@@ -14734,7 +14734,7 @@
       "text8bb2b50055b6": "Un connettore appartiene al progetto, non a un laptop o a un accesso. Aggiungilo una volta e ogni sessione avviata da quel progetto potrà raggiungerlo, senza una seconda configurazione né chiavi condivise in un messaggio diretto.",
       "text8bbecc2acd82": "Imposta i metadati dell'identity provider",
       "text8bc1d53cc57c": "In",
-      "text8bcac7908eb9": "-----BEGIN RSA PRIVATE KEY-----",
+      "text8bcac7908eb9": "Incolla il contenuto del file .pem",
       "text8bd901c25ba7": "R&S — piattaforma",
       "text8bf73992ff9b": "Non c’è un passaggio di provisioning separato né una console da esplorare. Un comando avvia lo stack. Un altro decide con quale Kortix sta comunicando la tua CLI.",
       "text8bf926d1ef32": "Configura SSO",

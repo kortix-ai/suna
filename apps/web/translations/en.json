@@ -14745,7 +14745,7 @@
       "text8bb2b50055b6": "A connector belongs to the project, not to a laptop or a login. Add it once and every session that project starts can reach it — with no second setup and no key passed around in a DM.",
       "text8bbecc2acd82": "Set identity provider metadata",
       "text8bc1d53cc57c": "In",
-      "text8bcac7908eb9": "-----BEGIN RSA PRIVATE KEY-----",
+      "text8bcac7908eb9": "Paste the contents of the .pem file",
       "text8bd901c25ba7": "R&D — platform",
       "text8bf73992ff9b": "There is no separate provisioning step and no console to click through. One command brings the stack up. One more decides which Kortix your CLI is talking to.",
       "text8bf926d1ef32": "Set up SSO",

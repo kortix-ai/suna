@@ -164,7 +164,7 @@ function TelegramUsersForm({
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const save = useSetTelegramAllowedUsers();
-  const [users, setUsers] = useState(initial.join(', '));
+  const [users, setUsers] = useState(() => initial.join(', '));
   const ids = parseTelegramUserIds(users);
 
   return (

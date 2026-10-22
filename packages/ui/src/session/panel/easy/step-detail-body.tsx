@@ -16,7 +16,7 @@
  */
 
 import type { ToolCallBlock } from '@kortix/sdk';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ActionNavigator } from '../shared/action-navigator';
 import { type FollowMode, clampIndex } from '../shared/action-navigator-logic';
 import { ToolParts } from './detail-view';
@@ -40,12 +40,7 @@ export function StepDetailBody({
   // it straight back to the newest part on the next streaming update.
   const [mode, setMode] = useState<FollowMode>(focusIndex >= 0 ? 'manual' : 'live');
 
-  useEffect(() => {
-    if (calls.length === 0) return;
-    setIndex((i) => (mode === 'live' ? calls.length - 1 : clampIndex(i, calls.length)));
-  }, [calls.length, mode]);
-
-  const safeIndex = clampIndex(index, calls.length);
+  const safeIndex = clampIndex(mode === 'live' ? calls.length - 1 : index, calls.length);
   const current = calls[safeIndex];
   const atLatest = safeIndex >= calls.length - 1;
 

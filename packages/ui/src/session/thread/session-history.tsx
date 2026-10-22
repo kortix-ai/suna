@@ -22,7 +22,7 @@ import {
   type SessionLogRestoreNotice,
   type SessionLogTurn,
 } from '@kortix/sdk';
-import type { ComponentType } from 'react';
+import { useMemo, type ComponentType } from 'react';
 
 import { Button } from '../../primitives/button';
 import { InfoBanner } from '../../primitives/info-banner';
@@ -70,7 +70,8 @@ function missingLabel(
 export function RestoreNotice({ notice, onDismiss }: { notice: SessionLogRestoreNotice; onDismiss: () => void }) {
   const t = useTranslations('sessionUi.history');
   const locale = useLocale();
-  const items = new Intl.ListFormat(locale, { style: 'narrow', type: 'unit' }).format(
+  const listFormat = useMemo(() => new Intl.ListFormat(locale, { style: 'narrow', type: 'unit' }), [locale]);
+  const items = listFormat.format(
     notice.missing.map((m) => missingLabel(t, m.kind, m.count)),
   );
   return (

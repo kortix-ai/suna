@@ -14,7 +14,7 @@ import { isKortixAppUrl } from '../apps/kortix-app-url';
 import { APP_ACCESS_PARAM, withoutAppAccessToken } from '../internal/lib/utils/app-access-token';
 import type { App } from '@kortix/sdk';
 import { useAppAccess, useProjectApps } from '@kortix/sdk/react';
-import { useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 
 import { appCan } from '../apps/app-shared';
 
@@ -80,8 +80,10 @@ export function useAppInBrowser(projectId: string | undefined, url: string | nul
   }
 
   const pinned = useRef<{ url: string; src: string } | null>(null);
-  if (url && resolved && pinned.current?.url !== url) pinned.current = { url, src: resolved };
   const src = url && pinned.current?.url === url ? pinned.current.src : resolved;
+  useLayoutEffect(() => {
+    if (url && src && pinned.current?.url !== url) pinned.current = { url, src };
+  });
 
   return { app, apps: apps.data ?? [], src };
 }

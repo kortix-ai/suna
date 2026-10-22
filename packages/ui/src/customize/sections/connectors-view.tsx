@@ -1258,14 +1258,16 @@ function EmailSenderPolicyEditor({
   const [regex, setRegex] = useState(initial.allowedRegex ?? '');
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const [syncedPolicy, setSyncedPolicy] = useState(policy);
+  if (policy !== syncedPolicy) {
+    setSyncedPolicy(policy);
     const next = normalizeEmailSenderPolicy(policy);
     setRestricted(next.mode === 'restricted');
     setEmails(next.allowedEmails.join('\n'));
     setDomains(next.allowedDomains.join('\n'));
     setRegex(next.allowedRegex ?? '');
     setError(null);
-  }, [policy]);
+  }
 
   const nextPolicy = (): EmailSenderPolicy => ({
     mode: restricted ? 'restricted' : 'allow_all',
@@ -3252,17 +3254,13 @@ export function CustomConnectorForm({
     const timer = window.setTimeout(() => setDiscoveryDraft(draft), 400);
     return () => window.clearTimeout(timer);
   }, [draft]);
-  useEffect(() => {
-    if (!emailChannelEnabled && draft.provider === 'channel' && draft.platform === 'email') {
-      setDraft((current) => ({ ...current, platform: 'slack' }));
-    }
-  }, [draft.platform, draft.provider, emailChannelEnabled]);
-  useEffect(() => {
-    // Channel connectors have no OAuth2-at-creation offer.
-    if (draft.provider === 'channel' && oauth2Selected) {
-      setOauth2Selected(false);
-    }
-  }, [draft.provider, oauth2Selected]);
+  if (!emailChannelEnabled && draft.provider === 'channel' && draft.platform === 'email') {
+    setDraft((current) => ({ ...current, platform: 'slack' }));
+  }
+  // Channel connectors have no OAuth2-at-creation offer.
+  if (draft.provider === 'channel' && oauth2Selected) {
+    setOauth2Selected(false);
+  }
 
   const save = useCreateCustomConnector(projectId, onAdded);
   const discovery = useQuery<ConnectorAuthDiscovery>({

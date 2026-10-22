@@ -13,7 +13,7 @@ import {
   ModalTitle,
 } from '../../../primitives/modal';
 import { useTranslations } from '../../../i18n';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { MAX_SESSION_NAME_LENGTH, useRenameSession } from '../../../session/actions/use-rename-session';
 
@@ -37,9 +37,14 @@ export function RenameSessionModal({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [value, setValue] = useState(currentName ?? '');
 
-  useEffect(() => {
+  const [syncedFor, setSyncedFor] = useState<[boolean, string | undefined]>([
+    open,
+    currentName,
+  ]);
+  if (syncedFor[0] !== open || syncedFor[1] !== currentName) {
+    setSyncedFor([open, currentName]);
     if (open) setValue(currentName ?? '');
-  }, [open, currentName]);
+  }
 
   const renameMutation = useRenameSession(projectId, sessionId, {
     onSuccess: () => {

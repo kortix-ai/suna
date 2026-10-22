@@ -190,8 +190,8 @@ export function ThemeToggle({ variant = 'icon', className, systemTheme = true }:
     );
   }
 
-  const lightIcon = THEME_OPTIONS.find((o) => o.id === 'light')!.icon;
-  const darkIcon = THEME_OPTIONS.find((o) => o.id === 'dark')!.icon;
+  const lightIcon = THEME_OPTIONS.find((o) => o.id === 'light')?.icon;
+  const darkIcon = THEME_OPTIONS.find((o) => o.id === 'dark')?.icon;
 
   return (
     <div className="flex items-center gap-1.5">

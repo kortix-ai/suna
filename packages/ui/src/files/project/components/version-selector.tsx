@@ -110,7 +110,6 @@ export function VersionSelector() {
               'featuresProjectFilesComponentsVersionSelector.line112JsxAttrPlaceholderFindAVersion',
             )}
             className="text-foreground placeholder:text-muted-foreground/50 h-7 min-w-0 flex-1 border-0 bg-transparent px-0 text-sm outline-none"
-            autoFocus
           />
         </div>
 

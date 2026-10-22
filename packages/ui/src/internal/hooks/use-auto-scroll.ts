@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   OWN_SCROLL_MS,
   chevronVisible,
@@ -310,7 +310,9 @@ export function useAutoScroll({
     markOwnScroll(OWN_SCROLL_MS);
     el.scrollTop = end;
   }, [sizeRoom, glideTo, markOwnScroll]);
-  settleRef.current = settle;
+  useLayoutEffect(() => {
+    settleRef.current = settle;
+  }, [settle]);
 
   const goToEnd = useCallback(
     (behavior: ScrollBehavior) => {
@@ -532,7 +534,7 @@ export function useAutoScroll({
       document.removeEventListener('keydown', onKeyDown, { capture: true });
       el.removeEventListener('scroll', onScroll);
     };
-  }, [goToEnd, endGlide, hasContent, setFollow, markOwnScroll]);
+  }, [goToEnd, endGlide, hasContent, setFollow]);
 
   return {
     scrollRef,
