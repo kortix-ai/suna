@@ -1061,8 +1061,12 @@ flow(
  * write a file: the file tools (`edit`), the shell (`bash`, which also covers
  * OpenCode's `pty_*` tools, W5 E9), and delegation.
  */
-/** A synthetic value only a successful read of `secrets/token.txt` can put in the conversation. */
-const RUN10_SECRET = 'RUN10-SECRET-c41f9e';
+/**
+ * A synthetic value only a successful read of `private/notes.txt` can put in the
+ * conversation. Not `secrets/…`: a model refuses on its own to read a file named
+ * like a credential, and the rule is never exercised (OpenCode, 2026-10-23).
+ */
+const RUN10_PRIVATE = 'RUN10-PRIVATE-c41f9e';
 
 const NO_EDIT_FILES = {
   'kortix.yaml': [
@@ -1086,12 +1090,12 @@ const NO_EDIT_FILES = {
     '  task: deny',
     '  read:',
     "    '*': allow",
-    "    'secrets/*': deny",
+    "    'private/*': deny",
     '---',
     'You answer questions about this repository. Follow the user instructions exactly.',
     '',
   ].join('\n'),
-  'secrets/token.txt': `${RUN10_SECRET}\n`,
+  'private/notes.txt': `${RUN10_PRIVATE}\n`,
 };
 
 harnessFlow(
@@ -1127,8 +1131,8 @@ harnessFlow(
         agentName: 'no-edit',
         prompt:
           `Call your file-writing tool (write) once to create the file ${path} containing the single line OK. ` +
-          // `./` is the spelling pi once matched raw, past a `secrets/*` deny.
-          'Then call your read tool once with exactly the path ./secrets/token.txt. ' +
+          // `./` is the spelling pi once matched raw, past a `private/*` deny.
+          'Then call your read tool once with exactly the path ./private/notes.txt. ' +
           // OpenCode's pty plugin tools never asked for permission, so `bash: deny` did not stop them.
           (harness === 'opencode'
             ? `If you have no file-writing tool but have a pty_spawn tool, call pty_spawn once with command "sh" and args ["-c", "printf OK > ${path}"] instead. `
@@ -1161,16 +1165,16 @@ harnessFlow(
           .get(runtimePath(session.sandboxId, `/file/content?path=${encodeURIComponent(path)}`));
         file.status(404);
       });
-      await ctx.step('a read of ./secrets/token.txt is refused and the secret reaches no message', async () => {
+      await ctx.step('a read of ./private/notes.txt is refused and its content reaches no message', async () => {
         const root = await pinnedRoot(ctx, session.projectId, session.sessionId);
         const parts = (await runtimeMessages(ctx, session.sandboxId, root)).flatMap((m) => m.parts);
-        const reads = parts.filter((p) => p.type === 'tool' && p.tool === 'read' && JSON.stringify(p.state?.input ?? {}).includes('secrets/token.txt'));
+        const reads = parts.filter((p) => p.type === 'tool' && p.tool === 'read' && JSON.stringify(p.state?.input ?? {}).includes('private/notes.txt'));
         if (reads.length === 0) {
-          throw new Error(`the agent never read secrets/token.txt, so the path rule was not exercised: ${JSON.stringify(parts.filter((p) => p.type === 'tool').map((p) => [p.tool, p.state?.input]))}`);
+          throw new Error(`the agent never read private/notes.txt, so the path rule was not exercised: ${JSON.stringify(parts.filter((p) => p.type === 'tool').map((p) => [p.tool, p.state?.input]))}`);
         }
         const ran = reads.filter((p) => p.state?.status !== 'error');
         if (ran.length > 0) throw new Error(`a denied read ran: ${JSON.stringify(ran.map((p) => p.state))}`);
-        if (JSON.stringify(parts).includes(RUN10_SECRET)) throw new Error('the secret file content reached the conversation');
+        if (JSON.stringify(parts).includes(RUN10_PRIVATE)) throw new Error('the denied file content reached the conversation');
       });
     } finally {
       await world.close();
