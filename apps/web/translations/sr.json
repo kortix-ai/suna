@@ -1,4 +1,12 @@
 {
+  "agentNavPrototype": {
+    "variantRail": "Leva traka (trenutno)",
+    "variantTabs": "Grupisani podvučeni tabovi",
+    "variantGroups": "Prekidač grupe + tabovi",
+    "variantInline": "Vertikalni tabovi sa vrednostima",
+    "previousVariant": "Prethodna varijanta",
+    "nextVariant": "Sledeća varijanta"
+  },
   "repositoryDisconnected": {
     "title": "GitHub je isključen",
     "reconnect": "Ponovo poveži GitHub",

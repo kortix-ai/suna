@@ -20,7 +20,7 @@ import {
 } from '@kortix/ui/internal/auth/auth-consent';
 import { ErrorStrip, Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
-import { backendApi, createAccountToken, revokeAccountToken } from '@kortix/sdk';
+import { approveCliDevice, createAccountToken, revokeAccountToken } from '@kortix/sdk';
 import { validateCallback } from './validate-callback';
 
 const normalizeCliCode = (code: string) => code.trim().toUpperCase().replace(/-/g, '');
@@ -100,8 +100,7 @@ function CliAuthorizeInner() {
           <Button disabled={!confirmed || phase === 'authorizing'} onClick={async () => {
             setPhase('authorizing'); setError(null);
             try {
-              const result = await backendApi.post('/cli/device/decide', { user_code: userCode, approve: true });
-              if (!result.success) throw result.error ?? new Error('Could not approve login.');
+              await approveCliDevice(userCode);
               setPhase('success');
             } catch (err) { setError((err as Error).message); setPhase('error'); }
           }}>{tI18nComplete.raw('cliDeviceAction')}</Button>

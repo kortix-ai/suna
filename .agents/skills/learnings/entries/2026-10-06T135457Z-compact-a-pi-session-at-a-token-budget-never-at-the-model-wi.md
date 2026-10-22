@@ -4,6 +4,8 @@ incident_date: 2026-10-06
 ---
 # Compact a pi session at a token budget, never at the model window
 
+**Superseded 2026-10-22** by [Serve every model its real limits](2026-10-22T184919Z-serve-every-model-its-real-limits-never-cap-a-window-or-a-co.md): pi compacts at its own default again.
+
 **Rule:** Give pi a per-model `compaction.modelOverrides["kortix/<id>"].reserveTokens` of `window - KORTIX_PI_COMPACT_AT_TOKENS` (default 160,000). pi compacts at `window - reserveTokens`; with only its default reserve (16,384) a 1M-token model fills to ~1M before it compacts, and every request re-sends the whole context.
 
 **Trigger surface:** pi settings in `apps/kortix-sandbox-agent-server/src/harness/pi/extensions/host.ts`, the catalog windows that `model.ts` sizes models from, or any new large-window model on the gateway.

@@ -1,4 +1,12 @@
 {
+  "agentNavPrototype": {
+    "variantRail": "Left rail (today)",
+    "variantTabs": "Grouped underline tabs",
+    "variantGroups": "Group switch + tabs",
+    "variantInline": "Vertical tabs with values",
+    "previousVariant": "Previous variant",
+    "nextVariant": "Next variant"
+  },
   "repositoryDisconnected": {
     "title": "GitHub disconnected",
     "reconnect": "Reconnect GitHub",

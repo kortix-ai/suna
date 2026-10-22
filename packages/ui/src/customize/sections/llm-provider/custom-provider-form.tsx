@@ -116,11 +116,7 @@ export function CustomProviderForm({
       const existing: CustomLlmProvider | undefined = custom.providers.find(
         (p) => p.id === providerId && p.configured,
       );
-      await custom.save(providerId, {
-        name,
-        base_url: baseUrl,
-        models: [...(existing?.models ?? []).filter((m) => m.id !== model.id), model],
-      });
+      // The key first: saving the endpoint reads its `GET /models` for each model's limits.
       if (apiKey) {
         // LLM provider credentials are always project-wide (see
         // api-key-connect-form.tsx) — a per-user key is invisible to the
@@ -132,6 +128,11 @@ export function CustomProviderForm({
           consumer: 'llm_gateway',
         });
       }
+      await custom.save(providerId, {
+        name,
+        base_url: baseUrl,
+        models: [...(existing?.models ?? []).filter((m) => m.id !== model.id).map(({ id, name }) => ({ id, name })), model],
+      });
       return providerId;
     },
     onSuccess: (providerId) => {

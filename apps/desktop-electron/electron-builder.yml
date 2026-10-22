@@ -128,6 +128,9 @@ nsis:
   allowToChangeInstallationDirectory: true
 
 linux:
+  # electron-builder 26 derives the binary name from package.json `name`
+  # (@kortix/desktop-electron), which it rejects for AppImage. Name it here.
+  executableName: kortix
   icon: build/icon.png
   category: Utility
   target:

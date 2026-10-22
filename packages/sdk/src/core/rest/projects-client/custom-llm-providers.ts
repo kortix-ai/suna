@@ -13,8 +13,12 @@ export interface CustomLlmProvider {
   name: string;
   /** `http(s)` URL without credentials. `null` only when `configured` is false. */
   base_url: string | null;
-  /** 1–50 models when configured. A model id has no whitespace. */
-  models: { id: string; name: string }[];
+  /**
+   * 1–50 models when configured. A model id has no whitespace. `context` and
+   * `output` are the model's token limits, read from the endpoint's `GET /models`
+   * on save; absent, the gateway serves a 128k window.
+   */
+  models: { id: string; name: string; context?: number; output?: number }[];
   /** The project secret that holds the key: `CUSTOM_<ID>_API_KEY`. */
   secret_name: string;
   /** The project-wide secret exists. The key is optional. */
@@ -27,7 +31,8 @@ export interface CustomLlmProvider {
 export interface CustomLlmProviderInput {
   name: string;
   base_url: string;
-  models: { id: string; name: string }[];
+  /** `context`/`output` override the limits the endpoint's `GET /models` reports. */
+  models: { id: string; name: string; context?: number; output?: number }[];
 }
 
 /** Every custom provider of the project, legacy key-only rows included (`configured: false`). */

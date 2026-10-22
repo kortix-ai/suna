@@ -1,4 +1,12 @@
 {
+  "agentNavPrototype": {
+    "variantRail": "左レール（現行）",
+    "variantTabs": "グループ化した下線タブ",
+    "variantGroups": "グループ切替 + タブ",
+    "variantInline": "値付きの縦タブ",
+    "previousVariant": "前のバリアント",
+    "nextVariant": "次のバリアント"
+  },
   "repositoryDisconnected": {
     "title": "GitHub の接続が切れています",
     "reconnect": "GitHub を再接続",
