@@ -119,8 +119,8 @@ paymentsRouter.openapi(
     request: {
       query: z.object({
         account_id: z.string().optional(),
-        limit: z.coerce.number().optional(),
-        offset: z.coerce.number().optional(),
+        limit: z.coerce.number().int().nonnegative().safe().optional(),
+        offset: z.coerce.number().int().nonnegative().safe().optional(),
         type_filter: z.string().optional(),
       }),
     },
@@ -304,8 +304,8 @@ paymentsRouter.openapi(
     request: {
       query: z.object({
         account_id: z.string().optional(),
-        limit: z.coerce.number().optional(),
-        offset: z.coerce.number().optional(),
+        limit: z.coerce.number().int().nonnegative().safe().optional(),
+        offset: z.coerce.number().int().nonnegative().safe().optional(),
       }),
     },
     responses: {

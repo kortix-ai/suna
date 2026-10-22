@@ -55,6 +55,7 @@ import {
   type MirrorSnapshot,
 } from './lib/session-transcript-mirror';
 import { convertMirrorOnRead } from './session-log-backfill';
+import { mirrorDrained } from './session-log-capture';
 import { rehydrateLargeTexts } from './session-log-blobs';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -92,9 +93,10 @@ type PageInput = { sessionId: string; threadId: string | null; beforeSeq: number
 
 /**
  * One page of one thread. Null when the session has no stored log and no v1 mirror to convert
- * (a new session). `'mirror_unconverted'`: no log, but a mirror this read did not convert (another
- * read holds the session's conversion lock, or ingest is off), so the history exists and a client
- * must not read it as "nothing saved".
+ * (a new session), or no stored log once the mirror is drained (`mirrorDrained`: no mirror table
+ * is read). `'mirror_unconverted'`: no log, but a mirror this read did not convert (another read
+ * holds the session's conversion lock, or ingest is off), so the history exists and a client must
+ * not read it as "nothing saved".
  */
 export async function readSessionLogPage(input: PageInput): Promise<SessionLogPage | 'unknown_thread' | 'mirror_unconverted' | null> {
   const page = await readPage(input);
@@ -102,6 +104,8 @@ export async function readSessionLogPage(input: PageInput): Promise<SessionLogPa
   if (await convertMirrorOnRead(input.sessionId)) return readPage(input);
   const again = await readPage(input);
   if (again !== null) return again;
+  // Drained: no mirror table is read (Release B1).
+  if (await mirrorDrained()) return null;
   const [mirror] = await db
     .select({ sessionId: sessionTranscriptMirrors.sessionId })
     .from(sessionTranscriptMirrors)

@@ -7,7 +7,8 @@
  * | a session was deleted     | delete + 30 days | delete + 37 days           | day 37   |
  * | the account was closed    | close + 80 days  | close + 87 days            | day 87   |
  *
- * "Rows" are the v2 `session_log*` rows and the v1 `session_transcript_*` rows.
+ * "Rows" are the v2 `session_log*` rows and, until the v1 mirror is drained
+ * (`mirrorDrained`), the v1 `session_transcript_*` rows.
  * "Objects" are everything under `<project_id>/<session_id>/` in the
  * `session-attachments` bucket: uploads, offloaded log texts (P2.3) and the
  * orphans a skipped capture batch leaves (P2.7b). Objects go after their rows,
@@ -76,6 +77,7 @@ import { and, eq, isNull, lte, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { sessionAttachmentStore } from './lib/session-attachments';
+import { mirrorDrained } from './session-log-capture';
 
 /**
  * Days from a session delete to its rows purge: the restore window too. The SQL twin is
@@ -181,16 +183,22 @@ async function dueSessions(now: Date, limit: number): Promise<DueSession[]> {
   return rows as unknown as DueSession[];
 }
 
-/** Every row of one session in both stores, then its done marker, in one transaction. */
-async function purgeRows(row: DueSession, now: Date): Promise<void> {
+/**
+ * Every row of one session in both stores, then its done marker, in one transaction. `drained`:
+ * the v1 mirror is drained (`mirrorDrained`), so its tables are not touched; the Release B2
+ * migration drops them with every row left in them.
+ */
+async function purgeRows(row: DueSession, now: Date, drained: boolean): Promise<void> {
   const id = row.session_id;
   await db.transaction(async (tx) => {
     await tx.delete(sessionLogMessages).where(eq(sessionLogMessages.sessionId, id));
     await tx.delete(sessionLogThreads).where(eq(sessionLogThreads.sessionId, id));
     await tx.delete(sessionLogBlobs).where(eq(sessionLogBlobs.sessionId, id));
     await tx.delete(sessionLogs).where(eq(sessionLogs.sessionId, id));
-    await tx.delete(sessionTranscriptMessages).where(eq(sessionTranscriptMessages.sessionId, id));
-    await tx.delete(sessionTranscriptMirrors).where(eq(sessionTranscriptMirrors.sessionId, id));
+    if (!drained) {
+      await tx.delete(sessionTranscriptMessages).where(eq(sessionTranscriptMessages.sessionId, id));
+      await tx.delete(sessionTranscriptMirrors).where(eq(sessionTranscriptMirrors.sessionId, id));
+    }
     await tx
       .insert(sessionContentPurges)
       .values({ sessionId: id, projectId: row.project_id, accountId: row.account_id, reason: row.reason, rowsPurgedAt: now })
@@ -207,9 +215,10 @@ export async function purgeSessionContent(
 
   await forgetReopenedAccounts();
   result.liveClosed = await liveClosedAccounts(now);
+  const drained = await mirrorDrained();
   for (const row of await dueSessions(now, batchSize)) {
     try {
-      await purgeRows(row, now);
+      await purgeRows(row, now, drained);
       result.sessions += 1;
       logger.debug('[session-purge] rows purged', { sessionId: row.session_id, reason: row.reason });
     } catch (error) {
