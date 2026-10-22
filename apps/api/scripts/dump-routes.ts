@@ -25,10 +25,11 @@
  *     INTERNAL_KORTIX_ENV=dev KORTIX_BILLING_INTERNAL_ENABLED=true \
  *     FRONTEND_URL=https://placeholder.kortix.com \
  *     KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT=https://placeholder.storage.example \
+ *     PLATINUM_INFERENCE_URL=https://placeholder.platinum.example/v1/inference \
  *     bun scripts/dump-routes.ts
  *
- * The last two placeholders exist because bun auto-loads the dotenvx-encrypted
- * `.env`, so those two URL vars arrive as `encrypted:…` ciphertext and fail
+ * The last three placeholders exist because bun auto-loads the dotenvx-encrypted
+ * `.env`, so those three URL vars arrive as `encrypted:…` ciphertext and fail
  * config validation before the app imports. They do not change the route table.
  */
 import { resolve } from "node:path";
