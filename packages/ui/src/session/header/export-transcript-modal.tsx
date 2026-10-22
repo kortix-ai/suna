@@ -44,6 +44,7 @@ import {
 } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Download } from '../../internal/icons/download';
+import { sessionStartedAt } from '../thread/session-context-metrics';
 
 // ============================================================================
 // Export Modal
@@ -57,8 +58,9 @@ interface TranscriptSessionHeader {
 
 /**
  * The transcript's header: the runtime's session while the computer runs, else
- * the session row the page shows (asleep, stopped, failed). Null: nothing to
- * name the export after yet.
+ * the session row the page shows (asleep, stopped, failed). The start is the row's
+ * (`sessionStartedAt`): a pi box stamps its runtime session at boot. Null: nothing
+ * to name the export after yet.
  */
 export function transcriptSessionHeader(
   runtime: { id: string; title?: string; slug?: string; time: { created: number; updated: number } } | undefined,
@@ -66,7 +68,8 @@ export function transcriptSessionHeader(
   sessionId: string,
 ): TranscriptSessionHeader | null {
   if (runtime) {
-    return { id: runtime.id, title: runtime.title || runtime.slug || 'Untitled', time: runtime.time };
+    const created = sessionStartedAt(runtime, row) ?? runtime.time.created;
+    return { id: runtime.id, title: runtime.title || runtime.slug || 'Untitled', time: { ...runtime.time, created } };
   }
   if (!row) return null;
   return {

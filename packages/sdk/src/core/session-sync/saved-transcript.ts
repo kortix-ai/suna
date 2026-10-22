@@ -33,7 +33,7 @@ import {
   holdSavedWindow,
   openBundleHistory,
 } from '../session/open-bundle';
-import { loadSessionLogPage, readFirstSessionLogAnswer, type SessionLogPage } from '../session-log/source';
+import { holdFirstSessionLogPage, loadSessionLogPage, readFirstSessionLogAnswer, type SessionLogPage } from '../session-log/source';
 import { EMPTY_SESSION_LOG_STATE, applySessionLogPage } from '../session-log/store';
 import { sessionLogRoot } from '../session-log/v1-view';
 
@@ -117,7 +117,8 @@ export interface SavedSessionCopy {
  * The session log first: its newest page of the root thread (`GET …/log`), as `log` with
  * `envelope: null`. The host puts it in the session store (`applySessionLogPage`) and renders
  * `useSessionLogThread`, which loads a sub-agent's thread from the heads that page names.
- * `useSession` reads the page again at the bind. No v1 window is read then.
+ * A bind within `SESSION_LOG_HOLD_MS` takes this page instead of reading it again; a later bind
+ * (after a wake) reads it again. No v1 window is read then.
  *
  * A 404 coded `session_log_missing` (a new session) answers no copy: `log: null`, no v1 read.
  * Only when the log answers a 404 without that code or an invalid page (a server older than the
@@ -148,6 +149,7 @@ export async function readSavedSessionCopy(input: {
   // The API serves the log and the session has none yet (a new session): no copy, v1 included.
   if (log === 'missing') return { envelope: null, empty: false, log: null };
   if (log) {
+    holdFirstSessionLogPage(projectId, sessionId, log);
     const root = sessionLogRoot(applySessionLogPage(EMPTY_SESSION_LOG_STATE, log));
     const provenEmpty = !!root?.empty && root.runtimeSessionId === runtimeSessionId;
     return { envelope: null, empty: provenEmpty && (await noTurnSince(projectId, sessionId, runtimeSessionId)), log };

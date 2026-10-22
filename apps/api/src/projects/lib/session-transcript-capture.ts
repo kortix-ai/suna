@@ -300,9 +300,10 @@ async function captureIntoSessionLog(
     const outcome = await writeSessionLogFromRead(sessionId, {
       root: read.opencodeSessionId,
       rows: [...asRows(read.opencodeSessionId, rows), ...children.flatMap((child) => asRows(child.opencodeSessionId, mirrorRowsFromOpencodePayload(child.payload)))],
+      complete: completeRead,
       before,
     });
-    // Nothing stored (a failed, invalid or too-large write): a failure, so it is retried and a
+    // Nothing stored (a failed or invalid write): a failure, so it is retried and a
     // wake does not mark the session captured.
     if (outcome.outcome !== 'written' && outcome.outcome !== 'skipped') return null;
     // Progress: a sub-agent the log did not hold before was written.

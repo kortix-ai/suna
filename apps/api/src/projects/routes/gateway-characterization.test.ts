@@ -298,3 +298,13 @@ describe('route registration (characterization)', () => {
     expect(registered.size).toBe(GATEWAY_ROUTES.length);
   });
 });
+
+describe("gateway spend day-window validation", () => {
+  for (const route of ["overview", "series", "sessions", "breakdown"]) {
+    for (const days of ["1.5", "NaN", "Infinity", "-Infinity"]) {
+      test(`${route} rejects days=${days}`, async () => {
+        expect((await request(`/gateway/${route}?days=${days}`)).status).toBe(400);
+      });
+    }
+  }
+});
