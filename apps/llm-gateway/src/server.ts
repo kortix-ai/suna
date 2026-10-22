@@ -144,6 +144,13 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
     { logger, imageWindow: config.imageWindow },
   );
   const app = new Hono();
+  app.use('*', async (c, next) => {
+    await next();
+    c.header('Content-Security-Policy', "default-src 'none';frame-ancestors 'none'");
+    c.header('X-Frame-Options', 'DENY');
+    // Permissions-Policy has no wildcard directive: deny each browser capability explicitly.
+    c.header('Permissions-Policy', 'accelerometer=(), ambient-light-sensor=(), attribution-reporting=(), autoplay=(), battery=(), bluetooth=(), browsing-topics=(), camera=(), clipboard-read=(), clipboard-write=(), compute-pressure=(), display-capture=(), encrypted-media=(), fullscreen=(), gamepad=(), geolocation=(), gyroscope=(), hid=(), identity-credentials-get=(), idle-detection=(), keyboard-map=(), local-fonts=(), magnetometer=(), microphone=(), midi=(), otp-credentials=(), payment=(), picture-in-picture=(), publickey-credentials-create=(), publickey-credentials-get=(), screen-wake-lock=(), serial=(), speaker-selection=(), storage-access=(), sync-xhr=(), usb=(), web-share=(), window-management=(), xr-spatial-tracking=()');
+  });
   const inflightRequests = trackInflight(app);
   registerHealth(app, api, inflight, traces, trafficSnapshot, upstreamIncidents);
   registerRoutes(app, gateway, inflight, recordOutcome);
