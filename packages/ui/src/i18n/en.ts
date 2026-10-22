@@ -6266,6 +6266,8 @@ const catalog = {
     "timeZone": "Time zone",
     "lastRun": "Last run",
     "lastRunFailed": "Last run failed",
+    "runQueued": "Reminder sent to the session",
+    "runFailed": "Could not run the reminder",
     "neverRun": "Not run yet",
     "searchPlaceholder": "Search reminders",
     "statusAll": "All",

@@ -187,7 +187,8 @@ reminder text: the fire is not a channel turn, so the answer must be posted
 with `slack send --channel <id> --thread <ts>` (see `kortix-slack`).
 
 `kortix reminders ls` shows this session's reminders, `pause <id>` /
-`resume <id>` turn one off and on. A reminder lives in the database, not
+`resume <id>` turn one off and on, and `run <id>` fires one once now (the
+retry of a failed run; the schedule does not move). A reminder lives in the database, not
 `kortix.yaml`: no CR, no manifest edit, and it pauses itself if its session
 is deleted. It never starts a new session — for work that must survive the
 session, use a trigger.

@@ -26,17 +26,23 @@ export type RemindersQuery = ReturnType<typeof useProjectReminders>;
 const EMPTY_TAB = { active: 'emptyActive', paused: 'emptyPaused', done: 'emptyDone' } as const;
 
 /**
- * Pause, resume and remove with their toasts. A reminder is pending while its
+ * Retry, pause, resume and remove with their toasts. A reminder is pending while its
  * own mutation runs; the SDK refetches the list before the mutation settles.
  */
 export function useReminderActions(query: RemindersQuery) {
   const t = useTranslations('reminders');
   const [removing, setRemoving] = useState<ProjectReminder | null>(null);
+  /**
+   * `update`, `remove` and `run` are one mutation each: a second call would
+   * replace the first's variables and drop its toast. So every row's actions
+   * are disabled while any runs, and the row that owns the request shows it.
+   */
+  const busy = query.update.isPending || query.remove.isPending || query.run.isPending;
   const failed = (error: unknown) =>
     errorToast(error instanceof Error ? error.message : t('updateFailed'));
 
   const setEnabled = (reminder: ProjectReminder, enabled: boolean) => {
-    if (query.update.isPending || query.remove.isPending) return;
+    if (busy) return;
     query.update.mutate(
       { sessionId: reminder.session_id as string, reminderId: reminder.id, enabled },
       { onSuccess: () => successToast(enabled ? t('resumed') : t('paused')), onError: failed },
@@ -46,15 +52,27 @@ export function useReminderActions(query: RemindersQuery) {
   // Stable identities for the memoized rows: the handlers read the latest
   // render through a ref, so a clock tick or a mutation state change does not
   // hand every row a new callback and re-render the whole list.
-  const latest = useRef(setEnabled);
-  latest.current = setEnabled;
+  const run = (reminder: ProjectReminder) => {
+    if (busy) return;
+    query.run.mutate(
+      { sessionId: reminder.session_id as string, reminderId: reminder.id },
+      {
+        onSuccess: () => successToast(t('runQueued')),
+        onError: (error) => errorToast(error instanceof Error ? error.message : t('runFailed')),
+      },
+    );
+  };
+
+  const latest = useRef({ setEnabled, run });
+  latest.current = { setEnabled, run };
   const toggle = useCallback(
-    (reminder: ProjectReminder) => latest.current(reminder, reminder.state !== 'active'),
+    (reminder: ProjectReminder) => latest.current.setEnabled(reminder, reminder.state !== 'active'),
     [],
   );
+  const retry = useCallback((reminder: ProjectReminder) => latest.current.run(reminder), []);
 
   const confirmRemove = () => {
-    if (!removing || query.update.isPending || query.remove.isPending) return;
+    if (!removing || busy) return;
     query.remove.mutate(
       { sessionId: removing.session_id as string, reminderId: removing.id },
       {
@@ -67,18 +85,14 @@ export function useReminderActions(query: RemindersQuery) {
     );
   };
 
-  /**
-   * `update` and `remove` are one mutation each: a second call would replace
-   * the first's variables and drop its toast. So every row's actions are
-   * disabled while either runs, and the row that owns the request shows it.
-   */
-  const busy = query.update.isPending || query.remove.isPending;
   const pendingAction = (reminder: ProjectReminder): RowPending =>
     query.update.isPending && query.update.variables?.reminderId === reminder.id
       ? 'toggle'
       : query.remove.isPending && query.remove.variables?.reminderId === reminder.id
         ? 'remove'
-        : null;
+        : query.run.isPending && query.run.variables?.reminderId === reminder.id
+          ? 'retry'
+          : null;
 
   const dialog = (
     <ConfirmDialog
@@ -100,7 +114,7 @@ export function useReminderActions(query: RemindersQuery) {
     />
   );
 
-  return { setEnabled, toggle, setRemoving, busy, pendingAction, dialog };
+  return { setEnabled, toggle, retry, setRemoving, busy, pendingAction, dialog };
 }
 
 type BulkKind = 'pause' | 'resume' | 'remove';
@@ -363,6 +377,7 @@ export function ReminderList({
                       selected={selection.selected.has(reminder.id)}
                       onSelect={selection.onSelect}
                       onToggle={actions.toggle}
+                      onRetry={actions.retry}
                       onRemove={actions.setRemoving}
                     />
                   ))}

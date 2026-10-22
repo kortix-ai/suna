@@ -21130,6 +21130,8 @@
     "timeZone": "Zeitzone",
     "lastRun": "Letzter Lauf",
     "lastRunFailed": "Letzter Lauf fehlgeschlagen",
+    "runQueued": "Erinnerung an die Sitzung gesendet",
+    "runFailed": "Die Erinnerung konnte nicht ausgeführt werden",
     "neverRun": "Noch nicht gelaufen",
     "searchPlaceholder": "Erinnerungen suchen",
     "statusAll": "Alle",

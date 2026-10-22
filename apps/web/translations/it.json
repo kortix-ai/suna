@@ -21130,6 +21130,8 @@
     "timeZone": "Fuso orario",
     "lastRun": "Ultima esecuzione",
     "lastRunFailed": "Ultima esecuzione non riuscita",
+    "runQueued": "Promemoria inviato alla sessione",
+    "runFailed": "Impossibile eseguire il promemoria",
     "neverRun": "Non ancora eseguito",
     "searchPlaceholder": "Cerca promemoria",
     "statusAll": "Tutti",

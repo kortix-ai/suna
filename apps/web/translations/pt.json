@@ -21130,6 +21130,8 @@
     "timeZone": "Fuso horário",
     "lastRun": "Última execução",
     "lastRunFailed": "A última execução falhou",
+    "runQueued": "Lembrete enviado para a sessão",
+    "runFailed": "Não foi possível executar o lembrete",
     "neverRun": "Ainda não executado",
     "searchPlaceholder": "Pesquisar lembretes",
     "statusAll": "Todos",

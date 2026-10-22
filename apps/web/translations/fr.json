@@ -21130,6 +21130,8 @@
     "timeZone": "Fuseau horaire",
     "lastRun": "Dernière exécution",
     "lastRunFailed": "La dernière exécution a échoué",
+    "runQueued": "Rappel envoyé à la session",
+    "runFailed": "Impossible d’exécuter le rappel",
     "neverRun": "Pas encore exécuté",
     "searchPlaceholder": "Rechercher des rappels",
     "statusAll": "Tous",

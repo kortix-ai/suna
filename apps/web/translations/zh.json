@@ -21130,6 +21130,8 @@
     "timeZone": "时区",
     "lastRun": "上次运行",
     "lastRunFailed": "上次运行失败",
+    "runQueued": "提醒已发送到会话",
+    "runFailed": "无法运行提醒",
     "neverRun": "尚未运行",
     "searchPlaceholder": "搜索提醒",
     "statusAll": "全部",

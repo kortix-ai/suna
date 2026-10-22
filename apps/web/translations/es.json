@@ -21130,6 +21130,8 @@
     "timeZone": "Zona horaria",
     "lastRun": "Última ejecución",
     "lastRunFailed": "La última ejecución falló",
+    "runQueued": "Recordatorio enviado a la sesión",
+    "runFailed": "No se pudo ejecutar el recordatorio",
     "neverRun": "Aún no se ha ejecutado",
     "searchPlaceholder": "Buscar recordatorios",
     "statusAll": "Todos",

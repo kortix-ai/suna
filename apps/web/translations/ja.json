@@ -21130,6 +21130,8 @@
     "timeZone": "タイムゾーン",
     "lastRun": "前回の実行",
     "lastRunFailed": "前回の実行に失敗しました",
+    "runQueued": "リマインダーをセッションに送信しました",
+    "runFailed": "リマインダーを実行できませんでした",
     "neverRun": "未実行",
     "searchPlaceholder": "リマインダーを検索",
     "statusAll": "すべて",
