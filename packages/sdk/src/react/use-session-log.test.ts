@@ -9,7 +9,7 @@ import type { SessionLog } from '../core/session-log/types';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-// The project detail answers the `session_log` flag; no network runs.
+// The project detail answers the `session_log` flag, which no hook reads any more; no network runs.
 let flag: boolean | undefined = true;
 const detailCalls: string[] = [];
 mock.module('../core/rest/projects-client', () => ({
@@ -542,19 +542,21 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     expect(calls).toBe(2);
   });
 
+  // The flag no longer gates the log (the API deletes it): the open reads the page first.
   for (const [name, setup] of [
     ['the flag is off', () => { flag = false; }],
     ['the API serves no flag', () => { flag = undefined; }],
   ] as const) {
-    test(`v1 when ${name}: no page request, no session log`, async () => {
+    test(`v2 when ${name}: the page is read first, and the project detail is not read`, async () => {
       setup();
       const calls: unknown[] = [];
-      const state = mount({ loader: async (...a: unknown[]) => { calls.push(a); return v1Page(); } });
+      const state = mount({ loader: async (...a: unknown[]) => { calls.push(a.slice(0, 3)); return v1Page(); } });
+      expect(state.dialect).toBe('v2');
       await flush();
-      expect(state.dialect).toBe('v1');
-      expect(calls).toEqual([]);
-      expect(useSyncStore.getState().sessionLogs).toEqual({});
-      expect(joined).toEqual([]);
+      expect(state.dialect).toBe('v2');
+      expect(calls).toEqual([[PROJECT, SESSION, { limit: 40 }]]);
+      expect(detailCalls).toEqual([]);
+      expect(joined.map((j) => j.options.schema)).toEqual(['v2']);
     });
   }
 
