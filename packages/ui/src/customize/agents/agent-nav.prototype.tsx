@@ -17,6 +17,7 @@
 import { CaretLeftIcon, CaretRightIcon } from '@phosphor-icons/react';
 import { type ReactNode, useCallback, useEffect } from 'react';
 
+import { useTranslations } from '../../i18n';
 import { cn } from '../../internal/lib/utils';
 import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
 import {
@@ -28,12 +29,7 @@ import {
 
 export const PROTOTYPE_ENABLED = process.env.NODE_ENV !== 'production';
 
-export const NAV_VARIANTS = [
-  { key: 'rail', label: 'Left rail (today)' },
-  { key: 'tabs', label: 'Grouped underline tabs' },
-  { key: 'groups', label: 'Group switch + tabs' },
-  { key: 'inline', label: 'Vertical tabs with values' },
-] as const;
+export const NAV_VARIANTS = [{ key: 'rail' }, { key: 'tabs' }, { key: 'groups' }, { key: 'inline' }] as const;
 export type NavVariant = (typeof NAV_VARIANTS)[number]['key'];
 
 export function useNavVariant(): NavVariant {
@@ -176,6 +172,13 @@ export function PrototypeSwitcher() {
   const pathname = usePathname();
   const search = useSearchParams();
   const current = useNavVariant();
+  const t = useTranslations('agentNavPrototype');
+  const labels: Record<NavVariant, string> = {
+    rail: t('variantRail'),
+    tabs: t('variantTabs'),
+    groups: t('variantGroups'),
+    inline: t('variantInline'),
+  };
   const index = NAV_VARIANTS.findIndex((v) => v.key === current);
 
   const go = useCallback(
@@ -206,18 +209,18 @@ export function PrototypeSwitcher() {
       <div className="bg-foreground text-background pointer-events-auto flex items-center gap-1 rounded-full p-1 shadow-lg">
         <button
           type="button"
-          aria-label="Previous variant"
+          aria-label={t('previousVariant')}
           onClick={() => go(-1)}
           className="flex size-7 items-center justify-center rounded-full hover:bg-background/15"
         >
           <CaretLeftIcon className="size-3.5" />
         </button>
         <span className="min-w-56 px-2 text-center text-xs tabular-nums">
-          {String.fromCharCode(65 + index)} · {NAV_VARIANTS[index].label}
+          {String.fromCharCode(65 + index)} · {labels[NAV_VARIANTS[index].key]}
         </span>
         <button
           type="button"
-          aria-label="Next variant"
+          aria-label={t('nextVariant')}
           onClick={() => go(1)}
           className="flex size-7 items-center justify-center rounded-full hover:bg-background/15"
         >

@@ -4,6 +4,7 @@ import {
   type CustomLlmProviderDefinition,
   CustomLlmProviderInputSchema,
   customProviderIdError,
+  probeCustomModelLimits,
   customProviderIdFromSecret,
   customProviderSecretName,
 } from '../../llm-gateway/custom-providers';
@@ -14,12 +15,20 @@ import { assertSafeEgressUrl, UnsafeEgressError } from '../../shared/ssrf-guard'
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
+import { resolveProjectSecretsForConsumer } from '../secrets';
 
 const CustomLlmProviderSchema = z.object({
   id: z.string(),
   name: z.string(),
   base_url: z.string().nullable(),
-  models: z.array(z.object({ id: z.string(), name: z.string() })),
+  models: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    /** Context window in tokens; absent: the gateway serves 128k. */
+    context: z.number().optional(),
+    /** Max output tokens; absent: the context window, else 16k. */
+    output: z.number().optional(),
+  })),
   secret_name: z.string(),
   has_key: z.boolean(),
   /** false: a `CUSTOM_<ID>_API_KEY` secret with no endpoint saved yet. */
@@ -93,7 +102,13 @@ export function registerCustomProvidersRoutes(): void {
         code: 'unsafe_base_url',
       }, 400);
     }
-    const next = await writeProjectCustomProvider(projectId, providerId, input);
+    // Save the key first: the endpoint's `GET /models` usually needs it.
+    const [key] = await resolveProjectSecretsForConsumer({
+      projectId, accountId: loaded.row.accountId, actorUserId: loaded.userId,
+      name: customProviderSecretName(providerId), consumer: 'llm_gateway',
+    });
+    const detected = await probeCustomModelLimits(input.base_url, key?.value ?? null);
+    const next = await writeProjectCustomProvider(projectId, providerId, input, detected);
     const { secretNames } = await listProjectCustomProviders(projectId);
     // Running sessions re-read the served model list.
     void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: true });

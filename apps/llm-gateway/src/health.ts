@@ -19,11 +19,10 @@ export function registerHealth(app: Hono, api: ReturnType<typeof createApiClient
     c.json({ ok: true, version: SERVICE_VERSION, commit: SERVICE_COMMIT }),
   );
 
-  // Deep health/readiness, built for an external monitor: an overall status, the
-  // specific incidents, dependency checks, and a rolling error rate. Returns HTTP
-  // 503 when unhealthy so a bot can alert on the status code alone, then read
-  // `incidents`/`checks` for the what.
+  // Public readiness keeps its HTTP status. Operational details require a
+  // gateway principal; never cache a credential-dependent health response.
   app.get('/health', async (c) => {
+    c.header('Cache-Control', 'no-store');
     const apiCheck = await api.ping();
     const traffic = trafficSnapshot();
     const admission = {
@@ -62,6 +61,10 @@ export function registerHealth(app: Hono, api: ReturnType<typeof createApiClient
       );
 
     const status = !apiCheck.ok ? 'unhealthy' : incidents.length ? 'degraded' : 'healthy';
+
+    const token = c.req.header('authorization')?.match(/^Bearer\s+(\S.*)$/i)?.[1].trim();
+    const principal = token ? await api.authenticate(token).catch(() => null) : null;
+    if (!principal) return c.json({ status }, status === 'unhealthy' ? 503 : 200);
 
     return c.json(
       {
