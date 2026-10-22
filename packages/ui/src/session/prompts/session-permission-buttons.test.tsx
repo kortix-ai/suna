@@ -3,7 +3,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, create } from 'react-test-renderer';
 import { SessionPermissionPrompt } from './session-permission-prompt';
 
-mock.module('@/features/providers/auth-provider', () => ({ useAuth: () => ({ user: null }) }));
 
 const request = { id: 'permission-test', sessionID: 'session-test', permission: 'bash', patterns: ['echo test'], always: [], metadata: {} };
 
