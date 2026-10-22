@@ -140,7 +140,12 @@ export function CustomProviderForm({
         models: [
           ...(existing?.models ?? [])
             .filter((m) => m.id !== model.id)
-            .map(({ id, name, attachment, reasoning }) => ({ id, name, attachment, reasoning })),
+            .map(({ id, name, attachment, reasoning }) => ({
+              id,
+              name,
+              ...(attachment !== undefined ? { attachment } : {}),
+              ...(reasoning !== undefined ? { reasoning } : {}),
+            })),
           model,
         ],
       });
