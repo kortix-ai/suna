@@ -577,8 +577,7 @@ export function CodeEditor({
     return exts;
   }, [langExtension, diagExt]);
 
-  const SaveButton = () => {
-    const tHardcodedUi = useTranslations('hardcodedUi');
+  const renderSaveButton = () => {
     if (readOnly || !onSave) return null;
 
     switch (saveState) {
@@ -671,7 +670,7 @@ export function CodeEditor({
         <div className="bg-muted/30 flex max-w-full min-w-0 shrink-0 items-center justify-between border-b px-3 py-1.5">
           {/* Left: Save/Discard/Unsaved */}
           <div className="flex min-w-0 items-center gap-1">
-            <SaveButton />
+            {renderSaveButton()}
             {hasChanges && (
               <TooltipProvider delayDuration={300}>
                 <Tooltip>

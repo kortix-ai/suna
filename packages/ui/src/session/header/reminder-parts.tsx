@@ -17,7 +17,7 @@ import { cn } from '../../internal/lib/utils';
 import { useLocale, useTranslations } from '../../i18n';
 import type { SessionReminder } from '@kortix/sdk';
 import { useSessionReminders } from '@kortix/sdk/react';
-import { ArrowUpRightIcon, PauseIcon, PlayIcon } from '@phosphor-icons/react';
+import { ArrowClockwiseIcon, ArrowUpRightIcon, PauseIcon, PlayIcon } from '@phosphor-icons/react';
 import { useState, type ReactNode } from 'react';
 
 export const isFailedReminder = (reminder: SessionReminder) => reminder.last_status === 'failed';
@@ -167,7 +167,7 @@ export function ReminderFacts({
   );
 }
 
-/** Pause or resume, remove, and the link into the Reminders tab. */
+/** Retry a failed run, pause or resume, remove, and the link into the Reminders tab. */
 export function ReminderActions({
   reminder,
   controls,
@@ -185,6 +185,12 @@ export function ReminderActions({
   const paused = reminder.state !== 'active';
   return (
     <div className={cn('flex items-center gap-1', className)}>
+      {isFailedReminder(reminder) ? (
+        <Button variant="secondary" size="xs" disabled={controls.running} onClick={() => controls.run(reminder)}>
+          <ArrowClockwiseIcon className="size-3.5" />
+          {t('retry')}
+        </Button>
+      ) : null}
       <Button
         variant="secondary"
         size="xs"
@@ -219,12 +225,15 @@ export function ReminderActions({
 
 export interface ReminderControls {
   pending: boolean;
+  running: boolean;
+  /** Fire the reminder once now. */
+  run: (reminder: SessionReminder) => void;
   setEnabled: (reminder: SessionReminder, enabled: boolean) => void;
   requestRemove: (reminder: SessionReminder) => void;
 }
 
 /**
- * The session's reminders with pause, resume and remove. Remove asks first:
+ * The session's reminders with run, pause, resume and remove. Remove asks first:
  * render `confirm` once next to whatever calls `requestRemove`.
  */
 export function useReminderControls(projectId: string | null, sessionId: string | null | undefined) {
@@ -233,6 +242,12 @@ export function useReminderControls(projectId: string | null, sessionId: string 
   const [removing, setRemoving] = useState<SessionReminder | null>(null);
   const controls: ReminderControls = {
     pending: reminders.update.isPending,
+    running: reminders.run.isPending,
+    run: (reminder) =>
+      reminders.run.mutate(reminder.id, {
+        onSuccess: () => successToast(t('runQueued')),
+        onError: (error) => errorToast(error instanceof Error ? error.message : t('runFailed')),
+      }),
     setEnabled: (reminder, enabled) =>
       reminders.update.mutate(
         { reminderId: reminder.id, enabled },

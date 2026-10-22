@@ -10,6 +10,7 @@ import {
   partStatus,
   partStreamingInput,
   StructuredOutput,
+  RecoveredCallsContext,
   ToolRunningContext,
   useToolCardFrame,
   useToolCardPad,
@@ -170,12 +171,15 @@ function CommandBlock({
   output,
   richOutput,
   exitCode,
+  recovered = false,
   settled,
 }: {
   command: string;
   output: string;
   richOutput: React.ReactNode;
   exitCode?: number;
+  /** A later step of the turn worked: the strip keeps the code, in the muted ink. */
+  recovered?: boolean;
   /** The call has finished. Until it has, silence means "not yet", not "none". */
   settled: boolean;
 }) {
@@ -258,7 +262,8 @@ function CommandBlock({
           className={cn(
             // `kortix-red`, matching the trigger's "Command failed": the strip
             // is the card's own copy of the verdict, so the two agree in tone.
-            'border-border/60 text-kortix-red border-t py-2 font-mono text-xs tabular-nums',
+            'border-border/60 border-t py-2 font-mono text-xs tabular-nums',
+            recovered ? 'text-muted-foreground' : 'text-kortix-red',
             // Metadata about the card, not a third pane: it keeps the shorter
             // 8px vertical inset, and only the horizontal one is the surface's
             // to supply.
@@ -423,9 +428,13 @@ export function BashTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
 
   const exitCode = useMemo(() => {
     if (call.status !== 'complete') return undefined;
-    return shellExitCode(partRawOutput(call));
+    // OpenCode tags the code in the output; pi records it beside the output (KRTX-3021).
+    const recorded = partMetadata(call).exit;
+    return shellExitCode(partRawOutput(call)) ?? (typeof recorded === 'number' ? recorded : undefined);
   }, [call]);
   const failed = typeof exitCode === 'number' && exitCode !== 0;
+  // A failure the agent moved past keeps its words, not the red (KRTX-3021).
+  const recovered = useContext(RecoveredCallsContext).has(call.id);
 
   // `teams send "…"` / `slack send …` / `telegram send …` IS the reply the
   // person in the channel received. It renders as that message — badge, text,
@@ -470,7 +479,7 @@ export function BashTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
         ) : commandPreview ? (
           <BashTrigger
             title={title}
-            failed={failed}
+            failed={failed && !recovered}
             command={command}
             commandPreview={send ? (sendText ?? send.file ?? '') : commandPreview}
             extraLines={send ? 0 : extraLines}
@@ -498,6 +507,7 @@ export function BashTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
             output={plainOutput}
             richOutput={richOutput}
             exitCode={exitCode}
+            recovered={recovered}
             settled={status === 'completed' || status === 'error'}
           />
         </div>

@@ -123,7 +123,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.1.0
         with:
           node-version: 22
 
@@ -207,7 +207,7 @@ jobs:
       # The import-boundary lint runs under Node: ESLint's config validation
       # crashes under the Bun runtime (apps/kortix-sandbox-agent-server/ARCHITECTURE.md).
       - name: Install Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.1.0
         with:
           node-version: 22
 
@@ -258,7 +258,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.1.0
         with:
           node-version: 22
 
@@ -306,7 +306,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.1.0
         with:
           node-version: 22
 
@@ -351,7 +351,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.1.0
         with:
           node-version: 22
 

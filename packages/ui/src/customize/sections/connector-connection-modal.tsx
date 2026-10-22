@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations as useI18nTranslations } from '../../i18n';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { Button } from '../../primitives/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../primitives/disclosure';
@@ -85,13 +85,16 @@ export function ConnectorConnectionModal({
   const [slugEdited, setSlugEdited] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
 
-  useEffect(() => {
-    if (!open) return;
-    setName(proposedName);
-    setSlug(initialSlug);
-    setSlugEdited(false);
-    setOptionsOpen(false);
-  }, [proposedName, initialSlug, open]);
+  const [resetFor, setResetFor] = useState<[string, string, boolean] | null>(null);
+  if (!resetFor || resetFor[0] !== proposedName || resetFor[1] !== initialSlug || resetFor[2] !== open) {
+    setResetFor([proposedName, initialSlug, open]);
+    if (open) {
+      setName(proposedName);
+      setSlug(initialSlug);
+      setSlugEdited(false);
+      setOptionsOpen(false);
+    }
+  }
 
   const slugAvailable = isConnectorConnectionSlugAvailable(slug, existingSlugs);
   const slugInvalid = slug.length > 0 && !slugAvailable;

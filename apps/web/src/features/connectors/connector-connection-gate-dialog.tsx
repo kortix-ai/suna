@@ -181,10 +181,13 @@ export function ConnectorConnectionGateDialog() {
     [connectorConnections],
   );
 
-  useEffect(() => {
+  const resetKey = `${isOpen}|${connectionKey}`;
+  const [prevResetKey, setPrevResetKey] = useState(resetKey);
+  if (resetKey !== prevResetKey) {
+    setPrevResetKey(resetKey);
     setConnectedIds(new Set());
     setPendingId(null);
-  }, [isOpen, connectionKey]);
+  }
 
   // Every connect refreshes the lists, not only the last one: an open
   // Connectors page and the session catalogue show each account as it lands.

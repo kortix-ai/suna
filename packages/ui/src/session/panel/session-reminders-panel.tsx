@@ -42,8 +42,7 @@ import { useLocale, useTranslations } from '../../i18n';
 import type { SessionReminder } from '@kortix/sdk';
 import { AlarmIcon, MagnifyingGlassIcon as SearchIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
-import { lastRunLabel } from '../../customize/triggers/schedule/trigger-list';
-import { CLOCK_TONE } from '../../customize/triggers/schedule/trigger-tile';
+import { CLOCK_TONE, lastRunLabel } from '../../internal/lib/trigger-clock';
 import {
   ReminderActions,
   ReminderFacts,

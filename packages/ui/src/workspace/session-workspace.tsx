@@ -31,7 +31,7 @@ import type { UseSessionResult } from '@kortix/sdk/react';
 import { ProjectScope } from '../internal/project-scope';
 import { SessionThread } from '../session/thread/session-thread';
 import type React from 'react';
-import { memo, useCallback, useEffect, useState } from 'react';
+import { memo, useCallback, useState } from 'react';
 
 export interface SessionLayoutProps {
   sessionId: string;
@@ -197,10 +197,9 @@ function useSessionPanelSurfaces({
     />
   );
 
-  // While booting, the panel is JUST the dead-center "Kortix Computer is
-  // starting" loader — no header bar (the loader has its own heading, so a panel
-  // title would be redundant), filling the whole card so it's perfectly
-  // centered. The runtime-coupled views (Actions/Files/Terminal/Browser) need a
+  // While booting, the panel is JUST the wake status — empty unless the wake
+  // needs attention, and then dead-center in the card — with no header bar.
+  // The runtime-coupled views (Actions/Files/Terminal/Browser) need a
   // live sandbox, so they only render once booted.
   //
   // Easy mode has no header either: it is the three cards and nothing else. No
@@ -212,13 +211,7 @@ function useSessionPanelSurfaces({
   // away — press it again and the same detail comes back.
   const effectivePanelHeader = booting || isEasy ? null : panelHeader;
   const effectivePanelBody = booting ? (
-    <SessionStartingLoader
-      stage={bootStage ?? 'provisioning'}
-      delayMs={0}
-      projectId={projectId}
-      sessionId={projectSessionId}
-      variant="stepper"
-    />
+    <SessionStartingLoader projectId={projectId} sessionId={projectSessionId} />
   ) : (
     panelBody
   );
@@ -245,14 +238,10 @@ function useSessionPanelBody({
   const showAudit = !isEasy && effectiveView === 'audit';
 
   const [terminalActivated, setTerminalActivated] = useState(false);
-  useEffect(() => {
-    if (showTerminal) setTerminalActivated(true);
-  }, [showTerminal]);
+  if (showTerminal && !terminalActivated) setTerminalActivated(true);
 
   const [browserActivated, setBrowserActivated] = useState(false);
-  useEffect(() => {
-    if (showBrowser) setBrowserActivated(true);
-  }, [showBrowser]);
+  if (showBrowser && !browserActivated) setBrowserActivated(true);
 
   // Easy mode's body is the detail shell and nothing else — the cards moved to
   // the floating overlay over the chat. The Advanced branches below are kept

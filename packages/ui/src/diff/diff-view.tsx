@@ -68,25 +68,17 @@ export function DiffView(props: PatchProps | FilesProps) {
   const isDark = useIsDark();
   const themeType = isDark ? 'dark' : 'light';
 
+  const patchInput = 'patch' in props ? props.patch : null;
+  const beforeName = 'before' in props ? props.before.name : '';
+  const beforeContents = 'before' in props ? props.before.contents : '';
+  const afterName = 'after' in props ? props.after.name : '';
+  const afterContents = 'after' in props ? props.after.contents : '';
   const patch = useMemo(() => {
     // `createTwoFilesPatch` writes no `new file mode` / `deleted file mode`
     // line, so only the patch path can be one-sided.
-    if ('patch' in props) return splitablePatch(props.patch);
-    return createTwoFilesPatch(
-      props.before.name,
-      props.after.name,
-      props.before.contents,
-      props.after.contents,
-      '',
-      '',
-    );
-  }, [
-    'patch' in props ? props.patch : null,
-    'before' in props ? props.before.name : null,
-    'before' in props ? props.before.contents : null,
-    'after' in props ? props.after.name : null,
-    'after' in props ? props.after.contents : null,
-  ]);
+    if (patchInput !== null) return splitablePatch(patchInput);
+    return createTwoFilesPatch(beforeName, afterName, beforeContents, afterContents, '', '');
+  }, [patchInput, beforeName, beforeContents, afterName, afterContents]);
 
   const options = useMemo<FileDiffOptions<undefined>>(
     () => ({

@@ -10,16 +10,13 @@ import type { QueryClient } from '@tanstack/react-query';
  * from the central reset helper.
  */
 let sharedQueryClient: QueryClient | null = null;
-let waiters: Array<(client: QueryClient) => void> = [];
+/** `onEachQueryClient` subscribers. replica-local: one tab's app. */
+const followers = new Set<(client: QueryClient) => void>();
 
 export function registerQueryClient(client: QueryClient): void {
+  if (sharedQueryClient === client) return;
   sharedQueryClient = client;
-  // AuthProvider sits ABOVE ReactQueryProvider, and #10344 mounts the app
-  // shell one auth round trip sooner, so `adoptDeviceCaches` can run before
-  // this registers. Flush anyone who asked for the client before it existed.
-  const pending = waiters;
-  waiters = [];
-  for (const run of pending) run(client);
+  for (const run of [...followers]) run(client);
 }
 
 export function getSharedQueryClient(): QueryClient | null {
@@ -27,10 +24,19 @@ export function getSharedQueryClient(): QueryClient | null {
 }
 
 /**
- * Run `run` with the shared client — now if it is registered, else as soon as
- * it registers. A one-shot: it fires once and is forgotten.
+ * Run `run` with the shared client now (if one is registered), and again with
+ * every DIFFERENT client registered later. Returns the unsubscribe.
+ *
+ * AuthProvider sits ABOVE ReactQueryProvider, and #10344 mounts the app shell
+ * one auth round trip sooner, so a caller can ask before any client exists.
+ * `ReactQueryProvider` registers during render, and React can discard that
+ * render (a hydration retry, a suspension, Strict Mode) and commit a second
+ * client: a caller that ran once would hold a client the app no longer reads.
  */
-export function whenQueryClientReady(run: (client: QueryClient) => void): void {
+export function onEachQueryClient(run: (client: QueryClient) => void): () => void {
+  followers.add(run);
   if (sharedQueryClient) run(sharedQueryClient);
-  else waiters.push(run);
+  return () => {
+    followers.delete(run);
+  };
 }

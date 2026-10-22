@@ -6,6 +6,7 @@ import {
   HOVER_OPEN_DELAY_MS,
   clearIfActive,
   hoverOpenDelayMs,
+  sessionRowHoverHandlers,
   useSessionHoverStore,
 } from './session-hover-store';
 
@@ -27,6 +28,7 @@ const opened = (sessionId: string) => settled(() => active() === sessionId);
 
 beforeEach(() => {
   store.getState().dismiss();
+  store.setState({ suppressedSessionId: null });
 });
 
 describe('hover delay policy', () => {
@@ -151,5 +153,107 @@ describe('session hover group', () => {
     store.getState().dismiss();
     expect(active()).toBeNull();
     expect(warm()).toBe(false);
+  });
+});
+
+/**
+ * KRTX-2847. A click on a row opens that session, and the card then described
+ * the page the person had just opened: it appeared 200 ms after every switch
+ * and vanished when the page took focus, like a toast firing on each re-entry.
+ */
+describe('a clicked row', () => {
+  test('shuts its card at once, and the card stays shut while the pointer rests on the row', async () => {
+    store.getState().openSession('a');
+    expect(await opened('a')).toBe(true);
+
+    store.getState().suppress('a');
+    expect(active()).toBeNull();
+
+    // The new page re-renders the row under the resting pointer, and the row
+    // takes focus from the click: both ask to open the card again.
+    store.getState().openSession('a', undefined, 'pointer');
+    store.getState().openSession('a', undefined, 'focus');
+    await sleep(HOVER_OPEN_DELAY_MS + 120);
+    expect(active()).toBeNull();
+  });
+
+  test('the open the press started does not land after the click', async () => {
+    // pointerdown focuses the link and schedules an open; the click follows at once.
+    store.getState().openSession('a', undefined, 'focus');
+    store.getState().suppress('a');
+
+    await sleep(HOVER_OPEN_DELAY_MS + 120);
+    expect(active()).toBeNull();
+  });
+
+  test('shows its card again once the pointer has left it', async () => {
+    store.getState().suppress('a');
+    store.getState().release('a');
+
+    store.getState().openSession('a');
+    expect(await opened('a')).toBe(true);
+  });
+
+  test('stays quiet alone: the next row still opens its card', async () => {
+    store.getState().suppress('a');
+
+    store.getState().openSession('b');
+    expect(await opened('b')).toBe(true);
+  });
+});
+
+describe('session row wiring', () => {
+  const row = (hovered: boolean) =>
+    ({ currentTarget: { matches: (selector: string) => selector === ':hover' && hovered } }) as never;
+  const pointer = (hovered = true) =>
+    ({ pointerType: 'mouse', currentTarget: { matches: (s: string) => s === ':hover' && hovered } }) as never;
+
+  test('press, focus and click on a row open no card', async () => {
+    const handlers = sessionRowHoverHandlers('a');
+    handlers.onPointerEnter(pointer());
+    handlers.onFocus(row(true));
+    handlers.onClick();
+
+    await sleep(HOVER_OPEN_DELAY_MS + 120);
+    expect(active()).toBeNull();
+  });
+
+  test('the page taking focus while the pointer rests on the row keeps the row quiet', async () => {
+    const handlers = sessionRowHoverHandlers('a');
+    handlers.onPointerEnter(pointer());
+    handlers.onClick();
+    handlers.onBlur(row(true));
+
+    handlers.onFocus(row(true));
+    await sleep(HOVER_OPEN_DELAY_MS + 120);
+    expect(active()).toBeNull();
+  });
+
+  test('the pointer leaving the clicked row lets it open its card on the next visit', async () => {
+    const handlers = sessionRowHoverHandlers('a');
+    handlers.onPointerEnter(pointer());
+    handlers.onClick();
+    handlers.onPointerLeave();
+
+    handlers.onPointerEnter(pointer());
+    expect(await opened('a')).toBe(true);
+  });
+
+  test('keyboard focus leaving the clicked row, pointer elsewhere, releases it too', async () => {
+    const handlers = sessionRowHoverHandlers('a');
+    handlers.onFocus(row(false));
+    handlers.onClick();
+    handlers.onBlur(row(false));
+
+    handlers.onPointerEnter(pointer());
+    expect(await opened('a')).toBe(true);
+  });
+
+  test('a touch never opens the card', async () => {
+    const handlers = sessionRowHoverHandlers('a');
+    handlers.onPointerEnter({ pointerType: 'touch', currentTarget: {} } as never);
+
+    await sleep(HOVER_OPEN_DELAY_MS + 120);
+    expect(active()).toBeNull();
   });
 });

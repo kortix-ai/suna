@@ -40,7 +40,7 @@ const SESSION_ID = SESSION_FIXTURE.sessionId;
 const WORKING_TURN_ID = SESSION_FIXTURE.working.userMessageId;
 const PENDING_TURN_IDS = fixturePendingTurnIds();
 const NOOP = () => {};
-const NOOP_ASYNC = async () => {};
+const noopAsync = async () => {};
 const NO_OUTCOME = {};
 
 function ControlButton({ label, onClick }: { label: string; onClick: () => void }) {
@@ -135,7 +135,7 @@ export default function SessionFixturePage() {
                           permissions={SESSION_FIXTURE.permissions}
                           questions={SESSION_FIXTURE.questions}
                           agentNames={SESSION_FIXTURE.agentNames}
-                          onPermissionReply={NOOP_ASYNC}
+                          onPermissionReply={noopAsync}
                           onRewind={NOOP}
                           rewindDisabled
                         />

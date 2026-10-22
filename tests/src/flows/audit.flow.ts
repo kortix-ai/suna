@@ -784,3 +784,64 @@ flow(
     });
   },
 );
+
+// ── AUD-9: account activity rollup read ──────────────────────────────────────
+interface AuditActivityBody {
+  since: string;
+  until: string;
+  rolled_through: string | null;
+  actors: Array<{ actor_user_id: string; active_days: number; active_hours: number; events: number; days: unknown[] }>;
+}
+
+flow(
+  'AUD-9',
+  { domain: 'audit', routes: ['GET /v1/accounts/:accountId/audit/activity'] },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const path = '/v1/accounts/:accountId/audit/activity';
+    await ctx.step('OWNER reads activity with no window → 200, the 28 UTC days ending today', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get(path, { params: { accountId: team.id } });
+      r.status(200).body().exists('$.actors');
+      const body = r.json<AuditActivityBody>();
+      // null until the rollup worker's first tick, then the instant it has counted through.
+      if (!('rolled_through' in body)) throw new Error('rolled_through is missing');
+      const today = new Date().toISOString().slice(0, 10);
+      const expectedSince = new Date(Date.parse(`${today}T00:00:00Z`) - 27 * 86_400_000).toISOString().slice(0, 10);
+      if (body.until !== today || body.since !== expectedSince) {
+        throw new Error(`default window ${body.since}..${body.until}, expected ${expectedSince}..${today}`);
+      }
+    });
+    await ctx.step('since/until/project_id/client filters → 200 echoing the window', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get(path, {
+        params: { accountId: team.id },
+        query: { since: '2026-09-09', until: '2026-10-21T12:00:00Z', project_id: '00000000-0000-4000-a000-000000000001', client: 'browser' },
+      });
+      r.status(200).body().has('$.since', '2026-09-09').has('$.until', '2026-10-21').has('$.actors', []);
+    });
+    await ctx.step('since after until → 400', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get(path, {
+        params: { accountId: team.id },
+        query: { since: '2026-10-02', until: '2026-10-01' },
+      });
+      r.status(400);
+    });
+    await ctx.step('more than 400 days → 400', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get(path, {
+        params: { accountId: team.id },
+        query: { since: '2025-01-01', until: '2026-10-01' },
+      });
+      r.status(400);
+    });
+    await ctx.step('malformed date → 400; unknown client → 400', async () => {
+      (await ctx.client.as(ctx.P.OWNER).get(path, { params: { accountId: team.id }, query: { since: 'last-week' } })).status(400);
+      (await ctx.client.as(ctx.P.OWNER).get(path, { params: { accountId: team.id }, query: { client: 'tablet' } })).status(400);
+    });
+    await ctx.step('NONMEMBER → 403', async () => {
+      (await ctx.client.as(ctx.P.NONMEMBER).get(path, { params: { accountId: team.id } })).status(403);
+    });
+    await ctx.step('non-Enterprise account → 402', async () => {
+      const plain = await ctx.fixtures.team({ name: ctx.fixtures.name('aud9-plain') });
+      (await ctx.client.as(ctx.P.OWNER).get(path, { params: { accountId: plain.id } })).status(402);
+    });
+  },
+);

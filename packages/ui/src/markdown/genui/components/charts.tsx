@@ -26,7 +26,7 @@
 
 // eslint-disable-next-line no-restricted-imports -- screen-reader text for the figure; this module is reached only through lazy()
 import { genuiA11yText } from '@kortix/sdk/genui';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, XAxis, YAxis } from 'recharts';
 
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '../../../primitives/chart';
@@ -155,14 +155,14 @@ function PieFigure({
       return (
         <HoverCard key={slice.key} openDelay={80} closeDelay={40}>
           <HoverCardTrigger asChild>
-            <div
-              tabIndex={0}
+            <button
+              type="button"
               onMouseEnter={() => focus.hover(slice.key)}
               onMouseLeave={() => focus.hover(null)}
               onClick={() => focus.toggle(slice.key)}
               aria-label={`${slice.label}: ${format(slice.value)} (${slice.percent}%)`}
               className={cn(
-                'focus-visible:ring-ring duration-fast flex min-h-1.5 min-w-0 flex-col justify-between overflow-hidden rounded-md transition-opacity outline-none focus-visible:ring-2',
+                'focus-visible:ring-ring duration-fast flex min-h-1.5 min-w-0 flex-col justify-between overflow-hidden rounded-md text-left transition-opacity outline-none focus-visible:ring-2',
                 small ? 'p-0' : 'p-3',
                 i < 2 ? 'text-background' : 'text-foreground',
               )}
@@ -174,7 +174,7 @@ function PieFigure({
                   <span className={cn('truncate tabular-nums', i === 0 ? 'text-2xl font-medium' : 'text-sm')}>{slice.percent}%</span>
                 </>
               )}
-            </div>
+            </button>
           </HoverCardTrigger>
           <HoverCardContent side="top" className="flex w-auto min-w-40 flex-col gap-1 p-3">
             <span className="text-foreground flex items-center gap-2 text-sm font-medium">
@@ -310,10 +310,10 @@ export function ChartView({ node, props }: GenuiComponentProps) {
   const t = useTranslations('genui');
   const focus = useFocus();
   const locale = useLocale();
+  const number = useMemo(() => new Intl.NumberFormat(locale), [locale]);
+  const compact = useMemo(() => new Intl.NumberFormat(locale, { notation: 'compact' }), [locale]);
   // A streamed pie arrives before its slices resolve (the parent line comes first). Hold its space until one lands.
   if (node.type === 'PieChart' && kids(props.slices).length === 0) return GenuiPending(node);
-  const number = new Intl.NumberFormat(locale);
-  const compact = new Intl.NumberFormat(locale, { notation: 'compact' });
   const format = (value: unknown) => (typeof value === 'number' ? number.format(value) : value == null ? '—' : String(value));
 
   // The tooltip row of `ChartTooltipContent`, with the table's number format.
@@ -470,7 +470,8 @@ export function ChartView({ node, props }: GenuiComponentProps) {
 /** The chart's values as text: the Show data dialog's table. A missing value stays a dash, never a zero. */
 export function ChartDataTable({ node }: { node: GenuiNode }) {
   const t = useTranslations('genui');
-  const number = new Intl.NumberFormat(useLocale());
+  const locale = useLocale();
+  const number = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   const format = (value: unknown) => (typeof value === 'number' ? number.format(value) : value == null ? '—' : String(value));
   const { props } = node;
   let head: string[];

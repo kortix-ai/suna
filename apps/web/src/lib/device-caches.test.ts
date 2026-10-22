@@ -188,6 +188,41 @@ describe('adopt runs before the query client registers (#10344)', () => {
   });
 });
 
+// React can discard a render in which `ReactQueryProvider` created and registered
+// its client (a hydration retry, a suspension, Strict Mode), then commit a second
+// client. The restore ran once, on the first: the committed client was empty, so the
+// project gate had no kept project and a reload with every read held showed
+// "Opening your project" until the network answered (journey 34).
+describe('a client registered after the restore (a discarded render) gets the kept queries too', () => {
+  const user = 'user-replaced';
+  const gate = qk.project.summary('project-replaced');
+
+  test('the second client holds the restored gate, and the writer follows it', async () => {
+    const previous = new QueryClient();
+    previous.setQueryData(gate, { project_id: 'project-replaced' });
+    const writer = createPersistedQueryCache({ storage: local, userId: user, shouldPersist: () => true });
+    writer.persist(previous);
+    await writer.flush();
+
+    const discarded = new QueryClient();
+    registerQueryClient(discarded);
+    adoptDeviceCaches(user);
+    expect<unknown>(discarded.getQueryData(gate)).toEqual({ project_id: 'project-replaced' });
+
+    const committed = new QueryClient();
+    registerQueryClient(committed);
+    expect<unknown>(committed.getQueryData(gate)).toEqual({ project_id: 'project-replaced' });
+
+    // What the committed client changes is what the next reload restores.
+    committed.setQueryData(gate, { project_id: 'project-replaced', name: 'renamed' });
+    pageWindow.dispatchEvent(new Event('pagehide'));
+    await settle();
+    expect(entries.get(`kortix.query-cache:${user}`)).toContain('renamed');
+
+    await clearDeviceCaches();
+  });
+});
+
 describe('device caches', () => {
   const client = new QueryClient();
 

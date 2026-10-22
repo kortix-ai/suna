@@ -280,7 +280,7 @@ export function useFileContentState({
         setIsSaving(false);
       }
     },
-    [filePath, fileName, refetch, onSaved, readOnly, source],
+    [filePath, fileName, refetch, onSaved, readOnly, source, tHardcodedUi, tI18nHardcoded],
   );
 
   // Discard handler — force-remounts CodeEditor so it re-initialises from fileContent.content.

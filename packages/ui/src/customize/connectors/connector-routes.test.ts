@@ -8,6 +8,8 @@ import {
   connectorHref,
   connectorsHref,
   legacyDetailRedirect,
+  connectorSearchFromParams,
+  withConnectorSearch,
 } from './connector-routes';
 
 const BASE = '/projects/p1/customize/connectors';
@@ -117,5 +119,24 @@ describe('legacyDetailRedirect', () => {
   test('no ?c= means no redirect', () => {
     expect(legacyDetailRedirect('p1', new URLSearchParams('scope=connected'))).toBeNull();
     expect(legacyDetailRedirect('p1', null)).toBeNull();
+  });
+});
+
+// KRTX-3018: opening a connector unmounts the catalogue, and the search lived
+// only in component state, so browser Back showed the full catalogue again.
+describe('the catalogue search in the URL', () => {
+  test('reads the trimmed query from ?q=', () => {
+    expect(connectorSearchFromParams(new URLSearchParams('q=Shopify'))).toBe('Shopify');
+    expect(connectorSearchFromParams(new URLSearchParams('scope=channels&q=%20slack%20'))).toBe('slack');
+    expect(connectorSearchFromParams(new URLSearchParams('scope=channels'))).toBe('');
+    expect(connectorSearchFromParams(null)).toBe('');
+  });
+
+  test('writes a non-empty query and drops an empty one, keeping the other params', () => {
+    const params = new URLSearchParams('scope=channels');
+    withConnectorSearch(params, ' Shopify ');
+    expect(params.toString()).toBe('scope=channels&q=Shopify');
+    withConnectorSearch(params, '   ');
+    expect(params.toString()).toBe('scope=channels');
   });
 });

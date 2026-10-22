@@ -98,6 +98,8 @@ function BranchRow({ branch }: { branch: ProjectBranch }) {
   );
 }
 
+const NO_BRANCHES: ProjectBranch[] = [];
+
 const PICKER_TRIGGER_CLASS =
   'py-2 flex-1 min-w-0 rounded-sm border-0 bg-transparent px-2 hover:bg-muted/40 focus:ring-0';
 
@@ -119,7 +121,7 @@ export function OpenChangeRequestDialog({
   const sessionMode = activeSession !== null;
 
   const branchesQuery = useBranches({ enabled: open && !sessionMode, projectId });
-  const branches = branchesQuery.data?.branches ?? [];
+  const branches = branchesQuery.data?.branches ?? NO_BRANCHES;
   const branchMap = useMemo(() => {
     const m = new Map<string, ProjectBranch>();
     for (const b of branches) m.set(b.name, b);
