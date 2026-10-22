@@ -604,3 +604,18 @@ test("a session whose log the store already holds (the route's useSession read i
     useSyncStore.getState().dropSessionLog(SESSION);
   }
 });
+
+test('a new session on an API that serves the log (404 session_log_missing): no /transcript, and no saved copy', async () => {
+  logServed = true;
+  const requests: string[] = [];
+  globalThis.fetch = mock(async (url: unknown) => {
+    requests.push(String(url));
+    if (String(url).includes('/log?')) return Response.json({ error: 'No session log for this session', code: 'session_log_missing' }, { status: 404 });
+    return Response.json(envelope('ses_log_missing', 2));
+  }) as unknown as typeof fetch;
+  const hook = await mount('ses_log_missing', offline);
+  await settle();
+  expect(requests).toEqual([`http://test.local/v1/projects/${PROJECT}/sessions/${SESSION}/log?limit=40`]);
+  expect(hook.value().messages).toHaveLength(0);
+  expect(hook.value().mirrorState).toBe('absent');
+});
