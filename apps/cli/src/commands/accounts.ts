@@ -28,7 +28,8 @@ KORTIX_API_URL, KORTIX_FRONTEND_URL and KORTIX_PROJECT_ID for that invocation.
 
 Subcommands:
   ls                   List the accounts you belong to (--json)
-  use [<slug|id>]      Switch the active account (interactive if omitted)
+  use [<slug|id>]      Switch the active account (interactive if omitted).
+                       The slug is the first 8 characters of the id (ls).
   current              Print the active account (--json)
   info [<slug|id>]     Show one account (defaults to the active one) (--json)
 
@@ -39,7 +40,7 @@ Global options:
 
 Examples:
   kortix accounts ls
-  kortix accounts use kortix
+  kortix accounts use 1a2b3c4d
   kortix projects ls          # lists the active account's projects
 `;
 

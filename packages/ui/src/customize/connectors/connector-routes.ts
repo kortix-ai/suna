@@ -39,6 +39,25 @@ export function connectorsHref(
 }
 
 /** `null` for the computer entry: a computer has no app page. */
+/**
+ * The catalogue search, held in `?q=`. Opening a connector is a route change
+ * that unmounts the catalogue; a search kept only in state was gone on browser
+ * Back (KRTX-3018).
+ */
+const SEARCH_PARAM = 'q';
+
+export function connectorSearchFromParams(search: Pick<URLSearchParams, 'get'> | null | undefined): string {
+  return search?.get(SEARCH_PARAM)?.trim() ?? '';
+}
+
+/** Sets `?q=` to the trimmed query, or removes it when the query is empty. */
+export function withConnectorSearch(params: URLSearchParams, query: string): URLSearchParams {
+  const trimmed = query.trim();
+  if (trimmed) params.set(SEARCH_PARAM, trimmed);
+  else params.delete(SEARCH_PARAM);
+  return params;
+}
+
 export function appRefFromEntry(entry: CatalogEntry): AppRef | null {
   if (entry.source === 'discover') {
     return { source: 'discover', slug: entry.slug, id: entry.connector.id };

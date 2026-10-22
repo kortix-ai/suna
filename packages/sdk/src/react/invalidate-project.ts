@@ -65,14 +65,19 @@ export function writeProjectNameOptimistically(
   projectId: string,
   name: string,
 ): ProjectNameSnapshot {
-  const lists = qc.getQueriesData<ProjectsListEntry[]>({ queryKey: qk.projects.scope() });
+  // Quota queries share this prefix but contain an object, not a project list.
+  const listQueries = {
+    queryKey: qk.projects.scope(),
+    predicate: (query: { queryKey: QueryKey }) => query.queryKey.length === qk.projects.list().length,
+  };
+  const lists = qc.getQueriesData<ProjectsListEntry[]>(listQueries);
   const snapshot: ProjectNameSnapshot = {
     detail: qc.getQueryData<ProjectDetailEntry>(qk.project.detail(projectId)),
     lists: lists.map(([queryKey, data]) => ({ queryKey, data })),
   };
 
   qc.setQueriesData<ProjectsListEntry[] | undefined>(
-    { queryKey: qk.projects.scope() },
+    listQueries,
     (prev) => prev?.map((p) => (p.project_id === projectId ? { ...p, name } : p)),
   );
   qc.setQueryData(

@@ -50,6 +50,25 @@ export class AppArtifactStorageUnavailableError extends Error {
   }
 }
 
+/**
+ * Storage refused the request itself (KRTX-2981): a bucket size limit above a
+ * self-host's global limit, a forbidden write. Configuration, so a retry cannot
+ * change it. 408 and 429 are excluded: they clear on their own.
+ */
+export function isAppArtifactStorageRefusal(error: unknown): boolean {
+  const { status, statusCode } = (error ?? {}) as { status?: unknown; statusCode?: unknown };
+  const code = typeof status === 'number' && status >= 400 && status < 500 ? status : Number(statusCode);
+  return Number.isInteger(code) && code >= 400 && code < 500 && code !== 408 && code !== 429;
+}
+
+export class AppArtifactStorageRefusedError extends Error {
+  constructor(cause: unknown) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    super(`App artifact storage refused the request: ${detail}`, { cause });
+    this.name = 'AppArtifactStorageRefusedError';
+  }
+}
+
 export async function retryAppArtifactStorage<T>(
   operation: () => Promise<T>,
   sleep: (delayMs: number) => Promise<void> = Bun.sleep,
@@ -57,7 +76,8 @@ export async function retryAppArtifactStorage<T>(
   for (const delayMs of APP_ARTIFACT_STORAGE_RETRY_DELAYS_MS) {
     try {
       return await operation();
-    } catch {
+    } catch (error) {
+      if (isAppArtifactStorageRefusal(error)) throw error;
       await sleep(delayMs);
     }
   }
@@ -122,7 +142,9 @@ export async function createAppArtifactUploadUrl(
       return { uploadUrl: toPublicStorageUrl(data.signedUrl), objectPath, maxBytes: MAX_ARCHIVE_BYTES };
     });
   } catch (error) {
-    throw new AppArtifactStorageUnavailableError(error);
+    throw isAppArtifactStorageRefusal(error)
+      ? new AppArtifactStorageRefusedError(error)
+      : new AppArtifactStorageUnavailableError(error);
   }
 }
 

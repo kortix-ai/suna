@@ -64,11 +64,9 @@ export function FullScreenPresentationViewer({
   const [metadata, setMetadata] = useState<PresentationMetadata | null>(null);
   const [currentSlide, setCurrentSlide] = useState(initialSlide);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [retryAttempt, setRetryAttempt] = useState(0);
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const hasLoadedRef = useRef(false);
-  const [showControls, setShowControls] = useState(true);
   const [showEditor, setShowEditor] = useState(false);
   const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
   const [isDownloadingPPTX, setIsDownloadingPPTX] = useState(false);
@@ -115,7 +113,6 @@ export function FullScreenPresentationViewer({
       }
 
       setIsLoading(true);
-      setError(null);
       setRetryAttempt(retryCount);
 
       try {
@@ -304,13 +301,6 @@ export function FullScreenPresentationViewer({
     return () => document.removeEventListener('keydown', handleKeyDown, true);
   }, [isOpen, goToNextSlide, goToPreviousSlide, totalSlides, onClose, showEditor]);
 
-  // Always show controls
-  useEffect(() => {
-    if (isOpen) {
-      setShowControls(true);
-    }
-  }, [isOpen]);
-
   // Download handlers
   const handleDownload = async (format: DownloadFormat) => {
     if (isDownloadRestricted) {
@@ -459,7 +449,7 @@ export function FullScreenPresentationViewer({
 
     SlideIframeComponent.displayName = 'SlideIframeComponent';
     return SlideIframeComponent;
-  }, [sandboxUrl, refreshTimestamp, showEditor, subdomainOpts, tHardcodedUi]);
+  }, [sandboxUrl, refreshTimestamp, showEditor, subdomainOpts, tHardcodedUi, tI18nComplete]);
 
   if (!isOpen) return null;
 
@@ -620,6 +610,7 @@ export function FullScreenPresentationViewer({
                   {slides.map((slide) => (
                     <button
                       key={slide.number}
+                      aria-label={`${tHardcodedUi.raw('i18nComplete.text6bb4c1177681')} ${slide.number}`}
                       onClick={() => setCurrentSlide(slide.number)}
                       className={cn(
                         'h-2.5 w-2.5 rounded-full transition-colors duration-200',

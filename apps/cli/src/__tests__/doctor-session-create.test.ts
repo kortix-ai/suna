@@ -23,6 +23,9 @@ let originalCwd: string;
 let saved: Record<string, string | undefined>;
 let createBodies: unknown[];
 let output: string;
+let resolvedForCaller: string | null;
+let modelLookupFails: boolean;
+let modelLookups: number;
 
 beforeEach(() => {
   saved = {};
@@ -57,8 +60,16 @@ beforeEach(() => {
 
   createBodies = [];
   output = '';
+  resolvedForCaller = 'provider/available';
+  modelLookupFails = false;
+  modelLookups = 0;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    if (url.endsWith('/model-defaults')) {
+      modelLookups += 1;
+      if (modelLookupFails) return Response.json({ error: 'unavailable' }, { status: 503 });
+      return Response.json({ resolvedForCaller });
+    }
     if (url.endsWith('/v1/accounts/me')) {
       return new Response(
         JSON.stringify({
@@ -109,6 +120,28 @@ afterEach(() => {
 });
 
 describe('kortix doctor session create payload', () => {
+  test('pins an available model instead of inheriting a paid runtime default', async () => {
+    await runDoctor([]);
+    expect(createBodies[0]).toHaveProperty('model', 'provider/available');
+  });
+
+  test('explicitly skips inference when no model resolves for a free account', async () => {
+    resolvedForCaller = null;
+    expect(await runDoctor([])).toBe(0);
+    expect(createBodies).toHaveLength(0);
+    expect(output).toContain('agent reply skipped');
+    expect(output).toContain('kortix providers');
+    expect(output).not.toContain('all checks passed');
+  });
+
+  test('reports model lookup errors without creating a session', async () => {
+    modelLookupFails = true;
+    expect(await runDoctor([])).toBe(1);
+    expect(createBodies).toHaveLength(0);
+    expect(output).toContain('model lookup failed');
+    expect(output).not.toContain('agent reply skipped');
+  });
+
   test('discloses that UI-prepared warm sessions are left unchanged', async () => {
     await runDoctor([]);
     expect(output).toContain('UI-prepared warm sessions are left unchanged and may remain billed.');
@@ -125,6 +158,7 @@ describe('kortix doctor session create payload', () => {
     expect(await runDoctor(['--no-session'])).toBe(0);
     expect(createBodies).toHaveLength(0);
     expect(output).not.toContain('may remain billed');
+    expect(modelLookups).toBe(0);
   });
   test('never sends a null initial_prompt, which the API schema rejects with 400', async () => {
     await runDoctor([]);

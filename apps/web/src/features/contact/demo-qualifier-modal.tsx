@@ -150,24 +150,26 @@ export function DemoQualifierModal({
   const companySizes = useMemo(() => companySizesForEmail(email), [email]);
   const slot = useMemo(() => booking && formatBookedSlot(booking, locale), [booking, locale]);
 
-  useEffect(() => {
-    if (size === '1-10' && !isWorkEmail(email)) setSize(null);
-  }, [email, size]);
-
-  useEffect(() => {
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
     if (open) {
       setStep('form');
       setBooking(null);
       setError(null);
     }
-  }, [open]);
+  }
 
-  useEffect(() => {
+  const [prevDefaultName, setPrevDefaultName] = useState(defaultName);
+  if (defaultName !== prevDefaultName) {
+    setPrevDefaultName(defaultName);
     if (defaultName) setName((n) => n || defaultName);
-  }, [defaultName]);
-  useEffect(() => {
+  }
+  const [prevDefaultEmail, setPrevDefaultEmail] = useState(defaultEmail);
+  if (defaultEmail !== prevDefaultEmail) {
+    setPrevDefaultEmail(defaultEmail);
     if (defaultEmail) setEmail((e) => e || defaultEmail);
-  }, [defaultEmail]);
+  }
 
   useEffect(() => {
     // Only touch the Cal.com embed API once the modal is actually open. This
@@ -424,7 +426,10 @@ export function DemoQualifierModal({
                   id="dq-email"
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (!isWorkEmail(e.target.value)) setSize((s) => (s === '1-10' ? null : s));
+                  }}
                   placeholder={tI18nHardcoded.raw(
                     'autoFeaturesContactDemoQualifierModalJsxAttrPlaceholderYouCompanyee6aa000',
                   )}

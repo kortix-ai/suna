@@ -33,6 +33,7 @@ export {
   type UiRouter,
   type UiSearchParams,
   type UiShallowNavigate,
+  type UiSlashAction,
   type UiStrings,
   type UiStringsInput,
   type UseUiBrand,

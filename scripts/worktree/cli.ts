@@ -6,7 +6,8 @@
  * guided wizard. Non-interactive (CI/scripts):
  *
  *   pnpm worktree create --name <feat> [--branch b] [--from dev] [--db] [--no-start] [--yes]
- *   pnpm worktree start <feat> [--billing] [--stripe]
+ *   pnpm worktree start <feat> [--billing] [--stripe] [--no-web]
+ *   pnpm worktree web <feat> [--billing]   (only `next dev`, for a stack started with --no-web)
  *   pnpm worktree stop|status <feat>
  *   pnpm worktree nuke <feat> [feat2 …] [--force] [--yes]   (confirms each unless --yes)
  *   pnpm worktree nuke            (TTY: pick from a list, then confirm each)
@@ -232,7 +233,7 @@ ${pc.bgCyan(pc.black(' pnpm worktree '))}  ${pc.dim('isolated multi-instance dev
 
   ${pc.cyan('pnpm worktree')}                 ${pc.dim('interactive menu')}
   ${pc.cyan('pnpm worktree create')}          ${pc.dim('guided wizard (or --name <n> --from <branch> [--db] [--no-tunnel])')}
-  ${pc.cyan('start')} ${pc.dim('<n> [--billing] [--stripe] [--no-tunnel]')}   ${pc.cyan('stop')} ${pc.dim('<n> | --all')}   ${pc.cyan('nuke')} ${pc.dim('<n> [n…] [--force] [--yes]')}
+  ${pc.cyan('start')} ${pc.dim('<n> [--billing] [--stripe] [--no-tunnel] [--no-web]')}   ${pc.cyan('web')} ${pc.dim('<n> [--billing]')}   ${pc.cyan('stop')} ${pc.dim('<n> | --all')}   ${pc.cyan('nuke')} ${pc.dim('<n> [n…] [--force] [--yes]')}
   ${pc.cyan('nuke --all')} ${pc.dim('[--older-than 3d] [--idle 2d] [--include-dirty] [--dry-run] [--yes]')}   ${pc.dim('bulk: skips running stacks + dirty trees')}
   ${pc.cyan('pr')} ${pc.dim('<n> [--title … --base dev --draft --web]')}
   ${pc.cyan('list')} ${pc.dim('[name] [--json]')}   ${pc.cyan('status')} ${pc.dim('[n]')}   ${pc.cyan('doctor')} ${pc.dim('[--yes]')}
@@ -541,7 +542,7 @@ async function cmdCreate(a: Args) {
     pc.green(`✓ worktree "${name}" ready`),
   );
   if (a.flags['no-start']) { ok(`start it:  ${pc.cyan('pnpm worktree start ' + name)}`); }
-  else { await cmdStart({ cmd: 'start', name, names: [name], flags: { ...(a.flags['no-tunnel'] ? { 'no-tunnel': true } : {}), ...(a.flags.stripe ? { stripe: true } : {}) } }); }
+  else { await cmdStart({ cmd: 'start', name, names: [name], flags: { ...(a.flags['no-tunnel'] ? { 'no-tunnel': true } : {}), ...(a.flags.stripe ? { stripe: true } : {}), ...(a.flags['no-web'] ? { 'no-web': true } : {}) } }); }
 }
 
 async function cmdStart(a: Args) {
@@ -627,10 +628,12 @@ async function cmdStart(a: Args) {
     else warn('stripe CLI missing or not logged in — billing NOT enabled. Install it and run `stripe login`, then restart with --stripe.');
   }
   const billing = !!a.flags.billing || !!stripe;
+  // An API-only change needs no web server; each `next dev` holds GBs of RAM.
+  const noWeb = !!a.flags['no-web'];
 
   await freeSlotPorts(e.ports);
 
-  console.log(`\n${pc.green('🚀')} ${pc.bold(name)}   web ${url('http://localhost:' + e.ports.web)}  ${pc.dim('·')}  api http://localhost:${e.ports.api}  ${pc.dim('·')}  ${dbMode === 'isolated' ? `studio http://localhost:${e.ports.sbStudio}` : `db ${pc.dim(dbLabel(dbMode, name))}`}`);
+  console.log(`\n${pc.green('🚀')} ${pc.bold(name)}   web ${noWeb ? pc.dim('off (--no-web)') : url('http://localhost:' + e.ports.web)}  ${pc.dim('·')}  api http://localhost:${e.ports.api}  ${pc.dim('·')}  ${dbMode === 'isolated' ? `studio http://localhost:${e.ports.sbStudio}` : `db ${pc.dim(dbLabel(dbMode, name))}`}`);
   console.log(`${pc.dim('   llm gateway')} http://localhost:${e.ports.gateway} ${pc.dim('(standalone · slot port · API proxies /v1/llm-gateway/*)')}`);
   if (tunnel) console.log(`${pc.dim('   sandbox callback')} ${url(tunnel.url)}`);
   if (billing) {
@@ -638,6 +641,7 @@ async function cmdStart(a: Args) {
       `${pc.dim('   billing')} ${pc.green('on')} ${stripe ? pc.dim('· stripe webhooks → :' + e.ports.api) : pc.dim('· local routes only')}`,
     );
   }
+  if (noWeb) sub(`open the UI on demand: pnpm worktree web ${name}`);
   console.log(pc.dim('   (Ctrl+C stops the dev servers cleanly)\n'));
 
   // The API's KORTIX_URL is baked at spawn, so a tunnel rotation has to
@@ -647,7 +651,7 @@ async function cmdStart(a: Args) {
   let api = spawnApi(tunnel?.url);
   let apiRestarting = false;
   const gateway = Bun.spawn(['pnpm', '--filter', GATEWAY_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...gatewayLaunchEnv(e.ports) }, stdout: 'inherit', stderr: 'inherit' });
-  const web = Bun.spawn(['pnpm', '--filter', WEB_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...webLaunchEnv(e.ports, creds, { billing }) }, stdout: 'inherit', stderr: 'inherit' });
+  const web = noWeb ? null : Bun.spawn(['pnpm', '--filter', WEB_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...webLaunchEnv(e.ports, creds, { billing }) }, stdout: 'inherit', stderr: 'inherit' });
   void waitForGateway(e.ports.gateway, gateway);
   let stopping = false;
   // Quick tunnels die silently — cloudflared exits, or the URL starts answering
@@ -700,11 +704,11 @@ async function cmdStart(a: Args) {
     // reconstructed from ppid. Killing the port holder alone is what used to leak
     // the ~15 Next workers behind it.
     const rows = psTable();
-    const spawned = [api.pid, gateway.pid, web.pid, tunnel?.proc.pid, stripe?.proc.pid]
+    const spawned = [api.pid, gateway.pid, web?.pid, tunnel?.proc.pid, stripe?.proc.pid]
       .filter((p): p is number => typeof p === 'number');
     const roots = [...new Set([...spawned, ...stackRoots(e.path, e.ports, { rows })])];
-    try { api.kill(); } catch {} try { gateway.kill(); } catch {} try { web.kill(); } catch {} try { tunnel?.proc.kill(); } catch {} try { stripe?.proc.kill(); } catch {}
-    await Promise.race([Promise.all([api.exited, gateway.exited, web.exited]), Bun.sleep(4000)]);
+    try { api.kill(); } catch {} try { gateway.kill(); } catch {} try { web?.kill(); } catch {} try { tunnel?.proc.kill(); } catch {} try { stripe?.proc.kill(); } catch {}
+    await Promise.race([Promise.all([api.exited, gateway.exited, web?.exited]), Bun.sleep(4000)]);
     const res = await killTree(roots, { rows });
     if (res.survived.length) {
       await setStatus(name, 'running');
@@ -719,7 +723,38 @@ async function cmdStart(a: Args) {
   process.on('SIGTERM', () => { void shutdown(); });
   startTunnelWatchdog();
   void watchApi();
-  await Promise.race([gateway.exited, web.exited]);
+  await Promise.race(web ? [gateway.exited, web.exited] : [gateway.exited]);
+  await shutdown();
+}
+
+/** `next dev` alone, for a stack already running with --no-web. Reads creds; never starts or migrates a database. */
+async function cmdWeb(a: Args) {
+  const name = need(a.name);
+  const e = loadRegistry().slots[name] ?? die(`unknown worktree "${name}" — create it first`);
+  if (!portInUse(e.ports.api).inUse) die(`no API listens on :${e.ports.api} for "${name}" — start the stack first: pnpm worktree start ${name} --no-web`);
+  if (portInUse(e.ports.web).inUse) die(`web port ${e.ports.web} is already in use — stop that process first`);
+  const mode = dbModeOf(e);
+  const creds = mode === 'isolated' ? slotCredsFromStatus(e.ports, supaStatusEnv(name))
+    : mode === 'branch' ? (await primaryForBranch()).creds
+    : primaryCredsFromStatus(await ensurePrimarySupabase(repoRoot()));
+  console.log(`\n${pc.green('🚀')} ${pc.bold(name)}   web ${url('http://localhost:' + e.ports.web)}  ${pc.dim('(Ctrl+C stops the web server only)')}\n`);
+  const web = Bun.spawn(['pnpm', '--filter', WEB_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...webLaunchEnv(e.ports, creds, { billing: !!a.flags.billing }) }, stdout: 'inherit', stderr: 'inherit' });
+  let stopping = false;
+  const shutdown = async () => {
+    if (stopping) return; stopping = true;
+    // Snapshot before signalling: once `next dev` dies its workers reparent and the tree is lost.
+    const rows = psTable();
+    const roots = [...new Set([web.pid, ...listenersOn(e.ports.web)])];
+    try { web.kill(); } catch {}
+    await Promise.race([web.exited, Bun.sleep(4000)]);
+    const res = await killTree(roots, { rows });
+    if (res.survived.length) warn(`${plural(res.survived.length, 'process', 'processes')} survived SIGKILL (${res.survived.join(', ')})`);
+    else ok(`web stopped — ${plural(res.targeted.length, 'process', 'processes')} reaped; api left running.`);
+    process.exit(0);
+  };
+  process.on('SIGINT', () => { void shutdown(); });
+  process.on('SIGTERM', () => { void shutdown(); });
+  await web.exited;
   await shutdown();
 }
 
@@ -1132,6 +1167,7 @@ try {
   switch (a.cmd) {
     case 'create': case 'new': await cmdCreate(a); break;
     case 'start': await cmdStart(a); break;
+    case 'web': await cmdWeb(a); break;
     case 'stop': await cmdStop(a); break;
     case 'nuke': case 'rm': await cmdNuke(a); break;
     case 'list': case 'ls': cmdList(a); break;

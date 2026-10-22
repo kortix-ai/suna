@@ -1,0 +1,3 @@
+# The synthetic dataset is committed: dev, build, tests, seed and eval read it.
+# build.py regenerates it (python-docx, reportlab).
+!dist/

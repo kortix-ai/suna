@@ -84,6 +84,7 @@ export function RoomComposer({
     const q = mention.query.toLowerCase();
     const matches = (label: string, id: string) => !q || label.toLowerCase().includes(q) || id.toLowerCase().startsWith(q);
     const taken = new Set<string>(viewerId ? [viewerId] : []);
+    const emailById = new Map(people.map((p) => [p.user_id, p.email]));
     const inMembers: Candidate[] = [];
     for (const m of members) {
       const id = m.session_id ?? m.user_id;
@@ -91,7 +92,7 @@ export function RoomComposer({
       taken.add(id);
       const title = m.kind === 'session' ? sessionDisplay(m.label).name : m.label;
       if (!matches(title, id)) continue;
-      const email = m.kind === 'person' ? people.find((p) => p.user_id === id)?.email : null;
+      const email = m.kind === 'person' ? emailById.get(id) : null;
       inMembers.push({
         key: id,
         insert: email ? `@${email}` : `@${id.slice(0, MENTION_ID_CHARS)}`,

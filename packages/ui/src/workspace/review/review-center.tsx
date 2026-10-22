@@ -55,8 +55,8 @@ import { localizeUiCatalog } from '../../i18n/ui-catalog/localize-ui-catalog';
 import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '../../i18n/ui-catalog/product-catalog-translation-keys.generated';
 import { cn } from '../../internal/lib/utils';
 import { hasOpenFloatingLayer } from '../../lib/z-stack';
-import { SelectionBar, type SelectionBarAction } from '../selection/selection-bar';
-import { selectRange, toggleId } from '../selection/selection';
+import { SelectionBar, type SelectionBarAction } from '../../internal/selection/selection-bar';
+import { selectRange, toggleId } from '../../internal/selection/selection';
 import type { ReviewVerdict } from '@kortix/sdk';
 import {
   ArrowUUpLeftIcon as ArrowUUpLeft,
@@ -781,16 +781,16 @@ export function ReviewCenter({
   }
 
   // If the active session filter no longer has items in this segment, reset it.
-  useEffect(() => {
-    if (sessionFilter !== 'all' && !sessionOpts.some((s) => s.sessionId === sessionFilter)) {
-      setSessionFilter('all');
-    }
-  }, [sessionOpts, sessionFilter]);
+  if (sessionFilter !== 'all' && !sessionOpts.some((s) => s.sessionId === sessionFilter)) {
+    setSessionFilter('all');
+  }
 
   // Keep the focus cursor in range as the visible list changes.
-  useEffect(() => {
+  const [visibleCountSeen, setVisibleCountSeen] = useState<number | null>(null);
+  if (visible.length !== visibleCountSeen) {
+    setVisibleCountSeen(visible.length);
     setFocusedIdx((i) => Math.max(0, Math.min(i, visible.length - 1)));
-  }, [visible.length]);
+  }
 
   // Select mode: DOM focus follows the cursor (j/k, a toggled row), so Space
   // and Enter act on the row the user sees, and a pointer entry that
@@ -814,11 +814,13 @@ export function ReviewCenter({
   // mutation (there's no per-call settle callback threaded through `apply`),
   // so clear the pending marker here rather than leave a button spinning
   // forever if the item already left the list (e.g. a stale poll raced it).
-  useEffect(() => {
+  const [initialItemsSeen, setInitialItemsSeen] = useState(initialItems);
+  if (initialItems !== initialItemsSeen) {
+    setInitialItemsSeen(initialItems);
     if (initialItems) setItems(initialItems);
     setPendingId(null);
     setPendingDecision(null);
-  }, [initialItems]);
+  }
 
   // Detect items that arrived since the user last looked → flag them "fresh".
   // The first load of each segment seeds its known set silently (nothing is
@@ -1214,11 +1216,12 @@ export function ReviewCenter({
   ];
 
   const confirmCount = bulkIds[confirm.verb].length;
+  const confirmIds = new Set(bulkIds[confirm.verb]);
   // Every item the verb will decide: which app, what it does, to what, how risky.
   const confirmList = (
     <ul className="border-border divide-border max-h-72 w-full min-w-0 divide-y overflow-y-auto rounded-lg border">
       {selectedItems
-        .filter((i) => bulkIds[confirm.verb].includes(i.id))
+        .filter((i) => confirmIds.has(i.id))
         .map((i) => {
           const risk = RISK_BADGE[i.risk];
           // The arguments, as the approval modal reads them: the content

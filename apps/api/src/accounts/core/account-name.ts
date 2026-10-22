@@ -35,3 +35,17 @@ export function profileNameFromMetadata(metadata: unknown): string | null {
 function capitalize(word: string): string {
   return word.charAt(0).toLocaleUpperCase() + word.slice(1);
 }
+
+/**
+ * Why a user-chosen account name is refused, or null when it is valid. The
+ * name lands in emails, the admin console and third-party tools, so markup
+ * (`<`, `>`) and control characters are refused at the boundary (pentest
+ * 2026-07 finding 2). Rendering still escapes it everywhere.
+ */
+export function accountNameError(name: string | null | undefined): string | null {
+  if (!name) return "name is required";
+  if (name.length > 255) return "name is too long";
+  // eslint-disable-next-line no-control-regex
+  if (/[<>\u0000-\u001f\u007f]/.test(name)) return "name must not contain <, > or control characters";
+  return null;
+}

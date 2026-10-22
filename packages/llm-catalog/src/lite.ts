@@ -1,5 +1,27 @@
 import providerEnvJson from './provider-env.generated.json' with { type: 'json' };
 
+/**
+ * Platinum Inference as a regular BYOK provider. It is not on models.dev, so
+ * it is appended to every catalog (the bundled snapshot, its id/env projection,
+ * and the API's live models.dev refresh). Its models are not listed here: the
+ * API reads them from Platinum's `/models` with the project's own key
+ * (apps/api llm-gateway/models/platinum-models.ts).
+ */
+export const PLATINUM_PROVIDER: CatalogProvider = {
+  id: 'platinum',
+  name: 'Platinum',
+  env: ['PLATINUM_API_KEY'],
+  doc: 'https://platinum.dev',
+  api: 'https://api.platinum.dev/v1/inference',
+  npm: '@ai-sdk/openai-compatible',
+  models: [],
+};
+
+const PROVIDER_ENV: ReadonlyArray<{ id: string; env: string[] }> = [
+  ...(providerEnvJson as ReadonlyArray<{ id: string; env: string[] }>),
+  { id: PLATINUM_PROVIDER.id, env: PLATINUM_PROVIDER.env! },
+];
+
 export {
   DEFAULT_ENABLEMENT_WINDOW_MONTHS,
   defaultEnabledModelIds,
@@ -144,7 +166,7 @@ export function providerOwnKeyName(providerId: string): string {
 // rule moved by migration 20260930220000000_provider_own_key_names.
 const SHARED_KEY_OWNER = (() => {
   const claimants = new Map<string, string[]>();
-  for (const { id, env } of providerEnvJson as ReadonlyArray<{ id: string; env: string[] }>) {
+  for (const { id, env } of PROVIDER_ENV) {
     if (env.length !== 1) continue;
     claimants.set(env[0]!, [...(claimants.get(env[0]!) ?? []), id]);
   }
@@ -446,7 +468,7 @@ export function clampGenerationConfig(
   return out;
 }
 
-interface CatalogProvider {
+export interface CatalogProvider {
   id: string;
   name: string;
   env?: string[];
@@ -476,186 +498,10 @@ export interface Catalog {
  * Regenerated together with the snapshot; catalog-isolation.test.ts checks
  * that the two agree.
  */
-export const CATALOG_PROVIDER_ENV = providerEnvJson as ReadonlyArray<{ id: string; env: string[] }>;
+export const CATALOG_PROVIDER_ENV = PROVIDER_ENV;
 
-export interface ManagedModel {
-  id: string;
-  name: string;
-  // OpenRouter model ID used by the managed route.
-  upstreamModelId: string;
-  transport: 'openrouter';
-  // Both fields are required when MORPH_MANAGED_MODELS selects this model.
-  morphModelId?: string;
-  morphPricing?: { inputPerMillion: number; cachedInputPerMillion?: number; outputPerMillion: number };
-  // Public per-endpoint OpenRouter rates checked 2026-09-26. Only entries in openrouterProvider.only
-  // are eligible. The gateway still settles from upstream usage.cost when sent.
-  openrouterEndpointPricing?: Record<string, { inputPerMillion: number; cachedInputPerMillion: number; outputPerMillion: number }>;
-  // Omit this to keep the model grouped under Kortix in the picker.
-  providerBrand?: string;
-  // Catalog lookup hint. Managed pricing below is the routing authority.
-  pricingRef: string;
-  // Explicit upstream per-million-token prices for credit billing.
-  pricing?: {
-    inputPerMillion: number;
-    outputPerMillion: number;
-    cachedInputPerMillion?: number;
-    cacheWritePerMillion?: number;
-    contextOver200k?: {
-      inputPerMillion: number;
-      outputPerMillion: number;
-      cachedInputPerMillion?: number;
-      cacheWritePerMillion?: number;
-      contextThreshold: number;
-    };
-  };
-  tier: 'flagship' | 'balanced' | 'fast';
-  // Image input supported by the upstream model. Also sets the served
-  // `modalities`: OpenCode drops image parts for a model without `image` input.
-  vision: boolean;
-  // Effort values the upstream accepts, probed live through the gateway. They
-  // become the thinking control's variants. Wins over the models.dev record.
-  reasoningOptions?: CatalogReasoningOption[];
-  // What OpenCode sizes the conversation by. It compacts when a step used
-  // `context - min(output, 32_000)` tokens, so `context` sits below the
-  // smallest window a serving route accepts: enough for one more step to fit.
-  // managed.test.ts holds the measured windows and the margin.
-  limit: { context: number; output: number };
-  // OpenRouter provider routing: the allowed endpoint pool and privacy constraints.
-  openrouterProvider?: Record<string, unknown>;
-}
-
-// A managed model's `pricingRef` is supposed to be the model's real
-// models.dev id, but Kortix's own display id is dotted (`claude-opus-4.8`)
-// while models.dev Claude ids are dashed (`claude-opus-4-8`) — a mismatch
-// here silently misses the models.dev lookup and falls back to a permissive
-// synthetic capability record (no reasoning_options, temperature always
-// true), which is wrong for real models. Consumers doing a `provider/model`
-// lookup by `pricingRef` should try these candidates in order rather than
-// a single exact match, so a dotted/dashed slip degrades gracefully instead
-// of silently losing real capability data.
-export function pricingRefLookupCandidates(pricingRef: string): string[] {
-  const slash = pricingRef.indexOf('/');
-  if (slash <= 0) return [pricingRef];
-  const providerId = pricingRef.slice(0, slash);
-  const modelId = pricingRef.slice(slash + 1);
-  const candidates = [pricingRef];
-  const dashed = `${providerId}/${modelId.replace(/\./g, '-')}`;
-  if (dashed !== pricingRef) candidates.push(dashed);
-  return candidates;
-}
-
-// Managed IDs are bare gateway model IDs. OpenCode uses `kortix/<id>`, so the
-// picker shows Kortix whichever upstream serves the request.
-//
-// Upstream order per model (apps/api `managedCandidates`): OpenCode Zen, Morph
-// direct, then the OpenRouter endpoint pool below. Every pool member was in
-// OpenRouter's ZDR feed and passed, on 2026-10-19 through OpenRouter pinned to
-// that endpoint: 12/12 text + tool-call requests (~30k-token context), 3/3 image
-// reads, first token p50 under 6 s, and a price at or below `pricing`. The
-// gateway sends a request to a member only when its host is a subprocessor in
-// effect (`inferenceHostCleared`, @kortix/shared/subprocessors), so a host joins
-// on its notice date by itself. `allow_fallbacks: true` lets OpenRouter move
-// between members; `only` keeps it inside the pool. packages/llm-catalog/README.md
-// records the probe results.
-const OPENROUTER_POOL_PRIVACY = { allow_fallbacks: true, zdr: true, data_collection: 'deny' } as const;
-
-// Resolver uses this list for operator overlays too; an unknown endpoint fails closed.
-export const VERIFIED_MANAGED_ENDPOINTS = [
-  'deepinfra/fp8', 'deepinfra/fp8/priority', 'inference-net/fp8', 'wafer/mxfp4', 'cloudflare',
-  'fireworks', 'deepinfra/fp4', 'together', 'parasail/fp4', 'modal/nvfp4', 'crusoe/fp4',
-  'inference-net/fp4', 'makora', 'near-ai/fp8', 'open-inference/fp4', 'primeintellect',
-  'siliconflow/fp8', 'venice',
-] as const;
-
-// Customer-facing name of the inference provider behind each route. The
-// picker shows this name, never the aggregator or the quantization tag.
-// `morph` is the direct Morph route (MORPH_MANAGED_MODELS).
-export const MANAGED_ENDPOINT_PROVIDERS: Record<(typeof VERIFIED_MANAGED_ENDPOINTS)[number] | 'morph', string> = {
-  'deepinfra/fp8': 'DeepInfra', 'deepinfra/fp8/priority': 'DeepInfra', 'deepinfra/fp4': 'DeepInfra',
-  'inference-net/fp8': 'Inference.net', 'inference-net/fp4': 'Inference.net',
-  'wafer/mxfp4': 'Wafer', cloudflare: 'Cloudflare', fireworks: 'Fireworks', together: 'Together',
-  'parasail/fp4': 'Parasail', 'modal/nvfp4': 'Modal', 'crusoe/fp4': 'Crusoe', makora: 'Makora',
-  'near-ai/fp8': 'NEAR AI', 'open-inference/fp4': 'Open Inference', primeintellect: 'Prime Intellect',
-  'siliconflow/fp8': 'SiliconFlow', venice: 'Venice',
-  morph: 'Morph',
-};
-
-export const MANAGED_MODELS: ManagedModel[] = [
-  {
-    id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', upstreamModelId: 'deepseek/deepseek-v4.1-flash-1017',
-    transport: 'openrouter', morphModelId: 'morph-dsv41flash-1017',
-    morphPricing: { inputPerMillion: 0.15, cachedInputPerMillion: 0.003, outputPerMillion: 0.6 },
-    pricingRef: 'openrouter/deepseek/deepseek-v4.1-flash',
-    pricing: { inputPerMillion: 0.2, cachedInputPerMillion: 0.03, outputPerMillion: 0.65 },
-    openrouterEndpointPricing: {
-      'deepinfra/fp8': { inputPerMillion: 0.098, cachedInputPerMillion: 0.00294, outputPerMillion: 0.294 },
-      'deepinfra/fp8/priority': { inputPerMillion: 0.147, cachedInputPerMillion: 0.00441, outputPerMillion: 0.441 },
-      'inference-net/fp8': { inputPerMillion: 0.08, cachedInputPerMillion: 0.008, outputPerMillion: 0.5 },
-      'wafer/mxfp4': { inputPerMillion: 0.1, cachedInputPerMillion: 0.003, outputPerMillion: 0.5 },
-      cloudflare: { inputPerMillion: 0.1, cachedInputPerMillion: 0.003, outputPerMillion: 0.6 },
-    },
-    tier: 'balanced', vision: true, limit: { context: 1_000_000, output: 65_536 },
-    reasoningOptions: [{ type: 'effort', values: ['none', 'low', 'high', 'max'] }],
-    openrouterProvider: {
-      only: ['deepinfra/fp8', 'deepinfra/fp8/priority', 'inference-net/fp8', 'wafer/mxfp4', 'cloudflare'],
-      ...OPENROUTER_POOL_PRIVACY,
-      max_price: { prompt: 0.3, completion: 1.2 },
-    },
-  },
-  {
-    id: 'glm-5.3-flash', name: 'GLM 5.3 Flash', upstreamModelId: 'z-ai/glm-5.3-flash',
-    transport: 'openrouter', morphModelId: 'morph-glm53flash',
-    morphPricing: { inputPerMillion: 0.1, cachedInputPerMillion: 0.02, outputPerMillion: 0.35 },
-    pricingRef: 'openrouter/z-ai/glm-5.3-flash',
-    pricing: { inputPerMillion: 0.15, cachedInputPerMillion: 0.05, outputPerMillion: 0.5 },
-    openrouterEndpointPricing: {
-      fireworks: { inputPerMillion: 0.15, cachedInputPerMillion: 0.03, outputPerMillion: 0.5 },
-      'deepinfra/fp4': { inputPerMillion: 0.075, cachedInputPerMillion: 0.015, outputPerMillion: 0.25 },
-      together: { inputPerMillion: 0.15, cachedInputPerMillion: 0.03, outputPerMillion: 0.5 },
-      'parasail/fp4': { inputPerMillion: 0.15, cachedInputPerMillion: 0.03, outputPerMillion: 0.5 },
-      'modal/nvfp4': { inputPerMillion: 0.15, cachedInputPerMillion: 0.03, outputPerMillion: 0.5 },
-      'crusoe/fp4': { inputPerMillion: 0.15, cachedInputPerMillion: 0.03, outputPerMillion: 0.5 },
-      'inference-net/fp4': { inputPerMillion: 0.12, cachedInputPerMillion: 0.032, outputPerMillion: 0.388 },
-      makora: { inputPerMillion: 0.14, cachedInputPerMillion: 0.024, outputPerMillion: 0.47 },
-      'near-ai/fp8': { inputPerMillion: 0.08, cachedInputPerMillion: 0.012, outputPerMillion: 0.5 },
-      'open-inference/fp4': { inputPerMillion: 0.048, cachedInputPerMillion: 0.006, outputPerMillion: 0.16 },
-      primeintellect: { inputPerMillion: 0.15, cachedInputPerMillion: 0.03, outputPerMillion: 0.5 },
-      'siliconflow/fp8': { inputPerMillion: 0.15, cachedInputPerMillion: 0.03, outputPerMillion: 0.5 },
-      venice: { inputPerMillion: 0.15, cachedInputPerMillion: 0.03, outputPerMillion: 0.5 },
-    },
-    tier: 'fast', vision: true, limit: { context: 1_000_000, output: 65_536 },
-    // `none` returns 400 upstream, so GLM has no off switch.
-    reasoningOptions: [{ type: 'effort', values: ['low', 'high', 'max'] }],
-    openrouterProvider: {
-      only: [
-        'fireworks', 'deepinfra/fp4', 'together', 'parasail/fp4', 'modal/nvfp4', 'crusoe/fp4',
-        'inference-net/fp4', 'makora', 'near-ai/fp8', 'open-inference/fp4', 'primeintellect',
-        'siliconflow/fp8', 'venice',
-      ],
-      ...OPENROUTER_POOL_PRIVACY,
-      max_price: { prompt: 0.15, completion: 0.5 },
-    },
-  },
-];
-
-const MANAGED_BY_ID = new Map(MANAGED_MODELS.map((m) => [m.id, m] as const));
-
-export function getManagedModel(id: string): ManagedModel | undefined {
-  return MANAGED_BY_ID.get(id);
-}
-
-export function isManagedModelId(id: string): boolean {
-  return MANAGED_BY_ID.has(id);
-}
-
-export const DEFAULT_MANAGED_MODEL_IDS = MANAGED_MODELS.map((m) => m.id);
-
-export const MANAGED_FLAGSHIP_MODEL_ID = (
-  MANAGED_MODELS.find((m) => m.tier === 'flagship') ?? MANAGED_MODELS[0]
-).id;
-
-/** Concrete Kortix-managed default used when no account or project default exists. */
-export const PLATFORM_DEFAULT_MODEL_ID = 'deepseek-v4.1-flash';
+// Kortix managed models are not listed here: the Kortix API reads them from
+// Platinum Inference (apps/api llm-gateway/models/managed-models.ts).
 
 export const MODEL_SELECTOR_PROVIDER_IDS = [
   'kortix',
@@ -669,6 +515,7 @@ export const MODEL_SELECTOR_PROVIDER_IDS = [
 ] as const;
 
 export const PROVIDER_LABELS: Record<string, string> = {
+  platinum: 'Platinum',
   anthropic: 'Anthropic',
   openai: 'OpenAI',
   codex: 'ChatGPT subscription',

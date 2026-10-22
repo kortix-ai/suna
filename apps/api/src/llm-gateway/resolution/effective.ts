@@ -1,4 +1,4 @@
-import { canonicalManagedModelId, isRuntimeManagedModelId } from '../models/managed-models';
+import { canonicalManagedModelId } from '../models/managed-models';
 
 // One definition of how a default model/agent is chosen across scopes. Keeping
 // the precedence here means Slack, the web picker, and the gateway agree.
@@ -39,8 +39,9 @@ export function toOpencodeModelRef(model: string): string {
   return `${KORTIX_PREFIX}${toWireModel(model)}`;
 }
 
+/** A bare wire id is a Kortix managed model: BYOK and codex refs always carry a `provider/`. */
 function isManagedRef(ref: string): boolean {
-  return isRuntimeManagedModelId(toWireModel(ref));
+  return !toWireModel(ref).includes('/');
 }
 
 /**

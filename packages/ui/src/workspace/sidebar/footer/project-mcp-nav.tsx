@@ -2,7 +2,7 @@
 
 import { PromoNavRow } from './promo-nav-row';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useSyncExternalStore } from 'react';
 
 import { useSidebar } from '../../../primitives/sidebar';
 import { Mcp } from '../../../internal/icons/mcp';
@@ -10,6 +10,8 @@ import { useIsMobile } from '../../../internal/hooks';
 import { useTranslations } from '../../../i18n';
 
 export const MCP_PROMO_DISMISSED_KEY = 'kortix.mcp-promo.dismissed';
+
+const subscribeNoop = () => () => {};
 
 function readDismissed(): boolean {
   try {
@@ -30,9 +32,10 @@ export function ProjectMcpNavItem({ onOpenConnect }: { onOpenConnect: () => void
   const tComputers = useTranslations('computers');
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
-  const [dismissed, setDismissed] = useState(() =>
-    typeof window === 'undefined' ? true : readDismissed(),
-  );
+  // The server and the hydrating render read "dismissed"; the stored flag applies after.
+  const stored = useSyncExternalStore(subscribeNoop, readDismissed, () => true);
+  const [dismissedNow, setDismissed] = useState(false);
+  const dismissed = stored || dismissedNow;
   const dismiss = useCallback(() => {
     setDismissed(true);
     try {

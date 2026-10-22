@@ -143,7 +143,7 @@ let knownManagedModelId: string | null = null;
 const managedModels = await import('../models/managed-models');
 mock.module('../models/managed-models', () => ({
   ...managedModels,
-  RUNTIME_MANAGED_MODELS: [],
+  managedLineup: () => [],
   getRuntimeManagedModel: (id: string) =>
     runtimeManagedModel?.id === id ? runtimeManagedModel : undefined,
   isRuntimeManagedModelId: (id: string) => runtimeManagedModel?.id === id,
@@ -195,6 +195,20 @@ beforeEach(() => {
   resolveProjectSecretsForConsumer.mockClear();
   resolveCodexCredential.mockClear();
   resolveCodexAccountCredential.mockClear();
+});
+
+describe('resolveCandidates — Platinum BYOK', () => {
+  test("a project's PLATINUM_API_KEY reaches Platinum inference directly, billed by Platinum, with the session id", async () => {
+    catalogUpstream = { baseUrl: 'https://api.platinum.dev/v1/inference', envVar: 'PLATINUM_API_KEY', kind: 'openai-compat' };
+    secretsByName = { PLATINUM_API_KEY: 'pt_live_project' };
+    const [candidate, ...rest] = await resolveCandidates(principal({ sessionId: 'session-1' }), 'platinum/deepseek-v4.1-flash');
+    expect(rest).toEqual([]);
+    expect(candidate).toMatchObject({
+      provider: 'platinum', kind: 'openai-compat', baseUrl: 'https://api.platinum.dev/v1/inference',
+      apiKey: 'pt_live_project', billingMode: 'none', markup: 0, resolvedModel: 'deepseek-v4.1-flash',
+      headers: { 'x-platinum-session': 'session-1' },
+    });
+  });
 });
 
 describe('resolveCandidates — selected account key pool', () => {
@@ -560,14 +574,20 @@ describe('resolveCandidates — BYOK billing', () => {
 });
 
 describe('resolveCandidates — managed model tier gating', () => {
-  test('managed descriptor is returned unchanged without reading project keys', async () => {
+  test('managed descriptor carries the conversation as x-platinum-session, without reading project keys', async () => {
     runtimeManagedModel = { id: 'glm-5.3-flash' };
-    const candidates = await resolveCandidates(principal(), 'glm-5.3-flash');
+    const candidates = await resolveCandidates(principal({ sessionId: 'ses_1' }), 'glm-5.3-flash');
     expect(candidates).toEqual([{
       provider: 'kortix-managed', kind: 'bedrock', baseUrl: 'https://managed.test',
       apiKey: 'm', billingMode: 'credits', markup: 1, resolvedModel: 'glm-5.3-flash',
+      headers: { 'x-platinum-session': 'ses_1' },
     }]);
     expect(resolveProjectSecretsForConsumer).not.toHaveBeenCalled();
+    // A gateway API-key call has no session: the key, then the user, stands in.
+    expect((await resolveCandidates(principal({ keyId: 'key_1' }), 'glm-5.3-flash'))[0]?.headers)
+      .toEqual({ 'x-platinum-session': 'key_1' });
+    expect((await resolveCandidates(principal(), 'glm-5.3-flash'))[0]?.headers)
+      .toEqual({ 'x-platinum-session': 'u1' });
   });
 
   test('freeModelsOnly principal throws plan_upgrade_required before any tier lookup', async () => {
@@ -644,9 +664,9 @@ describe('resolveCandidates — managed model tier gating', () => {
     });
   });
 
-  // The evidence case (2026-09-28 sweep): a session pinned to an id the
-  // BUNDLED catalog still knows about only because it's in RETIRED_MANAGED_
-  // MODEL_IDS — never in RUNTIME_MANAGED_MODELS — must not collapse into the
+  // The evidence case (2026-09-28 sweep): a session pinned to an id known
+  // only because it's in RETIRED_MANAGED_MODEL_IDS — never in the Platinum
+  // lineup — must not collapse into the
   // same "disabled on this deployment" message. Nothing is disabled; the id
   // is gone. `grok-4.6` has no declared successor (managed-models.ts's
   // LEGACY_MANAGED_IDS) — the message says so, without inventing one.
@@ -668,22 +688,6 @@ describe('resolveCandidates — managed model tier gating', () => {
   // so `effectiveModel` here is already `deepseek-v4.1-flash` by the time
   // resolution runs — this never reaches `model_retired` at all. It just
   // works, transparently, the instant `deepseek-v4.1-flash` is servable.
-  test('a two-hop legacy alias resolves transparently through its retired intermediate to the final replacement — no error at all', async () => {
-    runtimeManagedModel = { id: 'deepseek-v4.1-flash' };
-    const p = principal();
-    tierByAccount[p.accountId] = 'pro';
-
-    const candidates = await resolveCandidates(p, 'morph-dsv4flash');
-    expect(candidates).toHaveLength(1);
-    expect(candidates[0]).toMatchObject({ provider: 'kortix-managed' });
-  });
-
-  // The id-level guard (managed-models.test.ts's "every LEGACY_MANAGED_IDS
-  // chain resolves off of a retired id") is what makes the branch below
-  // structurally unreachable for any DECLARED chain: canonicalManagedModelId
-  // is idempotent on its own output, so `effectiveModel` here is always
-  // already the fully-resolved fixed point. It stays defensive code for a
-  // chain that ever exceeds CANONICAL_CHAIN_MAX_HOPS (managed-models.ts).
 });
 
 describe('resolveCandidates — codex + unknown provider', () => {

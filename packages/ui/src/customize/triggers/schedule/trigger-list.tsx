@@ -11,6 +11,7 @@ import { Checkbox } from '../../../primitives/checkbox';
 import { SessionDotMatrix } from '../../../primitives/dot-matrix/session-dot-matrix';
 import type { UiTranslator } from '../../../i18n';
 import { useLocale, useTranslations } from '../../../i18n';
+import { lastRunLabel } from '../../../internal/lib/trigger-clock';
 import { cn } from '../../../internal/lib/utils';
 import type { ProjectTrigger } from '@kortix/sdk';
 import { Fragment, type ReactNode } from 'react';
@@ -42,25 +43,6 @@ export function nextRunLabel(
       ? date.toLocaleDateString(locale, { weekday: 'short' })
       : date.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
   return t('text27a2c8b3a0d2', { value0: day ? `${day} ${time}` : time });
-}
-
-/** "2d ago", "9h ago", "3w ago" in the viewer's locale, or "Never run". */
-export function lastRunLabel(
-  trigger: Pick<ProjectTrigger, 'last_fired_at' | 'event'>,
-  t: UiTranslator,
-  locale: string,
-  now: number = Date.now(),
-): string {
-  const iso = trigger.last_fired_at ?? trigger.event?.last_event_at ?? null;
-  const at = iso ? Date.parse(iso) : Number.NaN;
-  if (!Number.isFinite(at)) return t.raw('text3d40a69d3160');
-  const rtf = new Intl.RelativeTimeFormat(locale, { style: 'narrow', numeric: 'auto' });
-  const min = Math.floor(Math.max(0, now - at) / 60_000);
-  if (min < 1) return rtf.format(0, 'second');
-  if (min < 60) return rtf.format(-min, 'minute');
-  if (min < 24 * 60) return rtf.format(-Math.floor(min / 60), 'hour');
-  if (min < 7 * 24 * 60) return rtf.format(-Math.floor(min / (24 * 60)), 'day');
-  return rtf.format(-Math.floor(min / (7 * 24 * 60)), 'week');
 }
 
 export function TriggerList({

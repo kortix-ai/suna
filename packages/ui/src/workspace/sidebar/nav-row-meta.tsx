@@ -3,6 +3,7 @@
 import { uiRoutes } from '../../lib/routes';
 import { capabilityTabHref } from '../../internal/lib/capability-tab-routes';
 import { useAppsRowVisible } from './footer/project-apps-nav';
+import { useGoalsRowVisible } from './footer/project-goals-nav';
 import { useRoomsRowVisible } from './footer/project-rooms-nav';
 import { filesRow } from '../../internal/layout/files-nav-label';
 import {
@@ -11,7 +12,7 @@ import {
 } from '../../internal/layout/project-settings-nav';
 import { useTranslations } from '../../i18n';
 import type { SidebarNavItemId } from '../../internal/stores/sidebar-nav-store';
-import { AppWindowIcon, ChatsTeardropIcon, FoldersIcon, HardDrivesIcon } from '@phosphor-icons/react';
+import { AppWindowIcon, ChatsTeardropIcon, FoldersIcon, HardDrivesIcon, TargetIcon } from '@phosphor-icons/react';
 import { useMemo, type ReactNode } from 'react';
 
 export interface NavRowMeta {
@@ -32,6 +33,7 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
   const { customize: customizeTab, files: filesTarget } = useProjectNavRows(projectId);
   const appsVisible = useAppsRowVisible(projectId);
   const roomsVisible = useRoomsRowVisible(projectId);
+  const goalsVisible = useGoalsRowVisible(projectId);
 
   // Memoized on the gates, not rebuilt per render: the Customize sidebar
   // modal memoizes its rows on this object, and a fresh one per render would
@@ -39,6 +41,7 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
   return useMemo(() => {
     const appsHref = uiRoutes().apps(projectId);
     const roomsHref = uiRoutes().rooms(projectId);
+    const goalsHref = uiRoutes().goals(projectId);
     const files = filesTarget ? filesRow(projectId, filesTarget) : null;
     return {
       ...(customizeTab
@@ -68,6 +71,15 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
             },
           }
         : {}),
+      ...(goalsVisible && goalsHref
+        ? {
+            goals: {
+              label: t('goals'),
+              icon: <TargetIcon />,
+              href: goalsHref,
+            },
+          }
+        : {}),
       ...(files
         ? {
             files: {
@@ -78,5 +90,5 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
           }
         : {}),
     };
-  }, [t, tI18nComplete, projectId, customizeTab, appsVisible, roomsVisible, filesTarget]);
+  }, [t, tI18nComplete, projectId, customizeTab, appsVisible, roomsVisible, goalsVisible, filesTarget]);
 }

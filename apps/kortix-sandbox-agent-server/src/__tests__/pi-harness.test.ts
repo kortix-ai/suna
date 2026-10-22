@@ -3103,6 +3103,33 @@ describe('pi slash commands', () => {
     expect(user.parts.map((p) => p.text)).toEqual([expanded])
   })
 
+  const withDeploySkill = (workspace: string) => {
+    withReviewCommand(workspace)
+    for (const name of ['deploy', 'review']) {
+      mkdirSync(join(workspace, 'skills', name), { recursive: true })
+      writeFileSync(join(workspace, 'skills', name, 'SKILL.md'), `---\nname: ${name}\ndescription: The ${name} skill\n---\nSKILL-BODY-${name}\n`)
+    }
+  }
+
+  test('the command list carries the granted skills after the commands; a command keeps its name', async () => {
+    const r = await boot({ script: [], prepare: withDeploySkill })
+    expect(await r.user('/command').then((res) => res.json())).toEqual([
+      { name: 'review', description: 'Review a change', source: 'command', template: TEMPLATE, hints: ['$1', '$ARGUMENTS'] },
+      { name: 'deploy', description: 'The deploy skill', source: 'skill', template: '', hints: [] },
+    ])
+  })
+
+  test('a skill runs as its SKILL.md body plus the arguments', async () => {
+    const r = await boot({ script: [{ text: 'Deployed.' }], prepare: withDeploySkill })
+    const root = r.service.runtime()!.rootId
+    const res = await command(r, root, { command: 'deploy', arguments: 'to staging' })
+    expect(res.status).toBe(200)
+    const sent = sentText(gateway.sent.at(-1)!)
+    expect(sent).toContain('<skill name=\\"deploy\\"')
+    expect(sent).toContain('SKILL-BODY-deploy')
+    expect(sent).toContain('to staging')
+  })
+
   test('a command pi does not have is refused with 400 and runs no turn', async () => {
     const r = await boot({ script: [{ text: 'never' }], prepare: withReviewCommand })
     const root = r.service.runtime()!.rootId
@@ -4000,7 +4027,9 @@ describe('kortix.yaml v3 on pi', () => {
     expect(await skillNames(r)).toEqual(['deploy', 'review'])
     // `subagents` is the runtime's own task tool, not a project extension.
     expect(r.service.runtime()!.extensionStatus()).toEqual({ loaded: ['subagents'], failed: [] })
-    expect(await r.user('/command').then((res) => res.json())).toEqual([])
+    // No prompt template from a harness folder: the registered skills are the only rows.
+    const rows = (await r.user('/command').then((res) => res.json())) as Array<{ name: string; source: string }>
+    expect(rows.map((c) => [c.source, c.name])).toEqual([['skill', 'deploy'], ['skill', 'review']])
     const before = gateway.sent.length
     await promptAndSettle(r, 'hello')
     const system = systemSent(gateway.sent[before]!)
@@ -4028,7 +4057,9 @@ describe('kortix.yaml v3 on pi', () => {
     expect(names).toContain('folder-harnessespi')
     expect(names).toContain('unregistered')
     expect(names).not.toContain('review')
-    expect(((await r.user('/command').then((res) => res.json())) as Array<{ name: string }>).map((c) => c.name)).toEqual(['folder-prompt'])
+    const rows = (await r.user('/command').then((res) => res.json())) as Array<{ name: string; source: string }>
+    expect(rows.filter((c) => c.source === 'command').map((c) => c.name)).toEqual(['folder-prompt'])
+    expect(rows.filter((c) => c.source === 'skill').map((c) => c.name).sort()).toEqual([...names].sort())
   })
 
   test('the per-agent skill grant still filters the registered skills', async () => {

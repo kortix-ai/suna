@@ -1707,7 +1707,7 @@ export default function BrandPage() {
                           <Button size="sm">
                             {tI18nHardcoded.raw('i18nComplete.text5263293fc202')}
                           </Button>
-                          <Button size="icon">
+                          <Button size="icon" aria-label={tI18nHardcoded.raw('i18nComplete.text74a883a037bc')}>
                             <Settings className="size-4" />
                           </Button>
                         </div>
@@ -1723,10 +1723,10 @@ export default function BrandPage() {
                           <Button size="xs" variant="muted">
                             {tI18nHardcoded.raw('i18nComplete.text35542ace70ce')}
                           </Button>
-                          <Button size="icon-sm" variant="ghost">
+                          <Button size="icon-sm" variant="ghost" aria-label={tI18nHardcoded.raw('i18nComplete.text74a883a037bc')}>
                             <Settings className="size-3.5" />
                           </Button>
-                          <Button size="icon-xs" variant="ghost">
+                          <Button size="icon-xs" variant="ghost" aria-label={tI18nHardcoded.raw('i18nComplete.text7d9eb7acb13e')}>
                             <X className="size-3" />
                           </Button>
                         </div>
@@ -2642,7 +2642,7 @@ export default function BrandPage() {
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="outline" size="icon">
+                            <Button variant="outline" size="icon" aria-label={tI18nHardcoded.raw('i18nComplete.textb79cac926e0b')}>
                               <HelpCircle className="size-4" />
                             </Button>
                           </TooltipTrigger>
@@ -2658,7 +2658,7 @@ export default function BrandPage() {
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="outline" size="icon">
+                            <Button variant="outline" size="icon" aria-label={tI18nHardcoded.raw('i18nComplete.text74a883a037bc')}>
                               <Settings className="size-4" />
                             </Button>
                           </TooltipTrigger>

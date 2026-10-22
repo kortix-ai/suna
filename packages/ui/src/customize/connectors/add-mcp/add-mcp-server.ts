@@ -32,8 +32,9 @@ export function mcpServerIdentity(
   const base =
     [...labels].reverse().find((label) => !GENERIC_LABELS.has(label)) ?? labels[labels.length - 1] ?? 'mcp';
   const root = normalizeConnectorConnectionSlug(base) || 'mcp';
+  const taken = new Set(takenSlugs);
   let slug = root;
-  for (let n = 2; takenSlugs.includes(slug); n++) slug = `${root}-${n}`;
+  for (let n = 2; taken.has(slug); n++) slug = `${root}-${n}`;
   const name = root.charAt(0).toUpperCase() + root.slice(1);
   return { slug, name };
 }
@@ -47,8 +48,9 @@ export function mcpAppIdentity(
   takenSlugs: readonly string[],
 ): { slug: string; name: string } {
   const root = normalizeConnectorConnectionSlug(appName) || 'mcp';
+  const taken = new Set(takenSlugs);
   let slug = root;
-  for (let n = 2; takenSlugs.includes(slug); n++) slug = `${root}-${n}`;
+  for (let n = 2; taken.has(slug); n++) slug = `${root}-${n}`;
   return { slug, name: appName };
 }
 

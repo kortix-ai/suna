@@ -1254,6 +1254,9 @@
     "expiredBody": "Ask the person who invited you to send a new one.",
     "wrongAccountTitle": "Switch accounts",
     "wrongAccountBody": "This invite is addressed to a different account. You're signed in as {{email}}.",
+    "directoryTitle": "Sign in with single sign-on",
+    "directoryBody": "Your organization's directory added you to this account. Open this invite in a browser and sign in with your organization's single sign-on, or ask an account admin to resend the invite.",
+    "ssoDomainUnverifiedBody": "Your single sign-on provider has not verified this email's domain. Sign out and sign back in with your email address to use this invite.",
     "signOutAndContinue": "Sign out and continue",
     "backToProjects": "Back to projects"
   },

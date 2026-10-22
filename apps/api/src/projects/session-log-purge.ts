@@ -77,7 +77,11 @@ import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { sessionAttachmentStore } from './lib/session-attachments';
 
-/** Days from a session delete to its rows purge: the restore window too. */
+/**
+ * Days from a session delete to its rows purge: the restore window too. The SQL twin is
+ * `kortix.session_delete_due_at` (migration `20261022130858924_mirror_sessions_without_log.sql`),
+ * which the purge below and the backfill selection read.
+ */
 export const SESSION_DELETE_ROWS_DAYS = 30;
 /** Days from an account closure to its rows purge: objects follow 7 days later, all gone by day 87 < 90. */
 const ACCOUNT_CLOSED_ROWS_DAYS = 80;
@@ -94,11 +98,6 @@ export function sessionRestoreUntil(deletedAt: unknown): Date | null {
   const at = typeof deletedAt === 'string' ? Date.parse(deletedAt) : Number.NaN;
   return Number.isFinite(at) ? new Date(at + SESSION_DELETE_ROWS_DAYS * DAY_MS) : null;
 }
-// What `deleteSession` and the account deletion write: an ISO instant. Anything else is skipped,
-// so one unreadable stamp cannot fail the query for every other session.
-const ISO_INSTANT =
-  '^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?Z$';
-
 // A raw `sql` parameter is not a Date: the driver takes a string.
 const instant = (at: Date) => sql`${at.toISOString()}::timestamptz`;
 
@@ -166,9 +165,10 @@ async function dueSessions(now: Date, limit: number): Promise<DueSession[]> {
     select s.session_id, s.project_id::text as project_id, s.account_id::text as account_id, x.reason
     from kortix.project_sessions s
     left join closed e on e.account_id = s.account_id
+    -- Null for a session that is not deleted, or whose stamp is not the ISO instant
+    -- deleteSession writes: one unreadable stamp cannot fail the query for every other session.
     cross join lateral (select
-      case when jsonb_typeof(s.metadata -> 'deletedAt') = 'string' and s.metadata ->> 'deletedAt' ~ ${ISO_INSTANT}
-        then (s.metadata ->> 'deletedAt')::timestamptz + make_interval(days => ${SESSION_DELETE_ROWS_DAYS}) end as deleted_due,
+      kortix.session_delete_due_at(s.metadata) as deleted_due,
       e.closed_at + make_interval(days => ${ACCOUNT_CLOSED_ROWS_DAYS}) as closed_due) w
     cross join lateral (select
       least(w.deleted_due, w.closed_due) as due_at,

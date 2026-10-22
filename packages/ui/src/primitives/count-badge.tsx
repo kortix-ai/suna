@@ -27,16 +27,23 @@ export type CountBadgeTone = keyof typeof TONE;
 export function CountBadge({
   count,
   tone = 'neutral',
+  icon,
   className,
   ...props
-}: { count: number; tone?: CountBadgeTone } & Omit<React.ComponentProps<'span'>, 'children'>) {
+}: {
+  count: number;
+  tone?: CountBadgeTone;
+  /** A glyph that names what is counted, drawn before the number. */
+  icon?: React.ReactNode;
+} & Omit<React.ComponentProps<'span'>, 'children'>) {
   return (
     <Badge
       variant="transparent"
       size="tabular"
-      className={cn(TONE[tone], 'shrink-0 text-current', className)}
+      className={cn(TONE[tone], 'shrink-0 text-current', icon && 'gap-1', className)}
       {...props}
     >
+      {icon}
       {count > 99 ? '99+' : count}
     </Badge>
   );

@@ -102,6 +102,7 @@ resource "aws_iam_role_policy" "ec2_cpu_reconciler" {
   policy = data.aws_iam_policy_document.ec2_cpu_reconciler.json
 }
 
+#trivy:ignore:AVD-AWS-0017 Non-secret operational metadata; CloudWatch's AWS-managed encryption is sufficient (same rationale as the CKV_AWS_158 skip).
 resource "aws_cloudwatch_log_group" "euw2_ec2_cpu_reconciler" {
   # checkov:skip=CKV_AWS_158: Logs contain only instance IDs and reconciliation counts; CloudWatch's AWS-managed encryption is sufficient for this non-secret operational metadata.
   provider          = aws.euw2

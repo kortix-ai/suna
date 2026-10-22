@@ -169,6 +169,8 @@ export interface AccountStateResponse {
     total: number;
     daily: number;
     monthly: number;
+    /** Next scheduled reset of the expiring credit bucket. */
+    expires_at?: string | null;
     extra: number;
     /** Wallet admission only. Project model availability is resolved by /model-picker. */
     can_run: boolean;

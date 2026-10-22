@@ -89,10 +89,10 @@ token.personal.revoke). Service accounts and other people's keys need
 token.create / token.revoke.
 
 Personal API keys — act as YOU, and die with your membership:
-  ls [--mine] [--all] [--json]      List the account's keys. --mine narrows to
-                                    the ones you minted yourself. Keys that
-                                    cannot authenticate are hidden; --all
-                                    lists them too.
+  ls [--mine] [--all] [--json]      List the account's keys that still
+                                    authenticate. --mine narrows to the ones
+                                    you minted yourself; --mine --all lists
+                                    your revoked keys too.
   new <name> [--expires <when>]     Mint a key. The secret prints ONCE.
       [--project <id>]              Bind the key to one project (it can never
                                     reach another).
@@ -120,9 +120,10 @@ A new service account holds NO permissions. Grant it one with
 
 Options:
   --mine              ls: only the keys you minted.
-  --all               ls: with --mine, also list the keys that cannot
+  --all               ls --mine: also list your keys that cannot
                       authenticate (revoked, or revoked_at stamped on a row
-                      still reading active).
+                      still reading active). Without --mine it changes
+                      nothing: the account list holds live keys only.
   --expires <when>    ISO-8601, or a forward span: 30d, 12h, 6w, 1y.
   --project <id>      new: bind the key to one project.
   --description <t>   service-accounts new: what this identity is for.
@@ -222,7 +223,7 @@ export async function runTokens(argv: string[]): Promise<number> {
           if (hidden > 0) {
             process.stdout.write(
               `  ${C.dim}${hidden} revoked key${hidden === 1 ? '' : 's'} hidden — list them with ` +
-                `${C.reset}${C.cyan}kortix tokens ls --all${C.reset}\n`,
+                `${C.reset}${C.cyan}kortix tokens ls --mine --all${C.reset}\n`,
             );
           }
           process.stdout.write('\n');
@@ -243,7 +244,7 @@ export async function runTokens(argv: string[]): Promise<number> {
         }
         const count =
           hidden > 0
-            ? `${visible.length} key${visible.length === 1 ? '' : 's'} · ${hidden} revoked hidden (--all lists them)`
+            ? `${visible.length} key${visible.length === 1 ? '' : 's'} · ${hidden} revoked hidden (--mine --all lists them)`
             : `${visible.length} key${visible.length === 1 ? '' : 's'}`;
         process.stdout.write(`\n  ${C.dim}${count}${C.reset}\n\n`);
         return 0;

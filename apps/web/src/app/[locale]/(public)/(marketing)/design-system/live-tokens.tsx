@@ -14,23 +14,12 @@
  */
 
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@kortix/ui';
+import { cn, useIsDark } from '@kortix/ui';
 import { CheckIcon, CopyIcon } from '@phosphor-icons/react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 /** True while the page theme is dark. The theme is the `dark` class on <html>. */
-export function useIsDark(): boolean {
-  const [dark, setDark] = useState(false);
-  useEffect(() => {
-    const root = document.documentElement;
-    const read = () => setDark(root.classList.contains('dark'));
-    read();
-    const observer = new MutationObserver(read);
-    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
-  }, []);
-  return dark;
-}
+export { useIsDark } from '@kortix/ui';
 
 /** Reads a custom property declared on :root (a plain value, not a color). */
 function useRootVar(name: string): string {

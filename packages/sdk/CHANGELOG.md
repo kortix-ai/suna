@@ -5,6 +5,15 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed (the session log is the only saved history, P8.2)
+- `FeatureFlagKey` `'session_log'` is no longer a flag: absent from `FEATURE_FLAG_KEYS` and from
+  the feature-flag catalog. The API sends `experimental.session_log: true` for every project, so
+  `useFeatureFlag(id, 'session_log')` reports `true` once the project detail loads, as before.
+  `KortixProject.experimental.session_log` is optional in the type.
+- `GET …/sessions/:id/log` answers `503` `{ code: 'session_log_converting' }` with `Retry-After: 60`
+  for an old session whose history is still only in the v1 mirror and over the conversion size cap;
+  retry after the delay.
+
 ### Added (custom LLM providers)
 - `listCustomLlmProviders(projectId)`, `putCustomLlmProvider(projectId, providerId, input)` and
   `deleteCustomLlmProvider(projectId, providerId)` (types `CustomLlmProvider`,
@@ -15,6 +24,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `project(id)` without the project id.
 - `useCustomLlmProviders(projectId)` (`@kortix/sdk/react`): `{ providers, isLoading, error, save,
   remove, isSaving }`. Writes refresh the list and both model-picker caches.
+
+### Deprecated (managed models are served by Kortix Platinum inference)
+- `ProjectLlmCatalogResponse.managedPricingRoutes`: the API no longer sends it. Every managed
+  model has one price, its `cost` in `models`. `platformFeePercent` is unchanged.
 
 ### Deprecated (the LLM gateway is the only model path)
 - `FeatureFlagKey` `'llm_gateway'` graduated: absent from `FEATURE_FLAG_KEYS`, and
