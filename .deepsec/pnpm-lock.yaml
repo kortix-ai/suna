@@ -12,6 +12,7 @@ overrides:
   undici@>=8.0.0 <8.10.2: 8.10.2
   tar@>=7.0.0 <7.5.21: 7.5.21
   brace-expansion@>=5.0.0 <5.0.12: 5.0.12
+  ip-address@<10.7.4: 10.7.4
   '@modelcontextprotocol/sdk@<1.32.0': 1.32.0
 
 importers:
@@ -785,8 +786,8 @@ packages:
   inherits@2.0.4:
     resolution: {integrity: sha512-k/vGaX4/Yla3WzyMCvTQOXYeIHvqOKtnqBduzTHpzpQZzAskKMhZ2K+EnBiSM9zGSoIFeMpXKxa4dYeZIQqewQ==}
 
-  ip-address@10.7.2:
-    resolution: {integrity: sha512-7H/2gFSIitxc0hG3nOI1glS8QLo/EHBFFLk8vEUjXY/xu0AdL8jZ9U1IzO2PUm0d2D/ofQcAifb0g6OBkt8U7w==}
+  ip-address@10.7.4:
+    resolution: {integrity: sha512-DWBMKyeM25D70nrIiTkgQth59/G+naKOTep6huF9j+GmeK3DMD60Zvxg5d5qQnz+38AHgou6ean2LECX+lrKDg==}
     engines: {node: '>= 12'}
 
   ipaddr.js@1.9.1:
@@ -1946,7 +1947,7 @@ snapshots:
     dependencies:
       debug: 4.4.3
       express: 5.2.1
-      ip-address: 10.7.2
+      ip-address: 10.7.4
     transitivePeerDependencies:
       - supports-color
 
@@ -2126,7 +2127,7 @@ snapshots:
 
   inherits@2.0.4: {}
 
-  ip-address@10.7.2: {}
+  ip-address@10.7.4: {}
 
   ipaddr.js@1.9.1: {}
 
