@@ -315,12 +315,23 @@ export function SandboxAddressBar({
  * Cross-origin iframes frequently never fire onLoad, so neither surface may
  * trust the event alone — the parent decides when to show and dismiss this.
  */
-export function PreviewLoadingOverlay({ label }: { label: string }) {
+export function PreviewLoadingOverlay({
+  label,
+  detail,
+  action,
+}: {
+  label: string;
+  /** A second line once the load is slow: why, and the way out. */
+  detail?: string;
+  action?: React.ReactNode;
+}) {
   return (
     <div className="bg-background/80 absolute inset-0 z-10 flex items-center justify-center">
-      <div className="text-muted-foreground flex flex-col items-center gap-2">
+      <div className="text-muted-foreground flex max-w-xs flex-col items-center gap-2 px-4 text-center">
         <Loading className="size-4" />
         <p className="text-xs">{label}</p>
+        {detail && <p className="text-xs text-pretty">{detail}</p>}
+        {action}
       </div>
     </div>
   );
