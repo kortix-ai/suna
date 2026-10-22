@@ -528,8 +528,8 @@ An open reads the session log first (`GET …/log`), on every host, with no proj
 with `savedChild`, and `loadSessionExportMessages`. No `GET …/transcript` is read then. The host
 applies a page it reads itself to the session store and renders `useSessionLogThread`.
 Only when the log answers 404 (an API older than the session log, or a session with no stored
-log yet) does an open read the v1 saved window once: the session-open snapshot carries it (the
-read waits up to 2 s for one in flight), else `GET …/transcript?shape=sync&history=true`.
+log yet) does an open read the v1 saved window once: `GET …/transcript?shape=sync&history=true`.
+The session-open snapshot (`GET …/snapshot`) asks for no v1 window (`?transcript=0`).
 `readSavedSessionCopy` then returns it as `envelope`, and the SDK holds it for the open that
 follows (up to 5 min). The v1 reads (`getSessionTranscriptSync`, `transcriptSync`,
 `loadSessionTranscriptMirror`, …) are deprecated.
