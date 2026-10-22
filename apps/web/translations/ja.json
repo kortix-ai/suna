@@ -5115,7 +5115,8 @@
       "ssoContinue": "シングルサインオンで続行",
       "askAdminTitle": "管理者に再送を依頼",
       "askAdminDescription": "組織のディレクトリによってこのアカウントに追加されましたが、このインスタンスではメールアドレスを確認できません。アカウント管理者に招待の再送を依頼し、その後このリンクをもう一度開いてください。",
-      "ssoDomainUnverified": "シングルサインオンのプロバイダーがこのメールのドメインを検証していません。この招待を使うには、サインアウトしてメールアドレスでサインインし直してください。"
+      "ssoDomainUnverified": "シングルサインオンのプロバイダーがこのメールのドメインを検証していません。この招待を使うには、サインアウトしてメールアドレスでサインインし直してください。",
+      "ssoUnavailable": "現在シングルサインオンを利用できません。アカウント管理者に招待の再送を依頼してください。"
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – オープンソースのAI Operating System",

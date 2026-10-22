@@ -5115,7 +5115,8 @@
       "ssoContinue": "Weiter mit Single Sign-On",
       "askAdminTitle": "Admin um erneutes Senden bitten",
       "askAdminDescription": "Das Verzeichnis deiner Organisation hat dich zu diesem Konto hinzugefügt, und diese Instanz kann deine E-Mail-Adresse nicht bestätigen. Bitte einen Kontoadmin, die Einladung erneut zu senden, und öffne diesen Link dann noch einmal.",
-      "ssoDomainUnverified": "Dein Single-Sign-On-Anbieter hat die Domain dieser E-Mail-Adresse nicht verifiziert. Melde dich ab und mit deiner E-Mail-Adresse wieder an, um diese Einladung zu nutzen."
+      "ssoDomainUnverified": "Dein Single-Sign-On-Anbieter hat die Domain dieser E-Mail-Adresse nicht verifiziert. Melde dich ab und mit deiner E-Mail-Adresse wieder an, um diese Einladung zu nutzen.",
+      "ssoUnavailable": "Single Sign-On ist gerade nicht verfügbar. Bitte einen Kontoadmin, die Einladung erneut zu senden."
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – Das Open-Source-AI Operating System",

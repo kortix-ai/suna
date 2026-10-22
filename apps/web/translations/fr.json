@@ -5115,7 +5115,8 @@
       "ssoContinue": "Continuer avec l'authentification unique",
       "askAdminTitle": "Demandez à un administrateur de la renvoyer",
       "askAdminDescription": "L'annuaire de votre organisation vous a ajouté à ce compte, et cette instance ne peut pas confirmer votre adresse e-mail. Demandez à un administrateur du compte de renvoyer l'invitation, puis rouvrez ce lien.",
-      "ssoDomainUnverified": "Votre fournisseur d'authentification unique n'a pas vérifié le domaine de cette adresse e-mail. Déconnectez-vous et reconnectez-vous avec votre adresse e-mail pour utiliser cette invitation."
+      "ssoDomainUnverified": "Votre fournisseur d'authentification unique n'a pas vérifié le domaine de cette adresse e-mail. Déconnectez-vous et reconnectez-vous avec votre adresse e-mail pour utiliser cette invitation.",
+      "ssoUnavailable": "L'authentification unique n'est pas disponible pour le moment. Demandez à un administrateur du compte de renvoyer l'invitation."
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – L'AI Operating System open source",

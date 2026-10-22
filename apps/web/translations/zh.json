@@ -5115,7 +5115,8 @@
       "ssoContinue": "继续使用单点登录",
       "askAdminTitle": "请管理员重新发送",
       "askAdminDescription": "你所在组织的目录已将你添加到此账户，但此实例无法确认你的邮箱地址。请让账户管理员重新发送邀请，然后再次打开此链接。",
-      "ssoDomainUnverified": "你的单点登录提供方尚未验证此邮箱的域名。请退出，然后使用你的邮箱地址重新登录，以使用此邀请。"
+      "ssoDomainUnverified": "你的单点登录提供方尚未验证此邮箱的域名。请退出，然后使用你的邮箱地址重新登录，以使用此邀请。",
+      "ssoUnavailable": "单点登录当前不可用。请让账户管理员重新发送邀请。"
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – 开源的 AI Operating System",

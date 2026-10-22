@@ -5115,7 +5115,8 @@
       "ssoContinue": "Continuar con inicio de sesión único",
       "askAdminTitle": "Pide a un administrador que la reenvíe",
       "askAdminDescription": "El directorio de tu organización te añadió a esta cuenta y esta instancia no puede confirmar tu correo electrónico. Pide a un administrador de la cuenta que reenvíe la invitación y vuelve a abrir este enlace.",
-      "ssoDomainUnverified": "Tu proveedor de inicio de sesión único no ha verificado el dominio de este correo. Cierra sesión y vuelve a iniciarla con tu correo electrónico para usar esta invitación."
+      "ssoDomainUnverified": "Tu proveedor de inicio de sesión único no ha verificado el dominio de este correo. Cierra sesión y vuelve a iniciarla con tu correo electrónico para usar esta invitación.",
+      "ssoUnavailable": "El inicio de sesión único no está disponible ahora. Pide a un administrador de la cuenta que reenvíe la invitación."
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – El AI Operating System de código abierto",

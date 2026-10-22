@@ -5126,7 +5126,8 @@
       "ssoContinue": "Continue with single sign-on",
       "askAdminTitle": "Ask an admin to resend",
       "askAdminDescription": "Your organization's directory added you to this account, and this instance cannot confirm your email address. Ask an account admin to resend the invite, then open this link again.",
-      "ssoDomainUnverified": "Your single sign-on provider has not verified this email's domain. Sign out and sign back in with your email address to use this invite."
+      "ssoDomainUnverified": "Your single sign-on provider has not verified this email's domain. Sign out and sign back in with your email address to use this invite.",
+      "ssoUnavailable": "Single sign-on is not available right now. Ask an account admin to resend the invite."
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – The open-source AI Operating System",

@@ -5115,7 +5115,8 @@
       "ssoContinue": "Nastavi jedinstvenom prijavom",
       "askAdminTitle": "Zamoli administratora da je ponovo pošalje",
       "askAdminDescription": "Direktorijum tvoje organizacije te je dodao na ovaj nalog, a ova instanca ne može da potvrdi tvoju adresu e-pošte. Zamoli administratora naloga da ponovo pošalje pozivnicu, pa ponovo otvori ovaj link.",
-      "ssoDomainUnverified": "Tvoj provajder jedinstvene prijave nije verifikovao domen ove adrese e-pošte. Odjavi se i ponovo se prijavi svojom adresom e-pošte da bi iskoristio ovu pozivnicu."
+      "ssoDomainUnverified": "Tvoj provajder jedinstvene prijave nije verifikovao domen ove adrese e-pošte. Odjavi se i ponovo se prijavi svojom adresom e-pošte da bi iskoristio ovu pozivnicu.",
+      "ssoUnavailable": "Jedinstvena prijava trenutno nije dostupna. Zamoli administratora naloga da ponovo pošalje pozivnicu."
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – AI Operating System отвореног кода",

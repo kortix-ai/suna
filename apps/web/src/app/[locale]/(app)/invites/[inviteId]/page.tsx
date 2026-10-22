@@ -21,7 +21,7 @@ import { ErrorStrip, Rise, StepHeader } from '@kortix/ui/internal/auth/auth-prim
 import { useAuth } from '@/features/providers/auth-provider';
 import { inviteLandingPath } from '@kortix/ui/workspace/project-selector/project-selector-model';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
-import { createClient as createBrowserSupabaseClient } from '@/lib/supabase/client';
+import { createClient as createBrowserSupabaseClient, fetchSamlEnabled } from '@/lib/supabase/client';
 import { authRedirectUrl } from '@kortix/ui/internal/lib/desktop';
 import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { useAppHome } from '@kortix/ui/internal/lib/onboarding/use-app-home';
@@ -99,6 +99,9 @@ export default function InvitePage() {
       // browser remembered, in the account they came from (KRTX-1731).
       router.replace(inviteLandingPath(landing));
     },
+    // The ErrorStrip below shows the API's sentence. Without this no-op the
+    // QueryClient's default mutation `onError` adds a second, generic toast.
+    onError: () => {},
   });
 
   const declineMutation = useMutation({
@@ -115,6 +118,7 @@ export default function InvitePage() {
       // a signed-in user with nothing else to do belongs.
       router.replace(PROJECT_LANDING_PATH);
     },
+    onError: () => {},
   });
 
   // A directory invite on an instance that cannot prove the address: the
@@ -127,9 +131,24 @@ export default function InvitePage() {
         providerId,
         options: { redirectTo: authRedirectUrl(callback), skipBrowserRedirect: true },
       });
-      if (error || !data?.url) throw error ?? new Error('Single sign-on is not available.');
+      if (error || !data?.url) throw error ?? new Error('no SSO redirect');
       window.location.href = data.url;
     },
+    // The screen shows its own sentence; no generic toast.
+    onError: () => {},
+  });
+  // Offer single sign-on only where Auth can run it: a self-host has SAML off
+  // until an operator turns it on, and the button would only fail there.
+  const ssoOffered =
+    !!inviteQuery.data &&
+    !inviteQuery.data.invite.email_matches_caller &&
+    inviteQuery.data.invite.reason === 'email_unconfirmed' &&
+    !!inviteQuery.data.invite.sso_provider_id;
+  const samlQuery = useQuery({
+    queryKey: ['auth', 'saml-enabled'],
+    queryFn: fetchSamlEnabled,
+    enabled: ssoOffered,
+    staleTime: Infinity,
   });
 
   useEffect(() => {
@@ -142,7 +161,7 @@ export default function InvitePage() {
     router.replace(inviteLandingPath(accountInviteLanding({ account_id: inv.account_id }, inv)));
   }, [inviteQuery.data, router]);
 
-  if (authLoading || !user || inviteQuery.isLoading) {
+  if (authLoading || !user || inviteQuery.isLoading || (ssoOffered && samlQuery.isLoading)) {
     return <AuthPendingScreen footer={false} />;
   }
 
@@ -178,8 +197,10 @@ export default function InvitePage() {
   // The caller holds the address, but this instance cannot prove it (no email
   // provider) and nobody shared the invite: the directory pushed it.
   if (!invite.email_matches_caller && invite.reason === 'email_unconfirmed') {
-    const providerId = invite.sso_provider_id;
-    const ssoError = ssoMutation.error instanceof Error ? ssoMutation.error.message : null;
+    const providerId = samlQuery.data ? invite.sso_provider_id : null;
+    const ssoError = ssoMutation.isError
+      ? tHardcodedUi.raw('appInvitesInviteidPage.ssoUnavailable')
+      : null;
     return (
       <AuthFrame footerVariant="none">
         <Rise>

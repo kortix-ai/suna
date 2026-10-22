@@ -5115,7 +5115,8 @@
       "ssoContinue": "Continua con il single sign-on",
       "askAdminTitle": "Chiedi a un amministratore di inviarlo di nuovo",
       "askAdminDescription": "La directory della tua organizzazione ti ha aggiunto a questo account e questa istanza non può confermare il tuo indirizzo email. Chiedi a un amministratore dell'account di inviare di nuovo l'invito, poi riapri questo link.",
-      "ssoDomainUnverified": "Il tuo provider di single sign-on non ha verificato il dominio di questa email. Esci e accedi di nuovo con il tuo indirizzo email per usare questo invito."
+      "ssoDomainUnverified": "Il tuo provider di single sign-on non ha verificato il dominio di questa email. Esci e accedi di nuovo con il tuo indirizzo email per usare questo invito.",
+      "ssoUnavailable": "Il single sign-on non è disponibile al momento. Chiedi a un amministratore dell'account di inviare di nuovo l'invito."
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – L'AI Operating System open source",

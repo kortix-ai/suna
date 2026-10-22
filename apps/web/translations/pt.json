@@ -5115,7 +5115,8 @@
       "ssoContinue": "Continuar com logon único",
       "askAdminTitle": "Peça a um administrador para reenviar",
       "askAdminDescription": "O diretório da sua organização adicionou você a esta conta, e esta instância não consegue confirmar seu endereço de e-mail. Peça a um administrador da conta para reenviar o convite e abra este link novamente.",
-      "ssoDomainUnverified": "Seu provedor de logon único não verificou o domínio deste e-mail. Saia e entre novamente com seu endereço de e-mail para usar este convite."
+      "ssoDomainUnverified": "Seu provedor de logon único não verificou o domínio deste e-mail. Saia e entre novamente com seu endereço de e-mail para usar este convite.",
+      "ssoUnavailable": "O logon único não está disponível agora. Peça a um administrador da conta para reenviar o convite."
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – O AI Operating System de código aberto",
