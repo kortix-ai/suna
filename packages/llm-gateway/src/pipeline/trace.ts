@@ -39,7 +39,7 @@ function logTrace(logger: GatewayLogger, trace: GatewayTrace): void {
       ` (admit=${timing.admit_ms ?? '-'} route=${timing.route_ms ?? '-'} resolve=${timing.resolve_ms ?? '-'} billing=${timing.billing_ms ?? '-'})` +
       (timing.admit_api_total_ms !== undefined
         ? ` admit_api=${timing.admit_api_total_ms} net=${timing.admit_net_ms ?? '-'}` +
-          ` [principal=${timing.admit_api_principal_ms ?? '-'} tier=${timing.admit_api_tier_ms ?? '-'} budget=${timing.admit_api_budget_ms ?? '-'}` +
+          ` [principal=${timing.admit_api_principal_ms ?? '-'} tier=${timing.admit_api_tier_ms ?? '-'}(billing=${timing.admit_api_tier_billing_ms ?? '-'} default=${timing.admit_api_tier_default_ms ?? '-'}) budget=${timing.admit_api_budget_ms ?? '-'}` +
           ` route=${timing.admit_api_route_ms ?? '-'} resolve=${timing.admit_api_resolve_ms ?? '-'} billing=${timing.admit_api_billing_ms ?? '-'}]`
         : '')
     : '';

@@ -134,7 +134,8 @@ async function resolvePrincipalWithReason(
  * Kortix models are visible without a second tier lookup. When internal billing
  * is off (self-host) every account sees the full lineup.
  */
-async function withResolvedTier(principal: AuthedPrincipal): Promise<AuthedPrincipal> {
+async function withResolvedTier(principal: AuthedPrincipal, timing?: Record<string, number>): Promise<AuthedPrincipal> {
+  const t0 = performance.now();
   const tiered: AuthedPrincipal = config.KORTIX_BILLING_INTERNAL_ENABLED
     ? await (async () => {
         // Both reads share the entitlements tier-snapshot cache: one DB read,
@@ -148,12 +149,15 @@ async function withResolvedTier(principal: AuthedPrincipal): Promise<AuthedPrinc
         return { ...principal, tier, freeModelsOnly: !managedModels };
       })()
     : { ...principal, freeModelsOnly: false };
+  if (timing) timing.tier_billing = Math.round(performance.now() - t0);
   // Resolve the account/project/agent-configured concrete default once, here,
   // so it travels with the principal across the standalone-gateway RPC boundary.
   // Never let a resolution error break authentication for every LLM call.
   let defaultModel: string | undefined;
   try {
+    const t1 = performance.now();
     defaultModel = await resolveDefaultModelForPrincipal(tiered);
+    if (timing) timing.tier_default = Math.round(performance.now() - t1);
   } catch {
     defaultModel = undefined;
   }
@@ -239,7 +243,7 @@ export async function authorizeRequest(
   const resolved = await resolvePrincipalWithReason(token);
   if (options.timing) options.timing.principal = Math.round(performance.now() - t0);
   const t1 = performance.now();
-  let principal = resolved.principal ? await withResolvedTier(resolved.principal) : null;
+  let principal = resolved.principal ? await withResolvedTier(resolved.principal, options.timing) : null;
   if (options.timing) options.timing.tier = Math.round(performance.now() - t1);
   if (!principal) {
     // Name the SANDBOX refusal when that is what happened. "Invalid token" for
