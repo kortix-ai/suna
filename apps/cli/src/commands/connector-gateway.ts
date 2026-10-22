@@ -190,7 +190,7 @@ interface Invocation {
 type Handler = (invocation: Invocation) => Promise<void>;
 
 async function listConnectors({ flags }: Invocation): Promise<void> {
-  const connector = connectorClient(stringValue(flags.project));
+  const connector = await connectorClient(stringValue(flags.project), stringValue(flags.host));
   // Name/status/tool-count only — never ask for the per-action schemas.
   const connectors = await connector.catalog({ includeSchemas: false });
   out({
@@ -204,7 +204,7 @@ async function listConnectors({ flags }: Invocation): Promise<void> {
 }
 
 async function discover({ args, flags }: Invocation): Promise<void> {
-  const connector = connectorClient(stringValue(flags.project));
+  const connector = await connectorClient(stringValue(flags.project), stringValue(flags.host));
   const q = args.join(' ') || stringValue(flags.query) || '';
   const matches = await connector.search(q, {
     limit: Number(stringValue(flags.limit)) || 20,
@@ -219,7 +219,7 @@ async function discover({ args, flags }: Invocation): Promise<void> {
 }
 
 async function show({ args, flags }: Invocation): Promise<void> {
-  const connector = connectorClient(stringValue(flags.project));
+  const connector = await connectorClient(stringValue(flags.project), stringValue(flags.host));
   const ref = args[0];
   if (!ref || !ref.includes('.'))
     throw new CliError('usage: kortix connectors show <connector>.<action>', 'USAGE');
@@ -242,7 +242,7 @@ async function show({ args, flags }: Invocation): Promise<void> {
 async function call({ args, flags, repeated }: Invocation): Promise<void> {
   const { slug, action, rawArgs } = parseConnectorCallInput(args, flags);
   if (flags.out === true) throw new CliError('--out needs a file path', 'USAGE');
-  const connector = connectorClient(stringValue(flags.project));
+  const connector = await connectorClient(stringValue(flags.project), stringValue(flags.host));
   let parsed = await readCallArgs(rawArgs);
   // A valueless `--attach` is the `true` sentinel — it carries no path.
   const attach = (repeated.attach ?? []).filter((path): path is string => typeof path === 'string');
@@ -321,7 +321,7 @@ async function upload({ args, flags }: Invocation): Promise<void> {
   const filename = stringValue(flags.filename);
   const contentType = stringValue(flags['content-type']);
   const contentId = stringValue(flags['content-id']);
-  const connector = connectorClient(stringValue(flags.project));
+  const connector = await connectorClient(stringValue(flags.project), stringValue(flags.host));
   let uploaded;
   try {
     [uploaded] = await uploadAttachmentFiles(
@@ -357,7 +357,7 @@ async function add({ args, flags }: Invocation): Promise<void> {
     );
   rejectBuiltinChannel(slug);
   const draft = connectorDraftFromFlags(slug, flags);
-  const res = await addConnector(draft, stringValue(flags.project));
+  const res = await addConnector(draft, stringValue(flags.project), stringValue(flags.host));
   out({
     ok: true,
     slug,
@@ -371,7 +371,7 @@ async function add({ args, flags }: Invocation): Promise<void> {
 async function remove({ args, flags }: Invocation): Promise<void> {
   const slug = args[0];
   if (!slug) throw new CliError('usage: kortix connectors rm <slug>', 'USAGE');
-  await removeConnector(slug, stringValue(flags.project));
+  await removeConnector(slug, stringValue(flags.project), stringValue(flags.host));
   out({
     ok: true,
     slug,
@@ -403,6 +403,7 @@ async function connect({ args, flags }: Invocation): Promise<void> {
     slug,
     expiresInMinutes: expires ? Number(expires) : undefined,
     projectOverride: stringValue(flags.project),
+    hostArg: stringValue(flags.host),
     ...(owner ? { owner } : {}),
   });
   out({
