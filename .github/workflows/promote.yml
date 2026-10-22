@@ -275,7 +275,7 @@ jobs:
           deadline=$(( $(date +%s) + 20 * 60 ))
           while [ "$ok" -lt 8 ]; do
             api="$(read_commit https://staging-api.kortix.com/v1/health)"
-            gw="$(read_commit https://gateway-staging.kortix.com/health)"
+            gw="$(read_commit https://gateway-staging.kortix.com/health/live)"
             web="$(read_commit -H "x-vercel-protection-bypass: ${VERCEL_BYPASS}" https://staging.kortix.com/api/health)"
             if [ "$api" = "$MERGE_SHA" ] && [ "$gw" = "$MERGE_SHA" ] && [ "$web" = "$MERGE_SHA" ]; then ok=$((ok + 1)); else ok=0; fi
             echo "health: api=${api:0:10} gateway=${gw:0:10} web=${web:0:10} consecutive=$ok/8"

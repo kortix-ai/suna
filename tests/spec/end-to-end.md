@@ -803,7 +803,7 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 ## 17. Router / LLM / proxy (sandbox-facing; `apiKeyAuth`)
 
 `RTR-4` billed proxy passthrough `ALL /router/:service[/*]` for `tavily|serper|firecrawl` — Kortix token → managed keys; user key + `X-Kortix-Token` → passthrough; disallowed service/route → 4xx.
-`GW-1` standalone gateway `GET /health` → 200 `{status:"healthy",service:"kortix-llm-gateway"}`.
+`GW-1` standalone gateway `GET /health` → 200 with only `{status:"healthy"}` (or `degraded`); operational details require gateway authentication.
 `GW-2` standalone gateway `GET /v1/llm/models` plus `/v1/models` and `/v1/openai/models` aliases — account PAT → 200 with a non-empty `{models:{...}}` catalog.
 `GW-2b` An anonymous caller cannot list models through the standalone gateway.
 `GW-3` standalone OpenAI-compatible chat aliases reject ANON → 401/403.
