@@ -173,9 +173,9 @@ describe('continueSession — project default reasoning effort', () => {
   });
 
   test('a configured default rides the prompt when the model publishes it', async () => {
-    // `deepseek-v4.1-flash` — the platform's managed default — publishes the
+    // `deepseek/deepseek-v4-flash` (bundled catalog) publishes the
     // effort enum including `max`.
-    awakeSession({ projectDefaultEffort: 'max', metadata: { opencode_model: 'kortix/deepseek-v4.1-flash' } });
+    awakeSession({ projectDefaultEffort: 'max', metadata: { opencode_model: 'deepseek/deepseek-v4-flash' } });
     expect(await continueSession({ sessionId: SESSION_ID, text: 'hello', source: 'ui' })).toBe(
       'delivered',
     );
@@ -183,7 +183,7 @@ describe('continueSession — project default reasoning effort', () => {
   });
 
   test('an explicit session pick wins over the project default', async () => {
-    awakeSession({ projectDefaultEffort: 'max', metadata: { opencode_model: 'kortix/deepseek-v4.1-flash' } });
+    awakeSession({ projectDefaultEffort: 'max', metadata: { opencode_model: 'deepseek/deepseek-v4-flash' } });
     expect(
       await continueSession({
         sessionId: SESSION_ID,
@@ -196,9 +196,9 @@ describe('continueSession — project default reasoning effort', () => {
   });
 
   test('a default the session model does not publish is dropped, never sent', async () => {
-    // `deepseek-v4.1-flash` publishes none/low/high/max — `medium` is not on
+    // `deepseek/deepseek-v4-flash` publishes low/high/max — `medium` is not on
     // its ladder and must not ride the prompt.
-    awakeSession({ projectDefaultEffort: 'medium', metadata: { opencode_model: 'kortix/deepseek-v4.1-flash' } });
+    awakeSession({ projectDefaultEffort: 'medium', metadata: { opencode_model: 'deepseek/deepseek-v4-flash' } });
     expect(await continueSession({ sessionId: SESSION_ID, text: 'hello', source: 'ui' })).toBe(
       'delivered',
     );
@@ -206,7 +206,7 @@ describe('continueSession — project default reasoning effort', () => {
   });
 
   test('a stored value no catalog model publishes changes nothing', async () => {
-    awakeSession({ projectDefaultEffort: 'ultra', metadata: { opencode_model: 'kortix/deepseek-v4.1-flash' } });
+    awakeSession({ projectDefaultEffort: 'ultra', metadata: { opencode_model: 'deepseek/deepseek-v4-flash' } });
     expect(await continueSession({ sessionId: SESSION_ID, text: 'hello', source: 'ui' })).toBe(
       'delivered',
     );
@@ -223,7 +223,7 @@ describe('continueSession — project default reasoning effort', () => {
 
   test('the prompt\u2019s own model override selects the model the clamp checks', async () => {
     // deepseek does not publish `medium`; the prompt's own BYOK model does.
-    awakeSession({ projectDefaultEffort: 'medium', metadata: { opencode_model: 'kortix/deepseek-v4.1-flash' } });
+    awakeSession({ projectDefaultEffort: 'medium', metadata: { opencode_model: 'deepseek/deepseek-v4-flash' } });
     expect(
       await continueSession({
         sessionId: SESSION_ID,

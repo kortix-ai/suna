@@ -154,12 +154,13 @@ describe('effortVariantForPrompt', () => {
     ).toBeUndefined();
   });
 
-  test('the real bundled catalog resolves a managed slug through its pricingRef', () => {
-    // Not a stub: the production path. `deepseek-v4.1-flash` is the platform's
-    // managed default and publishes none/low/high/max via its pricingRef.
-    expect(promptWireModel(null, 'kortix/deepseek-v4.1-flash')).toBe('deepseek-v4.1-flash');
-    expect(effortVariantForPrompt({ stored: 'max', sessionModelRef: 'kortix/deepseek-v4.1-flash' })).toBe('max');
+  test('the real bundled catalog resolves a provider-qualified model', () => {
+    // Not a stub: the production path. `deepseek/deepseek-v4-flash` publishes
+    // low/high/max in the bundled catalog. (Managed bare ids resolve through
+    // the runtime Platinum Inference lineup, which a unit test does not load.)
+    expect(promptWireModel(null, 'deepseek/deepseek-v4-flash')).toBe('deepseek/deepseek-v4-flash');
+    expect(effortVariantForPrompt({ stored: 'max', sessionModelRef: 'deepseek/deepseek-v4-flash' })).toBe('max');
     // …and an effort it does not publish is dropped, never sent.
-    expect(effortVariantForPrompt({ stored: 'medium', sessionModelRef: 'kortix/deepseek-v4.1-flash' })).toBeUndefined();
+    expect(effortVariantForPrompt({ stored: 'medium', sessionModelRef: 'deepseek/deepseek-v4-flash' })).toBeUndefined();
   });
 });
