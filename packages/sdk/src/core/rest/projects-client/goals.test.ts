@@ -153,6 +153,20 @@ describe('listProjectGoals', () => {
     expect(requested).not.toContain('/drives/d1/files?path=null/Goals');
   });
 
+  test('a goal.json with non-array lists reads as empty lists, not a crash', async () => {
+    routes['/drives'] = { status: 200, body: { drives: [{ ...drive, personalFolder: null }] } };
+    routes['/drives/d1/files?path=/Company/Goals'] = { status: 200, body: { entries: [dir('/Company/Goals/bank-close')], access: 'write' } };
+    routes['/drives/d1/files/content?path=/Company/Goals/bank-close/goal.json'] = {
+      status: 200,
+      body: { ...GOAL, status: 'verifying', items: 'x', success_criteria: { a: 1 }, sessions: 7, transitions: [null, 'x'] },
+    };
+    routes['/projects/p1/reminders'] = { status: 200, body: { reminders: [HEARTBEAT] } };
+
+    const [goal] = await listProjectGoals('p1', { now: NOW });
+    expect(goal?.goal).toMatchObject({ items: [], success_criteria: [], sessions: [], transitions: [] });
+    expect(goal?.health).toEqual({ state: 'healthy', issues: [] });
+  });
+
   test('a project without Files or without Goals folders has no goals', async () => {
     routes['/drives'] = { status: 200, body: { drives: [] } };
     expect(await listProjectGoals('p1')).toEqual([]);

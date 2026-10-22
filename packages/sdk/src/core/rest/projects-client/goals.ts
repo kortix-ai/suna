@@ -165,7 +165,16 @@ function parseGoal(text: string | null): ProjectGoalDocument | null {
   if (!text) return null;
   try {
     const value = JSON.parse(text) as ProjectGoalDocument;
-    return value && typeof value === 'object' && typeof value.objective === 'string' ? value : null;
+    if (!value || typeof value !== 'object' || typeof value.objective !== 'string') return null;
+    // A member can write any JSON here: keep only object entries of real arrays.
+    const list = <T>(v: unknown): T[] => (Array.isArray(v) ? v.filter((x) => x && typeof x === 'object') : []);
+    return {
+      ...value,
+      success_criteria: list(value.success_criteria),
+      items: list(value.items),
+      sessions: list(value.sessions),
+      transitions: list(value.transitions),
+    };
   } catch {
     return null;
   }
