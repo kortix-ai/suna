@@ -17,6 +17,7 @@ import { ZodError } from 'zod';
 import {
   projectSessions,
   projects,
+  sessionContentPurges,
   sessionLogMessages,
   sessionLogs,
   sessionLogThreads,
@@ -34,7 +35,10 @@ const bucket = fakeSessionStorage();
 const realSupabase = await import('../shared/supabase');
 mock.module('../shared/supabase', () => ({ ...realSupabase, getSupabase: () => ({ storage: bucket.storage }) }));
 
-const { backfillSessionLogs, convertMirrorOnRead, reopenSessionLogBackfill, roundTripMismatches, newBackfillState, BACKFILL_BATCH_SIZE } = await import('../projects/session-log-backfill');
+const { backfillSessionLogs, convertMirrorOnRead, roundTripMismatches, newBackfillState, BACKFILL_BATCH_SIZE } = await import('../projects/session-log-backfill');
+const { SESSION_DELETE_ROWS_DAYS } = await import('../projects/session-log-purge');
+const { restoreSession } = await import('../projects/session-lifecycle/restore-session');
+const { readStoredTranscriptWindow } = await import('../projects/session-log-read');
 const { writeSessionLogFromMirror } = await import('../projects/session-log-capture');
 const { ingestSessionLogJournal } = await import('../projects/session-log-ingest');
 const { claimSessionLog } = await import('../projects/session-log-restore');
@@ -228,14 +232,35 @@ describe('a tool call the old mirror stripped (before 2026-09-28) converts as th
   });
 });
 
+const DAY_MS = 86_400_000;
+/** Soft-delete `sessionId` as `deleteSession` stamps it, `msAgo` before now. */
+const markDeleted = (sessionId: string, msAgo: number) =>
+  db.update(projectSessions).set({ metadata: { deletedAt: new Date(Date.now() - msAgo).toISOString() } }).where(eq(projectSessions.sessionId, sessionId));
+
 describe('selection', () => {
-  test('a soft-deleted session is skipped: no log, not counted', async () => {
-    const deleted = await oldSession([plain(0), plain(1)]);
-    await db.update(projectSessions).set({ metadata: { deletedAt: new Date().toISOString() } }).where(eq(projectSessions.sessionId, deleted));
-    const [tick] = await pass('write');
-    expect(tick!.counts.sessions).toBe(0);
-    expect(await hasLog(deleted)).toBe(false);
-    await db.delete(projectSessions).where(eq(projectSessions.sessionId, deleted));
+  test('a deleted session inside the restore window converts (counted deleted); past the window, or purged, it is not selected', async () => {
+    const window = SESSION_DELETE_ROWS_DAYS * DAY_MS;
+    const recent = await oldSession([plain(0), plain(1)]);
+    await markDeleted(recent, DAY_MS);
+    // One minute on either side of the purge's due time: the SQL window is the purge's 30 days.
+    const lastMinute = await oldSession([plain(0), plain(1)]);
+    await markDeleted(lastMinute, window - 60_000);
+    const expired = await oldSession([plain(0), plain(1)]);
+    await markDeleted(expired, window + 60_000);
+    const purged = await oldSession([plain(0), plain(1)]);
+    await markDeleted(purged, DAY_MS);
+    await db.insert(sessionContentPurges).values({ sessionId: purged, projectId: project.project_id, accountId: project.account_id, reason: 'session_deleted', rowsPurgedAt: new Date() });
+    const live = await oldSession([plain(0), plain(1)]);
+    const info = spyOn(logger, 'info');
+    const ticks = await pass('write');
+    const infoLines = info.mock.calls.map((c) => [...c]);
+    info.mockRestore();
+    expect({ sessions: total(ticks, 'sessions'), deleted: total(ticks, 'deleted'), logs: total(ticks, 'logs') }).toEqual({ sessions: 3, deleted: 2, logs: 3 });
+    expect({ recent: await hasLog(recent), lastMinute: await hasLog(lastMinute), expired: await hasLog(expired), purged: await hasLog(purged), live: await hasLog(live) })
+      .toEqual({ recent: true, lastMinute: true, expired: false, purged: false, live: true });
+    // The pass summary carries the count: what an operator reads in the logs.
+    expect(infoLines.find((c) => c[0] === '[session-log] backfill pass complete')?.[1]).toMatchObject({ mode: 'write', sessions: 3, deleted: 2, logs: 3 });
+    for (const id of [recent, lastMinute, expired, purged, live]) await db.delete(projectSessions).where(eq(projectSessions.sessionId, id));
   });
 
   test('a session with a journal is not selected; its rows stay the journal rows', async () => {
@@ -610,6 +635,7 @@ describe('dry: converts in memory, writes nothing, reports the counts', () => {
       expect(summary).toEqual({
         mode: 'dry',
         sessions: 2,
+        deleted: 0,
         logs: 2,
         skipped: 0,
         failed: 0,
@@ -753,28 +779,39 @@ async function withMirrorHidden<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 describe('drained (P8.2): once a pass selects nothing, the mirror is never read again', () => {
-  test('a write pass that selects nothing sets drained; a later tick reads no mirror table and converts nothing; a reopen clears it', async () => {
-    const [empty] = await pass('write');
-    expect(empty!.counts.sessions).toBe(0);
-    expect((await stateRow())!.state.drained).toBe(true);
-
-    // Nothing writes the mirror after P8.2; a restored deleted session is the one way a mirror-only session reappears.
-    const late = await oldSession([plain(0), plain(1)]);
-    await withMirrorHidden(async () => {
-      expect(await pass('write')).toEqual([{ more: false, counts: expect.objectContaining({ sessions: 0 }) }]);
-      expect(await pass('dry')).toEqual([{ more: false, counts: expect.objectContaining({ sessions: 0 }) }]);
-    });
-    expect(await hasLog(late)).toBe(false);
-
-    await reopenSessionLogBackfill();
-    expect((await stateRow())!.state.drained).toBe(false);
+  test('a restorable deleted mirror-only session keeps the backfill undrained until it converts; then no tick reads a mirror table, and its restore reads the history from the log', async () => {
+    const deleted = await oldSession([plain(0), plain(1), plain(2), plain(3)]);
+    await markDeleted(deleted, DAY_MS);
+    const failing: typeof writeSessionLogFromMirror = async () => ({ outcome: 'failed' });
+    // Its conversion fails twice: each pass selected it, so neither drains.
+    for (let i = 0; i < 2; i++) {
+      const ticks = await pass('write', { convert: failing });
+      expect({ sessions: total(ticks, 'sessions'), deleted: total(ticks, 'deleted'), failed: total(ticks, 'failed') }).toEqual({ sessions: 1, deleted: 1, failed: 1 });
+      expect((await stateRow())!.state.drainedWithDeleted).toBe(false);
+    }
     const ticks = await pass('write');
-    expect(total(ticks, 'logs')).toBe(1);
-    expect(await hasLog(late)).toBe(true);
+    expect({ deleted: total(ticks, 'deleted'), logs: total(ticks, 'logs') }).toEqual({ deleted: 1, logs: 1 });
     // The pass found work, so it is not drained; the next one finds none and is.
-    expect((await stateRow())!.state.drained).toBe(false);
-    await pass('write');
-    expect((await stateRow())!.state.drained).toBe(true);
+    expect((await stateRow())!.state.drainedWithDeleted).toBe(false);
+    expect(total(await pass('write'), 'sessions')).toBe(0);
+    expect((await stateRow())!.state.drainedWithDeleted).toBe(true);
+
+    const warn = spyOn(logger, 'warn');
+    try {
+      await withMirrorHidden(async () => {
+        expect(await pass('write')).toEqual([{ more: false, counts: expect.objectContaining({ sessions: 0 }) }]);
+        expect(await pass('dry')).toEqual([{ more: false, counts: expect.objectContaining({ sessions: 0 }) }]);
+        // Release B: both v1 tables gone, the restore still brings the history back.
+        expect(await restoreSession({ projectId: project.project_id, sessionId: deleted, accountId: project.account_id })).toEqual({ ok: true });
+        const window = await readStoredTranscriptWindow({ sessionId: deleted, limit: 50 });
+        expect(window?.messages.map((m) => m.info.id)).toEqual(['msg_000000', 'msg_000001', 'msg_000002', 'msg_000003']);
+      });
+      // A read of a hidden table would fail inside the converter, which logs it.
+      expect(warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('capture write failed'))).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
+    await db.delete(projectSessions).where(eq(projectSessions.sessionId, deleted));
   });
 
   test('a read of a session without a log converts its mirror while not drained, and touches no mirror table once drained', async () => {
@@ -786,7 +823,7 @@ describe('drained (P8.2): once a pass selects nothing, the mirror is never read 
     await db.delete(sessionTranscriptMirrors).where(eq(sessionTranscriptMirrors.sessionId, old));
 
     await pass('write');
-    expect((await stateRow())!.state.drained).toBe(true);
+    expect((await stateRow())!.state.drainedWithDeleted).toBe(true);
     const fresh = await seedSession(project, OWNER);
     // Not drained, the conversion reads the mirror (and fails without it); drained, it never does.
     const warn = spyOn(logger, 'warn');
