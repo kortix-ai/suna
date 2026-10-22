@@ -81,7 +81,6 @@ export function ExclusionsEditor({
     onChange({ kind, id: addable, on: true });
     setQuery('');
   };
-  const setBy = t('setByOrg', { org });
   const known = (id: string): id is CaptureExclusionGroup =>
     (CAPTURE_EXCLUSION_GROUPS as readonly string[]).includes(id);
   const searchLabel = apps ? t('searchOrAddApp') : t('searchWebsites');
@@ -133,12 +132,11 @@ export function ExclusionsEditor({
                 key={group.id}
                 icon={GROUP_ICONS[group.id] ?? ShieldCheckIcon}
                 title={known(group.id) ? tGroup(group.id) : group.name}
-                description={[group.locked ? setBy : '', summary].filter(Boolean).join(' · ')}
+                description={summary}
                 members={apps ? memberApps(group.members.apps) : group.members.domains}
                 showLabel={t('showList')}
                 hideLabel={t('hideList')}
                 checked={group.enabled}
-                locked={group.locked}
                 onChange={(on) => onChange({ kind: 'group', id: group.id, on })}
               />
             );
@@ -147,9 +145,8 @@ export function ExclusionsEditor({
             <ExclusionItem
               leading={<Tile icon={EyeSlashIcon} />}
               title={t('privateBrowsing')}
-              description={view.privateBrowsing.locked ? setBy : t('privateBrowsingDescription')}
+              description={t('privateBrowsingDescription')}
               checked={view.privateBrowsing.excluded}
-              locked={view.privateBrowsing.locked}
               onChange={(on) => onChange({ kind: 'private-browsing', on })}
             />
           ) : null}
@@ -180,7 +177,6 @@ export function ExclusionsEditor({
         empty={query.trim() ? t('noMatch') : t(apps ? 'noExcludedApps' : 'noExcludedSites')}
         rows={lists.excluded}
         apps={apps}
-        setBy={setBy}
         onChange={(id, on) => onChange({ kind, id, on })}
       />
     </div>
@@ -202,7 +198,6 @@ function CategoryItem({
   showLabel,
   hideLabel,
   checked,
-  locked,
   onChange,
 }: {
   icon: Icon;
@@ -212,7 +207,6 @@ function CategoryItem({
   showLabel: string;
   hideLabel: string;
   checked: boolean;
-  locked: boolean;
   onChange: (on: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -237,7 +231,6 @@ function CategoryItem({
           </span>
         }
         checked={checked}
-        locked={locked}
         onChange={onChange}
       />
       {open ? (
@@ -269,19 +262,17 @@ function ExclusionList({
   empty,
   rows,
   apps,
-  setBy,
   onChange,
 }: {
   title: string;
   empty: string;
   rows: ExclusionRow[];
   apps: boolean;
-  setBy: string;
   onChange: (id: string, on: boolean) => void;
 }) {
   const shown = apps
     ? namedAppRows(rows)
-    : rows.map((row) => ({ ids: [row.id], name: row.name, detail: '', locked: row.locked }));
+    : rows.map((row) => ({ ids: [row.id], name: row.name, detail: '' }));
   return (
     <RowSection title={title}>
       {shown.length === 0 ? (
@@ -292,9 +283,8 @@ function ExclusionList({
             key={row.ids.join(' ')}
             leading={<Tile icon={apps ? AppWindowIcon : GlobeIcon} />}
             title={row.name}
-            description={row.locked && setBy ? setBy : row.detail || undefined}
+            description={row.detail || undefined}
             checked
-            locked={row.locked}
             onChange={(on) => row.ids.forEach((id) => onChange(id, on))}
           />
         ))
@@ -341,14 +331,12 @@ function ExclusionItem({
   title,
   description,
   checked,
-  locked,
   onChange,
 }: {
   leading: ReactNode;
   title: string;
   description?: ReactNode;
   checked: boolean;
-  locked: boolean;
   onChange: (on: boolean) => void;
 }) {
   return (
@@ -362,7 +350,6 @@ function ExclusionItem({
       </div>
       <Checkbox
         checked={checked}
-        disabled={locked}
         onCheckedChange={(value) => onChange(value === true)}
         aria-label={title}
       />
@@ -461,7 +448,6 @@ export function IncludedEditor({
         empty={t(apps ? 'noApps' : 'noSites')}
         rows={list}
         apps={apps}
-        setBy=""
         onChange={(id, on) => onChange({ kind: apps ? 'include-app' : 'include-domain', id, on })}
       />
     </div>

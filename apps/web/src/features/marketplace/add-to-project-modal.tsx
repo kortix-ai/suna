@@ -35,7 +35,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@kortix/ui/select';
-import { errorToast } from '@kortix/ui/toast';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import {
   GitHubSetupRequiredPanel,
   isAccountGitAdmin,
@@ -134,6 +134,39 @@ export function AddToProjectModal({
     onOpenChange(next);
   };
 
+  // The install session runs in the cloud on its own (the sandbox claims its
+  // initial prompt at boot), so the person stays on the page they were reading.
+  // The toast offers the session; the turn-done toast reports the result.
+  const announceInstall = (
+    projectId: string,
+    projectName: string,
+    sessionId: string | null | undefined,
+  ) => {
+    const sessionHref = prepareMarketplaceInstallSessionNavigation(
+      queryClient,
+      router,
+      projectId,
+      sessionId,
+    );
+    onOpenChange(false);
+    successToast(
+      tI18nComplete('text724b09397472', { name: humanizedTitle, project: projectName }),
+      {
+        description: tI18nComplete.raw('text1e007c47254d'),
+        duration: 8000,
+        actions: [
+          {
+            label: tI18nComplete.raw(sessionHref ? 'textb205bb47f81a' : 'texted077f3d8125'),
+            onClick: () => {
+              closeCustomize();
+              router.push(sessionHref ?? `/projects/${projectId}`);
+            },
+          },
+        ],
+      },
+    );
+  };
+
   const onConfirm = async () => {
     if (busy) return;
     setBusy(true);
@@ -169,29 +202,17 @@ export function AddToProjectModal({
             )
           : (await installSession.mutateAsync({ projectId: project.project_id, id: item.id }))
               .session_id;
-        const sessionHref = prepareMarketplaceInstallSessionNavigation(
-          queryClient,
-          router,
-          project.project_id,
-          sessionId,
-        );
-        onOpenChange(false);
-        closeCustomize();
-        router.replace(sessionHref ?? `/projects/${project.project_id}`);
+        announceInstall(project.project_id, project.name, sessionId);
         return;
       }
 
       const projectId = target;
       const { session_id } = await installSession.mutateAsync({ projectId, id: item.id });
-      const sessionHref = prepareMarketplaceInstallSessionNavigation(
-        queryClient,
-        router,
+      announceInstall(
         projectId,
+        projects.find((p) => p.project_id === projectId)?.name ?? '',
         session_id,
       );
-      onOpenChange(false);
-      closeCustomize();
-      router.push(sessionHref ?? `/projects/${projectId}`);
     } catch (e) {
       if (isManagedGitUnavailableError(e)) {
         const gitSettingsAccountId =

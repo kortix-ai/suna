@@ -45,7 +45,7 @@ changed="$(git diff --name-only HEAD^ HEAD 2>/dev/null)" || exit 1
 # path matches, skip on any branch. Sibling apps are safe because apps/web imports
 # nothing from them (only packages/@kortix/*). Never add packages/ or root config
 # here — those (and any UNKNOWN new top-level path) must fall through to a build.
-SAFE='^(infra/|tests/|docs/|apps/(api|cli|desktop-electron|kortix-sandbox-agent-server|llm-gateway|mobile|sandbox|whitelabel-demo)/)'
+SAFE='^(infra/|tests/|docs/|apps/(api|cli|desktop-electron|kortix-sandbox-agent-server|llm-gateway|mobile|sandbox|white-label)/)'
 if ! printf '%s\n' "$changed" | grep -qvE "$SAFE"; then
   echo "vercel-ignore: only non-FE paths (other apps / infra / tests / docs) changed since HEAD^ — skipping build."
   exit 0

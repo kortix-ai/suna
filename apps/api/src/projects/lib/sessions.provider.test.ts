@@ -56,6 +56,12 @@ describe('resolveSessionProvider (per-project provider override)', () => {
     ).toEqual({ fallback: true });
   });
 
+  test('a Daytona pin is ignored even while Daytona is enabled → fallback, so the project runs on Platinum', () => {
+    expect(
+      resolveSessionProvider({ requested: null, projectPin: 'daytona', allowed: ALLOWED, isEnabled: bothEnabled }),
+    ).toEqual({ fallback: true });
+  });
+
   test('no request + no pin → fallback (weighted balancer runs)', () => {
     expect(
       resolveSessionProvider({ requested: null, projectPin: null, allowed: ALLOWED, isEnabled: bothEnabled }),

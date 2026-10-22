@@ -41,9 +41,16 @@ export function composerModelList(modelPicker: ProjectLlmCatalogResponse | undef
   return flattenModels(pickerProviderList({ modelPicker }));
 }
 
-/** Models the project offers (`enabled !== false`): zero means "Connect model" (KRTX-251). */
+/** Models the project offers and the caller can run (`enabled`, `available`):
+ *  zero means "Connect model" (KRTX-251, KRTX-3011). */
 export function offeredModelCount(models: FlatModel[]): number {
-  return models.filter((m) => m.enabled !== false).length;
+  return models.filter(isRunnable).length;
+}
+
+/** `/model-picker` marks a model a default names, whose provider is not
+ *  connected, `available: false`: the gateway would refuse it (KRTX-3011). */
+function isRunnable(model: FlatModel): boolean {
+  return model.enabled !== false && model.available !== false;
 }
 
 /**
@@ -164,7 +171,7 @@ export function modelPickerOptions(
 ): PickerOption[] {
   const isStoreVisible = createModelVisibility({ catalogModels: models });
   return models
-    .filter((model) => model.enabled !== false)
+    .filter(isRunnable)
     .map((model) => {
       const groupID = pickerGroupId(model);
       return { model, groupID, group: pickerGroupLabel(groupID, model), label: pickerModelName(model) };

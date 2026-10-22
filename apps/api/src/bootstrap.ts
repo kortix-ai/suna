@@ -33,6 +33,7 @@ import { startBillingRotation, stopBillingRotation } from './workers/billing-rot
 import { startEventLoopLagSampler, stopEventLoopLagSampler } from './workers/event-loop-lag-worker';
 import { startGatewaySpendBackfillWorker, stopGatewaySpendBackfillWorker } from './workers/gateway-spend-backfill-worker';
 import { startJobWorker, stopJobWorker } from './workers/job-queue-worker';
+import { startManagedLineupRefresh, stopManagedLineupRefresh } from './workers/managed-lineup-worker';
 import { startNotificationWorker, stopNotificationWorker } from './workers/notification-worker';
 import { startProjectMaintenance, stopProjectMaintenance } from './workers/project-maintenance-worker';
 import { startProjectSnapshotWorker, stopProjectSnapshotWorker } from './workers/project-snapshot-worker';
@@ -140,6 +141,7 @@ async function startReplicaServices() {
   warnIfPreviewOriginsMissing(appLogger);
   startEventLoopLagSampler();
   startAccessControlCache();
+  startManagedLineupRefresh();
   startTunnelService();
   // Warm the runtime-settings cache BEFORE serving traffic so the admin-panel
   // toggles (warm_snapshot / provider_fallback) are honored from
@@ -417,6 +419,7 @@ async function runShutdown(signal: string): Promise<void> {
   runtimeModelCatalog.stop();
   stopTunnelService();
   stopAccessControlCache();
+  stopManagedLineupRefresh();
   stopTmpReaper();
   stopJobWorker();
   stopTriggerEventPollWorker();

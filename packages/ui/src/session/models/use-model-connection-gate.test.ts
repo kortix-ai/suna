@@ -14,6 +14,7 @@ const selectorSource = readFileSync(join(import.meta.dir, 'model-selector.tsx'),
 // what happened here.
 const chatInputSource = readFileSync(join(import.meta.dir, '..', 'composer', 'composer.tsx'), 'utf8');
 const chatGateSource = readFileSync(join(import.meta.dir, 'model-connection-gate.tsx'), 'utf8');
+const availabilitySource = readFileSync(join(import.meta.dir, 'model-availability.ts'), 'utf8');
 
 describe('model management entry-point routing', () => {
   test('maps each precise action to the matching project modal tab', () => {
@@ -31,7 +32,9 @@ describe('model management entry-point routing', () => {
   });
 
   test('routes each model-selector management action through the modal gate', () => {
-    expect(selectorSource.match(/handleOpenProviderModal\('providers'\)/g)).toHaveLength(2);
+    // Two management actions, plus selecting a model whose provider is not
+    // connected (KRTX-3011): it opens the connection instead of choosing it.
+    expect(selectorSource.match(/handleOpenProviderModal\('providers'\)/g)).toHaveLength(3);
     expect(selectorSource.match(/handleOpenProviderModal\('models'\)/g)).toHaveLength(1);
     expect(selectorSource).toContain("aria-label={tModel('addProvider')}");
     expect(selectorSource).toContain("aria-label={tModel('manageModels')}");
@@ -46,7 +49,9 @@ describe('model management entry-point routing', () => {
   // `tier_key` free-tier rule contradicted the server's
   // `KORTIX_BILLING_INTERNAL_ENABLED ? … : false` and killed every selection.
   test('reads server-resolved enablement instead of re-deriving entitlement', () => {
-    expect(gateSource).toContain('model.enabled !== false');
+    // `isRunnableModel` reads the server's `enabled` and `available` flags.
+    expect(gateSource).toContain('isRunnableModel(model)');
+    expect(availabilitySource).toContain('model.enabled !== false && model.available !== false');
     expect(gateSource).toContain('return isModelOffered(model)');
     const imports = gateSource.slice(0, gateSource.indexOf('export function'));
     expect(imports).not.toContain('hasUsableModel');

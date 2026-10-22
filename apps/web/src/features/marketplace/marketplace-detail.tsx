@@ -52,6 +52,7 @@ import {
   totalCapabilityCount,
 } from './marketplace-item-view';
 import { TypeTile, typeMeta } from './marketplace-meta';
+import { useMarketplaceListHref } from './marketplace-return';
 import { MarketplaceShell } from './marketplace-shell';
 import { useMarketplaceSurface } from './marketplace-surface';
 
@@ -562,6 +563,8 @@ export function MarketplaceDetail({
   nav?: DetailNav;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  // Back returns to the list as the person left it (`?source=`, `?q=`).
+  const listHref = useMarketplaceListHref();
   const onPrev = nav?.onPrev;
   const onNext = nav?.onNext;
   // ← / → step through the surrounding item list (ignored while typing).
@@ -712,7 +715,7 @@ export function MarketplaceDetail({
         { label: itemTitle },
       ]
     : [
-        { label: tI18nComplete.raw('textc608981d8d68'), href: '/marketplace' },
+        { label: tI18nComplete.raw('textc608981d8d68'), href: listHref },
         { label: companyLabel, href: marketplaceSourceHref(data.marketplaceId) },
         ...(projectCrumb ? [projectCrumb] : []),
         { label: itemTitle },
@@ -903,7 +906,7 @@ export function MarketplaceDetail({
         <div className="space-y-10">
           <header className="space-y-6">
             <Link
-              href="/marketplace"
+              href={listHref}
               className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm transition-colors duration-(--duration-normal)"
             >
               <ArrowLeft className="size-4" aria-hidden />

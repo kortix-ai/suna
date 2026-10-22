@@ -53,6 +53,10 @@ resolve to `credits`). Stripe owns it. `tier='enterprise'` no longer exists.
 Compute is billed at Platinum's list rates at 1× on every plan
 (`platform/providers/compute-rates.ts`).
 
+Members are unlimited and share the account credit pool. The Plan and account
+hub billing panes show the existing account member count alongside an unlimited
+allowance; there is no paid-seat denominator.
+
 ## Wallet warning
 
 The sidebar warns while an account can run when its USD wallet falls below
@@ -176,6 +180,14 @@ Every timestamp is ISO 8601. `plan` is the billing plan.
 is absent from the current Stripe account. It leaves the local plan, credits,
 and subscription mapping unchanged. A missing remote object does not prove
 that the account lost its paid entitlement. Transient Stripe failures propagate.
+
+### Credit reset visibility
+
+Account state exposes `credits.expires_at`, the scheduled `next_credit_grant`
+reset timestamp, or null for an unknown legacy schedule. Balance cards show
+that date beside remaining plan credits. The ledger shows each grant's own
+`expires_at` when recorded, never a current account schedule substituted for
+a historical grant. New free welcome grants record their scheduled reset date.
 
 ## Wallet admission and model access
 

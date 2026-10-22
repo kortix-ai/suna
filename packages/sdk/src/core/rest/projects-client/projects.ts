@@ -336,9 +336,12 @@ export interface GatewayCatalogModel {
 
 export interface ProjectLlmCatalogResponse {
   models: Record<string, GatewayCatalogModel>;
-  /** Kortix's platform fee on managed model usage, in percent of the base prices below. */
+  /** Kortix's platform fee on managed model usage, in percent of each model's `cost`. */
   platformFeePercent?: number;
-  /** Base provider USD per million tokens, before `platformFeePercent`. */
+  /**
+   * @deprecated The API no longer sends this. Kortix Platinum inference serves every
+   * managed model at one price, which is the model's `cost`. Removed in the next major.
+   */
   managedPricingRoutes?: Record<string, Array<{
     route: string;
     role: 'preferred' | 'eligible';

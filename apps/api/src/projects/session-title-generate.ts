@@ -1,5 +1,6 @@
 import { and, eq, or, sql } from 'drizzle-orm';
 
+import { platformDefaultModelId } from '../llm-gateway/models/served-managed-models';
 import { projectSessions } from '@kortix/db';
 import { splitPastedContent } from '@kortix/shared';
 import { config } from '../config';
@@ -310,10 +311,7 @@ function storedTitleSource(row: ProjectSessionRow): string | null {
 
 /** The platform default, in gateway wire form. */
 function platformDefaultModel(): string | null {
-  const ref =
-    typeof config.LLM_GATEWAY_DEFAULT_MODEL === 'string'
-      ? config.LLM_GATEWAY_DEFAULT_MODEL.trim()
-      : '';
+  const ref = platformDefaultModelId();
   return ref ? toWireModel(ref) : null;
 }
 

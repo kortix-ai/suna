@@ -1,0 +1,17 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`connectors Section and Eyebrow preserve markup (undefined) 1`] = `"<section id="synthetic" class="mx-auto max-w-7xl px-6 py-24 sm:py-30">Body</section>"`;
+
+exports[`connectors Section and Eyebrow preserve markup (undefined) 2`] = `"<span class="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">Label</span>"`;
+
+exports[`connectors Section and Eyebrow preserve markup (py-8 synthetic) 1`] = `"<section id="synthetic" class="mx-auto max-w-7xl px-6 sm:py-30 py-8 synthetic">Body</section>"`;
+
+exports[`connectors Section and Eyebrow preserve markup (py-8 synthetic) 2`] = `"<span class="text-muted-foreground font-mono text-[10px] tracking-widest uppercase py-8 synthetic">Label</span>"`;
+
+exports[`solutions Section and Eyebrow preserve markup (undefined) 1`] = `"<section id="synthetic" class="mx-auto max-w-7xl px-6 py-24 sm:py-30">Body</section>"`;
+
+exports[`solutions Section and Eyebrow preserve markup (undefined) 2`] = `"<span class="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">Label</span>"`;
+
+exports[`solutions Section and Eyebrow preserve markup (py-8 synthetic) 1`] = `"<section id="synthetic" class="mx-auto max-w-7xl px-6 sm:py-30 py-8 synthetic">Body</section>"`;
+
+exports[`solutions Section and Eyebrow preserve markup (py-8 synthetic) 2`] = `"<span class="text-muted-foreground font-mono text-[10px] tracking-widest uppercase py-8 synthetic">Label</span>"`;

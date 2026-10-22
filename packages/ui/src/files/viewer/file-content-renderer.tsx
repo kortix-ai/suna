@@ -144,6 +144,9 @@ export interface FileContentRendererProps {
   /** PDF only: start the zoom plugin at fit-to-page instead of the numeric
    *  default. No effect on any other file category. */
   fitOnOpen?: boolean;
+  /** PDF only: search for this text once the file opens. Hits are highlighted and
+   *  the first one is scrolled into view (a citation's quote, for example). */
+  findText?: string;
   /** Additional class name for the code editor */
   codeEditorEditorClassName?: string;
   /** Bumped by the surface's Refresh control. Remounts the renderers that read
@@ -167,6 +170,7 @@ export function FileContentRenderer({
   onStatusChange,
   imageControls,
   fitOnOpen = false,
+  findText,
   codeEditorEditorClassName,
   reloadKey = 0,
 }: FileContentRendererProps) {
@@ -349,6 +353,7 @@ export function FileContentRenderer({
                 fileName={fileName}
                 className="h-full"
                 fitOnOpen={fitOnOpen}
+                findText={findText}
                 showDownload={false}
               />
             </Suspense>

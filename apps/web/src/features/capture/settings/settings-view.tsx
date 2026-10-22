@@ -365,6 +365,19 @@ function PolicyForm({
 
       <Group title={t('retentionTitle')}>
         <NumberRow
+          id="capture-local-hours"
+          title={t('localHours')}
+          description={t('localHoursHint')}
+          unit={t('hours')}
+          value={draft.retention.local_hours}
+          max={CAPTURE_RETENTION_LIMITS.localHours}
+          onChange={(value) =>
+            patch('retention', {
+              local_hours: whole(value, CAPTURE_RETENTION_LIMITS.localHours),
+            })
+          }
+        />
+        <NumberRow
           id="capture-remote-days"
           title={t('remoteDays')}
           description={t('remoteDaysHint')}

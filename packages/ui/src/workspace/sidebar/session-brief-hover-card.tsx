@@ -6,7 +6,10 @@ import {
   type SessionDisplayStatus,
   type SessionSource,
 } from '../../session/actions/session-label';
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '../../primitives/hover-card';
+import { FLOATING_PANEL_SURFACE } from '../../primitives/menu-recipe';
+import { usePortalContainer } from '../../lib/portal-container';
+import { cn } from '../../lib/utils';
+import { floatingZ, useDialogDepth } from '../../lib/z-stack';
 import { LocalTime } from '../../primitives/local-time';
 import { menuRow } from '../../primitives/menu-recipe';
 import { CR_ID_PREFIX } from '../review/review-actions';
@@ -14,13 +17,15 @@ import { reviewHref } from '../../internal/lib/capability-tab-routes';
 import { useTranslations } from '../../i18n';
 import { useSessionHoverStore } from '../../internal/stores/session-hover-store';
 import type { ChangeRequest, ChangeRequestStatus } from '@kortix/sdk';
-import { GitDiffIcon } from '@phosphor-icons/react';
+import { ArrowsSplitIcon, GitDiffIcon, RobotIcon } from '@phosphor-icons/react';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { useEffect, type ReactElement } from 'react';
+import { Slot } from 'radix-ui';
+import { useEffect, useLayoutEffect, useRef, type ReactElement, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { shortRelative } from '../../session/actions/project-session-list-helpers';
 import { SessionLabelBadges } from '../sessions/session-label-badges';
 import { SOURCE_ICONS } from './session-source-icons';
-import { SessionStatusMark } from './session-status-mark';
+import { isReviewOverdue, SessionStatusMark } from './session-status-mark';
 
 const DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
   year: 'numeric',
@@ -60,14 +65,22 @@ interface SessionBrief {
   changeRequests: readonly ChangeRequest[];
   /** The session's free-form labels; the sidebar row has no room for them. */
   labels?: readonly string[];
+  /** `needs-you` only: what the session waits on, see `SessionStatusMark`. */
+  waitingOn?: 'answer' | 'review';
+  /** The session was spawned by another one and is drawn under it. */
+  spawned?: boolean;
+  /** What this session started: its sub-agents and the sessions it spawned. */
+  subagentCount?: number;
+  spawnedCount?: number;
 }
 
 interface SessionBriefInteractionProps {
   projectId: string;
 }
 
-function useStatusLabel(status: SessionDisplayStatus): string {
+function useStatusLabel(status: SessionDisplayStatus, waitingOn?: 'answer' | 'review'): string {
   const t = useTranslations('sidebar.sessionList.status');
+  if (status === 'needs-you' && waitingOn === 'answer') return t('needsInput');
   return t(SESSION_STATUS_TRANSLATION_KEY[status]);
 }
 
@@ -154,23 +167,54 @@ function SessionBriefContent({
   source,
   changeRequests,
   labels,
+  waitingOn,
+  spawned = false,
+  subagentCount = 0,
+  spawnedCount = 0,
   projectId,
   onDismiss,
 }: SessionBrief & SessionBriefInteractionProps & { onDismiss: () => void }) {
   const SourceIcon = source.kind === 'chat' ? null : SOURCE_ICONS[source.kind];
+  const statusLabel = useStatusLabel(status, waitingOn);
+  const t = useTranslations('sidebar.sessionList.brief');
 
   return (
     <>
       <div className="space-y-1.5 px-3.5 py-2.5">
         <div className="flex items-center gap-3">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <p className="text-foreground truncate text-sm font-medium">{title}</p>
-            <span className="shrink-0">
-              <SessionStatusMark status={status} />
-            </span>
-          </div>
+          <p className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">{title}</p>
           <RelativeCreatedTime createdAt={createdAt} />
         </div>
+
+        <div className="text-muted-foreground flex items-center gap-2 text-xs">
+          <SessionStatusMark
+            status={status}
+            waitingOn={waitingOn}
+            overdue={isReviewOverdue(changeRequests)}
+          />
+          <span>{statusLabel}</span>
+        </div>
+
+        {spawned && (
+          <div className="text-muted-foreground flex items-center gap-2 text-xs">
+            <ArrowsSplitIcon aria-hidden className="size-4 shrink-0" />
+            <span>{t('spawned')}</span>
+          </div>
+        )}
+
+        {subagentCount > 0 && (
+          <div className="text-muted-foreground flex items-center gap-2 text-xs">
+            <RobotIcon aria-hidden className="size-4 shrink-0" />
+            <span>{t('subAgentCount', { count: subagentCount })}</span>
+          </div>
+        )}
+
+        {spawnedCount > 0 && (
+          <div className="text-muted-foreground flex items-center gap-2 text-xs">
+            <ArrowsSplitIcon aria-hidden className="size-4 shrink-0" />
+            <span>{t('spawnedCount', { count: spawnedCount })}</span>
+          </div>
+        )}
 
         {SourceIcon ? (
           <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-xs">
@@ -204,36 +248,111 @@ function SessionBriefContent({
   );
 }
 
+const CARD_EDGE_PX = 8;
+
 /**
- * Radix HoverCard strips every tab stop inside its content — `getTabbableNodes`
- * runs on each render and sets `tabindex="-1"` — because a hover card is a
- * preview surface, not a menu. Pointer clicks and `cmd`-clicks on the change
- * rows still work; the keyboard route to the same changes is the footer's
- * Review pill, which is a Popover and therefore fully tabbable. Do not try to
- * restore focusability here: the effect has no dependency array and will
- * overwrite whatever you set on the next commit.
+ * The one card for the whole session list. Rows do not own a card: the active
+ * row renders its brief into this host's slot (`SessionBriefCard`), and the
+ * host lines up with that row. Moving to the next row therefore moves the same
+ * card, with a 150ms glide, instead of unmounting one card and mounting another
+ * at a new place. Radix HoverCard cannot do this: it exports no `Anchor`, so a
+ * single instance cannot follow the pointer between triggers.
  *
- * Timing and exclusivity belong to `useSessionHoverStore`, not to this instance,
- * because both are properties of the LIST: only one card may be open at a time,
- * and the second row the pointer visits must not pay the opening delay again.
- * Radix's own delays are zeroed and its `onOpenChange` left unwired — with
- * `closeDelay={0}` it would report a close the instant the pointer left the row,
- * cancelling the window in which the pointer travels into the card. The store is
- * the only thing that decides whether this card is showing.
+ * The first open fades in over 100ms and does not move: the card opens to the
+ * right, into the path the pointer is already taking. The glide is only for a
+ * move between rows, never for keyboard focus or reduced motion.
  *
- * `animated={false}` for the reason submenus opt out of their enter animation:
- * the card opens to the right, into the path the pointer is already taking, so
- * an enter animation is time spent moving content away from the hand.
+ * The left padding is the gap between row and card. It is part of the card's
+ * box, so the pointer never leaves on its way in and the card needs no close
+ * grace for the crossing beyond the store's own.
+ *
+ * Mount it once, client-side only, where hover cards can show at all.
  */
-export function SessionBriefHoverCard({
-  sessionId,
-  children,
-  ...brief
-}: SessionBrief & SessionBriefInteractionProps & { sessionId: string; children: ReactElement }) {
-  const open = useSessionHoverStore((state) => state.activeSessionId === sessionId);
+export function SessionBriefCardHost() {
+  const activeSessionId = useSessionHoverStore((state) => state.activeSessionId);
+  const anchor = useSessionHoverStore((state) => state.anchor);
+  const via = useSessionHoverStore((state) => state.via);
+  const setSlot = useSessionHoverStore((state) => state.setSlot);
   const openSession = useSessionHoverStore((state) => state.openSession);
   const closeSession = useSessionHoverStore((state) => state.closeSession);
   const dismiss = useSessionHoverStore((state) => state.dismiss);
+  const container = usePortalContainer();
+  const depth = useDialogDepth();
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const shown = useRef(false);
+  const visible = !!activeSessionId && !!anchor;
+
+  // Before paint: line up with the row, kept inside the viewport.
+  useLayoutEffect(() => {
+    const el = wrapperRef.current;
+    if (!el || !visible || !anchor) {
+      shown.current = false;
+      return;
+    }
+    const rect = anchor.getBoundingClientRect();
+    const top = Math.max(CARD_EDGE_PX, Math.min(rect.top, window.innerHeight - CARD_EDGE_PX - el.offsetHeight));
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // A move between rows glides; the first open fades in, as the reminders card does.
+    el.style.transition =
+      shown.current && via === 'pointer' && !reduce
+        ? 'transform var(--duration-normal) var(--ease-in-out)'
+        : 'opacity var(--duration-fast) var(--ease-out)';
+    el.style.transform = `translate(${rect.right}px, ${top}px)`;
+    shown.current = true;
+  }, [visible, activeSessionId, anchor, via]);
+
+  // WCAG 1.4.13: dismissible without moving the pointer. A scroll moves the
+  // row away from the card, so it closes too, unless it scrolls the card itself.
+  useEffect(() => {
+    if (!visible) return;
+    const onKey = (event: KeyboardEvent) => event.key === 'Escape' && dismiss();
+    const onScroll = (event: Event) => {
+      if (!wrapperRef.current?.contains(event.target as Node)) dismiss();
+    };
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', dismiss);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', dismiss);
+    };
+  }, [visible, dismiss]);
+
+  return createPortal(
+    <div
+      ref={wrapperRef}
+      data-slot="session-brief-card"
+      className={cn('fixed top-0 left-0 pl-3.5 starting:opacity-0', !visible && 'hidden')}
+      style={{ zIndex: floatingZ(depth) }}
+      onPointerEnter={() => activeSessionId && openSession(activeSessionId)}
+      onPointerLeave={() => activeSessionId && closeSession(activeSessionId)}
+    >
+      <div ref={setSlot} className={cn(FLOATING_PANEL_SURFACE, 'w-72 overflow-hidden rounded-md shadow-xs')} />
+    </div>,
+    container ?? document.body,
+  );
+}
+
+/**
+ * A row's trigger plus its brief, rendered into the shared card while the row
+ * is active. Timing and exclusivity belong to `useSessionHoverStore`: only one
+ * card may show at a time, and the second row the pointer visits must not pay
+ * the opening delay again.
+ */
+function SessionBriefCard({
+  id,
+  children,
+  content,
+}: {
+  id: string;
+  children: ReactElement;
+  content: ReactNode;
+}) {
+  const open = useSessionHoverStore((state) => state.activeSessionId === id);
+  const slot = useSessionHoverStore((state) => state.slot);
+  const openSession = useSessionHoverStore((state) => state.openSession);
+  const closeSession = useSessionHoverStore((state) => state.closeSession);
 
   // A row can be filtered out, or the sidebar unmounted, while its card shows.
   // Without this the store keeps naming a row that no longer exists and the
@@ -241,40 +360,40 @@ export function SessionBriefHoverCard({
   useEffect(
     () => () => {
       const store = useSessionHoverStore.getState();
-      if (store.activeSessionId === sessionId) store.dismiss();
+      if (store.activeSessionId === id) store.dismiss();
     },
-    [sessionId],
+    [id],
   );
 
   return (
-    <HoverCard open={open} openDelay={0} closeDelay={0}>
-      <HoverCardTrigger
-        asChild
-        onPointerEnter={() => openSession(sessionId)}
-        onPointerLeave={() => closeSession(sessionId)}
-        onFocus={() => openSession(sessionId)}
-        onBlur={() => closeSession(sessionId)}
+    <>
+      {/* data-state as the Radix trigger set it: the row hides its markers while the card is open. */}
+      <Slot.Root
+        data-state={open ? 'open' : 'closed'}
+        onPointerEnter={(event) => {
+          if (event.pointerType !== 'touch') openSession(id, event.currentTarget, 'pointer');
+        }}
+        onPointerLeave={() => closeSession(id)}
+        onFocus={(event) => openSession(id, event.currentTarget, 'focus')}
+        onBlur={() => closeSession(id)}
       >
         {children}
-      </HoverCardTrigger>
-      <HoverCardContent
-        side="right"
-        align="start"
-        sideOffset={14}
-        animated={false}
-        className="w-72 overflow-hidden rounded-md p-0 shadow-xs"
-        onPointerEnter={() => openSession(sessionId)}
-        onPointerLeave={() => closeSession(sessionId)}
-        // WCAG 1.4.13: content shown on hover must be dismissible without moving
-        // the pointer. Radix's own dismissal path runs through `setOpen`, which
-        // is inert here because the store owns `open`, so Escape is wired
-        // straight to the store. DismissableLayer listens on the document, so it
-        // fires even though nothing inside the card can hold focus.
-        onEscapeKeyDown={dismiss}
-      >
-        <SessionBriefContent {...brief} onDismiss={dismiss} />
-      </HoverCardContent>
-    </HoverCard>
+      </Slot.Root>
+      {open && slot ? createPortal(content, slot) : null}
+    </>
+  );
+}
+
+export function SessionBriefHoverCard({
+  sessionId,
+  children,
+  ...brief
+}: SessionBrief & SessionBriefInteractionProps & { sessionId: string; children: ReactElement }) {
+  const dismiss = useSessionHoverStore((state) => state.dismiss);
+  return (
+    <SessionBriefCard id={sessionId} content={<SessionBriefContent {...brief} onDismiss={dismiss} />}>
+      {children}
+    </SessionBriefCard>
   );
 }
 
@@ -288,9 +407,10 @@ export function SessionBriefDescription({
   createdAt,
   source,
   changeRequests,
+  waitingOn,
 }: Omit<SessionBrief, 'title'> & { id: string }) {
   const t = useTranslations('sidebar.sessionList.brief');
-  const statusLabel = useStatusLabel(status);
+  const statusLabel = useStatusLabel(status, waitingOn);
 
   return (
     <span id={id} className="sr-only">
@@ -318,5 +438,53 @@ export function MobileSessionCreatedTime({ createdAt }: { createdAt: string }) {
       createdAt={createdAt}
       className="text-muted-foreground block truncate text-xs leading-4 tabular-nums"
     />
+  );
+}
+
+/**
+ * The hover card of a sub-agent row: what it is and when it ran. Same store,
+ * same shell as `SessionBriefHoverCard`, so one card is open at a time across
+ * sessions, sub-agents and spawned children, and moving between them is free.
+ */
+export function SubagentHoverCard({
+  id,
+  title,
+  createdAt,
+  updatedAt,
+  children,
+}: {
+  id: string;
+  title: string;
+  createdAt: number | null;
+  updatedAt: number | null;
+  children: ReactElement;
+}) {
+  const t = useTranslations('sidebar.sessionList.brief');
+  const created = createdAt ?? updatedAt;
+  const createdIso = created ? new Date(created).toISOString() : null;
+
+  return (
+    <SessionBriefCard
+      id={id}
+      content={
+        <div className="space-y-1.5 px-3.5 py-2.5">
+          <div className="flex items-center gap-3">
+            <p className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">{title}</p>
+            {createdIso && <RelativeCreatedTime createdAt={createdIso} />}
+          </div>
+          <div className="text-muted-foreground flex items-center gap-2 text-xs">
+            <RobotIcon aria-hidden className="size-4 shrink-0" />
+            <span>{t('subAgent')}</span>
+          </div>
+          {createdIso && (
+            <div className="text-muted-foreground text-xs">
+              {t('created')}: <SessionCreatedTime createdAt={createdIso} />
+            </div>
+          )}
+        </div>
+      }
+    >
+      {children}
+    </SessionBriefCard>
   );
 }

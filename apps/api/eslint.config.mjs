@@ -144,6 +144,10 @@ export default tseslint.config(
       'kortix-api/projects-surface': 'error',
       'kortix-api/replica-local': 'error',
       'no-console': 'error',
+      // A statement after a return is dead code that still reads as live.
+      // KRTX-2987: a model assignment after a `return` saved every channel
+      // model pin as null for a day.
+      'no-unreachable': 'error',
       'no-restricted-syntax': [
         'error',
         {

@@ -30,6 +30,8 @@ interface PdfRendererProps {
   toolbarActions?: React.ReactNode;
   /** Start the zoom plugin at fit-to-page instead of the numeric default. */
   fitOnOpen?: boolean;
+  /** Search for this text once the document opens: highlighted, first hit in view. */
+  findText?: string;
   /** False when the host's own toolbar already has the Download button, so the
    *  viewer does not show a second one. */
   showDownload?: boolean;
@@ -43,6 +45,7 @@ export function PdfRenderer({
   fileName,
   toolbarActions,
   fitOnOpen,
+  findText,
   showDownload = true,
 }: PdfRendererProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -122,6 +125,7 @@ export function PdfRenderer({
       className={cn('h-full w-full', className)}
       toolbarActions={toolbarActions}
       fitOnOpen={fitOnOpen}
+      findText={findText}
     />
   );
 }

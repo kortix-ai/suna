@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -56,4 +57,12 @@ test('German security deck translates captions at every build step', () => {
       expect(html).toContain(caption);
     }
   }
+});
+
+test('security deck preserves its complete rendered output', () => {
+  expect(createHash('sha256').update(renderToStaticMarkup(
+    <NextIntlClientProvider locale="de" timeZone="UTC" messages={messages}>
+      <BuiltDeck />
+    </NextIntlClientProvider>,
+  )).digest('hex')).toMatchSnapshot();
 });
