@@ -4,6 +4,7 @@ import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import {
   PatPolicyError,
+  checkTokenMintExpiry,
   createAccountToken,
   listAccountTokens,
   revokeAccountToken,
@@ -45,12 +46,14 @@ export function registerProjectCredentialsRoutes(): void {
         },
       responses: {
           200: json(z.any(), 'OK'),
-          ...errors(404),
+          ...errors(403, 404),
       },
     }),
     async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
+    // The list names every member's project keys: it needs the leaf that
+    // issues and revokes them (`project.credentials.issue`), not project.read.
+    const loaded = await loadProjectForUser(c, projectId, 'credentials');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const tokens = await listAccountTokens(loaded.row.accountId, projectId);
     // Session-bound tokens are not CLI tokens. The runtime mints one per session
@@ -135,6 +138,14 @@ export function registerProjectCredentialsRoutes(): void {
     const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : undefined;
     if (expiresAt && Number.isNaN(expiresAt.getTime())) {
       return c.json({ error: 'expires_at must be ISO-8601' }, 400);
+    }
+    // A project-scoped caller never mints a token that outlives itself.
+    const expiryRefusal = await checkTokenMintExpiry(
+      expiresAt,
+      c.get('tokenProjectId') ? (c.get('iamTokenId') as string | undefined) : undefined,
+    );
+    if (expiryRefusal) {
+      return c.json({ error: expiryRefusal.error, code: expiryRefusal.code }, expiryRefusal.status);
     }
 
     const userId = c.get('userId') as string;
@@ -231,7 +242,7 @@ export function registerProjectCredentialsRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const body = await readJsonObject(c);
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Storing a git credential is a connector-write capability — a custom role can
     // omit project.connector.write to take credential management away from a

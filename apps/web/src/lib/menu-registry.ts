@@ -19,13 +19,14 @@
 
 import { Monitor as MonitorIcon } from '@/features/icon/icons/monitor';
 import { Moon } from '@/features/icon/icons/moon';
-import { SidebarToggle as PanelLeftClose } from '@/features/icon/icons/sidebar-toggle';
+import { SidebarGlyph as PanelLeftClose } from '@kortix/ui/icons';
 import { Sun } from '@/features/icon/icons/sun';
 import type { UiTranslator } from '@/i18n/translator';
 import { TERMINAL_THEMES, type InterfaceThemeId } from '@/lib/interface-themes';
 import { MENU_TRANSLATION_KEYS } from '@/lib/menu-translation-keys.generated';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import { WALLPAPERS } from '@/lib/wallpapers';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
+import type { SettingsTabId } from '@kortix/ui/internal/lib/settings-tab-id';
+import { WALLPAPERS } from '@kortix/ui/theme';
 import type { FeatureFlagKey } from '@kortix/sdk';
 import type { RuntimeCapability } from '@kortix/sdk';
 import {
@@ -47,6 +48,7 @@ import {
   FolderOpenIcon as FolderOpen,
   GitDiffIcon as GitCompareArrows,
   GlobeIcon as Globe,
+  HardDrivesIcon as HardDrives,
   KeyIcon as KeyRound,
   StackIcon as Layers,
   SquaresFourIcon as LayoutDashboard,
@@ -99,23 +101,13 @@ export type MenuItemKind =
   /**
    * Opens the account hub modal. NOT `navigate`: the hub has no route — it is
    * `?accountId=` on whatever page you are already on
-   * (`stores/account-panel-store.ts`), so there is no href to give. The
+   * (`packages/ui/src/internal/stores/account-panel-store.ts`), so there is no href to give. The
    * destination is `accountTab` below, and the account is whichever one is
    * selected at the moment the row is chosen.
    */
   | 'account';
 
-export type SettingsTabId =
-  | 'general'
-  | 'security'
-  | 'appearance'
-  | 'sounds'
-  | 'notifications'
-  | 'billing'
-  | 'transactions'
-  | 'referrals'
-  | 'tokens'
-  | 'shortcuts';
+export type { SettingsTabId };
 
 /** The group / section a menu item belongs to. */
 export type MenuGroup =
@@ -177,7 +169,7 @@ export interface MenuItemDef {
   /**
    * For kind='account': which hub section to open (`?accountTab=`), or omitted
    * for the hub's account list. Values come from `VALID_TABS` in
-   * `features/accounts/hub/sections.ts`, which
+   * `packages/ui/src/internal/account-hub/sections.ts`, which
    * `menu-registry-destinations.test.ts` checks this against.
    */
   accountTab?: string;
@@ -222,8 +214,6 @@ export interface MenuItemDef {
   keywords?: string;
   /** If true, item is only shown when billing is enabled */
   requiresBilling?: boolean;
-  /** If true, item is only shown for admin users */
-  requiresAdmin?: boolean;
   /** If true, item is only shown when there's an active session */
   requiresSession?: boolean;
   /** If set, the item is only shown when the session's runtime serves this
@@ -232,10 +222,6 @@ export interface MenuItemDef {
   /** If true, item is only shown when a project is active (new project shell).
    *  Project-scoped hrefs use the `{projectId}` token, resolved at render. */
   requiresProject?: boolean;
-  /** If true, item is only shown when the project / project-paradigm
-   *  feature flag (NEXT_PUBLIC_ENABLE_PROJECTS) is on. Used to gate
-   *  project-paradigm surfaces (Board today; Milestones, Team later). */
-  requiresProjectsFlag?: boolean;
   /** If set, the item is only shown when the named per-project FEATURE FLAG is
    *  enabled (mirrors the Customize rail gating). A disabled feature's surface
    *  is invisible, so EVERY registry consumer must honour this — the command
@@ -419,8 +405,8 @@ export const menuRegistry: MenuItemDef[] = [
     // anything, which is why it read as a list rather than as the switcher it
     // opens. The verb stays; only the noun changed.
     //
-    // It said "Switch workspace" until the product settled on ONE noun
-    // (`features/workspace/workspace-vocabulary.test.ts`). "Project" won
+    // It said "Switch workspace" until the product settled on ONE noun.
+    // "Project" won
     // because it is the load-bearing one — the URL (`/projects/<id>`), the API
     // (`/v1/projects`), the CLI (`kortix projects`), `kortix.yaml` and the DB
     // all say it, and renaming those would break a published SDK's public
@@ -695,6 +681,19 @@ export const menuRegistry: MenuItemDef[] = [
       'schedules schedule cron scheduled tasks webhooks webhook http endpoint incoming request triggers timed recurring',
   },
   {
+    // The Customize Reminders tab (`remindersHref`, #10261). Gated in
+    // `command-palette.tsx` on the tab's own verdict (flag + trigger rule).
+    id: 'proj-reminders',
+    label: 'Reminders',
+    icon: Calendar,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/reminders',
+    requiresProject: true,
+    keywords: 'reminders reminder remind follow up later nudge calendar',
+  },
+  {
     id: 'proj-secrets',
     label: 'Secrets',
     icon: LockKey,
@@ -738,18 +737,33 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'files repository drive browser explorer',
   },
   {
-    // The project's shared folders: the Files tab under Customize. Only for
-    // projects with the `drives` flag on, like the tab itself.
+    // The project's shared folders: the sidebar Drive row (`filesRow`). Only
+    // for projects with the `drives` flag on, like the row itself. The id
+    // predates the move from `/customize/files` to `/drive` (#10258).
     id: 'proj-shared-files',
-    label: 'Shared files',
-    icon: FolderOpen,
+    label: 'Drive',
+    icon: HardDrives,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/files',
+    href: '/projects/{projectId}/drive',
     requiresProject: true,
     requiresFlag: 'drives',
     keywords: 'files folders drive shared company my folder access share',
+  },
+  {
+    // The repo browser under Customize → Repo, where it moves when the
+    // `drives` flag is on (#10258). `command-palette.tsx` gates the row on
+    // the tab's own verdict, so it shows exactly when the tab does.
+    id: 'proj-repo',
+    label: 'Repo',
+    icon: FolderGit2,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/repo',
+    requiresProject: true,
+    keywords: 'repo repository git files browser explorer code',
   },
   {
     id: 'proj-apps',
@@ -798,8 +812,8 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    // Its own project page since 2026-10-02, outside Customize.
-    href: '/projects/{projectId}/review',
+    // The Customize Review tab (`reviewHref`).
+    href: '/projects/{projectId}/customize/review',
     requiresProject: true,
     keywords: 'review center inbox approvals awaiting waiting needs you outputs queue',
   },
@@ -838,18 +852,6 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['rightSidebar'],
     kind: 'action',
     actionId: 'newTerminal',
-  },
-  {
-    id: 'workspace',
-    label: 'Workspace',
-    icon: Blocks,
-    group: 'quickActions',
-    subGroup: 'tools',
-    showIn: ['commandPalette', 'rightSidebar'],
-    kind: 'navigate',
-    href: '/workspace',
-    activePathPrefixes: ['/workspace', '/agents', '/commands', '/tools'],
-    keywords: 'workspace agents skills commands tools build create',
   },
   {
     id: 'providers-quick',
@@ -1092,7 +1094,7 @@ export const menuRegistry: MenuItemDef[] = [
   // These eight rows are the palette's only route to the account-scoped
   // surfaces. They spent one release as settings tabs, derived from
   // `railGroups()` like every other tab; they are not settings tabs any more
-  // (`ACCOUNT_GRADUATED` in `features/workspace/settings/settings-tabs.ts`
+  // (`ACCOUNT_GRADUATED` in `packages/ui/src/customize/settings/settings-tabs.ts`
   // redirects every stale `/settings/<id>` bookmark onto this page), so the
   // derived list cannot produce them and they are hand-written here — the same
   // arrangement `proj-triggers` uses for the same reason.

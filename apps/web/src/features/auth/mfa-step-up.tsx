@@ -30,24 +30,28 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
-import { KortixLogo } from '@/components/ui/kortix-logo';
-import Loading from '@/components/ui/loading';
-import { successToast } from '@/components/ui/toast';
+import { Button } from '@kortix/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@kortix/ui/dialog';
+import { SessionDotMatrix } from '@kortix/ui/dot-matrix/session-dot-matrix';
+import { KortixLogo } from '@kortix/ui/kortix-logo';
+import Loading from '@kortix/ui/loading';
+import { successToast } from '@kortix/ui/toast';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { invalidateTokenCache } from '@/lib/auth-token';
-import { mfaChallengeRequired, supabaseMFAService } from '@/lib/supabase/mfa';
-import { cn } from '@/lib/utils';
+import { type AALResponse, mfaChallengeRequired, supabaseMFAService } from '@/lib/supabase/mfa';
+import { cn } from '@kortix/ui';
 import { useAuth } from '@/features/providers/auth-provider';
 import { MFA_AAL_QUERY_KEY, MFA_FACTORS_QUERY_KEY } from '@/hooks/account/use-mfa';
 import { useTranslations } from '@/i18n/use-translations';
 
-import { MFA_VERIFIED_EVENT, armPendingMfaAction, clearPendingMfaAction } from './mfa-pending-action';
+import {
+  MFA_REQUIRED_EVENT,
+  MFA_VERIFIED_EVENT,
+  armPendingMfaAction,
+  clearPendingMfaAction,
+} from '@kortix/ui/internal/auth/mfa-pending-action';
 
-export const MFA_REQUIRED_EVENT = 'kortix:mfa-required';
-export { MFA_VERIFIED_EVENT };
+export { MFA_REQUIRED_EVENT, MFA_VERIFIED_EVENT };
 
 /**
  * Run `action` now, or — while this session still owes a TOTP challenge — open
@@ -106,6 +110,15 @@ export function MfaChallengeDialog({ open, dismissible, onDismiss, onVerified }:
       // Invalidate so every caller (and the MfaGate's AAL answer, which is what
       // releases the gate) reads the aal2 token.
       invalidateTokenCache();
+      // A verified code IS the aal2 answer: Supabase upgraded this session
+      // before `challengeAndVerify` resolved. Record it before anything
+      // re-reads. The gate used to wait for a fresh AAL read (a `getUser`
+      // network call); until it landed, "Verified" showed over an emptied
+      // prompt, and a read that failed kept the old aal1 answer, so the code
+      // had to be entered twice.
+      queryClient.setQueryData<AALResponse>(MFA_AAL_QUERY_KEY, (aal) =>
+        aal ? { ...aal, current_level: 'aal2', action_required: 'none' } : aal,
+      );
       successToast(t('verified'));
       setCode('');
       // Refetch active queries so reads that failed while the session was aal1

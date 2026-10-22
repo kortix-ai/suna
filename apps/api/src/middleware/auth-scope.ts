@@ -48,8 +48,7 @@ export function extractPreviewSandboxId(path: string): string | null {
  *     no in-guest boot timeline was recorded.
  *
  * ADD A SINK HERE when you add a route whose caller is the daemon holding
- * `KORTIX_TOKEN`. `__tests__/unit-boot-timeline-auth-mount.test.ts` pins the
- * membership of this set for the same reason it pins the middleware mount.
+ * `KORTIX_TOKEN`.
  */
 const SESSION_BOUND_PLATFORM_SINKS = new Set([
   '/v1/platform/runtime-projection',
@@ -131,6 +130,13 @@ export async function enforceTokenProjectScope(
   // only; else 403 capture_no_human), checked in the handler
   // (capture/account-routes.ts). Nothing here reads another person or account.
   if (c.req.method === 'GET' && path.startsWith('/v1/capture/me/')) return;
+
+  // `/v1/drives` — Files (`kortix drive`). Drive routes are keyed by drive id,
+  // not project id, so the project binding is checked in the handlers: a
+  // project-bound token reaches only its own project's drive (`loadDrive`),
+  // and a session token acts as the person who started the session
+  // (`sessionFilesRefusal`, drives/routes.ts).
+  if (path === '/v1/drives' || path.startsWith('/v1/drives/')) return;
 
   const deny = (check: string, reason: string): never => {
     // NAME the principal and the check in the message. The global `app.onError`

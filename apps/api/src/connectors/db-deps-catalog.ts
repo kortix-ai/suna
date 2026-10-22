@@ -11,6 +11,8 @@ import { and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { principalMayUseConnector } from './principal-access';
 import {
   canonicalConnectorAlias,
+  loadSessionConnectorResolutionData,
+  type SessionConnectorResolutionData,
   listEntitledConnectorConnections,
   listEntitledConnectorConnectionsBatch,
   resolveSessionConnectorConnectionOutcome,
@@ -70,11 +72,13 @@ async function catalogAccountsFor(
   p: ConnectorPrincipal,
   slug: string,
   visibility: 'private' | 'project' | 'restricted',
+  preloaded: SessionConnectorResolutionData,
 ): Promise<CatalogAccount[]> {
   const entitled = await listEntitledConnectorConnections({
     accountId: p.accountId,
     projectId: p.projectId,
     alias: canonicalConnectorAlias(slug),
+    preloaded,
     actingUserId: p.userId,
     visibility,
     agentPrincipal: p.agentPrincipal ?? null,
@@ -137,12 +141,13 @@ export async function listCatalog(
       loadConnectorPoliciesForMany(connectorIds),
     ]);
 
-  // Each connector's resolution reads only: its session outcome, its accounts
-  // and its credential. They are independent (the session row is request-
-  // memoized), so they run concurrently instead of one connector at a time.
-  // Measured on dev-api 2026-09-27 with 8 connectors: 8.0-16.9 s, db n=71-80
-  // serial; prod showed db n=113 on this route. Bounded, because a project can
-  // hold dozens of connectors. `mapLimit` keeps the connector order.
+  const preloaded = await loadSessionConnectorResolutionData({
+    accountId: p.accountId, projectId: p.projectId, sessionId: p.sessionId,
+    actingUserIds: [p.userId],
+  });
+
+  // Resolution and account listing share one request-local snapshot. Concurrency
+  // only bounds channel install reads; it does not hide per-entry SQL fan-out.
   const CATALOG_RESOLVE_CONCURRENCY = 8;
   const resolved = await mapLimit(conns, CATALOG_RESOLVE_CONCURRENCY, async (row): Promise<CatalogConnector | null> => {
     // Per-agent assignment: an agent only sees connectors its grant lists —
@@ -168,6 +173,7 @@ export async function listCatalog(
       projectId: row.projectId,
       sessionId: p.sessionId,
       alias: row.slug,
+      preloaded,
       actingUserId: p.userId,
       account: null,
       agentPrincipal: p.agentPrincipal ?? null,
@@ -176,11 +182,13 @@ export async function listCatalog(
     const connection =
       outcome.kind === 'ok' && outcome.connection.status === 'active' ? outcome.connection : null;
     if (outcome.kind === 'ok' && !connection) return null;
-    const accounts = await catalogAccountsFor(p, row.slug, accountVisibility);
+    const accounts = await catalogAccountsFor(p, row.slug, accountVisibility, preloaded);
     const { hasAuth } = authOf(row);
     if (connection && hasAuth) {
-      // Always the shared credential — `per_user` was removed 2026-07-05.
-      if (!(await connectorConnected(row, null, connection))) return null;
+      if (row.providerType === 'composio') {
+        if (!(await connectorConnected(row, null, connection))) return null;
+      } else if (row.providerType !== 'channel' &&
+        !preloaded.catalogCredentialConnectionIds.has(connection.connectionId)) return null;
     }
     const connectorPolicies = policiesByConnector.get(row.connectorId) ?? [];
     const actions = actionsByConnector.get(row.connectorId) ?? [];

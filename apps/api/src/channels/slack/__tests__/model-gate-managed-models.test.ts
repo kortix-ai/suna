@@ -80,7 +80,7 @@ describe('channelModelContext — freeManagedOnly honors the managedModels overr
     invalidateAccountBilling();
   });
 
-  test('free plan, no override → managed models withheld (unchanged)', async () => {
+  test('free plan, no override → no managed models', async () => {
     expect((await gateFor({ tier: 'free' })).freeManagedOnly).toBe(true);
   });
 
@@ -88,12 +88,11 @@ describe('channelModelContext — freeManagedOnly honors the managedModels overr
     expect((await gateFor({ tier: 'credits' })).freeManagedOnly).toBe(false);
   });
 
-  test('THE BUG: override=true on a free plan now grants managed models', async () => {
-    // Old behavior: freeManagedOnly stayed true because the tier string was
-    // still 'free'. The operator grant was invisible to Slack only.
-    expect((await gateFor({ tier: 'free', entitlementOverrides: { managedModels: { value: true } } })).freeManagedOnly).toBe(
-      false,
-    );
+  test('override=true never grants managed models to No Plan or Free', async () => {
+    for (const tier of ['none', 'free']) {
+      invalidateAccountBilling();
+      expect((await gateFor({ tier, entitlementOverrides: { managedModels: { value: true } } })).freeManagedOnly).toBe(true);
+    }
   });
 
   test('THE BUG, other direction: override=false on a paid plan withdraws them', async () => {
@@ -103,7 +102,7 @@ describe('channelModelContext — freeManagedOnly honors the managedModels overr
   });
 
   test('override=null defers to the plan', async () => {
-    expect((await gateFor({ tier: 'free' })).freeManagedOnly).toBe(
+    expect((await gateFor({ tier: 'none' })).freeManagedOnly).toBe(
       true,
     );
     invalidateAccountBilling();
@@ -114,7 +113,7 @@ describe('channelModelContext — freeManagedOnly honors the managedModels overr
 
   test('trials are removed: a leftover active trial row grants nothing', async () => {
     const row = {
-      tier: 'free',
+      tier: 'none',
       trialStatus: 'active',
       trialTier: 'tier_25_200',
       trialEndsAt: new Date(Date.now() + 86_400_000).toISOString(),

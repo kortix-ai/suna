@@ -18,7 +18,7 @@ import {
 } from '../git';
 // From the leaf, not the barrel: suites that stub '../git' by listing its
 // exports would otherwise lose these names and fail at import.
-import { BRANCH_LIST_MAX_LIMIT, filterBranchesForResponse } from '../git/branches';
+import { BRANCH_LIST_MAX_LIMIT, filterBranchesForResponse, isSessionBranchName } from '../git/branches';
 import {
   DIRECTORY_PAGE_LIMIT,
   DIRECTORY_PAGE_MAX_LIMIT,
@@ -32,6 +32,8 @@ import { resourceDenierForRequest } from '../lib/project-resources';
 import { CommitSchema, projectsApp } from '../lib/app';
 import { isGitRefNotFoundError } from '../git/mirror';
 import { withProjectGitAuth } from '../lib/git';
+import { projectReadView } from '../lib/project-read-view';
+import { withSessionLabels } from '../lib/session-branch-labels';
 import { normalizeString } from '../lib/serializers';
 
 function isMissingGitPathError(error: unknown): boolean {
@@ -541,9 +543,17 @@ export function registerProjectFilesRoutes(): void {
       // they may show a listing up to 5 min old (`branch-list-cache.ts`). Every
       // caller that omits it (CLIs, sandboxes, the change-request picker) keeps
       // reading the upstream live.
-      const allBranches = await listBranches(await withProjectGitAuth(loaded.row), {
+      const listed = await listBranches(await withProjectGitAuth(loaded.row), {
         allowRecent: !includeSessionBranches,
       });
+      // A non-manager sees only the session branches of sessions they may open.
+      const view = await projectReadView(c, loaded);
+      const visibleSessions = includeSessionBranches && !view.full
+        ? await view.visibleSessionIds(listed.filter((b) => isSessionBranchName(b.name)).map((b) => b.name))
+        : new Set<string>();
+      const allBranches = view.full
+        ? listed
+        : listed.filter((b) => b.is_default || !isSessionBranchName(b.name) || visibleSessions.has(b.name));
       const branches = filterBranchesForResponse(allBranches, {
         q: query.q,
         limit: query.limit,
@@ -551,7 +561,11 @@ export function registerProjectFilesRoutes(): void {
       });
       return c.json({
         default_branch: loaded.row.defaultBranch,
-        branches,
+        // A session branch is named by its session id: say which session it is.
+        branches: await withSessionLabels(projectId, branches, {
+          userId: loaded.userId,
+          openableSessionIds: view.openableSessionIds,
+        }),
       });
     } catch (error) {
       console.warn('[projects] branch listing unavailable', {
@@ -589,6 +603,7 @@ export function registerProjectFilesRoutes(): void {
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_READ);
 
     const ref = c.req.query('ref') || loaded.row.defaultBranch;
+    if (!(await (await projectReadView(c, loaded)).refsVisible(ref))) return c.json({ error: 'Not found' }, 404);
     const path = normalizeString(c.req.query('path'));
     const limit = Number(c.req.query('limit') || '50');
     const skip = Number(c.req.query('skip') || '0');
@@ -626,6 +641,8 @@ export function registerProjectFilesRoutes(): void {
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_READ);
 
+    // `sha` resolves any git ref, a session branch name included.
+    if (!(await (await projectReadView(c, loaded)).refsVisible(sha))) return c.json({ error: 'Commit not found' }, 404);
     try {
       const commit = await getCommit(await withProjectGitAuth(loaded.row), sha);
       if (!commit) return c.json({ error: 'Commit not found' }, 404);
@@ -663,6 +680,7 @@ export function registerProjectFilesRoutes(): void {
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_READ);
 
+    if (!(await (await projectReadView(c, loaded)).refsVisible(sha))) return c.json({ error: 'Not found' }, 404);
     try {
       const diff = await getCommitDiff(await withProjectGitAuth(loaded.row), sha, { path });
       return c.json({ path: path ?? null, ...diff });
@@ -705,6 +723,9 @@ export function registerProjectFilesRoutes(): void {
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_READ);
+    if (!(await (await projectReadView(c, loaded)).refsVisible(fromRef, intoRef))) {
+      return c.json({ error: 'Not found' }, 404);
+    }
 
     if (fromRef === intoRef) {
       return c.json({

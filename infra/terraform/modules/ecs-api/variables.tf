@@ -188,12 +188,6 @@ variable "fargate_base_on_demand" {
   }
 }
 
-variable "container_insights" {
-  description = "Enable CloudWatch Container Insights."
-  type        = bool
-  default     = true
-}
-
 variable "log_retention_days" {
   description = "CloudWatch log retention. The security baseline requires at least 365 days."
   type        = number
@@ -325,4 +319,16 @@ variable "capture_device_role_arn" {
   description = "ARN of the capture device role the API assumes to issue device credentials (modules/capture-store device_role_arn). Used only when capture_enabled."
   type        = string
   default     = ""
+}
+
+variable "service_discovery" {
+  description = "Cloud Map registration: { namespace_id }. When set, every task registers an A record <container_name>.<namespace> so callers inside the VPC reach it without the ALB or Cloudflare. null = no registration. An object, so count stays known when the namespace is created in the same apply."
+  type        = object({ namespace_id = string })
+  default     = null
+}
+
+variable "extra_security_group_ids" {
+  description = "More security groups for the tasks, besides the module's own. Environment roots use them for VPC-internal rules, because the module's inline rules are authoritative."
+  type        = list(string)
+  default     = []
 }

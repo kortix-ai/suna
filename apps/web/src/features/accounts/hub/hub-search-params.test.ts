@@ -27,7 +27,7 @@ function sourceFiles(dir: string): string[] {
 
 /** The short keys, read from the one alias table in the store. */
 function hubParamKeys(): string[] {
-  const store = readFileSync(join(webSrc, 'stores/account-panel-store.ts'), 'utf8');
+  const store = readFileSync(join(webSrc, '../../../packages/ui/src/internal/stores/account-panel-store.ts'), 'utf8');
   const table = store.match(/const HUB_PARAM_ALIASES = \{([\s\S]*?)\} as const/);
   if (!table) throw new Error('HUB_PARAM_ALIASES not found in account-panel-store.ts');
   return [...table[1].matchAll(/^\s*(\w+): 'account\w+',$/gm)].map((m) => m[1]);
@@ -37,7 +37,7 @@ describe('hub panes read hub state through useHubSearchParams()', () => {
   const keys = hubParamKeys();
 
   test('the alias table parses to every hub key', () => {
-    expect(keys.sort()).toEqual(['from', 'group', 'member', 'project', 'provider', 'setup', 'tab']);
+    expect(keys.sort()).toEqual(['group', 'member', 'project', 'provider', 'setup', 'tab', 'transactions']);
   });
 
   test('no hub-rendered file reads a short hub key off the raw URL', () => {

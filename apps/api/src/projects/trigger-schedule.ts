@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { CRON_MIN_INTERVAL_SECONDS, cronIntervalError } from '@kortix/manifest-schema';
+import { CRON_MIN_INTERVAL_SECONDS, type TriggerFilter, cronIntervalError } from '@kortix/manifest-schema';
 import { Cron } from 'croner';
 
 export interface TriggerScheduleSpec {
@@ -17,7 +17,7 @@ export interface TriggerScheduleSpec {
   sessionMode: string;
   pinnedSessionId: string | null;
   sessionKey: string | null;
-  filter: Record<string, string> | null;
+  filter: TriggerFilter | null;
   /** type=monitor only — see GitTriggerSpec. Absent for cron/webhook. */
   run?: string | null;
   monitorMode?: 'poll' | 'stream' | null;
@@ -27,6 +27,13 @@ export interface TriggerScheduleSpec {
   event?: { connector: string; account?: string | null; source?: string | null; type: string; config: Record<string, unknown> } | null;
   /** Session reminder only — see GitTriggerSpec.reminder. */
   reminder?: { everySeconds: number | null } | null;
+  /** type=cron only — see GitTriggerSpec.maxLatenessSeconds. */
+  maxLatenessSeconds?: number;
+  /** Any type — see GitTriggerSpec.maxRunsPerHour / maxRunsPerDay. */
+  maxRunsPerHour?: number;
+  maxRunsPerDay?: number;
+  /** See GitTriggerSpec.overlap. */
+  overlap?: 'skip' | 'allow';
 }
 
 export function validateTriggerTimezone(timezone: string): string | null {
@@ -93,6 +100,14 @@ export function triggerScheduleRevision(spec: TriggerScheduleSpec): string {
     ...(spec.type === 'event' ? { event: spec.event ? withSourceIfSet(spec.event) : null } : {}),
     // Same rule as the monitor fields: absent for every manifest trigger.
     ...(spec.reminder ? { reminderEverySeconds: spec.reminder.everySeconds } : {}),
+    // Joins only when set: the claim reads it from the stored spec, which is
+    // rewritten only on a revision change. Unset keeps every revision put.
+    ...(spec.maxLatenessSeconds ? { maxLatenessSeconds: spec.maxLatenessSeconds } : {}),
+    // Run caps (KRTX-1721): the same rule. Cron, event and monitor fires read
+    // them from the stored spec.
+    ...(spec.maxRunsPerHour ? { maxRunsPerHour: spec.maxRunsPerHour } : {}),
+    ...(spec.overlap ? { overlap: spec.overlap } : {}),
+    ...(spec.maxRunsPerDay ? { maxRunsPerDay: spec.maxRunsPerDay } : {}),
   };
   return createHash('sha256').update(JSON.stringify(scheduleConfig)).digest('hex');
 }

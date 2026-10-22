@@ -41,7 +41,7 @@ export function registerProjectGitRoutes(): void {
     }),
     async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'write');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // This endpoint hands back a RAW git push credential. project.write is
     // fold-exempt, so without a leaf gate a read-scoped agent could mint a push
@@ -130,6 +130,8 @@ export function registerProjectGitRoutes(): void {
             state: z.enum(['connected', 'reconnect_required', 'unavailable', 'not_connected']),
             reason: z.string().optional(),
             install_url: z.string().nullable().optional(),
+            disconnected_reason: z.enum(['app_uninstalled', 'app_suspended', 'repo_not_accessible']).optional(),
+            message: z.string().optional(),
           }),
           "The project's git connection state",
         ),
@@ -146,6 +148,7 @@ export function registerProjectGitRoutes(): void {
         state: connection.state,
         ...(connection.reason ? { reason: connection.reason } : {}),
         ...(connection.installUrl !== undefined ? { install_url: connection.installUrl } : {}),
+        ...(connection.disconnectedReason ? { disconnected_reason: connection.disconnectedReason, message: connection.message } : {}),
       });
     },
   );
@@ -176,7 +179,7 @@ export function registerProjectGitRoutes(): void {
     }),
     async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'write');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Inviting a git collaborator grants a human standing access to the repo —
     // membership-tier, not plain write. Gate on members.manage so a member (or a

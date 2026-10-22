@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import type { CapturePolicy } from '@kortix/sdk';
 
-import { applyToPrivacy, exclusionLists, fromPolicy } from './exclusions-model';
+import { applyToPrivacy, exclusionLists, fromPolicy, includedView } from './exclusions-model';
 
 const LABEL = (id: string) => ({ name: `name:${id}`, description: `hint:${id}` });
 
@@ -17,21 +17,21 @@ const PRIVACY: CapturePolicy['privacy'] = {
 describe('the organization policy', () => {
   test('every category and the mandatory lists, nothing locked', () => {
     const view = fromPolicy(PRIVACY, LABEL);
-    expect(view.groups.map((group) => [group.id, group.enabled, group.locked])).toEqual([
-      ['password_managers', true, false],
-      ['messaging', false, false],
-      ['banking', false, false],
+    expect(view.groups.map((group) => [group.id, group.enabled])).toEqual([
+      ['password_managers', true],
+      ['messaging', false],
+      ['banking', false],
     ]);
     expect(view.groups[0]?.name).toBe('name:password_managers');
     const apps = exclusionLists(view, 'apps', '');
     expect(apps.categories).toHaveLength(3);
     expect(apps.excluded).toEqual([
-      { id: 'com.example.hr', name: 'com.example.hr', locked: false },
+      { id: 'com.example.hr', name: 'com.example.hr' },
     ]);
     expect(exclusionLists(view, 'websites', '').excluded.map((row) => row.id)).toEqual([
       'payroll.example',
     ]);
-    expect(view.privateBrowsing).toEqual({ excluded: true, locked: false });
+    expect(view.privateBrowsing).toEqual({ excluded: true });
   });
 
   test('applyToPrivacy adds and removes each kind without duplicates or mutation', () => {
@@ -57,5 +57,30 @@ describe('the organization policy', () => {
       applyToPrivacy(PRIVACY, { kind: 'private-browsing', on: false }).exclude_private_browsing,
     ).toBe(false);
     expect(PRIVACY.excluded_bundle_ids).toEqual(['com.example.hr']);
+  });
+
+  test('record only included: the switch and both lists, added and removed', () => {
+    expect(includedView(PRIVACY)).toEqual({ on: false, apps: [], domains: [] });
+    const on = applyToPrivacy(PRIVACY, { kind: 'record-only', on: true });
+    const withApp = applyToPrivacy(on, {
+      kind: 'include-app',
+      id: 'com.tinyspeck.slackmacgap',
+      on: true,
+    });
+    const withSite = applyToPrivacy(withApp, {
+      kind: 'include-domain',
+      id: 'github.com',
+      on: true,
+    });
+    expect(includedView(withSite)).toEqual({
+      on: true,
+      apps: [{ id: 'com.tinyspeck.slackmacgap', name: 'com.tinyspeck.slackmacgap' }],
+      domains: [{ id: 'github.com', name: 'github.com' }],
+    });
+    expect(
+      applyToPrivacy(withSite, { kind: 'include-domain', id: 'github.com', on: false })
+        .included_domains,
+    ).toEqual([]);
+    expect(PRIVACY.record_only_included).toBeUndefined();
   });
 });

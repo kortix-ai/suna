@@ -46,11 +46,10 @@ import {
 import { eq } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { PROJECT_ACTIONS } from '../../iam/actions';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { resolveTemplateBySlug } from '../../snapshots/templates';
-import { extractAgents, grantsByAgent } from '../agents';
+import { extractAgents, agentNotDeclaredError, grantsByAgent } from '../agents';
 import { assertNoGrantEscalation } from '../../iam/agent-grant-ceiling';
 import { isRepoFileNotFoundError, readRepoFile } from '../git';
 import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from '../git/branches';
@@ -263,8 +262,7 @@ export function registerAgentConfigRoutes(): void {
       await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
 
       // The manifest read stays forced: a GET right after a PUT may land on
-      // another replica, and the editor must read back what was saved (see
-      // `manifest-for-edit-freshness.test.ts`). It proves the default branch
+      // another replica, and the editor must read back what was saved. It proves the default branch
       // with one `ls-remote` and fetches only when it moved. The `.md` read
       // below then uses that just-proven mirror instead of starting a second
       // fetch, and one git-auth resolve serves both reads.
@@ -283,6 +281,18 @@ export function registerAgentConfigRoutes(): void {
 
       const read = readAgentBlockV2(manifest, agentName);
       if (!read.ok) return c.json({ error: read.error, code: 'manifest_malformed' }, 400);
+
+      // A name the manifest does not declare is a 404, not an empty success:
+      // the dashboard's editor contract says a missing agent answers 404 (its
+      // not-found state comes from /detail), and the CLI's `agents config` /
+      // `agents scope --show` must not exit 0 on a phantom agent
+      // (KRTX-2071/KRTX-2535). v1 keeps its declared-agent null block (v1
+      // always reads back null), so the declared check runs on the manifest's
+      // own roster.
+      if (read.block === null) {
+        const notDeclared = agentNotDeclaredError(manifest, agentName);
+        if (notDeclared) return c.json(notDeclared, 404);
+      }
 
       let block:
         | (AgentBlockV2 & { behavior?: Record<string, unknown>; opencode?: Record<string, unknown> })
@@ -313,7 +323,6 @@ export function registerAgentConfigRoutes(): void {
       const harness = selectSessionHarness({
         piHarnessFlag: resolveFeatureFlag(loaded.row.metadata, 'pi_harness'),
         runtime: manifestRuntime(manifest.raw),
-        llmGateway: projectLlmGatewayEnabled(loaded.row.metadata),
       });
 
       return c.json({
@@ -353,7 +362,7 @@ export function registerAgentConfigRoutes(): void {
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
       await assertProjectCapability(
@@ -457,7 +466,7 @@ export function registerAgentConfigRoutes(): void {
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const agentName = c.req.param('agentName');
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
       await assertProjectCapability(
@@ -648,6 +657,12 @@ async function prepareAgentConfigV2(
     if (!resolved.ok) return { ok: false, status: 400, body: { error: resolved.error, code: 'invalid_body' } };
     behaviorDraft = resolved.draft;
     const currentBlock = readAgentBlockV2(manifest, agentName);
+    // The write replaces the whole block. Keys this body cannot carry
+    // (`harnesses`, `network_egress`) are not this editor's to delete: keep
+    // them, as the v3 write does.
+    for (const [key, value] of Object.entries((currentBlock.ok && currentBlock.block) || {})) {
+      if (!(key in AgentBlockSchema.shape)) (governanceBlock as Record<string, unknown>)[key] = value;
+    }
     const explicitFile = currentBlock.ok ? currentBlock.block?.file : undefined;
     if (explicitFile !== undefined) governanceBlock.file = explicitFile;
     else if (agentMd.exists || behaviorDraft !== undefined) governanceBlock.file = agentMd.path;

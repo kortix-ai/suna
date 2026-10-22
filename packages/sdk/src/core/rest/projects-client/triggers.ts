@@ -64,9 +64,29 @@ export interface ProjectTriggerEvent {
   status: 'active' | 'needs_connection' | 'error' | 'pending';
   error: string | null;
   last_event_at: string | null;
+  /** Source `mcp`: when Kortix last checked the app with success. Null for other sources and before the first check. */
+  checked_at?: string | null;
+  /** Source `mcp`: when Kortix checks the app next. Null for other sources, and while the trigger is not subscribed. */
+  next_check_at?: string | null;
 }
 
 /** Parsed trigger spec — what the listing endpoint returns. */
+/**
+ * One trigger filter condition (KRTX-1721): exactly one operator. `not` and
+ * `in` compare the payload value as text; `prefix` and `not_prefix` test how
+ * it starts; `exists` tests that it is present and not null. A missing path
+ * reads as an empty string.
+ */
+export type TriggerFilterCondition =
+  | { not: string[] }
+  | { in: string[] }
+  | { exists: boolean }
+  | { prefix: string[] }
+  | { not_prefix: string[] };
+
+/** A filter path's condition: a string means "equals". */
+export type TriggerFilterValue = string | TriggerFilterCondition;
+
 export interface ProjectTrigger {
   /** URL-safe slug (the filename minus `.md`). */
   slug: string;
@@ -109,6 +129,29 @@ export interface ProjectTrigger {
   prompt_template: string;
   /** Session strategy — see {@link ProjectTriggerSessionMode}. */
   session_mode: ProjectTriggerSessionMode;
+  /**
+   * Runs the trigger may start in any 60 minutes. Null when unset: the
+   * default, 60, applies. A fire past it starts nothing and is recorded as a
+   * skipped run, `throttled: …`. Optional: older servers omit it.
+   */
+  max_runs_per_hour?: number | null;
+  /** Runs the trigger may start in a UTC day. Null when unset: no daily cap. */
+  max_runs_per_day?: number | null;
+  /**
+   * Fresh session mode only (KRTX-1721): `skip` holds a fire while the
+   * trigger's previous run is still active. Null when unset: `skip` for a
+   * cron trigger, `allow` for the others. Optional: older servers omit it.
+   */
+  overlap?: 'skip' | 'allow' | null;
+  /**
+   * Set while the trigger paused itself (KRTX-1721): it ran at its hourly run
+   * limit through the previous hour and was still being held. No automatic fire
+   * starts a run until it is resumed: `updateProjectTrigger(…, { enabled: true })`.
+   * Absent on older servers.
+   */
+  auto_paused_at?: string | null;
+  /** Why it paused, e.g. `auto-paused: ran at max_runs_per_hour 60 for 2 hours in a row`. */
+  auto_paused_reason?: string | null;
   /** For session_mode === 'pinned' only: the session id looped. Null otherwise. */
   session_id: string | null;
   /**
@@ -120,11 +163,12 @@ export interface ProjectTrigger {
   session_key: string | null;
   /**
    * Payload paths (dotted, rooted at the same `body`/`headers` object the
-   * prompt template sees) mapped to the value they must equal for the trigger
-   * to fire. A non-matching delivery is accepted but spawns no session. Null
-   * when unfiltered.
+   * prompt template sees) mapped to the condition each must meet for the
+   * trigger to fire: a value it must equal, or one operator
+   * ({@link TriggerFilterCondition}). A non-matching delivery is accepted but
+   * spawns no session. Null when unfiltered.
    */
-  filter: Record<string, string> | null;
+  filter: Record<string, TriggerFilterValue> | null;
   /** Access policy applied to every session this trigger creates. */
   session_access: TriggerSessionAccess;
   last_fired_at: string | null;
@@ -143,6 +187,8 @@ export interface ProjectTrigger {
   /** ISO time an enabled cron trigger runs next: the slot the scheduler
    *  claims, jitter included. Null for a webhook trigger, and from an older API. */
   next_fire_at?: string | null;
+  /** Next exact cron occurrence, without scheduler jitter. Absent from older APIs. */
+  next_cron_at?: string | null;
   /** Public fire URL for webhook triggers; null for cron. */
   webhook_url: string | null;
 }
@@ -166,6 +212,12 @@ export interface ProjectTriggerListing {
    * ONE repo deployed to two control planes (e.g. dev + prod) from double-firing.
    */
   triggers_paused?: boolean;
+  /**
+   * The account's Pause all automations (`PATCH /accounts/:id/automations`):
+   * true stops every automatic fire in every project of the account, this one
+   * included. Manual `fire` still works. Older servers omit it.
+   */
+  account_automations_paused?: boolean;
 }
 
 export interface CreateProjectTriggerInput {
@@ -213,6 +265,12 @@ export interface CreateProjectTriggerInput {
   event?: string;
   /** For type='event'. Provider event config, shaped by the event type's `config_schema`. */
   event_config?: Record<string, unknown>;
+  /** Runs it may start in any 60 minutes, a whole number ≥ 1. Omit for the default, 60. */
+  max_runs_per_hour?: number;
+  /** Runs it may start in a UTC day, a whole number ≥ 1. Omit for no daily cap. */
+  max_runs_per_day?: number;
+  /** See {@link ProjectTrigger.overlap}. Omit for the type's default. */
+  overlap?: 'skip' | 'allow';
   /**
    * Session strategy across fires. Omit for the type's default — 'fresh' on
    * cron/webhook, 'reuse' on monitor (a monitor fires repeatedly by design, so
@@ -227,8 +285,8 @@ export interface CreateProjectTriggerInput {
    * sent explicitly.
    */
   session_key?: string | null;
-  /** Payload paths mapped to the value they must equal for the trigger to fire. */
-  filter?: Record<string, string> | null;
+  /** Payload paths mapped to the condition each must meet for the trigger to fire. See {@link ProjectTrigger.filter}. */
+  filter?: Record<string, TriggerFilterValue> | null;
   /** Defaults to private. This is account-local runtime state, not manifest config. */
   session_access?: TriggerSessionAccess;
 }
@@ -266,12 +324,18 @@ export interface UpdateProjectTriggerInput {
   event?: string;
   /** For type='event'. Replaces the provider event config. */
   event_config?: Record<string, unknown>;
+  /** null resets it to the default, 60. */
+  max_runs_per_hour?: number | null;
+  /** null removes the daily cap. */
+  max_runs_per_day?: number | null;
+  /** See {@link ProjectTrigger.overlap}. null resets it to the type's default. */
+  overlap?: 'skip' | 'allow' | null;
   session_mode?: ProjectTriggerSessionMode;
   session_id?: string | null;
   /** See {@link CreateProjectTriggerInput.session_key}. null clears it. */
   session_key?: string | null;
-  /** null or {} clears the filter. */
-  filter?: Record<string, string> | null;
+  /** Replaces the whole filter. null or {} clears it. */
+  filter?: Record<string, TriggerFilterValue> | null;
   /** Replaces the policy and updates prior sessions created by this trigger. */
   session_access?: TriggerSessionAccess;
 }
@@ -318,6 +382,31 @@ export async function deleteProjectTrigger(projectId: string, slug: string) {
 }
 
 /**
+ * The account's Pause all automations: `paused` stops every automatic fire in
+ * every project of the account — schedules, reminders, webhooks, app events and
+ * monitors. A manual fire still runs.
+ */
+export interface AccountAutomationsStatus {
+  paused: boolean;
+  paused_at: string | null;
+  /** The user who paused them; null while running. */
+  paused_by: string | null;
+  /** True when the caller may pause or resume (account.write). */
+  can_change: boolean;
+}
+
+export async function getAccountAutomations(accountId: string) {
+  return unwrap(await backendApi.get<AccountAutomationsStatus>(`/accounts/${accountId}/automations`));
+}
+
+/** Pause or resume every automation of the account. Needs account.write (owners and admins by default). */
+export async function setAccountAutomationsPaused(accountId: string, paused: boolean) {
+  return unwrap(
+    await backendApi.patch<AccountAutomationsStatus>(`/accounts/${accountId}/automations`, { paused }, { showErrors: false }),
+  );
+}
+
+/**
  * Pause or resume ALL of a project's triggers server-side (the per-project
  * kill-switch — see {@link ProjectTriggerListing.triggers_paused}). Returns the
  * updated trigger listing, including the new `triggers_paused` value.
@@ -335,17 +424,181 @@ export async function setProjectTriggersActivation(
 }
 
 export interface FireProjectTriggerResponse {
-  status: 'fired' | 'queued' | 'failed';
+  /** `deduped`: an identical fire is already in flight; nothing new was started. */
+  status: 'fired' | 'queued' | 'deduped' | 'failed';
   session_id?: string | null;
-  reason?: string;
+  /** The lifecycle command a queued fire waits on; null when none was written. */
+  command_id?: string | null;
+  /** True when this fire matched one already in flight. */
+  deduped?: boolean;
+  /** The run this fire wrote to the trigger's history; null when the write failed. */
+  run_id?: string | null;
+  reason?: string | null;
   error?: string;
 }
 
-export async function fireProjectTrigger(projectId: string, slug: string) {
+/** Options of {@link fireProjectTrigger}. Omit them for a plain manual fire. */
+export interface FireProjectTriggerOptions {
+  /** Deep-merged over the manual base payload at the root, e.g. `{ body: {…} }` for a webhook template. */
+  payload?: Record<string, unknown>;
+  /** Render the prompt and evaluate the filter only: no session, no command, no run. */
+  dryRun?: boolean;
+}
+
+/** What a real fire would send. `fireProjectTrigger(…, { dryRun: true })` writes nothing. */
+export interface ProjectTriggerDryRunResult {
+  dry_run: true;
+  rendered_prompt: string;
+  /** False when the trigger's `filter` would skip this payload. */
+  filter_matches: boolean;
+  /** The rendered key of a `keyed` trigger; null otherwise. */
+  session_key: string | null;
+  /** The merged payload, unredacted (it is the caller's own input). */
+  payload: Record<string, unknown>;
+}
+
+/** What fired a run. */
+export type ProjectTriggerRunSource = 'cron' | 'webhook' | 'manual' | 'monitor' | 'reminder' | 'event';
+
+/**
+ * A run's fire outcome. `fired` = a session was started or prompted;
+ * `rejected` = a webhook delivery refused before its signature verified.
+ */
+export type ProjectTriggerRunStatus = 'queued' | 'running' | 'fired' | 'failed' | 'skipped' | 'rejected';
+
+/** One fire of a trigger, from any source, as the run history lists it. */
+export interface ProjectTriggerRun {
+  run_id: string;
+  slug: string;
+  source: ProjectTriggerRunSource;
+  status: ProjectTriggerRunStatus;
+  /** The agent turn's outcome; null when the run started no turn. */
+  run_status: 'running' | 'succeeded' | 'failed' | null;
+  /** Why the fire failed, was skipped or was rejected. */
+  error: string | null;
+  /** Why the agent turn failed (`stopped` for a stopped turn). */
+  run_error: string | null;
+  session_id: string | null;
+  command_id: string | null;
+  /** The run this one replayed, or null. */
+  replay_of: string | null;
+  /** False for a webhook delivery refused before its signature verified. Replay then needs `confirmUnverified`. */
+  payload_verified: boolean;
+  /**
+   * The fire's payload. Values under secret-looking keys read `[redacted]`.
+   * An oversized payload reads `{ truncated: true, bytes }` and cannot be replayed.
+   */
+  payload: Record<string, unknown>;
+  scheduled_for: string;
+  created_at: string;
+  started_at: string;
+  /** Null while the run waits, runs, or its turn is still going. */
+  ended_at: string | null;
+  duration_ms: number | null;
+  /** LLM spend of the run's session between `started_at` and `ended_at` (or now). Null without a session. */
+  cost_usd: number | null;
+}
+
+/** One page of runs, newest first. */
+export interface ProjectTriggerRunList {
+  runs: ProjectTriggerRun[];
+  /**
+   * Pass as `cursor` for the next page; null on the last page. A page can hold
+   * fewer than `limit` runs (or none) while `next_cursor` is set: follow it.
+   */
+  next_cursor: string | null;
+}
+
+/** Paging of {@link listTriggerRuns}. `limit` is 1–100, default 25. */
+export interface ListTriggerRunsOptions {
+  cursor?: string;
+  limit?: number;
+}
+
+/** Paging and filter of {@link listProjectTriggerRuns}. */
+export interface ListProjectTriggerRunsOptions extends ListTriggerRunsOptions {
+  status?: ProjectTriggerRunStatus;
+}
+
+function runsQuery(options: ListProjectTriggerRunsOptions | undefined) {
+  const q = new URLSearchParams();
+  if (options?.status) q.set('status', options.status);
+  if (options?.limit != null) q.set('limit', String(options.limit));
+  if (options?.cursor) q.set('cursor', options.cursor);
+  const qs = q.toString();
+  return qs ? `?${qs}` : '';
+}
+
+/**
+ * Run a trigger now. It works while triggers are paused. With `payload` the
+ * prompt renders against that payload; with `dryRun: true` nothing is
+ * written and the rendered prompt comes back instead.
+ */
+export async function fireProjectTrigger(
+  projectId: string,
+  slug: string,
+  options: FireProjectTriggerOptions & { dryRun: true },
+): Promise<ProjectTriggerDryRunResult>;
+export async function fireProjectTrigger(
+  projectId: string,
+  slug: string,
+  options?: FireProjectTriggerOptions & { dryRun?: false },
+): Promise<FireProjectTriggerResponse>;
+export async function fireProjectTrigger(
+  projectId: string,
+  slug: string,
+  options?: FireProjectTriggerOptions,
+): Promise<FireProjectTriggerResponse | ProjectTriggerDryRunResult>;
+export async function fireProjectTrigger(projectId: string, slug: string, options?: FireProjectTriggerOptions) {
+  const body: { payload?: Record<string, unknown>; dry_run?: boolean } = {};
+  if (options?.payload !== undefined) body.payload = options.payload;
+  if (options?.dryRun !== undefined) body.dry_run = options.dryRun;
+  return unwrap(
+    await backendApi.post<FireProjectTriggerResponse | ProjectTriggerDryRunResult>(
+      `/projects/${projectId}/triggers/${slug}/fire`,
+      body,
+    ),
+  );
+}
+
+/** One trigger's runs, newest first. Follow `next_cursor` to page. */
+export async function listTriggerRuns(projectId: string, slug: string, options?: ListTriggerRunsOptions) {
+  return unwrap(
+    await backendApi.get<ProjectTriggerRunList>(
+      `/projects/${projectId}/triggers/${slug}/runs${runsQuery(options)}`,
+    ),
+  );
+}
+
+/** Every trigger run of the project the caller may see, newest first. `failed` includes dead-lettered runs. */
+export async function listProjectTriggerRuns(projectId: string, options?: ListProjectTriggerRunsOptions) {
+  return unwrap(
+    await backendApi.get<ProjectTriggerRunList>(`/projects/${projectId}/trigger-runs${runsQuery(options)}`),
+  );
+}
+
+/** Options of {@link replayTriggerRun}. */
+export interface ReplayTriggerRunOptions {
+  /** Required to replay a run whose `payload_verified` is false. */
+  confirmUnverified?: boolean;
+}
+
+/**
+ * Fire a trigger again with a past run's stored payload and the current spec.
+ * Throws: 404 unknown run (or a run of another trigger), 409
+ * `run_in_progress` while the run is queued or running, 409
+ * `payload_unverified` without `confirmUnverified`, 422 `payload_truncated`.
+ */
+export async function replayTriggerRun(
+  projectId: string,
+  slug: string,
+  runId: string,
+  options?: ReplayTriggerRunOptions,
+) {
   return unwrap(
     await backendApi.post<FireProjectTriggerResponse>(
-      `/projects/${projectId}/triggers/${slug}/fire`,
-      {},
+      `/projects/${projectId}/triggers/${slug}/runs/${runId}/replay`,
+      options?.confirmUnverified ? { confirm_unverified: true } : {},
     ),
   );
 }
@@ -365,7 +618,7 @@ export interface ProjectTriggerEventType {
 }
 
 export interface ProjectTriggerEventTypes {
-  /** Event source adapter id, such as `composio`. */
+  /** Event source adapter id: `composio` or `mcp`. */
   source?: string;
   /** @deprecated Same value as `source`. */
   provider: string;
@@ -377,7 +630,8 @@ export interface ProjectTriggerEventTypes {
  * The app events a connector, or an app with no connector, can trigger on.
  * Throws 404 for an unknown connector (`app_not_found` for an app with no
  * events), 400 for an unknown `source`, and 409 `event_source_unavailable`
- * when no event source serves it.
+ * when no event source serves it. With source `mcp`, a catalogue app or a
+ * project MCP server that has no events yet returns an empty `event_types`.
  */
 export async function listProjectTriggerEventTypes(
   projectId: string,
@@ -413,7 +667,7 @@ export interface ProjectTriggerEventConnector {
 
 /** An app that can trigger events, with the project's state for it. */
 export interface ProjectTriggerEventApp {
-  /** Event source adapter id, such as `composio`. The trigger's `event_source`. */
+  /** Event source adapter id: `composio` or `mcp`. The trigger's `event_source`. */
   source?: string;
   /** @deprecated Same value as `source`. */
   provider: string;
@@ -430,6 +684,8 @@ export interface ProjectTriggerEventApp {
   connectors?: ProjectTriggerEventConnector[];
   /** Slug to give a new connector for this app (never a reserved or taken one). */
   new_connector_slug?: string;
+  /** Source mcp: the catalogue MCP server to install for this app. Null for other sources and for a project MCP server outside the catalogue. */
+  mcp_url?: string | null;
 }
 
 export interface ProjectTriggerEventApps {

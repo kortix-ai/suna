@@ -17,6 +17,8 @@
  * Confirms use `useConfirmDialog` (never `Alert.alert`); failures use toasts.
  */
 
+import { PROJECT_ACTIONS } from '@kortix/sdk';
+import { useCan } from '@kortix/sdk/react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { useColorScheme } from 'nativewind';
@@ -74,9 +76,6 @@ interface MembersNavPageProps {
   /** Pushed as a sub-page of project Settings: Go back in place of the hamburger. */
   onBack?: () => void;
   onOpenDrawer?: () => void;
-  onOpenRightDrawer?: () => void;
-  isDrawerOpen?: boolean;
-  isRightDrawerOpen?: boolean;
 }
 
 type Confirm = (request: ConfirmRequest) => void;
@@ -338,9 +337,6 @@ export function MembersNavPage({
   projectId,
   onBack,
   onOpenDrawer,
-  onOpenRightDrawer,
-  isDrawerOpen,
-  isRightDrawerOpen,
 }: MembersNavPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -349,7 +345,7 @@ export function MembersNavPage({
   const projectQuery = useProject(projectId);
   const accessQuery = useProjectAccess(projectId);
   const project = projectQuery.data;
-  const canManage = project?.effective_project_role === 'manager' || !!accessQuery.data?.can_manage;
+  const canManage = useCan({ projectId }, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed;
   const invitesQuery = usePendingProjectInvites(projectId, canManage);
 
   const [sheet, setSheet] = useState<SheetState>(null);
@@ -383,9 +379,6 @@ export function MembersNavPage({
         title={page.label}
         onBack={onBack}
         onOpenDrawer={onBack ? undefined : onOpenDrawer}
-        onOpenRightDrawer={onOpenRightDrawer}
-        isDrawerOpen={isDrawerOpen}
-        isRightDrawerOpen={isRightDrawerOpen}
         onAdd={canManage ? () => open({ kind: 'invite' }) : undefined}
         addLabel="Invite member"
       />

@@ -1,12 +1,14 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
 
 // Mirrors the sanctioned internal import in reset-client-state.ts (see the
 // comment there). `mock.module` is keyed by the specifier STRING, so this
 // must stay byte-identical to the one the module under test uses — a
 // mismatch silently detaches the mock and lets the real IndexedDB run.
-import { useBrowserRecentsStore } from '@/stores/browser-recents-store';
-import { useTabStore } from '@/stores/tab-store';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
+import * as deviceCaches from '@/lib/device-caches';
+import { useBrowserRecentsStore } from '@kortix/ui/internal/stores/browser-recents-store';
+import { useMobileAppPromoStore } from '@kortix/ui/internal/stores/mobile-app-promo-store';
+import { useTabStore } from '@kortix/ui/internal/stores/tab-store';
+import { useUserPreferencesStore } from '@kortix/ui/internal/stores/user-preferences-store';
 import {
   clearImpersonationSession,
   getImpersonationSession,
@@ -28,16 +30,33 @@ import * as idb from '@kortix/sdk/internal/idb-sync-cache'; // eslint-disable-li
  *   - `AuthProvider.adoptUser` awaits it before `setIsLoading(false)` — the
  *     whole app parks on its loading frame at SIGN-IN.
  *
- * A hanging promise, not a rejecting one: a rejection is what a `try`/`catch`
- * already handled, and it is not the failure that was shipped.
+ * A hanging promise, not a rejecting one, is the failure that was shipped. A
+ * REJECTING purge is its own case, tested below: the `try`/`catch` around step
+ * 0 guards only `clearDeviceCaches`' SYNCHRONOUS prefix, so a purge rejection
+ * arrives in the discarded promise, and the `.catch` attached at the call site
+ * — not that `try`/`catch` — is what handles it.
  *
  * `mock.module` is process-wide, which is safe here because `apps/web` runs
  * `bun test --isolate` (package.json) — one process per file. This file mocks
- * exactly one export and spreads the rest of the real module.
+ * one export per mocked module and spreads the rest of each real module.
  */
 mock.module('@kortix/sdk/internal/idb-sync-cache', () => ({
   ...idb,
   clearSessionIDBCache: () => new Promise<void>(() => {}),
+}));
+
+/**
+ * Step 0 fires `clearDeviceCaches()` fire-and-forget: the `try`/`catch` around
+ * the call guards only its SYNCHRONOUS prefix (the detach + store swap), while
+ * the actual purge runs in the discarded promise. A rejection there would
+ * otherwise escape as an unhandled promise rejection during sign-out — in the
+ * exact path whose own contract is to settle. This mock makes that purge
+ * rejectable on demand; every other export of the real module stays live.
+ */
+let deviceCachePurge: () => Promise<void> = () => Promise.resolve();
+mock.module('@/lib/device-caches', () => ({
+  ...deviceCaches,
+  clearDeviceCaches: () => deviceCachePurge(),
 }));
 
 /**
@@ -59,7 +78,7 @@ mock.module('@kortix/sdk/internal/idb-sync-cache', () => ({
  * not `mock.module` on `@/lib/utils/clear-local-storage`. `mock.module` is
  * PROCESS-WIDE in this
  * repo: it replaced `clearUserLocalStorage` for every test that shares this
- * process, so `bun test src/lib/utils` outside `--isolate` broke
+ * process, so `bun test packages/ui/src/internal/lib/utils` outside `--isolate` broke
  * `clear-local-storage.test.ts`'s own tests of the real function with an
  * error belonging to a module this file never runs. The gated CI command
  * (`bun test --isolate --parallel=4`) never saw it — one process per file —
@@ -185,6 +204,30 @@ describe('resetClientState with an IndexedDB purge that never settles', () => {
   });
 });
 
+describe('resetClientState when the device-cache purge rejects', () => {
+  test('still settles, reports the rejection, and the later steps still ran', async () => {
+    const consoleError = spyOn(console, 'error').mockImplementation(() => {});
+    const identityBefore = sdkIdentityResets;
+    const rejecting = new Error('the device-cache purge failed');
+    deviceCachePurge = () => Promise.reject(rejecting);
+    try {
+      await resetClientState({ idbTimeoutMs: 5 });
+
+      // `resetClientState()` settled (a) and sign-out proceeded: the steps
+      // below step 0 still ran (c), counted here by the SDK identity reset.
+      expect(sdkIdentityResets).toBe(identityBefore + 1);
+      // The rejection was HANDLED, not discarded (b): it reached the same
+      // console.error channel as every other step. Without the promise
+      // handler this assertion fails AND Bun fails the test outright with the
+      // unhandled rejection, so red here means the rejection truly escaped.
+      expect(consoleError).toHaveBeenCalledWith('Failed to clear the device caches:', rejecting);
+    } finally {
+      deviceCachePurge = () => Promise.resolve();
+      consoleError.mockRestore();
+    }
+  });
+});
+
 describe('resetClientState when localStorage access throws', () => {
   beforeEach(() => stubThrowingLocalStorage());
   afterEach(() => restoreLocalStorage());
@@ -253,6 +296,51 @@ describe('resetClientState resets registered persisted stores IN MEMORY, not jus
     await resetClientState({ idbTimeoutMs: 5 });
 
     expect(useUserPreferencesStore.getState().preferences.darkTheme).toBe('pure-dark');
+  });
+
+  test('a promo dismissal survives resetClientState() — a fresh sign-in must not re-ask', async () => {
+    // `kortix.mobileAppPromo` is device-scoped (`KEEP_STORAGE_KEYS`), so the
+    // sign-out sweep must leave both halves of this dismissal alone: the disk
+    // key (the sweep) and the store's in-memory `closed` (it deliberately does
+    // not register a reset). Sweeping either half re-asked the promo on the
+    // next sign-in (KRTX-2640).
+    //
+    // The store's persist rides `window.localStorage` and the sweep reads the
+    // bare globals; this environment has no DOM (`test-setup.ts`), so a small
+    // fake stands in for all three, the same technique
+    // `clear-local-storage.test.ts` uses throughout.
+    const entries = new Map<string, string>();
+    const fake: Storage = {
+      get length() {
+        return entries.size;
+      },
+      clear: () => entries.clear(),
+      getItem: (key) => (entries.has(key) ? entries.get(key)! : null),
+      key: (index) => [...entries.keys()][index] ?? null,
+      removeItem: (key) => entries.delete(key),
+      setItem: (key, value) => entries.set(key, value),
+    };
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      writable: true,
+      value: { localStorage: fake, sessionStorage: fake },
+    });
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, writable: true, value: fake });
+    Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, writable: true, value: fake });
+    try {
+      useMobileAppPromoStore.getState().close();
+      expect(useMobileAppPromoStore.getState().closed).toBe(true);
+
+      await resetClientState({ idbTimeoutMs: 5 });
+
+      expect(useMobileAppPromoStore.getState().closed).toBe(true);
+      const persisted = JSON.parse(entries.get('kortix.mobileAppPromo') ?? '{}') as {
+        state?: { closed?: boolean };
+      };
+      expect(persisted.state?.closed).toBe(true);
+    } finally {
+      restoreLocalStorage();
+    }
   });
 });
 

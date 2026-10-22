@@ -4,7 +4,9 @@
 //! brings the gtk and appindicator system libraries).
 //!
 //! The menu: the recording status, the sync status, "Open Kortix Capture", and on a
-//! computer the person set up, the pauses and "Resume". There is no Quit. Signing in
+//! computer the person set up, the pauses and "Resume", then "Restart Kortix Capture" and
+//! "Quit Kortix Capture" (`kortix-capture restart|quit`: they stop the service, not only
+//! this icon, so the supervisor does not bring it straight back). Signing in
 //! to Kortix lives in the window, under Sync. On a managed computer the menu names
 //! the organization and has no Pause: the person cannot end a recording
 //! the organization runs; the machine service's `service run --managed` owns it and
@@ -35,9 +37,13 @@ use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 const ICON_RECORDING: &[u8] = include_bytes!("../../../assets/icons/trayTemplate@2x.png");
 #[cfg(target_os = "macos")]
 const ICON_IDLE: &[u8] = include_bytes!("../../../assets/icons/trayIdleTemplate@2x.png");
-#[cfg(not(target_os = "macos"))]
+#[cfg(windows)]
+const ICON_RECORDING: &[u8] = include_bytes!("../../../assets/icons/windows/tray.png");
+#[cfg(windows)]
+const ICON_IDLE: &[u8] = include_bytes!("../../../assets/icons/windows/trayIdle.png");
+#[cfg(all(unix, not(target_os = "macos")))]
 const ICON_RECORDING: &[u8] = include_bytes!("../../../assets/icons/tray.png");
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(unix, not(target_os = "macos")))]
 const ICON_IDLE: &[u8] = include_bytes!("../../../assets/icons/trayIdle.png");
 /// macOS draws a template image in the menu bar's own color.
 const TEMPLATE: bool = cfg!(target_os = "macos");
@@ -48,6 +54,8 @@ const PAUSE: &str = "kortix.pause";
 const RESUME: &str = "kortix.resume";
 const PAUSE_TOMORROW: &str = "kortix.pause.tomorrow";
 const PAUSE_FOREVER: &str = "kortix.pause.forever";
+const RESTART: &str = "kortix.restart";
+const QUIT: &str = "kortix.quit";
 /// How often the tray looks for a notice it has not shown yet.
 const NOTICE_POLL: Duration = Duration::from_secs(5);
 /// How long sync stays broken before the tray notifies.
@@ -164,6 +172,13 @@ fn menu(v: &View) -> (Menu, MenuItem, MenuItem) {
             }
             TrayAction::Resume => {
                 let _ = menu.append(&MenuItem::with_id(RESUME, "Resume", true, None));
+            }
+            TrayAction::Restart => {
+                let _ = menu.append(&PredefinedMenuItem::separator());
+                let _ = menu.append(&MenuItem::with_id(RESTART, "Restart Kortix Capture", true, None));
+            }
+            TrayAction::Quit => {
+                let _ = menu.append(&MenuItem::with_id(QUIT, "Quit Kortix Capture", true, None));
             }
         }
     }
@@ -338,6 +353,9 @@ pub fn run(paths: &MemoryPaths) -> Result<()> {
                     });
                     next_refresh = Instant::now() + Duration::from_secs(2);
                 }
+                // The service ends this tray too; the OS (or opening the app) brings it back.
+                RESTART => spawn_self(&["restart"]),
+                QUIT => spawn_self(&["quit"]),
                 _ => {}
             }
         }

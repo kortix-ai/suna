@@ -338,10 +338,13 @@ export function createTurnAutoResumer(deps: TurnAutoResumerDeps): TurnAutoResume
     try {
       const url = `${deps.opencode.getInternalUrl()}/session/${encodeURIComponent(sessionId)}/prompt_async?directory=${encodeURIComponent(deps.cfg.workspace)}`;
       // No `model` — the session continues on whatever model it was already using.
+      // `synthetic` marks harness context: the transcript renders this prompt as
+      // a notice, never as a user bubble (KRTX-2597), the same flag the initial
+      // prompt's context part carries (initial-prompt.ts).
       const res = await fetchImpl(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parts: [{ type: 'text', text }] }),
+        body: JSON.stringify({ parts: [{ type: 'text', text, synthetic: true }] }),
         signal: AbortSignal.timeout(15_000),
       });
       return res.ok;

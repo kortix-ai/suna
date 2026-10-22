@@ -17,6 +17,9 @@ const Empty = () => null;
 const renders = { mark: 0, children: 0 };
 let childrenProps: any[] = [];
 let navPills: any[] = [];
+// The IAM leaves the caller holds; null = every leaf (a project manager).
+let held: string[] | null = null;
+let appCount = 0;
 let paged: Record<string, any> = {};
 const VirtualList = (props: any) => {
   // A virtualised list renders each cell as a PureComponent: a cell re-renders
@@ -63,6 +66,11 @@ const fakes: Record<string, Record<string, unknown>> = {
     useProjectSessionsPaged: (_: string, options: { startedBy?: string; view?: string }) =>
       paged[options.view ?? options.startedBy ?? ''] ?? page([]),
   },
+  '@kortix/sdk/react': {
+    useCans: (_: unknown, actions: string[]) =>
+      Object.fromEntries(actions.map((a) => [a, { allowed: held === null || held.includes(a), isLoading: false }])),
+    useProjectApps: () => ({ data: Array.from({ length: appCount }) }),
+  },
   '@/contexts': { useAuthContext: () => ({ user: { id: 'me' } }) },
   '@/hooks/useProfileEditor': { useProfileEditor: () => profile },
   '@/hooks/useActivePlanName': { useActivePlanName: () => null },
@@ -84,6 +92,7 @@ const real = new Set([
   '@/lib/session/session-tree',
   '@/lib/session/session-pages',
   '@/lib/session/project-stack',
+  '@/lib/session/nav-access',
   '@/stores/session-tree-store',
   '@/components/session/SessionSubsessionTree',
 ]);
@@ -128,6 +137,8 @@ beforeEach(() => {
   renders.mark = renders.children = 0;
   childrenProps = [];
   navPills = [];
+  held = null;
+  appCount = 0;
   // `p-1` is expanded below: its children block shows.
   paged = {
     me: page([row('s-1'), row('s-2'), row('p-1', { child_count: 2 })]),
@@ -220,46 +231,28 @@ describe('ProjectLeftDrawer renders', () => {
     expect(selected[0]).toStartWith('Child 6, sub-session of ');
   });
 
-  test('notification_center off: the pills from before KRTX-1742, no Notifications', async () => {
+  test('the nav pills are Search, Files, Review and Apps: Notifications is the home bell', async () => {
     await act(async () => {
-      tree = create(
-        React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true, notificationsUnreadCount: 3 })
-      );
+      tree = create(React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true }));
     });
     expect([...new Set(navPills.map((props) => props.label))]).toEqual(['Search', 'Files', 'Review', 'Apps']);
   });
 
-  test('the Notifications pill shows the unread count and opens the inbox', async () => {
-    navigated.length = 0;
+  test('a plain member sees neither Review nor Apps; an existing App brings Apps back', async () => {
+    held = ['project.review.read'];
     await act(async () => {
-      tree = create(
-        React.createElement(Drawer.ProjectLeftDrawer, {
-          projectId: 'proj',
-          ...handlers,
-          open: true,
-          notificationsEnabled: true,
-          notificationsUnreadCount: 3,
-        })
-      );
+      tree = create(React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true }));
     });
-    expect([...new Set(navPills.map((props) => props.label))]).toEqual(['Search', 'Files', 'Review', 'Notifications', 'Apps']);
-    const pill = navPills.filter((props) => props.label === 'Notifications').at(-1);
-    expect(pill.accessibilityLabel).toBe('Notifications, 3 unread');
-    expect(pill.trailing.props.count).toBe(3);
-    await act(async () => pill.onPress());
-    expect(navigated).toEqual([['inbox']]);
+    expect([...new Set(navPills.map((props) => props.label))]).toEqual(['Search', 'Files']);
+    appCount = 1;
+    navPills = [];
+    await act(async () => {
+      tree.unmount();
+      tree = create(React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true }));
+    });
+    expect([...new Set(navPills.map((props) => props.label))]).toEqual(['Search', 'Files', 'Apps']);
   });
 
-  test('with nothing unread the pill reads its name alone', async () => {
-    await act(async () => {
-      tree = create(
-        React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true, notificationsEnabled: true })
-      );
-    });
-    const pill = navPills.filter((props) => props.label === 'Notifications').at(-1);
-    expect(pill.accessibilityLabel).toBe('Notifications');
-    expect(pill.trailing.props.count).toBe(0);
-  });
 });
 
 // KRTX-1727: the server drops rows the viewer may not see after a bounded

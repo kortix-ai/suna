@@ -12,8 +12,8 @@ import { join, resolve } from 'node:path';
 import { Client } from 'pg';
 import { mapWithConcurrency } from '../src/core/concurrency';
 import {
-  DB_SUITE_QUARANTINE,
   type DbSuite,
+  LOCAL_SUPERUSER,
   SUITE_DATABASE_PREFIX,
   dbSuiteVerdict,
   discoverDbSuites,
@@ -26,6 +26,7 @@ import {
   suiteEnvironment,
   templateDatabaseName,
   withDatabase,
+  withUser,
 } from '../src/core/db-suites';
 import { ensureLocalSupabase, resolveLocalTopology } from '../src/core/local-stack';
 
@@ -173,6 +174,22 @@ async function dumpPlatformAuthSchema(adminUrl: string): Promise<string> {
 }
 
 /**
+ * Every suite connects as `postgres`, which a fresh Supabase stack demotes
+ * from superuser (`ALTER ROLE postgres NOSUPERUSER`, KRTX-2026). Supabase's
+ * own supautils extension lets that role SET `session_replication_role` on
+ * current images, but the allowance belongs to the image, not to the stack —
+ * a stack without it made a suite die mid-run with `permission denied to set
+ * parameter`. Grant the SET privilege once per run as the cluster superuser,
+ * so a fixture on the suites' own connection can write past a trigger on any
+ * stack, image included or not. Idempotent: the catalog keeps one ACL row.
+ */
+async function grantSessionReplicationRole(adminUrl: string): Promise<void> {
+  await withClient(withUser(adminUrl, LOCAL_SUPERUSER), (client) =>
+    client.query('grant set on parameter session_replication_role to postgres'),
+  );
+}
+
+/**
  * The migrated template for the current migration history. Built once per
  * hash under a temporary name and published by RENAME, so two concurrent runs
  * never clone a half-migrated template.
@@ -236,7 +253,12 @@ interface SuiteResult {
 async function runSuite(
   suite: DbSuite,
   index: number,
-  context: { adminUrl: string; template: string; reportDir: string },
+  context: {
+    adminUrl: string;
+    template: string;
+    reportDir: string;
+    storage?: { apiUrl: string; accessKeyId: string; secretAccessKey: string };
+  },
 ): Promise<SuiteResult> {
   const startedAt = performance.now();
   const database = suiteDatabaseName(process.pid, index);
@@ -267,6 +289,8 @@ async function runSuite(
           ...suiteEnvironment({
             databaseUrl: withDatabase(context.adminUrl, database),
             adminUrl: context.adminUrl,
+            file: suite.file,
+            storage: context.storage,
           }),
         },
         stdout: 'pipe',
@@ -309,19 +333,17 @@ async function main(): Promise<number> {
   const startedAt = performance.now();
   const { filters, workers } = parseArgs(process.argv.slice(2));
   const discovered = discoverDbSuites(root);
-  const selected = selectDbSuites(discovered, filters);
-  const quarantined = selected.filter((suite) => DB_SUITE_QUARANTINE[suite.file]);
-  const suites = selected.filter((suite) => !DB_SUITE_QUARANTINE[suite.file]);
-  for (const suite of quarantined) {
-    log(`QUARANTINED ${suite.file}: ${DB_SUITE_QUARANTINE[suite.file]}`);
-  }
+  const suites = selectDbSuites(discovered, filters);
 
   const topology = resolveLocalTopology(root);
   const supabase = await ensureLocalSupabase(topology, { autoStart: false });
   const adminUrl = supabase.environment.DB_URL;
   const apiUrl = supabase.environment.API_URL;
   if (!adminUrl || !apiUrl) throw new Error('local Supabase reports no DB_URL or API_URL');
+  const { S3_PROTOCOL_ACCESS_KEY_ID: accessKeyId, S3_PROTOCOL_ACCESS_KEY_SECRET: secretAccessKey } = supabase.environment;
+  const storage = accessKeyId && secretAccessKey ? { apiUrl, accessKeyId, secretAccessKey } : undefined;
   await waitForPlatformAuth(apiUrl);
+  await grantSessionReplicationRole(adminUrl);
 
   const templateStartedAt = performance.now();
   const template = await ensureTemplate(adminUrl);
@@ -337,7 +359,7 @@ async function main(): Promise<number> {
     results = await mapWithConcurrency(
       suites.map((suite, index) => ({ suite, index })),
       workers,
-      ({ suite, index }) => runSuite(suite, index, { adminUrl, template: template.name, reportDir }),
+      ({ suite, index }) => runSuite(suite, index, { adminUrl, template: template.name, reportDir, storage }),
     );
   } finally {
     await rm(reportDir, { recursive: true, force: true });
@@ -349,7 +371,7 @@ async function main(): Promise<number> {
   log(`slowest: ${slowest.map((r) => `${r.suite.file} ${seconds(r.durationMs)}`).join(', ')}`);
   for (const result of failed) log(`FAILED ${result.suite.file}: ${result.reason}`);
   log(
-    `${failed.length === 0 ? 'PASS' : 'FAIL'} ${results.length - failed.length}/${results.length} suites, ${tests} tests, ${quarantined.length} quarantined, ${seconds(performance.now() - startedAt)}`,
+    `${failed.length === 0 ? 'PASS' : 'FAIL'} ${results.length - failed.length}/${results.length} suites, ${tests} tests, ${seconds(performance.now() - startedAt)}`,
   );
   return failed.length === 0 ? 0 : 1;
 }

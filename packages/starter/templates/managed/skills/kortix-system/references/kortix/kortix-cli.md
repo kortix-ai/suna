@@ -104,10 +104,23 @@ invocation: `kortix projects ls --host local`.
 | Command | Effect |
 | --- | --- |
 | `kortix projects ls` | Every project on the active account. |
-| `kortix projects info [<id-or-slug>]` | Show one project (defaults to the linked one — see below). |
+| `kortix projects info [<id-or-slug>]` | Show one project (defaults to the linked one — see below), including its `git` line: `connected`, or `disconnected (<reason>)` with the cause and the reconnect link. |
 | `kortix projects link [<id>]` | Bind cwd to a remote project. Writes `.kortix/link.json` with `project_id`, `account_id`, `host`, `host_url`. No arg → arrow-key picker. |
 | `kortix projects unlink` | Drop `.kortix/link.json`. |
 | `kortix projects open [<id>]` | Open the dashboard URL for a project in your browser. |
+
+#### Repository disconnected
+
+When the Kortix GitHub App can no longer reach the project's repository (the
+App was uninstalled or suspended on the GitHub owner, or the repository was
+deleted, renamed, or removed from the App), every command that reads the
+repository fails with HTTP `409` `repository_disconnected`. The message names
+the cause and who fixes it. `git fetch` and `git push` print the same message
+as `remote: …`. New sessions and scheduled triggers do not start until it is
+fixed. An agent cannot fix it: tell the user that a GitHub owner of the
+organization must reinstall the App or re-grant the repository
+(**Customize → Settings → Git repo → Reconnect GitHub**, or the link
+`kortix projects info` prints). Do not retry in a loop.
 
 #### How a command finds "the project"
 
@@ -279,7 +292,7 @@ Each session is an isolated sandbox VM on its own ephemeral branch.
 | `kortix sessions info <id>` | Detail view: status, branch, base ref, agent, sandbox URL, errors. `--json`. |
 | `kortix sessions log [<id>] [--limit N] [--json]` | **Read-only** peek at a session agent's recent messages — see what another agent is *doing right now* without sending it anything. Never wakes a stopped sandbox. `--json` prints the session log (`"schema": "kortix.session/2"`): `source` (`log`, or `v1` when the session has no stored log yet) and `threads` (root and sub-agents), each with its newest `--limit` messages as `blocks` and `has_more`; a running turn's messages the log does not hold yet carry `ext.kortix.data.provisional: true` (read this key; the top-level `"provisional": true` they also carry is deprecated and goes in the next release). The human header names the sandbox status and, read live, whether the agent is `working` or `idle`. `--schema v1` (deprecated, removed in the next release) prints the old array of `{role, text, parts}` per root message. Aliases: `messages`, `history`. No id → most-recent running (an interactive picker when several run on a TTY). |
 | `kortix sessions chat [<id>]` | Talk to a session's agent. `--prompt "<text>"` = one-shot (prints the reply and exits); add `--json` to get that reply as JSON (a synchronous subagent call); no flag = REPL. No id → picks/asks which running session. `--new` starts a fresh one. |
-| `kortix sessions new [--prompt "<text>"] [--wait] [--json]` | Start a new session. `--wait` blocks until it's running; `--json` prints the session object so you can capture `session_id` to orchestrate. `--with-file <local path>` (repeatable) uploads each file to `/workspace/incoming/<name>` **before** the prompt is delivered, and appends a manifest of the paths to the prompt. |
+| `kortix sessions new [--prompt "<text>"] [--wait] [--json]` | Start a new session. `--wait` blocks until the runtime is ready, not until the prompt's turn ends, and exits 1 when that turn has already failed; run `kortix sessions wait-for <id>` to wait for the turn (exit 1 when it fails). `--json` prints the session object so you can capture `session_id` to orchestrate. `--with-file <local path>` (repeatable) uploads each file to `/workspace/incoming/<name>` **before** the prompt is delivered, and appends a manifest of the paths to the prompt. |
 | `kortix sessions wait-for <id> [--timeout <s>]` | Block until the session's agent finishes its current work — never poll with sleeps. Exit `0` = done, `3` = blocked on a permission/question ask (answer via `sessions pending`), `124` = still working at the timeout (default 300s). Alias: `wait`. |
 | `kortix sessions cp <src> <dst> [-r]` | Copy files between your machine/sandbox and a session's sandbox, or directly between two sessions' sandboxes. Refs are scp-style: `<session-id>:<path>` is remote, plain is local; paths resolve under `/workspace` unless absolute. Overwrites the exact destination path; `-r` for directories. Wakes stopped sandboxes on demand. |
 | `kortix sessions restart <id>` | Re-provision a session in place. |
@@ -351,6 +364,9 @@ the same state.
 | `kortix triggers ls [--type cron\|webhook\|event\|monitor] [--connector <slug>] [--json]` | List triggers + runtime state (`last_fired_at`). `--type` keeps one kind; `--type event` groups the rows by app. `--connector` keeps the app events on one connector. The filters combine, and `--json` respects them. |
 | `kortix triggers info <slug>` | Show one trigger in full. |
 | `kortix triggers fire <slug>` | Manually fire a trigger now. |
+| `kortix triggers fire <slug> --payload <json\|@file> [--dry-run] [--json]` | Fire with a JSON object merged over the manual payload. `--dry-run` fires nothing: it prints the rendered prompt, the filter verdict and the session key. Test a webhook or event prompt this way. |
+| `kortix triggers runs <slug> [--status queued\|running\|fired\|failed\|skipped\|rejected] [--limit N] [--cursor <c>] [--json]` | The trigger's run history, newest first: run id, started, source, status, run status, duration, cost, session. |
+| `kortix triggers replay <slug> <run_id> [--confirm-unverified]` | Fire again with that run's stored payload. An unverified webhook run exits 1 until you pass `--confirm-unverified`. |
 | `kortix triggers enable <slug>` | Set `enabled = true`. |
 | `kortix triggers disable <slug>` | Set `enabled = false`. |
 | `kortix triggers events --apps [--json]` (all `triggers events` forms and `triggers add|set --type event` need the project flag `event_triggers`: off prints `App event triggers are off for this project. Turn them on: kortix projects features enable event_triggers`, exit 1) | List apps that can trigger events: event count and state (`connected`, `needs account`). Under each app, every connector (profile) with its shared accounts: label, `as <connected_as>`, `default`, `not connected`. Apps with no connector print as one `No connector yet` line. |
@@ -384,6 +400,7 @@ enable reminders` turns it on (the user's decision).
 | `kortix reminders add "<text>" --cron "0 0 9 * * 1-5" --timezone Europe/Berlin` | Repeat on a 6-field cron. |
 | `kortix reminders ls [--json]` | This session's reminders: id, state (`active`/`paused`/`done`), next fire. |
 | `kortix reminders pause <id>` / `resume <id>` | Turn one off / on (resume re-arms from now). |
+| `kortix reminders run <id>` | Fire once now: retry a failed run. The schedule does not move. |
 | `kortix reminders rm <id>` | Delete it. Do this as soon as its condition is met. |
 
 Each fire arrives as `[REMINDER <id> — …]` followed by the text, and wakes a

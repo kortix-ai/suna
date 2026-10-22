@@ -80,7 +80,11 @@ mock.module('@/components/kortix/avatar', () => ({ Avatar: none }));
 // ends the dismiss animation synchronously (fires onDismiss).
 mock.module('@/components/kortix/sheet', () => {
   const { forwardRef, useImperativeHandle } = React;
+  // The real close-then slot: the archive confirm depends on its defer/take
+  // semantics, so the mock carries it through rather than stubbing it.
+  const { useCloseThen } = require('@/components/kortix/use-close-then');
   return {
+    useCloseThen,
     Sheet: forwardRef(function Sheet(props: HostProps & { onDismiss?: () => void }, ref) {
       useImperativeHandle(ref, () => ({
         open: () => sheetOpen.push(1),

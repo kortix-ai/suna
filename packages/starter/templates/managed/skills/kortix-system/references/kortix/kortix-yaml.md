@@ -1,99 +1,97 @@
 # `kortix.yaml` — in-depth reference
 
-`kortix.yaml` is the single source of truth for everything the Kortix
-platform reads about a project. It lives at the repo root. This page
-documents `kortix_version: 3`, the current version.
+`kortix.yaml` is the single source of truth for everything the
+Kortix platform reads about a project. It lives at the repo root.
+Any repo with a valid `kortix.yaml` (or, for legacy v1 projects, a
+`kortix.toml`) at the root is a Kortix project.
 
-A v3 manifest does two things:
+The platform parser is permissive: it never throws on a bad entry.
+Instead, bad triggers go into an `errors` list returned alongside the
+good ones, so a single typo doesn't break the whole file.
 
-1. **It registers what exists.** `skills`, `tools`, `commands`,
-   `extensions`, `connectors`, `apps`, `env` (secret names) and `sandbox`
-   templates. A registry entry gives a thing a name. It gives no agent
-   access to it.
-2. **It defines every agent.** Each `agents.<name>` block holds the
-   agent's prompt, model and tool policy, and the registered things it
-   enables by name.
-
-Nothing applies to every agent: no project-wide permission, command or
-extension. Harness-specific code lives only under `extensions`, with one
-implementation per harness. Unknown keys are errors. A v3 session reads
-only the compiled manifest, never `harnesses/`, `.kortix/`, `.opencode/`,
-`.pi/`, `opencode.jsonc` or a pi `settings.json`.
+This page documents `kortix_version: 2`: a governance-only `agents:`
+name-to-block map, and a session harness (`runtime:`), OpenCode or pi.
 
 The authoritative structural spec is the public JSON Schema:
-`https://kortix.com/schema/kortix.v3.schema.json`, or
+`https://kortix.com/schema/kortix.v2.schema.json`, or
 `https://kortix.com/schema/kortix.schema.json` for all published versions.
-Use `kortix schema --version 3` offline. Versions 1 and 2 are legacy: see
-[Legacy versions](#legacy-versions).
+Use `kortix schema --version 2` offline.
 
-## Version 3 example
+> **Legacy note — v1 used TOML.** Projects created before v2 shipped
+> may still have a `kortix.toml` at the root with `kortix_version: 1`
+> (or no `kortix_version` at all). The platform resolves the manifest
+> by trying `kortix.yaml`, then `kortix.yml`, then falling back to
+> `kortix.toml` — so a v1 TOML project keeps working as-is; nothing
+> breaks. To move a project onto v2, rename `kortix.toml` to
+> `kortix.yaml`, convert its contents to YAML, bump `kortix_version` to
+> `2`, add the now-required `default_agent`, and rework any `[[agents]]`
+> array into the `agents:` map described below (or run `kortix migrate`
+> once available). `kortix_version: 2` manifests must be YAML — TOML
+> only supports `kortix_version: 1`.
+
+## Version 2 example
 
 ```yaml
-# yaml-language-server: $schema=https://kortix.com/schema/kortix.v3.schema.json
-kortix_version: 3
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.v2.schema.json
+kortix_version: 2
+
+default_agent: kortix
 
 project:
-  name: acme-support
-  description: Answers help desk tickets and reports on them.
+  name: my-project
+  description: What this project is.
 
-default_agent: assistant
-
-# The harness a session boots: "opencode" (the default) or "pi".
-runtime: opencode
-
-# Secret names the runtime needs. `required` is *advisory* — surfaced in
-# the dashboard so the user knows what to set, not enforced at session start.
+# Env vars the runtime needs. `required` is *advisory* — surfaced in
+# the dashboard so the user knows what to set, but not enforced at
+# session start.
 env:
-  required: [HELPDESK_TOKEN]
-  optional: [SLACK_WEBHOOK_URL, WEBHOOK_SLACK_SECRET]
+  required:
+    - DATABASE_URL
+  optional:
+    - STRIPE_API_KEY
+    - WEBHOOK_SLACK_SECRET
 
 # Named sandbox environments. Each template uses one image or Dockerfile.
 sandbox:
-  default: support
+  default: ml
   templates:
-    - slug: support
-      name: Support
-      dockerfile: sandbox/Dockerfile
-      cpu: 2
-      memory: 4
+    - slug: ml
+      name: ML
+      dockerfile: Dockerfile.ml
 
-# Connector-call approvals (the connector registry's rules).
-policy:
-  default_mode: risk
-policies:
-  - match: helpdesk.close_ticket
-    action: require_approval
+# The harness a session boots while the project's pi_harness flag is off:
+# "opencode" (the default) or "pi". The flag is on by default and boots pi.
+runtime: opencode
 
-# ─── Registries: what exists in this project ─────────────────────
-skills:
-  pdf: skills/pdf                                # skills/pdf/SKILL.md
-  triage-rules: support/skills/triage-rules
-
+# The tools every session gets (references/kortix/tools.md). `kortix:<name>`
+# is a Kortix tool; a path is the project's own module. With this key, only
+# the listed Kortix tools load. Delete a line to remove that tool.
 tools:
-  lookup_order: tools/lookup_order.ts            # the seven Kortix tools need no entry
+  web_search: kortix:web_search
+  image_search: kortix:image_search
+  scrape_webpage: kortix:scrape_webpage
+  memory: kortix:memory
+  show: kortix:show
+  lookup_order: tools/lookup_order.ts
 
-commands:
-  summarize:
-    description: Summarize a text in five bullets.
-    prompt: Summarize $ARGUMENTS in five bullets.
-  weekly-report:
-    description: Write the weekly support report.
-    prompt_file: support/commands/weekly-report.md
+# Files only OpenCode reads: opencode.jsonc, plugins/, tools/, commands/.
+# Defaults to "harnesses/opencode", then the legacy ".kortix/opencode",
+# when omitted. The agent daemon launches opencode with
+# OPENCODE_CONFIG_DIR pointed here. Agents and skills sit at the root;
+# Kortix-side launchability and grants live in the `agents:` map below.
+opencode:
+  config_dir: harnesses/opencode
 
-extensions:
-  audit:
-    opencode: extensions/audit.opencode.ts       # an OpenCode plugin module
-    pi: extensions/audit.pi.ts                   # a pi extension file
-  web-access:
-    pi: npm:pi-web-access@0.30.0                 # a pi package, exact version
+# Files only pi reads: extensions/, prompts/, skills/, settings.json.
+# Defaults to "harnesses/pi", then the legacy ".kortix/pi", when omitted.
+pi:
+  config_dir: harnesses/pi
 
-connectors:
-  - slug: helpdesk
-    name: Help desk
-    provider: openapi
-    spec: https://helpdesk.example.com/openapi.json
-    auth:
-      type: bearer
+# pi packages (https://pi.dev/packages) every pi session of the project loads.
+harnesses:
+  pi:
+    packages:
+      - npm:pi-web-access@0.30.0
 
 # ─── Apps ─────────────────────────────────────────────────────────
 # Local, repeatable deployment defaults. `kortix apps deploy` remains the
@@ -115,7 +113,7 @@ connectors:
 apps:
   backend:
     type: oci_image
-    image: ghcr.io/get-convex/convex-backend@sha256:<digest>   # pinned by the template
+    image: ghcr.io/convex/convex-backend@sha256:<digest>   # pinned by the template
     command: ["sh", "-c", "cd /convex && CONVEX_CLOUD_ORIGIN=$KORTIX_APP_URL CONVEX_SITE_ORIGIN=$KORTIX_SERVICE_URL_SITE exec ./run_backend.sh"]
     labels: [backend]          # tags only; no behavior depends on them
     display: { preview: none } # an icon card; listed | preview (live | none) | parent
@@ -175,7 +173,7 @@ triggers:
   - slug: daily-digest
     name: Daily digest
     type: cron
-    agent: assistant
+    agent: kortix
     enabled: true
     cron: "0 0 9 * * 1-5"            # 09:00 Mon–Fri
     timezone: America/Los_Angeles
@@ -186,220 +184,94 @@ triggers:
   - slug: slack-hook
     name: Slack handler
     type: webhook
-    agent: assistant
+    agent: kortix
     enabled: true
     secret_env: WEBHOOK_SLACK_SECRET   # add value via Secrets Manager
     prompt: |
       Slack event from {{ headers.user_agent }}.
       User said: {{ body.text }}
-  - slug: weekly-report
-    type: cron
-    agent: reporter
-    cron: "0 0 15 * * 1"
-    timezone: Europe/Berlin
-    prompt: Write the weekly support report for the last 7 days.
 
-# ─── Agents: each one decides what it uses ───────────────────────
+# ─── Agents (governance only) ─────────────────────────────────────
 agents:
-  assistant:
-    description: The project's main agent. Answers tickets and delegates research.
-    mode: primary
-    model: kortix/glm-5.3-flash
-    prompt_file: agents/assistant.md
-    permission:
-      bash:
-        "*": allow
-        "git push *": ask
-      external_directory: deny
-    tools: all
+  kortix:
+    file: agents/kortix.md
+    connectors: all
+    secrets: all
+    kortix_permissions: all
     skills: all
-    subagents: [researcher]
-    commands: [summarize, weekly-report]
-    extensions: [audit]
-    connectors: [helpdesk]
-    secrets: [HELPDESK_TOKEN]
-    apps: [api]
-    kortix_permissions: [project.session.read, project.review.submit]
-
-  researcher:
-    description: Looks up an account's order history. Never edits files.
-    mode: subagent
-    prompt: |
-      You research one account. Read its orders with lookup_order and
-      report what you found. Never edit files.
-    permission:
-      edit: deny
-      bash: deny
-    tools: [read, grep, lookup_order, web_search]
-    skills: [triage-rules]
-    secrets: [HELPDESK_TOKEN]
-
-  reporter:
-    description: Writes the weekly report on a schedule.
-    mode: primary
-    hidden: true
-    prompt_file: support/agents/reporter.md
-    commands: [weekly-report]
-    extensions: [web-access]
-    codemode: only
-    connectors: [helpdesk]
-    secrets: [SLACK_WEBHOOK_URL]
-    workspace:
-      project_repository: false
+  release-bot:
+    file: agents/release-bot.md
+    sandbox: ml
+    connectors: [github]
+    kortix_permissions: [project.write, project.cr.open]    # may OPEN a CR, but not merge it
 ```
 
-## `agents:`
+## `agents:` in version 2
 
-`agents` maps an agent name (`[a-z0-9][a-z0-9_-]{0,127}`) to one block.
-At least one agent is required. Only declared agents run: OpenCode's
-`build`, `plan`, `general` and `explore` are off unless the manifest
-declares that name, and pi offers no built-in `general` or `explore`
-subagent. Both harnesses run the same compiled agent.
+Per-agent **governance overlay**. Agent behavior (prompt, mode, model,
+tools, permissions) stays in the agent's `.md` frontmatter and body, which
+both harnesses read; OpenCode-only settings stay in `opencode.jsonc`. The manifest's `agents:`
+map declares which agents Kortix should treat as platform-launchable and
+what server-side authority each one receives. Keyed by the agent's name.
+`file` names the agent's `.md`. Without `file`, Kortix reads
+`agents/<name>.md`, then the legacy `.kortix/opencode/agents/<name>.md`.
+Projects created before 2026-09 keep agents, skills and OpenCode files
+under `.kortix/opencode/`; both layouts work.
 
-### Behavior keys
+`agents:` is **required** in v2 and is **deny-by-default**: an omitted
+`connectors`/`secrets`/`skills`/`kortix_permissions` on a declared agent
+resolves to `none`, not `all`. `default_agent` is also required and
+must name a declared, enabled agent.
 
-| Key | Default | Compiles to |
-| --- | --- | --- |
-| `description` | none | The agent's description. A parent agent reads it to pick a subagent. |
-| `mode` | `all` | `primary` (a session runs it), `subagent` (another agent starts it), `all` (both). |
-| `prompt` | none | The system prompt, as text. |
-| `prompt_file` | none | The system prompt, read from a repository `.md` file. Set `prompt` or `prompt_file`, not both. A missing file fails the session compile. |
-| `model`, `variant`, `temperature`, `top_p`, `steps` | harness default | The same keys. `steps` is a positive integer. |
-| `options`, `color` | none | The same keys. pi ignores both. |
-| `hidden` | `false` | `true` hides the agent from agent menus. |
-| `enabled` | `true` | `false` compiles to `disable: true`. It cannot be `default_agent`. |
-| `permission` | `allow` | The tool policy: an action (`allow`, `ask`, `deny`) or a map of tool to action or pattern map. |
+| Key          | Notes                                                                                           |
+| ------------ | ----------------------------------------------------------------------------------------------- |
+| `file`       | Repo-relative path of the agent's `.md` (frontmatter + prompt), e.g. `agents/release-bot.md`. Default: `agents/<name>.md`. |
+| `enabled`    | Whether the platform may launch this agent. Default: `true`.                                     |
+| `sandbox`    | Sandbox template for this agent. Must name an available template or `default`.                  |
+| `connectors` | Connectors the agent may call. `["slug", …]` \| `"all"` \| `"none"` (default: `none`).           |
+| `secrets`    | Env-var / secret names the agent may read. Same shape (default: `none`).                        |
+| `skills`     | Skill names the agent may load. Same shape (default: `none`).                                   |
+| `kortix_permissions` | Kortix permissions: what it may do to the project (project-scoped iam actions), through the CLI, the API, or git. Same shape (default: `none`). `kortix_cli` is the deprecated spelling — still accepted with a validation warning. |
+| `workspace`  | `{ project_repository: true \| false }`. `true`: new sessions check out the project repository on their own branch. `false`: no checkout, no git variables, no repository access. Omitted: `true` in v2, `false` in v3. Write it explicitly on every agent. The strings `branch` / `runtime` are deprecated aliases of `true` / `false`. |
+| `apps`       | Restricted or private Apps this agent may open, by slug. `["slug", …]` \| `"all"` \| `"none"` (default: `none`). The App gate also requires `project.app.read` in the agent's effective permissions. Editable from Customize → Agents → the agent → Apps, or `kortix agents scope <agent> --apps <slug,slug>`. |
 
-`permission` rules:
+```yaml
+agents:
+  release-bot:
+    file: agents/release-bot.md
+    sandbox: ml
+    connectors: [github]
+    kortix_permissions: [project.write, project.cr.open]    # may OPEN a CR, but not merge it
+```
 
-- Omitted is `allow`. A tool never waits for a person unless the agent says `ask`.
-- There is no top-level `permission`. Each agent has its own.
-- `permission.skill` and `permission.task` are errors: use `skills` and `subagents`.
-- `bash: deny` also denies the `pty_*` terminal tools, and `edit: deny` also denies `memory`, unless the agent sets a rule for those tools.
+**Grantable `kortix_permissions`** (project-scoped only — account-level admin
+actions can never be granted to an agent; `project.members.manage`,
+`project.delete` and `project.credentials.issue` are HUMAN_ONLY and never
+effective for an agent; run `kortix validate --scopes`):
+`project.read|write|delete`, `project.cr.open|merge`,
+`project.session.read|start|stop|bindings.write`, `project.members.read|manage`,
+`project.trigger.read|create|update|delete|fire`,
+`project.connector.read|write|connections.manage`
+(channels — Slack/meet/email send + connect — are gated on `project.connector.write`).
 
-### What the agent enables
+**Resolution at session start:** every agent must be declared under
+`agents:`; an undeclared or disabled agent cannot be launched by the
+platform. `default_agent` must resolve to a declared, enabled agent —
+give it `connectors: all`, `secrets: all`, `kortix_permissions: all`,
+`skills: all` explicitly if it should keep full access. The grant
+takes effect only once a CR is merged (read from the default branch).
+The agent is the acting principal: `kortix_permissions` ∩ its ceiling role
+(IAM, bound to the agent's service account; default = every grantable
+permission) − the HUMAN_ONLY set. The launcher's role is not an input; the
+launcher only needs "may run this agent".
 
-| Key | Default | Values | Compiles to |
-| --- | --- | --- | --- |
-| `tools` | `all` | `all`, `none`, a list, `{ exclude: [names] }` | The tools the model sees. Names are harness, Kortix or registered tools. |
-| `skills` | none | grant set | `permission.skill`: each granted skill `allow`, then `"*": deny`. `all` = every registered and Kortix skill. |
-| `subagents` | none | grant set | `permission.task`: each granted agent `allow`, then `"*": deny`. A name must be another declared agent with mode `subagent` or `all`. |
-| `commands` | none | grant set | The command lists this agent among the agents that may run it. |
-| `extensions` | none | grant set | The OpenCode plugins / pi packages a session of this agent loads. |
-| `codemode` | `on` | `on`, `only`, `off` | pi's codemode tool. OpenCode ignores it. |
-
-A grant set is `all` (or `"*"`, or a list that contains `"*"`), `none`
-(or `""`, `[]`), or a list of names. Every listed name must be
-registered (or a built-in); anything else is an error. **An agent with no
-`skills` key loads no skill, not even a Kortix skill.**
-
-### Kortix access
-
-| Key | Default | Notes |
-| --- | --- | --- |
-| `connectors` | none | Connector slugs the agent may call. |
-| `connectors_required` | none | Subset of `connectors` that needs a connected account. Parsed, not read at session start. |
-| `secrets` | none | Secret names the agent receives in its sandbox. |
-| `apps` | none | Restricted or private Apps it may open. The App gate also needs `project.app.read`. |
-| `kortix_permissions` | none | Project actions through the CLI, the API, or git. Effective = this list ∩ the agent's ceiling role − `project.credentials.issue`. `kortix validate --scopes` prints the list. |
-| `workspace.project_repository` | `true` | `false`: no checkout in `/workspace` and no repository access (`403`). |
-| `sandbox` | `sandbox.default` | A sandbox template slug, or `default`. |
-| `network_egress` | none | Declaration only: `{ version: 1, default: deny, rules: [] }`. Warns; not enforced. |
-
-Agent keys from earlier versions are errors with a pointer to the
-replacement: `file` (use `prompt` / `prompt_file`), `disable`
-(`enabled: false`), `opencode` and `harnesses` (behavior keys,
-`extensions`, `codemode`), `env` (`secrets`), `kortix_cli`
-(`kortix_permissions`), `connectors_personal` (`connectors_required`),
-`repository_access` (`workspace.project_repository`), and the map form
-`tools: { bash: false }` (`tools: { exclude: [bash] }`).
-
-**Resolution at session start:** only a declared, enabled agent can be
-launched. `default_agent` must name a declared, enabled agent with mode
-`primary` or `all`. A grant takes effect once its change request merges
-(read from the default branch). The agent is the acting principal; the
-launcher only needs "may run this agent". The dashboard agent editor,
-`kortix agents scope|config|default` and `kortix secrets grant` edit v2
-manifests only: on v3, edit the block and open a change request.
-
-## The three permission layers
-
-| Layer | Key | Where | Decides |
-| --- | --- | --- | --- |
-| Tool policy | `permission` | each agent | Whether a harness tool call runs, waits for a person, or is refused. |
-| Kortix permissions | `kortix_permissions` | each agent | Which Kortix project actions the agent's own token may take. |
-| Connector approvals | `policy`, `policies`, a connector's `policies` | the connector registry | Whether a connector call runs, needs approval, or is blocked. |
-
-`policy.default_mode` is `allow_all` (default) or `risk` (a read runs; a
-write or destructive call needs approval). A `policies` rule matches
-`<connector-slug>.<tool>` with `*` globs; project rules are checked first,
-then the connector's own `policies`; the first match wins. `kortix
-validate` does not check `policy` or `policies`.
-
-## Registries
-
-**Names.** A skill, command or extension name matches
-`^[a-z0-9]+(-[a-z0-9]+)*$`, at most 64 characters. A tool name is snake
-case, `^[a-z][a-z0-9_]{0,63}$`.
-
-**Paths.** Repo-relative. No leading `/` or `-`, no `.`, `..` or empty
-segment. Every path in an imported file is still relative to the
-repository root, not to that file.
-
-**Built-ins are always registered.** The seven Kortix tools (`web_search`,
-`image_search`, `scrape_webpage`, `memory`, `show`,
-`kortix-connectors_call`, `kortix-connectors_describe`) and the 12 Kortix
-skills (`kortix-apps`, `kortix-computer`, `kortix-connectors`,
-`kortix-drives`, `kortix-genui`, `kortix-harness-refinement`,
-`kortix-marketplace`, `kortix-memory`, `kortix-onboarding`,
-`kortix-slack`, `kortix-system`, `kortix-teams`) exist without an entry.
-An agent still grants them by name.
-
-### `skills:`
-
-Name → the folder that holds `SKILL.md`. The folder's last segment is the
-name (`pdf: skills/pdf`), and the `SKILL.md` frontmatter `name` is the same.
-A name that starts with `kortix-` is an error. A session loads exactly the
-registered folders and the Kortix skills; an unregistered `SKILL.md` is
-never visible.
-
-### `tools:`
-
-Name → a module (`.ts`, `.js`, `.mts`, `.mjs`, `.cts`, `.cjs`). A harness
-tool name or a `pty_` name is an error. A Kortix tool's name replaces that
-tool for every agent. The v2 value `kortix:<name>` is an error.
-`references/kortix/tools.md` has the module contract.
-
-### `commands:`
-
-Name → `{ description?, prompt | prompt_file }`. Exactly one of `prompt`
-and `prompt_file`; no other key (a command has no `agent`: it runs on the
-agent that enables it). `$ARGUMENTS` takes everything after the command
-name; `$1`, `$2`, … take one word each, the last takes the rest. A command
-no agent enables is not compiled. Running a command on an agent that does
-not enable it answers `403` `command_not_enabled`.
-
-### `extensions:`
-
-Name → `{ opencode?, pi? }`, at least one:
-
-- `opencode`: a repo module, loaded as an OpenCode plugin.
-- `pi`: `npm:<name>@<x.y.z>` (an exact version), a repo path (file or
-  folder), or `{ source, extensions?, skills?, prompts?, themes? }` (each
-  filter a list of globs; omitted loads everything, `[]` loads nothing).
-
-An extension without an implementation for the session's harness does
-nothing there. A session loads the extensions of the agent it starts
-with; a mid-session agent switch keeps them. The change request merge
-builds npm pi packages; a session never runs `npm install`.
-
-## `runtime:`
-
-The harness a session boots. Root-only. `opencode` (default) or `pi`.
-Kortix picks it when a session starts, restarts or resumes: the project's
-`llm_gateway` flag off → OpenCode; the `pi_harness` flag on → pi;
-`runtime: pi` → pi; anything else → OpenCode. pi calls models only
-through the LLM gateway. `../pi/overview.md` lists what pi supports.
+**Discovery direction:** declaring `agents:` is server-side, declarative
+agent discovery — it is not a rule that every agent file
+must be registered. Unregistered files can exist for local experiments
+or runtime internals. Kortix product UI (chat input, triggers, channels)
+fetches the server-side registered agent list rather than querying
+the sandbox runtime directly. Model pickers similarly come from the
+server/LLM-gateway catalog rather than a sandbox-local provider list.
 
 ## `connectors:`
 
@@ -535,13 +407,16 @@ authorization. Re-scoping always means: authorize-new → re-pin → revoke-old.
 
 ## Schema versioning
 
-`kortix_version` is the schema version. Version 3 is YAML-only and
-requires `default_agent` and `agents`. A version above `3` is rejected
-outright — the platform never silently misreads future fields. A
-`kortix.toml` that declares version `2` or `3` is an error.
+`kortix_version` is the schema version. Version 2 is YAML-only and requires
+`default_agent` and `agents`.
 
-When the platform writes the manifest back (after a dashboard edit), it
-keeps `kortix_version` as the first key.
+A manifest declaring a version higher than
+the platform knows about is rejected outright — the platform won't
+silently misread future fields.
+
+When the platform writes the manifest back (after a dashboard edit),
+it ensures `kortix_version` is the first key, so the file is
+self-describing at a glance.
 
 ## What's parsed where
 
@@ -549,108 +424,64 @@ keeps `kortix_version` as the first key.
 | ---------------------- | ------------------------------------------------------------------- |
 | Trigger sweep          | `triggers:`                                                          |
 | Sandbox builder        | `sandbox:`                                                           |
-| Session compile        | `agents:`, `skills:`, `tools:`, `commands:`, `extensions:`, `runtime:`, and every `prompt_file` |
+| Sandbox runtime        | v2 `runtime:`, `opencode:`, `pi:`, `harnesses:`                      |
 | Session bootstrap      | `env:` (advisory — surfaced to dashboard, not enforced)              |
 | Apps CLI               | `apps:` (local deployment defaults; deploy remains explicit)          |
 | Session token mint     | `agents:` (per-agent connectors/secrets/skills/apps/kortix_permissions scope) |
-| Connector catalog      | `connectors:`, `policy:`, `policies:`                               |
+| Connector catalog      | `connectors:` (definitions; account ownership is cloud-side)         |
 | Agent/model UI         | Server-side agent registry + LLM-gateway model catalog                |
 | Dashboard UI           | All of the above + `project:` + the raw manifest                     |
 
-Every surface reads the MERGED manifest when the root declares
-`imports:`. An unknown key is an error, at the top level and in an agent,
-command or extension. Retired top-level keys name their replacement:
-`permission` (per agent), `harnesses` (`extensions` + agent `codemode`),
-`opencode` and `pi` (no harness folder in v3), `channels` (connect a
-channel in the dashboard), `sandboxes` (`sandbox.templates`).
+Every surface above reads the MERGED manifest when the root declares
+`imports:` (see below). `sandbox:`, `opencode:`, `env:`, `project:`,
+`default_agent`, and `runtime` are root-only keys.
+
+Unknown top-level keys are ignored — safe to add your own metadata,
+but the platform won't react to it.
 
 ## `imports:` — split the manifest across files
 
-Use it when `kortix.yaml` outgrows one screen: one file per agent, one
-file per registry, and a feature folder that holds its own agents,
-prompts, commands, skills and triggers.
-
-```text
-kortix.yaml                  root: kortix_version, project, default_agent, runtime, env, sandbox, policy, imports
-agents/assistant.yaml        agents: { assistant: … }
-agents/assistant.md          its prompt_file
-agents/researcher.yaml
-skills/skills.yaml           skills: { pdf: skills/pdf }
-tools/tools.yaml             tools: { lookup_order: tools/lookup_order.ts }
-commands/commands.yaml
-extensions/extensions.yaml
-connectors/helpdesk.yaml
-apps/apps.yaml               one file: App sources can hold other YAML
-triggers/nightly-triage.yaml
-support/support.yaml         a feature folder: skills, commands, agents, triggers
-support/agents/reporter.md
-support/commands/weekly-report.md
-support/skills/triage-rules/SKILL.md
-```
+Use it when `kortix.yaml` outgrows one screen (many triggers with long
+prompts, one file per team or agent group). Do not dump 30 triggers into
+the root file.
 
 ```yaml
 # kortix.yaml
-kortix_version: 3
-default_agent: assistant
+kortix_version: 2
+default_agent: kortix
 imports:
-  - agents/                    # a directory: every .yaml/.yml below it, any depth
-  - skills/skills.yaml         # a single file
-  - tools/tools.yaml
-  - commands/commands.yaml
-  - extensions/extensions.yaml
-  - connectors/
-  - apps/apps.yaml
-  - triggers/
-  - support/support.yaml
+  - triggers/                # a directory: every .yaml/.yml below it, any depth
+  - agents.yaml              # a single file
+agents:
+  kortix:
+    connectors: all
 ```
 
 ```yaml
-# support/support.yaml
-skills:
-  triage-rules: support/skills/triage-rules
-commands:
-  weekly-report:
-    description: Write the weekly support report.
-    prompt_file: support/commands/weekly-report.md
-agents:
-  reporter:
-    description: Writes the weekly report on a schedule.
-    mode: primary
-    hidden: true
-    prompt_file: support/agents/reporter.md
-    commands: [weekly-report]
+# triggers/reports/weekly.yaml
 triggers:
   - slug: weekly-report
     type: cron
-    agent: reporter
-    cron: "0 0 15 * * 1"
-    prompt: Write the weekly support report for the last 7 days.
+    agent: galileo
+    cron: "0 0 15 * * 0"
+    prompt: |-
+      Build the weekly report.
 ```
 
 The platform merges the root and every import into one manifest before
-it validates, compiles agents, sweeps triggers, or mints agent grants. A
-grant in one file can name a skill, command or extension registered in
-another.
+it validates, sweeps triggers, or mints agent grants. A trigger in one
+file can name an agent declared in another.
 
 Rules:
 
 - Paths are relative to the repository root. No `..`, no absolute
-  paths, no globs. A path that matches no `.yaml`/`.yml` file is an error.
+  paths, no globs.
 - A directory import takes every `.yaml`/`.yml` below it, sorted by path.
-- An imported file declares only `agents`, `skills`, `tools`,
-  `commands`, `extensions`, `connectors`, `apps`, `triggers` and
-  `imports` (nesting: max 8 levels, 200 files). Any other key in an
-  imported file is an error. `kortix_version`, `project`,
-  `default_agent`, `runtime`, `env`, `sandbox`, `policy` and `policies`
-  stay in `kortix.yaml`.
-- **Import a file, not a folder, when the folder holds other YAML.** An
-  App's source (`pnpm-workspace.yaml`, a compose file) or a skill's
-  reference files can hold YAML that is not manifest YAML; a directory
-  import of that folder fails the whole manifest. Import `apps/apps.yaml`,
-  not `apps/`.
-- One name, one file. The same agent, skill, tool, command, extension or
-  App name, or trigger/connector slug, in two files is an error naming
-  both files. Nothing overrides silently.
+- An imported file declares only `triggers`, `connectors`, `agents`,
+  `apps`, and `imports` (nesting: max 8 levels, 200 files). Every other
+  key stays in `kortix.yaml`; an imported file that sets one is an error.
+- One name, one file. The same trigger/connector slug or agent/app name
+  in two files is an error naming both files. Nothing overrides silently.
 - A broken import fails the WHOLE manifest, like a YAML syntax error.
   Run `kortix validate` before `kortix ship`; it checks the merged result.
 - Dashboard, API, and `kortix triggers enable|disable|rm` edits are
@@ -728,6 +559,114 @@ Each entry needs exactly one of `image` or `dockerfile`, never both.
 Session template precedence is explicit `sandbox_slug`, agent `sandbox`,
 project `sandbox.default`, then platform `default`. Triggers, schedules, and
 channels use the target agent's template.
+
+## `opencode:` in version 2
+
+Where the OpenCode runtime config lives. **Optional**, with a default.
+
+| Key          | Default              | Notes                                                                            |
+| ------------ | --------------------- | -------------------------------------------------------------------------------- |
+| `config_dir` | `harnesses/opencode`, then `.kortix/opencode` | Repo-relative dir. When omitted, the first candidate that has an `opencode.json[c]` wins. |
+
+The agent daemon launches `opencode serve` with
+`OPENCODE_CONFIG_DIR=<config_dir>`. OpenCode reads its own files from that
+folder: `opencode.jsonc`, `commands/`, `tools/`, `plugins/`. Agents,
+skills and harness-neutral tools (top-level `tools:`) do not live there. Kortix compiles agents from `agents/` and
+`kortix.yaml` and hands them to the harness. Every harness loads the
+skills in `skills/`.
+
+`opencode.jsonc` remains the OpenCode-native registry for plugins, MCP servers,
+providers, model/provider settings, permissions, and default runtime behavior.
+Do not duplicate those details in `kortix.yaml`; use `agents:` only for the
+Kortix-side decision of which agents are launchable/authorized by the platform.
+
+## `runtime:` in version 2
+
+The harness a session boots inside its sandbox. **Optional.** Root-only.
+
+| Value | Harness |
+| --- | --- |
+| `opencode` (default) | OpenCode, as a process the sandbox daemon starts. |
+| `pi` | pi, inside the sandbox daemon process. |
+
+Kortix reads the key when a session is created, in this order: the
+project's `pi_harness` flag on (the default) → pi; `runtime: pi` → pi; anything else → OpenCode. pi calls
+models only through the LLM gateway. Any other value fails `kortix validate`. `../pi/overview.md` lists what pi supports.
+
+## `pi:` in version 2
+
+Where the pi config lives. **Optional**, with a default.
+
+| Key          | Default                         | Notes |
+| ------------ | ------------------------------- | ----- |
+| `config_dir` | `harnesses/pi`, then `.kortix/pi` | Repo-relative dir. An absolute path or a `..` segment is ignored. |
+
+pi reads `extensions/`, `prompts/`, `skills/` and `settings.json` from that
+folder (`../pi/overview.md`). An OpenCode session does not read it.
+
+## `harnesses:` in version 2
+
+Per-harness packages. **Optional.**
+
+```yaml
+harnesses:
+  pi:
+    packages:
+      - npm:pi-web-access@0.30.0            # the pi.dev install line, with an exact version
+      - source: npm:pi-mcp-adapter@2.36.0
+        extensions: ["extensions/*.ts"]     # load only these files of the package
+        skills: []                          # load none of its skills
+      - ./extensions/audit.ts               # one extension file, anywhere in this repository
+agents:
+  researcher:
+    harnesses:
+      pi:
+        packages: [npm:@juicesharp/rpiv-todo@2.11.0]   # this agent only
+  reviewer:
+    harnesses:
+      pi:
+        exclude: [pi-web-access]                       # this agent does not load it
+```
+
+| Key | Where | Notes |
+| --- | --- | --- |
+| `harnesses.pi.packages` | top level | pi packages every pi session loads. At most 20 entries. |
+| `agents.<name>.harnesses.pi.packages` | agent | Packages for this agent, added to the top-level list. An entry for a package the top level also lists replaces it for this agent. |
+| `agents.<name>.harnesses.pi.exclude` | agent | Top-level packages this agent does not load: a package name (`pi-web-access`, `@scope/name`) or a `./` path as the top level writes it. Never a version. |
+| `harnesses.opencode.plugins` | top level and agent | File names in the OpenCode `plugins/` directory an agent loads. An agent drops one with `exclude`. With no selection, OpenCode discovers every plugin. |
+
+A `packages` entry is `npm:<name>@<x.y.z>` (an exact version), a `./<path>`
+in this repository, or `{ source, extensions, skills, prompts, themes }` with
+pi's own filters (an omitted filter loads everything, `[]` loads nothing). A
+version range, a missing version or a Git source fails validation. Kortix
+builds each distinct package list once, when the change request merges.
+
+A `./` path to a `.ts` or `.js` file is one pi extension. It can live anywhere
+in the repository, so a project needs no `harnesses/pi/` folder. It loads from
+the session's config release, as a project tool does, and a release that
+changes a file in its folder restarts the pi runtime. The package list itself
+is read when the session starts: a running session keeps the list it started
+with.
+
+## `tools:` in version 2
+
+The tools a session gets, by name. **Optional.** `references/kortix/tools.md`
+has the module contract and one checklist per task.
+
+| Value | Meaning |
+| --- | --- |
+| `kortix:<name>` | A Kortix tool (`web_search`, `image_search`, `scrape_webpage`, `memory`, `show`), maintained by Kortix. The key must be `<name>`. |
+| A repo-relative `.ts` / `.js` path | The project's own module. Under a Kortix tool name, it replaces the Kortix tool. |
+
+- No `tools:` key in the root file or any imported file: every session gets
+  all five Kortix tools.
+- A `tools:` key, even an empty one: sessions get only the Kortix tools it
+  lists. Delete a `kortix:<name>` line to remove that tool from every agent.
+- `kortix tools ls` lists what a session gets; `kortix tools eject <name>`
+  copies a Kortix tool to `tools/<name>.ts` for the project to change.
+- `kortix validate` errors on `kortix:<name>` under another key or for an
+  unknown name, and warns when the key lists no Kortix tool or an agent's
+  `tools` names a Kortix tool the project does not load.
 
 ## `triggers:`
 
@@ -967,28 +906,3 @@ edits the same trigger from the UI.
 If you add a new trigger and don't yet have a value for `secret_env`,
 declare it in `env.optional` so it shows up in the Secrets Manager,
 and leave the trigger `enabled: false` until the user sets the value.
-
-## Validation
-
-`kortix validate` (also run by `kortix ship` and the change request merge
-check) reports as errors: an unknown key; a grant that names an
-unregistered skill, tool, command or extension, or a subagent that is not
-declared; a `default_agent` that is not declared, is disabled, or has
-`mode: subagent`; a trigger `agent` that is not declared; a registry name
-or path that breaks the rules above. A warning never blocks. A
-`prompt_file` that does not exist fails the session compile.
-
-## Legacy versions
-
-`kortix_version` 1 (`kortix.toml`, `[[agents]]` array) and 2 (governance
-`agents:` map, behavior in `agents/<name>.md` frontmatter, harness
-folders `harnesses/opencode/` and `harnesses/pi/` or `.kortix/opencode/`,
-top-level `harnesses`, `opencode.config_dir`, `pi.config_dir`, `tools:`
-values `kortix:<name>`) still read and run. They are legacy: write new
-config in v3.
-
-- v2 → v3: `kortix migrate` prints the v3 manifest; `kortix migrate --write`
-  writes it. Then `kortix validate`, and open a change request.
-- v1 → v2: `kortix projects upgrade` (or **Customize → Settings →
-  Upgrades**) starts a session that rewrites the manifest and opens a
-  change request. Then migrate to v3.

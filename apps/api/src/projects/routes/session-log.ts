@@ -41,6 +41,7 @@ import {
   SessionLogManifestSchema,
   SessionLogPageSchema,
   SessionLogRestoreMissingSchema,
+  SessionLogRestoreTooLargeSchema,
   SessionLogRestoreSchema,
   SessionLogSwitchPreflightRequestSchema,
   SessionLogSwitchPreflightSchema,
@@ -53,11 +54,12 @@ import { callerKortixSessionId } from '../../middleware/caller-session';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { auth, errors, json } from '../../openapi';
 import type { AppEnv } from '../../types';
-import { assertProjectCapability, loadVisibleSession } from '../lib/access';
+import { assertProjectCapability, loadVisibleSession, sessionIsTombstoned } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { parseBoundedPositiveInt } from '../lib/serializers';
 import { findSessionLogBlob, storeSessionLogBlob } from '../session-log-blobs';
 import { ingestSessionLogJournal, readSessionLogManifest, sessionExists, type SessionLogScope } from '../session-log-ingest';
+import { SessionLogConvertingError } from '../session-log-backfill';
 import { readSessionLogPage } from '../session-log-read';
 import { claimSessionLog } from '../session-log-restore';
 import { sessionLogSwitchPreflight } from '../session-log-switch';
@@ -161,7 +163,12 @@ async function sessionReadGate(
   const { loaded } = binding;
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
   const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
-  return visible ? { denied: null, projectMetadata: loaded.row.metadata } : { denied: c.json({ error: 'Not found' }, 404) };
+  // A deleted session reads nothing (KRTX-2744, as `GET …/transcript`): its stored log and
+  // loss report are content of a session the trash model advertises as gone. The restore
+  // claim takes the session sandbox credential, not this gate, so a fresh box still claims.
+  return !visible || sessionIsTombstoned(visible.row)
+    ? { denied: c.json({ error: 'Not found' }, 404) }
+    : { denied: null, projectMetadata: loaded.row.metadata };
 }
 
 export function registerSessionLogRoutes(): void {
@@ -259,8 +266,11 @@ export function registerSessionLogRoutes(): void {
       if (outcome.status === 409) return c.json(outcome.body, 409);
       if (outcome.status === 422) return c.json(outcome.body, 422);
       if (outcome.status === 429) {
-        c.header('Retry-After', '2');
-        return c.json(outcome.body, 429);
+        // Header inline, never `c.header(...)` first: the request deadline may
+        // have answered this request already, and Context#header on the
+        // finalized context re-wraps its consumed body stream (KRTX-2737;
+        // mechanism and precedent: the audit-ingest contended 503, KRTX-2600).
+        return c.json(outcome.body, 429, { 'Retry-After': '2' });
       }
       return c.json(outcome.body, 404);
     },
@@ -299,12 +309,15 @@ export function registerSessionLogRoutes(): void {
         'Session sandbox credential only, no body. Raises the session generation by 1 and answers `SessionLogRestore` ' +
         'at that generation: every thread with its live messages in seq order, the rev of every message (tombstones ' +
         'included) and each text stored by reference. A box still journaling at an older generation then gets 409. ' +
-        'Gzipped when the request accepts gzip and the body is 1 KiB or more. 404 `no_session_log`: no stored log, nothing claimed.',
+        'Gzipped when the request accepts gzip and the body is 1 KiB or more. 404 `no_session_log`: no stored log, nothing claimed. ' +
+        '413 `session_log_too_large`: the live messages are over `SESSION_LOG_RESTORE_MAX_BYTES`; the claim stands and the answer ' +
+        'carries every thread, rev and seq but no message.',
       ...auth,
       request: { params },
       responses: {
         200: json(SessionLogRestoreSchema, 'The claimed generation and the whole stored log'),
         404: json(SessionLogRestoreMissingSchema, 'The session has no stored log; nothing was claimed'),
+        413: json(SessionLogRestoreTooLargeSchema, 'The log is over the restore cap; claimed, answered without messages'),
         ...errors(403, 503),
       },
     }),
@@ -314,6 +327,7 @@ export function registerSessionLogRoutes(): void {
       if (!config.SESSION_LOG_RESTORE_ENABLED) return c.json({ error: 'Session log restore is off' }, 503);
       const restored = await claimSessionLog(scope);
       if (!restored) return c.json({ error: 'no_session_log' as const }, 404);
+      if ('error' in restored) return c.json(restored, 413);
       return c.json(restored, 200);
     },
   );
@@ -329,7 +343,9 @@ export function registerSessionLogRoutes(): void {
         '`thread` defaults to the root thread; `messages` are the newest `limit` (default 40, max 500) ' +
         'with `seq < before_seq`, ascending by seq, tombstoned messages left out. Session read permission, ' +
         'the same gate as `GET .../transcript`: a session-bound token reads the sessions that route serves it. ' +
-        '404 when the session has no stored log or no such thread.',
+        '404 when the session has no stored log (`code: session_log_missing`) or no such thread. A session whose history is still only in the ' +
+        'v1 mirror is converted to the log before the read answers; one over the conversion size cap answers ' +
+        '503 `session_log_converting` with `Retry-After` while the backfill converts it.',
       ...auth,
       request: {
         params,
@@ -337,7 +353,7 @@ export function registerSessionLogRoutes(): void {
       },
       responses: {
         200: json(SessionLogPageSchema, 'One page of the session log'),
-        ...errors(400, 403, 404),
+        ...errors(400, 403, 404, 503),
       },
     }),
     async (c) => {
@@ -356,8 +372,17 @@ export function registerSessionLogRoutes(): void {
       const gate = await sessionReadGate(c, projectId, sessionId);
       if (gate.denied) return gate.denied as never;
 
-      const page = await readSessionLogPage({ sessionId, threadId: query.thread ?? null, beforeSeq, limit: limit.value });
-      if (!page) return c.json({ error: 'No session log for this session' }, 404);
+      let page: Awaited<ReturnType<typeof readSessionLogPage>>;
+      try {
+        page = await readSessionLogPage({ sessionId, threadId: query.thread ?? null, beforeSeq, limit: limit.value });
+      } catch (err) {
+        if (!(err instanceof SessionLogConvertingError)) throw err;
+        c.header('Retry-After', '60');
+        return c.json({ error: err.message, code: err.code }, 503);
+      }
+      // The code tells a client this API serves the log and the session has none yet (a new
+      // session): it stays on the log. An API without this route answers a bare 404.
+      if (!page) return c.json({ error: 'No session log for this session', code: 'session_log_missing' }, 404);
       if (page === 'unknown_thread') return c.json({ error: 'Unknown thread' }, 404);
       return c.json(page, 200);
     },
@@ -371,7 +396,7 @@ export function registerSessionLogRoutes(): void {
       summary: 'List what a session would lose on another harness',
       description:
         'Read only: claims nothing, changes nothing. Body `{ to: "pi" | "opencode" }`. Answers `SessionLogSwitchPreflight`: ' +
-        '`available` and `reason` (`same_harness`, `llm_gateway_off`: a switch that cannot happen is still a 200), ' +
+        '`available` and `reason` (`same_harness`: a switch that cannot happen is still a 200), ' +
         '`restores` (the project restores session logs; false puts a `history` line first in `losses`), ' +
         '`losses` (each feature or runtime control the stored log uses that `to` handles worse, with counts; `degraded`: ' +
         'lowered or emulated, `lost`) and `unsupported` (everything the source harness handles that `to` handles worse, used or not). ' +

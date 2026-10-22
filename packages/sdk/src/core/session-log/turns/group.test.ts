@@ -151,6 +151,39 @@ describe('derived fields', () => {
     expect(turns[3]!.error).toMatchObject({ code: 'context_overflow', message: 'too long' });
   });
 
+  test('a compaction inside a turn: the replies after it continue below the marker, not above it', () => {
+    // pi compacts mid-turn and keeps naming the prompt (`reply_to: u1`); OpenCode would send a
+    // synthetic continue prompt. The work after the marker is a continuation turn: a stand-in
+    // prompt with no blocks (no bubble), and the live turn when the working turn names u1.
+    const block = { type: 'compaction' as const, id: 'c1', summary: 'SUMMARY', first_kept_message_id: 'a1', trigger: 'auto' as const };
+    const messages = [
+      user('u1'),
+      reply('a1', 'u1'),
+      msg('cmp', 'user', [block], { kind: 'compaction', status: 'complete' }),
+      reply('a2', 'u1'),
+      reply('a3', null),
+      msg('cmp2', 'user', [{ ...block, id: 'c2' }], { kind: 'compaction', status: 'complete' }),
+      reply('a4', 'u1', undefined, { status: 'streaming' }),
+    ];
+    const turns = sessionLogTurns(thread(messages), { busy: true, liveMessageId: 'u1' });
+    expect(turns.map((t) => [t.id, t.partial, t.compaction !== null, t.assistant.map((m) => m.message_id), t.live])).toEqual([
+      ['u1', false, false, ['a1'], false],
+      ['cmp', false, true, [], false],
+      ['cmp:continued', true, false, ['a2', 'a3'], false],
+      ['cmp2', false, true, [], false],
+      ['cmp2:continued', true, false, ['a4'], true],
+    ]);
+    expect(turns[2]!.user).toMatchObject({ message_id: 'cmp:continued', role: 'user', kind: 'turn', blocks: [], created_at: messages[2]!.created_at });
+    expect(turns.map((t) => t.continues)).toEqual([null, null, { marker: 'cmp', prompt: 'u1' }, null, { marker: 'cmp2', prompt: 'u1' }]);
+    // The working turn named by the marker is its continuation too; the identity holds across reads.
+    const again = sessionLogTurns(thread(messages), { busy: true, liveMessageId: 'cmp2' });
+    expect(again.find((t) => t.live)?.id).toBe('cmp2:continued');
+    expect(again[2]!.user).toBe(turns[2]!.user);
+    // A compaction between turns (a `/summarize`) keeps its own turn: the next prompt's replies follow it.
+    expect(sessionLogTurns(thread([user('u1'), reply('a1', 'u1'), msg('cmp3', 'user', [block], { kind: 'compaction' }), user('u2'), reply('b1', 'u2')])).map((t) => t.id))
+      .toEqual(['u1', 'cmp3', 'u2']);
+  });
+
   test('threads: a sub-thread the turn spawned, by its head or by the call that names it', () => {
     const spawn = call('k1', 'task', { kind: 'task' });
     const t = thread([user('u1'), reply('a1', 'u1', [spawn]), user('u2'), reply('a2', 'u2', [call('k2', 'task', { kind: 'task' })])]);
@@ -233,4 +266,56 @@ describe('sessionLogRetrying', () => {
     expect(sessionLogRetrying(done)).toBe(false);
     expect(sessionLogRetrying(thread([user('u1')]))).toBe(false);
   });
+});
+
+describe('foldCompactions', () => {
+  test('one prompt owns work across repeated compactions, including their summaries and live hint', () => {
+    const source = thread([
+      user('u'), reply('before', 'u', [call('read1', 'read')]),
+      msg('c1', 'user', [{ type: 'compaction', id: 'cp1', summary: 'first summary', first_kept_message_id: null }], { kind: 'compaction' }),
+      reply('middle', 'u', [call('read2', 'read')]),
+      msg('c2', 'user', [{ type: 'compaction', id: 'cp2', summary: 'second summary', first_kept_message_id: null }], { kind: 'compaction' }),
+      reply('after', 'c2', [{ type: 'text', id: 'done', text: 'Done.' }]),
+      user('next'),
+    ]);
+    const turns = sessionLogTurns(source, { foldCompactions: true, busy: true, liveMessageId: 'c2', held: ['next'] });
+    expect(turns.map((t) => t.id)).toEqual(['u', 'next']);
+    expect(turns[0]!.blocks.map((b) => b.id)).toEqual(['read1', 'cp1', 'read2', 'cp2', 'done']);
+    expect(turns[0]!.response?.text).toBe('Done.');
+    expect(turns[0]!.live).toBe(true);
+    expect(turns[0]!.compaction).toBeNull();
+    expect(sessionLogTurns(source).map((t) => t.id)).toEqual(['u', 'c1', 'c1:continued', 'c2', 'c2:continued', 'next']);
+  });
+
+  test('leading compaction stays standalone and never absorbs a later user prompt', () => {
+    const marker = msg('c', 'user', [{ type: 'compaction', id: 'cp', summary: 'summary', first_kept_message_id: null }], { kind: 'compaction' });
+    const turns = sessionLogTurns(thread([marker, reply('a', 'c'), user('u'), reply('b', 'u')]), { foldCompactions: true });
+    expect(turns.map((t) => t.id)).toEqual(['c', 'c:continued', 'u']);
+  });
+});
+
+test('folded streaming markers remain live before continuation content and cache independently of the default view', () => {
+  const marker = msg('c', 'user', [{ type: 'compaction', id: 'cp', summary: null, first_kept_message_id: null }], { kind: 'compaction', status: 'streaming' });
+  const source = thread([user('u'), reply('a', 'u', [call('t', 'bash')]), marker]);
+  const options = { foldCompactions: true, busy: true, liveMessageId: 'c' };
+  const folded = sessionLogTurns(source, options);
+  expect(folded.map((t) => t.id)).toEqual(['u']);
+  expect(folded[0]!.live).toBe(true);
+  expect(folded[0]!.blocks.map((b) => b.id)).toEqual(['t', 'cp']);
+  expect(sessionLogTurns(source, options)[0]).toBe(folded[0]);
+  expect(sessionLogTurns(source).map((t) => t.id)).toEqual(['u', 'c']);
+  expect(sessionLogTurns(source, options)[0]!.blocks.map((b) => b.id)).toEqual(['t', 'cp']);
+});
+
+test('folding never crosses a new prompt and preserves failed compaction errors', () => {
+  const source = thread([
+    user('u1'), reply('a1', 'u1'), user('u2'), reply('a2', 'u2'),
+    msg('c', 'user', [], { kind: 'compaction', status: 'error', error: { code: 'compact_failed', message: 'Synthetic compaction failure' } }),
+    reply('a3', 'u2'),
+  ]);
+  const turns = sessionLogTurns(source, { foldCompactions: true });
+  expect(turns.map((t) => t.id)).toEqual(['u1', 'u2']);
+  expect(turns[0]!.assistant.map((m) => m.message_id)).toEqual(['a1']);
+  expect(turns[1]!.assistant.map((m) => m.message_id)).toEqual(['a2', 'c', 'a3']);
+  expect(turns[1]!.error?.message).toBe('Synthetic compaction failure');
 });

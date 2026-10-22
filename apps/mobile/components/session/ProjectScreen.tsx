@@ -209,7 +209,7 @@ export function ProjectScreen() {
   // open and the app is in the foreground, so a home send skips the sandbox
   // boot. Gated by the project's `warm_sessions` flag (billed compute).
   useWarmProjectSession(projectId, project?.experimental?.warm_sessions === true);
-  // KRTX-1742 (the inbox, its drawer pill, reading a session's notifications)
+  // KRTX-1742 (the inbox, its home bell, reading a session's notifications)
   // is behind the project's `notification_center` flag, off by default.
   // Unknown while the project loads: off.
   const notificationCenterOn = project?.experimental?.notification_center === true;
@@ -270,7 +270,7 @@ export function ProjectScreen() {
     [reviewNeedsYou.items, needsInput.data]
   );
 
-  // The caller's notifications across every project (KRTX-1742): the drawer's
+  // The caller's notifications across every project (KRTX-1742): the home bell's
   // Notifications count. The Notifications page reads the same query (same
   // limit). It polls every 60 s while the app is in the foreground, and not
   // while a root screen covers the project or the flag is off.
@@ -510,8 +510,6 @@ export function ProjectScreen() {
         activeRuntimeSessionId={shownRuntimeId}
         activeParentSessionId={activeParentSessionId}
         reviewNeedsYouCount={reviewNeedsYouCount}
-        notificationsEnabled={notificationCenterOn}
-        notificationsUnreadCount={notificationsUnreadCount}
         needsYouBySession={needsYouSessions}
         // New session opens project home: its composer starts the session.
         onNewSession={startNewSession}
@@ -531,8 +529,6 @@ export function ProjectScreen() {
       activeParentSessionId,
       drawerOpen,
       reviewNeedsYouCount,
-      notificationCenterOn,
-      notificationsUnreadCount,
       needsYouSessions,
       startNewSession,
       openSessionFromDrawer,
@@ -588,16 +584,9 @@ export function ProjectScreen() {
   const viewDrawerOpen = threadShown ? false : drawerOpen;
 
   // Tool pages keep PageHeader: its hamburger opens the drawer. The "···"
-  // that opened the project sheet is removed (COR-123/COR-160 Task 3): the
-  // project sheet (`CustomizeSheet`) is deleted, so no page passes
-  // `onOpenRightDrawer` any more and `PageHeader` shows no "···".
-  const pageChrome = useMemo(
-    () => ({
-      onOpenDrawer: openDrawer,
-      isDrawerOpen: viewDrawerOpen,
-    }),
-    [openDrawer, viewDrawerOpen]
-  );
+  // that opened the project sheet is gone (COR-123/COR-160 Task 3): the
+  // project sheet (`CustomizeSheet`) is deleted and PageHeader has no "···".
+  const pageChrome = useMemo(() => ({ onOpenDrawer: openDrawer }), [openDrawer]);
 
   // While the computer wakes, the connecting view shows the session's saved
   // copy (hooks/useSavedCopy.ts): the one this device kept, then the server's,
@@ -701,6 +690,7 @@ export function ProjectScreen() {
             onOpenProjectSession={handleOpenProjectSession}
             onCreateAgent={createAgent}
             boundAgentName={boundAgentName}
+            projectSession={showsSubsession ? null : activeProjectSession}
           />
         ) : activeSessionId || connectingProjectSessionId ? (
           /* Connecting — a project session is provisioning (or errored), or
@@ -808,6 +798,13 @@ export function ProjectScreen() {
     (submit) => dashboardSendRef.current(submit),
     []
   );
+  // The home bell (KRTX-1742): a push of the Notifications page over home.
+  // A second tap finds `inbox` on top and does nothing (`drawerRouteMove`).
+  const openNotifications = useCallback(() => navigateProjectRoute(PROJECT_INBOX_ROUTE), [navigateProjectRoute]);
+  const homeNotifications = useMemo(
+    () => (notificationCenterOn ? { unreadCount: notificationsUnreadCount, onOpen: openNotifications } : undefined),
+    [notificationCenterOn, notificationsUnreadCount, openNotifications]
+  );
   const homeContent = useMemo(
     () => (
       <View className="flex-1 bg-background">
@@ -816,11 +813,12 @@ export function ProjectScreen() {
           sending={isDashboardSending}
           onSubmitNewSession={submitNewSession}
           onOpenDrawer={openDrawer}
+          notifications={homeNotifications}
           takeInitialDraft={takeInitialDraft}
         />
       </View>
     ),
-    [projectId, isDashboardSending, submitNewSession, openDrawer, takeInitialDraft]
+    [projectId, isDashboardSending, submitNewSession, openDrawer, homeNotifications, takeInitialDraft]
   );
 
   // Memoized: a new value re-renders every project route that reads it.
@@ -900,8 +898,7 @@ export function ProjectScreen() {
         openSpringConfig={DRAWER_OPEN}
         closeSpringConfig={DRAWER_CLOSE}
         renderDrawerContent={renderDrawer}>
-        {/* The SDK's project scope: its runtime hooks read this project's model
-            mode from it (`useRuntimeProviders`). */}
+        {/* The SDK's project scope: its runtime hooks read this project from it. */}
         <KortixProjectProvider projectId={projectId}>
         <ProjectRouteProvider value={projectRoute}>
           {/* Native Stack: platform default push/pop. No iOS swipe-back: the

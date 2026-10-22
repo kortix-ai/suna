@@ -14,7 +14,15 @@
 
 import { locales } from '@/i18n/config';
 
+import {
+  DEFAULT_DARK_THEME,
+  DEFAULT_LIGHT_THEME,
+  type DarkThemeId,
+  type LightThemeId,
+} from '@kortix/ui/internal/lib/interface-theme-defaults';
 import terminalThemes from './kortix-themes.generated.json';
+
+export { DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME, type DarkThemeId, type LightThemeId };
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -47,20 +55,15 @@ export const LIGHT_THEME_IDS: readonly string[] = [
   ...KORTIX_LIGHT_THEME_IDS,
   ...TERMINAL_THEMES.filter((t) => t.mode === 'light').map((t) => t.id),
 ];
-export type LightThemeId = string;
 
 /** Dark palettes, in picker order. */
 export const DARK_THEME_IDS: readonly string[] = [
   ...KORTIX_DARK_THEME_IDS,
   ...TERMINAL_THEMES.filter((t) => t.mode === 'dark').map((t) => t.id),
 ];
-export type DarkThemeId = string;
 
 /** Ids stored by earlier builds that now live under a terminal-theme id. */
 const LEGACY_THEME_IDS: Record<string, string> = { jellybean: 'jellybeans-default' };
-
-export const DEFAULT_LIGHT_THEME: LightThemeId = 'pure-light';
-export const DEFAULT_DARK_THEME: DarkThemeId = 'pure-dark';
 
 /** The rows of the theme picker, in display order. */
 export const INTERFACE_THEME_IDS: readonly string[] = [
@@ -177,6 +180,10 @@ export function syncInterfaceThemes(
   else clearInterfaceThemes(element);
 }
 
+/** `value` as a JS literal that is safe inside an inline `<script>`: `<`, `>`, `/` and line separators are escaped. */
+const scriptLiteral = (value: unknown): string =>
+  JSON.stringify(value).replace(/[<>/\u2028\u2029]/g, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`);
+
 /**
  * Inlined in the root layout's `<head>` so a themed route's first paint —
  * including the auth gate's loading mark — already shows the stored palette.
@@ -184,8 +191,8 @@ export function syncInterfaceThemes(
  * blob directly; any failure (no storage, bad JSON, unknown id) leaves the
  * defaults. Keep it dependency-free: it is inlined as a string.
  */
-export const INTERFACE_THEME_INIT_SCRIPT = `(function(){try{var d=document.documentElement;if(!new RegExp(${JSON.stringify(
+export const INTERFACE_THEME_INIT_SCRIPT = `(function(){try{var d=document.documentElement;if(!new RegExp(${scriptLiteral(
   THEMED_ROUTE_SOURCE,
-)}).test(location.pathname))return;var L=${JSON.stringify(LIGHT_THEME_IDS)},D=${JSON.stringify(
+)}).test(location.pathname))return;var L=${scriptLiteral(LIGHT_THEME_IDS)},D=${scriptLiteral(
   DARK_THEME_IDS,
 )},s={};try{var r=localStorage.getItem('${USER_PREFERENCES_STORAGE_KEY}'),p=r?JSON.parse(r):null;s=(p&&p.state&&p.state.preferences)||{};}catch(e){}d.setAttribute('data-light-theme',L.indexOf(s.lightTheme)>=0?s.lightTheme:'${DEFAULT_LIGHT_THEME}');d.setAttribute('data-dark-theme',D.indexOf(s.darkTheme)>=0?s.darkTheme:'${DEFAULT_DARK_THEME}');}catch(e){}})();`;

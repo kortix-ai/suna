@@ -1,5 +1,5 @@
 // Main exports
-export { createDb, instrumentSql, type Database, type DbHooks } from './client';
+export { createDb, connectRetry, instrumentSql, type Database, type DbHooks } from './client';
 export * as schema from './schema';
 
 // Re-export frequently used schemas and types for convenience
@@ -37,6 +37,8 @@ export {
   gatewayRequestLogs,
   gatewayApiKeys,
   gatewayBudgets,
+  gatewaySpendDaily,
+  gatewaySpendPendingDays,
   gatewayOtelConfigs,
   // Kortix tables
   projects,
@@ -51,6 +53,7 @@ export {
   projectAccessRequests,
   projectSecrets,
   projectSecretTombstones,
+  projectSecretRequests,
   accountSecretResources,
   accountSecretGrants,
   sessionProviderSecretPools,
@@ -62,6 +65,7 @@ export {
   projectSecretScopeEnum,
   projectTriggerRuntime,
   projectTriggerEventSubscriptions,
+  projectTriggerEventPolls,
   projectTriggerSessionAccessGrants,
   projectTriggerExecutions,
   projectMonitorEvents,
@@ -102,6 +106,7 @@ export {
   sessionLogMessages,
   sessionLogBlobs,
   sessionContentPurges,
+  sessionLogBackfillState,
   accountSubscriptionEnds,
   sessionRuntimeProjections,
   providerEvents,
@@ -145,6 +150,11 @@ export {
   notificationWatchers,
   triggerWatchers,
   webPushSubscriptions,
+  // Rooms: agent-to-agent messaging (flag agent_rooms)
+  rooms,
+  roomMessages,
+  roomMembers,
+  sessionIdleWatches,
   // Product feedback (POST /v1/feedback)
   feedback,
   // Billing v2 — per-seat + compute metering + per-member YOLO

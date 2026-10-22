@@ -1696,13 +1696,12 @@ async function boxSession(ctx: FlowContext, fixture: Fixture) {
 }
 
 /**
- * Run the flow on `harness`: a pi run turns the project's `pi_harness` flag on
- * before the session boots, and every run proves which harness the box runs.
+ * Run the flow on `harness`: the project's `pi_harness` flag (on by default) is
+ * set before the session boots, and every run proves which harness the box runs.
  */
 async function optIntoHarness(ctx: FlowContext, fixture: Fixture, harness: Harness): Promise<void> {
-  if (harness !== 'pi') return;
-  await ctx.step('the project runs pi: `pi_harness` is on, so every session boots pi', async () => {
-    await fixture.setFeature(true, 'pi_harness');
+  await ctx.step(`the project runs ${harness}: \`pi_harness\` is ${harness === 'pi' ? 'on' : 'off'}`, async () => {
+    await fixture.setFeature(harness === 'pi', 'pi_harness');
   });
 }
 
@@ -1804,7 +1803,7 @@ harnessFlow(
   'CFG-11',
   {
     domain: 'config-releases',
-    requires: ['database', 'funded', 'daytona', 'managedGit', 'stripe'],
+    requires: ['database', 'funded', 'sandbox', 'managedGit', 'stripe'],
     timeoutMs: 1_500_000,
     routes: [
       FEATURES,
@@ -2089,7 +2088,7 @@ harnessFlow(
   'CFG-12',
   {
     domain: 'config-releases',
-    requires: ['database', 'funded', 'daytona', 'managedGit', 'stripe'],
+    requires: ['database', 'funded', 'sandbox', 'managedGit', 'stripe'],
     timeoutMs: 1_800_000,
     routes: [
       FEATURES,
@@ -2290,14 +2289,11 @@ harnessFlow(
       await fixture.cleanup();
     }
   },
-  // pi on deployed staging answers from a stale system prompt after an idle
-  // convergence (gates 37557504543 and 37933459772: DEF-DEV-2 answered
-  // marker2-epsilon / marker2-parked; OpenCode CFG-12 passed both times).
-  // Suspected: harness/pi/config-release.ts swap + reconfigure keeps the old
-  // compiled governance. Remove when the pi fix lands.
-  process.env.KE2E_TARGET === 'staging'
-    ? { quarantine: 'pi keeps a stale system prompt after idle config convergence on staging (DEF-DEV-2), open since v0.13.52 — quarantined 2026-10-09 until the pi reconfigure fix lands' }
-    : {},
+  // Known pi defect on deployed staging: pi answers from a stale system prompt
+  // after an idle convergence (gates 37557504543 and 37933459772: DEF-DEV-2
+  // answered marker2-epsilon / marker2-parked; OpenCode CFG-12 passed both
+  // times). Suspected: harness/pi/config-release.ts swap + reconfigure keeps
+  // the old compiled governance. A red CFG-12-pi is that bug, not this test.
 );
 
 // ── CFG-13 — the meta coordinator runs the platform governance, on a real box ─
@@ -2309,7 +2305,7 @@ flow(
   'CFG-13',
   {
     domain: 'config-releases',
-    requires: ['database', 'funded', 'daytona', 'managedGit', 'stripe'],
+    requires: ['database', 'funded', 'sandbox', 'managedGit', 'stripe'],
     timeoutMs: 900_000,
     routes: [
       FEATURES,
@@ -2569,7 +2565,7 @@ harnessFlow(
   'CFG-16',
   {
     domain: 'config-releases',
-    requires: ['database', 'funded', 'daytona', 'managedGit', 'stripe', 'projectSnapshots'],
+    requires: ['database', 'funded', 'sandbox', 'managedGit', 'stripe', 'projectSnapshots'],
     timeoutMs: 1_500_000,
     routes: [
       FEATURES,

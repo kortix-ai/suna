@@ -5,7 +5,7 @@ import {
   BasicTool,
   partOutcome,
   ToolOutcomeContext,
-} from '@/features/session/tool/shared/infrastructure';
+} from '@kortix/ui/session';
 import type { ToolPart } from '@/ui';
 
 function part(state: Record<string, unknown>): Pick<ToolPart, 'state'> {

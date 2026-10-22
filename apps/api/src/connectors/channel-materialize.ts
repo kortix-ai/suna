@@ -4,6 +4,7 @@ import {
   listAgentMailInstalls,
   loadSlackInstall,
   loadTeamsInstall,
+  loadTelegramInstall,
 } from '../channels/install-store';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 /**
@@ -103,7 +104,19 @@ export async function synthesizeChannelConnectors(
     .where(eq(projects.projectId, projectId))
     .limit(1);
 
-  if (!project || !resolveFeatureFlag(project.metadata, 'agentmail_email')) {
+  if (!project) return specs;
+
+  // Telegram (connectors_v2): the bot install is the registration, like Slack.
+  const telegramSlug = channelDefaultSlug('telegram');
+  if (
+    resolveFeatureFlag(project.metadata, 'connectors_v2') &&
+    !channelAlreadyDeclared(declared, 'telegram', telegramSlug) &&
+    (await loadTelegramInstall(projectId).catch(() => null))
+  ) {
+    specs.push(channelSpec('telegram', telegramSlug));
+  }
+
+  if (!resolveFeatureFlag(project.metadata, 'agentmail_email')) {
     return specs;
   }
 

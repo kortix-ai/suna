@@ -20,14 +20,14 @@ import {
 } from '../../billing/services/entitlements';
 import { isPaidTier } from '../../billing/services/tiers';
 import { requireFeatureFlag } from '../../feature-flags/gate';
+import { PROJECT_ACTIONS } from '../../iam';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveEffectiveModel } from '../../llm-gateway/resolution/default-model';
 import { getCatalogEntry } from '../../marketplace/catalog';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { readJsonObject } from '../../shared/http-body';
 import { readManifestFromRepo } from '../git/files';
-import { loadProjectForUser } from '../lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { loadGitProject } from '../lib/git';
 import { normalizeString, requestAuditContext } from '../lib/serializers';
@@ -107,7 +107,6 @@ function buildItemInstallPrompt(
 async function installModelGate(
   loaded: NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>,
 ): Promise<{ status: 402; body: { error: string; code: string } } | null> {
-  if (!projectLlmGatewayEnabled(loaded.row.metadata)) return null;
   if (await accountMayUseManagedModels(loaded.row.accountId)) return null;
   const mirroredDefaultAgent = normalizeString(
     (loaded.row.metadata as Record<string, unknown> | null | undefined)?.default_agent,
@@ -135,8 +134,10 @@ async function installModelGate(
 
 async function handleMarketplaceInstallSession(c: any) {
   const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'write');
+  const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // The install lands as a change request, so it needs the CR leaf.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
   // Flag gate AFTER membership authz. `marketplace` defaults ON platform-wide,
   // so this only rejects a project that explicitly turned it off.
   const gate = requireFeatureFlag(c, loaded.row.metadata, 'marketplace');

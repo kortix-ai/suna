@@ -45,6 +45,13 @@ test('notifications register and unregister a push device token', async () => {
   ]);
 });
 
+test('notifications.releaseDeviceToken POSTs the token to the public release route (KRTX-2242)', async () => {
+  await kortix.notifications.releaseDeviceToken('t');
+  expect(calls).toEqual([
+    { method: 'POST', url: 'http://test.local/v1/notifications/device-token/release', body: { device_token: 't' } },
+  ]);
+});
+
 test('notifications reach the inbox, preferences and Web Push routes (KRTX-1742)', async () => {
   const n = kortix.notifications;
   await n.list({ limit: 20 });
@@ -93,4 +100,19 @@ test('the root builds a sandbox proxy URL from an external id (mobile: no Sandbo
   const root = await import('../../index');
   expect(root.getSandboxUrlForExternalId('ext-1', 6080)).toBe('http://test.local/p/ext-1/6080');
   expect(root.getSandboxUrlForExternalId('ext-1')).toBe('http://test.local/p/ext-1/8000');
+});
+
+test('project(id).triggers reaches run history, fire with a payload, and replay (KRTX-1743)', async () => {
+  const t = kortix.project('P1').triggers;
+  await t.runs('nightly', { limit: 5 });
+  await t.projectRuns({ status: 'failed' });
+  await t.fire('nightly', { dryRun: true });
+  await t.replay('nightly', 'run-1');
+  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+    'GET http://test.local/projects/P1/triggers/nightly/runs?limit=5',
+    'GET http://test.local/projects/P1/trigger-runs?status=failed',
+    'POST http://test.local/projects/P1/triggers/nightly/fire',
+    'POST http://test.local/projects/P1/triggers/nightly/runs/run-1/replay',
+  ]);
+  expect(calls[2]!.body).toEqual({ dry_run: true });
 });

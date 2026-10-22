@@ -1,12 +1,12 @@
 /**
  * Agent-run + session happy-path backlog.
  *
- * Maps 1:1 to spec IDs: RUN-1..8, RUN-10, RUN-11, RUN-12, SESS-2, SESS-3, SESS-9, SESS-12,
- * FILE-8, FILE-9, GOLD-1, CHN-6, SESS-10, CONN-26.
+ * Maps 1:1 to spec IDs: RUN-1..8, RUN-10, RUN-12, SESS-2, SESS-3, SESS-9, SESS-12,
+ * FILE-8, FILE-9, GOLD-1, CHN-6, SESS-10.
  *
  * REALITY: every flow here needs a REAL booted sandbox and/or a funded
  * account, which the local target does not have. They are therefore gated at the
- * FLOW level on `requires: ["funded"]` and/or `["daytona"]`. The runner
+ * FLOW level on `requires: ["funded"]` and/or `["sandbox"]`. The runner
  * self-skips a flow whose capability is absent, so these SKIP cleanly locally
  * and run for real against a deployed target.
  *
@@ -49,8 +49,6 @@ import {
   watchSessionEvents,
 } from '../fixtures/session-run';
 
-const MORPH = { providerID: 'kortix', modelID: 'morph-dsv41flash' };
-
 /** A reply the flow can find by content: the model is told to answer with exactly `marker`. */
 function echo(marker: string): string {
   return `Reply with exactly this single token and nothing else: ${marker}`;
@@ -60,7 +58,7 @@ harnessFlow(
   'SESS-10',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     serial: true,
     // Boot (≤540s) + one turn (≤240s) + the mirror wait (≤180s) exceeds 360s.
     timeoutMs: 900_000,
@@ -138,153 +136,12 @@ harnessFlow(
   },
 );
 
-// ─── CONN-26: a real agent selects Composio for Gmail ─────────────────────────
-flow(
-  'CONN-26',
-  {
-    domain: 'connectors',
-    requires: ['funded', 'daytona', 'managedGit'],
-    serial: true,
-    timeoutMs: 720_000,
-    // Added in 5b070ebb18 (2026-08-24, direct push) and never run on a
-    // deployed gate before the v0.13.6 release (run 32992496089, api shard
-    // 1), where it failed after 392s: `Timed out waiting for Composio Gmail
-    // authorization request from agent session ses_fc0decd80ffeYPyIR1B5efRcz3`.
-    // CONN-25 passed in the same run (real connect.composio.dev link in 7.4s),
-    // so staging holds a working COMPOSIO_API_KEY — the unproven part is the
-    // live morph-dsv41flash turn calling `add_connector` inside the 300s wait, and
-    // the harness dumps no transcript on that timeout. Quarantined until it
-    // passes a staging dry run of tests-release.yml with the transcript
-    // captured on failure; un-quarantine ONLY in the PR that carries that
-    // green run.
-    quarantine:
-      'real-agent Composio selection: morph-dsv41flash turn produced no add_connector call / connect.composio.dev link within 300s on staging (gate run 32992496089, api shard 1) — unproven flow, quarantined 2026-08-26 pending a green staging dry run',
-    routes: [
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
-      'GET /v1/connectors/projects/:projectId/connectors',
-      'GET /v1/connectors/projects/:projectId/connectors/:slug/config',
-    ],
-  },
-  async (ctx) => {
-    const project = await ctx.fixtures.project({ managedGit: true });
-    const session = await ctx.fixtures.session(project, {
-      prompt: 'Reply with the single word READY. Do not call any tools.',
-    });
-    const params = { projectId: project.id, sessionId: session.id };
-
-    await ctx.step('a fresh remote session boots to a ready runtime', async () => {
-      await waitForSessionReady(ctx, project.id, session.id, 360_000);
-    });
-
-    await ctx.step('GLM-5.3 744B receives the real Gmail connector request', async () => {
-      await sendPrompt(
-        ctx,
-        project.id,
-        session.id,
-        'Use the Kortix connector tools now. Add Gmail with the default managed provider and start authorization. Never use Pipedream or any legacy provider. Do not complete OAuth, read mail, or send mail. Stop after you give me the authorization link and ask me to open it.',
-        { model: MORPH },
-      );
-    });
-
-    type FullMessage = { role: string; text: string; tools: Array<{ tool: string; input?: string }> };
-    const addConnector = (tool: { tool: string }) => /add[_ -]?connector/i.test(tool.tool);
-    let messages: FullMessage[] = [];
-    await ctx.step('the agent calls the connector tools and asks the user to authorize', async () => {
-      messages = await waitFor(
-        async () => {
-          // `detail=full` carries each tool call's input as a JSON string.
-          const response = await ctx.client
-            .as(ctx.P.OWNER)
-            .get('/v1/projects/:projectId/sessions/:sessionId/transcript', {
-              params,
-              query: { limit: '200', detail: 'full', chars: '5000' },
-            });
-          response.status(200);
-          return (response.json<any>().messages ?? []) as FullMessage[];
-        },
-        {
-          until: (rows) => {
-            const assistantText = rows
-              .filter((message) => message.role === 'assistant')
-              .map((message) => message.text)
-              .join('\n');
-            return (
-              rows.some((message) => (message.tools ?? []).some(addConnector)) &&
-              assistantText.includes('connect.composio.dev') &&
-              /open|authorize|connect/i.test(assistantText)
-            );
-          },
-          timeoutMs: 300_000,
-          intervalMs: 4_000,
-          description: `Composio Gmail authorization request from session ${session.id}`,
-          retryOnError: isKe2eRetryableError,
-        },
-      );
-    });
-
-    await ctx.step('no connector tool call attempted the legacy Pipedream escape hatch', async () => {
-      const toolCalls = messages.flatMap((message) => message.tools ?? []);
-      const addCalls = toolCalls.filter(addConnector);
-      if (addCalls.length === 0) throw new Error('agent emitted no add-connector tool call');
-      for (const call of toolCalls) {
-        if (/"provider":"pipedream"|"allow_legacy_pipedream":true/.test(call.input ?? '')) {
-          throw new Error('agent attempted the legacy Pipedream provider');
-        }
-      }
-      for (const call of addCalls) {
-        const provider = /"provider":"([^"]*)"/.exec(call.input ?? '')?.[1];
-        if (provider !== undefined && provider !== 'composio') {
-          throw new Error(`agent selected unexpected managed provider ${provider}`);
-        }
-      }
-    });
-
-    await ctx.step('project readback proves the agent persisted Gmail through Composio', async () => {
-      const listed = await ctx.client
-        .as(ctx.P.OWNER)
-        .get('/v1/connectors/projects/:projectId/connectors', {
-          params: { projectId: project.id },
-        });
-      listed.status(200);
-      const body = listed.json<any>();
-      const rows = Array.isArray(body) ? body : (body?.connectors ?? []);
-      const gmail = rows.find(
-        (row: any) =>
-          row?.provider === 'composio' &&
-          (String(row?.slug ?? '').toLowerCase().includes('gmail') ||
-            String(row?.name ?? '').toLowerCase().includes('gmail')),
-      );
-      if (!gmail?.slug) throw new Error('project connector list omitted agent-created Gmail');
-      if (
-        rows.some(
-          (row: any) =>
-            row?.provider === 'pipedream' &&
-            (String(row?.slug ?? '').toLowerCase().includes('gmail') ||
-              String(row?.name ?? '').toLowerCase().includes('gmail')),
-        )
-      ) {
-        throw new Error('project persisted a Pipedream-backed Gmail connector');
-      }
-
-      const config = await ctx.client
-        .as(ctx.P.OWNER)
-        .get('/v1/connectors/projects/:projectId/connectors/:slug/config', {
-          params: { projectId: project.id, slug: gmail.slug },
-        });
-      config.status(200).body().has('$.provider', 'composio').has('$.app', 'gmail');
-    });
-  },
-);
-
 // ─── RUN-1: a ready session names its runtime conversation ────────────────────
 harnessFlow(
   'RUN-1',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -314,7 +171,8 @@ harnessFlow(
   'RUN-2',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    tags: ['deployed'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -378,7 +236,8 @@ harnessFlow(
   'RUN-3',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    tags: ['deployed'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -411,7 +270,7 @@ harnessFlow(
   'RUN-4',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -445,7 +304,7 @@ harnessFlow(
   'RUN-5',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -501,7 +360,7 @@ harnessFlow(
   'RUN-6',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -544,7 +403,8 @@ harnessFlow(
   'RUN-7',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    tags: ['deployed'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 780_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -617,7 +477,8 @@ flow(
   'RUN-8',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    tags: ['deployed'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     retry: { attempts: 2 },
     routes: [
@@ -669,7 +530,7 @@ flow(
   'SESS-2',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     serial: true,
     timeoutMs: 300_000,
     routes: ['POST /v1/projects/:projectId/sessions'],
@@ -707,7 +568,7 @@ flow(
   'SESS-3',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 240_000,
     routes: ['POST /v1/projects/:projectId/sessions'],
   },
@@ -742,7 +603,7 @@ harnessFlow(
   'SESS-9',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -774,7 +635,8 @@ harnessFlow(
   'SESS-12',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
+    tags: ['deployed'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -843,7 +705,7 @@ flow(
   'FILE-8',
   {
     domain: 'files',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 360_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -893,7 +755,8 @@ flow(
   'FILE-9',
   {
     domain: 'files',
-    requires: ['funded', 'daytona'],
+    tags: ['deployed'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 600_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -952,7 +815,8 @@ flow(
   'GOLD-1',
   {
     domain: 'golden',
-    requires: ['funded', 'daytona'],
+    tags: ['deployed'],
+    requires: ['funded', 'sandbox'],
     serial: true,
     timeoutMs: 600_000,
     routes: [
@@ -1125,13 +989,13 @@ flow(
 // closest real boundary: a `event_callback`/`app_mention` POST is accepted and
 // (when an install + signature are present on the target) acknowledged 200
 // `{ok:true}` and a `source:slack` session subsequently appears; otherwise the
-// install gate (404) is asserted. This flow is gated on funded+daytona because a
+// install gate (404) is asserted. This flow is gated on funded+sandbox because a
 // successful dispatch spins a real sandbox.
 flow(
   'CHN-6',
   {
     domain: 'channels',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     serial: true,
     timeoutMs: 240_000,
     routes: ['POST /v1/webhooks/slack/:projectId', 'GET /v1/projects/:projectId/sessions'],
@@ -1227,7 +1091,7 @@ harnessFlow(
   'RUN-10',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     // Boot (≤540s) + the boot turn (≤240s).
     timeoutMs: 900_000,
     routes: [
@@ -1243,7 +1107,7 @@ harnessFlow(
     const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
     try {
       await ctx.step(`the project declares a no-edit agent and runs ${harness}`, async () => {
-        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        await world.setFeature('pi_harness', harness === 'pi');
         await world.commitToMain(NO_EDIT_FILES, 'ke2e RUN-10: a no-edit agent');
       });
       const path = `ke2e-run10-${Date.now()}.txt`;
@@ -1293,41 +1157,11 @@ harnessFlow(
   },
 );
 
-flow(
-  'RUN-11',
-  {
-    domain: 'agent-run',
-    requires: ['funded', 'daytona'],
-    timeoutMs: 900_000,
-    routes: [
-      'PATCH /v1/projects/:projectId/features',
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
-    ],
-  },
-  async (ctx) => {
-    const project = await ctx.fixtures.project({ seed: true });
-    await ctx.step('the project asks for pi and turns the LLM gateway off', async () => {
-      for (const [feature, enabled] of [['pi_harness', true], ['llm_gateway', false]] as const) {
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .patch('/v1/projects/:projectId/features', { feature, enabled }, { params: { projectId: project.id } });
-        r.status(200).body().has(`$.experimental.${feature}`, enabled);
-      }
-    });
-    // pi has no model path without the gateway: the session boots OpenCode,
-    // and bootSession proves it from the daemon's health.
-    await bootSession(ctx, 'opencode', { project });
-  },
-);
-
 harnessFlow(
   'RUN-12',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 780_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -1393,7 +1227,7 @@ flow(
   'RUN-20',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 780_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
@@ -1521,7 +1355,7 @@ harnessFlow(
   'RUN-15',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     // Three sessions: boot (≤540s) + one turn (≤240s) each.
     timeoutMs: 2_500_000,
     routes: [
@@ -1542,7 +1376,7 @@ harnessFlow(
       ctx.client.as(ctx.P.OWNER).get(runtimePath(sandboxId, `/file/content?path=${encodeURIComponent(`ke2e-run15-${nonce}.txt`)}`));
     try {
       await ctx.step(`the project declares the ke2e_marker tool and a limited agent, and runs ${harness}`, async () => {
-        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        await world.setFeature('pi_harness', harness === 'pi');
         await world.commitToMain(PROJECT_TOOL_FILES, 'ke2e RUN-15: a project tool and a limited agent');
       });
 
@@ -1615,7 +1449,7 @@ harnessFlow(
   'RUN-19',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     // One session: boot (≤540s) + one turn (≤240s).
     timeoutMs: 900_000,
     routes: [
@@ -1641,7 +1475,7 @@ harnessFlow(
         if (!manifest.includes('  web_search: tools/web_search.ts  # ejected from kortix:web_search\n')) throw new Error(`eject did not point kortix.yaml at the copy:\n${manifest}`);
         const source = cli.readFile('tools/web_search.ts');
         if (!source.includes(EJECTED_EXECUTE)) throw new Error('the ejected web_search no longer has the execute line this flow changes');
-        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        await world.setFeature('pi_harness', harness === 'pi');
         await world.commitToMain({ 'kortix.yaml': manifest, 'tools/web_search.ts': source.replace(EJECTED_EXECUTE, CHANGED_EXECUTE) }, 'ke2e RUN-19: four Kortix tools and an ejected web_search');
       });
 
@@ -1710,7 +1544,7 @@ harnessFlow(
   'RUN-13',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
@@ -1790,7 +1624,7 @@ harnessFlow(
   'RUN-14',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
@@ -1806,7 +1640,7 @@ harnessFlow(
     const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
     try {
       await ctx.step(`the project runs ${harness} and commits the command where that harness reads it`, async () => {
-        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        await world.setFeature('pi_harness', harness === 'pi');
         const path = harness === 'pi' ? `harnesses/pi/prompts/${COMMAND}.md` : `harnesses/opencode/commands/${COMMAND}.md`;
         await world.commitToMain({ [path]: COMMAND_TEMPLATE }, `ke2e RUN-14: the ${COMMAND} command`);
       });
@@ -1905,7 +1739,7 @@ harnessFlow(
   'RUN-17',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     // Boot (≤540s) + the boot turn + two turns (≤240s each).
     timeoutMs: 1_200_000,
     routes: [
@@ -1923,7 +1757,7 @@ harnessFlow(
     const token = `Agentpick${Date.now()}`;
     try {
       await ctx.step(`the project declares a second primary agent and runs ${harness}`, async () => {
-        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        await world.setFeature('pi_harness', harness === 'pi');
         await world.commitToMain(agentPickFiles(token), 'ke2e RUN-17: a marker agent');
       });
       const session = await bootSession(ctx, harness, { project, prompt: 'Reply with the word ready.' });
@@ -1966,7 +1800,7 @@ flow(
   'RUN-16',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -2013,7 +1847,7 @@ harnessFlow(
   'RUN-18',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
@@ -2033,7 +1867,7 @@ harnessFlow(
     const agentsMd = `# Project rules\n\n${name}: ${value}\n`;
     try {
       await ctx.step(`the project runs ${harness} and commits a root AGENTS.md`, async () => {
-        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        await world.setFeature('pi_harness', harness === 'pi');
         await world.commitToMain({ 'AGENTS.md': agentsMd }, 'ke2e RUN-18: a root AGENTS.md');
       });
       const { projectId, sessionId, sandboxId } = await bootSession(ctx, harness, { project });

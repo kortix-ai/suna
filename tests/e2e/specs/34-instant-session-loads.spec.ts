@@ -28,7 +28,8 @@
  * The fourth arm saves a turn that dispatched a sub-agent. A sub-agent runs in
  * its own OpenCode session, and its row opens that transcript, which only the
  * running computer could answer: while it was off, the view waited. Now saved
- * history holds the sub-agent's transcript too, and the view draws its steps.
+ * history holds the sub-agent's transcript too: the row opens its steps in
+ * place, and its 'View' action opens the whole transcript.
  *
  * The fifth arm stores a tool call the way saved history stored it before it
  * kept tool calls 1:1: no input, no output, only the title (OpenCode titles a
@@ -44,7 +45,7 @@
  * session-open snapshot never answer. The copy the device kept painted first,
  * and the newer saved copy from the history read never replaced it, so the
  * reload showed an older last message until the computer woke. The newer turn
- * now shows at once, from one transcript read.
+ * now shows at once, from one read of the session log.
  *
  * The eighth arm opens the Sessions page as the project owner, then reloads it
  * with every session-list and permission read held. The page picks the
@@ -87,6 +88,8 @@ const API_PATH = new URL(process.env.E2E_API_URL!).pathname.replace(/\/+$/, '');
  * The saved copy this device keeps for one session, or null. The web host keeps
  * saved copies in IndexedDB (`kortix-session-cache`, store `saved-copies`, see
  * the SDK's `idb-sync-cache.ts`), keyed `kortix.saved-copy:<user>:<project>/<session>`.
+ * A session whose project has the `session_log` flag on keeps its session-log page
+ * instead, under `kortix.saved-copy.log:…` (`savedLogCopyKey`).
  * The read opens the database at its current version and closes it, so it never
  * blocks the page's own upgrade.
  */
@@ -122,6 +125,34 @@ function readSavedCopy(page: Page, key: string): Promise<string | null> {
  * for the conversation. An older page (`before=`) and a sub-agent's window
  * (`child=`) are other reads.
  */
+/**
+ * The key of the copy this device keeps for one session. The session log owns the history of a
+ * project with the `session_log` flag on (#10305): the device keeps the log's page under the
+ * `.log` namespace (the SDK's `saved-log.ts`) and no v1 copy.
+ */
+const savedLogCopyKey = (userId: string, projectId: string, sessionId: string) =>
+  `kortix.saved-copy.log:${userId}:${projectId}/${sessionId}`;
+
+/**
+ * Every read of the newest page of the session log's root thread from now on: `GET …/log?`.
+ * An older page (`before_seq=`) and a sub-agent's thread (`thread=`) are other reads.
+ */
+function countOpenLogReads(page: Page, sessionId: string): { urls: string[] } {
+  const reads = { urls: [] as string[] };
+  page.on('request', (request) => {
+    const url = request.url();
+    if (
+      request.method() === 'GET' &&
+      url.includes(`/sessions/${sessionId}/log?`) &&
+      !url.includes('before_seq=') &&
+      !url.includes('thread=')
+    ) {
+      reads.urls.push(url);
+    }
+  });
+  return reads;
+}
+
 function countOpenTranscriptReads(page: Page, sessionId: string): { urls: string[] } {
   const reads = { urls: [] as string[] };
   page.on('request', (request) => {
@@ -217,8 +248,8 @@ async function firstShown(page: Page): Promise<Record<string, number>> {
 type SavedMessages = Parameters<typeof seedSessionTranscript>[1]['messages'];
 
 /**
- * A user, a project and a stopped session with saved history. `store`: the session log (the
- * project's `session_log` flag on), or the v1 mirror for a contract only the mirror states.
+ * A user, a project and a stopped session with saved history. `store`: the session log, or an
+ * old session's v1 mirror, which the first read converts into the log (P8.2).
  */
 async function setup(page: Page, label: string, messages?: SavedMessages, store: 'log' | 'mirror' = 'log') {
   const env = loadEnv();
@@ -287,7 +318,7 @@ test('34 — a reload with every read held shows the project, its session list a
       await route.continue().catch(() => {});
     });
     // Once `holding`, every read the reload depends on waits for the end of the test.
-    for (const path of ['snapshot', 'transcript']) {
+    for (const path of ['snapshot', 'transcript', 'log']) {
       await page.route(`**/sessions/${sessionId}/${path}*`, hold);
     }
     await page.route(
@@ -307,7 +338,7 @@ test('34 — a reload with every read held shows the project, its session list a
       .poll(
         () =>
           Promise.all([
-            readSavedCopy(page, `kortix.saved-copy:${user.id}:${project.id}/${sessionId}`),
+            readSavedCopy(page, savedLogCopyKey(user.id, project.id, sessionId)),
             page.evaluate(
               (userId) => Object.keys(localStorage).includes(`kortix.query-cache:${userId}`),
               user.id,
@@ -332,10 +363,13 @@ test('34 — a reload with every read held shows the project, its session list a
     });
     expect(marks.bootScreen, 'the boot screen must not appear').toBeUndefined();
     expect(marks.skeleton, 'no placeholder rows: the kept copy paints at once').toBeUndefined();
-    // One story about the computer: the page's own start is waking it, so the
-    // composer says so too, never "idle — your next message wakes it".
-    await expect(page.getByText("Waking this session's computer.", { exact: false })).toBeVisible();
-    await expect(page.getByText('This session is idle', { exact: false })).toHaveCount(0);
+    // The page's own start wakes the computer in the background, and a routine
+    // wake says nothing: no boot pill, no waking line, never "asleep — your
+    // next message wakes it". The composer stays live.
+    await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible();
+    await expect(page.getByText("Waking this session's computer", { exact: false })).toHaveCount(0);
+    await expect(page.getByText('Reserving your computer', { exact: false })).toHaveCount(0);
+    await expect(page.getByText("This session's computer is asleep", { exact: false })).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath('reload-held.png') });
   } finally {
     release();
@@ -473,7 +507,7 @@ test('34 — a saved tool call shows its command and output, from the server and
       await held;
       await route.continue().catch(() => {});
     });
-    for (const path of ['snapshot', 'transcript']) {
+    for (const path of ['snapshot', 'transcript', 'log']) {
       await page.route(`**/sessions/${sessionId}/${path}*`, hold);
     }
     await page.route(
@@ -628,7 +662,18 @@ test("34 — a saved sub-agent's steps open while the computer is off", async ({
     // #9774 each run of work under the fold has its own closed, named line.
     await openWork(page);
     await page.getByRole('button', { name: 'Asked a helper agent', exact: true }).click();
+    // The row reads the sub-agent's thread from the session log as it mounts. Until the
+    // steps are in hand it is a plain button onto the full view; with them it is a
+    // closed disclosure that opens them in place (`TaskTool`). Click it only then.
+    const agentRow = page.getByRole('button', { name: new RegExp(SUBAGENT_TASK), expanded: false });
+    await expect(agentRow).toBeVisible({ timeout: 30_000 });
     await page.getByText(SUBAGENT_TASK, { exact: true }).first().click();
+    await expect(page.getByRole('button', { name: `List the source files ${SUBAGENT_COMMAND}` })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    // The row's 'View' action opens the sub-agent's whole transcript.
+    await page.getByRole('button', { name: 'Open full view', exact: true }).click();
     const view = page.getByRole('dialog');
     await expect(view).toBeVisible();
     // The sub-agent's own settled turn folds the same way.
@@ -697,11 +742,9 @@ test('34 — a tool call saved before tool calls were kept 1:1 shows its command
 
 test('34 — a session proven empty opens on its composer, not the boot screen', async ({ page }, testInfo) => {
   test.setTimeout(300_000);
-  // A head-complete saved copy with no messages: what a complete read of an
-  // empty runtime stores.
-  // The mirror: a head-complete copy with no rows proves the session empty. A session log
-  // with no message is no stored log yet (`readLogTranscriptWindow` answers null).
-  const { project, sessionId } = await setup(page, 'empty', () => [], 'mirror');
+  // A stored session log whose root thread holds no message: what a box that journaled an
+  // empty conversation stores. The page's empty root thread proves the session empty.
+  const { project, sessionId } = await setup(page, 'empty', () => []);
   let release = () => {};
   const held = new Promise<void>((resolve) => {
     release = resolve;
@@ -762,7 +805,7 @@ test("34 — a reload shows the server's newer saved copy, not only the one this
     await expect
       .poll(
         () =>
-          readSavedCopy(page, `kortix.saved-copy:${user.id}:${project.id}/${sessionId}`).then(
+          readSavedCopy(page, savedLogCopyKey(user.id, project.id, sessionId)).then(
             (copy) => copy?.includes('This reply is stored in the database.') === true,
           ),
         { timeout: 30_000, message: 'the device keeps the saved copy' },
@@ -798,9 +841,15 @@ test("34 — a reload shows the server's newer saved copy, not only the one this
     });
 
     holding = true;
-    const reads = countOpenTranscriptReads(page, sessionId);
+    const transcriptReads = countOpenTranscriptReads(page, sessionId);
+    const reads = countOpenLogReads(page, sessionId);
+    // The session log owns this history (#10305): the newer turn comes from `GET …/log`.
     const history = page.waitForResponse(
-      (r) => r.url().includes(`/sessions/${sessionId}/transcript?`) && r.url().includes('history=true'),
+      (r) =>
+        r.request().method() === 'GET' &&
+        r.url().includes(`/sessions/${sessionId}/log?`) &&
+        !r.url().includes('before_seq=') &&
+        !r.url().includes('thread='),
     );
     await page.reload({ waitUntil: 'commit' });
     // The newer turn shows while the computer and the snapshot are still held.
@@ -808,14 +857,15 @@ test("34 — a reload shows the server's newer saved copy, not only the one this
     await expect(page.getByText(newerReply, { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(newerPrompt, { exact: true })).toBeVisible();
     await expect(page.getByText(SAVED_REPLY, { exact: true })).toHaveCount(1);
-    // One saved-history read, not that one plus a second read of the window.
+    // One saved-history read, not that one plus a second read of the window, and no v1 read.
     expect(reads.urls).toHaveLength(1);
+    expect(transcriptReads.urls).toEqual([]);
     await page.screenshot({ path: testInfo.outputPath('reload-newer-copy.png') });
     // And the device keeps the newer copy for the next open.
     await expect
       .poll(
         () =>
-          readSavedCopy(page, `kortix.saved-copy:${user.id}:${project.id}/${sessionId}`).then(
+          readSavedCopy(page, savedLogCopyKey(user.id, project.id, sessionId)).then(
             (copy) => copy?.includes(newerReply) === true,
           ),
         { timeout: 15_000, message: 'the device keeps the newer copy' },
@@ -961,6 +1011,128 @@ test('34 — an open reads the saved copy once: the session-open snapshot carrie
     await page.screenshot({ path: testInfo.outputPath('one-saved-history-read.png') });
   } finally {
     release();
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await project?.dispose?.();
+  }
+});
+
+/** `count` saved turns: a one-line prompt and a three-line reply each, a second apart. */
+const savedTurns =
+  (count: number): SavedMessages =>
+  (root) => {
+    const created = Date.now() - 600_000;
+    const id = (n: number) => `msg_${String(n).padStart(24, '0')}`;
+    return Array.from({ length: count }, (_, k) => {
+      const i = k + 1;
+      const at = created + i * 1000;
+      return [
+        {
+          info: { id: id(2 * i - 1), sessionID: root, role: 'user', time: { created: at }, agent: 'kortix' },
+          parts: [
+            {
+              id: `prt_older_prompt_${i}`,
+              sessionID: root,
+              messageID: id(2 * i - 1),
+              type: 'text',
+              text: `Question ${i}: what is special about the number ${i}?`,
+            },
+          ],
+        },
+        {
+          info: {
+            id: id(2 * i),
+            sessionID: root,
+            parentID: id(2 * i - 1),
+            role: 'assistant',
+            time: { created: at + 1, completed: at + 2 },
+            agent: 'kortix',
+            mode: 'build',
+            providerID: 'kortix',
+            modelID: 'openai/gpt-5.6-sol',
+            path: { cwd: '/workspace', root: '/workspace' },
+            cost: 0,
+            tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+            finish: 'stop',
+          },
+          parts: [
+            {
+              id: `prt_older_reply_${i}`,
+              sessionID: root,
+              messageID: id(2 * i),
+              type: 'text',
+              text: `Answer ${i}.\n\n- ${i} is a whole number.\n- ${i} comes after ${i - 1}.\n- ${i} comes before ${i + 1}.`,
+            },
+          ],
+        },
+      ];
+    }).flat();
+  };
+
+test('34 — loading older messages leaves the turn the reader is reading where it is on screen', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const { project, sessionId, root } = await setup(page, 'older', savedTurns(60), 'mirror');
+  try {
+    await page.route(`**/sessions/${sessionId}/start*`, async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      await route.fulfill({
+        status: 200,
+        json: { stage: 'stopped', agent_name: 'kortix', retriable: false, sandbox: null, opencode_session_id: root, failure: null },
+      });
+    });
+    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+    await expect(page.getByText('Answer 60.', { exact: true })).toBeVisible({ timeout: 120_000 });
+    // The newest page only: the first turn is older history, not drawn yet.
+    await expect(page.getByText('Question 1: what is special about the number 1?', { exact: true })).toHaveCount(0);
+
+    // The reader scrolls up into the history sentinel and stops. Their turn is pinned, and its
+    // on-screen top is read in every layout pass from the moment the pull starts. The observer is
+    // created once the loading row is up — after the page's own observers — so it reads what the
+    // browser paints. A read of 0 is the contract: nothing above the reader moves them.
+    const result = await page.evaluate(async () => {
+      const el = document.querySelector<HTMLElement>('[data-follow]')!;
+      const content = el.firstElementChild!;
+      const turns = () => el.querySelectorAll<HTMLElement>('[data-turn-id]');
+      const before = turns().length;
+      const rowUp = () => Array.from(el.querySelectorAll('[role="status"]')).some((n) => /older/i.test(n.textContent ?? ''));
+      el.dispatchEvent(new WheelEvent('wheel', { deltaY: -400, bubbles: true }));
+      el.scrollTop = 150;
+      const top = el.getBoundingClientRect().top;
+      const anchor = Array.from(turns()).find((t) => t.getBoundingClientRect().bottom >= top)!;
+      const seen = () => anchor.getBoundingClientRect().top - el.getBoundingClientRect().top;
+      const start = seen();
+      const shifts: number[] = [];
+      let ro: ResizeObserver | null = null;
+      let sawRow = false;
+      const mo = new MutationObserver(() => {
+        if (!rowUp()) return;
+        sawRow = true;
+        ro ??= new ResizeObserver(() => shifts.push(seen() - start));
+        ro.observe(content);
+      });
+      mo.observe(content, { childList: true, subtree: true });
+      const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+      const t0 = performance.now();
+      while (performance.now() - t0 < 30_000 && !(turns().length > before && sawRow && !rowUp())) await wait(50);
+      await wait(1000); // the new turns are contained 500ms after they render
+      mo.disconnect();
+      ro?.disconnect();
+      return {
+        turnsBefore: before,
+        turnsAfter: turns().length,
+        sawRow,
+        layoutPasses: shifts.length,
+        maxShiftPx: Math.max(0, ...shifts.map((s) => Math.abs(s))),
+        finalShiftPx: seen() - start,
+      };
+    });
+    await page.screenshot({ path: testInfo.outputPath('older-history.png') });
+    expect(result.sawRow, 'the pull ran and showed its loading row').toBe(true);
+    expect(result.turnsAfter, 'the older page rendered above the reader').toBeGreaterThan(result.turnsBefore);
+    expect(result.maxShiftPx, `the reader's turn never moved on screen (${JSON.stringify(result)})`).toBeLessThanOrEqual(1);
+    expect(Math.abs(result.finalShiftPx), 'and ends where it started').toBeLessThanOrEqual(1);
+  } finally {
     await page.unrouteAll({ behavior: 'ignoreErrors' });
     await project?.dispose?.();
   }

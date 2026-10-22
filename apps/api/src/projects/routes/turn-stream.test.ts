@@ -207,7 +207,7 @@ mock.module('../session-lifecycle/forwarded-strand-reconcile', () => ({
 }));
 
 mock.module('../lib/session-transcript-capture', () => ({
-  captureSessionTranscriptMirror: () => {
+  captureJournallessSessionLog: () => {
     order.push('mirror');
   },
 }));

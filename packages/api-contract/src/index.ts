@@ -53,7 +53,6 @@ export const FeatureFlagMapSchema = z.object({
   marketplace: z.boolean(),
   connectors_api_discover: z.boolean(),
   agentmail_email: z.boolean(),
-  llm_gateway: z.boolean(),
   meta_agent: z.boolean(),
   monitors: z.boolean(),
   reminders: z.boolean(),
@@ -67,8 +66,10 @@ export const FeatureFlagMapSchema = z.object({
   notification_center: z.boolean(),
   volumes: z.boolean(),
   drives: z.boolean(),
-  session_log: z.boolean(),
   session_log_restore: z.boolean(),
+  connectors_v2: z.boolean(),
+  agent_rooms: z.boolean(),
+  goals: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -133,7 +134,9 @@ export const ProjectRoleSchema = z.enum(PROJECT_ROLES);
 export type ProjectRole = z.infer<typeof ProjectRoleSchema>;
 
 /** Every sandbox provider the current platform can select or emit. */
-export const SANDBOX_PROVIDERS = ['daytona', 'platinum', 'e2b'] as const;
+// Platinum is the reference provider; Daytona is a legacy fallback (removal
+// scheduled). E2B support is discontinued.
+export const SANDBOX_PROVIDERS = ['platinum', 'daytona'] as const;
 export const SandboxProviderSchema = z.enum(SANDBOX_PROVIDERS);
 export type SandboxProvider = z.infer<typeof SandboxProviderSchema>;
 
@@ -177,7 +180,15 @@ export const ProjectSchema = z.object({
   /** UI label for the caller's effective role (not an auth decision). */
   effective_project_role: ProjectRoleSchema.nullable(),
   dashboard_url: z.string(),
-  experimental: FeatureFlagMapSchema,
+  /** `apps` is not a flag (Apps graduated); it is always `true` so CLIs before
+   *  v0.14.0, which gate `kortix apps` on it, keep working. */
+  experimental: FeatureFlagMapSchema.extend({
+    apps: z.literal(true).optional(),
+    /** Not a flag (the gateway is the only model path); always `true` for older SDK and mobile clients. */
+    llm_gateway: z.literal(true).optional(),
+    /** Not a flag (the session log is every session's saved history); always `true` for older SDK, CLI and mobile clients. */
+    session_log: z.literal(true).optional(),
+  }),
   experimental_features: z.array(FeatureFlagViewSchema),
   /** Per-project provider pin, surfaced only while still usable. */
   default_sandbox_provider: SandboxProviderSchema.nullable(),
@@ -799,6 +810,9 @@ export const OAuth2ResourceDiscoverySchema = z
       .omit({ has_client_secret: true, has_private_key: true })
       .optional(),
     registration_endpoint: z.string().optional(),
+    /** Kortix signs in with its own OAuth client: a catalogue app whose server
+     *  has no dynamic registration. Register without `registration_endpoint`. */
+    kortix_client: z.boolean().optional(),
     token_endpoint_auth_methods_supported: z.array(z.string()).optional(),
     code_challenge_methods_supported: z.array(z.string()).optional(),
     scopes: z.array(z.string()),
@@ -808,10 +822,12 @@ export const OAuth2ResourceDiscoverySchema = z
 export type OAuth2ResourceDiscovery = z.infer<typeof OAuth2ResourceDiscoverySchema>;
 
 /** Register Kortix as a client (RFC 7591) and save the issued client as the
- * connection's OAuth2 application. Endpoint fields come from discovery. */
+ * connection's OAuth2 application. Endpoint fields come from discovery.
+ * Without `registration_endpoint` the server uses Kortix's own OAuth client,
+ * which only a catalogue app with `kortix_client` discovery has. */
 export const OAuth2ClientRegistrationInputSchema = z
   .object({
-    registration_endpoint: OAuth2HttpsUrlSchema,
+    registration_endpoint: OAuth2HttpsUrlSchema.optional(),
     /** Authorization server issuer, recorded for RFC 9207 `iss` validation. */
     issuer: OAuth2HttpsUrlSchema.optional(),
     client_name: z.string().trim().min(1).max(128).optional(),
@@ -974,6 +990,8 @@ export const SESSION_INITIAL_CONTEXT_MAX_CHARS = 8_192;
 /** Authoritative public body for POST /v1/projects/:projectId/sessions. */
 export const SessionCreateInputSchema = z
   .object({
+    /** Copy the authorized platform session history into a new independent session. */
+    fork_from_session_id: z.string().min(1).max(255).optional(),
     base_ref: z.string().min(1).optional(),
     agent_name: z.string().min(1).optional(),
     sandbox_slug: z.string().min(1).optional(),
@@ -1074,6 +1092,7 @@ export type SessionUpdateInput = z.input<typeof SessionUpdateInputSchema>;
  *  (`apps/api/src/projects/opencode-session-snapshot.ts`). Times are epoch ms. */
 export const RuntimeSessionSnapshotSchema = z.object({
   id: z.string(),
+  fork_source_id: z.string().optional(),
   title: z.string().nullable(),
   parent_id: z.string().nullable(),
   project_id: z.string().nullable(),
@@ -1083,7 +1102,28 @@ export const RuntimeSessionSnapshotSchema = z.object({
 });
 export type RuntimeSessionSnapshot = z.infer<typeof RuntimeSessionSnapshotSchema>;
 
+/**
+ * Is the session working, decided ONCE by the server (R5.2). Clients show this
+ * instead of combining their own signals. `working` while a live turn runs that
+ * the runtime has not reported ended, or while a prompt is on its way to the
+ * runtime (`pending_delivery`). Ordered by the control frame's `cseq`.
+ */
+export const SessionWorkingSchema = z.object({
+  state: z.enum(['working', 'idle']),
+  /** When this state began (ISO), or null when the server does not know. */
+  since: z.string().nullable(),
+  /** The newest live turn, or null. */
+  turn_token: z.string().nullable(),
+  /** No live turn yet, but a prompt is queued for or being handed to the runtime. */
+  pending_delivery: z.boolean(),
+});
+export type SessionWorking = z.infer<typeof SessionWorkingSchema>;
+
 export const ProjectSessionSchema = z.object({
+  /** Durable conversation selection, falling back to the creation pin before a log exists. */
+  model: z.string().nullable().optional(),
+  /** Work activity, independent of the computer lifecycle status. Older servers may omit it. */
+  working: SessionWorkingSchema.optional(),
   session_id: z.string(),
   account_id: z.string(),
   project_id: z.string(),
@@ -1147,6 +1187,8 @@ export const ProjectSessionSchema = z.object({
     .optional(),
   deleted_at: z.string().nullable().optional(),
   deleted_by: z.string().nullable().optional(),
+  /** A deleted session: the last instant `POST …/restore` takes it back (KRTX-2853). */
+  restore_until: z.string().nullable().optional(),
   /** When the requesting person pinned / archived it (KRTX-2418). Present on
    *  the list and the read by id for a person; absent for an agent, an API
    *  key or a service account, and on other responses. */
@@ -1443,6 +1485,23 @@ export const TriggerSessionAccessSchema = z
 export type TriggerSessionAccess = z.infer<typeof TriggerSessionAccessSchema>;
 
 /** One trigger entry as emitted by `loadTriggersForResponse`. */
+/**
+ * One trigger filter condition (KRTX-1721): exactly one operator. `not` and
+ * `in` compare the payload value as text; `prefix` and `not_prefix` test its
+ * start; `exists` tests that it is present and not null.
+ */
+export const TriggerFilterConditionSchema = z.union([
+  z.object({ not: z.array(z.string()) }).strict(),
+  z.object({ in: z.array(z.string()) }).strict(),
+  z.object({ exists: z.boolean() }).strict(),
+  z.object({ prefix: z.array(z.string()) }).strict(),
+  z.object({ not_prefix: z.array(z.string()) }).strict(),
+]);
+export type TriggerFilterCondition = z.infer<typeof TriggerFilterConditionSchema>;
+/** A filter path's condition: a string means "equals". */
+export const TriggerFilterValueSchema = z.union([z.string(), TriggerFilterConditionSchema]);
+export type TriggerFilterValue = z.infer<typeof TriggerFilterValueSchema>;
+
 export const TriggerSchema = z.object({
   slug: z.string(),
   path: z.string(),
@@ -1486,6 +1545,10 @@ export const TriggerSchema = z.object({
       status: z.enum(['active', 'needs_connection', 'error', 'pending']),
       error: z.string().nullable(),
       last_event_at: z.string().nullable(),
+      /** Source `mcp`: when Kortix last checked the app with success. Null for other sources and before the first check. */
+      checked_at: z.string().nullable().optional(),
+      /** Source `mcp`: when Kortix checks the app next. Null for other sources, and while the trigger is not subscribed. */
+      next_check_at: z.string().nullable().optional(),
     })
     .nullable(),
   prompt_template: z.string(),
@@ -1497,8 +1560,33 @@ export const TriggerSchema = z.object({
    * per delivery to pick one session per key. Null otherwise.
    */
   session_key: z.string().nullable(),
-  /** Payload paths that must match for the trigger to fire. Null when unfiltered. */
-  filter: z.record(z.string(), z.string()).nullable(),
+  /**
+   * Payload paths that must match for the trigger to fire. Null when unfiltered.
+   * A path maps to a value (equals) or one operator (KRTX-1721).
+   */
+  filter: z.record(z.string(), TriggerFilterValueSchema).nullable(),
+  /**
+   * Runs the trigger may start in any 60 minutes. Null when unset: the default,
+   * 60, applies. A fire past it is a skipped run with reason `throttled: …`.
+   */
+  max_runs_per_hour: z.number().int().nullable().optional(),
+  /** Runs the trigger may start in a UTC day. Null when unset: no daily cap. */
+  max_runs_per_day: z.number().int().nullable().optional(),
+  /**
+   * Set while the trigger paused itself (KRTX-1721): it ran at its hourly run
+   * limit through the previous hour and was still being held. No automatic
+   * fire starts a run until it is resumed (`PATCH enabled: true`). Absent on
+   * older servers.
+   */
+  auto_paused_at: z.string().nullable().optional(),
+  /** Why it paused, e.g. `auto-paused: ran at max_runs_per_hour 60 for 2 hours in a row`. */
+  auto_paused_reason: z.string().nullable().optional(),
+  /**
+   * Fresh session mode only (KRTX-1721): `skip` holds a fire while the
+   * trigger's previous run is still active. Null when unset: `skip` for a
+   * cron trigger, `allow` otherwise. Absent on older servers.
+   */
+  overlap: z.enum(['skip', 'allow']).nullable().optional(),
   /** Account-local policy for sessions this trigger creates. */
   session_access: TriggerSessionAccessSchema,
   last_fired_at: z.string().nullable(),
@@ -1507,6 +1595,8 @@ export const TriggerSchema = z.object({
   last_attempt_at: z.string().nullable(),
   /** When an enabled cron trigger runs next: the slot the scheduler claims, jitter included. Null for a webhook trigger. */
   next_fire_at: z.string().nullable().optional(),
+  /** Next exact cron occurrence, without scheduler jitter. */
+  next_cron_at: z.string().nullable().optional(),
   webhook_url: z.string().nullable(),
 });
 export type Trigger = z.infer<typeof TriggerSchema>;
@@ -1518,9 +1608,83 @@ export type Trigger = z.infer<typeof TriggerSchema>;
 export const TriggerListSchema = z.object({
   triggers: z.array(TriggerSchema),
   triggers_paused: z.boolean(),
+  /** The account's Pause all automations: true stops every project's triggers. Older servers omit it. */
+  account_automations_paused: z.boolean().optional(),
   errors: z.array(z.object({ slug: z.string(), path: z.string(), error: z.string() })),
 });
 export type TriggerList = z.infer<typeof TriggerListSchema>;
+
+/**
+ * One run of a trigger (KRTX-1743): one fire from any source, its outcome, and
+ * the agent turn it started. `payload` is display-redacted: every value under a
+ * credential-named key reads `[redacted]`. A payload over 64 KiB reads
+ * `{ truncated: true, bytes }` and cannot be replayed.
+ */
+export const TriggerRunSchema = z.object({
+  run_id: z.string(),
+  slug: z.string(),
+  source: z.enum(['cron', 'webhook', 'manual', 'monitor', 'reminder', 'event']),
+  /** The fire's outcome. `fired` = a session was started or prompted. */
+  status: z.enum(['queued', 'running', 'fired', 'failed', 'skipped', 'rejected']),
+  /** The agent turn's outcome; null when the run started no turn. */
+  run_status: z.enum(['running', 'succeeded', 'failed']).nullable(),
+  /** Why the fire failed, was skipped or was rejected. */
+  error: z.string().nullable(),
+  /** Why the agent turn failed (`stopped` for a stopped turn). */
+  run_error: z.string().nullable(),
+  session_id: z.string().nullable(),
+  command_id: z.string().nullable(),
+  /** The run this one replayed, or null. */
+  replay_of: z.string().nullable(),
+  /** False for a webhook delivery refused before its signature verified. */
+  payload_verified: z.boolean(),
+  payload: z.record(z.string(), z.unknown()),
+  scheduled_for: z.string(),
+  created_at: z.string(),
+  started_at: z.string(),
+  /** Null while the run waits, runs, or its turn is still going. */
+  ended_at: z.string().nullable(),
+  duration_ms: z.number().nullable(),
+  /** LLM spend of the run's session between `started_at` and `ended_at` (or now). Null without a session. */
+  cost_usd: z.number().nullable(),
+});
+export type TriggerRun = z.infer<typeof TriggerRunSchema>;
+
+/** `GET …/triggers/:slug/runs` and `GET …/trigger-runs`: newest first, keyset-paged. */
+export const TriggerRunListSchema = z.object({
+  runs: z.array(TriggerRunSchema),
+  /** Pass as `cursor` for the next page; null on the last page. A page can hold fewer than `limit` runs. */
+  next_cursor: z.string().nullable(),
+});
+export type TriggerRunList = z.infer<typeof TriggerRunListSchema>;
+
+/** Optional body of `POST …/triggers/:slug/fire`. No body = a plain manual fire. */
+export const TriggerFireRequestSchema = z.object({
+  /** Deep-merged over the manual base payload at the root, e.g. `{ body: {…} }` for a webhook template. */
+  payload: z.record(z.string(), z.unknown()).optional(),
+  /** Render and evaluate only: no session, no command, no run row. */
+  dry_run: z.boolean().optional(),
+});
+export type TriggerFireRequest = z.infer<typeof TriggerFireRequestSchema>;
+
+/** `POST …/fire` with `dry_run: true`: what a real fire would send, with nothing written. */
+export const TriggerDryRunResultSchema = z.object({
+  dry_run: z.literal(true),
+  rendered_prompt: z.string(),
+  /** False when the trigger's `filter` would skip this payload. */
+  filter_matches: z.boolean(),
+  /** The rendered key of a `keyed` trigger; null otherwise. */
+  session_key: z.string().nullable(),
+  payload: z.record(z.string(), z.unknown()),
+});
+export type TriggerDryRunResult = z.infer<typeof TriggerDryRunResultSchema>;
+
+/** Optional body of `POST …/triggers/:slug/runs/:run_id/replay`. */
+export const TriggerReplayRequestSchema = z.object({
+  /** Required to replay a payload whose webhook signature never verified. */
+  confirm_unverified: z.boolean().optional(),
+});
+export type TriggerReplayRequest = z.infer<typeof TriggerReplayRequestSchema>;
 
 // ─── Session reads: transcript, turn, prompt queue, snapshot ────────────────
 // The wire shapes of the routes a session view reads on every open. apps/api
@@ -1648,23 +1812,6 @@ export const SessionTurnFailureSchema = z.object({
   error: SessionTurnEndErrorSchema.nullable(),
 });
 export type SessionTurnFailure = z.infer<typeof SessionTurnFailureSchema>;
-
-/**
- * Is the session working, decided ONCE by the server (R5.2). Clients show this
- * instead of combining their own signals. `working` while a live turn runs that
- * the runtime has not reported ended, or while a prompt is on its way to the
- * runtime (`pending_delivery`). Ordered by the control frame's `cseq`.
- */
-export const SessionWorkingSchema = z.object({
-  state: z.enum(['working', 'idle']),
-  /** When this state began (ISO), or null when the server does not know. */
-  since: z.string().nullable(),
-  /** The newest live turn, or null. */
-  turn_token: z.string().nullable(),
-  /** No live turn yet, but a prompt is queued for or being handed to the runtime. */
-  pending_delivery: z.boolean(),
-});
-export type SessionWorking = z.infer<typeof SessionWorkingSchema>;
 
 /** `GET .../turn`. `turns` empty means idle; it is a list because a session
  *  can hold more than one open turn. */
@@ -1841,6 +1988,7 @@ export const SessionSnapshotSchema = z.object({
     known: z.literal(true),
     base_ref: z.string().nullable(),
     agent_name: z.string().nullable(),
+    /** @deprecated Always true: the LLM gateway is the only model path. Kept for older clients. */
     llm_gateway_enabled: z.boolean(),
   }),
   models: z.union([
@@ -1921,6 +2069,9 @@ export const ChangeRequestSchema = z.object({
   merge_commit_sha: z.string().nullable(),
   closed_at: z.string().nullable(),
   closed_by: z.string().nullable(),
+  /** A closed request's replacement: the next request opened for the same
+   *  branch, when the caller may read it. Null otherwise (KRTX-3031). */
+  superseded_by: z.object({ cr_id: z.string(), number: z.number() }).nullable(),
   metadata: JsonObjectSchema,
   created_at: z.string(),
   updated_at: z.string(),
@@ -2109,6 +2260,8 @@ export const SecretSchema = z.object({
    *  any agent may actually receive the secret. See
    *  `SecretDeliveryBlockedReasonSchema` for the tri-state rule. */
   delivery_blocked_reason: SecretDeliveryBlockedReasonSchema.nullable().optional(),
+  /** Manifest agent grants; null means the roster could not be loaded. */
+  agents: z.union([z.array(z.string()), z.literal('all')]).nullable().optional(),
   network_boundary_available: z.boolean().optional(),
   egress_policy: SecretEgressPolicySchema.nullable(),
   strategy_locked: z.boolean(),

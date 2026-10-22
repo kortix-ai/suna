@@ -13,16 +13,17 @@ import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
-import Hint from '@/components/ui/hint';
-import Loading from '@/components/ui/loading';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
-import { OutcomeTitle } from '@/features/auth/auth-consent';
-import { Rise, StepHeader } from '@/features/auth/auth-primitives';
-import { framePolicy } from '@/features/file-viewer/preview-policy';
-import { Copy } from '@/features/icon/icons/copy';
-import { Download } from '@/features/icon/icons/download';
+import { Button } from '@kortix/ui/button';
+import { ButtonGroup } from '@kortix/ui/button-group';
+import Hint from '@kortix/ui/hint';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import Loading from '@kortix/ui/loading';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
+import { OutcomeTitle } from '@kortix/ui/internal/auth/auth-consent';
+import { Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
+import { framePolicy } from '@kortix/ui/file-viewer';
+import { Copy } from '@kortix/ui/icons';
+import { Download } from '@kortix/ui/internal/icons/download';
 import { getAuthToken } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
 import { getPublicSessionShare, getPublicShareByToken, startSessionWithToken } from '@kortix/sdk';
@@ -71,6 +72,8 @@ export default function PublicSessionSharePage() {
   const [loading, setLoading] = useState(true);
   const [hasAuth, setHasAuth] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+  const tCommon = useTranslations('common');
   // A transcript share is titled by the session's name. The share row's own
   // label is the generic "Conversation".
   const [sessionTitle, setSessionTitle] = useState<string | null>(null);
@@ -159,14 +162,15 @@ export default function PublicSessionSharePage() {
 
   async function startSession() {
     if (!meta) return;
-    const authToken = await getAuthToken();
-    if (!authToken) {
-      // nav-contract: prefetch-only — a defensive bounce for a token that expired between render and click; the offline panel's Sign in <Link> already prefetches this href.
-      router.push(`/auth?next=${encodeURIComponent(`/share/session/${token}`)}`);
-      return;
-    }
     setStarting(true);
+    setStartError(null);
     try {
+      const authToken = await getAuthToken();
+      if (!authToken) {
+        // nav-contract: prefetch-only — a defensive bounce for a token that expired between render and click; the offline panel's Sign in <Link> already prefetches this href.
+        router.push(`/auth?next=${encodeURIComponent(`/share/session/${token}`)}`);
+        return;
+      }
       await startSessionWithToken(meta.share.project_id, meta.share.session_id, {
         backendUrl: base,
         accessToken: authToken,
@@ -178,6 +182,8 @@ export default function PublicSessionSharePage() {
         cache: 'no-store',
       });
       setMeta(body);
+    } catch (err) {
+      setStartError((err instanceof Error && err.message) || tCommon.raw('error'));
     } finally {
       setStarting(false);
     }
@@ -361,15 +367,22 @@ export default function PublicSessionSharePage() {
                   <h2 className="text-xl font-medium tracking-tight">{offlineTitle}</h2>
                   <p className="text-muted-foreground text-sm text-pretty">{offlineDescription}</p>
                 </div>
+                {startError && (
+                  <InfoBanner className="w-full" tone="destructive" role="alert">
+                    {startError}
+                  </InfoBanner>
+                )}
                 <Button
                   onClick={startSession}
                   disabled={starting}
                   aria-busy={starting || undefined}
                 >
                   {starting ? <Loading /> : <Play weight="fill" />}
-                  {tI18nHardcoded.raw(
-                    'autoAppPublicShareSessionTokenPageJsxTextStartSessiond4216ec8',
-                  )}
+                  {startError
+                    ? tCommon.raw('retry')
+                    : tI18nHardcoded.raw(
+                        'autoAppPublicShareSessionTokenPageJsxTextStartSessiond4216ec8',
+                      )}
                 </Button>
               </div>
             </div>

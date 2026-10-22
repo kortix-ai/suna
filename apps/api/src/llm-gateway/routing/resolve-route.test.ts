@@ -17,6 +17,19 @@ describe('gateway control-plane route resolver', () => {
     supportsImage: (model) => model === 'model-default' || model === 'model-vision',
   });
 
+  test('a legacy or prefixed id gets the fallback chain of the model it resolves to', async () => {
+    const aliased = createGatewayRouteResolver({
+      defaultModel: 'model-default', visionModel: undefined, supportsImage: () => true,
+      policies: [{ id: 'resilience', models: ['model-default'], fallbackModels: ['model-fallback'], fallbackOn: 'transient' }],
+      canonicalModel: (model) => (model === 'retired-model' || model === 'kortix/model-default' ? 'model-default' : model),
+    });
+    for (const requestedModel of ['retired-model', 'kortix/model-default']) {
+      expect(await aliased(principal, { requestedModel, requires: { imageInput: false } })).toMatchObject({
+        policyId: 'resilience', primaryModel: requestedModel, fallbackModels: ['model-fallback'],
+      });
+    }
+  });
+
   test('does not resolve stale auto into the platform default', async () => {
     expect(await resolveRoute(principal, {
       requestedModel: 'auto',
@@ -288,5 +301,25 @@ describe('gateway control-plane route resolver — generation-defaults clamping'
     // A model with no configured entry at all → undefined, not a leak of
     // some other model's defaults.
     expect(route.generationDefaultsForModel?.('unconfigured-model')).toBeUndefined();
+  });
+
+  test('an unresolved principal default is read only when the route depends on it', async () => {
+    let reads = 0;
+    const lazy = createGatewayRouteResolver({
+      defaultModel: 'model-default', visionModel: 'model-vision', policies: [],
+      supportsImage: (model) => model === 'model-vision',
+      resolveDefaultModel: async () => { reads += 1; return 'account-model'; },
+    });
+    // A text request: the default changes nothing, so it is not read.
+    expect((await lazy(principal, { requestedModel: 'account-model', requires: { imageInput: false } })).primaryModel)
+      .toBe('account-model');
+    expect(reads).toBe(0);
+    // An image request: the default decides the reroute, so it is read, as eager resolution would.
+    expect((await lazy(principal, { requestedModel: 'account-model', requires: { imageInput: true } })).primaryModel)
+      .toBe('model-vision');
+    expect(reads).toBe(1);
+    // A principal that carries its default is never re-read.
+    await lazy({ ...principal, defaultModel: 'account-model' }, { requestedModel: 'x', requires: { imageInput: true } });
+    expect(reads).toBe(1);
   });
 });

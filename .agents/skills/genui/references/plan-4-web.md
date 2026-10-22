@@ -16,7 +16,7 @@
 
 See `plan.md`. Specific to this plan:
 - `MARKDOWN_COMPONENTS` in `unified-markdown.tsx` keeps a stable identity (its comment at L72-83): values that change go through `MarkdownRenderContext`, never through a rebuilt components object.
-- No new spinner: pending heavy nodes use `Loading` from `@/components/ui/loading`.
+- No new spinner: pending heavy nodes use `Loading` from `@kortix/ui/loading`.
 - Icons: `@phosphor-icons/react` with the `*Icon` names. mapcn ships `lucide-react` imports; Task 5 replaces them.
 - Reserved heights (no layout jump): Table pending 160px, charts 220px (matches `cost-chart.tsx`), map 280px.
 - `.agents/skills/kortix-brand/scripts/audit.sh <changed files>` is clean before the PR.
@@ -32,9 +32,9 @@ See `plan.md`. Specific to this plan:
 
 **Files:**
 - Modify: `apps/web/package.json` (dependency `"@openuidev/lang-core": "0.3.1"`)
-- Modify: `apps/web/src/components/markdown/code/markdown-code.tsx`
-- Modify: `apps/web/src/components/markdown/unified-markdown.tsx` (context value gains `trust`; `code` renderer passes it; export `useMarkdownRenderContext`, `MarkdownImage`, `MarkdownLink`)
-- Create: `apps/web/src/features/genui/genui-message-block.tsx` (minimal in this task; Task 2 completes it)
+- Modify: `packages/ui/src/markdown/code/markdown-code.tsx`
+- Modify: `packages/ui/src/markdown/unified-markdown.tsx` (context value gains `trust`; `code` renderer passes it; export `useMarkdownRenderContext`, `MarkdownImage`, `MarkdownLink`)
+- Create: `packages/ui/src/markdown/genui/genui-message-block.tsx` (minimal in this task; Task 2 completes it)
 - Test: `apps/web/src/components/markdown/code/markdown-code.test.tsx` (extend)
 
 **Interfaces:**
@@ -140,12 +140,12 @@ const MARKDOWN_COMPONENTS = {
 
 - [ ] **Step 4: Route the fence**
 
-`apps/web/src/features/genui/genui-message-block.tsx` (minimal; Task 2 replaces the body):
+`packages/ui/src/markdown/genui/genui-message-block.tsx` (minimal; Task 2 replaces the body):
 
 ```tsx
 'use client';
 
-import type { MarkdownTrust } from '@/components/markdown/markdown-policy';
+import type { MarkdownTrust } from '@kortix/ui/markdown';
 
 export interface GenuiMessageBlockProps {
   code: string;
@@ -162,11 +162,11 @@ export default function GenuiMessageBlock(_props: GenuiMessageBlockProps) {
 In `markdown-code.tsx`, add imports and the lazy component next to `MermaidRenderer`:
 
 ```tsx
-import type { MarkdownTrust } from '@/components/markdown/markdown-policy';
+import type { MarkdownTrust } from '@kortix/ui/markdown';
 import { genuiVersionFromClassName } from '@kortix/sdk/genui';
 
 // Generative UI pulls in lang-core and the block components; load it only once a block exists.
-const GenuiMessageBlock = lazy(() => import('@/features/genui/genui-message-block'));
+const GenuiMessageBlock = lazy(() => import('@kortix/ui/genui').then((m) => ({ default: m.GenuiMessageBlock })));
 ```
 
 Add to `MarkdownCodeProps`:
@@ -194,16 +194,16 @@ Destructure `trust` in the function parameters.
 - [ ] **Step 5: Run tests to verify they pass**
 
 ```bash
-cd apps/web && bun test src/components/markdown/code/markdown-code.test.tsx src/components/markdown/unified-markdown.test.tsx src/components/markdown/stream-words.test.ts
-npx tsc --noEmit -p . 2>&1 | rg -v "preview-fit.test|easy-panel-logic.test" | rg "error TS" | head
+(cd apps/web && bun test src/components/markdown/code/markdown-code.test.tsx src/components/markdown/unified-markdown.test.tsx src/components/markdown/stream-words.test.ts)
+pnpm --filter Kortix-Computer-Frontend typecheck   # from the repo root; tsgo, incremental
 ```
 
-Expected: tests PASS; no new `error TS` lines (the ~15 known errors in the 2 listed test files are filtered).
+Expected: tests PASS; the typecheck adds no `error TS` line in the touched files (compare against `origin/dev`).
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add apps/web/package.json pnpm-lock.yaml apps/web/src/components/markdown apps/web/src/features/genui
+git add apps/web/package.json pnpm-lock.yaml packages/ui/src/markdown apps/web/src/features/genui
 git commit -m "feat(web): route openui fences to the generative UI block"
 ```
 
@@ -212,9 +212,9 @@ git commit -m "feat(web): route openui fences to the generative UI block"
 ### Task 2: `GenuiMessageBlock` — renderer, fallback, preference, telemetry
 
 **Files:**
-- Modify: `apps/web/src/features/genui/genui-message-block.tsx`
-- Create: `apps/web/src/features/genui/use-genui-enabled.ts`
-- Modify: `apps/web/src/stores/user-preferences-store.ts`
+- Modify: `packages/ui/src/markdown/genui/genui-message-block.tsx`
+- Create: `packages/ui/src/markdown/genui/use-genui-enabled.ts`
+- Modify: `packages/ui/src/internal/stores/user-preferences-store.ts`
 - Modify: `apps/web/src/lib/track.ts`
 - Test: `apps/web/src/features/genui/genui-message-block.test.tsx`
 
@@ -231,7 +231,7 @@ import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { PANEL_EVENTS } from '@/lib/track';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
+import { useUserPreferencesStore } from '@kortix/ui/internal/stores/user-preferences-store';
 
 import GenuiMessageBlock from './genui-message-block';
 
@@ -270,7 +270,7 @@ Expected: FAIL — `setGenuiEnabled` is not a function; `PANEL_EVENTS` lacks `ge
 
 - [ ] **Step 3: Store, hook, and event**
 
-`apps/web/src/stores/user-preferences-store.ts`: add to `UserPreferences`:
+`packages/ui/src/internal/stores/user-preferences-store.ts`: add to `UserPreferences`:
 
 ```ts
   /**
@@ -286,10 +286,10 @@ add `genuiEnabled: true,` to `DEFAULT_PREFERENCES`, `setGenuiEnabled: (enabled: 
       setGenuiEnabled: (enabled) => get().patchPreferences({ genuiEnabled: enabled }),
 ```
 
-`apps/web/src/features/genui/use-genui-enabled.ts`:
+`packages/ui/src/markdown/genui/use-genui-enabled.ts`:
 
 ```ts
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
+import { useUserPreferencesStore } from '@kortix/ui/internal/stores/user-preferences-store';
 
 /** The viewer's generative UI preference. Default on. */
 export function useGenuiEnabled(): boolean {
@@ -301,7 +301,7 @@ export function useGenuiEnabled(): boolean {
 
 - [ ] **Step 4: The real block**
 
-`apps/web/src/features/genui/genui-message-block.tsx`:
+`packages/ui/src/markdown/genui/genui-message-block.tsx`:
 
 ```tsx
 'use client';
@@ -309,8 +309,8 @@ export function useGenuiEnabled(): boolean {
 import { useCallback, useRef } from 'react';
 import { GenuiBlock, type GenuiBlockEvent } from '@kortix/sdk/genui/react';
 
-import type { MarkdownTrust } from '@/components/markdown/markdown-policy';
-import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
+import type { MarkdownTrust } from '@kortix/ui/markdown';
+import { UnifiedMarkdown } from '@kortix/ui/markdown';
 import { track } from '@/lib/track';
 
 import { GenuiPending, webGenuiComponents } from './components';
@@ -371,7 +371,7 @@ Expected: PASS (3 tests).
 - [ ] **Step 6: Commit**
 
 ```bash
-git add apps/web/src/features/genui apps/web/src/stores/user-preferences-store.ts apps/web/src/lib/track.ts
+git add apps/web/src/features/genui packages/ui/src/internal/stores/user-preferences-store.ts apps/web/src/lib/track.ts
 git commit -m "feat(web): generative UI block with personal off switch and live-only telemetry"
 ```
 
@@ -380,10 +380,10 @@ git commit -m "feat(web): generative UI block with personal off switch and live-
 ### Task 3: Layout, data, and inline components
 
 **Files:**
-- Create: `apps/web/src/features/genui/components/layout.tsx` (Stack, Card, Tabs, Accordion)
-- Create: `apps/web/src/features/genui/components/data.tsx` (Stat, StatRow, Table, Compare, RankedList)
-- Create: `apps/web/src/features/genui/components/inline.tsx` (Badge, Callout, Image, Link)
-- Create: `apps/web/src/features/genui/components/pending.tsx`
+- Create: `packages/ui/src/markdown/genui/components/layout.tsx` (Stack, Card, Tabs, Accordion)
+- Create: `packages/ui/src/markdown/genui/components/data.tsx` (Stat, StatRow, Table, Compare, RankedList)
+- Create: `packages/ui/src/markdown/genui/components/inline.tsx` (Badge, Callout, Image, Link)
+- Create: `packages/ui/src/markdown/genui/components/pending.tsx`
 - Create: `apps/web/src/features/genui/components/index.ts`
 - Test: `apps/web/src/features/genui/components/components.test.tsx`
 
@@ -455,13 +455,13 @@ Expected: FAIL — `Cannot find module './index'`.
 
 - [ ] **Step 3: Pending**
 
-`apps/web/src/features/genui/components/pending.tsx`:
+`packages/ui/src/markdown/genui/components/pending.tsx`:
 
 ```tsx
 import type { ReactNode } from 'react';
 import type { GenuiNode } from '@kortix/sdk/genui';
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
 /** Final heights of the components that would otherwise jump when they finish streaming. */
 const RESERVED: Record<string, string> = {
@@ -486,7 +486,7 @@ export function GenuiPending(node: GenuiNode): ReactNode {
 
 - [ ] **Step 4: Layout components**
 
-`apps/web/src/features/genui/components/layout.tsx`:
+`packages/ui/src/markdown/genui/components/layout.tsx`:
 
 ```tsx
 'use client';
@@ -494,12 +494,12 @@ export function GenuiPending(node: GenuiNode): ReactNode {
 import type { GenuiNode } from '@kortix/sdk/genui';
 import type { GenuiComponentProps } from '@kortix/sdk/genui/react';
 
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { cn } from '@/lib/utils';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@kortix/ui/accordion';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@kortix/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@kortix/ui/tabs';
+import { cn } from '@kortix/ui';
 
-import { MarkdownImage, MarkdownLink } from '@/components/markdown/unified-markdown';
+import { MarkdownImage, MarkdownLink } from '../../unified-markdown';
 
 export const kids = (value: unknown): GenuiNode[] => (Array.isArray(value) ? (value as GenuiNode[]) : []);
 
@@ -574,7 +574,7 @@ export function GenuiAccordion({ props, renderChild }: GenuiComponentProps) {
 
 - [ ] **Step 5: Data components**
 
-`apps/web/src/features/genui/components/data.tsx`:
+`packages/ui/src/markdown/genui/components/data.tsx`:
 
 ```tsx
 'use client';
@@ -582,9 +582,9 @@ export function GenuiAccordion({ props, renderChild }: GenuiComponentProps) {
 import type { GenuiComponentProps } from '@kortix/sdk/genui/react';
 import { ArrowDownRightIcon, ArrowUpRightIcon, MinusIcon } from '@phosphor-icons/react';
 
-import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { cn } from '@/lib/utils';
-import { MarkdownLink } from '@/components/markdown/unified-markdown';
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@kortix/ui/table';
+import { cn } from '@kortix/ui';
+import { MarkdownLink } from '../../unified-markdown';
 
 import { kids } from './layout';
 
@@ -713,7 +713,7 @@ export function GenuiRankedList({ props }: GenuiComponentProps) {
 
 - [ ] **Step 6: Inline components and the map**
 
-`apps/web/src/features/genui/components/inline.tsx`:
+`packages/ui/src/markdown/genui/components/inline.tsx`:
 
 ```tsx
 'use client';
@@ -721,9 +721,9 @@ export function GenuiRankedList({ props }: GenuiComponentProps) {
 import type { GenuiComponentProps } from '@kortix/sdk/genui/react';
 import { CheckCircleIcon, InfoIcon, WarningIcon } from '@phosphor-icons/react';
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
-import { MarkdownImage, MarkdownLink } from '@/components/markdown/unified-markdown';
+import { Alert, AlertDescription, AlertTitle } from '@kortix/ui/alert';
+import { Badge } from '@kortix/ui/badge';
+import { MarkdownImage, MarkdownLink } from '../../unified-markdown';
 
 const BADGE_VARIANT = { neutral: 'secondary', good: 'default', warn: 'outline', bad: 'destructive' } as const;
 const CALLOUT_ICON = { info: InfoIcon, warn: WarningIcon, success: CheckCircleIcon } as const;
@@ -808,12 +808,12 @@ git commit -m "feat(web): genui layout, data, and inline components"
 ### Task 4: Charts (lazy)
 
 **Files:**
-- Create: `apps/web/src/features/genui/components/charts.tsx`
+- Create: `packages/ui/src/markdown/genui/components/charts.tsx`
 - Modify: `apps/web/src/features/genui/components/index.ts`
 - Test: `apps/web/src/features/genui/components/charts.test.tsx`
 
 **Interfaces:**
-- Consumes: `ChartContainer`, `ChartTooltip`, `ChartTooltipContent`, `ChartConfig` from `@/components/ui/chart`; `genuiA11yText`, `genuiNodeToMarkdown` (plan-1).
+- Consumes: `ChartContainer`, `ChartTooltip`, `ChartTooltipContent`, `ChartConfig` from `@kortix/ui/chart`; `genuiA11yText`, `genuiNodeToMarkdown` (plan-1).
 - Produces: `webGenuiComponents.BarChart`, `.LineChart`, `.PieChart` (lazy wrappers).
 
 - [ ] **Step 1: Write the failing test**
@@ -851,7 +851,7 @@ Expected: FAIL — `Cannot find module './charts'`.
 
 Check the chart color tokens first: `rg -n "\-\-chart-[1-5]" apps/web/src/app/globals.css`. Use `var(--chart-1)` … `var(--chart-4)` if they exist; if they do not, use `var(--foreground)` with the series index as opacity steps (1, .7, .45, .25) and note it in the PR.
 
-`apps/web/src/features/genui/components/charts.tsx`:
+`packages/ui/src/markdown/genui/components/charts.tsx`:
 
 ```tsx
 'use client';
@@ -860,8 +860,8 @@ import { genuiA11yText, genuiNodeToMarkdown, type GenuiNode } from '@kortix/sdk/
 import type { GenuiComponentProps } from '@kortix/sdk/genui/react';
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, XAxis, YAxis } from 'recharts';
 
-import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
-import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@kortix/ui/chart';
+import { UnifiedMarkdown } from '@kortix/ui/markdown';
 
 const COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-1)'];
 const kids = (value: unknown): GenuiNode[] => (Array.isArray(value) ? (value as GenuiNode[]) : []);
@@ -975,9 +975,9 @@ git commit -m "feat(web): genui bar, line, and pie charts with Show data"
 ### Task 5: Map (mapcn, lazy, provider from env)
 
 **Files:**
-- Create: `apps/web/src/components/ui/map.tsx` (via the mapcn registry)
-- Create: `apps/web/src/features/genui/components/map.tsx`
-- Modify: `apps/web/src/features/genui/components/index.tsx`
+- Create: `packages/ui/src/primitives/map.tsx` (via the mapcn registry)
+- Create: `packages/ui/src/markdown/genui/components/map.tsx`
+- Modify: `packages/ui/src/markdown/genui/components/index.tsx`
 - Modify: `apps/web/package.json` (`maplibre-gl`)
 - Test: `apps/web/src/features/genui/components/map.test.tsx`
 
@@ -991,17 +991,17 @@ mapcn's default basemap is CARTO, whose commercial use needs an enterprise licen
 
 ```bash
 cd apps/web && pnpm dlx shadcn@latest add @mapcn/map
-rg -n "lucide-react" src/components/ui/map.tsx package.json
+rg -n "lucide-react" packages/ui/src/primitives/map.tsx package.json
 ```
 
-Expected: `src/components/ui/map.tsx` exists; `maplibre-gl@^6` added. In `map.tsx`, replace `import { X, Minus, Plus, Locate, Maximize, Loader2 } from "lucide-react";` with Phosphor icons and the Kortix spinner:
+Expected: `packages/ui/src/primitives/map.tsx` exists; `maplibre-gl@^6` added. In `map.tsx`, replace `import { X, Minus, Plus, Locate, Maximize, Loader2 } from "lucide-react";` with Phosphor icons and the Kortix spinner:
 
 ```tsx
 import { ArrowsOutIcon, CrosshairIcon, MinusIcon, PlusIcon, XIcon } from '@phosphor-icons/react';
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 ```
 
-and replace each use: `X`→`XIcon`, `Minus`→`MinusIcon`, `Plus`→`PlusIcon`, `Locate`→`CrosshairIcon`, `Maximize`→`ArrowsOutIcon`, and the `Loader2` spinner element in `DefaultLoader` with `<Loading />`. If the installer added `lucide-react` to `package.json`, remove it. Re-run `rg -n "lucide-react" src/components/ui/map.tsx package.json` → no output.
+and replace each use: `X`→`XIcon`, `Minus`→`MinusIcon`, `Plus`→`PlusIcon`, `Locate`→`CrosshairIcon`, `Maximize`→`ArrowsOutIcon`, and the `Loader2` spinner element in `DefaultLoader` with `<Loading />`. If the installer added `lucide-react` to `package.json`, remove it. Re-run `rg -n "lucide-react" packages/ui/src/primitives/map.tsx package.json` → no output.
 
 - [ ] **Step 2: Write the failing test**
 
@@ -1039,7 +1039,7 @@ Expected: FAIL — `Cannot find module './map'`.
 
 - [ ] **Step 4: Implement**
 
-`apps/web/src/features/genui/components/map.tsx`:
+`packages/ui/src/markdown/genui/components/map.tsx`:
 
 ```tsx
 'use client';
@@ -1048,8 +1048,8 @@ import { genuiA11yText, type GenuiNode } from '@kortix/sdk/genui';
 import type { GenuiComponentProps } from '@kortix/sdk/genui/react';
 import { useTheme } from 'next-themes';
 
-import { Map, MapControls, MapMarker, MapRoute, MarkerContent, MarkerPopup } from '@/components/ui/map';
-import { MarkdownLink } from '@/components/markdown/unified-markdown';
+import { Map, MapControls, MapMarker, MapRoute, MarkerContent, MarkerPopup } from '@kortix/ui/map';
+import { MarkdownLink } from '../../unified-markdown';
 
 const kids = (value: unknown): GenuiNode[] => (Array.isArray(value) ? (value as GenuiNode[]) : []);
 
@@ -1156,7 +1156,7 @@ and add `Map: GenuiMapEntry,` to `webGenuiComponents`. Add `NEXT_PUBLIC_GENUI_MA
 
 ```bash
 cd apps/web && bun test src/features/genui
-cd ../.. && .agents/skills/kortix-brand/scripts/audit.sh apps/web/src/features/genui apps/web/src/components/ui/map.tsx
+cd ../.. && .agents/skills/kortix-brand/scripts/audit.sh apps/web/src/features/genui packages/ui/src/primitives/map.tsx
 ```
 
 Expected: PASS; audit clean.
@@ -1164,7 +1164,7 @@ Expected: PASS; audit clean.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add apps/web/src/components/ui/map.tsx apps/web/src/features/genui apps/web/package.json pnpm-lock.yaml apps/web/.env.example apps/web/translations
+git add packages/ui/src/primitives/map.tsx apps/web/src/features/genui apps/web/package.json pnpm-lock.yaml apps/web/.env.example apps/web/translations
 git commit -m "feat(web): genui map on mapcn, place list until a tile style is configured"
 ```
 
@@ -1230,7 +1230,7 @@ Add props `genuiEnabled = true` and `onGenuiEnabledChange = () => {}` to `Appear
       </section>
 ```
 
-(import `Switch` from `@/components/ui/switch`). In the connected component, read and pass:
+(import `Switch` from `@kortix/ui/switch`). In the connected component, read and pass:
 
 ```tsx
   const genuiEnabled = useUserPreferencesStore((s) => s.preferences.genuiEnabled ?? true);
@@ -1266,8 +1266,8 @@ git commit -m "feat(web): Rich answers switch in Appearance settings"
 ### Task 7: Copy and export never contain OpenUI source
 
 **Files:**
-- Modify: `apps/web/src/features/session/session-chat/transcript.tsx` (`handleCopy`, ~L2096-2108)
-- Modify: `apps/web/src/features/session/header/export-transcript-modal.tsx` (`transcript` memo, ~L144)
+- Modify: `packages/ui/src/session/thread/transcript.tsx` (`handleCopy`, ~L2096-2108)
+- Modify: `packages/ui/src/session/header/export-transcript-modal.tsx` (`transcript` memo, ~L144)
 - Test: `apps/web/src/features/genui/copy-export.test.ts`
 
 **Interfaces:**
@@ -1347,14 +1347,13 @@ git commit -m "feat(web): copy and export render generative UI as markdown"
 
 Remove the two lines from the `genui` registry entry. Run `cd apps/api && bun test src/__tests__/unit-feature-flags.test.ts` → PASS.
 
-- [ ] **Step 2: Full local test run**
+- [ ] **Step 2: Typecheck and lint the touched packages**
 
 ```bash
-pnpm test
-pnpm test:verify --rev HEAD --branch genui
+pnpm --filter Kortix-Computer-Frontend typecheck   # from the repo root; tsgo, incremental
 ```
 
-Expected: green; verify exits 0.
+Expected: exit 0. The full suite runs on the staging pull request.
 
 - [ ] **Step 3: Drive the real UI with agent-browser (recorded)**
 

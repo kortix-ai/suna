@@ -117,6 +117,14 @@ kortix sessions queue <session_id> now <prompt_id> # run this one next
 
 `kortix sessions chat -p` without `--steer` or `--queue` hands the message to the running sandbox directly and prints the reply. Without `-p` it opens a REPL. `kortix sessions queue <id> rm` is refused with `409` after a model step reads the message.
 
+### Mention files, agents and sessions
+
+In the composer, type `@` to mention a file, an agent or another session, and `/` to run a command.
+
+- Kortix sends each mention to the agent as a reference: a file's path, an agent's name, a session's id. The agent can open the file, hand off to the agent, or read the session.
+- References work on a chat's first message, on every later message, and in a command's arguments.
+- On a new chat, the `@` list shows agents only. Files show once the session's sandbox runs.
+
 ### Stop a turn or stop the session
 
 - **The Stop button** ends the running turn and holds the queue. The sandbox keeps running. Send any new message to release the hold. From the CLI: `kortix sessions queue <id> hold` and `kortix sessions queue <id> release`.
@@ -201,11 +209,12 @@ The session branch persists after a stop and after a delete. Only work the agent
 
 A deleted session stays restorable for 30 days. The delete answers `restore_until`, the last moment a restore works. To restore it:
 
-- In the web app, select **Undo** in the toast that confirms the delete. While the old sandbox is still being removed, Undo tries again for about 30 seconds, then offers **Try again**. A delete of several sessions from the Sessions page has no Undo: restore each session from the CLI or from code.
-- From the CLI, run `kortix sessions restore <session_id>` with the full session ID. `kortix sessions rm` prints the exact command, with the date, `--project` and, for a session on another host, `--host`.
-- From code, call `s.restore()` ([Sessions from code](/docs/sdk/sessions#control-the-session)), or `POST /v1/projects/<project_id>/sessions/<session_id>/restore`.
+- In the web app, select **Undo** in the toast that confirms the delete. While the old sandbox is still being removed, Undo tries again for about 30 seconds, then offers **Try again**.
+- Later, open **Recently deleted**: the tab on the Sessions page, also in the sidebar's session menu. It lists the deleted sessions you can restore, with the date each one stays restorable. Select **Restore session** on a row. A delete of several sessions from the Sessions page lands here too.
+- From the CLI, `kortix sessions ls --deleted` lists the same sessions with their full IDs. Run `kortix sessions restore <session_id>` with the full session ID. `kortix sessions rm` prints the exact command, with the date, `--project` and, for a session on another host, `--host`.
+- From code, call `s.restore()` ([Sessions from code](/docs/sdk/sessions#control-the-session)), or `POST /v1/projects/<project_id>/sessions/<session_id>/restore`. `GET /v1/projects/<project_id>/sessions?deleted=only` lists what you can restore, each row with `deleted_at`, `deleted_by` and `restore_until` (`listProjectSessionsPage(projectId, { view: 'deleted' })` in the SDK).
 
-A restore needs the same permission as the delete: the session owner or a person who manages the project. The conversation, the stored files and the branch come back. The session's next start boots a new sandbox from the branch. Public links the delete revoked stay revoked: create new ones.
+A restore needs the same permission as the delete: the session owner or a person who manages the project. Recently deleted follows the same rule: you see the sessions you deleted, and a person who manages the project sees every deleted session they can open. The conversation, the stored files and the branch come back. The session's next start boots a new sandbox from the branch, and the new sandbox loads the saved conversation back into the agent: the agent keeps the context of the earlier turns, as when you [continue a lost session](#continue-a-lost-session). The same restore limit applies. Public links the delete revoked stay revoked: create new ones.
 
 | Restore answer | Meaning |
 | --- | --- |
@@ -233,7 +242,7 @@ To continue a lost session on a new sandbox:
 - From the CLI, run `kortix sessions recover <session_id>`, then `kortix sessions start <session_id> --wait`.
 - From code, call `s.recover()` ([Sessions from code](/docs/sdk/sessions#control-the-session)), or `POST /v1/projects/<project_id>/sessions/<session_id>/recover`.
 
-The next start boots a new sandbox from the session branch. The new sandbox loads the saved conversation back into the agent, so the agent keeps the context of the earlier turns. The transcript does not change. A continue needs the same permission as a delete: the session owner or a person who manages the project.
+The next start boots a new sandbox from the session branch. The new sandbox loads the saved conversation back into the agent, so the agent keeps the context of the earlier turns. The transcript does not change. A saved conversation over the restore limit (24 MB by default; attachments and long tool outputs count at two fifths of their size) is not loaded: the agent starts with only a note that the earlier conversation was not restored, and the session page shows **Some earlier content could not be restored**. A continue needs the same permission as a delete: the session owner or a person who manages the project.
 
 | Continue answer | Meaning |
 | --- | --- |
@@ -419,7 +428,7 @@ A warm session is a pre-booted session that waits for your first prompt, so the 
 
 - A warm session waits at most 60 minutes.
 - It uses compute while it waits.
-- The per-project `warm_sessions` flag controls it. Run `kortix projects features ls` to see its state, and change it in **Customize → Settings → Feature flags**.
+- The per-project `warm_sessions` flag is off by default. Turn it on only if you want to spend idle compute for faster starts. Run `kortix projects features ls` to see its state, and change it in **Customize → Settings → Feature flags**.
 
 ```bash
 kortix sessions warm                        # create or reuse your warm session
@@ -431,6 +440,12 @@ kortix sessions warm --exclude <session_id> # never hand back this session
 ## Notifications
 
 A notification tells you that a session or a trigger needs you. Kortix writes each one to the bell, then sends it to your phone, your browser, or your email, as your settings allow.
+
+### In the app
+
+These need no flag and no browser permission. A turn that ends while you are elsewhere in the web or desktop app shows a **Task complete** toast with **Open session**. A failed turn shows **Session error**. Elsewhere means another page, another session, another tab or another app. The browser tab's icon gets a dot until you open the session.
+
+This covers the sessions you open in that window, also one you leave while its turn runs. The session on your screen shows no toast: its transcript shows the end. For turns that start elsewhere, such as a trigger or another device, turn on the notification center below.
 
 ### Turn notifications on
 

@@ -102,7 +102,7 @@ const DEFAULT_LIMIT = 50;
 //   ?session_id=<id>        — one session
 //   ?source=api_key         — one trusted execution source (authoritative_source)
 //   ?credential_kind=oauth_app — one credential class the API authenticated
-//   ?outcome=failure        — success, failure, denied, or pending
+//   ?outcome=failure        — success, failure, denied, pending, or expired
 //   ?request_id=<id>        — one API request
 //   ?correlation_id=<id>    — one cross-system operation
 //   ?resource_type=X        — prefix match on resource_type
@@ -130,7 +130,7 @@ auditRouter.openapi(
         source: z.string().optional(),
         credential_kind: z.string().optional(),
         phase: z.string().optional(),
-        outcome: z.enum(['success', 'failure', 'denied', 'pending']).optional(),
+        outcome: z.enum(['success', 'failure', 'denied', 'pending', 'expired']).optional(),
         request_id: z.string().optional(),
         correlation_id: z.string().optional(),
         resource_type: z.string().optional(),
@@ -321,7 +321,7 @@ auditRouter.openapi(
         source: z.string().optional(),
         credential_kind: z.string().optional(),
         phase: z.string().optional(),
-        outcome: z.enum(['success', 'failure', 'denied', 'pending']).optional(),
+        outcome: z.enum(['success', 'failure', 'denied', 'pending', 'expired']).optional(),
         request_id: z.string().optional(),
         correlation_id: z.string().optional(),
         resource_type: z.string().optional(),

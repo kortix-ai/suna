@@ -1,7 +1,7 @@
 'use client';
 
 import { SystemFaultView } from '@/components/common/system-fault';
-import { reloadForChunkLoadError } from '@/lib/chunk-load-recovery';
+import { reloadForChunkLoadError } from '@kortix/ui/internal/lib/chunk-load-recovery';
 import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';
 

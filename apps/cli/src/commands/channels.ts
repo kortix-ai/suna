@@ -12,6 +12,8 @@ import {
 } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
 import { bindingsLs, bindingsPatch } from './channels-bindings.ts';
+import type { EmailInstallation, EmailMode } from './channels-email.ts';
+import type { TeamsInstallation } from './channels-teams.ts';
 import { emailCommand } from './channels-email.ts';
 import { teamsConnect, teamsDisconnect, teamsManifest, teamsStatus } from './channels-teams.ts';
 
@@ -22,7 +24,7 @@ Connect this project to a chat platform (Slack by default; MS Teams via
 bound channel runs.
 
 Subcommands:
-  status                  Show the current connection.
+  status                  Show Slack, Teams and Email connection states.
   connect                 Connect. Slack: on Kortix Cloud (or any host with the
                           shared Slack app configured) this prints a one-click
                           "Add to Slack" install link — open it, pick the
@@ -51,7 +53,7 @@ Channel bindings (which agent/model/join-policy one bound channel uses):
   bind <bindingId> [options]      Change one binding.
 
 Global options:
-  --platform <slack|teams>  Chat platform (default: slack).
+  --platform <slack|teams>  Filter status; other commands default to Slack.
   --project <id>          Operate on this project id (default: linked or
                           \$KORTIX_PROJECT_ID).
   --host <name>           Use this host instead of the linked / active one.
@@ -186,18 +188,29 @@ export async function runChannels(argv: string[]): Promise<number> {
 
   switch (sub) {
     case 'status':
+      if (!platformFlag) return allChannelsStatus(ctxOpts, extra.connector, json);
       return platform === 'teams' ? teamsStatus(ctxOpts, json) : channelsStatus(ctxOpts, json);
-    case 'connect':
+    case 'connect': {
+      // Reject an invalid --timeout here, at the one read site: a
+      // non-numeric or negative value used to reach the poll deadline raw,
+      // and NaN never satisfies `Date.now() >= deadline` (Infinity never
+      // does either), so `connect --wait` hung forever. A finite value whose
+      // ms multiplication overflows (`--timeout 2e305`) hangs the same way.
+      const timeoutSec = timeoutFlag ? Number(timeoutFlag) : 300;
+      if (timeoutSec < 0 || !Number.isFinite(timeoutSec * 1000)) {
+        return fail(`--timeout requires a non-negative number of seconds, got '${timeoutFlag}'`);
+      }
       return platform === 'teams'
         ? teamsConnect(ctxOpts, { json })
         : channelsConnect(ctxOpts, {
             json,
             manual,
             wait,
-            timeoutSec: timeoutFlag ? Number(timeoutFlag) : 300,
+            timeoutSec,
             botTokenFlag,
             signingSecretFlag,
           });
+    }
     case 'disconnect':
     case 'remove':
     case 'rm':
@@ -213,6 +226,44 @@ export async function runChannels(argv: string[]): Promise<number> {
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
+  }
+}
+
+async function allChannelsStatus(
+  ctxOpts: { projectArg?: string; hostArg?: string },
+  connector: string | undefined,
+  json: boolean,
+): Promise<number> {
+  const ctx = await resolveProjectContext(ctxOpts);
+  if (!ctx) return 1;
+  const base = `/projects/${ctx.projectId}/channels`;
+  try {
+    const [slack, teams, mode, email] = await Promise.all([
+      ctx.client.get<SlackInstallation | null>(`${base}/slack/installation`),
+      ctx.client.get<TeamsInstallation | null>(`${base}/teams/installation`),
+      ctx.client.get<EmailMode>(`${base}/email/mode`),
+      ctx.client.get<EmailInstallation | null>(
+        `${base}/email/installation?connector_slug=${encodeURIComponent(connector ?? 'kortix_email')}`,
+      ),
+    ]);
+    if (json) {
+      emitJson({
+        slack: { connected: Boolean(slack), installation: slack ?? null },
+        teams: { connected: Boolean(teams), installation: teams ?? null },
+        email: { connected: Boolean(email), mode, installation: email ?? null },
+      });
+    } else {
+      process.stdout.write(
+        `CHANNEL  STATUS\n` +
+          `slack    ${slack ? 'connected' : 'not connected'}\n` +
+          `teams    ${teams ? 'connected' : 'not connected'}\n` +
+          `email    ${!mode.enabled ? 'off — agentmail_email feature flag is disabled' : email ? 'connected' : 'not connected'}\n` +
+          `\nDetails: kortix channels status --platform <slack|teams> or kortix channels email status\n`,
+      );
+    }
+    return 0;
+  } catch (err) {
+    return surfaceApiError(err);
   }
 }
 

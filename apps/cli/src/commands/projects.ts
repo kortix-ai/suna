@@ -49,6 +49,9 @@ export {
 const HELP = help`Usage: kortix projects <subcommand>
 
 Subcommands:
+  create <name>       Create a managed project; prints its id (--json).
+                       --host <name> and --account <id> select the destination.
+                       Then run projects use <id> to select it.
   ls [--all]           List projects in the active account (--all spans every
                        account, grouped). --query <text> filters by name, id
                        or repo. (--json)
@@ -118,6 +121,8 @@ export async function runProjects(argv: string[]): Promise<number> {
     return 0;
   }
   switch (sub) {
+    case 'create':
+      return projectsCreate(rest);
     case 'ls':
     case 'list': {
       const restCopy = [...rest];
@@ -237,7 +242,7 @@ export async function runProjects(argv: string[]): Promise<number> {
 const FEATURES_HELP = help`Usage: kortix projects features [ls | enable | disable | reset] [<flag>]
 
 Per-project feature flags — the same switches as Settings → Feature flags.
-A flag is a stable key (e.g. monitors, event_triggers, llm_gateway). State is
+A flag is a stable key (e.g. monitors, event_triggers). State is
 stored on the project row, never in kortix.yaml.
 
 Subcommands:
@@ -254,9 +259,9 @@ Options:
 Requires project.settings.write. A flag the platform marks unavailable stays
 off regardless of the project override.
 
-Internal-only flags (session_log, session_log_restore) are listed only while
-they are on, with origin "kortix". Only Kortix changes them: enable, disable
-and reset answer feature_operator_only. Contact Kortix to change one.
+Internal-only flags are listed only while they are on, with origin "kortix".
+Only Kortix changes them: enable, disable and reset are refused. Contact
+Kortix to change one.
 `;
 
 interface FeatureFlagRow {
@@ -607,9 +612,10 @@ Options:
   -y, --yes            rm: skip the confirmation.
   -h, --help           Show this help.
 
-ls needs project read; new and rm need project.credentials.issue. A
-session-bound token can neither mint nor revoke project tokens (403). The
-account's PAT policy (require expiry, maximum lifetime) applies to new tokens.
+ls, new and rm need project.credentials.issue: the list names every member's
+project tokens. A session-bound token can neither mint nor revoke project
+tokens (403). The account's PAT policy (require expiry, maximum lifetime)
+applies to new tokens.
 `;
 
 interface CliTokenRow {
@@ -758,16 +764,15 @@ async function projectsCliTokens(argv: string[]): Promise<number> {
   return 2;
 }
 
-// ── Customize → Upgrades (manifest v1 → v2 → v3) ───────────────────────────
+// ── Customize → Upgrades (manifest v1 → v2) ────────────────────────────────
 
 const UPGRADE_HELP = help`Usage: kortix projects upgrade [<id>] [options]
 
-Start the agent session that moves the project's manifest one version up:
-kortix_version 1 (\`kortix.toml\`) to 2 (\`kortix.yaml\`) — the dashboard's
-Customize → Upgrades → "Migrate manifest to v2" — or kortix_version 2 to 3
-with \`kortix migrate\`. The project's default agent rewrites the manifest,
-runs \`kortix validate\`, and opens a change request. It never merges: a
-human reviews the diff. A project on kortix_version 3 has nothing to upgrade.
+Start the agent session that migrates a v1 \`kortix.toml\` to a v2
+\`kortix.yaml\` — the dashboard's Customize → Upgrades → "Migrate manifest to
+v2". The project's default agent refreshes the marketplace baseline, rewrites
+the manifest, runs \`kortix validate\`, and opens a change request. It never
+merges: a human reviews the diff.
 
 Options:
   --project <id>       Act on this project (default: linked/default).
@@ -775,7 +780,8 @@ Options:
   --json               Machine-readable output.
   -h, --help           Show this help.
 
-Requires project write (session create).
+Requires project write (session create). Run \`kortix files cat kortix.yaml\`
+first — a project already on kortix_version 2 has nothing to migrate.
 `;
 
 async function projectsUpgrade(argv: string[]): Promise<number> {
@@ -799,23 +805,6 @@ async function projectsUpgrade(argv: string[]): Promise<number> {
   const ctx = await resolveProjectContext({ projectArg: id, hostArg });
   if (!ctx) return 1;
 
-  // Every upgrade targets kortix_version 3; one prompt covers v1 and v2. The
-  // server's manifest verdict only says when there is nothing to do.
-  const version = await ctx.client
-    .get<{ config?: { manifest_version?: { version?: number | null } } }>(`/projects/${ctx.projectId}/detail`)
-    .then((detail) => detail.config?.manifest_version?.version ?? null, () => null);
-  if (version === 3) {
-    if (json) emitJson({ project_id: ctx.projectId, upgrade_id: null, version: 3 });
-    else process.stdout.write(`${status.ok('kortix.yaml is on kortix_version 3 — nothing to upgrade.')}\n`);
-    return 0;
-  }
-  const upgrade = {
-    id: 'manifest-v3',
-    name: 'Migrate manifest to v3',
-    prompt: MIGRATE_TO_V3_PROMPT,
-    label: version === 2 ? 'kortix_version 2 → 3' : 'kortix.toml → kortix.yaml v3',
-  };
-
   let session: { session_id: string };
   try {
     // The web stashes the prompt client-side (`pending_prompt`) because a
@@ -823,9 +812,9 @@ async function projectsUpgrade(argv: string[]): Promise<number> {
     // prompt goes as `initial_prompt` — the server delivers it and the
     // session starts working on its own.
     session = await ctx.client.post<{ session_id: string }>(`/projects/${ctx.projectId}/sessions`, {
-      initial_prompt: upgrade.prompt,
-      name: upgrade.name,
-      metadata: { kind: 'project-upgrade', upgrade_id: upgrade.id },
+      initial_prompt: MIGRATE_TO_V2_PROMPT,
+      name: 'Migrate manifest to v2',
+      metadata: { kind: 'project-upgrade', upgrade_id: 'manifest-v2' },
     });
   } catch (err) {
     return surfaceApiError(err);
@@ -833,7 +822,7 @@ async function projectsUpgrade(argv: string[]): Promise<number> {
   const output = {
     session_id: session.session_id,
     project_id: ctx.projectId,
-    upgrade_id: upgrade.id,
+    upgrade_id: 'manifest-v2',
   };
   if (json) {
     emitJson(output);
@@ -842,7 +831,7 @@ async function projectsUpgrade(argv: string[]): Promise<number> {
   process.stdout.write(
     `${status.ok(`Started upgrade session ${C.bold}${session.session_id}${C.reset}`)}\n`,
   );
-  process.stdout.write(`  ${C.dim}upgrade   ${C.reset}${upgrade.id} (${upgrade.label})\n`);
+  process.stdout.write(`  ${C.dim}upgrade   ${C.reset}manifest-v2 (kortix.toml → kortix.yaml)\n`);
   process.stdout.write(
     `\n  ${C.dim}Watch it:${C.reset} ${C.cyan}kortix connect ${session.session_id}${C.reset}\n`,
   );
@@ -850,246 +839,246 @@ async function projectsUpgrade(argv: string[]): Promise<number> {
 }
 
 /**
- * The seed prompt for the manifest upgrade to kortix_version 3 (from v1 or v2).
+ * The seed prompt for the v1 → v2 manifest migration.
  *
- * VERBATIM COPY of `MIGRATE_TO_V3_PROMPT` in
- * `apps/web/src/features/workspace/customize/migrate-to-v3/migration-prompt.ts`,
+ * VERBATIM COPY of `MIGRATE_TO_V2_PROMPT` in
+ * `packages/ui/src/customize/migrate-to-v2/migration-prompt.ts`,
  * which is the source of truth. The CLI cannot import from `apps/web` and the
- * prompt lives in no shared package, so both doors must be edited together:
- * `kortix projects upgrade` and the dashboard's Upgrades button seed the SAME
- * contract. `projects-parity.test.ts` fails when they differ.
+ * prompt lives in no shared package, so both doors must be edited together —
+ * `kortix projects upgrade` and the dashboard's Upgrades button must seed the
+ * SAME contract, or two users running "the same" upgrade get different diffs.
  */
-const MIGRATE_TO_V3_PROMPT = `Upgrade this project's manifest to kortix_version 3 (kortix.yaml). The project is on kortix_version 1 (kortix.toml) or kortix_version 2 (kortix.yaml): check \`kortix_version\` at the top of the manifest first. Read everything first, then make the change, then land it as a change request — do not merge it yourself.
-
-On kortix_version 2, start with \`kortix migrate\`: it prints the v3 conversion and a "Not carried over" list, and \`kortix migrate --write\` writes it. Then check its result against every section below and carry over by hand what it lists. On kortix_version 1, convert by hand.
+const MIGRATE_TO_V2_PROMPT = `Migrate this project's manifest from kortix_version 1 (kortix.toml) to kortix_version 2 (kortix.yaml), and move its files to the root layout. Read everything first, then make the change, then land it as a change request — do not merge it yourself.
 
 ## 1. Read before you write
 
-- The current manifest: \`kortix.toml\` (v1) or \`kortix.yaml\` (v2), plus every file its \`imports:\` names.
-- Every agent. v1: the \`[[agents]]\` entries (grants \`connectors\`, \`kortix_permissions\` — older manifests spell it \`kortix_cli\` — and \`env\`) and the agent files in \`.kortix/opencode/agents/*.md\`. v2: the \`agents:\` map and the \`.md\` each \`file:\` key names (usually \`agents/<name>.md\`). An agent \`.md\` holds the agent's behavior: frontmatter (\`description\`, \`mode\`, \`model\`, \`variant\`, \`temperature\`, \`top_p\`, \`steps\`, \`options\`, \`color\`, \`hidden\`, \`permission\`, \`tools\`, \`disable\`) and a body (the system prompt).
-- The harness folders: \`.kortix/opencode/\` (v1), or the folders that \`opencode.config_dir\` and \`pi.config_dir\` name (v2, usually \`harnesses/opencode/\` and \`harnesses/pi/\`). Read \`opencode.jsonc\` (the project-wide \`permission\`, \`default_agent\`, \`mcp\` servers, other runtime settings), \`commands/*.md\`, \`plugins/\`, \`tools/\`, and pi's \`settings.json\` (\`packages\`).
-- The v2 top-level \`harnesses:\` key (\`harnesses.opencode.plugins\`, \`harnesses.pi.packages\`, \`harnesses.pi.codemode\`) and each agent's \`harnesses:\` (\`exclude\`, extra \`packages\`, \`codemode\`).
-- The skills: every folder that holds a \`SKILL.md\` (\`skills/<name>/\`, \`.kortix/opencode/skills/<name>/\`, or under a harness folder).
-- The default agent: v2's \`default_agent\`. In v1, the \`default_agent\` in \`opencode.jsonc\`; without one, the agent whose frontmatter has \`mode: primary\` and reads as the general one. Record which you picked and why in the change request description.
+- The current manifest: \`kortix.toml\` (or \`kortix.yaml\` if this project already partially moved — check \`kortix_version\` at the top either way).
+- Any \`[[agents]]\` entries in the v1 manifest — these carry \`connectors\`, \`kortix_permissions\` (older manifests spell it \`kortix_cli\`), and \`env\` grants per agent name. An agent name with NO \`[[agents]]\` entry at all is today unrestricted (v1's back-compat default is "all" when a grant key is omitted).
+- \`.kortix/opencode/opencode.jsonc\` — if it sets a top-level \`default_agent\`, that is the project's existing default; use it. If it doesn't, pick the agent whose \`.kortix/opencode/agents/*.md\` frontmatter has \`mode: primary\` and reads as the general/primary one (usually the first-created or the one with the broadest permissions). Record which you picked and why in the change request description — a human reviews this before it merges, so a defensible choice beats blocking on it.
+- **You do NOT need to read each agent's \`.md\` frontmatter to migrate it.** v1's frontmatter (mode/model/temperature/permission/prompt/…) is ALREADY valid v2 OpenCode behavior — its content stays unchanged. Only the file moves (section 5). The manifest conversion is governance-only.
+- The current layout: v1 projects keep agents in \`.kortix/opencode/agents/\`, skills in \`.kortix/opencode/skills/\`, the other OpenCode files in \`.kortix/opencode/\`, and memory in \`.kortix/memory/\`. A v1 manifest that sets \`opencode.config_dir\` uses that directory instead of \`.kortix/opencode\`.
 
 ## 2. Bring the platform baseline up to date first
 
-A project on an older manifest usually also runs stale platform skills. Refresh them BEFORE touching the manifest so the upgrade lands on a current baseline:
+A project still on a v1 manifest is usually also running stale platform skills. Refresh them BEFORE touching the manifest so the migration lands on a current baseline:
 
-1. \`kortix marketplace updates\` — a hash-diff report of every marketplace-tracked item (the Kortix-managed skills, plus any marketplace skills the user installed).
-2. If updates are listed, apply them: \`kortix marketplace update --all\`. **This commits directly to \`main\` through the platform's own hash-safe update path — it is intentionally NOT part of your change request.** It rewrites only files whose installed hash no longer matches the catalog.
+1. \`kortix marketplace updates\` — a hash-diff report of every marketplace-tracked item (the kortix-managed skills like \`kortix-system\`/\`kortix-memory\`, plus any marketplace skills the user installed).
+2. If updates are listed, apply them: \`kortix marketplace update --all\`. **This commits directly to \`main\` through the platform's own hash-safe update path — it is intentionally NOT part of your change request.** It only rewrites files whose installed hash no longer matches the catalog, so untouched user files are never clobbered.
 3. Sync your session branch on top of the refreshed main: \`git fetch origin && git rebase origin/main\`.
 4. Items reported as \`orphaned\` (no longer in the catalog) are not updatable — leave them alone and mention them in the change request description.
-5. Marketplace-tracked items are the ONLY thing you refresh this way. Do not change what any agent, skill, tool, command or plugin does. Sections 5–7 move files and rewrite their paths; that is the only change they get.
+5. Marketplace-tracked items are the ONLY thing you refresh this way. Do NOT hand-update anything else "to latest": agents' \`.md\` files, the memory directory, \`opencode.jsonc\`, the continuation plugin, \`tools/*.ts\`, and custom skills are user- or platform-owned files with no update tracking — leave every one of them untouched. Section 5 moves some of them and rewrites their old paths; that is the only change they get.
 
 ## 3. The authoritative schema is one command away
 
-Whenever you are unsure about a field name, an allowed value, or whether a key exists in v3, consult the canonical JSON Schema instead of guessing:
+Whenever you are unsure about a field name, an allowed value, or whether a key survived into v2, consult the canonical JSON Schema instead of guessing:
 
-- \`kortix schema --version 3\` — prints the exact v3 schema the validator and the CR-merge gate enforce. \`kortix schema --version 2\` and \`--version 1\` print the shapes you are upgrading FROM.
-- The same documents are published at \`https://kortix.com/schema/kortix.v3.schema.json\` (and \`kortix.v2.schema.json\`, \`kortix.v1.schema.json\`).
+- \`kortix schema --version 2\` — prints the exact v2 schema the validator and the CR-merge gate enforce. Works offline inside your sandbox. \`kortix schema --version 1\` prints the v1 shape you are migrating FROM.
+- The same documents are published at \`https://kortix.com/schema/kortix.v2.schema.json\` (and \`kortix.v1.schema.json\`, plus the combined \`kortix.schema.json\` that dispatches on \`kortix_version\`).
 
-The schema, this prompt and \`kortix validate\` enforce the same rules. If they ever appear to disagree, trust \`kortix validate\` and say so in the change request description.
+The schema, this prompt, and \`kortix validate\` all enforce the same rules — if they ever appear to disagree, trust \`kortix validate\`'s output and say so in the change request description.
 
-## 4. The v3 shape you're producing
+## 4. The v2 shape you're producing
 
-In v3 the project REGISTERS things and each agent ENABLES them by name. Nothing is global: no project-wide permission, and no command, plugin or package that applies to every agent. Everything an agent is lives in its \`agents.<name>\` block.
+v2's \`agents:\` map is GOVERNANCE ONLY — connectors/secrets/skills/kortix_permissions/workspace/enabled. OpenCode behavior (mode/model/temperature/permission/the prompt itself) is NOT part of the manifest at all; it lives entirely in each agent's own \`.md\` frontmatter + body, exactly as it does today. After section 5 that file is \`agents/<name>.md\`, and the agent's \`file:\` key names it.
 
 \`\`\`yaml
-kortix_version: 3
-default_agent: <name>            # REQUIRED — a declared, enabled agent with mode primary or all
-
-skills:                          # name -> repo folder that holds SKILL.md (folder basename = name)
-  <skill>: skills/<skill>
-tools:                           # snake_case name -> repo .ts/.js module
-  <tool_name>: tools/<tool_name>.ts
-commands:                        # name -> exactly one of prompt / prompt_file
-  <command>:
-    description: <one line>
-    prompt_file: commands/<command>.md
-extensions:                      # name -> one implementation per harness
-  <extension>:
-    opencode: extensions/<extension>.ts       # an OpenCode plugin module
-    pi: npm:<package>@<x.y.z>                 # a pi package: exact npm pin or a repo path
+kortix_version: 2
+default_agent: <name>          # REQUIRED — must resolve to a declared, enabled agent below
 
 agents:
   <name>:
-    description: <one line>
-    mode: primary                # primary | subagent | all
-    model: <provider/model>      # optional
-    prompt_file: agents/<name>.md  # the system prompt (or \`prompt:\` inline)
-    permission: allow            # tool policy; \`skill\` and \`task\` keys are errors here
-    tools: all                   # all | none | [names] | { exclude: [names] }
-    skills: all                  # registered + Kortix skills this agent may load
-    subagents: all               # declared subagents this agent may start
-    commands: all                # registered commands this agent may run
-    extensions: all              # registered extensions a session of this agent loads
-    connectors: all
-    secrets: all
-    kortix_permissions: all
+    file: agents/<name>.md       # the agent's .md, repo-relative (section 5 moves it there)
+    enabled: true                # optional; false = can't start sessions (default true)
+    connectors: all               # connector slugs | "all" | "none"
+    secrets: all                  # renamed from v1's "env" — names | "all" | "none"
+    kortix_permissions: all        # project.* permission names | "all" | "none"
+    skills: all                    # names of skills/* this agent may invoke | "all" | "none"
+    workspace:
+      project_repository: false    # optional — true (default) | false
 \`\`\`
 
-Rules the validator enforces:
+That's the WHOLE block. No \`description\`, no \`model\`, no \`opencode:\` sub-object, no \`mode\`/\`temperature\`/\`permission\`/\`prompt\` — every one of those is a hard schema error if authored here. They already live in the \`.md\` and are staying there.
 
-- Registry names (skills, commands, extensions): lowercase words joined by \`-\`, at most 64 characters. Tool names: snake_case. Paths: repo-relative, no leading \`/\` or \`./\`, no \`..\`.
-- **Kortix skills and Kortix tools are always registered.** Never add a \`kortix-*\` skill or a Kortix tool (\`web_search\`, \`image_search\`, \`scrape_webpage\`, \`memory\`, \`show\`, \`kortix-connectors_call\`, \`kortix-connectors_describe\`) to a registry; an agent grants them by name. The v2 \`kortix:<name>\` value form is an error in v3: delete those \`tools:\` lines. A project skill name must not start with \`kortix-\`.
-- Every grant names something registered, a Kortix skill or tool, or (for \`subagents\`) a declared agent with \`mode\` \`subagent\` or \`all\`. An unknown name is an error.
-- \`skills\`, \`subagents\`, \`commands\` and \`extensions\` default to \`none\` on an agent, and \`connectors\`, \`secrets\`, \`kortix_permissions\` and \`apps\` are deny-by-default too. **Write the explicit value that reproduces today's access for every agent** (section 5). Omitting a grant silently takes it away.
-- A \`permission\` omitted on an agent means \`allow\` for every tool.
-- Top-level \`opencode\`, \`pi\`, \`harnesses\`, \`permission\` and \`channels\` are errors. On an agent, \`file\`, \`disable\`, \`opencode\`, \`harnesses\`, \`env\`, \`kortix_cli\`, \`connectors_personal\`, \`repository_access\` and the \`{ <tool>: true|false }\` form of \`tools\` are errors. Any unknown key is an error.
-- \`project\`, \`env\` (the required/optional secret names), \`sandbox\`, \`connectors\`, \`apps\`, \`triggers\`, \`policy\`/\`policies\` and \`imports\` keep their shape. \`triggers[].agent\` must name a declared agent.
+Rules that the schema enforces (get these right or \`kortix validate\` fails):
 
-## 5. Convert the agents
+- \`agents\` is a MAP (\`name: {...}\`), not the v1 \`[[agents]]\` array of tables.
+- \`default_agent\` is required at the top level and must name a declared, enabled (\`enabled\` not \`false\`) agent.
+- Any behavioral field (\`description\`, \`model\`, \`mode\`, \`temperature\`, \`top_p\`, \`steps\`, \`variant\`, \`color\`, \`hidden\`, \`permission\`, \`prompt\`, or a nested \`opencode:\` block) authored on the manifest agent block is a hard error, pointing you at the agent's own \`.md\` frontmatter instead — because that's where it already lives, untouched.
+- \`disable\` is a hard error too — it's the manifest-governance \`enabled\` (inverted): write \`enabled: false\` instead. (This is unrelated to a NATIVE \`disable\` key that might already be hand-authored in an agent's own \`.md\` frontmatter — leave that alone; it's a different, runtime-level concept.)
+- \`env\` is a hard error in v2 — it is renamed \`secrets\`. **v2 defaults every omitted grant (\`connectors\`/\`secrets\`/\`kortix_permissions\`/\`skills\`) to \`"none"\` (deny-by-default), unlike v1 which defaulted an omitted grant to \`"all"\`.** To avoid silently narrowing an agent's access during migration, write the EXPLICIT value that reproduces today's behavior for every agent — if a v1 agent had no \`[[agents]]\` entry, or its \`env\`/\`connectors\`/\`kortix_cli\` (or \`kortix_permissions\`) were omitted or set to \`all\`, write \`secrets: all\`, \`connectors: all\`, \`kortix_permissions: all\` explicitly in its v2 block. Only narrow a grant if the v1 manifest already narrowed it (an explicit list, or \`none\`) — carry that exact list over. \`skills\` has no v1 equivalent; default new agents to \`all\` unless you have a specific reason to narrow.
+- \`channels\` is removed entirely in v2 — delete any \`[[channels]]\` block. Channel↔agent routing now lives in the dashboard (Customize → Channels), not in git. Do not try to replicate it in the manifest.
+- Every other top-level section (\`project\`, \`env\` for required/optional documentation vars — NOT the per-agent grant, \`sandbox\`, \`triggers\`, \`connectors\`, \`apps\`) keeps its v1 shape unchanged — translated to YAML, not restructured. \`opencode.config_dir\` is the one exception: section 5 sets it. If \`triggers[].agent\` names an agent, make sure that name still exists in the new \`agents\` map (rename references if you renamed an agent).
+- If an agent has no \`.md\` today (a bare \`[[agents]]\` entry with no matching OpenCode agent file), still declare it in \`agents:\` with its governance grants carried over — don't drop it. Omit its \`file:\` key. It has no behavior until someone adds \`agents/<name>.md\`.
 
-For every agent:
+## 5. Move to the root layout
 
-1. Move the behavior from the \`.md\` frontmatter into the agent block: \`description\`, \`mode\`, \`model\`, \`variant\`, \`temperature\`, \`top_p\`, \`steps\`, \`options\`, \`color\`, \`hidden\`, \`permission\`. \`disable: true\` becomes \`enabled: false\`.
-2. The \`.md\` body is the system prompt. Write it, without the frontmatter, to \`agents/<name>.md\` and set \`prompt_file: agents/<name>.md\`. A v1 file moves with \`git mv .kortix/opencode/agents/<name>.md agents/<name>.md\` first, so git keeps its history. Change nothing in the prompt text except old paths (section 7). Delete the v2 \`file:\` key.
-3. Permission: nothing is global, so copy the project-wide \`permission\` from \`opencode.jsonc\` into every agent, then apply the agent's own \`permission\` on top (the agent's rule wins per key). Move a \`skill\` rule to \`skills:\` and a \`task\` rule to \`subagents:\` (an allowlist of the names it allowed). When neither the project nor the agent sets a permission, write nothing: omitted means \`allow\`.
-4. Frontmatter \`tools: { <tool>: false }\` becomes \`tools: { exclude: [<tool>] }\`; a map that only enables some tools becomes the list of those names.
-5. Grants. Carry each existing grant over exactly. v1 \`env\` becomes \`secrets\`; v1 \`kortix_cli\` becomes \`kortix_permissions\`; \`connectors_personal\` becomes \`connectors_required\`; \`repository_access: false\` becomes \`workspace: { project_repository: false }\`. A v1 grant that was omitted meant \`all\`: write \`all\`. For the new v3 grants, reproduce today's behavior: \`skills: all\` unless the agent narrowed skills, \`subagents: all\` for an agent that could start subagents, \`commands: all\` for an agent a user talks to, \`extensions: all\` unless a v2 agent's \`harnesses\` \`exclude\` dropped some (then list the rest), and the agent's \`harnesses.pi.codemode\` as \`codemode\`.
-6. **Only declared agents exist in v3.** v3 disables OpenCode's built-in \`build\`, \`plan\`, \`general\` and \`explore\` unless the manifest declares that name. If \`default_agent\`, a trigger, a command or a prompt uses one of them, declare it as an agent (\`mode: subagent\` for \`general\`/\`explore\`) with a \`description\` and a prompt.
-7. An agent declared in the manifest with no \`.md\` keeps its grants and gets no \`prompt_file\`.
+v2 projects keep harness-neutral files at the repo root. Move this project in the same change request. Use \`git mv\`, so git records every move as a rename and keeps each file's history.
 
-## 6. Register skills, tools, commands and extensions
+| From | To |
+| --- | --- |
+| \`.kortix/opencode/agents/<name>.md\` | \`agents/<name>.md\` |
+| \`.kortix/opencode/skills/<name>/\` | \`skills/<name>/\` |
+| \`.kortix/memory/\` | \`memory/\` |
+| the rest of \`.kortix/opencode/\` (\`opencode.jsonc\`, \`package.json\`, \`bun.lock\`, \`plugins/\`, \`tools/\`, \`commands/\`) | \`harnesses/opencode/\` |
 
-- **Skills.** Each project skill folder becomes \`skills.<name>: <folder>\`, at \`skills/<name>/\`. Move a skill that lives elsewhere with \`git mv\`. Do not register \`kortix-*\` skills: they are always registered.
-- **Tools.** Each project tool module becomes \`tools.<name>: <path>\`. Move modules out of a harness folder to \`tools/\` with \`git mv\`. Keep v2 path entries; delete \`kortix:<name>\` entries.
-- **Commands.** Each \`commands/<name>.md\` in a harness folder becomes \`commands.<name>\`: its frontmatter \`description\` stays as \`description\`; its body goes to \`commands/<name>.md\` (body only, no frontmatter) and \`prompt_file: commands/<name>.md\`. \`$ARGUMENTS\` and \`$1\`, \`$2\`, … keep working. A command's frontmatter \`agent\`, \`model\` or \`subtask\` has no v3 key: drop it, grant the command to that agent only, and list it in the change request description.
-- **Extensions.** Each OpenCode plugin (v1 \`.kortix/opencode/plugins/\`, v2 \`<config_dir>/plugins/\` and \`harnesses.opencode.plugins\`) becomes \`extensions.<name>.opencode: extensions/<name>.ts\` (or \`extensions/<name>/\` for a plugin with its own files). Move it with every file it imports and keep the relative imports working. Each pi package (\`harnesses.pi.packages\`, pi \`settings.json\` \`packages\`) becomes \`extensions.<name>.pi\` with the same value: \`npm:<package>@<x.y.z>\` (pin an exact version), a repo path, or the \`{ source, extensions, skills, prompts, themes }\` filter map. Give a plugin and a pi package one name when they do the same job. If a plugin imports an npm package listed in the harness folder's \`package.json\`, keep that \`package.json\` (and its lockfile) beside the plugin, and say so in the change request description.
-- **MCP servers.** An \`mcp\` server in \`opencode.jsonc\` becomes a \`connectors:\` entry; check the fields with \`kortix schema --version 3\`.
-- Any other \`opencode.jsonc\` setting (\`subagent_depth\`, \`provider\`, \`compaction\`, …) and any pi \`settings.json\` key besides \`packages\` has no v3 home. List each one in the change request description; do not invent a key for it.
+If the v1 manifest sets \`opencode.config_dir\`, that directory is the source instead of \`.kortix/opencode\`. Skip a row when its source does not exist.
 
-## 7. Remove the harness folders
+\`\`\`
+mkdir -p harnesses
+git mv .kortix/opencode/agents agents
+git mv .kortix/opencode/skills skills
+git mv .kortix/memory memory
+git mv .kortix/opencode harnesses/opencode
+\`\`\`
 
-v3 reads no harness folder and no harness key: never \`harnesses/\`, \`.kortix/opencode/\`, \`opencode.config_dir\` or \`pi.config_dir\`.
+\`git mv <dir> <target>\` moves \`<dir>\` INTO \`<target>\` when \`<target>\` already exists. Check each target with \`ls\` first. When it exists, move the entries one at a time (\`git mv .kortix/opencode/skills/<name> skills/<name>\`).
 
-1. After sections 5 and 6 moved everything out, delete what is left: \`git rm -r harnesses/\` (v2) or \`git rm -r .kortix/opencode/\` (v1). v1 also moves memory: \`git mv .kortix/memory memory\`. Keep \`.kortix/state/\` and \`.kortix/link.json\`.
-2. Delete the top-level \`opencode\`, \`pi\`, \`harnesses\` and \`permission\` keys and every agent's \`harnesses\` key.
-3. Update \`.gitignore\`: rewrite each \`.kortix/opencode/<path>\` or \`harnesses/<harness>/<path>\` entry to the file's new path, and each \`.kortix/memory/<path>\` entry to \`memory/<path>\`.
-4. Find every remaining reference to an old path: \`git grep -n -e '.kortix/opencode' -e '.kortix/memory' -e 'harnesses/'\`. Replace each one with the new path. Agent prompts, tools and skills often name them. Change only the path.
+Then:
 
-Edge case: a root \`agents/\`, \`skills/\`, \`tools/\`, \`commands/\`, \`extensions/\` or \`memory/\` directory that already holds unrelated files. Pick a free folder for the moved files instead (for example \`kortix/agents/\`), point the manifest paths at it, and say so in the change request description.
+1. Set the OpenCode config dir in \`kortix.yaml\`: \`opencode:\` with \`config_dir: harnesses/opencode\`.
+2. Give every agent whose \`.md\` you moved a \`file:\` key: \`file: agents/<name>.md\`.
+3. Update \`.gitignore\`: rewrite each \`.kortix/opencode/<path>\` entry as \`harnesses/opencode/<path>\`, and each \`.kortix/memory/<path>\` entry as \`memory/<path>\`. Keep \`.kortix/state/\` — runtime state stays there.
+4. Find every remaining reference to an old path: \`git grep -n -e '.kortix/opencode' -e '.kortix/memory'\`. Replace each one with its new path. For example, \`tools/memory.ts\` hard-codes \`.kortix/memory\`, and agent prompts often name it. Change only the path. Leave \`.kortix/state/\` and \`.kortix/link.json\` references alone.
 
-## 8. Legacy keys v3 refuses — drop these while you convert
+Edge cases:
 
-From a v1 manifest, also remove these. Note each removal in the change request description:
+- A root \`agents/\`, \`memory/\`, or \`harnesses/\` directory that already holds files unrelated to Kortix: do not merge into it. Skip this whole section, steps 1–4 included, keep the legacy layout (Kortix still reads it), and say why in the change request description.
+- A skill that already exists in \`skills/<name>/\` (the marketplace update in section 2 can install it there): keep the root copy and remove the legacy copy with \`git rm -r\`.
 
-- **Retired \`kortix_permissions\` actions** — \`project.session.exec\`, \`project.gateway.routing.edit\`, \`project.schedule.read\`, \`project.schedule.write\`, \`project.webhook.read\`, \`project.webhook.write\`, \`channel.read\`, \`channel.connect\`, \`channel.send\`, \`channel.disconnect\`. They have been no-ops for a while, so deleting them changes nothing. Do NOT substitute a broader grant (e.g. \`all\`) to "cover" a deleted action.
-- **\`credential = "per_user"\`** and **\`agent_scope\`** on a \`[[connectors]]\` entry. Every connector is shared now. If a connector had \`agent_scope = ["a"]\`, keep that connector out of every other agent's \`connectors\` grant (an explicit slug list instead of \`all\`), then delete the key.
-- **\`[[channels]]\`** — channel routing lives in the dashboard (Customize → Channels). Delete the block.
-- **Legacy singular \`[sandbox]\` image keys** (\`image\`, \`dockerfile\`, \`cpu\`, \`memory\`, \`disk\`, …) — move them under \`sandbox.templates\` with a named slug.
+## 6. Legacy keys v2 refuses — drop these while you convert
 
-## 9. Worked example
+v1 tolerates several retired keys with a deprecation warning; v2 makes every one of them a hard error. Remove them as part of the conversion and note each removal in the change request description:
 
-A representative v2 project: \`kortix.yaml\`
+- **Retired \`kortix_permissions\` actions** — \`project.session.exec\`, \`project.gateway.routing.edit\`, \`project.schedule.read\`, \`project.schedule.write\`, \`project.webhook.read\`, \`project.webhook.write\`, \`channel.read\`, \`channel.connect\`, \`channel.send\`, \`channel.disconnect\`. These were removed from the enforcement catalog and have been no-ops for a while — granting or omitting them never had any effect, so deleting them from a grant list changes nothing. Do NOT substitute a broader grant (e.g. \`all\`) to "cover" a deleted action.
+- **\`credential = "per_user"\` on a \`[[connectors]]\` entry** — the per-user credential mode was removed; every connector is \`"shared"\` now. Delete the \`credential\` key (or write \`shared\` explicitly if the entry already spelled it out).
+- **\`agent_scope\` on a \`[[connectors]]\` entry** — retired; the runtime no longer reads it. Per-agent connector access is expressed from the OTHER side now: each agent's \`connectors:\` grant in the \`agents:\` map. If a v1 connector had \`agent_scope = ["a", "b"]\`, make sure agents outside that list don't get that connector slug in their \`connectors\` grant (use an explicit slug list instead of \`all\` for the agents that should keep access), then delete the key.
+- **Legacy singular \`[sandbox]\` image keys** (\`image\`, \`dockerfile\`, \`cpu\`, \`memory\`, \`disk\`, …) — already an error in v1's validator; if \`kortix validate\` flags them, move the image definition under \`[[sandbox.templates]]\` → \`sandbox.templates:\` with a named slug.
+
+## 7. Worked example
+
+A representative v1 \`kortix.toml\`:
+
+\`\`\`toml
+kortix_version = 1
+
+[project]
+name = "acme-ops"
+
+[env]
+required = ["DATABASE_URL"]
+
+[[agents]]
+name = "dev"
+connectors = ["github", "linear"]
+env = "all"
+kortix_cli = ["project.file.read", "project.file.write", "project.session.exec"]
+
+[[agents]]
+name = "support"
+# no grants declared — v1 treats omitted grants as "all"
+
+[[channels]]
+type = "slack"
+agent = "support"
+
+[[triggers]]
+slug = "weekly-summary"
+type = "cron"
+cron = "0 9 * * 1"
+agent = "dev"
+prompt = "Post the weekly summary."
+
+[[connectors]]
+slug = "github"
+provider = "github"
+credential = "per_user"
+agent_scope = ["dev"]
+\`\`\`
+
+becomes this v2 \`kortix.yaml\`:
 
 \`\`\`yaml
 kortix_version: 2
 default_agent: dev
+
 project:
   name: acme-ops
+
 env:
-  required: [DATABASE_URL]
+  required:
+    - DATABASE_URL
+
 opencode:
   config_dir: harnesses/opencode
-harnesses:
-  pi:
-    packages: ["npm:pi-web-access@0.30.0"]
-tools:
-  memory: kortix:memory
-  lookup_order: tools/lookup_order.ts
+
 agents:
   dev:
     file: agents/dev.md
-    connectors: [github]
+    connectors:
+      - github
+      - linear
+    secrets: all          # v1 "env = all", renamed
+    kortix_permissions:   # renamed from v1's kortix_cli; project.session.exec dropped — retired no-op action
+      - project.file.read
+      - project.file.write
+    skills: all
+  support:
+    file: agents/support.md
+    # v1 had no grants (implicit all) — but the github connector was
+    # agent_scoped to dev only, so "all" would WIDEN support's access.
+    # An explicit list preserves today's effective behavior instead.
+    connectors: none
     secrets: all
     kortix_permissions: all
     skills: all
-  reviewer:
-    file: agents/reviewer.md
-    skills: [code-review]
+
+triggers:
+  - slug: weekly-summary
+    type: cron
+    cron: "0 9 * * 1"
+    agent: dev
+    prompt: Post the weekly summary.
+
+connectors:
+  - slug: github
+    provider: github
+    # credential/agent_scope removed — connectors are shared; per-agent
+    # access now lives in the agents map above.
 \`\`\`
 
-with \`harnesses/opencode/opencode.jsonc\` setting \`"permission": { "bash": "ask" }\`, a command \`harnesses/opencode/commands/release-notes.md\`, a plugin \`harnesses/opencode/plugins/audit.ts\`, the skill \`skills/code-review/\`, and \`agents/reviewer.md\` starting with the frontmatter \`mode: subagent\`, \`description: Reviews diffs.\` and \`permission: { edit: deny }\`,
+Note what happened: the \`[[channels]]\` block is gone (dashboard-owned now), each agent names its moved \`.md\` with \`file:\`, \`opencode.config_dir\` points at \`harnesses/opencode\`, \`env\` became \`secrets\`, the retired CLI action and connector keys were dropped, every omitted-in-v1 grant was written out explicitly, and the old \`agent_scope\` was honored by adjusting the AGENTS' \`connectors\` grants rather than copied over. Your project will differ — apply the rules, not this output verbatim.
 
-becomes this v3 \`kortix.yaml\`:
+## 8. Leave every agent's \`.md\` alone
 
-\`\`\`yaml
-kortix_version: 3
-default_agent: dev
-project:
-  name: acme-ops
-env:
-  required: [DATABASE_URL]
+Beyond the move and the path updates in section 5, do not edit or reformat any agent's \`.md\` as part of this migration. Its frontmatter (mode/model/permission/temperature/…) and body (the system prompt) are ALREADY the agent's v2 behavior — nothing else about them needs to change. This is what keeps the manifest conversion governance-only and comparatively small: you're translating one array-of-tables into one map of governance grants, full stop.
 
-skills:
-  code-review: skills/code-review
-tools:
-  lookup_order: tools/lookup_order.ts     # memory is a Kortix tool: always registered
-commands:
-  release-notes:
-    description: Draft release notes from the merged change requests.
-    prompt_file: commands/release-notes.md
-extensions:
-  audit:
-    opencode: extensions/audit.ts
-  web-access:
-    pi: npm:pi-web-access@0.30.0
+## 9. Write the file, remove the old one
 
-agents:
-  dev:
-    mode: primary
-    prompt_file: agents/dev.md
-    permission:
-      bash: ask                           # the project-wide rule from opencode.jsonc
-    tools: all
-    skills: all
-    subagents: all
-    commands: all
-    extensions: all
-    connectors: [github]
-    secrets: all
-    kortix_permissions: all
-  reviewer:
-    description: Reviews diffs.
-    mode: subagent
-    prompt_file: agents/reviewer.md
-    permission:
-      bash: ask
-      edit: deny
-    skills: [code-review]
-    extensions: all
-\`\`\`
+- Write the fully assembled manifest to \`kortix.yaml\` at the repo root (same directory as the old \`kortix.toml\`).
+- If the project has more than ~10 triggers, or long multi-line prompts, keep \`kortix.yaml\` readable: add \`imports: [triggers/]\` to the root and write the triggers into YAML files under \`triggers/\` (one file per trigger or per group; each file is a \`triggers:\` list). Every other key stays in \`kortix.yaml\`. Slugs must stay unique across all files.
+- Carry over meaningful TOML comments as YAML comments next to the same keys — hand-written context in a manifest is documentation someone chose to leave; don't strip it.
+- Delete the old \`kortix.toml\` in the same commit — don't leave both files (the platform always prefers \`kortix.yaml\` when both exist, but a stale v1 file next to it is confusing for the next person who edits by hand).
+- You do not need to touch any project setting outside git — the platform resolves \`kortix.yaml\` automatically once it exists, regardless of the configured manifest filename.
 
-Note what happened: the behavior moved from each \`.md\` frontmatter into its agent block, and each \`.md\` now holds only its prompt; the project-wide permission was copied into both agents; the command, the plugin and the pi package became registry entries that each agent enables by name; \`kortix:memory\` was deleted (Kortix tools are always registered); \`opencode\`, \`harnesses\` and every \`file:\` key are gone, and \`harnesses/\` was removed with \`git rm -r\`. Your project will differ — apply the rules, not this output verbatim.
+## 10. Validate before you're done
 
-## 10. Write the file, remove the old ones
+Run \`kortix validate\` (it auto-detects \`kortix.yaml\`). Fix every error it reports — do not open the change request with a manifest that fails validation. Warnings are fine to leave if they're informational, but read them. If an error surprises you, cross-check the field against \`kortix schema --version 2\`.
 
-- Write the assembled manifest to \`kortix.yaml\` at the repo root. Start it with \`# yaml-language-server: $schema=https://kortix.com/schema/kortix.v3.schema.json\`.
-- From v1: delete \`kortix.toml\` in the same commit. Never leave two manifests.
-- With many triggers or long prompts, keep \`kortix.yaml\` readable with \`imports:\` (for example \`imports: [triggers/]\`, each file a \`triggers:\` list). \`agents\`, \`skills\`, \`tools\`, \`commands\` and \`extensions\` can be imported the same way.
-- Carry meaningful comments over next to the same keys. Hand-written context in a manifest is documentation someone chose to leave.
+## 11. Land it as a change request — never merge
 
-## 11. Validate before you're done
+First, re-sync: \`git fetch origin\` and check whether \`origin/main\` advanced while you worked (\`git log HEAD..origin/main --oneline\`) — on active projects it will (connectors added from the dashboard, other sessions merging). If it moved, rebase; if the rebase conflicts on \`kortix.toml\` (main changed the manifest you deleted), don't fight it — \`git rebase --abort\`, \`git reset --hard origin/main\`, and redo the conversion against the CURRENT manifest, then continue. Never revert main's changes to win a conflict.
 
-Run \`kortix validate\`. Fix every error it reports — do not open the change request with a manifest that fails validation. Read the warnings. If an error surprises you, check the field against \`kortix schema --version 3\`.
-
-## 12. Land it as a change request — never merge
-
-First, re-sync: \`git fetch origin\` and check whether \`origin/main\` advanced while you worked (\`git log HEAD..origin/main --oneline\`). If it moved, rebase. If the rebase conflicts on the manifest or a moved file, don't fight it — \`git rebase --abort\`, \`git reset --hard origin/main\`, and redo the conversion against the CURRENT files, then continue. Never revert main's changes to win a conflict.
-
-Then commit, **push the branch**, and open the change request. A commit that is never pushed leaves the CR empty and un-appliable (\`422 CR_HEAD_NOT_AHEAD\`):
+Then commit, **push the branch**, and open the change request. A commit that is never pushed leaves the CR empty ("No changes detected") and un-appliable — the platform refuses such a CR outright (\`422 CR_HEAD_NOT_AHEAD\`):
 
 \`\`\`
-git add -A && git commit -m "Upgrade to kortix_version 3"
+git add -A && git commit -m "Migrate to kortix_version 2 (kortix.yaml) and the root layout"
 git push origin HEAD
-kortix cr open --head <your-branch> --title "Upgrade to kortix_version 3" --description "<the default agent and why, every file you moved or removed, each agent's grants, every key or setting you dropped and why, and any grant you left narrowed>"
+kortix cr open --head <your-branch> --title "Migrate to kortix_version 2 (kortix.yaml) and the root layout" --description "<what you converted, which files you moved, which agent you picked as default_agent and why, every legacy key you removed, and any grant you had to leave narrowed>"
 \`\`\`
 
 If the push is rejected because the remote session branch moved, \`git fetch origin\` then \`git push --force-with-lease origin HEAD\` — your own session branch only, never any other branch.
 
-Then verify the CR carries your diff: run \`kortix cr diff <number>\`. If it reports no changes, your push did not land; push again and re-check (the CR updates automatically, do not open a second one).
+Then verify the CR actually carries your diff: run \`kortix cr diff <number>\` — if it reports no changes, your push didn't land; push again and re-check (the CR updates automatically, do not open a second one).
 
 Do **not** run \`kortix cr merge\`. This is a human-reviewed change like any other — stop once the CR is open and verified non-empty, and tell the user its number so they can review the diff and merge it themselves.`;
 
@@ -1106,16 +1095,24 @@ export function saveClonedProjectLink(
   host: string | undefined,
   hostUrl: string,
 ): void {
-  saveLink(
-    {
-      project_id: project.project_id,
-      account_id: project.account_id,
-      host,
-      host_url: hostUrl,
-      linked_at: new Date().toISOString(),
-    },
-    repoRoot,
-  );
+  const existing = loadLink(repoRoot);
+  if (
+    existing?.project_id !== project.project_id ||
+    existing.account_id !== project.account_id ||
+    existing.host !== host ||
+    existing.host_url !== hostUrl
+  ) {
+    saveLink(
+      {
+        project_id: project.project_id,
+        account_id: project.account_id,
+        host,
+        host_url: hostUrl,
+        linked_at: new Date().toISOString(),
+      },
+      repoRoot,
+    );
+  }
 
   appendGitExcludeEntries(repoRoot, ['/.kortix/link.json'], 'Kortix local project binding');
 }
@@ -1141,7 +1138,7 @@ async function projectsClone(
   destination?: string,
   hostArg?: string,
 ): Promise<number> {
-  const id = resolveProjectId(arg, { hostScoped: !hostArg });
+  const id = resolveProjectId(arg, { hostScoped: !hostArg, hostArg });
   if (!id) {
     process.stderr.write(
       `${status.err('No project selected. Run `kortix projects use`, link a directory, or pass an id.')}\n`,
@@ -1235,6 +1232,44 @@ function filterProjects(projects: ProjectSummary[], query?: string): ProjectSumm
   return projects.filter((p) =>
     [p.name, p.project_id, p.repo_url].some((f) => (f ?? '').toLowerCase().includes(q)),
   );
+}
+
+async function projectsCreate(argv: string[]): Promise<number> {
+  const rest = [...argv];
+  const json = takeFlagBool(rest, ['--json']);
+  let hostArg: string | undefined;
+  let accountArg: string | undefined;
+  try {
+    hostArg = takeFlagValue(rest, ['--host']);
+    accountArg = takeFlagValue(rest, ['--account']);
+  } catch (err) {
+    process.stderr.write(`${status.err(err instanceof Error ? err.message : String(err))}\n`);
+    return 2;
+  }
+  const name = rest[0]?.trim();
+  if (rest.length !== 1 || !name || name.startsWith('-') || hostArg === '' || accountArg === '') {
+    process.stderr.write('Usage: kortix projects create <name> [--host <name>] [--account <id>] [--json]\n');
+    return 2;
+  }
+  const auth = hostArg ? loadAuthForHost(hostArg) : requireAuth();
+  if (!auth?.token) {
+    if (hostArg) process.stderr.write(`${status.err(`Host "${hostArg}" is not logged in.`)}\n`);
+    return 1;
+  }
+  const accountId = accountArg || (hostArg ? auth.account_id || undefined : scopeAccountId(auth));
+  try {
+    const project = await clientFromAuth(auth, { accountId }).post<ProjectSummary>('/projects/provision', {
+      name,
+      account_id: accountId,
+    });
+    if (!isDefaultProjectResponse(project)) return invalidDefaultProjectResponse(project);
+    // Provisioning also returns a one-time push credential. Never print it.
+    if (json) emitJson({ project_id: project.project_id, name: project.name, account_id: project.account_id });
+    else process.stdout.write(`${project.project_id}\n`);
+    return 0;
+  } catch (err) {
+    return surface(err);
+  }
 }
 
 async function projectsLs(
@@ -1393,8 +1428,28 @@ function renderProjectTable(
   }
 }
 
+interface GitConnectionState {
+  state: 'connected' | 'reconnect_required' | 'unavailable' | 'not_connected';
+  reason?: string;
+  disconnected_reason?: string;
+  message?: string;
+  install_url?: string | null;
+}
+
+/** The `git` line of `projects info`, plus the cause and the fix when the repository is disconnected. */
+export function gitConnectionLines(git: GitConnectionState): string {
+  const label = `  ${C.dim}git        ${C.reset}`;
+  if (git.state === 'connected') return `${label}connected\n`;
+  if (git.state === 'not_connected') return `${label}not connected\n`;
+  const why = git.disconnected_reason ?? git.reason;
+  let out = `${label}${C.yellow}${git.disconnected_reason ? 'disconnected' : git.state.replace('_', ' ')}${why ? ` (${why})` : ''}${C.reset}\n`;
+  if (git.message) out += `             ${git.message}\n`;
+  if (git.install_url) out += `  ${C.dim}reconnect  ${C.reset}${git.install_url}\n`;
+  return out;
+}
+
 async function projectsInfo(arg?: string, json = false, hostArg?: string): Promise<number> {
-  const id = resolveProjectId(arg, { hostScoped: !hostArg });
+  const id = resolveProjectId(arg, { hostScoped: !hostArg, hostArg });
   if (!id) {
     process.stderr.write(
       `${status.err('No project linked. Run `kortix projects link` or pass an id.')}\n`,
@@ -1408,9 +1463,14 @@ async function projectsInfo(arg?: string, json = false, hostArg?: string): Promi
   );
   if (!located) return 1;
   const p = located.located.project;
+  // Whether Kortix can reach the repository (KRTX-2955). Best effort: an
+  // older server without the route prints no git line.
+  const git = await located.located.client
+    .get<GitConnectionState>(`/projects/${p.project_id}/git/connection`)
+    .catch(() => null);
   if (json) {
     // The API's wire name for the id is `project_id`; scripts read `.id`.
-    emitJson({ id: p.project_id, ...p });
+    emitJson({ id: p.project_id, ...p, ...(git ? { git_connection_state: git } : {}) });
     return 0;
   }
   process.stdout.write('\n');
@@ -1422,8 +1482,9 @@ async function projectsInfo(arg?: string, json = false, hostArg?: string): Promi
   process.stdout.write(`  ${C.dim}manifest   ${C.reset}${p.manifest_path}\n`);
   process.stdout.write(`  ${C.dim}status     ${C.reset}${p.status}\n`);
   process.stdout.write(`  ${C.dim}updated    ${C.reset}${formatRelative(p.updated_at)}\n`);
-  // Internal-only surfaces Kortix turned on (apps). Agents read this
-  // to know `kortix apps` works here.
+  if (git) process.stdout.write(gitConnectionLines(git));
+  // Internal-only flags Kortix turned on. Agents read this to know which
+  // Kortix-managed surfaces work here.
   const managed = featureRows(p as unknown as Record<string, unknown>)
     .filter((r) => r.operator_only && r.enabled)
     .map((r) => r.key);
@@ -1668,7 +1729,7 @@ async function projectsUnlink(): Promise<number> {
 }
 
 async function projectsOpen(arg?: string, hostArg?: string): Promise<number> {
-  const id = resolveProjectId(arg, { hostScoped: !hostArg });
+  const id = resolveProjectId(arg, { hostScoped: !hostArg, hostArg });
   if (!id) {
     process.stderr.write(`${status.err('No project linked. Pass an id or link first.')}\n`);
     return 1;
@@ -1701,7 +1762,7 @@ async function projectsRm(args: string[]): Promise<number> {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
   }
-  const id = rest.find((a) => !a.startsWith('-')) ?? resolveProjectId(undefined, { hostScoped: !hostArg });
+  const id = rest.find((a) => !a.startsWith('-')) ?? resolveProjectId(undefined, { hostScoped: !hostArg, hostArg });
   if (!id) {
     process.stderr.write(
       `${status.err('No project to remove.')} Pass an id or run inside a linked project.\n`,
@@ -1748,6 +1809,9 @@ async function projectsRm(args: string[]): Promise<number> {
 // ── helpers ────────────────────────────────────────────────────────────────
 
 function surface(err: unknown): number {
+  // A denial goes through the shared formatter so the CLI's tail names the
+  // refused identity and the right remedy.
+  if (err instanceof ApiError && err.status === 403) return surfaceApiError(err);
   if (err instanceof ApiError) {
     if (err.status === 401) {
       process.stderr.write(`${status.err(tokenRejectedLine(err.message))}\n`);

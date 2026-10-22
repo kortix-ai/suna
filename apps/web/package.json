@@ -3,8 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node scripts/copy-viewer-wasm.mjs && node scripts/copy-emojibase-data.mjs && node scripts/generate-fumadocs-source.mjs && NODE_OPTIONS='--max-http-header-size=32768' dotenvx run --ignore=MISSING_ENV_FILE -f .env.local -f .env -- next dev --port ${WEB_PORT:-3000}",
-    "dev:staging-env": "node scripts/generate-fumadocs-source.mjs && NODE_OPTIONS='--max-http-header-size=32768' dotenvx run --overload -f .env.staging -- next dev --port ${WEB_PORT:-3000}",
+    "typecheck": "(test -d .source || node scripts/generate-fumadocs-source.mjs) && tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",
+    "dev": "node scripts/copy-viewer-wasm.mjs && node scripts/copy-emojibase-data.mjs && node scripts/generate-fumadocs-source.mjs && NODE_OPTIONS='--max-http-header-size=32768 --max-old-space-size=4096' dotenvx run --ignore=MISSING_ENV_FILE -f .env.local -f .env -- next dev --port ${WEB_PORT:-3000}",
+    "dev:staging-env": "node scripts/generate-fumadocs-source.mjs && NODE_OPTIONS='--max-http-header-size=32768 --max-old-space-size=4096' dotenvx run --overload -f .env.staging -- next dev --port ${WEB_PORT:-3000}",
     "build": "node scripts/validate-production-supabase-env.mjs && node scripts/copy-viewer-wasm.mjs && node scripts/copy-emojibase-data.mjs && node scripts/generate-fumadocs-source.mjs && NODE_OPTIONS=\"${NODE_OPTIONS:---max-old-space-size=6144}\" next build",
     "start": "next start",
     "docs:build": "node -e \"import('./scripts/blume-docs.mjs').then(m => m.buildBlumeDocs())\"",
@@ -18,7 +19,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "postinstall": "cp node_modules/@embedpdf/pdfium/dist/pdfium.wasm public/pdfium.wasm 2>/dev/null || true",
-    "test": "bun test --isolate --parallel=4"
+    "test": "node ../../scripts/test-guard.mjs \"bun test --isolate --parallel=4\""
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
@@ -48,6 +49,7 @@
     "@kortix/llm-catalog": "workspace:*",
     "@kortix/sdk": "workspace:*",
     "@kortix/shared": "workspace:*",
+    "@kortix/ui": "workspace:*",
     "@lezer/highlight": "1.2.3",
     "@logtail/next": "^0.4.0",
     "@next/third-parties": "16.4.0",
@@ -121,7 +123,7 @@
     "file-saver": "^2.0.5",
     "frimousse": "^0.3.0",
     "fumadocs-core": "16.14.0",
-    "fumadocs-mdx": "15.2.1",
+    "fumadocs-mdx": "15.2.3",
     "heic2any": "0.0.4",
     "i18next": "^26.3.6",
     "jszip": "^3.10.1",
@@ -186,6 +188,7 @@
     "@types/react-dom": "^19.2.0",
     "@types/react-test-renderer": "^19.3.0",
     "@types/turndown": "^5.0.5",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "eslint": "^9",
     "eslint-config-next": "16.4.0",
     "happy-dom": "^20.14.5",

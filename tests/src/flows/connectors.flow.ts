@@ -9,7 +9,6 @@ import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
 import { type CliResult, CliSandbox, throwIfCliInfraFailure } from '../fixtures/cli';
 import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
-import { stagingAppsEdgeQuarantine } from '../fixtures/apps-edge';
 
 function parseCliJson<T>(result: CliResult, action: string): T {
   throwIfCliInfraFailure(result, action);
@@ -688,6 +687,171 @@ flow(
   },
 );
 
+// Install asks this before it offers an app's hosted MCP server. The positive
+// answers need a public OAuth server, so the unit tests cover them
+// (`mcpSignInCheck`); here the guard and the permission.
+flow(
+  'CONN-36',
+  {
+    domain: 'connectors',
+    routes: ['POST /v1/connectors/projects/:projectId/connectors/mcp-sign-in-check'],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const path = '/v1/connectors/projects/:projectId/connectors/mcp-sign-in-check';
+
+    await ctx.step('a local MCP server URL is refused by the egress guard', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(path, { url: 'https://127.0.0.1/mcp' }, { params: { projectId: p.id } });
+      r.status(400).body().has('$.code', 'invalid_source_address');
+    });
+
+    await ctx.step('a value that is not a URL is a 400', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(path, { url: 'linear' }, { params: { projectId: p.id } });
+      r.status(400);
+    });
+
+    await ctx.step('NONMEMBER cannot check a server', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post(path, { url: 'https://mcp.example.test/mcp' }, { params: { projectId: p.id } });
+      r.status(403);
+    });
+  },
+);
+
+// connectors_v2 retires Pipedream: a Pipedream connector moves in place to the
+// Kortix app for the same service. The sign-in itself needs the vendor's OAuth
+// server, so this flow covers the listing, the start (the marked account), the
+// refusals and the flag gate; the switch after a sign-in was proven on a local
+// stack and `apps/api/src/connectors/connector-move.test.ts` pins the target URL rule.
+flow(
+  'CONN-37',
+  {
+    domain: 'connectors',
+    routes: [
+      'GET /v1/projects/:projectId/connector-moves',
+      'POST /v1/projects/:projectId/connectors/:slug/move',
+      'POST /v1/connectors/projects/:projectId/connectors',
+      'POST /v1/projects/:projectId/connections/me',
+      'POST /v1/projects/:projectId/connections/:connectionId/oauth2/discover-resource',
+      'PUT /v1/connectors/projects/:projectId/connectors/:slug/policies',
+    ],
+  },
+  async (ctx) => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const on = await ctx.fixtures.project({ managedGit: true, metadata: { experimental: { connectors_v2: true } } });
+    const off = await ctx.fixtures.project();
+    type Move = { slug: string; app: string | null; to: { slug: string } | null; connection_id: string | null; signed_in: boolean; accounts: number };
+    const moves = async () =>
+      (await owner.get('/v1/projects/:projectId/connector-moves', { params: { projectId: on.id } })).status(200).json<{ moves: Move[] }>().moves;
+    let forgedConnectionId = '';
+    const create = async (body: Record<string, unknown>) =>
+      (await owner.post('/v1/connectors/projects/:projectId/connectors', { ...body, create_only: true }, { params: { projectId: on.id }, timeoutMs: 60_000 })).status([200, 409]);
+
+    await ctx.step('setup: a Pipedream Linear connector, a Pipedream app with no Kortix app, and an MCP server', async () => {
+      await create({ slug: 'issues', name: 'Issues', provider: 'pipedream', app: 'linear_app', allow_legacy_pipedream: true });
+      await create({ slug: 'crm', name: 'CRM', provider: 'pipedream', app: 'pipedrive', allow_legacy_pipedream: true });
+      await create({ slug: 'desk', provider: 'mcp', url: 'https://ke2e.kortix.test/mcp', auth: { type: 'none' } });
+    });
+
+    await ctx.step('the listing names each Pipedream connector and the Kortix app it moves to; an MCP server is not listed', async () => {
+      const list = await moves();
+      const issues = list.find((m) => m.slug === 'issues');
+      const crm = list.find((m) => m.slug === 'crm');
+      if (issues?.app !== 'linear_app' || issues.to?.slug !== 'linear' || issues.connection_id !== null || issues.signed_in) {
+        throw new Error(`issues entry is wrong: ${JSON.stringify(issues)}`);
+      }
+      if (crm?.to !== null) throw new Error(`a Pipedream app with no Kortix app must list to: null: ${JSON.stringify(crm)}`);
+      if (list.some((m) => m.slug === 'desk')) throw new Error('an mcp connector is not a move');
+    });
+
+    await ctx.step('a move_to an account owner writes is not a mark: the listing ignores it, and the account has no sign-in target', async () => {
+      const forged = await owner.post(
+        '/v1/projects/:projectId/connections/me',
+        { connector_alias: 'issues', label: 'Forged', metadata: { move_to: 'linear' } },
+        { params: { projectId: on.id } },
+      );
+      forged.status([200, 201]);
+      const connectionId = forged.json<{ connection_id: string }>().connection_id;
+      forgedConnectionId = connectionId;
+      const issues = (await moves()).find((m) => m.slug === 'issues');
+      if (issues?.connection_id !== null) throw new Error(`a forged mark started a move: ${JSON.stringify(issues)}`);
+      const discover = await owner.post(
+        '/v1/projects/:projectId/connections/:connectionId/oauth2/discover-resource',
+        {},
+        { params: { projectId: on.id, connectionId } },
+      );
+      if (discover.statusCode !== 400 || !discover.text().includes('no server URL')) {
+        throw new Error(`unexpected discovery answer: ${discover.statusCode} ${discover.text()}`);
+      }
+    });
+
+    await ctx.step('a connector with Pipedream tool rules does not move; a * rule does not block it', async () => {
+      await create({ slug: 'board', name: 'Board', provider: 'pipedream', app: 'clickup', allow_legacy_pipedream: true });
+      const policies = (list: Array<{ match: string; action: string }>) =>
+        owner.put('/v1/connectors/projects/:projectId/connectors/:slug/policies', { policies: list }, { params: { projectId: on.id, slug: 'board' }, timeoutMs: 60_000 });
+      (await policies([{ match: 'clickup-create-task', action: 'block' }])).status(200);
+      const refused = await owner.post('/v1/projects/:projectId/connectors/:slug/move', {}, { params: { projectId: on.id, slug: 'board' } });
+      refused.status(409);
+      if (!refused.text().includes('clickup-create-task')) throw new Error(`the refusal does not name the rule: ${refused.text()}`);
+      (await policies([{ match: '*', action: 'require_approval' }])).status(200);
+      (await owner.post('/v1/projects/:projectId/connectors/:slug/move', {}, { params: { projectId: on.id, slug: 'board' } }))
+        .status(200).body().has('$.status', 'sign_in').has('$.to.slug', 'clickup');
+    });
+
+    await ctx.step('a Composio connector lists with its provider and moves too; Composio Slack does not move', async () => {
+      await create({ slug: 'tasks', name: 'Tasks', provider: 'composio', app: 'clickup' });
+      await create({ slug: 'chat-legacy', name: 'Chat', provider: 'composio', app: 'slack' });
+      const list = await moves();
+      const tasks = list.find((m) => m.slug === 'tasks') as (Move & { provider?: string }) | undefined;
+      if (tasks?.provider !== 'composio' || tasks.to?.slug !== 'clickup') throw new Error(`tasks entry is wrong: ${JSON.stringify(tasks)}`);
+      const chat = list.find((m) => m.slug === 'chat-legacy');
+      if (chat && chat.to !== null) throw new Error(`Slack must not move: ${JSON.stringify(chat)}`);
+      (await owner.post('/v1/projects/:projectId/connectors/:slug/move', {}, { params: { projectId: on.id, slug: 'tasks' } }))
+        .status(200).body().has('$.status', 'sign_in').has('$.to.url', 'https://mcp.clickup.com/mcp');
+      (await owner.get('/v1/connectors/projects/:projectId/connectors/:slug/config', { params: { projectId: on.id, slug: 'tasks' } }))
+        .status(200).body().has('$.provider', 'composio');
+    });
+
+    await ctx.step('a move starts: it marks an account and names the catalogue MCP server to sign in to', async () => {
+      const r = await owner.post('/v1/projects/:projectId/connectors/:slug/move', {}, { params: { projectId: on.id, slug: 'issues' } });
+      r.status(200).body().has('$.status', 'sign_in').has('$.to.slug', 'linear').has('$.to.url', 'https://mcp.linear.app/mcp');
+      const connectionId = r.json<{ connection_id: string }>().connection_id;
+      const issues = (await moves()).find((m) => m.slug === 'issues');
+      if (issues?.connection_id !== connectionId || issues.signed_in) throw new Error(`the started move is not listed: ${JSON.stringify(issues)}`);
+      // Pipedream still serves the connector until the sign-in completes.
+      (await owner.get('/v1/connectors/projects/:projectId/connectors/:slug/config', { params: { projectId: on.id, slug: 'issues' } }))
+        .status(200).body().has('$.provider', 'pipedream');
+    });
+
+    await ctx.step('refusals: no Kortix app → 409, not a Pipedream connector → 409, another connector\'s account → 400, an unknown account or connector → 404', async () => {
+      const move = (slug: string, body: Record<string, unknown> = {}) =>
+        owner.post('/v1/projects/:projectId/connectors/:slug/move', body, { params: { projectId: on.id, slug } });
+      const noApp = await move('crm');
+      noApp.status(409);
+      if (!noApp.text().includes('keeps working through Pipedream')) throw new Error(`unexpected refusal: ${noApp.text()}`);
+      const notPipedream = await move('desk');
+      notPipedream.status(409);
+      if (!notPipedream.text().includes('Only a Pipedream or Composio connector moves')) throw new Error(`unexpected refusal: ${notPipedream.text()}`);
+      (await move('board', { connection_id: forgedConnectionId })).status(400);
+      (await move('issues', { connection_id: '00000000-0000-4000-8000-000000000000' })).status(404);
+      (await move('no-such-connector')).status(404);
+    });
+
+    await ctx.step('without connectors_v2 both routes answer 403 feature_disabled; a non-member gets 403', async () => {
+      (await owner.get('/v1/projects/:projectId/connector-moves', { params: { projectId: off.id } }))
+        .status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'connectors_v2');
+      (await owner.post('/v1/projects/:projectId/connectors/:slug/move', {}, { params: { projectId: off.id, slug: 'issues' } }))
+        .status(403).body().has('$.code', 'feature_disabled');
+      (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/projects/:projectId/connector-moves', { params: { projectId: on.id } })).status(403);
+    });
+  },
+);
+
 // Pairs with CONN-7 (PUT .../credential) — disconnect (delete) a connector's
 // stored credential. Unknown connector → 404 (deleteConnectorCredential looks
 // the connector up before touching the credential store).
@@ -883,8 +1047,11 @@ flow(
     });
 
     await ctx.step(
-      'connection OAuth routes reject a non-Pipedream connector → 404/501',
+      'MCP connection sign-in on an unreachable server → 400 naming the server; finalize → not connected',
       async () => {
+        // #10266 gave MCP connections a sign-in on this route. The server URL
+        // does not resolve, so discovery fails: a 400 about the configured
+        // server, never a 500.
         const connect = await ctx.client
           .as(ctx.P.OWNER)
           .post(
@@ -892,7 +1059,10 @@ flow(
             {},
             { params: { projectId: p.id, connectionId: memberConnectionId } },
           );
-        connect.status([404, 501]);
+        connect
+          .status(400)
+          .body()
+          .matches('$.message', /Could not discover sign-in for this MCP server: .*ke2e\.kortix\.test/);
 
         const finalize = await ctx.client
           .as(ctx.P.OWNER)
@@ -901,7 +1071,7 @@ flow(
             {},
             { params: { projectId: p.id, connectionId: memberConnectionId } },
           );
-        finalize.status([404, 501]);
+        finalize.status(200).body().has('$.connected', false);
       },
     );
 
@@ -1929,14 +2099,21 @@ flow(
     ],
   },
   async (ctx) => {
+    let providers: string[] = [];
+    await ctx.step('read the connect providers this deployment offers', async () => {
+      const status = await ctx.client.as(ctx.P.OWNER).get('/v1/connectors/connect-status');
+      status.status(200);
+      const statusBody = status.json<{ provider: string | null; providers?: string[] }>();
+      providers = statusBody.providers ?? (statusBody.provider ? [statusBody.provider] : []);
+    });
+    // A bare return recorded a pass with zero steps, so a Gmail OAuth
+    // regression went unnoticed on every non-Composio run (KRTX-2852).
+    if (!providers.includes('composio')) {
+      await ctx.step('this deployment offers no Composio connect: skipped', async () => {});
+      return;
+    }
     const p = await ctx.fixtures.project({ managedGit: true });
     const slug = `ke2e-gmail-oauth-${Date.now().toString(36)}`;
-
-    const status = await ctx.client.as(ctx.P.OWNER).get('/v1/connectors/connect-status');
-    status.status(200);
-    const statusBody = status.json<{ provider: string | null; providers?: string[] }>();
-    const providers = statusBody.providers ?? (statusBody.provider ? [statusBody.provider] : []);
-    if (!providers.includes('composio')) return;
 
     await ctx.step('declare Gmail as a Composio-managed OAuth connector', async () => {
       const created = await ctx.client.as(ctx.P.OWNER).post(
@@ -4261,6 +4438,125 @@ flow(
   },
 );
 
+// ── CONN-MCP-SECRET-1 — an MCP connector authenticates with a bound project secret ──
+// Found live 2026-10-17: `kortix connectors secret <slug> <ID>` stored the
+// binding on the connector row, and every sync then sent tools/list with no
+// Authorization header (HTTP 401, zero tools). Local target only: the MCP
+// server is runner-local and only the local stack allows 127.0.0.1.
+flow(
+  'CONN-MCP-SECRET-1',
+  {
+    domain: 'connectors',
+    requires: ['database'],
+    timeoutMs: 120_000,
+    routes: [
+      'POST /v1/projects/:projectId/secrets',
+      'POST /v1/connectors/projects/:projectId/connectors',
+      'PUT /v1/connectors/projects/:projectId/connectors/:slug/secret-binding',
+      'GET /v1/connectors/projects/:projectId/connectors',
+      'POST /v1/connectors/projects/:projectId/connectors/sync',
+      'DELETE /v1/connectors/projects/:projectId/connectors/:slug',
+    ],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') {
+      await ctx.step('deployed targets cannot reach a runner-local MCP server: skipped', async () => {});
+      return;
+    }
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const params = { projectId: p.id };
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const stamp = Date.now().toString(36);
+    const slug = `ke2e-mcp-secret-${stamp}`;
+    const SECRET = `KE2E_MCP_TOKEN_${stamp.toUpperCase()}`;
+    const TOKEN = `ke2e-bound-${stamp}`;
+    const { createServer } = await import('node:http');
+    // What each tools/list carried in Authorization; a wrong or missing bearer gets 401.
+    const listAuth: string[] = [];
+    const upstream = createServer((req, res) => {
+      let raw = '';
+      req.on('data', (c) => (raw += c));
+      req.on('end', () => {
+        const msg = raw ? (JSON.parse(raw) as { id?: number; method?: string }) : {};
+        if (msg.method === 'tools/list') listAuth.push(req.headers.authorization ?? '');
+        if (req.headers.authorization !== `Bearer ${TOKEN}`) {
+          res.writeHead(401, { 'content-type': 'application/json' });
+          res.end('{"error":"unauthorized"}');
+          return;
+        }
+        if (msg.id === undefined) {
+          res.writeHead(202);
+          res.end();
+          return;
+        }
+        const result =
+          msg.method === 'initialize'
+            ? { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'ke2e', version: '1' } }
+            : msg.method === 'tools/list'
+              ? { tools: [{ name: 'ping', description: 'Answer pong', inputSchema: { type: 'object', properties: {} } }] }
+              : {};
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result }));
+      });
+    });
+    const port = await new Promise<number>((resolve) =>
+      upstream.listen(0, '127.0.0.1', () => resolve((upstream.address() as { port: number }).port)),
+    );
+    const row = async () => {
+      const r = await owner.get('/v1/connectors/projects/:projectId/connectors', { params });
+      r.status(200);
+      const found = r.json<{ connectors: Array<{ slug: string; status: string; actions: Array<{ name?: string; path?: string }> }> }>()
+        .connectors.find((c) => c.slug === slug);
+      if (!found) throw new Error(`the list omitted ${slug}: ${r.text().slice(0, 400)}`);
+      return found;
+    };
+
+    try {
+      await ctx.step('store a broker project secret for the connector → 200', async () => {
+        (await owner.post('/v1/projects/:projectId/secrets', { name: SECRET, value: TOKEN, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
+      });
+
+      await ctx.step('add a bearer MCP connector with no credential → 200; tools/list is refused, zero tools', async () => {
+        const r = await owner.post(
+          '/v1/connectors/projects/:projectId/connectors',
+          { slug, provider: 'mcp', url: `http://127.0.0.1:${port}/mcp`, transport: 'http', auth: { type: 'bearer' } },
+          { params, timeoutMs: 60_000 },
+        );
+        r.status(200);
+        if ((await row()).actions.length !== 0) throw new Error('tools loaded without a credential');
+      });
+
+      await ctx.step('bind the secret → 200 with a clean re-sync; tools/list carried the secret as the bearer; the tool is listed', async () => {
+        const before = listAuth.length;
+        const r = await owner.put(
+          '/v1/connectors/projects/:projectId/connectors/:slug/secret-binding',
+          { secret_identifier: SECRET },
+          { params: { ...params, slug }, timeoutMs: 60_000 },
+        );
+        r.status(200);
+        const sync = r.json<{ sync?: { errors: Array<{ slug: string; error: string }> } }>().sync;
+        if (!sync || sync.errors.some((e) => e.slug === slug)) throw new Error(`bind sync: ${r.text().slice(0, 400)}`);
+        if (listAuth.slice(before).at(-1) !== `Bearer ${TOKEN}`) throw new Error(`tools/list auth: ${JSON.stringify(listAuth.slice(before))}`);
+        const c = await row();
+        if (c.status !== 'active' || !c.actions.some((a) => (a.name ?? a.path) === 'ping')) throw new Error(`row: ${JSON.stringify(c)}`);
+      });
+
+      await ctx.step('a manual sync fetches tools/list with the bound secret again; the connector stays active', async () => {
+        const before = listAuth.length;
+        const r = await owner.post('/v1/connectors/projects/:projectId/connectors/sync', {}, { params, timeoutMs: 60_000 });
+        r.status(200);
+        const errors = r.json<{ errors: Array<{ slug: string; error: string }> }>().errors;
+        if (errors.some((e) => e.slug === slug)) throw new Error(`sync errors: ${JSON.stringify(errors)}`);
+        if (listAuth.slice(before).at(-1) !== `Bearer ${TOKEN}`) throw new Error(`tools/list auth: ${JSON.stringify(listAuth.slice(before))}`);
+        if ((await row()).status !== 'active') throw new Error('the connector left active after a manual sync');
+      });
+    } finally {
+      await owner.del('/v1/connectors/projects/:projectId/connectors/:slug', { params: { ...params, slug } }).catch(() => undefined);
+      await new Promise<void>((resolve) => upstream.close(() => resolve()));
+    }
+  },
+);
+
 // ── CONN-32 — the REST call route: request checks and every policy layer ─────
 // The gateway reads three policy sources on every call: connector rules
 // (connector_policies), project rules on fully-qualified paths
@@ -5037,7 +5333,6 @@ flow(
   {
     domain: 'connectors',
     requires: ['database', 'appHost'],
-    ...stagingAppsEdgeQuarantine(),
     timeoutMs: 180_000,
     routes: [
       'POST /v1/connectors/projects/:projectId/call',

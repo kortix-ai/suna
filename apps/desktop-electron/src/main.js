@@ -16,7 +16,7 @@
 // `window.__TAURI__` bridge shape (see preload.js) so the web app's desktop
 // bridge (apps/web/src/lib/desktop.ts) runs UNCHANGED.
 
-const { app, BrowserWindow, Menu, dialog, shell, ipcMain, nativeTheme, safeStorage, clipboard, globalShortcut } = require('electron');
+const { app, BrowserWindow, Menu, dialog, shell, ipcMain, nativeImage, nativeTheme, safeStorage, clipboard, globalShortcut } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { setupAutoUpdates, checkForUpdatesInteractive } = require('./updater');
@@ -27,6 +27,7 @@ const { decidePopup, isAllowedPopupNavigation } = require('./popup-rules');
 const { backgroundForTheme, normalizeChoice, normalizeTheme } = require('./theme-state');
 const { MIN_HEIGHT, MIN_WIDTH, restoreWindowState } = require('./window-state');
 const { buildFrontendMenu } = require('./frontend-menu');
+const { buildAppMenuTemplate } = require('./app-menu');
 const { resolveChannel } = require('./update-channel');
 const { openInstanceChooser, focusInstanceChooser } = require('./instance-chooser');
 const { explainNetError, hostOf, normalizeInstanceUrl } = require('./instance-rules');
@@ -36,9 +37,17 @@ const { isAppPath, isPreviewHost } = require('./nav-rules');
 const { rendererGoneNeedsRecovery } = require('./renderer-recovery');
 const { setupCrashTelemetry } = require('./crash-telemetry');
 const { NAVIGATION_SHORTCUTS, historyTarget } = require('./navigation');
-const { DESKTOP_CHROME_JS, configureNativeWindowControls, macTrafficLightPosition } = require('./window-chrome');
+const {
+  DESKTOP_CHROME_JS,
+  WIN_TITLEBAR,
+  configureNativeWindowControls,
+  macTrafficLightPosition,
+  winTitleBarOverlay,
+} = require('./window-chrome');
 const { setupComputer } = require('./computer-tray');
+const { setAttentionBadge } = require('./attention-badge');
 const { setupQuickEntry } = require('./quick-entry');
+const { attachContextMenu } = require('./context-menu');
 const { SHORTCUTS, shortcutLabel } = require('./quick-entry-rules');
 
 // Name comes from the bundle (productName): "Kortix" for prod, "Kortix Dev" for
@@ -84,7 +93,7 @@ const DEFAULT_URL = process.env.KORTIX_DESKTOP_DEFAULT_URL || bakedDefaultUrl() 
 const CHANNEL = resolveChannel(require('../package.json'));
 
 const URL_SCHEME = 'kortix';
-// Matches DESKTOP_UA_TOKEN in apps/web/src/lib/desktop.ts and the
+// Matches DESKTOP_UA_TOKEN in packages/ui/src/internal/lib/desktop.ts and the
 // KortixDesktop check in apps/web/src/middleware.ts.
 const UA_TOKEN = 'KortixDesktop/0.1.0';
 
@@ -171,6 +180,18 @@ function writeTheme(theme, choice) {
     );
   } catch {
     /* best-effort */
+  }
+}
+
+/** Window background and, on Windows, the caption-button glyphs follow the theme. */
+function syncWindowTheme() {
+  const background = currentBackgroundColor();
+  for (const win of [mainWindow, splashWindow]) {
+    if (!win || win.isDestroyed()) continue;
+    win.setBackgroundColor(background);
+  }
+  if (process.platform === 'win32' && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setTitleBarOverlay(winTitleBarOverlay(nativeTheme.shouldUseDarkColors));
   }
 }
 
@@ -316,6 +337,7 @@ function createMainWindow() {
   const restored = restoredWindowState();
 
   const isMac = process.platform === 'darwin';
+  const isWindows = process.platform === 'win32';
 
   // App icon for the taskbar/dock on Windows/Linux (macOS uses the bundled
   // .icns at package time). Missing file → Electron default icon.
@@ -337,9 +359,19 @@ function createMainWindow() {
           titleBarStyle: 'hidden',
           trafficLightPosition: macTrafficLightPosition(),
         }
-      : fs.existsSync(winIcon)
-        ? { icon: winIcon }
-        : {}),
+      : {
+          // Windows: no Win32 title bar and no menu-bar strip. The OS draws
+          // only the caption buttons, over the page's own top row
+          // (window-chrome.js → WIN_TITLEBAR). Linux keeps its native frame;
+          // its menu bar shows on Alt.
+          ...(isWindows
+            ? {
+                titleBarStyle: 'hidden',
+                titleBarOverlay: winTitleBarOverlay(nativeTheme.shouldUseDarkColors),
+              }
+            : { autoHideMenuBar: true }),
+          ...(fs.existsSync(winIcon) ? { icon: winIcon } : {}),
+        }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -353,6 +385,14 @@ function createMainWindow() {
   // Keep one canonical set of controls. Web-rendered traffic lights could
   // coexist with native buttons after focus/reload transitions.
   configureNativeWindowControls(mainWindow, isMac);
+
+  // Windows has no menu bar (frameless windows draw none). A lone Alt press
+  // opens the application menu under the title bar instead, as Alt does in
+  // every Windows app with a menu bar.
+  if (isWindows) watchAltForAppMenu(mainWindow);
+
+  // Right-click: the menu every browser and text field has (KRTX-2555).
+  attachContextMenu(mainWindow.webContents, { Menu, shell, clipboard, getWindow: () => mainWindow });
 
   const syncRendererWindowState = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -460,6 +500,8 @@ function createMainWindow() {
   // Go menu state follows every committed navigation, including the App
   // Router's same-document ones.
   mainWindow.webContents.on('did-navigate', refreshNavigationMenu);
+  // A new document starts with nothing unseen; its page re-sends the count.
+  mainWindow.webContents.on('did-navigate', clearAttentionBadge);
   mainWindow.webContents.on('did-navigate-in-page', (_event, _url, isMainFrame) => {
     if (isMainFrame) refreshNavigationMenu();
   });
@@ -545,6 +587,7 @@ function createMainWindow() {
 
   mainWindow.on('closed', () => {
     if (persistTimer) clearTimeout(persistTimer);
+    clearAttentionBadge();
     mainWindow = null;
     quickEntry?.close();
   });
@@ -910,189 +953,75 @@ function buildMenu() {
   });
   const quickEntryShortcut = quickEntry?.shortcut() ?? { accelerator: null, registered: null };
 
-  const template = [
-    ...(isMac
-      ? [
-          {
-            label: app.name,
-            submenu: [
-              { role: 'about' },
-              {
-                id: 'kx-app-settings',
-                label: 'Settings…',
-                accelerator: 'CommandOrControl+,',
-                click: () => sendDesktopCommand('open-settings'),
-              },
-              {
-                label: 'Check for Updates…',
-                click: () => checkForUpdatesInteractive(),
-              },
-              { type: 'separator' },
-              frontendMenu,
-              { type: 'separator' },
-              { role: 'services' },
-              { type: 'separator' },
-              { role: 'hide' },
-              { role: 'hideOthers' },
-              { role: 'unhide' },
-              { type: 'separator' },
-              { role: 'quit' },
-            ],
-          },
-        ]
-      : []),
-    {
-      label: 'File',
-      submenu: [
-        {
-          id: 'kx-file-new-session',
-          label: 'New Session',
-          accelerator: 'CommandOrControl+N',
-          enabled: false,
-          click: () => sendDesktopCommand('new-session'),
-        },
-        {
-          // The accelerator is the global shortcut; the menu only displays it.
-          id: 'kx-file-quick-entry',
-          label: 'Open Quick Entry',
-          ...(quickEntryShortcut.accelerator
-            ? { accelerator: quickEntryShortcut.accelerator, registerAccelerator: false }
-            : {}),
-          click: () => quickEntry?.show(),
-        },
-        {
-          label: 'Quick Entry Shortcut',
-          submenu: [
-            ...SHORTCUTS.map((accelerator) => ({
-              type: 'radio',
-              label: `${shortcutLabel(accelerator, process.platform)}${
-                accelerator === quickEntryShortcut.accelerator && quickEntryShortcut.registered === false ? ' (in use)' : ''
-              }`,
-              checked: accelerator === quickEntryShortcut.accelerator,
-              click: () => chooseQuickEntryShortcut(accelerator),
-            })),
-            {
-              type: 'radio',
-              label: 'Off',
-              checked: quickEntryShortcut.accelerator === null,
-              click: () => chooseQuickEntryShortcut(null),
-            },
-          ],
-        },
-        { type: 'separator' },
-        {
-          id: 'kx-file-close-tab',
-          label: 'Close Tab',
-          accelerator: 'CommandOrControl+W',
-          enabled: false,
-          click: () => sendDesktopCommand('close-tab'),
-        },
-        {
-          id: 'kx-file-close-window',
-          label: 'Close Window',
-          accelerator: 'CommandOrControl+Shift+W',
-          click: () => mainWindow?.close(),
-        },
-        ...(!isMac
-          ? [
-              { type: 'separator' },
-              {
-                id: 'kx-file-settings',
-                label: 'Settings…',
-                accelerator: 'CommandOrControl+,',
-                click: () => sendDesktopCommand('open-settings'),
-              },
-            ]
-          : []),
-      ],
+  const template = buildAppMenuTemplate({
+    platform: process.platform,
+    appName: app.name,
+    shortcuts,
+    frontendMenu,
+    quickEntry: {
+      ...quickEntryShortcut,
+      choices: SHORTCUTS.map((accelerator) => ({ accelerator, label: shortcutLabel(accelerator, process.platform) })),
     },
-    { role: 'editMenu' },
-    {
-      label: 'View',
-      submenu: [
-        { role: 'reload' },
-        { role: 'forceReload' },
-        { role: 'toggleDevTools' },
-        { type: 'separator' },
-        {
-          id: 'kx-view-actual-size',
-          label: 'Actual Size',
-          accelerator: 'CommandOrControl+0',
-          click: () => sendDesktopCommand('zoom-reset'),
-        },
-        {
-          id: 'kx-view-zoom-in',
-          label: 'Zoom In',
-          accelerator: 'CommandOrControl+Plus',
-          click: () => sendDesktopCommand('zoom-in'),
-        },
-        {
-          id: 'kx-view-zoom-out',
-          label: 'Zoom Out',
-          accelerator: 'CommandOrControl+-',
-          click: () => sendDesktopCommand('zoom-out'),
-        },
-        { type: 'separator' },
-        { role: 'togglefullscreen' },
-        ...(isMac
-          ? []
-          : [
-              { type: 'separator' },
-              {
-                label: 'Check for Updates…',
-                click: () => checkForUpdatesInteractive(),
-              },
-              frontendMenu,
-            ]),
-      ],
+    on: {
+      command: sendDesktopCommand,
+      about: showAboutDialog,
+      checkForUpdates: () => checkForUpdatesInteractive(),
+      showQuickEntry: () => quickEntry?.show(),
+      chooseQuickEntryShortcut,
+      closeWindow: () => mainWindow?.close(),
+      back: () => goBackInApp(),
+      forward: () => navigateWindow('forward'),
+      home: () => navigateWindow('home'),
+      copyUrl: () => {
+        const url = copyableUrl(mainWindow?.webContents.getURL() || '');
+        if (url) clipboard.writeText(url);
+      },
     },
-    {
-      // Browser-standard history, so no page can strand the user. The
-      // accelerators are native menu accelerators, so they work on any page,
-      // including one the web app did not render.
-      label: 'Go',
-      submenu: [
-        {
-          id: 'kx-go-back',
-          label: 'Back',
-          accelerator: shortcuts.back,
-          click: () => goBackInApp(),
-        },
-        {
-          id: 'kx-go-forward',
-          label: 'Forward',
-          accelerator: shortcuts.forward,
-          enabled: false,
-          click: () => navigateWindow('forward'),
-        },
-        { type: 'separator' },
-        {
-          id: 'kx-go-home',
-          label: 'Home',
-          accelerator: shortcuts.home,
-          click: () => navigateWindow('home'),
-        },
-        { type: 'separator' },
-        {
-          // The shell has no address bar, so a session link is otherwise
-          // unshareable. Copy the page the window is on; enabled state follows
-          // the same URL as refreshNavigationMenu.
-          id: 'kx-go-copy-url',
-          label: 'Copy Current URL',
-          accelerator: 'CommandOrControl+L',
-          enabled: false,
-          click: () => {
-            const url = copyableUrl(mainWindow?.webContents.getURL() || '');
-            if (url) clipboard.writeText(url);
-          },
-        },
-      ],
-    },
-    { role: 'windowMenu' },
-  ];
+  });
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
   refreshNavigationMenu();
+}
+
+/** Kortix ▸ About Kortix on Windows and Linux (macOS uses the native about panel). */
+function showAboutDialog() {
+  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+  const options = {
+    type: 'info',
+    title: `About ${app.name}`,
+    message: app.name,
+    detail: `Version ${app.getVersion()}\nElectron ${process.versions.electron} · Chromium ${process.versions.chrome}`,
+    buttons: ['OK'],
+  };
+  void (parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options));
+}
+
+/** Open the application menu as a popup at window point (x, y). */
+function popupAppMenu(x = WIN_TITLEBAR.insetX, y = WIN_TITLEBAR.band) {
+  const menu = Menu.getApplicationMenu();
+  if (!menu || !mainWindow || mainWindow.isDestroyed()) return;
+  menu.popup({ window: mainWindow, x, y });
+}
+
+/**
+ * Alt pressed and released with no other key in between opens the
+ * application menu. Alt+key chords (Alt+F4, Alt+Tab, Alt+Left) do not.
+ */
+function watchAltForAppMenu(win) {
+  let altAlone = false;
+  win.webContents.on('before-input-event', (_event, input) => {
+    if (input.type === 'keyDown') {
+      altAlone = input.key === 'Alt' && !input.isAutoRepeat && !input.control && !input.shift && !input.meta;
+      return;
+    }
+    if (input.type === 'keyUp' && input.key === 'Alt' && altAlone) {
+      altAlone = false;
+      popupAppMenu();
+    }
+  });
+  win.on('blur', () => {
+    altAlone = false;
+  });
 }
 
 /** Settings ▸ Preferences: the Quick Entry shortcut, its choices, and whether another app holds it. */
@@ -1136,6 +1065,14 @@ function isTrustedSender(event) {
   }
 }
 
+function showAttentionBadge(count) {
+  setAttentionBadge({ app, window: mainWindow, nativeImage, platform: process.platform }, count);
+}
+
+function clearAttentionBadge() {
+  showAttentionBadge(0);
+}
+
 function registerIpc() {
   // Single funnel matching the Tauri `core.invoke(cmd, args)` contract so the
   // web app's existing calls (set_zoom / open_external / get_frontend_url /
@@ -1156,9 +1093,7 @@ function registerIpc() {
         themeChoice = normalizeChoice(args.palettes);
         nativeTheme.themeSource = theme;
         writeTheme(theme, themeChoice);
-        const background = currentBackgroundColor();
-        mainWindow?.setBackgroundColor(background);
-        splashWindow?.setBackgroundColor(background);
+        syncWindowTheme();
         return null;
       }
       case 'open_external': {
@@ -1193,6 +1128,17 @@ function registerIpc() {
         if (saveError) throw new Error(`Kortix could not save the URL: ${saveError}`);
         return null;
       }
+      case 'show_app_menu': {
+        // The title bar's menu button (Windows). x/y are the button's
+        // bottom-left corner in page CSS px; the menu opens below it.
+        const zoom = event.sender.getZoomFactor();
+        popupAppMenu(Math.round((Number(args.x) || 0) * zoom), Math.round((Number(args.y) || 0) * zoom));
+        return null;
+      }
+      case 'set_badge_count':
+        // Finished turns the user has not seen yet (web TurnAttentionBadge).
+        showAttentionBadge(args.count);
+        return null;
       case 'quick_entry_take':
         // The prompt typed in the Quick Entry bar, once (null when none).
         return quickEntry?.take() ?? null;
@@ -1364,11 +1310,7 @@ if (!gotLock) {
     });
     registerIpc();
     nativeTheme.themeSource = readTheme();
-    nativeTheme.on('updated', () => {
-      const background = currentBackgroundColor();
-      mainWindow?.setBackgroundColor(background);
-      splashWindow?.setBackgroundColor(background);
-    });
+    nativeTheme.on('updated', syncWindowTheme);
     buildMenu();
 
     // First launch of a new profile: choose the instance before anything loads.

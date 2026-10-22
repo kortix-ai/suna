@@ -95,7 +95,14 @@ export function mirrorMessagesForHydrate(
 		const parts = (Array.isArray(row.parts) ? row.parts : [])
 			.filter((p): p is Record<string, unknown> => !!p && typeof p === "object")
 			.slice()
-			.sort((a, b) => String(a.id ?? "").localeCompare(String(b.id ?? "")));
+			// Byte order, as `reconcile-parts.ts` sorts and the store's binary
+			// search reads. `localeCompare` is collation order and disagreed on
+			// mixed-case ids (KRTX-2897).
+			.sort((a, b) => {
+				const x = String(a.id ?? "");
+				const y = String(b.id ?? "");
+				return x < y ? -1 : x > y ? 1 : 0;
+			});
 		out.push({ info: info as unknown as Message, parts: parts as unknown as Part[] });
 	}
 	return out;
@@ -129,6 +136,8 @@ export function parseKortixSessionScope(
  * flight or just answered, else the route. `useSession` passes its answer in,
  * so for a session it owns this never runs. A sub-agent's window is read here,
  * by `child`: the snapshot carries only the conversation's.
+ *
+ * @deprecated Reads the v1 saved copy. `useSessionSync` reads the session log first and calls this only when the log answers 404. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
  */
 export async function loadSessionTranscriptMirror(input: {
 	kortixSessionScope: string | undefined;
@@ -166,6 +175,8 @@ export async function loadSessionTranscriptMirror(input: {
  * Never throws, for the same reason the first window does not: paging further
  * back is an accelerator, and its absence costs only the page the user cannot
  * see yet.
+ *
+ * @deprecated Reads the v1 saved copy. Older log pages: `useSessionLogOlder` (`GET …/log?before_seq=`). Removed in the next major.
  */
 export async function loadOlderSessionTranscriptMirror(input: {
 	kortixSessionScope: string | undefined;
@@ -187,6 +198,41 @@ export async function loadOlderSessionTranscriptMirror(input: {
 	} catch {
 		return null;
 	}
+}
+
+/** The route's largest window: an export walks the whole saved copy. */
+const SAVED_EXPORT_WINDOW = 500;
+
+/**
+ * Every message of the saved copy, oldest first: each window back from the
+ * newest, until the server leaves no cursor. For an export, which needs the
+ * whole conversation while the computer cannot answer. Unlike the reads above
+ * it throws on a failed read: a partial export must not pass for a whole one.
+ *
+ * @deprecated Reads the v1 saved copy. `loadSessionExportMessages` reads the session log first. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
+ */
+export async function loadSavedSessionTranscriptMessages(
+	scope: { projectId: string; sessionId: string },
+	signal?: AbortSignal,
+): Promise<Array<{ info: Message; parts: Part[] }>> {
+	const windows: Array<Array<{ info: Message; parts: Part[] }>> = [];
+	const seen = new Set<string>();
+	let before: string | null = null;
+	do {
+		const envelope = await getSessionTranscriptSync(scope.projectId, scope.sessionId, {
+			limit: SAVED_EXPORT_WINDOW,
+			history: true,
+			before,
+			signal,
+		});
+		if (!envelope.available) break;
+		windows.unshift(mirrorMessagesForHydrate(envelope));
+		before = envelope.next_cursor ?? null;
+		// A cursor the server already gave is a server that is not advancing.
+		if (before !== null && seen.has(before)) break;
+		if (before !== null) seen.add(before);
+	} while (before !== null);
+	return windows.flat();
 }
 
 /**

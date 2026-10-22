@@ -25,7 +25,7 @@ import {
   type ThemeChoice,
 } from './interface-themes';
 
-const TERMINAL_LIGHT_COUNT = 13;
+const TERMINAL_LIGHT_COUNT = 14;
 const TERMINAL_DARK_COUNT = 26;
 const TERMINAL_TOTAL = TERMINAL_LIGHT_COUNT + TERMINAL_DARK_COUNT;
 const EXPECTED_TOKEN_COUNT = 39;
@@ -54,7 +54,7 @@ function blockFor(theme: TerminalTheme): string {
 }
 
 describe('terminal theme catalog', () => {
-  test('has 13 light and 26 dark curated themes', () => {
+  test('has 14 light and 26 dark curated themes', () => {
     expect(TERMINAL_THEMES).toHaveLength(TERMINAL_TOTAL);
     expect(TERMINAL_THEMES.filter((t) => t.mode === 'light')).toHaveLength(TERMINAL_LIGHT_COUNT);
     expect(TERMINAL_THEMES.filter((t) => t.mode === 'dark')).toHaveLength(TERMINAL_DARK_COUNT);
@@ -307,8 +307,10 @@ describe('themed surface', () => {
     }
   });
 
+  // The ::selection base rule lives in @kortix/ui theme.css, one base for every host.
   test('unthemed pages keep the original inverted selection', () => {
-    expect(globalsCss).toContain(
+    const uiThemeCss = readFileSync(join(import.meta.dir, '../../../../packages/ui/src/styles/theme.css'), 'utf8');
+    expect(uiThemeCss).toContain(
       'background: var(--selection, color-mix(in oklch, var(--primary) 72%, transparent));',
     );
   });

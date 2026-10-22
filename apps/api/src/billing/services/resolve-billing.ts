@@ -77,6 +77,17 @@ export function enterpriseStateOf(row: BillingRow | null | undefined): Enterpris
 }
 
 /**
+ * THE managed-models invariant: Kortix-managed inference is sold, never given
+ * away. Only a paid billing plan or a licensed Enterprise contract carries it.
+ * Free and No Plan never do, whatever the catalog, an override or the
+ * Enterprise demo says (2026-10-19: Free ran managed models on its included
+ * credits through three separate exemptions).
+ */
+export function paysForManagedModels(plan: PlanRecord, enterprise: EnterpriseState): boolean {
+  return plan.family !== 'free' || enterprise === 'licensed';
+}
+
+/**
  * Resolve the account's billing plan, Enterprise state and effective
  * entitlements from one row.
  *
@@ -120,6 +131,8 @@ export function resolveBillingFromRow(
     const value = readOverride(row.entitlementOverrides, key, nowMs);
     if (value !== undefined) entitlements[key] = value;
   }
+  // Applied last, so no catalog row, override or demo can undo it.
+  if (!paysForManagedModels(stored, enterprise)) entitlements.managedModels = false;
 
   return { plan: stored, features, enterprise, source: 'stored', entitlements, grace: null, display: displayFor(stored) };
 }

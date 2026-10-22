@@ -13,23 +13,23 @@
  *
  * Run with placeholder env if config validation needs it (see tests CI).
  *
- * The route table is ENV-SENSITIVE — two flags decide whether whole routers
- * mount, so regenerating with the wrong ones silently rewrites the manifest
+ * The route table is ENV-SENSITIVE — one flag decides whether a whole router
+ * mounts, so regenerating with the wrong value silently rewrites the manifest
  * and moves the coverage gate:
  *   KORTIX_BILLING_INTERNAL_ENABLED=true  hides /v1/setup/* (self-host only)
- *   LLM_GATEWAY_ENABLED=true              mounts the in-API /v1/llm/* surface
- * Both must be `true` — that is the managed/cloud deployment the manifest
- * describes. A local .env with billing off adds nine /v1/setup routes and
- * drops the two `ALL /v1/llm*` passthroughs. Regenerate with:
+ * It must be `true` — that is the managed/cloud deployment the manifest
+ * describes. A local .env with billing off adds nine /v1/setup routes.
+ * Regenerate with:
  *
  *   cd apps/api && SUPABASE_URL=https://placeholder.supabase.co \
  *     INTERNAL_KORTIX_ENV=dev KORTIX_BILLING_INTERNAL_ENABLED=true \
- *     LLM_GATEWAY_ENABLED=true FRONTEND_URL=https://placeholder.kortix.com \
+ *     FRONTEND_URL=https://placeholder.kortix.com \
  *     KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT=https://placeholder.storage.example \
+ *     PLATINUM_INFERENCE_URL=https://placeholder.platinum.example/v1/inference \
  *     bun scripts/dump-routes.ts
  *
- * The last two placeholders exist because bun auto-loads the dotenvx-encrypted
- * `.env`, so those two URL vars arrive as `encrypted:…` ciphertext and fail
+ * The last three placeholders exist because bun auto-loads the dotenvx-encrypted
+ * `.env`, so those three URL vars arrive as `encrypted:…` ciphertext and fail
  * config validation before the app imports. They do not change the route table.
  */
 import { resolve } from "node:path";

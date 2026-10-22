@@ -13,11 +13,10 @@
  * - Nav rows, the first rows of the scrolling list (they scroll away with
  *   it, so a new pill never shrinks the list): Search (→ Sessions, its search field auto-focused), Files
  *   (→ /projects/[id]/files), Review (→ the Review page, a trailing count
- *   pill while items wait), Notifications (→ /projects/[id]/inbox, the
- *   caller's notifications across every project, a trailing count pill while
- *   one is unread; KRTX-1742, only while the project's `notification_center`
- *   flag is on), and Apps (→ the Apps page, the project's
- *   deployed apps). Connectors moved to project Settings → Customize
+ *   pill while items wait), and Apps (→ the Apps page, the project's
+ *   deployed apps). Notifications is the bell at the top right of project
+ *   home (`NotificationsButton`), not a row here (Jay, 2026-10-16).
+ *   Connectors moved to project Settings → Customize
  *   (KRTX-249): a "Customize in the web app" hand-off sheet, not a drawer row.
  * - "Pinned" first (KRTX-2418): the sessions the viewer pinned, any starter
  *   and any depth, open by default, no header while empty with no next page.
@@ -52,7 +51,7 @@
  *
  * Every action closes the drawer first, except the switcher row: it opens a
  * sheet over the drawer, and only a pick inside that sheet closes the drawer.
- * Search, Files, Review, and Notifications go through `onNavigateRoute` (ProjectScreen) or
+ * Search, Files, and Review go through `onNavigateRoute` (ProjectScreen) or
  * `useTabStore.navigateToPage`: a push over project home, or a replace of the
  * screen that covers home, so the project stack stays one screen deep
  * (lib/session/project-stack). New session returns to project home and pops a
@@ -70,7 +69,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
-  BellIcon,
   FoldersIcon,
   CaretDownIcon,
   CaretRightIcon,
@@ -105,13 +103,14 @@ import { useActivePlanName } from '@/hooks/useActivePlanName';
 import { useProfileEditor } from '@/hooks/useProfileEditor';
 import { haptics } from '@/lib/haptics';
 import { useRefetchOnOpen } from '@/components/session/use-refetch-on-open';
+import { useCans, useProjectApps } from '@kortix/sdk/react';
 import { useAccounts, useProject, useProjectSessionsPaged } from '@/lib/projects/hooks';
+import { NAV_ACTIONS, REVIEW_ACCESS, appsRowVisible, navAccessAllowed } from '@/lib/session/nav-access';
 import { sessionListState, shouldLoadMoreSessions } from '@/lib/session/session-pages';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import {
   PROJECT_ACCOUNT_ROUTE,
   PROJECT_FILES_ROUTE,
-  PROJECT_INBOX_ROUTE,
   PROJECT_SESSIONS_ROUTE,
   type ProjectDrawerRoute,
 } from '@/lib/session/project-stack';
@@ -198,14 +197,6 @@ export interface ProjectLeftDrawerProps {
   activeParentSessionId?: string | null;
   /** Items that wait for the user — the Review row's trailing count pill. */
   reviewNeedsYouCount?: number;
-  /** The project's `notification_center` flag is on: the Notifications row shows (KRTX-1742). */
-  notificationsEnabled?: boolean;
-  /**
-   * The caller's unread notifications across every project — the
-   * Notifications row's trailing count pill. ProjectScreen reads the inbox
-   * and passes the count, so this memoized drawer runs no polled query.
-   */
-  notificationsUnreadCount?: number;
   /**
    * Session id → what it waits on (`needsYouBySession` over the review inbox).
    * Those sessions leave the list for a "Needs you" group at its top, in the
@@ -221,7 +212,7 @@ export interface ProjectLeftDrawerProps {
    * `drawerThreadMove`).
    */
   onOpenSubsession: (parent: ProjectSession, childId: string) => void;
-  /** Sessions, Files, Account, or Notifications: push over home, or replace the covering screen. */
+  /** Sessions, Files, or Account: push over home, or replace the covering screen. */
   onNavigateRoute: (route: ProjectDrawerRoute, routeParams?: Record<string, string>) => void;
   /**
    * Long press on a session row: opens `SessionActionsSheet` over the drawer
@@ -265,8 +256,6 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
   activeRuntimeSessionId = null,
   activeParentSessionId = null,
   reviewNeedsYouCount = 0,
-  notificationsEnabled = false,
-  notificationsUnreadCount = 0,
   needsYouBySession = EMPTY_NEEDS_YOU,
   onNewSession,
   onOpenProjectSession,
@@ -286,6 +275,13 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
   // covers the project.
   // Poll for provisioning rows only while the project screen is focused.
   const isFocused = useIsFocused();
+
+  // Review and Apps show only to a caller who can act on them (web's rule):
+  // nothing renders before the verdict lands.
+  const navCans = useCans({ projectId }, NAV_ACTIONS);
+  const appsQuery = useProjectApps(projectId);
+  const showReview = navAccessAllowed(navCans, REVIEW_ACCESS);
+  const showApps = appsRowVisible(navCans, appsQuery.data?.length);
 
   // The switcher row's project tile, name, and account line: the project's
   // own account, not necessarily the globally selected one — a deep link can
@@ -567,12 +563,6 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
     [navigateOnce]
   );
 
-  // The caller's notifications, across every project (KRTX-1742).
-  const goToNotifications = useCallback(
-    () => navigateOnce(() => onNavigateRoute(PROJECT_INBOX_ROUTE)),
-    [navigateOnce, onNavigateRoute]
-  );
-
   // Apps is a tab-store page like Review: one entry point, the drawer pill.
   const goToApps = useCallback(
     () => navigateOnce(() => useTabStore.getState().navigateToPage('page:apps')),
@@ -759,25 +749,16 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
         <View className="px-2 -mx-1 space-y-1">
           <NavPill icon={MagnifyingGlassIcon} label="Search" onPress={goToSearch} />
           <NavPill icon={FoldersIcon} label="Files" onPress={goToFiles} />
-          <NavPill
-            icon={SealCheckIcon}
-            label="Review"
-            accessibilityLabel={reviewNeedsYouCount > 0 ? `Review, ${reviewNeedsYouCount} pending` : 'Review'}
-            onPress={goToReview}
-            trailing={<CountBadge count={reviewNeedsYouCount} tone="waiting" />}
-          />
-          {notificationsEnabled ? (
+          {showReview ? (
             <NavPill
-              icon={BellIcon}
-              label="Notifications"
-              accessibilityLabel={
-                notificationsUnreadCount > 0 ? `Notifications, ${notificationsUnreadCount} unread` : 'Notifications'
-              }
-              onPress={goToNotifications}
-              trailing={<CountBadge count={notificationsUnreadCount} tone="waiting" />}
+              icon={SealCheckIcon}
+              label="Review"
+              accessibilityLabel={reviewNeedsYouCount > 0 ? `Review, ${reviewNeedsYouCount} pending` : 'Review'}
+              onPress={goToReview}
+              trailing={<CountBadge count={reviewNeedsYouCount} tone="waiting" />}
             />
           ) : null}
-          <NavPill icon={SquaresFourIcon} label="Apps" onPress={goToApps} />
+          {showApps ? <NavPill icon={SquaresFourIcon} label="Apps" onPress={goToApps} /> : null}
         </View>
         {needsYouSessions.length > 0 ? (
           <View className="px-2 -mx-1">
@@ -806,11 +787,10 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
       goToSearch,
       goToFiles,
       goToReview,
-      goToNotifications,
       goToApps,
+      showReview,
+      showApps,
       reviewNeedsYouCount,
-      notificationsEnabled,
-      notificationsUnreadCount,
       needsYouSessions,
       needsYouBySession,
       sessionsListState,

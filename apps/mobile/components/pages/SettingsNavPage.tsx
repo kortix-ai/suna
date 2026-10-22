@@ -103,7 +103,8 @@ import {
   projectConnectorsWebUrl,
   projectCustomizeWebUrl,
 } from '@/lib/projects/web-project-links';
-import { PROJECT_CUSTOMIZE_ITEMS } from '@/lib/session/dock-menu';
+import { visibleCustomizeItems } from '@/lib/session/dock-menu';
+import { NAV_ACTIONS } from '@/lib/session/nav-access';
 import type { SubPageId } from '@/lib/session/project-stack';
 import { DOCK_ICONS } from '@/components/session/dock-icons';
 import { haptics } from '@/lib/haptics';
@@ -123,9 +124,6 @@ interface SettingsNavPageProps {
   /** Open a Customize row's page (Schedules, Secrets, Members) as a sub-page over this one. */
   onOpenPage: (pageId: SubPageId) => void;
   onOpenDrawer?: () => void;
-  onOpenRightDrawer?: () => void;
-  isDrawerOpen?: boolean;
-  isRightDrawerOpen?: boolean;
 }
 
 function githubRepoWebUrl(repoUrl: string | null | undefined): string | null {
@@ -361,7 +359,9 @@ function DeleteProjectSheet({
 
 const { PROJECT_WRITE, PROJECT_SETTINGS_WRITE, PROJECT_MEMBERS_MANAGE, PROJECT_DELETE } = PROJECT_ACTIONS;
 /** The leaves this page's routes assert, in one probe. */
-const SETTINGS_ACTIONS = [PROJECT_WRITE, PROJECT_SETTINGS_WRITE, PROJECT_MEMBERS_MANAGE, PROJECT_DELETE] as const;
+const SETTINGS_ACTIONS = [
+  ...new Set([PROJECT_WRITE, PROJECT_SETTINGS_WRITE, PROJECT_MEMBERS_MANAGE, PROJECT_DELETE, ...NAV_ACTIONS]),
+];
 
 export function SettingsNavPage({
   page,
@@ -369,9 +369,6 @@ export function SettingsNavPage({
   onBack,
   onOpenPage,
   onOpenDrawer,
-  onOpenRightDrawer,
-  isDrawerOpen,
-  isRightDrawerOpen,
 }: SettingsNavPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -384,6 +381,7 @@ export function SettingsNavPage({
   const canEdit = allowed(PROJECT_WRITE, PROJECT_SETTINGS_WRITE);
   const canAddCollaborator = allowed(PROJECT_WRITE, PROJECT_MEMBERS_MANAGE);
   const canDelete = allowed(PROJECT_WRITE, PROJECT_DELETE);
+  const customizeItems = visibleCustomizeItems(cans);
   const bgColor = isDark ? THEME.dark.background : THEME.light.background;
 
   const update = useUpdateProject(projectId);
@@ -479,9 +477,6 @@ export function SettingsNavPage({
         title={project?.name || page.label}
         onBack={onBack}
         onOpenDrawer={onBack ? undefined : onOpenDrawer}
-        onOpenRightDrawer={onOpenRightDrawer}
-        isDrawerOpen={isDrawerOpen}
-        isRightDrawerOpen={isRightDrawerOpen}
       />
 
       <PageContent>
@@ -491,8 +486,9 @@ export function SettingsNavPage({
           onRetry={() => void refetch()}>
           {project ? (
             <View className="gap-6 px-4 pt-1">
+              {customizeItems.length > 0 ? (
               <SettingsGroup title="Customize">
-                {PROJECT_CUSTOMIZE_ITEMS.map((item) => (
+                {customizeItems.map((item) => (
                   <SettingsRow
                     key={item.label}
                     icon={DOCK_ICONS[item.icon]}
@@ -506,6 +502,7 @@ export function SettingsNavPage({
                 ))}
                 <SettingsRow icon={Globe} label="More on kortix.com" external onPress={openCustomizeOnWeb} />
               </SettingsGroup>
+              ) : null}
 
               <SettingsGroup title="Details">
                 <SettingsRow

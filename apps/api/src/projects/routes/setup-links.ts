@@ -19,6 +19,7 @@ import { connectLinkEligibility } from '../../connectors/db-deps';
 import { pipedreamConfigured } from '../../connectors/pipedream';
 import { composioConfigured } from '../../connectors/composio';
 import { mintSetupLink, type SecretFieldSpec } from '../../setup-links/token';
+import { mintSecretLink } from '../../setup-links/mint-secret-link';
 import { isValidSecretName } from '../secrets';
 import { sessionWithheldSecrets, withheldSecretsFix } from '../lib/session-secret-reach';
 import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
@@ -116,7 +117,7 @@ export function registerSetupLinksRoutes(): void {
       // Runtime delivery remains available only through an explicit opt-in.
       const scope = requestedScope === 'runtime' ? 'runtime' : 'connector';
       const sessionId = (c.get('sessionId') as string | undefined) ?? null;
-      const { token, expiresAt } = mintSetupLink(
+      const { token, expiresAt } = await mintSecretLink(
         projectId,
         { kind: 'secret', fields, scope, uid: loaded.userId, sid: sessionId },
         { expiresInMinutes: typeof body.expires_in_minutes === 'number' ? body.expires_in_minutes : undefined },
@@ -182,21 +183,24 @@ export function registerSetupLinksRoutes(): void {
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
 
-      // Provider-neutral: a setup link is a hosted authorization page, and both
-      // Composio and Pipedream have one. Gating on Pipedream alone is what sent a
-      // Composio connector down the fallback path where the agent pastes a raw
-      // provider URL into chat — losing the button, the modal and the resume.
-      if (!composioConfigured() && !pipedreamConfigured()) {
+      const slug = normalizeString(body.slug);
+      if (!slug) return c.json({ error: 'slug is required' }, 400);
+
+      const eligibility = await connectLinkEligibility(projectId, slug);
+      // Provider-neutral: a setup link is a hosted authorization page. Composio and
+      // Pipedream host theirs; an MCP connector's is Kortix's own OAuth sign-in and
+      // needs neither. Gating on Pipedream alone is what sent a Composio connector
+      // down the fallback path where the agent pastes a raw provider URL into chat.
+      if (
+        !(eligibility.ok && eligibility.providerType === 'mcp') &&
+        !composioConfigured() &&
+        !pipedreamConfigured()
+      ) {
         return c.json(
           { error: 'No hosted connector authorization provider is configured on this deployment' },
           501,
         );
       }
-
-      const slug = normalizeString(body.slug);
-      if (!slug) return c.json({ error: 'slug is required' }, 400);
-
-      const eligibility = await connectLinkEligibility(projectId, slug);
       if (!eligibility.ok) {
         // Each reason has a different person and a different fix behind it, and
         // the old single message named the wrong one for two of the three.
@@ -205,7 +209,7 @@ export function registerSetupLinksRoutes(): void {
             {
               error:
                 `"${slug}" is a ${eligibility.providerType} connector, and setup links are hosted ` +
-                'authorization pages, which only Composio and Pipedream connectors have. It is ' +
+                'authorization pages, which only Composio, Pipedream and one-click MCP sign-in connectors have. It is ' +
                 'already on this project — connect it the way that provider is connected rather ' +
                 'than adding it to kortix.yaml again.',
               code: 'CONNECTOR_PROVIDER_UNSUPPORTED',

@@ -10,6 +10,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { loadProjectConfig } from './config';
+import { getStarterFiles } from '@kortix/starter';
+import { isSelectableAgent } from '@kortix/sdk/projects-client';
+import { projectConfigAgentsToRuntimeAgents } from '@kortix/sdk';
 import type { GitBackedProject } from './types';
 
 const exec = promisify(execFile);
@@ -131,6 +134,33 @@ afterEach(async () => {
 });
 
 describe('loadProjectConfig characterization', () => {
+  test('a fresh starter offers only its customer agent while keeping automation registered', async () => {
+    const files = getStarterFiles({ projectName: 'Picker regression' });
+    await push(Object.fromEntries(files.map((file) => [file.path, file.content])), 'seed a fresh starter');
+    const config = await loadProjectConfig(project);
+    expect(config.agents.map((agent) => agent.name)).toContain('harness-reflector');
+    expect(config.agents.filter(isSelectableAgent).map((agent) => agent.name)).toEqual(['kortix']);
+    expect(projectConfigAgentsToRuntimeAgents({ ...config, agents: config.agents.map((agent) => ({ ...agent, source: undefined })) }).filter(isSelectableAgent).map((agent) => agent.name)).toEqual(['kortix']);
+  });
+
+  test('hidden primary agents stay registered but are excluded from pickers', async () => {
+    await push({
+      'kortix.yaml': 'kortix_version: 2\ndefault_agent: assistant\nagents:\n  assistant:\n    file: agents/assistant.md\n  internal:\n    file: agents/internal.md\n',
+      'agents/assistant.md': '---\nmode: primary\nhidden: false\n---\nCustomer assistant',
+      'agents/internal.md': '---\nmode: primary\nhidden: true\n---\nScheduled automation',
+    }, 'declare hidden automation');
+    const config = await loadProjectConfig(project);
+    expect(config.agents.map((agent) => agent.name)).toEqual(['assistant', 'internal']);
+    expect(config.agents.filter(isSelectableAgent).map((agent) => agent.name)).toEqual(['assistant']);
+  });
+
+  test('v3 hidden primary agents keep their visibility marker', async () => {
+    await push({ 'kortix.yaml': 'kortix_version: 3\ndefault_agent: assistant\nagents:\n  assistant:\n    mode: primary\n  internal:\n    mode: primary\n    hidden: true\n' }, 'declare v3 automation');
+    const config = await loadProjectConfig(project);
+    expect(config.agents.map((agent) => agent.name)).toEqual(['assistant', 'internal']);
+    expect(config.agents.filter(isSelectableAgent).map((agent) => agent.name)).toEqual(['assistant']);
+  });
+
   test('imported agents: every registered agent is listed, a disabled one with enabled: false, attributed to its declaring file', async () => {
     // The reported shape: a root manifest that declares no `agents:` of its own
     // and imports a domain file that does — one enabled, one disabled agent.
@@ -177,8 +207,8 @@ opencode:
     expect(config.manifest_version).toEqual({
       version: 2,
       latest_version: 3,
-      migration_offered: true,
-      target_version: 3,
+      migration_offered: false,
+      target_version: null,
       unknown_reason: null,
       path: 'kortix.yaml',
     });

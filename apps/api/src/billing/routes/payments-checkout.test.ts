@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'bun:test';
+import { HTTPException } from 'hono/http-exception';
 
 const sessions: Array<{ params: unknown; options: unknown }> = [];
 const purchases: unknown[] = [];
@@ -13,7 +14,15 @@ mock.module('../services/subscriptions', () => ({ getOrCreateStripeCustomer: asy
 mock.module('../services/tiers', () => ({ resolveCreditPriceId: () => price }));
 mock.module('../services/billing-cache', () => ({ resolveAccountBilling: async () => ({ entitlements: { canPurchaseCredits: true } }) }));
 mock.module('../../middleware/resolve-account', () => ({ resolveScopedAccountId: async () => 'acct_synthetic' }));
-mock.module('../http-require-billing-write', () => ({ resolveBillingWriteAccountId: async () => 'acct_synthetic' }));
+// A custom role without billing.read: the read gate refuses before any ledger query.
+let billingReadDenied = false;
+mock.module('../http-require-billing-write', () => ({
+  resolveBillingWriteAccountId: async () => 'acct_synthetic',
+  resolveBillingReadAccountId: async () => {
+    if (billingReadDenied) throw new HTTPException(403, { message: "You don't have permission to view billing." });
+    return 'acct_synthetic';
+  },
+}));
 mock.module('../repositories/transactions', () => ({
   insertPurchase: async (input: unknown) => { purchases.push(input); return { id: 'purchase_synthetic' }; },
   getTransactions: async () => ({}), getTransactionsSummary: async () => ({}), getUsageRecords: async () => ({}),
@@ -37,10 +46,22 @@ test.each([null, 'price_synthetic'])('credit checkout preserves payload for cata
       line_items: catalogPrice ? [{ price: catalogPrice, quantity: 1 }] : [{
         price_data: { currency: 'usd', unit_amount: 2550, product_data: { name: '$25.5 Credits' } }, quantity: 1,
       }],
-      success_url: 'https://example.test/success', cancel_url: 'https://example.test/cancel',
+      success_url: 'https://example.test/success?accountId=acct_synthetic&accountTab=billing', cancel_url: 'https://example.test/cancel',
       metadata: { account_id: 'acct_synthetic', purchase_id: 'purchase_synthetic', type: 'credit_purchase' },
       wallet_options: { link: { display: 'never' } },
     },
     options: { apiVersion: '2025-04-30.basil' },
   }]);
 });
+
+test.each(['/transactions', '/transactions/summary', '/credit-usage', '/auto-topup/settings', '/auto-topup/setup-status'])(
+  'GET %s answers 403 without billing.read',
+  async (path) => {
+    billingReadDenied = true;
+    try {
+      expect((await paymentsRouter.request(path)).status).toBe(403);
+    } finally {
+      billingReadDenied = false;
+    }
+  },
+);

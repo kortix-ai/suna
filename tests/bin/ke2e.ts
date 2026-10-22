@@ -29,7 +29,6 @@ import { renderStepSummary, writeResults } from '../src/core/report';
 import { runExitCode } from '../src/core/result';
 import { runAttemptSuffix } from '../src/core/run-identity';
 import { discoverFlows, runSuite } from '../src/core/runner';
-import { writeUiData } from '../src/core/ui-data';
 import { runCoverage } from '../src/coverage/check-coverage';
 import { runGc } from '../src/fixtures/gc';
 import { parseShardSpec, planShard } from '../src/core/shard';
@@ -84,12 +83,14 @@ function newRunId(): string {
  *
  * The partition is computed from the live registry (see `src/core/shard.ts`),
  * so every flow lands in exactly one shard and a newly added flow can never
- * fall out of the release gate. `--shard` selects flows on its own; combining
- * it with another selector would intersect two partitions and could silently
- * run nothing, so that is rejected.
+ * fall out of the release gate. `--tag` narrows the registry BEFORE the
+ * partition (the release gate shards the `deployed` set), so every tagged flow
+ * still lands in exactly one shard. Any other selector would intersect two
+ * partitions and could silently run nothing, so that is rejected.
  */
 async function resolveShardIds(
   value: string,
+  tags: string[],
   conflicting: Array<[string, unknown]>,
 ): Promise<string[]> {
   const used = conflicting.filter(([, v]) => v !== undefined && v !== false).map(([n]) => n);
@@ -98,7 +99,10 @@ async function resolveShardIds(
   }
   const spec = parseShardSpec(value);
   await discoverFlows();
-  const plan = planShard(allFlows(), spec);
+  const flows = allFlows().filter(
+    (f) => tags.length === 0 || (f.meta.tags ?? []).some((t) => tags.includes(t)),
+  );
+  const plan = planShard(flows, spec);
   if (plan.ids.length === 0) {
     throw new Error(`--shard ${value} selected no flows`);
   }
@@ -139,14 +143,6 @@ async function main(): Promise<number> {
     log.info(
       `${cat.totalFlows} flows · ${cat.totalSteps} cases · ${cat.totalRoutes} routes · ${cat.domains.length} domains`,
     );
-    return 0;
-  }
-
-  if (cmd === 'ui-data') {
-    const dir = (flags.out as string) ?? resolve(import.meta.dir, '../ui/data');
-    const r = await writeUiData(dir);
-    log.info(`ui data → ${dir}`);
-    log.info(`${r.flows} flows (${r.passed} passed, ${r.skipped} gated/skipped)`);
     return 0;
   }
 
@@ -215,10 +211,9 @@ async function main(): Promise<number> {
 
     const shardIds =
       typeof flags.shard === 'string'
-        ? await resolveShardIds(flags.shard, [
+        ? await resolveShardIds(flags.shard, list(flags.tag) ?? [], [
             ['id', flags.id],
             ['domain', flags.domain],
-            ['tag', flags.tag],
             ['grep', flags.grep],
             ['smoke', flags.smoke],
           ])
@@ -251,7 +246,7 @@ async function main(): Promise<number> {
     log.info('');
     log.info(
       `${log.bold('results')}: ${s.passed}/${s.total} passed · ${s.failed} failed · ${s.skipped} skipped` +
-        `${s.quarantined ? ` (${s.quarantined} QUARANTINED)` : ''} · ${s.todo} todo · ${(s.durationMs / 1000).toFixed(1)}s`,
+        ` · ${s.todo} todo · ${(s.durationMs / 1000).toFixed(1)}s`,
     );
     log.info(log.dim(`report → ${htmlPath}`));
 
@@ -287,7 +282,7 @@ async function main(): Promise<number> {
  * pre-SIGKILL window, so it is hard-bounded and never blocks exit.
  *
  * The same signal shape the sandbox CI workers already use
- * (`daytona-ci.ts:785-788`, `platinum-ci.ts:1037-1040`).
+ * (`platinum-ci.ts`).
  */
 function installCancellationReclaim(runId: string): void {
   const budgetMs = Number(process.env.KE2E_CANCEL_RECLAIM_MS ?? 20_000);

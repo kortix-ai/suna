@@ -11,6 +11,11 @@ import {
 } from '../../core/session-sync/session-sync-controller';
 import { getCurrentRuntimeSandboxId, getCurrentRuntimeUrl } from '../../core/session/current-runtime';
 import { useSyncStore } from '../stores/sync-store';
+import { getSessionLogPage } from '../../core/rest/projects-client/sessions';
+import { EMPTY_SESSION_LOG_STATE, applySessionLogPage, type SessionLogState } from '../../core/session-log/store';
+import { loadSessionLogPage, readSessionLogAnswer } from '../../core/session-log/source';
+import { sessionLogRowsFor, sessionLogThreadIdOf } from '../../core/session-log/v1-view';
+import { loadSavedSessionTranscriptMessages, parseKortixSessionScope } from './server-transcript-mirror';
 
 interface MessagesResponse {
   data?: Array<{ info: Message; parts: Part[] }>;
@@ -423,12 +428,77 @@ export async function loadSessionRuntimeStatus(
   return result.data[sessionId] ?? ({ type: 'idle' } as SessionStatus);
 }
 
+/** @deprecated Reads the runtime's v1 messages. Use `loadSessionExportMessages` (the session log first) or `getSessionLogPage`. Removed in the next major. */
 export function loadSessionTranscriptMessages(
   sessionId: string,
 ): Promise<SessionSyncPage['messages']> {
   return loadCompleteSessionHistory((request) =>
     readSessionMessagePage(getClient(), sessionId, request),
   );
+}
+
+/** The largest page the log route serves. */
+const SESSION_LOG_EXPORT_PAGE_LIMIT = 500;
+
+/**
+ * Every message of runtime session `runtimeSessionId`'s thread of a v2 session, oldest first,
+ * as v1 rows (`toV1`): the messages `state` holds (a page, the streamed turn), then every older
+ * page of `GET …/log?thread=&before_seq=`. Read into a copy: the store's window is not widened.
+ * Throws when the log names no such thread or a page fails.
+ */
+async function loadSessionLogExportRows(
+  projectId: string,
+  sessionId: string,
+  runtimeSessionId: string,
+  state: SessionLogState,
+): Promise<SessionSyncPage['messages']> {
+  const thread = sessionLogThreadIdOf(state, runtimeSessionId);
+  if (!thread) throw new Error(`The session log has no thread ${runtimeSessionId}`);
+  while (state.older[thread] !== false) {
+    const first = state.messages[thread]?.[0]?.seq;
+    const page = await getSessionLogPage(projectId, sessionId, { thread, before_seq: first, limit: SESSION_LOG_EXPORT_PAGE_LIMIT });
+    if (page?.thread_id !== thread) throw new Error(`The session log has no page of thread ${thread}`);
+    state = applySessionLogPage(state, page, first);
+    // A page that reaches no further back ends the walk.
+    const reached = state.messages[thread]?.[0]?.seq;
+    if (reached === undefined || (first !== undefined && reached >= first)) break;
+  }
+  return sessionLogRowsFor({ [sessionId]: state }, runtimeSessionId, []);
+}
+
+/**
+ * Every message of a session for an export, oldest first. The session log first: the log the
+ * store holds for `kortixSessionScope` (v2), else the log's newest page read from the API. The
+ * export is then the log's thread of `sessionId`, every page of it, and nothing else is read.
+ * A 404 coded `session_log_missing` (a new session) leaves the runtime alone: its history, or
+ * nothing. Only when the log answers a 404 without that code or an invalid page (a server older
+ * than the log) does it read v1: while the computer runs, the runtime's whole history;
+ * when the runtime cannot answer (asleep, stopped, failed) or answers empty, the v1 saved copy
+ * (deprecated), every window of it. `kortixSessionScope` (`projectId/sessionId`) names the
+ * session; without it only the runtime is read, and a runtime failure throws.
+ */
+export async function loadSessionExportMessages(
+  sessionId: string,
+  kortixSessionScope?: string,
+): Promise<SessionSyncPage['messages']> {
+  const saved = parseKortixSessionScope(kortixSessionScope);
+  let log = saved ? useSyncStore.getState().sessionLogs[saved.sessionId] : undefined;
+  // The API serves the log and the session has none yet: only the runtime can hold messages.
+  let missing = false;
+  if (saved && !log && loadSessionLogPage) {
+    const page = await readSessionLogAnswer(loadSessionLogPage, saved.projectId, saved.sessionId, { limit: SESSION_LOG_EXPORT_PAGE_LIMIT });
+    if (page === 'missing') missing = true;
+    else if (page) log = applySessionLogPage(EMPTY_SESSION_LOG_STATE, page);
+  }
+  if (saved && log) return loadSessionLogExportRows(saved.projectId, saved.sessionId, sessionId, log);
+  let live: SessionSyncPage['messages'] = [];
+  try {
+    live = await loadSessionTranscriptMessages(sessionId);
+  } catch (error) {
+    if (!saved) throw error;
+  }
+  if (live.length > 0 || !saved || missing) return live;
+  return loadSavedSessionTranscriptMessages(saved);
 }
 
 /**

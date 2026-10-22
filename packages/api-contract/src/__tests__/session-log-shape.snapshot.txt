@@ -235,6 +235,18 @@ SessionLogRestoreSchema = {
   blobs: array(SessionLogRestoreBlobSchema)
 }
 
+SessionLogRestoreTooLargeSchema = {
+  generation: number(int)(min0)
+  log: SessionLogSchema
+  revs: record(number(int)(min0))
+  seq_max: record(number(int)(min0)) | absent
+  blobs: array(SessionLogRestoreBlobSchema)
+  error: literal("session_log_too_large")
+  bytes: number(int)(min0)
+  limit: number(int)(min0)
+  messages: number(int)(min0)
+}
+
 SessionLogSchema = {
   schema: literal("kortix.session/2")
   v: number(int)(min0)
@@ -329,7 +341,7 @@ SessionLogSwitchPreflightSchema = {
   from: string
   to: SessionLogHarnessSchema
   available: boolean
-  reason: enum(same_harness | llm_gateway_off) | null
+  reason: enum(same_harness) | null
   restores: boolean
   losses: array(SessionLogSwitchLossSchema)
   unsupported: array(SessionLogSwitchGapSchema)

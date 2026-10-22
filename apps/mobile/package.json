@@ -2,10 +2,12 @@
   "name": "kortix",
   "main": "expo-router/entry",
   "scripts": {
+    "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",
     "postinstall": "patch-package",
     "eas-build-post-install": "patch-package",
     "bake:heatmap": "bun scripts/bake-heatmap.ts",
     "bake:liquid-metal": "bun scripts/bake-liquid-metal.ts",
+    "bake:maplibre": "bun scripts/bake-maplibre.ts",
     "dev": "expo start -c",
     "android": "expo start -c --android",
     "android:dev": "./scripts/start-android.sh",
@@ -17,7 +19,7 @@
     "ios": "expo start -c --ios",
     "web": "expo start -c --web",
     "clean": "rm -rf .expo node_modules",
-    "test": "bun test --isolate"
+    "test": "node ../../scripts/test-guard.mjs \"bun test --isolate\""
   },
   "dependencies": {
     "@expensify/react-native-live-markdown": "0.1.339",
@@ -122,9 +124,10 @@
     "@babel/plugin-transform-unicode-regex": "^7.26.0",
     "@types/react": "~19.2.18",
     "@types/react-test-renderer": "19.1.0",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "babel-preset-expo": "~57.0.14",
     "canvaskit-wasm": "^0.42.0",
-    "maplibre-gl": "5.24.0",
+    "maplibre-gl": "6.12.0",
     "mermaid": "11.17.2",
     "patch-package": "^8.0.0",
     "prettier": "^3.6.2",

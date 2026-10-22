@@ -5,26 +5,30 @@
 // in by adapters later.
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectSessions } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
 import { relayReviewCard } from '../../channels/turn-relay';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { auth, errors, json, lenientBody } from '../../openapi';
-import { db } from '../../shared/db';
 import { isUuid } from '../../shared/validate';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { approvalCallerOf } from '../lib/http-approval-caller';
+import { loadVisibleSession } from '../lib/access';
+import { projectReadView } from '../lib/project-read-view';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
+import { inferAuditSource } from '../../shared/audit';
+import { markApprovalCardDecided } from '../../channels/approval-card-relay';
 import { isAdaptedId } from '../review-adapters';
 import {
   REVIEW_PAGE_DEFAULT_LIMIT,
   REVIEW_PAGE_MAX_LIMIT,
   type ReviewSegment,
+  BULK_MAX_IDS,
   applyVerdict,
-  bulkApplyVerdict,
+  BULK_RESULT_CODES,
+  bulkActReview,
   decodeInboxCursor,
   getInboxItem,
   getReviewItemById,
@@ -77,7 +81,11 @@ export function registerReviewItemsRoutes(): void {
         PROJECT_ACTIONS.PROJECT_REVIEW_READ,
       );
       return c.json(
-        await reviewSummary(projectId, () => approvalCallerOf(c, loaded, projectId)),
+        await reviewSummary(
+          projectId,
+          () => approvalCallerOf(c, loaded, projectId),
+          await projectReadView(c, loaded),
+        ),
         200,
       );
     },
@@ -148,6 +156,7 @@ export function registerReviewItemsRoutes(): void {
           after,
         },
         () => approvalCallerOf(c, loaded, projectId),
+        await projectReadView(c, loaded),
       );
       return c.json({ review_items: page.items, next_cursor: page.nextCursor });
     },
@@ -183,8 +192,11 @@ export function registerReviewItemsRoutes(): void {
 
       // A native id, `cr:<cr_id>` or a pending `call:<execution_id>`, in the
       // list's shape: a link to an item does not depend on its page.
-      const item = await getInboxItem(projectId, c.req.param('reviewItemId'), () =>
-        approvalCallerOf(c, loaded, projectId),
+      const item = await getInboxItem(
+        projectId,
+        c.req.param('reviewItemId'),
+        () => approvalCallerOf(c, loaded, projectId),
+        await projectReadView(c, loaded),
       );
       if (!item) return c.json({ error: 'Review item not found' }, 404);
       return c.json({ review_item: item });
@@ -249,19 +261,14 @@ export function registerReviewItemsRoutes(): void {
           ? (body.detail as Record<string, unknown>)
           : {};
 
-      let originSessionId: string | null = normalizeString(body.session_id ?? body.sessionId);
-      if (originSessionId) {
-        const [sessionRow] = await db
-          .select({ sessionId: projectSessions.sessionId })
-          .from(projectSessions)
-          .where(
-            and(
-              eq(projectSessions.sessionId, originSessionId),
-              eq(projectSessions.projectId, projectId),
-            ),
-          )
-          .limit(1);
-        if (!sessionRow) originSessionId = null;
+      // The origin session must be one the caller may open: an item raised
+      // against another member's private session would surface there.
+      const originSessionId: string | null = normalizeString(body.session_id ?? body.sessionId);
+      if (
+        originSessionId &&
+        !(await loadVisibleSession(loaded, originSessionId, c.get('sessionId') ?? null, callerKortixSessionId(c)))
+      ) {
+        return c.json({ error: 'Session not found' }, 404);
       }
 
       const row = await insertReviewItem({
@@ -317,7 +324,7 @@ export function registerReviewItemsRoutes(): void {
       const projectId = c.req.param('projectId');
       const reviewItemId = c.req.param('reviewItemId');
       const body = await readJsonObject(c);
-      const loaded = await loadProjectForUser(c, projectId, 'write');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
         c,
@@ -363,27 +370,29 @@ export function registerReviewItemsRoutes(): void {
       request: {
         params: z.object({ projectId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
-            ids: z.array(z.string()).openapi({ description: 'Review item ids. review_item_ids is accepted as an alias.' }),
+            ids: z.array(z.string()).openapi({ description: 'Review item ids (native, call:<execution_id>), at most 50. review_item_ids is accepted as an alias.' }),
             verdict: z.enum(['approve', 'reject', 'changes', 'answer', 'dismiss']).openapi({ description: 'Decision applied to every item.' }),
           }) } } },
       },
       responses: {
-        200: json(z.object({ updated: z.number(), review_items: z.array(AnyObject) }), 'Bulk result'),
+        200: json(
+          z.object({
+            updated: z.number(),
+            review_items: z.array(AnyObject),
+            results: z
+              .array(z.object({ id: z.string(), ok: z.boolean(), code: z.enum(BULK_RESULT_CODES).optional() }))
+              .openapi({ description: 'One entry per requested id, in request order.' }),
+          }),
+          'Bulk result',
+        ),
         ...errors(400, 403, 404),
       },
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const body = await readJsonObject(c);
-      const loaded = await loadProjectForUser(c, projectId, 'write');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      await assertProjectCapability(
-        c,
-        loaded.userId,
-        loaded.row.accountId,
-        projectId,
-        PROJECT_ACTIONS.PROJECT_REVIEW_ACT,
-      );
 
       const verdict = normalizeString(body.verdict);
       if (!isReviewVerdict(verdict)) {
@@ -399,9 +408,31 @@ export function registerReviewItemsRoutes(): void {
           : null;
       const ids = (idsRaw ?? []).filter((x: unknown): x is string => typeof x === 'string');
       if (ids.length === 0) return c.json({ error: 'ids must be a non-empty array' }, 400);
+      if (ids.length > BULK_MAX_IDS) {
+        return c.json({ error: `ids may hold at most ${BULK_MAX_IDS} items` }, 400);
+      }
+      // Each source keeps its single-item authorization: native items need
+      // project.review.act (as the act route); a connector call needs the
+      // resolve rule (manager or launcher), checked per id.
+      if (ids.some((id: string) => !isAdaptedId(id))) {
+        await assertProjectCapability(
+          c,
+          loaded.userId,
+          loaded.row.accountId,
+          projectId,
+          PROJECT_ACTIONS.PROJECT_REVIEW_ACT,
+        );
+      }
 
-      const rows = await bulkApplyVerdict(ids, projectId, { verdict, actingUserId: loaded.userId });
-      return c.json({ updated: rows.length, review_items: rows.map(serializeReviewItem) });
+      const { rows, results } = await bulkActReview(ids, projectId, {
+        verdict,
+        accountId: loaded.row.accountId,
+        caller: await approvalCallerOf(c, loaded, projectId),
+        auditSource: inferAuditSource(c.get('authType'), 'human'),
+        updateStaleCard: (row, decision) =>
+          markApprovalCardDecided({ projectId, row, decision, note: '', actorUserId: loaded.userId }),
+      });
+      return c.json({ updated: rows.length, review_items: rows.map(serializeReviewItem), results });
     },
   );
 }

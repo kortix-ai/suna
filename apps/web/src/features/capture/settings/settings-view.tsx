@@ -12,23 +12,30 @@ import {
 import { useCapturePolicy, useSetCapturePolicy } from '@kortix/sdk/react';
 import { useId, useState, type ReactNode } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Field, FieldDescription } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { ErrorState } from '@/features/layout/section/error-state';
+import { Button } from '@kortix/ui/button';
+import { Field, FieldDescription } from '@kortix/ui/field';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
+import { RadioGroup, RadioGroupItem } from '@kortix/ui/radio-group';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@kortix/ui/select';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Switch } from '@kortix/ui/switch';
+import { Textarea } from '@kortix/ui/textarea';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { ErrorState } from '@kortix/ui/error-state';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
-import { relativeTime } from '@/lib/relative-time';
-import { useCaptureArea } from '../area/use-capture-area';
-import { ExclusionsEditor } from './exclusions-editor';
-import { applyToPrivacy, fromPolicy } from './exclusions-model';
+import { relativeTime } from '@kortix/ui/internal/lib/relative-time';
+import { useCaptureArea } from '@kortix/ui/internal/capture/use-capture-area';
+import { ExclusionsEditor, IncludedEditor } from './exclusions-editor';
+import { applyToPrivacy, fromPolicy, includedView } from './exclusions-model';
 
 function SwitchRow({
   title,
@@ -225,6 +232,7 @@ function PolicyForm({
   const save = useSetCapturePolicy(accountId);
   const [draft, setDraft] = useState<CapturePolicy>(record.policy);
   const privacyControls = draft.experimental?.privacy_controls ?? false;
+  const recordOnly = draft.privacy.record_only_included ?? false;
   const dirty = JSON.stringify(draft) !== JSON.stringify(record.policy);
   const patch = <K extends keyof CapturePolicy>(key: K, value: Partial<CapturePolicy[K]>) =>
     setDraft((current) => ({ ...current, [key]: { ...(current[key] as object), ...value } }));
@@ -250,6 +258,85 @@ function PolicyForm({
           />
         ))}
       </Group>
+
+      <section className="space-y-4">
+        <div className="space-y-1">
+          <Label>{t('included.title')}</Label>
+          <p className="text-muted-foreground text-xs">{t('included.hint', { org })}</p>
+        </div>
+        <RadioGroup
+          value={recordOnly ? 'include' : 'exclude'}
+          onValueChange={(mode) =>
+            setDraft((current) => ({
+              ...current,
+              privacy: applyToPrivacy(current.privacy, {
+                kind: 'record-only',
+                on: mode === 'include',
+              }),
+            }))
+          }
+          className="grid gap-2 sm:grid-cols-2"
+          aria-label={t('included.policyType')}
+        >
+          <RadioGroupItem
+            value="exclude"
+            label={t('included.exclusionPolicy')}
+            description={t('included.exclusionPolicyHint')}
+            size="lg"
+            variant="outline"
+          />
+          <RadioGroupItem
+            value="include"
+            label={t('included.inclusionPolicy')}
+            description={t('included.inclusionPolicyHint')}
+            size="lg"
+            variant="outline"
+          />
+        </RadioGroup>
+        {recordOnly ? (
+          <div className="space-y-1 pt-2">
+            <Label>{t('included.recordTitle')}</Label>
+            <IncludedEditor
+              view={includedView(draft.privacy)}
+              onChange={(change) =>
+                setDraft((current) => ({
+                  ...current,
+                  privacy: applyToPrivacy(current.privacy, change),
+                }))
+              }
+            />
+            <div className="bg-popover mt-3 rounded-md border">
+              <SwitchRow
+                title={t('included.memberInclusions')}
+                description={t('included.memberInclusionsHint')}
+                checked={draft.privacy.member_inclusions ?? true}
+                onChange={(on) =>
+                  setDraft((current) => ({
+                    ...current,
+                    privacy: applyToPrivacy(current.privacy, { kind: 'member-inclusions', on }),
+                  }))
+                }
+              />
+            </div>
+          </div>
+        ) : null}
+        <div className="space-y-1 pt-2">
+          <Label>{recordOnly ? t('included.exceptTitle') : t('exclusionsTitle')}</Label>
+          <ExclusionsEditor
+            org={org}
+            view={fromPolicy(draft.privacy, (id) => ({
+              name: tGroup(id),
+              description: tGroup(`${id}Hint`),
+            }))}
+            onChange={(change) =>
+              setDraft((current) => ({
+                ...current,
+                privacy: applyToPrivacy(current.privacy, change),
+              }))
+            }
+          />
+        </div>
+      </section>
 
       <Group title={t('framesTitle')} description={t('framesHint')}>
         <SelectRow
@@ -277,6 +364,19 @@ function PolicyForm({
       </Group>
 
       <Group title={t('retentionTitle')}>
+        <NumberRow
+          id="capture-local-hours"
+          title={t('localHours')}
+          description={t('localHoursHint')}
+          unit={t('hours')}
+          value={draft.retention.local_hours}
+          max={CAPTURE_RETENTION_LIMITS.localHours}
+          onChange={(value) =>
+            patch('retention', {
+              local_hours: whole(value, CAPTURE_RETENTION_LIMITS.localHours),
+            })
+          }
+        />
         <NumberRow
           id="capture-remote-days"
           title={t('remoteDays')}
@@ -336,22 +436,6 @@ function PolicyForm({
               onChange={(redact_pii) => patch('privacy', { redact_pii })}
             />
           </Group>
-          <section className="space-y-1">
-            <Label>{t('exclusionsTitle')}</Label>
-            <ExclusionsEditor
-              org={org}
-              view={fromPolicy(draft.privacy, (id) => ({
-                name: tGroup(id),
-                description: tGroup(`${id}Hint`),
-              }))}
-              onChange={(change) =>
-                setDraft((current) => ({
-                  ...current,
-                  privacy: applyToPrivacy(current.privacy, change),
-                }))
-              }
-            />
-          </section>
         </>
       ) : null}
 

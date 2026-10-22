@@ -4,7 +4,7 @@
  * /projects/[id]/customize — a redirect, in two directions.
  *
  *  1. No `?section=` → the first capability tab the caller may open, through
- *     the same `TAB_PREFERENCE` the sidebar's Customize row uses. That is
+ *     the same `capabilityAccess()` rule the sidebar's Customize row uses. That is
  *     Agents for anyone who can read them: Customize is agent-centric (Marko,
  *     2026-09-01) and the agent list IS the landing page. This route used to
  *     render `CustomizeIndexPage`, a seven-band chooser over every tab; the
@@ -26,11 +26,9 @@
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
 
-import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/capability-skeleton';
-import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import { TAB_PREFERENCE } from '@/features/workspace/project-sidebar/project-settings-nav';
+import { CapabilitiesSkeleton } from '@kortix/ui/customize/shared/capability-skeleton';
+import { capabilityTabHref, useCapabilityAccess } from '@kortix/ui/workspace';
 import { useLegacySectionRedirect } from '@/features/workspace/settings/use-account-section-redirect';
-import { useProjectPageCans } from '@/lib/use-project-can';
 
 export default function ProjectCustomizePage() {
   const params = useParams<{ id: string }>();
@@ -55,9 +53,8 @@ export default function ProjectCustomizePage() {
   // never land a person on different tabs. Waits for the probes to settle
   // rather than jumping on the optimistic answer: a redirect is a commitment,
   // and landing on a tab that then 403s is worse than a beat of skeleton.
-  const caps = useProjectPageCans(projectId || undefined);
-  const settled = TAB_PREFERENCE.every((tab) => !caps[tab.action]?.isLoading);
-  const landing = TAB_PREFERENCE.find((tab) => caps[tab.action]?.allowed)?.key ?? null;
+  const { settled, tabs } = useCapabilityAccess(projectId || undefined);
+  const landing = tabs[0] ?? null;
 
   useEffect(() => {
     if (!projectId || rawSection) return;

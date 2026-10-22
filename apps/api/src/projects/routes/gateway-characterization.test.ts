@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { gatewayBudgets, gatewayRequestLogs } from '@kortix/db';
+import { gatewayBudgets, gatewayRequestLogs, gatewaySpendPendingDays } from '@kortix/db';
 import { Hono } from 'hono';
 import * as realAccess from '../lib/access';
 
@@ -38,8 +38,10 @@ const databaseMock = {
     from: (table: unknown) => ({
       where: (_w: unknown) => {
         if (table === gatewayBudgets) return Promise.resolve(exhaustedBudget ? [{ scope: 'project', action: 'block', period: 'month', limitUsd: '1' }] : []);
+        // No pending day: `budgetSpends` reads the running total.
+        if (table === gatewaySpendPendingDays) return { limit: () => Promise.resolve([]) };
         // `budgetSpends` selects one `b<index>` sum per budget.
-        if (table === gatewayRequestLogs && cols && 'b0' in cols) return Promise.resolve([{ b0: 1 }]);
+        if (cols && 'b0' in cols) return Promise.resolve([{ b0: 1 }]);
         // `GET /gateway/overview`'s aggregate select ends at `.where()`.
         if (cols && 'totalCost' in cols) return Promise.resolve(aggRow ? [aggRow] : []);
         return {
@@ -75,6 +77,15 @@ mock.module('../lib/access', () => ({
     userId: USER_ID,
   }),
   assertProjectCapability: async () => {},
+}));
+
+mock.module('../../llm-gateway/resolution/resolve-candidates', () => ({
+  resolveCandidates: async () => [],
+}));
+
+// The caller is a manager: the read view filters nothing.
+mock.module('../lib/project-read-view', () => ({
+  projectReadView: async () => ({ full: true, where: () => undefined, allows: async () => true }),
 }));
 
 const { projectsApp } = await import('../lib/app');
@@ -141,6 +152,16 @@ test('playground returns a typed 402 before dispatch when the project budget is 
   });
   expect(res.status).toBe(402);
   expect(await res.json()).toMatchObject({ code: 'budget_exceeded' });
+});
+
+test('playground reports the public gateway URL even when a model is unavailable', async () => {
+  const res = await buildApp().request(`/v1/projects/${PROJECT_ID}/gateway/playground`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ prompt: 'pong', models: ['synthetic-unavailable-model'] }),
+  });
+  expect(res.status).toBe(200);
+  expect(await res.json()).toMatchObject({ gateway_url: null, results: [{ ok: false }] });
 });
 
 describe('GET /gateway/logs pagination (characterization)', () => {

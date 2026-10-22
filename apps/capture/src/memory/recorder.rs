@@ -795,6 +795,9 @@ pub(crate) fn capture_request(
         "own_bundle_ids": s.own_bundle_ids,
         "exclude_domains": s.effective_excluded_domains(),
         "exclude_private": s.exclude_private_browsing,
+        "only_included": s.record_only_included,
+        "include_bundle_ids": s.included_bundle_ids,
+        "include_domains": s.effective_included_domains(),
         "record_unknown": s.record_unknown_bundle_ids,
         "inactive_after_seconds": s.inactivity_seconds as f64,
         "ax": s.ax_enabled,
@@ -1923,6 +1926,7 @@ fn fetch_favicons(
     }
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
+        .user_agent(super::sync::user_agent())
         .build()?;
     for (id, domain) in domains {
         let fetched = favicon_candidate(&domain)
@@ -3006,6 +3010,38 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_engine_matches_apps_by_the_shared_vectors() {
+        let Ok(mut engine) = Engine::new() else {
+            eprintln!("skipped: no capture engine in this build");
+            return;
+        };
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixtures/capture-format-v2/apps.json"
+        );
+        let v: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        for c in v["matches"].as_array().unwrap() {
+            let res = engine
+                .request(
+                    json!({"cmd": "_app_match", "entry": c["entry"], "bundle_id": c["app"]["bundle_id"], "aliases": c["app"]["aliases"]}),
+                    Duration::from_secs(5),
+                )
+                .unwrap();
+            assert_eq!(res["match"], c["match"], "{c}");
+        }
+        for k in v["keys"].as_array().unwrap() {
+            let res = engine
+                .request(
+                    json!({"cmd": "_app_match", "entry": k["input"], "bundle_id": ""}),
+                    Duration::from_secs(5),
+                )
+                .unwrap();
+            assert_eq!(res["key"], k["key"], "{k}");
+        }
+    }
+
     /// The macOS engine's display plan: which windows it hides from every display,
     /// which display a hidden window fully covers, and each display's top window.
     #[cfg(target_os = "macos")]
@@ -3080,6 +3116,77 @@ mod tests {
             "hidden windows never name a display"
         );
         assert_eq!(d(2)["top"]["title"], "general");
+
+        // Record only included: Slack (an app) and github.com (a website, in any browser).
+        let plan = engine
+            .request(
+                json!({
+                    "cmd": "_plan_displays",
+                    "exclude_private": true,
+                    "only_included": true,
+                    "include_bundle_ids": ["com.tinyspeck.slackmacgap"],
+                    "include_domains": ["github.com"],
+                    "displays": [{"id": 1, "x": 0, "y": 0, "w": 1728, "h": 1117}, {"id": 2, "x": 1728, "y": 0, "w": 3440, "h": 1440}],
+                    "windows": [
+                        w(10, "com.spotify.client", "Spotify", None, 0, 1728, 1117),
+                        w(30, "com.tinyspeck.slackmacgap", "general", None, 2000, 1600, 1400),
+                        w(40, "com.google.Chrome", "PR", Some("https://github.com/kortix-ai/suna"), 1728, 3440, 1440),
+                        w(50, "com.google.Chrome", "Video", Some("https://youtube.com/watch"), 1728, 800, 600),
+                    ],
+                }),
+                Duration::from_secs(5),
+            )
+            .unwrap();
+        let mut hidden: Vec<i64> = plan["hidden"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_i64().unwrap())
+            .collect();
+        hidden.sort();
+        assert_eq!(hidden, [10, 50], "not included: hidden");
+        let d = |id: i64| {
+            plan["displays"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|d| d["id"] == id)
+                .unwrap()
+                .clone()
+        };
+        assert_eq!(d(1)["covered"], true, "no included window: no frame");
+        assert_eq!(d(2)["covered"], false);
+    }
+
+    /// The macOS engine masks and includes a window by any of its app's identifiers.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_engine_plans_windows_by_every_app_identifier() {
+        let Ok(mut engine) = Engine::new() else {
+            eprintln!("skipped: no capture engine in this build");
+            return;
+        };
+        let w = |id: i64, bundle: &str, aliases: &[&str], x: i64| {
+            json!({"window_id": id, "bundle_id": bundle, "aliases": aliases, "app_name": bundle, "title": "t",
+                   "x": x, "y": 0, "w": 800, "h": 1000, "layer": 0})
+        };
+        let windows = [
+            w(1, "com.autodesk.AutoCAD2025", &["AutoCAD 2025", "AutoCAD"], 0),
+            w(2, "com.apple.Safari", &["Safari"], 800),
+        ];
+        let mut plan = |extra: Value| {
+            let mut req = json!({"cmd": "_plan_displays", "exclude_private": true,
+                "displays": [{"id": 1, "x": 0, "y": 0, "w": 1600, "h": 1000}], "windows": windows});
+            req.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            let res = engine.request(req, Duration::from_secs(5)).unwrap();
+            let mut hidden: Vec<i64> = res["hidden"].as_array().unwrap().iter().map(|v| v.as_i64().unwrap()).collect();
+            hidden.sort();
+            hidden
+        };
+        assert_eq!(plan(json!({"only_included": true, "include_bundle_ids": ["AutoCAD 2025.app"]})), [2]);
+        assert_eq!(plan(json!({"only_included": true, "include_bundle_ids": ["com.autodesk.autocad*"]})), [2]);
+        assert_eq!(plan(json!({"exclude_bundle_ids": ["AutoCAD"]})), [1]);
+        assert!(plan(json!({"exclude_bundle_ids": ["com.autodesk"]})).is_empty());
     }
 
     #[test]

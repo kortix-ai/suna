@@ -197,6 +197,12 @@ export const accounts = kortixSchema.table(
    *  may change it (`PATCH /accounts/:id/iam/session-oversight`). Members see
    *  a disclosure in the share dialog while it is on. */
   adminsSeeAllSessions: boolean('admins_see_all_sessions').default(false).notNull(),
+  /** Pause all automations (KRTX-1721): set, no schedule, reminder, webhook,
+   *  app event or monitor of any project in the account fires on its own. A
+   *  manual fire still runs. NULL = automations run. `PATCH /accounts/:id/automations`. */
+  automationsPausedAt: timestamp('automations_paused_at', { withTimezone: true }),
+  /** Who paused them; NULL while running. */
+  automationsPausedBy: uuid('automations_paused_by'),
   /** Organization branding (enterprise `branding` entitlement): the product
    *  name plus the Storage URLs of the logo / icon / favicon (light + optional
    *  dark) that replace the Kortix marks for this account's members. `{}` = default Kortix branding. The
@@ -998,6 +1004,13 @@ export const projectSecretTombstones = kortixSchema.table(
   (table) => [primaryKey({ columns: [table.projectId, table.name] })],
 );
 
+/** The current intake capability for each project secret name. */
+export const projectSecretRequests = kortixSchema.table('project_secret_requests', {
+  projectId: uuid('project_id').notNull().references(() => projects.projectId, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 64 }).notNull(),
+  nonce: text('nonce').notNull(),
+}, (table) => [primaryKey({ columns: [table.projectId, table.name] })]);
+
 /** Account-owned secret resource. Member grants, rather than a user or project
  * binding, authorize use. The value stays encrypted in the API data plane. */
 export const accountSecretResources = kortixSchema.table('account_secret_resources', {
@@ -1652,6 +1665,15 @@ export const projectTriggerRuntime = kortixSchema.table(
     // Suppression episodes in the trailing 24 h. Three ⇒ the monitor is
     // auto-disabled with a `last_error` (spec bounds table).
     suppressionCount: integer('suppression_count').default(0),
+    // Auto-pause (KRTX-1721): set when the trigger ran at its hourly run limit
+    // through the previous hour and is still being held. While set, no
+    // automatic fire starts a run; a manual fire still does. `PATCH enabled:
+    // true` clears both and stamps `auto_pause_resumed_at`: for 2 hours after
+    // a resume the trigger cannot pause itself again, so its old runs do not
+    // re-pause a trigger whose cause was fixed. Runtime state, not a manifest edit.
+    autoPausedAt: timestamp('auto_paused_at', { withTimezone: true }),
+    autoPausedReason: text('auto_paused_reason'),
+    autoPauseResumedAt: timestamp('auto_pause_resumed_at', { withTimezone: true }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -1703,6 +1725,66 @@ export const projectTriggerEventSubscriptions = kortixSchema.table(
     check(
       'project_trigger_event_subscriptions_status_check',
       sql`${table.status} in ('active', 'needs_connection', 'error')`,
+    ),
+  ],
+);
+
+/**
+ * One Kortix-polled app-event stream (source `mcp`): one shared account, one
+ * event type, one config. `external_id` is the subscriptions' `external_id`;
+ * triggers that watch the same thing share the stream. The row is its own
+ * schedule: `next_poll_at` (NULL = parked until the next subscribe), claimed
+ * with `locked_until`, fenced by `claim`. `connection_id` has no FK on
+ * purpose: a vanished account is found by the poll and reconciled, so the
+ * subscription rows say why instead of staying `active` over nothing.
+ */
+export const projectTriggerEventPolls = kortixSchema.table(
+  'project_trigger_event_polls',
+  {
+    externalId: text('external_id').primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    connectionId: uuid('connection_id').notNull(),
+    connectorSlug: varchar('connector_slug', { length: 128 }).notNull(),
+    eventType: text('event_type').notNull(),
+    config: jsonb('config').$type<Record<string, unknown>>().default({}).notNull(),
+    intervalSeconds: integer('interval_seconds').notNull(),
+    /** Item keys already handled, newest-visible first; bounded by the poller. */
+    seen: text('seen').array().default(sql`'{}'::text[]`).notNull(),
+    /** NULL: the next check records what is there (and fires only items newer than `fire_after`). */
+    primedAt: timestamp('primed_at', { withTimezone: true }),
+    /** Items older than this never fire. Set at subscribe, and moved on every re-prime (a pause, no live trigger). */
+    fireAfter: timestamp('fire_after', { withTimezone: true }).defaultNow().notNull(),
+    nextPollAt: timestamp('next_poll_at', { withTimezone: true }),
+    lockedUntil: timestamp('locked_until', { withTimezone: true }),
+    claim: integer('claim').default(0).notNull(),
+    failures: integer('failures').default(0).notNull(),
+    lastError: text('last_error'),
+    lastErrorKind: text('last_error_kind'),
+    rateWindowStart: timestamp('rate_window_start', { withTimezone: true }),
+    rateWindowFires: integer('rate_window_fires').default(0).notNull(),
+    lastSuccessAt: timestamp('last_success_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      name: 'project_trigger_event_polls_project_fk',
+      columns: [table.projectId],
+      foreignColumns: [projects.projectId],
+    }).onDelete('cascade'),
+    index('idx_project_trigger_event_polls_due')
+      .on(table.nextPollAt)
+      .where(sql`${table.nextPollAt} is not null`),
+    index('idx_project_trigger_event_polls_project').on(table.projectId),
+    index('idx_project_trigger_event_polls_connection').on(table.connectionId),
+    check(
+      'project_trigger_event_polls_interval_check',
+      sql`${table.intervalSeconds} between 60 and 86400`,
+    ),
+    check(
+      'project_trigger_event_polls_error_kind_check',
+      sql`${table.lastErrorKind} is null or ${table.lastErrorKind} in ('needs_connection', 'fatal', 'transient')`,
     ),
   ],
 );
@@ -1883,6 +1965,18 @@ export const projectTriggerExecutions = kortixSchema.table(
     completedAt: timestamp('completed_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    // Run history (KRTX-1743). Every fire source writes one run row here;
+    // `source` names it (cron | webhook | manual | ...). Non-cron rows are
+    // inserted in a terminal status, so the claim worker never sees them.
+    source: varchar('source', { length: 16 }).default('cron').notNull(),
+    replayOf: uuid('replay_of'),
+    payloadVerified: boolean('payload_verified').default(true).notNull(),
+    // Outcome of the agent turn the run dispatched (running | succeeded | failed).
+    runStatus: varchar('run_status', { length: 16 }),
+    runError: text('run_error'),
+    runEndedAt: timestamp('run_ended_at', { withTimezone: true }),
+    // The `session_turns` row that closed this run. A turn closes one run only.
+    runTurnToken: text('run_turn_token'),
   },
   (table) => [
     foreignKey({
@@ -1890,6 +1984,11 @@ export const projectTriggerExecutions = kortixSchema.table(
       foreignColumns: [projects.projectId],
       name: 'project_trigger_exec_project_fk',
     }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.replayOf],
+      foreignColumns: [table.executionId],
+      name: 'project_trigger_exec_replay_of_fk',
+    }).onDelete('set null'),
     foreignKey({
       columns: [table.sessionId],
       foreignColumns: [projectSessions.sessionId],
@@ -1907,6 +2006,28 @@ export const projectTriggerExecutions = kortixSchema.table(
       table.lockedUntil,
     ),
     index('idx_project_trigger_executions_project').on(table.projectId, table.createdAt),
+    index('idx_project_trigger_executions_slug_created').on(
+      table.projectId,
+      table.slug,
+      table.createdAt.desc(),
+    ),
+    index('idx_project_trigger_executions_status_created').on(
+      table.projectId,
+      table.status,
+      table.createdAt.desc(),
+    ),
+    index('idx_project_trigger_executions_session')
+      .on(table.sessionId)
+      .where(sql`${table.sessionId} is not null`),
+    index('idx_project_trigger_executions_replay_of')
+      .on(table.replayOf)
+      .where(sql`${table.replayOf} is not null`),
+    index('idx_project_trigger_executions_noncron_created')
+      .on(table.createdAt)
+      .where(sql`${table.source} <> 'cron'`),
+    index('idx_project_trigger_executions_open_run')
+      .on(table.sessionId)
+      .where(sql`${table.runStatus} = 'running'`),
   ],
 );
 
@@ -1951,6 +2072,12 @@ export const sessionLifecycleCommands = kortixSchema.table(
     index('idx_session_lifecycle_commands_forwarded')
       .on(table.updatedAt)
       .where(sql`(${table.result}->>'status') = 'forwarded'`),
+    // The claim drain (`claimDueLifecycleCommands`). Without it the claim
+    // reads every due queued row and detoasts the payload of each held
+    // prompt, which can be megabytes, on every tick.
+    index('idx_session_lifecycle_commands_claimable')
+      .on(table.availableAt)
+      .where(sql`${table.status} = 'queued' AND (COALESCE(${table.result}->>'held', '') <> 'true' OR ${table.payload}->>'clientMessageId' IS NULL)`),
   ],
 );
 
@@ -2763,6 +2890,19 @@ export const sessionContentPurges = kortixSchema.table(
       .where(sql`${table.objectsPurgedAt} IS NULL`),
   ],
 );
+
+/**
+ * The pass of the session-log backfill (P3.1, `apps/api/src/projects/session-log-backfill.ts`):
+ * one row (`id` = 'pass') with the mode, the keyset cursor and the running totals as JSON, so a
+ * new leader resumes the pass instead of starting over. `rev` fences a save: a tick saves only
+ * over the rev it loaded. No content: counts, the mode and the cursor's (created_at, session_id).
+ */
+export const sessionLogBackfillState = kortixSchema.table('session_log_backfill_state', {
+  id: text('id').primaryKey(),
+  state: jsonb('state').notNull(),
+  rev: integer('rev').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
 
 /**
  * UNUSED since decision D6b (2026-10-14): an account closure, read from
@@ -3869,6 +4009,18 @@ export const auditEvents = kortixSchema.table(
     // on the growing audit_events table and 500-ing /ops/overview (Better Stack
     // error 4ba74f8c17f3e48e13c07511fb802ec55ba07294237c0985f3df792729e8f4d8).
     index('idx_audit_events_occurred_at').on(table.occurredAt),
+    // Partial index for the audit list's connector/computer action filter
+    // (GET /v1/accounts/:id/audit?action=connector.): every entry IS a row
+    // that filter wants, so the plan walks one account's tool rows newest-
+    // first and stops at LIMIT instead of walking the whole recent ledger.
+    // Only tool-action rows are indexed, so the write cost stays bounded.
+    // Scanned backward for the `order by occurred_at desc, event_id desc` —
+    // declared ascending because drizzle-orm 0.45's index builder cannot
+    // express DESC — by
+    // 20261020080001000_audit_events_account_tool_action_time.concurrent.ts.
+    index('idx_audit_events_account_tool_action_time')
+      .on(table.accountId, table.occurredAt, table.eventId)
+      .where(sql`${table.action} like 'connector.%' or ${table.action} like 'computer.%'`),
   ],
 );
 
@@ -4056,6 +4208,16 @@ export const gatewayRequestLogs = kortixSchema.table(
     // idx_gateway_logs_project_failed_time — by
     // 20261008012757000_gateway_logs_account_time_covering.concurrent.ts.
     index('idx_gateway_logs_account_time_covering').on(table.accountId, table.createdAt),
+    // Covering index for the project-led gateway aggregates (gateway budgets
+    // memberRows/projectAgg + budgetSpends, gateway overview, gateway series):
+    // index-only scan by (project_id, created_at) that never touches the wide
+    // request/response jsonb heap rows. Built CONCURRENTLY with INCLUDE (ok,
+    // billing_mode, final_cost_precise, upstream_cost_precise, input_tokens,
+    // output_tokens, latency_ms, actor_user_id) — not expressible in
+    // drizzle-orm 0.45's index builder; the schema contract checks relation
+    // + uniqueness only, same pattern as idx_gateway_logs_account_time_covering
+    // — by 20261020080000000_gateway_logs_project_time_covering.concurrent.ts.
+    index('idx_gateway_logs_project_time_covering').on(table.projectId, table.createdAt),
   ],
 );
 
@@ -4121,6 +4283,39 @@ export const gatewayBudgets = kortixSchema.table(
     index('idx_gateway_budgets_lookup').on(table.projectId, table.scope),
   ],
 );
+
+/**
+ * Running spend per project, UTC day and actor: the gateway budgets read this
+ * instead of summing month-to-date gateway_request_logs (1.18M rows, ~1-4 s on
+ * the largest project). The AFTER INSERT trigger
+ * `kortix.gateway_spend_daily_add` adds every inserted log row in the same
+ * statement, so the two cannot drift. `actor_user_id` is the all-zero uuid for
+ * a row without an actor. `total_cost` uses the rule of shared/llm-spend.ts.
+ */
+export const gatewaySpendDaily = kortixSchema.table(
+  'gateway_spend_daily',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    day: date('day', { mode: 'string' }).notNull(),
+    actorUserId: uuid('actor_user_id').notNull(),
+    requests: integer('requests').default(0).notNull(),
+    totalCost: numeric('total_cost').default('0').notNull(),
+    tokens: bigint('tokens', { mode: 'number' }).default(0).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.day, table.actorUserId] })],
+);
+
+/**
+ * UTC days whose gateway_spend_daily rows are not complete yet: the days
+ * before the trigger existed, and the day it was installed. While a budget
+ * period overlaps one, its readers sum gateway_request_logs as before. The
+ * gateway-spend-backfill worker recomputes each closed day and deletes it here.
+ */
+export const gatewaySpendPendingDays = kortixSchema.table('gateway_spend_pending_days', {
+  day: date('day', { mode: 'string' }).primaryKey(),
+});
 
 /**
  * Per-project OTLP trace-export config — "connect any tool" for the gateway's
@@ -4587,6 +4782,13 @@ export const apps = kortixSchema.table(
     scale: jsonb('scale').default({}).notNull(),
     /** Where Kortix shows the App (`AppDisplay`: listed, preview, parent). Presentation only. */
     display: jsonb('display').default({}).notNull(),
+    /**
+     * An App hosted elsewhere: Kortix lists it and frames this https URL, and
+     * never deploys it. Null for every App Kortix runs.
+     */
+    externalUrl: text('external_url'),
+    /** The external site allows framing (its X-Frame-Options / CSP frame-ancestors, read when the URL was set). */
+    externalFrameable: boolean('external_frameable').default(false).notNull(),
     lastRequestAt: timestamp('last_request_at', { withTimezone: true }),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -6431,6 +6633,7 @@ export const connectorCallStatusEnum = kortixSchema.enum('connector_call_status'
   'error',
   'denied',
   'pending_approval',
+  'expired',
 ]);
 
 /**
@@ -6947,6 +7150,8 @@ export const connectorProjectSettings = kortixSchema.table('connector_project_se
     .primaryKey()
     .references(() => projects.projectId, { onDelete: 'cascade' }),
   defaultMode: connectorDefaultModeEnum('default_mode').default('allow_all').notNull(),
+  /** `approvals.ttl` from kortix.yaml in seconds; null = the 24 h default. */
+  approvalTtlSeconds: integer('approval_ttl_seconds'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -7003,9 +7208,14 @@ export const connectorCalls = kortixSchema.table(
     approvedBy: uuid('approved_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    /** When a `pending_approval` row stops being decidable; null = never. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
   },
   (table) => [
     index('idx_connector_calls_project').on(table.projectId),
+    index('idx_connector_calls_pending_expiry')
+      .on(table.expiresAt)
+      .where(sql`${table.status} = 'pending_approval'`),
     index('idx_connector_calls_project_session_created').on(
       table.projectId,
       table.sessionId,
@@ -7284,8 +7494,8 @@ export const pushDeviceTokens = kortixSchema.table('push_device_tokens', {
   onPermission: boolean('on_permission').default(true).notNull(),
   playSound: boolean('play_sound').default(true).notNull(),
   /** The sign-in (`auth.sessions.id`) that registered the token. A push goes
-   *  only while that sign-in exists. NULL: registered with a personal token,
-   *  or before this column existed. */
+   *  only while that sign-in exists. NULL (registered before this column
+   *  existed) gets no push. */
   authSessionId: uuid('auth_session_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -7351,6 +7561,13 @@ export const captureWorkspaces = kortixSchema.table('capture_workspaces', {
     .references(() => accounts.accountId, { onDelete: 'cascade' }),
   enabled: boolean('enabled').default(false).notNull(),
   policy: jsonb('policy').$type<Record<string, unknown>>().default({}).notNull(),
+  /**
+   * Where this account's recordings are stored. `{}` or `{mode:'kortix'}` means
+   * the deployment-default store. `{mode:'s3', …}` is the account's own
+   * S3-compatible bucket; any static secret inside is encrypted. Server-only,
+   * never published to the bucket (unlike `policy`).
+   */
+  storage: jsonb('storage').$type<Record<string, unknown>>().default({}).notNull(),
   updatedBy: uuid('updated_by'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -7788,6 +8005,11 @@ export const notifications = kortixSchema.table('notifications', {
   // No FK: a soft-deleted session keeps its row; the read filter hides it.
   sessionId: text('session_id'),
   triggerSlug: text('trigger_slug'),
+  // A conversation message (`kind = 'message'`): the room it was posted in.
+  // No FK, like session_id: the read filter hides a row whose room is gone.
+  roomId: uuid('room_id'),
+  // A thread reply: the thread's root seq, so the link opens the thread.
+  roomThreadSeq: bigint('room_thread_seq', { mode: 'number' }),
   kind: text('kind').notNull(),
   title: text('title').notNull(),
   body: text('body').default('').notNull(),
@@ -7810,7 +8032,7 @@ export const notifications = kortixSchema.table('notifications', {
   index('idx_notifications_account').on(table.accountId),
   index('idx_notifications_project').on(table.projectId),
   index('idx_notifications_created').on(table.createdAt),
-  check('notifications_kind', sql`${table.kind} IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered')`),
+  check('notifications_kind', sql`${table.kind} IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered', 'message')`),
 ]);
 
 /** One record per user: partial overrides of the default notification preferences. */
@@ -7855,6 +8077,116 @@ export const triggerWatchers = kortixSchema.table('trigger_watchers', {
   primaryKey({ columns: [table.projectId, table.slug, table.userId] }),
   foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'trigger_watchers_project_fk' }).onDelete('cascade'),
   index('idx_trigger_watchers_user').on(table.userId),
+]);
+
+/**
+ * A room: a named, durable chat room of a project (`dev`, `platinum/dev`) that
+ * agent sessions and people post in; anyone with `project.room.read` can find
+ * it. `last_seq` numbers the messages; a post takes the next value under the
+ * row lock, so `seq` is gap-free per room.
+ */
+export const rooms = kortixSchema.table('rooms', {
+  roomId: uuid('room_id').defaultRandom().primaryKey(),
+  projectId: uuid('project_id').notNull(),
+  accountId: uuid('account_id').notNull(),
+  name: varchar('name', { length: 64 }).notNull(),
+  topic: text('topic'),
+  lastSeq: bigint('last_seq', { mode: 'number' }).default(0).notNull(),
+  createdByUserId: uuid('created_by_user_id'),
+  createdBySessionId: text('created_by_session_id'),
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'rooms_project_fk' }).onDelete('cascade'),
+  uniqueIndex('idx_rooms_project_name').on(table.projectId, table.name),
+  check('rooms_name_check', sql`${table.name} ~ '^[a-z0-9][a-z0-9._/-]{0,63}$'`),
+]);
+
+/** One message. `sender_kind`: `member` (a person) or `session` (an agent). */
+export const roomMessages = kortixSchema.table('room_messages', {
+  messageId: uuid('message_id').defaultRandom().primaryKey(),
+  roomId: uuid('room_id').notNull(),
+  seq: bigint('seq', { mode: 'number' }).notNull(),
+  senderKind: varchar('sender_kind', { length: 16 }).notNull(),
+  senderUserId: uuid('sender_user_id'),
+  senderSessionId: text('sender_session_id'),
+  senderLabel: text('sender_label').notNull(),
+  text: text('text').notNull(),
+  replyToSeq: bigint('reply_to_seq', { mode: 'number' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.roomId], foreignColumns: [rooms.roomId], name: 'room_messages_room_fk' }).onDelete('cascade'),
+  uniqueIndex('idx_room_messages_room_seq').on(table.roomId, table.seq),
+  // A thread: its replies by root.
+  index('idx_room_messages_room_thread').on(table.roomId, table.replyToSeq).where(sql`${table.replyToSeq} is not null`),
+  check('room_messages_sender_kind_check', sql`${table.senderKind} in ('member', 'session')`),
+]);
+
+/**
+ * A member of a room: an agent session or a person.
+ *   session: a message addressed to it steers its turn; other traffic arrives
+ *            as one digest at its turn boundary (a stopped session wakes),
+ *            acting as `added_by_user_id` — the person who added it, never
+ *            the sender.
+ *   person:  every message from anyone else raises their unread count
+ *            (`last_read_seq`); one addressed to them also notifies them, with
+ *            the notification center on. A person may be a member only while
+ *            they may read rooms in the project; delivery re-checks it.
+ * `notify`: `all`, `mentions` or `none`.
+ */
+export const roomMembers = kortixSchema.table('room_members', {
+  memberId: uuid('member_id').defaultRandom().primaryKey(),
+  roomId: uuid('room_id').notNull(),
+  memberKind: varchar('member_kind', { length: 16 }).notNull(),
+  sessionId: text('session_id'),
+  userId: uuid('user_id'),
+  projectId: uuid('project_id').notNull(),
+  notify: varchar('notify', { length: 16 }).default('all').notNull(),
+  addedByUserId: uuid('added_by_user_id').notNull(),
+  lastReadSeq: bigint('last_read_seq', { mode: 'number' }).default(0).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.roomId], foreignColumns: [rooms.roomId], name: 'room_members_room_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.sessionId], foreignColumns: [projectSessions.sessionId], name: 'room_members_session_fk' }).onDelete('cascade'),
+  uniqueIndex('idx_room_members_room_session').on(table.roomId, table.sessionId).where(sql`${table.sessionId} is not null`),
+  uniqueIndex('idx_room_members_room_user').on(table.roomId, table.userId).where(sql`${table.userId} is not null`),
+  index('idx_room_members_session').on(table.sessionId),
+  index('idx_room_members_user').on(table.userId),
+  check('room_members_notify_check', sql`${table.notify} in ('all', 'mentions', 'none')`),
+  check(
+    'room_members_kind_check',
+    sql`(${table.memberKind} = 'session' and ${table.sessionId} is not null and ${table.userId} is null) or (${table.memberKind} = 'person' and ${table.userId} is not null and ${table.sessionId} is null)`,
+  ),
+]);
+
+/**
+ * A one-shot "tell me when this session goes idle" (flag `agent_rooms`).
+ * When the target session's turn ends, it posts one message in `room_id`
+ * @-mentioning the watcher with the outcome, and the row is deleted. A row past
+ * `expires_at` is dropped unanswered.
+ */
+export const sessionIdleWatches = kortixSchema.table('session_idle_watches', {
+  watchId: uuid('watch_id').defaultRandom().primaryKey(),
+  targetSessionId: text('target_session_id').notNull(),
+  roomId: uuid('room_id').notNull(),
+  projectId: uuid('project_id').notNull(),
+  accountId: uuid('account_id').notNull(),
+  watcherKind: varchar('watcher_kind', { length: 16 }).notNull(),
+  watcherSessionId: text('watcher_session_id'),
+  watcherUserId: uuid('watcher_user_id'),
+  addedByUserId: uuid('added_by_user_id').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.targetSessionId], foreignColumns: [projectSessions.sessionId], name: 'session_idle_watches_target_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'session_idle_watches_project_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.roomId], foreignColumns: [rooms.roomId], name: 'session_idle_watches_room_fk' }).onDelete('cascade'),
+  index('idx_session_idle_watches_target').on(table.targetSessionId),
+  check(
+    'session_idle_watches_kind_check',
+    sql`(${table.watcherKind} = 'session' and ${table.watcherSessionId} is not null and ${table.watcherUserId} is null) or (${table.watcherKind} = 'person' and ${table.watcherUserId} is not null and ${table.watcherSessionId} is null)`,
+  ),
 ]);
 
 /**

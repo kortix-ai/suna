@@ -17,8 +17,7 @@ await runtime.lifecycle.start()
 `KORTIX_HARNESS` (`opencode` | `pi`; unset means `opencode`) is set by apps/api
 at provisioning (`buildSessionSandboxEnvVars` → `selectSessionHarness`): pi when
 the project's `pi_harness` feature flag is on, or when the manifest says
-`runtime: pi`, and the `llm_gateway` flag is on (pi has no model path without
-the gateway); OpenCode otherwise. `loadConfig` reads it BEFORE the adapter
+`runtime: pi`; OpenCode otherwise. `loadConfig` reads it BEFORE the adapter
 loads its own environment, so only the selected adapter's variables are parsed.
 There is no per-request switching: one box, one harness, for the life of the
 box. A new box of the session re-reads the selection, so a change of the flag or
@@ -27,11 +26,28 @@ of `runtime:` switches an existing session's harness at its next new box. With
 records the switch in `harness.history` ("Harness history, a switch" below).
 `POST /v1/projects/:p/sessions/:s/log/switch-preflight` (apps/api) answers
 before that happens: whether the switch can happen (`available`, `reason`:
-`same_harness`, or `llm_gateway_off` for pi), whether the new box restores the
+`same_harness`), whether the new box restores the
 log (`restores`; off, `losses` starts with `history`), what the session uses
 that the target handles worse (`losses`) and everything the target lacks, used
 or not (`unsupported`). The contract is `switchPreflight` in
 `@kortix/api-contract/session-log` (`capabilities.ts`).
+
+## Models: the LLM gateway only
+
+Both harnesses send every model request to the Kortix LLM gateway, under one
+provider id, `kortix`. There is no native provider mode. OpenCode's composed
+config always registers the `kortix` provider and sets
+`enabled_providers: ['kortix']` (`buildOpencodeConfigContent`,
+`open-code/lifecycle.ts`), and every model ref becomes `kortix/<wire id>`.
+
+- A box without the gateway env (`KORTIX_LLM_BASE_URL` + `KORTIX_TOKEN`, or
+  `KORTIX_LLM_PROXY_URL`) logs an error at each config compose. OpenCode keeps
+  the `kortix`-only config with no upstream, so turns fail; it never falls back
+  to provider keys in the process env. pi throws at model setup
+  (`createPiModels`, `pi/model.ts`).
+- `POST /kortix/env` with `llmGatewayEnabled: true` sets `KORTIX_LLM_BASE_URL`
+  and re-points a running LLM proxy. `llmGatewayEnabled: false` (an API from
+  before the graduation) is logged and ignored: it never clears the gateway env.
 
 ## Ownership
 
@@ -51,9 +67,10 @@ or not (`unsupported`). The contract is `switchPreflight` in
 | `open-code/background.ts`, `open-code/resource-diagnostics.ts`, `open-code/quick-queue-interrupt.ts` | Native offload, turn guard, tool-boundary queue interrupt and diagnostic projection |
 | Other `open-code/` modules | Native database, projections, pins, attachments, audit and recovery |
 | `pi/service.ts` | Composition; loads pi lazily so an OpenCode boot never pays for it |
-| `pi/runtime.ts` | The in-process pi `Agent`: model, tools, skills, the root `AGENTS.md`, turns, transcript, durability |
+| `pi/runtime.ts` | The in-process pi `Agent`: model, tools, skills, the root `AGENTS.md`, today's date (each turn, OpenCode's `Today's date` line), turns, transcript, durability |
 | `pi/boot.ts` | Session boot: the same host steps as OpenCode, then `pi-ready` |
 | `pi/surface.ts` | The raw OpenCode-compatible routes, answered in-process |
+| `pi/vcs.ts` | The Changes tab on pi: `vcs: 'git'` on `/project/current` and `GET /vcs/diff` (`mode=branch` against the merge base with `KORTIX_DEFAULT_BRANCH`, `mode=git` against HEAD), OpenCode's `VcsFileDiff` shape |
 | `pi/turn-events.ts`, `pi/transcript.ts` | pi events → Kortix session events (`@kortix/api-contract/transcript`); the transcript store |
 | `pi/interactions.ts`, `pi/tools.ts`, `pi/model.ts`, `pi/sampling.ts` | Permissions/questions, workspace tools, gateway model, the agent's `temperature`/`top_p`/`steps` on each model request |
 | `../routes/` | Controllers, authentication, request parsing, HTTP status/headers, gzip and SSE delivery |
@@ -160,7 +177,8 @@ restart (`this.stop()` inside the native lifecycle) leaves it running.
 The boot runs these steps when the native store is behind the log (P6.4, "When the
 boot restores" below):
 
-1. `POST …/log/restore` (P6.1) answers `SessionLogRestore` `{ generation, log, revs, seq_max, blobs }`.
+1. `POST …/log/restore` (P6.1) answers `SessionLogRestore` `{ generation, log, revs, seq_max, blobs }`,
+   or 413 `session_log_too_large` for a log over the API's cap (see "Memory" below).
    The claim raises the generation, and the ingest applies a put whose
    `(generation, rev)` is above the stored pair, so the box needs no rev seed.
 2. `sessionLogFromRestore(answer, apiTextReader(sandboxRelayContext()))`
@@ -265,7 +283,8 @@ root. No turn runs at either point.
   keeps the claimed generation, the ids the write left out, and the D3 notice:
   a crash before it reads as behind at the next boot, and a daemon restart
   journals at the claimed generation. A 404 (no stored log) or 503 (operator
-  switch off) claims nothing and restores nothing. Any other failure (5xx,
+  switch off) claims nothing and restores nothing. A 413 `session_log_too_large`
+  claimed but carries no message: see "Memory" below. Any other failure (5xx,
   408, 429, network, a body that does not parse, a write that throws) is
   retried, 3 attempts, each a new claim; then the boot fails
   (`initialRuntimeSessionError`, the proxy answers
@@ -322,20 +341,50 @@ root. No turn runs at either point.
   no entry. A log without a history (a converted log) starts with the harness
   its `harness.current` names. Limit: a box that never restored (flag off)
   sends its adapter's one-entry history, which replaces the stored one.
-- **Memory.** A synthetic 83 MB answer (2,000 turns, a 40 kB tool result each,
-  all under the 256 kB text cap) restored into pi in 0.7 s with a peak RSS
-  1.29 GB above the daemon's (measured on a laptop, Bun 1.4.3). No cap: the API
-  holds the same answer in memory once per claim. Dev accepts this risk (the flag
-  is on by default there since 2026-10-15) until the cap lands; elsewhere the
-  flag is operator-only.
-  Before default-on, cap it (413 above a stored size, or paging).
+- **Memory, and the cap.** A restore holds the whole log in memory on both
+  sides. Measured on a real Platinum box (pi, 2 vCPU, 3.9 GB, Bun 1.4.3) with a
+  synthetic 38.5 MB log (1,000 tool results of 40 kB): the daemon peaked at
+  1.57 GB RSS (+1.45 GB, about 38x the log) and settled at 272 MB; the API
+  (`POST …/log/restore`) rose by about 330 MB. Attachments cost less per
+  byte: 60 synthetic 500 kB images (30 MB of blobs, 83 kB of records) peaked
+  the daemon at 566 MB (+455 MB, about 15x) and the API by about 50 MB (the box
+  reads them one by one through the attachments route). So the API caps what
+  the box pulls: `SESSION_LOG_RESTORE_MAX_BYTES` (default 24 MiB) bounds the
+  live messages' stored JSON lengths plus the bytes of the session's live
+  `session_log_blobs` (full texts over 256 kB and attachments) at
+  `SESSION_LOG_BLOB_WEIGHT` = 2/5 (15x / 38x ≈ 0.39, rounded up), one sum in
+  daemon-memory terms. Effective maxima: 24 MiB of records alone, or 60 MiB of
+  blobs alone (about 125 screenshots of 500 kB); either peaks the daemon at
+  about 1 GB. 60 screenshots of 500 kB restore; 400 (200 MB) answer 413. p99.9 of
+  prod sessions is about 15 MB, p99 3.7 MB. The size query reads the records
+  inside Postgres before any record leaves it. Above the cap the claim still
+  happens and the answer is 413
+  `SessionLogRestoreTooLarge`: every thread without messages, every rev,
+  `seq_max`, `messages` (the count left out), `bytes` and `limit`; no record
+  leaves Postgres. The box writes the log's root with the D3 note alone
+  (above `seq_max`, so new messages number above every stored seq), keeps no
+  other thread, persists every stored id (`revs`) as unwritten so later boots
+  do not read the store as behind, and journals at the claimed generation. The
+  note tells the agent the size and the limit; the session patch carries
+  `restore_grade: 'partial'` and `dropped: { message: <count> }`, which P5.6
+  shows as "Missing: N earlier messages". The stored history stays in the
+  transcript. The same 38.5 MB log over the cap: the daemon peaked at 135 MB
+  (+29 MB) and the API rose by about 21 MB; the 30 MB of images over the cap:
+  128 MB and about 2 MB. The switch preflight (`POST …/log/switch-preflight`)
+  reports `restores: false` and a `history` loss for a log over the cap. A 413 with another body (a proxy)
+  claimed nothing and restores nothing, as a 404.
+  ponytail: an over-cap restore gives the agent none of the history; restore
+  the newest messages under the cap (paging) when sessions near it are common.
 
-Default-on blocker (do not turn `session_log_restore` on by default in prod
-before it is fixed): the restore memory above has no cap. Dev turns it on for
+Default-on: the cap above bounds what one restore makes the box hold (live
+records plus 2/5 of live blobs, 24 MiB by default). It does not bound the native
+store a box already holds: a box with a large store loads it at boot (`held()`)
+before any restore. A fresh box drops only an attachment whose record still
+says `blob:` (P2.13 uploads the bytes). Precondition for prod default-on: a
+release whose kortixd handles the 413 (an older kortixd boots without the
+restore and its journal stops at 409). Dev turns `session_log_restore` on for
 every project without a stored value (`SESSION_LOG_RESTORE_DEFAULT_ENABLED` in
-`deploy-dev.yml`, 2026-10-15). Attachment bytes are no longer
-a blocker (P2.13): the journal uploads them, and a fresh box drops only an
-attachment whose record still says `blob:` (see the restore limits below).
+`deploy-dev.yml`, 2026-10-15); prod does not yet.
 
 Known limits of the boot reconcile:
 - Losing `session-log-restore.json` (or OpenCode's `opencode-session-log.json`)
@@ -359,7 +408,7 @@ the first system prompt pi rebuilds takes that id, so the record is replaced, no
 added. Three restores of one session keep one context record per thread (the
 same ids); before, each restore added one per thread pi prompted.
 
-Proved in `opencode-session-log-restore.test.ts` (the pinned OpenCode binary,
+Proved in the `opencode-session-log-restore-*.test.ts` files (the pinned OpenCode binary,
 `opencode serve` in an isolated home against a fake model, dummy key): the 7
 golden fixtures, converted and partial logs, an OpenCode session and a pi
 session recorded in the test, a second restore after a journaled turn, the seq
@@ -417,6 +466,7 @@ reads them and fails when a pin leaves them:
   `quickjs-wasi` are pinned beside them at the versions pi-coding-agent depends on (codemode's
   worker and wasm, above): move them with the bump, and check that pi still resolves the
   worker as `./src/extensions/codemode/worker.ts` (`getCodemodeWorkerSpecifier`).
+  `@silvia-odwyer/photon-node` (pi's image resizer, "Images" below) is pinned the same way.
 - OpenCode: `opencode` in `packages/shared/src/runtime-versions.json` (the image
   installs it; `opencode-db.test.ts` also gates its minor line).
 - Both: `SESSION_LOG_MINOR` in `@kortix/api-contract/session-log`.
@@ -584,10 +634,10 @@ them dirty until apps/api acknowledges `(message_id, rev)`.
 Both harnesses flush it before a turn's end is relayed: pi and the OpenCode
 orphan path through `relayTurnEnd`, OpenCode's normal turn end through
 `relayTurnEndToApi`. pi also flushes it when it stores a compaction between
-turns (`compact()`, `/session/:id/summarize`, P2.12): that compaction has no
-turn end, and it ends after the summarize request returns, so without this
-flush the log got it only at the next turn end. A compaction inside a turn
-(threshold, overflow) waits for the turn's end. The memory-guard turn end does not flush. The daemon
+turns (`compact()`, `/session/:id/summarize`, P2.12), and the `/summarize`
+turn end flushes it again (see "The conversation, compaction and slash
+commands"). A compaction inside a turn (threshold, overflow) waits for the
+turn's end. The memory-guard turn end does not flush. The daemon
 shutdown (SIGTERM, SIGINT, the agent swap) flushes it before `harness.stop()`.
 Each flush waits at most 3 s, or until the first failed post; a batch not
 acknowledged by then keeps retrying in the background. A provider stop is not
@@ -705,7 +755,10 @@ same `/kortix/runtime/*` namespace and the same raw routes
 session: the root id is `ses_pi<sha256(sessionId)[:24]>`, deterministic (or the
 root thread id a session-log restore wrote into the dump), so a restart
 resolves the same root and restores the transcript from
-`$KORTIX_RUNTIME_STATE_DIR/pi/<session>.json`.
+`$KORTIX_RUNTIME_STATE_DIR/pi/<session>.json`. The root's title stays
+`New session`, also after a restore: the session title is Kortix's
+(`metadata.name`, generated from the first prompt), and the API drops the
+placeholder (`isPlaceholderOpencodeTitle`).
 
 Config it reads (all set by apps/api for every session, harness-neutral values):
 `KORTIX_MODEL` (the resolved session model), `KORTIX_COMPILED_AGENT_CONFIG`
@@ -750,6 +803,11 @@ describes.
   the rest, `$ARGUMENTS` takes the raw text, and a template with neither gets
   the arguments appended. OpenCode's `` !`cmd` `` shell expansion is not
   supported.
+- **Skills in the command list.** On v2 and v3, `GET /command` ends with the
+  agent's granted skills as `source: 'skill'` rows, as OpenCode lists them:
+  the session composer's `/` menu reads only this list. A command shadows a
+  skill of the same name. `POST /session/:id/command` with a skill name sends
+  the `SKILL.md` body in pi's `<skill>` block, then the arguments.
 - **Extensions.** The API sends the session agent's pi packages as
   `KORTIX_PI_PACKAGES`; a repo entry is `./<path>` and resolves against the
   config root. Extensions load once per runtime start, so an agent switch
@@ -825,9 +883,30 @@ other tool. A rule under the tool's own name wins over its capability. OpenCode'
 hosted `web_search`/`image_search` and `scrape_webpage` follow `websearch`
 and `webfetch` (`open-code/lifecycle.ts` `capabilityToolRules`). The OpenCode
 tools cannot ask, so they run only when the capability is `allow`. A rule is an
-action, or a glob-pattern -> action map matched against the `bash` command
-line or a workspace tool's path, with the longest matching pattern winning and
-`*` the weakest. A pattern map is never collapsed to its `*` entry. pi's
+action, or a glob-pattern -> action map matched against a `bash` command or a
+workspace tool's path. A pattern map is never collapsed to its `*` entry.
+
+**A bash line is decided command by command, both harnesses.** OpenCode asks
+for each command its tree-sitter parse finds. pi splits the line
+(`pi/interactions.ts` `bashCommands`) on unquoted `;`, `&`, `|` and newlines,
+reads each `$(…)`, backtick, `<(…)`, `>(…)` and `( … )` body as commands of its
+own, and the strictest answer wins (`deny`, then `ask`, then `allow`). So
+`bash: { '*': deny, 'kortix connectors call x get *': allow }` runs that call
+and refuses `kortix connectors call x get a; env`. A line whose quotes or
+brackets do not balance is decided as a call with no subject: a restriction
+asks.
+
+**Precedence, both harnesses:** the most specific matching rule wins, whatever
+order the keys are written in (`@kortix/api-contract/permission-rules`). The
+longest pattern is the most specific; equal lengths compare by code unit, the
+later one winning. Keys follow the same order (`bash` outranks `*`), and a key
+whose map matches nothing falls back to a less specific key. pi resolves this
+in `pi/interactions.ts` `resolvePolicyRule`. OpenCode applies the LAST match in
+key order, so kortixd writes every block it composes least specific first
+(`buildOpencodeConfigContent` step 9), and the `open-code/permission-order.ts`
+plugin's `config` hook orders the blocks it did not compose (the project's
+`opencode.json[c]`, a config dir's `agents/*.md`). An agent block still
+outranks the global block on OpenCode. pi's
 request names the capability and the call's subject (`patterns`); an "always"
 reply allows the capability for the session, and a `deny` still outranks it.
 The reply is `RUNTIME_PERMISSION_REPLIES` (`once`, `always`, `reject`).
@@ -922,6 +1001,35 @@ stays sequential. A child session is read-only (prompts to it answer 501).
 A child's calls are checked against the subagent's own rules and the session's
 rules; a `deny` from either wins, so delegating never unlocks a denied call.
 
+### Images
+
+- **Prompt images.** apps/api writes every prompt attachment to
+  `/workspace/uploads/.kortix-inbox/<command>/` and puts a `<file path="…" mime="…">` tag
+  in the prompt text; nothing rides inline in the body (`prompt-attachment-materializer.ts`).
+  When the selected model reads images (catalog `attachment: true`), the runtime also hands pi
+  each PNG, JPEG, GIF or WebP a tag names inside the inbox, resized by pi
+  (`promptImages`, `pi/images.ts`): on a prompt, a steer and a `noReply` message. The tag stays,
+  so the agent still has the path. A model without image input gets the tag alone.
+  Each path is read once, at most 20 images per prompt, one at a time. A file is read only when
+  its real path stays in the inbox (no symlink out), it is a regular file and it is at most
+  50 MiB. Steers run on one chain, so they reach pi in arrival order; a retract while a steer
+  loads its images cancels it (`retracted`; the steer answers `duplicate`).
+- **Session log.** pi records each image as an attachment (P2.13). An image from a tag carries
+  `source_path` (the tag's path, matched by order: when pi left out a tag image, none is set).
+  A restore writes no v1 file part for it, and the web draws it once, through its tag
+  (`normalizeAttachments`).
+- **Resize.** pi resizes every image (`read` and prompt images) with photon
+  (`@silvia-odwyer/photon-node`), which reads `photon_rs_bg.wasm` from its own `__dirname`.
+  A compiled daemon bakes the build machine's path there, so before 2026-10-16 photon never
+  loaded on a box and pi dropped every image ("[Image omitted: could not be resized below the
+  inline image size limit.]"). `pi/images.ts` embeds the wasm in the binary and redirects that
+  one file name to the embedded copy. In a binary pi's resize worker does not load, so pi
+  resizes in-process (about 0.65 s for an 18 MB 3000x2000 PNG on an M-series laptop; at most
+  20 per prompt). Follow-up: build the worker path pi's `resizeImage` asks for in a binary as a
+  second entrypoint, as codemode's worker (`scripts/build.sh`); it must install the wasm redirect itself.
+  `pi-images.test.ts` builds a binary against a copy of photon-node, deletes the copy, and runs
+  pi's `read` and `promptImages` in it.
+
 ### The conversation, compaction and slash commands
 
 pi's `SessionManager` (in memory) is the model context: the agent's messages
@@ -941,6 +1049,28 @@ message flagged `summary` with the summary text or an error,
 transcript keeps every message. A project's `settings.json` in the pi config
 dir sets `compaction.enabled`, `reserveTokens` and `keepRecentTokens`.
 Subagent child sessions have no `AgentSession` and do not compact.
+
+A `/summarize` is a turn of its own, named by its compaction marker (the user
+message with the `compaction` part), as on OpenCode: when the compaction that
+`compact()` started begins, the runtime relays `turn_begin` with the marker id,
+and when it ends, the turn end with the same id (`onTurnBegin`/`onTurnEnd`).
+The boot relays the end after the begin settled, or after 5 s
+(`turnEndAfterBegin`). apps/api binds the id to the open `/summarize` turn and
+marks that turn durable (`log_durable_at`) when the log acknowledges the
+compaction record, whose `message_id` is the marker id (`markDurableTurns`,
+apps/api `session-log-ingest.ts`). A failure (the summary's model call) ends
+the turn `error` with pi's reason; a stop ends it `idle`. pi's two refusals
+end it `idle` too, because nothing changed: `Compaction failed: Nothing to
+compact (session too small)` (pi keeps the last `keepRecentTokens`) and
+`Compaction failed: Already compacted` (nothing after the last compaction).
+pi gives no code for them, so the runtime matches these exact strings
+(`PI_COMPACTION_REFUSALS`; the pi-harness tests fail when a pi bump rewords
+them). The summary message on the wire carries the refusal as its error, and
+the daemon logs `[pi] compaction failed`; the session log has no record (pi
+stores no entry). A Stop drops a `/summarize` still queued behind the running
+turn: no model call, no turn relay. An auto compaction (threshold, overflow)
+runs inside its prompt turn, and an extension's `ctx.compact()` is not a
+`/summarize`: neither relays a turn.
 
 Reasoning is display only across models (C3, P7.3). pi-ai replays a thinking
 block that another model wrote as visible assistant text. `pi/reasoning.ts`

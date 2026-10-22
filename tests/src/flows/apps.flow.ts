@@ -3,13 +3,12 @@
  * deployment lifecycle boundaries, the App viewer token, and deleting an App
  * or one deployment together with its provider images, and the machine, scale,
  * exec and volume routes. Maps to spec section 28 (APP-1..8,
- * APP-11, APP-13; APP-9, APP-10 and APP-12 live in apps-tokens.flow.ts).
+ * APP-11, APP-13, APP-14; APP-9, APP-10 and APP-12 live in apps-tokens.flow.ts).
  */
 import { flow } from "../core/flow";
 import type { Client } from "../core/client";
 import type { Principal } from "../core/types";
 import { CliSandbox } from "../fixtures/cli";
-import { stagingAppsEdgeQuarantine } from "../fixtures/apps-edge";
 import { withDb } from "../fixtures/chat";
 import { waitFor } from "../core/poll";
 
@@ -56,7 +55,9 @@ flow(
       response.body().has("$.error", "Unknown feature flag 'apps'");
       const read = await owner.get("/v1/projects/:projectId", { params: projectParams });
       read.status(200);
-      const rows = (read.json() as { experimental_features: Array<{ key: string }> })
+      // CLIs before v0.14.0 gate every `kortix apps` command on this value.
+      read.body().has("$.experimental.apps", true);
+      const rows =(read.json() as { experimental_features: Array<{ key: string }> })
         .experimental_features;
       if (rows.some((f) => f.key === "apps")) {
         throw new Error(`the catalog still lists apps: ${JSON.stringify(rows)}`);
@@ -355,6 +356,27 @@ flow(
     );
 
     await ctx.step(
+      "a deployment that names the deprecated daytona provider → 400 sandbox_provider_deprecated",
+      async () => {
+        const response = await owner.post(
+          "/v1/projects/:projectId/apps/:appId/deployments",
+          {
+            artifact_id: artifactId,
+            provider: "daytona",
+            source: {
+              kind: "oci_image",
+              image: "docker.io/library/caddy:alpine",
+              command: ["caddy", "file-server"],
+              port: 80,
+            },
+          },
+          { params: appParams },
+        );
+        response.status(400).body().has("$.code", "sandbox_provider_deprecated");
+      },
+    );
+
+    await ctx.step(
       "deployment reads expose empty state and unknown boundaries",
       async () => {
         const list = await owner.get(
@@ -540,6 +562,7 @@ flow(
       "PUT /v1/admin/api/projects/:id/features",
       "GET /v1/projects/:projectId/apps",
       "POST /v1/projects/:projectId/apps",
+      "POST /v1/projects/:projectId/apps/:appId/access-session",
       "GET /v1/projects/:projectId/apps/:appId",
       "PATCH /v1/projects/:projectId/apps/:appId",
       "PATCH /v1/projects/:projectId/apps/:appId/access",
@@ -628,6 +651,14 @@ flow(
       if (!visible.includes(appId)) {
         throw new Error(`project-wide App ${appId} was hidden from a teammate`);
       }
+
+      // A listed App is one the teammate can open: the card mints this session.
+      const session = await teammate.post(
+        "/v1/projects/:projectId/apps/:appId/access-session",
+        {},
+        { params: { ...projectParams, appId } },
+      );
+      session.status(200).body().exists("$.url").exists("$.expires_at");
     });
 
     await ctx.step(
@@ -946,6 +977,7 @@ flow(
   "APP-5",
   {
     domain: "apps",
+    tags: ["deployed"],
     routes: [
       "PUT /v1/admin/api/projects/:id/features",
       "POST /v1/projects/:projectId/apps",
@@ -1037,7 +1069,6 @@ flow(
   {
     domain: "apps",
     requires: ["appHost"],
-    ...stagingAppsEdgeQuarantine(),
     timeoutMs: 180_000,
     routes: [
       "PUT /v1/admin/api/projects/:id/features",
@@ -1372,7 +1403,6 @@ flow(
   {
     domain: "apps",
     requires: ["appHost"],
-    ...stagingAppsEdgeQuarantine(),
     timeoutMs: 300_000,
     routes: [
       "PUT /v1/admin/api/projects/:id/features",
@@ -1584,6 +1614,12 @@ flow(
       "POST /v1/projects/:projectId/apps/:appId/volumes/:volumeId/snapshots",
       "POST /v1/projects/:projectId/apps/:appId/volumes/:volumeId/restore",
       "POST /v1/projects/:projectId/apps/:appId/volumes/:volumeId/fork",
+      "GET /v1/projects/:projectId/apps/:appId",
+      "GET /v1/projects/:projectId/apps/:appId/access",
+      "PATCH /v1/projects/:projectId/apps/:appId/access",
+      "GET /v1/projects/:projectId/apps/:appId/deployments",
+      "GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId",
+      "GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs",
     ],
   },
   async (ctx) => {
@@ -1737,6 +1773,24 @@ flow(
           .has("$.volumes[0].size_gb", 10).has("$.volumes[0].snapshot_retention_days", 30);
       });
 
+      await ctx.step("a project member who can open the App (project.app.read, no deploy) reads the App but not its operations: 403 on access policy, deployments, deployment events, runtime logs, machines, volumes and snapshots", async () => {
+        (await owner.patch("/v1/projects/:projectId/apps/:appId/access", { mode: "project" }, { params: app() })).status(200);
+        (await member.get("/v1/projects/:projectId/apps/:appId", { params: app() })).status(200).body().has("$.app_id", appId);
+        const deployment = { ...app(), deploymentId: UNKNOWN_ID };
+        const refusals = [
+          await member.get("/v1/projects/:projectId/apps/:appId/access", { params: app() }),
+          await member.get("/v1/projects/:projectId/apps/:appId/deployments", { params: app() }),
+          await member.get("/v1/projects/:projectId/apps/:appId/deployments/:deploymentId", { params: deployment }),
+          await member.get("/v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs", { params: deployment }),
+          await member.get("/v1/projects/:projectId/apps/:appId/machines", { params: app() }),
+          await member.get("/v1/projects/:projectId/apps/:appId/volumes", { params: app() }),
+          await member.get("/v1/projects/:projectId/apps/:appId/volumes/:volumeId/snapshots", { params: vol() }),
+        ];
+        refusals.forEach((response) => response.status(403));
+        (await owner.get("/v1/projects/:projectId/apps/:appId/deployments", { params: app() })).status(200).body().exists("$.deployments");
+        (await owner.get("/v1/projects/:projectId/apps/:appId/access", { params: app() })).status(200).body().has("$.mode", "project");
+      });
+
       await ctx.step("NONMEMBER learns nothing (403/404); ANON → 401", async () => {
         (await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects/:projectId/apps/:appId/machines", { params: app() })).status([403, 404]);
         (await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects/:projectId/apps/:appId/volumes", { params: app() })).status([403, 404]);
@@ -1753,6 +1807,117 @@ flow(
       if (volumeId) await withDb(ctx, (db) => db.query("DELETE FROM kortix.app_volumes WHERE volume_id = $1", [volumeId])).catch(() => {});
       if (appId) await owner.del("/v1/projects/:projectId/apps/:appId", { params: app() }).catch(() => {});
       cli.dispose();
+    }
+  },
+);
+
+flow(
+  "APP-14",
+  {
+    domain: "apps",
+    requires: ["database", "appHost"],
+    routes: [
+      "POST /v1/projects/:projectId/apps",
+      "GET /v1/projects/:projectId/apps",
+      "GET /v1/projects/:projectId/apps/:appId",
+      "PATCH /v1/projects/:projectId/apps/:appId",
+      "POST /v1/projects/:projectId/apps/:appId/deployments",
+      "POST /v1/projects/:projectId/apps/:appId/token",
+      "POST /v1/projects/:projectId/apps/:appId/access-session",
+      "PATCH /v1/projects/:projectId/apps/:appId/access",
+      "DELETE /v1/projects/:projectId/apps/:appId",
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const projectParams = { projectId: project.id };
+    const slug = ctx.fixtures.name("ext").toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 63);
+    // An IP-literal private address: the API never fetches it (the SSRF guard
+    // refuses it before any connection), so the framing probe is deterministic
+    // and the site counts as frameable — the viewer's browser may reach it.
+    const site = "https://127.0.0.1:9/dashboard";
+    const moved = "https://127.0.0.1:9/moved";
+    const apiOrigin = ctx.env.apiUrl.replace(/\/v1$/, "");
+    let appId = "";
+    let plainId = "";
+    const app = () => ({ ...projectParams, appId });
+
+    try {
+      await ctx.step("an http or credential-carrying external_url is refused with 400 and creates nothing", async () => {
+        for (const external_url of ["http://example.com", "https://user:pass@example.com", "javascript:alert(1)"]) {
+          (await owner.post("/v1/projects/:projectId/apps", { slug, name: "bad", external_url }, { params: projectParams }))
+            .status(400);
+        }
+        (await owner.get("/v1/projects/:projectId/apps", { params: projectParams })).status(200).body().has("$.apps", []);
+      });
+
+      await ctx.step("create with external_url: 201, url is the site, preview only, no cost, no warning", async () => {
+        const created = await owner.post("/v1/projects/:projectId/apps", { slug, name: "Ops dashboard", external_url: site }, { params: projectParams });
+        created.status(201).body()
+          .has("$.external_url", site)
+          .has("$.url", site)
+          .has("$.capabilities", ["preview"])
+          .has("$.estimated_monthly_usd", 0)
+          .has("$.active_deployment_id", null)
+          .has("$.warnings", []);
+        appId = created.json<any>().app_id;
+      });
+
+      await ctx.step("list and get carry the external App with its site URL", async () => {
+        const list = await owner.get("/v1/projects/:projectId/apps", { params: projectParams });
+        list.status(200);
+        const listed = list.json<any>().apps.find((row: any) => row.app_id === appId);
+        if (listed?.external_url !== site || listed?.url !== site) throw new Error(`list: ${list.text()}`);
+        (await owner.get("/v1/projects/:projectId/apps/:appId", { params: app() })).status(200).body().has("$.external_url", site);
+      });
+
+      await ctx.step("deploy and sign-in tokens answer 409 app_capability_unsupported: Kortix never runs it", async () => {
+        const deploy = await owner.post("/v1/projects/:projectId/apps/:appId/deployments",
+          { artifact_id: UNKNOWN_ID, source: { kind: "static" } }, { params: app() });
+        deploy.status(409).body().has("$.code", "app_capability_unsupported").has("$.capability", "deployments");
+        const token = await owner.post("/v1/projects/:projectId/apps/:appId/token", {}, { params: app() });
+        token.status(409).body().has("$.code", "app_capability_unsupported").has("$.capability", "member_tokens");
+      });
+
+      await ctx.step("access-session hands out the site URL itself", async () => {
+        (await owner.post("/v1/projects/:projectId/apps/:appId/access-session", {}, { params: app() }))
+          .status(200).body().has("$.url", site);
+      });
+
+      await ctx.step("the App's Kortix host redirects 302 to the site", async () => {
+        const routeKey = await withDb(ctx, async (db) =>
+          (await db.query("SELECT route_key FROM kortix.apps WHERE app_id = $1", [appId])).rows[0]?.route_key as string);
+        // A public App: the gate lets an anonymous request through to the redirect.
+        (await owner.patch("/v1/projects/:projectId/apps/:appId/access", { mode: "public" }, { params: app() })).status(200);
+        const response = await fetch(`${apiOrigin}/`, {
+          headers: { host: `${routeKey}.apps.localhost:${new URL(apiOrigin).port}` },
+          redirect: "manual",
+        });
+        if (response.status !== 302 || response.headers.get("location") !== site) {
+          throw new Error(`Kortix host: ${response.status} location=${response.headers.get("location")}`);
+        }
+      });
+
+      await ctx.step("PATCH external_url moves the App; a PATCH on an App Kortix runs answers 409 app_not_external", async () => {
+        (await owner.patch("/v1/projects/:projectId/apps/:appId", { external_url: moved }, { params: app() }))
+          .status(200).body().has("$.external_url", moved).has("$.url", moved);
+        const plain = await owner.post("/v1/projects/:projectId/apps", { slug: `${slug.slice(0, 56)}-plain`, name: "plain" }, { params: projectParams });
+        plain.status(201).body().has("$.external_url", null);
+        plainId = plain.json<any>().app_id;
+        (await owner.patch("/v1/projects/:projectId/apps/:appId", { external_url: moved }, { params: { ...projectParams, appId: plainId } }))
+          .status(409).body().has("$.code", "app_not_external");
+      });
+
+      await ctx.step("delete removes the external App from the list", async () => {
+        (await owner.del("/v1/projects/:projectId/apps/:appId", { params: app() })).status(200);
+        const list = await owner.get("/v1/projects/:projectId/apps", { params: projectParams });
+        if (list.json<any>().apps.some((row: any) => row.app_id === appId)) throw new Error(`still listed: ${list.text()}`);
+        appId = "";
+      });
+    } finally {
+      if (appId) await owner.del("/v1/projects/:projectId/apps/:appId", { params: app() }).catch(() => {});
+      if (plainId) await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId: plainId } }).catch(() => {});
     }
   },
 );

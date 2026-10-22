@@ -5,7 +5,9 @@
 The API package's direct `scripts/test.sh` command selects one to four Bun
 workers from available memory. It reserves 2 GiB for the agent and OS and
 budgets 4 GiB per worker. It restarts workers every 80 test files because a
-single long-lived Bun worker retained 8.9 GiB during a full suite. Set
+single long-lived Bun worker retained 8.9 GiB during a full suite. A batch
+ends when its slowest file ends, so the files in `apps/api/scripts/slow-tests.txt`
+(1 s or more) run first. Add a file there when it passes 1 s. Set
 `KORTIX_API_TEST_WORKERS` only on a dedicated
 runner with measured headroom. A detached suite continues after an agent turn
 ends; check and stop that process before retrying a memory-guarded turn.
@@ -23,8 +25,9 @@ The local API that the flows start refreshes its git mirror every second
 (`KORTIX_GIT_REFRESH_INTERVAL_MS=1000`, `src/core/local-stack.ts`). The 60 s
 default made each flow that pushes `kortix.yaml` wait up to 60 s per push.
 
-The default run has six lanes plus package quality. It runs only the lanes and
-packages the branch's diff can affect ([Diff-scoped default run](#diff-scoped-default-run)):
+The default run has six lanes plus package quality. It always runs every lane
+and every package. There is no diff scope, no lane reuse, and no attestation:
+CI runs the whole suite at the dev -> staging promote and nightly on `dev`.
 
 1. Black-box REST and CLI flows against local Supabase, API, and gateway.
 2. `@kortix/sdk` tests in `packages/sdk`.
@@ -37,47 +40,21 @@ The REST runner is language-agnostic at the product boundary. It sends HTTP
 requests and starts the compiled CLI as a process. It never imports API route
 handlers.
 
-## Diff-scoped default run
+## Default run
 
-Plain `pnpm test` runs only what the branch's diff can affect
-(`tests/src/core/test-scope.ts`). The diff is every file that differs from the
-merge-base with `origin/dev`, uncommitted edits included.
+A Mac refuses a suite-wide run (`pnpm test`, `--full`, `--packages-only`,
+`--browser-only`, `--db-only` with no filter) and prints the targeted
+commands. Run the targeted tests that cover your change: one flow
+(`--id <FLOW>`), one DB suite filter, the SDK, or one package test file.
+`KORTIX_FULL_TEST=1` overrides the refusal on a box with headroom.
 
-| Changed path | What runs |
-| --- | --- |
-| a file in a workspace package | that package, every package that depends on it (`pnpm --filter "...{dir}"`), and every package that imports it by relative path (`../../packages/x`) |
-| `.github/`, `.githooks/`, `infra/`, `tests/e2e/` | the packages whose files name that path |
-| `tests/src/flows/`, `tests/spec/`, `tests/migration/` | the REST/CLI flows and DB suites |
-| `.agents/`, `.claude/`, `tests/unit/`, a root `*.md` | only the always-on lanes |
-| anything else (root config, `pnpm-lock.yaml`, `scripts/`, `supabase/`, the runner itself, an app that is not a workspace package) | everything |
-
-- The runner unit tests, route coverage and worktree tests always run.
-- The flows and DB suites run when the scope reaches `apps/api`, `apps/cli`,
-  `apps/llm-gateway` or `packages/db`, or a flow path changed. Otherwise the
-  attestation records `db-suites=skipped-unaffected`.
-- The SDK lane runs when the scope reaches `packages/sdk`.
-- Package quality runs the publish checks, lint, typecheck and workspace tests
-  of the packages in scope only.
-
-A run also reuses lane groups (`core`, `packages`, `db-suites`) that already
-passed for the same diff: rerunning after a flake runs only the red groups. A
-merge of `origin/dev` that touches other files keeps the diff, so it keeps the
-reuse. A file that joins the diff or an edit to a changed file drops every
-reused group. Delete `tests/attestations/<branch>.json` to rerun everything on
-the same diff. The attestation hashes the working tree, so commit the tested
-edits as they are: a tested file that the commit leaves out makes it stale.
-A run fingerprints the working tree before its lanes start. When the tree
-differs at the end (an edit or commit made during the run), it writes no
-attestation and exits 1: rerun `pnpm test` on the final tree.
-
-`CI=1 pnpm test` runs the whole suite and reuses nothing. GitHub Actions sets
-`CI`, so the `Tests` run on every push to `dev` and the release lanes always
-run everything: they are the backstop for a dependency the scope cannot see.
+A box without Docker (a factory sandbox) drops the `api-cli-flows` and
+`db-suites` lanes and logs `SKIP <lane> (no Docker, not a pass)`.
 
 ## Commands
 
 ```bash
-pnpm test                       # Fast local core
+pnpm test                       # Whole core suite; refused on a Mac unless KORTIX_FULL_TEST=1
 pnpm test -- --id ACC-4        # One flow
 pnpm test -- --domain access   # One flow domain
 pnpm test -- --sdk-only        # SDK only
@@ -89,15 +66,17 @@ pnpm test -- --packages-only   # Every app/package test and publish contract
 pnpm test -- --agentic-only tests/example.e2e.ts # Opt-in e2e browser pilot
 pnpm test -- --full            # Core, browser, and every app/package test
 pnpm test -- --target-smoke    # Deployed staging API SHA and browser smoke
-pnpm test -- --target-full     # Every deployed staging API flow and browser journey
-pnpm test -- --target-api-full --api-shard=1/6     # One deployed API shard
+pnpm test -- --target-full     # Deployed seam API flows (`deployed` tag) and browser journeys
+pnpm test -- --target-api-full # Deployed seam API flows only (the release gate's API job)
 pnpm test -- --target-browser-full --browser-shard=1/3 # One deployed browser shard
 ```
 
 `--target-full` runs both deployed lanes in one process. The two per-lane modes
 run one lane each, so the release gate can run them as parallel GitHub jobs.
-Both accept a shard, and both assert the deployed SHA exactly as `--target-full`
-does.
+Both assert the deployed SHA exactly as `--target-full` does. The API lane runs
+only the flows tagged `deployed` (see "Release gate: the deployed seams").
+`--api-shard=N/M` partitions that set when one job is not enough; the browser
+lane takes `--browser-shard=N/M`.
 
 Browser and full modes start local Supabase, apply migrations, and start the
 deterministic API, gateway, and web processes. The runner stops only processes
@@ -133,29 +112,41 @@ browser-visible changes) before you merge into `main`. A pull request into
 lanes, once) or the `preview` label (below).
 
 GitHub Actions uses `.github/workflows/tests.yml` for every local-profile run.
-It runs on every push to `main`, on a pull request into `staging`, once when a
-person adds the `test` label to a pull request, and on manual dispatch. The push-to-`main` run is a post-merge safety net: it blocks nothing,
-and a red run comments on the offending commit with the failing lane names. A
+It holds the contract lanes (no browser). They run nightly on `dev`, once
+when a person adds the `test` label to a pull request into `dev`, on manual
+dispatch, and inside the release suite (`tests-release.yml` calls it). The
+nightly run blocks nothing; a red night comments on the commit with the
+failing lane names. A
 cancelled run means a newer commit superseded it. Deployed-target runs are
 separate: `deploy-preview.yml` (`--target-full` against a preview origin, on
 dispatch only; the `preview` label deploys without it) and `tests-release.yml` (`--target-*-full` against deployed
 staging, whose `full suite + quality gates` job is the only required check in
 the repository).
 
-The run is ten lanes in parallel, each natively on one free GitHub-hosted
-runner (`CI_RUNNER_L`, default `ubuntu-24.04`, 4 vCPU / 16 GB). Core and
-package lanes run `pnpm test` and `pnpm test -- --packages-only`. Eight browser
-lanes run shards `1/8` through `8/8` with one Playwright worker each
+The run is eight lanes in parallel, each natively on one free GitHub-hosted
+runner (`CI_RUNNER_L`, default `ubuntu-24.04`, 4 vCPU / 16 GB). Two core lanes
+split the default run without package quality: `core-flows` runs
+`pnpm test -- --core-group=flows` (the REST and CLI flows) and `core-db` runs
+`pnpm test -- --core-group=db` (the DB suites, runner unit tests, route
+coverage, worktree tests, then the SDK). On one runner the flows and the DB
+suites shared 4 vCPU and the lane took 11-12 min. Four package lanes run one slice of package
+quality each: `pnpm test -- --packages-only --package-group=api` (`cli`,
+`kortixd`, `rest`; `rest` holds the repo-wide checks and every other package).
+On one runner the API, CLI and kortixd suites and three `tsc` shared 4 vCPU and
+the lane took 18.5 min. Two browser
+lanes run shards `1/2` and `2/2` with one Playwright worker each
 (`E2E_BROWSER_WORKERS=1`, exported in browser lanes only) via
 `pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL`. The runner hands
 each shard its spec files by path, balanced by measured duration (see
-"Browser shard balancing"). The ten lanes are the parallel equivalent of
+"Browser shard balancing"). The eight lanes are the parallel equivalent of
 `pnpm test -- --full`; `tests.yml` records their measured times. Each lane checks out the
 exact requested SHA, runs `pnpm install --frozen-lockfile`, and invokes the
 unchanged root command; browser lanes also install Chromium and prestart
 Supabase so the root runner reuses it. `actions/cache` keeps the Chromium
-download per lockfile; every runner is a fresh VM, so `pnpm install` and the
-Supabase image pulls run cold on each lane.
+download per lockfile. Every runner is a fresh VM, so `pnpm install` (~45 s)
+and the Supabase image pulls (~55 s) run cold on each lane. A `node_modules`
+cache does not pay on these runners: restoring its 1.33 GB archive took
+24-44 s against a 41-49 s cold install (2026-10-16).
 
 Until 2026-08-26 each lane ran inside a Platinum or Daytona cloud sandbox with
 a content-addressed warm image; the runner was a thin orchestrator. That path
@@ -179,8 +170,8 @@ Add the `preview` label to a same-repository pull request into `main`.
 2. Three credential-free jobs build the API, gateway, and frontend images for
    `linux/amd64`.
 3. The trusted controller from `main` publishes the three exact SHA tags.
-4. The controller restores one warm Platinum sandbox. `auto` uses Daytona only
-   when Platinum infrastructure fails.
+4. The controller restores one warm Platinum sandbox. Previews run on Platinum
+   only; there is no fallback provider.
 5. The sandbox generates the standard `kortix self-host` Compose distribution.
 6. One overlay adds Caddy, Mailpit, the report mount, and loopback PostgreSQL.
 7. On a dispatch only, the sandbox runs `pnpm test -- --target-full` against its public HTTPS origin.
@@ -192,15 +183,14 @@ frontend, and Mailpit. It does not use the Dev, staging, or production database.
 The warm image contains dependencies and Docker layers only. It contains no
 preview database and no runtime secret.
 
-The runtime secret allowlist contains `DAYTONA_API_KEY`,
-`KE2E_STRIPE_SECRET_KEY`, `KE2E_STRIPE_WEBHOOK_SECRET`, `OPENROUTER_API_KEY`, `MORPH_API_KEY`, and the five fields required
+The runtime secret allowlist contains `PLATINUM_API_KEY`,
+`KE2E_STRIPE_SECRET_KEY`, `KE2E_STRIPE_WEBHOOK_SECRET`, `PLATINUM_INFERENCE_API_KEY`, and the five fields required
 for the dedicated preview GitHub App installation. Mailpit handles preview
 email. The GitHub App runs the real managed repository and CLI push flows.
 OAuth initiation is the only allowed preview browser exclusion. All API flow
 exclusions and all other browser journey exclusions fail the preview test.
 
-Use **Run workflow** to select `platinum` or `daytona` explicitly for one
-provider proof. A new deployment deletes any existing provider sandbox for the
+A new deployment deletes any existing provider sandbox for the
 same pull request. A test failure keeps the sandbox available for diagnosis.
 A push to a labelled branch starts nothing; re-add the label to deploy the new
 head. The label never runs the suite (step 7); a dispatch does. Removing the label or deleting the branch deletes the sandbox; closing
@@ -210,7 +200,7 @@ branch no longer exists.
 `tests-release.yml` runs the deployed staging suite for pull requests into
 `prod`. It does not repeat the local-profile suite. It rejects development and
 production hosts. It requires the API, gateway, **and frontend** health commits
-to equal `RELEASE_SOURCE_SHA`. It runs every selected REST and CLI flow with
+to equal `RELEASE_SOURCE_SHA`. It runs the `deployed` REST and CLI flows with
 `--require-all`, then runs all configured Playwright journeys against
 `staging.kortix.com` with the Vercel bypass header. A missing external
 capability fails the release gate instead of counting as a pass.
@@ -271,39 +261,74 @@ bun tests/bin/refresh-shard-durations.ts local <tests.yml run id>...
 bun tests/bin/refresh-shard-durations.ts deployed <tests-release.yml run id>...
 ```
 
-A spec file that no run executed (quarantined, local-only) gets 0. A shard wall
+A spec file that no run executed (local-only) gets 0. A shard wall
 time is about `fixed overhead + sum of its files` at one worker: 295 s local, 105 s
-deployed. The largest file (`27-desktop-parity`, 520 s local) is the floor.
+deployed. The largest file is the floor. `27-desktop-parity` was one 520 s file
+(655 s on CI run 38777589705); its journeys now live in
+`e2e/helpers/desktop-parity.ts` and run from two spec files, one per runtime.
 
-#### Release gate shards
+#### Release gate: the deployed seams
 
-The gate runs as parallel matrix jobs instead of one 90-minute job: six API
-shards (`--target-api-full --api-shard=N/6`) and three browser shards
-(`--target-browser-full --browser-shard=N/3`), with `fail-fast: false` so one
-red shard still reports the others. Wall clock becomes the slowest shard rather
-than a contended sum on one 2-vCPU runner.
+The release suite's contract lanes run every flow on the release tree.
+The release gate runs against deployed staging, so it tests only what a
+deployment can break. Its API job runs the flows tagged `deployed`
+(`DEPLOYED_FLOW_TAG` in `src/core/local-runner.ts`), one or more per seam, the
+money path first. `--require-all` applies to that set: a skipped, todo, or
+failed `deployed` flow fails the gate.
 
-`src/core/shard.ts` computes the API partition from the live flow registry, so a
-newly added flow always lands in exactly one shard and can never fall out of the
-gate. Shard 1 owns every `serial` and every `global` flow, and nothing else. Two
-jobs running the platform-mutating `global` flows at once would corrupt each
-other, and both kinds run strictly one-at-a-time, so a parallel flow sharing
-that runner waits behind a queue it cannot help drain. The remaining flows are
-bin-packed longest-first using the declared `timeoutMs` as a static cost proxy.
-Read a printed projected load as a wall-clock ceiling of
-`load / KE2E_API_WORKERS`. `unit/shard.test.ts` proves the partition is total,
-that the pinned flows never leave shard 1, and that shard 1 takes no packed
-work.
+| Seam | Flows |
+| --- | --- |
+| Health, deployed SHA, edge error shape | SYS-1, SYS-8, SYS-5, GW-1, GW-1b |
+| Auth and JWT against the real Supabase | AUTH-3, AUTH-1, ME-1, TOK-3 |
+| Email delivery | AUTH-2, AUTH-4 |
+| CORS, cookies, domains | PRX-1, PRX-3, OAU-5, MCP-1 |
+| Sandbox boot and the runtime proxy | RUN-2, RUN-2-pi, RUN-8 |
+| SSE through the edge | RUN-3, RUN-3-pi |
+| Sandbox stop and wake | SESS-12, SESS-12-pi |
+| LLM gateway | GW-2, GW-MANAGED-1 |
+| Stripe and billing webhooks | BILL-1, BILL-3, BILL-8, BILL-18 |
+| Object storage and uploads | SESS-31, SESS-31-log, FILE-9 |
+| Git push to managed repositories | SHIP-1, RUN-7, RUN-7-pi, GH-19, FILE-1 |
+| Money path: prompt to merged change request, real CLI | GOLD-1, CLI-SESS |
+| MCP over HTTP with a PAT | MCP-4 |
+| Apps edge host check | APP-5 |
+| Provider webhook secrets | SBX-6 |
+| Web push keys | NOTIF-4 |
+| Internal cron key | BILL-13 |
+| Database writes over the deployed pool | ACCT-2, PROJ-1 |
 
-Why six. On run 32240074477 four shards of 137 flows were all killed by the
-40-minute job cap while still passing what they ran (76/87 and 68/77). Measured
-from those logs, a shard completes 2.0–2.3 flows/min, so 137 flows needs 62–70
-minutes — more than a 60-minute cap allows. Six shards put 82 flows on each,
-which the same rates finish in 38–43 minutes. Each shard uses
-`KE2E_API_WORKERS=1` and `KE2E_SANDBOX_WORKERS=1` to stay below staging's
-proven concurrency ceiling.
+45 flows, picked for stability: in the 8 release-gate runs from 2026-10-13 to
+2026-10-15, 44 passed every run (SESS-31-log: 3 of 3 since it was added) and
+RUN-3 failed once on a request timeout (run 38399331524). Their median times
+sum to ~10 min of flow work, which the 9 workers run in ~3 min. `unit/deployed-set.test.ts`
+pins this table to the tags, keeps the set between 30 and 50 flows, and rejects
+a todo `deployed` flow. To add a seam, tag its flow
+(`tags: ['deployed']`, or add `deployed` to the existing tags) and add the row
+here and in that test. A `harnessFlow` tag covers both harness variants.
 
-A final job named `full suite + quality gates` aggregates the shards. That exact
+The gate is three parallel jobs and an aggregator:
+
+- `deployed api smoke`: one job, `--target-api-full`, 4 API and 5 sandbox
+  workers. About 1 min of runner setup, then ~3 min of flows. The 30-minute
+  cap covers a cold sandbox image (`runner.ts` waits up to 15 min for the
+  image and 10 min for its runtime); it is a hang detector, not a budget.
+- `deployed browser shard` 1 to 4: `--target-browser-full
+  --browser-shard=N/4`, `fail-fast: false`. Four shards keep the heaviest
+  shard to one spec 27 file (~3.6 min of journeys in the `deployed` table).
+- `sweep stale test accounts` runs beside them, not in front. It reclaims
+  accounts older than 2 hours, so it cannot touch this run.
+
+Before 2026-10-16 the API job was six shards of the whole registry (~700
+flows), 10-17 min each on green run 38495058722, and v0.13.57 needed 5 gate
+rounds for flakes on shared staging. `src/core/shard.ts` still partitions any
+selection for `--api-shard`, and `unit/shard.test.ts` proves that partition.
+
+Staging concurrency is a fleet total: 4 + 5 API workers plus 4 browser workers
+is 13. Run 32231251280 collapsed staging at 26 workers, 15 held on run
+32240074477, and 19 produced origin 5xx on team creation. Lower the workers
+first if `MAINTENANCE_MODE` 503s reappear.
+
+A final job named `full suite + quality gates` aggregates the jobs. That exact
 name is the required status check on `prod` branch protection; renaming it
 without updating the protection rule silently disables the gate.
 
@@ -392,28 +417,6 @@ The control client retries `502`, `503`, `504`, `524`, the provider's transient
 bounded exponential backoff. Sandbox deletion uses eight attempts. A failed
 deletion fails the workflow and keeps the exact sandbox ID in the log.
 
-### Daytona
-
-Daytona first builds an OCI base snapshot. It starts a temporary builder from
-that base. The builder starts nested Docker, pulls the Supabase images, stops
-Supabase and dockerd, writes a warm marker, and captures the warm snapshot.
-`DAYTONA_CI_TARGET` selects the nested-Docker region. It falls back to
-`DAYTONA_TARGET`, then `us`. Do not reuse the product `DAYTONA_WARM_TARGET`.
-That product variable can select a different sandbox class or region.
-
-The disposable worker uses 6 vCPU, 12 GiB RAM, and 40 GiB disk. These are the
-current Daytona organization maxima. The worker is private.
-Its labels include the repository, exact SHA, workflow run ID, and run attempt.
-The cleanup command deletes only the exact worker whose name and labels match.
-
-Run a provider explicitly from a checkout with the provider key loaded:
-
-```bash
-TEST_SANDBOX_PROVIDER=platinum bun tests/bin/sandbox-ci.ts --full
-TEST_SANDBOX_PROVIDER=daytona bun tests/bin/sandbox-ci.ts --full
-TEST_SANDBOX_PROVIDER=auto bun tests/bin/sandbox-ci.ts --full
-```
-
 ## Product flows
 
 `tests/spec/end-to-end.md` is the human-readable contract. Each contract has a
@@ -478,7 +481,9 @@ counts. Do not infer those counts from source files.
 The runner splits selected flows into three lanes.
 
 - **Parallel lanes** — `meta.serial` and `meta.global` unset. Split again into an
-  API lane and a live-sandbox lane by `requires: ['daytona']`.
+  API lane and a live-sandbox lane by `requires: ['sandbox']`. The `sandbox`
+  capability (`KE2E_CAP_SANDBOX`) means a real cloud sandbox on Platinum, the
+  reference provider; a preview enables it from `PLATINUM_API_KEY`.
 - **Serial lane** — `meta.serial`. Never runs beside another serial flow. It
   runs at concurrency 1 *inside the same `Promise.all` as the parallel lanes*,
   so it overlaps them instead of appending a sequential tail.
@@ -597,11 +602,26 @@ that asks creates it again.
 Playwright exists only for behavior that requires a browser. Browser tests live
 in `tests/e2e/specs`. API-only behavior belongs in a REST flow.
 
-The browser suite does not repeat every REST contract. It covers selected
-browser-visible journeys. REST flows remain authoritative for complete API and
-CLI contracts. The browser suite does not claim complete customer-journey
-coverage. A browser journey is incomplete when it skips for a missing provider,
-OAuth, or mutation capability; report that skip explicitly.
+The browser suite covers the money path only: the journeys a paying user
+cannot work around when they break. Since 2026-10-16 it has these spec files:
+
+| Spec | Money-path step |
+| --- | --- |
+| `01-account-auth` | Sign up from the delivered email, sign out, sign in again. |
+| `37-new-user-lands-on-projects` | A new user lands on the project selector. |
+| `free-tier-pricing-onboarding` | The pricing page (`@target-smoke`). |
+| `10-billing-journey` | Checkout, credits, billing portal (deployed only: needs Stripe). |
+| `34-instant-session-loads` | A session opens instantly from its saved copy. |
+| `27-desktop-parity`, `27-desktop-parity-desktop` | Send, steer and queue a prompt; the web and desktop gate (journeys in `e2e/helpers/desktop-parity.ts`). |
+| `55-session-own-model` | A session keeps the model it was started with. |
+| `49-connector-connect-landing` | Connect a connector and land on its page. |
+| `45-invite-lands-in-invited-project` | Accept a project invite and land in the project. |
+
+Every other browser-visible behavior belongs in a component test in its app or
+in a REST flow. Add a spec only for a new money-path step, and delete one when
+its step leaves the money path. REST flows remain authoritative for complete
+API and CLI contracts. A browser journey is incomplete when it skips for a
+missing provider, OAuth, or mutation capability; report that skip explicitly.
 
 Local browser runs use two Playwright workers. Four workers make cold Next.js
 route compilation slower and can exceed the five-minute journey timeout.
@@ -617,10 +637,12 @@ The lane writes its Playwright HTML report to
 `tests/test-results/html/index.html`. CI includes that directory in the browser
 artifact.
 
-The regular browser lane excludes provider-mutating journeys. Set
-`E2E_ENABLE_SANDBOX_TEMPLATE_BUILD=1` only for the dedicated sandbox-template
-journey. That journey creates and deletes its own product snapshot. The
-Platinum CI worker remains a separate infrastructure sandbox.
+Every CI browser run records a video of every journey, passed or failed
+(`resolveVideoMode` in `playwright.config.ts`). A local run keeps a video only
+for a failure. To replay a release shard, download its artifact and open the
+report: `gh run download <run-id> --repo kortix-ai/suna -n
+tests-release-browser-shard-1 -D /tmp/shard-1`, then `npx playwright
+show-report /tmp/shard-1/html`.
 
 ### Tag filters
 
@@ -638,33 +660,12 @@ Entries in the same direction are unioned. Playwright applies both at
 collection, before `--shard`, so an excluded journey is never loaded, never
 counted, and never lands in a shard.
 
-### Quarantined journeys
+### No quarantine
 
-A browser journey that cannot be made deterministic against a deployed target
-carries the `@quarantine` tag on its `test.describe`. Today that is
-`17-oauth-provider-initiation` (it clicks through to `accounts.google.com` and
-`github.com` and asserts what those pages do, so a third-party interstitial
-turns a gate red with no Kortix defect behind it), `13-sdk-only-session`, and
-`08-accounts-project-access` (cross-task IAM cache propagation — the spec's own
-header explains what the product needs before it can be un-quarantined).
-
-- **Every gate excludes the tag by default.** `resolveGrepFilters` injects it
-  whenever the environment names no include filter, so a workflow cannot block
-  a build on a quarantined journey by forgetting to set `E2E_EXCLUDE_TAGS` —
-  which is exactly what `tests.yml` did.
-- The blocking release gate also names the tag explicitly; that is now
-  belt-and-braces rather than the only thing holding the line.
-- `.github/workflows/tests-browser-nightly.yml` runs exactly the tag, nightly
-  and on dispatch, against the same staging origin with the same secrets. It
-  gates nothing. A red run there is a ticket, not a block.
-
-An excluded journey does not count as a skip. `strict-skip-reporter.ts` fails
-the strict lane on a `skipped` RESULT, and a grep-excluded journey produces no
-result at all. Prove the set with `playwright test --list`.
-
-To return a journey to the blocking gate, remove its tag — no workflow edit is
-needed. Remove it only once the non-determinism is gone at the source, not
-because the nightly happened to be green.
+Nothing is quarantined: no browser journey, no API flow, no DB suite (testing
+reset, 2026-10-16). The mechanism is gone. A test that fails twice without a
+Kortix defect is fixed or deleted the same day. A test that fails because of a
+Kortix defect stays red until the defect is fixed.
 
 ### Deployed-target resilience
 
@@ -714,11 +715,15 @@ How the lane runs a file:
    `--db-only`) starts Supabase before the first stage and stops it at the end
    when it started it. `test:integration` and `bun tests/bin/db-suites.ts`
    need a running Supabase.
-2. It builds one template database per content hash of the migrations, the
-   `packages/db` scripts, and the platform `auth` schema. It copies `auth` from
-   the Supabase database with `pg_dump` inside the Supabase container, applies
-   `test-prereqs.sql`, and runs `migrate.ts local-up`. A second run with the
-   same hash reuses the template (0.1 s instead of ~1 s).
+2. It grants `SET ON PARAMETER session_replication_role` to `postgres`, so a
+   fixture on the suites' own connection can write past a trigger on any
+   stack — the stack's init demotes that role from superuser, and Supabase's
+   supautils allowance for the parameter belongs to the image, not the stack
+   (KRTX-2026). It then builds one template database per content hash of the
+   migrations, the `packages/db` scripts, and the platform `auth` schema. It
+   copies `auth` from the Supabase database with `pg_dump` inside the Supabase
+   container, applies `test-prereqs.sql`, and runs `migrate.ts local-up`. A
+   second run with the same hash reuses the template (0.1 s instead of ~1 s).
 3. For every file it clones a fresh database from the template
    (`CREATE DATABASE … TEMPLATE`, ~150 ms), runs `bun test <file>` in its own
    process, and drops the database. No file sees another file's rows
@@ -744,9 +749,9 @@ suite ignored them. `unit/db-suites.test.ts` fails when a test file reads
 `process.env.TEST_DATABASE_URL` (or the other lane variables) but is not named
 as a DB suite, so a new suite cannot sit skipped inside a unit lane.
 
-To park a broken suite, add it to `DB_SUITE_QUARANTINE` with the reason. The
-lane prints every quarantined file on every run. Remove the entry when the
-cause is fixed.
+The lane also supplies local Supabase Storage's S3 endpoint to the one suite
+whose subject is an S3 round trip (`PROJECT_SNAPSHOT_SUITE` in
+`src/core/db-suites.ts`). No other suite gets the S3 variables.
 
 A test that needs a live cloud sandbox, a model, or another external service is
 not a DB suite. Name it `*.live.test.ts`; no lane runs it.
@@ -784,7 +789,7 @@ contracts moved into the canonical lanes before deletion.
 
 | Retired path | Canonical disposition |
 | --- | --- |
-| `tests/accessibility` | Axe checks moved to `tests/e2e/specs/00-accessibility.spec.ts`. |
+| `tests/accessibility` | Removed. The axe journey was cut with the 2026-10-16 money-path reset. |
 | `tests/pentest` | Unique transport checks moved to REST flow `SEC-J`. Existing auth and webhook checks stay in `SEC-A` through `SEC-I`. |
 | `tests/migration` shell runner | The disposable-Postgres contracts run in the `db-suites` lane of `pnpm test`. |
 | `tests/e2e/specs/10-production-*` | API behavior moved to REST access, project, session, trigger, and security flows. Browser-visible behavior stays in focused Playwright journeys. |

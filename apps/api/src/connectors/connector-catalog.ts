@@ -63,6 +63,10 @@ export interface ConnectorCatalogItem {
   categories: string[];
   feeds: string[];
   popularity: number | null;
+  /** The hosted MCP server (`connectUrl`), https only. MCP entries only. */
+  mcpUrl?: string;
+  /** The index's curated, OAuth-signed-in servers rank first. */
+  oauth?: boolean;
 }
 
 export interface ConnectorTemplate {
@@ -104,6 +108,12 @@ interface CatalogOptions {
   ttlMs?: number;
   timeoutMs?: number;
   now?: () => number;
+  /** A catalogue other than integrations.sh, held in memory: its records and
+   *  each domain's surfaces, served as they are (no fetch, no enrichment). */
+  source?: {
+    items(): ConnectorCatalogItem[];
+    surfaces(domain: string): ConnectorSurfaceVariant[];
+  };
 }
 
 function strings(value: unknown): string[] {
@@ -139,7 +149,18 @@ function normalizeItem(value: unknown): ConnectorCatalogItem | null {
     feeds: strings(raw.feeds),
     popularity:
       typeof raw.popularity === 'number' && Number.isFinite(raw.popularity) ? raw.popularity : null,
+    ...(kind === 'mcp' && httpsUrl(raw.connectUrl) ? { mcpUrl: httpsUrl(raw.connectUrl)! } : {}),
+    ...((raw.auth as { kind?: unknown } | undefined)?.kind === 'oauth' ? { oauth: true } : {}),
   };
+}
+
+function httpsUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  try {
+    return new URL(value).protocol === 'https:' ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 function authTemplate(surface: Record<string, unknown>): ConnectorTemplate['auth'] | undefined {
@@ -388,6 +409,7 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
   };
 
   const loadIndex = async (): Promise<ConnectorCatalogItem[]> => {
+    if (options.source) return options.source.items();
     if (indexCache && now() - indexCache.at < ttlMs) return indexCache.items;
     if (indexRequest) return indexRequest;
     indexRequest = (async () => {
@@ -415,6 +437,7 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
   };
 
   const loadSurfaces = async (domain: string): Promise<ConnectorSurfaceVariant[]> => {
+    if (options.source) return options.source.surfaces(domain);
     const cached = surfaceCache.get(domain);
     if (cached && now() - cached.at < ttlMs) return cached.value;
     const pending = surfaceRequests.get(domain);
@@ -578,6 +601,28 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
       return new Map([...best].map(([key, item]) => [key, item.id]));
     },
 
+    /**
+     * Each app's hosted MCP server URL by its join key: a curated OAuth entry
+     * first, then the most popular. Install offers it before the managed app.
+     */
+    async directMcpUrls(): Promise<Map<string, string>> {
+      const rank = (item: ConnectorCatalogItem) =>
+        (item.feeds.includes('curated') ? 2 : 0) + (item.oauth ? 1 : 0);
+      const best = new Map<string, ConnectorCatalogItem>();
+      for (const item of await loadIndex()) {
+        if (!item.mcpUrl) continue;
+        const key = appNameKey(item.name);
+        const current = best.get(key);
+        if (
+          !current ||
+          rank(item) > rank(current) ||
+          (rank(item) === rank(current) && (item.popularity ?? 0) > (current.popularity ?? 0))
+        )
+          best.set(key, item);
+      }
+      return new Map([...best].map(([key, item]) => [key, item.mcpUrl!]));
+    },
+
     async detail(id: string): Promise<ConnectorCatalogDetail> {
       const items = await loadIndex();
       const item = items.find((candidate) => candidate.id === id);
@@ -585,7 +630,10 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
       const variants = await loadSurfaces(item.domain);
       return {
         item,
-        variants: [...variants, ...(OFFICIAL_SURFACE_ENRICHMENTS[item.domain] ?? [])],
+        variants: [
+          ...variants,
+          ...(options.source ? [] : (OFFICIAL_SURFACE_ENRICHMENTS[item.domain] ?? [])),
+        ],
       };
     },
   };
@@ -598,3 +646,4 @@ export const connectorCatalogSections = catalog.sections;
 export const getConnectorCatalogDetail = catalog.detail;
 export const connectorCatalogIcons = catalog.icons;
 export const connectorCatalogDirectIds = catalog.directIds;
+export const connectorCatalogDirectMcpUrls = catalog.directMcpUrls;

@@ -3,8 +3,6 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, sy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PermissionBroker, compilePermissionPolicy } from '@/harness/pi/interactions'
-import connectorCall from '@/services/tools/kortix/kortix-connectors_call'
-import connectorDescribe from '@/services/tools/kortix/kortix-connectors_describe'
 import imageSearch from '@/services/tools/kortix/image_search'
 import memoryTool from '@/services/tools/kortix/memory'
 import scrapeWebpage from '@/services/tools/kortix/scrape_webpage'
@@ -312,11 +310,20 @@ describe('show', () => {
     await expect(show({ items: JSON.stringify([{ type: 'image' }]) })).rejects.toThrow('All items failed validation')
     await expect(show({ items: 'not json' })).rejects.toThrow("Invalid JSON in 'items' parameter.")
   })
+
+  test('an empty items value ("null", "[]") beside a single item shows that item', async () => {
+    writeFileSync(join(dir, 'SKILL.md'), '# skill')
+    for (const items of ['null', '[]']) {
+      const result = JSON.parse(out(await show({ type: 'file', path: 'SKILL.md', theme: 'success', items })))
+      expect(result.entry).toMatchObject({ type: 'file', path: join(dir, 'SKILL.md'), theme: 'success' })
+    }
+    await expect(show({ items: 'null' })).rejects.toThrow("'type' is required.")
+  })
 })
 
 describe('each Kortix tool is one self-contained module (what `kortix tools eject` copies)', () => {
   const kortixDir = join(import.meta.dir, '../services/tools/kortix')
-  const modules = { 'kortix-connectors_call': connectorCall, 'kortix-connectors_describe': connectorDescribe, web_search: webSearch, image_search: imageSearch, scrape_webpage: scrapeWebpage, memory: memoryTool, show: showTool }
+  const modules = { web_search: webSearch, image_search: imageSearch, scrape_webpage: scrapeWebpage, memory: memoryTool, show: showTool }
 
   test('one file per Kortix tool, named after the tool', () => {
     expect(readdirSync(kortixDir).sort()).toEqual(Object.keys(KORTIX_TOOLS).map((name) => `${name}.ts`).sort())

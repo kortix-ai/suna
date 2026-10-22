@@ -49,7 +49,7 @@ When the agent starts a dev server on port 3000, run `kortix sessions forward <s
 
 - The session branch is named after the `session_id`. Commits push to that branch through the Kortix git proxy. By default, work reaches the base branch through a [change request](/docs/git#change-requests).
 - The agents, skills and tools a session runs come from a read-only copy of the base branch, not from `/workspace`. An edit in `/workspace` takes effect after it reaches the base branch. See [Config comes from the base branch](/docs/git#config-comes-from-the-base-branch).
-- An agent with `workspace: { project_repository: false }` gets no clone and no git variables.
+- An agent with `workspace: { project_repository: false }` gets no clone and no git variables. In `kortix_version: 3` that is the default: an agent opts in with `project_repository: true`. See [Workspace](/docs/project/manifest#agent-workspace).
 - The sandbox has its own id at the provider, the external id. It is not the `session_id`. Previews and the API proxy use the external id. `kortix sessions info <session_id> --json` shows it in `sandbox_url`, after `/v1/p/`.
 
 ## Ports and previews
@@ -166,7 +166,7 @@ Install Docker in your Dockerfile, for example `RUN curl -fsSL https://get.docke
 
 The runtime layer adds the `kortix` user to the `docker` group and starts `dockerd` at boot. Its log is `/var/log/dockerd.log`. If `dockerd` stops, start it again with `sudo sh -c 'nohup dockerd >/var/log/dockerd.log 2>&1 &'`.
 
-On Platinum, `container_runtime` also adds the kernel modules Docker needs for its networks and storage. E2B fails the build with `container_runtime is not supported on E2B`.
+On Platinum, `container_runtime` also adds the kernel modules Docker needs for its networks and storage.
 
 ## Environment variables
 
@@ -187,7 +187,7 @@ Kortix sets these variables in every session sandbox.
 | `KORTIX_AGENT_NAME` | The session's agent. |
 | `KORTIX_MODEL` | The session's model, when one is set. |
 | `KORTIX_HARNESS` | `pi` on a pi session. Not set on an OpenCode session. |
-| `KORTIX_LLM_BASE_URL` | The LLM gateway, when the gateway is on for the project. |
+| `KORTIX_LLM_BASE_URL` | The LLM gateway. |
 | `KORTIX_TOKEN` | The session credential. See below. |
 | `KORTIX_PROJECT_SECRET_NAMES` | Comma-separated names of the secrets delivered to this session. |
 
@@ -201,13 +201,16 @@ Kortix sets these variables in every session sandbox.
 
 ## Sandbox providers
 
-Kortix runs sandboxes on three providers. The operator of the Kortix instance decides which ones are on.
+Platinum is the reference sandbox provider. New sessions run on Platinum by default. The operator of the Kortix instance decides which providers are on.
 
 | Provider | Id | Docker in the sandbox | Persistent machines and shared folders | US region |
 | --- | --- | --- | --- | --- |
-| Daytona | `daytona` | Yes | No | No |
 | Platinum | `platinum` | Yes | Yes | Yes, with the **US Region** flag |
-| E2B | `e2b` | No. A template with `container_runtime: true` fails to build. | No | No |
+| Daytona (legacy) | `daytona` | Yes | No | No |
+
+<Callout type="warning">
+**Legacy: Daytona.** Daytona is a legacy fallback provider. Its removal is scheduled. Existing Daytona sessions keep working for now, but Daytona gets no new features and no support guarantee. Use Platinum. E2B support is discontinued.
+</Callout>
 
 A new session gets its provider in this order:
 

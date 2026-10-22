@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 840,
+  "count": 880,
   "routes": [
     {
       "method": "GET",
@@ -29,6 +29,10 @@
     {
       "method": "GET",
       "path": "/health/ready"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/admit"
     },
     {
       "method": "POST",
@@ -243,6 +247,14 @@
       "path": "/v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries/:deliveryId/replay"
     },
     {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/automations"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId/automations"
+    },
+    {
       "method": "DELETE",
       "path": "/v1/accounts/:accountId/branding"
     },
@@ -337,6 +349,14 @@
     {
       "method": "GET",
       "path": "/v1/accounts/:accountId/capture/search"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/storage"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/capture/storage"
     },
     {
       "method": "GET",
@@ -1292,6 +1312,10 @@
     },
     {
       "method": "POST",
+      "path": "/v1/connectors/projects/:projectId/connectors/mcp-sign-in-check"
+    },
+    {
+      "method": "POST",
       "path": "/v1/connectors/projects/:projectId/connectors/sync"
     },
     {
@@ -1503,6 +1527,10 @@
       "path": "/v1/notifications/device-token/:token"
     },
     {
+      "method": "POST",
+      "path": "/v1/notifications/device-token/release"
+    },
+    {
       "method": "GET",
       "path": "/v1/notifications/preferences"
     },
@@ -1621,6 +1649,10 @@
     {
       "method": "DELETE",
       "path": "/v1/p/share/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/p/ticket"
     },
     {
       "method": "GET",
@@ -2099,6 +2131,22 @@
       "path": "/v1/projects/:projectId/channels/teams/oauth/complete"
     },
     {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/channels/telegram"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/channels/telegram/allowed-users"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/telegram/connect"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/telegram/installation"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/cli-token"
     },
@@ -2223,8 +2271,28 @@
       "path": "/v1/projects/:projectId/connections/me"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/connector-moves"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connectors/:slug/move"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/connectors/:slug/oauth2/connection"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/custom-providers"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/custom-providers/:providerId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/custom-providers/:providerId"
     },
     {
       "method": "PUT",
@@ -2496,6 +2564,54 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/rooms"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/rooms"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/rooms/:roomId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/rooms/:roomId"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/rooms/:roomId/members/people/:userId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/rooms/:roomId/members/people/:userId"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/rooms/:roomId/members/sessions/:sessionId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/rooms/:roomId/members/sessions/:sessionId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/rooms/:roomId/messages"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/rooms/:roomId/messages"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/rooms/:roomId/read"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/rooms/people"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/runtime/prompt-attachments/:attachmentId"
     },
     {
@@ -2683,6 +2799,10 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/events"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/idle-notice"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/log"
     },
@@ -2828,11 +2948,31 @@
     },
     {
       "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId/run"
+    },
+    {
+      "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/restart"
     },
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/restore"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/rooms"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/rooms/:roomId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/rooms/:roomId/messages"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/rooms/:roomId/messages"
     },
     {
       "method": "GET",
@@ -2887,6 +3027,10 @@
       "path": "/v1/projects/:projectId/skills"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/skills/remove"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/snapshots"
     },
@@ -2897,6 +3041,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/snapshots/rebuild"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/trigger-runs"
     },
     {
       "method": "GET",
@@ -2917,6 +3065,14 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/triggers/:slug/fire"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/triggers/:slug/runs"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/triggers/:slug/runs/:run_id/replay"
     },
     {
       "method": "PATCH",
@@ -3013,6 +3169,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/provision-stream"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/quota"
     },
     {
       "method": "GET",

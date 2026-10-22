@@ -2,6 +2,7 @@ import {
   DEFAULT_HOST_NAME,
   DEFAULT_INTERNAL_DEV_API_BASE,
   type Host,
+  activeHostEntry,
   activeHostName,
   getHost,
   listHosts,
@@ -25,6 +26,11 @@ Authentication is per host — one set of stored credentials per Kortix
 instance. The "active" host is what every other command operates on
 unless you pass \`--host <name>\` per invocation. Sign in with
 \`kortix hosts login\`; switch instance with \`kortix hosts use\`.
+
+Inside a Kortix sandbox, plain commands use the delegated session identity,
+not stored host credentials. KORTIX_DISABLE_SANDBOX_ENV_FILE=1 disables the
+sandbox env-file fallback. To use stored credentials, also unset exported KORTIX_TOKEN,
+KORTIX_API_URL, KORTIX_FRONTEND_URL and KORTIX_PROJECT_ID for that invocation.
 
 Built-in hosts (always exist):
   cloud                Kortix Cloud (https://api.kortix.com)
@@ -167,9 +173,29 @@ export async function runHosts(argv: string[]): Promise<number> {
 // ── ls ───────────────────────────────────────────────────────────────────
 
 function hostsLs(json = false): number {
-  const rows = listHosts();
+  const effective = activeHostEntry();
+  const rows = listHosts().map((row) => ({
+    ...row,
+    active:
+      row.name === effective.name &&
+      row.host.url === effective.host.url &&
+      row.host.token === effective.host.token,
+    credential_source: row.host.token ? 'stored' : null,
+  }));
+  if (!rows.some((row) => row.active)) {
+    rows.push({
+      ...effective,
+      active: true,
+      credential_source: effective.envWins ? 'environment' : 'url-override',
+    });
+  }
   if (json) {
-    emitJson(rows.map((r) => hostJson(r.name, r.host, r.active)));
+    emitJson(
+      rows.map((r) => ({
+        ...hostJson(r.name, r.host, r.active),
+        credential_source: r.credential_source,
+      })),
+    );
     return 0;
   }
   if (rows.length === 0) {

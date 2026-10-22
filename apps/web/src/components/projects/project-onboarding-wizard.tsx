@@ -4,26 +4,24 @@ import { useTranslations } from '@/i18n/use-translations';
 import { ArrowLeftIcon as ArrowLeft } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, m, useReducedMotion, type Variants } from 'motion/react';
-import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
 
 import { DesktopCloseButton } from '@/components/desktop/desktop-close-button';
-import { Button } from '@/components/ui/button';
-import { Modal, ModalContent } from '@/components/ui/modal';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { Button } from '@kortix/ui/button';
+import { Modal, ModalContent } from '@kortix/ui/modal';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import { useAuth } from '@/features/providers/auth-provider';
-import { connectorConnectionQueryKeys } from '@/features/workspace/customize/sections/connector-connection-form';
+import { connectorConnectionQueryKeys } from '@kortix/ui/customize/sections/connector-connection-form';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { isBillingEnabled, isConnectorsEnabled } from '@/lib/config';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectPageCans } from '@/lib/use-project-can';
-import { firstChatHref, useFirstChatStore } from '@/stores/first-chat-store';
+import { PROJECT_ACTIONS, useProjectPageCans } from '@kortix/ui/workspace';
+import { useFirstChatStore } from '@kortix/ui/internal/stores/first-chat-store';
 import { listConnectors, type OnboardingUseCase } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 
 import { completeThenNotify } from './onboarding/complete-then';
-import { connectApp, connectionSlugFor, type CatalogApp } from './onboarding/connect-app';
+import { connectApp, connectionSlugFor, type CatalogApp } from '@kortix/ui/workspace/projects/onboarding/connect-app';
 import { slideVariants } from './onboarding/motion';
 import { buildSteps, deriveCompanyDomain } from './onboarding/onboarding-profile';
 import { StepIdentityProvider, StepProgress } from './onboarding/step-shell';
@@ -110,25 +108,11 @@ export function ProjectOnboardingWizard({
 
   const onboarding = useProjectOnboarding(projectId);
   const queryClient = useQueryClient();
-  const router = useRouter();
-
-  // A host that navigates on exit (`/new`) always lands on the project page.
-  // Fetching that route while the questions are answered means the last click
-  // swaps pages at once instead of loading one.
-  const navigatesOnExit = Boolean(onCompleted || onSkip);
-  useEffect(() => {
-    if (navigatesOnExit) router.prefetch(firstChatHref(projectId));
-  }, [navigatesOnExit, projectId, router]);
 
   const reduced = useReducedMotion() ?? false;
   const stepVariants = useMemo(() => slideVariants(reduced), [reduced]);
 
   const [index, setIndex] = useState(0);
-  // Set when an exit navigates away (`/new`). The stamp is optimistic, so
-  // `isPending` flips false in the same tick as the click; without this the
-  // wizard would unmount and uncover `/new`'s "Creating …" loader until the
-  // project page paints. The route change unmounts the wizard instead.
-  const [leaving, setLeaving] = useState(false);
 
   const { save } = useOnboardingAnswers(projectId);
   const [useCase, setUseCase] = useState<OnboardingUseCase | null>(null);
@@ -305,9 +289,8 @@ export function ProjectOnboardingWizard({
 
   const openProject = useCallback(() => {
     startFirstChat();
-    if (onCompleted) setLeaving(true);
     void complete();
-  }, [startFirstChat, onCompleted, complete]);
+  }, [startFirstChat, complete]);
 
   const saveWork = useCallback(() => {
     if (!useCase) return;
@@ -320,7 +303,7 @@ export function ProjectOnboardingWizard({
     next();
   }, [useCase, note, save, next]);
 
-  if (!isPending && !leaving) return null;
+  if (!isPending) return null;
 
   return (
     <>

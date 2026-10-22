@@ -12,10 +12,10 @@
  *
  * `switchPreflight(log, to, ctx)` is the report of a switch to `to`:
  * - `available` / `reason`: the switch can happen. `same_harness`: the log already runs on `to`.
- *   `llm_gateway_off`: pi has no model path without the project's `llm_gateway` flag.
- * - `restores`: the project's `session_log_restore` flag (and the operator switch) is on, so the new
- *   box restores the log. Off: the new box starts without the conversation, and `losses` starts
- *   with a `history` line (every live message).
+ * - `restores`: the project's `session_log_restore` flag (and the operator switch) is on and the log is
+ *   under the API's restore cap (`SESSION_LOG_RESTORE_MAX_BYTES`), so the new box restores the log.
+ *   Otherwise the new box starts without the conversation, and `losses` starts with a `history` line
+ *   (every live message).
  * - `unsupported`: everything the source harness handles that `to` handles worse, used or not:
  *   model features of the manifests and runtime controls (`HARNESS_RUNTIME_CAPABILITIES`).
  * - `losses`: the `unsupported` lines the log shows in use, with counts. A feature the source
@@ -94,9 +94,7 @@ const own = <T>(table: Record<string, T>, key: string): T | undefined => (Object
 
 /** What the API knows besides the log (`POST …/log/switch-preflight`). */
 export type SwitchContext = {
-  /** The project's `llm_gateway` flag: pi has no model path without it. */
-  llmGateway: boolean;
-  /** The project's `session_log_restore` flag and the operator switch: the new box restores the log. */
+  /** The project's `session_log_restore` flag and the operator switch are on and the log is under the restore cap: the new box restores the log. */
   restore: boolean;
   /** Tombstoned messages: OpenCode deletes the messages a rewind reverts. */
   deletedMessages?: number;
@@ -173,7 +171,7 @@ export function switchPreflight(log: SessionLog, to: SessionLogHarness, ctx: Swi
 
   // No restore: the new box starts without the conversation, the largest loss of all.
   if (!ctx.restore && messages.length > 0) losses.unshift({ feature: 'history', used: messages.length, status: 'lost' });
-  const reason = from === to ? 'same_harness' : to === 'pi' && !ctx.llmGateway ? 'llm_gateway_off' : null;
+  const reason = from === to ? 'same_harness' : null;
   return { session_id: log.session_id, from, to, available: reason === null, reason, restores: ctx.restore, losses, unsupported };
 }
 

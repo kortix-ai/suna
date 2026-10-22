@@ -115,7 +115,7 @@ minutes, without a redeploy. A machine size change applies to the next
 release: a new release with a new `vm` resizes without an image rebuild.
 
 **Provider.** On Platinum (Kortix Cloud), an always-on App's VM is persistent.
-On Daytona and E2B (self-host), the VM keeps the provider's idle backstop and
+On the legacy Daytona fallback (self-host), the VM keeps the provider's idle backstop and
 keep-alive renews it. When the provider stops the VM anyway, keep-alive
 restarts it within 5 minutes, so the App can be unreachable for up to 5
 minutes.
@@ -145,10 +145,10 @@ The new App uses `private` access unless `--access` selects another mode.
 Use `--no-wait` only when another process will poll deployment state. The
 default wait limit is 1,200 seconds. Change it with `--wait-seconds`.
 
-## Repeatable manifest
+## Repeatable v2 manifest
 
-The `apps:` map lives in `kortix.yaml` (`kortix_version: 3`, and the legacy
-version 2). An imported file may declare it. It contains deployment defaults. It does not auto-deploy on merge.
+The `apps:` map is available only in `kortix_version: 2` YAML manifests.
+It contains deployment defaults. It does not auto-deploy on merge.
 
 ```yaml
 apps:

@@ -108,6 +108,14 @@ export const MONITOR_MODES = ['poll', 'stream'] as const;
 export const MONITOR_MIN_INTERVAL_SECONDS = 30;
 /** Floor for `expect_event_within` (the silence watchdog) — the platform bound. */
 export const MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS = 300;
+/** Floor for a cron trigger's `max_lateness` (the misfire bound, KRTX-1743). */
+export const TRIGGER_MIN_MAX_LATENESS_SECONDS = 60;
+/**
+ * A trigger starts at most this many runs in any 60 minutes when its
+ * `max_runs_per_hour` is unset (KRTX-1721). Twice the busiest production
+ * trigger's hour in October 2026; the 60 s cron floor allows exactly this.
+ */
+export const DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR = 60;
 /** Longest `run` command accepted. Bounds a hostile manifest out of the box config. */
 export const MONITOR_RUN_MAX_LENGTH = 1024;
 
@@ -178,7 +186,7 @@ export const CONNECTOR_AUTH_TYPES = [
 /** The exclusive owner model for connections under one connector. */
 export const CONNECTOR_AUTHORIZATION_STRATEGIES = ['project', 'user'] as const;
 /** Platforms a `channel` connector can target — mirrors connectors.ts CHANNEL_PLATFORMS. */
-export const CHANNEL_PLATFORMS = ['slack', 'teams', 'email'] as const;
+export const CHANNEL_PLATFORMS = ['slack', 'teams', 'email', 'telegram'] as const;
 /**
  * Platform-owned slugs and the only provider allowed to use each — mirrors
  * connectors.ts RESERVED_SLUG_PROVIDERS so a user app can't shadow the built-in
@@ -276,6 +284,9 @@ export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
   'project.review.read',
   'project.review.submit',
   'project.review.act',
+  // Rooms: read = list rooms and read messages; write = post, join, leave.
+  'project.room.read',
+  'project.room.write',
   // Minting a project credential. Grantable so a manifest CAN hand it to an
   // agent explicitly, but note the two credential routes refuse an
   // agent-session token outright (projects/routes/secret-delivery.ts) — an agent that could
@@ -416,8 +427,18 @@ export const HARNESS_TOOL_NAMES = [
  * The Kortix tools (apps/kortix-sandbox-agent-server `src/services/tools/kortix/`).
  * A project lists one in `tools:` as `<name>: kortix:<name>`, or replaces it
  * with its own module under the same name.
+ *
+ * Connector access is the `kortix connectors` CLI, never a built-in tool. The
+ * MCP-era `kortix-connectors_call` / `kortix-connectors_describe` meta-tools
+ * were re-added once (#9902) and removed again; a test pins them out.
  */
-export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'kortix-connectors_call', 'kortix-connectors_describe'] as const;
+export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show'] as const;
+/**
+ * Kortix tools that no longer exist. Manifests written while #9902 was live
+ * still name them (the v2 starter, v3 agent excludes). Naming one is
+ * a warning, not an error: no session can load it, so the name has no effect.
+ */
+export const RETIRED_KORTIX_TOOLS: readonly string[] = ['kortix-connectors_call', 'kortix-connectors_describe'];
 /** A `tools:` value that keeps a Kortix tool: `kortix:<name>`. */
 export const KORTIX_TOOL_PREFIX = 'kortix:';
 
@@ -455,13 +476,17 @@ export const KORTIX_SKILL_NAMES = [
   'kortix-connectors',
   'kortix-drives',
   'kortix-genui',
+  'kortix-goals',
   'kortix-harness-refinement',
   'kortix-marketplace',
   'kortix-memory',
   'kortix-onboarding',
+  'kortix-rooms',
   'kortix-slack',
   'kortix-system',
   'kortix-teams',
+  'kortix-ui',
+  'kortix-user-memory',
 ] as const;
 /** The prefix only Kortix skills use. */
 export const KORTIX_SKILL_PREFIX = 'kortix-';

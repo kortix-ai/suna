@@ -1,10 +1,11 @@
+import { isRepositoryDisconnectedError, repositoryDisconnectedBody } from './shared/repository-health';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { BillingError } from './errors';
 import { logger as appLogger } from './lib/logger';
 import { captureException, isSentryIgnoredError } from './lib/sentry';
-import { isRequestDeadlineHTTPException } from './middleware/request-deadline';
+import { isRequestDeadlineHTTPException, isDeadlineOrphan, REQUEST_DEADLINE_CODE } from './middleware/request-deadline';
 import {
   GIT_MIRROR_UNAVAILABLE_CODE,
   isRemotePushPolicyRejection,
@@ -26,7 +27,7 @@ import {
   CONNECTORS_PROVIDER_UNAVAILABLE_CODE,
   isComposioTransientProviderError,
 } from './shared/composio-transient';
-import { isPlatinumSandboxNotRunningError } from './shared/platinum';
+import { isPlatinumSandboxNotRunningError, PlatinumExecOutcomeUnknownError } from './shared/platinum';
 
 // The typed branch handlers keep every ladder branch verbatim (comment,
 // predicate, body); the dispatcher below calls them in the original ladder
@@ -479,18 +480,66 @@ function handleSecretUndecryptable(err: Error, c: Context, method: string, path:
   return c.json({ error: err.message, code: 'SECRET_UNDECRYPTABLE' }, 409);
 }
 
+function handleRepositoryDisconnected(err: Error, c: Context): Response | null {
+  // The project's GitHub repository cannot be reached until a person acts
+  // (reinstall the App, re-grant the repo): a 409 with the cause and the fix,
+  // never the transient 503 a failed clone would become. No log line here: the
+  // state change was logged once where it was classified (KRTX-2952..2955).
+  let cause: unknown = err;
+  for (let depth = 0; cause && depth < 5; depth++) {
+    if (isRepositoryDisconnectedError(cause)) return c.json(repositoryDisconnectedBody(cause), 409);
+    cause = (cause as { cause?: unknown }).cause;
+  }
+  return null;
+}
+
 // The dispatcher keeps the original head of the onError callback; each branch
 // below it was extracted whole into the typed handler above it.
 function handleUnhandledError(err: Error, c: Context): Response {
   const method = c.req.method;
   const path = c.req.path;
   const errName = err.constructor?.name || 'Error';
+  // A request whose deadline already fired had its 503 (Retry-After) served
+  // while the handler kept running with no owner — see request-deadline.ts.
+  // When that orphan resumes it touches the served context (`c.header(...)`
+  // makes Hono recreate the sent Response from its consumed body stream, and
+  // Bun rejects that with `TypeError: Body object should not be disturbed or
+  // locked`), compose catches the throw at its dispatch level and calls
+  // onError a SECOND time with an error that can no longer reach any client.
+  // prod 2026-10-16 22:43:05, request mvbjzd4t-a8d: the manifest handler,
+  // orphaned for 675 ms behind a stalled DB pool, threw exactly that and was
+  // captured as a 500 (Better Stack pattern 235fd74b…).
+  //
+  // Classify it: warn (not error), no captureException, and a 503 body — the
+  // request already degraded as 503 and nobody reads this discarded response.
+  // MUST NOT call c.header/c.status here: on a served context those recreate
+  // the consumed body and would throw the very error this branch absorbs.
+  if (isDeadlineOrphan(c, err)) {
+    appLogger.warn(`${method} ${path} -> 503 [deadline-orphan] handler resumed after its response was served`, {
+      method,
+      path,
+      errorType: 'deadline-orphan',
+      causeErrorType: errName,
+      causeMessage: err.message.slice(0, 200),
+    });
+    return c.json(
+      { error: true, message: 'Request deadline already exceeded', status: 503, code: REQUEST_DEADLINE_CODE },
+      503,
+    );
+  }
   const abort = handleSandboxProxyAbort(err, c, errName, path);
   if (abort) return abort;
+  if (err instanceof PlatinumExecOutcomeUnknownError) {
+    // Preserve ambiguity without a retry hint: the provider may have executed the write.
+    appLogger.warn('Sandbox exec outcome unknown after provider timeout', { method, path, status: 504 });
+    return c.json({ error: true, code: 'sandbox_exec_outcome_unknown', message: err.message, status: 504 }, 504);
+  }
   const platinum = handlePlatinumSandboxNotRunning(err, c, method, path);
   if (platinum) return platinum;
   const daytonaRateLimited = handleDaytonaRateLimit(err, c, method, path);
   if (daytonaRateLimited) return daytonaRateLimited;
+  const disconnected = handleRepositoryDisconnected(err, c);
+  if (disconnected) return disconnected;
   const gitUnavailable = handleTransientGitMirrorFailure(err, c, method, path);
   if (gitUnavailable) return gitUnavailable;
   const pushRejected = handlePushPolicyRejection(err, c, method);

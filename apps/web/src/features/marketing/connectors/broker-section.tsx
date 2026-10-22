@@ -1,13 +1,13 @@
 'use client';
 
 import { Reveal } from '@/components/home/reveal';
-import { Separator } from '@/components/ui/separator';
+import { Separator } from '@kortix/ui/separator';
 import SectionHeader from '@/features/marketing/component/section-header';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { ArrowRightIcon, LockKeyIcon, ProhibitIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { getLocalizedConnectorsContent } from './content';
-import { Eyebrow, Section } from './shared';
+import { Eyebrow, Section } from '../component/section-primitives';
 
 /**
  * One env-var panel. `before` renders its keys struck through and dimmed, so a

@@ -22,6 +22,7 @@ import { parseConnectorHeaders } from './connector-headers';
 import { normalizeImportPath } from './imports';
 import { appDisplayIssues, appReleaseConfigIssues, resolveAppReleaseConfig } from '@kortix/shared/app-config';
 import { appReleaseInputFromBlock } from './app-config';
+import { parseTriggerFilter } from './trigger-filter';
 import { validateManifestBodyV3 } from './index.v3';
 import {
   CHANNEL_PLATFORMS,
@@ -40,6 +41,8 @@ import {
   MONITOR_MIN_INTERVAL_SECONDS,
   MONITOR_MODES,
   MONITOR_RUN_MAX_LENGTH,
+  TRIGGER_MIN_MAX_LATENESS_SECONDS,
+  DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR,
   EVENT_FORBIDDEN_KEYS,
   RESERVED_SANDBOX_SLUG,
   RESERVED_SLUG_PROVIDERS,
@@ -120,6 +123,15 @@ export {
 } from './format';
 
 export { slugifySlug } from './slug';
+export {
+  TRIGGER_FILTER_OPERATORS,
+  parseTriggerFilter,
+  triggerFilterValueMatches,
+  type TriggerFilter,
+  type TriggerFilterCondition,
+  type TriggerFilterOperator,
+  type TriggerFilterValue,
+} from './trigger-filter';
 export { appReleaseInputFromBlock } from './app-config';
 
 export {
@@ -194,6 +206,8 @@ export {
   MONITOR_MIN_INTERVAL_SECONDS,
   MONITOR_MODES,
   MONITOR_RUN_MAX_LENGTH,
+  TRIGGER_MIN_MAX_LATENESS_SECONDS,
+  DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR,
   EVENT_FORBIDDEN_KEYS,
   DURATION_RE,
   formatDurationSeconds,
@@ -240,6 +254,7 @@ export {
   type WorkspaceModeV2,
   type AgentWorkspaceV2,
   type ProjectRepositoryResult,
+  projectRepositoryDefault,
   resolveProjectRepository,
   type RuntimeV2,
   type PermissionActionV2,
@@ -1422,6 +1437,30 @@ export function validateTriggers(node: unknown, path: string, issues: ManifestIs
         message: 'prompt is required and may not be empty.',
         severity: 'error',
       });
+    }
+    // Run caps (KRTX-1721): any trigger type, a whole number of at least 1.
+    for (const field of ['max_runs_per_hour', 'max_runs_per_day'] as const) {
+      const cap = entry[field];
+      if (cap !== undefined && !(typeof cap === 'number' && Number.isInteger(cap) && cap >= 1)) {
+        issues.push({ path: `${where}.${field}`, message: `${field} must be a whole number of at least 1.`, severity: 'error' });
+      }
+    }
+    // Overlap (KRTX-1721): any trigger type; it acts on fresh session mode only.
+    if (entry.overlap !== undefined && entry.overlap !== 'skip' && entry.overlap !== 'allow') {
+      issues.push({ path: `${where}.overlap`, message: 'overlap must be "skip" or "allow".', severity: 'error' });
+    }
+    // The payload filter (KRTX-1721): a value (equals) or one operator per path.
+    if (entry.filter !== undefined) {
+      const parsed = parseTriggerFilter(entry.filter);
+      if ('error' in parsed) issues.push({ path: `${where}.filter`, message: `${parsed.error}.`, severity: 'error' });
+    }
+    // The misfire bound (KRTX-1743): cron only, a duration of at least 60s.
+    if (entry.max_lateness !== undefined) {
+      if (type === 'cron') {
+        validateMonitorDuration(entry.max_lateness, `${where}.max_lateness`, TRIGGER_MIN_MAX_LATENESS_SECONDS, issues);
+      } else {
+        issues.push({ path: `${where}.max_lateness`, message: 'max_lateness is only valid on a cron trigger.', severity: 'error' });
+      }
     }
     if (type === 'cron') {
       const cron =

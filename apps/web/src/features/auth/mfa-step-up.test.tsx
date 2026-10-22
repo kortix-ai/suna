@@ -103,10 +103,11 @@ mock.module('next/link', () => ({
 }));
 
 const toasts: string[] = [];
-mock.module('@/components/ui/toast', () => ({
+const uiToastMock = () => ({
   successToast: (message: string) => toasts.push(`success:${message}`),
   errorToast: (message: string) => toasts.push(`error:${message}`),
-}));
+});
+mock.module('@kortix/ui/toast', uiToastMock);
 
 // The real Dialog reaches through Radix portals and the z-stack; these tests
 // assert the gate's decisions, not the overlay. A conditional render keeps the
@@ -115,28 +116,36 @@ const host = (tag: string) =>
   function Host({ children, ...props }: { children?: React.ReactNode; [key: string]: unknown }) {
     return createElement(tag, props, children);
   };
-mock.module('@/components/ui/dialog', () => ({
+const uiDialogMock = () => ({
   Dialog: ({ open, children }: { open?: boolean; children?: React.ReactNode }) =>
     open ? createElement('div', { 'data-dialog': 'open' }, children) : null,
   DialogContent: host('section'),
   DialogDescription: host('p'),
   DialogTitle: host('h2'),
-}));
-mock.module('@/components/ui/button', () => ({
+});
+const realDialog = await import('@kortix/ui/dialog');
+mock.module('@kortix/ui/dialog', () => ({ ...realDialog, ...uiDialogMock() }));
+const uiButtonMock = () => ({
   Button: ({ children, ...props }: { children?: React.ReactNode; [key: string]: unknown }) =>
     createElement('button', props, children),
-}));
-mock.module('@/components/ui/dot-matrix/session-dot-matrix', () => ({
+});
+const realButton = await import('@kortix/ui/button');
+mock.module('@kortix/ui/button', () => ({ ...realButton, ...uiButtonMock() }));
+const uiDotMatrixSessionDotMatrixMock = () => ({
   SessionDotMatrix: () => createElement('span', null, 'matrix'),
-}));
-mock.module('@/components/ui/kortix-logo', () => ({ KortixLogo: host('svg') }));
-mock.module('@/components/ui/loading', () => ({
+});
+mock.module('@kortix/ui/dot-matrix/session-dot-matrix', uiDotMatrixSessionDotMatrixMock);
+const uiKortixLogoMock = () => ({ KortixLogo: host('svg') });
+mock.module('@kortix/ui/kortix-logo', uiKortixLogoMock);
+const uiLoadingMock = () => ({
   default: (props: Record<string, unknown>) => createElement('span', props, 'loading'),
-}));
-mock.module('@/components/ui/info-banner', () => ({
+});
+mock.module('@kortix/ui/loading', uiLoadingMock);
+const uiInfoBannerMock = () => ({
   InfoBanner: ({ children, title }: { children?: React.ReactNode; title?: React.ReactNode }) =>
     createElement('aside', null, title, children),
-}));
+});
+mock.module('@kortix/ui/info-banner', uiInfoBannerMock);
 mock.module('@phosphor-icons/react', () => ({
   ShieldCheckIcon: host('svg'),
   ShieldWarningIcon: host('svg'),
@@ -144,7 +153,7 @@ mock.module('@phosphor-icons/react', () => ({
 
 const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
 const { MfaStepUpProvider, MfaGate, requestMfaStepUp } = await import('./mfa-step-up');
-const { clearPendingMfaAction } = await import('./mfa-pending-action');
+const { clearPendingMfaAction } = await import('@kortix/ui/internal/auth/mfa-pending-action');
 
 // ─── Render helpers ─────────────────────────────────────────────────────────
 // bun test has no `window`; the repo pattern installs a minimal shim. A fresh
@@ -307,6 +316,33 @@ describe('MfaGate', () => {
     // invalidation refetched the AAL answer, which is what releases the gate.
     await settle();
     expect(serialize(root)).toContain('APP CONTENT');
+  });
+
+  // 2026-10-17: a user had to enter the code twice. A correct code showed
+  // "Verified" but left the prompt up, emptied: the gate waited for a fresh
+  // AAL read (a getUser network call), and a read that failed kept the old
+  // aal1 answer. A correct code is the aal2 answer; the gate leaves at once.
+  test('a correct code releases the gate at once, while the AAL re-read is still in flight', async () => {
+    verifiedTotpAal();
+    const root = await mount(createElement(MfaGate, null, APP));
+    aalHang = new Promise(() => {});
+    await enterAndVerify(root, '654321');
+
+    expect(toasts).toContain('success:Verified');
+    expect(serialize(root)).toContain('APP CONTENT');
+    expect(input(root)).toBeUndefined();
+  });
+
+  test('a failed AAL re-read after a correct code does not bring the prompt back', async () => {
+    verifiedTotpAal();
+    const root = await mount(createElement(MfaGate, null, APP));
+    // The next getAAL throws ("User not found"), as a failed getUser does.
+    user = null;
+    await enterAndVerify(root, '654321');
+    await settle();
+
+    expect(serialize(root)).toContain('APP CONTENT');
+    expect(input(root)).toBeUndefined();
   });
 
   test('Verify shows the session dot matrix while the code is checked', async () => {

@@ -37,12 +37,20 @@ import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { useAuthContext } from '@/contexts';
+import { useSignOutAndRoute } from '@/hooks/useSignOutAndRoute';
 import { log } from '@/lib/logger';
 import { projectKeys } from '@/lib/projects/hooks';
 import { listMyAccountInvites, type MyAccountInvite } from '@/lib/accounts/accounts-client';
 import { inviteKeys } from '@/lib/invites/hooks';
 import { inviteHref, skippedInvites, takeInviteLink } from '@/lib/invites/invite-landing';
-import { checkLastProject, freshOrCached, resolveLandingProject } from '@/lib/projects/landing';
+import { probeEffectivePermission } from '@kortix/sdk';
+import { permissionProbeKey } from '@kortix/sdk/react';
+import {
+  checkLastProject,
+  freshOrCached,
+  resolveLandingProject,
+  type CreateVerdicts,
+} from '@/lib/projects/landing';
 import {
   classifyStartFailure,
   startFailureCopy,
@@ -91,6 +99,28 @@ function fetchProjects(queryClient: QueryClient, accountId: string): Promise<Kor
     queryKey: projectKeys.projects(accountId),
     queryFn: () => listProjectsForAccount(accountId),
   });
+}
+
+/** Per account: may the caller create a project (`project.create`)? A failed probe is no. */
+async function fetchCreateVerdicts(
+  queryClient: QueryClient,
+  accounts: KortixAccount[],
+  userId: string
+): Promise<CreateVerdicts> {
+  const entries = await Promise.all(
+    accounts.map(async (account) => {
+      const allowed = await queryClient
+        .fetchQuery({
+          queryKey: permissionProbeKey(account.account_id, userId, 'project.create'),
+          queryFn: () => probeEffectivePermission(account.account_id, userId, { action: 'project.create' }),
+          staleTime: 5 * 60_000,
+        })
+        .then((verdict) => verdict.allowed === true)
+        .catch(() => false);
+      return [account.account_id, allowed] as const;
+    })
+  );
+  return Object.fromEntries(entries);
 }
 
 /** The caller's pending invites. A failed list is none: an invite never blocks the start (web `/projects/start`). */
@@ -144,10 +174,10 @@ async function confirmLastProject(input: {
 export default function StartScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { user, isAuthenticated, mfaRequired, isLoading: authLoading, signOut } = useAuthContext();
+  const { user, isAuthenticated, mfaRequired, isLoading: authLoading } = useAuthContext();
   const userId = user?.id ?? null;
   const [failure, setFailure] = React.useState<StartFailure | null>(null);
-  const [signingOut, setSigningOut] = React.useState(false);
+  const { signingOut, signOutAndRoute: handleSignOut } = useSignOutAndRoute();
   // Bumped by Try again to re-run the resolve.
   const [attempt, setAttempt] = React.useState(0);
   // At launch the native splash covers this screen until it redirects or
@@ -253,7 +283,8 @@ export default function StartScreen() {
         // the account the first project would be created in.
         const accountId = onboardingAccountId(
           accounts,
-          useCurrentAccountStore.getState().selectedAccountId
+          useCurrentAccountStore.getState().selectedAccountId,
+          await fetchCreateVerdicts(queryClient, accounts, userId)
         );
         useCurrentAccountStore.getState().setSelectedAccountId(accountId);
         if (destination.kind === 'welcome') {
@@ -286,15 +317,6 @@ export default function StartScreen() {
       if (retryTimer) clearTimeout(retryTimer);
     };
   }, [authLoading, isAuthenticated, mfaRequired, userId, attempt, queryClient, router]);
-
-  const handleSignOut = React.useCallback(async () => {
-    if (signingOut) return;
-    setSigningOut(true);
-    // A failed sign-out (auth server down) still leaves the screen usable.
-    const result = await signOut().catch(() => null);
-    setSigningOut(false);
-    if (result?.success) router.replace('/auth');
-  }, [router, signOut, signingOut]);
 
   const copy = failure ? startFailureCopy(failure) : null;
   const sessionEnded = failure === 'session';

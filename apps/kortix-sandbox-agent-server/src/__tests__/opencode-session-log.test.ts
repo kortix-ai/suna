@@ -381,6 +381,37 @@ describe('OpenCode session-log journal wiring', () => {
     expect(frames.at(-1)!.payload).not.toMatchObject({ delta: 'late' })
   })
 
+  test.each(['text', 'reasoning'])('OpenCode snapshot updates stream %s before the turn ends', async (type) => {
+    resetKortixEventBusForTests()
+    const frames: KortixEvent[] = []
+    sessionLogEventBus().subscribe((event) => void frames.push(event), {})
+    const dbPath = join(dir, 'opencode.db')
+    writeStore(dbPath, before)
+    const port = createOpenCodeSessionLogPort({ db: new OpencodeDb(dbPath), dbPath, sessionId: SESSION, rootId: () => ROOT, statePath: join(dir, 's.json') })
+    startSessionLogJournal(port, { generation: 0 })
+    await flushSessionLogJournal()
+    const bus = kortixEventBus()
+    const id = 'msg_streaming_snapshot'
+    bus.publish('message.updated', { info: { id, sessionID: ROOT, role: 'assistant', time: { created: 1791729213580 } } }, ROOT)
+    const part = { id: 'prt_streaming_snapshot', messageID: id, sessionID: ROOT, type, text: '' }
+    bus.publish('message.part.updated', { part }, ROOT)
+    for (const text of ['1\n', '1\n2\n', '1\n2\n3\n']) {
+      bus.publish('message.part.updated', { part: { ...part, text } }, ROOT)
+      const puts = frames.filter((f) => f.type === 'log.message').map((f) => SESSION_LOG_EVENTS['log.message'].parse(f.payload)).filter((p) => 'message' in p)
+      const put = puts.filter((p) => p.message?.message_id === id).at(-1)
+      expect(put?.message?.status).toBe('streaming')
+      expect(put?.message?.blocks.find((b) => b.id === part.id)).toMatchObject({ type, text })
+    }
+    const count = frames.length
+    bus.publish('message.part.updated', { part: { ...part, text: '1\n2\n3\n' } }, ROOT)
+    expect(frames).toHaveLength(count)
+    bus.publish('message.part.delta', { sessionID: ROOT, messageID: id, partID: part.id, field: 'text', delta: '4\n' }, ROOT)
+    bus.publish('message.part.updated', { part: { ...part, text: '1\n2\n3\n4\n' } }, ROOT)
+    expect(frames).toHaveLength(count + 1)
+    expect(frames.at(-1)?.type).toBe('log.block.delta')
+    expect(part.text).toBe('')
+  })
+
   test('a live turn (P4.3b): the user put, a streaming put before the first delta, a put for each new block, then the final put at a higher rev', async () => {
     resetKortixEventBusForTests()
     const frames: KortixEvent[] = []

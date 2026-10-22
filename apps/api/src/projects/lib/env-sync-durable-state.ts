@@ -5,19 +5,17 @@
  * in-process memo is cold on every replica that didn't personally push the
  * last turn.
  *
- * Persisted on `session_sandboxes.config`, the SAME jsonb bag
- * `markSandboxLlmGatewayMode` (sandbox-env-sync.ts) already writes for
- * `llmGatewayEnabled` and provisioning already writes for `serviceKey`. One
- * row per session (DB constraint + anchor-guard trigger — see the schema
- * comment on `session_sandboxes`), so this is keyed on `sessionId`, exactly
- * like `markSandboxLlmGatewayMode`.
+ * Persisted on `session_sandboxes.config`, the SAME jsonb bag provisioning
+ * already writes for `serviceKey`. One row per session (DB constraint +
+ * anchor-guard trigger — see the schema comment on `session_sandboxes`), so
+ * this is keyed on `sessionId`.
  *
  * The write is an ATOMIC SQL jsonb merge
  * (`COALESCE(config,'{}'::jsonb) || jsonb_build_object(...)`), not a
  * read-modify-write in JS — see the warning on `metadata-merge.ts` for the
  * lost-update class of bug a plain read-then-`UPDATE` produces when another
  * writer touches a DIFFERENT key of the same jsonb column between the read
- * and the write. `llmGatewayEnabled`/`serviceKey` and the keys here are
+  * and the write. `serviceKey` and the keys here are
  * disjoint, so this merge can never clobber, or be clobbered by, either.
  *
  * THE DAEMON BOOT FENCE (2026-10-16). The record says what the box's daemon
@@ -102,8 +100,7 @@ export async function persistEnvSyncDurableState(
   await db
     .update(sessionSandboxes)
     .set({
-      // Key names are embedded as SQL literals, not bound parameters — same
-      // convention as `markSandboxLlmGatewayMode`'s `'llmGatewayEnabled'`. Must
+      // Key names are embedded as SQL literals, not bound parameters. Must
       // stay literal string constants (the `*_KEY` constants above),
       // never caller input — see the guard note on `metadataMergeSubtree`.
       config: sql`COALESCE(${sessionSandboxes.config}, '{}'::jsonb) || jsonb_build_object('envSyncSignature', ${signature}::text, 'envSyncAppliedAtMs', ${appliedAtMs}::bigint, 'envSyncRecordVersion', ${ENV_SYNC_RECORD_VERSION}::int)`,

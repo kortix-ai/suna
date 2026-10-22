@@ -19,13 +19,12 @@ kortix cr open --head tighten-triage --title "Tighten the triage prompt"
 
 ## Your project's repository
 
-A project has one of three kinds of repository. All three work the same way after the project exists.
+A project has one of two kinds of repository. Both work the same way after the project exists.
 
 | Kind | What it is | How you get it |
 | --- | --- | --- |
 | Managed | Kortix creates and manages a private repository. You need no GitHub account. | Pick **Kortix managed** under **Git account** when you create a project. Or run `kortix ship` in a folder with no `origin` remote, or `kortix ship --origin managed`. |
 | GitHub | A repository in your GitHub account or organization. Kortix reaches it through the Kortix GitHub App, which you install under **Account settings → Git**, or through a GitHub token. | Pick a GitHub account under **Git account**, then **Create a new repository** or **Import an existing repository**. Or run `kortix ship` in a folder whose `origin` is on GitHub. |
-| Other git host | A repository at any other git URL. | Run `kortix ship` in a folder with that `origin`, or `kortix ship --origin <git-url>`. |
 
 On a self-hosted instance, a platform admin sets up managed repositories in the admin console. `GET /v1/projects/managed-git/status` returns `configured: false` until then, and the new-project form says "Kortix-managed repositories are not available on this instance." See [Self-hosting](/docs/host).
 
@@ -144,6 +143,7 @@ git -c http.extraHeader="$AUTH" push origin HEAD:refs/heads/ci-update
 | `403` | `token is scoped to a different project` | The token is bound to another project. |
 | `404` | `Not found` | The project does not exist or was deleted. |
 | `409` | `Repository changed during authorization; retry the request` | Someone replaced the repository while you connected. Retry. |
+| `409` | `Kortix cannot reach <owner>/<repo>: …`, printed as `remote: …` | The repository is disconnected. See [Repository disconnected](#repository-disconnected). |
 | `502` | `No git upstream is configured for this project` or `git upstream unreachable` | Kortix cannot reach the upstream repository. Check the connection under **Git repo**. |
 | `503` | `git_credential_unavailable` | Kortix could not get a credential for the upstream. Retry when the body says `retry: true`. Otherwise check the connection. |
 
@@ -166,12 +166,12 @@ A folder with no `.kortix/link.json` gets a new project. Ship picks the reposito
 | `origin` of the folder | What ship creates |
 | --- | --- |
 | A GitHub URL | A GitHub project through the Kortix GitHub App. If the App is not installed, ship prints an install link and asks you to retry after you install it. With `-y` it stops instead. `--github-token <PAT>` links without the App; the token needs repository Contents read and write. |
-| Another URL | A project for that URL. |
+| Another URL (GitLab, Bitbucket, plain git) | Nothing. Kortix links GitHub repositories only, so ship stops before any request and suggests `--origin managed`. |
 | None, or `--origin managed` | A managed repository. Ship sets `origin` to the git origin and installs the credential helper. |
 
-For a GitHub or other URL, the first ship pushes to your existing `origin` with your own git credentials.
+For a GitHub URL, the first ship pushes to your existing `origin` with your own git credentials.
 
-`--origin <git-url>` sets `origin` to that URL first. `--account <id|slug>` picks the account, and `--name` the project name.
+`--origin <github-url>` sets `origin` to that GitHub URL first. `--account <id|slug>` picks the account, and `--name` the project name.
 
 Ship writes `.kortix/link.json` the moment the project exists, and `git add -A` commits it. A teammate with push access (`project.gitops.push`, the Manager role) who clones the repository can then run `kortix ship` too. Later ships set `origin` to the project's git origin and install the credential helper.
 
@@ -181,13 +181,13 @@ Five permissions control git:
 
 | Permission | Allows |
 | --- | --- |
-| `project.gitops.read` | Clone and fetch every branch. |
+| `project.gitops.read` | Read commits, diffs and change requests. For a session: clone and fetch. |
 | `project.gitops.push` | Push. Open change requests. |
 | `project.gitops.merge` | Merge change requests. |
 | `project.gitops.ref.any` | For a session: push a branch other than its own. |
 | `project.gitops.ref.delete` | Delete a branch. |
 
-A project **Member** holds `project.gitops.read` only: a Member can clone but cannot push. A **Manager** holds all five. Account owners and admins act as Managers on every project in the account. See [Accounts & access](/docs/accounts).
+A project **Member** holds `project.gitops.read` only. A Member reads the branches, commits and change requests of their own sessions and of sessions they may open, and nothing of another member's private session. A clone serves every branch, so a person needs `project.gitops.push` to clone or fetch: a Member cannot clone from their own git client. A Member's sessions still clone and push their own branch. A **Manager** holds all five. Account owners and admins act as Managers on every project in the account. See [Accounts & access](/docs/accounts).
 
 **People** with push access:
 
@@ -413,6 +413,7 @@ A session runs the current config release of its base branch: `kortix.yaml`, age
 - Each commit on the base branch is a new config release. A running session converges to it at the start of its next turn. A push or a merge also starts the convergence in the background.
 - To apply it at once, select **Reload config** in the session menu, or run `kortix sessions reload <session_id>`. It restarts the agent runtime. `--force` reloads during a turn and ends that turn; it asks first unless you pass `--yes`. `--no-repo` skips the git pull in `/workspace`. `--status` only reports whether the session is behind.
 - To test config before a merge, create a session with `base_ref` set to your branch. Its change requests target that branch too.
+- Such a session runs the branch's agent behavior: prompts, tools, skills and harness files. Governance still comes from the default branch: which agents are declared, and their secret, connector and permission grants. A branch cannot widen what an agent may use before it merges. When the project requires declared agents, an agent declared only on the branch is refused with `400` `AGENT_NOT_DECLARED`.
 
 When a release fails to load, the session runs the last release that worked, or else the platform default config. The session header shows **Config failed to load**. Fix the config on the base branch. See [Sandboxes & previews](/docs/work/runtime) for troubleshooting.
 
@@ -443,6 +444,26 @@ datasets/raw export-ignore
 | `reconnect_required` | The Kortix GitHub App installation is missing, unusable, or does not match the repository. Open the `install_url` in the response to install the App again. |
 | `unavailable` | Kortix cannot reach the repository for a reason you cannot fix with the App. |
 | `not_connected` | The project has no repository. |
+
+### Repository disconnected
+
+Kortix reaches a GitHub repository through the Kortix GitHub App installed on the repository's owner. When that access goes away, the project is **disconnected**. `GET /v1/projects/<project_id>/git/connection` then returns `state: reconnect_required`, `reason: repository_disconnected`, a `disconnected_reason`, a `message` with the cause and the fix, and an `install_url`.
+
+| `disconnected_reason` | Cause | Fix |
+| --- | --- | --- |
+| `app_uninstalled` | The Kortix GitHub App was uninstalled from the owner, or its connection was removed from your Kortix account. | A GitHub owner of the organization reinstalls the App: **Customize → Settings → Git repo → Reconnect GitHub**. |
+| `app_suspended` | An owner suspended the App on GitHub. | A GitHub owner unsuspends it under GitHub **Settings → GitHub Apps**. |
+| `repo_not_accessible` | The repository was deleted, renamed, or removed from the App's repository access. | A GitHub owner adds the repository again under GitHub **Settings → GitHub Apps → Kortix → Repository access**, or you replace the repository. |
+
+While a project is disconnected:
+
+- Every API route that reads the repository answers `409` with `code: repository_disconnected`, the `reason`, and the same message. The project detail still loads: its `config.manifest_version.unknown_reason` is `repository_disconnected` and `git_connection.status` is `error`.
+- Session create and start fail at once with that `409`. A session that is already running keeps running.
+- Scheduled triggers skip each run and record the message as the trigger's last error. They do not retry.
+- `git clone`, `fetch` and `push` through the Kortix git origin print the message as `remote: …`.
+- The web app shows **GitHub disconnected** in the sidebar, in **Git repo** and on a session that cannot start. `kortix projects info` prints the reason and the reconnect link.
+
+Kortix checks GitHub again at most every 5 minutes. After the fix on GitHub, the project reconnects on the next check. Reconnecting through **Reconnect GitHub** checks at once, and a project that stored the old installation moves to the new one.
 
 ### Replace the repository
 

@@ -24,14 +24,6 @@ const PROJECT_ROW = {
   metadata: null as Record<string, unknown> | null,
 };
 
-/** Mutable per-test gateway mode — mocked directly rather than routed through
- *  real feature-flag resolution, which additionally gates on operator config
- *  (`config.LLM_GATEWAY_ENABLED`) this suite has no reason to wire up. */
-let llmGatewayEnabled = false;
-mock.module('../../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: () => llmGatewayEnabled,
-}));
-
 const SESSION_ROW = {
   createdBy: 'user-1',
   agentName: 'support',
@@ -176,7 +168,6 @@ beforeEach(() => {
   snapshotRevision = 'rev-1';
   snapshotCapabilitiesJson = '{"version":1,"capabilities":[]}';
   PROJECT_ROW.metadata = null;
-  llmGatewayEnabled = false;
 });
 
 describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
@@ -228,17 +219,6 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
     await prompt();
     snapshotCapabilitiesJson =
       '{"version":1,"capabilities":[{"identifier":"WEATHER_API","delivery":"https_broker"}]}';
-    await promptAfterChange();
-
-    expect(posted.map((p) => p.refreshModels)).toEqual([true, true]);
-  });
-
-  test('an LLM-gateway mode flip still asks for a reload', async () => {
-    // Toggling this changes the daemon-side KORTIX_TOKEN / BASE_URL /
-    // OPENCODE_DENY_ENV triple — the "gateway URL, model tokens/keys" case
-    // named directly in the task.
-    await prompt();
-    llmGatewayEnabled = true;
     await promptAfterChange();
 
     expect(posted.map((p) => p.refreshModels)).toEqual([true, true]);

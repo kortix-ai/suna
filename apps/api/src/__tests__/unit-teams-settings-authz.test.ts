@@ -15,6 +15,7 @@ const CONVO = '19:abc@thread.tacv2';
 mock.module('../config', () => ({
   SANDBOX_VERSION: 'test',
   config: { FRONTEND_URL: 'https://dev.kortix.com', TEAMS_REQUIRE_USER_IDENTITY: true },
+  KNOWN_PROVIDERS: ['platinum', 'daytona'],
 }));
 
 let dbResults: unknown[][] = [];
@@ -80,7 +81,6 @@ mock.module('../channels/slack/model-gate', () => ({
     accountId: 'acct-1',
     ownerUserId: 'owner-1',
     freeManagedOnly: false,
-    llmGatewayEnabled: true,
   }),
 }));
 mock.module('../llm-gateway/models/picker', () => ({

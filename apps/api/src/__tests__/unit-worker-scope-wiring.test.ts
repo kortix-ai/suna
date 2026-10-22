@@ -43,7 +43,9 @@ const WORKERS: Record<string, string> = {
   'audit-archive': 'workers/audit-archive-worker.ts',
   'project-snapshots': 'workers/project-snapshot-worker.ts',
   'iam-grant-expiry': 'workers/grant-expiry-worker.ts',
+  'approval-expiry': 'workers/approval-expiry-worker.ts',
   'oauth-sweep': 'workers/oauth-sweep-worker.ts',
+  'session-model-fallback': 'workers/session-model-fallback-worker.ts',
   'session-lifecycle': 'projects/session-lifecycle/drain.ts',
   'tunnel-cleanup': 'workers/tunnel-worker.ts',
   'tunnel-rpc-forwarder': 'tunnel/core/cluster-forwarder.ts',
@@ -54,6 +56,7 @@ const WORKERS: Record<string, string> = {
   'slack-turn-gc': 'workers/slack-turn-gc-worker.ts',
   'teams-turn-gc': 'workers/teams-turn-gc-worker.ts',
   'job-queue': 'workers/job-queue-worker.ts',
+  'trigger-event-poll': 'workers/trigger-event-poll-worker.ts',
   'capture-index-reader': 'workers/capture-worker.ts',
   'capture-maintenance': 'workers/capture-worker.ts',
   'capture-events-reader': 'workers/capture-worker.ts',
@@ -64,6 +67,7 @@ const WORKERS: Record<string, string> = {
   'notification-digest': 'workers/notification-worker.ts',
   'session-log-purge': 'workers/session-log-purge-worker.ts',
   'session-log-backfill': 'workers/session-log-backfill-worker.ts',
+  'gateway-spend-backfill': 'workers/gateway-spend-backfill-worker.ts',
 };
 
 /** Files with a `setInterval` that is not a background job over tenant state. */
@@ -81,6 +85,7 @@ const NOT_WORKERS: Record<string, string> = {
   'workers/access-control-cache-worker.ts': 'refreshes the in-memory access-control cache',
   'workers/app-deployment-worker.ts': 'timer that calls triggerAppDeploymentWorker, which wraps itself',
   'workers/event-loop-lag-worker.ts': 'measures event-loop lag',
+  'workers/managed-lineup-worker.ts': 'refreshes the in-memory managed lineup from Platinum Inference',
   'workers/session-lifecycle-worker.ts': 'timer that calls drainSessionLifecycleQueue, which wraps itself',
   'workers/teams-bot-token-refresh-worker.ts': 'refreshes the in-memory Teams bot token',
   'workers/tmp-reaper-worker.ts': 'deletes stale local tmp directories; no database writes',
@@ -101,6 +106,7 @@ const STARTS: Record<string, string> = {
   startAuditArchiveWorker: 'audit-archive',
   startProjectSnapshotWorker: 'project-snapshots',
   startGrantExpirySweeper: 'iam-grant-expiry',
+  startApprovalExpirySweeper: 'approval-expiry',
   startDriveWorkers: 'drive-conflict-scan',
   startOAuthSweeper: 'oauth-sweep',
   startBillingRotation: 'billing-trial-expiry',
@@ -110,14 +116,18 @@ const STARTS: Record<string, string> = {
   startCaptureWorkers: 'capture-index-reader',
   startCaptureHealthWorker: 'capture-health',
   startJobWorker: 'job-queue',
+  startTriggerEventPollWorker: 'trigger-event-poll',
   startNotificationWorker: 'notification-digest',
   startSessionLogPurgeWorker: 'session-log-purge',
+  startSessionModelFallbackWorker: 'session-model-fallback',
   startSessionLogBackfillWorker: 'session-log-backfill',
+  startGatewaySpendBackfillWorker: 'gateway-spend-backfill',
   startTeamsBotTokenRefresh: 'not a worker: in-memory Teams bot token',
   startEventLoopLagSampler: 'not a worker: measures this process event-loop lag',
   startSessionLifecycleWorker: 'session-lifecycle',
   startTunnelService: 'tunnel-cleanup',
   startAccessControlCache: 'not a worker: in-memory cache',
+  startManagedLineupRefresh: 'not a worker: in-memory managed lineup',
   startTmpReaper: 'not a worker: local tmp directories only',
   startConfigBaseMoveBroadcast:
     'not a worker: one LISTEN connection, event-driven, no timer and no tick',
@@ -195,7 +205,7 @@ describe('background jobs run as named workers', () => {
       .filter((call) => !(call in NOT_LOOPS))
       .filter((call) => {
         const from = new RegExp(
-          `import \\{[^}]*\\b${call}\\b[^}]*\\} from '([^']+)'|\\{ ${call} \\} = await import\\('([^']+)'\\)`,
+          `import \\{[^}]*\\b${call}\\b[^}]*\\} from '([^']+)'|\\{[^}]*\\b${call}\\b[^}]*\\} = await import\\('([^']+)'\\)`,
         ).exec(bootstrap);
         return !(from?.[1] ?? from?.[2])?.startsWith('./workers/');
       });

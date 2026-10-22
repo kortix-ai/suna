@@ -41,17 +41,17 @@ import {
   CommandPopoverContent,
   CommandPopoverTrigger,
   CommandSeparator,
-} from '@/components/ui/command';
-import { Separator } from '@/components/ui/separator';
-import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
-import { Switch } from '@/components/ui/switch';
+} from '@kortix/ui/command';
+import { Separator } from '@kortix/ui/separator';
+import { SettingsSubsectionHeader } from '@kortix/ui/settings-subsection-header';
+import { Switch } from '@kortix/ui/switch';
 import {
   TRIGGER_CARET_CLASS,
   TRIGGER_ICON_SIZE,
   triggerVariants,
-} from '@/components/ui/trigger-variants';
+} from '@kortix/ui/trigger-variants';
 import { WallpaperCard } from '@/features/accounts/settings/appearance-tab';
-import { useGenuiEnabled } from '@/features/genui/use-genui-enabled';
+import { useGenuiEnabled } from '@kortix/ui/genui';
 import {
   INTERFACE_THEME_OPTIONS,
   ThemeSwatch,
@@ -64,10 +64,10 @@ import {
   type InterfaceThemeId,
   type ThemeChoice,
 } from '@/lib/interface-themes';
-import { cn } from '@/lib/utils';
-import { DEFAULT_WALLPAPER_ID, WALLPAPERS, type Wallpaper } from '@/lib/wallpapers';
-import { useUserPreferencesStore, type ConversationDensity } from '@/stores/user-preferences-store';
-import { SettingsTabHeader } from '../settings-tab-header';
+import { cn } from '@kortix/ui';
+import { DEFAULT_WALLPAPER_ID, WALLPAPERS, type Wallpaper } from '@kortix/ui/theme';
+import { useUserPreferencesStore, type ConversationDensity } from '@kortix/ui/internal/stores/user-preferences-store';
+import { SettingsTabHeader } from '@kortix/ui/customize/settings/settings-tab-header';
 
 const DENSITY_OPTIONS: { id: ConversationDensity; label: string; description: string }[] = [
   {
@@ -252,6 +252,19 @@ const optionFor = (value: InterfaceThemeId) =>
 const nameFor = (option: InterfaceThemeOption, copy: AppearanceTabCopy): string =>
   option.kind === 'labelled' ? copy.themes[option.labelKey] : option.name;
 
+/** The catalog group a row is listed under. */
+const groupFor = (option: InterfaceThemeOption, copy: AppearanceTabCopy): string => {
+  if (option.kind === 'labelled') return copy.themeGroups.kortix;
+  return option.group === 'dark' ? copy.themeGroups.darkThemes : copy.themeGroups.lightThemes;
+};
+
+/** A row's cmdk value: its name, id and group, which search matches and which
+ *  `defaultValue` names to open the list on the applied theme. */
+export const themeRowValue = (value: InterfaceThemeId, copy: AppearanceTabCopy): string => {
+  const option = optionFor(value);
+  return `${nameFor(option, copy)} ${option.value} ${groupFor(option, copy)}`;
+};
+
 const KORTIX_OPTIONS = INTERFACE_THEME_OPTIONS.filter(
   (option): option is Extract<InterfaceThemeOption, { kind: 'labelled' }> =>
     option.kind === 'labelled' && option.value !== 'system',
@@ -285,12 +298,12 @@ function ThemePicker({
 }) {
   const [open, setOpen] = useState(false);
 
-  const row = (option: InterfaceThemeOption, group: string) => {
+  const row = (option: InterfaceThemeOption) => {
     const label = nameFor(option, copy);
     return (
       <CommandItem
         key={option.value}
-        value={`${label} ${option.value} ${group}`}
+        value={themeRowValue(option.value, copy)}
         onSelect={() => {
           onThemeChange(option.value);
           setOpen(false);
@@ -324,6 +337,9 @@ function ThemePicker({
         align="end"
         sideOffset={6}
         shouldFilter
+        // cmdk marks the highlighted row `aria-selected`: open on the applied
+        // theme, not on the first row, so a screen reader announces it.
+        defaultValue={themeRowValue(theme, copy)}
         className={cn(
           'w-[min(280px,calc(100vw-1.5rem))]',
           // Group captions read as plain menu labels (MENU_LABEL), not the
@@ -334,18 +350,18 @@ function ThemePicker({
         <CommandInput compact placeholder={copy.themeSearch.placeholder} />
         <CommandList className="max-h-[360px]">
           <CommandEmpty>{copy.themeSearch.empty}</CommandEmpty>
-          <CommandGroup>{row(optionFor('system'), copy.themeGroups.kortix)}</CommandGroup>
+          <CommandGroup>{row(optionFor('system'))}</CommandGroup>
           <CommandSeparator />
           <CommandGroup heading={copy.themeGroups.kortix}>
-            {KORTIX_OPTIONS.map((option) => row(option, copy.themeGroups.kortix))}
+            {KORTIX_OPTIONS.map((option) => row(option))}
           </CommandGroup>
           <CommandSeparator />
           <CommandGroup heading={copy.themeGroups.lightThemes}>
-            {LIGHT_TERMINAL_OPTIONS.map((option) => row(option, copy.themeGroups.lightThemes))}
+            {LIGHT_TERMINAL_OPTIONS.map((option) => row(option))}
           </CommandGroup>
           <CommandSeparator />
           <CommandGroup heading={copy.themeGroups.darkThemes}>
-            {DARK_TERMINAL_OPTIONS.map((option) => row(option, copy.themeGroups.darkThemes))}
+            {DARK_TERMINAL_OPTIONS.map((option) => row(option))}
           </CommandGroup>
         </CommandList>
       </CommandPopoverContent>

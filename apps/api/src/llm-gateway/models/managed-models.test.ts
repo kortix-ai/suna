@@ -1,162 +1,92 @@
 import { describe, expect, test } from 'bun:test';
 
+import { PLATINUM_MODELS_RESPONSE, TEST_MANAGED_LINEUP } from '../../__tests__/fixtures/managed-lineup';
 import {
   canonicalManagedModelId,
+  getRuntimeManagedModel,
+  isKnownManagedModelId,
   isRetiredManagedModelId,
-  LEGACY_MANAGED_IDS,
+  loadManagedLineup,
+  managedLineup,
+  managedModelsFromPlatinum,
   type ManagedModel,
-  parseManagedModels,
-  resolveLegacyIdChain,
   resolvePlatformDefaultModelId,
-  retiredManagedModelReplacement,
+  __setManagedLineupForTest,
 } from './managed-models';
 
-describe('runtime managed model registry', () => {
-  test('accepts a complete operator-defined managed-model replacement', () => {
-    const configured = parseManagedModels(JSON.stringify([{
-      id: 'operator-model',
-      name: 'Operator Model',
-      upstreamModelId: 'morph-model-v2',
-      transport: 'openrouter',
-      pricingRef: 'openrouter/morph-model-v2',
-      openrouterProvider: { only: ['test-endpoint'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
-      tier: 'balanced',
-      vision: true,
-      limit: { context: 64_000, output: 8_000 },
-    }]));
+const answer = (body: unknown, status = 200) => async () => new Response(JSON.stringify(body), { status });
 
-    expect(configured).toEqual([expect.objectContaining({
-      id: 'operator-model',
-      upstreamModelId: 'morph-model-v2',
-      vision: true,
-    })]);
+describe('the managed lineup is what Platinum Inference lists', () => {
+  test('maps Platinum /models to the lineup, in Platinum order', () => {
+    expect(managedModelsFromPlatinum(PLATINUM_MODELS_RESPONSE)).toEqual(TEST_MANAGED_LINEUP);
   });
 
-  test('keeps text-only models in operator overlays', () => {
-    const vision = {
-      id: 'vision', name: 'Vision', upstreamModelId: 'z-ai/glm-5.3-flash',
-      transport: 'openrouter', pricingRef: 'openrouter/z-ai/glm-5.3-flash',
-      openrouterProvider: { only: ['test-endpoint'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
-      tier: 'fast', vision: true, limit: { context: 1_000, output: 100 },
-    };
-    expect(parseManagedModels(JSON.stringify([{ ...vision, id: 'text', vision: false }, vision])))
-      .toEqual([expect.objectContaining({ id: 'text', vision: false }), expect.objectContaining({ id: 'vision' })]);
+  test('skips entries Platinum does not own or did not price', () => {
+    const [model] = PLATINUM_MODELS_RESPONSE.data;
+    expect(managedModelsFromPlatinum({ data: [
+      { ...model, owned_by: 'tabby' },
+      { ...model, id: 'unpriced', pricing: undefined },
+      { ...model, id: 'text-only', modalities: { input: ['text'], output: ['text'] }, reasoning_efforts: [] },
+    ] })).toEqual([{ ...TEST_MANAGED_LINEUP[0]!, id: 'text-only', vision: false, reasoningOptions: undefined }].map(
+      ({ reasoningOptions: _, ...m }) => m,
+    ));
   });
 
-  test('accepts a ZDR OpenRouter pool without a direct upstream', () => {
-    const pooled = {
-      id: 'pooled', name: 'Pooled', upstreamModelId: 'z-ai/glm-5.3-flash',
-      transport: 'openrouter', pricingRef: 'openrouter/z-ai/glm-5.3-flash',
-      tier: 'fast', vision: true, limit: { context: 1_000, output: 100 },
-      openrouterProvider: {
-        only: ['decart/fp4', 'coreweave/nvfp4'], allow_fallbacks: true, zdr: true, data_collection: 'deny',
-        max_price: { prompt: 0.15, completion: 0.5 },
-      },
-    };
-    expect(parseManagedModels(JSON.stringify([pooled]))).toMatchObject([pooled]);
-    const withMorph = { ...pooled, morphModelId: 'morph-glm53flash',
-      morphPricing: { inputPerMillion: 0.1, outputPerMillion: 0.35 } };
-    expect(parseManagedModels(JSON.stringify([withMorph]))).toMatchObject([withMorph]);
-    expect(() => parseManagedModels(JSON.stringify([{ ...pooled, morphModelId: 'morph-glm53flash' }]))).toThrow();
-    expect(() => parseManagedModels(JSON.stringify([{ ...pooled, morphPricing: withMorph.morphPricing }]))).toThrow();
+  test('a model Platinum adds is served the next load, with no code change', async () => {
+    const added = { ...PLATINUM_MODELS_RESPONSE.data[1]!, id: 'qwen-x', name: 'Qwen X', pricing: { input: 0.2, output: 0.8 } };
+    expect(await loadManagedLineup(answer({ data: [...PLATINUM_MODELS_RESPONSE.data, added] }))).toBe(true);
+    expect(managedLineup().map((m) => m.id)).toEqual(['deepseek-v4.1-flash', 'glm-5.3-flash', 'qwen-x']);
+    expect(getRuntimeManagedModel('qwen-x')?.pricing).toEqual({ inputPerMillion: 0.2, outputPerMillion: 0.8 });
+    expect(isKnownManagedModelId('qwen-x')).toBe(true);
   });
 
-  test('rejects an unrestricted, non-ZDR, or data-collecting operator route', () => {
-    const model = {
-      id: 'unsafe', name: 'Unsafe', upstreamModelId: 'z-ai/glm-5.3-flash',
-      transport: 'openrouter', pricingRef: 'openrouter/z-ai/glm-5.3-flash',
-      tier: 'fast', vision: true, limit: { context: 1_000, output: 100 },
-    };
-    const route = { only: ['coreweave/nvfp4'], allow_fallbacks: true, zdr: true, data_collection: 'deny' };
-    expect(() => parseManagedModels(JSON.stringify([model]))).toThrow();
-    for (const unsafe of [
-      { ...route, only: [] },
-      { allow_fallbacks: true, zdr: true, data_collection: 'deny' },
-      { ...route, zdr: false },
-      { ...route, data_collection: 'allow' },
-    ]) {
-      expect(() => parseManagedModels(JSON.stringify([{ ...model, openrouterProvider: unsafe }]))).toThrow();
-    }
-    expect(() => parseManagedModels(JSON.stringify([{ ...model, morphModelId: '', openrouterProvider: route }]))).toThrow();
+  test('a failed load keeps the last good lineup', async () => {
+    __setManagedLineupForTest(TEST_MANAGED_LINEUP);
+    expect(await loadManagedLineup(answer({ error: 'down' }, 503))).toBe(false);
+    expect(await loadManagedLineup(async () => { throw new Error('network'); })).toBe(false);
+    expect(await loadManagedLineup(answer({ object: 'list' }))).toBe(false);
+    expect(managedLineup()).toEqual(TEST_MANAGED_LINEUP);
   });
 
-  test('rejects an unknown managed transport', () => {
-    expect(() => parseManagedModels(JSON.stringify([{
-      id: 'retired-model',
-      name: 'Retired Model',
-      upstreamModelId: 'retired-model',
-      transport: 'aster',
-      pricingRef: 'vendor/retired-model',
-      // A valid route, so the transport is the only fault.
-      openrouterProvider: { only: ['test-endpoint'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
-      tier: 'balanced',
-      vision: false,
-      limit: { context: 1_000, output: 1_000 },
-    }]))).toThrow();
-  });
-
-  test('rejects malformed and duplicate managed-model definitions', () => {
-    expect(() => parseManagedModels('{broken')).toThrow('must be valid JSON');
-    const duplicate = {
-      id: 'same',
-      name: 'Same',
-      upstreamModelId: 'morph-same',
-      transport: 'openrouter',
-      pricingRef: 'openrouter/morph-same',
-      openrouterProvider: { only: ['test-endpoint'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
-      tier: 'fast',
-      vision: false,
-      limit: { context: 1, output: 1 },
-    };
-    expect(() => parseManagedModels(JSON.stringify([duplicate, duplicate]))).toThrow('duplicate');
+  test('sends the Platinum key to {PLATINUM_INFERENCE_URL}/models', async () => {
+    let seen: { url: string; auth: string | null } | null = null;
+    await loadManagedLineup(async (url, init) => {
+      seen = { url, auth: new Headers(init?.headers).get('authorization') };
+      return new Response(JSON.stringify(PLATINUM_MODELS_RESPONSE));
+    });
+    expect(seen!.url.endsWith('/models')).toBe(true);
+    expect(seen!.auth).toMatch(/^Bearer \S+/);
   });
 });
 
-const managed = (
-  id: string,
-  transport: ManagedModel['transport'],
-  tier: ManagedModel['tier'] = 'balanced',
-): ManagedModel => ({
+const managed = (id: string): ManagedModel => ({
   id,
   name: id,
-  upstreamModelId: id,
-  transport,
-  pricingRef: id,
-  tier,
+  pricing: { inputPerMillion: 1, outputPerMillion: 1 },
   vision: false,
   limit: { context: 1_000, output: 1_000 },
 });
 
 describe('resolvePlatformDefaultModelId — the platform default must always be reachable', () => {
-  const lineup = [
-    managed('kimi-k3', 'openrouter', 'flagship'),
-    managed('morph-dsv4flash', 'openrouter', 'fast'),
-  ];
+  const lineup = [managed('kimi-k3'), managed('morph-dsv4flash')];
 
   test('keeps the configured default when it is actually served', () => {
-    const served = [managed('morph-glm53-744b', 'openrouter'), ...lineup];
+    const served = [managed('morph-glm53-744b'), ...lineup];
     expect(resolvePlatformDefaultModelId('morph-glm53-744b', served)).toBe('morph-glm53-744b');
   });
 
-  test('maps an old Morph default to the equivalent served model', () => {
-    expect(resolvePlatformDefaultModelId('morph-kimik3', lineup)).toBe('kimi-k3');
-    const deepseek = managed('deepseek-v4.1-flash', 'openrouter');
-    expect(resolvePlatformDefaultModelId('kortix/morph-dsv41flash', [deepseek])).toBe('deepseek-v4.1-flash');
-  });
-
-  test('falls back to the served flagship when the configured default is unreachable', () => {
+  test('falls back to the first served model (Platinum order) when the configured default is unreachable', () => {
     expect(resolvePlatformDefaultModelId('morph-glm53-744b', lineup)).toBe('kimi-k3');
   });
 
   test('accepts and preserves the opencode `kortix/<id>` ref form', () => {
     expect(resolvePlatformDefaultModelId('kortix/morph-glm53-744b', lineup)).toBe('kimi-k3');
-    const served = [managed('morph-glm53-744b', 'openrouter'), ...lineup];
+    const served = [managed('morph-glm53-744b'), ...lineup];
     expect(resolvePlatformDefaultModelId('kortix/morph-glm53-744b', served)).toBe('kortix/morph-glm53-744b');
   });
 
-  test('falls back to the first served model when no flagship is served', () => {
-    const noFlagship = [managed('morph-dsv4flash', 'openrouter', 'fast')];
-    expect(resolvePlatformDefaultModelId('morph-glm53-744b', noFlagship)).toBe('morph-dsv4flash');
+  test('an empty configured default takes the first served model', () => {
+    expect(resolvePlatformDefaultModelId('', lineup)).toBe('kimi-k3');
   });
 
   test('leaves a BYOK default untouched — it resolves from a project key, not a managed transport', () => {
@@ -180,7 +110,8 @@ describe('isRetiredManagedModelId', () => {
   test('a current lineup id is not retired', () => {
     expect(isRetiredManagedModelId('deepseek-v4.1-flash')).toBe(false);
     expect(isRetiredManagedModelId('glm-5.3-flash')).toBe(false);
-    expect(isRetiredManagedModelId('kimi-k3')).toBe(false);
+    // Kimi K3 left the lineup on 2026-10-19.
+    expect(isRetiredManagedModelId('kimi-k3')).toBe(true);
   });
 
   test('an id this catalog has never heard of is not retired — it is simply unknown', () => {
@@ -188,77 +119,12 @@ describe('isRetiredManagedModelId', () => {
   });
 });
 
-describe('deepseek-v4-flash-0731 declares deepseek-v4.1-flash as its successor', () => {
-  test('canonicalManagedModelId resolves it', () => {
-    expect(canonicalManagedModelId('deepseek-v4-flash-0731')).toBe('deepseek-v4.1-flash');
-  });
-
-  // deepseek-v4-flash-0731 is ITSELF the one-hop target of two older aliases —
-  // a single lookup would leave morph-dsv4flash/deepseek-v4-flash pointing at
-  // a now-also-retired id. canonicalManagedModelId must follow the full chain.
-  test('a two-hop alias (morph-dsv4flash / deepseek-v4-flash) resolves through it, not to it', () => {
-    expect(canonicalManagedModelId('morph-dsv4flash')).toBe('deepseek-v4.1-flash');
-    expect(canonicalManagedModelId('deepseek-v4-flash')).toBe('deepseek-v4.1-flash');
-  });
-});
-
-// The guard against this exact class of bug recurring: someone retires a
-// model that is itself the declared successor of an older alias, and does not
-// revisit that alias. Every entry in the map must resolve — however many hops
-// it takes — to something that is NOT ALSO retired.
-describe('every LEGACY_MANAGED_IDS chain resolves off of a retired id', () => {
-  for (const alias of Object.keys(LEGACY_MANAGED_IDS)) {
-    test(`"${alias}" -> ... -> a non-retired id`, () => {
-      const resolved = canonicalManagedModelId(alias);
-      expect(isRetiredManagedModelId(resolved)).toBe(false);
-      // Idempotent: a true fixed point, not an intermediate hop left behind
-      // by the bound or a cycle guard.
-      expect(canonicalManagedModelId(resolved)).toBe(resolved);
-    });
-  }
-});
-
-describe('resolveLegacyIdChain is bounded and cycle-safe (synthetic tables — the real map is never mutated)', () => {
-  test('a direct cycle stops instead of looping forever', () => {
-    const cyclic = { a: 'b', b: 'a' };
-    // Enters the cycle at 'a' -> 'b' -> 'a' (seen) -> stops at 'b'.
-    expect(resolveLegacyIdChain('a', cyclic)).toBe('b');
-  });
-
-  test('a self-referencing entry stops immediately', () => {
-    expect(resolveLegacyIdChain('a', { a: 'a' })).toBe('a');
-  });
-
-  test('a chain longer than the hop bound stops rather than hanging', () => {
-    const long: Record<string, string> = {};
-    for (let i = 0; i < 20; i++) long[`chain-${i}`] = `chain-${i + 1}`;
-    const resolved = resolveLegacyIdChain('chain-0', long, 8);
-    expect(resolved).not.toBe('chain-20'); // never reaches the true (unbounded) end
-    expect(resolved.startsWith('chain-')).toBe(true); // stopped mid-chain, not a wrong answer
-  });
-
-  test('a chain within the bound fully resolves', () => {
-    const short = { a: 'b', b: 'c', c: 'd' };
-    expect(resolveLegacyIdChain('a', short, 8)).toBe('d');
-  });
-});
-
-describe('retiredManagedModelReplacement', () => {
-  const lineup = [managed('deepseek-v4.1-flash', 'openrouter'), managed('kimi-k3', 'openrouter')];
-
-  test('names the declared successor when it is actually served', () => {
-    expect(retiredManagedModelReplacement('deepseek-v4-flash-0731', lineup)).toBe('deepseek-v4.1-flash');
-  });
-
-  test('returns null when the declared successor is not itself served here', () => {
-    expect(retiredManagedModelReplacement('deepseek-v4-flash-0731', [managed('kimi-k3', 'openrouter')])).toBeNull();
-  });
-
-  test('returns null when there is no declared successor at all', () => {
-    expect(retiredManagedModelReplacement('grok-4.6', lineup)).toBeNull();
-  });
-
-  test('returns null for an id that was never retired', () => {
-    expect(retiredManagedModelReplacement('kimi-k3', lineup)).toBeNull();
+describe('a retired id follows the live lineup — no successor is hardcoded', () => {
+  test('canonicalManagedModelId maps a retired id to the first model Platinum lists', () => {
+    __setManagedLineupForTest([managed('qwen-x'), managed('deepseek-v4.1-flash')]);
+    expect(canonicalManagedModelId('morph-dsv41flash')).toBe('qwen-x');
+    expect(canonicalManagedModelId('deepseek-v4.1-flash')).toBe('deepseek-v4.1-flash');
+    __setManagedLineupForTest([]);
+    expect(canonicalManagedModelId('morph-dsv41flash')).toBe('morph-dsv41flash');
   });
 });

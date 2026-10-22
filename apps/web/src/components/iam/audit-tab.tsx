@@ -10,27 +10,26 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
 import { type Dispatch, type ReactNode, type SetStateAction, useMemo, useState } from 'react';
 
-import { CopyOverlay, HighlightedCode } from '@/components/markdown/code';
-import { CopyButton } from '@/components/markdown/copy-button';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { CopyOverlay, HighlightedCode, CopyButton } from '@kortix/ui/markdown';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import Loading from '@/components/ui/loading';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+} from '@kortix/ui/dropdown-menu';
+import { Input } from '@kortix/ui/input';
+import Loading from '@kortix/ui/loading';
+import { Popover, PopoverContent, PopoverTrigger } from '@kortix/ui/popover';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@kortix/ui/select';
+import { Skeleton } from '@kortix/ui/skeleton';
 import {
   Table,
   TableBody,
@@ -38,28 +37,28 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
+} from '@kortix/ui/table';
+import { Tabs, TabsList, TabsTrigger } from '@kortix/ui/tabs';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { ErrorState } from '@kortix/ui/error-state';
 import {
   EMPTY_PRINCIPAL_SELECTION,
   PROJECT_SELECT_ALL,
-  PrincipalPicker,
   type PrincipalSelection,
   ProjectSelect,
   formatRelative,
   singlePrincipal,
-} from '@/features/workspace/shared/access';
-import { localizeUiCatalog, translateUiCatalogText } from '@/i18n/localize-ui-catalog';
-import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '@/i18n/product-catalog-translation-keys.generated';
+} from '@kortix/ui/access/access/index';
+import { PrincipalPicker } from '@kortix/ui/access';
+import { localizeUiCatalog, translateUiCatalogText } from '@kortix/ui/i18n';
+import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/product-catalog-translation-keys.generated';
 import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
 import { type IamAuditEvent, type ListAuditFilter, listAuditEvents } from '@/lib/iam-client';
-import { CREDENTIAL_KINDS, CREDENTIAL_LABEL_KEYS, credentialVia } from './audit-credential-label';
+import { CREDENTIAL_KINDS, CREDENTIAL_LABEL_KEYS, credentialVia } from '@kortix/ui/session/panel/audit/audit-credential-label';
 import { AuditSessionPicker } from './audit-session-picker';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { downloadAccountAudit, listAccountMembers, listProjectsForAccount } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import {
@@ -68,7 +67,7 @@ import {
   describeAuditAction,
   formatResourcePill,
 } from './audit-display-helpers';
-import { Download } from '@/features/icon/icons/download';
+import { Download } from '@kortix/ui/internal/icons/download';
 
 type ActorType = NonNullable<IamAuditEvent['actor_type']>;
 type Outcome = NonNullable<IamAuditEvent['outcome']>;

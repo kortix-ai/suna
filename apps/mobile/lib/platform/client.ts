@@ -126,7 +126,7 @@ function toSandboxInfo(project: ProjectSummary, session: ProjectSessionSummary):
     external_id:
       session.sandbox_url?.match(/\/p\/([^/]+)\//)?.[1] || session.sandbox_id,
     name: session.name || `${project.name} session`,
-    provider: session.sandbox_provider || 'daytona',
+    provider: session.sandbox_provider || 'platinum',
     base_url: session.sandbox_url || '',
     status: normalizeSessionStatus(session.status),
     version: null,

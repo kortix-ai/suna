@@ -55,7 +55,7 @@ export function registerChangeRequestActionsRoutes(): void {
       const projectId = c.req.param('projectId');
       const crId = c.req.param('crId');
       const body = await readJsonObject(c);
-      const loaded = await loadProjectForUser(c, projectId, 'write');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
 
       // Human-side capability gate: merging lands code on the base branch.
@@ -123,7 +123,8 @@ export function registerChangeRequestActionsRoutes(): void {
             cr: cr.number,
             error: err instanceof Error ? err.message : String(err),
           });
-          c.header('Retry-After', '5');
+          // Header inline, never `c.header(...)` first — same race as the
+          // journal 429 (KRTX-2737): the deadline may have answered already.
           return c.json(
             {
               error:
@@ -133,6 +134,7 @@ export function registerChangeRequestActionsRoutes(): void {
               action: PROJECT_ACTIONS.PROJECT_GITOPS_MERGE,
             },
             503,
+            { 'Retry-After': '5' },
           );
         }
         for (const action of change.required) {
@@ -252,7 +254,11 @@ export function registerChangeRequestActionsRoutes(): void {
           baseCommitSha: result.base_sha_before,
           updatedAt: new Date(),
         })
-        .where(eq(changeRequests.crId, crId))
+        // crId here is whatever the caller sent (a UUID, a number, "#233"):
+        // bind the write to the RESOLVED row's canonical id, never the raw path
+        // param — a numeric id that matched above must not 22P02 this update
+        // after the merge has already landed.
+        .where(eq(changeRequests.crId, cr.crId))
         .returning();
 
       invalidateProjectMirror(projectId);
@@ -326,10 +332,11 @@ export function registerChangeRequestActionsRoutes(): void {
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const crId = c.req.param('crId');
-      const loaded = await loadProjectForUser(c, projectId, 'write');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      // Per-agent gate: managing a CR's lifecycle is part of the change-request
-      // capability, which is `project.gitops.push` (no-op for human/PAT tokens).
+      // Managing a CR's lifecycle is part of the change-request capability,
+      // `project.gitops.push`, for humans and agents alike.
+      await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
       assertAgentScope(c, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
       const cr = await getCrById(crId, projectId);
@@ -346,7 +353,8 @@ export function registerChangeRequestActionsRoutes(): void {
           closedBy: loaded.userId,
           updatedAt: new Date(),
         })
-        .where(eq(changeRequests.crId, crId))
+        // Bind the write to the resolved row's canonical id (see the merge route).
+        .where(eq(changeRequests.crId, cr.crId))
         .returning();
       return c.json(serializeChangeRequest(row));
     },
@@ -372,10 +380,11 @@ export function registerChangeRequestActionsRoutes(): void {
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const crId = c.req.param('crId');
-      const loaded = await loadProjectForUser(c, projectId, 'write');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      // Per-agent gate: managing a CR's lifecycle is part of the change-request
-      // capability, which is `project.gitops.push` (no-op for human/PAT tokens).
+      // Managing a CR's lifecycle is part of the change-request capability,
+      // `project.gitops.push`, for humans and agents alike.
+      await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
       assertAgentScope(c, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
       const cr = await getCrById(crId, projectId);
@@ -392,7 +401,8 @@ export function registerChangeRequestActionsRoutes(): void {
           closedBy: null,
           updatedAt: new Date(),
         })
-        .where(eq(changeRequests.crId, crId))
+        // Bind the write to the resolved row's canonical id (see the merge route).
+        .where(eq(changeRequests.crId, cr.crId))
         .returning();
       return c.json(serializeChangeRequest(row));
     },

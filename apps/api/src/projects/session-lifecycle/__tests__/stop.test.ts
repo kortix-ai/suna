@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import * as realComputeMetering from '../../../billing/services/compute-metering';
 import * as realProviders from '../../../platform/providers';
@@ -129,7 +129,7 @@ mock.module('../../../billing/services/compute-metering', () => ({
 }));
 
 mock.module('../../lib/session-transcript-capture', () => ({
-  captureSessionTranscriptMirror: async (
+  captureJournallessSessionLog: async (
     sessionId: string,
     _deps?: unknown,
     options?: { scope?: string; actorUserId?: string },
@@ -176,6 +176,17 @@ const baseInput = {
   accountId: 'acct-1',
   userId: 'user-1',
 };
+
+// The provider retry's 1 s pause (stop.ts) costs no wall time here; the short
+// waits a test takes for background work stay real.
+const realSleep = Bun.sleep;
+let sleep: ReturnType<typeof spyOn>;
+beforeEach(() => {
+  sleep = spyOn(Bun, 'sleep').mockImplementation((ms) => realSleep(typeof ms === 'number' && ms >= 1_000 ? 0 : ms));
+});
+afterEach(() => {
+  sleep.mockRestore();
+});
 
 beforeEach(() => {
   sandboxRow = null;

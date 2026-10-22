@@ -74,7 +74,7 @@ beforeEach(() => {
 const last = () => calls.at(-1)!;
 
 test('AppHostingProvider is exactly the supported hosted provider set', () => {
-  const exactProviderSet: Equal<AppHostingProvider, 'daytona' | 'platinum' | 'e2b'> = true;
+  const exactProviderSet: Equal<AppHostingProvider, 'platinum' | 'daytona'> = true;
   expect(exactProviderSet).toBe(true);
 });
 
@@ -507,4 +507,19 @@ test('createAppToken mints a sign-in token for the App naming the caller', async
 
   expect(await createAppToken('project-1', 'app-1')).toEqual(minted);
   expect(last()).toMatchObject({ method: 'POST', url: 'http://backend.test/v1/projects/project-1/apps/app-1/token' });
+});
+
+test('an external App: created and moved by external_url, carried on the App', async () => {
+  const external: Equal<App['external_url'], string | null | undefined> = true;
+  const createInput: Equal<CreateAppInput['external_url'], string | undefined> = true;
+  const updateInput: Equal<UpdateAppInput['external_url'], string | undefined> = true;
+  expect([external, createInput, updateInput]).toEqual([true, true, true]);
+  responses.push({ status: 201, body: { app_id: 'app-ext', external_url: 'https://grafana.example.com', capabilities: ['preview'] } });
+  const app = await createApp('project-1', { slug: 'grafana', name: 'Grafana', external_url: 'https://grafana.example.com' });
+  expect(calls[0]!.body).toEqual({ slug: 'grafana', name: 'Grafana', external_url: 'https://grafana.example.com' });
+  expect(app.external_url).toBe('https://grafana.example.com');
+  responses.push({ body: { app_id: 'app-ext', external_url: 'https://grafana.example.org' } });
+  await updateApp('project-1', 'app-ext', { external_url: 'https://grafana.example.org' });
+  expect(calls[1]!.method).toBe('PATCH');
+  expect(calls[1]!.body).toEqual({ external_url: 'https://grafana.example.org' });
 });

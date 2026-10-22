@@ -21,8 +21,6 @@ let managedModels = false;
 let accountTier = 'free';
 /** What the session-default resolution returns: null = only the (unservable) platform default applies. */
 let resolvedDefault: string | null = null;
-/** The project's `llm_gateway` flag — off, the plan gate does not exist (native mode). */
-let gatewayOn = true;
 let createSessionCalls = 0;
 
 const app = new OpenAPIHono<AppEnv>();
@@ -44,6 +42,8 @@ mock.module('../lib/access', () => ({
       manifestPath: null,
     },
   }),
+
+  assertProjectCapability: async () => undefined,
 }));
 mock.module('../../feature-flags/gate', () => ({ requireFeatureFlag: () => null }));
 const realEntitlements = await import('../../billing/services/entitlements');
@@ -59,9 +59,6 @@ mock.module('../../llm-gateway/resolution/default-model', () => ({
     model: resolvedDefault,
     source: resolvedDefault ? ('account' as const) : ('platform' as const),
   }),
-}));
-mock.module('../../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: () => gatewayOn,
 }));
 const realSessionLifecycle = await import('../session-lifecycle');
 // mock.module replaces the module WHOLESALE: a hand-listed stub deletes every
@@ -99,7 +96,6 @@ beforeEach(() => {
   managedModels = false;
   accountTier = 'free';
   resolvedDefault = null;
-  gatewayOn = true;
   createSessionCalls = 0;
 });
 
@@ -136,13 +132,6 @@ describe('marketplace install-session — the import turn model gate (KRTX-1540)
 
   test('a servable configured default (the account own key) installs without the gate', async () => {
     resolvedDefault = 'anthropic/claude-opus-4.8';
-    const res = await post();
-    expect(res.status).toBe(201);
-    expect(createSessionCalls).toBe(1);
-  });
-
-  test('a native (gateway-off) project has no plan gate', async () => {
-    gatewayOn = false;
     const res = await post();
     expect(res.status).toBe(201);
     expect(createSessionCalls).toBe(1);

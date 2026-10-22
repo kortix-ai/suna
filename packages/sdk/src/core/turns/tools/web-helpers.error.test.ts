@@ -26,3 +26,35 @@ describe('parseWebSearchOutput on failure', () => {
     expect(parsed[0].sources).toHaveLength(1);
   });
 });
+
+// KRTX-3016: a batch whose queries all failed rendered "5 searches" over five
+// empty rows: each query's error was dropped here.
+describe('parseWebSearchOutput on a failed batch', () => {
+  const batch = (results: unknown[]) =>
+    JSON.stringify({ batch_mode: true, total_queries: results.length, results });
+
+  test('keeps each failed query with its error', () => {
+    const parsed = parseWebSearchOutput(
+      batch([
+        { query: 'desk cable tray', success: false, error: 'Error: 432 Error: {"detail":"over plan quota"}' },
+        { query: 'monitor riser', success: false, error: '' },
+      ]),
+    );
+    expect(parsed).toEqual([
+      { query: 'desk cable tray', answer: undefined, sources: [], error: 'Error: 432 Error: {"detail":"over plan quota"}' },
+      { query: 'monitor riser', answer: undefined, sources: [], error: 'Search failed' },
+    ]);
+  });
+
+  test('a successful query in the same batch carries no error', () => {
+    const parsed = parseWebSearchOutput(
+      batch([
+        { query: 'ok', success: true, results: [{ title: 'A', url: 'https://a.example' }] },
+        { query: 'bad', success: false, error: 'boom' },
+      ]),
+    );
+    expect(parsed[0].error).toBeUndefined();
+    expect(parsed[0].sources).toHaveLength(1);
+    expect(parsed[1].error).toBe('boom');
+  });
+});

@@ -37,10 +37,11 @@ The contract is:
 5. **Verify it carries your diff** (`kortix cr diff <n>`). No changes
    shown = your push didn't land; push and re-check the SAME CR — it
    recomputes live. Never open a duplicate.
-6. **Surface the CR number to the user** (`kortix cr ls`) so they can
-   review.
+6. **Surface the CR to the user**: its number and title (`kortix cr ls`).
+   In the web app, point them at the **Review** button under your reply;
+   name `kortix cr merge <n>` only for a CLI or channel user.
 7. **Stop. The agent does not merge its own CR.** Merging is the
-   user's call, from the dashboard or `kortix cr merge <n>`.
+   user's call: the Review button, the dashboard, or `kortix cr merge <n>`.
 
 This mandate applies to **everything**:
 
@@ -288,8 +289,8 @@ Validation rules on `POST /`:
 | Surface       | How the CR composes                                                                              |
 | ------------- | ------------------------------------------------------------------------------------------------ |
 | **Sessions**  | A CR's `origin_session_id` is back-filled from `$KORTIX_SESSION_ID` so the dashboard shows the session that opened it. Cascade is `ON DELETE SET NULL` — closing the session orphans the link, doesn't delete the CR. |
-| **Skills**    | A new skill folder and its `skills:` registry entry reach future sessions **only** after a CR that contains them merges to `main`. Until then, only the originating session sees them. |
-| **Agents**    | Same: a new or changed `agents.<name>` block in `kortix.yaml` (and its `prompt_file`) needs to land via CR. |
+| **Skills**    | New `skills/<name>/SKILL.md` files reach future sessions **only** after a CR that contains them merges to `main`. Until then, only the originating session sees them. |
+| **Agents**    | Same: new `agents/<agent>.md` files need to land via CR.                       |
 | **Triggers**  | Edits to `triggers:` in `kortix.yaml` only reach the scheduler after the CR merges. The scheduler reads `kortix.yaml` on `main`. |
 | **Secrets**   | Decoupled. Secrets live in the Kortix Secrets Manager, not the manifest; CRs don't move secrets. |
 | **Dashboard** | Renders CR list / detail / diff / merge button. Same data as the CLI sees.                       |

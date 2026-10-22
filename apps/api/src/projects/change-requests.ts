@@ -13,10 +13,11 @@
  * what.
  */
 
-import { and, desc, eq, lt, sql } from 'drizzle-orm';
+import { type SQL, and, asc, desc, eq, gt, inArray, lt, sql } from 'drizzle-orm';
 import type { ChangeRequest } from '@kortix/api-contract';
 import { changeRequests } from '@kortix/db';
 import { db } from '../shared/db';
+import { isUuid } from '../shared/validate';
 
 type ChangeRequestStatus = 'open' | 'merged' | 'closed';
 
@@ -27,7 +28,16 @@ export const CHANGE_REQUEST_LIST_MAX_LIMIT = 500;
 
 type ChangeRequestRow = typeof changeRequests.$inferSelect;
 
-export function serializeChangeRequest(row: ChangeRequestRow): ChangeRequest {
+/** A change request by its two names: the id and the number people read. */
+export interface ChangeRequestRef {
+  cr_id: string;
+  number: number;
+}
+
+export function serializeChangeRequest(
+  row: ChangeRequestRow,
+  supersededBy: ChangeRequestRef | null = null,
+): ChangeRequest {
   return {
     cr_id: row.crId,
     account_id: row.accountId,
@@ -47,6 +57,7 @@ export function serializeChangeRequest(row: ChangeRequestRow): ChangeRequest {
     merge_commit_sha: row.mergeCommitSha,
     closed_at: row.closedAt?.toISOString() ?? null,
     closed_by: row.closedBy,
+    superseded_by: supersededBy,
     metadata: row.metadata ?? {},
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
@@ -68,6 +79,8 @@ export interface ListChangeRequestsForProjectOptions {
   limit?: number;
   /** A previous page's `next_cursor`: the rows numbered below it. */
   cursor?: number;
+  /** The caller's read filter (`ProjectReadView.where`); absent reads every row. */
+  visibleTo?: SQL;
 }
 
 /** A list cursor is the number of the last row of the page (rows are unique by
@@ -95,6 +108,7 @@ export async function listChangeRequestsForProject(
   if (options.cursor != null) {
     whereClauses.push(lt(changeRequests.number, options.cursor));
   }
+  if (options.visibleTo) whereClauses.push(options.visibleTo);
   const limit = Math.min(
     options.limit ?? CHANGE_REQUEST_LIST_DEFAULT_LIMIT,
     CHANGE_REQUEST_LIST_MAX_LIMIT,
@@ -106,10 +120,46 @@ export async function listChangeRequestsForProject(
     .orderBy(desc(changeRequests.number))
     .limit(limit + 1);
   const page = rows.slice(0, limit);
+  const replaced = await supersededByFor(projectId, page, options.visibleTo);
   return {
-    change_requests: page.map(serializeChangeRequest),
+    change_requests: page.map((row) => serializeChangeRequest(row, replaced.get(row.crId) ?? null)),
     next_cursor: rows.length > limit ? String(page[page.length - 1].number) : null,
   };
+}
+
+/**
+ * The request that replaced each closed one: the next request opened for the
+ * same branch. An agent revises its work by closing #2 and opening #3 on the
+ * same session branch, and #2 read only "Closed" (KRTX-3031). Derived, not
+ * stored, so requests replaced before this shipped name theirs too. A merged
+ * request is never superseded, and a replacement outside `visibleTo` (the
+ * caller's read filter) is never named.
+ */
+export async function supersededByFor(
+  projectId: string,
+  rows: readonly ChangeRequestRow[],
+  visibleTo?: SQL,
+): Promise<Map<string, ChangeRequestRef>> {
+  const closed = rows.filter((row) => row.status === 'closed');
+  if (closed.length === 0) return new Map();
+  const later = await db
+    .select({ crId: changeRequests.crId, number: changeRequests.number, headRef: changeRequests.headRef })
+    .from(changeRequests)
+    .where(
+      and(
+        eq(changeRequests.projectId, projectId),
+        inArray(changeRequests.headRef, [...new Set(closed.map((row) => row.headRef))]),
+        gt(changeRequests.number, Math.min(...closed.map((row) => row.number))),
+        visibleTo,
+      ),
+    )
+    .orderBy(asc(changeRequests.number));
+  const replaced = new Map<string, ChangeRequestRef>();
+  for (const row of closed) {
+    const next = later.find((cr) => cr.headRef === row.headRef && cr.number > row.number);
+    if (next) replaced.set(row.crId, { cr_id: next.crId, number: next.number });
+  }
+  return replaced;
 }
 
 /**
@@ -125,11 +175,30 @@ export async function getNextCrNumber(projectId: string): Promise<number> {
   return (row?.max ?? 0) + 1;
 }
 
+/** A UUID (the canonical cr_id) or a bare per-project number ("233", "#233"
+ *  — the number the UI and the CLI display). Anything else can never match:
+ *  returning null instead of handing Postgres a non-UUID is what keeps a
+ *  malformed id a 404 rather than a 500 (prod, 2026-10-18: a caller passed
+ *  the CR number to the merge route and the uuid cast 500-ed).
+ */
 export async function getCrById(crId: string, projectId: string) {
+  const ref = crId.replace(/^#/, '');
+  // `number` is int4: a digit string above 2^31-1 would bind as 22003
+  // (integer out of range) — a 500, not the 404 this lookup promises.
+  const num = Number(ref);
+  const byNumber = /^\d+$/.test(ref) && num <= 2147483647;
+  if (!isUuid(ref) && !byNumber) return null;
   const [row] = await db
     .select()
     .from(changeRequests)
-    .where(and(eq(changeRequests.crId, crId), eq(changeRequests.projectId, projectId)))
+    .where(
+      and(
+        eq(changeRequests.projectId, projectId),
+        // The (project_id, number) unique index serves the number lookup; a
+        // number can never be a UUID, so the two shapes never collide.
+        byNumber ? eq(changeRequests.number, num) : eq(changeRequests.crId, ref),
+      ),
+    )
     .limit(1);
   return row ?? null;
 }
@@ -167,7 +236,10 @@ export async function recordRequestedChange(
       metadata: { ...meta, requested_changes: [...requestedChangesOf(cr), entry] },
       updatedAt: new Date(),
     })
-    .where(and(eq(changeRequests.crId, crId), eq(changeRequests.projectId, projectId)))
+    // crId may be the display number ("233", "#233") that getCrById just
+    // resolved — bind the write to the resolved canonical id, never the raw
+    // argument, or a numeric id would 22P02 the update it just earned.
+    .where(and(eq(changeRequests.crId, cr.crId), eq(changeRequests.projectId, projectId)))
     .returning();
   return row ?? null;
 }

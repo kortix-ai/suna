@@ -3,10 +3,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { Modal } from '@/components/ui/modal';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
-import { railGroups } from './rail';
-import { DEFAULT_SETTINGS_RAIL_CHROME_COPY } from './rail-copy-context';
+import { Modal } from '@kortix/ui/modal';
+import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
+import { railGroups } from '@kortix/ui/customize/settings/rail';
+import { DEFAULT_SETTINGS_RAIL_CHROME_COPY } from '@kortix/ui/customize/settings/rail-copy-context';
 import {
   ACCOUNT_SCOPED_SETTINGS_TABS,
   SettingsPanelShell,
@@ -14,10 +14,9 @@ import {
   type SettingsTabAllowedParams,
   buildSettingsPanelSettingsNav,
   isSettingsTabAllowed,
-  probeAdmits,
 } from './settings-panel-body';
-import { DEFAULT_SETTINGS_TAB, SETTINGS_TABS } from './settings-tabs';
-import type { RailItem } from './type';
+import { DEFAULT_SETTINGS_TAB, SETTINGS_TABS } from '@kortix/ui/customize/settings/settings-tabs';
+import type { RailItem } from '@kortix/ui/customize/settings/type';
 
 /**
  * `SettingsPanelShell` is the innermost presentational layer — no hooks, no
@@ -145,7 +144,7 @@ describe('SettingsPanelShell — desktop rail', () => {
       expect(html).toContain('Mirkos Org');
       // `?accountId=acc-1`, not `/accounts/acc-1`: the account hub has no
       // route — it is a modal addressed by a query param on whatever page it
-      // opens over (`stores/account-panel-store.ts`). Rendered with no router
+      // opens over (`packages/ui/src/internal/stores/account-panel-store.ts`). Rendered with no router
       // context, as this shell deliberately is, `HubLink` emits the
       // query-only relative form, which resolves against the current page.
       expect(html).toContain('href="?accountId=acc-1"');
@@ -243,6 +242,18 @@ describe('SettingsPanelView — the dialog frame', () => {
   test("the desktop rail is the account shell's sidebar column, from the shell's one constant", () => {
     expect(SOURCE).toContain('SETTINGS_SIDEBAR_WIDTH_PX');
     expect(SOURCE).not.toContain('grid-cols-[250px_1fr]');
+  });
+
+  /**
+   * KRTX-1975: opened from inside a project, the dialog titled itself
+   * "Settings — <project>" while every pane left in it is personal or
+   * account-scoped. The title is `chrome.settings` unconditionally now —
+   * asserted on the view's source, the only place the view's title is
+   * reachable without a DOM (the dialog portals, see this file's header).
+   */
+  test('the dialog title is plain Settings, never project-titled', () => {
+    expect(SOURCE).toContain('modalTitle={chrome.settings}');
+    expect(SOURCE).not.toContain('projectTitle');
   });
 });
 
@@ -410,15 +421,15 @@ describe('SettingsPanelShell — real tab content gating', () => {
 });
 
 /**
- * The shell no longer takes a project at all.
- *
- * It took one to render `RelatedProjectsSwitcher` in the rail, back when the
- * overlay held thirteen project-configuration tabs. Every pane left in it is
- * user-scoped, so switching project from here changes nothing visible inside
- * the frame; the project sidebar's own switcher
+ * The shell takes no `project`, and neither does the view any more. The view
+ * took one to name the dialog "Settings — <project>" — a lie about what the
+ * dialog holds (KRTX-1975), and since the view dropped the prop (this
+ * commit's companion change) the accessible title is plain "Settings". The
+ * rail carried a `RelatedProjectsSwitcher` while the overlay held thirteen
+ * project-configuration tabs; switching project from a dialog that holds
+ * Profile, Preferences, Connected accounts and one workspace pane changes
+ * nothing you can see in it, and the project sidebar's own switcher
  * (`project-sidebar/workspace-switcher.tsx`) is where that job lives.
- * `SettingsPanelView` still takes the project — for the dialog's accessible
- * title — which is why this is asserted on the shell's props, not the view's.
  */
 describe('SettingsPanelShell — project-free', () => {
   test('renders the rail with no project in scope', () => {
@@ -527,10 +538,7 @@ describe('buildSettingsPanelSettingsNav', () => {
  *
  * `SettingsPanel` has two mounts: `ProjectShell` (with a `projectId`) and
  * `app/[locale]/(app)/settings*` (without one). `isSettingsTabAllowed` decides which
- * rows the rail may show on each, and — for the two Workspace rows that
- * mount config-page panes — whether the caller's project capabilities admit
- * the row, over the identical `CUSTOMIZE_SECTION_GATE_ACTIONS` leaves
- * `/projects/[id]/customize/settings` reads.
+ * rows the rail may show on each.
  */
 describe('isSettingsTabAllowed — project scope (JAY-547)', () => {
   function paramsFor(overrides: Partial<SettingsTabAllowedParams> = {}): SettingsTabAllowedParams {
@@ -563,48 +571,9 @@ describe('isSettingsTabAllowed — project scope (JAY-547)', () => {
     }
   });
 
-  /**
-   * Sandbox templates and Feature flags gate on the same IAM read leaf the
-   * config page gates them on (`isCustomizeSectionVisible`). No capability
-   * answer yet — the probe in flight, or a caller that passed none — hides
-   * the row rather than showing a pane the API would refuse.
-   */
-  test('the IAM-gated workspace tabs follow the project capability answer', () => {
-    const allow = () => true;
-    const deny = () => false;
-    for (const tab of ['sandbox', 'feature-flags', 'upgrades'] as const) {
-      expect(isSettingsTabAllowed(tab, paramsFor({ hasProject: true }))).toBe(false);
-      expect(isSettingsTabAllowed(tab, paramsFor({ hasProject: true, canProject: deny }))).toBe(
-        false,
-      );
-      expect(isSettingsTabAllowed(tab, paramsFor({ hasProject: true, canProject: allow }))).toBe(
-        true,
-      );
-      // A capability grant never overrides the scope rule.
-      expect(isSettingsTabAllowed(tab, paramsFor({ hasProject: false, canProject: allow }))).toBe(
-        false,
-      );
-    }
-  });
-
-  /**
-   * The probe answer the container feeds the gate. Fail-open while loading
-   * is load-bearing: an in-flight probe reads `allowed: false`, and the
-   * panel bounces an active tab that is not in the rail — so `=== true`
-   * sent every `/settings/sandbox` deep link to Profile in CI.
-   */
-  test('an in-flight probe admits the row; only a received denial hides it', () => {
-    expect(probeAdmits(undefined)).toBe(true);
-    expect(probeAdmits({ allowed: false, isLoading: true })).toBe(true);
-    expect(probeAdmits({ allowed: true, isLoading: false })).toBe(true);
-    expect(probeAdmits({ allowed: false, isLoading: false })).toBe(false);
-  });
-
-  test('with a project and every capability, the scope gate admits every tab', () => {
+  test('with a project, the scope gate admits every tab', () => {
     for (const tab of SETTINGS_TABS) {
-      expect(
-        isSettingsTabAllowed(tab, paramsFor({ hasProject: true, canProject: () => true })),
-      ).toBe(true);
+      expect(isSettingsTabAllowed(tab, paramsFor({ hasProject: true }))).toBe(true);
     }
   });
 

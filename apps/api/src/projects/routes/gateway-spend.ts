@@ -1,8 +1,8 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import { gatewayBudgets, gatewayRequestLogs } from '@kortix/db';
 import { db } from '../../shared/db';
-import { budgetSpends } from '../../llm-gateway/budgets';
+import { budgetSpends, monthToDateGatewaySpend } from '../../llm-gateway/budgets';
 import { auth, errors, json } from '../../openapi';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import {
@@ -12,6 +12,7 @@ import {
   projectCapabilityAllowed,
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
+import { projectReadView } from '../lib/project-read-view';
 import { listProjectGatewaySessionSpend, listProjectGatewaySourceSpend } from '../../shared/session-costs';
 import { projectSpendByModel } from '../lib/session-model-usage';
 import {
@@ -190,11 +191,13 @@ export function registerGatewaySpendRoutes(): void {
       );
 
       const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
+      const view = await projectReadView(c, loaded);
       return c.json(
         await listProjectGatewaySessionSpend({
           accountId: loaded.row.accountId,
           projectId,
           days,
+          sessionsVisibleTo: (column) => view.where(column),
         }),
       );
     },
@@ -288,44 +291,26 @@ export function registerGatewaySpendRoutes(): void {
       );
 
       const now = new Date();
+      // A non-manager reads the project budget and their own member budget
+      // and spend row, never another member's id, email or spend.
+      const { full } = await projectReadView(c, loaded);
       const budgets = await db
         .select()
         .from(gatewayBudgets)
-        .where(eq(gatewayBudgets.projectId, projectId));
-
-      const memberRows = await db
-        .select({
-          userId: gatewayRequestLogs.actorUserId,
-          requests: sql<number>`count(*)::int`,
-          // Budgets cap what a project SPENDS, so per-member spend here is the
-          // same total-spend figure the budget gate enforces on — not the
-          // Kortix-billed slice, which is 0 on every BYOK request.
-          cost: totalSpendSql,
-          tokens: sql<string>`coalesce(sum(${gatewayRequestLogs.inputTokens} + ${gatewayRequestLogs.outputTokens}), 0)`,
-        })
-        .from(gatewayRequestLogs)
         .where(
           and(
-            eq(gatewayRequestLogs.projectId, projectId),
-            sql`${gatewayRequestLogs.actorUserId} is not null`,
-            sql`${gatewayRequestLogs.createdAt} >= date_trunc('month', now())`,
-          ),
-        )
-        .groupBy(gatewayRequestLogs.actorUserId)
-        .orderBy(desc(totalSpendSql));
-
-      const [projectAgg] = await db
-        .select({
-          requests: sql<number>`count(*)::int`,
-          cost: totalSpendSql,
-        })
-        .from(gatewayRequestLogs)
-        .where(
-          and(
-            eq(gatewayRequestLogs.projectId, projectId),
-            sql`${gatewayRequestLogs.createdAt} >= date_trunc('month', now())`,
+            eq(gatewayBudgets.projectId, projectId),
+            full
+              ? undefined
+              : sql`(${gatewayBudgets.subjectUserId} is null or ${gatewayBudgets.subjectUserId} = ${loaded.userId})`,
           ),
         );
+
+      const { project: projectSpend, members: memberRows } = await monthToDateGatewaySpend(
+        projectId,
+        full ? null : loaded.userId,
+        now,
+      );
 
       // The gate's own measure of each budget, in one statement (KRTX-1725).
       const spends = await budgetSpends(projectId, budgets, now);
@@ -341,7 +326,7 @@ export function registerGatewaySpendRoutes(): void {
       return c.json({
         // Month-to-date, whatever the budgets' periods. A meter reads its own
         // budget's `spent_usd`.
-        project_spend: { requests: projectAgg?.requests ?? 0, cost: projectAgg?.cost ?? 0 },
+        project_spend: projectSpend,
         budgets: budgets.map((b, i) => ({
           budget_id: b.budgetId,
           scope: b.scope,
@@ -359,7 +344,7 @@ export function registerGatewaySpendRoutes(): void {
           email: r.userId ? (emails.get(r.userId) ?? null) : null,
           requests: r.requests,
           cost: r.cost,
-          tokens: Number(r.tokens),
+          tokens: r.tokens,
         })),
       });
     },

@@ -2,12 +2,14 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { SecretValueStatusSchema } from '@kortix/api-contract';
 import { accountSecretGrants, accountSecretResources, projects, sessionProviderSecretPools } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
+import type { Context } from 'hono';
+import type { AppEnv } from '../types';
 import { auth, errors, json } from '../openapi';
 import { db } from '../shared/db';
 import { accountMemberRow } from '../iam/membership-read';
 import { clearAccountSecretCooldown, encryptAccountSecret, memberMayReadProject, probeAccountSecret, secretUsableInProject } from '../secrets/account-resource';
 import { resolveFeatureFlag } from '../feature-flags/registry';
-import { actorOf, authorize, PROJECT_ACTIONS } from '../iam';
+import { ACCOUNT_ACTIONS, actorOf, authorize, PROJECT_ACTIONS } from '../iam';
 import { resolveCatalogUpstream } from '../llm-gateway/models/provider-registry';
 import { AccountIdParam, accountsRouter, getMembership } from './core/app';
 import { readJsonObject } from '../shared/http-body';
@@ -43,9 +45,14 @@ async function loadSecret(accountId: string, secretId: string) {
     .where(and(eq(accountSecretResources.accountId, accountId), eq(accountSecretResources.secretId, secretId))).limit(1);
   return row ?? null;
 }
-async function mayManage(userId: string, accountId: string, creatorId: string) {
-  const membership = await getMembership(userId, accountId);
-  return Boolean(membership && (membership.accountRole === 'owner' || membership.accountRole === 'admin' || creatorId === userId));
+/** The caller may manage a resource they created, or any resource with account.write. */
+async function mayManage(c: Context<AppEnv>, accountId: string, creatorId: string) {
+  const userId = c.get('userId') as string;
+  if (creatorId === userId) return Boolean(await getMembership(userId, accountId));
+  return mayWriteAccount(c, accountId);
+}
+async function mayWriteAccount(c: Context<AppEnv>, accountId: string) {
+  return (await authorize(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed;
 }
 async function view(row: typeof accountSecretResources.$inferSelect, actorId: string) {
   const grants = await db.select({ userId: accountSecretGrants.userId }).from(accountSecretGrants)
@@ -82,7 +89,7 @@ export function registerSecretResourceRoutes() {
     if (projectId && !(await memberMayReadProject(accountId, projectId, userId, { mfaAal: c.get('mfaAal') }))) {
       return c.json({ error: 'Forbidden' }, 403);
     }
-    const manager = membership.accountRole === 'owner' || membership.accountRole === 'admin';
+    const manager = await mayWriteAccount(c, accountId);
     const rows = await db.select().from(accountSecretResources).where(eq(accountSecretResources.accountId, accountId));
     const scoped = rows.filter((row) => !projectId ? row.projectId === null : row.projectId === null || row.projectId === projectId);
     const views = await Promise.all(scoped.map((row) => view(row, userId)));
@@ -158,7 +165,7 @@ export function registerSecretResourceRoutes() {
     const actorId = c.get('userId') as string;
     const row = await loadSecret(accountId, c.req.param('secretId'));
     if (!row) return c.json({ error: 'Not found' }, 404);
-    if (!row.projectId || !(await mayManage(actorId, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
+    if (!row.projectId || !(await mayManage(c, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
     // Narrowing a key to its creator skips the `authorize` below: the caller's
     // own request, with its MFA level, is checked here instead.
     if (!(await memberMayReadProject(accountId, row.projectId, actorId, { mfaAal: c.get('mfaAal') }))) {
@@ -198,7 +205,7 @@ export function registerSecretResourceRoutes() {
     const userId = c.get('userId') as string;
     const row = await loadSecret(accountId, c.req.param('secretId'));
     if (!row) return c.json({ error: 'Not found' }, 404);
-    if (!(await mayManage(userId, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
+    if (!(await mayManage(c, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
     if (row.providerId === 'codex' && row.name === 'CODEX_AUTH_JSON') {
       return c.json({ error: 'Reconnect this ChatGPT account to refresh its OAuth login' }, 400);
     }
@@ -221,7 +228,7 @@ export function registerSecretResourceRoutes() {
     const userId = c.get('userId') as string;
     const row = await loadSecret(accountId, secretId);
     if (!row) return c.json({ error: 'Not found' }, 404);
-    if (!(await mayManage(userId, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
+    if (!(await mayManage(c, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
     await clearAccountSecretCooldown(row.secretId, accountId);
     return c.json(await view({ ...row, cooldownUntil: null, cooldownProbeAt: null }, userId));
   });
@@ -236,7 +243,7 @@ export function registerSecretResourceRoutes() {
     const userId = c.get('userId') as string;
     const row = await loadSecret(accountId, c.req.param('secretId'));
     if (!row) return c.json({ error: 'Not found' }, 404);
-    if (!(await mayManage(userId, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
+    if (!(await mayManage(c, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
     await db.transaction(async (tx) => {
       await tx.update(sessionProviderSecretPools)
         .set({ secretIds: sql`${sessionProviderSecretPools.secretIds} - ${row.secretId}`, updatedAt: new Date() })
@@ -257,7 +264,7 @@ export function registerSecretResourceRoutes() {
     const userId = c.req.param('userId');
     const row = await loadSecret(accountId, c.req.param('secretId'));
     if (!row) return c.json({ error: 'Not found' }, 404);
-    if (!(await mayManage(actorId, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
+    if (!(await mayManage(c, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
     const [member] = await accountMemberRow(accountId, userId);
     if (!member) return c.json({ error: 'Member not found' }, 404);
     // Same checks as `PUT .../access`: a project key is shared only by someone
@@ -289,7 +296,7 @@ export function registerSecretResourceRoutes() {
     const actorId = c.get('userId') as string;
     const row = await loadSecret(accountId, c.req.param('secretId'));
     if (!row) return c.json({ error: 'Not found' }, 404);
-    if (!(await mayManage(actorId, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
+    if (!(await mayManage(c, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
     if (row.providerId === 'codex' && row.createdBy === c.req.param('userId')) {
       return c.json({ error: 'The connection owner keeps access' }, 400);
     }

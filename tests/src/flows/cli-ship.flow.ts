@@ -239,6 +239,7 @@ flow(
   'SHIP-1',
   {
     domain: 'cli',
+    tags: ['deployed'],
     requires: ['managedGitPush'],
     // Each `ship` is allotted its own 120s CLI budget below, and a real ship
     // provisions a GitHub repo, commits, and pushes through the git proxy to a
@@ -303,7 +304,7 @@ flow(
   'SHIP-2',
   {
     domain: 'cli',
-    routes: ['GET /v1/accounts/me', 'POST /v1/projects'],
+    routes: ['GET /v1/accounts/me'],
   },
   async (ctx) => {
     const pat = await ctx.fixtures.pat({
@@ -313,7 +314,7 @@ flow(
     ctx.track('cli-sandbox', sb.cwd);
     try {
       await initProject(sb);
-      // Pre-set a non-GitHub origin so ship takes the BYO POST /projects path.
+      // Pre-set a non-GitHub origin: ship must refuse it as a BYO origin.
       const byoUrl = 'https://git.example.test/ke2e/byo.git';
       Bun.spawnSync(['git', '-C', sb.cwd, 'remote', 'add', 'origin', byoUrl]);
       const login = await sb.login(pat, { noProject: true, account: ctx.P.accountId });
@@ -322,18 +323,18 @@ flow(
       await ctx.step(
         'ship -y with a non-GitHub origin → BYO rejected (GitHub-only), origin untouched',
         async () => {
-          // The BYO path POSTs /projects {repo_url}, but the API only accepts a
-          // GitHub repo_url (normalizeRepoUrl → resolveGitHubImport). A non-GitHub
-          // origin is rejected 400 BEFORE saveLink — so ship exits non-zero, no
-          // link.json is written, and (critically) the existing origin is never
+          // POST /projects accepts only a GitHub repo_url (normalizeRepoUrl), so
+          // ship refuses a non-GitHub origin itself, before any project request:
+          // exit 2, no link.json, and (critically) the existing origin is never
           // clobbered (the single-writable-origin invariant). A real BYO happy
           // path needs a live GitHub repo + App installation (env-specific).
           const r = await sb.run(['ship', '-y'], { timeoutMs: 120_000 });
+          check('ship refused the non-GitHub origin (exit 2)', r.exitCode === 2, 2, r.exitCode);
           check(
-            'ship failed — non-GitHub BYO rejected (non-zero exit)',
-            r.exitCode !== 0,
+            'the refusal names the GitHub-only rule',
+            r.stderr.includes('Kortix links GitHub repositories only'),
             true,
-            r.exitCode,
+            r.stderr.slice(0, 300),
           );
           check(
             'no link.json written on failure',
@@ -362,7 +363,7 @@ flow(
   'SHIP-3',
   {
     domain: 'cli',
-    routes: ['GET /v1/accounts/me', 'POST /v1/projects'],
+    routes: ['GET /v1/accounts/me'],
   },
   async (ctx) => {
     const pat = await ctx.fixtures.pat({
@@ -378,20 +379,20 @@ flow(
       await ctx.step(
         'ship -y --origin <non-GitHub url> → BYO rejected (GitHub-only), no link',
         async () => {
-          // `--origin <url>` forces the BYO path; the API rejects a non-GitHub
-          // repo_url (400) before saveLink AND before setOrigin (which is line-
-          // ordered after the POST), so ship exits non-zero, no link.json is
-          // written, and the origin is not rewritten. The happy path (origin
-          // rewritten to an explicit url) needs a real GitHub repo + App.
+          // `--origin <url>` forces the BYO path. Ship refuses a non-GitHub url
+          // before any project request and before setOrigin, so it exits 2, no
+          // link.json is written, and the origin is not rewritten. The happy
+          // path (origin rewritten to an explicit url) needs a real GitHub repo + App.
           const explicit = 'https://git.example.test/ke2e/explicit.git';
           const r = await sb.run(['ship', '-y', '--origin', explicit], {
             timeoutMs: 120_000,
           });
+          check('ship refused the non-GitHub origin (exit 2)', r.exitCode === 2, 2, r.exitCode);
           check(
-            'ship failed — non-GitHub BYO rejected (non-zero exit)',
-            r.exitCode !== 0,
+            'the refusal suggests --origin managed',
+            r.stderr.includes('--origin managed'),
             true,
-            r.exitCode,
+            r.stderr.slice(0, 300),
           );
           check(
             'no link.json written on failure',
@@ -675,7 +676,7 @@ flow(
   'CR-9',
   {
     domain: 'cli',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     serial: true,
     timeoutMs: 1_200_000,
     routes: [

@@ -17,7 +17,7 @@ import {
   modelInDefaultView,
   pickerProviderList,
   type FlatModel,
-  type PickerProviderListInput,
+  type ProjectLlmCatalogResponse,
 } from '@kortix/sdk';
 import type { PickerOption } from './composer-config';
 
@@ -32,22 +32,25 @@ export interface PickerModel {
   variants?: Record<string, Record<string, unknown>>;
 }
 
-const GATEWAY_PROVIDER_ID = 'kortix';
-
 /**
- * The composer's model list for one set of sources (`useComposerModels`):
- * `@kortix/sdk` builds it, `pickerProviderList` → `flattenModels`, in the
- * provider mode web's `modelProviderMode` reads off the same list.
+ * The composer's model list from the project's `/model-picker` answer
+ * (`useComposerModels`): `@kortix/sdk` builds it, `pickerProviderList` →
+ * `flattenModels`. Every model goes through the LLM gateway.
  */
-export function composerModelList(input: PickerProviderListInput): FlatModel[] {
-  return flattenModels(pickerProviderList(input), {
-    providerMode: input.gatewayEnabled ? 'gateway' : 'native',
-  });
+export function composerModelList(modelPicker: ProjectLlmCatalogResponse | undefined): FlatModel[] {
+  return flattenModels(pickerProviderList({ modelPicker }));
 }
 
-/** Models the project offers (`enabled !== false`): zero means "Connect model" (KRTX-251). */
+/** Models the project offers and the caller can run (`enabled`, `available`):
+ *  zero means "Connect model" (KRTX-251, KRTX-3011). */
 export function offeredModelCount(models: FlatModel[]): number {
-  return models.filter((m) => m.enabled !== false).length;
+  return models.filter(isRunnable).length;
+}
+
+/** `/model-picker` marks a model a default names, whose provider is not
+ *  connected, `available: false`: the gateway would refuse it (KRTX-3011). */
+function isRunnable(model: FlatModel): boolean {
+  return model.enabled !== false && model.available !== false;
 }
 
 /**
@@ -103,7 +106,6 @@ export const PICKER_PROVIDER_LABELS: Record<string, string> = {
 
 /** The provider a model belongs to in the picker. Web `pickerGroupId`. */
 export function pickerGroupId(model: PickerModel): string {
-  if (model.providerID !== GATEWAY_PROVIDER_ID) return model.providerID;
   if (model.provider) return model.provider;
   // An older catalog without `provider`: the wire id is `<provider>/<model>`.
   // Kortix-managed ids carry no "/", so they stay under `kortix`.
@@ -160,8 +162,7 @@ function groupRank(groupID: string): number {
  *
  * Web's model selector rules: models the project turned off (`enabled:
  * false`) are not rows; a row the empty-search view hides
- * (`modelInDefaultView` over `createModelVisibility`: newest per family for
- * native providers, every gateway model) is `searchOnly`. `selected` always
+ * (`modelInDefaultView` over `createModelVisibility`) is `searchOnly`. `selected` always
  * shows. Mobile has no "Manage models" pins, so none are passed.
  */
 export function modelPickerOptions(
@@ -170,7 +171,7 @@ export function modelPickerOptions(
 ): PickerOption[] {
   const isStoreVisible = createModelVisibility({ catalogModels: models });
   return models
-    .filter((model) => model.enabled !== false)
+    .filter(isRunnable)
     .map((model) => {
       const groupID = pickerGroupId(model);
       return { model, groupID, group: pickerGroupLabel(groupID, model), label: pickerModelName(model) };

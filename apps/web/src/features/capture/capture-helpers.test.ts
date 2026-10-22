@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { CaptureDevice } from '@kortix/sdk';
 import {
-  dayWindow,
   durationParts,
   indexAtOrBefore,
   localDayOf,
@@ -9,14 +8,6 @@ import {
 import { deviceStatus } from './devices/device-status';
 
 describe('capture time', () => {
-  test('a local day window runs from local midnight to the next local midnight', () => {
-    const { from, to } = dayWindow('2026-10-03');
-    expect(localDayOf(from)).toBe('2026-10-03');
-    expect(new Date(from).getHours()).toBe(0);
-    expect(localDayOf(to)).toBe('2026-10-04');
-    expect(new Date(to).getHours()).toBe(0);
-  });
-
   test('durations round to the minute; the moment lookup finds the last item at or before a time', () => {
     expect(durationParts(3_725)).toEqual({ hours: 1, minutes: 2 });
     expect(durationParts(-5)).toEqual({ hours: 0, minutes: 0 });
@@ -46,7 +37,7 @@ describe('device status', () => {
       last_credentials_at: null,
       revoked_at: null,
       created_at: '2026-10-01T10:00:00.000Z',
-    }) as CaptureDevice;
+    }) as unknown as CaptureDevice;
 
   test('recording is green with its layers, queue and last frame', () => {
     const view = deviceStatus(
@@ -70,7 +61,7 @@ describe('device status', () => {
   test('a locked screen or an excluded app in front is not a pause: own words, no hue', () => {
     expect(deviceStatus(device('paused', { reason: 'locked' }))).toMatchObject({ key: 'locked', tone: 'none' });
     expect(deviceStatus(device('not_recording', { reason: 'locked' }))).toMatchObject({ key: 'locked', tone: 'none' });
-    for (const reason of ['excluded_app', 'excluded_domain', 'private_browsing']) {
+    for (const reason of ['excluded_app', 'excluded_domain', 'not_included', 'private_browsing']) {
       expect(deviceStatus(device('paused', { reason }))).toMatchObject({ key: 'excluded', tone: 'none' });
     }
     expect(deviceStatus(device('paused', { reason: 'paused' }))).toMatchObject({ key: 'paused', tone: 'orange' });

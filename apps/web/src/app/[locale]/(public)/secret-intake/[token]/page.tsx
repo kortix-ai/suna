@@ -1,8 +1,8 @@
 'use client';
 
-import { SecretIntakeForm } from '@/components/setup-links/secret-intake-form';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
-import { Rise, StepHeader } from '@/features/auth/auth-primitives';
+import { SecretIntakeForm } from '@kortix/ui/markdown/setup-links/secret-intake-form';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
+import { Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useTranslations } from '@/i18n/use-translations';
 import { useParams } from 'next/navigation';
 
@@ -18,7 +18,7 @@ export default function SecretIntakePage() {
         <StepHeader
           title={tI18nHardcoded.raw('autoAppPublicSecretIntakeTokenPageJsxTextAddA71a8394a')}
           description={tI18nHardcoded.raw(
-            'autoAppPublicSecretIntakeTokenPageJsxTextYourKortix7bc8f4ee',
+            'autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068',
           )}
         />
       </Rise>

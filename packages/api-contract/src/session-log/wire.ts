@@ -26,9 +26,12 @@
  *
  * Read (P4.2): `GET /v1/projects/:p/sessions/:s/log?thread=<thread_id>&before_seq=<n>&limit=<n>`,
  * the caller's session read permission, the transcript route's gate (a session-bound token included).
- * It reads Postgres only, never the box, and is served whether or not the `session_log` flag is
- * on. 200 `SessionLogPage`: one page of one thread. 404 when the session has no stored log, or when
- * `thread` is not one of its threads.
+ * It reads Postgres only, never the box. 200 `SessionLogPage`: one page of one thread. 404 `{ error,
+ * code: 'session_log_missing' }` when the session has no stored log yet (a client stays on the log;
+ * an API without this route answers 404 with no code), and 404 when `thread` is not one of its threads. A session whose history is
+ * only in the old v1 mirror is converted to the log first (P8.2); 503 `{ error, code:
+ * 'session_log_converting' }` with `Retry-After: 60` when that history is over the conversion size
+ * cap and the backfill has not converted it yet.
  *
  * Restore (P6.1): `POST /v1/projects/:p/sessions/:s/log/restore`, sandbox token only, no body.
  * The daemon of a fresh box calls it once, before its harness starts. It claims the session:
@@ -42,6 +45,11 @@
  *   tombstoned messages included: number new messages above it) and `blobs` (each text the
  *   API stored by reference: the record holds its 16 kB preview; read the full text with `GET /v1/projects/:p/sessions/:s/attachments/<id>`,
  *   the id being the last segment of `ref`, and check `sha256`).
+ * - 413 `SessionLogRestoreTooLarge`: the restore is over `SESSION_LOG_RESTORE_MAX_BYTES` (`bytes`, the
+ *   live messages' stored JSON lengths plus 2/5 of the session's live blob bytes, against `limit`). The claim still happens, so the box
+ *   journals above it: the answer is `SessionLogRestore` with every thread and no message, every
+ *   rev, `seq_max` and no blob, plus `messages` (the live messages left out). The box writes the D3
+ *   note alone into its root and boots: the model does not see the earlier conversation.
  * - 404 `SessionLogRestoreMissing`: the session has no stored log; nothing was claimed. Boot
  *   without a restore. A 404 with another body is an API that predates the route.
  * - 503: the operator switch `SESSION_LOG_RESTORE_ENABLED` is off; nothing was claimed.
@@ -136,6 +144,15 @@ export const SessionLogRestoreSchema = z.object({
   blobs: z.array(SessionLogRestoreBlobSchema),
 });
 export const SessionLogRestoreMissingSchema = z.object({ error: z.literal('no_session_log') });
+export const SessionLogRestoreTooLargeSchema = SessionLogRestoreSchema.extend({
+  error: z.literal('session_log_too_large'),
+  /** The live messages' stored JSON lengths plus 2/5 of the bytes of the session's live blobs (full texts, attachments), rounded up. */
+  bytes: z.number().int().nonnegative(),
+  /** The API's `SESSION_LOG_RESTORE_MAX_BYTES`. */
+  limit: z.number().int().nonnegative(),
+  /** The live messages left out of `log`. */
+  messages: z.number().int().nonnegative(),
+});
 
 /** A harness a session can run on: the adapters with a capability manifest (`capabilities.ts`). */
 export const SessionLogHarnessSchema = z.enum(['pi', 'opencode']);
@@ -161,9 +178,9 @@ export const SessionLogSwitchPreflightSchema = z.object({
   to: SessionLogHarnessSchema,
   /** False when the switch cannot happen; `reason` says why. */
   available: z.boolean(),
-  /** `same_harness`: the log already runs on `to`. `llm_gateway_off`: pi needs the project's `llm_gateway` flag. */
-  reason: z.enum(['same_harness', 'llm_gateway_off']).nullable(),
-  /** The new box restores the log (`session_log_restore` on). False: it starts without the conversation (`losses` begins with `history`). */
+  /** `same_harness`: the log already runs on `to`. */
+  reason: z.enum(['same_harness']).nullable(),
+  /** The new box restores the log (`session_log_restore` on, the log under the restore cap). False: it starts without the conversation (`losses` begins with `history`). */
   restores: z.boolean(),
   /** What the session uses that `to` handles worse, with counts. */
   losses: z.array(SessionLogSwitchLossSchema),
@@ -188,3 +205,4 @@ export type SessionLogManifest = z.infer<typeof SessionLogManifestSchema>;
 export type SessionLogPage = z.infer<typeof SessionLogPageSchema>;
 export type SessionLogRestoreBlob = z.infer<typeof SessionLogRestoreBlobSchema>;
 export type SessionLogRestore = z.infer<typeof SessionLogRestoreSchema>;
+export type SessionLogRestoreTooLarge = z.infer<typeof SessionLogRestoreTooLargeSchema>;

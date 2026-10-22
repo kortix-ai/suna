@@ -69,7 +69,7 @@ A session page shows the conversation, the composer below it, and a header above
 
 - **Agent picker**: the agent that runs the next turn.
 - **Model picker** and **effort picker**: the model and its reasoning effort for the next turn. See [Models](/docs/project/models).
-- **Attachments**: select the attach button, paste a file, or drag it into the composer.
+- **Attachments**: select the attach button, paste a file, or drop it anywhere on the session page or the project home. The file attaches to the composer. A drop on the side panel's **Files** uploads into the workspace instead.
 - `@` mentions an agent, another session, or a file in the repository.
 - `/` opens skills, commands and actions: **Switch model**, **Switch agent**, **Set reasoning effort**, **Attach file**, **Compact session** and **Show context**.
 - The ring next to the send button shows how much of the model's context window the session uses.
@@ -250,6 +250,8 @@ The app updates itself from the stable channel. It checks at launch and every 6 
 - On macOS, run the app from `/Applications`. A connected computer needs that fixed path.
 - With a connected computer, closing the last window keeps the app in the menu bar or tray. The computer agent runs as a separate service and stays connected after you quit. See [Computers](/docs/connect/computers).
 - The desktop app has no push service. While its window is open it polls for notifications and shows them as OS notifications. See [Where they appear](/docs/work/sessions#where-they-appear).
+- Right-click shows the menu a browser shows: spelling suggestions and **Add to Dictionary** on a misspelled word; Cut, Copy and Paste in a text field; **Copy Link** and **Open Link in Browser** on a link; **Copy Image** on an image.
+- A turn that finishes while the window is not in focus adds 1 to a count on the app icon. The count shows on the Dock icon on macOS, as a dot on the taskbar icon on Windows, and on the launcher icon on Linux desktops that support counts. Coming back to the session takes it off the count. The count does not need the `notification_center` flag.
 
 ## Mobile app
 

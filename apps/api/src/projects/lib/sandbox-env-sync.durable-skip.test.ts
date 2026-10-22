@@ -32,11 +32,6 @@ const PROJECT_ROW = {
   metadata: null as Record<string, unknown> | null,
 };
 
-let llmGatewayEnabled = false;
-mock.module('../../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: () => llmGatewayEnabled,
-}));
-
 const SESSION_ROW = {
   createdBy: 'user-1',
   agentName: 'support',
@@ -168,7 +163,6 @@ beforeEach(() => {
   snapshotRevision = 'rev-1';
   snapshotCapabilitiesJson = '{"version":1,"capabilities":[]}';
   PROJECT_ROW.metadata = null;
-  llmGatewayEnabled = false;
 });
 
 afterEach(async () => {

@@ -11,7 +11,7 @@ import { parse } from 'yaml';
 // entrypoint so they catch wiring mistakes a unit test on an unexported
 // function would miss.
 //
-// None of these tests configure DAYTONA_API_KEY (the sandbox key `init` asks
+// None of these tests configure PLATINUM_API_KEY (the sandbox key `init` asks
 // about — managed git and the LLM key are configured in the dashboard after
 // `start`, not by this CLI). `init`/`start` never hard-fail on a missing
 // secret — they warn and proceed; see secrets.test.ts for coverage of that
@@ -125,6 +125,44 @@ esac
       .toBe('${KORTIX_FRONTEND_MEMORY_LIMIT:-512m}');
   });
 
+  test('switching to an external capture store drops the on-box MinIO and survives re-init', async () => {
+    expect((await run(['init', '--yes'])).code).toBe(0);
+    // Default: the bundled MinIO store and its generated root pair.
+    expect(readCompose().services['capture-store']).toBeDefined();
+    expect(readEnv().CAPTURE_STORE_ROOT_USER).toBeTruthy();
+    expect(readEnv().KORTIX_CAPTURE_STORE).toBe('bundled');
+
+    const set = await run([
+      'env', 'set',
+      'KORTIX_CAPTURE_STORE=external',
+      'KORTIX_CAPTURE_S3_BUCKET=acme-capture',
+      'KORTIX_CAPTURE_STS_ROLE_ARN=arn:aws:iam::123456789012:role/kortix-capture-device',
+    ]);
+    expect(set.code).toBe(0);
+
+    // .env holds the durable switch + external values; the dead MinIO root pair
+    // is shed so it never persists on an external instance.
+    const env = readEnv();
+    expect(env.KORTIX_CAPTURE_STORE).toBe('external');
+    expect(env.KORTIX_CAPTURE_S3_BUCKET).toBe('acme-capture');
+    expect(env.CAPTURE_STORE_ROOT_USER).toBeUndefined();
+    expect(env.CAPTURE_STORE_ROOT_PASSWORD).toBeUndefined();
+
+    // Compose: no on-box store; the API reads the operator's S3 from .env and
+    // never creates the bucket.
+    const after = readCompose();
+    expect(after.services['capture-store']).toBeUndefined();
+    const apiEnv = (after.services['kortix-api'] as { environment: Record<string, string> }).environment;
+    expect(apiEnv.KORTIX_CAPTURE_S3_BUCKET).toBe('${KORTIX_CAPTURE_S3_BUCKET:-}');
+    expect(apiEnv.KORTIX_CAPTURE_S3_CREATE_BUCKET).toBe('false');
+    expect(apiEnv).not.toHaveProperty('KORTIX_CAPTURE_S3_PROXY_TARGET');
+
+    // Durable across `update`: a later re-init keeps the external mode.
+    expect((await run(['init', '--yes'])).code).toBe(0);
+    expect(readEnv().KORTIX_CAPTURE_STORE).toBe('external');
+    expect(readCompose().services['capture-store']).toBeUndefined();
+  });
+
   test('init defaults to the shared auth+sandbox defaults and the stable channel', async () => {
     const { code } = await run(['init', '--yes']);
     expect(code).toBe(0);
@@ -142,8 +180,10 @@ esac
     expect(env.SUPABASE_ANON_KEY).toBeTruthy();
     expect(env.SUPABASE_PUBLIC_URL).toBeTruthy();
     expect((readCompose().services['kortix-api'] as { env_file: string[] }).env_file).toContain('.env');
-    expect(env.ALLOWED_SANDBOX_PROVIDERS).toBe('daytona');
-    expect(env.DAYTONA_SERVER_URL).toBe('https://app.daytona.io/api');
+    // Platinum is the reference provider; E2B support is discontinued.
+    expect(env.ALLOWED_SANDBOX_PROVIDERS).toBe('platinum');
+    expect(env).not.toHaveProperty('E2B_API_KEY');
+    expect(env).not.toHaveProperty('E2B_DOMAIN');
 
     // Default channel is "stable" — a plain moving Docker tag, no signing/TUF.
     expect(env.KORTIX_CHANNEL).toBe('stable');

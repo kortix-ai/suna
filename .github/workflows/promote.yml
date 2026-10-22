@@ -1,34 +1,59 @@
 name: Promote to Production
 
-# Review-gated promotion — PROPOSE only; publishing happens on merge.
+# One dispatch takes a dev SHA all the way to a review-gated release PR:
 #
-# This workflow never publishes anything. It:
-#   1. computes the NEXT version from what's currently live on `prod`,
-#   2. freezes the promoted code (the source ref, default `staging`) on an
-#      ephemeral `release/vX.Y.Z` branch, stamping `VERSION` + `RELEASE_NOTES.md`,
-#   3. opens a PR into the protected `prod` branch.
+#   dev SHA ─(job stage)─> promote/dev-<sha10> ─> PR into staging, merged here
+#           (merge commit, no checks) ─> Build Staging Artifacts ─> Deploy
+#           Staging ─> staging /health serves the merge SHA
+#   ─(job open-release-pr)─> release/vX.Y.Z ─> PR into prod ─> `Tests - release`
+#           (`full suite + quality gates`, the one required check) ─> a person
+#           merges into prod.
 #
-# No tag, no GitHub Release, no image retag, no deploy, and `dev` is untouched.
-# A second person reviews and MERGES the PR — that merge is the ONLY thing that
-# advances `prod`, and its push event triggers deploy-prod.yml, which is what
-# actually creates the tag `vX.Y.Z`, cuts the Release, and deploys. So a version
-# only ever comes into existence when code lands on `prod`. `dev` (dev) stays
-# push-friendly; staging is the pre-prod source of truth.
+# The pull request into `staging` runs no workflow: every tree check and the
+# full suite run once, on the pull request into `prod` (2026-10-16, "one suite
+# on promote to prod"). Dispatching this workflow is the owner's approval for
+# the staging merge. Merging into prod stays a person's call.
+#
+# `ref: staging` (or a SHA on staging's first-parent chain) skips the dev leg:
+# that is the hotfix path, staging -> prod only. `dry_run: true` prints every
+# decision and changes nothing.
+#
+# This workflow never publishes anything. The merge into prod triggers
+# deploy-prod.yml, which tags vX.Y.Z, cuts the Release, and deploys.
+#
+# Workflow-token rules this file depends on (the learnings ledger):
+#   - A merge or push made with GITHUB_TOKEN starts no `push` workflow, and a
+#     run it starts fires no `workflow_run`. So the stage job DISPATCHES
+#     build-staging.yml (on ref `staging`, so its check-runs land on the merge
+#     SHA), and build-staging's `dispatch-deploy` job dispatches Deploy Staging.
+#   - A pull request opened with GITHUB_TOKEN holds its workflow runs in
+#     `action_required`. The open-release-pr job approves them; only the PR's
+#     own `Tests - release` run counts for the prod ruleset.
 #
 # The release branch does a `merge -s ours origin/prod` so `prod` is always an
 # ancestor of the PR head → the promote PR merges cleanly every time (no VERSION
-# / notes conflicts), while keeping the promoted ref's content verbatim.
+# / notes conflicts), while keeping the promoted content verbatim.
 
 on:
   workflow_dispatch:
     inputs:
+      ref:
+        description: 'Source to promote: a dev ref or SHA (default dev, runs the dev -> staging leg), or staging (hotfix: staging -> prod only)'
+        required: false
+        default: dev
+        type: string
+      dry_run:
+        description: 'Print every decision (SHA, conflict, PRs, version) and change nothing'
+        required: false
+        default: false
+        type: boolean
       title:
-        description: 'Release title — one-liner for the public changelog'
-        required: true
+        description: 'Release title — one-liner for the public changelog (required unless dry_run)'
+        required: false
         type: string
       notes:
-        description: 'Release notes — what changed and why (markdown ok)'
-        required: true
+        description: 'Release notes — what changed and why, markdown (required unless dry_run)'
+        required: false
         type: string
       bump:
         description: 'Semver bump (ignored if an explicit version is given)'
@@ -40,16 +65,6 @@ on:
         description: 'Explicit version override (e.g. 0.9.1) — optional'
         required: false
         type: string
-      ref:
-        description: 'Source ref to promote (default staging)'
-        required: false
-        default: staging
-        type: string
-      skip_green:
-        description: 'Fast-track: skip the staging QA-green wait (still requires the staging images to be built). Also enabled standingly via the RELEASE_FAST_TRACK repo variable.'
-        required: false
-        default: false
-        type: boolean
 
 concurrency:
   group: promote
@@ -58,18 +73,231 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
-  actions: write # approve the release pull request's gate run
+  actions: write # dispatch build-staging; approve the release pull request's runs
+  id-token: write # OIDC -> AWS Secrets Manager (Vercel bypass for the staging web /health)
 
 jobs:
+  stage:
+    name: Promote dev to staging
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    # Build Staging Artifacts takes ~25 min, Deploy Staging ~20 min.
+    timeout-minutes: 120
+    outputs:
+      source_sha: ${{ steps.deploy.outputs.source_sha || steps.plan.outputs.source_sha }}
+      dev_leg: ${{ steps.plan.outputs.dev_leg }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Plan the promotion
+        id: plan
+        env:
+          INPUT_REF: ${{ inputs.ref }}
+          IN_TITLE: ${{ inputs.title }}
+          IN_NOTES: ${{ inputs.notes }}
+        run: |
+          set -euo pipefail
+          if [ "$DRY_RUN" != true ] && { [ -z "$IN_TITLE" ] || [ -z "$IN_NOTES" ]; }; then
+            echo "::error::title and notes are required unless dry_run is true."
+            exit 1
+          fi
+          git fetch --no-tags origin dev staging prod
+          REF="${INPUT_REF:-dev}"
+          SHA="$(git rev-parse --verify --quiet "origin/$REF^{commit}" || git rev-parse --verify "$REF^{commit}")"
+          STAGING="$(git rev-parse origin/staging)"
+          echo "plan: ref=$REF sha=$SHA staging=$STAGING dry_run=$DRY_RUN"
+          if [ "$REF" = staging ] || grep -qx "$SHA" < <(git rev-list --first-parent origin/staging); then
+            echo "plan: $SHA is on staging -> staging-only path (hotfix): no dev leg; release source $SHA"
+            { echo "dev_leg=false"; echo "source_sha=$SHA"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git merge-base --is-ancestor "$SHA" origin/staging; then
+            echo "::error::$SHA is already merged into staging by an earlier promotion. Re-run with ref=staging to release the staging tip."
+            exit 1
+          fi
+          SHA10="${SHA:0:10}"
+          BRANCH="promote/dev-$SHA10"
+          rc=0
+          git merge-tree --write-tree origin/staging "$SHA" >/dev/null || rc=$?
+          case "$rc" in
+            0) CONFLICT=false ;;
+            1) CONFLICT=true ;;
+            *) echo "::error::git merge-tree failed (exit $rc)"; exit 1 ;;
+          esac
+          PR="$(gh pr list --base staging --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          PR_PLAN="new PR"; [ -z "$PR" ] || PR_PLAN="reuse open PR #$PR"
+          echo "plan: dev leg: $SHA -> $BRANCH -> PR into staging ($PR_PLAN), merge commit, no checks"
+          if [ "$CONFLICT" = true ]; then
+            echo "plan: merge-tree reports a conflict with staging -> branch is a merge of staging and $SHA10 whose tree equals $SHA"
+          else
+            echo "plan: no conflict -> branch is $SHA unchanged"
+          fi
+          echo "plan: then dispatch build-staging.yml on staging for the merge SHA, wait for Deploy Staging, and require 8 consecutive /health reads (api, gateway, web) on the merge SHA"
+          {
+            echo "dev_leg=true"
+            echo "sha=$SHA"
+            echo "sha10=$SHA10"
+            echo "branch=$BRANCH"
+            echo "conflict=$CONFLICT"
+            # Dry run: the release job computes the version from the current staging tip.
+            echo "source_sha=$STAGING"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Push the promotion branch, open and merge the PR into staging
+        id: merge
+        if: steps.plan.outputs.dev_leg == 'true' && inputs.dry_run != true
+        env:
+          SHA: ${{ steps.plan.outputs.sha }}
+          SHA10: ${{ steps.plan.outputs.sha10 }}
+          BRANCH: ${{ steps.plan.outputs.branch }}
+          CONFLICT: ${{ steps.plan.outputs.conflict }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # A promotion branch is never force-pushed: a rerun reuses it.
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
+            echo "Reusing existing $BRANCH."
+          elif [ "$CONFLICT" = true ]; then
+            git switch --detach origin/staging
+            git merge --no-ff --no-commit "$SHA" || true
+            git rev-parse -q --verify MERGE_HEAD >/dev/null || { echo "::error::git merge did not start a merge of $SHA."; exit 1; }
+            git read-tree --reset -u "$SHA" # take the dev tree for every file
+            git commit -m "Merge dev $SHA10 into staging"
+            git push origin "HEAD:refs/heads/$BRANCH"
+          else
+            git push origin "$SHA:refs/heads/$BRANCH"
+          fi
+          git fetch --no-tags origin "$BRANCH"
+          HEAD_SHA="$(git rev-parse FETCH_HEAD)"
+          if [ "$CONFLICT" = true ] && [ "$(git rev-parse "$HEAD_SHA^{tree}")" != "$(git rev-parse "$SHA^{tree}")" ]; then
+            echo "::error::$BRANCH ($HEAD_SHA) tree differs from $SHA."
+            exit 1
+          fi
+          if [ "$CONFLICT" != true ] && [ "$HEAD_SHA" != "$SHA" ]; then
+            echo "::error::$BRANCH points at $HEAD_SHA, expected $SHA."
+            exit 1
+          fi
+
+          PR="$(gh pr list --base staging --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [ -z "$PR" ]; then
+            gh pr create --base staging --head "$BRANCH" \
+              --title "Promote dev $SHA10 to staging" \
+              --body "Promotes dev \`$SHA\` to staging. Opened and merged by Promote to Production run $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. This PR runs no checks: the one suite runs on the release PR into \`prod\`."
+            PR="$(gh pr list --base staging --head "$BRANCH" --state open --json number --jq '.[0].number')"
+          fi
+          echo "Promotion PR #$PR ($BRANCH @ $HEAD_SHA)."
+          # Merge commit, never squash: the release notes and the migration cost
+          # pass are verified against these SHAs. GitHub computes mergeability
+          # asynchronously, so retry for up to 2 min.
+          merged=""
+          for _ in $(seq 1 12); do
+            if gh pr merge "$PR" --merge --match-head-commit "$HEAD_SHA"; then merged=1; break; fi
+            sleep 10
+          done
+          [ -n "$merged" ] || { echo "::error::Could not merge promotion PR #$PR."; exit 1; }
+          MERGE_SHA="$(gh pr view "$PR" --json mergeCommit --jq '.mergeCommit.oid')"
+          git fetch --no-tags origin staging
+          [ "$(git rev-parse origin/staging)" = "$MERGE_SHA" ] || {
+            echo "::error::staging is not at the merge commit $MERGE_SHA."; exit 1;
+          }
+          echo "Merged PR #$PR into staging as $MERGE_SHA."
+          { echo "merge_sha=$MERGE_SHA"; echo "pr=$PR"; } >> "$GITHUB_OUTPUT"
+
+      - name: Check out the aws-env action
+        if: steps.merge.outputs.merge_sha != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read the Vercel bypass from AWS Secrets Manager
+        if: steps.merge.outputs.merge_sha != ''
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            VERCEL_BYPASS=kortix-ci-env:VERCEL_AUTOMATION_BYPASS_SECRET
+
+      - name: Build and deploy staging, wait until it serves the merge SHA
+        id: deploy
+        if: steps.merge.outputs.merge_sha != ''
+        env:
+          MERGE_SHA: ${{ steps.merge.outputs.merge_sha }}
+        run: |
+          set -euo pipefail
+          wait_run() { # <run id> <label> <timeout min>
+            local id="$1" label="$2" deadline=$(( $(date +%s) + $3 * 60 )) state
+            while :; do
+              state="$(gh run view "$id" --json status,conclusion --jq '.status + "/" + (.conclusion // "")')"
+              case "$state" in
+                completed/success) echo "$label run $id succeeded."; return 0 ;;
+                completed/*) echo "::error::$label run $id finished $state."; exit 1 ;;
+              esac
+              [ "$(date +%s)" -lt "$deadline" ] || { echo "::error::$label run $id still $state after $3 min."; exit 1; }
+              sleep 30
+            done
+          }
+          find_run() { # <workflow> <since> [head sha]; $3 is optional, so read it as ${3:-} under set -u
+            local id=""
+            for _ in $(seq 1 30); do
+              id="$(gh run list --workflow "$1" --event workflow_dispatch --limit 20 \
+                --json databaseId,headSha,createdAt \
+                --jq "[.[] | select(.createdAt >= \"$2\" and (\"${3:-}\" == \"\" or .headSha == \"${3:-}\"))] | sort_by(.createdAt) | .[0].databaseId // empty")"
+              [ -n "$id" ] && { echo "$id"; return 0; }
+              sleep 10
+            done
+            echo "::error::No $1 run created since $2." >&2
+            exit 1
+          }
+
+          # A merge made with GITHUB_TOKEN starts no push workflow, so dispatch
+          # the build. Ref `staging` puts its check-runs on the merge SHA, which
+          # the release preflight reads. Its dispatch-deploy job starts Deploy Staging.
+          T0="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run build-staging.yml --ref staging -f sha="$MERGE_SHA"
+          BUILD="$(find_run build-staging.yml "$T0" "$MERGE_SHA")"
+          echo "Build Staging Artifacts: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$BUILD"
+          wait_run "$BUILD" "Build Staging Artifacts" 60
+          DEPLOY="$(find_run deploy-staging.yml "$T0")"
+          echo "Deploy Staging: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$DEPLOY"
+          wait_run "$DEPLOY" "Deploy Staging" 45
+
+          # One health read during a rolling deploy proves nothing: require 8
+          # consecutive reads where api, gateway, and web all serve the SHA.
+          read_commit() { curl -fsS --max-time 15 "$@" 2>/dev/null | jq -r '.commit // "none"' 2>/dev/null || echo none; }
+          ok=0
+          deadline=$(( $(date +%s) + 20 * 60 ))
+          while [ "$ok" -lt 8 ]; do
+            api="$(read_commit https://staging-api.kortix.com/v1/health)"
+            gw="$(read_commit https://gateway-staging.kortix.com/health)"
+            web="$(read_commit -H "x-vercel-protection-bypass: ${VERCEL_BYPASS}" https://staging.kortix.com/api/health)"
+            if [ "$api" = "$MERGE_SHA" ] && [ "$gw" = "$MERGE_SHA" ] && [ "$web" = "$MERGE_SHA" ]; then ok=$((ok + 1)); else ok=0; fi
+            echo "health: api=${api:0:10} gateway=${gw:0:10} web=${web:0:10} consecutive=$ok/8"
+            [ "$(date +%s)" -lt "$deadline" ] || { echo "::error::staging did not serve $MERGE_SHA on all three surfaces within 20 min."; exit 1; }
+            [ "$ok" -ge 8 ] || sleep 15
+          done
+          echo "Staging serves $MERGE_SHA."
+          echo "source_sha=$MERGE_SHA" >> "$GITHUB_OUTPUT"
+
   open-release-pr:
     name: Open review-gated release PR
+    needs: stage
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 20
+    env:
+      DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+      SOURCE_SHA: ${{ needs.stage.outputs.source_sha }}
     steps:
-      - name: Checkout ${{ inputs.ref }} (full history)
-        uses: actions/checkout@v7
+      - name: Checkout the release source (full history)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ needs.stage.outputs.source_sha }}
           fetch-depth: 0
 
       - name: Compute next version (from what's live on prod)
@@ -108,93 +336,49 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Proposing v$NEW"
 
-      - name: Pre-flight — refuse to promote unless this commit is fully green
+      - name: Pre-flight — refuse to promote unless the staging images exist
         id: preflight
         env:
           GH_TOKEN: ${{ github.token }}
-          # Opt-in FAST-TRACK: set repo variable RELEASE_FAST_TRACK=true (standing)
-          # or pass skip_green=true (per-run). In fast-track we still REQUIRE the
-          # staging image-build checks to be green — deploy-prod retags those exact
-          # images, so they must exist — but we DON'T wait on the slow QA/e2e lanes.
-          FAST: ${{ (vars.RELEASE_FAST_TRACK == 'true' || inputs.skip_green) && 'true' || 'false' }}
-          INPUT_REF: ${{ inputs.ref }}
+          DEV_LEG: ${{ needs.stage.outputs.dev_leg }}
           RUN_ID: ${{ github.run_id }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          if [ "$FAST" = "true" ]; then
-            echo "::warning::FAST-TRACK promote — only the staging image-build checks are gated; QA/e2e greenness is NOT verified for this release (RELEASE_FAST_TRACK / skip_green)."
-          fi
-          TREE_SHA="$(git rev-parse HEAD)"
-          IMAGE_SHA="$TREE_SHA"
-          echo "tree_sha=$TREE_SHA" >> "$GITHUB_OUTPUT"
+          IMAGE_SHA="$(git rev-parse HEAD)"
           echo "image_sha=$IMAGE_SHA" >> "$GITHUB_OUTPUT"
-          echo "Promote tree $INPUT_REF @ $TREE_SHA"
           echo "Release image source @ $IMAGE_SHA"
-          # The staging branch tip is the immutable image source. Build, deploy,
-          # QA, and artifact checks must all be green for this exact commit.
-          # Robustly judge greenness, tolerating two GitHub quirks that would
-          # otherwise make this gate un-passable:
-          #   1. THIS promote run registers an in_progress check on HEAD (and a
-          #      failed earlier attempt leaves a `failure` one) — exclude any
-          #      check-run belonging to our own github.run_id.
-          #   2. Re-runs / concurrency leave SUPERSEDED duplicate check-runs of
-          #      the same name (e.g. a `cancelled` CodeQL "Analyze" next to a
-          #      later `success`). Keep only the latest run per name (max
-          #      started_at) so a stale cancelled/failed attempt can't block.
-          #   3. NON-CI noise / non-release gates that shouldn't block a deploy:
-          #      - "Dependabot*" — GitHub's background dependency-update jobs,
-          #        which fail routinely (lockfile/monorepo) and are irrelevant.
-          #      - "Analyze*" — CodeQL security scans. They run on every push for
-          #        visibility but are SLOW (~15m) and a security scan shouldn't gate
-          #        a release. The gate still waits for the staging artifact build
-          #        + QA checks, which guarantee the staging image exists to retag.
-          #      - "compliance-as-code-action" — Drata IaC visibility. It has a
-          #        separate compliance remediation track and must not block the
-          #        staging → prod release lane until the baseline is clean.
-          #      - "Open review-gated release PR" — a PRIOR promote attempt's own
-          #        check (the current run is already excluded via run_id, but an
-          #        earlier failed attempt would otherwise self-block the retry).
-          # FAIL CLOSED. A failed `gh api` call, or a commit with zero check-runs,
-          # must never read as green. The three staging manifest publishes are
-          # REQUIRED by name and must be `success` (a skip does not count): they
-          # prove the immutable images exist.
+          if [ "$DRY_RUN" = true ] && [ "$DEV_LEG" = true ]; then
+            echo "plan: the merge into staging does not exist in a dry run; the real run requires the three staging manifest publishes on the merge SHA."
+            exit 0
+          fi
+          # deploy-prod retags the `staging-<sha>` images and never rebuilds, so
+          # the three manifest publishes must be `success` on this exact commit
+          # (a skip does not count). Nothing else on staging is a gate: the one
+          # suite and every tree check run on the release PR into prod.
+          # FAIL CLOSED: a failed `gh api` call or a missing check is not green.
+          # The latest run per name wins; this run's own checks are excluded.
           check_green() {
-            local sha="$1" label="$2" raw latest not_green name
+            local sha="$1" raw latest missing=""
             if ! raw="$(RID="$RUN_ID" gh api "repos/${REPOSITORY}/commits/${sha}/check-runs?per_page=100" --paginate \
               --jq '.check_runs[] | select((.details_url // "") | contains("/runs/" + env.RID + "/") | not)')"; then
-              echo "::error::Refusing to promote — cannot read the check-runs of ${label} ${sha} (gh api failed)."
-              exit 1
+              echo "::error::Refusing to promote — cannot read the check-runs of ${sha} (gh api failed)."
+              return 1
             fi
             latest="$(jq -s 'group_by(.name) | map(max_by(.started_at // ""))' <<<"$raw")"
-            if [ "$(jq 'length' <<<"$latest")" = "0" ]; then
-              echo "::error::Refusing to promote — ${label} ${sha} has no check-runs. Build Staging Artifacts has not run on it."
-              exit 1
-            fi
             for name in "Publish API manifest (staging)" "Publish gateway manifest (staging)" "Publish frontend manifest (staging)"; do
-              if ! jq -e --arg n "$name" 'any(.[]; .name == $n and .conclusion == "success")' <<<"$latest" >/dev/null; then
-                echo "::error::Refusing to promote — required check '${name}' is missing or not successful on ${label} ${sha}."
-                exit 1
-              fi
+              jq -e --arg n "$name" 'any(.[]; .name == $n and .conclusion == "success")' <<<"$latest" >/dev/null || missing="$missing '$name'"
             done
-            not_green="$(FAST="$FAST" jq -r '.[]
-                      | select(((.name | ascii_downcase | startswith("dependabot")) or (.name | ascii_downcase | startswith("analyze")) or (.name == "compliance-as-code-action") or (.name == "Open review-gated release PR")) | not)
-                      | select(if env.FAST == "true" then (.name | startswith("Build ")) else true end)
-                      | select((.status != "completed") or (((.conclusion // "") | IN("success","skipped","neutral")) | not))
-                      | "\(.name): \(.status)/\(.conclusion)"' <<<"$latest")"
-            if [ -n "$not_green" ]; then
-              echo "::error::Refusing to promote — ${label} ${sha} is not all-green:"
-              echo "$not_green"
-              echo "Wait for these to finish/pass on '$INPUT_REF', then re-run promote." >&2
-              exit 1
+            if [ -n "$missing" ]; then
+              echo "::error::Refusing to promote — required check(s)${missing} missing or not successful on ${sha}. Run build-staging.yml for it first."
+              return 1
             fi
-            echo "✓ ${label} ${sha} is green."
+            echo "✓ The staging images exist for ${sha}."
           }
-          check_green "$IMAGE_SHA" "release image source"
-          if [ "$TREE_SHA" != "$IMAGE_SHA" ]; then
-            check_green "$TREE_SHA" "staging branch tip"
+          if ! check_green "$IMAGE_SHA"; then
+            [ "$DRY_RUN" = true ] || exit 1
+            echo "dry run: the real run would stop here."
           fi
-          echo "✓ Safe to promote."
 
       - name: Freeze release branch + open PR into prod
         env:
@@ -210,8 +394,17 @@ jobs:
           TAG="$RELEASE_TAG"
           RELBR="release/$TAG"
           # The image source is the staged source commit whose immutable images
-          # passed the staging build and verification workflows.
+          # passed the staging build.
           SRC_SHA="$RELEASE_SOURCE_SHA"
+
+          if [ "$DRY_RUN" = true ]; then
+            existing="$(gh pr list --base prod --head "$RELBR" --state open --json number --jq '.[0].number // empty' || true)"
+            echo "plan: release branch $RELBR = release source + merge -s ours origin/prod; VERSION=$NEW; RELEASE_SOURCE_SHA = the staging merge SHA (dev leg) or ${SRC_SHA} (staging-only)"
+            PR_PLAN="open a new PR"; [ -z "$existing" ] || PR_PLAN="force-push $RELBR, keep open PR #$existing (title and body unchanged)"
+            echo "plan: PR into prod: $PR_PLAN; approve its held runs (Tests - release + tree checks)"
+            echo "dry run: nothing changed."
+            exit 0
+          fi
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -243,12 +436,13 @@ jobs:
               | gh pr create --base prod --head "$RELBR" --title "Release $TAG — $IN_TITLE" --body-file -
           fi
 
-          # Approve the release gate here. This step opens the pull request with
-          # the workflow token, so GitHub holds that pull request's run of
-          # tests-release.yml (`action_required`) until someone approves it.
-          # Only that run's `full suite + quality gates` check counts for the
-          # `prod` ruleset: v0.13.57's dispatched gate passed on the same SHA
-          # and the pull request stayed BLOCKED. Approval starts attempt 2.
+          # Approve the release PR's runs here. This step opens the pull request
+          # with the workflow token, so GitHub holds every pull_request run on it
+          # (`action_required`) until someone approves it: tests-release.yml and
+          # the tree checks (ci, codeql, db-migrations, …). Only the PR's own
+          # `full suite + quality gates` check counts for the `prod` ruleset:
+          # v0.13.57's dispatched gate passed on the same SHA and the pull request
+          # stayed BLOCKED. Approval starts attempt 2.
           HEAD_SHA="$(git rev-parse HEAD)"
           held=""
           for _ in $(seq 1 30); do
@@ -262,20 +456,29 @@ jobs:
           else
             echo "::warning::Approve the release gate run yourself: gh api -X POST repos/$GITHUB_REPOSITORY/actions/runs/${held:-<run id>}/approve"
           fi
+          sleep 15
+          for run in $(gh api "repos/$GITHUB_REPOSITORY/actions/runs?event=pull_request&head_sha=$HEAD_SHA&per_page=100" \
+            --jq '.workflow_runs[] | select(.conclusion == "action_required") | .id'); do
+            if gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$run/approve" >/dev/null; then
+              echo "Approved run $run on $RELBR."
+            else
+              echo "::warning::Approve run $run yourself: gh api -X POST repos/$GITHUB_REPOSITORY/actions/runs/$run/approve"
+            fi
+          done
 
       - name: Summary
+        if: inputs.dry_run != true
         env:
           RELEASE_TAG: ${{ steps.ver.outputs.tag }}
           RELEASE_BASE: ${{ steps.ver.outputs.base }}
           RELEASE_NEW: ${{ steps.ver.outputs.new }}
-          INPUT_REF: ${{ inputs.ref }}
         run: |
           {
             echo "### Release PR opened — \`$RELEASE_TAG\`"
             echo ""
             echo "- Live on prod: \`$RELEASE_BASE\`"
             echo "- Proposed version: \`$RELEASE_NEW\`"
-            echo "- \`$INPUT_REF\` → \`release/$RELEASE_TAG\` → PR into \`prod\`"
+            echo "- staging \`$SOURCE_SHA\` → \`release/$RELEASE_TAG\` → PR into \`prod\`"
             echo ""
-            echo "_Nothing is published yet. A reviewer approves + merges the PR; the **merge** publishes the version (tag + GitHub Release + ECS roll + frontend)._"
+            echo "_Nothing is published yet. A reviewer merges the PR once \`full suite + quality gates\` is green; the **merge** publishes the version (tag + GitHub Release + ECS roll + frontend)._"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -4,6 +4,8 @@ import { and, eq, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { db } from '../shared/db';
 import { rowMetadata, CONNECTED_AS_KEY } from './connection-identity';
+import { mcpAppForUrl } from './mcp-apps';
+import { discoverProtectedResourceOAuth2, mcpSignInCheck } from './oauth2-resource-discovery';
 
 export function composioConnectionMetadata(input: {
   toolkit: string;
@@ -86,6 +88,23 @@ export async function loadPipedreamConnector(projectId: string, slug: string) {
   return { connectorId: row.connectorId, app };
 }
 
+/** Load an MCP connector's id and server URL (verifies provider). */
+export async function loadMcpConnector(projectId: string, slug: string) {
+  const [row] = await db
+    .select({
+      connectorId: connectors.connectorId,
+      accountId: connectors.accountId,
+      providerType: connectors.providerType,
+      config: connectors.config,
+    })
+    .from(connectors)
+    .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
+    .limit(1);
+  const url = (row?.config as { url?: unknown } | null)?.url;
+  if (!row || row.providerType !== 'mcp' || typeof url !== 'string' || !url) return null;
+  return { connectorId: row.connectorId, accountId: row.accountId, url };
+}
+
 /** Load a Composio connector's toolkit slug + id (verifies provider). */
 export async function loadComposioConnector(projectId: string, slug: string) {
   const [row] = await db
@@ -160,8 +179,8 @@ export type ConnectLinkEligibility =
       ok: true;
       connectorId: string;
       app: string;
-      /** Which provider mints the hosted page behind the link. */
-      providerType: 'pipedream' | 'composio';
+      /** Which provider mints the hosted page behind the link. `mcp`: Kortix's own OAuth sign-in. */
+      providerType: 'pipedream' | 'composio' | 'mcp';
     }
   /** No connector with this slug on the project. The manifest really is missing it. */
   | { ok: false; reason: 'no_such_connector' }
@@ -200,6 +219,15 @@ export async function connectLinkEligibility(
   // pastes a raw provider URL into the transcript. The web renderer only turns
   // OUR `/connect/<token>` link into a button, so that fallback lost the button,
   // the modal, and the resume, and left three renderings of one action on screen.
+  // An MCP server signs in through Kortix's own OAuth flow (oauth2-store
+  // `startConnectionSignIn`): a link works when that sign-in is one click.
+  if (row.providerType === 'mcp') {
+    const url = (row.config as { url?: unknown } | null)?.url;
+    if (typeof url !== 'string' || !(await mcpOneClickSignIn(url))) {
+      return { ok: false, reason: 'unsupported_provider', providerType: row.providerType };
+    }
+    return { ok: true, connectorId: row.connectorId, app: mcpAppForUrl(url)?.slug ?? slug, providerType: 'mcp' };
+  }
   if (row.providerType !== 'pipedream' && row.providerType !== 'composio') {
     return {
       ok: false,
@@ -215,4 +243,13 @@ export async function connectLinkEligibility(
     app,
     providerType: row.providerType,
   };
+}
+
+/** Whether the MCP server at `url` signs in in one click. Never throws. */
+async function mcpOneClickSignIn(url: string): Promise<boolean> {
+  try {
+    return mcpSignInCheck(await discoverProtectedResourceOAuth2({ resourceUrl: url, provider: 'mcp' })).one_click;
+  } catch {
+    return false;
+  }
 }

@@ -13,6 +13,8 @@ import { sweepAppVolumes } from '../apps/volumes';
 import { reclaimAppSiteBlobs } from '../apps/static-site';
 import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
 import { purgeExpiredMonitorEvents, reconcileMonitorBoxes } from './lib/monitor-box';
+import { purgeExpiredTriggerRuns } from './trigger-execution-store';
+import { settleTriggerRunsFromTurns } from './lib/trigger-run-outcome';
 import { mapWithConcurrency } from './lib/trigger-scheduler-state';
 import { emptyMonitorReconcileResult } from './lib/monitor-box-core';
 import { reconcileForwardedPrompts } from './session-lifecycle/consumption';
@@ -534,6 +536,17 @@ function runMaintenanceSweeps() {
       );
       return { examined: 0, activated: 0, parked: 0, lost: 0, archived: 0, errors: 1 };
     }),
+    // Trigger run history (KRTX-1743): non-cron runs 30 days, rejected runs 7.
+    () => purgeExpiredTriggerRuns().catch((err) => {
+      logger.warn('[project-maintenance] trigger-run retention failed', { error: err instanceof Error ? err.message : String(err) });
+      return 0;
+    }),
+    // A run whose turn ended on a path with no turn-end relay (reaper, stop,
+    // a box that went away) is closed from the turn ledger here.
+    () => settleTriggerRunsFromTurns().catch((err) => {
+      logger.warn('[project-maintenance] trigger-run settle failed', { error: err instanceof Error ? err.message : String(err) });
+      return 0;
+    }),
   ]);
 }
 
@@ -562,6 +575,8 @@ function logMaintenanceCycle(
     monitorEventsPurged,
     archivedRemovals,
     stuckProvisioning,
+    triggerRunsPurged,
+    triggerRunsSettled,
   ] = sweeps;
   const hadAction = Boolean(
     idle.stopped ||
@@ -609,7 +624,9 @@ function logMaintenanceCycle(
       archivedRemovals.removed ||
       archivedRemovals.failed ||
       stuckProvisioning.examined ||
-      stuckProvisioning.errors,
+      stuckProvisioning.errors ||
+      triggerRunsPurged ||
+      triggerRunsSettled,
   );
   if (hadAction) {
     console.log('[project-maintenance] completed', {
@@ -631,6 +648,8 @@ function logMaintenanceCycle(
       monitorEventsPurged,
       archivedRemovals,
       stuckProvisioning,
+      triggerRunsPurged,
+      triggerRunsSettled,
     });
   }
   // Unconditional heartbeat — proof-of-life independent of whether any

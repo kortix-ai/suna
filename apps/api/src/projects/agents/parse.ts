@@ -7,10 +7,11 @@ import {
   resolveGrantSet,
   safeAgentFile,
   SLUG_RE,
+  projectRepositoryDefault,
   resolveProjectRepository,
   type GrantSetV2,
 } from '@kortix/manifest-schema';
-import { normalizeRequiredConnectorAliases } from '../lib/agent-config-v2';
+import { normalizeRequiredConnectorAliases, readAgentBlockV2 } from '../lib/agent-config-v2';
 import {
   MANIFEST_FILENAME,
   type AgentParseError,
@@ -102,6 +103,40 @@ export function extractAgents(manifest: ParsedManifest): LoadedAgents {
   specs.sort((a, b) => a.name.localeCompare(b.name));
   errors.sort((a, b) => a.name.localeCompare(b.name));
   return { specs, errors, defaultAgent: null };
+}
+
+/**
+ * Does the manifest declare this agent at all — the roster every agent-name
+ * gate shares (KRTX-2071/KRTX-2535): v2+ the `agents:` map, where
+ * `readAgentBlockV2`'s ok-but-null block means the name is absent; v1 the
+ * `[[agents]]` array (a manifest without one declares nothing, matching
+ * `applyAgentScope`).
+ */
+function manifestDeclaresAgent(manifest: ParsedManifest, agentName: string): boolean {
+  if (manifest.schemaVersion >= 2) {
+    const read = readAgentBlockV2(manifest, agentName);
+    return read.ok && read.block !== null;
+  }
+  return extractAgents(manifest).specs.some((spec) => spec.name === agentName);
+}
+
+/**
+ * The not-declared verdict + message the agent-name gates share: the config
+ * GET (404) and the agent model-pin PUT (409). Names the declared agents so a
+ * caller can self-correct. `null` = the agent is declared; the caller
+ * proceeds.
+ */
+export function agentNotDeclaredError(
+  manifest: ParsedManifest,
+  agentName: string,
+): { error: string; code: 'agent_not_found' } | null {
+  if (manifestDeclaresAgent(manifest, agentName)) return null;
+  const declared = extractAgents(manifest).specs.map((spec) => spec.name);
+  const listed = declared.length > 0 ? declared.join(', ') : 'none';
+  return {
+    error: `No agent "${agentName}" declared in ${manifest.path || MANIFEST_FILENAME}. Declared agents: ${listed}.`,
+    code: 'agent_not_found',
+  };
 }
 
 /**
@@ -319,7 +354,7 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string, versi
     typeof normalizedRow.sandbox === 'string' && normalizedRow.sandbox.trim()
       ? normalizedRow.sandbox.trim()
       : null;
-  const repository = resolveProjectRepository(normalizedRow);
+  const repository = resolveProjectRepository(normalizedRow, projectRepositoryDefault(version));
   if (!repository.ok) return err(name, `agents.${name}.${repository.path} ${repository.message}`);
   const repositoryAccess = repository.value;
   const legacyReadWorkspace = repository.legacyRead;

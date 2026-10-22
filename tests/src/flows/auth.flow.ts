@@ -9,7 +9,7 @@
  * Use a flow-scoped user: logging out the shared OWNER revokes the identity
  * that PRX-1 and other flows need for the rest of the run.
  * Logout revokes the GoTrue session. `supabaseAuth` confirms every access
- * token (ES256 and HS256) with GoTrue through the liveness cache in
+ * token (ES256 and HS256) against `auth.sessions` in
  * apps/api/src/shared/jwt-liveness.ts, so the revoked bearer gets 401 on
  * `GET /v1/accounts/me`, a route without the account session gate.
  * The logout endpoint is documented to *always* return 200 once authed — even
@@ -38,7 +38,7 @@ flow(
 
 flow(
   "AUTH-1",
-  { domain: "auth", routes: ["POST /v1/auth/logout", "POST /v1/p/auth", "GET /v1/accounts/me"] },
+  { domain: "auth", tags: ["deployed"], routes: ["POST /v1/auth/logout", "POST /v1/p/auth", "GET /v1/accounts/me"] },
   async (ctx) => {
     const session = await ctx.fixtures.user({ label: "LOGOUT" });
     await ctx.step("logout revokes only this flow's session, not the shared OWNER", async () => {

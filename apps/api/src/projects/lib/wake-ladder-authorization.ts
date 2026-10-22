@@ -45,7 +45,6 @@ export async function reauthorizeWakeLadderActor(
       action: 'session',
       actor: input.actor,
       isServiceAccount: input.isServiceAccount,
-      bypassHeaderPresent: false,
     });
     if (!loaded) return null;
     const visible = await loadVisibleSession(loaded, input.sessionId, null, null);

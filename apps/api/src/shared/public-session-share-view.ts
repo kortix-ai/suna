@@ -15,7 +15,8 @@
  * `toPublicMessage`: only message role, text, tool NAME + status (no
  * args/output), file NAME + mime (no content), and a `reasoning_omitted` flag
  * are ever returned — raw tool call arguments, command output, file contents,
- * message ids and error text never leave the sandbox.
+ * message ids and raw error details never reach the public response. Failed
+ * assistant turns receive a fixed notice instead of provider error text.
  */
 
 import { eq } from 'drizzle-orm';
@@ -32,12 +33,12 @@ import {
 } from '../projects/lib/session-transcript-compact';
 import { projectionIdentity } from '../projects/lib/session-runtime-projection';
 import { fetchRuntimeMessages, fetchRuntimeState } from '../projects/lib/session-runtime-transport';
-import {
-  type MirrorSnapshot,
-  readSessionTranscriptMirror,
-} from '../projects/lib/session-transcript-mirror';
+import type { MirrorSnapshot } from '../projects/lib/session-transcript-mirror';
 import type { PublicShareRow } from './session-public-shares';
 
+/** Bounds the tool input and output `compactMessage` reads; `toPublicMessage`
+ *  drops both. Message text is the full answer, line breaks kept, so the page
+ *  renders the same markdown the session shows. */
 const MAX_MESSAGE_CHARS = 4000;
 const MAX_MESSAGES = 200;
 
@@ -127,18 +128,15 @@ export interface PublicSessionTranscript {
 }
 
 /** The stored-transcript read. The route passes `readStoredTranscriptWindow`
- *  (the session log when the project flag `session_log` is on, else the
- *  mirror); without it, the mirror. Tests inject their own. */
+ *  (the session log); tests inject their own. */
 export interface PublicSessionMessagesDeps {
-  readMirror?: (sessionId: string, limit: number) => Promise<MirrorSnapshot | null>;
+  readMirror: (sessionId: string, limit: number) => Promise<MirrorSnapshot | null>;
 }
-
-const readMirrorOnly = (sessionId: string, limit: number) => readSessionTranscriptMirror({ sessionId, limit });
 
 /** A mirror read that fails reads as "nothing saved": this is a best-effort
  *  fallback on an anonymous route, and it must never 500 it. */
 async function readMirrorSafely(
-  read: NonNullable<PublicSessionMessagesDeps['readMirror']>,
+  read: PublicSessionMessagesDeps['readMirror'],
   sessionId: string,
   limit: number,
 ): Promise<MirrorSnapshot | null> {
@@ -162,7 +160,10 @@ function toPublicMessage(message: CompactMessage): CompactPublicMessage {
     role: message.role,
     created: message.created,
     completed: message.completed,
-    text: message.text,
+    text: [
+      message.text,
+      message.role === 'assistant' && message.error ? 'The assistant could not complete this response.' : '',
+    ].filter(Boolean).join('\n\n'),
     tools: message.tools.map(({ tool, status }) => ({ tool, status })),
     files: message.files,
     reasoning_omitted: message.reasoning_omitted,
@@ -194,7 +195,7 @@ function fromMirror(
   opencodeSessionId: string | null,
 ): PublicSessionTranscript {
   const messages = mirror.messages.map((m) =>
-    toPublicMessage(compactMessage({ info: m.info as never, parts: m.parts as never }, MAX_MESSAGE_CHARS)),
+    toPublicMessage(compactMessage({ info: m.info as never, parts: m.parts as never }, MAX_MESSAGE_CHARS, true)),
   );
   return {
     available: true,
@@ -228,9 +229,9 @@ function fromMirror(
  */
 export async function getPublicSessionMessages(
   row: Pick<PublicShareRow, 'sessionId'> & { externalId: string | null; sandboxStatus: string | null },
-  deps: PublicSessionMessagesDeps = {},
+  deps: PublicSessionMessagesDeps,
 ): Promise<PublicSessionMessagesResult> {
-  const readMirror = (sessionId: string, limit: number) => readMirrorSafely(deps.readMirror ?? readMirrorOnly, sessionId, limit);
+  const readMirror = (sessionId: string, limit: number) => readMirrorSafely(deps.readMirror, sessionId, limit);
   const degrade = async (
     reason: string,
     opencodeSessionId: string | null = null,
@@ -294,7 +295,7 @@ export async function getPublicSessionMessages(
       captured_at: null,
       opencode_session_id: rootId,
       message_count: rawMessages.length,
-      messages: rawMessages.map((m) => toPublicMessage(compactMessage(m, MAX_MESSAGE_CHARS))),
+      messages: rawMessages.map((m) => toPublicMessage(compactMessage(m, MAX_MESSAGE_CHARS, true))),
     },
   };
 }

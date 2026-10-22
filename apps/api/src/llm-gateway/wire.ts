@@ -30,8 +30,11 @@ const GATEWAY_INFERENCE_TAG = 'gateway-inference';
 const AUTH_DESCRIPTION =
   'Bearer token: a project gateway key (`kortix_gw_…`, created via ' +
   'POST /v1/projects/{projectId}/gateway/keys) or a Kortix account token ' +
-  '(PAT `kortix_pat_…`, API key, or sandbox key). Unlike most of the API, the ' +
-  'raw Supabase user JWT is NOT accepted here — mint a gateway key or PAT first.';
+  '(PAT `kortix_pat_…`, API key, or sandbox key). Inference requires a project ' +
+  'context: a project-scoped or session token is admitted, while a bare ' +
+  'account-wide PAT is refused with 403 project_required. Unlike most of the ' +
+  'API, the raw Supabase user JWT is NOT accepted here — mint a gateway key or ' +
+  'PAT first.';
 
 const ChatMessageSchema = z
   .object({
@@ -117,7 +120,7 @@ const CHAT_COMPLETIONS_RESPONSES = {
       },
     },
   },
-  ...errors(400, 401, 402, 413, 429, 502),
+  ...errors(400, 401, 402, 403, 413, 429, 502),
 };
 
 function chatCompletionsRoute(path: string) {
@@ -213,7 +216,7 @@ const MESSAGES_RESPONSES = {
       },
     },
   },
-  ...errors(400, 401, 402, 413, 429, 502),
+  ...errors(400, 401, 402, 403, 413, 429, 502),
 };
 
 function messagesRoute(path: string) {
@@ -283,6 +286,9 @@ const GatewayModelModalitiesSchema = z
 const GatewayModelSchema = z
   .object({
     name: z.string(),
+    availability: z.enum(['available', 'plan', 'login', 'provider']).optional().openapi({
+      description: 'Discovery access path: available for managed plan access, plan for a managed upgrade, login for ChatGPT, provider for a provider key. External credentials are not checked; use scope=picker for connected project models.',
+    }),
     released: z.string().nullable().optional(),
     release_date: z.string().nullable().optional(),
     family: z.string().optional(),
@@ -377,9 +383,6 @@ export function mountLlmGateway(app: OpenAPIHono): void {
   }
 
   const proxy = async (c: import('hono').Context, path: string): Promise<Response> => {
-    if (!config.LLM_GATEWAY_ENABLED) {
-      return c.json({ error: 'LLM gateway is disabled', code: 'gateway_disabled' }, 503);
-    }
     if (!proxyBase) {
       return c.json(
         { error: 'Standalone LLM gateway is not configured', code: 'gateway_unavailable' },

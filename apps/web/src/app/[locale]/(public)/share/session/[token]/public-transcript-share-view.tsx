@@ -1,15 +1,16 @@
 'use client';
 
-import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
+import { UnifiedMarkdown } from '@kortix/ui/markdown';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { ErrorState } from '@kortix/ui/error-state';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { UserMessageBubble } from '@kortix/ui/session';
 import { getPublicSessionShareMessages, type PublicSessionTranscriptMessage } from '@kortix/sdk';
 import { ChatTextIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
+import { useEffect, useId, useRef, useState } from 'react';
 
 import {
   describeShareError,
@@ -117,20 +118,47 @@ export function PublicTranscriptShareView({ token }: { token: string }) {
 }
 
 function TranscriptMessage({ message }: { message: PublicSessionTranscriptMessage }) {
-  const isUser = message.role === 'user';
+  if (message.role === 'user') return <SharedUserMessage text={message.text} />;
   return (
-    <div className={cn('flex', isUser && 'justify-end')}>
-      <div
-        className={cn(
-          'min-w-0 wrap-break-word',
-          isUser ? 'bg-sidebar max-w-4/5 rounded-lg px-3.5 py-2.5' : 'w-full',
-        )}
-      >
-        {/* `untrusted`: an anonymous visitor reads this. Remote images wait
-            for a click, so opening the link sends no request to a host the
-            conversation chose, and agent setup links stay plain links. The
-            agent's replies render generative UI, as in the session. */}
-        <UnifiedMarkdown content={message.text} trust="untrusted" genui={!isUser} />
+    <div className="min-w-0 wrap-break-word">
+      {/* `untrusted`: an anonymous visitor reads this. Remote images wait
+          for a click, so opening the link sends no request to a host the
+          conversation chose, and agent setup links stay plain links. The
+          agent's replies render generative UI, as in the session. */}
+      <UnifiedMarkdown content={message.text} trust="untrusted" genui />
+    </div>
+  );
+}
+
+/** The session's own bubble: the prompt is plain text with its line breaks,
+ *  never markdown, clamped at 200px behind "Show more" (`UserMessage`). */
+function SharedUserMessage({ text }: { text: string }) {
+  const textId = useId();
+  const textRef = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [canExpand, setCanExpand] = useState(false);
+
+  useEffect(() => {
+    const el = textRef.current;
+    if (!el || expanded) return;
+    const measure = () => setCanExpand(el.scrollHeight > el.clientHeight + 2);
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [text, expanded]);
+
+  return (
+    <div className="flex justify-end">
+      <div className="flex max-w-4/5 min-w-0 justify-end">
+        <UserMessageBubble
+          canExpand={canExpand}
+          expanded={expanded}
+          onToggle={() => setExpanded((value) => !value)}
+          textId={textId}
+          textRef={textRef}
+        >
+          {text}
+        </UserMessageBubble>
       </div>
     </div>
   );

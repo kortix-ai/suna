@@ -21,11 +21,15 @@ mock.module('@kortix/sdk/react', () => ({
     `${providerID}/${modelID}`,
   flattenModels: () => [],
   modelProviderMode: () => 'gateway' as const,
+  // channels-view reads Teams from the SDK directly.
+  useTeamsInstall: disconnected,
+  useTeamsMode: disconnected,
+  useDisconnectTeams: disconnect,
 }));
-mock.module('@/lib/use-project-can', () => ({
+mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
   useProjectCan: () => ({ allowed: canWrite }),
 }));
-mock.module('@/hooks/channels/use-channels-installations', () => ({
+mock.module('@kortix/ui/internal/hooks/channels/use-channels-installations', () => ({
   useSlackInstall: disconnected,
   useSlackMode: disconnected,
   useEmailInstall: emailInstall,
@@ -34,14 +38,7 @@ mock.module('@/hooks/channels/use-channels-installations', () => ({
   useConnectSlack: () => ({ isPending: false, mutate: mock(), mutateAsync: mock() }),
   useSlackManifest: () => ({ data: null }),
 }));
-mock.module('@/hooks/channels/use-teams-installations', () => ({
-  useTeamsInstall: disconnected,
-  useTeamsMode: disconnected,
-  useDisconnectTeams: disconnect,
-  useConnectTeams: () => ({ isPending: false, mutate: mock(), mutateAsync: mock() }),
-  useTeamsManifest: () => ({ data: null }),
-}));
-mock.module('@/hooks/channels/use-channel-bindings', () => ({
+mock.module('@kortix/ui/internal/hooks/use-channel-bindings', () => ({
   useChannelBindings: () => ({ data: { bindings: [] }, isLoading: false }),
   useUpdateChannelBinding: disconnect,
 }));
@@ -52,21 +49,26 @@ mock.module('next/navigation', () => ({
 }));
 // Unrelated channel setup and session pickers need live runtime providers.
 // Keep the actual ChannelsSection, EmailChannelRow, ChannelRow and Button/Link.
-mock.module('@/features/workspace/customize/sections/component/slack-connect-card', () => ({
+mock.module('@kortix/ui/customize/sections/component/slack-connect-card', () => ({
   SlackConnectCard: () => null,
 }));
-mock.module('@/features/workspace/customize/sections/teams-channel-panel', () => ({
-  TeamsChannelPanel: () => null,
+// Telegram (connectors_v2, on here with every flag) reads its install hooks
+// through a QueryClient this suite does not mount.
+mock.module('@kortix/ui/customize/sections/component/telegram-channel-row', () => ({
+  TelegramChannelRow: () => null,
 }));
-mock.module('@/features/workspace/customize/sections/connectors-view', () => ({
+mock.module('@kortix/ui/customize/sections/component/teams-connect-card', () => ({
+  TeamsConnectCard: () => null,
+}));
+mock.module('@kortix/ui/customize/sections/connectors-view', () => ({
   EmailConnectForm: () => null,
 }));
-mock.module('@/features/session/model-selector', () => ({ ModelSelector: () => null }));
-mock.module('@/features/session/session-chat-input', () => ({
+mock.module('@kortix/ui/session/models/model-selector', () => ({ ModelSelector: () => null }));
+mock.module('@kortix/ui/session/composer/session-chat-input', () => ({
   AgentSelector: () => null,
 }));
 
-const { ChannelsSection } = await import('./view/channels-view');
+const { ChannelsSection } = await import('@kortix/ui/customize/sections/view/channels-view');
 
 function renderEmailRow() {
   const markup = renderToStaticMarkup(<ChannelsSection projectId="email-test" />);

@@ -23,6 +23,7 @@ import { sandboxRelayContext, sessionChannel } from '@/lib/kortix-api/relay-cont
 import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import type { InitialTurnClaim } from '@/types/control-plane'
 import { flushSessionLogJournal } from './session-log-journal'
+import { runOnIdleHook } from './on-idle-hook'
 
 export type TurnStreamFrame = Omit<TurnStreamRelayBody, 'session_id' | 'kind'> & { kind: DaemonTurnStreamKind }
 
@@ -209,6 +210,25 @@ export async function relayTurnBegin(runtimeSessionId: string, messageId: string
 }
 
 /**
+ * A turn's end waits for its begin relay, at most `waitMs`: an end that lands first lets the late
+ * begin adopt a turn that nothing ends (a refused pi `/summarize` ends within milliseconds). The
+ * bound keeps a hung begin (2 attempts of a 30 s request) from delaying the end.
+ */
+export function turnEndAfterBegin(waitMs = 5_000) {
+  const begins = new Map<string, Promise<unknown>>()
+  return {
+    begin(messageId: string, relay: Promise<unknown>): void {
+      begins.set(messageId, relay)
+    },
+    async end(messageId: string): Promise<void> {
+      const begun = begins.get(messageId)
+      begins.delete(messageId)
+      if (begun) await Promise.race([begun, Bun.sleep(waitMs)])
+    },
+  }
+}
+
+/**
  * The running turn read a steered message at a step boundary (`steer_read`).
  * apps/api closes that message's inbox row as delivered. 3 attempts; a
  * non-ok answer other than 5xx is definitive. Skipped while the session
@@ -325,6 +345,8 @@ export async function relayTurnEnd(
         const settled = outcome === undefined || outcome === 'closed' || outcome === 'already_closed' || outcome === 'no_active_turn'
         if (settled) {
           if (data?.ok) logger.info('[turn-relay] turn end relayed', { status: current.status, errorName: current.error?.name, runtimeSessionId: current.runtimeSessionId, attempt })
+          // pi ends its turns here; OpenCode's own relay (open-code/turn-relay.ts) runs the hook too.
+          runOnIdleHook(current)
           return true
         }
         logger.warn('[turn-relay] turn-end relay was not settled', {

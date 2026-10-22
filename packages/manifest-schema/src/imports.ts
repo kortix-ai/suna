@@ -52,6 +52,7 @@ export const ROOT_ONLY_KEYS = [
   'sandbox',
   'policy',
   'policies',
+  'approvals',
 ] as const;
 
 export const MAX_IMPORT_DEPTH = 8;
@@ -184,6 +185,10 @@ const ALL_IMPORTABLE_KEYS: readonly ImportableKey[] = [
   ...IMPORTABLE_MAP_KEYS,
 ];
 
+/** v2 imports merge only the collections v2 had: skills, commands and
+ *  extensions are v3 keys, and a v2 root's own value for them stays as written. */
+const V2_IMPORTABLE_KEYS: readonly ImportableKey[] = [...IMPORTABLE_LIST_KEYS, 'agents', 'apps', 'tools'];
+
 /**
  * Resolve `imports:` for a parsed root manifest. A root without `imports`
  * returns immediately and never calls the reader, so projects that do not use
@@ -195,8 +200,9 @@ export function resolveManifestImportsSync(
 ): ResolvedManifest {
   const files: ManifestSourceFile[] = [root];
   const origins = emptyOrigins();
+  const importable = root.raw.kortix_version === 3 ? ALL_IMPORTABLE_KEYS : V2_IMPORTABLE_KEYS;
   if (!hasManifestImports(root.raw)) {
-    for (const key of ALL_IMPORTABLE_KEYS) {
+    for (const key of importable) {
       for (const [id] of safeEntries(root.path, key, root.raw[key])) {
         if (id !== null) origins[key][id] = root.path;
       }
@@ -212,7 +218,7 @@ export function resolveManifestImportsSync(
     // A `tools` key selects the Kortix tools, so an empty one in any file
     // still reaches the merged document (`selectedKortixTools`).
     if (file.raw.tools !== undefined) maps.tools ??= {};
-    for (const key of ALL_IMPORTABLE_KEYS) {
+    for (const key of importable) {
       for (const [id, entry] of collectionEntries(file.path, key, file.raw[key])) {
         if (id !== null) {
           const declaredIn = origins[key][id];
@@ -305,7 +311,7 @@ export function resolveManifestImportsSync(
     else if (key in maps) merged[key] = maps[key];
     else merged[key] = value;
   }
-  for (const key of ALL_IMPORTABLE_KEYS) {
+  for (const key of importable) {
     if (key in merged) continue;
     if (lists[key]) merged[key] = lists[key];
     else if (maps[key]) merged[key] = maps[key];

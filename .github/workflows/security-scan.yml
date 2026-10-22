@@ -13,9 +13,10 @@ on:
     # Re-registered 2026-09-25: the schedule belonged to a user who left the org,
     # and GitHub stopped dispatching it after 2026-08-03. See db-drift.yml.
     - cron: "23 6 * * 1" # 06:23 UTC Mondays
-  # A pull request into `dev` runs no CI. Release pull requests are the gate.
+  # A pull request into `dev` or `staging` runs no CI. The release pull
+  # request into `prod` is the gate (2026-10-16).
   pull_request:
-    branches: [staging, prod]
+    branches: [prod]
     paths:
       - "infra/**"
       - "apps/*/Dockerfile"
@@ -54,7 +55,7 @@ jobs:
         env:
           TRIVY_SKIP_DB_UPDATE: "false"
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-fs
@@ -85,7 +86,7 @@ jobs:
           output: trivy-image.sarif
           exit-code: "0"
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image-${{ strategy.job-index }}
@@ -100,7 +101,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Checkov scan → SARIF
-        uses: bridgecrewio/checkov-action@cc0e17d456ef1713bbfd963ebac19dc776775cb2
+        uses: bridgecrewio/checkov-action@6f26dc90000b74feb589a906cdfae540f5119895
         with:
           directory: infra/
           framework: terraform,kubernetes,helm,dockerfile
@@ -108,7 +109,7 @@ jobs:
           output_file_path: checkov.sarif
           soft_fail: true
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee
         with:
           sarif_file: checkov.sarif/results_sarif.sarif
           category: checkov
@@ -137,13 +138,18 @@ jobs:
           output-file: hadolint.sarif
           no-fail: true
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee
         with:
           sarif_file: hadolint.sarif
           category: hadolint-${{ strategy.job-index }}
 
   gitleaks-history:
     name: Gitleaks (full history)
+    # Not on a pull request. It took 8-9 min of the release suite (run
+    # 38935179301) to print a report nobody gates on (exit-code 0, no SARIF).
+    # The blocking scan of the pull request's own commits is secret-scan.yml;
+    # the full history is rescanned weekly and on dispatch.
+    if: github.event_name != 'pull_request'
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:

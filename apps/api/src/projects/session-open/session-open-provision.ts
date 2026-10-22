@@ -9,7 +9,6 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { type SandboxProviderName, config } from '../../config';
 import { type SandboxStatus, getProvider } from '../../platform/providers';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
 import { exponentialBackoffMs } from '../../shared/backoff';
@@ -111,7 +110,6 @@ export async function allocateRuntimeOnOpen(
         opencodeModel,
         defaultBranch: loaded.row.defaultBranch,
         manifestPath: loaded.row.manifestPath,
-        llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
         repositoryAccess: repositoryAccessFromSessionMetadata(session.metadata),
         restoreSessionBranch: true,
       }),

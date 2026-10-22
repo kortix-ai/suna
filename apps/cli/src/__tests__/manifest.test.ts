@@ -328,6 +328,67 @@ describe('manifest-edit — YAML (Document-AST editing, comment-preserving)', ()
     expect(arrayEntryExists('sandbox.templates', 'slug', 'gpu', dir)).toBe(true);
   });
 
+  // `kortix connectors add` on a starter manifest re-indented every section
+  // comment and re-flowed lists, because a missing section went through a
+  // whole-document re-serialization.
+  const STARTER = [
+    'kortix_version: 2',
+    'project:',
+    '  description: "A long description that a re-serializer would fold onto a second line, which it must not"',
+    'tools:',
+    '  web_search: kortix:web_search      # maintained by Kortix',
+    '',
+    '# ─── Agents ───',
+    '# Governance only.',
+    'agents:',
+    '  kortix:',
+    '    skills: [a, b]',
+    '',
+    '  # The AP agent.',
+    '  ap-agent:',
+    '    connectors: []',
+    '',
+    'triggers:',
+    '  - slug: nightly',
+    '    type: cron',
+    '',
+    '# ─── Channels ───',
+    '# Managed in the dashboard.',
+    '',
+  ].join('\n');
+
+  test('appendArrayBlock adds a missing section without touching any existing byte', async () => {
+    const { appendArrayBlock, arrayEntryExists, manifestFile } = await import('../manifest-edit');
+    const { readFileSync } = await import('node:fs');
+    writeFileSync(join(dir, 'kortix.yaml'), STARTER);
+    appendArrayBlock('connectors', { slug: 'my-mcp', provider: 'mcp', url: 'https://x.example/mcp', auth: { type: 'bearer' } }, dir);
+    const text = readFileSync(manifestFile(dir), 'utf8');
+    expect(text.startsWith(STARTER)).toBe(true);
+    expect(text.slice(STARTER.length)).toBe(
+      '\nconnectors:\n  - slug: my-mcp\n    provider: mcp\n    url: https://x.example/mcp\n    auth:\n      type: bearer\n',
+    );
+    expect(arrayEntryExists('connectors', 'slug', 'my-mcp', dir)).toBe(true);
+  });
+
+  test('appendArrayBlock puts a new item before the comments that head the next section', async () => {
+    const { appendArrayBlock, arrayEntryExists, manifestFile } = await import('../manifest-edit');
+    const { readFileSync } = await import('node:fs');
+    writeFileSync(join(dir, 'kortix.yaml'), STARTER);
+    appendArrayBlock('triggers', { slug: 'weekly', type: 'cron' }, dir);
+    const text = readFileSync(manifestFile(dir), 'utf8');
+    expect(text).toBe(STARTER.replace('    type: cron\n', '    type: cron\n  - slug: weekly\n    type: cron\n'));
+    expect(arrayEntryExists('triggers', 'slug', 'weekly', dir)).toBe(true);
+  });
+
+  test('appendArrayBlock under an existing parent map never duplicates the parent key', async () => {
+    const { appendArrayBlock, arrayEntryExists, manifestFile } = await import('../manifest-edit');
+    const { readFileSync } = await import('node:fs');
+    writeFileSync(join(dir, 'kortix.yaml'), 'kortix_version: 2\nsandbox:\n  default: python\n');
+    appendArrayBlock('sandbox.templates', { slug: 'gpu', image: 'kortix/gpu:latest' }, dir);
+    expect(readFileSync(manifestFile(dir), 'utf8').match(/^sandbox:/gm)?.length).toBe(1);
+    expect(arrayEntryExists('sandbox.templates', 'slug', 'gpu', dir)).toBe(true);
+  });
+
   test('prefers kortix.yaml over kortix.toml when both exist (no guard-throw)', async () => {
     const { appendArrayBlock, arrayEntryExists } = await import('../manifest-edit');
     writeFileSync(join(dir, 'kortix.toml'), `kortix_version = 1\n`);

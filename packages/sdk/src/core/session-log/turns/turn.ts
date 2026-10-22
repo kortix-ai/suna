@@ -8,7 +8,10 @@
  *   `compaction` message is a turn: the marker, with its summary in its compaction block.
  * - A reply joins the turn `reply_to` names, else the latest prompt before it. A reply before
  *   every loaded prompt opens a `partial` turn (a stand-in user message with no blocks) when
- *   it names a prompt, else joins the first turn. A reply shell with no block, no error and
+ *   it names a prompt, else joins the first turn. A reply after a compaction that its turn
+ *   precedes (pi compacts inside a turn and keeps naming the prompt) joins the compaction's
+ *   continuation: a `partial` turn `<marker id>:continued` right after the marker, and the
+ *   working turn when the working projection names the prompt or the marker. A reply shell with no block, no error and
  *   zero usage is not drawn. A message out of context stays (a failed attempt keeps its rows)
  *   unless `hideOutOfContext` leaves it out.
  * - `held` prompts (the inbox still holds them) go after the thread, in the order given.
@@ -64,6 +67,12 @@ export interface SessionLogCompaction {
   inFlight: boolean;
 }
 
+/** {@link SessionLogTurn.continues}. */
+export interface SessionLogContinuation {
+  marker: string;
+  prompt: string | null;
+}
+
 export interface SessionLogTurn {
   /** The user message id, the turn's key. */
   id: string;
@@ -72,6 +81,12 @@ export interface SessionLogTurn {
   assistant: SessionLogMessage[];
   /** The prompt is not loaded: `user` is a stand-in with its id and no blocks. */
   partial: boolean;
+  /**
+   * The work after a compaction inside a turn (a `partial` turn `<marker>:continued` right after
+   * the marker): the marker's id and the prompt the replies name (null when they name none). The
+   * working projection still names that prompt or the marker. Null on every other turn.
+   */
+  continues: SessionLogContinuation | null;
   /** Every block of every reply, in order. */
   blocks: SessionLogBlock[];
   status: SessionLogTurnStatus;
@@ -96,9 +111,25 @@ export interface SessionLogTurn {
   queued: boolean;
   /** The session's last reply is on this turn and retries a provider error (v1 records only: a native record carries no retry flag). */
   retrying: boolean;
+  /**
+   * The turn's prompt is the harness's own continuation, not a person's message: every block is
+   * a `synthetic` text block the harness marked (an auto-recovery prompt, KRTX-2597). The
+   * transcript renders no bubble for it; the turn exists so the live and working logic keep
+   * working while the harness retries.
+   */
+  internal: boolean;
+  /**
+   * How an automatic-retry chain reads around this turn (KRTX-2597). `continued`: this turn
+   * errored and a system continuation turn follows, so its error row yields to that turn's
+   * outcome. `retries`: automatic retries before this turn's own error is the terminal one —
+   * the one error row the chain shows. Present only when one of the two applies.
+   */
+  autoRetry?: { continued: boolean; retries: number };
 }
 
 export interface SessionLogTurnsOptions {
+  /** Fold compactions and their continuation work into the preceding prompt. Default false. */
+  foldCompactions?: boolean;
   /** The session is working (the composer shows Stop). Default false: no turn is live. */
   busy?: boolean;
   /** The user message id the working projection names (`WorkingProjection.turnId`), when it names one. */
@@ -167,7 +198,7 @@ export function sessionLogPromptMessage(prompt: SessionPrompt, threadId: string)
 
 // ─── grouping ────────────────────────────────────────────────────────────────
 
-type Draft = { user: SessionLogMessage; assistant: SessionLogMessage[]; partial: boolean };
+type Draft = { user: SessionLogMessage; assistant: SessionLogMessage[]; partial: boolean; continues?: SessionLogContinuation };
 
 const standIns = new WeakMap<SessionLogMessage, SessionLogMessage>();
 
@@ -180,6 +211,21 @@ function standInFor(reply: SessionLogMessage): SessionLogMessage {
       model: null, usage: null, finish: null, error: null, created_at: reply.created_at, completed_at: null, producer: reply.producer, blocks: [],
     };
     standIns.set(reply, m);
+  }
+  return m;
+}
+
+const continuations = new WeakMap<SessionLogMessage, SessionLogMessage>();
+
+/** The stand-in prompt of the work after a compaction inside a turn, one per marker object. */
+function continuationOf(marker: SessionLogMessage): SessionLogMessage {
+  let m = continuations.get(marker);
+  if (!m) {
+    m = {
+      ...V, message_id: `${marker.message_id}:continued`, thread_id: marker.thread_id, seq: marker.seq, role: 'user', kind: 'turn', status: 'complete', in_context: true,
+      model: null, usage: null, finish: null, error: null, created_at: marker.created_at, completed_at: null, producer: marker.producer, blocks: [],
+    };
+    continuations.set(marker, m);
   }
   return m;
 }
@@ -199,16 +245,32 @@ function drafts(messages: readonly SessionLogMessage[], held: ReadonlySet<string
   }
   const partials: Draft[] = [];
   const leading: SessionLogMessage[] = [];
+  // The order prompts were read in, and each compaction's continuation, made at its first reply.
+  const order = new Map<Draft, number>();
+  const continued = new Map<Draft, Draft>();
   let last: Draft | null = null;
+  let compaction: Draft | null = null;
   for (const m of messages) {
     if (m.role === 'user') {
       const d = byId.get(m.message_id);
-      if (d && !held.has(m.message_id)) last = d;
+      if (d && !held.has(m.message_id)) {
+        last = d;
+        if (!order.has(d)) order.set(d, order.size);
+        if (d.user.kind === 'compaction') compaction = d;
+      }
       continue;
     }
     if (m.role !== 'assistant' || isEmptyShell(m)) continue;
     const named = m.reply_to ? byId.get(m.reply_to) : undefined;
-    const home = named ?? last;
+    let home = named ?? last;
+    if (compaction && home && (home === compaction || (order.get(home) ?? Infinity) < order.get(compaction)!)) {
+      let next = continued.get(compaction);
+      if (!next) {
+        next = { user: continuationOf(compaction.user), assistant: [], partial: true, continues: { marker: compaction.user.message_id, prompt: home === compaction ? null : home.user.message_id } };
+        continued.set(compaction, next);
+      }
+      home = next;
+    }
     if (home) {
       home.assistant.push(m);
       continue;
@@ -226,7 +288,43 @@ function drafts(messages: readonly SessionLogMessage[], held: ReadonlySet<string
     if (first) first.assistant.unshift(...leading);
     else turns.push({ user: leading[0]!, assistant: leading.slice(1), partial: false });
   }
-  return [...partials, ...turns.filter((t) => !held.has(t.user.message_id)), ...[...held].flatMap((id) => byId.get(id) ?? [])];
+  const shown = turns.filter((t) => !held.has(t.user.message_id)).flatMap((t) => {
+    const next = continued.get(t);
+    return next ? [t, next] : [t];
+  });
+  return [...partials, ...shown, ...[...held].flatMap((id) => byId.get(id) ?? [])];
+}
+
+/** Keep the existing continuation ownership, but draw its work under the original prompt. */
+function foldCompactionDrafts(list: Draft[], hint: string | null | undefined): { list: Draft[]; hint: string | null | undefined } {
+  const folded: Draft[] = [];
+  const homes = new Map<string, Draft>();
+  let liveHint = hint;
+  for (const draft of list) {
+    const previous = folded[folded.length - 1];
+    const home = draft.continues ? homes.get(draft.continues.marker)
+      : draft.user.kind === 'compaction' && previous?.user.kind !== 'compaction' ? previous : undefined;
+    if (!home) {
+      folded.push({ ...draft, assistant: [...draft.assistant] });
+      continue;
+    }
+    homes.set(draft.user.message_id, home);
+    if (draft.user.kind === 'compaction') home.assistant.push(draft.user);
+    home.assistant.push(...draft.assistant);
+    if (hint === draft.user.message_id) liveHint = home.user.message_id;
+  }
+  return { list: folded, hint: liveHint };
+}
+
+/** The turn the working projection means: a prompt or a marker whose work continued below a compaction names its last continuation. */
+function continuedHint(list: readonly Draft[], hint: string | null | undefined): string | null | undefined {
+  if (!hint) return hint;
+  let out = hint;
+  for (const d of list) {
+    const c = d.continues;
+    if (c && (out === c.marker || out === c.prompt || hint === c.prompt)) out = d.user.message_id;
+  }
+  return out;
 }
 
 // ─── derived fields ──────────────────────────────────────────────────────────
@@ -300,6 +398,34 @@ function threadsOf(d: Draft, blocks: SessionLogBlock[], heads: NonNullable<Sessi
 
 const writesPlan = (d: Draft) => d.assistant.some((m) => m.blocks.some((b) => isCall(b) && toolKind(b.name) === 'todowrite' && shouldShowToolPart(b)));
 
+/**
+ * The harness's own continuation prompt (an auto-recovery, KRTX-2597): every block is a
+ * `synthetic` text block the harness marked on the wire, so no person wrote this prompt. A
+ * person's prompt with harness context attached (mixed synthetic + real text) is not internal;
+ * an unloaded prompt's stand-in (no blocks) is not either.
+ */
+const isInternalPrompt = (m: SessionLogMessage) =>
+  m.blocks.length > 0 && m.blocks.every((b) => b.type === 'text' && b.synthetic === true);
+
+/**
+ * The automatic-retry chain around each turn, from the turn list's order: a turn whose next
+ * turn is an internal continuation yields its error row to that turn's outcome, and a chain's
+ * terminal turn counts the automatic retries that led to it. `internal` is index-aligned with
+ * the drafts (the same flags the turn fields read).
+ */
+function autoRetryOf(list: readonly Draft[], internal: readonly boolean[]): ({ continued: boolean; retries: number } | undefined)[] {
+  const errored = list.map((d) => errorOf(d) !== null);
+  const continued = list.map((_, i) => errored[i] === true && internal[i + 1] === true);
+  return list.map((_, i) => {
+    // A continued turn yields its row: it is never a chain's end, so its retries stay 0.
+    if (continued[i]!) return { continued: true, retries: 0 };
+    if (!errored[i]!) return undefined;
+    let retries = 0;
+    for (let j = i - 1; j >= 0 && continued[j]!; j--) retries += 1;
+    return retries > 0 ? { continued: false, retries } : undefined;
+  });
+}
+
 const cache = new WeakMap<SessionLogMessage, { assistant: SessionLogMessage[]; key: string; pricing: ModelPricingLookup | undefined; heads: unknown; turn: SessionLogTurn }>();
 const NONE: readonly string[] = [];
 
@@ -330,7 +456,9 @@ function inContextOnly(thread: SessionLogThread): SessionLogThread {
 export function sessionLogTurns(source: SessionLogThread, options: SessionLogTurnsOptions = {}): SessionLogTurn[] {
   const thread = options.hideOutOfContext ? inContextOnly(source) : source;
   const held = new Set(options.held ?? NONE);
-  const list = drafts(thread.messages, held);
+  const raw = drafts(thread.messages, held);
+  const continued = continuedHint(raw, options.liveMessageId);
+  const { list, hint } = options.foldCompactions ? foldCompactionDrafts(raw, continued) : { list: raw, hint: continued };
   const lastReply = last(thread.messages, (m) => m.role === 'assistant');
   const retrying = sessionLogRetrying(thread);
   const working = resolveWorkingTurn({
@@ -338,19 +466,22 @@ export function sessionLogTurns(source: SessionLogThread, options: SessionLogTur
       userMessage: { info: { id: d.user.message_id } },
       assistantMessages: d.assistant.map((m) => ({ info: { time: m.status === 'streaming' ? {} : { completed: 1 }, error: m.error ?? undefined } })),
     })),
-    hintMessageId: options.liveMessageId,
+    hintMessageId: hint,
     unrunTurnIds: held,
   });
   const anchor = last(list, writesPlan) ?? list[list.length - 1];
+  const internalPrompts = list.map((d) => !d.partial && isInternalPrompt(d.user));
+  const autoRetry = autoRetryOf(list, internalPrompts);
   const v1Thread = isV1Thread(thread);
   const exact = (m: SessionLogMessage) => v1Thread || m.producer.harness === V1_IMPORT;
   const heads = options.threads ?? [];
   const known = new Set(heads.map((h) => h.thread_id));
-  return list.map((d) => {
+  return list.map((d, i) => {
     const live = options.busy === true && working.workingTurnId === d.user.message_id;
     const queued = working.pendingTurnIds.includes(d.user.message_id);
     const retries = retrying && d.assistant.includes(lastReply!);
-    const key = `${d.partial}|${live}|${queued}|${d === anchor}|${retries}`;
+    const chain = autoRetry[i];
+    const key = `${d.partial}|${live}|${queued}|${d === anchor}|${retries}|${chain ? (chain.continued ? 'c' : '') + chain.retries : '-'}`;
     const prev = cache.get(d.user);
     if (prev && prev.key === key && prev.pricing === options.pricing && prev.heads === options.threads && prev.assistant.length === d.assistant.length && prev.assistant.every((m, i) => m === d.assistant[i])) return prev.turn;
     const blocks = d.assistant.flatMap((m) => m.blocks);
@@ -358,10 +489,13 @@ export function sessionLogTurns(source: SessionLogThread, options: SessionLogTur
     const threads = threadsOf(d, blocks, heads, known);
     const reply = d.assistant[d.assistant.length - 1];
     const turn: SessionLogTurn = {
+      internal: internalPrompts[i]!,
+      autoRetry: chain,
       id: d.user.message_id,
       user: d.user,
       assistant: d.assistant,
       partial: d.partial,
+      continues: d.continues ?? null,
       blocks,
       status: retries ? 'streaming' : reply ? reply.status : d.user.kind === 'compaction' ? d.user.status : 'pending',
       error: errorOf(d),

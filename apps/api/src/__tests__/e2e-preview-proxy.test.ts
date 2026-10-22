@@ -58,6 +58,8 @@ let mockFetchResponses: Array<{
   error?: Error;
 }> = [];
 let mockFetchCallCount = 0;
+/** Every upstream Response the stub handed out, to check the proxy released the ones it dropped. */
+let mockFetchReturned: Response[] = [];
 let mockFetchCalls: Array<{
   url: string;
   method: string;
@@ -344,8 +346,8 @@ mock.module('../platform/providers', () => ({
                   'X-Daytona-Disable-CORS': 'true',
                   ...(mockPreviewToken ? { 'X-Daytona-Preview-Token': mockPreviewToken } : {}),
                 }
-              : name === 'e2b' && mockPreviewToken
-                ? { 'e2b-traffic-access-token': mockPreviewToken }
+              : name === 'platinum' && mockPreviewToken
+                ? { 'x-provider-traffic-token': mockPreviewToken }
                 : {},
           effectivePort: route.effectivePort,
           websocket: route.websocket,
@@ -366,6 +368,8 @@ mock.module('../config', () => ({
     // config default, because this file's collaborators resolve a mix of the
     // mocked and the real module — a disagreement here reads as a CORS bug.
     FRONTEND_URL: 'http://localhost:3000',
+    // The origin every env push derives the gateway base URL from.
+    KORTIX_URL: 'https://api.example.test',
   },
 }));
 
@@ -435,8 +439,7 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
   // Let non-proxy URLs through (e.g. internal Hono test requests)
   if (
     !urlStr.startsWith('https://preview.') &&
-    !urlStr.startsWith('http://preview.') &&
-    !urlStr.includes('.e2b.test')
+    !urlStr.startsWith('http://preview.')
   ) {
     return originalFetch(url, init);
   }
@@ -466,12 +469,12 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
     return Promise.reject(responseConfig.error);
   }
 
-  return Promise.resolve(
-    new Response(responseConfig.body, {
-      status: responseConfig.status,
-      headers: responseConfig.headers || {},
-    }),
-  );
+  const response = new Response(responseConfig.body, {
+    status: responseConfig.status,
+    headers: responseConfig.headers || {},
+  });
+  mockFetchReturned.push(response);
+  return Promise.resolve(response);
 }
 
 // ─── Import proxy app AFTER mocks ────────────────────────────────────────────
@@ -546,6 +549,7 @@ beforeEach(() => {
   mockWakeCalls = [];
   mockFetchResponses = [{ status: 200, body: 'Hello from upstream' }];
   mockFetchCallCount = 0;
+  mockFetchReturned = [];
   mockFetchCalls = [];
   mockDbUpdateCalls = [];
   mockResolvedPreviewPorts = [];
@@ -838,6 +842,50 @@ describe('Preview proxy: forwarding', () => {
     expect(mockFetchCalls[0]?.url).toBe('https://preview.daytona.io/proxy-url/api/v2/page');
   });
 
+  // An upstream answer the proxy does not pass through is released, not left to
+  // GC: an unread undici body pins its connection until then (KRTX-2803).
+  test('a daemon not-ready 503 releases the upstream body it answered from a clone', async () => {
+    mockFetchResponses = [
+      { status: 503, body: '{"code":"runtime_not_ready","error":"sandbox runtime not ready"}', headers: { 'content-type': 'application/json' } },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/api/v2/page`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+    expect(res.status).toBe(503);
+    expect(await res.text()).toContain('runtime_not_ready');
+    expect(mockFetchReturned).toHaveLength(1);
+    expect(mockFetchReturned[0]!.bodyUsed).toBe(true);
+  });
+
+  test('a 502 the proxy retries releases the upstream body it drops', async () => {
+    mockFetchResponses = [
+      { status: 502, body: 'bad gateway' },
+      { status: 200, body: 'ok' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/api/v2/page`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('ok');
+    expect(mockFetchReturned[0]!.status).toBe(502);
+    expect(mockFetchReturned[0]!.bodyUsed).toBe(true);
+  });
+
+  test('a browser that gets the port-unreachable page leaves no upstream body unreleased', async () => {
+    mockFetchResponses = [{ status: 502, body: 'bad gateway' }];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/`, {
+      headers: { Authorization: 'Bearer test', Accept: 'text/html' },
+    });
+    // The state page a browser renders, not the upstream's bare 502.
+    expect(res.headers.get('content-type') ?? '').toContain('text/html');
+    // MAX_RETRIES = 3 → four attempts, every answer dropped.
+    expect(mockFetchReturned).toHaveLength(4);
+    expect(mockFetchReturned.every((r) => r.bodyUsed)).toBe(true);
+  }, 15_000);
+
   test('proxies POST request with body', async () => {
     mockFetchResponses = [{ status: 201, body: '{"id":"created"}' }];
     const app = createProxyTestApp();
@@ -922,7 +970,10 @@ describe('Preview proxy: forwarding', () => {
         OPENROUTER_API_KEY: 'sk-live',
         SENTRY_DSN: 'https://example.test/1',
       },
-      llmGatewayEnabled: false,
+      // Every push carries the gateway: this is what moves a box that booted
+      // in the removed native mode onto it.
+      llmGatewayEnabled: true,
+      llmGatewayBaseUrl: 'https://api.example.test/v1/llm',
       names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
       // `runtimeEnv` for a W3 daemon, the same map as `opencodeEnv` for an older one.
       runtimeEnv: {},
@@ -1241,13 +1292,13 @@ describe('Preview proxy: forwarding', () => {
         'x-daytona-disable-cors': 'true',
         'x-daytona-preview-token': 'daytona-preview-token-123',
       },
-      absent: ['e2b-traffic-access-token'],
+      absent: ['x-provider-traffic-token'],
     },
     {
-      provider: 'e2b',
-      previewUrl: 'https://8080-e2b-sandbox.e2b.test',
-      token: 'e2b-traffic-token',
-      present: { 'e2b-traffic-access-token': 'e2b-traffic-token' },
+      provider: 'platinum',
+      previewUrl: 'https://preview.platinum.test/proxy-url',
+      token: 'platinum-traffic-token',
+      present: { 'x-provider-traffic-token': 'platinum-traffic-token' },
       absent: ['x-daytona-preview-token'],
     },
   ])('$provider ingress headers are forwarded as the provider resolved them', async (row) => {
