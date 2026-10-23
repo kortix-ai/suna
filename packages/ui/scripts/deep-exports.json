@@ -231,6 +231,7 @@
     "./lib/utils",
     "./markdown/copy-button",
     "./markdown/setup-links/api-base",
+    "./markdown/setup-links/app-credentials-form",
     "./markdown/setup-links/approval-decision",
     "./markdown/setup-links/connector-handshake",
     "./markdown/setup-links/connector-link-info",

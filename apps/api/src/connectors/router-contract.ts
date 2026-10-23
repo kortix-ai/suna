@@ -439,6 +439,24 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
     sig: string | null,
   ): Promise<{ ok: boolean; connected: boolean }>;
   /**
+   * The public form that connects a toolkit on the customer's own app
+   * (`composio-app-form.ts`). No user auth: the sealed token is the capability.
+   */
+  appForm?: {
+    info(token: string): Promise<{
+      app: string;
+      name: string;
+      connector: string;
+      connected: boolean;
+      connected_as: string | null;
+      expires_at: string;
+    }>;
+    submit(
+      token: string,
+      body: { store?: unknown; client_id?: unknown; client_secret?: unknown },
+    ): Promise<{ connected: true; connected_as: string; success_redirect_uri?: string }>;
+  };
+  /**
    * A page of the Pipedream catalogue, filtered by query and/or category.
    *
    * Category filtering is served from a server-side snapshot of the whole

@@ -22422,5 +22422,31 @@
   "agentEditor": {
     "manage": "管理",
     "overviewTitle": "概览"
+  },
+  "connectAppForm": {
+    "title": "连接 Shopify",
+    "description": "Kortix 通过您组织中的 Shopify 应用访问您的商店。只需输入一次凭据。",
+    "loading": "正在加载表单…",
+    "stepsTitle": "在 Shopify 中创建应用",
+    "step1": "打开 <link>Shopify Dev Dashboard</link>，在拥有您商店的组织中创建应用。",
+    "step2": "在应用版本中选择代理所需的 Admin API 权限范围，然后发布该版本。",
+    "step3": "将应用安装到您的商店。",
+    "step4": "从应用的设置中复制 Client ID 和 Client secret。",
+    "sameOrganization": "应用和商店必须属于同一个 Shopify 组织。",
+    "storeLabel": "商店",
+    "clientIdLabel": "Client ID",
+    "clientSecretLabel": "Client secret",
+    "submit": "连接 {app}",
+    "connecting": "正在连接…",
+    "missingFields": "请输入商店、Client ID 和 Client secret。",
+    "failed": "无法连接。请检查网络连接后重试。",
+    "secretNote": "Kortix 将密钥发送给负责连接的 Composio。Kortix 不保留副本。",
+    "connectedTitle": "{app} 已连接",
+    "connectedDescription": "Kortix 已可访问 {store}。您可以关闭此窗口。",
+    "closeWindow": "您可以关闭此窗口。",
+    "expiredTitle": "此链接已过期",
+    "invalidTitle": "此链接无效",
+    "staleTitle": "此链接已被替换",
+    "startAgain": "请在 Kortix 中重新开始连接。"
   }
 }

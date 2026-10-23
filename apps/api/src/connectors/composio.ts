@@ -5,15 +5,19 @@ import {
   type ToolkitConnectionsDetails,
 } from '@composio/core';
 import { HTTPException } from 'hono/http-exception';
+import { logger } from '../lib/logger';
 import { type ExecResult, parseRetryAfter } from './call';
 import {
   composioHiddenToolkits,
   NATIVE_TOOLKITS,
   composioRestClient,
+  connectionAuthConfigId,
+  connectionAuthConfigName,
   customAuthConfigIds,
   searchComposioCatalog,
   type ComposioCatalogClient,
 } from './composio-catalog-search';
+import { appFormConnectUrl, newAppFormNonce, ownApp } from './composio-own-app';
 import type { ComposioToolLike } from './types';
 
 // Re-exported so `db-deps` reaches it through the lazily imported adapter module.
@@ -244,8 +248,26 @@ async function createDirectSession(input: {
   toolkit: string;
   connectedAccountId?: string | null;
   catalogClient?: ComposioCatalogClient;
+  /** The connection the session acts for. Binds its own app when the toolkit needs one. */
+  connectionId?: string;
 }): Promise<ComposioSessionLike> {
   const config = directSessionConfig(input.toolkit, input.connectedAccountId);
+  // A toolkit on the customer's own app (Shopify) binds the connection's own
+  // auth config. A connection without one falls through to the operator's
+  // config below, which is what a legacy Shopify token account was made on.
+  if (input.connectionId && ownApp(input.toolkit)) {
+    const own = await connectionAuthConfigId({
+      catalogClient: input.catalogClient,
+      toolkit: input.toolkit,
+      connectionId: input.connectionId,
+    });
+    if (own) {
+      return createToolkitSession(input.runtime, input.userId, input.toolkit, {
+        ...config,
+        authConfigs: { [input.toolkit]: own },
+      });
+    }
+  }
   try {
     return await createToolkitSession(input.runtime, input.userId, input.toolkit, config);
   } catch (error) {
@@ -820,6 +842,7 @@ export async function composioConnectUrl(input: {
   catalogClient?: ComposioCatalogClient;
 }): Promise<ComposioConnectResult> {
   assertStableUserId(input.connectionId, input.stableUserId);
+  if (ownApp(input.app)) return ownAppConnectUrl(input);
   // Composio's managed app is the supported zero-setup path. Custom OAuth
   // scopes require a verified app owned by the customer and must not be
   // smuggled into the managed client. An operator's own auth config is used
@@ -866,6 +889,161 @@ export async function composioConnectUrl(input: {
     connected: !!connectedAccountId,
     isNoAuth: false,
   };
+}
+
+/**
+ * Connect for a toolkit on the customer's own app (`composio-own-app.ts`).
+ *
+ * A connection whose own app already holds an active account stays connected,
+ * as on every other toolkit. Otherwise the link is Kortix's own form, which
+ * asks for the app's credentials and the store. Composio's hosted page cannot
+ * ask for them: they belong to the auth config, not to the account.
+ */
+async function ownAppConnectUrl(input: {
+  projectId: string;
+  app: string;
+  connectionId: string;
+  stableUserId: string;
+  redirects?: { success?: string; error?: string };
+  runtime?: ComposioRuntime;
+  catalogClient?: ComposioCatalogClient;
+}): Promise<ComposioConnectResult> {
+  const own = await connectionAuthConfigId({
+    catalogClient: input.catalogClient,
+    toolkit: input.app,
+    connectionId: input.connectionId,
+  });
+  if (own) {
+    const session = await createToolkitSession(input.runtime ?? getComposioRuntime(), input.stableUserId, input.app, {
+      ...directSessionConfig(input.app),
+      authConfigs: { [input.app]: own },
+    });
+    const connectedAccountId = activeConnectedAccountId(await loadToolkitState(session, input.app));
+    if (connectedAccountId) {
+      return { sessionId: session.sessionId, connectedAccountId, connected: true, isNoAuth: false };
+    }
+  }
+  const nonce = newAppFormNonce();
+  return {
+    connectUrl: appFormConnectUrl({
+      projectId: input.projectId,
+      connectionId: input.connectionId,
+      app: input.app,
+      nonce,
+      successRedirect: input.redirects?.success,
+    }),
+    // No Tool Router session yet: the form's submit creates the bound one, and
+    // finalize answers "not connected" until it does.
+    sessionId: '',
+    authRequestId: nonce,
+    connected: false,
+    isNoAuth: false,
+  };
+}
+
+/** Composio's refusal of an S2S account, which carries Shopify's own answer. */
+function ownAppRefusal(error: unknown, store: string): HTTPException {
+  const raw = error instanceof Error ? error.message : String(error);
+  const text = raw.replace(/<[^>]*>/g, ' ').replace(/\\n/g, ' ').replace(/\s+/g, ' ');
+  const status = /token exchange failed \(HTTP (\d{3})\)/i.exec(text)?.[1];
+  const reason = /Oauth error ([a-z_]+)/i.exec(text)?.[1];
+  const host = `${store}.myshopify.com`;
+  let message: string;
+  if (status === '404') {
+    message = `No Shopify store answers at ${host}. Enter the store's myshopify.com name from Settings → Domains in Shopify.`;
+  } else if (reason === 'shop_not_permitted') {
+    message = `The app is in a different Shopify organization than ${host}. Create the app in the organization that owns the store.`;
+  } else if (reason === 'application_cannot_be_found') {
+    message = `Shopify has no app with this Client ID. Copy the Client ID from the app's Settings in the Shopify Dev Dashboard.`;
+  } else if (status) {
+    message =
+      `Shopify refused the Client ID or secret for ${host}${reason ? ` (${reason})` : ` (HTTP ${status})`}. ` +
+      'Copy both from the app\'s Settings, and install the app on this store.';
+  } else {
+    message = `Composio refused the Shopify account: ${text.trim().slice(0, 200)}`;
+  }
+  return new HTTPException(422, {
+    message,
+    res: Response.json(
+      { error: true, message, status: 422, code: 'shopify_refused', ...(reason ? { reason } : {}) },
+      { status: 422 },
+    ),
+  });
+}
+
+/**
+ * Put one connection on the customer's own Shopify app: a new auth config with
+ * the app's client credentials, then an account for the store. Composio runs
+ * the client-credentials exchange while it creates the account, so a wrong
+ * credential or store fails here, with Shopify's reason, and nothing is kept.
+ * On success the connection's earlier own-app configs are deleted, and their
+ * accounts with them (Composio deletes a config's accounts).
+ */
+export async function connectOwnApp(input: {
+  connectionId: string;
+  toolkit: string;
+  store: string;
+  clientId: string;
+  clientSecret: string;
+  runtime?: ComposioRuntime;
+  catalogClient?: ComposioCatalogClient;
+}): Promise<{ sessionId: string; connectedAccountId: string }> {
+  const client = input.catalogClient ?? composioRestClient();
+  const authConfigs = client.authConfigs;
+  if (!authConfigs?.create || !authConfigs.delete || !client.connectedAccounts) {
+    throw new Error('Composio auth config API is unavailable');
+  }
+  const name = connectionAuthConfigName(input.connectionId);
+  const earlier = (
+    await authConfigs.list({
+      toolkit_slug: input.toolkit,
+      search: name,
+      is_composio_managed: false,
+      show_disabled: false,
+      limit: 50,
+    })
+  ).items.filter((row) => row.name === name).map((row) => row.id);
+  const created = await authConfigs.create({
+    toolkit: { slug: input.toolkit },
+    auth_config: {
+      type: 'use_custom_auth',
+      authScheme: 'S2S_OAUTH2',
+      name,
+      credentials: { client_id: input.clientId, client_secret: input.clientSecret },
+    },
+  });
+  const authConfigId = created.auth_config.id;
+  const userId = composioUserId(input.connectionId);
+  try {
+    let account: { id: string };
+    try {
+      account = await client.connectedAccounts.create({
+        auth_config: { id: authConfigId },
+        connection: {
+          user_id: userId,
+          state: { authScheme: 'S2S_OAUTH2', val: { status: 'INITIALIZING', subdomain: input.store } },
+        },
+      });
+    } catch (error) {
+      throw ownAppRefusal(error, input.store);
+    }
+    const session = await createToolkitSession(input.runtime ?? getComposioRuntime(), userId, input.toolkit, {
+      ...directSessionConfig(input.toolkit, account.id),
+      authConfigs: { [input.toolkit]: authConfigId },
+    });
+    if (activeConnectedAccountId(await loadToolkitState(session, input.toolkit)) !== account.id) {
+      throw new HTTPException(502, { message: 'Composio did not activate the Shopify account. Try again.' });
+    }
+    for (const id of earlier) {
+      await authConfigs.delete(id).catch((error: unknown) => {
+        logger.warn('[composio] could not delete a replaced own-app auth config', { id, error: String(error) });
+      });
+    }
+    return { sessionId: session.sessionId, connectedAccountId: account.id };
+  } catch (error) {
+    await authConfigs.delete(authConfigId).catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function finalizeComposioConnection(input: {

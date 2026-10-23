@@ -22422,5 +22422,31 @@
   "agentEditor": {
     "manage": "Upravljaj",
     "overviewTitle": "Pregled"
+  },
+  "connectAppForm": {
+    "title": "Повежите Shopify",
+    "description": "Kortix приступа вашој продавници преко Shopify апликације у вашој организацији. Унесите њене податке за пријаву једном.",
+    "loading": "Учитавање обрасца…",
+    "stepsTitle": "Направите апликацију у Shopify-ју",
+    "step1": "Отворите <link>Shopify Dev Dashboard</link> и направите апликацију у организацији која поседује вашу продавницу.",
+    "step2": "У верзији апликације изаберите Admin API опсеге који су потребни вашим агентима, па објавите верзију.",
+    "step3": "Инсталирајте апликацију у своју продавницу.",
+    "step4": "Копирајте Client ID и Client secret из подешавања апликације.",
+    "sameOrganization": "Апликација и продавница морају бити у истој Shopify организацији.",
+    "storeLabel": "Продавница",
+    "clientIdLabel": "Client ID",
+    "clientSecretLabel": "Client secret",
+    "submit": "Повежите {app}",
+    "connecting": "Повезивање…",
+    "missingFields": "Унесите продавницу, Client ID и Client secret.",
+    "failed": "Повезивање није успело. Проверите везу и покушајте поново.",
+    "secretNote": "Kortix шаље тајну Composio-у, који одржава везу. Kortix не чува копију.",
+    "connectedTitle": "{app} је повезан",
+    "connectedDescription": "Kortix приступа продавници {store}. Можете затворити овај прозор.",
+    "closeWindow": "Можете затворити овај прозор.",
+    "expiredTitle": "Овај линк је истекао",
+    "invalidTitle": "Овај линк не ради",
+    "staleTitle": "Овај линк је замењен",
+    "startAgain": "Поново покрените повезивање у Kortix-у."
   }
 }

@@ -296,6 +296,8 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/channels/teams/identity/bind': { action: 'channel.teams.identity.connect', title: 'Linked Teams identity' },
   'GET /v1/channels/teams/identity/login/:token': { action: 'channel.teams.login_link.read', title: 'Opened Teams login link' },
   'POST /v1/channels/teams/identity/preview': { action: 'channel.teams.identity.preview', title: 'Previewed Teams identity link' },
+  'GET /v1/connectors/app-form/:token': { action: 'connector.app_form.read', title: 'Opened app connect form' },
+  'POST /v1/connectors/app-form/:token': { action: 'connector.app_form.submit', title: 'Connected an app with its own credentials' },
   'POST /v1/connectors/attachments': { action: 'connector.attachment.upload', title: 'Uploaded connector attachment' },
   'POST /v1/connectors/call': { action: 'connector.action.run', title: 'Requested connector call' },
   'GET /v1/connectors/catalog': { action: 'connector.catalog.list', title: 'Viewed connector catalog' },

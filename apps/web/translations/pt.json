@@ -22422,5 +22422,31 @@
   "agentEditor": {
     "manage": "Gerenciar",
     "overviewTitle": "Visão geral"
+  },
+  "connectAppForm": {
+    "title": "Conectar Shopify",
+    "description": "O Kortix acessa sua loja por meio de um app Shopify da sua organização. Informe as credenciais dele uma vez.",
+    "loading": "Carregando o formulário…",
+    "stepsTitle": "Crie o app no Shopify",
+    "step1": "Abra o <link>Shopify Dev Dashboard</link> e crie um app na organização dona da sua loja.",
+    "step2": "Na versão do app, selecione os escopos da Admin API de que seus agentes precisam e publique a versão.",
+    "step3": "Instale o app na sua loja.",
+    "step4": "Copie o Client ID e o Client secret nas configurações do app.",
+    "sameOrganization": "O app e a loja precisam estar na mesma organização do Shopify.",
+    "storeLabel": "Loja",
+    "clientIdLabel": "Client ID",
+    "clientSecretLabel": "Client secret",
+    "submit": "Conectar {app}",
+    "connecting": "Conectando…",
+    "missingFields": "Informe a loja, o Client ID e o Client secret.",
+    "failed": "Não foi possível conectar. Verifique sua conexão e tente novamente.",
+    "secretNote": "O Kortix envia o segredo ao Composio, que mantém a conexão. O Kortix não guarda nenhuma cópia.",
+    "connectedTitle": "{app} está conectado",
+    "connectedDescription": "O Kortix acessa {store}. Você pode fechar esta janela.",
+    "closeWindow": "Você pode fechar esta janela.",
+    "expiredTitle": "Este link expirou",
+    "invalidTitle": "Este link não funciona",
+    "staleTitle": "Este link foi substituído",
+    "startAgain": "Inicie Conectar novamente no Kortix."
   }
 }
