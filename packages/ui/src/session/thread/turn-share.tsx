@@ -26,7 +26,6 @@ import { Button } from '../../primitives/button';
 import Hint from '../../primitives/hint';
 import { Input } from '../../primitives/input';
 import { Label } from '../../primitives/label';
-import Loading from '../../primitives/loading';
 import { Modal, ModalContent, ModalTitle } from '../../primitives/modal';
 import { RadioGroup } from '../../primitives/radio-group';
 import { Separator } from '../../primitives/separator';
@@ -60,10 +59,10 @@ function serverMessage(error: unknown): string | null {
 
 /**
  * The Share icon button of a settled turn's action bar, and the dialog it
- * opens. Renders nothing where a share cannot exist: a host without public
- * share pages, a turn outside a Kortix session, or a viewer the API would
- * refuse (`can_manage_sharing === false`, the same verdict `guardSessionSharing`
- * computes).
+ * opens. Renders only where the API would accept the share: a host with public
+ * share pages, a turn inside a Kortix session, and a viewer the server says may
+ * publish (`can_publish_response === true`, the API's `mayPublishTurn`).
+ * Hidden while the session row loads: an unknown answer is not a yes.
  */
 export function TurnShareButton({ projectId, sessionId, turnId }: Partial<TurnShareTarget>) {
   const t = useTranslations('turnShare');
@@ -72,7 +71,7 @@ export function TurnShareButton({ projectId, sessionId, turnId }: Partial<TurnSh
   const [open, setOpen] = useState(false);
 
   if (!publicSharesEnabled || !projectId || !sessionId || !turnId) return null;
-  if (session?.can_manage_sharing === false) return null;
+  if (session?.can_publish_response !== true) return null;
 
   return (
     <>
@@ -216,7 +215,6 @@ function TurnShareDialogContent({ target }: { target: TurnShareTarget }) {
               <Label htmlFor="turn-share-public">{t('publicLink')}</Label>
               <p className="text-muted-foreground text-xs">{t('publicLinkHint')}</p>
             </div>
-            {pending ? <Loading className="text-muted-foreground size-4 shrink-0" /> : null}
             <Switch
               id="turn-share-public"
               checked={!!share && !confirmingOff}

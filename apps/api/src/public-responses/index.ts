@@ -2,7 +2,7 @@
  * Anonymous, read-only view of one shared assistant response —
  * `GET /v1/public/responses/:token`. Backs the web page `/share/response/:token`.
  *
- * The token is the bearer capability (`kps_` + 128 random bits). The answer is
+ * The token is the bearer capability (`kps_` + a random UUID v4: 122 random bits). The answer is
  * ONLY the stored snapshot: no session id, project id, prompt, or sandbox
  * access. The snapshot is built at share time from the session log
  * (`projects/lib/response-snapshot.ts`); this route reads one row by token hash.
@@ -41,8 +41,8 @@ export function registerPublicResponseRoutes(): void {
     async (c) => {
       const result = await readPublicResponse(c.req.valid('param').token);
       if (!result.ok) return c.json({ error: result.error }, result.status);
-      // Revocation reaches a cached copy within 60 s.
-      c.header('Cache-Control', 'public, max-age=60');
+      // No shared cache may keep a revoked link's text; the web page caches it itself.
+      c.header('Cache-Control', 'private, no-store');
       return c.json({ response: result.response }, 200);
     },
   );

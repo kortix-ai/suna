@@ -22421,7 +22421,7 @@
     "responseOnly": "Samo odgovor",
     "responseOnlyHint": "Vaš prompt ostaje privatan",
     "promptAndResponse": "Prompt i odgovor",
-    "promptAndResponseHint": "Prikazuje šta ste pitali",
+    "promptAndResponseHint": "Uključuje prompt",
     "publicLink": "Javni link",
     "publicLinkHint": "Svako ko ima link može da ga pročita",
     "turnOffLink": "Isključi link",
@@ -22438,8 +22438,10 @@
     "unshareError": "Deljenje nije moguće prekinuti. Pokušajte ponovo.",
     "copyError": "Link nije moguće kopirati. Kopirajte ga iz polja.",
     "tryKortix": "Isprobajte Kortix",
-    "goneTitle": "Ovaj odgovor se više ne deli",
-    "goneHint": "Osoba koja ga je podelila isključila je link.",
+    "goneTitle": "Ovaj link više nije aktivan",
+    "goneHint": "Odgovor na koji je upućivao više nije javan.",
+    "busyTitle": "Ova stranica je zauzeta",
+    "busyHint": "Osvežite je za trenutak.",
     "fallbackTitle": "Podeljeni odgovor",
     "stopNote": "Link će prestati da radi."
   }

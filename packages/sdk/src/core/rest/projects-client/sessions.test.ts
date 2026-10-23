@@ -139,6 +139,19 @@ test('listProjectSessions keeps can_manage_sharing and can_manage_lifecycle apar
   expect(session.can_manage_lifecycle).toBe(true);
 });
 
+test('getProjectSession carries can_publish_response apart from can_manage_sharing', async () => {
+  // A project manager may publish a response of a session a human owns
+  // (can_publish_response) without being allowed to re-share the session itself.
+  nextResponse = {
+    status: 200,
+    body: { session_id: 'S1', is_owner: false, can_manage_sharing: false, can_publish_response: true },
+  };
+  const session = await getProjectSession('P1', 'S1');
+  const publish: boolean | undefined = session.can_publish_response;
+  expect(publish).toBe(true);
+  expect(session.can_manage_sharing).toBe(false);
+});
+
 // ─── Paging ────────────────────────────────────────────────────────────────
 // The list is a bounded keyset PAGE. It used to return every session row the
 // viewer could see: a 12,617-session project shipped a multi-megabyte body on a

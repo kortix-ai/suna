@@ -152,6 +152,13 @@ export interface ProjectSession {
    * re-share its contents.
    */
   can_manage_lifecycle?: boolean;
+  /**
+   * May the viewer publish one assistant response of this session through a
+   * public link (`shareTurn`)? A human (not an agent or service credential) who
+   * can read the session and is its owner or a project manager. Only the
+   * single-session reads carry it; absent means unknown, so hide the control.
+   */
+  can_publish_response?: boolean;
   /** Whether the current viewer may open/read this session. */
   can_access?: boolean;
   /** Exact lifecycle state of the backing runtime resource, when present. */

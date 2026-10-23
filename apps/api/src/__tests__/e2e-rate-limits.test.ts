@@ -103,26 +103,23 @@ describe('audited rate limits', () => {
     });
   });
 
-  test('limits anonymous shared-response reads by share, not by IP', async () => {
+  test('limits shared-response reads per share, with Retry-After and no audit row', async () => {
     const app = new Hono();
     app.use('/v1/public/responses/:token', createPublicResponseRateLimitMiddleware());
     app.get('/v1/public/responses/:token', (c) => c.json({ ok: true }));
 
-    const shareA = '11111111-1111-4111-a111-111111111111';
-    const tokenA = `kps_${shareA.replaceAll('-', '')}`;
+    const tokenA = 'kps_11111111111141118111111111111111';
     const tokenB = 'kps_22222222222242228222222222222222';
     const headers = { 'X-Forwarded-For': '203.0.113.21' };
 
     expect((await app.request(`/v1/public/responses/${tokenA}`, { headers })).status).toBe(200);
-    expect((await app.request(`/v1/public/responses/${tokenA}`, { headers })).status).toBe(429);
+    const denied = await app.request(`/v1/public/responses/${tokenA}`, { headers });
+    expect(denied.status).toBe(429);
+    expect(denied.headers.get('Retry-After')).toBe('60');
     // Another share from the same IP is its own bucket.
     expect((await app.request(`/v1/public/responses/${tokenB}`, { headers })).status).toBe(200);
-
-    expect(auditRows.at(-1)).toMatchObject({
-      resourceType: 'public_response',
-      resourceId: shareA,
-      metadata: { limiter: 'public_response' },
-    });
+    // A flood must not become a write amplifier, and the token is a bearer secret.
+    expect(auditRows).toEqual([]);
   });
 
   test('limits public check-email probes by client IP and writes an audit event on hit', async () => {

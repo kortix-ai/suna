@@ -18,10 +18,11 @@ import type { Context } from 'hono';
 import {
   PUBLIC_SHARE_OWNER_ONLY_ERROR,
   TURN_SHARE_AGENT_ERROR,
+  TURN_SHARE_AGENT_REVOKE_ERROR,
   TURN_SHARE_OWNER_OR_MANAGER_ERROR,
+  isHumanCaller,
   mayPublishTurn,
 } from '../../connectors/share';
-import { isAgentPrincipalActor } from '../../iam/actor';
 import { callerHasManagerStanding, loadSessionForSharing, loadVisibleSession, sessionIsTombstoned } from './access';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 
@@ -95,10 +96,31 @@ export async function guardSessionSharing(
   return { ok: true, session };
 }
 
+/** `isHumanCaller` for this request. */
+function requestIsHuman(c: Context, loaded: LoadedProject): boolean {
+  return isHumanCaller({ credentialKind: loaded.actor?.credential.kind, boundSessionId: callerKortixSessionId(c) });
+}
+
 /**
- * May the caller publish one assistant response of this session (`mayPublishTurn`)?
- * Unlike `guardSessionSharing('mint')`, it runs the session VISIBILITY gate:
- * the published text must be text the caller may read.
+ * The `mayPublishTurn` verdict for an already-loaded visible session (null:
+ * the caller cannot read it). Shared by the guard and the session serializer's
+ * `can_publish_response`, so the button and the API agree.
+ */
+export async function turnPublishVerdict(c: Context, loaded: LoadedProject, session: VisibleSession | null) {
+  const readable = session !== null && !sessionIsTombstoned(session.row);
+  return mayPublishTurn({
+    canRead: readable,
+    isHuman: requestIsHuman(c, loaded),
+    isOwner: readable && session.isOwner,
+    isManager: readable && (await callerHasManagerStanding(loaded, callerKortixSessionId(c))),
+  });
+}
+
+/**
+ * May the caller publish (PUT) or see the share of (GET) one assistant response
+ * of this session (`mayPublishTurn`)? Unlike `guardSessionSharing('mint')`, it
+ * runs the session VISIBILITY gate: the published text must be text the caller
+ * may read, and a manager learns nothing about a session they cannot open.
  */
 export async function guardTurnPublish(
   c: Context,
@@ -106,17 +128,27 @@ export async function guardTurnPublish(
   sessionId: string,
 ): Promise<{ ok: true; session: VisibleSession } | SessionAccessDenial> {
   const binding = callerKortixSessionId(c);
-  const visible = await loadVisibleSession(loaded, sessionId, binding, binding);
-  const session = visible && !sessionIsTombstoned(visible.row) ? visible : null;
-  const verdict = mayPublishTurn({
-    canRead: session !== null,
-    isHuman: binding === null && !(loaded.actor && isAgentPrincipalActor(loaded.actor)),
-    isOwner: session?.isOwner === true,
-    isManager: session !== null && (await callerHasManagerStanding(loaded, binding)),
-  });
+  const session = await loadVisibleSession(loaded, sessionId, binding, binding);
+  const verdict = await turnPublishVerdict(c, loaded, session);
   if (verdict === 'allow') return { ok: true, session: session! };
   if (verdict === 'not_found') return NOT_FOUND;
   return { ok: false, status: 403, error: verdict === 'not_human' ? TURN_SHARE_AGENT_ERROR : TURN_SHARE_OWNER_OR_MANAGER_ERROR };
+}
+
+/**
+ * May the caller turn off a response link (DELETE)? A human who is the owner
+ * or a project manager. No read check: revoking only removes access, so a
+ * manager can end a link on a session they cannot open.
+ */
+export async function guardTurnRevoke(
+  c: Context,
+  loaded: LoadedProject,
+  sessionId: string,
+): Promise<{ ok: true } | SessionAccessDenial> {
+  const guard = await guardSessionSharing(c, loaded, sessionId, 'revoke');
+  if (!guard.ok) return guard;
+  if (!requestIsHuman(c, loaded)) return { ok: false, status: 403, error: TURN_SHARE_AGENT_REVOKE_ERROR };
+  return { ok: true };
 }
 
 /** Send a guard denial as the route's JSON error response. */

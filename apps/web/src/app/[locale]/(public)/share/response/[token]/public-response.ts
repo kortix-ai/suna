@@ -10,7 +10,9 @@ export type PublicResponseResult =
   /** The token never existed: the route's not-found page. */
   | { kind: 'missing' }
   /** The sharer turned the link off (410). */
-  | { kind: 'revoked' };
+  | { kind: 'revoked' }
+  /** The API is rate-limiting (429) or failing (5xx): a calm retry state, never the error page. */
+  | { kind: 'busy' };
 
 /**
  * Read a shared response on the server, once per request: the page,
@@ -23,9 +25,10 @@ export const loadPublicResponse = cache(async (token: string): Promise<PublicRes
   try {
     const response = await getPublicResponse(token, {
       backendUrl: getEnv().BACKEND_URL,
-      // Never from the server's fetch cache: "Stop sharing" must take effect
-      // on the next load, not after a revalidate window.
-      cache: 'no-store',
+      // Every view of one link would otherwise reach the API, and the API
+      // rate-limits per share. A 15 s cache keeps a busy link up; the cost is
+      // that turning the link off reaches this page within 15 s.
+      next: { revalidate: 15 },
     });
     return { kind: 'shared', response };
   } catch (error) {
@@ -33,6 +36,7 @@ export const loadPublicResponse = cache(async (token: string): Promise<PublicRes
     const status = (error as { status?: unknown } | null)?.status;
     if (status === 404) return { kind: 'missing' };
     if (status === 410) return { kind: 'revoked' };
+    if (status === 429 || (typeof status === 'number' && status >= 500)) return { kind: 'busy' };
     throw error;
   }
 });

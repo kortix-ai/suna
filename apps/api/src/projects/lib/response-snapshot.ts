@@ -15,15 +15,36 @@ import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import type { ResponseSnapshot } from '../../shared/session-public-shares';
 import { rehydrateLargeTexts } from '../session-log-blobs';
-import { isPlaceholderOpencodeTitle } from './opencode-title';
 
-/** The session's display title: the user's rename, else a real auto title. */
-function sessionTitle(metadata: unknown): string | null {
-  const meta = (metadata ?? {}) as Record<string, unknown>;
-  const custom = typeof meta.custom_name === 'string' ? meta.custom_name.trim() : '';
-  if (custom) return custom;
-  const auto = typeof meta.name === 'string' ? meta.name.trim() : '';
-  return auto && !isPlaceholderOpencodeTitle(auto) ? auto : null;
+/** Bytes a published snapshot may carry (response + prompt, UTF-8). */
+export const MAX_PUBLISHED_BYTES = 256 * 1024;
+
+/** Markdown syntax off one line: emphasis, code ticks, links/images to their text, quote and list markers. */
+function plainLine(line: string): string {
+  return line
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[*_`~]/g, '')
+    .replace(/^\s*(?:#{1,6}\s+|>\s*|[-+]\s+|\d+[.)]\s+)+/, '')
+    .trim();
+}
+
+/**
+ * The published title: the response's first heading, else its first non-empty
+ * line, as plain text, at most 80 characters. Never the session title: the auto
+ * title is a summary (or an excerpt) of the session's first prompt, so it would
+ * publish prompt text on a "response only" share.
+ */
+export function responseTitle(markdown: string): string {
+  const lines = markdown.split('\n');
+  const heading = lines.find((l) => /^\s{0,3}#{1,6}\s+\S/.test(l));
+  const first = heading ?? lines.find((l) => plainLine(l)) ?? '';
+  return plainLine(first).slice(0, 80);
+}
+
+/** True when the published text would exceed `MAX_PUBLISHED_BYTES`. */
+export function publishedTooLarge(markdown: string, prompt: string | null): boolean {
+  const bytes = Buffer.byteLength(markdown, 'utf8') + (prompt === null ? 0 : Buffer.byteLength(prompt, 'utf8'));
+  return bytes > MAX_PUBLISHED_BYTES;
 }
 
 /** The response text of one assistant message: its non-synthetic text blocks. */
@@ -35,10 +56,13 @@ function textOf(message: SessionLogMessage): string[] {
 
 export type ResponseSnapshotResult =
   | { ok: true; snapshot: ResponseSnapshot }
-  | { ok: false; status: 404 | 409; error: string };
+  | { ok: false; status: 404 | 409 | 413; error: string };
 
 export const RESPONSE_NOT_FOUND_ERROR = 'Response not found';
 export const RESPONSE_SAVING_ERROR = 'This response is still being saved. Try again in a few seconds.';
+export const RESPONSE_STREAMING_ERROR = 'This response is still being written. Try again when it finishes.';
+export const RESPONSE_EMPTY_ERROR = 'This response has no text to share yet';
+export const RESPONSE_TOO_LARGE_ERROR = 'This response is too long to share publicly.';
 
 /**
  * The answer when the prompt is not in the session log. A turn the ledger
@@ -57,7 +81,6 @@ export async function buildResponseSnapshot(input: {
   sessionId: string;
   projectId: string;
   turnId: string;
-  sessionMetadata: unknown;
   /** Publish the prompt's text too. */
   includePrompt: boolean;
 }): Promise<ResponseSnapshotResult> {
@@ -91,26 +114,32 @@ export async function buildResponseSnapshot(input: {
       ),
     )
     .orderBy(asc(sessionLogMessages.seq));
+  // Only a finished turn is published: a reply still streaming would freeze half an answer.
+  if ((rows.at(-1)?.record as { status?: unknown } | undefined)?.status === 'streaming') {
+    return { ok: false, status: 409, error: RESPONSE_STREAMING_ERROR };
+  }
   // F3: a text over 256 kB is a preview in the row; publish the whole text.
   const [user, ...messages] = await rehydrateLargeTexts(
     { projectId: input.projectId, sessionId: input.sessionId },
     [prompt.record, ...rows.map((r) => r.record)] as unknown as SessionLogMessage[],
   );
   const markdown = messages.flatMap(textOf).join('\n\n');
-  if (!markdown) return { ok: false, status: 409, error: 'This response has no text to share yet' };
+  if (!markdown) return { ok: false, status: 409, error: RESPONSE_EMPTY_ERROR };
+  // Text blocks only: attachments and files are never published.
+  const promptText = input.includePrompt ? textOf(user!).join('\n\n') || null : null;
+  if (publishedTooLarge(markdown, promptText)) return { ok: false, status: 413, error: RESPONSE_TOO_LARGE_ERROR };
 
   const last = messages.at(-1)!;
-  const named = [...messages].reverse();
   return {
     ok: true,
     snapshot: {
-      title: sessionTitle(input.sessionMetadata) ?? markdown.split('\n')[0]!.replace(/^#+\s*/, '').slice(0, 80),
-      // Text blocks only: attachments and files are never published.
-      prompt: input.includePrompt ? textOf(user!).join('\n\n') || null : null,
+      title: responseTitle(markdown),
+      prompt: promptText,
       include_prompt: input.includePrompt,
       markdown,
-      agent_name: named.find((m) => m.agent)?.agent ?? null,
-      model_id: named.find((m) => m.model?.model)?.model?.model ?? null,
+      // Not published: a custom agent name can be internal. Kept in the type for old readers.
+      agent_name: null,
+      model_id: [...messages].reverse().find((m) => m.model?.model)?.model?.model ?? null,
       responded_at: last.completed_at ?? last.created_at,
     },
   };

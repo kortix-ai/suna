@@ -7246,7 +7246,7 @@ const catalog = {
     "responseOnly": "Response only",
     "responseOnlyHint": "Your prompt stays private",
     "promptAndResponse": "Prompt and response",
-    "promptAndResponseHint": "Shows what you asked",
+    "promptAndResponseHint": "Includes the prompt",
     "publicLink": "Public link",
     "publicLinkHint": "Anyone with the link can read it",
     "turnOffLink": "Turn off link",
@@ -7263,8 +7263,10 @@ const catalog = {
     "unshareError": "Could not stop sharing. Try again.",
     "copyError": "Could not copy the link. Copy it from the field.",
     "tryKortix": "Try Kortix",
-    "goneTitle": "This response is no longer shared",
-    "goneHint": "The person who shared it turned the link off.",
+    "goneTitle": "This link is no longer active",
+    "goneHint": "The response it pointed to is no longer public.",
+    "busyTitle": "This page is busy",
+    "busyHint": "Refresh in a moment.",
     "fallbackTitle": "Shared response",
     "stopNote": "The link will stop working."
   }

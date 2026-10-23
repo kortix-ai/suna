@@ -192,28 +192,40 @@ export function createSandboxProxyRateLimitMiddleware() {
   });
 }
 
+/** A 429 with `Retry-After`, and no audit row: a flood must not become a DB-write amplifier. */
+function quietRateLimited(c: Context, result: RateLimitResult): Response {
+  setHeaders(c, result);
+  return c.json(
+    {
+      error: 'rate_limit_exceeded',
+      message: 'Rate limit exceeded. Please retry shortly.',
+      retry_after_seconds: Math.ceil((result.retryAfterMs ?? result.resetMs) / 1000),
+    },
+    429,
+  );
+}
+
 /**
- * Guards the anonymous `GET /v1/public/responses/:token`. No identity to key on,
- * so it keys on the share the token names: every visitor to one shared link is
- * behind the same bucket, and one caller cycling links from a shared NAT does
- * not starve other links. A token that names no share falls back to client IP
- * BEFORE it can key a bucket, so unique garbage tokens cannot grow the bucket
- * Map without bound.
+ * Guards the anonymous `GET /v1/public/responses/:token`: one bucket per share
+ * (`KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN`, 600), shared by every visitor of the
+ * link, so it is a flood cap sized for a popular link. A token that names no
+ * share falls back to the client IP BEFORE it can key a bucket, so unique
+ * garbage tokens cannot grow the bucket Map without bound. No audit row (a
+ * flood must not become a DB-write amplifier), and the token or share id is
+ * never logged: the token is the share id, a bearer secret.
  */
 export function createPublicResponseRateLimitMiddleware() {
-  return createAuditedRateLimitMiddleware(publicResponseLimiter, (c) => {
-    const shareId = shareIdFromPublicRef(c.req.param('token') ?? '') ?? `ip:${requestClientKey(c)}`;
-    return {
-      key: shareId,
-      policy: { limit: positiveInt(config.KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN, 60), windowMs: 60_000 },
-      auditContext: {
-        action: RATE_LIMIT_EXCEEDED_ACTION,
-        resourceType: 'public_response',
-        resourceId: shareId,
-        metadata: { limiter: 'public_response' },
-      },
-    };
-  });
+  return async (c: Context, next: Next) => {
+    // No per-IP bucket: tokens carry 122 random bits, so enumeration is infeasible, and the IP seen here is the web tier's, shared by every visitor.
+    const shareKey = shareIdFromPublicRef(c.req.param('token') ?? '') ?? `ip:${requestClientKey(c)}`;
+    const share = publicResponseLimiter.check(shareKey, {
+      limit: positiveInt(config.KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN, 600),
+      windowMs: 60_000,
+    });
+    if (!share.allowed) return quietRateLimited(c, share);
+    setHeaders(c, share);
+    await next();
+  };
 }
 
 /**

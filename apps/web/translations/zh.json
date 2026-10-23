@@ -22421,7 +22421,7 @@
     "responseOnly": "仅回复",
     "responseOnlyHint": "你的提示保持私密",
     "promptAndResponse": "提示和回复",
-    "promptAndResponseHint": "显示你的提问",
+    "promptAndResponseHint": "包含提示",
     "publicLink": "公开链接",
     "publicLinkHint": "任何拥有链接的人都可以阅读",
     "turnOffLink": "关闭链接",
@@ -22438,8 +22438,10 @@
     "unshareError": "无法停止分享。请重试。",
     "copyError": "无法复制链接。请从字段中复制。",
     "tryKortix": "试用 Kortix",
-    "goneTitle": "此回复已不再分享",
-    "goneHint": "分享者已关闭此链接。",
+    "goneTitle": "此链接已失效",
+    "goneHint": "它指向的回复已不再公开。",
+    "busyTitle": "此页面繁忙",
+    "busyHint": "请稍后刷新。",
     "fallbackTitle": "分享的回复",
     "stopNote": "该链接将失效。"
   }

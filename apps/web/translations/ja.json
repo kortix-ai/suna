@@ -22421,7 +22421,7 @@
     "responseOnly": "回答のみ",
     "responseOnlyHint": "プロンプトは非公開のままです",
     "promptAndResponse": "プロンプトと回答",
-    "promptAndResponseHint": "質問内容を表示します",
+    "promptAndResponseHint": "プロンプトを含みます",
     "publicLink": "公開リンク",
     "publicLinkHint": "リンクを知っている全員が閲覧できます",
     "turnOffLink": "リンクを無効にする",
@@ -22438,8 +22438,10 @@
     "unshareError": "共有を停止できませんでした。もう一度お試しください。",
     "copyError": "リンクをコピーできませんでした。フィールドからコピーしてください。",
     "tryKortix": "Kortix を試す",
-    "goneTitle": "この回答は共有されなくなりました",
-    "goneHint": "共有した人がリンクを無効にしました。",
+    "goneTitle": "このリンクは無効になりました",
+    "goneHint": "リンク先の回答は公開されなくなりました。",
+    "busyTitle": "このページは混み合っています",
+    "busyHint": "しばらくしてから再読み込みしてください。",
     "fallbackTitle": "共有された回答",
     "stopNote": "リンクは機能しなくなります。"
   }

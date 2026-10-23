@@ -22421,7 +22421,7 @@
     "responseOnly": "Somente a resposta",
     "responseOnlyHint": "Seu prompt continua privado",
     "promptAndResponse": "Prompt e resposta",
-    "promptAndResponseHint": "Mostra o que você perguntou",
+    "promptAndResponseHint": "Inclui o prompt",
     "publicLink": "Link público",
     "publicLinkHint": "Qualquer pessoa com o link pode ler",
     "turnOffLink": "Desativar link",
@@ -22438,8 +22438,10 @@
     "unshareError": "Não foi possível parar de compartilhar. Tente novamente.",
     "copyError": "Não foi possível copiar o link. Copie-o do campo.",
     "tryKortix": "Experimente o Kortix",
-    "goneTitle": "Esta resposta não está mais compartilhada",
-    "goneHint": "A pessoa que a compartilhou desativou o link.",
+    "goneTitle": "Este link não está mais ativo",
+    "goneHint": "A resposta para a qual ele apontava não é mais pública.",
+    "busyTitle": "Esta página está ocupada",
+    "busyHint": "Atualize em instantes.",
     "fallbackTitle": "Resposta compartilhada",
     "stopNote": "O link deixará de funcionar."
   }

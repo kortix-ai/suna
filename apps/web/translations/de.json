@@ -22421,7 +22421,7 @@
     "responseOnly": "Nur die Antwort",
     "responseOnlyHint": "Dein Prompt bleibt privat",
     "promptAndResponse": "Prompt und Antwort",
-    "promptAndResponseHint": "Zeigt, was du gefragt hast",
+    "promptAndResponseHint": "Enthält den Prompt",
     "publicLink": "Öffentlicher Link",
     "publicLinkHint": "Alle mit dem Link können sie lesen",
     "turnOffLink": "Link deaktivieren",
@@ -22438,8 +22438,10 @@
     "unshareError": "Das Teilen konnte nicht beendet werden. Versuche es erneut.",
     "copyError": "Der Link konnte nicht kopiert werden. Kopiere ihn aus dem Feld.",
     "tryKortix": "Kortix ausprobieren",
-    "goneTitle": "Diese Antwort wird nicht mehr geteilt",
-    "goneHint": "Die Person, die sie geteilt hat, hat den Link deaktiviert.",
+    "goneTitle": "Dieser Link ist nicht mehr aktiv",
+    "goneHint": "Die Antwort, auf die er verwies, ist nicht mehr öffentlich.",
+    "busyTitle": "Diese Seite ist ausgelastet",
+    "busyHint": "Lade sie gleich neu.",
     "fallbackTitle": "Geteilte Antwort",
     "stopNote": "Der Link funktioniert dann nicht mehr."
   }

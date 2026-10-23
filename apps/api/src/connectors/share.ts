@@ -466,9 +466,10 @@ export function mayManageSessionSharing(input: {
  *  1. `not_found` when the caller cannot READ the session under normal session
  *     visibility. A public link must never become a way to read what the
  *     visibility gate refused, and the answer does not reveal that it exists.
- *  2. `not_human` for an agent-principal or session-bound sandbox credential,
- *     even on its own session: a prompt-injected agent must not be able to
- *     publish its own answers. A human's PAT or API key acts as that human.
+ *  2. `not_human` for any credential `isHumanCaller` refuses (an agent or
+ *     sandbox token, a service account), even on its own session: a
+ *     prompt-injected agent must not be able to publish its own answers. A
+ *     human's PAT or API key acts as that human.
  *  3. `allow` for the session owner or a project manager
  *     (`project.members.manage`); any other reader gets `not_owner_or_manager`.
  *
@@ -487,7 +488,18 @@ export function mayPublishTurn(input: {
   return input.isOwner || input.isManager ? 'allow' : 'not_owner_or_manager';
 }
 
+/**
+ * "Human" for `mayPublishTurn`: a browser login (`jwt`) or a person's PAT/API
+ * key, with no Kortix session binding. Everything else is a machine: a service
+ * account bearer, any agent-session token (bound or not, governed or not), a
+ * sandbox token, a session-bound PAT, or no actor at all (fail closed).
+ */
+export function isHumanCaller(input: { credentialKind: string | undefined; boundSessionId: string | null }): boolean {
+  return input.boundSessionId === null && (input.credentialKind === 'jwt' || input.credentialKind === 'pat');
+}
+
 export const TURN_SHARE_AGENT_ERROR = 'An agent cannot share a response publicly';
+export const TURN_SHARE_AGENT_REVOKE_ERROR = 'An agent cannot turn off a public response link';
 export const TURN_SHARE_OWNER_OR_MANAGER_ERROR =
   'Only the session owner or a project manager can share a response publicly';
 
