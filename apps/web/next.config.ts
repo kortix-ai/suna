@@ -491,20 +491,20 @@ const nextConfig = (): NextConfig => ({
         protocol: 'https',
         hostname: 'ke4pydspzeg0nm0o.public.blob.vercel-storage.com',
       },
-      // The desktop shell historically launched at /dashboard, which never
-      // existed and fell through to the marketing 404. The authed home is
-      // /projects (see middleware). Redirect so already-shipped desktop builds
-      // (URL baked in at compile time) recover instead of 404ing on launch.
-      // {
-      //   source: '/dashboard',
-      //   destination: '/projects',
-      //   permanent: false,
-      // },
     ],
   },
 
   async redirects() {
     return [
+      // The desktop shell historically launched at /dashboard, which never
+      // existed. The signed-in home is /projects (see middleware). Desktop
+      // builds that baked the old URL in, and old links, land there instead
+      // of on the 404 page (KRTX-3232).
+      {
+        source: '/dashboard',
+        destination: '/projects',
+        permanent: false,
+      },
       // Capability tabs moved under /customize/ (2026-09-03). The old
       // top-level segments were shared in Slack, saved as bookmarks and baked
       // into agent transcripts, so every one keeps resolving. `agent` became
