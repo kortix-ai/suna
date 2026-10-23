@@ -122,6 +122,22 @@ describe('audited rate limits', () => {
     expect(auditRows).toEqual([]);
   });
 
+  test('the per-share shared-response limit defaults to 3000 per minute', async () => {
+    const { config } = await import('../config');
+    const configured = Reflect.get(config, 'KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN');
+    Reflect.set(config, 'KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN', undefined);
+    try {
+      const app = new Hono();
+      app.use('/v1/public/responses/:token', createPublicResponseRateLimitMiddleware());
+      app.get('/v1/public/responses/:token', (c) => c.json({ ok: true }));
+      const res = await app.request('/v1/public/responses/kps_33333333333343338333333333333333');
+      expect(res.status).toBe(200);
+      expect(res.headers.get('X-RateLimit-Limit')).toBe('3000');
+    } finally {
+      Reflect.set(config, 'KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN', configured);
+    }
+  });
+
   test('limits public check-email probes by client IP and writes an audit event on hit', async () => {
     const app = new Hono();
     app.use('/v1/access/check-email', createCheckEmailRateLimitMiddleware());

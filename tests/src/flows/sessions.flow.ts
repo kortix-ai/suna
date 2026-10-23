@@ -1461,8 +1461,6 @@ flow(
       'GET /v1/projects/:projectId/sessions/:sessionId/open-bundle',
       'DELETE /v1/projects/:projectId/sessions/:sessionId',
       'POST /v1/accounts/tokens',
-      'GET /v1/projects/:projectId/sessions/:sessionId',
-      'DELETE /v1/projects/:projectId/sessions/:sessionId',
     ],
   },
   async (ctx) => {
@@ -3567,6 +3565,8 @@ flow(
       'GET /v1/projects/:projectId/sessions/:sessionId/public-shares',
       'GET /v1/p/public-share/:token',
       'POST /v1/accounts/tokens',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'DELETE /v1/projects/:projectId/sessions/:sessionId',
     ],
   },
   async (ctx) => {

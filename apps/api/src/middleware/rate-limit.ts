@@ -207,8 +207,9 @@ function quietRateLimited(c: Context, result: RateLimitResult): Response {
 
 /**
  * Guards the anonymous `GET /v1/public/responses/:token`: one bucket per share
- * (`KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN`, 600), shared by every visitor of the
- * link, so it is a flood cap sized for a popular link. A token that names no
+ * (`KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN`, 3000), shared by every visitor of the
+ * link (the web page reads with no-store, so every view arrives), so it is a
+ * flood cap sized for a popular link. A token that names no
  * share falls back to the client IP BEFORE it can key a bucket, so unique
  * garbage tokens cannot grow the bucket Map without bound. No audit row (a
  * flood must not become a DB-write amplifier), and the token or share id is
@@ -219,7 +220,7 @@ export function createPublicResponseRateLimitMiddleware() {
     // No per-IP bucket: tokens carry 122 random bits, so enumeration is infeasible, and the IP seen here is the web tier's, shared by every visitor.
     const shareKey = shareIdFromPublicRef(c.req.param('token') ?? '') ?? `ip:${requestClientKey(c)}`;
     const share = publicResponseLimiter.check(shareKey, {
-      limit: positiveInt(config.KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN, 600),
+      limit: positiveInt(config.KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN, 3000),
       windowMs: 60_000,
     });
     if (!share.allowed) return quietRateLimited(c, share);

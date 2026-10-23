@@ -25,10 +25,11 @@ export const loadPublicResponse = cache(async (token: string): Promise<PublicRes
   try {
     const response = await getPublicResponse(token, {
       backendUrl: getEnv().BACKEND_URL,
-      // Every view of one link would otherwise reach the API, and the API
-      // rate-limits per share. A 15 s cache keeps a busy link up; the cost is
-      // that turning the link off reaches this page within 15 s.
-      next: { revalidate: 15 },
+      // No Next fetch cache: Next caches only 200 responses, so a revalidation
+      // that gets 410 never replaces the cached 200 and a revoked link would keep
+      // rendering its text forever. Every view reads the API (per-share limit
+      // 3000/min); `cache()` above still dedupes the page and its metadata per request.
+      cache: 'no-store',
     });
     return { kind: 'shared', response };
   } catch (error) {
