@@ -15,7 +15,7 @@
 
 import type { V1Row } from '@kortix/api-contract/session-log';
 import { projectSessions, sessionLogs } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 import { db } from '../../shared/db';
 import { errorSqlstate } from '../../shared/error-cause';
@@ -33,7 +33,8 @@ import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { resolveSessionOpencodeEndpoint } from '../session-lifecycle/runtime-client';
 import { logger } from '../../lib/logger';
 import { config } from '../../config';
-import { readCapturedSessionLog, writeSessionLogFromRead } from '../session-log-capture';
+import { mirrorStoredCap, readCapturedSessionLog, writeSessionLogFromRead } from '../session-log-capture';
+import { threadRoom } from './thread-memory';
 import {
   MIRROR_CAPTURE_LIMIT,
   childReadFailureLog,
@@ -44,6 +45,8 @@ import {
 import { isRuntimeUnavailableError } from './runtime-read-failure';
 
 const CAPTURE_TIMEOUT_MS = 8_000;
+/** `capture` answers this when the capture is too large for the API's event loop. */
+const IN_THREAD = Symbol('in-thread');
 
 export interface CaptureResult {
   captured: number;
@@ -64,6 +67,8 @@ export interface CaptureOptions {
   actorUserId?: string;
   /** Internal: this capture was queued by the one before it (`moreChildren`). */
   chain?: { step: number; startedAt: number };
+  /** Internal: this capture runs in its own thread (`captureInThread`) and never hands off again. */
+  inThread?: boolean;
 }
 
 export interface CaptureDeps {
@@ -92,6 +97,11 @@ export interface CaptureDeps {
      *  never saved before (`readChildTranscripts`). */
     moreChildren?: boolean;
   } | null>;
+  /**
+   * A capture too large for the API's event loop runs here instead (`captureInThread`): the same
+   * capture, from the box read on, on a Bun `Worker`'s own heap, event loop and DB pool.
+   */
+  inThread?: (sessionId: string, options: CaptureOptions | undefined, jsonBytes: number) => Promise<CaptureResult | null>;
 }
 
 /** Sub-agent transcripts with rows one capture saves at most. A finished
@@ -104,7 +114,54 @@ const MAX_CHILD_READS_PER_CAPTURE = 12;
 /** Captures one capture may queue in a row: a hard stop under `moreChildren`'s progress rule. */
 const MAX_CAPTURE_CHAIN = 8;
 
+/**
+ * `fromV1`, `toV1` and the schema parse are synchronous over the whole history. Measured on a
+ * 2026-10-23 Mac in the API process (many small tool parts): 50 MB stalls the event loop 273 ms,
+ * 100 MB 533 ms, 200 MB 1.1 s (`fromV1` 1.07 s, `toV1` 1.01 s). A capture whose stored log or box
+ * read is over `SESSION_LOG_RESTORE_MAX_BYTES` of JSON (stored: over `mirrorStoredCap` by
+ * `pg_column_size`) runs in a Worker instead: one at a time per process (a second waits), and only
+ * with room for it (`threadRoom`, the backfill's guard: RSS + 12x its JSON under 75 % of the limit).
+ * No room: one WARN, nothing stored, and the next turn end tries again.
+ */
+function captureInThread(sessionId: string, options: CaptureOptions | undefined, jsonBytes: number): Promise<CaptureResult | null> {
+  const run = threadQueue.then(() => runCaptureThread(sessionId, options, jsonBytes));
+  threadQueue = run.catch(() => null);
+  return run;
+}
+
+/** One capture thread at a time per process: a second waits for the first (`captureInThread`). */
+let threadQueue: Promise<unknown> = Promise.resolve();
+
+function runCaptureThread(sessionId: string, options: CaptureOptions | undefined, jsonBytes: number): Promise<CaptureResult | null> {
+  // The backfill's guard: no room stores nothing now, and the next turn end tries again.
+  const room = threadRoom(jsonBytes);
+  if (!room.fits) {
+    logger.warn('[session-log] capture deferred: no memory for its thread', { session_id: sessionId, json_bytes: jsonBytes, rss: room.rss, need: room.need, limit: room.limit });
+    return Promise.resolve(null);
+  }
+  const worker = new Worker(new URL('./session-transcript-capture-thread.ts', import.meta.url).href, { smol: true });
+  return new Promise<CaptureResult | null>((resolve) => {
+    worker.onmessage = (event: MessageEvent<CaptureResult | null>) => resolve(event.data);
+    worker.onerror = (event) => {
+      logger.warn(`[session-log] capture thread failed for session ${sessionId}`, { sessionId, error: event.message });
+      resolve(null);
+    };
+    // A thread that exits before it answers.
+    worker.addEventListener('close', () => resolve(null));
+    worker.postMessage({ sessionId, options: { ...options, inThread: true } });
+  }).finally(() => worker.terminate());
+}
+
+/** The session log's live records, by `pg_column_size` (read without detoasting). */
+async function storedLogBytes(sessionId: string): Promise<number> {
+  const [row] = await db.execute<{ bytes: string }>(sql`
+    SELECT coalesce(sum(pg_column_size(record)), 0)::bigint AS bytes
+      FROM kortix.session_log_messages WHERE session_id = ${sessionId} AND deleted_at IS NULL`);
+  return Number(row?.bytes ?? 0);
+}
+
 const liveCaptureDeps: CaptureDeps = {
+  inThread: captureInThread,
   async readMessages(sessionId, options) {
     const resolved = await resolveSessionOpencodeEndpoint(sessionId, options?.actorUserId);
     if (!resolved) return null;
@@ -174,6 +231,7 @@ const liveCaptureDeps: CaptureDeps = {
       pageOf(resolved.opencodeSessionId),
       options?.fullHistory === true,
       recoveryFor(partsById(previous)),
+      MIRROR_CAPTURE_LIMIT,
     );
 
     /*
@@ -200,6 +258,7 @@ const liveCaptureDeps: CaptureDeps = {
           pageOf(child),
           true,
           recoveryFor(partsById(stored.filter((row) => row.opencodeSessionId === child))),
+          MIRROR_CAPTURE_LIMIT,
         ),
     });
     // One line per capture. Expected states — a stopped box, gone transcripts —
@@ -268,7 +327,7 @@ async function captureSessionTranscript(
         sqlstate: errorSqlstate(err) ?? 'unknown',
       });
     } else {
-      console.warn(`[session-log] box capture failed for session ${sessionId}`, {
+      console.warn('[session-log] box capture failed for session %s', sessionId, {
         sessionId,
         error: detail,
         sqlstate: errorSqlstate(err) ?? 'unknown',
@@ -288,10 +347,23 @@ async function captureIntoSessionLog(
 ): Promise<CaptureResult | null> {
   const fullHistory = options?.scope !== 'tail';
   let moreChildren = false;
-  const capture = async (): Promise<CaptureResult | null> => {
+  // Too large for this event loop: the whole capture runs in a thread (`captureInThread`).
+  const handOff = !options?.inThread && deps.inThread ? deps.inThread : null;
+  // The JSON the thread will hold, for its memory guard. ponytail: estimates; stored JSON is ~2x its
+  // `pg_column_size`, and the thread holds the stored log and the box read, about the same size.
+  let threadJsonBytes = 0;
+  const capture = async (): Promise<CaptureResult | null | typeof IN_THREAD> => {
+    if (handOff) {
+      const stored = await storedLogBytes(sessionId);
+      if (stored > mirrorStoredCap()) return ((threadJsonBytes = stored * 4), IN_THREAD);
+    }
     const before = await readCapturedSessionLog(sessionId);
     const read = await deps.readMessages(sessionId, { fullHistory, projectId, actorUserId: options?.actorUserId, stored: before.rows });
     if (!read) return null;
+    if (handOff) {
+      const chars = JSON.stringify(read.payload).length + JSON.stringify(read.children ?? []).length;
+      if (chars > config.SESSION_LOG_RESTORE_MAX_BYTES) return ((threadJsonBytes = chars * 2), IN_THREAD);
+    }
     const rows = mirrorRowsFromOpencodePayload(read.payload);
     const completeRead = fullHistory && read.complete === true && read.headComplete === true;
     if (rows.length === 0 && !completeRead) return null;
@@ -300,9 +372,10 @@ async function captureIntoSessionLog(
     const outcome = await writeSessionLogFromRead(sessionId, {
       root: read.opencodeSessionId,
       rows: [...asRows(read.opencodeSessionId, rows), ...children.flatMap((child) => asRows(child.opencodeSessionId, mirrorRowsFromOpencodePayload(child.payload)))],
+      complete: completeRead,
       before,
     });
-    // Nothing stored (a failed, invalid or too-large write): a failure, so it is retried and a
+    // Nothing stored (a failed or invalid write): a failure, so it is retried and a
     // wake does not mark the session captured.
     if (outcome.outcome !== 'written' && outcome.outcome !== 'skipped') return null;
     // Progress: a sub-agent the log did not hold before was written.
@@ -310,7 +383,9 @@ async function captureIntoSessionLog(
     moreChildren = read.moreChildren === true && outcome.outcome === 'written' && children.some((child) => !held.has(child.opencodeSessionId));
     return { captured: rows.length, head_complete: completeRead };
   };
-  const result = fullHistory ? await retryTranscriptCapture(capture) : await capture();
+  const answer = fullHistory ? await retryTranscriptCapture(capture) : await capture();
+  if (answer === IN_THREAD) return handOff!(sessionId, options, threadJsonBytes);
+  const result = answer;
   const step = options?.chain?.step ?? 0;
   if (result && fullHistory && moreChildren && step < MAX_CAPTURE_CHAIN) {
     void captureJournallessSessionLog(sessionId, deps, { ...options, chain: { step: step + 1, startedAt: chainStartedAt } });

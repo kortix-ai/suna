@@ -1581,6 +1581,12 @@ export const projectSessionPublicShares = kortixSchema.table(
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    // `resource_type = 'response'`: one assistant response (one turn), keyed by
+    // the turn's user message id, published as an immutable text snapshot
+    // built server-side from the session log.
+    messageId: text('message_id'),
+    snapshot: jsonb('snapshot').$type<Record<string, unknown>>(),
+    snapshotAt: timestamp('snapshot_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -1588,6 +1594,10 @@ export const projectSessionPublicShares = kortixSchema.table(
     uniqueIndex('idx_project_session_public_shares_token_hash').on(table.tokenHash),
     index('idx_project_session_public_shares_session').on(table.sessionId),
     index('idx_project_session_public_shares_project').on(table.projectId),
+    // One live share per response: a re-share re-snapshots the same row (same URL).
+    uniqueIndex('idx_project_session_public_shares_live_response')
+      .on(table.sessionId, table.messageId)
+      .where(sql`${table.resourceType} = 'response' and ${table.revokedAt} is null`),
   ],
 );
 

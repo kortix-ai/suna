@@ -149,6 +149,10 @@ let handlerChain: Promise<void> = Promise.resolve();
 let handlersPending = 0;
 // Moves on every promote and demote: a failed onAcquire steps down only if no newer change came.
 let term = 0;
+// `bun --hot` re-evaluates this module but keeps globalThis. The last evaluation's
+// stop lives there, so a re-evaluated start first stops that election (its renew
+// loop, watchdog and lease client) and releases its lease, instead of running beside it.
+const hot = globalThis as typeof globalThis & { __kortixLeaderElectionStop?: () => Promise<void> };
 
 /** Run `fn` after every earlier handler call settled, in call order. */
 function serially(fn: () => Promise<void>): Promise<void> {
@@ -302,6 +306,12 @@ export function startLeaderElection(
   h: LeaderElectionHandlers,
   opts: { eligible?: boolean } = {},
 ): void {
+  const previous = hot.__kortixLeaderElectionStop;
+  hot.__kortixLeaderElectionStop = stopLeaderElection;
+  if (previous && previous !== stopLeaderElection) {
+    void previous().catch(() => {}).then(() => startLeaderElection(h, opts));
+    return;
+  }
   if (running) return;
   // A pod that runs no singleton workers must never hold the lease (see
   // runsSingletonWorkers): joining the election would let it become a

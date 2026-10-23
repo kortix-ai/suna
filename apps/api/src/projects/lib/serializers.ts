@@ -138,6 +138,8 @@ export function serializeSession(
     ownerType?: 'user' | 'service_account' | 'unknown' | null;
     /** Whether the viewer may read/open the session, independent of inventory visibility. */
     canAccess?: boolean;
+    /** `mayPublishTurn` for the viewer (`turnPublishVerdict`). Single-session reads only; omitted elsewhere. */
+    canPublishResponse?: boolean;
     /** Exact state of the backing runtime resource, if one still exists. */
     runtimeStatus?: 'provisioning' | 'active' | 'stopped' | 'error' | 'archived' | null;
     /** Server-managed soft-deletion audit fields. */
@@ -254,6 +256,7 @@ export function serializeSession(
       ownerIsMachine: ctx?.ownerIsMachine ?? !row.createdBy,
     }),
     can_manage_lifecycle: isOwner || Boolean(ctx?.canManageProject),
+    ...(ctx?.canPublishResponse !== undefined ? { can_publish_response: ctx.canPublishResponse } : {}),
     can_access: canAccess,
     runtime_status: ctx?.runtimeStatus ?? null,
     deleted_at: ctx?.deletedAt ?? null,
@@ -328,8 +331,9 @@ export function serializeProject(
     // `llm_gateway` graduated on 2026-10-20 and stays `true` too: mobile builds
     // and SDKs from before then read false as the removed native model mode.
     // `session_log` graduated on 2026-10-22 and stays `true` too: older SDKs, CLIs
-    // and mobile builds read false as "serve the v1 transcript".
-    experimental: { ...resolveFeatureFlags(row.metadata), apps: true, llm_gateway: true, session_log: true },
+    // and mobile builds read false as "serve the v1 transcript". `pi_harness`
+    // graduated on 2026-10-23: every new session runs pi.
+    experimental: { ...resolveFeatureFlags(row.metadata), apps: true, llm_gateway: true, session_log: true, pi_harness: true },
     experimental_features: buildFeatureFlagCatalog(row.metadata),
     // Per-project sandbox-provider override (Customize → Settings). `default_sandbox_provider`
     // is the current pin (null = follow the platform default/distribution);

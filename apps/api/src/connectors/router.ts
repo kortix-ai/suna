@@ -20,6 +20,7 @@ import type { OpenAPIHono } from '@hono/zod-openapi';
 import { makeOpenApiApp } from '../openapi';
 import type { ConnectorRouterDeps } from './router-contract';
 import { registerConnectorAdminRoutes } from './routes/admin';
+import { registerAppFormRoutes } from './routes/app-form';
 import {
   registerConnectCatalogueRoutes,
   registerDiscoverDetailRoutes,
@@ -62,6 +63,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   registerConnectRoutes(app, deps);
   registerProjectPolicyRoutes(app, deps);
   registerPipedreamWebhookRoutes(app, deps);
+  registerAppFormRoutes(app, deps);
 
   return app;
 }

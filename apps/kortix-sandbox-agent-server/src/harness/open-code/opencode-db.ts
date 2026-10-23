@@ -53,9 +53,14 @@
 import { Database } from 'bun:sqlite'
 import { logger } from '@/lib/log/logger'
 
-/** Tiny retry for `SQLITE_BUSY` past `busy_timeout` — a checkpoint window. */
+/**
+ * Tiny retry for `SQLITE_BUSY` past `busy_timeout` — a checkpoint window.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export const DB_BUSY_RETRIES = 3
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export const DB_BUSY_RETRY_DELAY_MS = 15
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export const DB_BUSY_TIMEOUT_MS = 2_000
 
 /**
@@ -66,9 +71,11 @@ export const DB_BUSY_TIMEOUT_MS = 2_000
  * `isBlockingTurnRequest`). `opencode-db.test.ts` asserts the pin in
  * `packages/shared/src/runtime-versions.json` is still covered here, so a bump
  * that outruns this list fails a test instead of a production read.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export const SQLITE_READER_SUPPORTED_MINORS = ['1.18'] as const
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function isSupportedOpencodeVersion(version: string | null | undefined): boolean {
   if (!version) return false
   const m = /^(\d+)\.(\d+)\./.exec(version.trim())
@@ -76,6 +83,7 @@ export function isSupportedOpencodeVersion(version: string | null | undefined): 
   return (SQLITE_READER_SUPPORTED_MINORS as readonly string[]).includes(`${m[1]}.${m[2]}`)
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface SessionRow {
   id: string
   title: string
@@ -90,6 +98,7 @@ export interface SessionRow {
   model: string | null
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface MessageRow {
   id: string
   session_id: string
@@ -98,6 +107,7 @@ export interface MessageRow {
   data: string
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface PartRow {
   id: string
   message_id: string
@@ -107,6 +117,7 @@ export interface PartRow {
   data: string
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface StoreSessionRow {
   id: string
   title: string
@@ -115,6 +126,7 @@ export interface StoreSessionRow {
   time_created: number
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface TodoRow {
   session_id: string
   content: string
@@ -123,6 +135,7 @@ export interface TodoRow {
   position: number
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface StoreSnapshot {
   sessions: StoreSessionRow[]
   /** Ordered by `(time_created, id)`. */
@@ -132,6 +145,7 @@ export interface StoreSnapshot {
   todos: TodoRow[]
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface MessagePage {
   /** Newest-last, ordered by `(time_created, id)` exactly as OpenCode orders. */
   messages: Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }>
@@ -141,6 +155,7 @@ export interface MessagePage {
   hasMore: boolean
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export type MessagePageQuery = {
   sessionId: string
   limit: number
@@ -176,6 +191,7 @@ function parseJsonRow(data: string): Record<string, unknown> | null {
   }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface OpencodeDbProbe {
   supported: boolean
   /** Why not, when `supported` is false — logged once, surfaced in `/kortix/diag`. */
@@ -189,6 +205,7 @@ export interface OpencodeDbProbe {
  * One instance per daemon. The connection is opened on first use and kept: the
  * open costs ~0.3 ms but the page cache it warms is what makes a repeat
  * transcript read 2 ms instead of 10.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export class OpencodeDb {
   private db: Database | null = null

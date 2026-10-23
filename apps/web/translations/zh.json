@@ -1247,10 +1247,6 @@
           "name": "共享提供商密钥",
           "description": "成员连接自己的 ChatGPT 订阅和提供商密钥，按需共享，并为每个会话选择要使用的连接。"
         },
-        "pi_harness": {
-          "name": "Pi 运行框架（沙箱内）",
-          "description": "在会话沙箱内使用 Pi 运行框架而不是 OpenCode 来运行会话。关闭时，清单中的 `runtime: pi` 仍会选择 Pi。"
-        },
         "genui": {
           "name": "生成式 UI",
           "description": "智能体可以用卡片、对比、图表、地图和标签页来回答，而不是输出长篇文字。"
@@ -1294,6 +1290,10 @@
         "goals": {
           "name": "目标",
           "description": "给代理一个目标，它会一直负责，直到独立检查确认结果。它会规划、执行、等待、跟进相关人员，并把状态保存在“文件”中的 Goals 文件夹里。需要开启卷和提醒。"
+        },
+        "workspace_volume": {
+          "name": "工作区卷",
+          "description": "将每个新会话的 /workspace 保存在独立的卷上，因此已停止的沙盒可以删除，下次打开时会用相同的文件和对话启动新沙盒。由 Kortix 按项目启用。"
         }
       }
     },
@@ -1927,8 +1927,8 @@
     }
   },
   "sessionDelete": {
-    "description": "删除 <name>{label}</name> 并移除其沙盒。你可以在 {days} 天内从“最近删除”中恢复它。之后，其消息和文件将被删除。分支会保留。",
-    "bulkDescription": "删除每个选中的会话并移除其沙盒。你可以在 {days} 天内从“最近删除”中恢复每个会话。之后，其消息和文件将被删除。分支会保留。",
+    "description": "删除 <name>{label}</name> 并移除其沙盒。你可以在 {days} 天内从“最近删除”中恢复它。之后，其消息、文件和分支将被删除。",
+    "bulkDescription": "删除每个选中的会话并移除其沙盒。你可以在 {days} 天内从“最近删除”中恢复每个会话。之后，其消息、文件和分支将被删除。",
     "restoring": "正在恢复会话…",
     "undo": "撤销",
     "restored": "会话已恢复",
@@ -18174,6 +18174,7 @@
       "texteaca91e7a784": "已受邀加入此项目",
       "texteacdf25c58f8": "内置角色——所有计划均提供",
       "textead07c84baac": "更新日志",
+      "text19e6841a618f": "Kortix 每周上线的内容，直接来自我们的生产版本。",
       "texteae96e02bbc4": "图标",
       "texteaef0b00e1d6": "下载后查看",
       "texteaf72e534b81": "仅按工具名称设置的规则只能询问“agent 可以发送 email 吗？”——这很少是真正的问题。条件会定位调用中的某个值，并使用 glob 或正则表达式匹配；因此，规则可以允许发送到你的域名，同时阻止其他所有地址。列表参数只有在每个条目都通过时才会通过，因此只要有一个不在列表中的收件人，调用就会被暂停。规则无法判断的内容会向更少权限方向解析，绝不会向更多权限方向解析。",
@@ -20333,6 +20334,14 @@
       "texta0990a4a86dc": "白标:运行在 Platinum.dev 算力上的你的 AI 产品",
       "text6189ab6313de": "Fork Kortix,打上你的品牌,作为你自己的产品出售。许可证免费。唯一的要求是你的算力运行在 Platinum.dev 上。",
       "text7971dd752669": "提醒",
+      "textf952fee736ed": "版本历史",
+      "text68b8fd794db4": "已上线内容",
+      "textb8471beb7d98": "{count, plural, other {另有 # 项新功能}}",
+      "text48198dbb8f5e": "{count, plural, other {# 项改进}}",
+      "text1d511e2b26ca": "{count, plural, other {# 项修复}}",
+      "text1baa58fb1774": "查看全部更改",
+      "textc3eb9e6f2b69": "改进",
+      "text59e5965495d9": "修复",
       "text724b09397472": "正在将 {name} 添加到 {project}",
       "text1e007c47254d": "它会在后台完成设置，完成后你会收到通知。",
       "text57f57edb6f16": "变更请求 #{number} 已可审阅。",
@@ -22418,5 +22427,61 @@
   "agentEditor": {
     "manage": "管理",
     "overviewTitle": "概览"
+  },
+  "connectAppForm": {
+    "title": "连接 Shopify",
+    "description": "Kortix 通过您组织中的 Shopify 应用访问您的商店。只需输入一次凭据。",
+    "loading": "正在加载表单…",
+    "stepsTitle": "在 Shopify 中创建应用",
+    "step1": "打开 <link>Shopify Dev Dashboard</link>，在拥有您商店的组织中创建应用。",
+    "step2": "在应用版本中选择代理所需的 Admin API 权限范围，然后发布该版本。",
+    "step3": "将应用安装到您的商店。",
+    "step4": "从应用的设置中复制 Client ID 和 Client secret。",
+    "sameOrganization": "应用和商店必须属于同一个 Shopify 组织。",
+    "storeLabel": "商店",
+    "clientIdLabel": "Client ID",
+    "clientSecretLabel": "Client secret",
+    "submit": "连接 {app}",
+    "connecting": "正在连接…",
+    "missingFields": "请输入商店、Client ID 和 Client secret。",
+    "failed": "无法连接。请检查网络连接后重试。",
+    "secretNote": "Kortix 将密钥发送给负责连接的 Composio。Kortix 不保留副本。",
+    "connectedTitle": "{app} 已连接",
+    "connectedDescription": "Kortix 已可访问 {store}。您可以关闭此窗口。",
+    "closeWindow": "您可以关闭此窗口。",
+    "expiredTitle": "此链接已过期",
+    "invalidTitle": "此链接无效",
+    "staleTitle": "此链接已被替换",
+    "startAgain": "请在 Kortix 中重新开始连接。"
+  },
+  "turnShare": {
+    "shareResponse": "分享回复",
+    "whatToInclude": "包含内容",
+    "responseOnly": "仅回复",
+    "responseOnlyHint": "你的提示保持私密",
+    "promptAndResponse": "提示和回复",
+    "promptAndResponseHint": "包含提示",
+    "publicLink": "公开链接",
+    "publicLinkHint": "任何拥有链接的人都可以阅读",
+    "turnOffLink": "关闭链接",
+    "cancel": "取消",
+    "copyLink": "复制链接",
+    "copied": "已复制",
+    "linkCopied": "链接已复制",
+    "linkUpdated": "链接已更新",
+    "responseShared": "回复已分享",
+    "stale": "分享后回复已更改",
+    "updateLink": "更新链接",
+    "loadError": "无法加载分享设置。请重试。",
+    "shareError": "无法分享回复。请重试。",
+    "unshareError": "无法停止分享。请重试。",
+    "copyError": "无法复制链接。请从字段中复制。",
+    "tryKortix": "试用 Kortix",
+    "goneTitle": "此链接已失效",
+    "goneHint": "它指向的回复已不再公开。",
+    "busyTitle": "此页面繁忙",
+    "busyHint": "请稍后刷新。",
+    "fallbackTitle": "分享的回复",
+    "stopNote": "该链接将失效。"
   }
 }

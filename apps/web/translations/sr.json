@@ -1247,10 +1247,6 @@
           "name": "Дељени тајни кључеви провајдера",
           "description": "Чланови повезују своје ChatGPT претплате и кључеве провајдера, деле их по потреби и бирају које користи свака сесија."
         },
-        "pi_harness": {
-          "name": "Pi окружење (у сандбоксу)",
-          "description": "Покрећите сесије помоћу Pi окружења унутар сандбокса сесије уместо OpenCode-а. Када је искључено, `runtime: pi` у манифесту и даље бира Pi."
-        },
         "genui": {
           "name": "Генеративни UI",
           "description": "Агент може да одговара картицама, поређењима, графиконима, мапама и језичцима уместо дугих текстова."
@@ -1294,6 +1290,10 @@
         "goals": {
           "name": "Циљеви",
           "description": "Дајте агенту циљ за који је одговоран док независна провера не потврди исход. Планира, ради, чека, подсећа људе и чува своје стање у фасцикли Goals у Фајловима. Захтева укључене Volumene и Подсетнике."
+        },
+        "workspace_volume": {
+          "name": "Workspace volumen",
+          "description": "Čuva /workspace svake nove sesije na zasebnom volumenu, pa se zaustavljen sandbox može obrisati, a sledeći se pokreće sa istim fajlovima i razgovorom. Kortix ga uključuje po projektu."
         }
       }
     },
@@ -1927,8 +1927,8 @@
     }
   },
   "sessionDelete": {
-    "description": "Брише <name>{label}</name> и уклања њен сандбок. Можете да је вратите из „Недавно обрисане“ у року од {days} дана. Након тога, њене поруке и датотеке се бришу. Грана се задржава.",
-    "bulkDescription": "Брише сваку изабрану сесију и уклања њен сандбок. Сваку можете да вратите из „Недавно обрисане“ у року од {days} дана. Након тога, њене поруке и датотеке се бришу. Грана се задржава.",
+    "description": "Брише <name>{label}</name> и уклања њен сандбок. Можете да је вратите из „Недавно обрисане“ у року од {days} дана. Након тога, њене поруке, датотеке и грана се бришу.",
+    "bulkDescription": "Брише сваку изабрану сесију и уклања њен сандбок. Сваку можете да вратите из „Недавно обрисане“ у року од {days} дана. Након тога, њене поруке, датотеке и грана се бришу.",
     "restoring": "Враћање сесије…",
     "undo": "Опозови",
     "restored": "Сесија је враћена",
@@ -18174,6 +18174,7 @@
       "texteaca91e7a784": "Позвани сте у овај пројекат",
       "texteacdf25c58f8": "Уграђене улоге — на сваком плану",
       "textead07c84baac": "Дневник промена",
+      "text19e6841a618f": "Шта је Kortix објавио сваке недеље, директно из наших продукцијских издања.",
       "texteae96e02bbc4": "Иконе",
       "texteaef0b00e1d6": "Преузмите да бисте је видели",
       "texteaf72e534b81": "Правило по називу алатке може само да пита „сме ли агент да пошаље email?“ — што ретко јесте право питање. Услов показује на вредност унутар позива и пореди је са glob-ом или regular expression-ом, па правило може дозволити слање на ваш домен и зауставити све остало. Аргумент листе пролази само када свака ставка прође, па је један прималац ван листе довољан да задржи позив. Све што правило не може да одлучи разрешава се ка мањем приступу, никада ка већем.",
@@ -20333,6 +20334,14 @@
       "texta0990a4a86dc": "Вајт-лејбл: ваш AI производ на Platinum.dev compute-у",
       "text6189ab6313de": "Форкујте Kortix, ставите свој бренд и продајте га као свој производ. Лиценца је бесплатна. Једини услов: ваш compute ради на Platinum.dev-у.",
       "text7971dd752669": "Подсетници",
+      "textf952fee736ed": "Историја издања",
+      "text68b8fd794db4": "Шта смо објавили",
+      "textb8471beb7d98": "{count, plural, one {још # нова функција} few {још # нове функције} other {још # нових функција}}",
+      "text48198dbb8f5e": "{count, plural, one {# побољшање} few {# побољшања} other {# побољшања}}",
+      "text1d511e2b26ca": "{count, plural, one {# исправка} few {# исправке} other {# исправки}}",
+      "text1baa58fb1774": "Погледај све промене",
+      "textc3eb9e6f2b69": "Побољшања",
+      "text59e5965495d9": "Исправке",
       "text724b09397472": "Dodavanje {name} u {project}",
       "text1e007c47254d": "Podešavanje radi u pozadini. Dobićete obaveštenje kada bude gotovo.",
       "text57f57edb6f16": "Zahtev za izmenu #{number} je spreman za pregled.",
@@ -22418,5 +22427,61 @@
   "agentEditor": {
     "manage": "Upravljaj",
     "overviewTitle": "Pregled"
+  },
+  "connectAppForm": {
+    "title": "Повежите Shopify",
+    "description": "Kortix приступа вашој продавници преко Shopify апликације у вашој организацији. Унесите њене податке за пријаву једном.",
+    "loading": "Учитавање обрасца…",
+    "stepsTitle": "Направите апликацију у Shopify-ју",
+    "step1": "Отворите <link>Shopify Dev Dashboard</link> и направите апликацију у организацији која поседује вашу продавницу.",
+    "step2": "У верзији апликације изаберите Admin API опсеге који су потребни вашим агентима, па објавите верзију.",
+    "step3": "Инсталирајте апликацију у своју продавницу.",
+    "step4": "Копирајте Client ID и Client secret из подешавања апликације.",
+    "sameOrganization": "Апликација и продавница морају бити у истој Shopify организацији.",
+    "storeLabel": "Продавница",
+    "clientIdLabel": "Client ID",
+    "clientSecretLabel": "Client secret",
+    "submit": "Повежите {app}",
+    "connecting": "Повезивање…",
+    "missingFields": "Унесите продавницу, Client ID и Client secret.",
+    "failed": "Повезивање није успело. Проверите везу и покушајте поново.",
+    "secretNote": "Kortix шаље тајну Composio-у, који одржава везу. Kortix не чува копију.",
+    "connectedTitle": "{app} је повезан",
+    "connectedDescription": "Kortix приступа продавници {store}. Можете затворити овај прозор.",
+    "closeWindow": "Можете затворити овај прозор.",
+    "expiredTitle": "Овај линк је истекао",
+    "invalidTitle": "Овај линк не ради",
+    "staleTitle": "Овај линк је замењен",
+    "startAgain": "Поново покрените повезивање у Kortix-у."
+  },
+  "turnShare": {
+    "shareResponse": "Podeli odgovor",
+    "whatToInclude": "Šta uključiti",
+    "responseOnly": "Samo odgovor",
+    "responseOnlyHint": "Vaš prompt ostaje privatan",
+    "promptAndResponse": "Prompt i odgovor",
+    "promptAndResponseHint": "Uključuje prompt",
+    "publicLink": "Javni link",
+    "publicLinkHint": "Svako ko ima link može da ga pročita",
+    "turnOffLink": "Isključi link",
+    "cancel": "Otkaži",
+    "copyLink": "Kopiraj link",
+    "copied": "Kopirano",
+    "linkCopied": "Link je kopiran",
+    "linkUpdated": "Link je ažuriran",
+    "responseShared": "Odgovor je podeljen",
+    "stale": "Odgovor se promenio otkad ste ga podelili",
+    "updateLink": "Ažuriraj link",
+    "loadError": "Podešavanja deljenja nije moguće učitati. Pokušajte ponovo.",
+    "shareError": "Odgovor nije moguće podeliti. Pokušajte ponovo.",
+    "unshareError": "Deljenje nije moguće prekinuti. Pokušajte ponovo.",
+    "copyError": "Link nije moguće kopirati. Kopirajte ga iz polja.",
+    "tryKortix": "Isprobajte Kortix",
+    "goneTitle": "Ovaj link više nije aktivan",
+    "goneHint": "Odgovor na koji je upućivao više nije javan.",
+    "busyTitle": "Ova stranica je zauzeta",
+    "busyHint": "Osvežite je za trenutak.",
+    "fallbackTitle": "Podeljeni odgovor",
+    "stopNote": "Link će prestati da radi."
   }
 }

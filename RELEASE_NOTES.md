@@ -1,45 +1,36 @@
-Project transfer, embedded sessions, directory-guest invites and security updates
+Every new session runs pi, shareable responses, and a weekly changelog
 
 ### New
-- **Move projects between accounts.** A project can be transferred to another organization or account. (#9918)
-- **Default reasoning effort per project.** Set it once in project settings. (#9935)
-- **Run a session on your own machine** with a ChatGPT subscription, through kortixd. (#9754)
-- **Audit activity.** See who was active in a workspace and how often, in the API, CLI and SDK. (#10604)
-- **Goals** page, a session Goal button and goal health, behind the `goals` flag. (#10600)
-- **Embedded sessions.** Public transcript sharing is removed; existing transcript share links are revoked. Embed the real session page instead. (#10008)
+- **Every new session runs pi.** The `pi_harness` flag and `runtime: opencode` no longer select OpenCode. A session that already runs OpenCode keeps it. OpenCode is deprecated. (#10786)
+- **Share one response.** **Share response**, beside **Copy response**, publishes one finished assistant response through a public link: the response only, or the prompt and the response. Turning the link off ends anonymous access. (#10816)
+- **Weekly changelog.** `/changelog` groups what went live in production by week, and each week has its own page with every change. (#10823)
+- **Agent marks.** Every agent has a pixel mark on Agents cards and in agent pickers. (#10826)
+- **Shopify with your own app.** **Connect** on Shopify opens a Kortix form that takes the store and the Client ID and secret of your Shopify Dev Dashboard app. Shopify no longer issues the custom app tokens the old flow asked for. (#10825)
 
 ### Improved
-- **Billing.** Usage is metered on every plan; only charging is gated. (#9929)
-- **Model routing.** A project's Routing chain now covers every model. (#8742)
-- **Model limits.** Every model reports its real context window and output limit, including custom endpoints; Codex models get their 272k window. A custom-endpoint model reads images and reasons when the endpoint supports it. (#10757, #10768)
-- **Session history.** A new session reads only the session log, and an old session being converted opens its history, not an empty log. (#10722, #10728)
-- **Agents and connectors.** A cleaner agent page and connector modal, catalogue favicons that recover from broken images, and one design for role dialogs. (#10490, #9924, #10702, #10382)
-- **Mobile.** Simpler session sheets and tool surfaces. (#10229)
-- **Keep-alive.** An open page keeps its sandbox awake for the idle window, not 2 hours. (#10026)
+- **Compaction.** pi compacts early enough to leave room for the model's full answer, still compacts after it retries a failed model call, and honours a project's `compaction.reserveTokens` again; the context meter counts reasoning tokens once. (#10835, #10845)
+- **Session history.** Messages that only the old transcript store held move into the session log; the daemon keeps every batch the API refuses and sends it again; capture waits for memory and runs one session at a time; the usage panel counts the whole thread. (#10827, #10837, #10829, #10793, #10791, #10783)
+- **Deleted sessions are fully gone after 30 days**: the conversation, every copy (model requests and responses, prompt commands, questions, notifications, share links), the stored files and the session's branch. Sessions purged before this release lose their remaining copies too. (#10831)
+- **Branch cleanup.** A session branch that fails to delete no longer stalls the sweep. (#10833)
+- **Status page.** Upstream capacity errors that a fallback model absorbs no longer open an incident. (#10795)
+- **Parked sandboxes.** An open tab stops polling the transcript of a sandbox that is parked. (#10820)
 
 ### Fixed
-- **Invites on self-hosted instances without email.** A person your identity provider adds through SCIM can join even when their address is outside the provider's domain. The invite page offers **Continue with single sign-on**, says to ask an admin when single sign-on is not set up, and **Resend** lets that person accept. (#10707)
-- **Routine wakes are silent:** no waking notice, boot pill or boot screen. (#10716)
-- **Reload keeps your project**, and a sidebar click no longer opens a session's hover card. (#10720, #10721)
-- **Files.** Project owners can edit and commit repository text. (#10517)
-- **Projects.** Rename a project from the switcher. (#10523)
-- **Panels.** ⌘I brings back the panel it hid, also from inside the Browser preview. (#10725)
-- **CLI.** Remote login without a callback (its poll and approve calls get their own rate limit), service-account keys, and `connectors call` resolves the project like `connectors ls`. (#10483, #10779, #10235)
-- **Sessions.** Compacting a busy session no longer shows internal diagnostics; a US-region session boots where its drives live; a daemon restart drops its env-sync trust. (#10442, #10348, #10014)
-- **Apps.** Existing Apps move from `ghcr.io/get-convex` to `ghcr.io/convex` images. (#10353)
-- **Connectors.** A connector failure line is split in linear time. (#10736)
-- **Desktop.** The Linux AppImage builds again with electron-builder 26. (#10743)
+- **pi permissions.** A path rule holds for `./`, `..`, `@` and absolute paths. (#10787)
+- **Web addresses.** `/dashboard` opens projects; `/login` and `/signup` open sign-in; a trailing slash or another letter case redirects to the page; an unknown path answers 404 and a malformed one 400; `/privacy`, `/terms`, `/imprint` and `/subprocessors` open the legal pages; crawlers can fetch the static assets pages need; each localized page declares its locale; the Apple app-site-association file is served as JSON; the docs touch icon loads. (#10812, #10815, #10814, #10807, #10810, #10818, #10806, #10805, #10817, #10804, #10803, #10808)
+- **Sandbox versions.** The version feed caches one GitHub read, never names a prerelease as the latest stable version, and still answers when GitHub rejects the token. (#10809, #10811)
+- **Marketplace.** Paging never skips or repeats an item. (#10802)
+- **Scoped tokens** resolve the current project. (#10819)
+- **Files.** A download with a range the file cannot satisfy answers 416 with the file size, not "storage unavailable". (#10790)
+- **Agent page.** The dev-only layout switcher is gone. (#10813)
 
 ### Security
-- Dependency updates for the advisories of 2026-10-22 (Next 16.4.2, DOMPurify, Sentry, undici, Astro, Electron 42, Vitest 4, KaTeX, Caddy, Hono and others). (#10738, #10739, #10732, #10726)
-- Closed a path traversal in the presentations server. (#10729)
-- The repo-wide deploy role no longer holds prod grants; prod uses its own role. (#9329)
-- The gateway sends browser security headers, and its public health check no longer shows operational detail. (#10750, #10749)
-- Public access requests are rate-limited, device-login polling denials are uniform, and SCIM and git spec routes declare their auth. (#10753, #10773, #10755, #10754)
-- The sandbox web proxy guards egress on every port, and the web app restricts browser feature permissions. (#10752, #10751)
-- Pentest hardening: the marketplace catalog is cached and rate-limited, request bodies are capped at 64 MiB, every 401 names its auth scheme, OAuth client registration honours the requested client authentication, tighter CSP, signed release artifacts, and storage buckets no longer list their objects to signed-out callers. (#10748)
-- Session search rejects NUL bytes. (#10775)
-- A private security reporting policy. (#10756)
+- Unexpected server errors no longer return internal details to the client. (#10785)
+- Shared caches never store an authenticated API response. (#10828)
+- The API and gateway serve `security.txt`, `robots.txt` and `sitemap.xml`. (#10824)
+- Malformed tunnel IDs, fractional gateway day windows and invalid billing pagination are refused. (#10800, #10784, #10781)
+- CodeQL and the security scan run on every push to production. (#10796)
 
 ### Internal
-- Test, CI, scanner and runbook upkeep (#10713, #10723, #10727, #10731, #10737, #10740, #10741, #10744, #10747, #10758, #10759, #10761, #10762, #10763, #10765, #10767, #10769, #10770, #10772, #10760, #10776, #7956, #10689, dependency bumps).
+- Stateless sandboxes behind an operator-only flag that is off everywhere. (#10846)
+- Session-log groundwork for removing the old transcript tables, CLI installation-proof refactor, local hot-reload connection leak, quieter config-release logs, log lines that keep ids out of format strings, release and incident runbooks, and test upkeep. (#10782, #10822, #10821, #10839, #10847, #10792, #10794, #10798, #10830, #10832, #10834, #10836, #10838, #10840, #10849, #10851)

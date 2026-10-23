@@ -153,6 +153,7 @@ SessionLogJournalSeqConflictSchema = {
   rev: number(int)(min0)
   thread_id: string(min1)
   seq: number(int)
+  seq_max: number(int)
 }
 
 SessionLogManifestSchema = {

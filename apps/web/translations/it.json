@@ -1247,10 +1247,6 @@
           "name": "Segreti del provider condivisi",
           "description": "I membri collegano i propri abbonamenti ChatGPT e chiavi dei provider, li condividono quando serve e scelgono quali usa ogni sessione."
         },
-        "pi_harness": {
-          "name": "Harness Pi (nella sandbox)",
-          "description": "Esegue le sessioni con l'harness Pi all'interno della sandbox della sessione invece di OpenCode. Disattivato, `runtime: pi` nel manifest seleziona comunque Pi."
-        },
         "genui": {
           "name": "UI generativa",
           "description": "L'agente può rispondere con schede, confronti, grafici, mappe e tab invece di testi lunghi."
@@ -1294,6 +1290,10 @@
         "goals": {
           "name": "Obiettivi",
           "description": "Assegna a un agente un obiettivo di cui resta responsabile finché un controllo indipendente non conferma il risultato. Pianifica, lavora, attende, sollecita le persone e conserva il suo stato in una cartella Goals in File. Richiede Volumi e Promemoria attivi."
+        },
+        "workspace_volume": {
+          "name": "Volume del workspace",
+          "description": "Mantiene la /workspace di ogni nuova sessione su un volume dedicato, così una sandbox ferma può essere eliminata e la successiva si avvia con gli stessi file e la stessa conversazione. Kortix lo attiva per progetto."
         }
       }
     },
@@ -1927,8 +1927,8 @@
     }
   },
   "sessionDelete": {
-    "description": "Elimina <name>{label}</name> e rimuove la sua sandbox. Puoi ripristinarla da Eliminate di recente per {days} giorni. Dopo, i suoi messaggi e file vengono eliminati. Il suo branch viene mantenuto.",
-    "bulkDescription": "Elimina ogni sessione selezionata e rimuove la sua sandbox. Puoi ripristinarle da Eliminate di recente per {days} giorni. Dopo, i suoi messaggi e file vengono eliminati. Il suo branch viene mantenuto.",
+    "description": "Elimina <name>{label}</name> e rimuove la sua sandbox. Puoi ripristinarla da Eliminate di recente per {days} giorni. Dopo, i suoi messaggi, file e branch vengono eliminati.",
+    "bulkDescription": "Elimina ogni sessione selezionata e rimuove la sua sandbox. Puoi ripristinarle da Eliminate di recente per {days} giorni. Dopo, i suoi messaggi, file e branch vengono eliminati.",
     "restoring": "Ripristino della sessione…",
     "undo": "Annulla",
     "restored": "Sessione ripristinata",
@@ -18174,6 +18174,7 @@
       "texteaca91e7a784": "Invitato a questo progetto",
       "texteacdf25c58f8": "Ruoli integrati, per ogni piano",
       "textead07c84baac": "Registro delle modifiche",
+      "text19e6841a618f": "Cosa è stato rilasciato in Kortix ogni settimana, direttamente dalle nostre release di produzione.",
       "texteae96e02bbc4": "Icone",
       "texteaef0b00e1d6": "Scarica per visualizzare",
       "texteaf72e534b81": "Una regola basata sul nome dello strumento può chiedere solo “l’agente può inviare email?” — che raramente è la domanda giusta. Una condizione individua un valore nella chiamata e lo confronta con un glob o una regular expression, così una regola può consentire l’invio al tuo dominio e fermare tutto il resto. Un argomento elenco passa solo quando ogni elemento passa, quindi un solo destinatario fuori elenco basta a sospendere la chiamata. Se la regola non può decidere, l’esito è sempre quello con meno accesso, mai quello con più accesso.",
@@ -20333,6 +20334,14 @@
       "texta0990a4a86dc": "White-label: il tuo prodotto di IA sul calcolo di Platinum.dev",
       "text6189ab6313de": "Fai il fork di Kortix, applica il tuo marchio e vendilo come tuo prodotto. La licenza è gratuita. Unico requisito: il tuo calcolo gira su Platinum.dev.",
       "text7971dd752669": "Promemoria",
+      "textf952fee736ed": "Cronologia delle versioni",
+      "text68b8fd794db4": "Cosa abbiamo rilasciato",
+      "textb8471beb7d98": "{count, plural, one {# altra novità} other {# altre novità}}",
+      "text48198dbb8f5e": "{count, plural, one {# miglioramento} other {# miglioramenti}}",
+      "text1d511e2b26ca": "{count, plural, one {# correzione} other {# correzioni}}",
+      "text1baa58fb1774": "Vedi tutte le modifiche",
+      "textc3eb9e6f2b69": "Miglioramenti",
+      "text59e5965495d9": "Correzioni",
       "text724b09397472": "Aggiunta di {name} a {project}",
       "text1e007c47254d": "La configurazione avviene in background. Riceverai una notifica al termine.",
       "text57f57edb6f16": "La richiesta di modifica #{number} è pronta per la revisione.",
@@ -22418,5 +22427,61 @@
   "agentEditor": {
     "manage": "Gestisci",
     "overviewTitle": "Panoramica"
+  },
+  "connectAppForm": {
+    "title": "Connetti Shopify",
+    "description": "Kortix raggiunge il tuo negozio tramite un'app Shopify della tua organizzazione. Inserisci le sue credenziali una volta.",
+    "loading": "Caricamento del modulo…",
+    "stepsTitle": "Crea l'app in Shopify",
+    "step1": "Apri lo <link>Shopify Dev Dashboard</link> e crea un'app nell'organizzazione proprietaria del negozio.",
+    "step2": "Nella versione dell'app, seleziona gli scope Admin API che servono ai tuoi agenti, poi pubblica la versione.",
+    "step3": "Installa l'app nel tuo negozio.",
+    "step4": "Copia Client ID e Client secret dalle impostazioni dell'app.",
+    "sameOrganization": "L'app e il negozio devono essere nella stessa organizzazione Shopify.",
+    "storeLabel": "Negozio",
+    "clientIdLabel": "Client ID",
+    "clientSecretLabel": "Client secret",
+    "submit": "Connetti {app}",
+    "connecting": "Connessione…",
+    "missingFields": "Inserisci negozio, Client ID e Client secret.",
+    "failed": "Connessione non riuscita. Controlla la connessione e riprova.",
+    "secretNote": "Kortix invia il secret a Composio, che gestisce la connessione. Kortix non ne conserva una copia.",
+    "connectedTitle": "{app} è connesso",
+    "connectedDescription": "Kortix raggiunge {store}. Puoi chiudere questa finestra.",
+    "closeWindow": "Puoi chiudere questa finestra.",
+    "expiredTitle": "Questo link è scaduto",
+    "invalidTitle": "Questo link non funziona",
+    "staleTitle": "Questo link è stato sostituito",
+    "startAgain": "Avvia di nuovo Connetti in Kortix."
+  },
+  "turnShare": {
+    "shareResponse": "Condividi risposta",
+    "whatToInclude": "Cosa includere",
+    "responseOnly": "Solo la risposta",
+    "responseOnlyHint": "Il tuo prompt resta privato",
+    "promptAndResponse": "Prompt e risposta",
+    "promptAndResponseHint": "Include il prompt",
+    "publicLink": "Link pubblico",
+    "publicLinkHint": "Chiunque abbia il link può leggerla",
+    "turnOffLink": "Disattiva link",
+    "cancel": "Annulla",
+    "copyLink": "Copia link",
+    "copied": "Copiato",
+    "linkCopied": "Link copiato",
+    "linkUpdated": "Link aggiornato",
+    "responseShared": "Risposta condivisa",
+    "stale": "La risposta è cambiata da quando l’hai condivisa",
+    "updateLink": "Aggiorna link",
+    "loadError": "Impossibile caricare le impostazioni di condivisione. Riprova.",
+    "shareError": "Impossibile condividere la risposta. Riprova.",
+    "unshareError": "Impossibile interrompere la condivisione. Riprova.",
+    "copyError": "Impossibile copiare il link. Copialo dal campo.",
+    "tryKortix": "Prova Kortix",
+    "goneTitle": "Questo link non è più attivo",
+    "goneHint": "La risposta a cui puntava non è più pubblica.",
+    "busyTitle": "Questa pagina è occupata",
+    "busyHint": "Aggiorna tra un momento.",
+    "fallbackTitle": "Risposta condivisa",
+    "stopNote": "Il link smetterà di funzionare."
   }
 }

@@ -287,10 +287,6 @@ const envSchema = z.object({
   // default; dev turns it on in its deploy overrides (deploy-dev.yml). A project's stored value wins.
   // Rollback: set it to "false" in the overrides. Removing the key keeps the running task's value.
   SESSION_LOG_RESTORE_DEFAULT_ENABLED: optBoolFalse,
-  // Default of the project flag `pi_harness` for a project with no stored value. On by default
-  // (2026-10-20): new sessions boot pi. A project's stored value wins. Rollback for a whole
-  // deployment: set it to "false" in the overrides; new sessions boot OpenCode again.
-  PI_HARNESS_DEFAULT_ENABLED: optBoolTrue,
   // The largest restore the API answers (`POST …/log/restore`), in bytes: the live messages' stored
   // JSON lengths plus 2/5 of the session's live blob bytes (full texts, attachments; ~15x in the daemon,
   // 30 MB of images: +455 MB; `SESSION_LOG_BLOB_WEIGHT`). So 24 MiB allows 24 MiB of records or 60 MiB
@@ -567,6 +563,10 @@ const envSchema = z.object({
   // mounts, with the folders synced in by the box's daemon.
   KORTIX_DRIVES_SESSION_MOUNT: optStr,
   KORTIX_DRIVES_SYNC: optStr,
+  // `off` (or 0/false/no): no new session gets a /workspace volume, whatever its
+  // project's `workspace_volume` flag says. A session that already has one keeps
+  // it (platform/services/workspace-volume.ts).
+  KORTIX_WORKSPACE_VOLUMES: optStr,
   // The fresh-session Git fast path: KORTIX_SESSION_FRESH, the base-tip +
   // scaffold-delta hint (inline or remote bundle), and the OpenCode config-dir
   // hint that lets the daemon spawn OpenCode before the checkout. Default ON;
@@ -758,6 +758,10 @@ const envSchema = z.object({
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: optInt(15),
   KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: optInt(720), // 12 hours
   KORTIX_SANDBOX_AUTODELETE_MINUTES: optInt(-1), // never auto-delete
+  // Stateless sandboxes: a session whose /workspace is a Platinum volume loses
+  // its stopped box after this many minutes (projects/reaping/idle-volume-retire.ts);
+  // the next open boots a fresh box on the volume. -1 keeps every stopped box.
+  KORTIX_SANDBOX_IDLE_DELETE_MINUTES: optInt(60),
   // The PROVIDER-NATIVE idle timer (Daytona autoStopInterval / Platinum
   // auto_stop_minutes) — a LAST-RESORT backstop for boxes this API can no
   // longer reach, NOT the primary stop. It used to be derived from
@@ -804,6 +808,7 @@ const envSchema = z.object({
 
   // ── Abuse controls (optional, all have sane defaults) ────────────────────
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN: optInt(20),
+  KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN: optInt(3000),
   KORTIX_DEMO_REQUEST_REQS_PER_MIN: optInt(10),
   KORTIX_FEEDBACK_REQS_PER_MIN: optInt(10),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: optInt(60),
@@ -1268,7 +1273,6 @@ export const config = {
   SESSION_LOG_INGEST_ENABLED: env.SESSION_LOG_INGEST_ENABLED,
   SESSION_LOG_RESTORE_ENABLED: env.SESSION_LOG_RESTORE_ENABLED,
   SESSION_LOG_RESTORE_DEFAULT_ENABLED: env.SESSION_LOG_RESTORE_DEFAULT_ENABLED,
-  PI_HARNESS_DEFAULT_ENABLED: env.PI_HARNESS_DEFAULT_ENABLED,
   SESSION_LOG_RESTORE_MAX_BYTES: env.SESSION_LOG_RESTORE_MAX_BYTES,
   SESSION_LOG_BLOB_READ_MS: env.SESSION_LOG_BLOB_READ_MS,
   SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,
@@ -1394,6 +1398,7 @@ export const config = {
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
   KORTIX_DRIVES_SESSION_MOUNT: env.KORTIX_DRIVES_SESSION_MOUNT,
   KORTIX_DRIVES_SYNC: env.KORTIX_DRIVES_SYNC,
+  KORTIX_WORKSPACE_VOLUMES: env.KORTIX_WORKSPACE_VOLUMES,
   KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,
   KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: env.KORTIX_PROJECT_SNAPSHOT_S3_BUCKET,
   KORTIX_PROJECT_SNAPSHOT_S3_REGION: env.KORTIX_PROJECT_SNAPSHOT_S3_REGION,
@@ -1441,6 +1446,7 @@ export const config = {
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,
+  KORTIX_SANDBOX_IDLE_DELETE_MINUTES: env.KORTIX_SANDBOX_IDLE_DELETE_MINUTES,
   KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: env.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
   KORTIX_SANDBOX_AUTODELETE_MINUTES: env.KORTIX_SANDBOX_AUTODELETE_MINUTES,
   KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES,
@@ -1526,6 +1532,7 @@ export const config = {
 
   // ─── Abuse Controls ───────────────────────────────────────────────────────
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN: env.KORTIX_INVITE_ACCEPT_REQS_PER_MIN,
+  KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN: env.KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN,
   KORTIX_DEMO_REQUEST_REQS_PER_MIN: env.KORTIX_DEMO_REQUEST_REQS_PER_MIN,
   KORTIX_FEEDBACK_REQS_PER_MIN: env.KORTIX_FEEDBACK_REQS_PER_MIN,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE,

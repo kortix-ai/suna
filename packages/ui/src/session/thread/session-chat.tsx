@@ -4178,6 +4178,7 @@ export function SessionChat({
           detachedRows={sessionState ? undefined : hookMessages}
           source={sessionState ?? DETACHED_SESSION_MESSAGES}
           session={session}
+          sessionRow={projectSessionRow}
           providers={providers}
           allSessions={allSessions}
           servedModel={sessionServedModel}
@@ -4489,6 +4490,8 @@ export function SessionChat({
                               isLast={turn.id === lastUserMessageId}
                               ownsPlan={turn.id === planAnchorId}
                               sessionId={sessionId}
+                              projectId={projectId}
+                              projectSessionId={projectSessionId}
                               sessionStatus={sessionStatus}
                               permissions={pendingPermissions}
                               questions={pendingQuestions}

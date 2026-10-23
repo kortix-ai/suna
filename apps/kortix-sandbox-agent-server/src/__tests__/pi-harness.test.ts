@@ -875,6 +875,24 @@ describe('pi harness', () => {
     expect(existsSync(join(r.workspace, 'new.txt'))).toBe(false)
   })
 
+  test('a path deny holds for every spelling of the path the read tool resolves', async () => {
+    const permission = { read: { 'secrets/*': 'deny', '*': 'allow' } }
+    for (const path of ['./secrets/a', 'x/../secrets/a', '@secrets/a']) {
+      const r = await boot({
+        script: [{ tool: 'read', args: { path } }, { text: 'blocked' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission } } }) },
+        prepare: (workspace) => {
+          mkdirSync(join(workspace, 'secrets'))
+          writeFileSync(join(workspace, 'secrets', 'a'), 'sentinel-secret')
+        },
+      })
+      const tool = await firstToolPart(r)
+      expect(tool.state.status).toBe('error')
+      expect(tool.state.error).toContain('denies')
+      expect(JSON.stringify(tool)).not.toContain('sentinel-secret')
+    }
+  })
+
   test('the manifest skills grant hides every other skill: managed, project and pi skill dirs (W1 B3)', async () => {
     const skill = (dir: string, name: string) => {
       mkdirSync(join(dir, name), { recursive: true })
@@ -2971,6 +2989,54 @@ describe('pi compaction', () => {
     expect(page.messages.filter((m) => m.info.error)).toEqual([])
   })
 
+  test('compaction leaves the model its whole output budget, not pi default 16k reserve', async () => {
+    // 128,000 window and a 32,768 output limit: a request needs 32,768 tokens of room for the
+    // answer, so compaction must start at 95,232, not at pi's default window - 16,384 = 111,616.
+    const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
+    const catalog = join(workspace, 'catalog.json')
+    writeFileSync(catalog, JSON.stringify({ models: { [MODEL_ID]: { name: 'Test Model', limit: { context: 128_000, output: 32_768 } } } }))
+    const r = await boot({
+      workspace,
+      env: { KORTIX_LLM_CATALOG_FILE: catalog },
+      // 100,001 tokens is over 95,232 and under 111,616: the report the session meter shows.
+      script: [{ text: 'first answer', promptTokens: 100_000 }, ...SUMMARY, { text: 'answer after compaction' }],
+      prepare: compactEverything,
+    })
+    const root = r.service.runtime()!.rootId
+    await promptAndSettle(r, 'ALPHA question')
+    await promptAndSettle(r, 'BETA question')
+    await waitFor(() => r.service.runtime()!.idle())
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    const [turn] = compactionTurns(page)
+    expect(turn!.part).toMatchObject({ type: 'compaction', auto: true })
+    expect(page.messages.filter((m) => m.info.error)).toEqual([])
+    // The second prompt reaches the model after the summary cut, never with the full history.
+    expect(sentText(gateway.sent.at(-1)!)).toContain('SUMMARY-ONE')
+  })
+
+  test('a project reserve compacts earlier than the model output budget, never later', async () => {
+    // The project asks pi to cut at 28,000 (reserve 100,000 of a 128,000 window, capped at 64,000),
+    // well before this model's own 32,768 reserve would (95,232). A 70,000-token reply is over.
+    const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
+    const catalog = join(workspace, 'catalog.json')
+    writeFileSync(catalog, JSON.stringify({ models: { [MODEL_ID]: { name: 'Test Model', limit: { context: 128_000, output: 32_768 } } } }))
+    mkdirSync(join(workspace, 'harnesses/pi'), { recursive: true })
+    writeFileSync(join(workspace, 'harnesses/pi/settings.json'), JSON.stringify({ compaction: { keepRecentTokens: 1, reserveTokens: 100_000 } }))
+    const r = await boot({
+      workspace,
+      env: { KORTIX_LLM_CATALOG_FILE: catalog },
+      script: [{ text: 'first answer', promptTokens: 70_000 }, ...SUMMARY, { text: 'answer after compaction' }],
+    })
+    const root = r.service.runtime()!.rootId
+    await promptAndSettle(r, 'ALPHA question')
+    await promptAndSettle(r, 'BETA question')
+    await waitFor(() => r.service.runtime()!.idle())
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(compactionTurns(page)[0]!.part).toMatchObject({ type: 'compaction', auto: true })
+    expect(page.messages.filter((m) => m.info.error)).toEqual([])
+    expect(sentText(gateway.sent.at(-1)!)).toContain('SUMMARY-ONE')
+  })
+
   test('a context overflow compacts and retries: the turn completes with no error on the wire', async () => {
     const overflow = { status: 400, message: "This model's maximum context length is 64000 tokens. However, your messages resulted in 70000 tokens." }
     const r = await boot({ script: [{ text: 'first answer' }, overflow, ...SUMMARY, { text: 'answer after compaction' }], prepare: compactEverything })
@@ -3007,35 +3073,43 @@ describe('pi compaction', () => {
     expect(text).toContain('ContextOverflowError')
   })
 
-  test('stop during the compaction before a prompt ends the turn without a model call', async () => {
-    // The retried step skips pi's post-run check, so the 60,000-token reply is compacted before the next prompt.
-    const r = await boot({ script: [{ text: 'first answer' }, { cut: '' }, { text: 'big answer', promptTokens: 60_000 }, { stall: true }, { text: 'must not be asked' }], prepare: compactEverything })
+  test('stop during the compaction after a turn ends it without another model call', async () => {
+    // The 60,000-token reply is over the 64k window's threshold, so pi compacts after the turn.
+    // A stop during that summary ends the turn; no further model call goes out.
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'big answer', promptTokens: 60_000 }, { stall: true }, { text: 'must not be asked' }], prepare: compactEverything })
     const root = r.service.runtime()!.rootId
     await promptAndSettle(r, 'ALPHA question')
-    await promptAndSettle(r, 'BETA question')
     const calls = gateway.requests.length
     const messageID = 'msg_0198e2a4b0e3ABCDEFGHIJKLMN'
-    expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'GAMMA question' }] })).status).toBe(204)
-    await waitFor(() => gateway.requests.length > calls)
+    expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'BETA question' }] })).status).toBe(204)
+    // The answer, then the summary request that stalls.
+    await waitFor(() => gateway.requests.length - calls === 2)
     expect((await r.user(`/session/${root}/abort`, { method: 'POST' })).status).toBe(200)
     await waitFor(() => r.service.runtime()!.idle())
-    // One request: the stalled summary. Neither the turn's model call nor a compaction after the stop goes out.
-    expect(gateway.requests.length - calls).toBe(1)
-    expect(gateway.sent.slice(calls).map(sentText).filter((sent) => sent.includes('GAMMA question'))).toEqual([])
+    expect(gateway.requests.length - calls).toBe(2)
     const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
-    expect(page.messages.at(-1)!.info).toMatchObject({ role: 'assistant', error: { name: 'MessageAbortedError' } })
+    const summary = page.messages.find((m) => m.info.role === 'assistant' && m.info.summary === true)
+    expect(summary!.info.error).toMatchObject({ name: 'MessageAbortedError' })
+    expect(page.messages.filter((m) => m.info.role === 'assistant' && !m.info.summary).at(-1)!.parts.find((p) => p.type === 'text')).toMatchObject({ text: 'big answer' })
   })
 
-  test('an overflow after a transient retry fails at once: pi does not compact a retried step', async () => {
+  test('an overflow after a transient retry still compacts and retries: the retry stays inside pi loop', async () => {
+    // The cut is retried at pi's settle boundary (runtime `turnExtension`), so the retried step
+    // runs pi's post-run checks like any other and an overflow there is recovered, not final.
     const overflow = { status: 400, message: "This model's maximum context length is 64000 tokens. However, your messages resulted in 70000 tokens." }
-    const r = await boot({ script: [{ text: 'first answer' }, { cut: '' }, overflow], prepare: compactEverything })
+    const r = await boot({ script: [{ text: 'first answer' }, { cut: '' }, overflow, ...SUMMARY, { text: 'answer after the retry compacted' }], prepare: compactEverything })
     const root = r.service.runtime()!.rootId
     await promptAndSettle(r, 'ALPHA question')
     const events = await r.bearer('/kortix/opencode/events?since=0')
     expect((await prompt(r, root, { messageID: 'msg_0198e2a4b0e4ABCDEFGHIJKLMN', parts: [{ type: 'text', text: 'BETA question' }] })).status).toBe(204)
     await waitFor(() => r.service.runtime()!.idle())
-    const text = await readSse(events, (t) => t.includes('ContextOverflowError') && t.includes('event: session.idle'))
-    expect(text).not.toContain('Compacting the conversation')
+    const text = await readSse(events, (t) => t.includes('event: session.idle') && t.includes('answer after the retry compacted'))
+    expect(text).toContain('Compacting the conversation to continue.')
+    expect(text).not.toContain('event: session.error')
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(page.messages.filter((m) => m.info.error)).toEqual([])
+    expect(compactionTurns(page)[0]!.part).toMatchObject({ type: 'compaction', auto: true, overflow: true })
+    expect(page.messages.at(-1)!.parts.find((p) => p.type === 'text')).toMatchObject({ text: 'answer after the retry compacted' })
   })
 })
 

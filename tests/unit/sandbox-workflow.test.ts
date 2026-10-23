@@ -345,7 +345,10 @@ describe('native test-lane workflow', () => {
       const text = readFileSync(resolve(dir, file), 'utf8');
       expect(text, file).toMatch(/^ {2}pull_request:\n(?: {4}.*\n)*? {4}branches: \[prod\]$/m);
     }
-    expect(readFileSync(resolve(dir, 'codeql.yml'), 'utf8')).not.toMatch(/^ {2}push:/m);
+    // A merge push into `prod` scans the prod ref so prod alerts close on release.
+    for (const file of ['codeql.yml', 'security-scan.yml']) {
+      expect(readFileSync(resolve(dir, file), 'utf8'), file).toMatch(/^ {2}push:\n {4}branches: \[prod\]$/m);
+    }
     const intoStaging = readdirSync(dir)
       .filter((file) => /\.ya?ml$/.test(file))
       .filter((file) => {

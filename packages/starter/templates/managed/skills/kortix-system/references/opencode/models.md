@@ -2,6 +2,8 @@
 
 # Models
 
+> **Deprecated: OpenCode is sunset.** Every new Kortix session runs pi (`../pi/overview.md`). This page applies only to a session that still runs OpenCode. Do not add OpenCode config to a project.
+
 Configuring an LLM provider and model.
 
 OpenCode uses the [AI SDK](https://ai-sdk.dev/) and [Models.dev](https://models.dev) to support **75+ LLM providers** and it supports running local models.

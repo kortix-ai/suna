@@ -162,6 +162,56 @@ describe('host boundary transport', () => {
     expect(requests[0]?.init?.headers).not.toHaveProperty('Authorization');
   });
 
+  test('own-app connect form reads and submits anonymously', async () => {
+    responseFactory = () =>
+      Response.json({
+        app: 'shopify',
+        name: 'Shopify',
+        connector: 'Store',
+        connected: false,
+        connected_as: null,
+        expires_at: '2026-10-23T12:00:00.000Z',
+      });
+    const info = await boundary.getConnectorAppForm('kaf_token', {
+      backendUrl: 'https://api.example.test/v1',
+    });
+    expect(info.name).toBe('Shopify');
+
+    responseFactory = () => Response.json({ connected: true, connected_as: 'acme.myshopify.com' });
+    const result = await boundary.submitConnectorAppForm(
+      'kaf_token',
+      { store: 'acme', clientId: 'client-id', clientSecret: 'client-secret' },
+      { backendUrl: 'https://api.example.test/v1' },
+    );
+    expect(result.connected_as).toBe('acme.myshopify.com');
+    expect(requests.map((request) => request.url)).toEqual([
+      'https://api.example.test/v1/connectors/app-form/kaf_token',
+      'https://api.example.test/v1/connectors/app-form/kaf_token',
+    ]);
+    expect(requests[1]?.init?.method).toBe('POST');
+    expect(JSON.parse(String(requests[1]?.init?.body))).toEqual({
+      store: 'acme',
+      client_id: 'client-id',
+      client_secret: 'client-secret',
+    });
+    expect(requests[1]?.init?.headers).not.toHaveProperty('Authorization');
+  });
+
+  test("own-app connect form submit surfaces the provider's refusal", async () => {
+    responseFactory = () =>
+      Response.json(
+        { error: true, message: 'Shopify has no app with this Client ID.', code: 'shopify_refused' },
+        { status: 422 },
+      );
+    await expect(
+      boundary.submitConnectorAppForm(
+        'kaf_token',
+        { store: 'acme', clientId: 'wrong', clientSecret: 'wrong' },
+        { backendUrl: 'https://api.example.test/v1' },
+      ),
+    ).rejects.toMatchObject({ status: 422, message: 'Shopify has no app with this Client ID.' });
+  });
+
   test('connector setup-link finalize returns who the account was authorized as', async () => {
     responseFactory = () => Response.json({ connected: true, connected_as: 'ops@example.test' });
 
@@ -311,5 +361,31 @@ describe('host boundary transport', () => {
       { backendUrl: 'https://api.example.test/v1', accessToken: 'token-1' },
     );
     expect(new URL(requests[0]!.url).searchParams.get('actor_type')).toBe('anonymous');
+  });
+});
+
+describe('public response share', () => {
+  test('getPublicResponse reads the anonymous route without credentials', async () => {
+    const response = {
+      title: 'T',
+      prompt: null,
+      markdown: 'Hello',
+      agent_name: null,
+      model_id: 'm',
+      responded_at: '2026-10-23T00:00:00.000Z',
+      shared_at: '2026-10-23T00:00:01.000Z',
+    };
+    responseFactory = () => Response.json({ response });
+    const result = await boundary.getPublicResponse('kps_a b', { backendUrl: 'https://api.example.test/v1' });
+    expect(requests[0]?.url).toBe('https://api.example.test/v1/public/responses/kps_a%20b');
+    expect(new Headers(requests[0]?.init?.headers).has('Authorization')).toBe(false);
+    expect(result).toEqual(response);
+  });
+
+  test('getPublicResponse throws with a readable status on 410', async () => {
+    responseFactory = () => Response.json({ error: 'Share link revoked' }, { status: 410 });
+    await expect(boundary.getPublicResponse('kps_x', { backendUrl: 'https://api.example.test' })).rejects.toMatchObject({
+      status: 410,
+    });
   });
 });

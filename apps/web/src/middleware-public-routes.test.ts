@@ -46,6 +46,8 @@ test('every supported public surface accepts an explicit locale prefix', async (
     '/careers',
     '/channels',
     '/changelog',
+    '/changelog/releases',
+    '/changelog/releases/page/2',
     '/company-as-code',
     '/connectors',
     '/contact',
@@ -73,5 +75,22 @@ test('every supported public surface accepts an explicit locale prefix', async (
     );
     expect(response.headers.get('x-locale')).toBe('de');
     expect(response.headers.get('x-middleware-request-x-locale')).toBe('de');
+  }
+});
+
+// KRTX-3234: `skipTrailingSlashRedirect` left /pricing/ a 200 duplicate of
+// /pricing. A NextURL clone re-adds the request's trailing slash, so the
+// destination is built from a plain URL; otherwise /pricing/ redirects to itself.
+test('a public page with a trailing slash redirects to the spelling without it', async () => {
+  const cases: Array<[string, string]> = [
+    ['/pricing/', 'http://localhost:3000/pricing'],
+    ['/de/pricing/?utm_source=x', 'http://localhost:3000/de/pricing?utm_source=x'],
+    ['/Pricing/', 'http://localhost:3000/pricing'],
+    ['/de/', 'http://localhost:3000/de'],
+  ];
+  for (const [path, location] of cases) {
+    const response = await middleware(new NextRequest(`http://localhost:3000${path}`));
+    expect(response.status).toBe(308);
+    expect(response.headers.get('location')).toBe(location);
   }
 });

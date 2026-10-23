@@ -15,13 +15,6 @@ export const MANAGED_SKILLS_DIR = '/opt/kortix/managed-skills';
 export const RUNTIME_ASSETS_STATE_PATH = '/opt/kortix/runtime-assets-state.json';
 
 /**
- * The argv OpenCode runs for the `kortix-connectors` MCP server. `connectors`
- * must be a real CLI command: the singular `connector` shipped on 2026-08-06
- * and the server never started for six days.
- */
-export const CONNECTORS_MCP_COMMAND = ['/usr/local/bin/kortix', 'connectors', 'mcp'] as const;
-
-/**
  * The files outside `apps/kortix-sandbox-agent-server` that kortixd bundles
  * into its binary, repo-relative. apps/api fingerprints them with the daemon
  * source, so a change to one rebuilds sandbox images, and the Dockerfiles copy

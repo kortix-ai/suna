@@ -85,7 +85,7 @@ flow(
         .as(ctx.P.OWNER)
         .patch(
           '/v1/projects/:projectId/features',
-          { feature: 'pi_harness', enabled: null },
+          { feature: 'genui', enabled: null },
           { params: { projectId: p.id } },
         );
       project.status(200);
@@ -97,8 +97,32 @@ flow(
       if (body.experimental_features.some((f) => f.key === 'pi_worker')) {
         throw new Error('the catalog still lists pi_worker');
       }
-      if (!body.experimental_features.some((f) => f.key === 'pi_harness')) {
-        throw new Error('the catalog lost pi_harness');
+    });
+
+    await ctx.step('pi_harness graduated (every new session runs pi) → 400, absent from the catalog, experimental.pi_harness true', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          '/v1/projects/:projectId/features',
+          { feature: 'pi_harness', enabled: false },
+          { params: { projectId: p.id } },
+        );
+      r.status(400);
+      const project = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          '/v1/projects/:projectId/features',
+          { feature: 'genui', enabled: null },
+          { params: { projectId: p.id } },
+        );
+      project.status(200);
+      const body = project.json<{
+        experimental: Record<string, boolean>;
+        experimental_features: Array<{ key: string }>;
+      }>();
+      if (body.experimental.pi_harness !== true) throw new Error(`experimental.pi_harness is ${body.experimental.pi_harness}, not true`);
+      if (body.experimental_features.some((f) => f.key === 'pi_harness')) {
+        throw new Error('the catalog still lists pi_harness');
       }
     });
 

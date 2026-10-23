@@ -1069,10 +1069,6 @@
           "name": "Pooled Provider Secrets",
           "description": "Members connect their own ChatGPT subscriptions and provider keys, share them when needed, and choose which ones each session uses."
         },
-        "pi_harness": {
-          "name": "Pi Harness (in-sandbox)",
-          "description": "Run sessions on the pi harness inside the session sandbox instead of OpenCode. Off, `runtime: pi` in the manifest still selects pi."
-        },
         "genui": {
           "name": "Generative UI",
           "description": "The agent may answer with cards, comparisons, charts, maps, and tabs instead of long text."
@@ -1116,6 +1112,10 @@
         "goals": {
           "name": "Goals",
           "description": "Give an agent an objective it owns until an independent check confirms the outcome. It plans, works, waits, follows up with people, and keeps its state in a Goals folder in Files. Needs Volumes and Reminders on."
+        },
+        "workspace_volume": {
+          "name": "Workspace volume",
+          "description": "Keeps each new session's /workspace on its own volume, so a stopped sandbox can be deleted and the next open boots a new one on the same files and conversation. Kortix enables it per project."
         }
       }
     },
@@ -1927,8 +1927,8 @@
     }
   },
   "sessionDelete": {
-    "description": "Deletes <name>{label}</name> and removes its sandbox. You can restore it from Recently deleted for {days} days. After that, its messages and files are deleted. Its branch is kept.",
-    "bulkDescription": "Deletes each selected session and removes its sandbox. You can restore each one from Recently deleted for {days} days. After that, its messages and files are deleted. Its branch is kept.",
+    "description": "Deletes <name>{label}</name> and removes its sandbox. You can restore it from Recently deleted for {days} days. After that, its messages, files and branch are deleted.",
+    "bulkDescription": "Deletes each selected session and removes its sandbox. You can restore each one from Recently deleted for {days} days. After that, its messages, files and branch are deleted.",
     "restoring": "Restoring the session…",
     "undo": "Undo",
     "restored": "Session restored",
@@ -18185,6 +18185,7 @@
       "texteaca91e7a784": "Invited to this project",
       "texteacdf25c58f8": "Built-in roles — on every plan",
       "textead07c84baac": "Changelog",
+      "text19e6841a618f": "What shipped in Kortix each week, straight from our production releases.",
       "texteae96e02bbc4": "Icons",
       "texteaef0b00e1d6": "Download to view",
       "texteaf72e534b81": "A tool-name rule can only ask “may the agent send email?” — which is rarely the question. A condition points at a value inside the call and matches it with a glob or a regular expression, so a rule can allow sending to your own domain and stop at everything else. A list argument passes only when every entry passes, so one off-list recipient is enough to hold the call. Anything the rule cannot decide resolves toward less access, never more.",
@@ -20344,6 +20345,14 @@
       "texta0990a4a86dc": "White-label: your AI product on Platinum.dev compute",
       "text6189ab6313de": "Fork Kortix, put your brand on it, and sell it as your own product. The license is free. The one requirement is that your compute runs on Platinum.dev.",
       "text7971dd752669": "Reminders",
+      "textf952fee736ed": "Release history",
+      "text68b8fd794db4": "What shipped",
+      "textb8471beb7d98": "{count, plural, one {# more new feature} other {# more new features}}",
+      "text48198dbb8f5e": "{count, plural, one {# improvement} other {# improvements}}",
+      "text1d511e2b26ca": "{count, plural, one {# fix} other {# fixes}}",
+      "text1baa58fb1774": "See every change",
+      "textc3eb9e6f2b69": "Improvements",
+      "text59e5965495d9": "Fixes",
       "text724b09397472": "Adding {name} to {project}",
       "text1e007c47254d": "It sets up in the background. You get a notification when it is done.",
       "text57f57edb6f16": "Change request #{number} is ready to review.",
@@ -22418,5 +22427,61 @@
   "agentEditor": {
     "manage": "Manage",
     "overviewTitle": "Overview"
+  },
+  "connectAppForm": {
+    "title": "Connect Shopify",
+    "description": "Kortix reaches your store through a Shopify app in your organization. Enter its credentials once.",
+    "loading": "Loading the form…",
+    "stepsTitle": "Create the app in Shopify",
+    "step1": "Open the <link>Shopify Dev Dashboard</link> and create an app in the organization that owns your store.",
+    "step2": "On the app's version, select the Admin API scopes your agents need, then release the version.",
+    "step3": "Install the app on your store.",
+    "step4": "Copy the Client ID and Client secret from the app's Settings.",
+    "sameOrganization": "The app and the store must be in the same Shopify organization.",
+    "storeLabel": "Store",
+    "clientIdLabel": "Client ID",
+    "clientSecretLabel": "Client secret",
+    "submit": "Connect {app}",
+    "connecting": "Connecting…",
+    "missingFields": "Enter the store, the Client ID and the Client secret.",
+    "failed": "Could not connect. Check your connection and try again.",
+    "secretNote": "Kortix sends the secret to Composio, which runs the connection. Kortix keeps no copy.",
+    "connectedTitle": "{app} is connected",
+    "connectedDescription": "Kortix reaches {store}. You can close this window.",
+    "closeWindow": "You can close this window.",
+    "expiredTitle": "This link expired",
+    "invalidTitle": "This link does not work",
+    "staleTitle": "This link was replaced",
+    "startAgain": "Start Connect again in Kortix."
+  },
+  "turnShare": {
+    "shareResponse": "Share response",
+    "whatToInclude": "What to include",
+    "responseOnly": "Response only",
+    "responseOnlyHint": "Your prompt stays private",
+    "promptAndResponse": "Prompt and response",
+    "promptAndResponseHint": "Includes the prompt",
+    "publicLink": "Public link",
+    "publicLinkHint": "Anyone with the link can read it",
+    "turnOffLink": "Turn off link",
+    "cancel": "Cancel",
+    "copyLink": "Copy link",
+    "copied": "Copied",
+    "linkCopied": "Link copied",
+    "linkUpdated": "Link updated",
+    "responseShared": "Response shared",
+    "stale": "Response changed since you shared it",
+    "updateLink": "Update link",
+    "loadError": "Could not load the share settings. Try again.",
+    "shareError": "Could not share the response. Try again.",
+    "unshareError": "Could not stop sharing. Try again.",
+    "copyError": "Could not copy the link. Copy it from the field.",
+    "tryKortix": "Try Kortix",
+    "goneTitle": "This link is no longer active",
+    "goneHint": "The response it pointed to is no longer public.",
+    "busyTitle": "This page is busy",
+    "busyHint": "Refresh in a moment.",
+    "fallbackTitle": "Shared response",
+    "stopNote": "The link will stop working."
   }
 }

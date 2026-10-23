@@ -59,7 +59,6 @@ export const FeatureFlagMapSchema = z.object({
   warm_sessions: z.boolean(),
   secrets_egress: z.boolean(),
   pooled_provider_secrets: z.boolean(),
-  pi_harness: z.boolean(),
   genui: z.boolean(),
   us_region: z.boolean(),
   event_triggers: z.boolean(),
@@ -70,6 +69,7 @@ export const FeatureFlagMapSchema = z.object({
   connectors_v2: z.boolean(),
   agent_rooms: z.boolean(),
   goals: z.boolean(),
+  workspace_volume: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -188,6 +188,8 @@ export const ProjectSchema = z.object({
     llm_gateway: z.literal(true).optional(),
     /** Not a flag (the session log is every session's saved history); always `true` for older SDK, CLI and mobile clients. */
     session_log: z.literal(true).optional(),
+    /** Not a flag (every new session runs pi; OpenCode is sunset); always `true` for older SDK, CLI and mobile clients. */
+    pi_harness: z.literal(true).optional(),
   }),
   experimental_features: z.array(FeatureFlagViewSchema),
   /** Per-project provider pin, surfaced only while still usable. */
@@ -1185,6 +1187,8 @@ export const ProjectSessionSchema = z.object({
   can_manage_sharing: z.boolean(),
   /** May stop / restart / delete it and change its model — owner or project manager. */
   can_manage_lifecycle: z.boolean().optional(),
+  /** May publish one assistant response through a public link: a human owner or project manager who can read it. Single-session reads only. */
+  can_publish_response: z.boolean().optional(),
   can_access: z.boolean().optional(),
   runtime_status: z
     .enum(['provisioning', 'active', 'stopped', 'error', 'archived'])

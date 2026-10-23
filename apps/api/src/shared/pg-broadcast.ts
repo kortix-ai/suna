@@ -93,6 +93,10 @@ export const IAM_CACHE_BUST_CHANNEL = 'kortix_iam_cache_bust';
 type Handler = (projectId: string) => void;
 
 let listener: postgres.Sql | null = null;
+// `bun --hot` re-evaluates this module but keeps globalThis. The last evaluation's
+// stop lives there, so a re-evaluated start ends that LISTEN client first instead
+// of orphaning it (postgres.js re-LISTENs on reconnect, so an orphan never dies).
+const hot = globalThis as typeof globalThis & { __kortixPgBroadcastStop?: () => Promise<void> };
 let handlers: Handler[] = [];
 let publish: ((projectId: string) => void) | null = null;
 let tunnelForwardHandler: ((payload: string) => void) | null = null;
@@ -269,6 +273,9 @@ function deliver(payload: string): void {
 export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
   if (listener) return true;
   if (!config.DATABASE_URL) return false;
+  const previous = hot.__kortixPgBroadcastStop;
+  hot.__kortixPgBroadcastStop = stopConfigBaseMoveBroadcast;
+  if (previous && previous !== stopConfigBaseMoveBroadcast) await previous();
   try {
     const sql = postgres(config.DATABASE_URL, {
       max: PG_BROADCAST_POOL_MAX,

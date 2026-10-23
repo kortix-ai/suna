@@ -15,6 +15,7 @@ export interface RuntimeArtifact {
 
 export interface RuntimeArtifactFingerprintInput {
   sandboxVersion: string;
+  /** @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
   opencodeVersion: string;
   artifacts: RuntimeArtifact[];
 }

@@ -100,11 +100,9 @@ export interface Fixtures {
   sharedProject(): Promise<CreatedProject>;
   /**
    * A single seeded project for flows that create isolated sessions but do not
-   * mutate the project's base branch or project-wide Git configuration. One per
-   * harness: the `pi` project has the `pi_harness` feature flag on, so every
-   * session in it boots pi.
+   * mutate the project's base branch or project-wide Git configuration.
    */
-  sharedSeededProject(harness?: Harness): Promise<CreatedProject>;
+  sharedSeededProject(): Promise<CreatedProject>;
   /** Create a session in a project (provisions a real sandbox). */
   session(
     project: CreatedProject,
@@ -154,8 +152,8 @@ export interface FlowMeta {
   /** Registers as a tracked skip (yellow in the report) instead of running. */
   todo?: string;
   /**
-   * The spec id this flow implements when it is a harness variant of another
-   * flow (`harnessFlow`): `RUN-1-pi` implements `RUN-1`. Absent: the flow id.
+   * The spec id this flow implements when it is a variant of another flow
+   * (`SESS-31-log` implements `SESS-31`). Absent: the flow id.
    */
   specId?: string;
 }
@@ -176,5 +174,5 @@ export interface FlowContext {
 
 export type FlowFn = (ctx: FlowContext) => Promise<void>;
 
-/** The session runtime a flow boots. `KORTIX_HARNESS` in kortixd. */
-export type Harness = 'opencode' | 'pi';
+/** The session runtime a flow boots (`KORTIX_HARNESS` in kortixd): pi, since OpenCode was sunset (2026-10-23). */
+export type Harness = 'pi';

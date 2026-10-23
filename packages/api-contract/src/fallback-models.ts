@@ -10,6 +10,7 @@
  * (`OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX`). OpenCode clamps to 32,000 by
  * default; a clamp below a managed model's `limit.output` cuts a large file
  * write at finish_reason "length" and the tool never runs.
+ * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
  */
 export const MANAGED_OPENCODE_OUTPUT_TOKEN_MAX = 65_536
 // One `reasoning_options` entry (models.dev's shape, mirrored — see

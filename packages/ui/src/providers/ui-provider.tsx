@@ -229,7 +229,7 @@ export interface UiHostConfig {
   terminalEnabled: boolean;
   /**
    * The Terminal panel offers "Connect from your machine": the deployment's
-   * CLI installer (`<origin>/install`) and `kortix sessions connect`. A host
+   * CLI installer (`<origin>/install`) and `kortix sessions shell`. A host
    * that serves no installer and ships no Kortix CLI sets false, and the bar
    * is hidden. Default: true.
    */

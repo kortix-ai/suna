@@ -63,15 +63,15 @@ const HEADLINE_TIP_KEY = {
 
 /**
  * Breakdown rows, in a fixed order chosen by size rather than by the order the
- * API happens to emit them: input dominates, cache is next, output and
- * reasoning are the tail. A fixed order matters more than a sorted one here —
- * rows must not reshuffle under the cursor as tokens stream in.
+ * API happens to emit them: input dominates, cache is next, output is the tail.
+ * A fixed order matters more than a sorted one here — rows must not reshuffle
+ * under the cursor as tokens stream in. `reasoning` is not a row: it is a subset
+ * of `output`, so counting it here would read context the model never sends.
  */
 const BREAKDOWN_ROWS = [
   { key: 'input', labelKey: 'labelInput' },
   { key: 'cache', labelKey: 'labelCached' },
   { key: 'output', labelKey: 'labelOutput' },
-  { key: 'reasoning', labelKey: 'labelReasoning' },
 ] as const satisfies ReadonlyArray<{ key: keyof ContextBreakdown; labelKey: string }>;
 
 /**

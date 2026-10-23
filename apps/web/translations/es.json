@@ -1247,10 +1247,6 @@
           "name": "Secretos de proveedor compartidos",
           "description": "Los miembros conectan sus propias suscripciones de ChatGPT y claves de proveedor, las comparten cuando hace falta y eligen cuáles usa cada sesión."
         },
-        "pi_harness": {
-          "name": "Harness Pi (en el sandbox)",
-          "description": "Ejecuta las sesiones con el harness Pi dentro del sandbox de la sesión en lugar de OpenCode. Desactivado, `runtime: pi` en el manifiesto sigue seleccionando Pi."
-        },
         "genui": {
           "name": "UI generativa",
           "description": "El agente puede responder con tarjetas, comparaciones, gráficos, mapas y pestañas en lugar de textos largos."
@@ -1294,6 +1290,10 @@
         "goals": {
           "name": "Objetivos",
           "description": "Asigna a un agente un objetivo del que se encarga hasta que una comprobación independiente confirme el resultado. Planifica, trabaja, espera, hace seguimiento con las personas y guarda su estado en una carpeta Goals en Archivos. Requiere Volúmenes y Recordatorios activados."
+        },
+        "workspace_volume": {
+          "name": "Volumen de workspace",
+          "description": "Guarda el /workspace de cada nueva sesión en su propio volumen, para que un sandbox detenido pueda eliminarse y el siguiente arranque con los mismos archivos y la misma conversación. Kortix lo activa por proyecto."
         }
       }
     },
@@ -1927,8 +1927,8 @@
     }
   },
   "sessionDelete": {
-    "description": "Elimina <name>{label}</name> y quita su sandbox. Puedes restaurarla desde Eliminadas recientemente durante {days} días. Después, se eliminan sus mensajes y archivos. Su rama se conserva.",
-    "bulkDescription": "Elimina cada sesión seleccionada y quita su sandbox. Puedes restaurar cada una desde Eliminadas recientemente durante {days} días. Después, se eliminan sus mensajes y archivos. Su rama se conserva.",
+    "description": "Elimina <name>{label}</name> y quita su sandbox. Puedes restaurarla desde Eliminadas recientemente durante {days} días. Después, se eliminan sus mensajes, archivos y su rama.",
+    "bulkDescription": "Elimina cada sesión seleccionada y quita su sandbox. Puedes restaurar cada una desde Eliminadas recientemente durante {days} días. Después, se eliminan sus mensajes, archivos y su rama.",
     "restoring": "Restaurando la sesión…",
     "undo": "Deshacer",
     "restored": "Sesión restaurada",
@@ -18174,6 +18174,7 @@
       "texteaca91e7a784": "Invitado a este proyecto",
       "texteacdf25c58f8": "Roles integrados: en todos los planes",
       "textead07c84baac": "Registro de cambios",
+      "text19e6841a618f": "Lo que se lanzó en Kortix cada semana, directamente desde nuestras versiones de producción.",
       "texteae96e02bbc4": "Iconos",
       "texteaef0b00e1d6": "Descarga para verla",
       "texteaf72e534b81": "Una regla basada en el nombre de la herramienta solo puede preguntar «¿puede el agente enviar un correo?», que rara vez es la pregunta correcta. Una condición apunta a un valor dentro de la llamada y lo compara con un glob o una expresión regular, de modo que una regla puede permitir envíos a tu propio dominio y detener todo lo demás. Un argumento de lista solo pasa cuando todos sus elementos pasan, así que un destinatario fuera de la lista basta para retener la llamada. Todo lo que la regla no puede decidir se resuelve hacia un menor acceso, nunca hacia uno mayor.",
@@ -20333,6 +20334,14 @@
       "texta0990a4a86dc": "Marca blanca: tu producto de IA sobre el cómputo de Platinum.dev",
       "text6189ab6313de": "Haz un fork de Kortix, ponle tu marca y véndelo como tu producto. La licencia es gratuita. El único requisito: tu cómputo se ejecuta en Platinum.dev.",
       "text7971dd752669": "Recordatorios",
+      "textf952fee736ed": "Historial de versiones",
+      "text68b8fd794db4": "Lo que lanzamos",
+      "textb8471beb7d98": "{count, plural, one {# novedad más} other {# novedades más}}",
+      "text48198dbb8f5e": "{count, plural, one {# mejora} other {# mejoras}}",
+      "text1d511e2b26ca": "{count, plural, one {# corrección} other {# correcciones}}",
+      "text1baa58fb1774": "Ver todos los cambios",
+      "textc3eb9e6f2b69": "Mejoras",
+      "text59e5965495d9": "Correcciones",
       "text724b09397472": "Añadiendo {name} a {project}",
       "text1e007c47254d": "Se configura en segundo plano. Recibirás una notificación cuando termine.",
       "text57f57edb6f16": "La solicitud de cambio #{number} está lista para revisar.",
@@ -22418,5 +22427,61 @@
   "agentEditor": {
     "manage": "Gestionar",
     "overviewTitle": "Resumen"
+  },
+  "connectAppForm": {
+    "title": "Conectar Shopify",
+    "description": "Kortix accede a tu tienda mediante una app de Shopify de tu organización. Introduce sus credenciales una vez.",
+    "loading": "Cargando el formulario…",
+    "stepsTitle": "Crea la app en Shopify",
+    "step1": "Abre el <link>Shopify Dev Dashboard</link> y crea una app en la organización propietaria de tu tienda.",
+    "step2": "En la versión de la app, selecciona los scopes de Admin API que necesitan tus agentes y publica la versión.",
+    "step3": "Instala la app en tu tienda.",
+    "step4": "Copia el Client ID y el Client secret de los ajustes de la app.",
+    "sameOrganization": "La app y la tienda deben estar en la misma organización de Shopify.",
+    "storeLabel": "Tienda",
+    "clientIdLabel": "Client ID",
+    "clientSecretLabel": "Client secret",
+    "submit": "Conectar {app}",
+    "connecting": "Conectando…",
+    "missingFields": "Introduce la tienda, el Client ID y el Client secret.",
+    "failed": "No se pudo conectar. Comprueba tu conexión e inténtalo de nuevo.",
+    "secretNote": "Kortix envía el secreto a Composio, que gestiona la conexión. Kortix no guarda ninguna copia.",
+    "connectedTitle": "{app} está conectado",
+    "connectedDescription": "Kortix accede a {store}. Puedes cerrar esta ventana.",
+    "closeWindow": "Puedes cerrar esta ventana.",
+    "expiredTitle": "Este enlace ha caducado",
+    "invalidTitle": "Este enlace no funciona",
+    "staleTitle": "Este enlace se ha sustituido",
+    "startAgain": "Vuelve a iniciar Conectar en Kortix."
+  },
+  "turnShare": {
+    "shareResponse": "Compartir respuesta",
+    "whatToInclude": "Qué incluir",
+    "responseOnly": "Solo la respuesta",
+    "responseOnlyHint": "Tu prompt sigue siendo privado",
+    "promptAndResponse": "Prompt y respuesta",
+    "promptAndResponseHint": "Incluye el prompt",
+    "publicLink": "Enlace público",
+    "publicLinkHint": "Cualquiera con el enlace puede leerla",
+    "turnOffLink": "Desactivar enlace",
+    "cancel": "Cancelar",
+    "copyLink": "Copiar enlace",
+    "copied": "Copiado",
+    "linkCopied": "Enlace copiado",
+    "linkUpdated": "Enlace actualizado",
+    "responseShared": "Respuesta compartida",
+    "stale": "La respuesta cambió desde que la compartiste",
+    "updateLink": "Actualizar enlace",
+    "loadError": "No se pudo cargar la configuración para compartir. Inténtalo de nuevo.",
+    "shareError": "No se pudo compartir la respuesta. Inténtalo de nuevo.",
+    "unshareError": "No se pudo dejar de compartir. Inténtalo de nuevo.",
+    "copyError": "No se pudo copiar el enlace. Cópialo desde el campo.",
+    "tryKortix": "Prueba Kortix",
+    "goneTitle": "Este enlace ya no está activo",
+    "goneHint": "La respuesta a la que apuntaba ya no es pública.",
+    "busyTitle": "Esta página está ocupada",
+    "busyHint": "Actualízala en un momento.",
+    "fallbackTitle": "Respuesta compartida",
+    "stopNote": "El enlace dejará de funcionar."
   }
 }

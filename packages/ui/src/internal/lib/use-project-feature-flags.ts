@@ -36,7 +36,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
   const secretsEgress = useFeatureFlag(projectId, 'secrets_egress');
   const pooledProviderSecrets = useFeatureFlag(projectId, 'pooled_provider_secrets');
-  const piHarness = useFeatureFlag(projectId, 'pi_harness');
   const genui = useFeatureFlag(projectId, 'genui');
   const usRegion = useFeatureFlag(projectId, 'us_region');
   const eventTriggers = useFeatureFlag(projectId, 'event_triggers');
@@ -48,6 +47,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const connectorsV2 = useFeatureFlag(projectId, 'connectors_v2');
   const agentRooms = useFeatureFlag(projectId, 'agent_rooms');
   const goals = useFeatureFlag(projectId, 'goals');
+  const workspaceVolume = useFeatureFlag(projectId, 'workspace_volume');
 
   return {
     flags: {
@@ -60,7 +60,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       warm_sessions: warmSessions.enabled,
       secrets_egress: secretsEgress.enabled,
       pooled_provider_secrets: pooledProviderSecrets.enabled,
-      pi_harness: piHarness.enabled,
       genui: genui.enabled,
       us_region: usRegion.enabled,
       event_triggers: eventTriggers.enabled,
@@ -72,8 +71,9 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       connectors_v2: connectorsV2.enabled,
       agent_rooms: agentRooms.enabled,
       goals: goals.enabled,
+      workspace_volume: workspaceVolume.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: goals.isLoading,
+    isLoading: workspaceVolume.isLoading,
   };
 }

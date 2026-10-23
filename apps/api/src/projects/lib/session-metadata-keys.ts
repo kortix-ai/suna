@@ -83,6 +83,9 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // Server-confirmed runtime fork provenance and inventory.
   'runtime_forks',
   'opencode_sessions',
+  // The session's /workspace volume (platform/services/workspace-volume.ts):
+  // its boxes mount it and a delete deletes it.
+  'workspace_volume',
 ] as const;
 
 /**

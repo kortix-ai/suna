@@ -1498,9 +1498,6 @@
     }
   },
   "src/platform/routes/version.ts": {
-    "no-console": {
-      "count": 2
-    },
     "no-restricted-properties": {
       "count": 1
     }
@@ -1652,7 +1649,7 @@
   },
   "src/projects/lib/compile-agent-config.ts": {
     "no-console": {
-      "count": 2
+      "count": 1
     }
   },
   "src/projects/lib/connector-approval-decision.ts": {

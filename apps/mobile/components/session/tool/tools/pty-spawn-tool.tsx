@@ -50,6 +50,7 @@ function InlineMeta({ items }: { items: ReactNode[] }) {
   );
 }
 
+/** @deprecated Renders an OpenCode-only tool in an OpenCode session (pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode. */
 export function PtySpawnTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
   const input = partInput(call);

@@ -252,6 +252,7 @@ export function useRuntimeSessionDiff(sessionId: string) {
  * The runtime's todo list for a session. A runtime capability
  * (`session.todo`): a runtime without one (pi) is never asked, and `data`
  * stays undefined.
+ * @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support.
  */
 export function useRuntimeSessionTodo(sessionId: string) {
   const runtimeReady = useRuntimeReady();

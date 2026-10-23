@@ -44,7 +44,6 @@ import {
   validateAgentMdFrontmatter,
 } from '@kortix/manifest-schema';
 import { eq } from 'drizzle-orm';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
@@ -74,8 +73,6 @@ import {
   KNOWN_BEHAVIOR_KEYS,
   OpencodeAgentConfigSchema,
   readAgentMarkdownFile,
-  manifestRuntime,
-  selectSessionHarness,
 } from '../lib/compile-agent-config';
 import { withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
@@ -318,21 +315,16 @@ export function registerAgentConfigRoutes(): void {
         block = { ...(read.block ?? {}), behavior, opencode: behavior };
       }
 
-      // The harness a new session of this project runs, and the agent settings
-      // it ignores, so the editor marks them instead of letting them look applied.
-      const harness = selectSessionHarness({
-        piHarnessFlag: resolveFeatureFlag(loaded.row.metadata, 'pi_harness'),
-        runtime: manifestRuntime(manifest.raw),
-      });
-
       return c.json({
         agent: agentName,
         schema_version: read.schemaVersion,
         editable: read.schemaVersion >= 2,
         default_agent: read.defaultAgent,
         block,
-        harness,
-        ignored_settings: ignoredAgentSettings(harness),
+        // Every new session runs pi. The editor marks the agent settings pi
+        // ignores instead of letting them look applied.
+        harness: 'pi',
+        ignored_settings: ignoredAgentSettings('pi'),
       });
     },
   );

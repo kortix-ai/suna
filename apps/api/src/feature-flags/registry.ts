@@ -68,7 +68,7 @@
  * a time. `unit-feature-flag-drift.test.ts` compares contract <-> SDK <->
  * registry and catches 1/3/5 only. List every holder before you start:
  *
- *   rg -l "meta_agent" --glob '!node_modules' . | xargs rg -l "pi_harness"
+ *   rg -l "meta_agent" --glob '!node_modules' . | xargs rg -l "genui"
  *
  * The UI renders straight from {@link buildFeatureFlagCatalog}, so a new entry
  * lights up in Settings automatically. `unit-feature-flags.test.ts` pins the
@@ -300,22 +300,10 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'behavioral',
     enforcementNote: 'Session selection and provider credential resolution reject or ignore resource secrets while disabled.',
   },
-  {
-    key: 'pi_harness',
-    name: 'Pi Harness (in-sandbox)',
-    description:
-      'Run sessions on the pi agent harness inside the ordinary session sandbox instead of OpenCode (KORTIX_HARNESS=pi in kortixd). Same repo layout, same agents and skills, same wire to the UI; pi starts in-process in ~100 ms after the checkout. On by default. On ⇒ every new session of this project boots pi. Off ⇒ the manifest decides: `runtime: pi` still boots pi, anything else boots OpenCode. An existing session keeps its sandbox and so its harness.',
-    stability: 'experimental',
-    available: () => true,
-    // On by default (2026-10-20). PI_HARNESS_DEFAULT_ENABLED=false turns the default off for a deployment.
-    platformDefault: () => config.PI_HARNESS_DEFAULT_ENABLED,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'Read at session provisioning (projects/lib/sessions.ts buildSessionSandboxEnvVars → ' +
-      'selectSessionHarness). An established session keeps its sandbox (runtime-identity.ts), and a ' +
-      'restart reuses that sandbox and its env, so it keeps its harness. Only a lost or restored session ' +
-      'gets a new sandbox, and that one restores its history from the session log in either harness.',
-  },
+  // `pi_harness` graduated (2026-10-23): every new session runs pi; OpenCode is
+  // sunset and serves only sessions that already run on it. No flag, no
+  // operator lever, no manifest `runtime:` choice. A stored
+  // `experimental.pi_harness` override is inert.
   {
     key: 'genui',
     name: 'Generative UI',
@@ -498,6 +486,29 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'routes',
     enforcementNote:
       'Off ⇒ nothing of Rooms exists in the project. ROUTES: every /projects/:id/rooms* route and POST /projects/:id/sessions/:sid/idle-notice answer 403 `feature_disabled` (projects/routes/rooms.ts); a post fans out only to members whose own project still has the flag on (projects/rooms/service.ts); room notifications leave the inbox (notifications/inbox-read.ts). BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-rooms skill and the CLI hides and refuses `kortix rooms` / `kortix peers`; a change reaches the next new box, and retires warm sessions (feature-flags/toggle-effects.ts). CLI outside a box: hidden and refused unless the linked project has the flag on. IAM: project.room.* leave the account permission catalog until a project of the account has it on. NOTIFICATIONS: the `message` kind is in `hidden_kinds` (no settings row) unless the person is in a room of a flag-on project. WEB: no sidebar row, no More entry, no Rooms permission group; a deep link shows the flag-off screen. DOCS: the reference is the kortix-rooms skill (references/rooms.md), not the public docs.',
+  },
+  {
+    key: 'workspace_volume',
+    name: 'Workspace volume',
+    description:
+      "Keep each new Platinum session's /workspace on its own Platinum volume instead of the sandbox disk, so the sandbox is disposable: one stopped for an hour is deleted, and the next open boots a new sandbox on the same files and conversation. Not a Settings toggle: Kortix enables it per project.",
+    stability: 'experimental',
+    // Every workspace volume is a Platinum volume.
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    platformDefault: () => false,
+    // Internal-only: stateless sandboxes roll out project by project. A Kortix
+    // operator sets it (PUT /v1/admin/api/projects/:id/features).
+    catalogHidden: true,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'BEHAVIORAL only. Read once per session, at POST /sessions (platform/services/workspace-volume.ts): on, a ' +
+      'Platinum session is inserted with `metadata.workspace_volume` and every box it ever gets mounts volume ' +
+      'kws-<session_id> at /workspace, in the region the volume was created in, with KORTIX_WORKSPACE_VOLUME=1 and ' +
+      'the session-log restore on. Turning the flag off changes no session that has a volume; ' +
+      'KORTIX_WORKSPACE_VOLUMES=off stops new volumes everywhere. A box stopped longer than ' +
+      'KORTIX_SANDBOX_IDLE_DELETE_MINUTES (default 60) is deleted (projects/reaping/idle-volume-retire.ts). The ' +
+      'volume is deleted with the session content: by the retention purge after the trash window ' +
+      '(projects/session-log-purge.ts) or by account erasure.',
   },
 ];
 
