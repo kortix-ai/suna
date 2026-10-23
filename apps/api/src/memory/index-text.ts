@@ -63,20 +63,26 @@ function joinGroups(groups: readonly IndexGroup[], dropped: number): string {
   return dropped > 0 ? `${text}${text ? '\n' : ''}${overflowLine(dropped)}` : text;
 }
 
+/** The length `joinGroups` would produce, from per-group line counts and character sums (no string is built). */
+function joinedLength(groups: readonly { type: MemoryPageType; count: number; chars: number }[], dropped: number): number {
+  const live = groups.filter((group) => group.count > 0);
+  const text = live.reduce((sum, g) => sum + `## ${HEADINGS[g.type]}\n`.length + g.chars + g.count - 1, 0) + 2 * Math.max(live.length - 1, 0);
+  return dropped > 0 ? text + (text > 0 ? 1 : 0) + overflowLine(dropped).length : text;
+}
+
 /** One layer's list cut to `budget` characters, and the pages it still lists. */
 export function cutIndex(groups: readonly IndexGroup[], budget = Number.POSITIVE_INFINITY): { text: string; pageIds: string[] } {
-  const kept = groups.map((group) => ({ type: group.type, lines: [...group.lines], pageIds: [...group.pageIds] }));
+  const sizes = groups.map((group) => ({ type: group.type, count: group.lines.length, chars: group.lines.reduce((n, line) => n + line.length, 0) }));
   let dropped = 0;
-  let text = joinGroups(kept, 0);
-  while (text.length > budget) {
-    const largest = kept.reduce((a, b) => (b.lines.length > a.lines.length ? b : a), kept[0]!);
-    if (!largest || largest.lines.length === 0) break;
-    largest.lines.pop();
-    largest.pageIds.pop();
+  while (joinedLength(sizes, dropped) > budget) {
+    const largest = sizes.reduce((a, b) => (b.count > a.count ? b : a), sizes[0]!);
+    if (!largest || largest.count === 0) break;
+    largest.count -= 1;
+    largest.chars -= groups[sizes.indexOf(largest)]!.lines[largest.count]!.length;
     dropped += 1;
-    text = joinGroups(kept, dropped);
   }
-  return { text, pageIds: kept.flatMap((group) => group.pageIds) };
+  const kept = groups.map((group, i) => ({ type: group.type, lines: group.lines.slice(0, sizes[i]!.count), pageIds: group.pageIds.slice(0, sizes[i]!.count) }));
+  return { text: joinGroups(kept, dropped), pageIds: kept.flatMap((group) => group.pageIds) };
 }
 
 /** One layer's list, cut to `budget` characters (no cut by default). */
@@ -103,19 +109,21 @@ export function splitBudget(layers: readonly { scope: 'company' | 'channel' | 'd
   });
 }
 
-const CACHE_MAX = 5_000;
-// replica-local: rendered index per (layer, version); a version bump makes a new key, so entries never go stale.
-const cache = new Map<string, unknown>();
+const CACHE_MAX_BYTES = 32 * 1024 * 1024;
+// replica-local: one rendered index per layer key, at the version it was rendered for; a newer version replaces it. LRU, bounded by size.
+const cache = new Map<string, { version: string; value: unknown; bytes: number }>();
+let cacheBytes = 0;
+
+/** Rough UTF-16 size of a cached value. */
+const sizeOf = (value: unknown) => 2 * (typeof value === 'string' ? value.length : JSON.stringify(value).length);
 
 /** The cached value of a layer at a version (marked recently used), or undefined. */
 export function peekIndex<T>(layerId: string, version: number | string): T | undefined {
-  const key = `${layerId}:${version}`;
-  const hit = cache.get(key);
-  if (hit !== undefined) {
-    cache.delete(key);
-    cache.set(key, hit);
-  }
-  return hit as T | undefined;
+  const hit = cache.get(layerId);
+  if (!hit || hit.version !== String(version)) return undefined;
+  cache.delete(layerId);
+  cache.set(layerId, hit);
+  return hit.value as T;
 }
 
 /** The rendered index of a layer at a version, from the cache when this replica rendered it before. */
@@ -123,7 +131,18 @@ export function cachedIndex<T>(layerId: string, version: number | string, render
   const hit = peekIndex<T>(layerId, version);
   if (hit !== undefined) return hit;
   const value = render();
-  cache.set(`${layerId}:${version}`, value);
-  if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!);
+  const old = cache.get(layerId);
+  if (old) {
+    cache.delete(layerId);
+    cacheBytes -= old.bytes;
+  }
+  const entry = { version: String(version), value, bytes: sizeOf(value) };
+  cache.set(layerId, entry);
+  cacheBytes += entry.bytes;
+  while (cacheBytes > CACHE_MAX_BYTES && cache.size > 1) {
+    const [oldest, evicted] = cache.entries().next().value!;
+    cache.delete(oldest);
+    cacheBytes -= evicted.bytes;
+  }
   return value;
 }

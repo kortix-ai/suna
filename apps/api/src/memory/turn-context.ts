@@ -21,7 +21,7 @@ import { logger } from '../lib/logger';
 import { classifyRuntimeRequest } from '../sandbox-proxy/runtime-request';
 import { db } from '../shared/db';
 import { ttlMemo } from '../shared/ttl-memo';
-import { copyPages, indexPages } from './export';
+import { indexPages, indexRows } from './export';
 import { cachedIndex, cutIndex, type IndexGroup, indexGroups, peekIndex, splitBudget } from './index-text';
 import type { LayerRef } from './layers';
 import { threadLayers } from './thread-layers';
@@ -29,6 +29,8 @@ import { threadLayers } from './thread-layers';
 export interface MemoryTurnContext {
   layers: MemoryTurnLayers;
   system: string;
+  /** No "Used memory" record yet: this is the thread's first turn. */
+  firstTurn: boolean;
   /** What the thread's first turn records in `memory_thread_loads` ("Used memory"). */
   loaded: MemoryThreadLoadLayer[];
 }
@@ -66,9 +68,10 @@ const SYSTEM_INTRO = [
 /** The whole `system` when no layer has a page. */
 export const EMPTY_MEMORY_SYSTEM = 'Memory: this thread has no saved pages yet. Save a durable fact with the `remember` tool.';
 
-function layerHeading(layer: Pick<LayerRef, 'scope' | 'name'>): string {
+/** `readOnly`: the personal layer of a private channel thread (D3), which `remember` cannot write from there. */
+function layerHeading(layer: Pick<LayerRef, 'scope' | 'name'>, readOnly: boolean): string {
   if (layer.scope === 'company') return 'Company';
-  if (layer.scope === 'dm') return `Your memory with ${layer.name}`;
+  if (layer.scope === 'dm') return `Your memory with ${layer.name}${readOnly ? ' (read-only in this thread)' : ''}`;
   return layer.name;
 }
 
@@ -77,15 +80,15 @@ function layerHeading(layer: Pick<LayerRef, 'scope' | 'name'>): string {
  * with pages a `### <layer>` section with its list cut to the layer's budget.
  * `pageIds`: per layer, the pages the text lists.
  */
-export function memorySystem(layers: readonly { ref: Pick<LayerRef, 'scope' | 'name'>; groups: IndexGroup[] }[]): {
+export function memorySystem(layers: readonly { ref: Pick<LayerRef, 'scope' | 'name'>; groups: IndexGroup[]; readOnly?: boolean }[]): {
   system: string;
   pageIds: string[][];
 } {
   const budgets = splitBudget(layers.map(({ ref, groups }) => ({ scope: ref.scope, need: cutIndex(groups).text.length })));
   const cuts = layers.map(({ groups }, i) => cutIndex(groups, budgets[i]));
-  const sections = layers.flatMap(({ ref }, i) =>
+  const sections = layers.flatMap(({ ref, readOnly }, i) =>
     // The type headings sit one level under the layer heading.
-    cuts[i]!.text ? [`### ${layerHeading(ref)}\n${cuts[i]!.text.replace(/^## /gm, '#### ')}`] : [],
+    cuts[i]!.text ? [`### ${layerHeading(ref, readOnly === true)}\n${cuts[i]!.text.replace(/^## /gm, '#### ')}`] : [],
   );
   return {
     system: sections.length > 0 ? `${SYSTEM_INTRO}\n\n${sections.join('\n\n')}` : EMPTY_MEMORY_SYSTEM,
@@ -100,21 +103,34 @@ async function layerGroups(ref: LayerRef): Promise<{ groups: IndexGroup[]; hit: 
   const version = `${ref.version}:${ref.name}`;
   const hit = peekIndex<IndexGroup[]>(cacheId, version);
   if (hit) return { groups: hit, hit: true };
-  const pages = await copyPages(db, ref.layerId);
+  const pages = await indexRows(ref.layerId);
   return { groups: cachedIndex(cacheId, version, () => indexGroups(indexPages(ref, pages))), hit: false };
 }
+
+/**
+ * The layers a prompt by `prompterUserId` reads: a personal (DM) layer only
+ * when that person owns it. Anyone else who may prompt the thread (a manager
+ * with oversight, an automation actor) gets no personal section and no
+ * personal copy.
+ */
+export const promptLayers = (read: readonly LayerRef[], prompterUserId: string) =>
+  read.filter((layer) => layer.scope !== 'dm' || layer.dmUserId === prompterUserId);
 
 /**
  * Flag on: one query (session → root → space → layers), then one page query
  * per layer whose list this replica has not rendered at its version. Layers
  * read for the first time are made.
  */
-export async function memoryTurnContext(projectId: string, sessionId: string): Promise<MemoryTurnContext | null> {
+export async function memoryTurnContext(projectId: string, sessionId: string, prompterUserId: string): Promise<MemoryTurnContext | null> {
   if (!(await channelsOn(projectId))) return null;
   const thread = await threadLayers(sessionId);
-  const layers = thread ? turnLayersOf(thread.read) : null;
-  if (!thread || !layers) return null;
-  const indexed = await Promise.all(thread.read.map(async (ref) => ({ ref, ...(await layerGroups(ref)) })));
+  if (!thread) return null;
+  const read = promptLayers(thread.read, prompterUserId);
+  const layers = turnLayersOf(read);
+  if (!layers) return null;
+  const indexed = await Promise.all(
+    read.map(async (ref) => ({ ref, readOnly: ref.scope === 'dm' && thread.own.scope !== 'dm', ...(await layerGroups(ref)) })),
+  );
   const { system, pageIds } = memorySystem(indexed);
   logger.info('memory.turn_context', {
     session_id: sessionId,
@@ -126,6 +142,7 @@ export async function memoryTurnContext(projectId: string, sessionId: string): P
   return {
     layers,
     system,
+    firstTurn: !thread.loaded,
     loaded: indexed.map(({ ref }, i) => ({
       layer_id: ref.layerId,
       scope: ref.scope,

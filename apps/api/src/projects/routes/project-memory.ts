@@ -383,7 +383,13 @@ export function registerProjectMemoryRoutes(): void {
       request: {
         params: projectParams,
         query: z.object({
-          q: z.string().trim().min(MEMORY_SEARCH_LIMITS.q_min).max(MEMORY_SEARCH_LIMITS.q_max),
+          q: z
+            .string()
+            .trim()
+            .min(MEMORY_SEARCH_LIMITS.q_min)
+            .max(MEMORY_SEARCH_LIMITS.q_max)
+            // Postgres refuses NUL in a text parameter: 400 here, not a 500 from the query.
+            .refine((q) => !q.includes('\u0000'), 'q must not contain NUL'),
           layer: z.string().optional(),
           type: MemoryPageTypeSchema.optional(),
           limit: z.coerce.number().int().min(1).max(MEMORY_SEARCH_LIMITS.limit).optional(),

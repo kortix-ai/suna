@@ -300,16 +300,23 @@ export async function changeWithVersions<T>(
   const out = await db.transaction(async (tx) => {
     await lockLayers(tx, layerIds);
     const result = await write(tx, changeId);
-    // What the change was, per layer, for the `memory.change` metric (undo rate = op=undo / agent writes).
-    const kinds = await tx
-      .selectDistinct({ scope: memoryLayers.scope, op: memoryPageVersions.op, author_kind: memoryPageVersions.authorKind })
-      .from(memoryPageVersions)
-      .innerJoin(memoryLayers, eq(memoryLayers.layerId, memoryPageVersions.layerId))
-      .where(eq(memoryPageVersions.changeId, changeId));
-    return { result, versions: await bumpLayers(tx, layerIds), kinds };
+    return { result, versions: await bumpLayers(tx, layerIds) };
   });
-  for (const kind of out.kinds) logger.info('memory.change', kind);
-  return { result: out.result, versions: out.versions };
+  logChange(changeId);
+  return out;
+}
+
+/** `memory.change {scope, op, author_kind}` per layer of a committed change (undo rate = op=undo / agent writes); after the commit, off the layer lock. */
+function logChange(changeId: string): void {
+  void db
+    .selectDistinct({ scope: memoryLayers.scope, op: memoryPageVersions.op, author_kind: memoryPageVersions.authorKind })
+    .from(memoryPageVersions)
+    .innerJoin(memoryLayers, eq(memoryLayers.layerId, memoryPageVersions.layerId))
+    .where(eq(memoryPageVersions.changeId, changeId))
+    .then((kinds) => {
+      for (const kind of kinds) logger.info('memory.change', kind);
+    })
+    .catch(() => undefined);
 }
 
 export async function change<T>(layerIds: string[], write: (tx: Tx, changeId: string) => Promise<T>): Promise<T> {

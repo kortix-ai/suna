@@ -40,6 +40,7 @@ import {
   releasePromptDelivery,
 } from '../prompt-dedupe';
 import { recordSessionActivity } from '../../projects/session-activity';
+import { MEMORY_TURN_SYSTEM_MAX_CHARS } from '@kortix/api-contract';
 import { recordThreadLoad } from '../../memory/thread-loads';
 import { isMemoryTurnRoute, memoryTurnContext, withMemoryTurn, withoutClientSystem } from '../../memory/turn-context';
 import { logger } from '../../lib/logger';
@@ -363,9 +364,13 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
   state.requestBody = withoutClientSystem(state.requestBody);
   const sessionId = req.record.sessionId;
   try {
-    const turn = await memoryTurnContext(req.record.projectId, sessionId);
+    // The prompter decides whether the thread's personal layer is listed (its owner only).
+    const turn = await memoryTurnContext(req.record.projectId, sessionId, req.userId);
     if (!turn) return;
     state.requestBody = withMemoryTurn(state.requestBody, turn);
+    // "Used memory" is the first turn's list, recorded only when the list went out.
+    // ponytail: recorded before delivery; a refused prompt or a daemon older than the `system` field still records it.
+    if (!turn.firstTurn || turn.system.length > MEMORY_TURN_SYSTEM_MAX_CHARS) return;
     // Off the turn's path: a lost record only hides the "Used memory" chip.
     void recordThreadLoad(sessionId, turn.loaded).catch((error: unknown) =>
       logger.warn('[memory] the thread load was not recorded', {

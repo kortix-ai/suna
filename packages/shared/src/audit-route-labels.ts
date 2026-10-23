@@ -767,6 +767,8 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/projects/:projectId/memory/versions/:versionId/undo': { action: 'project.memory.change.undo', title: 'Undid memory change' },
   'POST /v1/projects/:projectId/memory/remember': { action: 'project.memory.remember', title: 'Agent saved to memory' },
   'GET /v1/projects/:projectId/memory/layers/:layerId/export': { action: 'project.memory.layer.export', title: 'Agent read memory copy' },
+  'GET /v1/projects/:projectId/memory/search': { action: 'project.memory.search', title: 'Searched memory' },
+  'GET /v1/projects/:projectId/sessions/:sessionId/memory-usage': { action: 'project.memory.usage.read', title: 'Viewed memory a thread used' },
   'GET /v1/projects/:projectId/custom-providers': { action: 'project.custom_provider.list', title: 'Listed custom model providers' },
   'PUT /v1/projects/:projectId/custom-providers/:providerId': { action: 'project.custom_provider.upsert', title: 'Saved custom model provider' },
   'DELETE /v1/projects/:projectId/custom-providers/:providerId': { action: 'project.custom_provider.delete', title: 'Deleted custom model provider' },

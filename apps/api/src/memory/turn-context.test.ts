@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { LayerRef } from './layers';
 import { type ThreadRow, threadPlan } from './thread-layers';
 import { indexGroups, type IndexPage } from './index-text';
-import { EMPTY_MEMORY_SYSTEM, isMemoryTurnRoute, memorySystem, turnLayersOf, withMemoryTurn, withoutClientSystem } from './turn-context';
+import { EMPTY_MEMORY_SYSTEM, isMemoryTurnRoute, memorySystem, promptLayers, turnLayersOf, withMemoryTurn, withoutClientSystem } from './turn-context';
 import { MEMORY_TURN_SYSTEM_MAX_CHARS } from '@kortix/api-contract';
 
 const CHANNEL = '11111111-1111-4111-8111-111111111111';
@@ -193,5 +193,34 @@ describe('the page list in the turn system prompt', () => {
     expect(system).toContain('more pages: use memory_search.');
     expect(system.length).toBeLessThan(9_000);
     for (const id of pageIds[1]!) expect(system).toContain(`- ${id} —`);
+  });
+
+  test('a private channel thread marks its personal section read-only', () => {
+    const { system } = memorySystem([{ ref: personal, readOnly: true, groups: indexGroups([indexPage({ title: 'C', path: '/c.md' })]) }]);
+    expect(system).toContain('### Your memory with writer (read-only in this thread)');
+  });
+});
+
+describe('who gets the personal layer in a turn', () => {
+  const ref = (scope: 'company' | 'channel' | 'dm', dmUserId: string | null = null): LayerRef => ({
+    layerId: `l-${scope}`,
+    projectId: 'p',
+    scope,
+    spaceId: scope === 'company' ? null : CHANNEL,
+    version: 1,
+    name: '',
+    readOnly: false,
+    dmUserId,
+  });
+  const d3 = [ref('company'), ref('channel'), ref('dm', 'owner')];
+
+  test('the DM owner prompting their private thread gets company, channel and personal', () => {
+    expect(promptLayers(d3, 'owner').map((layer) => layer.scope)).toEqual(['company', 'channel', 'dm']);
+  });
+
+  test('anyone else prompting it (a manager with oversight, an automation actor) gets no personal layer', () => {
+    expect(promptLayers(d3, 'manager').map((layer) => layer.scope)).toEqual(['company', 'channel']);
+    expect(promptLayers([ref('company'), ref('dm', 'owner')], 'manager').map((layer) => layer.scope)).toEqual(['company']);
+    expect(turnLayersOf(promptLayers(d3, 'manager'))?.map((layer) => layer.dir)).toEqual(['company', 'channel']);
   });
 });

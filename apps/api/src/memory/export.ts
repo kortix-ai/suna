@@ -36,8 +36,26 @@ export async function threadOf(projectId: string, sessionId: string) {
   return thread;
 }
 
+type IndexRow = Pick<PageRow, 'pageId' | 'type' | 'title' | 'summary' | 'status' | 'updatedAt' | 'createdAt'>;
+
+/** The copy pages of a layer with only what the page list needs (no bodies). */
+export async function indexRows(layerId: string): Promise<IndexRow[]> {
+  return db
+    .select({
+      pageId: memoryPages.pageId,
+      type: memoryPages.type,
+      title: memoryPages.title,
+      summary: memoryPages.summary,
+      status: memoryPages.status,
+      updatedAt: memoryPages.updatedAt,
+      createdAt: memoryPages.createdAt,
+    })
+    .from(memoryPages)
+    .where(and(eq(memoryPages.layerId, layerId), isNull(memoryPages.deletedAt), eq(memoryPages.status, 'confirmed')));
+}
+
 /** A layer's copy pages as index entries, each with its file in the copy. */
-export function indexPages(layer: Pick<LayerRef, 'scope'>, pages: PageRow[], slugs = pageSlugs(pages)): IndexPage[] {
+export function indexPages(layer: Pick<LayerRef, 'scope'>, pages: IndexRow[], slugs = pageSlugs(pages)): IndexPage[] {
   const dir = MEMORY_SCOPE_COPY_DIR[layer.scope];
   return pages.map((page) => ({
     pageId: page.pageId,

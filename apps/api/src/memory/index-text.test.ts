@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { cachedIndex, indexGroups, type IndexPage, renderIndex, splitBudget } from './index-text';
+import { cachedIndex, cutIndex, indexGroups, type IndexPage, renderIndex, splitBudget } from './index-text';
 
 const at = (day: number) => new Date(Date.UTC(2026, 9, day));
 const page = (over: Partial<IndexPage>): IndexPage => ({
@@ -66,5 +66,21 @@ describe('the page list agents receive', () => {
     expect(cachedIndex('layer-a', 1, render)).toBe('text 1');
     expect(cachedIndex('layer-a', 1, render)).toBe('text 1');
     expect(cachedIndex('layer-a', 2, render)).toBe('text 2');
+    // A newer version replaces the old one: going back renders again.
+    expect(cachedIndex('layer-a', 1, render)).toBe('text 3');
+  });
+
+  test('the cut never passes the budget and keeps fewer pages as the budget shrinks', () => {
+    const groups = indexGroups(
+      Array.from({ length: 40 }, (_, i) => page({ type: i % 2 ? 'people' : 'decisions', title: `P${i}`, updatedAt: at((i % 28) + 1), path: `/p${i}.md` })),
+    );
+    let last = Number.POSITIVE_INFINITY;
+    for (let budget = 2_000; budget >= 0; budget -= 37) {
+      const cut = cutIndex(groups, budget);
+      if (cut.pageIds.length > 0) expect(cut.text.length).toBeLessThanOrEqual(budget);
+      expect(cut.pageIds.length).toBeLessThanOrEqual(last);
+      last = cut.pageIds.length;
+      for (const id of cut.pageIds) expect(cut.text).toContain(`(${id})`);
+    }
   });
 });

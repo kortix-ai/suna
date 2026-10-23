@@ -36,6 +36,8 @@ export interface ThreadRow {
   dm_user_id: string | null;
   dm_agent: string | null;
   layers: { layer_id: string; scope: MemoryLayerScope; space_id: string | null; version: string }[] | null;
+  /** The calling session already has its "Used memory" record (`memory_thread_loads`). */
+  loaded?: boolean;
 }
 
 export interface PlannedLayer {
@@ -86,6 +88,8 @@ export interface ThreadLayers {
   company: LayerRef;
   /** Company first, then the thread's own layer, then (D3) the personal layer. */
   read: LayerRef[];
+  /** The calling session already has its "Used memory" record. */
+  loaded: boolean;
 }
 
 const MAX_DEPTH = 20;
@@ -108,6 +112,7 @@ async function readThreadRow(sessionId: string): Promise<ThreadRow | null> {
            s.space_id, s.kind::text AS space_kind, s.slug AS space_slug, s.dm_user_id AS space_dm_user_id,
            s.dm_agent_name AS space_dm_agent, s.archived_at AS space_archived_at,
            dm.space_id AS dm_space_id, dm.dm_user_id, dm.dm_agent_name AS dm_agent,
+           EXISTS (SELECT 1 FROM kortix.memory_thread_loads tl WHERE tl.session_id = ${sessionId}) AS loaded,
            (SELECT jsonb_agg(jsonb_build_object('layer_id', l.layer_id, 'scope', l.scope, 'space_id', l.space_id, 'version', l.version::text))
               FROM kortix.memory_layers l
              WHERE l.project_id = r.project_id
@@ -166,5 +171,6 @@ export async function threadLayers(sessionId: string): Promise<ThreadLayers | nu
     own: read[1]!,
     company: read[0]!,
     read,
+    loaded: row.loaded === true,
   };
 }

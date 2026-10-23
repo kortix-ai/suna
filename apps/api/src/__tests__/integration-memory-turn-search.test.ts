@@ -61,6 +61,8 @@ beforeAll(async () => {
   await page(L.company, 'Northwind contact', { type: 'people', body: 'Main contact is Sam; renews in March.' });
   await page(L.marketing, 'Launch pricing', { body: 'Pricing stays at $49 per seat for the launch.' });
   await page(L.marketing, '50% discount rule', { type: 'playbooks', body: 'Never more than half off.' });
+  await page(L.marketing, 'q4_launch', { type: 'workstreams' });
+  await page(L.marketing, 'q4xlaunch', { type: 'workstreams' });
   await page(L.marketing, 'Pricing rumor', { status: 'unconfirmed', body: 'Pricing may go to $59.' });
   await page(L.old, 'Old pricing', { body: 'Pricing was $39.' });
   await page(L.priya, 'Priya pricing notes', { type: 'playbooks', body: 'Priya prefers pricing in euros.' });
@@ -74,28 +76,37 @@ afterAll(async () => {
 
 describe('the memory a turn carries', () => {
   test('a channel thread: memory_layers for company and channel, and a system list of their confirmed pages', async () => {
-    const turn = (await memoryTurnContext(PROJECT, THREAD))!;
+    const turn = (await memoryTurnContext(PROJECT, THREAD, PRIYA))!;
     expect(turn.layers.map((layer) => layer.dir)).toEqual(['company', 'channel']);
     expect(turn.system).toContain('### Company\n#### People\n- Northwind contact — About Northwind contact (/opt/kortix/memory/company/people/northwind-contact.md)');
     expect(turn.system).toContain('### #marketing');
     expect(turn.system).toContain('- Launch pricing — About Launch pricing (/opt/kortix/memory/channel/decisions/launch-pricing.md)');
     expect(turn.system).not.toContain('Pricing rumor');
     expect(turn.system).not.toContain('Priya pricing notes');
-    expect(turn.loaded.map((layer) => layer.page_ids.length)).toEqual([1, 2]);
+    expect(turn.loaded.map((layer) => layer.page_ids.length)).toEqual([1, 4]);
     // Unchanged layers: the second turn renders from the cache, same text.
-    expect((await memoryTurnContext(PROJECT, THREAD))!.system).toBe(turn.system);
+    expect((await memoryTurnContext(PROJECT, THREAD, PRIYA))!.system).toBe(turn.system);
   });
 
   test('a private channel thread of the DM owner (D3) also lists "Your memory with writer"', async () => {
-    const turn = (await memoryTurnContext(PROJECT, PRIVATE_THREAD))!;
+    const turn = (await memoryTurnContext(PROJECT, PRIVATE_THREAD, PRIYA))!;
     expect(turn.layers.map((layer) => layer.dir)).toEqual(['company', 'channel', 'personal']);
-    expect(turn.system).toContain('### Your memory with writer\n#### Playbooks\n- Priya pricing notes');
+    expect(turn.system).toContain('### Your memory with writer (read-only in this thread)\n#### Playbooks\n- Priya pricing notes');
     expect(turn.system).not.toContain('Sam pricing notes');
   });
 
+  test('anyone but the DM owner prompting the private thread gets no personal section or copy', async () => {
+    const turn = (await memoryTurnContext(PROJECT, PRIVATE_THREAD, SAM))!;
+    expect(turn.layers.map((layer) => layer.dir)).toEqual(['company', 'channel']);
+    expect(turn.system).not.toContain('Your memory with');
+    expect(turn.system).not.toContain('Priya pricing notes');
+  });
+
   test('the first turn is recorded once; usage drops pages deleted since', async () => {
-    const first = (await memoryTurnContext(PROJECT, THREAD))!;
+    const first = (await memoryTurnContext(PROJECT, THREAD, PRIYA))!;
+    expect(first.firstTurn).toBe(true);
     await recordThreadLoad(THREAD, first.loaded);
+    expect((await memoryTurnContext(PROJECT, THREAD, PRIYA))!.firstTurn).toBe(false);
     await recordThreadLoad(THREAD, [{ layer_id: L.company, scope: 'company', name: 'Company', version: 99, page_ids: [] }]);
     const before = await threadUsage(THREAD, SAM);
     expect(before.loaded_at).not.toBeNull();
@@ -106,13 +117,14 @@ describe('the memory a turn carries', () => {
     await db.update(memoryPages).set({ deletedAt: new Date() }).where(eq(memoryPages.pageId, pageIds['Launch pricing']!));
     const after = await threadUsage(THREAD, SAM);
     expect(after.loaded_at).toBe(before.loaded_at);
-    expect(after.layers[1]!.pages.map((p) => p.title)).toEqual(['50% discount rule']);
+    expect(after.layers[1]!.pages.map((p) => p.title)).not.toContain('Launch pricing');
+    expect(after.layers[1]!.pages.map((p) => p.title)).toContain('50% discount rule');
     await db.update(memoryPages).set({ deletedAt: null }).where(eq(memoryPages.pageId, pageIds['Launch pricing']!));
     expect(await threadUsage(PRIVATE_THREAD, PRIYA)).toEqual({ loaded_at: null, layers: [] });
   });
 
   test('a private thread’s DM layer shows in usage for its owner only', async () => {
-    await recordThreadLoad(PRIVATE_THREAD, (await memoryTurnContext(PROJECT, PRIVATE_THREAD))!.loaded);
+    await recordThreadLoad(PRIVATE_THREAD, (await memoryTurnContext(PROJECT, PRIVATE_THREAD, PRIYA))!.loaded);
     expect((await threadUsage(PRIVATE_THREAD, PRIYA)).layers.map((layer) => layer.scope)).toEqual(['company', 'channel', 'dm']);
     expect((await threadUsage(PRIVATE_THREAD, SAM)).layers.map((layer) => layer.scope)).toEqual(['company', 'channel']);
   });
@@ -141,9 +153,12 @@ describe('memory search', () => {
     await expect(searchMemory(project, agent(THREAD), { q: 'pricing', layer: PRIYA_DM, limit: 20 })).rejects.toMatchObject({ status: 404 });
   });
 
-  test('`%` matches literally through the title fallback; type and limit narrow', async () => {
+  test('the title fallback matches `%` and `_` literally; type and limit narrow', async () => {
+    // Full text finds this one ('50'); only the fallback could match '5%', and it must not.
     expect(titles(await searchMemory(project, person(PRIYA), { q: '50%', limit: 20 }))).toEqual(['50% discount rule']);
     expect(titles(await searchMemory(project, person(PRIYA), { q: '5%', limit: 20 }))).toEqual([]);
+    // Full text cannot match 'q4_l' (no token 'l'); the fallback must match '_' literally, not as any character.
+    expect(titles(await searchMemory(project, person(PRIYA), { q: 'q4_l', limit: 20 }))).toEqual(['q4_launch']);
     expect(titles(await searchMemory(project, person(PRIYA), { q: 'pricing', type: 'playbooks', limit: 20 }))).toEqual(['Priya pricing notes']);
     expect((await searchMemory(project, person(PRIYA), { q: 'pricing', limit: 1 })).hits).toHaveLength(1);
   });
