@@ -57,6 +57,8 @@ function authorize(cfg: Config, c: Context): AuthOutcome {
 }
 
 const optionalString = (value: unknown): value is string | undefined => value === undefined || typeof value === 'string'
+/** `system`: the per-turn system prompt addition apps/api sends (the memory page list, about 8,000 characters). */
+export const MAX_TURN_SYSTEM_CHARS = 16_000
 
 /** `memory_layers`: `[{ layer_id, version, dir }]`, the version a number or its text, each folder at most once. */
 function parseMemoryLayers(value: unknown): MemoryLayerRef[] | string {
@@ -76,17 +78,18 @@ function parseMemoryLayers(value: unknown): MemoryLayerRef[] | string {
 
 /**
  * Validate a `POST /sessions/:id/prompt` body:
- * `{ message_id?, parts, agent?, model?: "provider/model", variant?, directory?, no_reply?, memory_layers? }`.
+ * `{ message_id?, parts, agent?, model?: "provider/model", variant?, directory?, no_reply?, memory_layers?, system? }`.
  */
 export function parseRuntimePromptBody(raw: unknown): RuntimePromptInput | string {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return 'body must be a JSON object'
   const body = raw as Record<string, unknown>
   if (!Array.isArray(body.parts) || body.parts.length === 0) return 'parts must be a non-empty array'
   if (body.parts.some((part) => !part || typeof part !== 'object' || Array.isArray(part))) return 'parts must be objects'
-  for (const key of ['message_id', 'agent', 'model', 'variant', 'directory'] as const) {
+  for (const key of ['message_id', 'agent', 'model', 'variant', 'directory', 'system'] as const) {
     if (!optionalString(body[key])) return `${key} must be a string`
   }
   if (body.no_reply !== undefined && typeof body.no_reply !== 'boolean') return 'no_reply must be a boolean'
+  if (typeof body.system === 'string' && body.system.length > MAX_TURN_SYSTEM_CHARS) return `system must be at most ${MAX_TURN_SYSTEM_CHARS} characters`
   const memoryLayers = body.memory_layers === undefined ? undefined : parseMemoryLayers(body.memory_layers)
   if (typeof memoryLayers === 'string') return memoryLayers
   let model: RuntimePromptInput['model']
@@ -105,6 +108,7 @@ export function parseRuntimePromptBody(raw: unknown): RuntimePromptInput | strin
     ...(text('directory') ? { directory: text('directory') } : {}),
     ...(body.no_reply === true ? { noReply: true } : {}),
     ...(memoryLayers ? { memoryLayers } : {}),
+    ...(text('system') ? { system: text('system') } : {}),
   }
 }
 

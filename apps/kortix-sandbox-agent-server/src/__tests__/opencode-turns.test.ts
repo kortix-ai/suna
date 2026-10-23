@@ -220,8 +220,29 @@ describe('parseRuntimePromptBody', () => {
     [{ parts: [{}], model: 'bare' }, 'model must be "provider/model"'],
     [{ parts: [{}], model: 'kortix/' }, 'model must be "provider/model"'],
     [{ parts: [{}], no_reply: 'yes' }, 'no_reply must be a boolean'],
+    [{ parts: [{}], system: 5 }, 'system must be a string'],
+    [{ parts: [{}], system: 'x'.repeat(16_001) }, 'system must be at most 16000 characters'],
   ])('%j is refused', (body, error) => {
     expect(parseRuntimePromptBody(body)).toBe(error)
+  })
+
+  test('system is the turn system text, up to 16,000 characters; a blank one or none leaves the input as before', () => {
+    const parts = [{ type: 'text', text: 'hi' }]
+    expect(parseRuntimePromptBody({ parts, system: '  ## Memory\n- Q4 launch  ' })).toEqual({ parts, system: '## Memory\n- Q4 launch' })
+    expect(parseRuntimePromptBody({ parts, system: 'x'.repeat(16_000) })).toEqual({ parts, system: 'x'.repeat(16_000) })
+    expect(parseRuntimePromptBody({ parts, system: '  ' })).toEqual({ parts })
+    expect(parseRuntimePromptBody({ parts })).toEqual({ parts })
+  })
+})
+
+describe('the turn system text on OpenCode (memory P2)', () => {
+  test('prompt_async carries system for that prompt; a prompt without it sends none', async () => {
+    const { proxy, seen } = fakeProxy(() => ({ status: 204, body: null }))
+    const turns = createOpenCodeTurnService(proxy, () => '/workspace')
+    const parts = [{ type: 'text', text: 'hi' }]
+    await turns.prompt('ses_1', { parts, system: '## Memory\n- Q4 launch' })
+    await turns.prompt('ses_1', { parts })
+    expect(seen.map((call) => call.body)).toEqual([{ parts, system: '## Memory\n- Q4 launch' }, { parts }])
   })
 })
 

@@ -144,6 +144,7 @@ export function createOpenCodeTurnService(
         ...(input.model ? { model: input.model } : {}),
         ...(input.variant ? { variant: input.variant } : {}),
         ...(input.noReply ? { noReply: true } : {}),
+        ...(input.system ? { system: input.system } : {}),
       })
     } catch (err) {
       if (key) recent.delete(key)

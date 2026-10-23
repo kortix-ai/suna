@@ -693,6 +693,18 @@ other adapter, no route and nothing in `src/app/`. The app hands a boot what it
 needs through `HarnessBootContext` (`serve` starts the HTTP server).
 `bun run lint` enforces all of it.
 
+## The prompt body
+
+`POST /kortix/runtime/sessions/:id/prompt` (`routes/kortix/runtime.ts`
+`parseRuntimePromptBody`) takes `{ message_id?, parts, agent?, model:
+"provider/model"?, variant?, directory?, no_reply?, memory_layers?, system? }`
+and answers `400 { error }` for a malformed one.
+
+| Field | What the turn does with it |
+| --- | --- |
+| `memory_layers` | `[{ layer_id, version, dir }]` (`project_channels`): the route brings the read-only memory copy to these versions before the turn ("Hosted tools", `memory-copy.ts`). |
+| `system` | A string of 16,000 characters at most (`MAX_TURN_SYSTEM_CHARS`), trimmed; blank is none. Added to this turn's system prompt only: pi sets it through the hidden `kortix-turn` extension (`before_agent_start`), OpenCode receives it as `prompt_async` `system`. apps/api sends the thread's memory page list here (`project_channels`). A prompt without it runs without it; a daemon that predates the field ignores it. |
+
 ## Steering
 
 `POST /kortix/runtime/sessions/:id/steer` takes the `/prompt` body with

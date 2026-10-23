@@ -26,6 +26,11 @@ export interface RuntimePromptInput {
    * harness reads nothing from it.
    */
   memoryLayers?: MemoryLayerRef[]
+  /**
+   * Text added to this turn's system prompt only (`project_channels`: the
+   * thread's memory page list). The next turn without it runs without it.
+   */
+  system?: string
 }
 
 /** The HTTP answer a verb produced; the route sends it as it is. */
