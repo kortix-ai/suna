@@ -7287,7 +7287,7 @@ const catalog = {
       "fromThread": "from “{thread}”",
       "author": {
         "system": "Kortix",
-        "unknown": "Someone"
+        "unknown": "A member"
       },
       "edit": "Edit",
       "more": "More actions",

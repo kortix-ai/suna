@@ -4,7 +4,6 @@ import type { ProjectSession, ProjectSpace } from '@kortix/sdk';
 import { useProjectSessions } from '@kortix/sdk/react';
 import {
   ChatTeardropTextIcon,
-  CheckIcon,
   type Icon,
   LightningIcon,
   LinkSimpleIcon,
@@ -29,6 +28,7 @@ import { UserAvatar } from '../../primitives/user-avatar';
 import { sessionDisplayLabel, sessionDisplayStatus } from '../../session/actions/session-label';
 import { participantLabel } from '../../session/participants/session-participants';
 import { MESSAGE_TEXT_CLASS, MessageRow } from '../../session/turn/message-row';
+import { SolidCheckIcon } from '../../internal/icons/solid-check-icon';
 import { RememberThisButton } from '../memory/remember-this';
 import { SessionStatusMark } from '../sidebar/session-status-mark';
 import {
@@ -352,7 +352,7 @@ function ThreadToolbar({ sessionId, onOpen }: { sessionId: string; onOpen: () =>
       </Hint>
       <Hint label={linkLabel} side="top">
         <Button variant="ghost" size="icon-md" aria-label={linkLabel} onClick={copyLink}>
-          {copied ? <CheckIcon className="size-4 shrink-0" /> : <LinkSimpleIcon className="size-4 shrink-0" />}
+          {copied ? <SolidCheckIcon className="size-4 shrink-0" /> : <LinkSimpleIcon className="size-4 shrink-0" />}
         </Button>
       </Hint>
     </>

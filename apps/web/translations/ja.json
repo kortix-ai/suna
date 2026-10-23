@@ -22454,7 +22454,7 @@
       "fromThread": "「{thread}」から",
       "author": {
         "system": "Kortix",
-        "unknown": "誰か"
+        "unknown": "メンバー"
       },
       "edit": "編集",
       "more": "その他の操作",

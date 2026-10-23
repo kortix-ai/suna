@@ -2897,6 +2897,9 @@ export function CommandPalette() {
                         {rootMemoryResults.map(({ hit, href, place }) => (
                           <CommandItem
                             key={hit.page_id}
+                            // The server matched the body too; cmdk scores only `value`, so a
+                            // body-only hit would unmount. The value stays its selection identity.
+                            forceMount
                             // Label plus curated keywords: the title, its layer, its summary.
                             value={sanitizeCmdkValue(`memory ${hit.title} ${place} ${hit.summary}`)}
                             onSelect={() => {
@@ -2904,7 +2907,7 @@ export function CommandPalette() {
                               close();
                             }}
                           >
-                            <SunDimIcon className="size-4 shrink-0" />
+                            <SunDimIcon aria-hidden className="size-4 shrink-0" />
                             <span className="flex-1 truncate">{hit.title}</span>
                             <span className="text-muted-foreground max-w-40 shrink-0 truncate text-xs">{place}</span>
                           </CommandItem>

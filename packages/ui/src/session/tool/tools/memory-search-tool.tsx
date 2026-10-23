@@ -267,7 +267,9 @@ export function MemoryPageSearchTool(props: ToolProps) {
                   : t('failedGeneric')
                 : result?.state === 'none'
                   ? t('none', { query })
-                  : t('running')
+                  : working
+                    ? t('running')
+                    : t('failedGeneric')
             }
           />
         )}

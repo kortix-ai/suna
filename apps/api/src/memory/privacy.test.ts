@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { PRIVATE_THREAD_LABEL, type Refs, threadRuleGate, visibleSource } from './serialize';
+import { MEMBER_FALLBACK, memberName, PRIVATE_THREAD_LABEL, type Refs, threadRuleGate, visibleSource } from './serialize';
 
 const threads = [
   { sessionId: 'own', visibility: 'private', createdBy: 'priya' },
@@ -50,5 +50,27 @@ describe('which threads a memory source may name', () => {
     expect(visibleSource(seen, refs)).toBe(seen);
     // A session that no longer exists reads as hidden too.
     expect(visibleSource(source({ kind: 'thread', sessionId: 'gone', messageId: null, label: 'x' }), refs).label).toBe(PRIVATE_THREAD_LABEL);
+  });
+});
+
+// Owner rule: memory names a person by display name, never by email.
+describe('a person in memory is never named by email', () => {
+  test('memberName: the display name, else null; an email-shaped name is dropped', () => {
+    expect(memberName({ displayName: 'Priya Shah' })).toBe('Priya Shah');
+    expect(memberName({ displayName: null })).toBeNull();
+    expect(memberName({ displayName: '  ' })).toBeNull();
+    expect(memberName({ displayName: 'priya@northwind.example' })).toBeNull();
+    expect(memberName(undefined)).toBeNull();
+  });
+
+  test('a stored person source holding an email reads as the neutral name, in the API and the agent copy', () => {
+    const refs: Refs = { names: new Map(), threads: new Map([['seen', { label: 'Q4 plan', hint: null, open: true }]]) };
+    expect(visibleSource(source({ kind: 'person', sessionId: 'seen', messageId: null, label: 'priya@northwind.example' }), refs)).toEqual({
+      kind: 'person',
+      sessionId: 'seen',
+      messageId: null,
+      label: MEMBER_FALLBACK,
+    });
+    expect(visibleSource(source({ kind: 'person', sessionId: null, messageId: null, label: 'Priya Shah' }), refs).label).toBe('Priya Shah');
   });
 });

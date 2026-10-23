@@ -1,7 +1,7 @@
 'use client';
 
 import { ApiError, type ProjectSession, type ProjectSpace } from '@kortix/sdk';
-import { useAddProjectMemoryNote } from '@kortix/sdk/react';
+import { useAddProjectMemoryNote, useProjectMemoryLayer } from '@kortix/sdk/react';
 import { SunDimIcon } from '@phosphor-icons/react';
 import { useEffect, useId, useState } from 'react';
 
@@ -10,6 +10,7 @@ import { SolidCheckIcon } from '../../internal/icons/solid-check-icon';
 import { Button } from '../../primitives/button';
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '../../primitives/field';
 import Hint from '../../primitives/hint';
+import Loading from '../../primitives/loading';
 import { Popover, PopoverContent, PopoverTrigger } from '../../primitives/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../primitives/select';
 import { Textarea } from '../../primitives/textarea';
@@ -21,6 +22,7 @@ const NOTE_MAX = 1000;
 const SAVED_MS = 2000;
 
 type Failure = 'secret' | 'limit' | 'readOnly' | 'failed';
+type Target = 'space' | 'company';
 const FAILURE_BY_CODE: Record<string, Failure> = {
   secret_detected: 'secret',
   page_limit: 'limit',
@@ -30,8 +32,9 @@ const FAILURE_BY_CODE: Record<string, Failure> = {
 /**
  * "Remember this" in a thread's hover toolbar: the thread's first prompt,
  * editable, saved as a note in this channel's (or DM's) memory or the
- * Company's, with the thread as its source. The button shows a check for 2 s
- * after a save.
+ * Company's, with the thread as its source. Only layers the viewer may write
+ * are offered (`can_write`, not `read_only`: an archived channel never is);
+ * with none, there is no button. The button shows a check for 2 s after a save.
  */
 export function RememberThisButton({ session, space }: { session: ProjectSession; space: ProjectSpace }) {
   const t = useTranslations('spaces.memory');
@@ -39,9 +42,14 @@ export function RememberThisButton({ session, space }: { session: ProjectSession
   const projectId = session.project_id;
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
-  const [layer, setLayer] = useState<'space' | 'company'>('space');
+  const [layer, setLayer] = useState<Target>('space');
   const [failure, setFailure] = useState<Failure | null>(null);
   const [saved, setSaved] = useState(false);
+  // Same reads as the Memory tab count and the Company page: shared cache entries.
+  const spaceLayer = useProjectMemoryLayer(projectId, space.space_id).data;
+  const companyLayer = useProjectMemoryLayer(projectId, 'company').data;
+  const writable = (data: typeof spaceLayer) => !!data && data.can_write && !data.read_only;
+  const targets: Target[] = [...(writable(spaceLayer) ? ['space' as const] : []), ...(writable(companyLayer) ? ['company' as const] : [])];
   const toSpace = useAddProjectMemoryNote(projectId, space.space_id);
   const toCompany = useAddProjectMemoryNote(projectId, 'company');
   const add = layer === 'company' ? toCompany : toSpace;
@@ -57,7 +65,7 @@ export function RememberThisButton({ session, space }: { session: ProjectSession
   const openChange = (next: boolean) => {
     if (next) {
       setText(threadMessageText(session).slice(0, NOTE_MAX));
-      setLayer('space');
+      setLayer(targets[0] ?? 'space');
       setFailure(null);
     }
     setOpen(next);
@@ -78,6 +86,7 @@ export function RememberThisButton({ session, space }: { session: ProjectSession
     );
   };
 
+  if (targets.length === 0) return null;
   return (
     <Popover open={open} onOpenChange={openChange}>
       <Hint label={label} side="top">
@@ -121,7 +130,7 @@ export function RememberThisButton({ session, space }: { session: ProjectSession
               <Select
                 value={layer}
                 onValueChange={(value) => {
-                  setLayer(value as 'space' | 'company');
+                  setLayer(value as Target);
                   setFailure(null);
                 }}
               >
@@ -129,12 +138,11 @@ export function RememberThisButton({ session, space }: { session: ProjectSession
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="space" className="cursor-pointer">
-                    {place}
-                  </SelectItem>
-                  <SelectItem value="company" className="cursor-pointer">
-                    {t('used.company')}
-                  </SelectItem>
+                  {targets.map((target) => (
+                    <SelectItem key={target} value={target} className="cursor-pointer">
+                      {target === 'space' ? place : t('used.company')}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </Field>
@@ -144,11 +152,16 @@ export function RememberThisButton({ session, space }: { session: ProjectSession
               {t('editor.cancel')}
             </Button>
             <Button type="submit" size="sm" disabled={!text.trim() || add.isPending} aria-busy={add.isPending || undefined}>
+              {add.isPending ? <Loading className="size-4 shrink-0" /> : null}
               {t('editor.save')}
             </Button>
           </div>
         </form>
       </PopoverContent>
+      {/* The toolbar hides on mouse-out: say the save out loud. */}
+      <span id={`${id}-saved`} role="status" aria-live="polite" className="sr-only">
+        {saved ? t('rememberThis.saved') : ''}
+      </span>
     </Popover>
   );
 }

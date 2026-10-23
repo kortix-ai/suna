@@ -14,6 +14,9 @@ const CHIP =
 const LINK = 'focus-visible:ring-ring underline-offset-2 outline-none hover:underline focus-visible:ring-2';
 
 /** The hint of a chip that opens nothing: a person, an import, a deleted thread, an outside source without a URL. */
+/** The API's name for a person without a display name (`apps/api/src/memory/serialize.ts`). */
+const MEMBER_FALLBACK = 'A member';
+
 const STATIC_HINT = { thread: 'threadGone', outside: 'outsideText', person: 'person', import: 'import' } as const;
 
 function isHttpUrl(value: string): boolean {
@@ -49,12 +52,17 @@ export function useSourceThreadHref(projectId: string): (source: ProjectMemorySo
 export function SourceChip({ source, projectId }: { source: ProjectMemorySource; projectId: string }) {
   const t = useTranslations('spaces.memory');
   const threadHref = useSourceThreadHref(projectId)(source);
-  // A person source is labelled with the name or, without one, the email: show the name part.
-  const text = source.kind === 'person' ? participantLabel({ name: source.label, email: null }) : source.label;
+  // A person source carries the display name, or the API's neutral "A member" (shown in the reader's language).
+  const text =
+    source.kind === 'person'
+      ? source.label === MEMBER_FALLBACK
+        ? t('author.unknown')
+        : participantLabel({ name: source.label, email: null })
+      : source.label;
   const label = <span className="truncate">{text}</span>;
   if (threadHref) {
     return (
-      <Hint side="top" label={t('source.thread', { label: source.label })}>
+      <Hint side="top" label={source.kind === 'person' ? t('source.person', { label: text }) : t('source.thread', { label: source.label })}>
         <Link href={threadHref} className={cn(CHIP, LINK)}>
           {label}
         </Link>

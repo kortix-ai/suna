@@ -12,7 +12,7 @@ import type { LayerRef, Viewer } from './layers';
 import { MemoryError } from './limits';
 import { sourceToken } from './merge';
 import { addSource, assertWrites, change, personAuthor, savePage } from './pages';
-import { loadRefs, threadGateFor } from './serialize';
+import { loadRefs, MEMBER_FALLBACK, threadGateFor } from './serialize';
 
 const NOTE_TITLE_CHARS = 80;
 
@@ -37,7 +37,7 @@ export async function addNote(layer: LayerRef, viewer: Viewer, input: MemoryNote
     }
   }
   const refs = await loadRefs([viewer.userId], [], gate);
-  const label = refs.names.get(viewer.userId) ?? 'A member';
+  const label = refs.names.get(viewer.userId) ?? MEMBER_FALLBACK;
   const text = input.text.trim();
   const pageId = randomUUID();
   await change([layer.layerId], async (tx, changeId) => {

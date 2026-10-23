@@ -93,6 +93,15 @@ export function threadGateFor(viewer: Viewer): ThreadGate {
   return async (threads) => new Set(threads.filter((t) => t.visibility === 'project' || t.createdBy === viewer.userId).map((t) => t.sessionId));
 }
 
+/** A person as memory names them when they set no display name. Never their email. */
+export const MEMBER_FALLBACK = 'A member';
+
+/** A person's name in memory: the profile display name, never an email (null when there is none). */
+export function memberName(identity: { displayName: string | null } | undefined): string | null {
+  const name = identity?.displayName?.trim();
+  return name && !name.includes('@') ? name : null;
+}
+
 /** Display names of `userIds`, and labels and places of `sessionIds` as `gate` lets the viewer see them. */
 export async function loadRefs(userIds: (string | null)[], sessionIds: (string | null)[], gate: ThreadGate): Promise<Refs> {
   const users = [...new Set(userIds.filter((id): id is string => !!id))];
@@ -116,7 +125,7 @@ export async function loadRefs(userIds: (string | null)[], sessionIds: (string |
           .where(inArray(projectSessions.sessionId, sessions)),
   ]);
   const open = await gate(rows);
-  const names = new Map(users.map((id) => [id, identities.get(id)?.displayName ?? identities.get(id)?.email ?? null]));
+  const names = new Map(users.map((id) => [id, memberName(identities.get(id))]));
   const threads = new Map<string, ThreadInfo>();
   for (const row of rows) {
     let hint: ThreadInfo['hint'] = null;
@@ -132,6 +141,9 @@ export function visibleSource<T extends { kind: string; sessionId: string | null
   source: T,
   refs: Refs,
 ): T {
+  // A person source written before names stopped falling back to the email
+  // holds one: read it as the neutral name (no row is rewritten).
+  if (source.kind === 'person' && source.label.includes('@')) source = { ...source, label: MEMBER_FALLBACK };
   if (!source.sessionId || refs.threads.get(source.sessionId)?.open) return source;
   return {
     ...source,
