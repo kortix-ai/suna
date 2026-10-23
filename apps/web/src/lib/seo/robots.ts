@@ -31,7 +31,6 @@ Sitemap: ${CANONICAL_ORIGIN}/blog/sitemap.xml
 # Disallow sensitive routes
 Disallow: /api/
 Disallow: /_next/
-Disallow: /admin/
 
 # Pages need their stylesheets, scripts and images to render. The longest
 # matching rule wins, so these override \`Disallow: /_next/\`.
