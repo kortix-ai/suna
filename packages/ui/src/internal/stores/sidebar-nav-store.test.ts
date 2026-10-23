@@ -25,6 +25,7 @@ describe('normalizeSidebarNav', () => {
       { id: 'apps', visibility: 'always' },
       { id: 'rooms', visibility: 'never' },
       { id: 'goals', visibility: 'always' },
+      { id: 'artifacts', visibility: 'never' },
     ];
     expect(normalizeSidebarNav(saved)).toEqual(saved);
   });
@@ -35,7 +36,7 @@ describe('normalizeSidebarNav', () => {
       { id: 'settings', visibility: 'always' },
       { id: 'files', visibility: 'never' },
     ]);
-    expect(ids(out)).toEqual(['customize', 'files', 'apps', 'rooms', 'goals']);
+    expect(ids(out)).toEqual(['customize', 'files', 'apps', 'rooms', 'goals', 'artifacts']);
     expect(out.find((e) => e.id === 'files')?.visibility).toBe('always');
   });
 
@@ -51,11 +52,16 @@ describe('normalizeSidebarNav', () => {
       { id: 'apps', visibility: 'never' },
       { id: 'rooms', visibility: 'never' },
       { id: 'goals', visibility: 'always' },
+      { id: 'artifacts', visibility: 'always' },
     ]);
   });
 
   test('Goals is a sidebar row by default (the row itself shows only with the goals flag on)', () => {
     expect(normalizeSidebarNav(null).find((e) => e.id === 'goals')?.visibility).toBe('always');
+  });
+
+  test('Artifacts is a sidebar row by default (the row itself shows only with the artifacts flag on)', () => {
+    expect(normalizeSidebarNav(null).find((e) => e.id === 'artifacts')?.visibility).toBe('always');
   });
 
   test('Rooms sits in the More menu until the person pins it', () => {
@@ -90,7 +96,7 @@ describe('moveSidebarNavItem', () => {
     const items = normalizeSidebarNav(null);
     expect(ids(moveSidebarNavItem(items, 'files', -1)).slice(0, 2)).toEqual(['files', 'customize']);
     expect(ids(moveSidebarNavItem(items, 'customize', -1))).toEqual(ids(items));
-    expect(ids(moveSidebarNavItem(items, 'goals', 1))).toEqual(ids(items));
+    expect(ids(moveSidebarNavItem(items, 'artifacts', 1))).toEqual(ids(items));
   });
 });
 
@@ -98,12 +104,12 @@ describe('useSidebarNavStore', () => {
   test('setItems, setVisibility and reset', () => {
     const store = useSidebarNavStore.getState();
     store.setItems(
-      (['files', 'apps', 'customize', 'rooms', 'goals'] as const).map((id) => ({
+      (['files', 'apps', 'customize', 'rooms', 'goals', 'artifacts'] as const).map((id) => ({
         id,
         visibility: 'always' as const,
       })),
     );
-    expect(ids(useSidebarNavStore.getState().items)).toEqual(['files', 'apps', 'customize', 'rooms', 'goals']);
+    expect(ids(useSidebarNavStore.getState().items)).toEqual(['files', 'apps', 'customize', 'rooms', 'goals', 'artifacts']);
     store.setVisibility('apps', 'never');
     store.setVisibility('files', 'active' as never); // ignored: not a visibility
     const items = useSidebarNavStore.getState().items;

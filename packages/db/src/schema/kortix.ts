@@ -8304,3 +8304,42 @@ export const cliDeviceGrants = kortixSchema.table('cli_device_grants', {
   accountId: uuid('account_id'),
   status: text('status').notNull().default('pending'),
 });
+
+/**
+ * An artifact (flag `artifacts`): a path in the project's Files volume shared
+ * as a doc or a page. The files are plain files in Files (`root`, with `entry`
+ * the page a reader opens); their history is the volume's commit log. This
+ * row only says that the path is shared, how, and with whom.
+ *   entry       `index.md` / `index.html` in a folder `root`; a single file's
+ *               name otherwise (then only that file is served)
+ *   type        doc: the entry is Markdown; html: the entry is an HTML page
+ *   visibility  private: the creator and `shared_with_user_ids`
+ *               project: every member who may read the project
+ *               public:  anyone with the link
+ */
+export const artifacts = kortixSchema.table('artifacts', {
+  artifactId: uuid('artifact_id').defaultRandom().primaryKey(),
+  projectId: uuid('project_id').notNull(),
+  accountId: uuid('account_id').notNull(),
+  driveId: uuid('drive_id').notNull(),
+  root: text('root').notNull(),
+  entry: text('entry').notNull(),
+  folder: boolean('folder').notNull(),
+  title: text('title').notNull(),
+  description: text('description'),
+  type: varchar('type', { length: 16 }).notNull(),
+  visibility: varchar('visibility', { length: 16 }).default('private').notNull(),
+  sharedWithUserIds: uuid('shared_with_user_ids').array().default(sql`'{}'::uuid[]`).notNull(),
+  pinnedByUserIds: uuid('pinned_by_user_ids').array().default(sql`'{}'::uuid[]`).notNull(),
+  createdByUserId: uuid('created_by_user_id').notNull(),
+  createdBySessionId: text('created_by_session_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'artifacts_project_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.driveId], foreignColumns: [drives.driveId], name: 'artifacts_drive_fk' }).onDelete('cascade'),
+  index('idx_artifacts_project_updated').on(table.projectId, table.updatedAt),
+  uniqueIndex('idx_artifacts_drive_path').on(table.driveId, table.root, table.entry),
+  check('artifacts_type_check', sql`${table.type} in ('doc', 'html')`),
+  check('artifacts_visibility_check', sql`${table.visibility} in ('private', 'project', 'public')`),
+]);

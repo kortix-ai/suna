@@ -430,6 +430,21 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'flag through the API outside a box (apps/cli/src/commands/goals.ts). The server parts goals use ' +
       '(reminders, unattended question release, reminder successors) are generic and stay on for every project.',
   },
+  {
+    key: 'artifacts',
+    name: 'Artifacts',
+    description:
+      'Share docs (Markdown) and HTML pages from Files: a gallery per project, a doc editor, versions from the Files history, PDF export for docs, and share links that are private, for the project, for chosen people, or public.',
+    stability: 'beta',
+    // Artifacts are paths in Files, a Platinum volume.
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'ROUTES: every /v1/projects/:id/artifacts* route answers 403 `feature_disabled` when off, and ' +
+      '/v1/artifacts/* (the content server) answers 404 for an artifact of a flag-off project. BOX: off, ' +
+      'a session box has no kortix-artifacts skill and its CLI hides and refuses `kortix artifacts`.',
+  },
   // `session_log` graduated (2026-10-22, P8.2): the session log is every session's
   // saved history and the v1 transcript mirror is no longer read. No flag and no
   // operator lever. A stored `experimental.session_log` override is inert.

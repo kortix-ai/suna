@@ -454,6 +454,29 @@ export async function getPublicResponse(
   return body.response;
 }
 
+/** A public artifact's title and type, and the URL of its page. */
+export interface PublicArtifact {
+  artifact_id: string;
+  title: string;
+  description: string | null;
+  type: 'doc' | 'html';
+  updated_at: string;
+  /** The page itself, served as a CSP sandbox: embed it in an iframe. */
+  content_url: string;
+}
+
+/**
+ * A public artifact, without a login (`GET /artifacts/meta/:id`). Throws a
+ * `HostBoundaryError` with `status` 404 when the artifact does not exist or is
+ * not public. `options.backendUrl` defaults to the configured backend.
+ */
+export async function getPublicArtifact(
+  artifactId: string,
+  options: HostRequestOptions = { backendUrl: getBackendUrl() },
+): Promise<PublicArtifact> {
+  return requestJson<PublicArtifact>(`/artifacts/meta/${encodeURIComponent(artifactId)}`, { ...options, accessToken: null });
+}
+
 export function startSessionWithToken(
   projectId: string,
   sessionId: string,

@@ -89,6 +89,7 @@ export type FeatureFlagKey =
   | 'agent_rooms'
   | 'goals'
   | 'workspace_volume'
+  | 'artifacts'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
@@ -137,6 +138,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'agent_rooms',
   'goals',
   'workspace_volume',
+  'artifacts',
 ] as const;
 
 /**

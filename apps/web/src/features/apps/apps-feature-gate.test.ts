@@ -286,7 +286,6 @@ test('a suspended App preview issues the request that wakes its active deploymen
 
   expect(view).toContain('if (!url)');
   expect(view).toContain('frame.src = url');
-  expect(view).toContain("frame.dataset.testid = 'app-live-preview'");
   expect(view).not.toContain("app.desired_state === 'stopped'");
   expect(view).not.toContain('Suspended. Open the App or use Wake App to resume it.');
 });

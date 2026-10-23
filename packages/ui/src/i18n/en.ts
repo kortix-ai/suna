@@ -835,6 +835,10 @@ const catalog = {
         "workspace_volume": {
           "name": "Workspace volume",
           "description": "Keeps each new session's /workspace on its own volume, so a stopped sandbox can be deleted and the next open boots a new one on the same files and conversation. Kortix enables it per project."
+        },
+        "artifacts": {
+          "name": "Artifacts",
+          "description": "Share docs (Markdown) and HTML pages (decks, dashboards, mockups, tools) from Files with the project, chosen people or anyone with a link. Docs edit in place, every save is a version from the Files history, and docs export to PDF. Adds the Artifacts page and `kortix artifacts`."
         }
       }
     },
@@ -1019,6 +1023,7 @@ const catalog = {
   "sidebar": {
     "rooms": "Rooms",
     "goals": "Goals",
+    "artifacts": "Artifacts",
     "referAndEarn": "Refer & Earn",
     "referralShareTitle": "Refer Friends",
     "referralShareSubtitle": "Get 400 credits",

@@ -156,6 +156,8 @@ export {
   roomMessages,
   roomMembers,
   sessionIdleWatches,
+  // Artifacts: published HTML pages (flag artifacts)
+  artifacts,
   // Product feedback (POST /v1/feedback)
   feedback,
   // Billing v2 — per-seat + compute metering + per-member YOLO

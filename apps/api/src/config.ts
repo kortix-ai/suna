@@ -724,6 +724,10 @@ const envSchema = z.object({
   // ── Sandbox Platform ──────────────────────────────────────────────────────
   // Public API base URL, without a route suffix. Auto-derived from PORT in local mode.
   KORTIX_URL: optStr,
+  // Optional origin that serves artifact pages (another site than the app, e.g.
+  // https://kortixusercontent.com). Pages on it get their own origin, so embedded
+  // players (YouTube, Vimeo) work. Unset: pages are served from KORTIX_URL, opaque.
+  ARTIFACT_CONTENT_URL: optStr,
   // Comma-separated. The first entry is the default for new sessions.
   // Platinum is the reference; `daytona` is a legacy opt-in fallback.
   ALLOWED_SANDBOX_PROVIDERS: optStrDefault('platinum'),
@@ -1459,6 +1463,7 @@ export const config = {
   PLATINUM_WEBHOOK_SECRET: env.PLATINUM_WEBHOOK_SECRET,
   // ─── Sandbox Provisioning (Platform) ──────────────────────────────────────
   KORTIX_URL: env.KORTIX_URL,
+  ARTIFACT_CONTENT_URL: env.ARTIFACT_CONTENT_URL?.replace(/\/+$/, ''),
   ALLOWED_SANDBOX_PROVIDERS: allowedProviders,
 
   /**

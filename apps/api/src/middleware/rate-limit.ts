@@ -88,6 +88,7 @@ export async function enforceRateLimit(
 const inviteAcceptLimiter = new TokenBucketRateLimiter('invite_accept');
 const sandboxProxyLimiter = new TokenBucketRateLimiter('sandbox_proxy');
 const publicResponseLimiter = new TokenBucketRateLimiter('public_response');
+const artifactContentLimiter = new TokenBucketRateLimiter('artifact_content');
 const demoRequestLimiter = new TokenBucketRateLimiter('demo_request');
 const checkEmailLimiter = new TokenBucketRateLimiter('check_email');
 const projectWebhookLimiter = new TokenBucketRateLimiter('project_webhook');
@@ -225,6 +226,24 @@ export function createPublicResponseRateLimitMiddleware() {
     });
     if (!share.allowed) return quietRateLimited(c, share);
     setHeaders(c, share);
+    await next();
+  };
+}
+
+/**
+ * The artifact content server (`/v1/artifacts/*`): one bucket per artifact,
+ * shared by every viewer, plus a backstop bucket per client. The key must name
+ * an identity the caller cannot invent (a verified token's artifact, a UUID):
+ * a raw path segment would give every request a fresh bucket. `keyOf` answers
+ * null otherwise, and the client address takes over.
+ */
+export function createArtifactContentRateLimitMiddleware(keyOf: (c: Context) => string | null) {
+  return async (c: Context, next: Next) => {
+    const client = artifactContentLimiter.check(`client:${requestClientKey(c)}`, { limit: 3000, windowMs: 60_000 });
+    if (!client.allowed) return quietRateLimited(c, client);
+    const result = artifactContentLimiter.check(keyOf(c) ?? `ip:${requestClientKey(c)}`, { limit: 3000, windowMs: 60_000 });
+    if (!result.allowed) return quietRateLimited(c, result);
+    setHeaders(c, result);
     await next();
   };
 }
@@ -428,6 +447,7 @@ export function resetRateLimiters() {
   inviteAcceptLimiter.reset();
   sandboxProxyLimiter.reset();
   publicResponseLimiter.reset();
+  artifactContentLimiter.reset();
   demoRequestLimiter.reset();
   checkEmailLimiter.reset();
   projectWebhookLimiter.reset();

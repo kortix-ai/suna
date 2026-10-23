@@ -3,6 +3,7 @@
 import { CommandPaletteBoundary } from '@/features/workspace/command-palette-boundary';
 import { DriveUploadTray } from '@kortix/ui/files';
 import { AppPreviewPoolLoader } from '@/features/apps/app-preview-pool-loader';
+import { ArtifactFramePreloader } from '@/features/artifacts/artifact-frame-preloader';
 import { useTranslations } from '@/i18n/use-translations';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
@@ -279,6 +280,8 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
         {/* App previews load here in the background and stay loaded while
             the project is open, so the Apps page shows them at once. */}
         <AppPreviewPoolLoader projectId={projectId} />
+        {/* Artifact pages too, in the same frame pool (flag `artifacts`). */}
+        <ArtifactFramePreloader projectId={projectId} />
 
         <Suspense fallback={null}>
           <PresentationViewerWrapper />
