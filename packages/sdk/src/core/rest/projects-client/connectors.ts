@@ -296,6 +296,8 @@ export interface ConnectorAccount {
    *  absent, on older servers) when not rejected. An ok call or a new
    *  credential clears it. */
   credential_rejected_at?: string | null;
+  /** Shopify: what the account's token could read when it connected. Absent for other providers. */
+  access?: import('../platform-client/host-boundary').ShopifyAccess | null;
 }
 
 export interface ConnectorCallOptions {
@@ -466,7 +468,8 @@ export interface AdminConnector {
     | 'graphql'
     | 'http'
     | 'channel'
-    | 'computer';
+    | 'computer'
+    | 'shopify';
   platform?: 'slack' | 'email' | null;
   /** Provider icon materialized during connector synchronization. */
   iconUrl?: string | null;
@@ -1500,6 +1503,10 @@ export interface ConnectorDraftInput {
   endpoint?: string;
   baseUrl?: string;
   spec?: string;
+  /** shopify: the default store, `<name>.myshopify.com` (a bare name is accepted). */
+  shop?: string;
+  /** shopify: the Admin API scopes Connect requests. Omit for the default set. */
+  scopes?: string[];
   /**
    * @deprecated Computers are accounts of the `computer` connector now: add one
    * with `addComputerToProject`. The server ignores this field. Removed in the

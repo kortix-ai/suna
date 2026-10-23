@@ -350,6 +350,9 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
        *  credential (a repeat 401 keeps the first time); cleared by a new
        *  credential or an ok call. */
       credential_rejected_at?: string | null;
+      /** Shopify: what the account's token could read when it connected
+       *  (catalog / orders / customers / inventory: ok | blocked | missing_scope | error). */
+      access?: import('./shopify').ShopifyAccess | null;
     }>
   >;
   /**

@@ -583,6 +583,12 @@ export interface ShopifyAccess {
   inventory: ShopifyCapability;
 }
 
+/** The access matrix the connect stored on an account (`metadata.shopify.access`), or null. */
+export function shopifyAccessOf(metadata: unknown): ShopifyAccess | null {
+  const access = (metadata as { shopify?: { access?: unknown } } | null)?.shopify?.access as ShopifyAccess | undefined;
+  return access && typeof access === 'object' && typeof access.catalog === 'string' ? access : null;
+}
+
 const ACCESS_FIELDS = { catalog: 'products', orders: 'orders', customers: 'customers', inventory: 'inventoryItems' } as const;
 
 /** The access matrix from a `check_access` response body. */

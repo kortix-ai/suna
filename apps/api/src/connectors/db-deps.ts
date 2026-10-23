@@ -93,6 +93,7 @@ import {
 } from './db-deps-connect';
 import { appFormInfo, submitAppForm } from './app-form';
 import { completeShopifyCallback, shopifyAccountConnected, startShopifyConnect } from './shopify-connect';
+import { shopifyAccessOf } from './shopify';
 import { makeDbGatewayDeps } from './db-deps-gateway';
 import {
   resolveAdmin,
@@ -373,6 +374,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
       is_default: connection.isDefault,
       connected_as: connectedAsOf(connection.metadata),
       credential_rejected_at: credentialRejectedAt(connection.metadata),
+      ...(shopifyAccessOf(connection.metadata) ? { access: shopifyAccessOf(connection.metadata) } : {}),
     }));
   },
   mintConnectorConnectLink: async ({ projectId, slug, userId, sessionId }) => {

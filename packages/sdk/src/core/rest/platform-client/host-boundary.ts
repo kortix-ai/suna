@@ -309,25 +309,56 @@ export interface ConnectorAppFormInfo {
   name: string;
   /** The connector's name in the project. */
   connector: string;
+  /**
+   * `oauth`: the native Shopify connector — submit answers Shopify's authorize
+   * URL. `client_credentials`: a Composio app on the customer's own app —
+   * submit connects at once. Absent on older servers (`client_credentials`).
+   */
+  flow?: 'oauth' | 'client_credentials';
   /** The link already connected the account. */
   connected: boolean;
   /** The store the account reaches, once connected. */
   connected_as: string | null;
   expires_at: string;
+  /** `oauth`: the store the form starts with. */
+  shop?: string | null;
+  /** `oauth`: the deployment's shared Shopify app connects; no Client ID or secret is asked. */
+  shared_app?: boolean;
+  /** `oauth`: the Admin API scopes Connect requests. */
+  scopes?: string[];
+  /** `oauth`: the redirect URL the merchant's own Shopify app must list. */
+  redirect_uri?: string;
+  /** `oauth`: what the account could read when it connected. */
+  access?: ShopifyAccess | null;
+}
+
+export type ShopifyCapability = 'ok' | 'blocked' | 'missing_scope' | 'error';
+
+/** What a Shopify account's token can read. `blocked`: protected customer data is not approved. */
+export interface ShopifyAccess {
+  shop: { name: string | null; domain: string | null; currency: string | null };
+  catalog: ShopifyCapability;
+  orders: ShopifyCapability;
+  customers: ShopifyCapability;
+  inventory: ShopifyCapability;
 }
 
 export interface ConnectorAppFormInput {
   /** The store's myshopify.com name, host, or admin URL. */
   store: string;
-  clientId: string;
-  clientSecret: string;
+  /** Omit both with a shared Shopify app (`shared_app`). */
+  clientId?: string;
+  clientSecret?: string;
 }
 
 export interface ConnectorAppFormResult {
-  connected: true;
-  connected_as: string;
+  /** `false` with `authorize_url`: open it to approve the app in Shopify. */
+  connected: boolean;
+  connected_as?: string;
   /** Where to send the browser next, when the connect asked for it. */
   success_redirect_uri?: string;
+  /** The Shopify page that approves the app (native Shopify connector). */
+  authorize_url?: string;
 }
 
 export function getConnectorAppForm(
@@ -348,7 +379,11 @@ export function submitConnectorAppForm(
 ): Promise<ConnectorAppFormResult> {
   return requestJson(`/connectors/app-form/${encodeURIComponent(token)}`, options, {
     method: 'POST',
-    body: { store: input.store, client_id: input.clientId, client_secret: input.clientSecret },
+    body: {
+      store: input.store,
+      ...(input.clientId !== undefined ? { client_id: input.clientId } : {}),
+      ...(input.clientSecret !== undefined ? { client_secret: input.clientSecret } : {}),
+    },
   });
 }
 
