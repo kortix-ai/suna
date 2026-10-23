@@ -25,6 +25,9 @@ const C = {
   ink: '#1f1f1f',          // --foreground (light)
   red: '#f14b4c',          // --kortix-red
   muted: '#666666',        // --muted-foreground (light)
+  nightMuted: '#999999',   // --muted-foreground (dark)
+  green: '#199338',        // --kortix-green
+  blue: '#2b91f7',         // --kortix-blue
   hair: '#e2e2e2',         // --border (light)
   night: '#0b0b0b',        // --background (dark)
   nightDot: '#262626',     // --border (dark)
@@ -358,6 +361,74 @@ SPECS.push(['sticker-logo-4x1.5in', 101.6, 38.1, DPI300, true, { w: 101.6, h: 38
 
 window.ITEMS = SPECS.map(([id, w, h, ppm, transparent, spec]) => ({ id, w, h, ppm, transparent, svg: item(spec) }));
 window.ITEMS.push({ id: 'sticker-app-icon-3in', w: 76.2, h: 76.2, ppm: DPI300, transparent: true, svg: appIconSticker(76.2) });
+
+// Sticker pack. Each sticker is transparent outside its shape: the shop cuts along the shape.
+const svgMm = (w, h, body) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">${body}</svg>`;
+const STICKERS = [];
+const sticker = (id, w, h, body) => STICKERS.push({ id: `sticker-${id}`, w, h, ppm: DPI300, transparent: true, svg: svgMm(w, h, body) });
+const disc = (d, fill) => `<circle cx="${d / 2}" cy="${d / 2}" r="${d / 2}" fill="${fill}"/>`;
+const tile = (w, h, r, fill) => `<rect width="${w}" height="${h}" rx="${r}" fill="${fill}"/>`;
+const D3 = 76.2; // 3 in
+
+// The symbol in a circle, both grounds.
+sticker('symbol-circle-black-3in', D3, D3, disc(D3, C.night) + symbolPath(D3 / 2, D3 / 2, 30, C.nightInk));
+sticker('symbol-circle-white-3in', D3, D3, disc(D3, C.paper) + symbolPath(D3 / 2, D3 / 2, 30, C.ink));
+// The pixel mark on the dark ground.
+sticker('pixel-black-3in', D3, D3, tile(D3, D3, 8, C.night) + mark('pixel', D3 / 2, D3 / 2, 52, C.nightInk));
+
+// Terminal stickers: real CLI commands (apps/cli/src/command-table.ts).
+// Roobert is installed locally, so canvas measures it synchronously.
+const measure = (text, font) => { const g = document.createElement('canvas').getContext('2d'); g.font = font; return g.measureText(text).width; };
+function terminal(id, cmd) {
+  const w = 101.6, h = 31.75, fs = 9, line = `$ ${cmd}`;
+  const lw = measure(line, `500 ${fs}px "Roobert Mono"`), cw = measure('M', `500 ${fs}px "Roobert Mono"`);
+  const x0 = (w - lw - cw * 1.5) / 2, base = h / 2 + fs * 0.35;
+  sticker(`terminal-${id}-4x1.25in`, w, h, tile(w, h, 6, C.night) +
+    `<text x="${x0}" y="${base}" font-family="Roobert Mono" font-weight="500" font-size="${fs}" xml:space="preserve"><tspan fill="${C.nightMuted}">$</tspan><tspan fill="${C.nightInk}"> ${cmd}</tspan></text>` +
+    `<rect x="${x0 + lw + cw * 0.5}" y="${h / 2 - fs * 0.45}" width="${cw}" height="${fs * 0.9}" fill="${C.nightInk}"/>`);
+}
+terminal('ship', 'kortix ship');
+terminal('doctor', 'kortix doctor');
+
+// Status chips: the hue on the dot, the word in ink (color.md, status table).
+function status(word, hue) {
+  const w = 76.2, h = 25.4, fs = 9, tw = measure(word, `500 ${fs}px Roobert`), dot = 6, gap = 4;
+  const x0 = (w - dot - gap - tw) / 2;
+  sticker(`status-${word.replace(/ /g, '-')}-3x1in`, w, h, tile(w, h, h / 2, C.paper) +
+    `<circle cx="${x0 + dot / 2}" cy="${h / 2}" r="${dot / 2}" fill="${hue}"/>` +
+    `<text x="${x0 + dot + gap}" y="${h / 2 + fs * 0.35}" font-family="Roobert" font-weight="500" font-size="${fs}" fill="${C.ink}">${word}</text>`);
+}
+status('merged', C.green);
+status('running', C.green);
+status('in review', C.blue);
+status('failed', C.red);
+
+// Pixel art from the card deck.
+const pixelSticker = (id, rows, color) => {
+  const pitch = 52 / Math.max(rows[0].length, rows.length);
+  sticker(`pixel-${id}-3in`, D3, D3, tile(D3, D3, 8, C.paper) + pixels(rows, D3 / 2, D3 / 2, pitch, pitch / 6, color));
+};
+pixelSticker('spade', suitGrid(SUITS.S, 13), C.ink);
+pixelSticker('heart', suitGrid(SUITS.H, 13), C.red);
+// King of hearts: the K crown over the heart, as on the K♥ court card.
+{
+  const heart = suitGrid(SUITS.H, 11), crown = CROWNS.K, pitch = 54 / (crown.length + 1 + heart.length);
+  const top = D3 / 2 - (crown.length + 1 + heart.length) * pitch / 2;
+  sticker('pixel-king-of-hearts-3in', D3, D3, tile(D3, D3, 8, C.paper) +
+    pixels(crown, D3 / 2, top + crown.length * pitch / 2, pitch, pitch / 6, C.red) +
+    pixels(heart, D3 / 2, top + (crown.length + 1 + heart.length / 2) * pitch, pitch, pitch / 6, C.red));
+}
+
+// The Kortix asterisk (packages/ui/src/primitives/kortix-asterisk.tsx), solid variant: four rounded arms.
+sticker('asterisk-3in', D3, D3, disc(D3, C.paper) + [0, 90, 45, -45].map(a =>
+  `<rect x="${D3 / 2 - 2.6}" y="${D3 / 2 - 22}" width="5.2" height="44" rx="2.6" fill="${C.ink}" transform="rotate(${a} ${D3 / 2} ${D3 / 2})"/>`).join(''));
+
+// Pin buttons, 2.25 in: the art is 2.625 in so 0.1875 in wraps around the edge; the face keeps the mark inside 1.75 in.
+const BTN = 66.675;
+STICKERS.push({ id: 'button-symbol-black-2.25in', w: BTN, h: BTN, ppm: DPI300, transparent: true, svg: svgMm(BTN, BTN, disc(BTN, C.night) + symbolPath(BTN / 2, BTN / 2, 19, C.nightInk)) });
+STICKERS.push({ id: 'button-pixel-white-2.25in', w: BTN, h: BTN, ppm: DPI300, transparent: true, svg: svgMm(BTN, BTN, disc(BTN, C.paper) + mark('pixel', BTN / 2, BTN / 2, 30, C.ink)) });
+
+window.ITEMS.push(...STICKERS);
 
 if (!location.hash.includes('export')) {
   const big = (svg, bg) => `<div style="background:${bg};padding:8px">${svg.replace('<svg ', '<svg style="width:300px;height:auto" ')}</div>`;

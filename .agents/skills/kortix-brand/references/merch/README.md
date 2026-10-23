@@ -1,6 +1,6 @@
 # Kortix merch
 
-Print artwork for Kortix merch: a card deck (54 cards plus a back), poker chip inlays, flags, posters, mugs, a mousepad, a desk mat, tote bags, t-shirts and stickers. `merch.html` draws every file. `export.mjs` renders them.
+Print artwork for Kortix merch: a card deck (54 cards plus a back), poker chip inlays, flags, posters, mugs, a mousepad, a desk mat, tote bags, t-shirts, a sticker pack and pin buttons. `merch.html` draws every file. `export.mjs` renders them.
 
 ## Upload files (`upload/`)
 
@@ -23,6 +23,13 @@ Print artwork for Kortix merch: a card deck (54 cards plus a back), poker chip i
 | `sticker-app-icon-3in.png` | 900 x 900 px, transparent corners | The app icon (`apps/web/public/favicon.svg`) as a sticker. |
 | `sticker-pixel-3in.png` | 900 x 900 px, transparent corners | The pixel mark on a white rounded square. |
 | `sticker-logo-4x1.5in.png` | 1200 x 450 px, transparent corners | The white logo on a black rounded rectangle. |
+| `sticker-symbol-circle-black-3in.png`, `sticker-symbol-circle-white-3in.png` | 900 x 900 px, round | The symbol in a circle. |
+| `sticker-pixel-black-3in.png` | 900 x 900 px | The pixel mark in white on black. |
+| `sticker-terminal-ship-4x1.25in.png`, `sticker-terminal-doctor-4x1.25in.png` | 1200 x 375 px | `$ kortix ship` and `$ kortix doctor` with a block cursor. Real commands from `apps/cli/src/command-table.ts`: rename the sticker if a command is renamed. |
+| `sticker-status-merged-3x1in.png`, `-running-`, `-in-review-`, `-failed-` | 900 x 300 px, pill | Product status chips: the status hue on the dot, the word in ink (`color.md` status table). |
+| `sticker-pixel-spade-3in.png`, `sticker-pixel-heart-3in.png`, `sticker-pixel-king-of-hearts-3in.png` | 900 x 900 px | Pixel suits and the K crown from the card deck. |
+| `sticker-asterisk-3in.png` | 900 x 900 px, round | The Kortix asterisk, solid variant (`packages/ui/src/primitives/kortix-asterisk.tsx`). |
+| `button-symbol-black-2.25in.png`, `button-pixel-white-2.25in.png` | 788 x 788 px, round | 2.25 in pin buttons. The art is 2.625 in so it wraps the edge; the mark stays inside the 1.75 in face. |
 
 `black` / `white` name the ground color. `ink-black` / `ink-white` name the ink on a transparent ground: choose the one that contrasts with the garment or bag.
 
@@ -44,7 +51,7 @@ Colors are the `tokens.css` values, inlined in `merch.html` with their token nam
 
 1. Install Google Chrome and the Roobert fonts locally.
 2. Run `node .agents/skills/kortix-brand/references/merch/export.mjs` from the repo root.
-3. It rewrites `upload/` (27 files) and writes all 56 cards (PNG at 300 dpi with bleed) and an SVG of every item to `output/merch/` (gitignored). It takes about 2 minutes.
+3. It rewrites `upload/` (42 files) and writes all 56 cards (PNG at 300 dpi with bleed) and an SVG of every item to `output/merch/` (gitignored). It takes about 2 minutes.
 
 Open `merch.html` in a browser to see every item on one sheet.
 
