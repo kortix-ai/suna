@@ -24,6 +24,8 @@ export interface UiRoutes {
   apps: (projectId: string) => string | null;
   /** The project's chat rooms (flag `agent_rooms`). */
   rooms: (projectId: string) => string | null;
+  /** The project's goals (flag `goals`); a goal is `<goals>/<scope>/<slug>`. */
+  goals: (projectId: string) => string | null;
   members: (projectId: string) => string | null;
   /** The project settings page, on its sandbox section. */
   sandboxSettings: (projectId: string) => string | null;
@@ -47,6 +49,7 @@ const DEFAULT_ROUTES = {
   drive: (p: string) => `/projects/${p}/drive`,
   apps: (p: string) => `/projects/${p}/apps`,
   rooms: (p: string) => `/projects/${p}/rooms`,
+  goals: (p: string) => `/projects/${p}/goals`,
   members: (p: string) => `/projects/${p}/members`,
   sandboxSettings: (p: string) => `/projects/${p}/config?section=sandbox`,
   customize: (p: string, path?: string) => `/projects/${p}/customize${path ? `/${path}` : ''}`,

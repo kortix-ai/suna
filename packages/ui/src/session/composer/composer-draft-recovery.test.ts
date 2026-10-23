@@ -2,10 +2,9 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   mergeFailedSubmissionFiles,
-  mergeFailedSubmissionMentions,
   mergeFailedSubmissionText,
 } from './composer-draft-recovery';
-import type { AttachedFile, TrackedMention } from './session-chat-input';
+import type { AttachedFile } from './session-chat-input';
 
 function localFile(name: string, localUrl: string): Extract<AttachedFile, { kind: 'local' }> {
   return {
@@ -37,9 +36,4 @@ describe('failed composer submission recovery', () => {
     expect(mergeFailedSubmissionFiles([sent], [sent])).toEqual([sent]);
   });
 
-  test('restores mentions without dropping mentions added while sending', () => {
-    const sent: TrackedMention = { kind: 'session', label: 'Research', value: 'ses_1' };
-    const added: TrackedMention = { kind: 'agent', label: 'Analyst' };
-    expect(mergeFailedSubmissionMentions([added], [sent])).toEqual([sent, added]);
-  });
 });

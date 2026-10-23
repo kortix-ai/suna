@@ -121,10 +121,11 @@ Subcommands:
                                     1 when the turn fails). --json prints
                                     the session object (capture session_id
                                     to orchestrate).
-                                    --connect attaches the OpenCode TUI as
-                                    soon as it's ready (implies --wait); on an
-                                    interactive terminal without it, you're
-                                    asked whether to connect after creation.
+                                    --connect (deprecated with OpenCode)
+                                    attaches the OpenCode TUI as soon as it's
+                                    ready (implies --wait); a pi session
+                                    cannot attach, so it exits 1. Talk to a
+                                    session with kortix sessions chat <id>.
                                     --with-file <local path> (repeatable)
                                     uploads the file to
                                     /workspace/incoming/<name> before the
@@ -639,20 +640,16 @@ function printDeletedSessions(sessions: ProjectSession[]): number {
 }
 
 /**
- * Post-create connect decision for `sessions new`:
- *  - `--connect`      → attach unconditionally (explicit flag wins everywhere)
- *  - interactive TTY  → ask (a human just created a session; the next thing
- *                       they almost always want is to be in it)
- *  - `--json` / pipe  → never ask, never attach — scripts stay deterministic
+ * Post-create connect decision for `sessions new`: only an explicit `--connect`
+ * attaches. Nothing asks: every new session runs pi, and `connect` attaches
+ * OpenCode's own TUI (deprecated with OpenCode), so it exits 1 on pi.
  */
 export function resolveConnectAfterCreate(input: {
   connect: boolean;
   json: boolean;
   tty: boolean;
-}): 'connect' | 'ask' | 'no' {
-  if (input.connect) return 'connect';
-  if (input.json || !input.tty) return 'no';
-  return 'ask';
+}): 'connect' | 'no' {
+  return input.connect ? 'connect' : 'no';
 }
 
 async function sessionsNew(
@@ -857,21 +854,16 @@ async function sessionsNew(
   }
 
   const tty = process.stdin.isTTY === true && process.stdout.isTTY === true;
-  const decision = resolveConnectAfterCreate({ connect: connectAfter, json, tty });
-  if (decision !== 'no') {
+  if (resolveConnectAfterCreate({ connect: connectAfter, json, tty }) === 'connect') {
     // A runtime without `session.attach` (pi) makes `connect` exit 1 with the
-    // reason and the shell/chat alternatives; asking first keeps an OpenCode
-    // user who answers "n" from waiting for the sandbox.
-    const go =
-      decision === 'connect' ||
-      (await confirm('  Connect to it now?', true, { onEndOfInput: false }));
-    if (go) {
-      if (!waited && !(await awaitReadiness())) return 1;
-      const pins = ['--project', ctx.projectId, ...(opts.hostArg ? ['--host', opts.hostArg] : [])];
-      return runSessionsConnect([created.session_id, ...pins]);
-    }
+    // reason and the shell/chat alternatives.
+    if (!waited && !(await awaitReadiness())) return 1;
+    const pins = ['--project', ctx.projectId, ...(opts.hostArg ? ['--host', opts.hostArg] : [])];
+    return runSessionsConnect([created.session_id, ...pins]);
+  }
+  if (tty) {
     process.stdout.write(
-      `  ${C.dim}Later: ${C.reset}${C.cyan}kortix connect ${shortId(created.session_id)}${C.reset}\n`,
+      `  ${C.dim}Chat: ${C.reset}${C.cyan}kortix sessions chat ${created.session_id}${C.reset}\n`,
     );
   }
   return turnFailed ? 1 : 0;

@@ -210,23 +210,15 @@ export function flow(id: string, meta: FlowMeta, fn: FlowFn): void {
 }
 
 /**
- * Register one flow per session harness. `<id>` runs on OpenCode (today's
- * default) and `<id>-pi` runs the same body on pi, so a harness difference
- * fails one named flow instead of hiding behind the default. Both implement
- * spec `<id>`; the pi variant carries the `harness-pi` tag
- * (`ke2e run --tag harness-pi`).
+ * Register a flow that boots a session and proves the harness it runs. Every
+ * new session runs pi (OpenCode is sunset, 2026-10-23), so `harness` is `pi`.
  */
 export function harnessFlow(
   id: string,
   meta: FlowMeta,
   fn: (ctx: FlowContext, harness: Harness) => Promise<void>,
 ): void {
-  flow(id, meta, (ctx) => fn(ctx, "opencode"));
-  flow(
-    `${id}-pi`,
-    { ...meta, specId: id, tags: [...(meta.tags ?? []), "harness-pi"] },
-    (ctx) => fn(ctx, "pi"),
-  );
+  flow(id, meta, (ctx) => fn(ctx, "pi"));
 }
 
 export function allFlows(): RegisteredFlow[] {

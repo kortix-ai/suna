@@ -50,7 +50,7 @@ import {
   scopeForService,
 } from './parse';
 import { fetchUpstreamBuffered } from './upstream';
-import { makeOpenApiApp } from '../openapi';
+import { auth, makeOpenApiApp } from '../openapi';
 import { loadGitProject } from '../projects/lib/git';
 import { refreshMirror, runGit } from '../projects/git/mirror';
 import { writeScaffoldDeltaBundle } from '../projects/git/fast-boot-bundle';
@@ -526,7 +526,7 @@ gitProxyApp.openapi(
   createRoute({
     method: 'get',
     path: '/{project}/info/refs',
-    tags: ['git'],
+    ...auth, tags: ['git'],
     summary: 'git smart-HTTP ref discovery (clone/fetch/push negotiation)',
     request: {
       params: projectParam,
@@ -551,7 +551,7 @@ gitProxyApp.openapi(
   createRoute({
     method: 'post',
     path: '/{project}/git-upload-pack',
-    tags: ['git'],
+    ...auth, tags: ['git'],
     summary: 'git-upload-pack (clone / fetch) — raw pack stream',
     request: { params: projectParam },
     responses: gitResponses,
@@ -674,7 +674,7 @@ gitProxyApp.openapi(
   createRoute({
     method: 'get',
     path: '/{project}/fast-boot-bundle',
-    tags: ['git'],
+    ...auth, tags: ['git'],
     summary: 'Download the scaffold→tip git bundle a fresh sandbox applies at boot',
     request: {
       params: projectParam,
@@ -742,7 +742,7 @@ gitProxyApp.openapi(
   createRoute({
     method: 'get',
     path: '/{project}/project-snapshot',
-    tags: ['git'],
+    ...auth, tags: ['git'],
     summary: 'Short-lived download descriptor for a prepared project snapshot archive',
     request: {
       params: projectParam,
@@ -798,7 +798,7 @@ gitProxyApp.openapi(
   createRoute({
     method: 'post',
     path: '/{project}/git-receive-pack',
-    tags: ['git'],
+    ...auth, tags: ['git'],
     summary: 'git-receive-pack (push) — raw pack stream',
     request: { params: projectParam },
     responses: gitResponses,

@@ -36,6 +36,10 @@ let urls: string[];
 let serveLog = false;
 let pagedLog = false;
 let emptyLog = false;
+/** The project's detail never answers: its features (the `session_log` flag) stay unknown. */
+let detailPending = false;
+/** `GET …/log` answers 404 `session_log_missing`: an API that serves the log, a session with none yet. */
+let missingLog = false;
 let renderer: ReactTestRenderer | null = null;
 let queryClient: QueryClient;
 
@@ -44,12 +48,15 @@ beforeEach(() => {
   serveLog = false;
   pagedLog = false;
   emptyLog = false;
+  detailPending = false;
+  missingLog = false;
   setCurrentRuntime(null);
   configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
   globalThis.fetch = mock(async (url: unknown) => {
     const parsed = new URL(url instanceof Request ? url.url : String(url));
     const path = parsed.pathname;
     urls.push(path + parsed.search);
+    if (missingLog && path.endsWith('/log')) return Response.json({ error: 'No session log for this session', code: 'session_log_missing' }, { status: 404 });
     if (serveLog && path.endsWith('/log')) {
       if (emptyLog) return Response.json({ ...page(), messages: [], has_more: false });
       if (!pagedLog) return Response.json(page());
@@ -62,6 +69,7 @@ beforeEach(() => {
     if (serveLog && path.endsWith('/events')) return new Response(new ReadableStream({ start() {} }), { headers: { 'content-type': 'text/event-stream' } });
     // The turn record of a session that never ran a turn.
     if (emptyLog && path.endsWith('/turn')) return Response.json({ turns: [], last_ended: null });
+    if (path === `/projects/${PROJECT_ID}/detail` && detailPending) return new Promise<Response>(() => {});
     if (path === `/projects/${PROJECT_ID}/detail`) return Response.json({ project: { project_id: PROJECT_ID, experimental: { session_log: true } }, config: {} });
     return Response.json({}, { status: 404 });
   }) as unknown as typeof fetch;
@@ -78,7 +86,7 @@ afterEach(() => {
 const flush = () => act(async () => { for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0)); });
 
 describe('useSession negotiates the session log without its chat engine', () => {
-  test.each([true, false])('chatEngine %p: the flag is read and the first log page is requested', async (chatEngine) => {
+  test.each([true, false])('chatEngine %p: the first log page is requested', async (chatEngine) => {
     function Host() {
       useSession(PROJECT_ID, SESSION_ID, { chatEngine, replayStartStash: false });
       return null;
@@ -92,8 +100,8 @@ describe('useSession negotiates the session log without its chat engine', () => 
     expect(urls.some((u) => u.startsWith(`/projects/${PROJECT_ID}/sessions/${SESSION_ID}/log`))).toBe(true);
   });
 
-  test.each([true, false])('chatEngine false, flag %p known at the open: the snapshot asks a transcript window only with the flag off', async (flag) => {
-    // A host that reads its own transcript paints the log on v2: the snapshot's v1 window is never read.
+  test.each([true, false])('chatEngine false, flag %p known at the open: the snapshot asks no transcript window', async (flag) => {
+    // The open reads the log first, whatever the flag: the snapshot's v1 window is never read.
     resetSessionOpenBundles();
     queryClient.setQueryData(qk.project.detail(PROJECT_ID), { project: { project_id: PROJECT_ID, experimental: { session_log: flag } }, config: {} });
     function Host() {
@@ -106,7 +114,7 @@ describe('useSession negotiates the session log without its chat engine', () => 
     await flush();
     const snapshots = urls.filter((u) => u.includes('/snapshot'));
     expect(snapshots).toHaveLength(1);
-    expect(snapshots[0]).toContain(flag ? 'transcript=0' : 'transcript=40');
+    expect(snapshots[0]).toContain('transcript=0');
   });
 
   test('disabled: no log request', async () => {
@@ -199,12 +207,43 @@ describe('useSession with its chat engine: the session log owns the history once
     expect(seen.result!.conversationEmpty).toBe(true);
   });
 
-  test('flag off: the open reads the saved copy as before (no log request)', async () => {
+  test('a cold open (the project features not loaded) reads GET …/log first and sends no /transcript', async () => {
     serveLog = true;
-    mountHost(false);
+    detailPending = true;
+    const seen: { result: Result | null } = { result: null };
+    function Host() {
+      seen.result = useSession(PROJECT_ID, SESSION_ID, { replayStartStash: false });
+      return null;
+    }
+    act(() => {
+      renderer = create(createElement(QueryClientProvider, { client: queryClient }, createElement(Host)));
+    });
     await flush();
     const base = `/projects/${PROJECT_ID}/sessions/${SESSION_ID}`;
+    expect(urls.filter((u) => u.includes('/transcript'))).toEqual([]);
+    expect(urls).toContain(`${base}/log?limit=40`);
+    // The snapshot asks no v1 window either.
+    expect(urls.filter((u) => u.includes('/snapshot')).every((u) => u.includes('transcript=0'))).toBe(true);
+    expect(seen.result!.savedTranscript).toBe('shown');
+  });
+
+  test('a new session on an API that serves the log (404 session_log_missing): no /transcript, and nothing saved to wait for', async () => {
+    missingLog = true;
+    const seen = mountHost(true);
+    await flush();
+    const base = `/projects/${PROJECT_ID}/sessions/${SESSION_ID}`;
+    expect(urls).toContain(`${base}/log?limit=40`);
+    expect(urls.filter((u) => u.includes('/transcript'))).toEqual([]);
+    expect(seen.result!.savedTranscript).toBe('none');
+  });
+
+  test.each([true, false])('flag %p: a server older than the log (GET …/log answers 404) falls back to the v1 saved copy', async (flag) => {
+    mountHost(flag);
+    await flush();
+    const base = `/projects/${PROJECT_ID}/sessions/${SESSION_ID}`;
+    expect(urls).toContain(`${base}/log?limit=40`);
     expect(urls).toContain(`${base}/transcript?shape=sync&limit=40&history=true`);
-    expect(urls.filter((u) => u.includes('/log'))).toEqual([]);
+    // The log is asked first.
+    expect(urls.indexOf(`${base}/log?limit=40`)).toBeLessThan(urls.indexOf(`${base}/transcript?shape=sync&limit=40&history=true`));
   });
 });

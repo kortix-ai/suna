@@ -52,6 +52,7 @@ data "aws_subnet" "selected" {
 
 # Used solely to guard against an arch mismatch between var.instance_type and
 # the resolved AMI (see the precondition on aws_instance.this below).
+#trivy:ignore:AVD-AWS-0344 The filter pins one exact image-id from Canonical's SSM parameter or the operator's var.ami_id; an owners list would reject an operator's private AMI.
 data "aws_ami" "selected" {
   filter {
     name   = "image-id"

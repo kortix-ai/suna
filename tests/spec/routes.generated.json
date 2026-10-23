@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 888,
+  "count": 894,
   "routes": [
     {
       "method": "GET",
@@ -213,6 +213,10 @@
     {
       "method": "GET",
       "path": "/v1/accounts/:accountId/audit"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/audit/activity"
     },
     {
       "method": "GET",
@@ -1193,6 +1197,18 @@
     {
       "method": "POST",
       "path": "/v1/channels/teams/identity/preview"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/cli/device/decide"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/cli/device/poll"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/cli/device/start"
     },
     {
       "method": "GET",
@@ -2299,6 +2315,10 @@
       "path": "/v1/projects/:projectId/default-agent"
     },
     {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/default-reasoning-effort"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/detail"
     },
@@ -2320,6 +2340,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/files/content"
+    },
+    {
+      "method": "PUT",
       "path": "/v1/projects/:projectId/files/content"
     },
     {
@@ -2948,6 +2972,10 @@
     },
     {
       "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId/run"
+    },
+    {
+      "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/restart"
     },
     {
@@ -3073,6 +3101,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/spaces/dm"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/transfer"
     },
     {
       "method": "GET",
@@ -3217,14 +3249,6 @@
     {
       "method": "GET",
       "path": "/v1/projects/suna-migration/status"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/public/session-shares/:shareId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/public/session-shares/:shareId/messages"
     },
     {
       "method": "POST",

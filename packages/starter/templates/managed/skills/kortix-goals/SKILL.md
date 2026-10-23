@@ -145,9 +145,11 @@ When the user gives an objective:
    or irreversible.
 4. Add the first items, then `kortix goals transition active --reason "criteria written"`.
 5. Act on the first item in this turn.
-6. `kortix goals check`, then end the turn with three lines to the user: the
+6. `kortix goals check`, then end the turn with four lines to the user: the
    outcome, the criteria, the first thing you need from them (or "nothing for
-   now").
+   now"), and where to watch it: the Goals page in the project sidebar (status,
+   health, next wake, what it waits on) or the Goal button in this session's
+   header.
 </start>
 
 <wake>

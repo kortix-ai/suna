@@ -331,8 +331,10 @@ async function buildCommit(
   if (parentSha) await runGit(['read-tree', parentSha], repoPath, false, null, indexEnv);
   else await runGit(['read-tree', '--empty'], repoPath, false, null, indexEnv);
   for (const b of blobs) {
+    const entry = await runGit(['--literal-pathspecs', 'ls-files', '--stage', '-z', '--', b.path], repoPath, false, null, indexEnv);
+    const mode = entry.stdout.split(' ', 1)[0] || '100644';
     await runGit(
-      ['update-index', '--add', '--cacheinfo', `100644,${b.sha},${b.path}`],
+      ['update-index', '--add', '--cacheinfo', `${mode},${b.sha},${b.path}`],
       repoPath,
       false,
       null,

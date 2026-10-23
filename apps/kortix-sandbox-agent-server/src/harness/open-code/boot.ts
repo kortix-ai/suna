@@ -113,7 +113,10 @@ function registerOpenCodeStateReader(): void {
   })
 }
 
-/** Run the existing OpenCode cold/session boot behind the harness boundary. */
+/**
+ * Run the existing OpenCode cold/session boot behind the harness boundary.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export async function runOpenCode(context: HarnessBootContext & { cfg: Config; bootState: SandboxBootState }): Promise<void> {
   const { cfg, bootState, bootMark, serve } = context
   // FIRST THING, before anything spawns or binds: restore the config-affecting
@@ -496,11 +499,15 @@ function runDeferredHistoryBackfill(bootState: SandboxBootState): void {
  * tell" as busy, and a cold box with no pin answers a definite `false` without
  * a request.
  */
-/** Test seam: re-arm the once-per-process guard. */
+/**
+ * Test seam: re-arm the once-per-process guard.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function resetManagedReconcileForTests(): void {
   managedReconcileRan = false
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function reconcileManagedModels(
   opencode: Opencode,
   cfg: Config,
@@ -942,7 +949,10 @@ async function startSessionRuntime(
 }
 
 
-/** Claim warm-seed boot before the host considers monitor or session mode. */
+/**
+ * Claim warm-seed boot before the host considers monitor or session mode.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export async function runOpenCodeWarmSeed(context: HarnessBootContext & { cfg: Config; bootState: SandboxBootState }): Promise<boolean> {
   if ((process.env.KORTIX_WARM_SEED ?? '').trim() !== '1') return false
   const { cfg, bootState, bootMark, serve } = context

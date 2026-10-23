@@ -84,14 +84,6 @@ export function splitFilenameForTile(name: string): { head: string; tail: string
   return { head: name.slice(0, -NAME_TAIL_CHARS), tail: name.slice(-NAME_TAIL_CHARS) };
 }
 
-/** The one-string form, for places that cannot render two lines (tooltips, tests). */
-export function middleTruncateFilename(name: string, max = 22): string {
-  if (name.length <= max) return name;
-  const tail = Math.min(NAME_TAIL_CHARS, Math.floor((max - 1) / 2));
-  const head = max - 1 - tail;
-  return `${name.slice(0, head)}…${name.slice(-tail)}`;
-}
-
 /** A tile previews the head of the paste only: the clamp shows four lines, and the DOM need not hold 100 kB. */
 export const PASTE_PREVIEW_CHARS = 400;
 

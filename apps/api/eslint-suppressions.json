@@ -1100,11 +1100,6 @@
       "count": 1
     }
   },
-  "src/http-middleware.ts": {
-    "no-restricted-properties": {
-      "count": 2
-    }
-  },
   "src/iam/actor.ts": {
     "no-restricted-properties": {
       "count": 1
@@ -1303,11 +1298,6 @@
     },
     "no-restricted-properties": {
       "count": 6
-    }
-  },
-  "src/marketplace/index.ts": {
-    "no-restricted-syntax": {
-      "count": 8
     }
   },
   "src/mcp/cli.ts": {
@@ -2370,11 +2360,6 @@
       "count": 1
     }
   },
-  "src/projects/routes/session-reminders.ts": {
-    "no-restricted-syntax": {
-      "count": 6
-    }
-  },
   "src/projects/routes/session-scope-decide.ts": {
     "no-restricted-imports": {
       "count": 2
@@ -2624,11 +2609,6 @@
   "src/projects/trigger-schedule.ts": {
     "no-restricted-properties": {
       "count": 1
-    }
-  },
-  "src/public-session-shares/index.ts": {
-    "no-restricted-syntax": {
-      "count": 2
     }
   },
   "src/repositories/account-tokens.ts": {
@@ -3068,17 +3048,6 @@
   "src/shared/project-account-lookup.ts": {
     "kortix-api/replica-local": {
       "count": 1
-    }
-  },
-  "src/shared/public-session-share-view.ts": {
-    "kortix-api/layers": {
-      "count": 5
-    },
-    "kortix-api/projects-surface": {
-      "count": 5
-    },
-    "no-console": {
-      "count": 3
     }
   },
   "src/shared/resolve-account.ts": {

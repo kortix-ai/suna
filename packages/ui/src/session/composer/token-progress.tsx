@@ -91,7 +91,7 @@ export function ContextUsageCard({
   onViewDetails,
 }: {
   breakdown: ContextBreakdown;
-  limit: number;
+  limit: number | null;
   ratio: number;
   tone: StatusTone;
   modelName: string | null;
@@ -104,7 +104,7 @@ export function ContextUsageCard({
   const title = t(HEADLINE_TITLE_KEY[headline]);
   const tipKey = HEADLINE_TIP_KEY[headline];
   const tip = tipKey ? t(tipKey) : null;
-  const remaining = Math.max(limit - breakdown.total, 0);
+  const remaining = limit === null ? null : Math.max(limit - breakdown.total, 0);
   const rows = BREAKDOWN_ROWS.filter((row) => breakdown[row.key] > 0);
 
   // The bar draws in from 0 on open instead of appearing pre-filled. The card
@@ -153,9 +153,11 @@ export function ContextUsageCard({
           <span className="text-muted-foreground tabular-nums">
             {t('usedCount', { used: formatContextCount(breakdown.total) })}
           </span>
-          <span className="text-foreground font-medium tabular-nums">
-            {t('remainingCount', { remaining: formatContextCount(remaining) })}
-          </span>
+          {remaining !== null ? (
+            <span className="text-foreground font-medium tabular-nums">
+              {t('remainingCount', { remaining: formatContextCount(remaining) })}
+            </span>
+          ) : null}
         </div>
       </div>
 
@@ -175,9 +177,11 @@ export function ContextUsageCard({
 
       <p className="text-muted-foreground flex items-baseline justify-between gap-3 border-t pt-3 text-xs">
         <span className="truncate">{modelName ?? t('modelUnknown')}</span>
-        <span className="shrink-0 tabular-nums">
-          {t('windowMeta', { limit: formatContextCount(limit) })}
-        </span>
+        {limit !== null ? (
+          <span className="shrink-0 tabular-nums">
+            {t('windowMeta', { limit: formatContextCount(limit) })}
+          </span>
+        ) : null}
       </p>
 
       {tip ? (

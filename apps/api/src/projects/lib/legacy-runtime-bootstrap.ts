@@ -107,7 +107,10 @@ export const LEGACY_BOOTSTRAP_EXEC_TIMEOUT_MS = 5 * 60 * 1000;
 export const LEGACY_BOOTSTRAP_CONVERGE_BUDGET_MS = 8 * 60 * 1000;
 export const LEGACY_BOOTSTRAP_POLL_MS = 5_000;
 
-/** OpenCode home on the box: 'auto' = detect from the running OpenCode / on-disk data (image generations differ). */
+/**
+ * OpenCode home on the box: 'auto' = detect from the running OpenCode / on-disk data (image generations differ).
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ */
 export const LEGACY_OPENCODE_HOME = 'auto';
 
 /**
@@ -176,7 +179,10 @@ export interface RuntimeClassification {
   runtimeBuild: number | null;
   /** `opencode` field of health: 'ok' | 'starting' | ... */
   opencode: string | null;
-  /** `runtime.components.opencode` outcome when reported. */
+  /**
+   * `runtime.components.opencode` outcome when reported.
+   * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+   */
   opencodeComponent: string | null;
   /** Every reason `klass === 'stale'`. Always `[]` for every other klass. */
   staleReasons: StaleReason[];
@@ -407,6 +413,7 @@ export function decideDeadDaemonOnOpen(input: {
 
 export interface RenderScriptOptions {
   relaunch: RelaunchStrategy;
+  /** @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
   opencodeHome?: string;
   /** Seconds the script waits for the relaunched daemon before it restores the legacy chain. */
   healthWaitS?: number;
@@ -477,6 +484,7 @@ export interface ScriptReport {
   error?: string;
   agent_sha256?: string;
   entrypoint_sha256?: string;
+  /** @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
   previous_opencode?: string;
   token_rotated?: boolean;
 }

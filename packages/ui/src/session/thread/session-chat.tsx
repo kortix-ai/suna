@@ -280,7 +280,6 @@ import {
   heldCommandRows,
   type HeldCommand,
 } from '../composer/held-commands';
-import { useReadinessSettling } from '../status/use-readiness-settling';
 import { useSessionHistoryViewStore } from '../../internal/stores/session-history-view-store';
 import { downloadBlob } from '../../internal/lib/utils/download';
 import { RestoreNotice, hasOutOfContext, type FullTextState } from './session-history';
@@ -3944,15 +3943,10 @@ export function SessionChat({
   // its cause attached instead of a shrug. An actionable cause reports to
   // Sentry; a routine browser tab discard only leaves a breadcrumb.
   useReloadForensics(projectSessionId);
-  // Nothing has answered yet and the mount is young: the difference between
-  // "this session is asleep" and "we have not looked yet". Without it, every
-  // page load painted the waking notice for a beat over a session that was
-  // never asleep — which reads as a disconnect. See `settling`.
-  const composerSettling = useReadinessSettling(runtimePhase === 'connecting');
   // ONE answer for every surface that draws this session's runtime, and the
   // reason the composer no longer guesses: `unknown` and `connecting` are
-  // waits, and a wait is not a fault. Only the control plane saying the box is
-  // down earns the waking notice.
+  // waits, and a wait is not a fault. A routine wake says nothing either; only
+  // a parked box with no wake under way earns the asleep notice.
   const sessionConnection = projectSessionConnection({
     sandbox: (projectSessionRow?.status as SandboxLifecycle | undefined) ?? null,
     runtimeReady,
@@ -3965,7 +3959,6 @@ export function SessionChat({
     pendingPrompt: allowSendBeforeReady && working.state === 'working',
     pendingDelivery: working.pendingDelivery,
     connection: sessionConnection,
-    settling: composerSettling,
     // Only an OPEN TURN the control plane is holding counts here. This tab's
     // optimistic receipt and a stream frame both survive a box that died
     // mid-turn, and a durable inbox row (which the projection also sources to
@@ -4092,7 +4085,9 @@ export function SessionChat({
       // Change requests are the only kind a turn produces. `external` exists on
       // the union for `setup-links/setup-link-button.tsx`, which renders this
       // card inline in prose and handles its own open.
-      if (outcome.kind === 'change_request') setOpenCrId(outcome.id.slice('cr:'.length));
+      if (outcome.kind === 'change_request') {
+        setOpenCrId(outcome.action.target ?? outcome.id.slice('cr:'.length));
+      }
     },
     [setOpenCrId],
   );
@@ -4129,12 +4124,8 @@ export function SessionChat({
       <div className="bg-background relative flex h-full flex-col" data-testid="session-chat">
         {/* `projectId`/`sessionId` are what arm the loader's restart offer
             (`canRestart`). Without them a session wedged in this state spun
-            forever with no way out but a page reload. The stage must also track
-            the real runtime — hardcoding "ready" froze the copy on
-            "Connecting" no matter what the boot was actually doing. */}
+            forever with no way out but a page reload. */}
         <SessionStartingLoader
-          stage={runtimeReady ? 'ready' : 'starting'}
-          variant="compact"
           projectId={projectId}
           sessionId={projectSessionId}
         />
@@ -4206,6 +4197,7 @@ export function SessionChat({
           detachedRows={sessionState ? undefined : hookMessages}
           source={sessionState ?? DETACHED_SESSION_MESSAGES}
           session={session}
+          sessionRow={projectSessionRow}
           providers={providers}
           allSessions={allSessions}
           servedModel={sessionServedModel}
@@ -4222,7 +4214,11 @@ export function SessionChat({
         {/* Change request detail — opened from a turn's outcome card, or from
           `?cr=` on load. Lives inside `ProjectFilesProvider` alongside
           `SessionOutcomesProvider` so both read the SAME project id and cache. */}
-        <ChangeRequestDetailDialog crId={openCrId} onClose={() => setOpenCrId(null)} />
+        <ChangeRequestDetailDialog
+          crId={openCrId}
+          onClose={() => setOpenCrId(null)}
+          onOpenChangeRequest={setOpenCrId}
+        />
 
         {/* Chat and the action panel share one row — see `session-body.tsx`. The
           instant shell renders the SAME row, so nothing moves at the crossfade.

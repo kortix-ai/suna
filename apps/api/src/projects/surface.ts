@@ -109,14 +109,10 @@ export const loadEventPoller = async (): Promise<void> => {
 // Drive sync's last push before a synced box loses a writable folder (consumed by drives/service.ts).
 export { flushDriveSyncBeforeStop } from './reaping/stop-box';
 
-// The transcript mirror's rewind marker (consumed by ../sandbox-proxy).
-export { setTranscriptRewindMarker } from './lib/session-transcript-mirror';
-
 // Close the stored copy of a question a client answered (consumed by ../sandbox-proxy).
 export { clearOpenQuestions } from './lib/pending-questions';
 
-// The stored transcript (the session log behind the `session_log` flag, else
-// the mirror), consumed by the public share route.
+// The stored transcript (`toV1` of the session log), consumed by the public share route.
 export { readStoredTranscriptWindow } from './session-log-read';
 
 // The retention purge of session content (consumed by workers/session-log-purge-worker.ts).

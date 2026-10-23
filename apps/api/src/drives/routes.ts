@@ -466,6 +466,7 @@ drivesApp.openapi(
     responses: {
       200: { description: 'File bytes', content: { 'application/octet-stream': { schema: z.any() } } },
       206: { description: 'Partial file bytes', content: { 'application/octet-stream': { schema: z.any() } } },
+      416: { description: 'Requested range is not satisfiable; Content-Range names the file size' },
       ...errors(400, 401, 404, 503),
     },
   }),
@@ -489,7 +490,7 @@ drivesApp.openapi(
     if (download === '1' || download === 'true') {
       headers.set('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(baseName(path))}`);
     }
-    return new Response(upstream.body, { status: upstream.status === 206 ? 206 : 200, headers });
+    return new Response(upstream.body, { status: upstream.status, headers });
   },
 );
 

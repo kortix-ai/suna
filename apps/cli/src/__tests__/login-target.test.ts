@@ -53,9 +53,11 @@ describe('browser login target', () => {
       if (scenario.override) args.push('--api', scenario.override);
       const proc = Bun.spawn([process.execPath, entry, ...args], {
         env: {
-          ...process.env,
+          PATH: process.env.PATH, HOME: tmpdir(),
           CI: '1',
           KORTIX_CONFIG_FILE: config,
+          KORTIX_API_URL: '',
+          KORTIX_TOKEN: '',
           KORTIX_FRONTEND_URL: 'https://unrelated.example.test',
           KORTIX_DASHBOARD_URL: 'https://legacy.example.test',
           KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
@@ -87,6 +89,33 @@ describe('browser login target', () => {
 });
 
 describe('token login target', () => {
+  test('service-account keys reach API verification instead of a PAT-only local rejection', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'login-service-key-'));
+    const seen: string[] = [];
+    const server = Bun.serve({
+      port: 0,
+      fetch: (req) => {
+        seen.push(req.headers.get('authorization') ?? '');
+        return Response.json({ user_id: 'synthetic_user', email: '', accounts: [] });
+      },
+    });
+    try {
+      const proc = Bun.spawn(
+        [process.execPath, entry, 'login', '--token', 'kortix_sa_synthetic', '--api', `http://127.0.0.1:${server.port}`, '--no-project'],
+        {
+          env: { PATH: process.env.PATH, HOME: tmpdir(), CI: '1', KORTIX_CONFIG_FILE: join(dir, 'config.json'), KORTIX_DISABLE_SANDBOX_ENV_FILE: '1', KORTIX_NO_UPDATE_CHECK: '1' },
+          stdout: 'pipe', stderr: 'pipe',
+        },
+      );
+      const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
+      expect(stderr).not.toContain('Invalid API key format');
+      expect(code).toBe(0);
+      expect(seen).toEqual(['Bearer kortix_sa_synthetic']);
+    } finally {
+      server.stop(true);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
   test('KORTIX_API_URL redirects the active built-in host, so the token never reaches the default API', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'login-env-target-'));
     const seen: Array<{ path: string; auth: string | null }> = [];
@@ -102,7 +131,7 @@ describe('token login target', () => {
         [process.execPath, entry, 'login', '--token', 'kortix_pat_envtarget', '--no-project'],
         {
           env: {
-            ...process.env,
+            PATH: process.env.PATH, HOME: tmpdir(),
             CI: '1',
             KORTIX_CONFIG_FILE: join(dir, 'config.json'),
             KORTIX_API_URL: `http://127.0.0.1:${server.port}`,
@@ -163,7 +192,7 @@ describe('login selects stored identity under delegation env', () => {
         }),
       );
       const env = {
-        ...process.env,
+        PATH: process.env.PATH, HOME: tmpdir(),
         CI: '1',
         KORTIX_CONFIG_FILE: config,
         KORTIX_TOKEN: 'kortix_pat_delegation',
@@ -205,4 +234,36 @@ describe('login selects stored identity under delegation env', () => {
       }
     });
   }
+});
+
+describe('callback-free device login', () => {
+  test('polls the selected API, saves the approved key, and whoami uses it', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'login-device-'));
+    const seen: string[] = [];
+    const server = Bun.serve({ port: 0, fetch: async req => {
+      const path = new URL(req.url).pathname;
+      seen.push(path);
+      if (path.endsWith('/start')) return Response.json({ device_code: 'a'.repeat(64), user_code: '0123456789ABCDEF', expires_in: 60, interval: 5 });
+      if (path.endsWith('/poll')) {
+        expect(await req.json()).toEqual({ device_code: 'a'.repeat(64) });
+        return Response.json({ token: 'kortix_pat_device' });
+      }
+      expect(req.headers.get('authorization')).toBe('Bearer kortix_pat_device');
+      return Response.json({ user_id: 'synthetic_user', email: '', accounts: [] });
+    } });
+    try {
+      const proc = Bun.spawn([process.execPath, entry, 'login', '--device', '--api', `http://127.0.0.1:${server.port}`, '--no-project'], {
+        env: { PATH: process.env.PATH, HOME: tmpdir(), CI: '1', KORTIX_CONFIG_FILE: join(dir, 'config.json'), KORTIX_DISABLE_SANDBOX_ENV_FILE: '1', KORTIX_NO_UPDATE_CHECK: '1' },
+        stdout: 'pipe', stderr: 'pipe',
+      });
+      const [code, stdout, stderr] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+      expect(stderr).not.toContain('Invalid');
+      if (code !== 0) throw new Error(stderr);
+      expect(code).toBe(0);
+      expect(stdout).toContain('Confirm code: 0123456789ABCDEF');
+      expect(stdout).not.toContain('callback=');
+      expect(stdout).not.toContain('a'.repeat(64));
+      expect(seen).toEqual(['/v1/cli/device/start', '/v1/cli/device/poll', '/v1/accounts/me']);
+    } finally { server.stop(true); rmSync(dir, { recursive: true, force: true }); }
+  }, 15000);
 });

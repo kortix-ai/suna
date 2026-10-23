@@ -563,6 +563,10 @@ export const qk = {
     spaceSummaries: (id: string) => [...qk.project.spaces(id), 'summary'] as const,
     /** `getProjectSpaceSummary` — one channel's tab counts. */
     spaceSummary: (id: string, spaceId: string) => [...qk.project.spaceSummaries(id), spaceId] as const,
+    /** `listProjectGoals` — the goal folders in Files with their heartbeats. */
+    goals: (id: string) => [...qk.project.scope(id), 'goals'] as const,
+    /** `getProjectGoalFiles` — one goal folder's log, notes and verification. */
+    goalFiles: (id: string, folder: string) => [...qk.project.goals(id), 'files', folder] as const,
     /** `listSessionReminders` — `GET /projects/:id/sessions/:sid/reminders`. */
     sessionReminders: (id: string, sessionId: string) =>
       [...qk.project.reminders(id), 'session', sessionId] as const,

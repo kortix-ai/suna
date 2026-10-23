@@ -1,4 +1,12 @@
 {
+  "agentNavPrototype": {
+    "variantRail": "Left rail (today)",
+    "variantTabs": "Grouped underline tabs",
+    "variantGroups": "Group switch + tabs",
+    "variantInline": "Vertical tabs with values",
+    "previousVariant": "Previous variant",
+    "nextVariant": "Next variant"
+  },
   "repositoryDisconnected": {
     "title": "GitHub disconnected",
     "reconnect": "Reconnect GitHub",
@@ -728,6 +736,9 @@
       "iconDescription": "Shown next to the project name.",
       "name": "Project name",
       "nameDescription": "Shown in the project switcher and anywhere this project is listed.",
+      "defaultEffort": "Default reasoning effort",
+      "defaultEffortDescription": "Applied to new prompts that carry no explicit effort pick, when the session's model supports it.",
+      "defaultEffortAutomatic": "Automatic",
       "saving": "Saving…",
       "archived": "Project archived",
       "archiveFailed": "Failed to archive project",
@@ -747,7 +758,19 @@
         "access": "Access for everyone on the team — nobody can reach this project again"
       },
       "reassurance": "Git repositories you connected yourself are not deleted. Any code already pushed to them stays where it is.",
-      "keepWorkspace": "Keep project"
+      "keepWorkspace": "Keep project",
+      "transferWorkspace": "Transfer project",
+      "transferDescription": "Move this project — its sessions, files, settings and member access — to another organization.",
+      "transferTitle": "Transfer project",
+      "transferDialog": "Sessions, files and settings follow the project. System member roles follow; groups, pending invitations and custom roles must be granted again in the target organization. Recorded usage stays on this organization’s bill.",
+      "transferTargetLabel": "Target organization",
+      "transferTargetPlaceholder": "Choose an organization",
+      "transferLoadingTargets": "Loading organizations…",
+      "transferNoTargets": "You are not a member of any other organization.",
+      "transferMove": "Move project",
+      "transferMoveTo": "Move to {name}",
+      "transferSuccess": "Project transferred",
+      "transferFailed": "Transfer failed"
     },
     "sandbox": {
       "states": {
@@ -1046,10 +1069,6 @@
           "name": "Pooled Provider Secrets",
           "description": "Members connect their own ChatGPT subscriptions and provider keys, share them when needed, and choose which ones each session uses."
         },
-        "pi_harness": {
-          "name": "Pi Harness (in-sandbox)",
-          "description": "Run sessions on the pi harness inside the session sandbox instead of OpenCode. Off, `runtime: pi` in the manifest still selects pi."
-        },
         "genui": {
           "name": "Generative UI",
           "description": "The agent may answer with cards, comparisons, charts, maps, and tabs instead of long text."
@@ -1077,10 +1096,6 @@
         "drives": {
           "name": "Drive",
           "description": "Shared folders that stay in sync with sessions: your own drive, one per agent, and company drives an admin attaches to the project. New sessions see them under /drives."
-        },
-        "session_log": {
-          "name": "Session log v2",
-          "description": "Reads a session through the v2 session log instead of the v1 transcript. Kortix enables it per project."
         },
         "session_log_restore": {
           "name": "Session log restore",
@@ -1494,6 +1509,7 @@
   },
   "sidebar": {
     "rooms": "Rooms",
+    "goals": "Goals",
     "referAndEarn": "Refer & Earn",
     "referralShareTitle": "Refer Friends",
     "referralShareSubtitle": "Get 400 credits",
@@ -5130,7 +5146,14 @@
       "youHaveBeenInvitedToAProject": "You have been invited to a project.",
       "joinProjectDescription": "You'll join {projectName} as {roleLabel}.",
       "roleManager": "a manager",
-      "signOutAndContinue": "Sign out and continue"
+      "signOutAndContinue": "Sign out and continue",
+      "ssoTitle": "Sign in with single sign-on",
+      "ssoDescription": "Your organization's directory added you to this account. Sign in with your organization's single sign-on to join. If you cannot, ask an account admin to resend the invite.",
+      "ssoContinue": "Continue with single sign-on",
+      "askAdminTitle": "Ask an admin to resend",
+      "askAdminDescription": "Your organization's directory added you to this account, and this instance cannot confirm your email address. Ask an account admin to resend the invite, then open this link again.",
+      "ssoDomainUnverified": "Your single sign-on provider has not verified this email's domain. Sign out and sign back in with your email address to use this invite.",
+      "ssoUnavailable": "Single sign-on is not available right now. Ask an account admin to resend the invite."
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – The open-source AI Operating System",
@@ -10658,7 +10681,7 @@
       "text1458e20a1642": "Optional. Kortix also deletes the local token on disconnect.",
       "text1459df2e344c": "A Linux machine boots from the sandbox image your project declares. It is its own isolated machine: its own filesystem, its own process table, its own network. Nothing is shared with another session.",
       "text14683b379324": "Revoke token",
-      "text146b38e7fa80": "When the default fails",
+      "text146b38e7fa80": "When a model fails",
       "text146cd06d5026": "Env:",
       "text146fd497badf": "Email skipped — copy invite link to share manually",
       "text147251df4759": "This usually takes a few seconds",
@@ -15632,6 +15655,8 @@
       "texta4f264c3ab5f": "Admin Grant",
       "texta4f6c318a669": "Delete this app?",
       "texta4fc39798651": "Change request #{number}",
+      "textddcd87c21894": "Superseded by #{number}",
+      "texta8ef31fa7d25": "View #{number}",
       "texta505da26f529": "Could not remove profile picture",
       "texta514a684676a": "Edit access",
       "texta515cf580dd9": "Updated IAM role permissions",
@@ -16026,7 +16051,7 @@
       "textafb32719ca9e": "Bot client secret",
       "textafb5023c3c05": "Changes applied",
       "textafb837ec251a": "Okta pushes changes as they happen (assignments, profile updates, group pushes) — a quiet period just means nothing changed.",
-      "textafb9890f7c72": "Where a request goes when the project default can't take it.",
+      "textafb9890f7c72": "Where a request goes when its model can't take it.",
       "textafc19f1734c1": "Principal",
       "textafc8e3a5d5db": "It clusters requests by what people actually want rather than by the words they used, counts how many distinct accounts raised each one, and attaches the quotes. When someone asks \"who asked for this\", the answer is in the document.",
       "textafdc7d79dccb": "Automatic provisioning from OneLogin",
@@ -16271,6 +16296,11 @@
       "textb6bb289a7a2c": "accounts teams organizations switch manage",
       "textb6bcbb175d23": "Regular · 400",
       "textb6c70926c1aa": "Admins only",
+      "textf19611c61ca5": "Full access",
+      "text15589a542412": "{count, plural, =0 {No connectors} one {# connector} other {# connectors}}",
+      "texte96d99ad9896": "{count, plural, =0 {No secrets} one {# secret} other {# secrets}}",
+      "text70b8d7e10749": "All Kortix actions",
+      "text2d3f4433505a": "{count, plural, =0 {No Kortix actions} one {# Kortix action} other {# Kortix actions}}",
       "textb6cde9030cef": "Create key",
       "textb6d85433a7ee": "Sessions could not be loaded",
       "textb6daf93376cc": "Loading finance.weekly",
@@ -16734,7 +16764,7 @@
       "textc3d2e79ebdd0": "Connectors",
       "textc3e3a6edeaa5": "Terms and conditions",
       "textc3e58a73609d": "Destructive",
-      "textc3ecd3cd791b": "Tried in order after the project default.",
+      "textc3ecd3cd791b": "Tried in order after the model a request names.",
       "textc3f282c05f3f": "policies approval block require_approval rules tools connector guardrails",
       "textc3f348ffaf7a": "Attach to project",
       "textc3f7bdf537c4": "req",
@@ -20067,6 +20097,7 @@
       "texta37dd5ef6ef2": "Customize Sidebar",
       "text8c712bd7c1ec": "sidebar customize reorder hide show navigation rows",
       "text2313fe21ea84": "Edit {name}",
+      "text2b2c3ec032a6": "Transferred project to another account",
       "text44f9fff8bdae": "Changed the credits plan",
       "text3fa17bba73e1": "Your account has no plan yet. Pick a monthly amount of credits to run sessions. Every member shares one pool.",
       "text6821e42be2c1": "Your wallet is empty, so sessions can’t run. Top up to keep compute and the latest AI models going — your plan is unaffected.",
@@ -20325,6 +20356,11 @@
       "texta8597db6f24b": "Remove skill",
       "text5f6ba69d66d1": "Skill removed",
       "textcb8d6b0c94c9": " and every file in it, edits included, and removes the skill from every agent that lists it. One commit on the default branch.",
+      "cliDeviceTitle": "Authorize Kortix CLI",
+      "cliDeviceWarning": "Approve only a login you started. Type the code your terminal shows.",
+      "cliDeviceCode": "Login code",
+      "cliDeviceApproved": "Login approved. Return to your terminal.",
+      "cliDeviceAction": "Authorize CLI",
       "openThreadAction": "Open thread",
       "untitledThread": "Untitled thread"
     },
@@ -20342,18 +20378,6 @@
       "cancel": "Cancel",
       "expiryNever": "Never",
       "expiryDays": "{count, plural, one {# day} other {# days}}"
-    },
-    "publicTranscriptShare": {
-      "sectionTitle": "Public link",
-      "sectionDescription": "Anyone with the link can read this conversation without signing in.",
-      "create": "Create public link",
-      "revokeDescription": "The conversation stops loading for everyone with the link. You can create a new link afterwards.",
-      "rowMeta": "Read-only conversation",
-      "unavailable": "This conversation is temporarily unavailable.",
-      "unavailableDescription": "The conversation could not be read right now. Try again in a moment.",
-      "loadFailedDescription": "The conversation could not be loaded.",
-      "empty": "No messages yet",
-      "savedCopy": "Saved copy from {date}"
     },
     "chatIdentityConnect": {
       "chatAccount": "{service} account",
@@ -20471,6 +20495,12 @@
       "title": "Saved, but {agent} can't read it yet",
       "grant": "{names} {count, plural, one {is} other {are}} not in the {agent} agent's secrets. Open Customize → Agents → {agent} → Secrets and enable {count, plural, one {it} other {them}}.",
       "allowlist": "{names} {count, plural, one {is} other {are}} outside this session's secrets. Start a new session to use {count, plural, one {it} other {them}}."
+    },
+    "sessionEmbed": {
+      "sectionTitle": "Embed",
+      "sectionDescription": "For same-site pages only. Viewers must already be signed in with access to this session; signing in inside a cross-site iframe is not supported.",
+      "copy": "Copy embed code",
+      "copied": "Embed code copied"
     },
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "Delivery: runtime — the real value loads into the sandbox environment. Agent code can read it.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Delivery: connector — server-side only. The value never enters the sandbox environment.",
@@ -20602,7 +20632,12 @@
     "deleteTitle": "Delete this provider?",
     "deleteBody": "{name} and its API key leave this project for every member, and sessions stop offering its models. This cannot be undone.",
     "deleted": "Provider deleted",
-    "deleteFailed": "Could not delete the provider"
+    "deleteFailed": "Could not delete the provider",
+    "readsImages": "Reads images",
+    "reasoning": "Reasoning",
+    "traitsHint": "Kortix reads these from the endpoint when it reports them. Turn them on when it does not.",
+    "contextWindow": "{tokens} context",
+    "contextDefault": "128K context (the endpoint reports none)"
   },
   "providerSheet": {
     "inUse": "In use",
@@ -22306,6 +22341,96 @@
     "openRoom": "Open",
     "gateDescription": "Turn on Rooms to let agent sessions and people of this project talk in named chat rooms."
   },
+  "goals": {
+    "title": "Goals",
+    "gateDescription": "Agents own an objective until it is verifiably done: the goal lives in Files, a daily heartbeat wakes it, the agent chases people for what it needs, and an independent check closes it.",
+    "empty": "No goals yet",
+    "emptyHint": "Start one in a session: describe the outcome, for example \"make sure our old bank account is closed\". The agent creates the goal and it shows here.",
+    "loadError": "Could not load goals. Try again.",
+    "retry": "Try again",
+    "needsYou": "Needs you",
+    "open": "Open",
+    "closed": "Closed",
+    "waitingFor": "Waiting for: {title}",
+    "criteria": "{met}/{total} criteria",
+    "nextWake": "Next wake {time}",
+    "noWake": "No wake scheduled",
+    "heartbeat": "Heartbeat",
+    "heartbeatPaused": "Paused",
+    "lastWakeLabel": "Last wake",
+    "progress": "Progress",
+    "scope": {
+      "company": "Company",
+      "personal": "Only you"
+    },
+    "status": {
+      "draft": "Draft",
+      "active": "Active",
+      "waiting_on_user": "Waiting on you",
+      "waiting_external": "Waiting",
+      "verifying": "Verifying",
+      "done": "Done",
+      "abandoned": "Abandoned"
+    },
+    "health": {
+      "healthy": "Running",
+      "attention": "Needs attention",
+      "closed": "Closed"
+    },
+    "issue": {
+      "no_heartbeat": "Nothing will wake this goal: its heartbeat reminder is missing.",
+      "heartbeat_paused": "The heartbeat reminder is paused.",
+      "heartbeat_failed": "The last wake failed: {error}",
+      "missed_wake": "The last wake is overdue.",
+      "ask_overdue": "An ask is past its due time.",
+      "verification_stalled": "Verification started more than 24 hours ago.",
+      "unreadable": "goal.json is missing or is not valid JSON."
+    },
+    "sessionChip": "Goal",
+    "sessionRole": {
+      "coordinator": "This session runs this goal.",
+      "worker": "This session works on this goal.",
+      "verifier": "This session verifies this goal."
+    },
+    "openGoal": "Open goal",
+    "openSession": "Open main session",
+    "openFolder": "Open folder",
+    "back": "All goals",
+    "healthTitle": "Health",
+    "successCriteria": "Success criteria",
+    "met": "Met",
+    "notMet": "Not met",
+    "items": "Items",
+    "noItems": "No items yet.",
+    "noCriteria": "No criteria yet: the agent writes them before the goal becomes active.",
+    "kind": {
+      "task": "Task",
+      "ask": "Ask",
+      "wait": "Wait"
+    },
+    "itemStatus": {
+      "open": "open",
+      "doing": "doing",
+      "done": "done",
+      "dropped": "dropped"
+    },
+    "due": "Due {time}",
+    "sessions": "Sessions",
+    "role": {
+      "coordinator": "Main session",
+      "worker": "Worker",
+      "verifier": "Verifier"
+    },
+    "timeline": "Timeline",
+    "verification": "Verification",
+    "notes": "Notes",
+    "log": "Log",
+    "notFound": "This goal no longer exists."
+  },
+  "agentEditor": {
+    "manage": "Manage",
+    "overviewTitle": "Overview"
+  },
   "spaces": {
     "create": {
       "title": "Create a channel",
@@ -22418,8 +22543,6 @@
         "waking": "Waking this thread's computer. Messages you send are queued and go out automatically."
       },
       "boot": {
-        "starting": "Starting this thread",
-        "progress": "Thread startup progress",
         "restart": "Restart thread"
       },
       "links": {

@@ -1,4 +1,12 @@
 {
+  "agentNavPrototype": {
+    "variantRail": "左レール（現行）",
+    "variantTabs": "グループ化した下線タブ",
+    "variantGroups": "グループ切替 + タブ",
+    "variantInline": "値付きの縦タブ",
+    "previousVariant": "前のバリアント",
+    "nextVariant": "次のバリアント"
+  },
   "repositoryDisconnected": {
     "title": "GitHub の接続が切れています",
     "reconnect": "GitHub を再接続",
@@ -42,7 +50,7 @@
     "specificMembers": "特定のメンバー",
     "specificDescription": "選択したプロジェクトメンバーと接続の所有者のみが使用できます。",
     "accessDescription": "プロジェクト全体に共有するか、特定のメンバーに制限してください。",
-    "selectedMembersCount": "{count, plural, one {# member} other {# members}}",
+    "selectedMembersCount": "{count, plural, other {# members}}",
     "providerDisabled": "このセッションではこのプロバイダーは無効です。",
     "unavailableKeys": "{count, plural, other {選択したキーのうち#個が利用できません。}} 利用できないキーを削除するか、アクセス権を復元してください。",
     "removeUnavailable": "利用できないキーを削除",
@@ -90,7 +98,7 @@
     "sharedTitle": "プロバイダー接続",
     "sharedDescription": "API キーと ChatGPT アカウントを追加できます。新しい接続は共有するまで自分専用です。セッションごとに使用する接続を選択できます。",
     "legacyProjectKey": "既存のプロジェクトキー · このセッションでキーを選択していない場合に使用",
-    "keyCount": "{count, plural, one {# 個のキー} other {# 個のキー}}",
+    "keyCount": "{count, plural, other {# 個のキー}}",
     "providerKeysFor": "{provider} の API キー",
     "addKey": "キーを追加",
     "loadError": "プロバイダーのシークレットを読み込めませんでした。",
@@ -456,7 +464,7 @@
       "totalCredits": "利用可能なクレジット合計",
       "allCredits": "すべてのクレジット",
       "monthlyCredits": "月額クレジット",
-      "renewalIn": "{days} {days, plural, one {日} other {日}}後に更新",
+      "renewalIn": "{days} {days, plural, other {日}}後に更新",
       "noRenewal": "更新予定なし",
       "extraCredits": "追加クレジット",
       "nonExpiring": "期限なし",
@@ -906,6 +914,9 @@
       "iconDescription": "プロジェクト名の横に表示されます。",
       "name": "プロジェクト名",
       "nameDescription": "プロジェクト切り替えと、このプロジェクトが一覧表示されるすべての場所に表示されます。",
+      "defaultEffort": "デフォルトの推論強度",
+      "defaultEffortDescription": "セッションで明示的な選択がなく、セッションのモデルが対応している場合に、新しいプロンプトへ適用されます。",
+      "defaultEffortAutomatic": "自動",
       "saving": "保存中…",
       "archived": "プロジェクトをアーカイブしました",
       "archiveFailed": "プロジェクトをアーカイブできませんでした",
@@ -925,7 +936,19 @@
         "access": "チーム全員のアクセス権 — 誰もこのプロジェクトに再びアクセスできません"
       },
       "reassurance": "自分で接続した Git リポジトリは削除されません。すでにプッシュしたコードはそのまま残ります。",
-      "keepWorkspace": "プロジェクトを保持"
+      "keepWorkspace": "プロジェクトを保持",
+      "transferWorkspace": "プロジェクトを移管",
+      "transferDescription": "このプロジェクト（セッション・ファイル・設定・メンバーアクセス）を別の組織に移動します。",
+      "transferTitle": "プロジェクトを移管",
+      "transferDialog": "セッション・ファイル・設定とシステムロールは移動します。グループ、保留中の招待、カスタムロールは移動先で再付与が必要です。記録済みの使用量は元の組織の請求に残ります。",
+      "transferTargetLabel": "移動先の組織",
+      "transferTargetPlaceholder": "組織を選択",
+      "transferLoadingTargets": "組織を読み込み中…",
+      "transferNoTargets": "他の組織のメンバーではありません。",
+      "transferMove": "プロジェクトを移動",
+      "transferMoveTo": "{name} に移動",
+      "transferSuccess": "プロジェクトを移管しました",
+      "transferFailed": "移管に失敗しました"
     },
     "sandbox": {
       "states": {
@@ -1224,10 +1247,6 @@
           "name": "共有プロバイダーシークレット",
           "description": "メンバーが自分の ChatGPT サブスクリプションとプロバイダーキーを接続し、必要に応じて共有し、セッションごとに使用するものを選択します。"
         },
-        "pi_harness": {
-          "name": "Pi ハーネス（サンドボックス内）",
-          "description": "セッションを OpenCode の代わりにセッションのサンドボックス内の Pi ハーネスで実行します。オフでも、マニフェストの `runtime: pi` は引き続き Pi を選択します。"
-        },
         "genui": {
           "name": "生成UI",
           "description": "エージェントは、長い文章の代わりにカード、比較表、グラフ、地図、タブで回答できます。"
@@ -1255,10 +1274,6 @@
         "drives": {
           "name": "ドライブ",
           "description": "セッションと同期し続ける共有フォルダー：自分のドライブ、エージェントごとのドライブ、管理者がプロジェクトに割り当てた会社のドライブ。新しいセッションでは /drives に表示されます。"
-        },
-        "session_log": {
-          "name": "セッションログ v2",
-          "description": "セッションを v1 のトランスクリプトではなく v2 のセッションログ経由で読み取ります。Kortix がプロジェクトごとに有効にします。"
         },
         "session_log_restore": {
           "name": "セッションログからの復元",
@@ -1308,7 +1323,7 @@
       "loadFailed": "このアカウントを読み込めませんでした。",
       "resetAt": "プランのクレジットのリセット日時",
       "availableBalance": "利用可能残高",
-      "creditCount": "{count, plural, one {{formatted} クレジット} other {{formatted} クレジット}}",
+      "creditCount": "{count, plural, other {{formatted} クレジット}}",
       "owed": "未払い",
       "buckets": {
         "monthly": {
@@ -1327,7 +1342,7 @@
       "includedInPlan": "プランに含まれる内容",
       "usedThisPeriod": "この期間の使用量",
       "planCreditsSpent": "プランクレジットを使い切りました。これ以降は購入済みクレジットを使用します。",
-      "grantRemaining": "{count, plural, one {この期間の付与分は残り {formatted} クレジットです。} other {この期間の付与分は残り {formatted} クレジットです。}}",
+      "grantRemaining": "{count, plural, other {この期間の付与分は残り {formatted} クレジットです。}}",
       "dailyAmountEvery": "{hours} 時間ごとに +{credits} クレジット",
       "dailyAmount": "+{credits} クレジット",
       "countdown": {
@@ -1494,6 +1509,7 @@
   },
   "sidebar": {
     "rooms": "ルーム",
+    "goals": "ゴール",
     "referAndEarn": "紹介して獲得",
     "referralShareTitle": "友達を紹介",
     "referralShareSubtitle": "400クレジット獲得",
@@ -1985,7 +2001,7 @@
     "providerRecovery": {
       "savedPrompt": "保存済みプロンプト",
       "noText": "テキストプロンプトは添付されていません。",
-      "attachments": "{count, plural, one {添付ファイル} other {添付ファイル}}",
+      "attachments": "{count, plural, other {添付ファイル}}",
       "reattach": "再読み込み後にこれらのファイルを再添付してください。",
       "unavailable": "保存済みプロンプトはありません。",
       "retrying": "再試行中…",
@@ -1995,10 +2011,10 @@
     },
     "connectorRequired": {
       "title": "続行するには{connectors}を接続",
-      "description": "{count, plural, one {{connectors}が必要ですが、まだ何も接続されていません。処理は実行されておらず、料金も発生していません。アカウントを接続すると、メッセージが再送信されます。} other {{connectors}が必要ですが、まだ何も接続されていません。処理は実行されておらず、料金も発生していません。アカウントを接続すると、メッセージが再送信されます。}}",
+      "description": "{count, plural, other {{connectors}が必要ですが、まだ何も接続されていません。処理は実行されておらず、料金も発生していません。アカウントを接続すると、メッセージが再送信されます。}}",
       "connectOne": "{connector}を接続",
       "connectMany": "アカウントを接続",
-      "privateDescription": "{count, plural, one {{connectors}は一度に1つのアカウントを認証するため、このセッションを実行するアカウントで接続する必要があります。} other {{connectors}は一度に1つのアカウントを認証するため、このセッションを実行するアカウントで接続する必要があります。}}"
+      "privateDescription": "{count, plural, other {{connectors}は一度に1つのアカウントを認証するため、このセッションを実行するアカウントで接続する必要があります。}}"
     },
     "composerMenus": {
       "noMatches": "一致する項目はありません",
@@ -2183,7 +2199,7 @@
     "stopUnconfirmed": "停止を確認できませんでした。エージェントがまだ実行中の可能性があります。もう一度停止してください。",
     "stoppedBy": "{name}が停止",
     "queued": "待機中",
-    "queuedFiles": "{count, plural, one {#個のファイル} other {#個のファイル}}",
+    "queuedFiles": "{count, plural, other {#個のファイル}}",
     "queuedCount": "{count} 件キュー中",
     "editingQueued": "編集中",
     "queuedActions": "メッセージの操作",
@@ -5119,7 +5135,14 @@
       "youHaveBeenInvitedToAProject": "プロジェクトに招待されています。",
       "joinProjectDescription": "{projectName} に{roleLabel}として参加します。",
       "roleManager": "マネージャー",
-      "signOutAndContinue": "サインアウトして続ける"
+      "signOutAndContinue": "サインアウトして続ける",
+      "ssoTitle": "シングルサインオンでサインイン",
+      "ssoDescription": "組織のディレクトリによって、このアカウントに追加されました。参加するには、組織のシングルサインオンでサインインしてください。サインインできない場合は、アカウント管理者に招待の再送を依頼してください。",
+      "ssoContinue": "シングルサインオンで続行",
+      "askAdminTitle": "管理者に再送を依頼",
+      "askAdminDescription": "組織のディレクトリによってこのアカウントに追加されましたが、このインスタンスではメールアドレスを確認できません。アカウント管理者に招待の再送を依頼し、その後このリンクをもう一度開いてください。",
+      "ssoDomainUnverified": "シングルサインオンのプロバイダーがこのメールのドメインを検証していません。この招待を使うには、サインアウトしてメールアドレスでサインインし直してください。",
+      "ssoUnavailable": "現在シングルサインオンを利用できません。アカウント管理者に招待の再送を依頼してください。"
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – オープンソースのAI Operating System",
@@ -10025,7 +10048,7 @@
       "text00d60e31a4e6": "実行",
       "text00d8d3f11739": "mail",
       "text00dd9d632755": "ブランチを検索",
-      "text00e99be56ba9": "{count, plural, one {# 行を削除しました} other {# 行を削除しました}}",
+      "text00e99be56ba9": "{count, plural, other {# 行を削除しました}}",
       "text00f5aae9f9d3": "このエージェントが呼び出すことができる外部サービス。 1 つを必須にマークすると、解決されるまでセッションは開始されません。",
       "text00f8ca92de43": "エージェントに判断が必要なときは、処理を永遠に止める代わりに、ボタン付きのカードを投稿します。クリックが判定となり、同じスレッドでそこからセッションが再開されます。",
       "text00ff22485ed6": "接続する",
@@ -10647,7 +10670,7 @@
       "text1458e20a1642": "任意。切断時にはKortixもローカルトークンを削除します。",
       "text1459df2e344c": "プロジェクトが宣言するsandbox imageからLinuxマシンを起動します。独自のファイルシステム、プロセステーブル、ネットワークを持つ完全に隔離されたマシンです。他のセッションとは何も共有しません。",
       "text14683b379324": "トークンを無効化",
-      "text146b38e7fa80": "デフォルトが失敗した場合",
+      "text146b38e7fa80": "モデルが失敗した場合",
       "text146cd06d5026": "環境：",
       "text146fd497badf": "メールをスキップしました — 招待リンクをコピーして手動で共有してください",
       "text147251df4759": "通常、数秒で完了します",
@@ -11399,7 +11422,7 @@
       "text2a6b24ad2872": "クレジット",
       "text2a728809f134": "SAML SSO用に作成した同じCustom Applicationを再利用できます。SCIMはその「Identity Management」タブにあります。",
       "text2a78025de6aa": "選択",
-      "text2a8f24e937b7": "{count, plural, one {#個のツールをカスタマイズ済み} other {#個のツールをカスタマイズ済み}}",
+      "text2a8f24e937b7": "{count, plural, other {#個のツールをカスタマイズ済み}}",
       "text2a91147eb974": "招待の有効期限",
       "text2a94ea8db704": "{value0} キーを入手する場所",
       "text2a9575e3e816": "確認",
@@ -12865,7 +12888,7 @@
       "text53f71e08be88": "Stripeサブスクリプション",
       "text53f76274b923": "このチャネル接続にはプラットフォーム設定がありません。",
       "text5405931307e3": "設定完了、サービスを開始中…",
-      "text540afa4c53ff": "{label}: {count, plural, one {# メンバー} other {# メンバー}}",
+      "text540afa4c53ff": "{label}: {count, plural, other {# メンバー}}",
       "text54266bfe04ff": "メンテナンス構成の更新に失敗しました",
       "text5427e0ef4eba": "権限：",
       "text542d24012988": "person@example.com",
@@ -15290,7 +15313,7 @@
       "text9a6a77d58095": "作業を担うもの — それぞれの指示、モデル、アクセス権。",
       "text9a6b697e6d4c": "OpenAIおよびAnthropic互換のドロップインエンドポイントです。上のセクションのゲートウェイキーを使用してください。",
       "text9a70da1bb740": "どのグループにも所属していません",
-      "text9a719be343e8": "{count, plural, one {#件の結果} other {#件の結果}}",
+      "text9a719be343e8": "{count, plural, other {#件の結果}}",
       "text9a72221a2747": "質問",
       "text9a788c263969": "新しい通知サービスにはどのデータベースを使うべきですか？",
       "text9a7b1baef5f5": "SAML2ウェブアプリ → 設定",
@@ -15621,6 +15644,8 @@
       "texta4f264c3ab5f": "管理者付与",
       "texta4f6c318a669": "このAppを削除しますか？",
       "texta4fc39798651": "変更リクエスト #{number}",
+      "textddcd87c21894": "#{number} に置き換え済み",
+      "texta8ef31fa7d25": "#{number} を表示",
       "texta505da26f529": "プロフィール写真を削除できませんでした",
       "texta514a684676a": "アクセス権を編集",
       "texta515cf580dd9": "IAM ロールの権限を更新しました",
@@ -16015,7 +16040,7 @@
       "textafb32719ca9e": "ボットクライアントシークレット",
       "textafb5023c3c05": "変更を適用しました",
       "textafb837ec251a": "Oktaは変更（割り当て、プロファイル更新、グループプッシュ）が発生するとプッシュします。何も変わらない期間があっても異常ではありません。",
-      "textafb9890f7c72": "プロジェクトのデフォルトで処理できない場合のリクエストの送信先。",
+      "textafb9890f7c72": "リクエストのモデルで処理できない場合のリクエストの送信先。",
       "textafc19f1734c1": "プリンシパル",
       "textafc8e3a5d5db": "使われた言葉ではなく、実際の要望でリクエストを分類し、異なるアカウント数を数え、引用を添付します。「誰がこれを求めたのか」と聞かれたら、答えはドキュメントにあります。",
       "textafdc7d79dccb": "OneLoginからの自動プロビジョニング",
@@ -16260,6 +16285,11 @@
       "textb6bb289a7a2c": "アカウント チーム 組織 切り替え 管理",
       "textb6bcbb175d23": "レギュラー · 400",
       "textb6c70926c1aa": "管理者のみ",
+      "textf19611c61ca5": "フルアクセス",
+      "text15589a542412": "{count, plural, =0 {コネクターなし} other {コネクター #件}}",
+      "texte96d99ad9896": "{count, plural, =0 {シークレットなし} other {シークレット #件}}",
+      "text70b8d7e10749": "すべての Kortix アクション",
+      "text2d3f4433505a": "{count, plural, =0 {Kortix アクションなし} other {Kortix アクション #件}}",
       "textb6cde9030cef": "キーを作成",
       "textb6d85433a7ee": "セッションを読み込めませんでした",
       "textb6daf93376cc": "finance.weeklyを読み込み中",
@@ -16723,7 +16753,7 @@
       "textc3d2e79ebdd0": "コネクター",
       "textc3e3a6edeaa5": "利用規約",
       "textc3e58a73609d": "破壊的",
-      "textc3ecd3cd791b": "プロジェクトのデフォルト後に、順番に試行されます。",
+      "textc3ecd3cd791b": "リクエストで指定されたモデルの後に、順番に試行されます。",
       "textc3f282c05f3f": "ポリシー 承認 ブロック require_approval ルール ツール コネクター ガードレール",
       "textc3f348ffaf7a": "プロジェクトに紐付け",
       "textc3f7bdf537c4": "リクエスト",
@@ -19682,7 +19712,7 @@
       "texte83e9ba50357": "アカウントを連携したプロジェクトメンバーは誰でも、ここでセッションに参加できます。",
       "text4540af5229a8": "セッションを開始した人だけが、そのセッションを続けられます。",
       "textda4bd8bdfe42": "他の人が参加するには、セッションのオーナーの承認が必要です。",
-      "text5dae52a3f448": "{count, plural, one {# チャンネル} other {# チャンネル}}",
+      "text5dae52a3f448": "{count, plural, other {# チャンネル}}",
       "text5097881a690f": "スレッド: {title}",
       "servedModelRow": "モデル",
       "servedModelInPlaceOf": "代替元",
@@ -20056,6 +20086,7 @@
       "texta37dd5ef6ef2": "サイドバーをカスタマイズ",
       "text8c712bd7c1ec": "サイドバー カスタマイズ 並べ替え 非表示 表示 ナビゲーション sidebar",
       "text2313fe21ea84": "{name}を編集",
+      "text2b2c3ec032a6": "プロジェクトを別のアカウントに移管しました",
       "text44f9fff8bdae": "クレジットプランを変更しました",
       "text3fa17bba73e1": "アカウントにはまだプランがありません。セッションを実行するには、月間クレジットの金額を選んでください。すべてのメンバーが 1 つのプールを共有します。",
       "text6821e42be2c1": "ウォレットが空のため、セッションを実行できません。チャージして計算と最新の AI モデルを使い続けてください。プランには影響ありません。",
@@ -20163,7 +20194,7 @@
       "text94ddcfbb2f30": "拒否された通話も混乱です。何が起こらなかったかは、何が起こったかと同じくらい記録の一部である。",
       "text89faa819e995": "それが決して手に入らないのは、それを作成した人の手に届くことです。ここには、上に進むための継承のエッジはありません。",
       "text6a51a65a11f4": "セッションを開始するとブランチが切断され、そのために 1 台のマシンが起動されます。データベースでは、2 番目のセッションにそのマシンを使用させることはできません。",
-      "catalogExcludedNoActions": "{count, plural, one {1 つのアプリは一致しますが、エージェントが呼び出すことができるアクションを公開していません。} other {{count} 個のアプリが一致しますが、エージェントが呼び出すことができるアクションは公開されていません。}}",
+      "catalogExcludedNoActions": "{count, plural, other {{count} 個のアプリが一致しますが、エージェントが呼び出すことができるアクションは公開されていません。}}",
       "text08cadd4156a5": "サンドボックスは、モデルが何でも実行できる実際の Linux マシンです。したがって、その中の唯一の資格情報は、プロジェクトにスコープされた 1 つの Kortix トークンです。",
       "textc7d878b8738e": "アカウントのアクションは、メンバーシップ、ロール、ポリシー、トークン、グループなど、同じ場所に配置されます。",
       "text5b70d52b009e": "サードパーティ API は、通常の認証されたリクエストを認識します。答えはエージェントに返されます。資格情報は残ります。",
@@ -20314,6 +20345,11 @@
       "texta8597db6f24b": "スキルを削除",
       "text5f6ba69d66d1": "スキルを削除しました",
       "textcb8d6b0c94c9": " とその中のすべてのファイル（編集内容を含む）。このスキルを使うすべてのエージェントからも外します。デフォルトブランチへの 1 回のコミットです。",
+      "cliDeviceTitle": "Kortix CLI を認証",
+      "cliDeviceWarning": "自分で開始したログインのみ承認してください。ターミナルに表示されたコードを入力してください。",
+      "cliDeviceCode": "ログインコード",
+      "cliDeviceApproved": "ログインを承認しました。ターミナルに戻ってください。",
+      "cliDeviceAction": "CLI を認証",
       "openThreadAction": "スレッドを開く",
       "untitledThread": "無題のスレッド"
     },
@@ -20331,18 +20367,6 @@
       "cancel": "キャンセル",
       "expiryNever": "なし",
       "expiryDays": "{count, plural, other {# 日}}"
-    },
-    "publicTranscriptShare": {
-      "sectionTitle": "公開リンク",
-      "sectionDescription": "リンクを知っている人は誰でもサインインせずにこの会話を読めます。",
-      "create": "公開リンクを作成",
-      "revokeDescription": "リンクを持つすべての人に対して会話が読み込まれなくなります。後で新しいリンクを作成できます。",
-      "rowMeta": "読み取り専用の会話",
-      "unavailable": "この会話は一時的に利用できません。",
-      "unavailableDescription": "現在この会話を読み込めません。しばらくしてからもう一度お試しください。",
-      "loadFailedDescription": "会話を読み込めませんでした。",
-      "empty": "まだメッセージはありません",
-      "savedCopy": "{date} に保存されたコピー"
     },
     "chatIdentityConnect": {
       "chatAccount": "{service} アカウント",
@@ -20458,8 +20482,14 @@
     },
     "secretIntakeWithheld": {
       "title": "保存しましたが、{agent} はまだ読み取れません",
-      "grant": "{count, plural, other {# 件のシークレット}}（{names}）はエージェント {agent} のシークレットに含まれていません。カスタマイズ → エージェント → {agent} → シークレット を開いて{count, plural, =1 {それ} other {それら}}を有効にしてください。",
-      "allowlist": "{count, plural, other {# 件のシークレット}}（{names}）はこのセッションのシークレットの範囲外です。{count, plural, =1 {それ} other {それら}}を使用するには新しいセッションを開始してください。"
+      "grant": "{count, plural, other {# 件のシークレット}}（{names}）はエージェント {agent} のシークレットに含まれていません。カスタマイズ → エージェント → {agent} → シークレット を開いて{count, plural, other {それら}}を有効にしてください。",
+      "allowlist": "{count, plural, other {# 件のシークレット}}（{names}）はこのセッションのシークレットの範囲外です。{count, plural, other {それら}}を使用するには新しいセッションを開始してください。"
+    },
+    "sessionEmbed": {
+      "sectionTitle": "埋め込み",
+      "sectionDescription": "同一サイトのページでのみ利用できます。閲覧者は事前にサインインし、このセッションへのアクセス権を持っている必要があります。クロスサイトの iframe 内でのサインインには対応していません。",
+      "copy": "埋め込みコードをコピー",
+      "copied": "埋め込みコードをコピーしました"
     },
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "配信: runtime — 実際の値はサンドボックス環境に読み込まれます。エージェントのコードが読み取れます。",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "配信: connector — サーバー側のみ。値がサンドボックス環境に入ることはありません。",
@@ -20591,7 +20621,12 @@
     "deleteTitle": "このプロバイダーを削除しますか？",
     "deleteBody": "{name} とその API キーはすべてのメンバーに対してこのプロジェクトから削除され、セッションはそのモデルを提供しなくなります。この操作は元に戻せません。",
     "deleted": "プロバイダーを削除しました",
-    "deleteFailed": "プロバイダーを削除できませんでした"
+    "deleteFailed": "プロバイダーを削除できませんでした",
+    "readsImages": "画像を読み取る",
+    "reasoning": "推論",
+    "traitsHint": "エンドポイントが報告する場合、Kortix はそこから読み取ります。報告しない場合はオンにしてください。",
+    "contextWindow": "コンテキスト {tokens}",
+    "contextDefault": "コンテキスト 128K（エンドポイントの報告なし）"
   },
   "providerSheet": {
     "inUse": "使用中",
@@ -21619,7 +21654,7 @@
     "newTeamFolder": "New team folder",
     "audienceQuestion": "誰が開けますか？",
     "badgeEveryone": "Everyone",
-    "badgePeople": "{count, plural, one {# person} other {# people}}",
+    "badgePeople": "{count, plural, other {# people}}",
     "privateNote": "マイファイルを開けるのはあなただけです。管理者も開けません。フォルダーを共有すると、他のユーザーにアクセス権を付与できます。",
     "noTeamFolders": "チームフォルダーはまだありません。",
     "sessionFilesName": "Files",
@@ -22306,6 +22341,96 @@
     "openRoom": "開く",
     "gateDescription": "ルームをオンにすると、このプロジェクトのエージェントセッションとメンバーが名前付きのチャットルームで会話できます。"
   },
+  "goals": {
+    "title": "ゴール",
+    "gateDescription": "エージェントは目標を検証可能に達成するまで担当します。ゴールはファイルに保存され、毎日のハートビートで起動し、必要なものを人に催促し、独立した確認で完了します。",
+    "empty": "ゴールはまだありません",
+    "emptyHint": "セッションで開始します。たとえば「古い銀行口座が確実に解約されているようにして」のように結果を書いてください。エージェントがゴールを作成し、ここに表示されます。",
+    "loadError": "ゴールを読み込めませんでした。もう一度お試しください。",
+    "retry": "再試行",
+    "needsYou": "対応が必要",
+    "open": "進行中",
+    "closed": "完了",
+    "waitingFor": "待機中: {title}",
+    "criteria": "基準 {met}/{total}",
+    "nextWake": "次回の起動 {time}",
+    "noWake": "起動の予定なし",
+    "heartbeat": "ハートビート",
+    "heartbeatPaused": "一時停止中",
+    "lastWakeLabel": "前回の起動",
+    "progress": "進捗",
+    "scope": {
+      "company": "会社",
+      "personal": "自分のみ"
+    },
+    "status": {
+      "draft": "下書き",
+      "active": "進行中",
+      "waiting_on_user": "あなたを待機中",
+      "waiting_external": "待機中",
+      "verifying": "検証中",
+      "done": "完了",
+      "abandoned": "中止"
+    },
+    "health": {
+      "healthy": "稼働中",
+      "attention": "要確認",
+      "closed": "完了"
+    },
+    "issue": {
+      "no_heartbeat": "このゴールを起動するものがありません。ハートビートのリマインダーがありません。",
+      "heartbeat_paused": "ハートビートのリマインダーが一時停止しています。",
+      "heartbeat_failed": "前回の起動に失敗しました: {error}",
+      "missed_wake": "前回の起動が遅れています。",
+      "ask_overdue": "依頼の期限が過ぎています。",
+      "verification_stalled": "検証開始から24時間以上経過しています。",
+      "unreadable": "goal.json がないか、有効な JSON ではありません。"
+    },
+    "sessionChip": "ゴール",
+    "sessionRole": {
+      "coordinator": "このセッションがこのゴールを担当しています。",
+      "worker": "このセッションはこのゴールの作業をしています。",
+      "verifier": "このセッションはこのゴールを検証しています。"
+    },
+    "openGoal": "ゴールを開く",
+    "openSession": "メインセッションを開く",
+    "openFolder": "フォルダを開く",
+    "back": "すべてのゴール",
+    "healthTitle": "状態",
+    "successCriteria": "成功基準",
+    "met": "達成",
+    "notMet": "未達成",
+    "items": "項目",
+    "noItems": "項目はまだありません。",
+    "noCriteria": "基準はまだありません。ゴールが進行中になる前にエージェントが作成します。",
+    "kind": {
+      "task": "タスク",
+      "ask": "依頼",
+      "wait": "待機"
+    },
+    "itemStatus": {
+      "open": "未着手",
+      "doing": "作業中",
+      "done": "完了",
+      "dropped": "取り下げ"
+    },
+    "due": "期限 {time}",
+    "sessions": "セッション",
+    "role": {
+      "coordinator": "メインセッション",
+      "worker": "作業者",
+      "verifier": "検証者"
+    },
+    "timeline": "タイムライン",
+    "verification": "検証",
+    "notes": "メモ",
+    "log": "ログ",
+    "notFound": "このゴールはもう存在しません。"
+  },
+  "agentEditor": {
+    "manage": "管理",
+    "overviewTitle": "概要"
+  },
   "spaces": {
     "create": {
       "title": "チャンネルを作成",
@@ -22418,8 +22543,6 @@
         "waking": "このスレッドのコンピューターを起動しています。送信したメッセージはキューに入り、自動で送信されます。"
       },
       "boot": {
-        "starting": "このスレッドを開始しています",
-        "progress": "スレッドの起動の進行状況",
         "restart": "スレッドを再起動"
       },
       "links": {

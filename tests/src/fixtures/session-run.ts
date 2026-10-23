@@ -166,7 +166,7 @@ export async function bootSession(
   },
 ): Promise<BootedSession> {
   return ctx.step(`a fresh ${harness} session boots to a ready runtime`, async () => {
-    const project = opts?.project ?? (await ctx.fixtures.sharedSeededProject(harness));
+    const project = opts?.project ?? (await ctx.fixtures.sharedSeededProject());
     const session = await ctx.fixtures.session(project, {
       prompt: opts?.prompt ?? 'say hello',
       opencodeModel: opts?.opencodeModel,

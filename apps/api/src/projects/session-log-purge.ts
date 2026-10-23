@@ -7,7 +7,8 @@
  * | a session was deleted     | delete + 30 days | delete + 37 days           | day 37   |
  * | the account was closed    | close + 80 days  | close + 87 days            | day 87   |
  *
- * "Rows" are the v2 `session_log*` rows and the v1 `session_transcript_*` rows.
+ * "Rows" are the v2 `session_log*` rows and, until the v1 mirror is drained
+ * (`mirrorDrained`), the v1 `session_transcript_*` rows.
  * "Objects" are everything under `<project_id>/<session_id>/` in the
  * `session-attachments` bucket: uploads, offloaded log texts (P2.3) and the
  * orphans a skipped capture batch leaves (P2.7b). Objects go after their rows,
@@ -76,8 +77,13 @@ import { and, eq, isNull, lte, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { sessionAttachmentStore } from './lib/session-attachments';
+import { mirrorDrained } from './session-log-capture';
 
-/** Days from a session delete to its rows purge: the restore window too. */
+/**
+ * Days from a session delete to its rows purge: the restore window too. The SQL twin is
+ * `kortix.session_delete_due_at` (migration `20261022130858924_mirror_sessions_without_log.sql`),
+ * which the purge below and the backfill selection read.
+ */
 export const SESSION_DELETE_ROWS_DAYS = 30;
 /** Days from an account closure to its rows purge: objects follow 7 days later, all gone by day 87 < 90. */
 const ACCOUNT_CLOSED_ROWS_DAYS = 80;
@@ -94,11 +100,6 @@ export function sessionRestoreUntil(deletedAt: unknown): Date | null {
   const at = typeof deletedAt === 'string' ? Date.parse(deletedAt) : Number.NaN;
   return Number.isFinite(at) ? new Date(at + SESSION_DELETE_ROWS_DAYS * DAY_MS) : null;
 }
-// What `deleteSession` and the account deletion write: an ISO instant. Anything else is skipped,
-// so one unreadable stamp cannot fail the query for every other session.
-const ISO_INSTANT =
-  '^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?Z$';
-
 // A raw `sql` parameter is not a Date: the driver takes a string.
 const instant = (at: Date) => sql`${at.toISOString()}::timestamptz`;
 
@@ -166,9 +167,10 @@ async function dueSessions(now: Date, limit: number): Promise<DueSession[]> {
     select s.session_id, s.project_id::text as project_id, s.account_id::text as account_id, x.reason
     from kortix.project_sessions s
     left join closed e on e.account_id = s.account_id
+    -- Null for a session that is not deleted, or whose stamp is not the ISO instant
+    -- deleteSession writes: one unreadable stamp cannot fail the query for every other session.
     cross join lateral (select
-      case when jsonb_typeof(s.metadata -> 'deletedAt') = 'string' and s.metadata ->> 'deletedAt' ~ ${ISO_INSTANT}
-        then (s.metadata ->> 'deletedAt')::timestamptz + make_interval(days => ${SESSION_DELETE_ROWS_DAYS}) end as deleted_due,
+      kortix.session_delete_due_at(s.metadata) as deleted_due,
       e.closed_at + make_interval(days => ${ACCOUNT_CLOSED_ROWS_DAYS}) as closed_due) w
     cross join lateral (select
       least(w.deleted_due, w.closed_due) as due_at,
@@ -181,16 +183,22 @@ async function dueSessions(now: Date, limit: number): Promise<DueSession[]> {
   return rows as unknown as DueSession[];
 }
 
-/** Every row of one session in both stores, then its done marker, in one transaction. */
-async function purgeRows(row: DueSession, now: Date): Promise<void> {
+/**
+ * Every row of one session in both stores, then its done marker, in one transaction. `drained`:
+ * the v1 mirror is drained (`mirrorDrained`), so its tables are not touched; the Release B2
+ * migration drops them with every row left in them.
+ */
+async function purgeRows(row: DueSession, now: Date, drained: boolean): Promise<void> {
   const id = row.session_id;
   await db.transaction(async (tx) => {
     await tx.delete(sessionLogMessages).where(eq(sessionLogMessages.sessionId, id));
     await tx.delete(sessionLogThreads).where(eq(sessionLogThreads.sessionId, id));
     await tx.delete(sessionLogBlobs).where(eq(sessionLogBlobs.sessionId, id));
     await tx.delete(sessionLogs).where(eq(sessionLogs.sessionId, id));
-    await tx.delete(sessionTranscriptMessages).where(eq(sessionTranscriptMessages.sessionId, id));
-    await tx.delete(sessionTranscriptMirrors).where(eq(sessionTranscriptMirrors.sessionId, id));
+    if (!drained) {
+      await tx.delete(sessionTranscriptMessages).where(eq(sessionTranscriptMessages.sessionId, id));
+      await tx.delete(sessionTranscriptMirrors).where(eq(sessionTranscriptMirrors.sessionId, id));
+    }
     await tx
       .insert(sessionContentPurges)
       .values({ sessionId: id, projectId: row.project_id, accountId: row.account_id, reason: row.reason, rowsPurgedAt: now })
@@ -207,9 +215,10 @@ export async function purgeSessionContent(
 
   await forgetReopenedAccounts();
   result.liveClosed = await liveClosedAccounts(now);
+  const drained = await mirrorDrained();
   for (const row of await dueSessions(now, batchSize)) {
     try {
-      await purgeRows(row, now);
+      await purgeRows(row, now, drained);
       result.sessions += 1;
       logger.debug('[session-purge] rows purged', { sessionId: row.session_id, reason: row.reason });
     } catch (error) {

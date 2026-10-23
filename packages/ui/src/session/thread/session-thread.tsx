@@ -70,7 +70,6 @@ export function SessionThread({
             />
           ) : (
             <SessionStartingLoader
-              stage={session.stage === 'starting' ? 'starting' : 'provisioning'}
               projectId={projectId}
               sessionId={sessionId}
             />

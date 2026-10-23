@@ -22,7 +22,6 @@ import {
   type MutableModels,
 } from '@earendil-works/pi-ai'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
-import { DEFAULT_COMPACTION_SETTINGS } from '@earendil-works/pi-coding-agent'
 import { LLM_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
 import { logger } from '@/lib/log/logger'
 import type { KortixGatewayModel } from '@kortix/api-contract/fallback-models'
@@ -53,6 +52,28 @@ export function readCatalogFile(path: string = process.env.KORTIX_LLM_CATALOG_FI
     const models = (parsed && typeof parsed === 'object' && 'models' in parsed ? (parsed as { models?: Record<string, CatalogModel> }).models : (parsed as Record<string, CatalogModel>)) ?? {}
     return models
   } catch {
+    return {}
+  }
+}
+
+/**
+ * The project's servable models with their real limits: `GET /models?scope=picker`,
+ * the list the web picker shows. It carries what the image-baked catalog cannot:
+ * custom endpoints, Platinum BYOK and models newer than the image. Empty on failure.
+ */
+export async function fetchPickerCatalog(env: NodeJS.ProcessEnv): Promise<Record<string, CatalogModel>> {
+  const base = env.KORTIX_LLM_BASE_URL?.trim()
+  const token = env.KORTIX_TOKEN?.trim()
+  if (!base || !token) return {}
+  try {
+    const res = await fetch(`${base.replace(/\/+$/, '')}/models?scope=picker`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(3_000),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return ((await res.json()) as { models?: Record<string, CatalogModel> }).models ?? {}
+  } catch (err) {
+    logger.warn('[pi] live model catalog unavailable; the baked catalog sizes the models', { err: String(err) })
     return {}
   }
 }
@@ -114,28 +135,16 @@ function gatewayModel(id: string, entry: CatalogModel | undefined, target: Gatew
     reasoning: entry?.reasoning === true,
     input: entry?.attachment ? ['text', 'image'] : ['text'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    // No source knows the window: pi's own default for a model it cannot size.
     contextWindow: entry?.limit?.context ?? 128_000,
-    maxTokens: entry?.limit?.output ?? 32_768,
+    // pi clamps a request's max_tokens to the room left in the window.
+    maxTokens: entry?.limit?.output ?? entry?.limit?.context ?? 32_768,
     compat: { thinkingFormat: 'openai', supportsStore: false, supportsDeveloperRole: false },
     // pi-ai clamps `xhigh` and `max` down to `high` unless the model maps them.
     thinkingLevelMap: Object.fromEntries(
       reasoningVariants(entry).filter((level) => level === 'xhigh' || level === 'max').map((level) => [level, level]),
     ),
   }
-}
-
-/**
- * pi compacts at `window - reserveTokens`, so a 1M window fills to ~1M before it does, and every
- * request re-sends all of it. A per-model reserve of `window - compactAt` moves the cut to
- * `compactAt` for every model larger than that; smaller models keep pi's default.
- */
-export function compactionSettings(catalog: Record<string, CatalogModel>, compactAt: number) {
-  const modelOverrides: Record<string, { reserveTokens: number }> = {}
-  for (const [id, entry] of Object.entries(catalog)) {
-    const reserveTokens = (entry?.limit?.context ?? 128_000) - compactAt
-    if (reserveTokens > DEFAULT_COMPACTION_SETTINGS.reserveTokens) modelOverrides[`${KORTIX_PROVIDER_ID}/${id}`] = { reserveTokens }
-  }
-  return { modelOverrides }
 }
 
 export async function createPiModels(input: {
@@ -148,7 +157,7 @@ export async function createPiModels(input: {
 
   const target = resolveGatewayTarget(env)
   if (!target) throw new Error('pi harness needs KORTIX_LLM_BASE_URL and KORTIX_TOKEN (the Kortix LLM gateway)')
-  const catalog = readCatalogFile(env.KORTIX_LLM_CATALOG_FILE)
+  const catalog = { ...readCatalogFile(env.KORTIX_LLM_CATALOG_FILE), ...(await fetchPickerCatalog(env)) }
   const provider = createProvider({
     id: KORTIX_PROVIDER_ID,
     name: 'Kortix',

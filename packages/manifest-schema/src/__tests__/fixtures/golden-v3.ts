@@ -3,7 +3,6 @@
 export const GOLDEN_V3 = `
 kortix_version: 3
 default_agent: assistant
-runtime: opencode
 
 project:
   name: acme

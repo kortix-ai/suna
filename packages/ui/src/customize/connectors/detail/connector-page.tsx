@@ -182,21 +182,68 @@ export function ConnectorPage({
 }
 
 function ConnectorPageBody({
-  projectId,
-  connector,
-  canWrite,
   backHref,
-  onChanged,
-  onRemoved,
-}: {
+  ...props
+}: Omit<ConnectorDetailViewProps, 'back' | 'onLeave'> & { backHref: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const router = useUiRouter();
+  return (
+    <ConnectorDetailView
+      {...props}
+      back={
+        <Button asChild variant="text" size="sm" className="-ml-1 w-fit px-0 has-[>svg]:px-0">
+          <Link href={backHref}>
+            <CaretLeftIcon className="size-3.5 shrink-0" />
+            {tI18nComplete.raw('textc3d2e79ebdd0')}
+          </Link>
+        </Button>
+      }
+      onLeave={() => router.push(connectorsHref(props.projectId, 'connected'))}
+    />
+  );
+}
+
+export interface ConnectorDetailViewProps {
   projectId: string;
   connector: AdminConnector;
   canWrite: boolean;
-  backHref: string;
   onChanged: () => void;
   /** The connector was deleted: refresh everything but its own queries. */
   onRemoved: () => void;
-}) {
+  /** Above the header: the page's Back link. */
+  back?: ReactNode;
+  /** At the header's right edge, after its actions: the modal's close button. */
+  headerEnd?: ReactNode;
+  /** Wraps the `h1`: the modal passes `ModalTitle asChild` for its accessible name. */
+  wrapTitle?: (title: ReactNode) => ReactNode;
+  /** The view's own connector is gone: leave it (the page routes back, the
+   *  modal closes). */
+  onLeave: () => void;
+  /** The tab and the install hand-offs live in the URL on the page. The modal
+   *  keeps its tab in state, so it never rewrites its host page's URL. */
+  urlState?: boolean;
+  /** The scroll column's classes; the modal uses tighter padding. */
+  columnClassName?: string;
+}
+
+/**
+ * One connector — the strip, its notice, and the Accounts / Tools / Settings
+ * tabs. The page (`/connectors/<app>/<connector>`) and the agent editor's
+ * connector modal render this same view, so the two cannot drift.
+ */
+export function ConnectorDetailView({
+  projectId,
+  connector,
+  canWrite,
+  onChanged,
+  onRemoved,
+  back,
+  headerEnd,
+  wrapTitle = (title) => title,
+  onLeave,
+  urlState = true,
+  columnClassName = PAGE_COLUMN,
+}: ConnectorDetailViewProps) {
   const t = useTranslations('connectorPages');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tSharing = useTranslations('accessSharing');
@@ -237,19 +284,22 @@ function ConnectorPageBody({
   // The tab is in the URL, so a link opens the right one.
   const eventTriggers = useConnectorEventTriggers(projectId, connector);
   const tabs = connectorTabs(connector, { canWrite, hasEvents: eventTriggers.hasEvents });
-  const requestedTab = search?.get('tab');
+  const [localTab, setLocalTab] = useState<ConnectorTab>('accounts');
+  const requestedTab = urlState ? search?.get('tab') : localTab;
   const tab = tabs.find((value) => value === requestedTab) ?? tabs[0] ?? 'accounts';
   const setTab = (next: ConnectorTab) =>
-    replaceParams((params) => {
-      if (next === 'accounts') params.delete('tab');
-      else params.set('tab', next);
-    });
+    urlState
+      ? replaceParams((params) => {
+          if (next === 'accounts') params.delete('tab');
+          else params.set('tab', next);
+        })
+      : setLocalTab(next);
 
   // The install hand-off: `?connect=<connection id>` opens credential entry
   // for that account once, then leaves the URL. The id is untrusted, so
   // `connectHandoff` opens only one of THIS connector's accounts and takes the
   // owner from the row; the URL's `owner` param is stripped, never read.
-  const connectId = search?.get('connect') ?? null;
+  const connectId = urlState ? (search?.get('connect') ?? null) : null;
   // Same cache entry as the probe in `useConnectorDetail`; read here for its
   // loading state, so a shared account is not refused before the answer lands.
   const accountId = useProjectAccountId(projectId);
@@ -320,7 +370,7 @@ function ConnectorPageBody({
   };
   // Right after Install (`?add=1`): ask for the first account once, then
   // leave the URL. Adjusted during render, not in an effect.
-  const addParam = search?.get('add') === '1';
+  const addParam = urlState && search?.get('add') === '1';
   const [addHandled, setAddHandled] = useState(false);
   if (addParam && !addHandled && canWrite && !isChannel) {
     setAddHandled(true);
@@ -448,24 +498,21 @@ function ConnectorPageBody({
   return (
     <SplitSheet open={sheetOpen} onOpenChange={closeCredential} size="lg" className="flex-1">
       <SplitSheetMain>
-        <div className={PAGE_COLUMN}>
-          <Button asChild variant="text" size="sm" className="-ml-1 w-fit px-0 has-[>svg]:px-0">
-            <Link href={backHref}>
-              <CaretLeftIcon className="size-3.5 shrink-0" />
-              {tI18nComplete.raw('textc3d2e79ebdd0')}
-            </Link>
-          </Button>
+        <div className={columnClassName}>
+          {back}
 
           <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-3">
               <ConnectorAppIcon connector={connector} size="lg" />
-              <h1
-                ref={headingRef}
-                tabIndex={-1}
-                className="text-foreground min-w-0 text-xl font-medium text-balance wrap-break-word"
-              >
-                {displayName}
-              </h1>
+              {wrapTitle(
+                <h1
+                  ref={headingRef}
+                  tabIndex={-1}
+                  className="text-foreground min-w-0 text-xl font-medium text-balance wrap-break-word"
+                >
+                  {displayName}
+                </h1>,
+              )}
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2">
               {/* A computer is paired, not installed: it has no notice, so its
@@ -476,6 +523,7 @@ function ConnectorPageBody({
                   {t('newSession')}
                 </Button>
               ) : null}
+              {headerEnd}
             </div>
           </header>
 
@@ -592,7 +640,7 @@ function ConnectorPageBody({
                 onStartSession: startPrivateSession,
                 addRequest,
                 onAddRequestHandled: () => setAddRequest(0),
-                onRemoved: () => router.push(connectorsHref(projectId, 'connected')),
+                onRemoved: onLeave,
                 onSetCredential: setCredentialTarget,
                 onConnect: needsSignIn ? connectAccount : undefined,
                 showAccountInfo: true,
@@ -603,7 +651,7 @@ function ConnectorPageBody({
                 displayName: displayName,
                 onChanged: onChanged,
                 onRemoved: () => {
-                  router.push(connectorsHref(projectId, 'connected'));
+                  onLeave();
                   onRemoved();
                 },
               }}

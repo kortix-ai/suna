@@ -13,7 +13,7 @@ export type PtyCloseAction = 'ended' | 'reconnect' | 'replace';
  * terminal asks `GET /kortix/pty`, which passes the same control-plane gate and
  * returns a readable body. That GET never wakes a box.
  */
-export type PtyAttachProbe = 'reachable' | 'not-ready' | 'unreachable';
+type PtyAttachProbe = 'reachable' | 'not-ready' | 'unreachable';
 
 /** `null` = the PTY list answered. Anything else is the error it threw. */
 export function classifyPtyAttachProbe(error: unknown): PtyAttachProbe {
@@ -50,12 +50,12 @@ export const PTY_WAKE_DEADLINE_MS = 3 * 60_000;
 export const PTY_MAX_ATTACH_FAILURES = 5;
 const PTY_RECONNECT_BACKOFF_CAP_MS = 8_000;
 
-export type PtyAttachPause = 'asleep' | 'failed';
+type PtyAttachPause = 'asleep' | 'failed';
 
 /** What the attach overlay shows. `null` means the shell is live. */
 export type AttachPhase = 'connecting' | 'waking' | 'reconnecting' | PtyAttachPause | null;
 
-export type PtyAttachStep =
+type PtyAttachStep =
   | { kind: 'retry'; delayMs: number; phase: 'waking' | 'reconnecting' }
   | { kind: 'pause'; reason: PtyAttachPause };
 
@@ -85,7 +85,7 @@ export function nextPtyAttachStep(input: {
   };
 }
 
-export type TerminalPanelState = 'connecting' | 'error' | 'empty' | 'terminal';
+type TerminalPanelState = 'connecting' | 'error' | 'empty' | 'terminal';
 
 export function deriveTerminalPanelState(input: {
   hasServerUrl: boolean;

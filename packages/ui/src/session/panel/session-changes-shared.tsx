@@ -51,7 +51,7 @@ export const CHANGE_STATUS_META: Record<string, { tone: StatusTone; label: strin
  * working-tree-only read drops to zero the moment the agent commits, and the
  * badge and the CTA vanish while the work is still not in the base version.
  */
-export interface SessionChanges {
+interface SessionChanges {
   /** Every file this version changed against its base. Never undefined. */
   files: VcsFileDiff[];
   count: number;

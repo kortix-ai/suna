@@ -20,10 +20,10 @@ import { useTranslations as useI18nTranslations } from '../../i18n';
 
 import { Badge } from '../../primitives/badge';
 import { Button } from '../../primitives/button';
-import { Label } from '../../primitives/label';
 import Loading from '../../primitives/loading';
 import { errorToast, successToast } from '../../primitives/toast';
 import { ModelSelector } from '../../session/models/model-selector';
+import { EditorSection, SettingRow } from '../sections/view/agent-editor-primitives';
 import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
 import { useProjectCan } from '../../internal/lib/use-project-can';
 import { cn } from '../../internal/lib/utils';
@@ -68,72 +68,62 @@ export function AgentModel({ projectId, agentName }: { projectId: string; agentN
         `${m.providerID}/${m.modelID}`)
       : null;
 
+  const help = explicit ? (
+    <>
+      {tI18nComplete.raw('text40124896532d')}{' '}
+      <span className="text-foreground font-medium">{nameOf(explicit)}</span>.
+    </>
+  ) : (
+    <>
+      {tI18nComplete.raw('text46e3bd02feee')}
+      {resolved ? (
+        <>
+          {' '}
+          (<span className="text-foreground font-medium">{nameOf(resolved)}</span>)
+        </>
+      ) : null}
+      {tI18nComplete.raw('textd5bf3036405d')}
+    </>
+  );
+
   return (
-    <div className="bg-popover space-y-3 rounded-md border px-4 py-4">
-      <div className="flex items-center gap-2">
-        <Label>{tI18nComplete.raw('text5e2c614c23f0')}</Label>
-        {explicit ? (
-          <Badge variant="muted" size="xs">
-            {tI18nComplete.raw('textf20c87946555')}
-          </Badge>
-        ) : null}
-      </div>
-
-      {canManage ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <ModelSelector
-            models={models}
-            providers={providers}
-            selectedModel={explicit}
-            onSelect={(m) => {
-              if (m) {
-                void defaults.setAgentDefault(agentName, m);
-                successToast(`${agentName} → ${nameOf(m)}`);
-              } else {
-                void defaults.clearAgentDefault(agentName);
-              }
-            }}
-          />
-          {explicit ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              onClick={() => {
-                void defaults.clearAgentDefault(agentName);
-                successToast(tI18nComplete('text86781ce4c5b4', { value0: agentName }));
-              }}
-            >
-              {tI18nComplete.raw('textbc5b45ae7b60')}
-            </Button>
-          ) : null}
-        </div>
-      ) : (
-        <Badge variant="outline" size="sm" className="font-mono">
-          {nameOf(resolved) ?? tI18nComplete.raw('text1f0a5246c481')}
-        </Badge>
-      )}
-
-      <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
-        {explicit ? (
-          <>
-            {tI18nComplete.raw('text40124896532d')}{' '}
-            <span className="text-foreground font-medium">{nameOf(explicit)}</span>.
-          </>
-        ) : (
-          <>
-            {tI18nComplete.raw('text46e3bd02feee')}
-            {resolved ? (
-              <>
-                {' '}
-                (<span className="text-foreground font-medium">{nameOf(resolved)}</span>)
-              </>
+    <EditorSection title={tI18nComplete.raw('text5e2c614c23f0')} description={help} lead>
+      <SettingRow label={tI18nComplete.raw('text34455bf1d857')}>
+        {canManage ? (
+          <div className="flex items-center gap-2 sm:justify-end">
+            {explicit ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  void defaults.clearAgentDefault(agentName);
+                  successToast(tI18nComplete('text86781ce4c5b4', { value0: agentName }));
+                }}
+              >
+                {tI18nComplete.raw('textbc5b45ae7b60')}
+              </Button>
             ) : null}
-            {tI18nComplete.raw('textd5bf3036405d')}
-          </>
+            <ModelSelector
+              models={models}
+              providers={providers}
+              selectedModel={explicit}
+              onSelect={(m) => {
+                if (m) {
+                  void defaults.setAgentDefault(agentName, m);
+                  successToast(`${agentName} → ${nameOf(m)}`);
+                } else {
+                  void defaults.clearAgentDefault(agentName);
+                }
+              }}
+            />
+          </div>
+        ) : (
+          <span className="text-foreground block truncate text-sm sm:text-right">
+            {nameOf(resolved) ?? tI18nComplete.raw('text1f0a5246c481')}
+          </span>
         )}
-      </p>
-    </div>
+      </SettingRow>
+    </EditorSection>
   );
 }
 
@@ -228,68 +218,70 @@ function AgentScopeCard({
   // Non-managers get the read-only mirror (the old presentation).
   if (!canManage) {
     return (
-      <div className="bg-popover space-y-3 rounded-md border px-4 py-4">
-        <Label>{tI18nComplete.raw('textec5ba0abb717')}</Label>
-        <dl className="space-y-2">
-          <ScopeRow label={tI18nComplete.raw('textd8707d411d99')} value={scope.env} />
-          <ScopeRow label={tI18nComplete.raw('textc3d2e79ebdd0')} value={scope.connectors} />
-          <ScopeRow label={tI18nComplete.raw('text8f12a6e05e6d')} value={scope.kortix_permissions ?? scope.kortix_cli} />
-        </dl>
-        <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
-          {tI18nComplete.raw('textac4c418e412f')}
-        </p>
-      </div>
+      <EditorSection title={tI18nComplete.raw('textec5ba0abb717')} bare>
+        <div className="bg-popover space-y-3 rounded-md border px-4 py-4">
+          <dl className="space-y-2">
+            <ScopeRow label={tI18nComplete.raw('textd8707d411d99')} value={scope.env} />
+            <ScopeRow label={tI18nComplete.raw('textc3d2e79ebdd0')} value={scope.connectors} />
+            <ScopeRow label={tI18nComplete.raw('text8f12a6e05e6d')} value={scope.kortix_permissions ?? scope.kortix_cli} />
+          </dl>
+          <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
+            {tI18nComplete.raw('textac4c418e412f')}
+          </p>
+        </div>
+      </EditorSection>
     );
   }
 
   return (
-    <div className="bg-popover space-y-4 rounded-md border px-4 py-4">
-      <Label>{tI18nComplete.raw('textec5ba0abb717')}</Label>
-      <ScopeEditor
-        key={`env-${editorNonce}`}
-        label={tI18nComplete.raw('textd8707d411d99')}
-        allLabel={tI18nComplete.raw('text922315177668')}
-        emptyLabel={tI18nComplete.raw('text82a37b8c2266')}
-        value={env}
-        options={secretOptions}
-        match="case-insensitive"
-        onChange={setEnv}
-      />
-      <ScopeEditor
-        key={`connectors-${editorNonce}`}
-        label={tI18nComplete.raw('textc3d2e79ebdd0')}
-        allLabel={tI18nComplete.raw('texta2e8754e4899')}
-        emptyLabel={tI18nComplete.raw('text389fb5217392')}
-        value={connectors}
-        options={connectorOptions}
-        onChange={setConnectors}
-      />
-      <dl>
-        <ScopeRow label={tI18nComplete.raw('text8f12a6e05e6d')} value={scope.kortix_permissions ?? scope.kortix_cli} />
-      </dl>
-      {/* The save bar only exists once there is something to save — an always-on
-          disabled pair of buttons is chrome that never earns its row. */}
-      {dirty ? (
-        <div className="border-border/50 flex items-center justify-end gap-2 border-t pt-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={save.isPending}
-            onClick={() => {
-              setEnv(scope.env);
-              setConnectors(scope.connectors);
-              setEditorNonce((n) => n + 1);
-            }}
-          >
-            {tI18nComplete.raw('textdaee7606b339')}
-          </Button>
-          <Button size="sm" disabled={save.isPending} onClick={() => save.mutate()}>
-            {save.isPending && <Loading className="size-3.5 shrink-0" />}
-            {tI18nComplete.raw('text1509f561f241')}
-          </Button>
-        </div>
-      ) : null}
-    </div>
+    <EditorSection title={tI18nComplete.raw('textec5ba0abb717')} bare>
+      <div className="bg-popover space-y-4 rounded-md border px-4 py-4">
+        <ScopeEditor
+          key={`env-${editorNonce}`}
+          label={tI18nComplete.raw('textd8707d411d99')}
+          allLabel={tI18nComplete.raw('text922315177668')}
+          emptyLabel={tI18nComplete.raw('text82a37b8c2266')}
+          value={env}
+          options={secretOptions}
+          match="case-insensitive"
+          onChange={setEnv}
+        />
+        <ScopeEditor
+          key={`connectors-${editorNonce}`}
+          label={tI18nComplete.raw('textc3d2e79ebdd0')}
+          allLabel={tI18nComplete.raw('texta2e8754e4899')}
+          emptyLabel={tI18nComplete.raw('text389fb5217392')}
+          value={connectors}
+          options={connectorOptions}
+          onChange={setConnectors}
+        />
+        <dl>
+          <ScopeRow label={tI18nComplete.raw('text8f12a6e05e6d')} value={scope.kortix_permissions ?? scope.kortix_cli} />
+        </dl>
+        {/* The save bar only exists once there is something to save — an always-on
+            disabled pair of buttons is chrome that never earns its row. */}
+        {dirty ? (
+          <div className="border-border/50 flex items-center justify-end gap-2 border-t pt-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={save.isPending}
+              onClick={() => {
+                setEnv(scope.env);
+                setConnectors(scope.connectors);
+                setEditorNonce((n) => n + 1);
+              }}
+            >
+              {tI18nComplete.raw('textdaee7606b339')}
+            </Button>
+            <Button size="sm" disabled={save.isPending} onClick={() => save.mutate()}>
+              {save.isPending && <Loading className="size-3.5 shrink-0" />}
+              {tI18nComplete.raw('text1509f561f241')}
+            </Button>
+          </div>
+        ) : null}
+      </div>
+    </EditorSection>
   );
 }
 
@@ -483,13 +475,13 @@ function ScopeEditor({
                 aria-pressed={o.selected}
                 onClick={() => toggle(o.id)}
                 className={cn(
-                  'flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs transition-colors',
+                  'flex w-full items-center gap-2 rounded-sm px-2 py-1 text-left text-xs transition-colors',
                   o.selected ? 'bg-secondary' : 'hover:bg-muted/50',
                 )}
               >
                 <span
                   className={cn(
-                    'flex size-4 shrink-0 items-center justify-center rounded border',
+                    'flex size-4 shrink-0 items-center justify-center rounded-sm border',
                     o.selected
                       ? 'border-foreground bg-foreground text-background'
                       : 'border-border/70',

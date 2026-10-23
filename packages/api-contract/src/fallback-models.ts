@@ -10,6 +10,7 @@
  * (`OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX`). OpenCode clamps to 32,000 by
  * default; a clamp below a managed model's `limit.output` cuts a large file
  * write at finish_reason "length" and the tool never runs.
+ * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
  */
 export const MANAGED_OPENCODE_OUTPUT_TOKEN_MAX = 65_536
 // One `reasoning_options` entry (models.dev's shape, mirrored — see
@@ -71,100 +72,4 @@ export type KortixGatewayModel = {
   description?: string
   open_weights?: boolean
   last_updated?: string
-}
-
-export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
-  'openai/gpt-5.5': {
-    name: 'GPT-5.5',
-    provider: 'openai',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    // models.dev: false — OpenAI reasoning models (gpt-5.x) reject a
-    // client-sent `temperature`, so advertising support here would make
-    // OpenCode send one and 400 the turn whenever this fallback catalog is
-    // in effect. Must match capabilitiesOf() in the served catalog
-    // (apps/api/src/llm-gateway/models/catalog-models.ts).
-    temperature: false,
-    limit: { context: 1_050_000, output: 64_000 },
-  },
-  'google/gemini-3.5-flash': {
-    name: 'Gemini 3.5 Flash',
-    provider: 'google',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 65_536 },
-  },
-  'google/gemini-3.1-pro-preview': {
-    name: 'Gemini 3.1 Pro',
-    provider: 'google',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 65_536 },
-  },
-  'deepseek/deepseek-v4-flash': {
-    name: 'DeepSeek V4 Flash',
-    provider: 'deepseek',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 64_000 },
-  },
-  'deepseek/deepseek-v4-pro': {
-    name: 'DeepSeek V4 Pro',
-    provider: 'deepseek',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 64_000 },
-  },
-  'minimax/minimax-m3': {
-    name: 'MiniMax M3',
-    provider: 'minimax',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 64_000 },
-  },
-  'moonshotai/kimi-k2.6': {
-    name: 'Kimi K2.6',
-    provider: 'moonshotai',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 262_144, output: 64_000 },
-  },
-  'z-ai/glm-5.1': {
-    name: 'GLM 5.1',
-    provider: 'z-ai',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 202_752, output: 64_000 },
-  },
-  'x-ai/grok-4.3': {
-    name: 'Grok 4.3',
-    // models.dev's real provider id is 'xai' (no hyphen) — matches
-    // @kortix/llm-catalog's PROVIDER_LABELS key and gatewayModelsAll's
-    // `provider` field. The model-id PREFIX here ('x-ai/...') is just this
-    // fallback table's own key convention and is left alone; only the
-    // `provider` value (what the picker actually groups/labels by) must
-    // match models.dev's real id or the picker mislabels/falls back to
-    // "Kortix" for this entry.
-    provider: 'xai',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_000_000, output: 64_000 },
-  },
 }

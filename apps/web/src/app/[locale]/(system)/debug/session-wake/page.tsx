@@ -30,13 +30,13 @@ export default function DebugSessionWakePage() {
     <QueryClientProvider client={qc}>
       <main className="bg-background text-foreground flex min-h-screen flex-col gap-6 p-6">
         <section id="loader-near" className="border-border h-48 rounded-md border">
-          <SessionStartingLoader stage="starting" delayMs={0} reason="runtime_wake_cooldown" failure={cooldown(near)} />
+          <SessionStartingLoader reason="runtime_wake_cooldown" failure={cooldown(near)} />
         </section>
         <section id="loader-far" className="border-border h-48 rounded-md border">
-          <SessionStartingLoader stage="starting" delayMs={0} reason="runtime_wake_cooldown" failure={cooldown(far)} />
+          <SessionStartingLoader reason="runtime_wake_cooldown" failure={cooldown(far)} />
         </section>
         <section id="banner-near" className="border-border relative h-16 rounded-md border">
-          <SessionConnectingBanner stage="starting" reason="runtime_wake_cooldown" failure={cooldown(near)} />
+          <SessionConnectingBanner reason="runtime_wake_cooldown" failure={cooldown(near)} />
         </section>
       </main>
     </QueryClientProvider>

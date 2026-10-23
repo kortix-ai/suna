@@ -728,8 +728,6 @@ function ThreadPanel({
         waking: t('notice.waking'),
       },
       labels: {
-        starting: t('boot.starting'),
-        startupProgress: t('boot.progress'),
         restart: t('boot.restart'),
       },
     }),

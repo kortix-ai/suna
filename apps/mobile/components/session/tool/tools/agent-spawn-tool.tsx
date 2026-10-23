@@ -13,7 +13,7 @@
  *   `ToolOutputFallback`; then the child's retry/error banner.
  */
 
-import { useCallback, useContext, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { View } from 'react-native';
 import { getChildSessionId } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
@@ -25,7 +25,6 @@ import {
   BasicTool,
   ToolOutputFallback,
   ToolResultCard,
-  ToolSurfaceContext,
   partInput,
   partOutput,
   partStatus,
@@ -35,7 +34,7 @@ import { OutputBlock } from '../shared/output-block';
 import { ToolRegistry } from '../shared/registry';
 import { TURN_SPACE, TURN_TYPE, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
-import { SubAgentActivity, SubAgentStatusBanner, useChildSession } from './sub-agent';
+import { SubAgentStatusBanner, useChildSession } from './sub-agent';
 
 function VerificationLine({ text }: { text: string }) {
   const palette = useTurnPalette();
@@ -48,7 +47,6 @@ function VerificationLine({ text }: { text: string }) {
 
 export function AgentSpawnTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const palette = useTurnPalette();
-  const surface = useContext(ToolSurfaceContext);
   const input = partInput(call);
   const status = partStatus(call);
   const output = partOutput(call);
@@ -122,20 +120,6 @@ export function AgentSpawnTool({ call, defaultOpen, forceOpen }: ToolProps) {
             ) : null}
           </View>
         </ToolResultCard>
-      ) : null}
-
-      {surface === 'panel' && childCalls.length > 0 ? (
-        <View
-          style={{
-            marginHorizontal: -TURN_SPACE.cardPad,
-            borderTopWidth: 1,
-            borderTopColor: palette.border30,
-            paddingHorizontal: TURN_SPACE.cardPad,
-            paddingTop: TURN_SPACE.cardPad,
-          }}
-        >
-          <SubAgentActivity childSessionId={childSessionId} calls={childCalls} />
-        </View>
       ) : null}
 
       <SubAgentStatusBanner childSessionId={childSessionId} childThread={childThread} />

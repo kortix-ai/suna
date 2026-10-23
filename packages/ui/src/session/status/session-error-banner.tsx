@@ -327,6 +327,26 @@ function DiagnosticFold({ summary, children }: { summary: ReactNode; children: R
   );
 }
 
+function FailureList({ failures, className }: {
+  failures: NonNullable<TurnErrorGatewayDetails['attemptFailures']>;
+  className: string;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  return (
+      <ol className={className}>
+        {failures.map((failure) => (
+          <li key={failure.attempt}>
+            <span className="text-foreground font-medium">{failureTarget(failure)}</span> ·{' '}
+            {failure.status !== undefined
+              ? tI18nComplete('textf6a6d0e934f4', { value0: failure.status })
+              : ''}
+            {String(failure.code)} · {failure.message}
+          </li>
+        ))}
+      </ol>
+  );
+}
+
 /**
  * The per-candidate failure chain, collapsed. It is the diagnostic, not the
  * message: a reader who wants to know WHY every route failed opens it; everyone
@@ -343,17 +363,7 @@ function GatewayAttemptFailureList({ details }: { details?: TurnErrorGatewayDeta
         failures.length === 1 ? tI18nComplete.raw('textce4c96225f63') : `${failures.length} attempts`
       }
     >
-      <ol className="text-muted-foreground mt-1 list-decimal space-y-1 pl-4 wrap-anywhere">
-        {failures.map((failure) => (
-          <li key={failure.attempt}>
-            <span className="text-foreground font-medium">{failureTarget(failure)}</span> ·{' '}
-            {failure.status !== undefined
-              ? tI18nComplete('textf6a6d0e934f4', { value0: failure.status })
-              : ''}
-            {String(failure.code)} · {failure.message}
-          </li>
-        ))}
-      </ol>
+      <FailureList failures={failures} className="text-muted-foreground mt-1 list-decimal space-y-1 pl-4 wrap-anywhere" />
     </DiagnosticFold>
   );
 }
@@ -502,20 +512,7 @@ function TurnErrorCheckpoint({
             <div className="mt-3 flex flex-col gap-2 pl-7">
               <GatewayMetaLine details={gateway} />
               {failures.length > 0 ? (
-                <ol className="text-muted-foreground list-decimal space-y-1 pl-4 text-xs wrap-anywhere">
-                  {failures.map((failure) => (
-                    <li key={failure.attempt}>
-                      <span className="text-foreground font-medium">
-                        {failureTarget(failure)}
-                      </span>{' '}
-                      ·{' '}
-                      {failure.status !== undefined
-                        ? tI18nComplete('textf6a6d0e934f4', { value0: failure.status })
-                        : ''}
-                      {String(failure.code)} · {failure.message}
-                    </li>
-                  ))}
-                </ol>
+                <FailureList failures={failures} className="text-muted-foreground list-decimal space-y-1 pl-4 text-xs wrap-anywhere" />
               ) : null}
               {raw ? (
                 <pre className="bg-muted text-muted-foreground max-h-40 overflow-auto rounded-md px-3 py-2 font-mono text-xs whitespace-pre-wrap wrap-anywhere">

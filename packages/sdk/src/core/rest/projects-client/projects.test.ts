@@ -25,6 +25,7 @@ import {
   updateExperimentalFeature,
   updateFeatureFlag,
   updateProject,
+  transferProject,
 } from './projects';
 
 test('ExperimentalFeatureKey includes the project-scoped Apps gate', () => {
@@ -1008,13 +1009,11 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'reminders',
     'secrets_egress',
     'pooled_provider_secrets',
-    'pi_harness',
     'genui',
     'us_region',
     'event_triggers',
     'warm_sessions',
     'notification_center',
-    'session_log',
     'session_log_restore',
     'volumes',
     'connectors_v2',
@@ -1115,8 +1114,8 @@ test('ExperimentalFeatureKey and ExperimentalFeatureView stay as aliases', () =>
 
 test('FeatureFlagView marks an operator-only flag; older servers omit the field', () => {
   const managed: FeatureFlagView = {
-    key: 'session_log',
-    name: 'Session log',
+    key: 'session_log_restore',
+    name: 'Session log restore',
     description: 'x',
     stability: 'experimental',
     available: true,
@@ -1201,6 +1200,36 @@ test('a failed repository create does not raise the global error toast', async (
   ).rejects.toThrow();
 
   expect(toasted).toEqual([]);
+});
+
+/** Runs `transferProject` against a mocked fetch and returns what it sent. */
+async function captureTransfer(projectId: string, accountId: string) {
+  configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok' });
+
+  let request: { url: string; method?: string; body: string } | undefined;
+  globalThis.fetch = mock(async (target: RequestInfo | URL, init?: RequestInit) => {
+    request = { url: String(target), method: init?.method, body: String(init?.body ?? '') };
+    return new Response(JSON.stringify({ ok: true, project_id: projectId, account_id: accountId }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+
+  await transferProject(projectId, accountId);
+
+  expect(request).toBeDefined();
+  return {
+    ...request!,
+    parsed: JSON.parse(request!.body || '{}') as Record<string, unknown>,
+  };
+}
+
+test('transferProject POSTs the target account id to the transfer route', async () => {
+  const sent = await captureTransfer('proj-1', 'acc-2');
+
+  expect(sent.method).toBe('POST');
+  expect(sent.url).toBe('http://backend.test/v1/projects/proj-1/transfer');
+  expect(sent.parsed).toEqual({ account_id: 'acc-2' });
 });
 
 // ── Project quota pre-check ─────────────────────────────────────────────────

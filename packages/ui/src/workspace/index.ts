@@ -60,3 +60,14 @@ export { SpaceView, type SpaceFolder, type SpaceTarget, type SpaceViewProps } fr
 export { ProjectSessionList } from './sidebar/project-session-list';
 export { ProjectSidebar } from './sidebar/project-sidebar';
 export { ShareSessionModal } from './sidebar/modal/share-session-modal';
+export {
+  formatGoalTime,
+  GoalHealthDot,
+  goalHref,
+  goalNeedsYou,
+  goalOpenAsks,
+  goalProgress,
+  GoalStatusBadge,
+  useGoalClock,
+  useGoalIssueText,
+} from '../internal/goals/goal-meta';

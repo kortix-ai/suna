@@ -398,7 +398,7 @@ export function registerProjectSessionsRoutes(): void {
             parent: z.string().min(1).max(128).optional(),
             started_by: z.enum(['me', 'others', 'automated']).optional(),
             // Server-side search over every session the viewer may see.
-            q: z.string().trim().min(1).max(200).optional(),
+            q: z.string().trim().min(1).max(200).regex(/^[^\u0000]*$/, 'Search must not contain NUL characters').optional(),
             // Repeatable; a session must carry every given label. Exact match.
             label: z
               .union([z.string().min(1).max(64), z.array(z.string().min(1).max(64)).max(20)])

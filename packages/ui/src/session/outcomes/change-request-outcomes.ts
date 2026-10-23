@@ -70,6 +70,27 @@ export function changeRequestOutcomes(
       // a server that sends `null` should degrade to the fallback sentence
       // rather than throw inside a transcript render.
       const summary = cr.description?.trim();
+      // An agent revises its work by closing this request and opening the next
+      // on the same branch. The card says so and opens the replacement
+      // (KRTX-3031). The card itself stays this request's: id and reference.
+      const replacement = cr.status === 'closed' ? (cr.superseded_by ?? null) : null;
+      const status = replacement
+        ? {
+            label: tI18nComplete
+              ? tI18nComplete('textddcd87c21894', { number: replacement.number })
+              : `Superseded by #${replacement.number}`,
+            tone: word.tone,
+          }
+        : { label: word.label, tone: word.tone };
+      const action = replacement
+        ? {
+            label: tI18nComplete
+              ? tI18nComplete('texta8ef31fa7d25', { number: replacement.number })
+              : `View #${replacement.number}`,
+            intent: 'open' as const,
+            target: replacement.cr_id,
+          }
+        : { label: word.action, intent: 'open' as const };
       return {
         id: `cr:${cr.cr_id}`,
         kind: 'change_request' as const,
@@ -82,7 +103,7 @@ export function changeRequestOutcomes(
         // a description; see `outcome-card.tsx`.
         description:
           summary || tI18nComplete?.raw('text5c58b6d31ba9') || 'Ready for you to look over.',
-        status: { label: word.label, tone: word.tone },
+        status,
         at: epoch(cr.created_at),
         // The number is a REFERENCE, not a name — it belongs in the quiet line
         // with the status. `into <base_ref>` is gone: a branch name is the one
@@ -93,8 +114,8 @@ export function changeRequestOutcomes(
             ? tI18nComplete('texta4fc39798651', { number: cr.number })
             : `Change request #${cr.number}`,
         ],
-        action: { label: word.action, intent: 'open' as const },
-        resourceHref: `?cr=${cr.cr_id}`,
+        action,
+        resourceHref: `?cr=${replacement?.cr_id ?? cr.cr_id}`,
       };
     });
 }

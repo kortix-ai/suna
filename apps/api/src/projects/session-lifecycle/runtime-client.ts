@@ -457,6 +457,7 @@ export async function retractStrandedMessage(
  * failure (no pin yet, sandbox unreachable, request timeout) fails OPEN —
  * returns false, i.e. delivers exactly as before this guard existed — so a
  * transient read failure never blocks a legitimate follow-up.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
  */
 export async function queuedContinueHasStagedRevert(row: SessionLifecycleCommandRow): Promise<boolean> {
   if (!row.sessionId) return false;
@@ -595,7 +596,10 @@ export async function readLegacyRuntimeMessage(
   return (await response.json()) as LegacyRuntimeMessage;
 }
 
-/** `unsupported` when the runtime edits no parts: `501` (pi). Any other refusal throws. */
+/**
+ * `unsupported` when the runtime edits no parts: `501` (pi). Any other refusal throws.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ */
 export async function updateLegacyRuntimePart(
   input: LegacyRuntimePartTarget & { messageId: string; partId: string; text: string },
 ): Promise<'updated' | 'unsupported'> {

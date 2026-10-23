@@ -37,7 +37,7 @@
  * whenever the content lands.
  */
 
-export interface TurnScrollAnchor {
+interface TurnScrollAnchor {
   element: HTMLElement;
   /** The anchor's position in content space at capture time. */
   contentTop: number;

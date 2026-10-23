@@ -70,6 +70,14 @@ interface SessionHoverState {
   closeSession: (sessionId: string) => void;
   /** Immediate, for a click that opens something else and for unmount. */
   dismiss: () => void;
+  /**
+   * The row whose session a click just opened. Its card would only describe
+   * the page on screen, so it stays shut until the pointer leaves the row.
+   * Unselected, like `warm`.
+   */
+  suppressedSessionId: string | null;
+  suppress: (sessionId: string) => void;
+  release: (sessionId: string) => void;
 }
 
 let openTimer: ReturnType<typeof setTimeout> | null = null;
@@ -89,10 +97,12 @@ export const useSessionHoverStore = create<SessionHoverState>((set, get) => ({
   via: 'pointer',
   slot: null,
   warm: false,
+  suppressedSessionId: null,
 
   setSlot: (slot) => set({ slot }),
 
   openSession: (sessionId, anchor, via = 'pointer') => {
+    if (get().suppressedSessionId === sessionId) return;
     closeTimer = cancel(closeTimer);
     warmTimer = cancel(warmTimer);
     // A pending open belongs to whichever row the pointer has just left.
@@ -135,4 +145,41 @@ export const useSessionHoverStore = create<SessionHoverState>((set, get) => ({
     warmTimer = cancel(warmTimer);
     set({ activeSessionId: null, warm: false });
   },
+
+  suppress: (sessionId) => {
+    set({ suppressedSessionId: sessionId });
+    get().dismiss();
+  },
+
+  release: (sessionId) => {
+    if (get().suppressedSessionId === sessionId) set({ suppressedSessionId: null });
+  },
 }));
+
+type RowTarget = { matches?: (selector: string) => boolean };
+
+/**
+ * A session row's hover wiring (KRTX-2847). The press focuses the row and the
+ * pointer rests on it, so without the click handler every switch showed the
+ * card of the session just opened, 200 ms later, until the page took focus.
+ * Focus leaving the row releases it only when the pointer is elsewhere: the
+ * new page takes focus while the pointer still rests on the row.
+ */
+export function sessionRowHoverHandlers(id: string) {
+  const store = () => useSessionHoverStore.getState();
+  return {
+    onPointerEnter: (event: { pointerType: string; currentTarget: RowTarget }) => {
+      if (event.pointerType !== 'touch') store().openSession(id, event.currentTarget as HTMLElement, 'pointer');
+    },
+    onPointerLeave: () => {
+      store().release(id);
+      store().closeSession(id);
+    },
+    onFocus: (event: { currentTarget: RowTarget }) => store().openSession(id, event.currentTarget as HTMLElement, 'focus'),
+    onBlur: (event: { currentTarget: RowTarget }) => {
+      if (!event.currentTarget.matches?.(':hover')) store().release(id);
+      store().closeSession(id);
+    },
+    onClick: () => store().suppress(id),
+  };
+}

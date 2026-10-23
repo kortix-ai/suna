@@ -38,7 +38,7 @@ import { CODEMODE_TOOL, type CodemodeMode } from './codemode'
 import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
 import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule } from './interactions'
 import type { PiModels, SelectedModel } from './model'
-import { compactionSettings, nativeModelId } from './model'
+import { nativeModelId } from './model'
 import { TranscriptStore, type RuntimeFrame } from './transcript'
 import { PiTurnEvents, assistantInfoFields, assistantMessageError, type TurnEventEmission } from './turn-events'
 import { withAgentSampling } from './sampling'
@@ -452,7 +452,7 @@ export class PiRuntime {
 
   /** The brokers publish under the root id. */
   private bindRoot(): void {
-    this.permissions = new PermissionBroker(this.rootId, (frame) => this.publish(frame), {}, (request) => this.hooks.onPermissionAsked?.(request))
+    this.permissions = new PermissionBroker(this.rootId, this.workspace, (frame) => this.publish(frame), {}, (request) => this.hooks.onPermissionAsked?.(request))
     this.questions = new QuestionBroker(this.rootId, (frame) => this.publish(frame), (request) => {
       this.hooks.onQuestionAsked?.(request, (answers) => void this.questions.reply(request.id, answers))
     })
@@ -641,7 +641,6 @@ export class PiRuntime {
         systemPrompt: () => this.systemPrompt(),
         skillAllowed: (name) => skillGranted(this.policy, name),
         provider: this.models.models.getProvider(this.selected.providerID),
-        compaction: compactionSettings(this.models.catalog, this.cfg.piCompactAtTokens),
       })
       const extensionsMs = performance.now() - extensionsStartedAt
       this.rebuildSystemPrompt()
@@ -713,6 +712,18 @@ export class PiRuntime {
     this.agent.state.thinkingLevel = this.thinkingLevel(this.compiledAgent()?.variant)
     const after = `${this.selected.modelID}|${this.agentName}|${this.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG ?? ''}`
     return { changed: before !== after }
+  }
+
+  /** Re-read the served models and their limits (a custom endpoint saved), keeping the selected model. */
+  async refreshModels(): Promise<void> {
+    if (!this.agent || !this.models) return
+    const { createPiModels } = await import('./model')
+    this.models = await createPiModels({
+      env: this.env,
+      defaultModelRef: this.env.KORTIX_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
+    })
+    this.selected = this.models.select(this.selected?.modelID ?? null)
+    this.agent.state.model = this.selected.model
   }
 
   /** Reload skills and the root AGENTS.md from disk (after a repo refresh). */
@@ -1515,7 +1526,7 @@ export class PiRuntime {
     // The subagent's own rules first, the session's rules otherwise. A deny from
     // either wins: delegating must never unlock a call the session denies.
     agent.beforeToolCall = this.toolGate((tool, args) => {
-      const own = resolvePolicyRule(policy, tool, args)
+      const own = resolvePolicyRule(policy, tool, args, this.workspace)
       const session = this.permissions.rule(tool, args)
       if (own === 'deny' || session === 'deny' || !allowed(tool)) return 'deny'
       return own ?? session

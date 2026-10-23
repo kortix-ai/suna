@@ -86,6 +86,11 @@ describe('account creation handoff', () => {
         expect(useCurrentAccountStore.getState().selectedAccountId).toBe('created');
         expect(useAccountPanelStore.getState().pushedEntry).toBe(host === 'sidebar');
       };
+      const realProjectCan = await import('@kortix/ui/internal/lib/use-project-can');
+      mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
+        ...realProjectCan,
+        useProjectCan: () => ({ allowed: false }),
+      }));
       mock.module('next/navigation', () => ({
         useRouter: () => ({
           push: navigate('push'),
@@ -110,8 +115,10 @@ describe('account creation handoff', () => {
       }));
       const children = ({ children }: { children?: ReactNode }) =>
         createElement('div', null, children);
-      const uiDropdownMenuMock = () =>
-        Object.fromEntries(
+      const realDropdownMenu = await import('@kortix/ui/dropdown-menu');
+      const uiDropdownMenuMock = () => ({
+        ...realDropdownMenu,
+        ...Object.fromEntries(
           [
             'DropdownMenu',
             'DropdownMenuCheckboxItem',
@@ -129,15 +136,21 @@ describe('account creation handoff', () => {
             'DropdownMenuSubTrigger',
             'DropdownMenuTrigger',
           ].map((name) => [name, children]),
-        );
+        ),
+      });
       mock.module('@kortix/ui/dropdown-menu', uiDropdownMenuMock);
       mock.module('@kortix/ui/dropdown-menu', uiDropdownMenuMock);
       const { createContext } = await import('react');
+      // The real module, with only what this test drives stubbed: a stub that
+      // lists names breaks whenever the tree imports one more of them.
+      const realSidebar = { ...(await import('@kortix/ui/sidebar')) };
       const uiSidebarMock = () => ({
+        ...realSidebar,
         SidebarContext: createContext(null),
         SidebarMenu: children,
         SidebarMenuButton: children,
         SidebarMenuItem: children,
+        useOptionalSidebar: () => null,
       });
       mock.module('@kortix/ui/sidebar', uiSidebarMock);
       mock.module('@kortix/ui/sidebar', uiSidebarMock);
@@ -146,7 +159,9 @@ describe('account creation handoff', () => {
         ThemeSubmenu: () => null,
         useLogoutFlow: () => ({ openConfirm() {}, dialog: null }),
       }));
+      const realComputerConnect = { ...(await import('@kortix/ui/internal/tunnel/computer-connect')) };
       mock.module('@kortix/ui/internal/tunnel/computer-connect', () => ({
+        ...realComputerConnect,
         COMPUTER_SETUP_EVENT: 'synthetic-setup',
       }));
       mock.module('@/features/tunnel/local-computer-modal', () => ({

@@ -73,6 +73,9 @@ import { COMPUTER_SETUP_EVENT } from '@kortix/ui/internal/tunnel/computer-connec
 import { LocalComputerModal } from '@/features/tunnel/local-computer-modal';
 import { newWorkspacePathForAccount } from '@kortix/ui/workspace/new/account-param';
 import { useCreatableAccounts } from '@kortix/ui/workspace/new/use-creatable-accounts';
+import { PROJECT_ACTIONS } from '@kortix/sdk';
+import { useProjectCan } from '@kortix/ui/internal/lib/use-project-can';
+import { capabilityTabHref } from '@kortix/ui/workspace';
 import { WorkspaceMenuSection } from '@kortix/ui/workspace/sidebar/workspace-menu-section';
 import { settingsShortcutLabel } from '@/features/workspace/settings/settings-shortcut';
 import { type SettingsTab } from '@kortix/ui/customize/settings/settings-tabs';
@@ -90,6 +93,7 @@ import {
   CaretUpDownIcon,
   GearSixIcon as CogOne,
   SignOutIcon as LogOut,
+  PencilSimpleIcon,
   PlusIcon,
 } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -100,6 +104,8 @@ import { useEffect, useState } from 'react';
 
 export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const t = useI18nTranslations('sidebar');
+  const tUi = useI18nTranslations('hardcodedUi.i18nComplete');
+  const canRename = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE).allowed;
   const tNewWorkspace = useI18nTranslations('newWorkspace');
   const sidebar = React.useContext(SidebarContext);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -304,6 +310,15 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                 </DropdownMenuPortal>
               </DropdownMenuSub>
               <DropdownMenuSeparator />
+
+              {canRename === true && (
+                <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
+                  <Link href={capabilityTabHref(projectId, 'config')} prefetch>
+                    <PencilSimpleIcon />
+                    {tUi('text3064d79a295c')}
+                  </Link>
+                </DropdownMenuItem>
+              )}
 
               {/* `profile`, NOT `general`. In the merged settings vocabulary
                   (`settings/settings-tabs.ts`) `general` is Workspace →

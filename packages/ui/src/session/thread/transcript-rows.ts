@@ -21,13 +21,8 @@ export interface TranscriptRows {
    * key: a channel thread says "this thread's computer", not "session".
    */
   notices?: Partial<Record<keyof typeof SESSION_NOTICE, string>>;
-  /** The boot loader's words in the host's terms ("Starting this thread"). */
+  /** The stuck-boot restart button in the host's terms ("Restart thread"). */
   labels?: {
-    /** The loader's heading. */
-    starting: string;
-    /** The progress bar's accessible name. */
-    startupProgress: string;
-    /** The stuck-boot restart button. */
     restart: string;
   };
 }

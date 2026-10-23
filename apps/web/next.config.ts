@@ -11,12 +11,23 @@ import { BLOG_ORIGIN } from './src/config/blog-origin';
 import { locales } from './src/i18n/catalog.mjs';
 import { SHIPPED_ICON_WEIGHTS } from '@kortix/ui/lib/icon-config';
 import {
+  embedContentSecurityPolicy,
   enforcedContentSecurityPolicy,
   reportOnlyContentSecurityPolicy,
 } from './src/lib/security/content-security-policy';
 import { refreshContentTimestamps } from './scripts/build-content-timestamps.mjs';
 import { copyEmojibaseData, getEmojibaseDataOutputPaths } from './scripts/emojibase-data.mjs';
 import { copyViewerWasm, getViewerWasmOutputPaths } from './scripts/viewer-wasm.mjs';
+
+/** The header set a host-framed page carries instead of the global enforced
+ *  CSP: the same directives with `frame-ancestors` opened. One owner, so the
+ *  two session-page header rules cannot drift apart. */
+const embedFrameHeaders = () => [
+  {
+    key: 'Content-Security-Policy',
+    value: embedContentSecurityPolicy(),
+  },
+];
 
 // --- Content timestamps manifest -----------------------------------------
 // Public AEO surfaces (/api/ai, /llms.txt) expose a `last_modified` field per
@@ -861,6 +872,10 @@ const nextConfig = (): NextConfig => ({
             value: 'nosniff',
           },
           {
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), geolocation=()',
+          },
+          {
             key: 'Referrer-Policy',
             value: 'strict-origin-when-cross-origin',
           },
@@ -908,6 +923,35 @@ const nextConfig = (): NextConfig => ({
               ]
             : []),
         ],
+      },
+      // The session page is framed by host pages for a living (the Share
+      // dialog's Embed snippet). Its rule must come after the global
+      // `/:path*` rule: for the same header key, the LAST matching rule wins,
+      // so the enforced CSP here replaces the global one on the session page
+      // (verified by curl on the local stack). X-Frame-Options cannot be
+      // removed by a later rule, but a browser that implements CSP
+      // frame-ancestors — every evergreen browser — ignores X-Frame-Options
+      // when the policy carries frame-ancestors, so the global SAMEORIGIN is
+      // inert on this path.
+      //
+      // Only same-origin and Kortix-owned same-site host pages can frame the
+      // authenticated session. Cookies and existing project/session permissions
+      // still determine access. Both canonical URL forms are covered.
+      {
+        source: '/projects/:projectId/sessions/:sessionId',
+        headers: embedFrameHeaders(),
+      },
+      {
+        source: '/:locale/projects/:projectId/sessions/:sessionId',
+        headers: embedFrameHeaders(),
+      },
+      // Apple reads this file as JSON (Universal Links for /share and
+      // /auth/callback, shared web credentials). It has no extension, so it
+      // was served as application/octet-stream (KRTX-3255). The static file
+      // server keeps a Content-Type that a rule already set.
+      {
+        source: '/.well-known/apple-app-site-association',
+        headers: [{ key: 'Content-Type', value: 'application/json' }],
       },
       {
         source: '/fonts/:path*',

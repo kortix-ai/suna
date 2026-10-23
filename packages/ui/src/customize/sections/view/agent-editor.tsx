@@ -458,8 +458,8 @@ export function AgentConfigSections({
   authority?: React.ReactNode;
 }) {
   const { draft, oc, set, setOc } = editor;
-  // Every section is a card (`EditorSectionStyle` 'panel'), so a tab holding
-  // two of them — Access holds the people and the grants — shows two blocks.
+  // Every pane opens with a `lead` section (the pane title) and stacks its
+  // later sections under Settings subsection headings.
   const body = (() => {
     switch (section) {
       case 'overview':
@@ -525,7 +525,7 @@ export function AgentConfigSections({
   })();
   return (
     <EditorSectionStyleProvider value="panel">
-      <div className="space-y-4">{body}</div>
+      <div className="space-y-8">{body}</div>
     </EditorSectionStyleProvider>
   );
 }

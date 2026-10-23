@@ -60,13 +60,13 @@ function ShareRow({
   isRevoking: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const tTranscript = useTranslations('hardcodedUi.publicTranscriptShare');
   const [copied, setCopied] = useState(false);
   const live = isShareLive(share);
   // Read at render time: `publicShareUrl` is null outside a browser (SSR).
   const url = publicShareUrl(share.public_path);
   const isFile = share.resource_type === 'file';
-  // A transcript share has no port and no file: it names the conversation.
+  // A legacy transcript share (revoked; the feature is removed) still carries
+  // no port and no file: its label is the row's own meta.
   const isTranscript = share.resource_type === 'transcript';
   const Icon = isFile ? FileText : isTranscript ? ChatText : Globe;
 
@@ -104,11 +104,7 @@ function ShareRow({
           )}
         </div>
         <p className="text-muted-foreground truncate text-xs">
-          {isFile
-            ? share.file_path
-            : isTranscript
-              ? tTranscript('rowMeta')
-              : `Port ${share.port}${share.path}`}
+          {isFile ? share.file_path : isTranscript ? share.label : `Port ${share.port}${share.path}`}
         </p>
       </div>
 

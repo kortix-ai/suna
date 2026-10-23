@@ -96,7 +96,6 @@ export function registerPublicSharesRoutes(): void {
       request: {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
-            transcript: z.boolean().optional().openapi({ description: 'true shares the session conversation. Give exactly one of transcript, preview_id, file.' }),
             preview_id: z.string().optional().openapi({ description: 'Share a session preview by id (from the previews list).' }),
             file: z.record(z.string(), z.any()).optional().openapi({ description: 'Share a workspace file: { path }.' }),
             mode: z.string().optional().openapi({ description: 'Access mode of the link.' }),
@@ -105,7 +104,6 @@ export function registerPublicSharesRoutes(): void {
           }) } } },
       },
       responses: {
-        200: json(z.any(), 'The live transcript share this session already has'),
         201: json(z.any(), 'Public share'),
         ...errors(400, 403, 404, 409),
       },
@@ -163,9 +161,7 @@ export function registerPublicSharesRoutes(): void {
         userId: loaded.userId,
       });
       if (!result.ok) return c.json({ error: result.error }, result.status as any);
-      // A transcript share is one live link per session: minting again returns
-      // the live link with 200 instead of a second one.
-      return c.json({ share: result.share }, result.created ? 201 : 200);
+      return c.json({ share: result.share }, 201);
     },
   );
 

@@ -202,7 +202,7 @@ export function SkillsPage({ projectId }: { projectId: string }) {
               secondaryAction={
                 <Button asChild variant="ghost" size="sm" className="gap-1.5">
                   <a
-                    href="https://opencode.ai/docs/skills/"
+                    href="/docs/project/agents#skills"
                     target="_blank"
                     rel="noopener noreferrer"
                   >

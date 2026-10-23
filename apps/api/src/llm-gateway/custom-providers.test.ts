@@ -12,10 +12,14 @@ let keys: Array<{ identifier: string; secretId?: string; value: string }> = [];
 const resolveProjectSecretsForConsumer = mock(async (_input: { name: string }) => keys);
 const realSecrets = await import('../projects/secrets');
 mock.module('../projects/secrets', () => ({ ...realSecrets, resolveProjectSecretsForConsumer }));
+let modelsResponse: () => Response = () => Response.json({ data: [] });
+const safeEgressFetch = mock(async (_url: string, _init?: { headers?: Record<string, string> }) => modelsResponse());
+const realGuard = await import('../shared/ssrf-guard');
+mock.module('../shared/ssrf-guard', () => ({ ...realGuard, safeEgressFetch }));
 
 const {
   customProviderCatalog, customProviderIdError, customProviderIdFromSecret, customProviderSecretName,
-  CustomLlmProviderInputSchema, upsertCustomProvider,
+  CustomLlmProviderInputSchema, probeCustomModels, upsertCustomProvider,
 } = await import('./custom-providers');
 const { resolveCandidates } = await import('./resolution/resolve-candidates');
 
@@ -58,6 +62,68 @@ describe('custom provider definitions', () => {
     expect(customProviderCatalog([railway])).toEqual({
       'railway/kimi-for-coding': expect.objectContaining({ name: 'Kimi', provider: 'railway', provider_name: 'Railway', tool_call: true }),
     });
+  });
+
+  test('a model serves its own limits; output falls back to the context, then 128k/16k', () => {
+    const limits = (models: { id: string; name: string; context?: number; output?: number }[]) =>
+      Object.values(customProviderCatalog([{ ...railway, models }])).map((m) => m.limit);
+    expect(limits([{ id: 'a', name: 'A', context: 1_048_576, output: 393_216 }])).toEqual([{ context: 1_048_576, output: 393_216 }]);
+    expect(limits([{ id: 'a', name: 'A', context: 1_048_576 }])).toEqual([{ context: 1_048_576, output: 1_048_576 }]);
+    expect(limits([{ id: 'a', name: 'A' }])).toEqual([{ context: 128_000, output: 16_000 }]);
+  });
+
+  test('a model that reads images or reasons serves it, with the effort levels', () => {
+    const [m] = Object.values(customProviderCatalog([{ ...railway, models: [{ id: 'a', name: 'A', attachment: true, reasoning: true }] }]));
+    expect(m).toMatchObject({ attachment: true, reasoning: true, reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high'] }] });
+    const [plain] = Object.values(customProviderCatalog([railway]));
+    expect(plain).toMatchObject({ attachment: false, reasoning: false });
+    expect(plain).not.toHaveProperty('reasoning_options');
+  });
+
+  test('upsert: an explicit switch wins over the endpoint, an unknown trait stays unset', () => {
+    const detected = new Map([['m', { attachment: false, reasoning: true }]]);
+    const [saved] = upsertCustomProvider([], 'p', { name: 'P', base_url: 'https://h.example/v1', models: [{ id: 'm', name: 'M', attachment: true }] }, detected);
+    expect(saved!.models).toEqual([{ id: 'm', name: 'M', attachment: true, reasoning: true }]);
+  });
+
+  test('upsert stores detected limits; a limit in the input wins', () => {
+    const detected = new Map([['m', { context: 1_048_576, output: 65_536 }]]);
+    const [saved] = upsertCustomProvider([], 'p', { name: 'P', base_url: 'https://h.example/v1', models: [{ id: 'm', name: 'M', output: 8_000 }] }, detected);
+    expect(saved!.models).toEqual([{ id: 'm', name: 'M', context: 1_048_576, output: 8_000 }]);
+  });
+});
+
+describe('probeCustomModels', () => {
+  test('reads context_window, max_model_len, context_length and output fields, with the key', async () => {
+    modelsResponse = () => Response.json({ data: [
+      { id: 'morph', context_window: 1_048_576 },
+      { id: 'vllm', max_model_len: 262_144 },
+      {
+        id: 'or', context_length: 200_000, top_provider: { max_completion_tokens: 64_000 },
+        architecture: { input_modalities: ['text', 'image'] }, supported_parameters: ['tools', 'reasoning'],
+      },
+      { id: 'text-only', context_length: 32_000, architecture: { input_modalities: ['text'] }, supported_parameters: ['tools'] },
+      { id: 'bare' },
+    ] });
+    const traits = await probeCustomModels('https://h.example/v1/', 'sk-1');
+    const none = { output: undefined, attachment: undefined, reasoning: undefined };
+    expect(Object.fromEntries(traits)).toEqual({
+      morph: { ...none, context: 1_048_576 },
+      vllm: { ...none, context: 262_144 },
+      or: { context: 200_000, output: 64_000, attachment: true, reasoning: true },
+      'text-only': { context: 32_000, output: undefined, attachment: false, reasoning: false },
+    });
+    expect(safeEgressFetch.mock.calls.at(-1)![0]).toBe('https://h.example/v1/models');
+    expect(safeEgressFetch.mock.calls.at(-1)![1]!.headers).toEqual({ authorization: 'Bearer sk-1' });
+  });
+
+  test('a refused, failing or malformed endpoint yields no limits', async () => {
+    modelsResponse = () => new Response('no', { status: 401 });
+    expect((await probeCustomModels('https://h.example/v1', null)).size).toBe(0);
+    modelsResponse = () => { throw new Error('ECONNREFUSED'); };
+    expect((await probeCustomModels('https://h.example/v1', null)).size).toBe(0);
+    modelsResponse = () => new Response('<html>');
+    expect((await probeCustomModels('https://h.example/v1', null)).size).toBe(0);
   });
 });
 

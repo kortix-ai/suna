@@ -3,7 +3,6 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { MINIMAL_FALLBACK_MODELS } from '@kortix/api-contract/fallback-models'
 import {
   buildOpencodeConfigContent,
   catalogIsDegraded,
@@ -250,10 +249,10 @@ describe('the boot config never touches the network', () => {
     return calls
   }
 
-  test('with no catalog file it falls back to the minimal model set, with no fetch', async () => {
+  test('with no catalog file it invents no models, with no fetch', async () => {
     const calls = recordFetches()
     const models = providerModels(await buildOpencodeConfigContent(NO_FILE_ENV as NodeJS.ProcessEnv))
-    expect(Object.keys(models)).toEqual(Object.keys(MINIMAL_FALLBACK_MODELS))
+    expect(models).toEqual({})
     expect(calls).toEqual([])
   })
 
@@ -277,32 +276,49 @@ describe('the boot config never touches the network', () => {
     expect(catalogIsDegraded(file)).toBe(false)
   })
 
-  test('every model gets a context window: a known one by id tail, else the conservative default', async () => {
-    // The gateway listing carries no limits; without one OpenCode cannot size
-    // the conversation and auto-compaction never fires.
-    const knownTail = Object.entries(MINIMAL_FALLBACK_MODELS).find(([, model]) => model.limit?.context)!
-    const tail = knownTail[0].split('/').pop()!
+  test("a model keeps its own window; only a model no source can size gets the default", async () => {
+    // Without a window OpenCode cannot size the conversation and never compacts.
+    // Another provider's model with the same last id segment does not lend its window.
+    const tail = 'deepseek-v4.1-flash'
     recordFetches()
     const models = providerModels(
       await buildOpencodeConfigContent({
         ...NO_FILE_ENV,
         KORTIX_LLM_CATALOG_FILE: await bakedCatalogFile({
-          models: { [`other-provider/${tail}`]: { name: 'Known tail' }, 'unknown/model-x': { name: 'Unknown' } },
+          models: {
+            'own/model': { name: 'Own', limit: { context: 1_048_576, output: 65_536 } },
+            [`deepseek/${tail}`]: { name: 'Known', limit: { context: 1_048_576, output: 393_216 } },
+            [`other-provider/${tail}`]: { name: 'Same tail' },
+          },
         }),
       } as NodeJS.ProcessEnv),
     ) as Record<string, { limit?: { context?: number; output?: number } }>
-    expect(models[`other-provider/${tail}`]?.limit).toEqual(knownTail[1].limit)
-    expect(models['unknown/model-x']?.limit).toEqual({ context: 200_000, output: 32_000 })
+    expect(models['own/model']?.limit).toEqual({ context: 1_048_576, output: 65_536 })
+    expect(models[`other-provider/${tail}`]?.limit).toEqual({ context: 200_000, output: 32_000 })
   })
 
-  test('no OpenAI reasoning model in the fallback set claims temperature support', () => {
-    // OpenCode would send `temperature` and every turn 400s while the fallback
-    // set is in effect.
-    const offenders = Object.entries(MINIMAL_FALLBACK_MODELS)
-      .filter(([id, model]) => id.startsWith('openai/') && model.reasoning && model.temperature)
-      .map(([id]) => id)
-    expect(offenders).toEqual([])
+  test('a model with a known window and no output limit still gets an output limit', async () => {
+    // OpenCode's config schema requires `limit.output` next to `limit.context`. One
+    // model without it fails the whole config: no OpenCode session can start
+    // (v0.14.7 staging, `ConfigInvalidError … limit.output: Missing key`).
+    recordFetches()
+    const models = providerModels(
+      await buildOpencodeConfigContent({
+        ...NO_FILE_ENV,
+        KORTIX_LLM_CATALOG_FILE: await bakedCatalogFile({
+          models: {
+            'poe/novita/deepseek-v3.2': { name: 'Window only', limit: { context: 163_840 } },
+            'tiny/model': { name: 'Small window', limit: { context: 8_192 } },
+            'with-input/model': { name: 'Input too', limit: { context: 400_000, input: 272_000 } },
+          },
+        }),
+      } as NodeJS.ProcessEnv),
+    ) as Record<string, { limit?: { context?: number; input?: number; output?: number } }>
+    expect(models['poe/novita/deepseek-v3.2']?.limit).toEqual({ context: 163_840, output: 32_000 })
+    expect(models['tiny/model']?.limit).toEqual({ context: 8_192, output: 8_192 })
+    expect(models['with-input/model']?.limit).toEqual({ context: 400_000, input: 272_000, output: 32_000 })
   })
+
 })
 
 describe('a repaired catalog is rebuilt to a known shape before it reaches disk', () => {

@@ -15,13 +15,14 @@ type SavedMessage = {
 };
 
 /**
- * A stopped session with saved history. By default the history is the v1 mirror
- * (`session_transcript_messages`), what every project reads today. With `log`, it is the
- * session log instead, written the way a box's daemon writes it: `fromV1` of the same rows
- * under producer `opencode`, posted to `POST …/log/journal` with a session sandbox
- * credential minted for the call; the project's `session_log` flag is turned on, so every
- * stored-transcript read serves the log (`readStoredTranscriptWindow`). No mirror row is
- * written then, so a read that passes proves the log answered.
+ * A stopped session with saved history. By default the history is an old session's v1 mirror
+ * (`session_transcript_*`), as a session saved before the journal left it: nothing reads the
+ * mirror itself (P8.2), so the first read converts it into the session log
+ * (`convertMirrorOnRead`). The fixture marks the backfill not drained, so a stack whose backfill
+ * pass already found nothing converts it. With `log`, the history is the session log, written
+ * the way a box's daemon writes it: `fromV1` of the same rows under producer `opencode`, posted
+ * to `POST …/log/journal` with a session sandbox credential minted for the call. No mirror row
+ * is written then.
  */
 /**
  * The default prompt and reply a seeded transcript stores when the caller does
@@ -94,7 +95,7 @@ export async function seedSessionTranscript(
     messages?: (root: string, defaults: SavedMessage[]) => SavedMessage[];
     /**
      * Store the history in the session log. `bearer`: the session owner's JWT or PAT, which mints the journal credential.
-     * Without it the history goes to the v1 mirror and the project's `session_log` flag is stored false.
+     * Without it the history goes to the v1 mirror, which the first read converts.
      */
     log?: { bearer: string };
   },
@@ -116,12 +117,9 @@ export async function seedSessionTranscript(
     if (input.log) {
       await journalSessionLog(env, { ...input, bearer: input.log.bearer, root, messages });
     } else {
-      // The v1 mirror is the saved copy only of a project with `session_log` off (on by default since 2026-10-22).
+      // A mirror-only session after the backfill drained (nothing writes the mirror since P8.2): reopen it.
       await db.query(
-        `UPDATE kortix.projects SET metadata = COALESCE(metadata, '{}'::jsonb)
-           || jsonb_build_object('experimental', COALESCE(metadata->'experimental', '{}'::jsonb) || '{"session_log":false}'::jsonb)
-         WHERE project_id = $1`,
-        [input.projectId],
+        "UPDATE kortix.session_log_backfill_state SET state = jsonb_set(state, '{drainedWithDeleted}', 'false'), rev = rev + 1 WHERE id = 'pass'",
       );
       await db.query(
         'INSERT INTO kortix.session_transcript_mirrors (session_id, project_id, account_id, opencode_session_id, head_complete) VALUES ($1,$2,$3,$4,true)',
@@ -217,12 +215,6 @@ export async function journalSessionLog(
     });
     const acked = journal.ok ? ((await journal.json()) as { acked: unknown[] }).acked.length : -1;
     if (acked !== puts.length) throw new Error(`POST …/log/journal answered ${journal.status}, acked ${acked} of ${puts.length}`);
-    await db.query(
-      `UPDATE kortix.projects SET metadata = COALESCE(metadata, '{}'::jsonb)
-         || jsonb_build_object('experimental', COALESCE(metadata->'experimental', '{}'::jsonb) || '{"session_log":true}'::jsonb)
-       WHERE project_id = $1`,
-      [input.projectId],
-    );
   } finally {
     // The credential lives for this call only.
     await fetch(`${env.apiUrl}/accounts/tokens/${credential.token_id}?account_id=${input.accountId}`, {

@@ -14,23 +14,24 @@ import {
 import { Close } from '../../icons/close';
 import { useModelPricingLookup } from '../../internal/lib/model-pricing';
 import { cn } from '../../lib/utils';
-import { type Session, type SessionLogBlock, type SessionLogMessage, type ToolCallBlock } from '@kortix/sdk';
+import { type ProjectSession, type Session, type SessionLogBlock, type SessionLogMessage, type ToolCallBlock } from '@kortix/sdk';
 import { formatUsdAsCredits } from '@kortix/shared';
 import {
   useSessionLog,
+  useSessionLogOlder,
   useSessionLogThread,
   useSessionMessages,
   type ProviderListResponse,
   type SessionMessagesSource,
 } from '@kortix/sdk/react';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import {
   CopyAllButton,
   rawExplorerData,
   SessionContextMessageExplorer,
   type RawV1Row,
 } from './session-context-message-explorer';
-import { getSessionContextMetrics } from './session-context-metrics';
+import { getSessionContextMetrics, sessionStartedAt } from './session-context-metrics';
 import type { ServedModelNotice } from '../turn/served-model';
 import { SubSessionSection } from './session-context-sub-sessions';
 
@@ -211,7 +212,7 @@ function OverviewStat({
         {value}
       </div>
       {meta ? (
-        <div className="text-muted-foreground/70 truncate text-xs tabular-nums">{meta}</div>
+        <div className="text-muted-foreground truncate text-xs tabular-nums">{meta}</div>
       ) : null}
     </div>
   );
@@ -228,6 +229,7 @@ function SessionContextModalBody({
   detachedRows,
   source,
   session,
+  sessionRow,
   providers,
   allSessions,
   servedModel,
@@ -242,6 +244,12 @@ function SessionContextModalBody({
   // JSON read the active source: the records on v2, else the v1 rows.
   const thread = useSessionLogThread(source);
   const log = thread?.messages ?? NO_MESSAGES;
+  // The counts are of the whole thread: an open modal reads every older page of the log
+  // (the chat holds only the newest window). A failed page stops the walk.
+  const { hasOlder, isLoadingOlder, loadOlder } = useSessionLogOlder(source);
+  useEffect(() => {
+    if (hasOlder && !isLoadingOlder) void loadOlder();
+  }, [hasOlder, isLoadingOlder, loadOlder]);
   const logSource = useSessionLog(source)?.source;
   // Only the v1 explorer reads the v1 rows: on v2 (or with detached rows) a
   // null runtime id reads none, so a streamed v1 row re-renders nothing here.
@@ -390,7 +398,7 @@ function SessionContextModalBody({
                   <li key={segment.key} className="flex items-center gap-2 text-xs">
                     <span
                       className={cn(
-                        'size-2 shrink-0 rounded-[2px]',
+                        'size-2 shrink-0 rounded-sm',
                         BREAKDOWN_SEGMENT_CLASS[segment.key],
                       )}
                     />
@@ -422,7 +430,7 @@ function SessionContextModalBody({
                   label: t.raw('detailAssistantMessages'),
                   value: counts.assistant.toLocaleString(),
                 },
-                { label: t.raw('detailStarted'), value: fmt.time(session?.time?.created) },
+                { label: t.raw('detailStarted'), value: fmt.time(sessionStartedAt(session, sessionRow)) },
                 { label: t.raw('detailLastReply'), value: fmt.time(ctx ? Date.parse(ctx.message.created_at) : undefined) },
               ].map((row) => (
                 <div
@@ -471,6 +479,8 @@ interface SessionContextModalProps {
   /** The session whose log the metrics read (`useSessionLogThread`). */
   source: SessionMessagesSource;
   session: Session | undefined;
+  /** The session's row: when it started (`sessionStartedAt`). */
+  sessionRow?: ProjectSession | null;
   providers: ProviderListResponse | undefined;
   allSessions?: Session[];
   /** The model that answered the newest request, when a fallback model did. */
@@ -485,6 +495,7 @@ export function SessionContextModal({
   detachedRows,
   source,
   session,
+  sessionRow,
   providers,
   allSessions,
   servedModel,
@@ -497,6 +508,7 @@ export function SessionContextModal({
           detachedRows={detachedRows}
           source={source}
           session={session}
+          sessionRow={sessionRow}
           providers={providers}
           allSessions={allSessions}
           servedModel={servedModel}

@@ -624,3 +624,25 @@ flow(
     });
   },
 );
+
+flow('FILE-14', { domain: 'files', routes: ['GET /v1/projects/:projectId/files/content', 'PUT /v1/projects/:projectId/files/content'] }, async (ctx) => {
+  const p = await ctx.fixtures.sharedProject();
+  const params = { projectId: p.id };
+  const owner = ctx.client.as(ctx.P.OWNER);
+  const read = await owner.get('/v1/projects/:projectId/files/content', { params, query: { path: 'README.md' } });
+  read.status(200);
+  const original = read.json<{ ref: string; content: string; revision: string }>();
+  const body = { path: 'README.md', ref: original.ref, content: original.content + '\nowner file edit regression\n', expected_revision: original.revision };
+  await ctx.step('owner commits a viewed file and reads the persisted edit', async () => {
+    (await owner.put('/v1/projects/:projectId/files/content', body, { params })).status(200).body().exists('$.commit_sha');
+    const after = await owner.get('/v1/projects/:projectId/files/content', { params, query: { path: body.path } });
+    after.status(200).body().has('$.content', body.content);
+  });
+  await ctx.step('stale revision cannot overwrite the committed edit', async () => {
+    (await owner.put('/v1/projects/:projectId/files/content', body, { params })).status(409);
+  });
+  await ctx.step('anonymous and unrelated users cannot commit', async () => {
+    (await ctx.client.as(ctx.P.ANON).put('/v1/projects/:projectId/files/content', body, { params })).status(401);
+    (await ctx.client.as(ctx.P.NONMEMBER).put('/v1/projects/:projectId/files/content', body, { params })).status([403, 404]);
+  });
+});

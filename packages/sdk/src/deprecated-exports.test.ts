@@ -71,6 +71,20 @@ const KORTIX_MASTER_EXPORTS = [...functionNames(kortixMaster), ...functionNames(
  * investigation.
  */
 
+/** Public transcript sharing was removed server-side (KRTX-2358): the API
+ *  serves no `/v1/public/session-shares/**` route and rejects transcript
+ *  creates. The client names stay exported until the next major. */
+const TRANSCRIPT_SHARE_EXPORTS = [
+  'findActiveTranscriptShare',
+  'getPublicSessionShare',
+  'getPublicSessionShareMessages',
+  'PublicSessionShareError',
+  'PublicSessionShareMeta',
+  'PublicSessionTranscript',
+  'PublicSessionTranscriptMessage',
+  'PublicSessionTranscriptToolCall',
+];
+
 /** Kortix orders prompts server-side; the client queue reducers are unused. */
 const MESSAGE_QUEUE_EXPORTS = [
   'claimNext',
@@ -259,7 +273,7 @@ describe('deprecated exports', () => {
     expect(RETIRED_MODULE_EXPORTS.length).toBeGreaterThan(80);
   });
 
-  test.each([...MESSAGE_QUEUE_EXPORTS, ...RETIRED_MODULE_EXPORTS, ...RETIRED_HOOKS, ...RETIRED_HOOK_TYPES, ...UNUSED_SESSION_HOOKS])(
+  test.each([...MESSAGE_QUEUE_EXPORTS, ...RETIRED_MODULE_EXPORTS, ...RETIRED_HOOKS, ...RETIRED_HOOK_TYPES, ...UNUSED_SESSION_HOOKS, ...TRANSCRIPT_SHARE_EXPORTS])(
     '%s is @deprecated and removed in the next major',
     (name) => {
       expect(deprecation(name)).toMatch(REMOVED_IN_NEXT_MAJOR);

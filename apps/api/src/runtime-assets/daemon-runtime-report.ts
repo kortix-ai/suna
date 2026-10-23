@@ -101,6 +101,7 @@ function modelIds(value: unknown): string[] | null {
  * is compared against. A W3 daemon names the harness the release belongs to
  * (`harness`, `harness_version`); a pi box has no OpenCode to converge. An
  * older daemon reports `opencode_version` only.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
  */
 function runningOpencodeVersion(running: Record<string, unknown>): string | null {
   const harness = str(running.harness);

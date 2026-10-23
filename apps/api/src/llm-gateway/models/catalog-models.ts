@@ -81,29 +81,16 @@ function codexName(id: string): string {
     .join('-');
 }
 
-// Conservative context window for any model models.dev doesn't declare one for.
-// The gateway guarantees EVERY served model carries a `limit` — OpenCode does NOT
-// pull limits from models.dev for a custom provider, so this is the single source
-// the client trusts to size conversations + fire auto-compaction (it does no
-// backfill of its own). Better to compact a little early than never.
-const DEFAULT_SERVED_LIMIT = { context: 200_000, output: 32_000 } as const;
-
-// Coerce a (possibly partial or zero) models.dev limit into a guaranteed-positive
-// window. Some non-chat catalog entries (whisper audio, NVIDIA video/TTS models)
-// report context:0 — fall back to the default so EVERY served model can be sized.
-// `input` (max prompt tokens, when models.dev distinguishes it from the total
-// context window) is passed through verbatim when present — it's not backfilled
-// like context/output because no consumer needs a guaranteed value for it yet.
-function servedLimit(limit?: { context?: number; input?: number; output?: number }): {
-  context: number;
-  input?: number;
-  output: number;
-} {
-  return {
-    context: limit?.context && limit.context > 0 ? limit.context : DEFAULT_SERVED_LIMIT.context,
-    ...(typeof limit?.input === 'number' && limit.input > 0 ? { input: limit.input } : {}),
-    output: limit?.output && limit.output > 0 ? limit.output : DEFAULT_SERVED_LIMIT.output,
-  };
+// A model's limits exactly as models.dev reports them: each positive field
+// passes through on its own, and an unknown one stays unset. A model with no
+// known window gets no `limit`; the harness then sizes it (pi, OpenCode).
+function servedLimit(limit?: { context?: number; input?: number; output?: number }) {
+  const out: { context?: number; input?: number; output?: number } = {};
+  for (const key of ['context', 'input', 'output'] as const) {
+    const value = limit?.[key];
+    if (typeof value === 'number' && value > 0) out[key] = value;
+  }
+  return out.context ? { limit: out } : {};
 }
 
 // Capability flags for a served model. models.dev is the single source of truth:
@@ -134,7 +121,7 @@ function capabilitiesOf(model: CatalogModel | undefined): Omit<GatewayModel, 'na
       ...(typeof model.description === 'string' ? { description: model.description } : {}),
       ...(typeof model.open_weights === 'boolean' ? { open_weights: model.open_weights } : {}),
       ...(typeof model.last_updated === 'string' ? { last_updated: model.last_updated } : {}),
-      limit: servedLimit(model.limit),
+      ...servedLimit(model.limit),
     };
   }
   return {
@@ -142,7 +129,6 @@ function capabilitiesOf(model: CatalogModel | undefined): Omit<GatewayModel, 'na
     tool_call: true,
     attachment: false,
     temperature: false,
-    limit: servedLimit(undefined),
   };
 }
 
@@ -254,6 +240,7 @@ export function gatewayModelsAll(
 export function gatewayCodexModels(
   catalog: Catalog = runtimeModelCatalog.snapshot(),
   codexIds: readonly string[] = runtimeModelCatalog.codexModelIds(),
+  codexWindows: Readonly<Record<string, number>> = runtimeModelCatalog.codexContextWindows(),
 ): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
   const catalogModelById = modelsById(catalog);
@@ -284,7 +271,10 @@ export function gatewayCodexModels(
       ...(typeof model?.description === 'string' ? { description: model.description } : {}),
       ...(typeof model?.open_weights === 'boolean' ? { open_weights: model.open_weights } : {}),
       ...(typeof model?.last_updated === 'string' ? { last_updated: model.last_updated } : {}),
-      limit: servedLimit(model?.limit),
+      // The ChatGPT backend's window (Codex models.json), not the public API's.
+      ...servedLimit(codexWindows[id]
+        ? { context: codexWindows[id], output: Math.min(model?.limit?.output ?? codexWindows[id]!, codexWindows[id]!) }
+        : model?.limit),
     };
   }
   return out;
