@@ -1,5 +1,6 @@
 /**
- * MEMORY-1..10 — Memory pages (`project_channels`): `/v1/projects/:projectId/memory/*`.
+ * MEMORY-1..13 — Memory pages (`project_channels`): `/v1/projects/:projectId/memory/*`
+ * and "Used memory" (`/sessions/:sessionId/memory-usage`).
  * Spec: tests/spec/end-to-end.md § 7b. Source of truth: apps/api/src/memory/ and
  * apps/api/src/projects/routes/project-memory.ts; shapes in
  * packages/api-contract/src/memory.ts. Pure rules (byte cap, secret shapes,
@@ -7,12 +8,15 @@
  * to them; these flows prove the HTTP contract.
  *
  * An agent's thread is a `project_sessions` row in a space plus a project
- * token bound to it: the credential kortixd's `remember` tool sends. No flow
- * here starts a sandbox.
+ * token bound to it: the credential kortixd's `remember` tool sends. Only
+ * MEMORY-13 starts a sandbox: the "Used memory" record is written by the turn
+ * hook on the sandbox proxy, which no flow reaches without a real box.
  */
 import { randomUUID } from 'node:crypto';
 import {
   MemoryChangeListSchema,
+  MemorySearchResultSchema,
+  MemoryUsageSchema,
   MemoryDeleteResultSchema,
   MemoryLayerExportSchema,
   MemoryLayerSchema,
@@ -27,14 +31,17 @@ import {
   type MemoryPage,
   type MemoryPageSummary,
   type MemoryRememberResult,
+  type MemorySearchHit,
+  type MemoryUsage,
   type MemoryVersion,
 } from '@kortix/api-contract';
 import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
-import type { Client, Res } from '../core/client';
+import { isKe2eRetryableError, type Client, type Res } from '../core/client';
 import type { BodyAssert } from '../core/expect';
 import type { FlowContext, FlowMeta } from '../core/types';
 import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
+import { endedAfter, readTranscript, readTurn, sendPrompt, waitForSessionReady, waitForTurn } from '../fixtures/session-run';
 
 const R = {
   layer: 'GET /v1/projects/:projectId/memory/layers/:layerKey',
@@ -50,6 +57,8 @@ const R = {
   undo: 'POST /v1/projects/:projectId/memory/versions/:versionId/undo',
   remember: 'POST /v1/projects/:projectId/memory/remember',
   export: 'GET /v1/projects/:projectId/memory/layers/:layerId/export',
+  search: 'GET /v1/projects/:projectId/memory/search',
+  usage: 'GET /v1/projects/:projectId/sessions/:sessionId/memory-usage',
 } as const;
 const FEATURES = 'PATCH /v1/projects/:projectId/features';
 const SPACE_CREATE = 'POST /v1/projects/:projectId/spaces';
@@ -67,6 +76,9 @@ const RESTORE = '/v1/projects/:projectId/memory/pages/:pageId/restore';
 const UNDO = '/v1/projects/:projectId/memory/versions/:versionId/undo';
 const REMEMBER = '/v1/projects/:projectId/memory/remember';
 const EXPORT = '/v1/projects/:projectId/memory/layers/:layerId/export';
+const SEARCH = '/v1/projects/:projectId/memory/search';
+const USAGE = '/v1/projects/:projectId/sessions/:sessionId/memory-usage';
+const SESSIONS = '/v1/projects/:projectId/sessions';
 const SPACES = '/v1/projects/:projectId/spaces';
 const SPACE = '/v1/projects/:projectId/spaces/:spaceId';
 const DM = '/v1/projects/:projectId/spaces/dm';
@@ -175,9 +187,11 @@ flow('MEMORY-1', meta([...Object.values(R), FEATURES]), async (ctx) => {
       world.owner.post(UNDO, undefined, { params: { projectId, versionId: id } }),
       world.owner.post(REMEMBER, { title: 'Priya', type: 'people', fact: 'Approves launch copy' }, { params: { projectId } }),
       world.owner.get(EXPORT, { params: { projectId, layerId: id } }),
+      world.owner.get(SEARCH, { params: { projectId }, query: { q: 'Pricing' } }),
+      world.owner.get(USAGE, { params: { projectId, sessionId: id } }),
     ]);
   try {
-    await ctx.step('with project_channels off (the default), all 13 memory routes → 403 {code: feature_disabled, feature: project_channels}', async () => {
+    await ctx.step('with project_channels off (the default), all 15 memory routes → 403 {code: feature_disabled, feature: project_channels}', async () => {
       for (const r of await everyRoute()) r.status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'project_channels');
     });
 
@@ -1006,3 +1020,308 @@ flow('MEMORY-10', meta([R.remember, R.export, R.layer, R.page, R.changes, FEATUR
     await world.close();
   }
 });
+
+/** The titles of `hits`, sorted: search ranks by relevance, so the flows compare sets. */
+const titlesOf = (hits: readonly MemorySearchHit[]) => hits.map((hit) => hit.title).sort().join('|');
+
+flow('MEMORY-11', meta([R.search, R.create, R.remove, FEATURES, SPACE_CREATE, SPACE_UPDATE, SPACE_DM, TOKEN_MINT]), async (ctx) => {
+  const { team, project, world } = await openWorld(ctx, { manifest: true });
+  const projectId = project.id;
+  const search = (client: Client, query: Record<string, string | number>) => client.get(SEARCH, { params: { projectId }, query });
+  const hitsOf = (res: Res) => read<{ hits: MemorySearchHit[] }>(res.status(200), (b) => b.schema(MemorySearchResultSchema)).hits;
+  const make = async (client: Client, layerKey: string, page: { type: string; title: string; summary?: string; body?: string }) =>
+    (await client.post(PAGES, page, { params: { projectId, layerKey } })).status(201).json<MemoryPage>();
+  try {
+    await ctx.step('with project_channels off, GET /memory/search → 403 feature_disabled', async () => {
+      (await search(world.owner, { q: 'Northwind' })).status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'project_channels');
+    });
+
+    await world.setFeature('project_channels', true);
+    const member = await team.addMember('member');
+    await team.grantProjectRole(projectId, member.userId!, 'member');
+    await world.grantRun('kortix', member);
+    const asMember = ctx.client.as(member);
+    const launch = await channel(world, 'Launch');
+    const other = await channel(world, 'Other');
+    const old = await channel(world, 'Old');
+    const ownerDm = (await world.owner.post(DM, { agent_name: 'kortix' }, { params: { projectId } })).status(200).json<Space>().space_id;
+    const memberDm = (await asMember.post(DM, { agent_name: 'kortix' }, { params: { projectId } })).status(200).json<Space>().space_id;
+
+    // One "Northwind" page in every layer kind, plus an unconfirmed, an archived-channel and a trashed one.
+    let pricing: MemoryPage;
+    let rumor: MemoryPage;
+    let rate: MemoryPage;
+    await ctx.step('seed pages that all mention Northwind: Company, #launch (one later unconfirmed), #other, #old (then archived), both DMs, one trashed', async () => {
+      pricing = await make(world.owner, 'company', { type: 'decisions', title: 'Northwind pricing', body: 'Plans stay at $49 for Northwind.' });
+      await make(world.owner, launch.space_id, { type: 'workstreams', title: 'Northwind launch', body: '- Ship the beta' });
+      rumor = await make(world.owner, launch.space_id, { type: 'decisions', title: 'Northwind rumor', body: 'A partner may resell Northwind.' });
+      await make(world.owner, other.space_id, { type: 'playbooks', title: 'Northwind support', body: 'Answer within a day.' });
+      await make(world.owner, old.space_id, { type: 'decisions', title: 'Northwind archive', body: 'Retired plan.' });
+      await make(world.owner, ownerDm, { type: 'playbooks', title: 'Northwind tone', body: 'Keep replies short.' });
+      await make(asMember, memberDm, { type: 'people', title: 'Northwind contact', body: 'Mateo answers the phone.' });
+      const draft = await make(world.owner, 'company', { type: 'decisions', title: 'Northwind draft', body: 'Not final.' });
+      (await world.owner.del(PAGE, { params: { projectId, pageId: draft.page_id } })).status(200);
+      rate = await make(world.owner, 'company', { type: 'decisions', title: 'Rate 5%_off', body: 'Promotion code rules.' });
+      (await world.owner.patch(SPACE, { archived: true }, { params: { projectId, spaceId: old.space_id } })).status(200);
+      // An unconfirmed page has no HTTP way in before P3 (outside content): set the status the way the P3 write will.
+      await world.db.query("UPDATE kortix.memory_pages SET status = 'unconfirmed' WHERE page_id = $1", [rumor.page_id]);
+    });
+
+    await ctx.step('the owner searches "Northwind" → Company, both live channels (the unconfirmed page marked so) and the owner’s DM; never the member’s DM, the archived channel or the trash', async () => {
+      const hits = hitsOf(await search(world.owner, { q: 'Northwind' }));
+      if (titlesOf(hits) !== 'Northwind launch|Northwind pricing|Northwind rumor|Northwind support|Northwind tone') fail('the owner’s hits', hits);
+      if (hits.find((h) => h.title === 'Northwind rumor')?.status !== 'unconfirmed') fail('the unconfirmed hit', hits);
+      const tone = hits.find((h) => h.title === 'Northwind tone');
+      if (tone?.scope !== 'dm' || tone.layer_key !== ownerDm || tone.layer_name !== 'kortix') fail('the DM hit', tone);
+    });
+
+    await ctx.step('a Company hit carries {layer_key: company, layer_name: Company, scope: company, type, summary, status: confirmed} and a body snippet', async () => {
+      const hit = hitsOf(await search(world.owner, { q: 'Northwind', type: 'decisions' })).find((h) => h.page_id === pricing!.page_id);
+      const want = { page_id: pricing!.page_id, layer_key: 'company', layer_name: 'Company', scope: 'company', type: 'decisions', title: 'Northwind pricing', summary: '', snippet: 'Plans stay at $49 for Northwind.', status: 'confirmed' };
+      const keys = Object.keys(want).sort();
+      if (!hit || JSON.stringify(hit, keys) !== JSON.stringify(want, keys)) fail('the Company hit', hit);
+    });
+
+    await ctx.step('the member searches "Northwind" → Company, both live channels and the member’s own DM; never the owner’s DM', async () => {
+      const hits = hitsOf(await search(asMember, { q: 'Northwind' }));
+      if (titlesOf(hits) !== 'Northwind contact|Northwind launch|Northwind pricing|Northwind rumor|Northwind support') fail('the member’s hits', hits);
+    });
+
+    await ctx.step('layer= narrows to one layer: the archived #old → its page; the member’s DM, asked by the owner → 404 memory_not_found', async () => {
+      if (titlesOf(hitsOf(await search(world.owner, { q: 'Northwind', layer: old.space_id }))) !== 'Northwind archive') fail('layer=#old', 'wrong hits');
+      if (titlesOf(hitsOf(await search(world.owner, { q: 'Northwind', layer: launch.space_id }))) !== 'Northwind launch|Northwind rumor') fail('layer=#launch', 'wrong hits');
+      (await search(world.owner, { q: 'Northwind', layer: memberDm })).status(404).body().has('$.code', 'memory_not_found');
+    });
+
+    await ctx.step('type= filters and limit= caps: type=playbooks → #other and the DM page; limit=1 → one hit', async () => {
+      if (titlesOf(hitsOf(await search(world.owner, { q: 'Northwind', type: 'playbooks' }))) !== 'Northwind support|Northwind tone') fail('type=playbooks', 'wrong hits');
+      if (hitsOf(await search(world.owner, { q: 'Northwind', limit: 1 })).length !== 1) fail('limit=1', 'not one hit');
+    });
+
+    await ctx.step('% and _ in q match literally: "%_" → only "Rate 5%_off"; "%%" → no hit (unescaped, both would match every title)', async () => {
+      const hits = hitsOf(await search(world.owner, { q: '%_' }));
+      if (hits.length !== 1 || hits[0]!.page_id !== rate!.page_id) fail('q=%_', hits);
+      if (hitsOf(await search(world.owner, { q: '%%' })).length !== 0) fail('q=%%', 'matched a title without %%');
+    });
+
+    await ctx.step('bad q, type or limit → 400 invalid_input: 1 character, 1 character inside spaces, 201 characters, a NUL, limit 0 or 21, an unknown type; 200 characters → 200', async () => {
+      const refused: Record<string, string | number>[] = [
+        { q: 'N' },
+        { q: '  N  ' },
+        { q: 'N'.repeat(201) },
+        { q: 'North\u0000wind' },
+        { q: 'Northwind', limit: 0 },
+        { q: 'Northwind', limit: 21 },
+        { q: 'Northwind', type: 'secrets' },
+      ];
+      for (const query of refused) {
+        (await search(world.owner, query)).status(400).body().has('$.code', 'invalid_input');
+      }
+      (await search(world.owner, { q: 'N'.repeat(200) })).status(200).body().has('$.hits', []);
+    });
+
+    const agent = await thread(ctx, world, { spaceId: launch.space_id, visibility: 'project', firstPrompt: 'Plan the Northwind launch' });
+
+    await ctx.step('a #launch thread’s session token searches "Northwind" → only its layers (Company, #launch), confirmed pages only', async () => {
+      const hits = hitsOf(await search(agent.client, { q: 'Northwind' }));
+      if (titlesOf(hits) !== 'Northwind launch|Northwind pricing') fail('the thread’s hits', hits);
+      if (hits.some((h) => h.status !== 'confirmed' || !['company', launch.space_id].includes(h.layer_key))) fail('the thread’s hit layers', hits);
+    });
+
+    await ctx.step('the session token naming a layer its thread does not read (#other, the owner’s DM) → 404 memory_not_found', async () => {
+      for (const layer of [other.space_id, ownerDm]) {
+        (await search(agent.client, { q: 'Northwind', layer })).status(404).body().has('$.code', 'memory_not_found');
+      }
+    });
+
+    await ctx.step("a token bound to another project's thread → 403 on this project's search", async () => {
+      const elsewhere = await team.project({ managedGit: true });
+      const foreign = await thread(ctx, world, { projectId: elsewhere.id, spaceId: null, visibility: 'project', firstPrompt: 'Elsewhere' });
+      (await search(foreign.client, { q: 'Northwind' })).status(403);
+    });
+  } finally {
+    await world.close();
+  }
+});
+
+flow('MEMORY-12', meta([R.usage, R.create, R.update, R.remove, FEATURES, SPACE_CREATE, SPACE_DM, TOKEN_MINT]), async (ctx) => {
+  const { team, project, world } = await openWorld(ctx, { manifest: true });
+  const projectId = project.id;
+  const usageOf = (client: Client, sessionId: string) => client.get(USAGE, { params: { projectId, sessionId } });
+  try {
+    const before = await thread(ctx, world, { spaceId: null, visibility: 'project', firstPrompt: 'Before the flag' });
+    await ctx.step('with project_channels off, GET /sessions/:id/memory-usage → 403 feature_disabled', async () => {
+      (await usageOf(world.owner, before.sessionId)).status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'project_channels');
+    });
+
+    await world.setFeature('project_channels', true);
+    const member = await team.addMember('member');
+    await team.grantProjectRole(projectId, member.userId!, 'member');
+    const asMember = ctx.client.as(member);
+    const launch = await channel(world, 'Launch');
+    const dmId = (await world.owner.post(DM, { agent_name: 'kortix' }, { params: { projectId } })).status(200).json<Space>().space_id;
+    const memo = await thread(ctx, world, { spaceId: launch.space_id, visibility: 'private', firstPrompt: 'Draft the Northwind pricing memo' });
+    const elsewhere = await thread(ctx, world, { spaceId: launch.space_id, visibility: 'private', firstPrompt: 'Another private thread' });
+
+    await ctx.step('a thread before its first turn → 200 {loaded_at: null, layers: []}', async () => {
+      (await usageOf(world.owner, memo.sessionId)).status(200).body().schema(MemoryUsageSchema).has('$.loaded_at', null).has('$.layers', []);
+    });
+
+    const p = (pageId: string) => ({ params: { projectId, pageId } });
+    const page = (layerKey: string, body: { type: string; title: string }) =>
+      world.owner.post(PAGES, body, { params: { projectId, layerKey } }).then((r) => r.status(201).json<MemoryPage>());
+    const pricing = await page('company', { type: 'decisions', title: 'Pricing' });
+    const launchPlan = await page(launch.space_id, { type: 'workstreams', title: 'Launch plan' });
+    const priya = await page(launch.space_id, { type: 'people', title: 'Priya' });
+    const tone = await page(dmId, { type: 'playbooks', title: 'Tone' });
+    const loadedAt = '2026-10-20T09:30:00.000Z';
+    const entry = (pg: MemoryPage) => ({ page_id: pg.page_id, type: pg.type, title: pg.title });
+
+    await ctx.step('the thread’s first-turn record (as the turn hook writes it: Company, #launch and the owner’s DM, read-only in a private channel thread) is listed by layer for the owner', async () => {
+      // The record is written on the sandbox proxy at the first prompt (MEMORY-13 proves that path); this flow seeds it.
+      const layers = [
+        { layer_id: pricing.layer_id, scope: 'company', name: 'Company', version: 1, page_ids: [pricing.page_id] },
+        { layer_id: launchPlan.layer_id, scope: 'channel', name: '#launch', version: 2, page_ids: [launchPlan.page_id, priya.page_id] },
+        { layer_id: tone.layer_id, scope: 'dm', name: 'kortix', version: 1, page_ids: [tone.page_id] },
+      ];
+      await world.db.query('INSERT INTO kortix.memory_thread_loads (session_id, first_loaded_at, layers) VALUES ($1, $2, $3::jsonb)', [memo.sessionId, loadedAt, JSON.stringify(layers)]);
+      (await usageOf(world.owner, memo.sessionId))
+        .status(200).body().schema(MemoryUsageSchema)
+        .has('$.loaded_at', loadedAt)
+        .has('$.layers', [
+          { layer_key: 'company', scope: 'company', name: 'Company', pages: [entry(pricing)] },
+          { layer_key: launch.space_id, scope: 'channel', name: '#launch', pages: [entry(launchPlan), entry(priya)] },
+          { layer_key: dmId, scope: 'dm', name: 'kortix', pages: [entry(tone)] },
+        ]);
+    });
+
+    await ctx.step('a page renamed since shows its current title; a page trashed since is left out, and a layer left with no page is left out', async () => {
+      (await world.owner.patch(PAGE, { base_version: 1, title: 'Launch plan v2' }, p(launchPlan.page_id))).status(200);
+      (await world.owner.del(PAGE, p(priya.page_id))).status(200);
+      (await world.owner.del(PAGE, p(pricing.page_id))).status(200);
+      (await usageOf(world.owner, memo.sessionId))
+        .status(200).body()
+        .has('$.loaded_at', loadedAt)
+        .has('$.layers', [
+          { layer_key: launch.space_id, scope: 'channel', name: '#launch', pages: [{ ...entry(launchPlan), title: 'Launch plan v2' }] },
+          { layer_key: dmId, scope: 'dm', name: 'kortix', pages: [entry(tone)] },
+        ]);
+    });
+
+    await ctx.step('another member cannot open the private thread or an unknown one → 404 session_not_found', async () => {
+      (await usageOf(asMember, memo.sessionId)).status(404).body().has('$.code', 'session_not_found');
+      (await usageOf(asMember, elsewhere.sessionId)).status(404).body().has('$.code', 'session_not_found');
+      (await usageOf(world.owner, randomUUID())).status(404).body().has('$.code', 'session_not_found');
+    });
+
+    await ctx.step('once the thread is project-visible the member opens it: #launch is listed, the owner’s DM layer (its titles) is not; the owner still sees it', async () => {
+      // Sharing only flips `visibility`; set it directly, since this thread has no box for the sharing route to update.
+      await world.db.query("UPDATE kortix.project_sessions SET visibility = 'project' WHERE session_id = $1", [memo.sessionId]);
+      const seen = read<MemoryUsage>((await usageOf(asMember, memo.sessionId)).status(200), (b) => b.schema(MemoryUsageSchema).has('$.loaded_at', loadedAt));
+      if (seen.layers.map((l) => l.layer_key).join() !== launch.space_id || JSON.stringify(seen).includes('Tone')) fail('the member’s usage', seen);
+      (await usageOf(world.owner, memo.sessionId)).status(200).body().has('$.layers.length', 2).has('$.layers[1].layer_key', dmId);
+    });
+  } finally {
+    await world.close();
+  }
+});
+
+/** Until no turn runs and the transcript holds an ended assistant reply: the session's first turn is over. */
+async function firstTurnEnded(ctx: FlowContext, projectId: string, sessionId: string): Promise<void> {
+  await waitFor(
+    async () => ({ turn: await readTurn(ctx, projectId, sessionId), transcript: await readTranscript(ctx, projectId, sessionId) }),
+    {
+      until: ({ turn, transcript }) =>
+        turn.turns.length === 0 && transcript.messages.some((m) => m.role === 'assistant' && (Boolean(m.completed) || Boolean(m.error))),
+      timeoutMs: 240_000,
+      intervalMs: 2_000,
+      description: `the first turn of ${sessionId} to end`,
+      retryOnError: isKe2eRetryableError,
+    },
+  );
+}
+
+/** A thread made through the session route, booted, its first prompt answered. */
+async function bootedThread(ctx: FlowContext, world: AgentPrincipalsWorld, body: Record<string, unknown>): Promise<string> {
+  const r = await world.owner.post(SESSIONS, body, { params: { projectId: world.projectId } });
+  // 202 is the accepted envelope of a create the API finishes in the background; both name the session.
+  r.status([201, 202]);
+  const sessionId = r.json<{ session_id: string | null }>().session_id;
+  if (!sessionId) fail('the session create named no session', r.text());
+  ctx.track('session', sessionId, { projectId: world.projectId });
+  await waitForSessionReady(ctx, world.projectId, sessionId);
+  await firstTurnEnded(ctx, world.projectId, sessionId);
+  return sessionId;
+}
+
+flow(
+  'MEMORY-13',
+  meta(
+    [
+      R.usage,
+      R.create,
+      FEATURES,
+      SPACE_CREATE,
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+    // Needs a booted box: the turn hook runs on the sandbox proxy. Two boots, a cold image can take ~7 min.
+    { requires: ['database', 'sandbox', 'funded'], timeoutMs: 1_500_000 },
+  ),
+  async (ctx) => {
+    // What the agent receives (`memory_layers` and the page list as `system` on the Kortix prompt body, a
+    // client-sent `system` dropped) is not observable over REST: apps/api turn-context.test.ts and
+    // integration-memory-turn-search.test.ts pin the body; this flow proves the "Used memory" record.
+    const { project, world } = await openWorld(ctx, { manifest: true });
+    const projectId = project.id;
+    const usageOf = (sessionId: string) => world.owner.get(USAGE, { params: { projectId, sessionId } });
+    try {
+      // The flag is on before any prompt: turn starts cache the flag per project for up to 30 s.
+      await world.setFeature('project_channels', true);
+      await world.fund();
+      const launch = await channel(world, 'Launch');
+      const make = (layerKey: string, body: { type: string; title: string; summary: string }) =>
+        world.owner.post(PAGES, body, { params: { projectId, layerKey } }).then((r) => r.status(201).json<MemoryPage>());
+      const pricing = await make('company', { type: 'decisions', title: 'Pricing', summary: 'Plans stay at $49' });
+      const plan = await make(launch.space_id, { type: 'workstreams', title: 'Launch plan', summary: 'Beta ships Nov 2' });
+      const priya = await make(launch.space_id, { type: 'people', title: 'Priya', summary: 'Approves launch copy' });
+
+      let sessionId = '';
+      let first: MemoryUsage;
+      await ctx.step('the first prompt of a #launch thread → memory-usage lists 3 pages in 2 layers: Company (Pricing) and #launch (Launch plan, Priya)', async () => {
+        sessionId = await bootedThread(ctx, world, { space_id: launch.space_id, initial_prompt: 'Reply with the single word OK.' });
+        // The record is written off the turn's path: poll briefly.
+        first = await waitFor(async () => (await usageOf(sessionId)).status(200).json<MemoryUsage>(), {
+          until: (u) => u.loaded_at !== null,
+          timeoutMs: 30_000,
+          intervalMs: 1_000,
+          description: 'the first-turn memory record',
+        });
+        const got = first.layers.map((l) => `${l.layer_key}:${l.pages.map((pg) => pg.page_id).sort().join()}`).sort().join('|');
+        const want = [`company:${pricing.page_id}`, `${launch.space_id}:${[plan.page_id, priya.page_id].sort().join()}`].sort().join('|');
+        if (got !== want) fail('the first-turn usage', first);
+        (await usageOf(sessionId)).status(200).body().schema(MemoryUsageSchema);
+      });
+
+      await ctx.step('a page added later and a second turn change nothing: same loaded_at, same 3 pages', async () => {
+        await make(launch.space_id, { type: 'decisions', title: 'Discounts', summary: 'No discounts in Q4' });
+        const previous = (await readTurn(ctx, projectId, sessionId)).last_ended?.turn_token;
+        await sendPrompt(ctx, projectId, sessionId, 'Reply with the single word OK again.');
+        await waitForTurn(ctx, projectId, sessionId, endedAfter(previous), 'the second turn to end');
+        (await usageOf(sessionId)).status(200).body().has('$.loaded_at', first!.loaded_at).has('$.layers', first!.layers);
+      });
+
+      await ctx.step('a thread that ran its first turn in no space (flag off) has no record once the flag is on again: {loaded_at: null, layers: []}', async () => {
+        await world.setFeature('project_channels', false);
+        const plain = await bootedThread(ctx, world, { initial_prompt: 'Reply with the single word OK.' });
+        await world.setFeature('project_channels', true);
+        (await usageOf(plain)).status(200).body().has('$.loaded_at', null).has('$.layers', []);
+      });
+    } finally {
+      await world.close();
+    }
+  },
+);
