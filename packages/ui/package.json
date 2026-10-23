@@ -227,7 +227,6 @@
     "./inline-meta": "./src/primitives/inline-meta.tsx",
     "./input": "./src/primitives/input.tsx",
     "./input-group": "./src/primitives/input-group.tsx",
-    "./internal/components/agent-mark": "./src/internal/components/agent-mark.tsx",
     "./internal/account-hub/account-hub-entry": "./src/internal/account-hub/account-hub-entry.tsx",
     "./internal/account-hub/account-hub-location": "./src/internal/account-hub/account-hub-location.tsx",
     "./internal/account-hub/account-settings-shell": "./src/internal/account-hub/account-settings-shell.tsx",
@@ -249,6 +248,7 @@
     "./internal/billing/use-transactions": "./src/internal/billing/use-transactions.ts",
     "./internal/branding/branding-provider": "./src/internal/branding/branding-provider.tsx",
     "./internal/capture/use-capture-area": "./src/internal/capture/use-capture-area.ts",
+    "./internal/components/agent-mark": "./src/internal/components/agent-mark.tsx",
     "./internal/components/hover-prefetch-link": "./src/internal/components/hover-prefetch-link.tsx",
     "./internal/components/mobile-store-qr": "./src/internal/components/mobile-store-qr.tsx",
     "./internal/desktop/desktop-back-button": "./src/internal/desktop/desktop-back-button.tsx",
@@ -1367,10 +1367,6 @@
         "types": "./dist/primitives/input-group.d.ts",
         "import": "./dist/primitives/input-group.js"
       },
-      "./internal/components/agent-mark": {
-        "types": "./dist/internal/components/agent-mark.d.ts",
-        "import": "./dist/internal/components/agent-mark.js"
-      },
       "./internal/account-hub/account-hub-entry": {
         "types": "./dist/internal/account-hub/account-hub-entry.d.ts",
         "import": "./dist/internal/account-hub/account-hub-entry.js"
@@ -1454,6 +1450,10 @@
       "./internal/capture/use-capture-area": {
         "types": "./dist/internal/capture/use-capture-area.d.ts",
         "import": "./dist/internal/capture/use-capture-area.js"
+      },
+      "./internal/components/agent-mark": {
+        "types": "./dist/internal/components/agent-mark.d.ts",
+        "import": "./dist/internal/components/agent-mark.js"
       },
       "./internal/components/hover-prefetch-link": {
         "types": "./dist/internal/components/hover-prefetch-link.d.ts",
