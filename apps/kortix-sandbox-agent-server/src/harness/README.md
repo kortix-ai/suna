@@ -1108,14 +1108,23 @@ dir sets `compaction.enabled`, `reserveTokens` and `keepRecentTokens`.
 Subagent child sessions have no `AgentSession` and do not compact.
 
 The threshold is `window - reserve`, and this daemon sets the reserve from the
-catalog: the model's own output limit, floored at pi's 16,384 default and
-capped at half the window (`compactionSettings` in `pi/model.ts`). pi's default
-reserve alone lets a request enter the window with less room left than the
-answer may use, so the provider cuts the reply (`stopReason: length`,
-`output_length` on the wire) at a context the meter still calls healthy. The
-reserve follows a catalog refresh (`refreshModels`), so a custom endpoint's
-real limits apply to a running session. A model's `limit.output` therefore
-also decides when its session compacts.
+catalog: the model's own output limit, floored at pi's 16,384 default and at the
+`compaction.reserveTokens` a project configures, and capped at half the window
+(`compactionSettings` in `pi/model.ts`). pi's default reserve alone lets a
+request enter the window with less room left than the answer may use, so the
+provider cuts the reply (`stopReason: length`, `output_length` on the wire) at a
+context the meter still calls healthy. The reserve follows a catalog refresh
+(`applyCompaction`), so a custom endpoint's real limits apply to a running
+session. A model's `limit.output` therefore also decides when its session
+compacts; a project can only ask for an earlier cut, never a later one.
+
+A transient model error is retried at pi's `agent_before_settle` boundary
+(`turnExtension`), not after `session.prompt` returns. The retry therefore stays
+inside pi's loop: every step after it runs pi's post-run checks, so a context
+threshold, an overflow or a cut answer there still compacts. The boundary
+appends a `context_edit` that omits the failed attempt, as pi's own retry does.
+A child session has no loop to re-enter and keeps the out-of-loop retry
+(`transient-retry.ts`).
 
 A `/summarize` is a turn of its own, named by its compaction marker (the user
 message with the `compaction` part), as on OpenCode: when the compaction that

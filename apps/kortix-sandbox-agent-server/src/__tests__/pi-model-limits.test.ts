@@ -53,3 +53,14 @@ test('the compaction reserve is the model output limit, so the answer always has
     'kortix/agent/window-only': { reserveTokens: 524_288 },
   })
 })
+
+test('a configured reserve raises the threshold earlier, never later than the output budget', () => {
+  const models = { 'agent/big': { limit: { context: 128_000, output: 32_768 } }, 'agent/small': { limit: { context: 64_000, output: 8_000 } } }
+  // A project that wants an earlier cut gets it on both models, capped at half the window.
+  expect(compactionSettings(models, 40_000).modelOverrides).toEqual({
+    'kortix/agent/big': { reserveTokens: 40_000 },
+    'kortix/agent/small': { reserveTokens: 32_000 },
+  })
+  // A configured reserve below the output limit never shrinks the answer's room.
+  expect(compactionSettings(models, 4_096).modelOverrides['kortix/agent/big']).toEqual({ reserveTokens: 32_768 })
+})
