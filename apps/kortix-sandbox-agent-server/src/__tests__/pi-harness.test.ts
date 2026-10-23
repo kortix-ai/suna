@@ -2989,6 +2989,31 @@ describe('pi compaction', () => {
     expect(page.messages.filter((m) => m.info.error)).toEqual([])
   })
 
+  test('compaction leaves the model its whole output budget, not pi default 16k reserve', async () => {
+    // 128,000 window and a 32,768 output limit: a request needs 32,768 tokens of room for the
+    // answer, so compaction must start at 95,232, not at pi's default window - 16,384 = 111,616.
+    const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
+    const catalog = join(workspace, 'catalog.json')
+    writeFileSync(catalog, JSON.stringify({ models: { [MODEL_ID]: { name: 'Test Model', limit: { context: 128_000, output: 32_768 } } } }))
+    const r = await boot({
+      workspace,
+      env: { KORTIX_LLM_CATALOG_FILE: catalog },
+      // 100,001 tokens is over 95,232 and under 111,616: the report the session meter shows.
+      script: [{ text: 'first answer', promptTokens: 100_000 }, ...SUMMARY, { text: 'answer after compaction' }],
+      prepare: compactEverything,
+    })
+    const root = r.service.runtime()!.rootId
+    await promptAndSettle(r, 'ALPHA question')
+    await promptAndSettle(r, 'BETA question')
+    await waitFor(() => r.service.runtime()!.idle())
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    const [turn] = compactionTurns(page)
+    expect(turn!.part).toMatchObject({ type: 'compaction', auto: true })
+    expect(page.messages.filter((m) => m.info.error)).toEqual([])
+    // The second prompt reaches the model after the summary cut, never with the full history.
+    expect(sentText(gateway.sent.at(-1)!)).toContain('SUMMARY-ONE')
+  })
+
   test('a context overflow compacts and retries: the turn completes with no error on the wire', async () => {
     const overflow = { status: 400, message: "This model's maximum context length is 64000 tokens. However, your messages resulted in 70000 tokens." }
     const r = await boot({ script: [{ text: 'first answer' }, overflow, ...SUMMARY, { text: 'answer after compaction' }], prepare: compactEverything })
