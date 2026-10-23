@@ -26,6 +26,18 @@ for (const status of [500, 502, 503, 504] as const) {
   }
 }
 
+test('a typed JSON 5xx body the thrower built keeps its code', async () => {
+  const app = new OpenAPIHono();
+  installHttpErrors(app);
+  const body = { error: true, message: 'Storage is unavailable, try again shortly', status: 503, code: 'synthetic_unavailable' };
+  app.get('/typed', () => {
+    throw new HTTPException(503, { message: body.message, res: Response.json(body, { status: 503 }) });
+  });
+  const response = await app.request('/typed');
+  expect(response.status).toBe(503);
+  expect(await response.json()).toEqual(body);
+});
+
 test('malformed JSON and unknown deep paths return safe envelopes', async () => {
   const app = new OpenAPIHono();
   installHttpErrors(app);
