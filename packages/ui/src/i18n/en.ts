@@ -7242,15 +7242,17 @@ const catalog = {
   },
   "turnShare": {
     "shareResponse": "Share response",
-    "title": "Share",
-    "close": "Close",
-    "whoCanRead": "Who can read",
-    "sessionMembers": "Session members",
-    "anyoneWithLink": "Anyone with the link",
-    "link": "Link",
+    "whatToInclude": "What to include",
+    "responseOnly": "Response only",
+    "responseOnlyHint": "Your prompt stays private",
+    "promptAndResponse": "Prompt and response",
+    "promptAndResponseHint": "Shows what you asked",
+    "publicLink": "Public link",
+    "publicLinkHint": "Anyone with the link can read it",
+    "turnOffLink": "Turn off link",
+    "cancel": "Cancel",
     "copyLink": "Copy link",
     "copied": "Copied",
-    "stopSharing": "Stop sharing",
     "linkCopied": "Link copied",
     "linkUpdated": "Link updated",
     "responseShared": "Response shared",
@@ -7265,7 +7267,6 @@ const catalog = {
     "goneTitle": "This response is no longer shared",
     "goneHint": "The person who shared it turned the link off.",
     "fallbackTitle": "Shared response",
-    "confirmStop": "Click again to stop sharing",
     "stopNote": "The link will stop working."
   }
 };

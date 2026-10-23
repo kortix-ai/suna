@@ -3626,11 +3626,11 @@ flow(
       });
 
       let token = '';
-      await ctx.step('the owner shares the turn → 200 with a /r/<token> URL, not stale', async () => {
+      await ctx.step('the owner shares the turn → 200 with a /share/response/<token> URL, not stale, prompt excluded', async () => {
         const res = (await owner.put(shareRoute, undefined, { params: turn })).status(200);
-        const share = res.json<{ share: { token: string; url: string; turn_id: string; stale: boolean } }>().share;
-        if (!share.token.startsWith('kps_') || !share.url.endsWith(`/r/${share.token}`)) throw new Error(`bad share ${JSON.stringify(share)}`);
-        if (share.turn_id !== 'msg_user_1' || share.stale !== false) throw new Error(`bad share ${JSON.stringify(share)}`);
+        const share = res.json<{ share: { token: string; url: string; turn_id: string; stale: boolean; include_prompt: boolean } }>().share;
+        if (!share.token.startsWith('kps_') || !share.url.endsWith(`/share/response/${share.token}`)) throw new Error(`bad share ${JSON.stringify(share)}`);
+        if (share.turn_id !== 'msg_user_1' || share.stale !== false || share.include_prompt !== false) throw new Error(`bad share ${JSON.stringify(share)}`);
         token = share.token;
       });
 
@@ -3639,6 +3639,7 @@ flow(
         const body = res.json<{ response: Record<string, unknown> }>();
         const expected = {
           title: 'Quarterly plan',
+          prompt: null,
           markdown: 'Hello\n\nWorld',
           agent_name: 'general',
           model_id: 'test-model',
@@ -3647,13 +3648,25 @@ flow(
         for (const [k, v] of Object.entries(expected)) {
           if (body.response[k] !== v) throw new Error(`response.${k} = ${JSON.stringify(body.response[k])}, expected ${JSON.stringify(v)}`);
         }
-        if (Object.keys(body.response).sort().join() !== 'agent_name,markdown,model_id,responded_at,shared_at,title') {
+        if (Object.keys(body.response).sort().join() !== 'agent_name,markdown,model_id,prompt,responded_at,shared_at,title') {
           throw new Error(`response leaks fields: ${Object.keys(body.response).join()}`);
         }
         const raw = JSON.stringify(body);
         for (const leak of ['SECRET PROMPT', 'PRIVATE REASONING', 'TOOL INPUT', 'SYNTHETIC', sessionId, project.id]) {
           if (raw.includes(leak)) throw new Error(`public response leaks ${leak}`);
         }
+      });
+
+      await ctx.step('re-share with include_prompt:true publishes the prompt text; false removes it; the URL never changes', async () => {
+        const withPrompt = (await owner.put(shareRoute, { include_prompt: true }, { params: turn })).status(200);
+        const a = withPrompt.json<{ share: { token: string; include_prompt: boolean } }>().share;
+        if (a.token !== token || a.include_prompt !== true) throw new Error(`bad share ${JSON.stringify(a)}`);
+        (await anon.get(publicRoute, { params: { token } })).status(200).body().has('$.response.prompt', 'SECRET PROMPT');
+        const without = (await owner.put(shareRoute, { include_prompt: false }, { params: turn })).status(200);
+        const b = without.json<{ share: { token: string; include_prompt: boolean } }>().share;
+        if (b.token !== token || b.include_prompt !== false) throw new Error(`bad share ${JSON.stringify(b)}`);
+        const res = (await anon.get(publicRoute, { params: { token } })).status(200).body().has('$.response.prompt', null);
+        void res;
       });
 
       await ctx.step('the response token opens no sandbox proxy and is not in the preview/file share list', async () => {

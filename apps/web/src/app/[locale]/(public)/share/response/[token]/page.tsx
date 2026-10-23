@@ -10,10 +10,10 @@ import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import Link from '@/components/site-link';
 import { getTranslations } from '@/i18n/get-translations';
 
-import { SHARE_PAGE_ROOT_CLASS } from '../../share/session/[token]/share-layout';
+import { SHARE_PAGE_ROOT_CLASS } from '../../session/[token]/share-layout';
 
 import { loadPublicResponse, plainTextExcerpt } from './public-response';
-import { ResponseMarkdown } from './response-markdown';
+import { ResponseMarkdown, SharedPrompt } from './response-markdown';
 
 type PublicResponseRouteProps = {
   params: Promise<{ locale: string; token: string }>;
@@ -98,6 +98,11 @@ export default async function PublicResponsePage({ params }: PublicResponseRoute
         <article className="mx-auto w-full max-w-3xl px-6 py-10">
           {meta.length > 0 ? (
             <p className="text-muted-foreground mb-6 text-xs">{meta.join(' · ')}</p>
+          ) : null}
+          {response.prompt ? (
+            <div className="mb-6">
+              <SharedPrompt text={response.prompt} />
+            </div>
           ) : null}
           <ResponseMarkdown markdown={response.markdown} />
         </article>

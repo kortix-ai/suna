@@ -318,6 +318,7 @@ describe('public response share', () => {
   test('getPublicResponse reads the anonymous route without credentials', async () => {
     const response = {
       title: 'T',
+      prompt: null,
       markdown: 'Hello',
       agent_name: null,
       model_id: 'm',

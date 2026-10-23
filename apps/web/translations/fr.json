@@ -22417,15 +22417,17 @@
   },
   "turnShare": {
     "shareResponse": "Partager la réponse",
-    "title": "Partager",
-    "close": "Fermer",
-    "whoCanRead": "Qui peut lire",
-    "sessionMembers": "Membres de la session",
-    "anyoneWithLink": "Toute personne disposant du lien",
-    "link": "Lien",
+    "whatToInclude": "Contenu à inclure",
+    "responseOnly": "Réponse seule",
+    "responseOnlyHint": "Votre prompt reste privé",
+    "promptAndResponse": "Prompt et réponse",
+    "promptAndResponseHint": "Montre ce que vous avez demandé",
+    "publicLink": "Lien public",
+    "publicLinkHint": "Toute personne disposant du lien peut la lire",
+    "turnOffLink": "Désactiver le lien",
+    "cancel": "Annuler",
     "copyLink": "Copier le lien",
     "copied": "Copié",
-    "stopSharing": "Arrêter le partage",
     "linkCopied": "Lien copié",
     "linkUpdated": "Lien mis à jour",
     "responseShared": "Réponse partagée",
@@ -22440,7 +22442,6 @@
     "goneTitle": "Cette réponse n'est plus partagée",
     "goneHint": "La personne qui l’a partagée a désactivé le lien.",
     "fallbackTitle": "Réponse partagée",
-    "confirmStop": "Cliquez à nouveau pour arrêter le partage",
     "stopNote": "Le lien cessera de fonctionner."
   }
 }

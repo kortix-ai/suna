@@ -372,9 +372,11 @@ export function getPublicShareByToken<T = Record<string, unknown>>(
   return requestJson<T>(`/p/public-share/${encodeURIComponent(token)}`, options);
 }
 
-/** One shared assistant response, as the anonymous `/r/:token` page reads it. */
+/** One shared assistant response, as the anonymous `/share/response/:token` page reads it. */
 export interface PublicResponse {
   title: string;
+  /** The prompt's text, when the sharer chose to publish it; else null. */
+  prompt: string | null;
   markdown: string;
   agent_name: string | null;
   model_id: string | null;

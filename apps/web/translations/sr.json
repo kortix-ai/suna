@@ -22417,15 +22417,17 @@
   },
   "turnShare": {
     "shareResponse": "Podeli odgovor",
-    "title": "Deljenje",
-    "close": "Zatvori",
-    "whoCanRead": "Ko može da čita",
-    "sessionMembers": "Članovi sesije",
-    "anyoneWithLink": "Svako ko ima link",
-    "link": "Link",
+    "whatToInclude": "Šta uključiti",
+    "responseOnly": "Samo odgovor",
+    "responseOnlyHint": "Vaš prompt ostaje privatan",
+    "promptAndResponse": "Prompt i odgovor",
+    "promptAndResponseHint": "Prikazuje šta ste pitali",
+    "publicLink": "Javni link",
+    "publicLinkHint": "Svako ko ima link može da ga pročita",
+    "turnOffLink": "Isključi link",
+    "cancel": "Otkaži",
     "copyLink": "Kopiraj link",
     "copied": "Kopirano",
-    "stopSharing": "Prekini deljenje",
     "linkCopied": "Link je kopiran",
     "linkUpdated": "Link je ažuriran",
     "responseShared": "Odgovor je podeljen",
@@ -22440,7 +22442,6 @@
     "goneTitle": "Ovaj odgovor se više ne deli",
     "goneHint": "Osoba koja ga je podelila isključila je link.",
     "fallbackTitle": "Podeljeni odgovor",
-    "confirmStop": "Kliknite ponovo da prekinete deljenje",
     "stopNote": "Link će prestati da radi."
   }
 }

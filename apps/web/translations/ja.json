@@ -22417,15 +22417,17 @@
   },
   "turnShare": {
     "shareResponse": "回答を共有",
-    "title": "共有",
-    "close": "閉じる",
-    "whoCanRead": "閲覧できるユーザー",
-    "sessionMembers": "セッションのメンバー",
-    "anyoneWithLink": "リンクを知っている全員",
-    "link": "リンク",
+    "whatToInclude": "含める内容",
+    "responseOnly": "回答のみ",
+    "responseOnlyHint": "プロンプトは非公開のままです",
+    "promptAndResponse": "プロンプトと回答",
+    "promptAndResponseHint": "質問内容を表示します",
+    "publicLink": "公開リンク",
+    "publicLinkHint": "リンクを知っている全員が閲覧できます",
+    "turnOffLink": "リンクを無効にする",
+    "cancel": "キャンセル",
     "copyLink": "リンクをコピー",
     "copied": "コピーしました",
-    "stopSharing": "共有を停止",
     "linkCopied": "リンクをコピーしました",
     "linkUpdated": "リンクを更新しました",
     "responseShared": "回答を共有しました",
@@ -22440,7 +22442,6 @@
     "goneTitle": "この回答は共有されなくなりました",
     "goneHint": "共有した人がリンクを無効にしました。",
     "fallbackTitle": "共有された回答",
-    "confirmStop": "もう一度クリックすると共有を停止します",
     "stopNote": "リンクは機能しなくなります。"
   }
 }

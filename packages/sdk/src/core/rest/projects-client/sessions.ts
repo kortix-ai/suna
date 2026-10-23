@@ -733,6 +733,8 @@ export interface TurnShare {
   created_at: string;
   snapshot_at: string;
   stale: boolean;
+  /** The snapshot also publishes the prompt that started the turn. */
+  include_prompt: boolean;
 }
 
 function turnSharePath(projectId: string, sessionId: string, turnId: string): string {
@@ -748,11 +750,21 @@ export async function getTurnShare(projectId: string, sessionId: string, turnId:
 
 /**
  * Share one response publicly, or refresh the snapshot of its live share (same
- * URL). Rejects with status 409 while the turn has no response text, 404 for an
- * unknown turn.
+ * URL). `include_prompt: true` also publishes the prompt's text (default off;
+ * every call sets it anew). Rejects with status 409 while the turn has no
+ * response text, 404 for an unknown turn.
  */
-export async function shareTurn(projectId: string, sessionId: string, turnId: string): Promise<{ share: TurnShare }> {
-  return unwrap(await backendApi.put<{ share: TurnShare }>(turnSharePath(projectId, sessionId, turnId)));
+export async function shareTurn(
+  projectId: string,
+  sessionId: string,
+  turnId: string,
+  options?: { include_prompt?: boolean },
+): Promise<{ share: TurnShare }> {
+  return unwrap(
+    await backendApi.put<{ share: TurnShare }>(turnSharePath(projectId, sessionId, turnId), {
+      include_prompt: options?.include_prompt === true,
+    }),
+  );
 }
 
 /** Revoke the public share of one turn. The link answers 410 afterwards. */

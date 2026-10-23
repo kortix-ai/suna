@@ -460,6 +460,9 @@ export async function resolvePublicShare(token: string) {
  */
 export interface ResponseSnapshot {
   title: string;
+  /** The prompt's text blocks; null unless the sharer chose `include_prompt`. */
+  prompt: string | null;
+  include_prompt: boolean;
   markdown: string;
   agent_name: string | null;
   model_id: string | null;
@@ -468,7 +471,7 @@ export interface ResponseSnapshot {
 
 /** The web page a response share opens at. */
 export function responseShareUrl(token: string): string {
-  return `${config.FRONTEND_URL.replace(/\/+$/, '')}/r/${token}`;
+  return `${config.FRONTEND_URL.replace(/\/+$/, '')}/share/response/${token}`;
 }
 
 const liveResponse = (sessionId: string, turnId: string) =>
@@ -547,6 +550,7 @@ export function serializeTurnShare(row: PublicShareRow, liveMarkdown: string | n
     created_at: row.createdAt.toISOString(),
     snapshot_at: (row.snapshotAt ?? row.createdAt).toISOString(),
     stale: liveMarkdown !== null && liveMarkdown !== (snapshot?.markdown ?? ''),
+    include_prompt: snapshot?.include_prompt === true,
   };
 }
 
@@ -584,6 +588,7 @@ export async function readPublicResponse(token: string) {
     ok: true as const,
     response: {
       title: s.title,
+      prompt: s.prompt ?? null,
       markdown: s.markdown,
       agent_name: s.agent_name,
       model_id: s.model_id,

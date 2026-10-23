@@ -379,10 +379,11 @@ const TURN_SHARE: TurnShare = {
   share_id: 'SH9',
   turn_id: 'msg_user_1',
   token: 'kps_abc',
-  url: 'https://kortix.test/r/kps_abc',
+  url: 'https://kortix.test/share/response/kps_abc',
   created_at: '2026-10-23T00:00:00.000Z',
   snapshot_at: '2026-10-23T00:00:00.000Z',
   stale: false,
+  include_prompt: false,
 };
 
 test('getTurnShare GETs the share of one turn and answers null when none is live', async () => {
@@ -393,12 +394,21 @@ test('getTurnShare GETs the share of one turn and answers null when none is live
   expect(result).toEqual({ share: null });
 });
 
-test('shareTurn PUTs the turn share with no body and returns the live share', async () => {
+test('shareTurn PUTs the turn share, prompt excluded by default, and returns the live share', async () => {
   nextResponse = { status: 200, body: { share: TURN_SHARE } };
   const result = await shareTurn('P1', 'S1', 'msg_user_1');
   expect(last().url).toContain('/projects/P1/sessions/S1/turns/msg_user_1/share');
   expect(last().method).toBe('PUT');
-  expect(result.share.url).toBe('https://kortix.test/r/kps_abc');
+  expect(last().body).toEqual({ include_prompt: false });
+  expect(result.share.url).toBe('https://kortix.test/share/response/kps_abc');
+});
+
+test('shareTurn sends include_prompt in the PUT body when asked', async () => {
+  nextResponse = { status: 200, body: { share: { ...TURN_SHARE, include_prompt: true } } };
+  const result = await shareTurn('P1', 'S1', 'msg_user_1', { include_prompt: true });
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({ include_prompt: true });
+  expect(result.share.include_prompt).toBe(true);
 });
 
 test('shareTurn rejects with the status when the turn has no text yet', async () => {

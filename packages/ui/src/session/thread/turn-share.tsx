@@ -4,42 +4,33 @@
  * Share ONE assistant response through a public, read-only link.
  *
  * Private by default: the dialog reads the turn's live share
- * (`getTurnShare`) and shows "Session members" until a share exists. The
- * server snapshots the response text when it shares (`shareTurn`), so the
- * link keeps what the reader saw here even if the turn is edited later —
- * `share.stale` says when it was, and "Update link" re-snapshots under the
- * same URL. The preview renders the text the way the public page does
- * (`trust="untrusted"`, no generative UI), so it never promises more than the
- * link shows.
+ * (`getTurnShare`) and the "Public link" switch stays off until one exists.
+ * The server snapshots the text when it shares (`shareTurn`), with the prompt
+ * only when the person picks "Prompt and response". A re-share keeps the token
+ * and URL, so changing the scope or "Update link" (after `share.stale`) never
+ * breaks a link someone already holds. Turning the link off is destructive and
+ * takes a second, explicit click.
  */
 
-import {
-  type TurnShare,
-  getTurnShare,
-  shareTurn,
-  unshareTurn,
-} from '@kortix/sdk';
+import { type TurnShare, getTurnShare, shareTurn, unshareTurn } from '@kortix/sdk';
 import { useProjectSession } from '@kortix/sdk/react';
-import {
-  CheckIcon,
-  GlobeIcon,
-  LockIcon,
-  ShareNetworkIcon,
-  WarningCircleIcon,
-} from '@phosphor-icons/react';
+import { CheckIcon, ShareNetworkIcon, WarningCircleIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { RadioGroup as RadioGroupPrimitive } from 'radix-ui';
 import { useEffect, useRef, useState } from 'react';
 
 import { Copy } from '../../icons/copy';
-import { useLocale, useTranslations } from '../../i18n';
-import { UnifiedMarkdown } from '../../markdown/unified-markdown';
+import { useTranslations } from '../../i18n';
+import { cn } from '../../lib/utils';
 import { Button } from '../../primitives/button';
 import Hint from '../../primitives/hint';
 import { Input } from '../../primitives/input';
 import { Label } from '../../primitives/label';
 import Loading from '../../primitives/loading';
 import { Modal, ModalContent, ModalTitle } from '../../primitives/modal';
-import { RadioGroup, RadioGroupItem } from '../../primitives/radio-group';
+import { RadioGroup } from '../../primitives/radio-group';
+import { Separator } from '../../primitives/separator';
+import { Switch } from '../../primitives/switch';
 import { successToast } from '../../primitives/toast';
 import { useUiHostConfig } from '../../providers/ui-provider';
 
@@ -50,11 +41,6 @@ export interface TurnShareTarget {
   /** The user message id that opens the turn (`SessionLogTurn.id`). */
   turnId: string;
 }
-
-type Audience = 'members' | 'public';
-
-/** How long an armed "Stop sharing" waits for its second click. */
-const STOP_CONFIRM_MS = 4_000;
 
 export function turnShareQueryKey({ projectId, sessionId, turnId }: TurnShareTarget) {
   return ['turn-share', projectId, sessionId, turnId] as const;
@@ -73,31 +59,14 @@ function errorStatus(error: unknown): number | undefined {
  * refuse (`can_manage_sharing === false`, the same verdict `guardSessionSharing`
  * computes).
  */
-export function TurnShareButton({
-  projectId,
-  sessionId,
-  turnId,
-  text,
-  agentName,
-  respondedAt,
-}: Partial<TurnShareTarget> & {
-  /** The response text as the transcript copies it. */
-  text: string;
-  agentName?: string | null;
-  respondedAt?: number | null;
-}) {
+export function TurnShareButton({ projectId, sessionId, turnId }: Partial<TurnShareTarget>) {
   const t = useTranslations('turnShare');
   const { publicSharesEnabled } = useUiHostConfig();
   const { data: session } = useProjectSession(projectId, sessionId);
   const [open, setOpen] = useState(false);
 
-  if (!publicSharesEnabled || !projectId || !sessionId || !turnId || !text) return null;
+  if (!publicSharesEnabled || !projectId || !sessionId || !turnId) return null;
   if (session?.can_manage_sharing === false) return null;
-
-  const title =
-    session?.custom_name?.trim() ||
-    session?.name?.trim() ||
-    (text.split('\n').find((line) => line.trim()) ?? '').replace(/^[#>*\-\s]+/, '').slice(0, 80);
 
   return (
     <>
@@ -114,64 +83,31 @@ export function TurnShareButton({
       </Hint>
       <Modal open={open} onOpenChange={setOpen}>
         {/* Mounted only while open: the share read runs when someone asks. */}
-        {open ? (
-          <TurnShareDialogContent
-            target={{ projectId, sessionId, turnId }}
-            text={text}
-            title={title}
-            agentName={agentName ?? session?.agent_name ?? null}
-            respondedAt={respondedAt ?? null}
-          />
-        ) : null}
+        {open ? <TurnShareDialogContent target={{ projectId, sessionId, turnId }} /> : null}
       </Modal>
     </>
   );
 }
 
-function TurnShareDialogContent({
-  target,
-  text,
-  title,
-  agentName,
-  respondedAt,
-}: {
-  target: TurnShareTarget;
-  text: string;
-  title: string;
-  agentName: string | null;
-  respondedAt: number | null;
-}) {
+type PublishInput = { includePrompt: boolean; reason: 'share' | 'scope' | 'update' };
+
+function TurnShareDialogContent({ target }: { target: TurnShareTarget }) {
   const t = useTranslations('turnShare');
-  const locale = useLocale();
   const queryClient = useQueryClient();
   const key = turnShareQueryKey(target);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // The scope the person picked; null = whatever the live share says.
+  const [pickedIncludePrompt, setPickedIncludePrompt] = useState<boolean | null>(null);
+  // "Turn off link" waits for this second, explicit click.
+  const [confirmingOff, setConfirmingOff] = useState(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Revoking kills a link people may already hold, so it takes two clicks:
-  // the first arms "Stop sharing", a second within STOP_CONFIRM_MS revokes.
-  const [confirmingStop, setConfirmingStop] = useState(false);
-  const stopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const stopButton = useRef<HTMLButtonElement>(null);
   useEffect(
     () => () => {
       if (copiedTimer.current) clearTimeout(copiedTimer.current);
-      if (stopTimer.current) clearTimeout(stopTimer.current);
     },
     [],
   );
-  const resetStop = () => {
-    if (stopTimer.current) clearTimeout(stopTimer.current);
-    setConfirmingStop(false);
-  };
-  const armStop = () => {
-    setConfirmingStop(true);
-    if (stopTimer.current) clearTimeout(stopTimer.current);
-    stopTimer.current = setTimeout(() => setConfirmingStop(false), STOP_CONFIRM_MS);
-    // From the "Session members" row: the second click belongs on the button,
-    // and its blur is what disarms it.
-    stopButton.current?.focus();
-  };
 
   const query = useQuery({
     queryKey: key,
@@ -181,6 +117,7 @@ function TurnShareDialogContent({
     staleTime: 30_000,
   });
   const share: TurnShare | null = query.data?.share ?? null;
+  const includePrompt = pickedIncludePrompt ?? share?.include_prompt ?? false;
 
   const copyUrl = async (url: string): Promise<boolean> => {
     try {
@@ -195,119 +132,150 @@ function TurnShareDialogContent({
   };
 
   const publish = useMutation({
-    mutationFn: (_reason: 'share' | 'update') =>
-      shareTurn(target.projectId, target.sessionId, target.turnId),
+    mutationFn: ({ includePrompt: include_prompt }: PublishInput) =>
+      shareTurn(target.projectId, target.sessionId, target.turnId, { include_prompt }),
     onMutate: () => setError(null),
-    onSuccess: async (data, reason) => {
+    onSuccess: async (data, { reason }) => {
       queryClient.setQueryData(key, data);
-      if (reason === 'update') {
+      setPickedIncludePrompt(null);
+      if (reason !== 'share') {
         successToast(t('linkUpdated'));
         return;
       }
       // Sharing is the moment the person wants the link: put it on the clipboard.
       successToast((await copyUrl(data.share.url)) ? t('linkCopied') : t('responseShared'));
     },
-    onError: (err) => setError(errorStatus(err) === 409 ? t('noText') : t('shareError')),
+    onError: (err, { reason }) => {
+      // A failed scope change leaves the live share as it was: show its scope.
+      if (reason === 'scope') setPickedIncludePrompt(null);
+      setError(errorStatus(err) === 409 ? t('noText') : t('shareError'));
+    },
   });
 
   const unpublish = useMutation({
     mutationFn: () => unshareTurn(target.projectId, target.sessionId, target.turnId),
-    onMutate: () => {
-      setError(null);
-      resetStop();
+    onMutate: () => setError(null),
+    onSuccess: (data) => {
+      queryClient.setQueryData(key, data);
+      setConfirmingOff(false);
     },
-    onSuccess: (data) => queryClient.setQueryData(key, data),
     onError: () => setError(t('unshareError')),
   });
 
   const pending = query.isLoading || publish.isPending || unpublish.isPending;
-  const audience: Audience = share ? 'public' : 'members';
   const shownError = error ?? (query.isError ? t('loadError') : null);
 
-  const meta = [
-    agentName,
-    respondedAt
-      ? new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(respondedAt)
-      : null,
-  ].filter(Boolean);
+  const pickScope = (value: string) => {
+    const next = value === 'prompt';
+    if (next === includePrompt) return;
+    setPickedIncludePrompt(next);
+    // Private: the pick waits for the switch. Public: re-share under the same URL.
+    if (share) publish.mutate({ includePrompt: next, reason: 'scope' });
+  };
 
   return (
-    <ModalContent className="space-y-0 lg:max-w-4xl">
-      <div className="flex min-h-0 flex-col md:h-140 md:flex-row">
-        {/* The response, as the link shows it. */}
-        <div className="bg-background relative flex max-h-64 min-h-0 flex-col border-b md:max-h-none md:flex-1 md:border-b-0">
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-6 pb-12 md:px-8">
-            {meta.length > 0 ? (
-              <p className="text-muted-foreground text-xs">{meta.join(' · ')}</p>
-            ) : null}
-            {title ? (
-              <p className="text-foreground text-xl font-medium text-balance">{title}</p>
-            ) : null}
-            <UnifiedMarkdown content={text} trust="untrusted" />
-          </div>
-          <div
-            aria-hidden="true"
-            className="from-background pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-linear-to-t to-transparent"
-          />
+    <ModalContent className="space-y-0 lg:max-w-lg">
+      <div className="flex flex-col gap-5 p-5">
+        <ModalTitle className="pr-10 text-lg font-medium">{t('shareResponse')}</ModalTitle>
+
+        <div className="space-y-2.5">
+          <Label id="turn-share-scope">{t('whatToInclude')}</Label>
+          <RadioGroup
+            aria-labelledby="turn-share-scope"
+            value={includePrompt ? 'prompt' : 'response'}
+            onValueChange={pickScope}
+            disabled={pending}
+            className="grid grid-cols-1 gap-2.5 sm:grid-cols-2"
+          >
+            <ScopeTile
+              value="response"
+              title={t('responseOnly')}
+              hint={t('responseOnlyHint')}
+              withPrompt={false}
+            />
+            <ScopeTile
+              value="prompt"
+              title={t('promptAndResponse')}
+              hint={t('promptAndResponseHint')}
+              withPrompt
+            />
+          </RadioGroup>
         </div>
 
-        {/* The controls. */}
-        <div className="flex min-h-0 shrink-0 flex-col gap-5 p-6 md:w-76 md:border-l">
-          <ModalTitle className="pr-10 text-lg font-medium">{t('title')}</ModalTitle>
+        <Separator />
 
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <Label id="turn-share-audience">{t('whoCanRead')}</Label>
-              {pending ? <Loading className="text-muted-foreground size-4 shrink-0" /> : null}
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <Label htmlFor="turn-share-public">{t('publicLink')}</Label>
+              <p className="text-muted-foreground text-xs">{t('publicLinkHint')}</p>
             </div>
-            <RadioGroup
-              aria-labelledby="turn-share-audience"
-              aria-busy={pending || undefined}
-              value={audience}
+            {pending ? <Loading className="text-muted-foreground size-4 shrink-0" /> : null}
+            <Switch
+              id="turn-share-public"
+              checked={!!share && !confirmingOff}
               disabled={pending}
-              onValueChange={(next) => {
-                if (next === audience) return;
-                if (next === 'public') publish.mutate('share');
-                else armStop();
+              aria-busy={pending || undefined}
+              onCheckedChange={(on) => {
+                if (on && confirmingOff) setConfirmingOff(false);
+                else if (on) publish.mutate({ includePrompt, reason: 'share' });
+                else if (share) setConfirmingOff(true);
               }}
-              className="gap-2"
-            >
-              <RadioGroupItem
-                value="members"
-                variant="outline"
-                size="lg"
-                className="has-data-[state=checked]:border-ring"
-                label={
-                  <span className="flex items-center gap-2">
-                    <LockIcon className="text-muted-foreground size-4 shrink-0" />
-                    {t('sessionMembers')}
-                  </span>
-                }
-              />
-              <RadioGroupItem
-                value="public"
-                variant="outline"
-                size="lg"
-                className="has-data-[state=checked]:border-ring"
-                label={
-                  <span className="flex items-center gap-2">
-                    <GlobeIcon className="text-muted-foreground size-4 shrink-0" />
-                    {t('anyoneWithLink')}
-                  </span>
-                }
-              />
-            </RadioGroup>
+            />
           </div>
 
-          {share ? (
-            <div className="space-y-2">
-              <Label htmlFor="turn-share-url">{t('link')}</Label>
-              <Input
-                id="turn-share-url"
-                readOnly
-                value={share.url}
-                onFocus={(event) => event.currentTarget.select()}
-              />
+          {share && confirmingOff ? (
+            <div
+              role="group"
+              aria-label={t('turnOffLink')}
+              className="flex flex-wrap items-center justify-between gap-2"
+            >
+              <p className="text-muted-foreground text-xs">{t('stopNote')}</p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline-ghost"
+                  size="xs"
+                  disabled={pending}
+                  onClick={() => setConfirmingOff(false)}
+                >
+                  {t('cancel')}
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="xs"
+                  disabled={pending}
+                  onClick={() => unpublish.mutate()}
+                >
+                  {t('turnOffLink')}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {share && !confirmingOff ? (
+            <>
+              <div className="flex gap-2">
+                <Input
+                  readOnly
+                  aria-label={t('publicLink')}
+                  value={share.url}
+                  onFocus={(event) => event.currentTarget.select()}
+                />
+                <Button
+                  className="shrink-0"
+                  disabled={pending}
+                  onClick={() =>
+                    void copyUrl(share.url).then((ok) => !ok && setError(t('copyError')))
+                  }
+                >
+                  {copied ? (
+                    <CheckIcon className="size-4 shrink-0" />
+                  ) : (
+                    <Copy className="size-4 shrink-0" />
+                  )}
+                  {copied ? t('copied') : t('copyLink')}
+                </Button>
+              </div>
               {share.stale ? (
                 <p className="text-muted-foreground flex flex-wrap items-center gap-1 text-xs">
                   {t('stale')} ·
@@ -316,19 +284,13 @@ function TurnShareDialogContent({
                     size="xs"
                     className="h-auto px-0 text-xs"
                     disabled={pending}
-                    onClick={() => publish.mutate('update')}
+                    onClick={() => publish.mutate({ includePrompt, reason: 'update' })}
                   >
                     {t('updateLink')}
                   </Button>
                 </p>
               ) : null}
-            </div>
-          ) : null}
-
-          {confirmingStop ? (
-            <p role="status" className="text-muted-foreground text-xs">
-              {t('stopNote')}
-            </p>
+            </>
           ) : null}
 
           {shownError ? (
@@ -337,36 +299,54 @@ function TurnShareDialogContent({
               {shownError}
             </p>
           ) : null}
-
-          <div className="mt-auto space-y-2">
-            {share ? (
-              <>
-                <Button
-                  size="lg"
-                  className="w-full"
-                  disabled={pending}
-                  onClick={() => void copyUrl(share.url).then((ok) => !ok && setError(t('copyError')))}
-                >
-                  {copied ? <CheckIcon className="size-4 shrink-0" /> : <Copy className="size-4 shrink-0" />}
-                  {copied ? t('copied') : t('copyLink')}
-                </Button>
-                <div className="flex justify-end">
-                  <Button
-                    ref={stopButton}
-                    variant="destructive"
-                    size="xs"
-                    disabled={pending}
-                    onClick={() => (confirmingStop ? unpublish.mutate() : armStop())}
-                    onBlur={resetStop}
-                  >
-                    {confirmingStop ? t('confirmStop') : t('stopSharing')}
-                  </Button>
-                </div>
-              </>
-            ) : null}
-          </div>
         </div>
       </div>
     </ModalContent>
+  );
+}
+
+/** Widths of the skeleton text lines, longest first. */
+const RESPONSE_LINES = ['w-full', 'w-11/12', 'w-2/3', 'w-5/6', 'w-1/2'];
+const RESPONSE_LINES_UNDER_PROMPT = ['w-full', 'w-5/6', 'w-2/3'];
+
+/**
+ * One scope choice: a skeleton of what the reader sees, a title and a hint.
+ * The prompt variant draws the prompt bubble top-right, where the transcript
+ * puts it. Outer `rounded-xl` minus the `p-2` inset gives the preview's
+ * `rounded-sm` (14 - 7.4 ≈ 6.6px), so the corners stay concentric.
+ */
+function ScopeTile({
+  value,
+  title,
+  hint,
+  withPrompt,
+}: {
+  value: string;
+  title: string;
+  hint: string;
+  withPrompt: boolean;
+}) {
+  return (
+    <RadioGroupPrimitive.Item
+      value={value}
+      className={cn(
+        'border-border flex flex-col gap-2.5 rounded-xl border p-2 text-left',
+        'hover:bg-hover transition-colors',
+        'data-[state=checked]:border-foreground',
+        'focus-visible:ring-ring outline-none focus-visible:ring-2',
+        'disabled:pointer-events-none disabled:opacity-50',
+      )}
+    >
+      <span aria-hidden="true" className="bg-background flex h-24 flex-col gap-1.5 rounded-sm p-3">
+        {withPrompt ? <span className="bg-muted ml-auto h-4 w-3/5 rounded-sm" /> : null}
+        {(withPrompt ? RESPONSE_LINES_UNDER_PROMPT : RESPONSE_LINES).map((width, index) => (
+          <span key={index} className={cn('bg-border h-1.5 rounded-full', width)} />
+        ))}
+      </span>
+      <span className="flex flex-col gap-0.5 px-1 pb-1">
+        <span className="text-foreground text-sm font-medium">{title}</span>
+        <span className="text-muted-foreground text-xs">{hint}</span>
+      </span>
+    </RadioGroupPrimitive.Item>
   );
 }

@@ -9,8 +9,9 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `getTurnShare`, `shareTurn`, `unshareTurn` and the `TurnShare` type: the public share of one
   turn's response (`/projects/:id/sessions/:sid/turns/:turnId/share`, GET / PUT / DELETE). The
   server publishes the response text as a snapshot; `shareTurn` again refreshes it and keeps the URL.
+  `shareTurn(…, { include_prompt: true })` also publishes the prompt text (`TurnShare.include_prompt`).
 - `getPublicResponse` and the `PublicResponse` type: the anonymous read of a shared response
-  (`GET /public/responses/:token`). Throws `HostBoundaryError` with `status` 404 or 410.
+  (`GET /public/responses/:token`); `prompt` is null unless the sharer included it. Throws `HostBoundaryError` with `status` 404 or 410.
 
 ### Changed (pi runs every new session; OpenCode is sunset)
 - `FeatureFlagKey` `'pi_harness'` is deprecated and no longer a flag: absent from `FEATURE_FLAG_KEYS`

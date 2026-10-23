@@ -6,7 +6,8 @@
  * `SessionLogTurn`).
  *
  * Only visible `text` blocks are published. Reasoning, tool calls and output,
- * attachments, synthetic harness text, and the user prompt never are.
+ * attachments and synthetic harness text never are. The prompt's text is
+ * published only when the sharer asks for it (`include_prompt`).
  */
 import { sessionLogMessages } from '@kortix/db';
 import type { SessionLogMessage } from '@kortix/api-contract/session-log';
@@ -41,10 +42,12 @@ export async function buildResponseSnapshot(input: {
   projectId: string;
   turnId: string;
   sessionMetadata: unknown;
+  /** Publish the prompt's text too. */
+  includePrompt: boolean;
 }): Promise<ResponseSnapshotResult> {
   const live = and(eq(sessionLogMessages.sessionId, input.sessionId), isNull(sessionLogMessages.deletedAt));
   const [prompt] = await db
-    .select({ messageId: sessionLogMessages.messageId })
+    .select({ record: sessionLogMessages.record })
     .from(sessionLogMessages)
     .where(and(live, eq(sessionLogMessages.messageId, input.turnId), eq(sessionLogMessages.role, 'user')))
     .limit(1);
@@ -66,9 +69,9 @@ export async function buildResponseSnapshot(input: {
     )
     .orderBy(asc(sessionLogMessages.seq));
   // F3: a text over 256 kB is a preview in the row; publish the whole text.
-  const messages = await rehydrateLargeTexts(
+  const [user, ...messages] = await rehydrateLargeTexts(
     { projectId: input.projectId, sessionId: input.sessionId },
-    rows.map((r) => r.record as unknown as SessionLogMessage),
+    [prompt.record, ...rows.map((r) => r.record)] as unknown as SessionLogMessage[],
   );
   const markdown = messages.flatMap(textOf).join('\n\n');
   if (!markdown) return { ok: false, status: 409, error: 'This response has no text to share yet' };
@@ -79,6 +82,9 @@ export async function buildResponseSnapshot(input: {
     ok: true,
     snapshot: {
       title: sessionTitle(input.sessionMetadata) ?? markdown.split('\n')[0]!.replace(/^#+\s*/, '').slice(0, 80),
+      // Text blocks only: attachments and files are never published.
+      prompt: input.includePrompt ? textOf(user!).join('\n\n') || null : null,
+      include_prompt: input.includePrompt,
       markdown,
       agent_name: named.find((m) => m.agent)?.agent ?? null,
       model_id: named.find((m) => m.model?.model)?.model?.model ?? null,

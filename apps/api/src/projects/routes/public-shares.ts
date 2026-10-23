@@ -27,6 +27,7 @@ const TurnShareSchema = z.object({
   created_at: z.string(),
   snapshot_at: z.string(),
   stale: z.boolean().openapi({ description: 'The live response text differs from the published snapshot.' }),
+  include_prompt: z.boolean().openapi({ description: 'The snapshot also publishes the prompt text.' }),
 });
 const TurnParams = z.object({ projectId: z.string(), sessionId: z.string(), turnId: z.string().min(1).max(200) });
 
@@ -244,7 +245,7 @@ export function registerPublicSharesRoutes(): void {
 
       const row = await getLiveResponseShare(sessionId, turnId);
       if (!row) return c.json({ share: null }, 200);
-      const live = await buildResponseSnapshot({ sessionId, projectId, turnId, sessionMetadata: guard.session.row.metadata });
+      const live = await buildResponseSnapshot({ sessionId, projectId, turnId, sessionMetadata: guard.session.row.metadata, includePrompt: false });
       return c.json({ share: serializeTurnShare(row, live.ok ? live.snapshot.markdown : null) }, 200);
     },
   );
@@ -256,9 +257,17 @@ export function registerPublicSharesRoutes(): void {
       tags: ['sessions'],
       summary: 'Share one assistant response publicly, or refresh its snapshot',
       description:
-        'Publishes the text of the response as an immutable snapshot built from the stored session log. A second call re-snapshots the same share: the URL does not change. Reasoning, tool calls, files and the prompt are never published.',
+        'Publishes the text of the response as an immutable snapshot built from the stored session log. A second call re-snapshots the same share: the URL does not change. `include_prompt: true` also publishes the prompt text (default false; every call sets it anew). Reasoning, tool calls and files are never published.',
       ...auth,
-      request: { params: TurnParams },
+      request: {
+        params: TurnParams,
+        body: {
+          required: false,
+          content: { 'application/json': { schema: lenientBody({
+            include_prompt: z.boolean().optional().openapi({ description: 'Also publish the prompt text. Default false.' }),
+          }) } },
+        },
+      },
       responses: {
         200: json(z.object({ share: TurnShareSchema }), 'The live share'),
         ...errors(400, 403, 404, 409),
@@ -272,7 +281,14 @@ export function registerPublicSharesRoutes(): void {
       const guard = await guardSessionSharing(c, loaded, sessionId, 'mint');
       if (!guard.ok) return c.json({ error: guard.error }, guard.status);
 
-      const built = await buildResponseSnapshot({ sessionId, projectId, turnId, sessionMetadata: guard.session.row.metadata });
+      const body = await readJsonObject(c);
+      const built = await buildResponseSnapshot({
+        sessionId,
+        projectId,
+        turnId,
+        sessionMetadata: guard.session.row.metadata,
+        includePrompt: body.include_prompt === true,
+      });
       if (!built.ok) return c.json({ error: built.error }, built.status);
       const row = await upsertResponseShare({
         sessionId,

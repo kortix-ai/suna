@@ -2070,7 +2070,6 @@ function TurnFooter(
                   projectId,
                   sessionId: projectSessionId,
                   turnId: turn.id,
-                  agentName: turn.assistant.at(-1)?.agent ?? null,
                 }
           }
         />
@@ -2151,10 +2150,12 @@ function TurnActionBar({
   costInfo: TurnSettledMeta['costInfo'];
   servedModel?: TurnServedModel;
   tHardcodedUi: ReturnType<typeof useTranslations>;
-  share?: { projectId?: string; sessionId?: string; turnId: string; agentName: string | null };
+  share?: { projectId?: string; sessionId?: string; turnId: string };
 }) {
   const [copied, setCopied] = useState(false);
-  // When inline content is active, the response is every text part (not just the last one).
+// ---- Copy response ----
+const handleCopy = async () => {
+  // When inline content is active, copy all text parts (not just the last one)
   const textToCopy = inlineContentParts
     ? inlineContentParts
         .flatMap((item) => {
@@ -2164,8 +2165,6 @@ function TurnActionBar({
         })
         .join('\n\n')
     : response;
-// ---- Copy response ----
-const handleCopy = async () => {
   if (!textToCopy) return;
   try {
     await copyGenuiText(textToCopy);
@@ -2206,14 +2205,7 @@ const handleCopy = async () => {
           </Button>
       ) : null}
       {response && share ? (
-        <TurnShareButton
-          projectId={share.projectId}
-          sessionId={share.sessionId}
-          turnId={share.turnId}
-          text={textToCopy}
-          agentName={share.agentName}
-          respondedAt={turnEndedAt}
-        />
+        <TurnShareButton projectId={share.projectId} sessionId={share.sessionId} turnId={share.turnId} />
       ) : null}
         <SessionTurnMeta
           endedAt={turnEndedAt}

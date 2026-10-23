@@ -22417,15 +22417,17 @@
   },
   "turnShare": {
     "shareResponse": "Condividi risposta",
-    "title": "Condividi",
-    "close": "Chiudi",
-    "whoCanRead": "Chi può leggere",
-    "sessionMembers": "Membri della sessione",
-    "anyoneWithLink": "Chiunque abbia il link",
-    "link": "Link",
+    "whatToInclude": "Cosa includere",
+    "responseOnly": "Solo la risposta",
+    "responseOnlyHint": "Il tuo prompt resta privato",
+    "promptAndResponse": "Prompt e risposta",
+    "promptAndResponseHint": "Mostra cosa hai chiesto",
+    "publicLink": "Link pubblico",
+    "publicLinkHint": "Chiunque abbia il link può leggerla",
+    "turnOffLink": "Disattiva link",
+    "cancel": "Annulla",
     "copyLink": "Copia link",
     "copied": "Copiato",
-    "stopSharing": "Interrompi condivisione",
     "linkCopied": "Link copiato",
     "linkUpdated": "Link aggiornato",
     "responseShared": "Risposta condivisa",
@@ -22440,7 +22442,6 @@
     "goneTitle": "Questa risposta non è più condivisa",
     "goneHint": "La persona che l’ha condivisa ha disattivato il link.",
     "fallbackTitle": "Risposta condivisa",
-    "confirmStop": "Fai di nuovo clic per interrompere la condivisione",
     "stopNote": "Il link smetterà di funzionare."
   }
 }

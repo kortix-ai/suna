@@ -1,6 +1,6 @@
 /**
  * Anonymous, read-only view of one shared assistant response —
- * `GET /v1/public/responses/:token`. Backs the web page `/r/:token`.
+ * `GET /v1/public/responses/:token`. Backs the web page `/share/response/:token`.
  *
  * The token is the bearer capability (`kps_` + 128 random bits). The answer is
  * ONLY the stored snapshot: no session id, project id, prompt, or sandbox
@@ -16,6 +16,7 @@ export const publicResponsesApp = makeOpenApiApp();
 
 const PublicResponseSchema = z.object({
   title: z.string(),
+  prompt: z.string().nullable(),
   markdown: z.string(),
   agent_name: z.string().nullable(),
   model_id: z.string().nullable(),
