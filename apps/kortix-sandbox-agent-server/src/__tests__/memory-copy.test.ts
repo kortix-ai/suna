@@ -180,6 +180,32 @@ describe('syncMemoryCopy', () => {
     expect(version()).toStartWith('7\n')
   })
 
+  test('with prune, a copy folder the turn no longer lists is removed; without it (remember) nothing is', async () => {
+    const PERSONAL: MemoryLayerRef = { layer_id: 'layer-2', version: '7', dir: 'personal' }
+    const COMPANY: MemoryLayerRef = { layer_id: 'layer-0', version: '7', dir: 'company' } // the fake export answers version 7
+    const fetch = api(() => Response.json(EXPORT))
+    await syncMemoryCopy([COMPANY, CHANNEL, PERSONAL], ENV, { root, fetch, prune: true })
+    expect(readdirSync(root).sort()).toEqual(['channel', 'company', 'personal'])
+    // remember syncs the one layer it wrote: the others stay.
+    await syncMemoryCopy([CHANNEL], ENV, { root, fetch })
+    expect(readdirSync(root).sort()).toEqual(['channel', 'company', 'personal'])
+    // The private thread became shared: the next turn lists no personal layer.
+    await syncMemoryCopy([COMPANY, CHANNEL], ENV, { root, fetch, prune: true })
+    expect(readdirSync(root).sort()).toEqual(['channel', 'company'])
+    expect(calls).toHaveLength(3) // the listed layers were current: nothing refetched
+    // A link where an unlisted folder belongs is removed, not followed; an empty list removes every folder.
+    const elsewhere = mkdtempSync(join(tmpdir(), 'memory-copy-elsewhere-'))
+    try {
+      writeFileSync(join(elsewhere, 'keep.txt'), 'mine')
+      symlinkSync(elsewhere, join(root, 'personal'))
+      await syncMemoryCopy([], ENV, { root, fetch, prune: true })
+      expect(readdirSync(root)).toEqual([])
+      expect(readdirSync(elsewhere)).toEqual(['keep.txt'])
+    } finally {
+      rmSync(elsewhere, { recursive: true, force: true })
+    }
+  })
+
   test('a link or a file where the folder belongs is replaced, never followed; leftovers of a crashed sync are removed', async () => {
     const elsewhere = mkdtempSync(join(tmpdir(), 'memory-copy-elsewhere-'))
     try {
@@ -206,7 +232,8 @@ describe('the Kortix prompt route', () => {
       parts,
       memoryLayers: [{ layer_id: 'layer-1', version: '7', dir: 'channel' }, { layer_id: 'layer-0', version: '12', dir: 'company' }],
     })
-    expect(parseRuntimePromptBody({ parts, memory_layers: [] })).toEqual({ parts })
+    // An empty list is a thread with no layer: every copy folder goes.
+    expect(parseRuntimePromptBody({ parts, memory_layers: [] })).toEqual({ parts, memoryLayers: [] })
     expect(parseRuntimePromptBody({ parts })).toEqual({ parts })
     const error = 'memory_layers must be [{ layer_id, version, dir: company | channel | personal }], each dir once'
     const layer = (dir: string) => ({ layer_id: 'l', version: 1, dir })
@@ -234,9 +261,9 @@ describe('the Kortix prompt route', () => {
     } as unknown as HarnessTurnService
     const app = createRuntimeRouter({ sandboxToken: 'tok' } as Parameters<typeof createRuntimeRouter>[0], {} as Parameters<typeof createRuntimeRouter>[1], {
       turns,
-      syncMemory: async (layers) => {
+      syncMemory: async (layers, _env, options) => {
         await Bun.sleep(0)
-        order.push(`sync ${layers.map((layer) => `${layer.dir}@${layer.version}`).join(',')}`)
+        order.push(`sync ${layers.map((layer) => `${layer.dir}@${layer.version}`).join(',')} prune=${options?.prune}`)
       },
     })
     const post = (body: Record<string, unknown>) =>
@@ -245,7 +272,7 @@ describe('the Kortix prompt route', () => {
     expect((await post({ message_id: 'msg_1', parts, memory_layers: [{ layer_id: 'layer-1', version: 7, dir: 'channel' }] })).status).toBe(202)
     expect((await post({ message_id: 'msg_2', parts, no_reply: true, memory_layers: [{ layer_id: 'layer-1', version: 8, dir: 'channel' }] })).status).toBe(202)
     expect((await post({ message_id: 'msg_3', parts })).status).toBe(202)
-    expect(order).toEqual(['sync channel@7', 'prompt msg_1', 'prompt msg_2', 'prompt msg_3'])
+    expect(order).toEqual(['sync channel@7 prune=true', 'prompt msg_1', 'prompt msg_2', 'prompt msg_3'])
   })
 
   test('a prompt that arrives while an earlier one of the session syncs starts after it', async () => {

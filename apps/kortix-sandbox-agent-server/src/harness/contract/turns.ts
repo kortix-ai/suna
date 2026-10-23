@@ -21,8 +21,9 @@ export interface RuntimePromptInput {
   noReply?: boolean
   /**
    * The thread's memory layers (`project_channels`): the route brings the
-   * read-only copy (`services/memory-copy.ts`) to these versions before the
-   * turn starts. A harness reads nothing from it.
+   * read-only copy (`services/tools/memory-copy.ts`) to these versions, and
+   * removes the copy of any layer not listed, before the turn starts. A
+   * harness reads nothing from it.
    */
   memoryLayers?: MemoryLayerRef[]
 }

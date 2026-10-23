@@ -104,7 +104,7 @@ export function parseRuntimePromptBody(raw: unknown): RuntimePromptInput | strin
     ...(text('variant') ? { variant: text('variant') } : {}),
     ...(text('directory') ? { directory: text('directory') } : {}),
     ...(body.no_reply === true ? { noReply: true } : {}),
-    ...(memoryLayers?.length ? { memoryLayers } : {}),
+    ...(memoryLayers ? { memoryLayers } : {}),
   }
 }
 
@@ -162,13 +162,14 @@ export function createRuntimeRouter(
       const sessionId = c.req.param('sessionId')
       return answer(c, async () => {
         // The turn reads the memory copy at these versions; a layer that cannot sync in 3 s keeps its old copy.
+        // The list is the thread's whole set: a copy folder it does not name is removed (`prune`).
         // A prompt that arrives while an earlier one of the session syncs waits for it, so prompts keep their order.
         const earlier = memorySyncs.get(sessionId)
         const sync = input.memoryLayers && !input.noReply
         if (earlier || sync) {
           const mine = (async () => {
             await earlier
-            if (sync) await (options.syncMemory ?? syncMemoryCopy)(input.memoryLayers!, sessionEnv())
+            if (sync) await (options.syncMemory ?? syncMemoryCopy)(input.memoryLayers!, sessionEnv(), { prune: true })
           })()
           memorySyncs.set(sessionId, mine)
           try {

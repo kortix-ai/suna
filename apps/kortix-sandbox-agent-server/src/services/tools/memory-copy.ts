@@ -61,6 +61,12 @@ export interface MemoryCopyOptions {
   fetch?: typeof fetch
   /** Per layer, the wait for an earlier sync of the folder included; default 3 s. */
   timeoutMs?: number
+  /**
+   * `layers` is the turn's whole list: remove every copy folder it does not
+   * name (a thread that became shared loses the owner's `personal` copy).
+   * Off for `remember`, which names only the layer it wrote.
+   */
+  prune?: boolean
 }
 
 // replica-local: one daemon per box; serializes the folder swap per layer folder.
@@ -69,31 +75,59 @@ const running = new Map<string, Promise<unknown>>()
 const written = new Map<string, string>()
 
 /**
- * Bring each layer's folder to its version, all layers at once. Never throws:
- * a layer that fails is logged and keeps its old copy.
+ * Bring each layer's folder to its version, all layers at once, and with
+ * `prune` remove the folders the list does not name. Never throws: a layer
+ * that fails is logged and keeps its old copy.
  */
 export async function syncMemoryCopy(layers: readonly MemoryLayerRef[], env: Record<string, string | undefined>, options: MemoryCopyOptions = {}): Promise<void> {
   const root = options.root ?? MEMORY_COPY_DIR
   const timeoutMs = options.timeoutMs ?? TIMEOUT_MS
-  await Promise.all(
-    layers.map((layer) => {
-      const target = join(root, layer.dir)
-      const before = running.get(target)
-      const mine = (async () => {
+  const listed = new Set<string>(layers.map((layer) => layer.dir))
+  const unlisted = options.prune ? MEMORY_COPY_DIRS.filter((dir) => !listed.has(dir)) : []
+  await Promise.all([
+    ...layers.map((layer) =>
+      queued(join(root, layer.dir), async (before) => {
         if (before && !(await settlesWithin(before, timeoutMs))) throw new Error('an earlier sync of this folder is still running')
-        await syncLayer(root, target, layer, env, options.fetch ?? fetch, timeoutMs)
-      })().catch((err) =>
+        await syncLayer(root, join(root, layer.dir), layer, env, options.fetch ?? fetch, timeoutMs)
+      }).catch((err) =>
         logger.warn('[memory-copy] layer not synced; the old copy stays', { dir: layer.dir, layer_id: layer.layer_id, error: err instanceof Error ? err.message : String(err) }),
-      )
-      // The next sync of this folder waits for both: one that gave up waiting must not let a third swap beside the first.
-      const chain = Promise.all([before, mine])
-      running.set(target, chain)
-      void chain.finally(() => {
-        if (running.get(target) === chain) running.delete(target)
-      })
-      return mine
-    }),
-  )
+      ),
+    ),
+    // Waits for an earlier sync of the folder with no cap (each is capped): a folder this thread may no longer read must go.
+    ...unlisted.map((dir) =>
+      queued(join(root, dir), async (before) => {
+        await before
+        await removeFolder(root, join(root, dir))
+      }).catch((err) => logger.error('[memory-copy] a memory folder this thread no longer reads was not removed', { dir, error: err instanceof Error ? err.message : String(err) })),
+    ),
+  ])
+}
+
+/** Run `work` after the folder's earlier work (`before`, which `work` awaits as it sees fit); the next one waits for both. */
+function queued(target: string, work: (before: Promise<unknown> | undefined) => Promise<void>): Promise<void> {
+  const before = running.get(target)
+  const mine = work(before)
+  // One that gave up waiting must not let a third swap beside the first.
+  const chain = Promise.allSettled([before, mine])
+  running.set(target, chain)
+  void chain.finally(() => {
+    if (running.get(target) === chain) running.delete(target)
+  })
+  return mine
+}
+
+/** Remove a copy folder: renamed away in one step, then deleted. A link or a file there is removed, never followed. */
+async function removeFolder(root: string, target: string): Promise<void> {
+  written.delete(target)
+  const rootStat = await lstat(root).catch(() => null)
+  if (!rootStat) return
+  if (rootStat.isSymbolicLink()) throw new Error(`${root} is a symbolic link`)
+  const existing = await lstat(target).catch(() => null)
+  if (!existing) return
+  if (!existing.isDirectory()) return rm(target, { force: true })
+  const old = `${target}.old-${randomBytes(4).toString('hex')}`
+  await rename(target, old)
+  await removeTree(old)
 }
 
 async function syncLayer(root: string, target: string, layer: MemoryLayerRef, env: Record<string, string | undefined>, fetchImpl: typeof fetch, timeoutMs: number): Promise<void> {
