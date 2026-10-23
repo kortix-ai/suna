@@ -20,6 +20,7 @@ export * from './git-history';
 export * from './change-requests';
 export * from './sessions';
 export * from './spaces';
+export * from './memory';
 export * from './session-prompt-actions';
 export * from './triggers';
 export * from './session-sandbox';

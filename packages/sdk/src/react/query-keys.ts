@@ -563,6 +563,18 @@ export const qk = {
     spaceSummaries: (id: string) => [...qk.project.spaces(id), 'summary'] as const,
     /** `getProjectSpaceSummary` — one channel's tab counts. */
     spaceSummary: (id: string, spaceId: string) => [...qk.project.spaceSummaries(id), spaceId] as const,
+    /** Every memory read of the project. Memory writes invalidate it: one change can touch two pages, even in two layers. */
+    memory: (id: string) => [...qk.project.scope(id), 'memory'] as const,
+    /** `getProjectMemoryLayer` — one layer (`company` or a space id) and its counts. */
+    memoryLayer: (id: string, layerKey: string) => [...qk.project.memory(id), 'layer', layerKey] as const,
+    /** `listProjectMemoryPages` — the layer's live pages. */
+    memoryPages: (id: string, layerKey: string) => [...qk.project.memoryLayer(id, layerKey), 'pages'] as const,
+    /** `listProjectMemoryChanges` — the layer's Recent changes (an infinite query). */
+    memoryChanges: (id: string, layerKey: string) => [...qk.project.memoryLayer(id, layerKey), 'changes'] as const,
+    /** `getProjectMemoryPage` — one page, by id: its route has no layer. */
+    memoryPage: (id: string, pageId: string) => [...qk.project.memory(id), 'page', pageId] as const,
+    /** `listProjectMemoryHistory` — one page's versions (an infinite query). */
+    memoryHistory: (id: string, pageId: string) => [...qk.project.memoryPage(id, pageId), 'history'] as const,
     /** `listProjectGoals` — the goal folders in Files with their heartbeats. */
     goals: (id: string) => [...qk.project.scope(id), 'goals'] as const,
     /** `getProjectGoalFiles` — one goal folder's log, notes and verification. */

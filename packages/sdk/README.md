@@ -478,6 +478,51 @@ rows[0].reply_count; // messages after it; a space list only, null elsewhere
 - Turning the flag on files every session in no space into `#general`;
   turning it off deletes nothing.
 
+### Memory pages (experimental)
+
+Experimental: every call here needs the project's `project_channels` flag.
+While it is off, every `memory` route returns `403` `feature_disabled`.
+
+Memory is a set of pages in 3 kinds of layer: the project's Company layer
+(key `"company"`), one per channel and one per DM (key = the space id). A page
+has one of 4 types (`people`, `decisions`, `workstreams`, `playbooks`); a
+`note` is a Remember-box sentence that an agent has not filed yet. Agents
+write through their `remember` tool, not through these calls. Every write
+records a version, and every change can be undone.
+
+```ts
+const m = kortix.project(pid).memory;
+const layer = await m.layer(ch.space_id); // counts per type, read_only, can_write; the first read creates it
+const pages = await m.pages.list("company"); // live pages, no bodies (≤ 200)
+const page = await m.pages.create(ch.space_id, { type: "people", title: "Priya", summary: "Runs the Northwind launch" });
+await m.notes.add(ch.space_id, { text: "Priya owns the launch checklist" }); // a `note` page
+const full = await m.pages.get(page.page_id); // body (markdown, ⟦n⟧ cites sources[n]), sources, related, version_no
+await m.pages.update(page.page_id, { base_version: full.version_no, body: "## Role\n- Owns QA" }); // stale base_version → 409 version_conflict
+const { version_id } = await m.pages.delete(page.page_id); // to the trash; without can_delete → 403 forbidden
+await m.undo(version_id); // { pages }: every live page the undo changed; a newer change → 409 superseded
+const { changes, next } = await m.changes(ch.space_id); // Recent changes, newest first
+await m.changes(ch.space_id, { before: next ?? undefined, limit: 20 }); // the next older page
+const { versions } = await m.pages.history(page.page_id); // each version's snapshot; same paging
+await m.pages.restore(page.page_id, versions[1].version_id); // a new version with that content
+```
+
+- Errors are `ApiError` with `code`: `409` `title_taken` (`data.page_id`),
+  `page_limit` (200 live pages per layer), `layer_read_only` (archived
+  channel), `version_conflict`, `superseded`, `already_undone`; `413`
+  `page_too_large` (body over 8,192 UTF-8 bytes); `422` `secret_detected`;
+  `404` `memory_not_found` (another member's DM, an unknown id). None reaches
+  the host error handler.
+- A thread's "Saved to memory" line carries `ProjectMemoryRememberResult`
+  (the agent's tool result); pass its `version_id` to `undo`.
+- React: `useProjectMemoryLayer(pid, layerKey)`, `useProjectMemoryPages(pid, layerKey)`,
+  `useProjectMemoryChanges(pid, layerKey)` and `useProjectMemoryHistory(pid, pageId)`
+  (infinite queries: `fetchNextPage`), `useProjectMemoryPage(pid, pageId)`; every
+  read takes `{ enabled }`. Mutations: `useCreateProjectMemoryPage(pid, layerKey)`,
+  `useAddProjectMemoryNote(pid, layerKey)`, `useUpdateProjectMemoryPage(pid)`,
+  `useDeleteProjectMemoryPage(pid)`, `useRestoreProjectMemoryPage(pid)`,
+  `useUndoProjectMemoryVersion(pid)`. Each write refreshes every memory read of
+  the project (`qk.project.memory(pid)`) and the channel tab counts.
+
 ### Apps
 
 `kortix.project(projectId).apps` deploys immutable App releases behind one stable URL: releases, machines per process group, persistent volumes. New Apps use `private` access. Apps is generally available: every project can create and deploy them.
@@ -674,7 +719,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.mobileClientPolicy()` | the operator's mobile release policy, `GET /v1/clients/mobile`, **no token needed** (read before login): resolves `{ minimum_version, store_url_ios, store_url_android }`, each a string or `null`; a non-200 answer throws `ApiError`. A mobile host compares its app version to `minimum_version` with `compareSemver(a, b)` (`-1 \| 0 \| 1`, or `null` when either side does not parse; ignores a leading `v` and `-pre`/`+build` suffixes) and fails open on `null`. Also exported standalone as `getMobileClientPolicy` and the `MobileClientPolicy` type. The operator sets `MOBILE_MIN_VERSION`, `MOBILE_STORE_URL_IOS`, `MOBILE_STORE_URL_ANDROID` on the API |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
-| `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events; `.fire(slug, { payload, dryRun })`; run history `.runs(slug)` / `.projectRuns({ status })`; `.replay(slug, runId)`) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.spaces.{list,create,update,dm,apps,links,summary}` (channels and DMs; experimental, `project_channels` flag) · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
+| `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events; `.fire(slug, { payload, dryRun })`; run history `.runs(slug)` / `.projectRuns({ status })`; `.replay(slug, runId)`) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.spaces.{list,create,update,dm,apps,links,summary}` (channels and DMs; experimental, `project_channels` flag) · `.memory.{layer,changes,pages,notes,undo}` (memory pages; experimental, `project_channels` flag) · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`restore`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`watch`/`setWatch`/`presence`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · runtime REST escape hatches: `stream()` and the deprecated `.runtime` |
 | `kortix.runtime()` | the runtime REST client for the active sandbox (the SDK's own `RuntimeClient`, frozen at the `@opencode-ai/sdk` 1.18.23 route shapes); use a session-scoped handle in multi-tenant code |
 

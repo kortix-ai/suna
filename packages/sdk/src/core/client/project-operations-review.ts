@@ -40,6 +40,29 @@ export function bindProjectOperationsReview(projectId: string) {
       summary: (spaceId: string) => P.getProjectSpaceSummary(projectId, spaceId),
     },
 
+    /** Memory pages (`project_channels` flag). A layer key is `company` or a channel's or DM's space id. */
+    memory: {
+      /** One layer and its page counts; the first read creates it. */
+      layer: (layerKey: string) => P.getProjectMemoryLayer(projectId, layerKey),
+      /** One page of Recent changes; walk older ones with `next` → `before`. */
+      changes: (...a: DropFirst<Parameters<typeof P.listProjectMemoryChanges>>) => P.listProjectMemoryChanges(projectId, ...a),
+      pages: {
+        list: (layerKey: string) => P.listProjectMemoryPages(projectId, layerKey),
+        create: (...a: DropFirst<Parameters<typeof P.createProjectMemoryPage>>) => P.createProjectMemoryPage(projectId, ...a),
+        get: (pageId: string) => P.getProjectMemoryPage(projectId, pageId),
+        update: (...a: DropFirst<Parameters<typeof P.updateProjectMemoryPage>>) => P.updateProjectMemoryPage(projectId, ...a),
+        delete: (pageId: string) => P.deleteProjectMemoryPage(projectId, pageId),
+        history: (...a: DropFirst<Parameters<typeof P.listProjectMemoryHistory>>) => P.listProjectMemoryHistory(projectId, ...a),
+        restore: (...a: DropFirst<Parameters<typeof P.restoreProjectMemoryPage>>) => P.restoreProjectMemoryPage(projectId, ...a),
+      },
+      /** Remember-box sentences, saved as `note` pages. */
+      notes: {
+        add: (...a: DropFirst<Parameters<typeof P.addProjectMemoryNote>>) => P.addProjectMemoryNote(projectId, ...a),
+      },
+      /** Undo one change by any of its versions. */
+      undo: (versionId: string) => P.undoProjectMemoryVersion(projectId, versionId),
+    },
+
     /** Review Center — the per-project human-in-the-loop inbox (change requests, tool approvals, agent outputs/decisions). */
     review: {
       /** One page of the inbox. Walk the rest with `next_cursor` → `cursor`. */

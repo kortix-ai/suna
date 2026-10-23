@@ -131,6 +131,37 @@ test('project(id).spaces lists, creates, updates and opens a DM', async () => {
   ]);
 });
 
+test('project(id).memory reaches layers, pages, history and undo', async () => {
+  const memory = kortix.project('P1').memory;
+  await memory.layer('company');
+  await memory.pages.list('S1');
+  await memory.pages.create('S1', { type: 'people', title: 'Priya' });
+  await memory.notes.add('S1', { text: 'Priya owns the Northwind launch' });
+  await memory.changes('S1', { before: 'C2' });
+  await memory.pages.get('PG1');
+  await memory.pages.update('PG1', { base_version: 3, summary: 'Owns QA' });
+  await memory.pages.delete('PG1');
+  await memory.pages.history('PG1');
+  await memory.pages.restore('PG1', 'V1');
+  await memory.undo('V2');
+  const base = 'http://test.local/projects/P1/memory';
+  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+    `GET ${base}/layers/company`,
+    `GET ${base}/layers/S1/pages`,
+    `POST ${base}/layers/S1/pages`,
+    `POST ${base}/layers/S1/notes`,
+    `GET ${base}/layers/S1/changes?before=C2`,
+    `GET ${base}/pages/PG1`,
+    `PATCH ${base}/pages/PG1`,
+    `DELETE ${base}/pages/PG1`,
+    `GET ${base}/pages/PG1/history`,
+    `POST ${base}/pages/PG1/restore`,
+    `POST ${base}/versions/V2/undo`,
+  ]);
+  expect(calls[6]!.body).toEqual({ base_version: 3, summary: 'Owns QA' });
+  expect(calls[9]!.body).toEqual({ version_id: 'V1' });
+});
+
 test('project(id).spaces reaches a channel’s apps, links and summary', async () => {
   const spaces = kortix.project('P1').spaces;
   await spaces.apps('S1');

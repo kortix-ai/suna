@@ -23,6 +23,19 @@ import type { KortixAccount } from './core/rest/projects-client/accounts';
 import type { ChangeRequest } from './core/rest/projects-client/change-requests';
 import type { KortixProject } from './core/rest/projects-client/projects';
 import type { SessionStartResult } from './core/rest/projects-client/session-sandbox';
+import type {
+  AddProjectMemoryNoteInput,
+  CreateProjectMemoryPageInput,
+  ProjectMemoryChangeList,
+  ProjectMemoryDeleteResult,
+  ProjectMemoryLayer,
+  ProjectMemoryPage,
+  ProjectMemoryPageSummary,
+  ProjectMemoryRememberResult,
+  ProjectMemoryUndoResult,
+  ProjectMemoryVersionList,
+  UpdateProjectMemoryPageInput,
+} from './core/rest/projects-client/memory';
 import type { ProjectSpace, ProjectSpaceLink, ProjectSpaceSummary } from './core/rest/projects-client/spaces';
 import type {
   CreateSessionPromptResult,
@@ -79,6 +92,27 @@ export function contractDrift(): void {
 
   fits<ProjectSpaceSummary>(wire<C.SpaceSummary>());
   noPhantom<NoPhantom<ProjectSpaceSummary, C.SpaceSummary>>();
+
+  // Memory pages (`/projects/:id/memory/*`). The inputs are checked the other way: what the SDK sends parses.
+  fits<ProjectMemoryLayer>(wire<C.MemoryLayer>());
+  noPhantom<NoPhantom<ProjectMemoryLayer, C.MemoryLayer>>();
+  fits<ProjectMemoryPageSummary>(wire<C.MemoryPageSummary>());
+  noPhantom<NoPhantom<ProjectMemoryPageSummary, C.MemoryPageSummary>>();
+  fits<ProjectMemoryPage>(wire<C.MemoryPage>());
+  noPhantom<NoPhantom<ProjectMemoryPage, C.MemoryPage>>();
+  fits<ProjectMemoryChangeList>(wire<C.MemoryChangeList>());
+  noPhantom<NoPhantom<ProjectMemoryChangeList['changes'][number], C.MemoryChange>>();
+  fits<ProjectMemoryVersionList>(wire<C.MemoryVersionList>());
+  noPhantom<NoPhantom<ProjectMemoryVersionList['versions'][number], C.MemoryVersion>>();
+  fits<ProjectMemoryDeleteResult>(wire<C.MemoryDeleteResult>());
+  noPhantom<NoPhantom<ProjectMemoryDeleteResult, C.MemoryDeleteResult>>();
+  fits<ProjectMemoryUndoResult>(wire<C.MemoryUndoResult>());
+  noPhantom<NoPhantom<ProjectMemoryUndoResult, C.MemoryUndoResult>>();
+  fits<ProjectMemoryRememberResult>(wire<C.MemoryRememberResult>());
+  noPhantom<NoPhantom<ProjectMemoryRememberResult, C.MemoryRememberResult>>();
+  fits<C.MemoryPageCreateInput>(wire<CreateProjectMemoryPageInput>());
+  fits<C.MemoryPageUpdateInput>(wire<UpdateProjectMemoryPageInput>());
+  fits<C.MemoryNoteInput>(wire<AddProjectMemoryNoteInput>());
 
   fits<SessionStartResult>(wire<C.SessionStartResult>());
   noPhantom<NoPhantom<SessionStartResult, C.SessionStartResult>>();
