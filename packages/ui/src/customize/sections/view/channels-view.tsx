@@ -596,8 +596,6 @@ function BindingOverrides({
 }
 
 /** The schedule modal's field frame, around each picker in the settings dialog. */
-const FIELD_FRAME = 'bg-popover flex w-full items-center rounded-md border px-2 py-1.5';
-
 /** Rows before the list grows a search field — the `AgentSelector` rule (7). */
 const BINDING_SEARCH_MIN = 7;
 
@@ -733,10 +731,6 @@ function ChannelSettingsModalContent({
   );
   const dirty = Object.keys(patch).length > 0;
 
-  // The pickers refuse to open when disabled but do not dim; dim them like the
-  // disabled Select, which dims itself.
-  const pickerFrame = cn(FIELD_FRAME, !canWrite && 'opacity-50');
-
   const update = useUpdateChannelBinding();
   const save = (e: React.FormEvent) => {
     e.preventDefault();
@@ -776,16 +770,15 @@ function ChannelSettingsModalContent({
           <FieldGroup className="gap-5">
             <Field data-disabled={!canWrite}>
               <FieldTitle>{tI18nComplete.raw('text11b39c93777e')}</FieldTitle>
-              {/* A full-width rounded-md panel, not the chat composer pill
-                  these selectors ship with. */}
-              <div className={pickerFrame}>
-                <AgentSelector
-                  agents={agents}
-                  selectedAgent={agentName ?? defaultAgentLabel}
-                  onSelect={(v) => setAgentDraft(!v || v === defaultAgentLabel ? null : v)}
-                  disabled={!canWrite}
-                />
-              </div>
+              {/* `field`: the selector is the bordered h-9 box itself, the same
+                  box as the Select below, not the composer chip in a frame. */}
+              <AgentSelector
+                agents={agents}
+                selectedAgent={agentName ?? defaultAgentLabel}
+                onSelect={(v) => setAgentDraft(!v || v === defaultAgentLabel ? null : v)}
+                disabled={!canWrite}
+                appearance="field"
+              />
               <FieldDescription className="text-xs">
                 {tI18nComplete.raw('text12dc6dbd8fc8')}
               </FieldDescription>
@@ -793,16 +786,15 @@ function ChannelSettingsModalContent({
 
             <Field data-disabled={!canWrite}>
               <FieldTitle>{tI18nComplete.raw('text5e2c614c23f0')}</FieldTitle>
-              <div className={pickerFrame}>
-                <ModelSelector
-                  models={models}
-                  providers={providers}
-                  selectedModel={model}
-                  unsetLabel={tI18nComplete.raw('texte8cb80e5c5cb')}
-                  onSelect={setModelDraft}
-                  disabled={!canWrite}
-                />
-              </div>
+              <ModelSelector
+                models={models}
+                providers={providers}
+                selectedModel={model}
+                unsetLabel={tI18nComplete.raw('texte8cb80e5c5cb')}
+                onSelect={setModelDraft}
+                disabled={!canWrite}
+                appearance="field"
+              />
               <FieldDescription className="text-xs">
                 {/* What the unset or refused pin runs instead, when it is known. */}
                 {modelDraft === undefined &&
@@ -816,24 +808,22 @@ function ChannelSettingsModalContent({
 
             <Field data-disabled={!canWrite}>
               <FieldTitle>{tI18nComplete.raw('textb1ca871c6696')}</FieldTitle>
-              <div className={FIELD_FRAME}>
-                <Select
-                  value={policy}
-                  onValueChange={(v) => setPolicyDraft(v as ChannelBinding['conversationPolicy'])}
-                  disabled={!canWrite}
-                >
-                  <SelectTrigger variant="transparent">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {conversationPolicies.map((p) => (
-                      <SelectItem key={p.value} value={p.value}>
-                        {p.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <Select
+                value={policy}
+                onValueChange={(v) => setPolicyDraft(v as ChannelBinding['conversationPolicy'])}
+                disabled={!canWrite}
+              >
+                <SelectTrigger className="h-9 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {conversationPolicies.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <FieldDescription className="text-xs">
                 {policyDescription(policy, tI18nComplete)}
               </FieldDescription>

@@ -16,9 +16,11 @@ import Hint from '../../primitives/hint';
 import { useTranslations } from '../../i18n';
 import { useUiHostConfig } from '../../providers/ui-provider';
 import { cn } from '../../lib/utils';
+import { TRIGGER_CARET_CLASS, triggerVariants } from '../../primitives/trigger-variants';
 import type { Agent } from '@kortix/sdk/react';
 import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
-import { CaretDownIcon, CheckIcon, SparkleIcon } from '@phosphor-icons/react';
+import { CaretDownIcon, CheckIcon } from '@phosphor-icons/react';
+import { AgentMark } from '../../internal/components/agent-mark';
 import { useEffect, useMemo, useState } from 'react';
 import { composerSelectableAgents } from './composer-agent-access';
 
@@ -58,6 +60,7 @@ export function AgentSelector({
   unavailableHint,
   open: controlledOpen,
   onOpenChange,
+  appearance = 'chip',
 }: {
   agents: Agent[];
   selectedAgent: string | null;
@@ -74,6 +77,12 @@ export function AgentSelector({
   unavailableHint?: string | null;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /**
+   * `chip` is the composer's borderless toolbar chip. `field` is a form field:
+   * the full-width `h-9` box every `SelectTrigger` in a form draws, so the
+   * picker reads as one more field instead of a chip inside a frame.
+   */
+  appearance?: 'chip' | 'field';
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const t = useTranslations('threads');
@@ -139,7 +148,24 @@ export function AgentSelector({
   // matching the resolver's own first-accessible pre-selection.
   const displayedName = resolveDisplayedAgentName(primaryAgents, selectedAgent);
   const displayName = displayedName ? label(displayedName) : agentDisplayLabel(offered, selectedAgent);
-  const metaSelected = isMetaAgentName(displayedName);
+  // The trigger leads with the agent's pixel mark, the same face it has on the
+  // Agents page and in every row below. Only for a real agent: a placeholder
+  // name such as a trigger's `default` would get a mark of its own, and that
+  // face would belong to no agent.
+  const triggerMark =
+    displayedName && primaryAgents.some((agent) => agent.name === displayedName) ? (
+      <AgentMark slug={displayedName} />
+    ) : null;
+  const field = appearance === 'field';
+  const fieldTrigger = (caret: boolean, props: { disabled?: boolean; 'aria-label'?: string }) => (
+    <button type="button" className={cn(triggerVariants(), 'h-9 w-full')} {...props}>
+      <span className="flex min-w-0 items-center gap-2">
+        {triggerMark}
+        <span className="truncate">{displayName}</span>
+      </span>
+      {caret ? <CaretDownIcon className={cn(TRIGGER_CARET_CLASS, 'size-4')} /> : null}
+    </button>
+  );
 
   /**
    * One agent: name, its type, its description, and a check when it is the
@@ -174,12 +200,14 @@ export function AgentSelector({
           setOpen(false);
         }}
       >
-        {meta && (
-          // Meta is the platform agent that runs the others, so its row leads
-          // with its own mark instead of reading as one more peer in the list.
-          <span className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-md">
-            <SparkleIcon weight="fill" className="text-foreground size-4" />
-          </span>
+        {/* Every row leads with the agent's pixel mark, so the list is
+            scanned by face before names are read. The tile matches the text
+            block edge to edge: name (20px) plus description (16px) = 36px,
+            or the name line alone. */}
+        {agent.description ? (
+          <AgentMark slug={agent.name} size={28} tile={36} />
+        ) : (
+          <AgentMark slug={agent.name} size={14} />
         )}
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-1.5">
@@ -193,7 +221,7 @@ export function AgentSelector({
             )}
           </div>
           {agent.description && (
-            <p className="text-muted-foreground mt-0.5 truncate text-xs">{agent.description}</p>
+            <p className="text-muted-foreground truncate text-xs">{agent.description}</p>
           )}
         </div>
         {isSelected && (
@@ -221,7 +249,9 @@ export function AgentSelector({
    * open — in exactly the state where its words matter.
    */
   if (primaryAgents.length === 0) {
-    const trigger = (
+    const trigger = field ? (
+      fieldTrigger(false, { disabled: true, 'aria-label': unavailableHint ?? undefined })
+    ) : (
       <Button
         type="button"
         variant="ghost"
@@ -250,6 +280,7 @@ export function AgentSelector({
    * text every inert control on this rail wears, and the disabled attribute.
    */
   if (disabled) {
+    if (field) return fieldTrigger(false, { disabled: true });
     return (
       <Button
         type="button"
@@ -258,7 +289,7 @@ export function AgentSelector({
         disabled
         className="text-muted-foreground rounded-lg hit-area-y-3"
       >
-        {metaSelected && <SparkleIcon className="size-3.5 shrink-0" weight="fill" />}
+        {triggerMark}
         <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
       </Button>
     );
@@ -267,6 +298,9 @@ export function AgentSelector({
   return (
     <CommandPopover open={open} onOpenChange={setOpen}>
       <CommandPopoverTrigger>
+        {field ? (
+          fieldTrigger(true, { 'aria-label': t('selectAgent') })
+        ) : (
         <Button
           type="button"
           variant="ghost"
@@ -274,7 +308,7 @@ export function AgentSelector({
           aria-label={t('selectAgent')}
           className="text-foreground/70 rounded-lg hit-area-y-3"
         >
-          {metaSelected && <SparkleIcon className="size-3.5 shrink-0" weight="fill" />}
+          {triggerMark}
           <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
           <CaretDownIcon
             className={cn(
@@ -283,6 +317,7 @@ export function AgentSelector({
             )}
           />
         </Button>
+        )}
       </CommandPopoverTrigger>
 
       {/* `min(...)`, not a hard `300px`: on a 320px viewport a fixed 300px
@@ -337,7 +372,12 @@ export function AgentSelector({
             being announced.
           */}
           {filteredPrimary.length > 0 && (
-            <CommandGroup forceMount>
+            // `gap-px` between rows: a selected row and a hovered row next to it
+            // otherwise draw one merged grey block.
+            <CommandGroup
+              forceMount
+              className="[&_[cmdk-group-items]]:flex [&_[cmdk-group-items]]:flex-col [&_[cmdk-group-items]]:gap-px"
+            >
               {filteredMeta.map((agent) => renderAgentItem(agent, true))}
               {filteredMeta.length > 0 && filteredProject.length > 0 && (
                 <CommandSeparator className="my-1" />
