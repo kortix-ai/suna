@@ -22626,6 +22626,34 @@
         "saved": "Saved to memory",
         "saveTo": "Save to",
         "dm": "Your memory with {agent}"
+      },
+      "archivedReadOnly": "{place} is archived. Its memory is read-only.",
+      "pending": {
+        "note": "Agents do not use these pages until someone confirms them.",
+        "from": "From {host}",
+        "banner": "From {host}. Agents do not use this until someone confirms it.",
+        "bannerNoHost": "From outside the thread. Agents do not use this until someone confirms it.",
+        "confirm": "Confirm",
+        "confirmPage": "Confirm {title}",
+        "discard": "Discard",
+        "discardPage": "Discard {title}",
+        "cancel": "Cancel",
+        "confirmed": "Page confirmed. Agents can use it now.",
+        "alreadyConfirmed": "Someone confirmed this page already.",
+        "confirmFailed": "Could not confirm the page. Try again.",
+        "discarded": "Page discarded",
+        "discardFailed": "Could not discard the page. Try again."
+      },
+      "trash": {
+        "title": "Trash",
+        "note": "Deleted pages stay here for 30 days, then they are deleted for good.",
+        "loadError": "Could not load the trash.",
+        "restore": "Restore",
+        "restorePage": "Restore {title}",
+        "restored": "Page restored",
+        "titleTaken": "A page with this title exists. Rename that page, then restore this one.",
+        "restoreFailed": "Could not restore the page. Try again.",
+        "allTrashed": "Every page is in the trash."
       }
     },
     "create": {

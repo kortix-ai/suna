@@ -22626,6 +22626,34 @@
         "saved": "已保存到记忆",
         "saveTo": "保存到",
         "dm": "你与 {agent} 的记忆"
+      },
+      "archivedReadOnly": "{place} 已归档。它的记忆为只读。",
+      "pending": {
+        "note": "在有人确认之前，智能体不会使用这些页面。",
+        "from": "来自 {host}",
+        "banner": "来自 {host}。在有人确认之前，智能体不会使用它。",
+        "bannerNoHost": "来自对话串之外。在有人确认之前，智能体不会使用它。",
+        "confirm": "确认",
+        "confirmPage": "确认 {title}",
+        "discard": "丢弃",
+        "discardPage": "丢弃 {title}",
+        "cancel": "取消",
+        "confirmed": "页面已确认。智能体现在可以使用它。",
+        "alreadyConfirmed": "已有人确认此页面。",
+        "confirmFailed": "无法确认页面。请重试。",
+        "discarded": "页面已丢弃",
+        "discardFailed": "无法丢弃页面。请重试。"
+      },
+      "trash": {
+        "title": "回收站",
+        "note": "已删除的页面会在这里保留 30 天，然后被永久删除。",
+        "loadError": "无法加载回收站。",
+        "restore": "恢复",
+        "restorePage": "恢复 {title}",
+        "restored": "页面已恢复",
+        "titleTaken": "已有同名页面。请先重命名该页面，再恢复此页面。",
+        "restoreFailed": "无法恢复页面。请重试。",
+        "allTrashed": "所有页面都在回收站中。"
       }
     },
     "create": {

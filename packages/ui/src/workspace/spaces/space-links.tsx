@@ -241,7 +241,8 @@ export function SpaceLinks({ projectId, space, place }: { projectId: string; spa
 }
 
 /**
- * One link: a tile with the site's first letter, the title over the host, who
+ * One link: a tile with the site's first letter, the title (the fetched one
+ * when the server has it) over the site name and host, who
  * shared or pinned it, and Pin / Unpin. The columns have fixed widths, so the
  * rows line up. A shared row shows Pin on hover (always without hover).
  */
@@ -307,7 +308,10 @@ function LinkRow({
         >
           {linkTitle(link)}
         </a>
-        <p className="text-muted-foreground truncate text-xs">{host}</p>
+        {/* The site's own name beside its host; the icon stays the first-letter tile (no remote image loads). */}
+        <p className="text-muted-foreground truncate text-xs">
+          {link.site_name && link.site_name.toLowerCase() !== host.toLowerCase() ? `${link.site_name} · ${host}` : host}
+        </p>
         {/* Below sm the meta column is hidden: the same line sits under the host. */}
         <p className="text-muted-foreground truncate text-xs sm:hidden">{meta.join(' · ')}</p>
       </div>

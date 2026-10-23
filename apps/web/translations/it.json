@@ -22626,6 +22626,34 @@
         "saved": "Salvato nella memoria",
         "saveTo": "Salva in",
         "dm": "La tua memoria con {agent}"
+      },
+      "archivedReadOnly": "{place} è archiviato. La sua memoria è di sola lettura.",
+      "pending": {
+        "note": "Gli agenti non usano queste pagine finché qualcuno non le conferma.",
+        "from": "Da {host}",
+        "banner": "Da {host}. Gli agenti non lo usano finché qualcuno non lo conferma.",
+        "bannerNoHost": "Da fuori dal thread. Gli agenti non lo usano finché qualcuno non lo conferma.",
+        "confirm": "Conferma",
+        "confirmPage": "Conferma {title}",
+        "discard": "Scarta",
+        "discardPage": "Scarta {title}",
+        "cancel": "Annulla",
+        "confirmed": "Pagina confermata. Gli agenti possono usarla ora.",
+        "alreadyConfirmed": "Qualcuno ha già confermato questa pagina.",
+        "confirmFailed": "Impossibile confermare la pagina. Riprova.",
+        "discarded": "Pagina scartata",
+        "discardFailed": "Impossibile scartare la pagina. Riprova."
+      },
+      "trash": {
+        "title": "Cestino",
+        "note": "Le pagine eliminate restano qui 30 giorni, poi vengono eliminate per sempre.",
+        "loadError": "Impossibile caricare il cestino.",
+        "restore": "Ripristina",
+        "restorePage": "Ripristina {title}",
+        "restored": "Pagina ripristinata",
+        "titleTaken": "Esiste già una pagina con questo titolo. Rinominala, poi ripristina questa.",
+        "restoreFailed": "Impossibile ripristinare la pagina. Riprova.",
+        "allTrashed": "Tutte le pagine sono nel cestino."
       }
     },
     "create": {

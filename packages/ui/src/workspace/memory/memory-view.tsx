@@ -7,6 +7,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
 import { Button } from '../../primitives/button';
+import { EmptyState } from '../../primitives/empty-state';
 import { ErrorState } from '../../primitives/error-state';
 import { InfoBanner } from '../../primitives/info-banner';
 import { Skeleton } from '../../primitives/skeleton';
@@ -130,6 +131,7 @@ export function MemoryView({ projectId, layerKey, place }: MemoryViewProps) {
   }
 
   const canWrite = layer.data.can_write && !layer.data.read_only;
+  const trashCount = layer.data.counts.trash;
   const kind = layer.data.scope;
   const rememberBar = canWrite ? (
     <RememberBar
@@ -150,10 +152,10 @@ export function MemoryView({ projectId, layerKey, place }: MemoryViewProps) {
       {/* An archived channel: its memory stays readable; no Edit, no Remember bar (`can_edit` / `can_write` are false). */}
       {layer.data.read_only ? (
         <InfoBanner tone="neutral" icon={LockIcon} className="mx-3 mt-3 shrink-0">
-          {t('remember.status.readOnly')}
+          {t('archivedReadOnly', { place })}
         </InfoBanner>
       ) : null}
-      {!selected ? (
+      {!selected && trashCount === 0 ? (
         <MemoryEmpty
           kind={kind}
           place={place}
@@ -174,14 +176,26 @@ export function MemoryView({ projectId, layerKey, place }: MemoryViewProps) {
             layerKey={layerKey}
             pages={pages}
             total={memoryPageCount(layer.data.counts)}
-            selectedId={selected.page_id}
+            trashCount={trashCount}
+            canWrite={canWrite}
+            selectedId={selected?.page_id ?? null}
             onSelect={setPage}
+            onRemoved={(pageId) => {
+              setGone({ pageId, list: list.data });
+              if (pageId === selected?.page_id) setPage(null);
+            }}
             onViewChange={(pageId, versionId) => {
               setPage(pageId);
               setHistory({ versionId });
             }}
             className={cn('@max-2xl/memory:w-full', explicit && '@max-2xl/memory:hidden')}
           />
+          {!selected ? (
+            // Every page is in the trash: the list shows it, the page side says so.
+            <div className="flex min-w-0 flex-1 items-center justify-center px-5 py-16 @max-2xl/memory:hidden">
+              <EmptyState size="sm" title={t('trash.allTrashed')} />
+            </div>
+          ) : (
           <SplitSheet
             size="lg"
             open={history !== null && !!page.data}
@@ -228,6 +242,7 @@ export function MemoryView({ projectId, layerKey, place }: MemoryViewProps) {
               />
             ) : null}
           </SplitSheet>
+          )}
         </div>
       )}
       {rememberBar}

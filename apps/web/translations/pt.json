@@ -22626,6 +22626,34 @@
         "saved": "Salvo na memória",
         "saveTo": "Salvar em",
         "dm": "Sua memória com {agent}"
+      },
+      "archivedReadOnly": "{place} está arquivado. A memória dele é somente leitura.",
+      "pending": {
+        "note": "Os agentes não usam estas páginas até que alguém as confirme.",
+        "from": "De {host}",
+        "banner": "De {host}. Os agentes não usam isto até que alguém confirme.",
+        "bannerNoHost": "De fora do thread. Os agentes não usam isto até que alguém confirme.",
+        "confirm": "Confirmar",
+        "confirmPage": "Confirmar {title}",
+        "discard": "Descartar",
+        "discardPage": "Descartar {title}",
+        "cancel": "Cancelar",
+        "confirmed": "Página confirmada. Os agentes já podem usá-la.",
+        "alreadyConfirmed": "Alguém já confirmou esta página.",
+        "confirmFailed": "Não foi possível confirmar a página. Tente novamente.",
+        "discarded": "Página descartada",
+        "discardFailed": "Não foi possível descartar a página. Tente novamente."
+      },
+      "trash": {
+        "title": "Lixeira",
+        "note": "As páginas excluídas ficam aqui por 30 dias e depois são excluídas para sempre.",
+        "loadError": "Não foi possível carregar a lixeira.",
+        "restore": "Restaurar",
+        "restorePage": "Restaurar {title}",
+        "restored": "Página restaurada",
+        "titleTaken": "Já existe uma página com este título. Renomeie-a e depois restaure esta.",
+        "restoreFailed": "Não foi possível restaurar a página. Tente novamente.",
+        "allTrashed": "Todas as páginas estão na lixeira."
       }
     },
     "create": {

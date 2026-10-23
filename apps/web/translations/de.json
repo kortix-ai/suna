@@ -22626,6 +22626,34 @@
         "saved": "Im Speicher gesichert",
         "saveTo": "Sichern in",
         "dm": "Dein Speicher mit {agent}"
+      },
+      "archivedReadOnly": "{place} ist archiviert. Sein Speicher ist schreibgeschützt.",
+      "pending": {
+        "note": "Agents nutzen diese Seiten erst, wenn jemand sie bestätigt.",
+        "from": "Von {host}",
+        "banner": "Von {host}. Agents nutzen dies erst, wenn jemand es bestätigt.",
+        "bannerNoHost": "Von außerhalb des Threads. Agents nutzen dies erst, wenn jemand es bestätigt.",
+        "confirm": "Bestätigen",
+        "confirmPage": "{title} bestätigen",
+        "discard": "Verwerfen",
+        "discardPage": "{title} verwerfen",
+        "cancel": "Abbrechen",
+        "confirmed": "Seite bestätigt. Agents können sie jetzt nutzen.",
+        "alreadyConfirmed": "Jemand hat diese Seite bereits bestätigt.",
+        "confirmFailed": "Die Seite konnte nicht bestätigt werden. Versuche es erneut.",
+        "discarded": "Seite verworfen",
+        "discardFailed": "Die Seite konnte nicht verworfen werden. Versuche es erneut."
+      },
+      "trash": {
+        "title": "Papierkorb",
+        "note": "Gelöschte Seiten bleiben 30 Tage hier und werden dann endgültig gelöscht.",
+        "loadError": "Der Papierkorb konnte nicht geladen werden.",
+        "restore": "Wiederherstellen",
+        "restorePage": "{title} wiederherstellen",
+        "restored": "Seite wiederhergestellt",
+        "titleTaken": "Eine Seite mit diesem Titel existiert. Benenne sie um und stelle dann diese wieder her.",
+        "restoreFailed": "Die Seite konnte nicht wiederhergestellt werden. Versuche es erneut.",
+        "allTrashed": "Alle Seiten sind im Papierkorb."
       }
     },
     "create": {

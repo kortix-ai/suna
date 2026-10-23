@@ -2,7 +2,7 @@
 
 import type { ProjectMemoryChange, ProjectMemoryPageSummary, ProjectMemoryPageType } from '@kortix/sdk';
 import { useProjectMemoryChanges, useProjectMemorySearch } from '@kortix/sdk/react';
-import { CaretDownIcon, ClockCounterClockwiseIcon, FileTextIcon, MagnifyingGlassIcon, WarningCircleIcon } from '@phosphor-icons/react';
+import { CaretDownIcon, ClockCounterClockwiseIcon, FileTextIcon, MagnifyingGlassIcon } from '@phosphor-icons/react';
 import { type ReactNode, useMemo, useState } from 'react';
 
 import { useLocale, useTranslations } from '../../i18n';
@@ -22,7 +22,9 @@ import {
 } from '../../primitives/input-group';
 import { Popover, PopoverContent, PopoverTrigger } from '../../primitives/popover';
 import { MEMORY_GROUPS, MEMORY_TYPE_ICON, MemoryAuthorAvatar, useMemoryAuthorName } from './memory-labels';
+import { NeedsConfirming } from './memory-pending';
 import { useUndoMemoryChange } from './memory-recent-change';
+import { MemoryTrash } from './memory-trash';
 
 /** The layer's confirmed pages by type, newest first; unconfirmed pages wait under "Needs confirming". */
 export function groupMemoryPages(pages: readonly ProjectMemoryPageSummary[]) {
@@ -40,16 +42,20 @@ const ROW = 'focus-visible:ring-ring flex h-7.5 w-full shrink-0 items-center rou
 
 /**
  * The Memory tab's left column: search, "All pages", the 4 type groups
- * (collapsible, with counts), Notes when there are some, and "Needs
- * confirming" pinned at the bottom when an agent saved outside content.
+ * (collapsible, with counts), Notes when there are some, Trash when it holds
+ * pages, and "Needs confirming" pinned at the bottom when an agent saved
+ * outside content.
  */
 export function MemoryPageList({
   projectId,
   layerKey,
   pages,
   total,
+  trashCount,
+  canWrite,
   selectedId,
   onSelect,
+  onRemoved,
   onViewChange,
   className,
 }: {
@@ -58,8 +64,14 @@ export function MemoryPageList({
   pages: readonly ProjectMemoryPageSummary[];
   /** "All pages": the layer's pages without notes, the number the tab shows (`memoryPageCount`). */
   total: number;
+  /** Pages in the layer's trash: "Trash" shows while there are some. */
+  trashCount: number;
+  /** The viewer writes this layer: Confirm, Discard and Restore. */
+  canWrite: boolean;
   selectedId: string | null;
   onSelect: (pageId: string) => void;
+  /** A page left the layer (discarded from Needs confirming). */
+  onRemoved: (pageId: string) => void;
   /** A Recent changes row's View: the page, at that version. */
   onViewChange: (pageId: string, versionId: string) => void;
   className?: string;
@@ -164,21 +176,21 @@ export function MemoryPageList({
           {needle && visible.length === 0 ? (
             <p className="text-muted-foreground px-2 py-8 text-xs">{t('noMatches', { query: query.trim() })}</p>
           ) : null}
+          {!needle && trashCount > 0 ? (
+            <MemoryTrash projectId={projectId} layerKey={layerKey} count={trashCount} canWrite={canWrite} onRestored={onSelect} />
+          ) : null}
         </div>
       )}
       {unconfirmed.length > 0 ? (
         <div className="shrink-0 px-3 pb-4">
-          <button
-            type="button"
-            onClick={() => onSelect(unconfirmed[0]!.page_id)}
-            className={cn(ROW, 'bg-kortix-orange/15 text-foreground h-8 gap-2 px-2')}
-          >
-            <span className="flex w-4 shrink-0 justify-center">
-              <WarningCircleIcon aria-hidden className="text-kortix-orange size-3.5" />
-            </span>
-            <span className="flex-1 truncate">{t('needsConfirming')}</span>
-            <CountBadge count={unconfirmed.length} tone="conflict" />
-          </button>
+          <NeedsConfirming
+            projectId={projectId}
+            pages={unconfirmed}
+            canWrite={canWrite}
+            selectedId={selectedId}
+            onSelect={onSelect}
+            onRemoved={onRemoved}
+          />
         </div>
       ) : null}
     </nav>

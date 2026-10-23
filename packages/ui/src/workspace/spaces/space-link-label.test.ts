@@ -22,5 +22,7 @@ describe('space link label', () => {
     expect(linkTitle({ url: 'https://a.com/x', title: ' Spec ' })).toBe('Spec');
     expect(linkTitle({ url: 'https://a.com/x', title: null })).toBe('x');
     expect(linkTitle({ url: 'https://www.a.com/', title: null })).toBe('a.com');
+    expect(linkTitle({ url: 'https://a.com/x', title: null, display_title: 'Pricing page' })).toBe('Pricing page');
+    expect(linkTitle({ url: 'https://a.com/x', title: null, display_title: ' ' })).toBe('x');
   });
 });

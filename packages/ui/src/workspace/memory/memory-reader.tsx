@@ -21,6 +21,7 @@ import { Skeleton } from '../../primitives/skeleton';
 import { errorToast, successToast, undoToast } from '../../primitives/toast';
 import { type MemoryBlock, type MemoryInline, memoryBlocks } from './body-tokens';
 import { MEMORY_TYPE_ICON, MemoryAuthorAvatar, useMemoryAuthorName } from './memory-labels';
+import { PendingBanner } from './memory-pending';
 import { MemoryRecentChange, useUndoMemoryChange } from './memory-recent-change';
 import { SourceChip } from './source-chip';
 
@@ -103,6 +104,10 @@ export function MemoryReader({
           {t('allPages')}
         </Button>
         <MemoryRecentChange projectId={projectId} page={summary} onViewChange={onHistory} onRemoved={onRemoved} />
+        {/* Outside content waits for a person: where it came from, Confirm and Discard. */}
+        {summary.status === 'unconfirmed' && page ? (
+          <PendingBanner projectId={projectId} page={page} onConfirmed={onSelectPage} onRemoved={onRemoved} />
+        ) : null}
         <header className="flex max-w-3xl flex-col items-start gap-4 @xl/reader:flex-row @xl/reader:justify-between @xl/reader:gap-6">
           <div className="flex min-w-0 flex-col gap-1.5">
             <p className="text-muted-foreground text-xs">{t(`type.${summary.type}`)}</p>

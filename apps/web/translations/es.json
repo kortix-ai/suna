@@ -22626,6 +22626,34 @@
         "saved": "Guardado en la memoria",
         "saveTo": "Guardar en",
         "dm": "Tu memoria con {agent}"
+      },
+      "archivedReadOnly": "{place} está archivado. Su memoria es de solo lectura.",
+      "pending": {
+        "note": "Los agentes no usan estas páginas hasta que alguien las confirme.",
+        "from": "De {host}",
+        "banner": "De {host}. Los agentes no lo usan hasta que alguien lo confirme.",
+        "bannerNoHost": "De fuera del hilo. Los agentes no lo usan hasta que alguien lo confirme.",
+        "confirm": "Confirmar",
+        "confirmPage": "Confirmar {title}",
+        "discard": "Descartar",
+        "discardPage": "Descartar {title}",
+        "cancel": "Cancelar",
+        "confirmed": "Página confirmada. Los agentes ya pueden usarla.",
+        "alreadyConfirmed": "Alguien ya confirmó esta página.",
+        "confirmFailed": "No se pudo confirmar la página. Inténtalo de nuevo.",
+        "discarded": "Página descartada",
+        "discardFailed": "No se pudo descartar la página. Inténtalo de nuevo."
+      },
+      "trash": {
+        "title": "Papelera",
+        "note": "Las páginas eliminadas se quedan aquí 30 días y luego se eliminan para siempre.",
+        "loadError": "No se pudo cargar la papelera.",
+        "restore": "Restaurar",
+        "restorePage": "Restaurar {title}",
+        "restored": "Página restaurada",
+        "titleTaken": "Ya existe una página con este título. Cambia su nombre y luego restaura esta.",
+        "restoreFailed": "No se pudo restaurar la página. Inténtalo de nuevo.",
+        "allTrashed": "Todas las páginas están en la papelera."
       }
     },
     "create": {

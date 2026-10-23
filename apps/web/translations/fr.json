@@ -22626,6 +22626,34 @@
         "saved": "Enregistré dans la mémoire",
         "saveTo": "Enregistrer dans",
         "dm": "Votre mémoire avec {agent}"
+      },
+      "archivedReadOnly": "{place} est archivé. Sa mémoire est en lecture seule.",
+      "pending": {
+        "note": "Les agents n’utilisent pas ces pages tant que personne ne les a confirmées.",
+        "from": "De {host}",
+        "banner": "De {host}. Les agents ne l’utilisent pas tant que personne ne l’a confirmé.",
+        "bannerNoHost": "D’en dehors du fil. Les agents ne l’utilisent pas tant que personne ne l’a confirmé.",
+        "confirm": "Confirmer",
+        "confirmPage": "Confirmer {title}",
+        "discard": "Rejeter",
+        "discardPage": "Rejeter {title}",
+        "cancel": "Annuler",
+        "confirmed": "Page confirmée. Les agents peuvent l’utiliser maintenant.",
+        "alreadyConfirmed": "Quelqu’un a déjà confirmé cette page.",
+        "confirmFailed": "Impossible de confirmer la page. Réessayez.",
+        "discarded": "Page rejetée",
+        "discardFailed": "Impossible de rejeter la page. Réessayez."
+      },
+      "trash": {
+        "title": "Corbeille",
+        "note": "Les pages supprimées restent ici 30 jours, puis sont supprimées définitivement.",
+        "loadError": "Impossible de charger la corbeille.",
+        "restore": "Restaurer",
+        "restorePage": "Restaurer {title}",
+        "restored": "Page restaurée",
+        "titleTaken": "Une page porte déjà ce titre. Renommez-la, puis restaurez celle-ci.",
+        "restoreFailed": "Impossible de restaurer la page. Réessayez.",
+        "allTrashed": "Toutes les pages sont dans la corbeille."
       }
     },
     "create": {

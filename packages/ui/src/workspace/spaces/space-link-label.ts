@@ -1,7 +1,7 @@
 /**
- * How the Links tab names a link without fetching it: the host ("paper.design")
- * and, as the title, the decoded path ("file/Pricing page"). A link with no
- * path is named by its host.
+ * How the Links tab names a link: the server's title when it has one, else,
+ * without fetching it, the decoded path ("file/Pricing page") under the host
+ * ("paper.design"). A link with no path is named by its host.
  */
 
 /** The host without `www.`; the raw text when it does not parse. */
@@ -36,7 +36,10 @@ function decode(raw: string): string {
   }
 }
 
-/** The row's title: the title a member gave, else the path, else the host. */
-export function linkTitle(link: { url: string; title: string | null }): string {
-  return link.title?.trim() || linkPathTitle(link.url) || linkHost(link.url);
+/**
+ * The row's title: the server's `display_title` (the title a member gave, else
+ * the page's fetched title), else the title a member gave, else the path, else the host.
+ */
+export function linkTitle(link: { url: string; title: string | null; display_title?: string | null }): string {
+  return link.display_title?.trim() || link.title?.trim() || linkPathTitle(link.url) || linkHost(link.url);
 }
