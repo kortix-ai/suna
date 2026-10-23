@@ -14,6 +14,9 @@ export const RESERVED_SANDBOX_SLUG = 'default';
 /** Regex matching every user-defined slug (triggers, sandboxes, apps, connectors). */
 export const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
+/** The group an agent falls into when it declares no `domain`. Consumer-side only — never written into a manifest. */
+export const DEFAULT_DOMAIN = 'general';
+
 /** Regex matching every legal env-var name. */
 export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
 

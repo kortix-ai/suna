@@ -1210,6 +1210,11 @@ function agentBlockV3Schema(): JsonSchemaFragment {
         additionalProperties: false,
       },
       sandbox: v2.properties.sandbox,
+      domain: {
+        type: 'string',
+        pattern: SLUG_RE.source,
+        description: 'Classification group for the dashboard (a key in the top-level `domains` map, or a bare name). Display-only.',
+      },
       network_egress: v2.properties.network_egress,
     },
     additionalProperties: false,
@@ -1293,6 +1298,20 @@ export function buildManifestV3Schema(): JsonSchemaFragment {
           },
         },
         additionalProperties: false,
+      },
+      domains: {
+        type: ['object', 'null'],
+        description: 'Optional display groups for the dashboard: slug → { label, description, order }. Data-only; groups agents by their `domain`.',
+        propertyNames: { pattern: SLUG_RE.source },
+        additionalProperties: {
+          type: 'object',
+          properties: {
+            label: { type: 'string' },
+            description: { type: 'string' },
+            order: { type: 'number' },
+          },
+          additionalProperties: false,
+        },
       },
       agents: {
         type: 'object',

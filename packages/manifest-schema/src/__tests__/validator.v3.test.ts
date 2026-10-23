@@ -159,3 +159,42 @@ describe('agents.<name>.workspace.project_repository default', () => {
     expect(projectRepositoryDefault(1)).toBe(true);
   });
 });
+
+describe('kortix_version 3: domains (optional grouping)', () => {
+  test('golden has no domain and stays valid (backward compatible)', () => {
+    expect(check(GOLDEN).errors).toEqual([]);
+  });
+
+  test('an agent may declare a domain', () => {
+    const yaml = swap('codemode: on', 'codemode: on\n    domain: engineering');
+    expect(check(yaml).errors).toEqual([]);
+  });
+
+  test('a top-level domains map is accepted', () => {
+    const yaml = swap(
+      'agents:',
+      'domains:\n  engineering:\n    label: Engineering\n    order: 1\n  marketing:\n    label: Marketing\nagents:',
+    );
+    expect(check(yaml).errors).toEqual([]);
+  });
+
+  test('a non-string agent domain is an error', () => {
+    const yaml = swap('codemode: on', 'codemode: on\n    domain: 42');
+    expect(errorPaths(yaml)).toContain('agents.assistant.domain');
+  });
+
+  test('an invalid agent domain slug is an error', () => {
+    const yaml = swap('codemode: on', 'codemode: on\n    domain: "Not A Slug"');
+    expect(errorPaths(yaml)).toContain('agents.assistant.domain');
+  });
+
+  test('an unknown key inside a domain is an error', () => {
+    const yaml = swap('agents:', 'domains:\n  eng:\n    color: red\nagents:');
+    expect(errorPaths(yaml)).toContain('domains.eng.color');
+  });
+
+  test('a non-numeric domain order is an error', () => {
+    const yaml = swap('agents:', 'domains:\n  eng:\n    order: soon\nagents:');
+    expect(errorPaths(yaml)).toContain('domains.eng.order');
+  });
+});
