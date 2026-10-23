@@ -1923,8 +1923,8 @@
     }
   },
   "sessionDelete": {
-    "description": "Deletes <name>{label}</name> and removes its sandbox. You can restore it from Recently deleted for {days} days. After that, its messages and files are deleted. Its branch is kept.",
-    "bulkDescription": "Deletes each selected session and removes its sandbox. You can restore each one from Recently deleted for {days} days. After that, its messages and files are deleted. Its branch is kept.",
+    "description": "Deletes <name>{label}</name> and removes its sandbox. You can restore it from Recently deleted for {days} days. After that, its messages, files and branch are deleted.",
+    "bulkDescription": "Deletes each selected session and removes its sandbox. You can restore each one from Recently deleted for {days} days. After that, its messages, files and branch are deleted.",
     "restoring": "Restoring the session…",
     "undo": "Undo",
     "restored": "Session restored",

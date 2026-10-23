@@ -1923,8 +1923,8 @@
     }
   },
   "sessionDelete": {
-    "description": "Elimina <name>{label}</name> y quita su sandbox. Puedes restaurarla desde Eliminadas recientemente durante {days} días. Después, se eliminan sus mensajes y archivos. Su rama se conserva.",
-    "bulkDescription": "Elimina cada sesión seleccionada y quita su sandbox. Puedes restaurar cada una desde Eliminadas recientemente durante {days} días. Después, se eliminan sus mensajes y archivos. Su rama se conserva.",
+    "description": "Elimina <name>{label}</name> y quita su sandbox. Puedes restaurarla desde Eliminadas recientemente durante {days} días. Después, se eliminan sus mensajes, archivos y su rama.",
+    "bulkDescription": "Elimina cada sesión seleccionada y quita su sandbox. Puedes restaurar cada una desde Eliminadas recientemente durante {days} días. Después, se eliminan sus mensajes, archivos y su rama.",
     "restoring": "Restaurando la sesión…",
     "undo": "Deshacer",
     "restored": "Sesión restaurada",

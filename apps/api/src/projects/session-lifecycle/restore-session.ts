@@ -2,9 +2,9 @@
  * `restoreSession`: take a deleted session out of the trash (KRTX-1734).
  *
  * A delete keeps the session row, its branch, its transcript and its stored
- * files, and removes its box. Until the retention purge takes its rows
- * (`SESSION_DELETE_ROWS_DAYS` after the delete, session-log-purge.ts), a
- * restore brings the session back:
+ * files, and removes its box. Until the retention purge takes its content
+ * and the branch sweep its branch (`SESSION_DELETE_ROWS_DAYS` after the
+ * delete, session-log-purge.ts), a restore brings the session back:
  *
  *  - the tombstone (`deletedAt`, `deletedBy`) goes, so every list and read
  *    serves the session again and the purge skips it;
@@ -69,7 +69,7 @@ const NOT_DELETED = {
 
 const PURGED = {
   status: 410,
-  error: `This session was deleted more than ${SESSION_DELETE_ROWS_DAYS} days ago. Its messages and files are gone.`,
+  error: `This session was deleted more than ${SESSION_DELETE_ROWS_DAYS} days ago. Its messages, files and branch are deleted.`,
   code: 'session_purged',
 } as const;
 
