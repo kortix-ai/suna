@@ -53,7 +53,7 @@ export interface ConnectionIdentity {
   connectionId: string;
 }
 
-async function authorizationCanCompleteOAuth(
+export async function authorizationCanCompleteOAuth(
   connectionId: string,
   initiatedBy: string,
 ): Promise<boolean> {

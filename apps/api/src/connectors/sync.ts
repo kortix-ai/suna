@@ -66,6 +66,7 @@ import { assertConnectorEndpointUrl, connectorEgressFetch } from './egress';
 import type { ProjectPolicySpec } from '../projects/policies';
 import { connectorConfig, toPolicyRows, toProjectPolicyRows } from './materialize';
 import {
+  graphqlDocumentAction,
   normalizeComposio,
   normalizeGraphql,
   normalizeHttp,
@@ -88,6 +89,7 @@ import {
   mergeAuthDiscoveries,
 } from './auth-discovery';
 import type { HttpRouteSpec, NormalizedAction } from './types';
+import { shopifyCatalog } from './shopify';
 
 export interface SyncResult {
   synced: number;
@@ -1415,12 +1417,20 @@ export async function resolveCatalog(
         return { actions: normalizeHttp(routes), server: spec.baseUrl };
       }
       case 'graphql': {
-        const introspection = await introspectGraphql(spec.endpoint!);
-        return {
-          actions: normalizeGraphql(introspection),
-          server: spec.endpoint,
-        };
+        assertAllowedEndpointUrl(spec.endpoint!);
+        let actions: NormalizedAction[] = [];
+        try {
+          actions = normalizeGraphql(await introspectGraphql(spec.endpoint!));
+        } catch {
+          // Introspection refused or failed: fall through to the raw action.
+        }
+        // A server that disables introspection still answers documents.
+        if (actions.length === 0) actions = [graphqlDocumentAction()];
+        return { actions, server: spec.endpoint };
       }
+      case 'shopify':
+        // A fixed catalog: Shopify disables introspection, and no network call is needed.
+        return { actions: shopifyCatalog(), server: null };
       case 'mcp': {
         assertAllowedEndpointUrl(spec.url!);
         const tools = await listMcpTools({

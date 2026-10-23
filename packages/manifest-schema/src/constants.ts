@@ -170,8 +170,13 @@ export const CONNECTOR_PROVIDERS = [
   'graphql',
   'http',
   'channel',
+  // Native Shopify Admin API: a fixed GraphQL action set, OAuth per store.
+  'shopify',
 ] as const;
 export type ConnectorProvider = (typeof CONNECTOR_PROVIDERS)[number];
+
+/** A store's permanent myshopify.com host, the one Shopify's OAuth and Admin API answer on. */
+export const SHOPIFY_SHOP_RE = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/;
 export const CONNECTOR_AUTH_TYPES = [
   'bearer',
   'basic',

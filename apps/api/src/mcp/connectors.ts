@@ -176,7 +176,8 @@ export const CONNECTOR_TOOLS = [
         project_id: PROJECT_ID,
         app: { type: 'string', description: 'Composio toolkit slug from search_connector_apps, e.g. "gmail".' },
         slug: { type: 'string', description: 'The connector\'s name in kortix.yaml (lowercase letters, digits, - and _). Defaults to `app`.' },
-        provider: { type: 'string', enum: ['composio', 'mcp', 'openapi', 'postman', 'graphql', 'http'], description: 'Default composio when `app` is given; required otherwise.' },
+        provider: { type: 'string', enum: ['composio', 'mcp', 'openapi', 'postman', 'graphql', 'http', 'shopify'], description: 'Default composio when `app` is given (shopify for app "shopify"); required otherwise.' },
+        shop: { type: 'string', description: 'Default Shopify store, <name>.myshopify.com (provider shopify).' },
         name: { type: 'string', description: 'Display name.' },
         url: { type: 'string', description: 'MCP server URL (provider mcp).' },
         transport: { type: 'string', enum: ['http', 'sse'], description: 'MCP transport (provider mcp).' },
@@ -580,19 +581,22 @@ export async function runConnectorTool(name: string, input: Record<string, unkno
       // Connectors v2: an app is its vendor's MCP server, from Kortix's catalogue.
       const mcpApp = app && !h.optionalArg(input, 'provider') && (await mcpAppsCatalogue(h, pid)) ? await findMcpApp(h, base, app) : null;
       if (app && mcpApp === undefined) throw h.input(`"${app}" is not in the app catalogue: search_connector_apps lists the apps`);
-      const provider = mcpApp ? 'mcp' : (h.optionalArg(input, 'provider') ?? (app ? 'composio' : undefined));
+      // Shopify is a native provider: Composio's shared app cannot read orders.
+      const nativeShopify = !mcpApp && app?.toLowerCase() === 'shopify' && !h.optionalArg(input, 'provider');
+      const provider = mcpApp ? 'mcp' : nativeShopify ? 'shopify' : (h.optionalArg(input, 'provider') ?? (app ? 'composio' : undefined));
       const slug = h.optionalArg(input, 'slug') ?? app;
       if (!provider || !slug) throw h.input('pass `app` (a managed app from search_connector_apps), or `provider` and `slug` for your own server');
       const draft: Record<string, unknown> = mcpApp ? { slug, provider, name: mcpApp.name, url: mcpApp.url, transport: 'http' } : { slug, provider };
-      for (const [from, to] of [['app', 'app'], ['name', 'name'], ['url', 'url'], ['transport', 'transport'], ['endpoint', 'endpoint'], ['spec', 'spec'], ['base_url', 'baseUrl']] as const) {
-        if (mcpApp && from === 'app') continue;
+      if (provider === 'shopify' && !draft.name) draft.name = 'Shopify';
+      for (const [from, to] of [['app', 'app'], ['name', 'name'], ['url', 'url'], ['transport', 'transport'], ['endpoint', 'endpoint'], ['spec', 'spec'], ['base_url', 'baseUrl'], ['shop', 'shop']] as const) {
+        if ((mcpApp || provider === 'shopify') && from === 'app') continue;
         const v = h.optionalArg(input, from);
         if (v) draft[to] = v;
       }
       const r = await h.call('POST', `${base}/connectors`, { body: draft });
       if (r.status >= 400) return h.apiResult(r);
       const done = parse(r.body) ?? {};
-      const oauth = provider === 'composio' || mcpApp !== null;
+      const oauth = provider === 'composio' || provider === 'shopify' || mcpApp !== null;
       return h.text(
         JSON.stringify(
           {

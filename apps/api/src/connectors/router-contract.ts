@@ -439,23 +439,20 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
     sig: string | null,
   ): Promise<{ ok: boolean; connected: boolean }>;
   /**
-   * The public form that connects a toolkit on the customer's own app
-   * (`composio-app-form.ts`). No user auth: the sealed token is the capability.
+   * The public connect form (`app-form.ts`): the native Shopify sign-in and
+   * Composio's own-app form. No user auth: the sealed token is the capability.
    */
   appForm?: {
-    info(token: string): Promise<{
-      app: string;
-      name: string;
-      connector: string;
-      connected: boolean;
-      connected_as: string | null;
-      expires_at: string;
-    }>;
+    info(token: string): Promise<import('./app-form').AppFormInfo>;
     submit(
       token: string,
       body: { store?: unknown; client_id?: unknown; client_secret?: unknown },
-    ): Promise<{ connected: true; connected_as: string; success_redirect_uri?: string }>;
+    ): Promise<import('./app-form').AppFormResult>;
   };
+  /** Shopify's OAuth callback (`shopify-connect.ts`): a redirect or a 400 text. */
+  shopifyCallback?(
+    requestUrl: string,
+  ): Promise<{ status: 302; location: string } | { status: 400; body: string }>;
   /**
    * A page of the Pipedream catalogue, filtered by query and/or category.
    *

@@ -50,6 +50,7 @@ import {
   CONNECTOR_POLICY_ACTIONS,
   CONNECTOR_PROVIDERS,
   ENV_NAME_RE,
+  SHOPIFY_SHOP_RE,
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
   GRANTABLE_KORTIX_PERMISSIONS,
   HEX_COLOR_RE_V2,
@@ -663,6 +664,10 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
       transport: normalizedEnumSchema(['http', 'sse']),
       spec: { type: 'string' },
       platform: normalizedEnumSchema(CHANNEL_PLATFORMS),
+      // shopify: the default store, `<name>.myshopify.com`.
+      shop: { type: 'string', pattern: SHOPIFY_SHOP_RE.source },
+      // shopify: the Admin API scopes Connect requests.
+      scopes: { type: 'array', items: NON_BLANK_STRING },
       credential: credentialSchema,
       authorization_strategy: {
         ...normalizedEnumSchema(CONNECTOR_AUTHORIZATION_STRATEGIES),
@@ -720,6 +725,14 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
         then: { anyOf: [{ required: ['base_url'] }, { required: ['baseUrl'] }] },
       },
       { if: { properties: { provider: normalizedEnumSchema(['channel']) } }, then: { required: ['platform'] } },
+      // shopify connectors authenticate through the store's OAuth grant.
+      {
+        if: {
+          properties: { provider: normalizedEnumSchema(['shopify']) },
+          required: ['auth'],
+        },
+        then: { properties: { auth: { properties: { type: normalizedEnumSchema(['none']) } } } },
+      },
       // channel connectors authenticate via the platform install token.
       {
         if: {

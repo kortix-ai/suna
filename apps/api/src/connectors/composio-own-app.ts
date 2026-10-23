@@ -11,7 +11,7 @@
  * them. Each connection therefore gets its own auth config, named after the
  * connection (`connectionAuthConfigName`), and connect opens Kortix's own form
  * (`/connect/app/<token>` on the web app), which collects the credentials and
- * the store. The form posts to `composio-app-form.ts`.
+ * the store. The form posts to `app-form.ts`.
  *
  * The link token is stateless, like a setup link (`setup-links/token.ts`): an
  * AEAD envelope under the project's key, so it cannot be forged or moved to
@@ -37,21 +37,8 @@ export function ownApp(toolkit: string): OwnApp | null {
   return OWN_APPS[toolkit.trim().toLowerCase()] ?? null;
 }
 
-/**
- * The store's permanent myshopify.com name (`acme` in `acme.myshopify.com`),
- * from what a person pastes: the name, the host, or an admin URL. `null` for
- * anything else, such as a custom domain, which the token endpoint refuses.
- */
-export function normalizeShopifyStore(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  let text = value.trim().toLowerCase();
-  if (!text) return null;
-  const adminStore = /admin\.shopify\.com\/store\/([a-z0-9][a-z0-9-]*)/.exec(text);
-  if (adminStore) return adminStore[1]!;
-  text = text.replace(/^https?:\/\//, '').split(/[/?#]/)[0]!;
-  text = text.replace(/\.myshopify\.com$/, '');
-  return /^[a-z0-9][a-z0-9-]{0,59}$/.test(text) ? text : null;
-}
+/** The store's permanent myshopify.com name (`acme` in `acme.myshopify.com`). */
+export { shopifyStoreName as normalizeShopifyStore } from './shopify';
 
 const TOKEN_PREFIX = 'kaf_';
 /** Long enough to make a Shopify app in the Dev Dashboard while the form waits. */
@@ -68,6 +55,8 @@ export interface AppFormPayload {
   exp: number;
   /** Where the form sends the browser after success (an allowed return page only). */
   ok?: string;
+  /** The user who started Connect. A Shopify OAuth grant completes as them. */
+  u?: string;
 }
 
 export function newAppFormNonce(): string {
@@ -80,6 +69,7 @@ export function mintAppFormToken(input: {
   app: string;
   nonce: string;
   successRedirect?: string;
+  userId?: string | null;
   now?: number;
 }): string {
   const ok = allowedReturnUri(input.successRedirect);
@@ -91,6 +81,7 @@ export function mintAppFormToken(input: {
     n: input.nonce,
     exp: (input.now ?? Date.now()) + TOKEN_TTL_MS,
     ...(ok ? { ok } : {}),
+    ...(input.userId ? { u: input.userId } : {}),
   };
   const envelope = encryptProjectSecret(input.projectId, JSON.stringify(payload));
   return TOKEN_PREFIX + Buffer.from(`${input.projectId}.${envelope}`, 'utf8').toString('base64url');
