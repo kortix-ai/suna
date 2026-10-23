@@ -18,8 +18,8 @@ export class MemoryError extends Error {
     super(message);
   }
 
-  get body(): Record<string, unknown> {
-    return { error: this.message, code: this.code, ...this.extra };
+  get body(): { error: string; code: string } & Record<string, unknown> {
+    return { ...this.extra, error: this.message, code: this.code };
   }
 }
 

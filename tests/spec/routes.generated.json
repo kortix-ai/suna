@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 895,
+  "count": 906,
   "routes": [
     {
       "method": "GET",
@@ -2493,6 +2493,50 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/marketplace/install-session"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/memory/layers/:layerKey"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/memory/layers/:layerKey/changes"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/memory/layers/:layerKey/notes"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/memory/layers/:layerKey/pages"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/memory/layers/:layerKey/pages"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/memory/pages/:pageId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/memory/pages/:pageId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/memory/pages/:pageId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/memory/pages/:pageId/history"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/memory/pages/:pageId/restore"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/memory/versions/:versionId/undo"
     },
     {
       "method": "GET",
