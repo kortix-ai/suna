@@ -1290,6 +1290,10 @@
         "goals": {
           "name": "Obiettivi",
           "description": "Assegna a un agente un obiettivo di cui resta responsabile finché un controllo indipendente non conferma il risultato. Pianifica, lavora, attende, sollecita le persone e conserva il suo stato in una cartella Goals in File. Richiede Volumi e Promemoria attivi."
+        },
+        "workspace_volume": {
+          "name": "Volume del workspace",
+          "description": "Mantiene la /workspace di ogni nuova sessione su un volume dedicato, così una sandbox ferma può essere eliminata e la successiva si avvia con gli stessi file e la stessa conversazione. Kortix lo attiva per progetto."
         }
       }
     },

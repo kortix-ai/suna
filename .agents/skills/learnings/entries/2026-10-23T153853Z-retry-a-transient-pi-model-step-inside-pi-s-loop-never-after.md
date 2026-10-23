@@ -1,5 +1,5 @@
 ---
-recorded: 2026-10-23T15:45:00Z
+recorded: 2026-10-23T15:38:53Z
 incident_date: 2026-10-23
 ---
 # Retry a transient pi model step inside pi's loop, never after session.prompt returns
