@@ -96,6 +96,8 @@ describe('the Kortix MCP app catalogue', () => {
     // Linear's toolkit and Notion's registry entry on notion.com are gone.
     expect((await catalog.list({ q: 'linear' })).items.map((item) => item.id)).toEqual(['kortix:linear']);
     expect((await catalog.list({ q: 'notion' })).items.map((item) => item.id)).toEqual(['kortix:notion']);
+    // A worse surface of an app still answers a search for it.
+    expect((await catalog.list({ q: 'graph mail' })).items.map((item) => item.id)).toEqual(['graph-mail-openapi']);
     // Browse sections keep a domain's first record: the toolkit, not Outlook's setup-only server.
     const productivity = (await catalog.sections({ perCategory: 24 })).sections.find((section) => section.key === 'productivity');
     expect(productivity?.items.map((item) => item.id)).toContain('composio:outlook');
@@ -143,6 +145,8 @@ function v2Catalog() {
             record('acme-mcp', 'mcp', 'Acme', 'acme.com', { mcpUrl: 'https://mcp.acme.com/mcp', oneClick: true, popularity: 50 }),
             record('outlook-mcp', 'mcp', 'Outlook', 'outlook.com', { mcpUrl: 'https://mcp.outlook.example/mcp' }),
             record('billing-openapi', 'openapi', 'Billing', 'billing.dev'),
+            record('graph-files-mcp', 'mcp', 'Graph Files', 'graph.example', { mcpUrl: 'https://graph.example/mcp', oneClick: true }),
+            record('graph-mail-openapi', 'openapi', 'Graph Mail', 'graph.example'),
             record('linear-openapi', 'openapi', 'Linear', 'linear.app'),
             record('notion-com-mcp', 'mcp', 'Notion', 'notion.com', { mcpUrl: 'https://mcp.notion.com/mcp', oneClick: true }),
           ],

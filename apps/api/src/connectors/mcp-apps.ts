@@ -342,32 +342,38 @@ export async function connectorsV2Items(
     ...direct,
     ...toolkits.map((card) => composioCatalogItem(card, domainOf.get(appNameKey(card.name)))),
   ];
-  // One record per app, its best way in. A dropped record is a worse surface
-  // of the same app: the app page still lists every surface of its domain.
-  const best = new Map<string, ConnectorCatalogItem>();
+  // Every record stays: a search must still find a worse surface of an app,
+  // and the registry files several apps under one domain (Microsoft Graph).
+  // Records come grouped by domain, best way in first, so `list` and the
+  // browse sections stand each app for its best record.
+  const byDomain = new Map<string, ConnectorCatalogItem[]>();
   for (const item of items) {
-    const current = best.get(item.domain);
-    if (!current || surfaceRank(item) < surfaceRank(current)) best.set(item.domain, item);
+    const group = byDomain.get(item.domain);
+    if (group) group.push(item);
+    else byDomain.set(item.domain, [item]);
   }
-  // Browse order: Kortix's apps; then the registry's popular apps and the
-  // managed apps (in their usage order) taking turns, as neither ranks the
-  // other; then the long tail.
-  const apps = [...best.values()];
-  const popular = apps.filter((item) => !item.feeds.includes('kortix') && item.popularity !== null);
-  popular.sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0));
-  // `best` keeps the position a domain was first seen at; toolkits keep theirs.
   const position = new Map(items.map((item, index) => [item, index]));
-  const managed = apps
-    .filter((item) => item.kind === 'composio')
-    .sort((a, b) => position.get(a)! - position.get(b)!);
-  const turns: ConnectorCatalogItem[] = [];
+  const groups = [...byDomain.values()].map((group) =>
+    group.sort((a, b) => surfaceRank(a) - surfaceRank(b) || position.get(a)! - position.get(b)!),
+  );
+  // Browse order, by each app's best record: Kortix's apps; then the
+  // registry's popular apps and the managed apps (in their usage order) taking
+  // turns, as neither ranks the other; then the long tail.
+  const head = (group: ConnectorCatalogItem[]) => group[0]!;
+  const curatedApps = groups.filter((group) => head(group).feeds.includes('kortix'));
+  const popular = groups
+    .filter((group) => !head(group).feeds.includes('kortix') && head(group).popularity !== null)
+    .sort((a, b) => (head(b).popularity ?? 0) - (head(a).popularity ?? 0));
+  const managed = groups
+    .filter((group) => head(group).kind === 'composio')
+    .sort((a, b) => position.get(head(a))! - position.get(head(b))!);
+  const turns: ConnectorCatalogItem[][] = [];
   for (let i = 0; i < Math.max(popular.length, managed.length); i++) {
     if (popular[i]) turns.push(popular[i]);
     if (managed[i]) turns.push(managed[i]);
   }
-  const placed = new Set(turns);
-  const curatedApps = apps.filter((item) => item.feeds.includes('kortix'));
-  return [...curatedApps, ...turns, ...apps.filter((item) => !placed.has(item) && !item.feeds.includes('kortix'))];
+  const placed = new Set([...curatedApps, ...turns]);
+  return [...curatedApps, ...turns, ...groups.filter((group) => !placed.has(group))].flat();
 }
 
 /** The Discover catalogue a `connectors_v2` project browses. */
