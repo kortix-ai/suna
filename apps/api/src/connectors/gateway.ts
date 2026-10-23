@@ -985,7 +985,7 @@ async function enforceCallPolicies(
     };
   };
 
-  const decision = resolveEffectiveAction({
+  let decision = resolveEffectiveAction({
     fullPath,
     relPath: input.actionPath,
     projectPolicies,
@@ -1000,6 +1000,23 @@ async function enforceCallPolicies(
     args: executionArgs,
     argsAvailable: true,
   });
+  // A raw GraphQL document (a server that refuses introspection) runs whatever
+  // the caller writes, mutations included. No per-field rule, no wildcard and
+  // no project default can stand in for a decision about it: it runs
+  // unattended only when a rule names it exactly, else it asks for approval.
+  if (action.binding.kind === 'graphql_document' && decision.action === 'always_run') {
+    decision = resolveEffectiveAction({
+      fullPath,
+      relPath: input.actionPath,
+      projectPolicies: projectPolicies.filter((policy) => policy.match === fullPath),
+      connectorPolicies: connectorPolicies.filter((policy) => policy.match === input.actionPath),
+      risk: 'write',
+      defaultMode: 'risk',
+      sensitive: connector.sensitive,
+      args: executionArgs,
+      argsAvailable: true,
+    });
+  }
   if (decision.action === 'block') {
     await audit(
       deps,

@@ -27,7 +27,7 @@ Connectors live in `kortix.yaml` under `connectors:`, or in a file it lists unde
 | `mcp` | A remote MCP server. | `url`; `transport` is `http` (default) or `sse` |
 | `openapi` | An API with an OpenAPI document. | `spec` (a URL or a repo path) |
 | `postman` | An API described by a Postman collection. | `spec` |
-| `graphql` | A GraphQL endpoint. Kortix introspects it when `spec` is absent. A server that refuses introspection gets one `graphql` action that takes the document. | `endpoint` |
+| `graphql` | A GraphQL endpoint. Kortix introspects it when `spec` is absent. A server that answers but refuses introspection gets one `graphql` action that takes the document; it asks for approval unless a policy names `graphql` exactly. | `endpoint` |
 | `shopify` | A Shopify store's Admin API, connected with your own Shopify app. See [Shopify](/docs/connect/shopify). | none; `shop` and `scopes` are optional |
 | `http` | A raw HTTP API. | `base_url` |
 | `channel` | Slack, Microsoft Teams or email. Kortix writes it when you connect a [channel](/docs/connect/channels). | `platform` |

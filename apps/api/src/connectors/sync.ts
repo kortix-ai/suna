@@ -1417,16 +1417,17 @@ export async function resolveCatalog(
         return { actions: normalizeHttp(routes), server: spec.baseUrl };
       }
       case 'graphql': {
-        assertAllowedEndpointUrl(spec.endpoint!);
-        let actions: NormalizedAction[] = [];
-        try {
-          actions = normalizeGraphql(await introspectGraphql(spec.endpoint!));
-        } catch {
-          // Introspection refused or failed: fall through to the raw action.
-        }
-        // A server that disables introspection still answers documents.
-        if (actions.length === 0) actions = [graphqlDocumentAction()];
-        return { actions, server: spec.endpoint };
+        // A request that fails stays an error (the catalog is not replaced).
+        const introspection = await introspectGraphql(spec.endpoint!);
+        const actions = normalizeGraphql(introspection);
+        if (actions.length > 0) return { actions, server: spec.endpoint };
+        // The server answered but refuses introspection (Shopify does): one raw
+        // action, which the gateway never runs unattended without a rule that
+        // names it (see `graphql_document` in gateway.ts).
+        return {
+          actions: introspectionRefused(introspection) ? [graphqlDocumentAction()] : [],
+          server: spec.endpoint,
+        };
       }
       case 'shopify':
         // A fixed catalog: Shopify disables introspection, and no network call is needed.
@@ -1679,6 +1680,13 @@ async function loadHttpRoutes(
   const parsed = /\.toml$/i.test(spec) ? (parseToml(raw) as any) : JSON.parse(raw);
   const routes = Array.isArray(parsed?.routes) ? parsed.routes : [];
   return routes as HttpRouteSpec[];
+}
+
+/** The server answered the introspection query with errors and no schema. */
+function introspectionRefused(body: unknown): boolean {
+  const payload = (body ?? {}) as { data?: { __schema?: unknown } | null; errors?: unknown };
+  const errors = payload.errors;
+  return !payload.data?.__schema && (typeof errors === 'string' ? errors.length > 0 : Array.isArray(errors) && errors.length > 0);
 }
 
 async function introspectGraphql(endpoint: string): Promise<any> {
