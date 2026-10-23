@@ -7,12 +7,22 @@
  * a DM `<personal>/Memory/agents/<agent>/` (`spaceDriveFolders`). Each `*.md`
  * file at depth ≤ 2 except `MEMORY.md` becomes one page (`op: import`, author
  * `system`, one `change_id` per page so Undo removes one page). Drive files are
- * read only, never changed. A file holding a secret is skipped and logged by path.
+ * read only, never changed.
+ *
+ * Skipped and logged by path (the rest still import): a file holding a secret,
+ * a blank or unreadable file, a file whose write fails, and — for Company and
+ * channels, which every member reads — a file the Drive grants do not let every
+ * project member read.
  *
  * Idempotent: the pages and `imported_at` commit in one transaction that holds
  * the layer row lock and re-checks `imported_at`, so a second run imports nothing.
  * Drive off, no drive, no folder: `imported_at` is set with nothing imported.
- * A storage failure throws, and the job queue retries with backoff.
+ * A storage outage (503) throws, and the job queue retries with backoff.
+ *
+ * Decisions: an archived channel's layer still imports (the files predate the
+ * archive; the pages are read-only like the rest of it). The import does not
+ * re-check `project_channels`: a layer exists only with the flag on, and pages
+ * of a flag-off project are kept data that nobody sees.
  */
 import { randomUUID } from 'node:crypto';
 import { MEMORY_LIMITS, type MemoryPageType } from '@kortix/api-contract';
@@ -20,9 +30,9 @@ import { memoryLayers, projectSpaces } from '@kortix/db';
 import { spaceDriveFolders } from '@kortix/shared';
 import { eq } from 'drizzle-orm';
 import { conflictOriginal } from '../drives/access';
-import { COMPANY_MEMORY_DIR } from '../drives/folders';
+import { COMPANY_MEMORY_DIR, type FolderGrant, folderAccess } from '../drives/folders';
 import { type DriveRow, findProjectDrive, listFolderGrants, personalFolderFor, readDriveVolume } from '../drives/service';
-import { DriveStorageError, driveStorageAvailable, listVolumeFiles, readVolumeFile } from '../drives/volumes';
+import { DriveStorageError, driveStorageAvailable, listVolumeFiles, readVolumeFile, type VolumeEntry } from '../drives/volumes';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
@@ -41,6 +51,7 @@ const KEEP_BYTES = 8_000;
 const READ_BYTES = 16 * 1024;
 /** The source an imported page cites: its only source, so number 1. */
 const SOURCE_TOKEN = '⟦1⟧';
+const FENCE = /^\s*(```|~~~)/;
 
 const SYSTEM_AUTHOR: Author = { kind: 'system', userId: null, agent: null, onBehalfUserId: null, sessionId: null, messageId: null };
 
@@ -71,6 +82,20 @@ export function importFiles<T extends { path: string; type: string }>(folder: st
     .slice(0, IMPORT_MAX_FILES);
 }
 
+/** May every project member read `path` under these grants? Company and channel layers show a page to every member. */
+export function everyMemberReads(path: string, grants: readonly FolderGrant[]): boolean {
+  return folderAccess(path, grants, { projectMember: true }) !== 'none';
+}
+
+/** File bytes as text: UTF-16 by its byte order mark, else UTF-8; NUL characters (which Postgres text refuses) dropped. */
+export function decodeFile(bytes: Uint8Array): string {
+  let text: string;
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) text = new TextDecoder('utf-16le').decode(bytes.subarray(2));
+  else if (bytes[0] === 0xfe && bytes[1] === 0xff) text = new TextDecoder('utf-16be').decode(bytes.subarray(2));
+  else text = new TextDecoder().decode(bytes);
+  return text.replaceAll('\u0000', '');
+}
+
 const TYPE_BY_NAME: ReadonlyArray<[RegExp, MemoryPageType]> = [
   [/people|profile|contacts|customers/i, 'people'],
   [/decision/i, 'decisions'],
@@ -83,16 +108,31 @@ export function pageTypeOf(fileName: string): MemoryPageType {
   return TYPE_BY_NAME.find(([re]) => re.test(fileName))?.[1] ?? 'note';
 }
 
+/** Per line: is it inside a fenced code block (fence lines included)? */
+function fenced(lines: readonly string[]): boolean[] {
+  let open = false;
+  return lines.map((line) => {
+    if (FENCE.test(line)) {
+      open = !open;
+      return true;
+    }
+    return open;
+  });
+}
+
 /**
  * The body to store: the text plus the source token, whole when it fits the
  * cap; else cut at the last line break within 8,000 bytes (or less, so the
- * note fits) and ended with a note that names the Drive path.
+ * note fits), a code fence left open by the cut closed, and ended with a note
+ * that names the Drive path.
  */
 export function cutBody(text: string, path: string): string {
   const whole = text ? `${text}\n\n${SOURCE_TOKEN}` : SOURCE_TOKEN;
   if (Buffer.byteLength(whole, 'utf8') <= MEMORY_LIMITS.body_bytes) return whole;
+  const close = '\n```';
   const note = `\n\n(Imported in part; the full file is in Drive: ${path}) ${SOURCE_TOKEN}`;
-  const budget = Math.max(0, Math.min(KEEP_BYTES, MEMORY_LIMITS.body_bytes - Buffer.byteLength(note, 'utf8')));
+  const room = MEMORY_LIMITS.body_bytes - Buffer.byteLength(note + close, 'utf8');
+  const budget = Math.max(0, Math.min(KEEP_BYTES, room));
   const bytes = Buffer.from(text, 'utf8');
   let end = bytes.lastIndexOf(0x0a, budget);
   if (end <= 0) {
@@ -100,7 +140,9 @@ export function cutBody(text: string, path: string): string {
     end = budget;
     while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end--;
   }
-  return bytes.subarray(0, end).toString('utf8').trimEnd() + note;
+  const kept = bytes.subarray(0, end).toString('utf8').trimEnd();
+  const openFence = kept.split('\n').filter((line) => FENCE.test(line)).length % 2 === 1;
+  return kept + (openFence ? close : '') + note;
 }
 
 export interface ImportedPage {
@@ -115,22 +157,25 @@ export interface ImportedPage {
 }
 
 /**
- * The page of one Drive file. Title: the first `# ` heading (dropped from the
- * body when it is the first line), else the file name without extension.
- * Summary: the first line that is not blank and not a heading. Null for a
- * blank file and for one that holds a secret.
+ * The page of one Drive file. Title: the first `# ` heading outside a code
+ * fence (dropped from the body when it is the first line), else the file name
+ * without extension. Summary: the first line that is not blank, not a heading
+ * and not in a code fence. A blank file or one holding a secret is skipped.
  */
-export function importedPage(path: string, raw: string): ImportedPage | null {
+export function importedPage(path: string, raw: string): ImportedPage | { skip: 'blank' | 'secret' } {
   const text = raw.replace(/\r\n?/g, '\n');
-  if (!text.trim() || findSecret(text)) return null;
+  if (!text.trim()) return { skip: 'blank' };
+  if (findSecret(text)) return { skip: 'secret' };
   const fileName = baseName(path);
   const fallbackTitle = withoutExt(fileName).trim().slice(0, MEMORY_LIMITS.title_chars) || 'Imported';
   const lines = text.split('\n');
-  const heading = lines.findIndex((line) => /^# \S/.test(line));
+  const inFence = fenced(lines);
+  const heading = lines.findIndex((line, i) => !inFence[i] && /^# \S/.test(line));
   const title = heading >= 0 ? lines[heading]!.slice(2).trim().slice(0, MEMORY_LIMITS.title_chars) : fallbackTitle;
+  const summaryLine =
+    lines.find((line, i) => i !== heading && !inFence[i] && line.trim() !== '' && !/^\s*#{1,6}(\s|$)/.test(line)) ?? '';
   const firstLine = lines.findIndex((line) => line.trim() !== '');
   if (heading >= 0 && heading === firstLine) lines.splice(heading, 1);
-  const summaryLine = lines.find((line) => line.trim() !== '' && !line.trimStart().startsWith('#')) ?? '';
   return {
     type: pageTypeOf(fileName),
     title,
@@ -151,24 +196,49 @@ interface LayerToImport {
   dmAgentName: string | null;
 }
 
+interface Source {
+  drive: DriveRow;
+  folder: string;
+  /** May the layer's readers read this file? */
+  readable: (path: string) => boolean;
+}
+
 /** The drive and Memory folder a layer imports from; null when there is none (Drive off, no drive, a DM owner without a folder). */
-async function sourceFolder(layer: LayerToImport): Promise<{ drive: DriveRow; folder: string } | null> {
+async function sourceFolder(layer: LayerToImport): Promise<Source | null> {
   if (!driveStorageAvailable() || !(await projectFeatureFlagEnabled(layer.projectId, 'drives'))) return null;
   const drive = await findProjectDrive(layer.projectId);
   if (!drive) return null;
-  if (layer.scope === 'company') return { drive, folder: COMPANY_MEMORY_DIR };
+  const grants = await listFolderGrants(drive);
+  const everyMember = (path: string) => everyMemberReads(path, grants);
+  if (layer.scope === 'company') return { drive, folder: COMPANY_MEMORY_DIR, readable: everyMember };
   if (layer.scope === 'channel') {
     const folders = layer.slug ? spaceDriveFolders('channel', layer.slug, null) : null;
-    return folders && { drive, folder: folders.memory };
+    return folders && { drive, folder: folders.memory, readable: everyMember };
   }
+  // A DM's layer is its owner's only, and so is the folder: no grant check.
   if (!layer.dmUserId || !layer.dmAgentName) return null;
-  const personal = personalFolderFor(await listFolderGrants(drive), layer.dmUserId);
-  const folders = spaceDriveFolders('dm', layer.dmAgentName, personal);
-  return folders && { drive, folder: folders.memory };
+  const folders = spaceDriveFolders('dm', layer.dmAgentName, personalFolderFor(grants, layer.dmUserId));
+  return folders && { drive, folder: folders.memory, readable: () => true };
+}
+
+type ReadFile = { path: string; page: ImportedPage } | { path: string; skip: string };
+
+/** One file's page. A file storage refuses (gone, bad path, shrunk under the range) is skipped; an outage throws. */
+async function readFile(drive: DriveRow, entry: VolumeEntry): Promise<ReadFile> {
+  let res: Response;
+  try {
+    res = await readVolumeFile(drive.platinumVolumeName, entry.path, Number(entry.size) > READ_BYTES ? `bytes=0-${READ_BYTES - 1}` : undefined);
+  } catch (err) {
+    if (err instanceof DriveStorageError && err.status !== 503) return { path: entry.path, skip: 'unreadable' };
+    throw err;
+  }
+  if (res.status === 416) return { path: entry.path, skip: 'blank' };
+  const page = importedPage(entry.path, decodeFile(new Uint8Array(await res.arrayBuffer()).subarray(0, READ_BYTES)));
+  return 'skip' in page ? { path: entry.path, skip: page.skip } : { path: entry.path, page };
 }
 
 /** The pages of the folder's files. A missing folder or volume reads as no files. */
-async function readFolder(drive: DriveRow, folder: string): Promise<Array<{ path: string; page: ImportedPage | null }>> {
+async function readFolder({ drive, folder, readable }: Source): Promise<ReadFile[]> {
   const entries = await readDriveVolume(
     drive,
     (volume) =>
@@ -178,18 +248,23 @@ async function readFolder(drive: DriveRow, folder: string): Promise<Array<{ path
       }),
     () => [],
   );
-  return mapWithConcurrency(importFiles(folder, entries), 4, async (entry) => {
-    const res = await readVolumeFile(
-      drive.platinumVolumeName,
-      entry.path,
-      Number(entry.size) > READ_BYTES ? `bytes=0-${READ_BYTES - 1}` : undefined,
-    );
-    const bytes = new Uint8Array(await res.arrayBuffer()).subarray(0, READ_BYTES);
-    return { path: entry.path, page: importedPage(entry.path, new TextDecoder().decode(bytes)) };
-  });
+  return mapWithConcurrency(importFiles(folder, entries), 4, (entry) =>
+    readable(entry.path) ? readFile(drive, entry) : Promise.resolve({ path: entry.path, skip: 'restricted' }),
+  );
 }
 
-/** Write the pages and set `imported_at`, in one transaction under the layer lock. Returns how many pages were made. */
+/** The error code a skip logs: never the message, which may quote file content. */
+const errorCode = (err: unknown): string => {
+  if (err instanceof MemoryError) return err.code;
+  const { code, cause, name } = (err ?? {}) as { code?: unknown; cause?: { code?: unknown }; name?: unknown };
+  return String(code ?? cause?.code ?? name ?? 'error');
+};
+
+/**
+ * Write the pages and set `imported_at`, in one transaction under the layer
+ * lock. Each file writes in its own savepoint, so a file that fails is logged
+ * and skipped and the rest still import. Returns how many pages were made.
+ */
 async function writeImport(layer: LayerToImport, files: Array<{ path: string; page: ImportedPage }>): Promise<number | null> {
   return db.transaction(async (tx) => {
     const [locked] = await tx
@@ -200,13 +275,13 @@ async function writeImport(layer: LayerToImport, files: Array<{ path: string; pa
     if (!locked || locked.importedAt) return null;
     let made = 0;
     for (const { path, page } of files) {
-      const saved = await saveImported(tx, layer, page).catch((err: unknown) => {
-        if (!(err instanceof MemoryError)) throw err;
-        logger.warn('[memory] a Drive memory file was not imported', { layer_id: layer.layerId, path, code: err.code });
-        return err.code === 'page_limit' ? 'full' : null;
-      });
-      if (saved === 'full') break;
-      if (saved) made += 1;
+      try {
+        await tx.transaction((savepoint) => saveImported(savepoint, layer, page));
+        made += 1;
+      } catch (err) {
+        logger.warn('[memory] a Drive memory file was not imported', { layer_id: layer.layerId, path, reason: errorCode(err) });
+        if (err instanceof MemoryError && err.code === 'page_limit') break;
+      }
     }
     if (made > 0) await bumpLayers(tx, [layer.layerId]);
     await tx.update(memoryLayers).set({ importedAt: new Date() }).where(eq(memoryLayers.layerId, layer.layerId));
@@ -214,8 +289,8 @@ async function writeImport(layer: LayerToImport, files: Array<{ path: string; pa
   });
 }
 
-/** One page under its title, else under its file name when the title is taken. Throws the MemoryError of the last try. */
-async function saveImported(tx: Tx, layer: LayerToImport, page: ImportedPage): Promise<string> {
+/** One page under its title, else under its file name when the title is taken. Throws the error of the last try. */
+async function saveImported(tx: Tx, layer: LayerToImport, page: ImportedPage): Promise<void> {
   const titles = [...new Set([page.title, page.fallbackTitle])];
   for (const [i, title] of titles.entries()) {
     try {
@@ -229,12 +304,11 @@ async function saveImported(tx: Tx, layer: LayerToImport, page: ImportedPage): P
         author: SYSTEM_AUTHOR,
       });
       await addSource(tx, row.pageId, { kind: 'import', label: page.fileName });
-      return row.pageId;
+      return;
     } catch (err) {
       if (!(err instanceof MemoryError && err.code === 'title_taken' && i < titles.length - 1)) throw err;
     }
   }
-  throw new Error('unreachable: saveImported tried no title');
 }
 
 /** Import the Drive memory of one layer, once. */
@@ -255,13 +329,15 @@ export async function importLayer(layerId: string): Promise<void> {
     .limit(1);
   if (!layer || layer.importedAt) return;
   const source = await sourceFolder(layer);
-  const read = source ? await readFolder(source.drive, source.folder) : [];
-  for (const { path, page } of read) {
-    if (!page) logger.info('[memory] a blank Drive memory file, or one holding a secret, was not imported', { layer_id: layerId, path });
+  const read = source ? await readFolder(source) : [];
+  const files: Array<{ path: string; page: ImportedPage }> = [];
+  for (const file of read) {
+    if ('page' in file) files.push(file);
+    else logger.info('[memory] a Drive memory file was not imported', { layer_id: layerId, path: file.path, reason: file.skip });
   }
-  const files = read.filter((file): file is { path: string; page: ImportedPage } => file.page !== null);
   const made = await writeImport(layer, files);
   if (made !== null) logger.info('[memory] Drive memory imported', { layer_id: layerId, folder: source?.folder ?? null, pages: made });
 }
 
-registerJobHandler(MEMORY_IMPORT_QUEUE, (job) => importLayer(String(job.payload.layer_id ?? job.jobKey)));
+// 15 min: longer than one file read's own 5-min storage timeout, so a slow read never lets a second worker claim the job.
+registerJobHandler(MEMORY_IMPORT_QUEUE, (job) => importLayer(String(job.payload.layer_id ?? job.jobKey)), 15 * 60_000);
