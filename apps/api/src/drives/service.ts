@@ -1023,7 +1023,7 @@ export function renderDriveNotes(
   ];
   const me = mounts.find((m) => m.role === 'me');
   if (me) {
-    // Space lines exist only with `project_channels` on, in a channel or DM thread: the threads that have `remember`.
+    // Space lines exist only with `project_channels` on, in a channel or DM thread: the threads that load `remember`, unless the agent's tool access removes it.
     const team = spaceLines.length
       ? 'what the whole team should know: `remember` with `layer: company`.'
       : `what the whole team should know goes in Company/${MEMORY_DIR_NAME}/ when that folder is mounted.`;
