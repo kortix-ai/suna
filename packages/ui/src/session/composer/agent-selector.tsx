@@ -16,6 +16,7 @@ import Hint from '../../primitives/hint';
 import { useTranslations } from '../../i18n';
 import { useUiHostConfig } from '../../providers/ui-provider';
 import { cn } from '../../lib/utils';
+import { TRIGGER_CARET_CLASS, triggerVariants } from '../../primitives/trigger-variants';
 import type { Agent } from '@kortix/sdk/react';
 import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
 import { CaretDownIcon, CheckIcon } from '@phosphor-icons/react';
@@ -59,6 +60,7 @@ export function AgentSelector({
   unavailableHint,
   open: controlledOpen,
   onOpenChange,
+  appearance = 'chip',
 }: {
   agents: Agent[];
   selectedAgent: string | null;
@@ -75,6 +77,12 @@ export function AgentSelector({
   unavailableHint?: string | null;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /**
+   * `chip` is the composer's borderless toolbar chip. `field` is a form field:
+   * the full-width `h-9` box every `SelectTrigger` in a form draws, so the
+   * picker reads as one more field instead of a chip inside a frame.
+   */
+  appearance?: 'chip' | 'field';
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const t = useTranslations('threads');
@@ -141,8 +149,23 @@ export function AgentSelector({
   const displayedName = resolveDisplayedAgentName(primaryAgents, selectedAgent);
   const displayName = displayedName ? label(displayedName) : agentDisplayLabel(offered, selectedAgent);
   // The trigger leads with the agent's pixel mark, the same face it has on the
-  // Agents page and in every row below.
-  const triggerMark = displayedName ? <AgentMark slug={displayedName} /> : null;
+  // Agents page and in every row below. Only for a real agent: a placeholder
+  // name such as a trigger's `default` would get a mark of its own, and that
+  // face would belong to no agent.
+  const triggerMark =
+    displayedName && primaryAgents.some((agent) => agent.name === displayedName) ? (
+      <AgentMark slug={displayedName} />
+    ) : null;
+  const field = appearance === 'field';
+  const fieldTrigger = (caret: boolean, props: { disabled?: boolean; 'aria-label'?: string }) => (
+    <button type="button" className={cn(triggerVariants(), 'h-9 w-full')} {...props}>
+      <span className="flex min-w-0 items-center gap-2">
+        {triggerMark}
+        <span className="truncate">{displayName}</span>
+      </span>
+      {caret ? <CaretDownIcon className={cn(TRIGGER_CARET_CLASS, 'size-4')} /> : null}
+    </button>
+  );
 
   /**
    * One agent: name, its type, its description, and a check when it is the
@@ -226,7 +249,9 @@ export function AgentSelector({
    * open — in exactly the state where its words matter.
    */
   if (primaryAgents.length === 0) {
-    const trigger = (
+    const trigger = field ? (
+      fieldTrigger(false, { disabled: true, 'aria-label': unavailableHint ?? undefined })
+    ) : (
       <Button
         type="button"
         variant="ghost"
@@ -255,6 +280,7 @@ export function AgentSelector({
    * text every inert control on this rail wears, and the disabled attribute.
    */
   if (disabled) {
+    if (field) return fieldTrigger(false, { disabled: true });
     return (
       <Button
         type="button"
@@ -272,6 +298,9 @@ export function AgentSelector({
   return (
     <CommandPopover open={open} onOpenChange={setOpen}>
       <CommandPopoverTrigger>
+        {field ? (
+          fieldTrigger(true, { 'aria-label': t('selectAgent') })
+        ) : (
         <Button
           type="button"
           variant="ghost"
@@ -288,6 +317,7 @@ export function AgentSelector({
             )}
           />
         </Button>
+        )}
       </CommandPopoverTrigger>
 
       {/* `min(...)`, not a hard `300px`: on a 320px viewport a fixed 300px
@@ -342,7 +372,12 @@ export function AgentSelector({
             being announced.
           */}
           {filteredPrimary.length > 0 && (
-            <CommandGroup forceMount>
+            // `gap-px` between rows: a selected row and a hovered row next to it
+            // otherwise draw one merged grey block.
+            <CommandGroup
+              forceMount
+              className="[&_[cmdk-group-items]]:flex [&_[cmdk-group-items]]:flex-col [&_[cmdk-group-items]]:gap-px"
+            >
               {filteredMeta.map((agent) => renderAgentItem(agent, true))}
               {filteredMeta.length > 0 && filteredProject.length > 0 && (
                 <CommandSeparator className="my-1" />
