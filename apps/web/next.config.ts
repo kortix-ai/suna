@@ -505,6 +505,13 @@ const nextConfig = (): NextConfig => ({
         destination: '/projects',
         permanent: false,
       },
+      // The paths people type to sign in or up (KRTX-3154). /auth asks for the
+      // email first and picks sign-in or sign-up itself.
+      {
+        source: '/:path(login|signin|sign-in|signup|sign-up|register)',
+        destination: '/auth',
+        permanent: false,
+      },
       // Capability tabs moved under /customize/ (2026-09-03). The old
       // top-level segments were shared in Slack, saved as bookmarks and baked
       // into agent transcripts, so every one keeps resolving. `agent` became
