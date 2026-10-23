@@ -6,6 +6,8 @@
 import type { MemoryLayer } from '@kortix/api-contract';
 import { layerCounts, type LayerRef, type Viewer, viewerWrites } from './layers';
 import { layerOf } from './serialize';
+// Loading the import module registers the `memory-import` job handler (shared/job-queue.ts).
+import './import';
 
 export { exportLayer } from './export';
 export { resolveLayerKey, type LayerRef, type Viewer } from './layers';
