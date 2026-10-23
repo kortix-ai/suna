@@ -1,6 +1,6 @@
 // The artifact content server — UNAUTHENTICATED, capability-gated. It serves an
-// artifact's files from its version manifest, and injects the type's kit into
-// index.html. Two forms:
+// artifact's files from its version manifest; a doc's index.html gets the doc
+// stylesheet, and `?print=1` opens the print dialog (Download PDF). Forms:
 //   /v1/artifacts/s/:token/<path>   a signed view token (private, project and
 //                                   shared artifacts; minted by the
 //                                   authenticated routes for one version)
@@ -15,7 +15,7 @@ import { createArtifactContentRateLimitMiddleware } from '../middleware/rate-lim
 import { PUBLIC_SHARE_SANDBOX_CSP } from '../sandbox-proxy/routes/public-share';
 import { isUuid } from '../shared/validate';
 import { DriveStorageError } from '../drives/volumes';
-import { injectKit } from './kits';
+import { renderEntry } from './formats';
 import { ARTIFACTS_FLAG, ENTRY_PATH, artifactPublicContentUrl, getArtifactById, getVersion, normalizeArtifactPath, readArtifactFile, type ArtifactRow } from './service';
 
 export const artifactContentApp = new Hono();
@@ -64,8 +64,9 @@ async function serve(c: Context, row: ArtifactRow | null, version: number | null
     'Cache-Control': cache,
     'Access-Control-Allow-Origin': '*',
   };
-  if (resolved === ENTRY_PATH && row.type !== 'page') {
-    return c.body(injectKit(await upstream.text(), row.type), 200, headers);
+  const print = c.req.query('print') === '1';
+  if (resolved === ENTRY_PATH && (row.type === 'doc' || print)) {
+    return c.body(renderEntry(await upstream.text(), row.type, { print }), 200, headers);
   }
   return new Response(upstream.body, { status: 200, headers: { ...headers, 'Content-Length': String(file.size) } });
 }

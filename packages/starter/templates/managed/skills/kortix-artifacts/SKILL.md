@@ -1,6 +1,6 @@
 ---
 name: kortix-artifacts
-description: "Publish HTML pages to the project with the `kortix artifacts` CLI: docs (specs, reports, memos), slides (decks), boards (design canvases with artboards), dashboards (KPIs, charts, tables) and plain pages (tools, explainers, apps). Each publish is a version; people open it in the Kortix app under Artifacts and can share it with the project, chosen people, or anyone with a link. Load when the user asks for a doc, report, write-up, deck, slides, presentation, design, mockup, board, dashboard, chart page, or any page meant to be read or shared, or names an artifact or an artifact link."
+description: "Publish shareable work to the project with the `kortix artifacts` CLI: a `doc` (a spec, report, memo or plan, written in Markdown, which people then edit in place) or an `html` page or bundle (a slide deck, dashboard, design mockup, tool or app). Each publish is a version; people open it in the Kortix app under Artifacts, download it as PDF, and share it with the project, chosen people, or anyone with a link. Load when the user asks for a doc, report, write-up, deck, slides, presentation, dashboard, mockup, page, or anything meant to be read or shared, or names an artifact or an artifact link."
 metadata:
   kortix-feature-flag: artifacts
 ---
@@ -8,49 +8,49 @@ metadata:
 <skill name="kortix-artifacts">
 
 <overview>
-An artifact is one HTML page (plus optional supporting files) published to
-the project. The Kortix app lists every artifact in a gallery, renders it in a
-sandboxed frame, keeps every version, and shares it. You publish and update it
-with `kortix artifacts`; the person sees it in the app at once.
+An artifact is work published to the project, versioned and shareable. The
+Kortix app lists every artifact in a gallery, opens it full height, keeps every
+version, exports PDF and shares it. You publish and update it with `kortix
+artifacts`; the person sees it at once.
 
-Use an artifact when the result is meant to be read, presented or shared: a
-report, a spec, a deck, a design, a dashboard. Keep a code change in the
-repository, not in an artifact.
+Use an artifact when the result is meant to be read, presented or shared. Keep
+a code change in the repository, not in an artifact.
 </overview>
 
 <types>
-The type picks a kit the server adds to your page, so you write plain semantic
-HTML and get a finished look. Before you write one, print its format and a
-complete starter page:
-
-    kortix artifacts types <type>            # format rules + starter page
-    kortix artifacts types <type> --starter  # only the starter page
+Two types. Pick by what a person does with it next.
 
 | Type | For | You write |
 |---|---|---|
-| `doc` | specs, reports, memos | `<h1>`, `<p>`, `<h2>`, lists, tables, `<pre><code>`, `<aside>` callouts. People can edit the text in place. |
-| `slides` | decks | one `<section>` per 1920×1080 slide; classes `title`, `center`, `dark`, `accent`, `cols`, `kicker`, `big`. |
-| `board` | designs, mockups, flows | one `<div class="artboard" data-name="…" style="width:…;height:…">` per screen, styled with your own CSS. |
-| `dashboard` | metrics | `<header>`, `.kpis` of `.kpi`, a `.grid` of `.card`; charts are `<figure class="chart" data-type="bar|line|area|hbar|donut" data-labels="…" data-series='{"Name":[…]}'>`. |
-| `page` | anything else | any HTML, CSS and JS. No kit. |
+| `doc` | specs, reports, memos, plans: text people read and edit | **Markdown** (`report.md`). Kortix styles it; people edit it in place like a document. |
+| `html` | decks, dashboards, mockups, tools, explainers: anything with its own layout | **Any HTML** with its own CSS and JS, plus files beside `index.html`. Served exactly as written. |
 
-The kit owns layout, typography, light and dark mode. Do not fight it: add CSS
-only for what the format does not cover (a board's artboard contents, a
-page's whole design). Inline everything you can; load a library from a CDN
-(cdnjs, jsdelivr, unpkg) only when you need it.
+`kortix artifacts types <type>` prints the format rules and a starter page.
+
+**doc** — one `# Title`, then headings, paragraphs, **bold**, *italic*,
+`code`, links, bulleted, numbered and task lists (`- [ ]`), quotes, code
+blocks, tables, images, `---`. No raw HTML layout, no CSS, no scripts: the
+editor keeps only these. Need charts or layout? Make an `html` artifact.
+
+**html** — a complete page. It runs sandboxed: no cookies, no localStorage, no
+access to Kortix. Load libraries from a CDN (cdnjs, jsdelivr, unpkg) when you
+need them (Chart.js for charts, Reveal.js for decks). Make it work from 360px
+to a large screen and in light and dark. "Download PDF" prints the page, so
+add `@media print` rules for a deck (one slide per page) or a dashboard.
 </types>
 
 <publish>
-1. Write the page to a file (or a folder with `index.html` and its assets).
+1. Write the file (`report.md`), or a folder with `index.html` and its assets.
 2. Publish it:
 
-       kortix artifacts publish report.html --type doc --title "Q3 churn report"
-       kortix artifacts publish ./deck --type slides --description "Board update, October"
+       kortix artifacts publish report.md --title "Q3 churn report"
+       kortix artifacts publish ./deck --description "Board update, October"
 
-   It prints the artifact id and its app link. The title defaults to the
-   page's `<title>`.
+   A `.md` file is a doc; anything else is html. It prints the artifact id and
+   its app link. The title defaults to the doc's `# Title` or the page's
+   `<title>`.
 3. End your answer with the app link and one line on what it shows. Never
-   paste the HTML into the chat.
+   paste the content into the chat.
 
 A new artifact is **private**: the person who runs this session (and you) can
 see it. Share it only when the user asks:
@@ -67,24 +67,23 @@ secrets, tokens or customer data in an artifact.
 Change an existing artifact instead of publishing a second one:
 
     kortix artifacts pull <id> ./work          # every file of the current version
-    # edit ./work/index.html
+    # edit ./work/index.html (a doc is stored as HTML; you may also publish a new .md)
     kortix artifacts publish ./work --id <id> --base-version <n>
 
 Files you leave out are kept; `--remove <path>` drops one. `--base-version`
 refuses the publish (exit 3, `version_conflict`) when someone else published
-after the version you pulled: pull again, merge, publish. `kortix artifacts
-versions <id>` lists the history, `restore <id> <n>` brings one back.
+after the version you pulled, for example a person editing the doc: pull
+again, merge, publish. `kortix artifacts versions <id>` lists the history,
+`restore <id> <n>` brings one back.
 </update>
 
 <quality>
-- One clear purpose per artifact; say the answer first (doc lede, title slide,
-  dashboard header).
+- Say the answer first: the doc's opening paragraph, the deck's title slide,
+  the dashboard's header.
 - Real content only: real numbers with units and dates, no lorem ipsum, no
   placeholder charts. If data is missing, say so on the page.
 - Docs: short paragraphs, one idea each, tables for comparisons.
-- Slides: one idea per slide, three bullets at most, large type.
-- Boards: size artboards like real devices; name every artboard.
-- Dashboards: 3–6 KPIs, each with a delta and its period; label units.
+- Decks: one idea per slide, large type, arrow keys to move.
 - Check it: `kortix artifacts open <id>` prints a signed `view` URL you can
   fetch to confirm the page loads.
 </quality>

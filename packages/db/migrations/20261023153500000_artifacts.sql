@@ -40,7 +40,7 @@ CREATE TABLE "kortix"."artifacts" (
 	"account_id" uuid NOT NULL,
 	"title" text NOT NULL,
 	"description" text,
-	"type" varchar(16) DEFAULT 'page' NOT NULL,
+	"type" varchar(16) DEFAULT 'html' NOT NULL,
 	"icon" varchar(40),
 	"visibility" varchar(16) DEFAULT 'private' NOT NULL,
 	"shared_with_user_ids" uuid[] DEFAULT '{}'::uuid[] NOT NULL,
@@ -50,7 +50,7 @@ CREATE TABLE "kortix"."artifacts" (
 	"created_by_session_id" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "artifacts_type_check" CHECK ("kortix"."artifacts"."type" in ('page', 'doc', 'slides', 'board', 'dashboard')),
+	CONSTRAINT "artifacts_type_check" CHECK ("kortix"."artifacts"."type" in ('doc', 'html')),
 	CONSTRAINT "artifacts_visibility_check" CHECK ("kortix"."artifacts"."visibility" in ('private', 'project', 'public'))
 );
 --> statement-breakpoint

@@ -1293,7 +1293,7 @@
         },
         "artifacts": {
           "name": "Artefakte",
-          "description": "Agenten und Personen veröffentlichen Dokumente, Folien, Boards und Dashboards als Seiten im Projekt. Jede Veröffentlichung ist eine Version, Dokumente werden direkt bearbeitet, und ein Freigabelink macht eine Seite privat, für das Projekt, für ausgewählte Personen oder öffentlich. Fügt die Seite „Artefakte“ und `kortix artifacts` hinzu."
+          "description": "Agenten und Personen veröffentlichen Dokumente und HTML-Seiten (Präsentationen, Dashboards, Mockups, Tools) im Projekt. Dokumente werden direkt bearbeitet, jede Veröffentlichung ist eine Version, jedes Artefakt lässt sich als PDF exportieren, und ein Freigabelink macht es privat, für das Projekt, für ausgewählte Personen oder öffentlich. Fügt die Seite „Artefakte“ und `kortix artifacts` hinzu."
         }
       }
     },
@@ -22487,21 +22487,15 @@
   },
   "artifacts": {
     "title": "Artefakte",
-    "gateDescription": "Dokumente, Folien, Boards und Dashboards, die Agenten und Personen als Seiten veröffentlichen, mit Versionen und Freigabelinks.",
+    "gateDescription": "Dokumente und HTML-Seiten, die Agenten und Personen veröffentlichen, mit Versionen, PDF-Export und Freigabelinks.",
     "makeNew": "Etwas Neues erstellen",
     "type": {
       "doc": "Dokument",
-      "slides": "Folien",
-      "board": "Board",
-      "dashboard": "Dashboard",
-      "page": "Seite"
+      "html": "HTML"
     },
     "typeHint": {
-      "doc": "Eine Spezifikation, ein Bericht oder ein Memo. Text direkt bearbeiten.",
-      "slides": "Eine 16:9-Präsentation für den Vollbildmodus.",
-      "board": "Bildschirme und Mockups auf einer Fläche zum Verschieben und Zoomen.",
-      "dashboard": "KPIs, Diagramme und Tabellen auf einer Seite.",
-      "page": "Beliebige HTML-Seite: ein Tool, eine Erklärung, eine App."
+      "doc": "Eine Spezifikation, ein Bericht oder ein Memo. Schreibe und bearbeite es wie ein Dokument.",
+      "html": "Eine beliebige Seite: eine Präsentation, ein Dashboard, ein Mockup oder ein Tool."
     },
     "scope": {
       "all": "Alle",
@@ -22513,7 +22507,7 @@
     "loadError": "Artefakte konnten nicht geladen werden.",
     "retry": "Erneut versuchen",
     "empty": "Noch keine Artefakte",
-    "emptyHint": "Bitte einen Agenten um ein Dokument, eine Präsentation, ein Design oder ein Dashboard, oder starte oben selbst eines.",
+    "emptyHint": "Bitte einen Agenten um ein Dokument, eine Präsentation oder ein Dashboard, oder starte oben selbst eines.",
     "emptyFiltered": "Keine passenden Artefakte",
     "updated": "Aktualisiert {time}",
     "pinned": "Angeheftet",
@@ -22555,7 +22549,6 @@
     "cancel": "Abbrechen",
     "save": "Speichern",
     "saving": "Speichern…",
-    "close": "Schließen",
     "saved": "Als Version {version} gespeichert",
     "back": "Zurück zu den Artefakten",
     "versions": "Versionen",
@@ -22565,17 +22558,11 @@
     "backToCurrent": "Zurück zur aktuellen",
     "restore": "Wiederherstellen",
     "restored": "Version {version} ist jetzt Version {current}",
-    "edit": "Bearbeiten",
-    "editSource": "Quelltext bearbeiten",
-    "editingHint": "Klicke in die Seite, um den Text zu bearbeiten.",
     "bold": "Fett",
     "italic": "Kursiv",
-    "heading": "Überschrift",
-    "subheading": "Zwischenüberschrift",
     "bulletList": "Aufzählung",
     "link": "Link",
     "linkPrompt": "Link-URL",
-    "present": "Präsentieren",
     "fullScreen": "Vollbild",
     "download": "HTML herunterladen",
     "askAgent": "Agent fragen",
@@ -22586,6 +22573,33 @@
     "notFoundHint": "Es wurde gelöscht, oder der Inhaber teilt es nicht mehr.",
     "busyTitle": "Kortix ist ausgelastet",
     "busyHint": "Versuche es in einer Minute erneut.",
-    "tryKortix": "Kortix testen"
+    "tryKortix": "Kortix testen",
+    "docStatus": {
+      "unsaved": "Ungespeicherte Änderungen",
+      "saving": "Speichern…",
+      "error": "Nicht gespeichert"
+    },
+    "editCode": "Code bearbeiten",
+    "downloadPdf": "PDF herunterladen",
+    "placeholder": "Schreibe etwas, oder tippe # für eine Überschrift, - für eine Liste, [ ] für eine Aufgabe",
+    "placeholderHeading": "Titel",
+    "strike": "Durchgestrichen",
+    "inlineCode": "Code",
+    "heading1": "Überschrift 1",
+    "heading2": "Überschrift 2",
+    "heading3": "Überschrift 3",
+    "quote": "Zitat",
+    "numberedList": "Nummerierte Liste",
+    "taskList": "Aufgabenliste",
+    "codeBlock": "Codeblock",
+    "table": "Tabelle",
+    "image": "Bild",
+    "divider": "Trennlinie",
+    "imagePrompt": "Bild-URL",
+    "addRow": "Zeile hinzufügen",
+    "addColumn": "Spalte hinzufügen",
+    "deleteRow": "Zeile löschen",
+    "deleteTable": "Tabelle löschen",
+    "conflict": "Jemand anderes hat eine neuere Version veröffentlicht. Lade die Seite neu, um sie zu sehen; deine letzten Änderungen wurden nicht gespeichert."
   }
 }

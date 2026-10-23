@@ -59,7 +59,7 @@ export function NewArtifactDialog({
   const blank = async () => {
     if (!type || !starter) return;
     const a = await create.mutateAsync({ type, title: t('untitled', { type: t(`type.${type}`) }), files: { 'index.html': { content: starter } } });
-    router.push(`${artifactHref(projectId, a.artifact_id)}${type === 'doc' ? '?edit=1' : '?source=1'}`);
+    router.push(`${artifactHref(projectId, a.artifact_id)}${type === 'doc' ? '' : '?code=1'}`);
   };
 
   return (

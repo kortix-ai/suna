@@ -8327,7 +8327,7 @@ export const artifacts = kortixSchema.table('artifacts', {
   accountId: uuid('account_id').notNull(),
   title: text('title').notNull(),
   description: text('description'),
-  type: varchar('type', { length: 16 }).default('page').notNull(),
+  type: varchar('type', { length: 16 }).default('html').notNull(),
   icon: varchar('icon', { length: 40 }),
   visibility: varchar('visibility', { length: 16 }).default('private').notNull(),
   sharedWithUserIds: uuid('shared_with_user_ids').array().default(sql`'{}'::uuid[]`).notNull(),
@@ -8340,7 +8340,7 @@ export const artifacts = kortixSchema.table('artifacts', {
 }, (table) => [
   foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'artifacts_project_fk' }).onDelete('cascade'),
   index('idx_artifacts_project_updated').on(table.projectId, table.updatedAt),
-  check('artifacts_type_check', sql`${table.type} in ('page', 'doc', 'slides', 'board', 'dashboard')`),
+  check('artifacts_type_check', sql`${table.type} in ('doc', 'html')`),
   check('artifacts_visibility_check', sql`${table.visibility} in ('private', 'project', 'public')`),
 ]);
 

@@ -1293,7 +1293,7 @@
         },
         "artifacts": {
           "name": "Artefatti",
-          "description": "Agenti e persone pubblicano documenti, presentazioni, board e dashboard come pagine nel progetto. Ogni pubblicazione è una versione, i documenti si modificano direttamente e un link di condivisione rende una pagina privata, visibile al progetto, a persone scelte o pubblica. Aggiunge la pagina Artefatti e `kortix artifacts`."
+          "description": "Agenti e persone pubblicano documenti e pagine HTML (presentazioni, dashboard, mockup, strumenti) nel progetto. I documenti si modificano direttamente, ogni pubblicazione è una versione, ogni artefatto si esporta in PDF e un link di condivisione lo rende privato, visibile al progetto, a persone scelte o pubblico. Aggiunge la pagina Artefatti e `kortix artifacts`."
         }
       }
     },
@@ -22487,21 +22487,15 @@
   },
   "artifacts": {
     "title": "Artefatti",
-    "gateDescription": "Documenti, presentazioni, board e dashboard che agenti e persone pubblicano come pagine, con versioni e link di condivisione.",
+    "gateDescription": "Documenti e pagine HTML che agenti e persone pubblicano, con versioni, esportazione PDF e link di condivisione.",
     "makeNew": "Crea qualcosa di nuovo",
     "type": {
       "doc": "Documento",
-      "slides": "Presentazione",
-      "board": "Board",
-      "dashboard": "Dashboard",
-      "page": "Pagina"
+      "html": "HTML"
     },
     "typeHint": {
-      "doc": "Una specifica, un rapporto o un memo. Modifica il testo direttamente.",
-      "slides": "Una presentazione 16:9 da mostrare a schermo intero.",
-      "board": "Schermate e mockup su una tela che puoi spostare e ingrandire.",
-      "dashboard": "KPI, grafici e tabelle in una sola pagina.",
-      "page": "Qualsiasi pagina HTML: uno strumento, una spiegazione, un’app."
+      "doc": "Una specifica, un rapporto o un memo. Scrivilo e modificalo come un documento.",
+      "html": "Una pagina qualsiasi: una presentazione, una dashboard, un mockup o uno strumento."
     },
     "scope": {
       "all": "Tutti",
@@ -22513,7 +22507,7 @@
     "loadError": "Impossibile caricare gli artefatti.",
     "retry": "Riprova",
     "empty": "Ancora nessun artefatto",
-    "emptyHint": "Chiedi a un agente un documento, una presentazione, un design o una dashboard, oppure creane uno qui sopra.",
+    "emptyHint": "Chiedi a un agente un documento, una presentazione o una dashboard, oppure creane uno qui sopra.",
     "emptyFiltered": "Nessun artefatto corrisponde",
     "updated": "Aggiornato {time}",
     "pinned": "Fissato",
@@ -22555,7 +22549,6 @@
     "cancel": "Annulla",
     "save": "Salva",
     "saving": "Salvataggio…",
-    "close": "Chiudi",
     "saved": "Salvato come versione {version}",
     "back": "Torna agli artefatti",
     "versions": "Versioni",
@@ -22565,17 +22558,11 @@
     "backToCurrent": "Torna alla corrente",
     "restore": "Ripristina",
     "restored": "La versione {version} è ora la versione {current}",
-    "edit": "Modifica",
-    "editSource": "Modifica sorgente",
-    "editingHint": "Fai clic nella pagina per modificarne il testo.",
     "bold": "Grassetto",
     "italic": "Corsivo",
-    "heading": "Titolo",
-    "subheading": "Sottotitolo",
     "bulletList": "Elenco puntato",
     "link": "Link",
     "linkPrompt": "URL del link",
-    "present": "Presenta",
     "fullScreen": "Schermo intero",
     "download": "Scarica HTML",
     "askAgent": "Chiedi all’agente",
@@ -22586,6 +22573,33 @@
     "notFoundHint": "È stato eliminato oppure il proprietario ha smesso di condividerlo.",
     "busyTitle": "Kortix è occupato",
     "busyHint": "Riprova tra un minuto.",
-    "tryKortix": "Prova Kortix"
+    "tryKortix": "Prova Kortix",
+    "docStatus": {
+      "unsaved": "Modifiche non salvate",
+      "saving": "Salvataggio…",
+      "error": "Non salvato"
+    },
+    "editCode": "Modifica codice",
+    "downloadPdf": "Scarica PDF",
+    "placeholder": "Scrivi, oppure digita # per un titolo, - per un elenco, [ ] per un’attività",
+    "placeholderHeading": "Titolo",
+    "strike": "Barrato",
+    "inlineCode": "Codice",
+    "heading1": "Titolo 1",
+    "heading2": "Titolo 2",
+    "heading3": "Titolo 3",
+    "quote": "Citazione",
+    "numberedList": "Elenco numerato",
+    "taskList": "Elenco di attività",
+    "codeBlock": "Blocco di codice",
+    "table": "Tabella",
+    "image": "Immagine",
+    "divider": "Divisore",
+    "imagePrompt": "URL dell’immagine",
+    "addRow": "Aggiungi riga",
+    "addColumn": "Aggiungi colonna",
+    "deleteRow": "Elimina riga",
+    "deleteTable": "Elimina tabella",
+    "conflict": "Qualcun altro ha pubblicato una versione più recente. Ricarica la pagina per vederla; le tue ultime modifiche non sono state salvate."
   }
 }

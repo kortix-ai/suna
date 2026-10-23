@@ -47,8 +47,8 @@ import { ShareArtifactDialog } from './share-artifact-dialog';
 const SCOPES: ArtifactListScope[] = ['all', 'mine', 'shared', 'pinned'];
 
 /**
- * /projects/[id]/artifacts — the gallery: make a new doc, deck, board or
- * dashboard, and every artifact the viewer may see, as live previews.
+ * /projects/[id]/artifacts — the gallery: make a new doc or HTML page, and
+ * every artifact the viewer may see, as live previews.
  */
 export function ArtifactsGallery({ projectId }: { projectId: string }) {
   const t = useTranslations('artifacts');
@@ -65,7 +65,7 @@ export function ArtifactsGallery({ projectId }: { projectId: string }) {
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-8 pb-20 md:px-8">
           <section className="flex flex-col gap-3">
             <h2 className="text-muted-foreground text-xs font-medium">{t('makeNew')}</h2>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {CREATE_TYPES.map((type) => {
                 const TypeIcon = ARTIFACT_TYPE_ICON[type];
                 return (

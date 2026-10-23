@@ -78,9 +78,9 @@ flow(
       return;
     }
 
-    await ctx.step('GET types → page, doc, slides, board, dashboard, each with a format and a starter page', async () => {
+    await ctx.step('GET types → doc and html, each with a format and a starter page', async () => {
       const types = (await owner.get(TYPES, { params: p })).status(200).json<{ types: { type: string; starter: string; format: string }[] }>().types;
-      if (types.map((t) => t.type).sort().join() !== 'board,dashboard,doc,page,slides') throw new Error(JSON.stringify(types.map((t) => t.type)));
+      if (types.map((t) => t.type).sort().join() !== 'doc,html') throw new Error(JSON.stringify(types.map((t) => t.type)));
       if (types.some((t) => !t.starter.includes('<html') || !t.format)) throw new Error('a type lacks its starter or format');
     });
 
@@ -109,14 +109,15 @@ flow(
 
     if (!storage) return;
 
-    await ctx.step('the signed view_url serves the page with the doc kit, as a CSP sandbox; style.css resolves; an unknown path → 404', async () => {
+    await ctx.step('the signed view_url serves the page with the doc stylesheet, as a CSP sandbox; style.css resolves; an unknown path → 404', async () => {
       const a = (await owner.get(ONE, one())).status(200).json<Detail>();
       const page = await get(a.view_url);
       if (page.status !== 200 || !page.headers.get('content-type')?.startsWith('text/html')) throw new Error(`view ${page.status} ${page.headers.get('content-type')}`);
       if (!/sandbox allow-scripts/.test(page.headers.get('content-security-policy') ?? '') || /allow-same-origin/.test(page.headers.get('content-security-policy') ?? '')) {
         throw new Error(`CSP ${page.headers.get('content-security-policy')}`);
       }
-      if (!page.text.includes('v1 body') || !page.text.includes('data-kortix-kit')) throw new Error('page lacks its body or the kit');
+      if (!page.text.includes('v1 body') || !page.text.includes('class="kx-doc"')) throw new Error('page lacks its body or the doc stylesheet');
+      if (!(await get(`${a.view_url}?print=1`)).text.includes('print()')) throw new Error('?print=1 does not open the print dialog');
       const css = await get(`${a.view_url}style.css`);
       if (css.status !== 200 || css.text !== 'p{color:red}' || !css.headers.get('content-type')?.startsWith('text/css')) throw new Error(`css ${css.status}`);
       if ((await get(`${a.view_url}nope.js`)).status !== 404) throw new Error('unknown path served');
@@ -155,12 +156,23 @@ flow(
       const a = (await owner.put(ONE, { base_version: 1, label: 'second', files: { 'index.html': { content: PAGE_V2 } } }, one())).status(200).json<Detail>();
       if (a.current_version !== 2 || !a.version.files.some((f) => f.path === 'style.css')) throw new Error(JSON.stringify(a.version));
       (await owner.put(ONE, { base_version: 1, files: { 'index.html': { content: 'x' } } }, one())).status(409).body().has('$.code', 'version_conflict');
+      const amended = (await owner.put(ONE, { base_version: 2, amend: true, files: { 'index.html': { content: PAGE_V2.replace('v2 body', 'v2 body amended') } } }, one())).status(200).json<Detail>();
+      if (amended.current_version !== 2) throw new Error(`an autosave within 10 min made version ${amended.current_version}`);
     });
 
     await ctx.step('content: the current source, and version 1 by number; the source carries no kit', async () => {
       const now = (await owner.get(CONTENT, { ...one(), query: { path: 'index.html' } })).status(200).text();
       const old = (await owner.get(CONTENT, { ...one(), query: { version: '1' } })).status(200).text();
-      if (!now.includes('v2 body') || !old.includes('v1 body') || now.includes('data-kortix-kit')) throw new Error('wrong source');
+      if (!now.includes('v2 body amended') || !old.includes('v1 body') || now.includes('kx-doc')) throw new Error('wrong source');
+    });
+
+    await ctx.step('a doc published as Markdown is stored as its HTML page: title from `# `, GFM table and task list', async () => {
+      const md = '# Plan\n\n- [x] ship\n- [ ] announce\n\n| a | b |\n|---|---|\n| 1 | 2 |\n';
+      const a = (await owner.post(LIST, { type: 'doc', files: { 'index.md': { content: md } } }, { params: p })).status(201).json<Detail>();
+      if (a.title !== 'Plan' || a.version.files.map((f) => f.path).join() !== 'index.html') throw new Error(JSON.stringify(a));
+      const html = (await owner.get(CONTENT, { params: { projectId: project.id, artifactId: a.artifact_id } })).status(200).text();
+      if (!html.includes('<table>') || !html.includes('data-type="taskList"') || !html.includes('data-checked="true"')) throw new Error(html.slice(0, 400));
+      (await owner.del(ONE, { params: { projectId: project.id, artifactId: a.artifact_id } })).status(200);
     });
 
     await ctx.step('versions lists 2, 1; restoring 1 makes version 3 with the v1 page', async () => {
@@ -239,20 +251,27 @@ flow(
     const dir = 'deck';
     let id = '';
     try {
-      await ctx.step('`artifacts types slides --starter` prints a deck; the agent publishes it as slides → exit 0, version 1, recorded with its session', async () => {
-        const starter = ok(await run(['artifacts', 'types', 'slides', '--starter']), 'types').stdout;
-        if (!starter.includes('<section')) throw new Error(starter.slice(0, 200));
-        sandbox.writeFile('deck/index.html', starter.replace('Untitled deck', 'Board update'));
-        const out = JSON.parse(ok(await run(['artifacts', 'publish', dir, '--type', 'slides', '--json']), 'publish').stdout);
-        if (out.title !== 'Board update' || out.type !== 'slides' || out.current_version !== 1 || out.created_by_session_id !== sessionId) throw new Error(JSON.stringify(out));
+      await ctx.step('`artifacts types html --starter` prints a page; the agent publishes a folder → html, version 1, recorded with its session', async () => {
+        const starter = ok(await run(['artifacts', 'types', 'html', '--starter']), 'types').stdout;
+        if (!starter.includes('<html')) throw new Error(starter.slice(0, 200));
+        sandbox.writeFile('deck/index.html', starter.replace('<title>Untitled page</title>', '<title>Board update</title>'));
+        const out = JSON.parse(ok(await run(['artifacts', 'publish', dir, '--json']), 'publish').stdout);
+        if (out.title !== 'Board update' || out.type !== 'html' || out.current_version !== 1 || out.created_by_session_id !== sessionId) throw new Error(JSON.stringify(out));
         id = out.artifact_id;
+      });
+
+      await ctx.step('`publish report.md` makes a doc titled by its `# ` heading', async () => {
+        sandbox.writeFile('report.md', '# Churn report\n\nChurn fell to **2.1%**.\n');
+        const out = JSON.parse(ok(await run(['artifacts', 'publish', 'report.md', '--json']), 'publish md').stdout);
+        if (out.type !== 'doc' || out.title !== 'Churn report') throw new Error(JSON.stringify(out));
+        ok(await run(['artifacts', 'rm', out.artifact_id]), 'rm doc');
       });
 
       await ctx.step('`ls` lists it; `pull` + edit + `publish --id --base-version 1` → version 2; a stale --base-version → exit 3', async () => {
         if (!ok(await run(['artifacts', 'ls']), 'ls').stdout.includes('Board update')) throw new Error('ls');
         ok(await run(['artifacts', 'pull', id.slice(0, 8), 'work']), 'pull');
         const page = sandbox.readFile('work/index.html');
-        sandbox.writeFile('work/index.html', page.replace('Thank you', 'Questions?'));
+        sandbox.writeFile('work/index.html', page.replace('Any HTML', 'Questions? Any HTML'));
         const out = JSON.parse(ok(await run(['artifacts', 'publish', 'work', '--id', id, '--base-version', '1', '--json']), 'republish').stdout);
         if (out.current_version !== 2) throw new Error(JSON.stringify(out));
         ok(await run(['artifacts', 'publish', 'work', '--id', id, '--base-version', '1']), 'stale publish', 3);

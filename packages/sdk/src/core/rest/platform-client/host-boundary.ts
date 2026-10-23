@@ -459,7 +459,7 @@ export interface PublicArtifact {
   artifact_id: string;
   title: string;
   description: string | null;
-  type: 'page' | 'doc' | 'slides' | 'board' | 'dashboard';
+  type: 'doc' | 'html';
   updated_at: string;
   /** The page itself, served as a CSP sandbox: embed it in an iframe. */
   content_url: string;

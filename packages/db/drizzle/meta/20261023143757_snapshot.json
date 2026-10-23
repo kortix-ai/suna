@@ -4718,7 +4718,7 @@
           "type": "varchar(16)",
           "primaryKey": false,
           "notNull": true,
-          "default": "'page'"
+          "default": "'html'"
         },
         "icon": {
           "name": "icon",
@@ -4826,7 +4826,7 @@
       "checkConstraints": {
         "artifacts_type_check": {
           "name": "artifacts_type_check",
-          "value": "\"kortix\".\"artifacts\".\"type\" in ('page', 'doc', 'slides', 'board', 'dashboard')"
+          "value": "\"kortix\".\"artifacts\".\"type\" in ('doc', 'html')"
         },
         "artifacts_visibility_check": {
           "name": "artifacts_visibility_check",

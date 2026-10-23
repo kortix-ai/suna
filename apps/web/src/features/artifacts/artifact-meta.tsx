@@ -2,25 +2,12 @@
 
 import type { ArtifactType, ArtifactVisibility } from '@kortix/sdk';
 import { framePolicy } from '@kortix/ui/file-viewer';
-import {
-  BrowserIcon,
-  ChartBarIcon,
-  FileTextIcon,
-  GlobeSimpleIcon,
-  LockSimpleIcon,
-  PaletteIcon,
-  PresentationIcon,
-  UsersThreeIcon,
-  type Icon,
-} from '@phosphor-icons/react';
+import { BrowserIcon, FileTextIcon, GlobeSimpleIcon, LockSimpleIcon, UsersThreeIcon, type Icon } from '@phosphor-icons/react';
 import { forwardRef, useState } from 'react';
 
 export const ARTIFACT_TYPE_ICON: Record<ArtifactType, Icon> = {
   doc: FileTextIcon,
-  slides: PresentationIcon,
-  board: PaletteIcon,
-  dashboard: ChartBarIcon,
-  page: BrowserIcon,
+  html: BrowserIcon,
 };
 
 export const VISIBILITY_ICON: Record<ArtifactVisibility, Icon> = {
@@ -36,7 +23,7 @@ export const VISIBILITY_ICON: Record<ArtifactVisibility, Icon> = {
 const ARTIFACT_CANVAS = 'bg-white';
 
 /** The types offered under "Make something new", in order. */
-export const CREATE_TYPES: ArtifactType[] = ['doc', 'slides', 'board', 'dashboard'];
+export const CREATE_TYPES: ArtifactType[] = ['doc', 'html'];
 
 export function artifactHref(projectId: string, artifactId: string): string {
   return `/projects/${projectId}/artifacts/${artifactId}`;

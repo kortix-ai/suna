@@ -1,6 +1,6 @@
-// `kortix artifacts` (flag `artifacts`): publish HTML pages — docs, slides,
-// boards, dashboards, pages — to the project, and list, read, share, version
-// and delete them. The API is the contract; this file only maps flags to it.
+// `kortix artifacts` (flag `artifacts`): publish docs and HTML pages to the
+// project, and list, read, share, version and delete them. The API is the
+// contract; this file only maps flags to it.
 import { readFile, readdir, stat, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, sep } from 'node:path';
 import {
@@ -29,17 +29,20 @@ import { C, help, pad, status } from '../style.ts';
 
 const HELP = help`Usage: kortix artifacts <subcommand> [options]
 
-An artifact is an HTML page published to the project: a doc, a slide deck, a
-design board, a dashboard, or any page. Each publish is a new version. People
-open it in the Kortix app (Artifacts), and a share link can make it public.
+An artifact is published to the project as one of two types:
+  doc    a document people read and edit in place (publish Markdown or HTML)
+  html   any page or bundle: a deck, a dashboard, a mockup, a tool
+Each publish is a new version. People open it in the Kortix app (Artifacts)
+and can download it as PDF; a share link can make it public.
 
 Subcommands:
   types [<type>]             The types. With a type: its format and a starter
                              page to copy (--starter prints only the page).
-  publish <file|dir>         Publish a new artifact. A file is published as
-                             index.html; a folder publishes every file in it
-                             (it needs an index.html). Prints the link.
-                             --type page|doc|slides|board|dashboard (default page)
+  publish <file|dir>         Publish a new artifact. A .md file is a doc; an
+                             .html file is published as index.html; a folder
+                             publishes every file in it (it needs an
+                             index.html). Prints the link.
+                             --type doc|html (default: doc for .md, else html)
                              --title "<title>" (default: the page's <title>)
                              --description "<one sentence>"
                              --visibility private|project|public (default private)
@@ -82,21 +85,21 @@ Options:
 Exit codes: 0 ok, 1 API error, 2 usage error, 3 version conflict.
 
 Examples:
-  kortix artifacts types slides
-  kortix artifacts publish report.html --type doc --title "Q3 churn report"
-  kortix artifacts publish ./deck --type slides --visibility project
+  kortix artifacts types doc
+  kortix artifacts publish report.md --title "Q3 churn report"
+  kortix artifacts publish ./deck --visibility project
   kortix artifacts publish report.html --id 3f2a1b9c --base-version 2
   kortix artifacts share 3f2a1b9c --visibility public
 `;
 
-const TYPES = ['page', 'doc', 'slides', 'board', 'dashboard'];
+const TYPES = ['doc', 'html'];
 const VISIBILITIES = ['private', 'project', 'public'];
 const KNOWN = ['types', 'publish', 'ls', 'list', 'info', 'cat', 'pull', 'open', 'share', 'rename', 'versions', 'restore', 'pin', 'unpin', 'rm', 'delete'];
 
 /** Every file under a folder, as published path → content. */
 async function collectFiles(path: string): Promise<Record<string, ArtifactFileInput>> {
   const info = await stat(path);
-  if (!info.isDirectory()) return { 'index.html': await fileInput(path) };
+  if (!info.isDirectory()) return { [/\.(md|markdown)$/i.test(path) ? 'index.md' : 'index.html']: await fileInput(path) };
   const out: Record<string, ArtifactFileInput> = {};
   const walk = async (dir: string) => {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -110,7 +113,7 @@ async function collectFiles(path: string): Promise<Record<string, ArtifactFileIn
   return out;
 }
 
-const TEXT = /\.(html?|css|m?js|json|txt|md|csv|svg|xml)$/i;
+const TEXT = /\.(html?|css|m?js|json|txt|md|markdown|csv|svg|xml)$/i;
 async function fileInput(path: string): Promise<ArtifactFileInput> {
   const bytes = await readFile(path);
   return TEXT.test(path) ? { content: bytes.toString('utf8') } : { content_base64: bytes.toString('base64') };
@@ -223,7 +226,7 @@ export async function runArtifacts(argv: string[]): Promise<number> {
             files,
             ...(f.title ? { title: f.title } : {}),
             ...(f.description ? { description: f.description } : {}),
-            ...(f.type ? { type: f.type as ArtifactType } : {}),
+            ...(f.type ? { type: f.type as ArtifactType } : files['index.md'] && !files['index.html'] ? { type: 'doc' as const } : {}),
             ...(f.label ? { label: f.label } : {}),
           };
           if (f.id) {

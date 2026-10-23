@@ -1,5 +1,5 @@
-// Artifacts (flag `artifacts`): HTML pages people and agents publish in a
-// project — docs, slides, boards, dashboards, pages. Logic lives in
+// Artifacts (flag `artifacts`): docs and HTML pages people and agents publish
+// in a project. Logic lives in
 // `artifacts/service.ts`; the bytes are served by `artifacts/content-routes.ts`.
 //
 // Authorization, per route, for the caller's role AND an agent's
@@ -23,7 +23,7 @@ import { callerKortixSessionId } from '../../middleware/caller-session';
 import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed, resolveUserIdentities } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { DriveStorageError } from '../../drives/volumes';
-import { ARTIFACT_TYPES, ARTIFACT_TYPE_KEYS } from '../../artifacts/kits';
+import { ARTIFACT_TYPES, ARTIFACT_TYPE_KEYS } from '../../artifacts/formats';
 import {
   ARTIFACTS_FLAG,
   ARTIFACT_VISIBILITIES,
@@ -64,14 +64,15 @@ const FileInputSchema = z.object({
 const PublishBody = z.object({
   title: z.string().min(1).max(200).optional().openapi({ description: "Default: the page's <title>, else Untitled." }),
   description: z.string().max(1000).nullable().optional(),
-  type: TypeEnum.optional().openapi({ description: 'page (default), doc, slides, board, dashboard. The type picks the kit.' }),
+  type: TypeEnum.optional().openapi({ description: 'html (default): any page or bundle. doc: a document Kortix styles and people edit in place; publish index.md (Markdown) or index.html.' }),
   icon: z.string().max(40).nullable().optional(),
   visibility: VisibilityEnum.optional().openapi({ description: 'New artifacts only. Default private.' }),
   label: z.string().max(60).nullable().optional().openapi({ description: 'A short name for this version.' }),
   files: z.record(z.string(), FileInputSchema.nullable()).openapi({
-    description: 'path → file. A new artifact needs index.html. On an update, a listed path is added or replaced, null removes it, and every other path carries over.',
+    description: 'path → file. A new artifact needs index.html (a doc may send index.md instead). On an update, a listed path is added or replaced, null removes it, and every other path carries over.',
   }),
   base_version: z.number().int().min(1).optional().openapi({ description: 'The version you edited. A newer current version answers 409 version_conflict.' }),
+  amend: z.boolean().optional().openapi({ description: 'Fold this save into the current version when you (and your session) published it less than 10 minutes ago: autosave.' }),
 });
 
 const PatchBody = z.object({

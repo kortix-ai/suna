@@ -17,7 +17,7 @@ import { signChannelState } from '../channels/core/signed-state';
 import { db } from '../shared/db';
 import { logger } from '../lib/logger';
 import { openDriveVolume, readVolumeFile, removeVolumeFile, writeVolumeFile } from '../drives/volumes';
-import { ARTIFACT_TYPE_KEYS, type ArtifactType } from './kits';
+import { ARTIFACT_TYPE_KEYS, markdownDoc, type ArtifactType } from './formats';
 
 export const ARTIFACTS_FLAG = 'artifacts' as const;
 export const ARTIFACT_VISIBILITIES = ['private', 'project', 'public'] as const;
@@ -117,6 +117,22 @@ export interface PublishInput {
   files: Record<string, FileInput | null>;
   /** The version the caller edited; a different current version answers 409. */
   base_version?: number;
+  /**
+   * Fold this save into the current version when the same person (and
+   * session) made it less than AMEND_WINDOW_MS ago: the doc editor's autosave,
+   * so one editing burst is one version.
+   */
+  amend?: boolean;
+}
+
+const AMEND_WINDOW_MS = 10 * 60_000;
+
+/** A doc published as Markdown (`index.md`, no `index.html`) is stored as its HTML page. */
+function docFiles(files: Record<string, FileInput | null>, type: string): Record<string, FileInput | null> {
+  const md = files['index.md'];
+  if (type !== 'doc' || !md || typeof md.content !== 'string' || files[ENTRY_PATH]) return files;
+  const { 'index.md': _markdown, ...rest } = files;
+  return { ...rest, [ENTRY_PATH]: { content: markdownDoc(md.content) } };
 }
 
 export interface Author {
@@ -185,8 +201,10 @@ export async function createArtifact(
 ): Promise<{ artifact: ArtifactRow; version: ArtifactVersionRow }> {
   if (Object.values(input.files).some((f) => f === null)) throw new ArtifactError(400, 'A new artifact has no file to remove', 'invalid_file');
   const artifactId = crypto.randomUUID();
-  const manifest = await writeFiles(scope.projectId, artifactId, {}, input.files);
-  const title = input.title?.trim() || htmlTitle(input.files) || 'Untitled';
+  const type = input.type ?? 'html';
+  const files = docFiles(input.files, type);
+  const manifest = await writeFiles(scope.projectId, artifactId, {}, files);
+  const title = input.title?.trim() || htmlTitle(files) || 'Untitled';
   return db.transaction(async (tx) => {
     const [artifact] = await tx.insert(artifacts).values({
       artifactId,
@@ -194,7 +212,7 @@ export async function createArtifact(
       accountId: scope.accountId,
       title,
       description: input.description ?? null,
-      type: input.type ?? 'page',
+      type,
       icon: input.icon ?? null,
       visibility: input.visibility ?? 'private',
       currentVersion: 1,
@@ -220,7 +238,22 @@ export async function publishVersion(
     throw new ArtifactError(409, `This artifact is at version ${current.currentVersion}; you edited version ${input.base_version}. Read it again and merge your change.`, 'version_conflict');
   }
   const prev = await getVersion(current.artifactId, current.currentVersion);
-  const manifest = manifestOverride ?? await writeFiles(current.projectId, current.artifactId, prev?.files ?? {}, input.files);
+  const manifest = manifestOverride ?? await writeFiles(current.projectId, current.artifactId, prev?.files ?? {}, docFiles(input.files, input.type ?? current.type));
+  const amend = input.amend && prev && prev.version > 1 && prev.createdByUserId === author.userId
+    && prev.createdBySessionId === author.sessionId && Date.now() - prev.createdAt.getTime() < AMEND_WINDOW_MS;
+  if (amend) {
+    // ponytail: an amended version's replaced blobs stay on the volume until the artifact is deleted.
+    return db.transaction(async (tx) => {
+      const [artifact] = await tx.update(artifacts).set({
+        updatedAt: new Date(),
+        ...(input.title?.trim() ? { title: input.title.trim() } : {}),
+      }).where(and(eq(artifacts.artifactId, current.artifactId), eq(artifacts.currentVersion, current.currentVersion))).returning();
+      if (!artifact) throw new ArtifactError(409, 'Someone published a newer version at the same time. Read it again and merge your change.', 'version_conflict');
+      const [version] = await tx.update(artifactVersions).set({ files: manifest })
+        .where(and(eq(artifactVersions.artifactId, current.artifactId), eq(artifactVersions.version, current.currentVersion))).returning();
+      return { artifact, version: version! };
+    });
+  }
   const nextVersion = current.currentVersion + 1;
   return db.transaction(async (tx) => {
     // The version guard makes two concurrent publishes from one version collide here.

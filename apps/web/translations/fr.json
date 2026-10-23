@@ -1293,7 +1293,7 @@
         },
         "artifacts": {
           "name": "Artefacts",
-          "description": "Les agents et les personnes publient des documents, des diapositives, des boards et des tableaux de bord sous forme de pages dans le projet. Chaque publication est une version, les documents se modifient directement et un lien de partage rend une page privée, accessible au projet, à des personnes choisies ou publique. Ajoute la page Artefacts et `kortix artifacts`."
+          "description": "Les agents et les personnes publient des documents et des pages HTML (présentations, tableaux de bord, maquettes, outils) dans le projet. Les documents se modifient directement, chaque publication est une version, tout artefact s’exporte en PDF et un lien de partage le rend privé, accessible au projet, à des personnes choisies ou public. Ajoute la page Artefacts et `kortix artifacts`."
         }
       }
     },
@@ -22487,21 +22487,15 @@
   },
   "artifacts": {
     "title": "Artefacts",
-    "gateDescription": "Documents, diapositives, boards et tableaux de bord que les agents et les personnes publient sous forme de pages, avec versions et liens de partage.",
+    "gateDescription": "Documents et pages HTML que les agents et les personnes publient, avec versions, export PDF et liens de partage.",
     "makeNew": "Créer quelque chose",
     "type": {
       "doc": "Document",
-      "slides": "Diapositives",
-      "board": "Board",
-      "dashboard": "Tableau de bord",
-      "page": "Page"
+      "html": "HTML"
     },
     "typeHint": {
-      "doc": "Une spécification, un rapport ou une note. Modifiez le texte directement.",
-      "slides": "Une présentation 16:9 à afficher en plein écran.",
-      "board": "Écrans et maquettes sur un canevas à déplacer et zoomer.",
-      "dashboard": "KPI, graphiques et tableaux sur une seule page.",
-      "page": "N’importe quelle page HTML : un outil, une explication, une appli."
+      "doc": "Une spécification, un rapport ou une note. Rédigez-le et modifiez-le comme un document.",
+      "html": "N’importe quelle page : une présentation, un tableau de bord, une maquette ou un outil."
     },
     "scope": {
       "all": "Tous",
@@ -22513,7 +22507,7 @@
     "loadError": "Impossible de charger les artefacts.",
     "retry": "Réessayer",
     "empty": "Aucun artefact pour l’instant",
-    "emptyHint": "Demandez un document, une présentation, un design ou un tableau de bord à un agent, ou lancez-en un ci-dessus.",
+    "emptyHint": "Demandez un document, une présentation ou un tableau de bord à un agent, ou lancez-en un ci-dessus.",
     "emptyFiltered": "Aucun artefact ne correspond",
     "updated": "Mis à jour {time}",
     "pinned": "Épinglé",
@@ -22555,7 +22549,6 @@
     "cancel": "Annuler",
     "save": "Enregistrer",
     "saving": "Enregistrement…",
-    "close": "Fermer",
     "saved": "Enregistré comme version {version}",
     "back": "Retour aux artefacts",
     "versions": "Versions",
@@ -22565,17 +22558,11 @@
     "backToCurrent": "Retour à la version actuelle",
     "restore": "Restaurer",
     "restored": "La version {version} est maintenant la version {current}",
-    "edit": "Modifier",
-    "editSource": "Modifier la source",
-    "editingHint": "Cliquez dans la page pour modifier son texte.",
     "bold": "Gras",
     "italic": "Italique",
-    "heading": "Titre",
-    "subheading": "Sous-titre",
     "bulletList": "Liste à puces",
     "link": "Lien",
     "linkPrompt": "URL du lien",
-    "present": "Présenter",
     "fullScreen": "Plein écran",
     "download": "Télécharger le HTML",
     "askAgent": "Demander à l’agent",
@@ -22586,6 +22573,33 @@
     "notFoundHint": "Il a été supprimé, ou son propriétaire a arrêté de le partager.",
     "busyTitle": "Kortix est occupé",
     "busyHint": "Réessayez dans une minute.",
-    "tryKortix": "Essayer Kortix"
+    "tryKortix": "Essayer Kortix",
+    "docStatus": {
+      "unsaved": "Modifications non enregistrées",
+      "saving": "Enregistrement…",
+      "error": "Non enregistré"
+    },
+    "editCode": "Modifier le code",
+    "downloadPdf": "Télécharger le PDF",
+    "placeholder": "Écrivez, ou tapez # pour un titre, - pour une liste, [ ] pour une tâche",
+    "placeholderHeading": "Titre",
+    "strike": "Barré",
+    "inlineCode": "Code",
+    "heading1": "Titre 1",
+    "heading2": "Titre 2",
+    "heading3": "Titre 3",
+    "quote": "Citation",
+    "numberedList": "Liste numérotée",
+    "taskList": "Liste de tâches",
+    "codeBlock": "Bloc de code",
+    "table": "Tableau",
+    "image": "Image",
+    "divider": "Séparateur",
+    "imagePrompt": "URL de l’image",
+    "addRow": "Ajouter une ligne",
+    "addColumn": "Ajouter une colonne",
+    "deleteRow": "Supprimer la ligne",
+    "deleteTable": "Supprimer le tableau",
+    "conflict": "Quelqu’un d’autre a publié une version plus récente. Rechargez la page pour la voir ; vos dernières modifications n’ont pas été enregistrées."
   }
 }

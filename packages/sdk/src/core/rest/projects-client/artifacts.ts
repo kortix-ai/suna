@@ -1,8 +1,7 @@
-// Artifacts (project flag `artifacts`): HTML pages people and agents publish in
-// a project — docs, slides, boards, dashboards and plain pages. Each publish is
-// an immutable version. The type picks the kit the content server adds to the
-// page, so an author writes plain semantic HTML (`listArtifactTypes` has each
-// format and a starter page). Visibility: private (the creator and
+// Artifacts (project flag `artifacts`): HTML people and agents publish in a
+// project — a `doc` (a document edited in place; publish Markdown or HTML) or
+// an `html` page or bundle (decks, dashboards, mockups, tools). Each publish is
+// a version (`listArtifactTypes` has each format and a starter page). Visibility: private (the creator and
 // `shared_with_user_ids`), project (every member), public (anyone with the
 // link). Reading needs `project.read`; publishing `project.session.start`;
 // changing an artifact its creator or project.write.
@@ -13,7 +12,8 @@ import { platformConfig } from '../../http/config';
 import { stripTrailingSlashes } from '../../../platform/strings';
 import { unwrap } from './shared';
 
-export type ArtifactType = 'page' | 'doc' | 'slides' | 'board' | 'dashboard';
+/** `doc`: a document Kortix styles and people edit in place. `html`: any page or bundle, served as written. */
+export type ArtifactType = 'doc' | 'html';
 export type ArtifactVisibility = 'private' | 'project' | 'public';
 export type ArtifactListScope = 'all' | 'mine' | 'shared' | 'pinned';
 
@@ -97,10 +97,12 @@ export interface PublishArtifactInput {
   visibility?: ArtifactVisibility;
   /** A short name for this version. */
   label?: string | null;
-  /** path → file. A new artifact needs index.html. On an update, null removes a path and every unlisted path carries over. */
+  /** path → file. A new artifact needs index.html (a doc may send index.md). On an update, null removes a path and every unlisted path carries over. */
   files: Record<string, ArtifactFileInput | null>;
   /** The version you edited; a newer current version fails with 409 `version_conflict`. */
   base_version?: number;
+  /** Fold this save into the current version when you published it less than 10 minutes ago (autosave). */
+  amend?: boolean;
 }
 
 export interface UpdateArtifactInput {
