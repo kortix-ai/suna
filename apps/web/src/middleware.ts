@@ -249,12 +249,27 @@ const DESKTOP_ALLOWED_ROUTES = [
   '/debug',
 ];
 
+function isDecodablePath(pathname: string): boolean {
+  try {
+    decodeURIComponent(pathname);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function middleware(request: NextRequest) {
   let { pathname } = request.nextUrl;
   // These are probes for server files, not product routes. A plain response also
   // avoids rendering the translated application shell for sensitive-file probes.
   if (/^\/(?:\.env(?:[./]|$)|\.git(?:\/|$)|package\.json$|etc\/passwd$)/i.test(pathname)) {
     return new NextResponse('Not found', { status: 404 });
+  }
+  // A path whose percent-encoding does not decode (`/%ff`, an overlong
+  // `/%c0%af`) matches no route. The router answered it with a bare 500 or a
+  // 200 "Page not found" page (KRTX-3239).
+  if (!isDecodablePath(pathname)) {
+    return new NextResponse('Bad request', { status: 400 });
   }
 
   // Dev and staging run behind one shared HTTP Basic credential. Read through
