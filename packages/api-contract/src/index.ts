@@ -18,6 +18,8 @@
 import { z } from 'zod';
 import { SessionLogPageSchema } from './session-log/wire';
 
+export * from './memory';
+
 /** Loose JSON object — jsonb metadata/config columns surfaced as-is. */
 export const JsonObjectSchema = z.record(z.string(), z.unknown());
 export type JsonObject = z.infer<typeof JsonObjectSchema>;
