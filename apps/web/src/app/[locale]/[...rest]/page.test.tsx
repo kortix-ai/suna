@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import * as catchAll from './page';
 import { generateMetadata } from './page';
 
 describe('the catch-all 404 route sets the document title', () => {
@@ -19,4 +20,12 @@ describe('the catch-all 404 route sets the document title', () => {
 test('the catch-all 404 is not indexed', async () => {
   const metadata = await generateMetadata();
   expect(metadata.robots).toEqual({ index: false, follow: true });
+});
+
+// KRTX-3169: notFound() in this page threw inside the I18nProvider Suspense
+// boundary, after the shell had flushed, so every unmatched path answered 200.
+// No path renders this page: the router answers 404 before any render.
+test('the router answers an unmatched path with 404 before rendering', async () => {
+  expect(catchAll.dynamicParams).toBe(false);
+  expect(await catchAll.generateStaticParams()).toEqual([]);
 });

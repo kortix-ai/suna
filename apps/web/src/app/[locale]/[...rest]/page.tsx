@@ -26,6 +26,17 @@ export async function generateMetadata(): Promise<Metadata> {
 // The root layout lives in app/[locale], so an unmatched path under a locale
 // has no parent not-found boundary of its own. This catch-all routes it to
 // app/[locale]/not-found.tsx inside the localized root layout.
+//
+// No path renders the page in a production build: the router answers 404
+// before any render. Rendering it threw notFound() inside the I18nProvider
+// Suspense boundary, after the shell had flushed, so every unmatched path
+// answered 200 with the 404 page (KRTX-3169). `next dev` does not enforce
+// `dynamicParams`, so there the page still renders and calls notFound().
+export const dynamicParams = false;
+export function generateStaticParams(): Array<{ rest: string[] }> {
+  return [];
+}
+
 export default function CatchAllNotFound(): never {
   notFound();
 }
