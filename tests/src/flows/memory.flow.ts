@@ -240,8 +240,8 @@ flow('MEMORY-2', meta([R.layer, R.pages, R.create, R.note, R.page, R.update, R.r
       (await layerOf(world.owner, 'company')).status(200).body().has('$.layer_id', company!.layer_id);
       const { rows } = await world.db.query<{ imported: boolean; jobs: number }>(
         `SELECT imported_at IS NOT NULL AS imported,
-                (SELECT count(*)::int FROM kortix.job_queue WHERE queue = 'memory-import' AND job_key = $1) AS jobs
-           FROM kortix.memory_layers WHERE layer_id = $1`,
+                (SELECT count(*)::int FROM kortix.job_queue WHERE queue = 'memory-import' AND job_key = $1::text) AS jobs
+           FROM kortix.memory_layers WHERE layer_id = $1::uuid`,
         [company!.layer_id],
       );
       if (!rows[0]?.imported || rows[0].jobs !== 0) fail('a Files-off layer was not marked imported, or queued an import', rows[0]);
@@ -773,11 +773,13 @@ flow('MEMORY-8', meta(
     });
 
     let storage = true;
-    await ctx.step('three synthetic files go into the channel’s Drive Memory folder (MEMORY.md, decisions.md, a 10 KB notes.md), or the target has no drive storage (503)', async () => {
+    await ctx.step('three synthetic files go into the channel’s Drive Memory folder (MEMORY.md, decisions.md, a 10 KB notes.md), or the target has no drive storage (the API answers 503)', async () => {
       for (const dir of ['/Company', '/Company/Channels', '/Company/Channels/launch', folder]) {
         const r = await world.owner.post('/v1/drives/:driveId/files/mkdir', { path: dir }, { params: { driveId } });
+        // No drive storage on this target: the API (not an edge: it sets x-request-id) answers 503.
+        // The body carries no code, and the local profile masks the message as "Internal server error".
         if (r.statusCode === 503) {
-          r.body().has('$.code', 'drive_storage_unavailable');
+          r.headerExists('x-request-id').body().has('$.status', 503);
           storage = false;
           return;
         }
@@ -795,9 +797,9 @@ flow('MEMORY-8', meta(
       const done = await waitFor(
         async () => (await world.db.query<{ imported_at: Date | null; jobs: number; status: string | null }>(
           `SELECT l.imported_at,
-                  (SELECT count(*)::int FROM kortix.job_queue WHERE queue = 'memory-import' AND job_key = $1) AS jobs,
-                  (SELECT status FROM kortix.job_queue WHERE queue = 'memory-import' AND job_key = $1) AS status
-             FROM kortix.memory_layers l WHERE l.layer_id = $1`,
+                  (SELECT count(*)::int FROM kortix.job_queue WHERE queue = 'memory-import' AND job_key = $1::text) AS jobs,
+                  (SELECT status FROM kortix.job_queue WHERE queue = 'memory-import' AND job_key = $1::text) AS status
+             FROM kortix.memory_layers l WHERE l.layer_id = $1::uuid`,
           [layerId],
         )).rows[0],
         { until: (row) => !!row?.imported_at && row.status === 'done', timeoutMs: 60_000, intervalMs: 500, description: 'the memory import to finish' },
