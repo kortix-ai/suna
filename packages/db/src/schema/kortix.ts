@@ -1181,6 +1181,16 @@ export const projectSpaceLinks = kortixSchema.table(
     /** How many messages shared it. */
     shareCount: integer('share_count').default(1).notNull(),
     lastSharedAt: timestamp('last_shared_at', { withTimezone: true }).defaultNow().notNull(),
+    /** The page's own title (`og:title`, else `<title>`), fetched by the server (job `link-unfurl`). */
+    fetchedTitle: text('fetched_title'),
+    /** `og:site_name` of the page. */
+    siteName: text('site_name'),
+    /** The page's icon URL; stored only when its host passes the egress address check. Never fetched by the API. */
+    iconUrl: text('icon_url'),
+    /** The last successful fetch; the link is fetched again after 7 days. */
+    fetchedAt: timestamp('fetched_at', { withTimezone: true }),
+    /** The last failed fetch; no new try for 24 hours. */
+    fetchFailedAt: timestamp('fetch_failed_at', { withTimezone: true }),
   },
   (table) => [
     check('project_space_links_source_check', sql`${table.source} in ('manual', 'message')`),
