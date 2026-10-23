@@ -460,6 +460,38 @@ export function mayManageSessionSharing(input: {
 }
 
 /**
+ * Who may publish ONE assistant response (a turn) through a public link
+ * (`PUT .../turns/:turnId/share`). Founder decision, 2026-10-23. In order:
+ *
+ *  1. `not_found` when the caller cannot READ the session under normal session
+ *     visibility. A public link must never become a way to read what the
+ *     visibility gate refused, and the answer does not reveal that it exists.
+ *  2. `not_human` for an agent-principal or session-bound sandbox credential,
+ *     even on its own session: a prompt-injected agent must not be able to
+ *     publish its own answers. A human's PAT or API key acts as that human.
+ *  3. `allow` for the session owner or a project manager
+ *     (`project.members.manage`); any other reader gets `not_owner_or_manager`.
+ *
+ * Narrower than the preview/file rule (`mayManageSessionSharing`): a manager
+ * qualifies on any session they can read, because the link publishes only text
+ * they already read, never sandbox access.
+ */
+export function mayPublishTurn(input: {
+  isHuman: boolean;
+  canRead: boolean;
+  isOwner: boolean;
+  isManager: boolean;
+}): 'allow' | 'not_found' | 'not_human' | 'not_owner_or_manager' {
+  if (!input.canRead) return 'not_found';
+  if (!input.isHuman) return 'not_human';
+  return input.isOwner || input.isManager ? 'allow' : 'not_owner_or_manager';
+}
+
+export const TURN_SHARE_AGENT_ERROR = 'An agent cannot share a response publicly';
+export const TURN_SHARE_OWNER_OR_MANAGER_ERROR =
+  'Only the session owner or a project manager can share a response publicly';
+
+/**
  * The denial wording for the two owner-governed sharing writes. Exported so the
  * routes, the flow contracts and the spec quote ONE string each.
  *

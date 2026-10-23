@@ -3564,6 +3564,7 @@ flow(
       'GET /v1/public/responses/:token',
       'GET /v1/projects/:projectId/sessions/:sessionId/public-shares',
       'GET /v1/p/public-share/:token',
+      'POST /v1/accounts/tokens',
     ],
   },
   async (ctx) => {
@@ -3591,13 +3592,13 @@ flow(
       producer: { harness: 'pi', harness_version: '1', adapter_version: '1' }, blocks, ext: {}, ...over,
     });
     const db = await openFlowDb(ctx.env);
-    const put = (m: ReturnType<typeof message>) =>
+    const put = (m: ReturnType<typeof message>, sid = sessionId) =>
       db.query(
         `INSERT INTO kortix.session_log_messages
            (session_id, message_id, thread_id, seq, role, kind, in_context, created_at, v, producer, generation, rev, content_hash, record)
          VALUES ($1, $2, 'main', $3, $4, 'turn', true, $5, 1, $6, 1, 1, 'h', $7)
          ON CONFLICT (session_id, message_id) DO UPDATE SET record = excluded.record`,
-        [sessionId, m.message_id, m.seq, m.role, T, JSON.stringify(m.producer), JSON.stringify(m)],
+        [sid, m.message_id, m.seq, m.role, T, JSON.stringify(m.producer), JSON.stringify(m)],
       );
     try {
       await put(message('msg_user_1', 1, 'user', [{ id: 'u', type: 'text', text: 'SECRET PROMPT' }]));
@@ -3694,6 +3695,59 @@ flow(
       await ctx.step('sharing again after a revoke mints a NEW link', async () => {
         const res = (await owner.put(shareRoute, undefined, { params: turn })).status(200);
         if (res.json<{ share: { token: string } }>().share.token === token) throw new Error('a revoked token came back');
+      });
+
+      // Who may publish (mayPublishTurn): a human owner or project manager who can READ the session.
+      const member = await team.addMember('member');
+      await team.grantProjectRole(project.id, member.userId!, 'member');
+      const manager = await team.addMember('member');
+      await team.grantProjectRole(project.id, manager.userId!, 'manager');
+      const asMember = ctx.client.as(member);
+      const asManager = ctx.client.as(manager);
+      const projectSessionId = await createDatabaseSession(ctx.env, {
+        projectId: project.id,
+        accountId: team.id,
+        userId: ctx.P.OWNER.userId!,
+        visibility: 'project',
+      });
+      ctx.track('session', projectSessionId, { projectId: project.id });
+      await put(message('msg_user_1', 1, 'user', [{ id: 'u', type: 'text', text: 'question' }]), projectSessionId);
+      await put(message('msg_asst_1', 2, 'assistant', [{ id: 't', type: 'text', text: 'answer' }], { reply_to: 'msg_user_1' }), projectSessionId);
+      const projectTurn = { ...turn, sessionId: projectSessionId };
+
+      await ctx.step('a plain member who can read a project session → 403 on PUT and on GET (the Share control hides)', async () => {
+        (await asMember.put(shareRoute, undefined, { params: projectTurn }))
+          .status(403)
+          .body()
+          .has('$.error', 'Only the session owner or a project manager can share a response publicly');
+        (await asMember.get(shareRoute, { params: projectTurn })).status(403);
+      });
+
+      await ctx.step("a project manager shares a response of a project session → 200; of another person's PRIVATE session PUT and GET → 404", async () => {
+        (await asManager.put(shareRoute, undefined, { params: projectTurn })).status(200).body().has('$.share.turn_id', 'msg_user_1');
+        (await asManager.put(shareRoute, undefined, { params: turn })).status(404);
+        (await asManager.get(shareRoute, { params: turn })).status(404);
+      });
+
+      await ctx.step('a session-bound agent credential → 403, even on its own session', async () => {
+        const minted = (await owner.post('/v1/accounts/tokens', { name: 'SESS-57 agent', account_id: team.id })).status(201);
+        const credential = minted.json<{ token_id: string; secret_key: string }>();
+        // The sandbox credential the platform issues: an account token bound to the project and the
+        // session, live while the session's sandbox row is (the SLOG-1 pattern).
+        await db.query('UPDATE kortix.account_tokens SET project_id = $2, session_id = $3 WHERE token_id = $1', [credential.token_id, project.id, sessionId]);
+        await db.query(
+          "INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status) VALUES ($1::uuid, $1, $2, $3, 'active')",
+          [sessionId, team.id, project.id],
+        );
+        try {
+          const agent = ctx.client.withBearer(credential.secret_key, 'SESSION_SANDBOX');
+          (await agent.put(shareRoute, undefined, { params: turn }))
+            .status(403)
+            .body()
+            .has('$.error', 'An agent cannot share a response publicly');
+        } finally {
+          await db.query('DELETE FROM kortix.session_sandboxes WHERE session_id = $1 AND external_id IS NULL', [sessionId]);
+        }
       });
     } finally {
       await db.end();

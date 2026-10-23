@@ -15,8 +15,14 @@
  * project's row, so a session of another project or account is `404`.
  */
 import type { Context } from 'hono';
-import { PUBLIC_SHARE_OWNER_ONLY_ERROR } from '../../connectors/share';
-import { loadSessionForSharing, loadVisibleSession, sessionIsTombstoned } from './access';
+import {
+  PUBLIC_SHARE_OWNER_ONLY_ERROR,
+  TURN_SHARE_AGENT_ERROR,
+  TURN_SHARE_OWNER_OR_MANAGER_ERROR,
+  mayPublishTurn,
+} from '../../connectors/share';
+import { isAgentPrincipalActor } from '../../iam/actor';
+import { callerHasManagerStanding, loadSessionForSharing, loadVisibleSession, sessionIsTombstoned } from './access';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 
 type LoadedProject = Parameters<typeof loadVisibleSession>[0];
@@ -87,6 +93,30 @@ export async function guardSessionSharing(
     };
   }
   return { ok: true, session };
+}
+
+/**
+ * May the caller publish one assistant response of this session (`mayPublishTurn`)?
+ * Unlike `guardSessionSharing('mint')`, it runs the session VISIBILITY gate:
+ * the published text must be text the caller may read.
+ */
+export async function guardTurnPublish(
+  c: Context,
+  loaded: LoadedProject,
+  sessionId: string,
+): Promise<{ ok: true; session: VisibleSession } | SessionAccessDenial> {
+  const binding = callerKortixSessionId(c);
+  const visible = await loadVisibleSession(loaded, sessionId, binding, binding);
+  const session = visible && !sessionIsTombstoned(visible.row) ? visible : null;
+  const verdict = mayPublishTurn({
+    canRead: session !== null,
+    isHuman: binding === null && !(loaded.actor && isAgentPrincipalActor(loaded.actor)),
+    isOwner: session?.isOwner === true,
+    isManager: session !== null && (await callerHasManagerStanding(loaded, binding)),
+  });
+  if (verdict === 'allow') return { ok: true, session: session! };
+  if (verdict === 'not_found') return NOT_FOUND;
+  return { ok: false, status: 403, error: verdict === 'not_human' ? TURN_SHARE_AGENT_ERROR : TURN_SHARE_OWNER_OR_MANAGER_ERROR };
 }
 
 /** Send a guard denial as the route's JSON error response. */

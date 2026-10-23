@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   mayManageSessionSharing,
+  mayPublishTurn,
   sharingChangeKeepsEditorAccess,
   type SecretGrant,
   type ShareSubject,
@@ -111,5 +112,35 @@ describe('sharingChangeKeepsEditorAccess', () => {
         subject: subject('manager', ['platform']),
       }),
     ).toBe(true);
+  });
+});
+
+describe('mayPublishTurn', () => {
+  const base = { isHuman: true, canRead: true, isOwner: false, isManager: false };
+
+  test('the owner who reads the session may publish', () => {
+    expect(mayPublishTurn({ ...base, isOwner: true })).toBe('allow');
+  });
+
+  test('a project manager who reads the session may publish', () => {
+    expect(mayPublishTurn({ ...base, isManager: true })).toBe('allow');
+  });
+
+  test('a plain member who reads the session is refused', () => {
+    expect(mayPublishTurn(base)).toBe('not_owner_or_manager');
+  });
+
+  test('a session the caller cannot read is not found, even for a manager or the owner', () => {
+    expect(mayPublishTurn({ ...base, canRead: false, isManager: true })).toBe('not_found');
+    expect(mayPublishTurn({ ...base, canRead: false, isOwner: true })).toBe('not_found');
+  });
+
+  test('an agent credential is refused even on its own session', () => {
+    expect(mayPublishTurn({ ...base, isHuman: false, isOwner: true })).toBe('not_human');
+    expect(mayPublishTurn({ ...base, isHuman: false, isManager: true })).toBe('not_human');
+  });
+
+  test('an agent credential that cannot read the session gets not found, not a hint it exists', () => {
+    expect(mayPublishTurn({ ...base, isHuman: false, canRead: false })).toBe('not_found');
   });
 });

@@ -13,7 +13,7 @@ import {
 import { buildResponseSnapshot } from '../lib/response-snapshot';
 import { loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { guardSession, guardSessionSharing, sessionAccessDenied } from '../lib/http-session-access';
+import { guardSession, guardSessionSharing, guardTurnPublish, sessionAccessDenied } from '../lib/http-session-access';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
 import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bindings';
@@ -240,8 +240,12 @@ export function registerPublicSharesRoutes(): void {
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      const guard = await guardSessionSharing(c, loaded, sessionId, 'list');
+      // Read access first (404 otherwise): a manager learns nothing about a session they cannot open.
+      const guard = await guardSession(c, loaded, sessionId, 'read');
       if (!guard.ok) return c.json({ error: guard.error }, guard.status);
+      if (!guard.session.canManageLifecycle) {
+        return c.json({ error: 'Only the session owner or a project manager can view this response share' }, 403);
+      }
 
       const row = await getLiveResponseShare(sessionId, turnId);
       if (!row) return c.json({ share: null }, 200);
@@ -278,7 +282,8 @@ export function registerPublicSharesRoutes(): void {
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      const guard = await guardSessionSharing(c, loaded, sessionId, 'mint');
+      // Owner or project manager, human, and able to read the session (mayPublishTurn).
+      const guard = await guardTurnPublish(c, loaded, sessionId);
       if (!guard.ok) return c.json({ error: guard.error }, guard.status);
 
       const body = await readJsonObject(c);
