@@ -40,6 +40,8 @@ import {
   releasePromptDelivery,
 } from '../prompt-dedupe';
 import { recordSessionActivity } from '../../projects/session-activity';
+import { isMemoryTurnRoute, memoryTurnLayers, withMemoryLayers } from '../../memory/turn-context';
+import { logger } from '../../lib/logger';
 import type { ForwardRequest, ForwardState } from './context';
 
 // Turn-start preparation on the forward path: runtime convergence before the
@@ -340,7 +342,26 @@ export async function syncEnvBeforeTurnStart(
     }
     return refusal;
   }
+  await addMemoryTurnLayers(req, state);
   return null;
+}
+
+/**
+ * `memory_layers` on a Kortix prompt body (`project_channels`): the thread's
+ * memory layers and versions, so kortixd refreshes its read-only memory copy
+ * before the turn. Flag off, no space, or any failure: the body goes as sent.
+ */
+async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Promise<void> {
+  if (!isMemoryTurnRoute(req.method, req.remainingPath)) return;
+  try {
+    const layers = await memoryTurnLayers(req.record.sessionId);
+    if (layers) state.requestBody = withMemoryLayers(state.requestBody, layers);
+  } catch (error) {
+    logger.warn('[memory] turn start forwarded without memory_layers', {
+      session_id: req.record.sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 /**

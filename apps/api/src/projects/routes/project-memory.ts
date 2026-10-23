@@ -5,12 +5,15 @@
  *
  * Every route needs `session` project access and the flag. People read and
  * write the layers they see. A session-bound caller (an agent's token) reads
- * only its thread's layers and gets 403 `use_remember` on writes.
+ * only its thread's layers and gets 403 `use_remember` on writes. Agents
+ * write with `POST …/memory/remember` and read their copy with the layer
+ * export; both answer 403 `session_token_required` to anyone else.
  */
 import { createRoute, z } from '@hono/zod-openapi';
 import {
   MemoryChangeListSchema,
   MemoryDeleteResultSchema,
+  MemoryLayerExportSchema,
   MemoryLayerSchema,
   MemoryNoteInputSchema,
   MemoryPageCreateInputSchema,
@@ -19,6 +22,8 @@ import {
   MemoryPageStatusSchema,
   MemoryPageTypeSchema,
   MemoryPageUpdateInputSchema,
+  MemoryRememberInputSchema,
+  MemoryRememberResultSchema,
   MemoryRestoreInputSchema,
   MemoryUndoResultSchema,
   MemoryVersionListSchema,
@@ -30,12 +35,14 @@ import {
   addNote,
   createPage,
   deletePage,
+  exportLayer,
   getPage,
   layerChanges,
   layerView,
   listPages,
   MemoryError,
   pageHistory,
+  remember,
   resolveLayerKey,
   restorePage,
   undoVersion,
@@ -91,6 +98,14 @@ export function memoryValidationHook(
   const issue = result.error?.issues[0];
   const where = issue?.path.length ? `${issue.path.map(String).join('.')}: ` : '';
   return c.json({ error: `${where}${issue?.message ?? 'Invalid input'}`, code: 'invalid_input', issues: result.error?.issues }, 400);
+}
+
+/** The session of an agent's token; a browser or personal token is 403 `session_token_required`. */
+function sessionOf(viewer: Viewer): string {
+  if (!viewer.sessionId) {
+    throw new MemoryError(403, 'session_token_required', 'Only an agent’s session token can call this route.');
+  }
+  return viewer.sessionId;
 }
 
 // Every status a MemoryError can carry; a read answers only 400, 403 and 404.
@@ -330,6 +345,54 @@ export function registerProjectMemoryRoutes(): void {
         const pages = await Promise.all(live.map((pageId) => getPage(project.projectId, pageId, viewer)));
         return c.json({ pages }, 200);
       }),
+    memoryValidationHook,
+  );
+
+  registerAgentMemoryRoutes();
+}
+
+/** The agent section: `remember` and the layer export (session token only). */
+function registerAgentMemoryRoutes(): void {
+  // POST /v1/projects/:projectId/memory/remember — kortixd's `remember` tool.
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/memory/remember',
+      tags: ['memory'],
+      summary: 'Save a fact to the calling thread’s memory',
+      description:
+        'Session token only. `layer` defaults to the thread’s channel or DM; `dm` outside a DM thread or `channel` outside a channel ' +
+        'thread is 403 `memory_layer_forbidden`. A live page of the title gets the fact or body; else a page of `type` is made. ' +
+        '409 `layer_read_only` / `page_limit`, 413 `page_too_large`, 422 `secret_detected`.',
+      ...auth,
+      request: { params: projectParams, body: { content: { 'application/json': { schema: MemoryRememberInputSchema } } } },
+      responses: { 200: json(MemoryRememberResultSchema, 'Saved'), ...WRITE_ERRORS },
+    }),
+    (c) =>
+      withMemoryCaller(c, async ({ project, viewer }) =>
+        c.json(await remember(project.projectId, sessionOf(viewer), c.req.valid('json')), 200),
+      ),
+    memoryValidationHook,
+  );
+
+  // GET /v1/projects/:projectId/memory/layers/:layerId/export — kortixd's copy sync.
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/memory/layers/{layerId}/export',
+      tags: ['memory'],
+      summary: 'Export a memory layer as the files of the read-only copy',
+      description:
+        'Session token only, for a layer the calling thread reads (else 403 `memory_layer_forbidden`). INDEX.md and one markdown file per confirmed page, ' +
+        'source tokens resolved to `[label]`.',
+      ...auth,
+      request: { params: projectParams.extend({ layerId: z.string() }) },
+      responses: { 200: json(MemoryLayerExportSchema, 'The layer’s files'), ...READ_ERRORS },
+    }),
+    (c) =>
+      withMemoryCaller(c, async ({ project, viewer }) =>
+        c.json(await exportLayer(project.projectId, sessionOf(viewer), c.req.valid('param').layerId), 200),
+      ),
     memoryValidationHook,
   );
 }

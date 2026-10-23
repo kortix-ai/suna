@@ -17,16 +17,21 @@ import { planUndo, type Snapshot, type UndoVersion } from './undo';
 
 type VersionRow = typeof memoryPageVersions.$inferSelect;
 
-/** True when no row of the version's change is undone and none of its pages has a newer version that is not undone. */
+/**
+ * True when no row of the version's change is undone and none of its pages has
+ * a newer version that is not undone. The outer row is named by table, since
+ * a one-table select leaves its columns unqualified.
+ */
+const outerChange = sql.raw('"memory_page_versions"."change_id"');
 const undoable = sql<boolean>`(
   NOT EXISTS (
     SELECT 1 FROM kortix.memory_page_versions c
-     WHERE c.change_id = ${memoryPageVersions.changeId} AND c.undone_by_version_id IS NOT NULL)
+     WHERE c.change_id = ${outerChange} AND c.undone_by_version_id IS NOT NULL)
   AND NOT EXISTS (
     SELECT 1 FROM kortix.memory_page_versions c
       JOIN kortix.memory_page_versions n
         ON n.page_id = c.page_id AND n.version_no > c.version_no AND n.undone_by_version_id IS NULL
-     WHERE c.change_id = ${memoryPageVersions.changeId}))`;
+     WHERE c.change_id = ${outerChange}))`;
 
 const invalidCursor = () => new MemoryError(400, 'invalid_input', '`before` is not a value this list returned.');
 

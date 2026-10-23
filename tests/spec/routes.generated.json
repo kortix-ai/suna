@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 906,
+  "count": 908,
   "routes": [
     {
       "method": "GET",
@@ -2496,6 +2496,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/memory/layers/:layerId/export"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/memory/layers/:layerKey"
     },
     {
@@ -2533,6 +2537,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/memory/pages/:pageId/restore"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/memory/remember"
     },
     {
       "method": "POST",
