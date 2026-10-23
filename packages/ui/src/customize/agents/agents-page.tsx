@@ -53,6 +53,7 @@ import { catalogEmptyKind } from '../shared/catalog/catalog-empty';
 import { CatalogNoMatch } from '../shared/catalog/catalog-empty-state';
 import { CatalogDomainSections } from '../shared/catalog/catalog-domain-sections';
 import { ALL_DOMAINS, DomainFilterTabs } from '../shared/catalog/domain-filter-tabs';
+import { useActiveDomain } from '../../internal/stores/active-domain-store';
 import { CatalogGrid } from '../shared/catalog/catalog-grid';
 import { GRID_CLASSNAME } from '../shared/catalog/catalog-grid-tokens';
 
@@ -185,7 +186,12 @@ export function AgentsPage({ projectId }: { projectId: string }) {
   );
   const useDomainGrouping =
     (config?.domains?.length ?? 0) > 0 || primaryAgents.some((agent) => Boolean(agent.domain));
-  const [domainFilter, setDomainFilter] = useState(ALL_DOMAINS);
+  // The active domain is the sidebar switcher's choice (shared source of
+  // truth): null = All. The page's own filter tabs read and write the same
+  // store, so switching in either place stays in sync.
+  const [activeDomain, setActiveDomain] = useActiveDomain(projectId);
+  const domainFilter = activeDomain ?? ALL_DOMAINS;
+  const setDomainFilter = (value: string) => setActiveDomain(value === ALL_DOMAINS ? null : value);
   // The agents of the selected domain (when a specific one is picked), flat.
   const filteredDomainAgents = useMemo(
     () => (domainFilter === ALL_DOMAINS ? [] : (primaryDomainGroups.find((g) => g.name === domainFilter)?.items ?? [])),
