@@ -1444,6 +1444,24 @@ export const memoryThreadLoads = kortixSchema.table('memory_thread_loads', {
   layers: jsonb('layers').$type<MemoryThreadLoadLayer[]>().notNull(),
 });
 
+/**
+ * One-time marks a member leaves in a project: the Channels intro seen, a
+ * "Get started" row done or the block dismissed. The API validates `mark`.
+ * Only the API reads it (RLS on, no policy).
+ */
+export const projectUserMarks = kortixSchema.table(
+  'project_user_marks',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    mark: text('mark').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.userId, table.mark] })],
+);
+
 // Who started a session's RUN (the whole spawn tree), for attribution and the
 // session list's "mine / shared / automated" split. Server-derived at create and
 // copied from the parent for a spawned session — see session-initiator.ts.

@@ -100,6 +100,7 @@ export {
   memoryPageVersions,
   memoryPageSources,
   memoryThreadLoads,
+  projectUserMarks,
   sessionPresenceLeases,
   projectSessionRuntimeContexts,
   accountModelPreferences,
