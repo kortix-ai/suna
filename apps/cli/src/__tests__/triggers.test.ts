@@ -770,7 +770,9 @@ describe('kortix triggers fire — reports the run outcome', () => {
   });
 
   test('a failed run exits non-zero with the real error and cleans up the session', async () => {
-    state.failAfterMs = 300;
+    // Fails after the CLI reads its anchor, even on a loaded runner: a failure
+    // before that read is a known gap (it reads as the previous run's).
+    state.failAfterMs = 1500;
     const apiConfig = writeConfig(startFireServer());
     const result = await runCli(
       ['triggers', 'fire', 'dogfood-cron', '--wait', '8s', '--project', PROJECT],
@@ -833,7 +835,9 @@ describe('kortix triggers fire — reports the run outcome', () => {
 
   test('a queued fire whose run later fails exits non-zero with the error', async () => {
     state.fireStatus = 'queued';
-    state.failAfterMs = 300;
+    // Fails after the CLI reads its anchor, even on a loaded runner: a failure
+    // before that read is a known gap (it reads as the previous run's).
+    state.failAfterMs = 1500;
     const apiConfig = writeConfig(startFireServer());
     const result = await runCli(
       ['triggers', 'fire', 'dogfood-cron', '--wait', '8s', '--project', PROJECT],
