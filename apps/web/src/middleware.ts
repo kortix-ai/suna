@@ -5,7 +5,7 @@ import {
   deriveEnvironmentAccessCookie,
   ENVIRONMENT_ACCESS_COOKIE,
 } from '@/lib/environment-protection';
-import { legalTermsRedirectUrl } from '@/lib/legal-terms-redirect';
+import { legalShortPathRedirectUrl, legalTermsRedirectUrl } from '@/lib/legal-terms-redirect';
 import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import {
@@ -418,6 +418,12 @@ export async function middleware(request: NextRequest) {
   );
   if (termsDestination) {
     return finalizeEnvironmentAccess(NextResponse.redirect(termsDestination, 308));
+  }
+  // /privacy, /terms, /imprint, /subprocessors (and each locale prefix) were
+  // 200 "Page not found" pages; each is a real legal page (KRTX-3256).
+  const legalDestination = legalShortPathRedirectUrl(pathname, request.nextUrl.searchParams, request.nextUrl);
+  if (legalDestination) {
+    return finalizeEnvironmentAccess(NextResponse.redirect(legalDestination, 308));
   }
 
   // Normalize app paths before maintenance, desktop and authentication gates.
