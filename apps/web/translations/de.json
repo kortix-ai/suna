@@ -1290,6 +1290,10 @@
         "goals": {
           "name": "Ziele",
           "description": "Gib einem Agenten ein Ziel, für das er verantwortlich bleibt, bis eine unabhängige Prüfung das Ergebnis bestätigt. Er plant, arbeitet, wartet, fragt bei Personen nach und speichert seinen Stand in einem Ordner „Goals“ unter Dateien. Erfordert aktivierte Volumes und Erinnerungen."
+        },
+        "workspace_volume": {
+          "name": "Workspace-Volume",
+          "description": "Speichert /workspace jeder neuen Session auf einem eigenen Volume. So kann eine gestoppte Sandbox gelöscht werden, und die nächste startet mit denselben Dateien und derselben Unterhaltung. Kortix aktiviert es pro Projekt."
         }
       }
     },

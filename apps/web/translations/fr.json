@@ -1290,6 +1290,10 @@
         "goals": {
           "name": "Objectifs",
           "description": "Confiez à un agent un objectif dont il reste responsable jusqu’à ce qu’une vérification indépendante confirme le résultat. Il planifie, travaille, attend, relance les personnes et conserve son état dans un dossier Goals dans Fichiers. Nécessite Volumes et Rappels activés."
+        },
+        "workspace_volume": {
+          "name": "Volume de workspace",
+          "description": "Conserve le /workspace de chaque nouvelle session sur son propre volume : une sandbox arrêtée peut être supprimée et la suivante démarre avec les mêmes fichiers et la même conversation. Kortix l'active par projet."
         }
       }
     },
