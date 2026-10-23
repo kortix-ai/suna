@@ -1,5 +1,6 @@
 'use client';
 
+import { LockIcon } from '@phosphor-icons/react';
 import { useProjectMemoryLayer, useProjectMemoryPage, useProjectMemoryPages } from '@kortix/sdk/react';
 import { useMemo, useRef, useState } from 'react';
 
@@ -7,6 +8,7 @@ import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
 import { Button } from '../../primitives/button';
 import { ErrorState } from '../../primitives/error-state';
+import { InfoBanner } from '../../primitives/info-banner';
 import { Skeleton } from '../../primitives/skeleton';
 import { SplitSheet, SplitSheetMain } from '../../primitives/split-sheet';
 import { useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
@@ -145,6 +147,12 @@ export function MemoryView({ projectId, layerKey, place }: MemoryViewProps) {
   // into the list.
   return (
     <div className="@container/memory flex min-h-0 flex-1 flex-col">
+      {/* An archived channel: its memory stays readable; no Edit, no Remember bar (`can_edit` / `can_write` are false). */}
+      {layer.data.read_only ? (
+        <InfoBanner tone="neutral" icon={LockIcon} className="mx-3 mt-3 shrink-0">
+          {t('remember.status.readOnly')}
+        </InfoBanner>
+      ) : null}
       {!selected ? (
         <MemoryEmpty
           kind={kind}
