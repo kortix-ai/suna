@@ -184,7 +184,8 @@ export async function collectMessageLinks(input: {
   text: string;
 }): Promise<void> {
   if (!input.spaceId || input.visibility !== 'project') return;
-  const urls = extractMessageLinks(input.text);
+  // Sorted: two concurrent upserts lock the same rows in the same order (no deadlock).
+  const urls = extractMessageLinks(input.text).sort();
   if (urls.length === 0 || !(await findLiveChannel(input.projectId, input.spaceId))) return;
   const t = projectSpaceLinks;
   await db
@@ -202,7 +203,12 @@ export async function collectMessageLinks(input: {
     )
     .onConflictDoUpdate({
       target: [t.spaceId, t.url],
-      set: { shareCount: sql`${t.shareCount} + 1`, lastSharedAt: sql`now()`, sessionId: sql`excluded.session_id` },
+      set: {
+        // An "Add link" row counts its first share in a thread as 1, not 2.
+        shareCount: sql`case when ${t.source} = 'manual' and ${t.sessionId} is null then 1 else ${t.shareCount} + 1 end`,
+        lastSharedAt: sql`now()`,
+        sessionId: sql`excluded.session_id`,
+      },
     });
   await pruneSharedLinks(input.spaceId);
 }
@@ -217,12 +223,15 @@ export function collectMessageLinksInBackground(
 ): void {
   const { userId, projectMetadata, ...rest } = input;
   if (!userId || !rest.spaceId || !resolveFeatureFlag(projectMetadata, 'project_channels')) return;
-  void collectMessageLinks({ ...rest, userId }).catch((err) =>
-    logger.warn('[spaces] collecting message links failed', {
-      sessionId: rest.sessionId,
-      error: err instanceof Error ? err.message : String(err),
-    }),
-  );
+  // After the handler returns its response: the extraction never delays the send.
+  setImmediate(() => {
+    collectMessageLinks({ ...rest, userId }).catch((err) =>
+      logger.warn('[spaces] collecting message links failed', {
+        sessionId: rest.sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  });
 }
 
 /** Drop the least recently shared unpinned links past `SPACE_SHARED_LINKS_MAX`. */

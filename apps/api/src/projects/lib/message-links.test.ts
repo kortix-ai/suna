@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { extractMessageLinks, MESSAGE_LINKS_MAX } from './message-links';
+import { extractMessageLinks, MESSAGE_LINKS_MAX, MESSAGE_SCAN_MAX } from './message-links';
 
 describe('extractMessageLinks', () => {
   test('a bare link, normalized', () => {
@@ -63,5 +63,30 @@ describe('extractMessageLinks', () => {
     expect(
       extractMessageLinks('<reply_context from="agent">see https://agent.com/x</reply_context>\nmine: https://me.com'),
     ).toEqual(['https://me.com/']);
+  });
+
+  test('trailing punctuation mixed with unopened closers is trimmed in one pass', () => {
+    expect(extractMessageLinks('(see https://a.com/x).) and https://b.com/y?).')).toEqual(['https://a.com/x', 'https://b.com/y']);
+  });
+
+  for (const [name, tail] of [
+    ['100k closing parens', ')'.repeat(100_000)],
+    ['100k ".)" pairs', '.)'.repeat(50_000)],
+    ['100k "(" then ")"', '('.repeat(50_000) + ')'.repeat(50_000)],
+  ] as const) {
+    test(`adversarial input (${name}) finishes in under 50 ms`, () => {
+      const started = performance.now();
+      const links = extractMessageLinks(`https://a.com/${tail}`);
+      expect(performance.now() - started).toBeLessThan(50);
+      expect(links).toEqual([]);
+    });
+  }
+
+  test('a 12 MB message is scanned only in its first 64 KB, fast', () => {
+    const text = `https://a.com/first ${'x '.repeat(6_000_000)} https://b.com/late`;
+    const started = performance.now();
+    expect(extractMessageLinks(text)).toEqual(['https://a.com/first']);
+    expect(performance.now() - started).toBeLessThan(50);
+    expect(MESSAGE_SCAN_MAX).toBe(65_536);
   });
 });

@@ -7535,7 +7535,6 @@ const catalog = {
         "addFailed": "Could not add the link. Try again.",
         "limit": "This channel already pins 200 links. Unpin one first.",
         "added": "Link added",
-        "addedBy": "{name} · {time}",
         "remove": "Remove link",
         "removeTitle": "Remove this link?",
         "removeDescription": "{link} is removed from {place} for everyone.",

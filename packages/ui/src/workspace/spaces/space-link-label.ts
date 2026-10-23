@@ -15,20 +15,25 @@ export function linkHost(url: string): string {
 
 /** The path and query, decoded, without the outer slashes; '' for a bare host. */
 export function linkPathTitle(url: string): string {
-  let raw: string;
+  let pathname: string;
+  let search: string;
   try {
-    const { pathname, search } = new URL(url);
-    raw = pathname + search;
+    ({ pathname, search } = new URL(url));
   } catch {
     return '';
   }
-  let text = raw;
-  try {
-    text = decodeURIComponent(raw.replace(/\+/g, ' '));
-  } catch {
-    // A malformed escape stays as written.
-  }
+  // `+` means a space in a query only; in a path it is a plus (`wiki/C++`).
+  const text = decode(pathname) + decode(search.replace(/\+/g, ' '));
   return text.replace(/^\/+|\/+$/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/** A malformed escape stays as written. */
+function decode(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
 }
 
 /** The row's title: the title a member gave, else the path, else the host. */

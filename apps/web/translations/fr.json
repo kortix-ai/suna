@@ -22702,7 +22702,6 @@
         "addFailed": "Impossible d’ajouter le lien. Réessayez.",
         "limit": "Ce canal a déjà 200 liens épinglés. Désépinglez-en un d’abord.",
         "added": "Lien ajouté",
-        "addedBy": "{name} · {time}",
         "remove": "Retirer le lien",
         "removeTitle": "Retirer ce lien ?",
         "removeDescription": "{link} est retiré de {place} pour tout le monde.",

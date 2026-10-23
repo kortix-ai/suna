@@ -185,9 +185,9 @@ export function SpaceLinks({ projectId, space, place }: { projectId: string; spa
         ) : null}
         {shared.length > 0 ? (
           <section aria-label={t('links.sharedTitle')} className="flex flex-col">
-            <div className="flex items-center justify-between gap-3 pb-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 pb-1.5">
               <h3 className="text-muted-foreground text-xs font-medium">{t('links.sharedTitle')}</h3>
-              <p className="text-muted-foreground text-xs max-sm:hidden">{t('links.sharedNote')}</p>
+              <p className="text-muted-foreground text-xs">{t('links.sharedNote')}</p>
             </div>
             {shared.map((day, index) => (
               <div key={day.key}>
@@ -308,6 +308,8 @@ function LinkRow({
           {linkTitle(link)}
         </a>
         <p className="text-muted-foreground truncate text-xs">{host}</p>
+        {/* Below sm the meta column is hidden: the same line sits under the host. */}
+        <p className="text-muted-foreground truncate text-xs sm:hidden">{meta.join(' · ')}</p>
       </div>
       {/* A long thread title truncates; the name and the time stay whole. */}
       <p className="text-muted-foreground flex w-72 shrink-0 text-xs whitespace-pre max-sm:hidden">
@@ -321,7 +323,7 @@ function LinkRow({
       <div className="relative z-10 flex w-20 shrink-0 items-center justify-end gap-1">
         {link.pinned ? (
           link.can_delete || !unpinRemoves(link) ? (
-            <Button variant="ghost" size="xs" className="text-muted-foreground" disabled={busy} onClick={onPin}>
+            <Button variant="text" size="xs" disabled={busy} onClick={onPin}>
               {t('links.unpin')}
             </Button>
           ) : null

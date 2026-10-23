@@ -343,9 +343,10 @@ export function registerProjectSessionsRoutes(): void {
         202,
       );
     }
-    // The thread's first message: a person's links join its channel's Links tab.
+    // The thread's first message: a person's links join its channel's Links tab
+    // (once: an idempotency-key replay returns the same session, `deduped`).
     const pendingText = (body.pending_prompt as { text?: unknown } | undefined)?.text;
-    collectMessageLinksInBackground({
+    if (result.status !== 'deduped') collectMessageLinksInBackground({
       projectId,
       sessionId: result.row.sessionId,
       spaceId: result.row.spaceId,

@@ -22702,7 +22702,6 @@
         "addFailed": "Der Link konnte nicht hinzugefügt werden. Versuche es erneut.",
         "limit": "Dieser Kanal hat bereits 200 angeheftete Links. Löse zuerst einen.",
         "added": "Link hinzugefügt",
-        "addedBy": "{name} · {time}",
         "remove": "Link entfernen",
         "removeTitle": "Diesen Link entfernen?",
         "removeDescription": "{link} wird für alle aus {place} entfernt.",

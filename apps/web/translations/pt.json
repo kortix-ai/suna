@@ -22702,7 +22702,6 @@
         "addFailed": "Não foi possível adicionar o link. Tente de novo.",
         "limit": "Este canal já tem 200 links fixados. Desafixe um primeiro.",
         "added": "Link adicionado",
-        "addedBy": "{name} · {time}",
         "remove": "Remover link",
         "removeTitle": "Remover este link?",
         "removeDescription": "{link} é removido de {place} para todos.",
