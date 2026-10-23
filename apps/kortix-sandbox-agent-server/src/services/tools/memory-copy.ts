@@ -42,7 +42,8 @@ interface LayerExport {
   pages: Array<{ type: string; slug: string; markdown: string }>
 }
 
-const TYPE_FOLDERS: Record<string, string> = {
+/** A page type → its folder in a layer's copy. */
+export const TYPE_FOLDERS: Record<string, string> = {
   people: 'people',
   decisions: 'decisions',
   workstreams: 'workstreams',

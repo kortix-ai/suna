@@ -14,6 +14,7 @@ import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-d
 import { logger } from '@/lib/log/logger'
 import imageSearch from './kortix/image_search'
 import memory from './kortix/memory'
+import memorySearch from './platform/memory_search'
 import remember from './platform/remember'
 import scrapeWebpage from './kortix/scrape_webpage'
 import show from './kortix/show'
@@ -43,7 +44,7 @@ export const KORTIX_TOOLS: Readonly<Record<string, KortixTool>> = {
  * of the same name replaces one in that project. An agent's tool access keeps
  * them under an allowlist and removes one only by name (`hostedToolAllowed`).
  */
-export const PLATFORM_TOOLS: Readonly<Record<string, KortixTool>> = { remember }
+export const PLATFORM_TOOLS: Readonly<Record<string, KortixTool>> = { remember, memory_search: memorySearch }
 
 export interface HostedTool extends KortixTool {
   name: string

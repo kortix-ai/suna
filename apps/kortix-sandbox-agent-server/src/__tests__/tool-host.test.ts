@@ -116,9 +116,10 @@ describe('loadTools', () => {
       (await loadTools(root, compiled, env)).tools.map((tool) => [tool.name, tool.source])
     expect((await names({})).map(([name]) => name)).not.toContain('remember')
     expect(await names({ KORTIX_SPACE_ID: '  ' }, { kortix_tools: [] })).toEqual([])
-    expect(await names({ KORTIX_SPACE_ID: 'space-1' }, { kortix_tools: [] })).toEqual([['remember', 'platform']])
-    expect((await names({ KORTIX_SPACE_ID: 'space-1' })).at(-1)).toEqual(['remember', 'platform'])
+    expect(await names({ KORTIX_SPACE_ID: 'space-1' }, { kortix_tools: [] })).toEqual([['remember', 'platform'], ['memory_search', 'platform']])
+    expect((await names({ KORTIX_SPACE_ID: 'space-1' })).slice(-2)).toEqual([['remember', 'platform'], ['memory_search', 'platform']])
     expect(hostedTool('remember')?.source).toBe('platform')
+    expect(hostedTool('memory_search')?.source).toBe('platform')
   })
 
   test('a project tool named like a platform tool replaces it in that project', async () => {
@@ -126,7 +127,7 @@ describe('loadTools', () => {
     const warn = spyOn(logger, 'warn')
     try {
       const { tools } = await loadTools(root, { kortix_tools: [], project_tools: { remember: 'tools/remember.ts' } }, { KORTIX_SPACE_ID: 'space-1' })
-      expect(tools.map((tool) => [tool.name, tool.source])).toEqual([['remember', 'tools/remember.ts']])
+      expect(tools.map((tool) => [tool.name, tool.source])).toEqual([['remember', 'tools/remember.ts'], ['memory_search', 'platform']])
       expect(warn.mock.calls).toEqual([['[tools] a project tool replaces the platform tool of its name', { tool: 'remember', source: 'tools/remember.ts' }]])
     } finally {
       warn.mockRestore()
