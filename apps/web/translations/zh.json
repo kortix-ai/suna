@@ -22437,7 +22437,6 @@
     "shareError": "无法分享回复。请重试。",
     "unshareError": "无法停止分享。请重试。",
     "copyError": "无法复制链接。请从字段中复制。",
-    "noText": "此回复还没有可分享的文本。",
     "tryKortix": "试用 Kortix",
     "goneTitle": "此回复已不再分享",
     "goneHint": "分享者已关闭此链接。",

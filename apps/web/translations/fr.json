@@ -22437,7 +22437,6 @@
     "shareError": "Impossible de partager la réponse. Réessayez.",
     "unshareError": "Impossible d'arrêter le partage. Réessayez.",
     "copyError": "Impossible de copier le lien. Copiez-le depuis le champ.",
-    "noText": "Cette réponse n'a pas encore de texte à partager.",
     "tryKortix": "Essayer Kortix",
     "goneTitle": "Cette réponse n'est plus partagée",
     "goneHint": "La personne qui l’a partagée a désactivé le lien.",

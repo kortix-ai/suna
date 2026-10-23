@@ -46,10 +46,16 @@ export function turnShareQueryKey({ projectId, sessionId, turnId }: TurnShareTar
   return ['turn-share', projectId, sessionId, turnId] as const;
 }
 
-/** The status an SDK error carries (`ApiError.status`), when it carries one. */
-function errorStatus(error: unknown): number | undefined {
-  const status = (error as { status?: unknown } | null)?.status;
-  return typeof status === 'number' ? status : undefined;
+/**
+ * The server's own message for a failed call, or null. Only an error that
+ * carries an HTTP status (`ApiError.status`) came from the server; a network
+ * failure's message ("Failed to fetch") is not worth showing.
+ */
+function serverMessage(error: unknown): string | null {
+  const { status, message } = (error ?? {}) as { status?: unknown; message?: unknown };
+  return typeof status === 'number' && typeof message === 'string' && message.trim()
+    ? message.trim()
+    : null;
 }
 
 /**
@@ -148,7 +154,7 @@ function TurnShareDialogContent({ target }: { target: TurnShareTarget }) {
     onError: (err, { reason }) => {
       // A failed scope change leaves the live share as it was: show its scope.
       if (reason === 'scope') setPickedIncludePrompt(null);
-      setError(errorStatus(err) === 409 ? t('noText') : t('shareError'));
+      setError(serverMessage(err) ?? t('shareError'));
     },
   });
 
@@ -159,11 +165,11 @@ function TurnShareDialogContent({ target }: { target: TurnShareTarget }) {
       queryClient.setQueryData(key, data);
       setConfirmingOff(false);
     },
-    onError: () => setError(t('unshareError')),
+    onError: (err) => setError(serverMessage(err) ?? t('unshareError')),
   });
 
   const pending = query.isLoading || publish.isPending || unpublish.isPending;
-  const shownError = error ?? (query.isError ? t('loadError') : null);
+  const shownError = error ?? (query.isError ? (serverMessage(query.error) ?? t('loadError')) : null);
 
   const pickScope = (value: string) => {
     const next = value === 'prompt';

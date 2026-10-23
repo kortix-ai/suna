@@ -9,7 +9,7 @@
  * attachments and synthetic harness text never are. The prompt's text is
  * published only when the sharer asks for it (`include_prompt`).
  */
-import { sessionLogMessages } from '@kortix/db';
+import { sessionLogMessages, sessionTurns } from '@kortix/db';
 import type { SessionLogMessage } from '@kortix/api-contract/session-log';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
@@ -37,6 +37,22 @@ export type ResponseSnapshotResult =
   | { ok: true; snapshot: ResponseSnapshot }
   | { ok: false; status: 404 | 409; error: string };
 
+export const RESPONSE_NOT_FOUND_ERROR = 'Response not found';
+export const RESPONSE_SAVING_ERROR = 'This response is still being saved. Try again in a few seconds.';
+
+/**
+ * The answer when the prompt is not in the session log. A turn the ledger
+ * (`session_turns`) knows is real: its messages have not reached the log yet
+ * (the journal lags a settled turn by seconds, and a lost tunnel can drop its
+ * posts until the daemon re-sends), so the caller retries → 409. A turn nobody
+ * recorded → 404.
+ */
+export function unloggedTurnResult(turnRecorded: boolean): ResponseSnapshotResult {
+  return turnRecorded
+    ? { ok: false, status: 409, error: RESPONSE_SAVING_ERROR }
+    : { ok: false, status: 404, error: RESPONSE_NOT_FOUND_ERROR };
+}
+
 export async function buildResponseSnapshot(input: {
   sessionId: string;
   projectId: string;
@@ -51,7 +67,14 @@ export async function buildResponseSnapshot(input: {
     .from(sessionLogMessages)
     .where(and(live, eq(sessionLogMessages.messageId, input.turnId), eq(sessionLogMessages.role, 'user')))
     .limit(1);
-  if (!prompt) return { ok: false, status: 404, error: 'Turn not found' };
+  if (!prompt) {
+    const [turn] = await db
+      .select({ turnToken: sessionTurns.turnToken })
+      .from(sessionTurns)
+      .where(and(eq(sessionTurns.sessionId, input.sessionId), eq(sessionTurns.messageId, input.turnId)))
+      .limit(1);
+    return unloggedTurnResult(turn !== undefined);
+  }
 
   const rows = await db
     .select({ record: sessionLogMessages.record })

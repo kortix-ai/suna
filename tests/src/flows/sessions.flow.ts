@@ -3622,8 +3622,28 @@ flow(
       });
 
       await ctx.step('unknown turn → 404; a turn with no reply text yet → 409', async () => {
-        (await owner.put(shareRoute, undefined, { params: { ...turn, turnId: 'msg_missing' } })).status(404);
+        (await owner.put(shareRoute, undefined, { params: { ...turn, turnId: 'msg_missing' } }))
+          .status(404)
+          .body()
+          .has('$.error', 'Response not found');
         (await owner.put(shareRoute, undefined, { params: { ...turn, turnId: 'msg_user_2' } })).status(409);
+      });
+
+      await ctx.step('a turn the ledger recorded whose messages have not reached the session log → 409, retry', async () => {
+        // session_turns knows the turn; session_log_messages has nothing for it yet (journal lag).
+        await db.query(
+          `INSERT INTO kortix.session_turns (turn_token, session_id, sandbox_id, project_id, account_id, message_id, state, end_reason)
+           VALUES ($1, $2, $3, $4, $5, 'msg_user_unlogged', 'ended', 'completed')`,
+          [`sess57-${crypto.randomUUID()}`, sessionId, crypto.randomUUID(), project.id, team.id],
+        );
+        try {
+          (await owner.put(shareRoute, undefined, { params: { ...turn, turnId: 'msg_user_unlogged' } }))
+            .status(409)
+            .body()
+            .has('$.error', 'This response is still being saved. Try again in a few seconds.');
+        } finally {
+          await db.query('DELETE FROM kortix.session_turns WHERE session_id = $1', [sessionId]);
+        }
       });
 
       let token = '';

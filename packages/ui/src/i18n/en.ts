@@ -7262,7 +7262,6 @@ const catalog = {
     "shareError": "Could not share the response. Try again.",
     "unshareError": "Could not stop sharing. Try again.",
     "copyError": "Could not copy the link. Copy it from the field.",
-    "noText": "This response has no text to share yet.",
     "tryKortix": "Try Kortix",
     "goneTitle": "This response is no longer shared",
     "goneHint": "The person who shared it turned the link off.",

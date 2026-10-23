@@ -761,15 +761,20 @@ export async function shareTurn(
   options?: { include_prompt?: boolean },
 ): Promise<{ share: TurnShare }> {
   return unwrap(
-    await backendApi.put<{ share: TurnShare }>(turnSharePath(projectId, sessionId, turnId), {
-      include_prompt: options?.include_prompt === true,
-    }),
+    // `showErrors: false`: the share dialog shows the failure inline, once.
+    await backendApi.put<{ share: TurnShare }>(
+      turnSharePath(projectId, sessionId, turnId),
+      { include_prompt: options?.include_prompt === true },
+      { showErrors: false },
+    ),
   );
 }
 
 /** Revoke the public share of one turn. The link answers 410 afterwards. */
 export async function unshareTurn(projectId: string, sessionId: string, turnId: string): Promise<{ share: null }> {
-  return unwrap(await backendApi.delete<{ share: null }>(turnSharePath(projectId, sessionId, turnId)));
+  return unwrap(
+    await backendApi.delete<{ share: null }>(turnSharePath(projectId, sessionId, turnId), { showErrors: false }),
+  );
 }
 
 /**

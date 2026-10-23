@@ -22437,7 +22437,6 @@
     "shareError": "Die Antwort konnte nicht geteilt werden. Versuche es erneut.",
     "unshareError": "Das Teilen konnte nicht beendet werden. Versuche es erneut.",
     "copyError": "Der Link konnte nicht kopiert werden. Kopiere ihn aus dem Feld.",
-    "noText": "Diese Antwort hat noch keinen Text zum Teilen.",
     "tryKortix": "Kortix ausprobieren",
     "goneTitle": "Diese Antwort wird nicht mehr geteilt",
     "goneHint": "Die Person, die sie geteilt hat, hat den Link deaktiviert.",
