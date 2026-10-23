@@ -9,7 +9,7 @@ import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { isUuid } from '../shared/validate';
 import { MemoryError, notFound } from './limits';
-import { cachedIndex, indexGroups, renderIndex } from './index-text';
+import { cachedIndex, type IndexPage, indexGroups, renderIndex } from './index-text';
 import type { LayerRef } from './layers';
 import { PAGE_COLUMNS, type PageRow } from './pages';
 import { copyPath, pageSlugs, renderPageMarkdown } from './render';
@@ -36,22 +36,24 @@ export async function threadOf(projectId: string, sessionId: string) {
   return thread;
 }
 
-function indexText(layer: LayerRef, pages: PageRow[], slugs: Map<string, string>, version: number): string {
+/** A layer's copy pages as index entries, each with its file in the copy. */
+export function indexPages(layer: Pick<LayerRef, 'scope'>, pages: PageRow[], slugs = pageSlugs(pages)): IndexPage[] {
   const dir = MEMORY_SCOPE_COPY_DIR[layer.scope];
+  return pages.map((page) => ({
+    pageId: page.pageId,
+    type: page.type,
+    title: page.title,
+    summary: page.summary,
+    status: page.status,
+    updatedAt: page.updatedAt,
+    path: copyPath(dir, page.type, slugs.get(page.pageId)!),
+  }));
+}
+
+function indexText(layer: LayerRef, pages: PageRow[], slugs: Map<string, string>, version: number): string {
   // The name is in the key: a channel rename changes the heading without a version bump.
   return cachedIndex(layer.layerId, `${version}:${layer.name}`, () => {
-    const list = renderIndex(
-      indexGroups(
-        pages.map((page) => ({
-          type: page.type,
-          title: page.title,
-          summary: page.summary,
-          status: page.status,
-          updatedAt: page.updatedAt,
-          path: copyPath(dir, page.type, slugs.get(page.pageId)!),
-        })),
-      ),
-    );
+    const list = renderIndex(indexGroups(indexPages(layer, pages, slugs)));
     return `# ${layer.name} memory\n\nRead-only. Save with the \`remember\` tool; open a page at its path.\n\n${list || 'No pages yet.'}\n`;
   });
 }

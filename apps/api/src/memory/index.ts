@@ -15,7 +15,9 @@ export { MemoryError } from './limits';
 export { addNote } from './notes';
 export { createPage, deletePage, getPage, listPages, restorePage, updatePage } from './pages';
 export { remember } from './remember';
-export { isMemoryTurnRoute, memoryTurnLayers, withMemoryLayers } from './turn-context';
+export { searchMemory } from './search';
+export { recordThreadLoad, threadUsage } from './thread-loads';
+export { isMemoryTurnRoute, memoryTurnContext, withMemoryTurn, withoutClientSystem } from './turn-context';
 export { layerChanges, pageHistory, undoVersion } from './versions';
 
 /** A layer with its counts, as the viewer sees it. */

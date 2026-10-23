@@ -16,6 +16,7 @@ import type {
 import { MEMORY_LIMITS } from '@kortix/api-contract';
 import { memoryLayers, memoryPageSources, memoryPageVersions, memoryPages } from '@kortix/db';
 import { and, asc, desc, eq, getTableColumns, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
+import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { isUuid } from '../shared/validate';
 import { layerById, livePageCount, type LayerRef, type Viewer, viewerWrites } from './layers';
@@ -295,11 +296,20 @@ export async function changeWithVersions<T>(
   layerIds: string[],
   write: (tx: Tx, changeId: string) => Promise<T>,
 ): Promise<{ result: T; versions: Map<string, number> }> {
-  return db.transaction(async (tx) => {
+  const changeId = randomUUID();
+  const out = await db.transaction(async (tx) => {
     await lockLayers(tx, layerIds);
-    const result = await write(tx, randomUUID());
-    return { result, versions: await bumpLayers(tx, layerIds) };
+    const result = await write(tx, changeId);
+    // What the change was, per layer, for the `memory.change` metric (undo rate = op=undo / agent writes).
+    const kinds = await tx
+      .selectDistinct({ scope: memoryLayers.scope, op: memoryPageVersions.op, author_kind: memoryPageVersions.authorKind })
+      .from(memoryPageVersions)
+      .innerJoin(memoryLayers, eq(memoryLayers.layerId, memoryPageVersions.layerId))
+      .where(eq(memoryPageVersions.changeId, changeId));
+    return { result, versions: await bumpLayers(tx, layerIds), kinds };
   });
+  for (const kind of out.kinds) logger.info('memory.change', kind);
+  return { result: out.result, versions: out.versions };
 }
 
 export async function change<T>(layerIds: string[], write: (tx: Tx, changeId: string) => Promise<T>): Promise<T> {

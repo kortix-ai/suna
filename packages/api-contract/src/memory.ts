@@ -385,3 +385,50 @@ export const MemoryTurnLayersSchema = z
   .max(MEMORY_COPY_DIRS.length)
   .refine((layers) => new Set(layers.map((layer) => layer.dir)).size === layers.length, 'each dir once');
 export type MemoryTurnLayers = z.infer<typeof MemoryTurnLayersSchema>;
+
+/** kortixd's cap on the per-turn `system` text of the Kortix prompt body; the turn hook never sends more. */
+export const MEMORY_TURN_SYSTEM_MAX_CHARS = 16_000;
+
+/** `GET /memory/search`: `q` 2–200 characters, at most 20 hits. */
+export const MEMORY_SEARCH_LIMITS = { q_min: 2, q_max: 200, limit: 20 } as const;
+
+export const MemorySearchHitSchema = z
+  .object({
+    page_id: z.string(),
+    layer_key: MemoryLayerKeySchema,
+    layer_name: z.string(),
+    scope: MemoryLayerScopeSchema,
+    type: MemoryPageTypeSchema,
+    title: z.string(),
+    summary: z.string(),
+    /** Up to ~160 characters of the body around the first match, source tokens removed. */
+    snippet: z.string(),
+    status: MemoryPageStatusSchema,
+  })
+  .strict();
+export type MemorySearchHit = z.infer<typeof MemorySearchHitSchema>;
+
+export const MemorySearchResultSchema = z.object({ hits: z.array(MemorySearchHitSchema) }).strict();
+export type MemorySearchResult = z.infer<typeof MemorySearchResultSchema>;
+
+/**
+ * `GET /sessions/:sessionId/memory-usage`: the pages listed to the thread's
+ * agent at its first turn ("Used memory"). Pages deleted since are left out;
+ * `loaded_at` is null before the first turn.
+ */
+export const MemoryUsageSchema = z
+  .object({
+    loaded_at: z.string().nullable(),
+    layers: z.array(
+      z
+        .object({
+          layer_key: MemoryLayerKeySchema,
+          scope: MemoryLayerScopeSchema,
+          name: z.string(),
+          pages: z.array(z.object({ page_id: z.string(), type: MemoryPageTypeSchema, title: z.string() }).strict()),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+export type MemoryUsage = z.infer<typeof MemoryUsageSchema>;

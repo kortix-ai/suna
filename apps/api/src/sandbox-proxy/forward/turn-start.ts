@@ -40,7 +40,8 @@ import {
   releasePromptDelivery,
 } from '../prompt-dedupe';
 import { recordSessionActivity } from '../../projects/session-activity';
-import { isMemoryTurnRoute, memoryTurnLayers, withMemoryLayers } from '../../memory/turn-context';
+import { recordThreadLoad } from '../../memory/thread-loads';
+import { isMemoryTurnRoute, memoryTurnContext, withMemoryTurn, withoutClientSystem } from '../../memory/turn-context';
 import { logger } from '../../lib/logger';
 import type { ForwardRequest, ForwardState } from './context';
 
@@ -347,20 +348,34 @@ export async function syncEnvBeforeTurnStart(
 }
 
 /**
- * `memory_layers` on a Kortix prompt body (`project_channels`): the thread's
- * memory layers and versions, so kortixd refreshes its read-only memory copy
- * before the turn. Flag off, no space, or any failure: the body goes as sent.
+ * `memory_layers` and `system` on a Kortix prompt body (`project_channels`):
+ * the thread's memory layers and versions, so kortixd refreshes its read-only
+ * memory copy before the turn, and the page list for the turn's system
+ * prompt. The first turn records the list ("Used memory"). A `system` the
+ * client sent is always dropped: only the API sets it. Flag off, no space, or
+ * any failure: the body goes on without memory. `/steer` never passes here
+ * (the API posts it to the box directly and never sets `system`).
  */
 async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Promise<void> {
   // Once per request: a retry attempt keeps the body the first attempt built.
   if (state.memoryLayersChecked || !isMemoryTurnRoute(req.method, req.remainingPath)) return;
   state.memoryLayersChecked = true;
+  state.requestBody = withoutClientSystem(state.requestBody);
+  const sessionId = req.record.sessionId;
   try {
-    const layers = await memoryTurnLayers(req.record.projectId, req.record.sessionId);
-    if (layers) state.requestBody = withMemoryLayers(state.requestBody, layers);
+    const turn = await memoryTurnContext(req.record.projectId, sessionId);
+    if (!turn) return;
+    state.requestBody = withMemoryTurn(state.requestBody, turn);
+    // Off the turn's path: a lost record only hides the "Used memory" chip.
+    void recordThreadLoad(sessionId, turn.loaded).catch((error: unknown) =>
+      logger.warn('[memory] the thread load was not recorded', {
+        session_id: sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
   } catch (error) {
-    logger.warn('[memory] turn start forwarded without memory_layers', {
-      session_id: req.record.sessionId,
+    logger.warn('[memory] turn start forwarded without memory', {
+      session_id: sessionId,
       error: error instanceof Error ? error.message : String(error),
     });
   }

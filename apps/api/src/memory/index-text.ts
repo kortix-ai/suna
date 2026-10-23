@@ -19,6 +19,7 @@ const HEADINGS: Record<MemoryPageType, string> = {
 export const INDEX_BUDGET = { total: 8_000, company: 3_000, others: 5_000 } as const;
 
 export interface IndexPage {
+  pageId: string;
   type: MemoryPageType;
   title: string;
   summary: string;
@@ -32,6 +33,8 @@ export interface IndexGroup {
   type: MemoryPageType;
   /** Newest first. */
   lines: string[];
+  /** The page of each line. */
+  pageIds: string[];
 }
 
 const pageLine = (page: IndexPage) => {
@@ -42,13 +45,12 @@ const pageLine = (page: IndexPage) => {
 
 /** The confirmed pages of one layer as groups in type order, each newest first. */
 export function indexGroups(pages: readonly IndexPage[]): IndexGroup[] {
-  return TYPE_ORDER.map((type) => ({
-    type,
-    lines: pages
+  return TYPE_ORDER.map((type) => {
+    const listed = pages
       .filter((page) => page.type === type && page.status === 'confirmed')
-      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
-      .map(pageLine),
-  })).filter((group) => group.lines.length > 0);
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+    return { type, lines: listed.map(pageLine), pageIds: listed.map((page) => page.pageId) };
+  }).filter((group) => group.lines.length > 0);
 }
 
 const overflowLine = (n: number) => `- …and ${n} more page${n === 1 ? '' : 's'}: use memory_search.`;
@@ -61,20 +63,24 @@ function joinGroups(groups: readonly IndexGroup[], dropped: number): string {
   return dropped > 0 ? `${text}${text ? '\n' : ''}${overflowLine(dropped)}` : text;
 }
 
-/** One layer's list, cut to `budget` characters (no cut by default). */
-export function renderIndex(groups: readonly IndexGroup[], budget = Number.POSITIVE_INFINITY): string {
-  const kept = groups.map((group) => ({ type: group.type, lines: [...group.lines] }));
+/** One layer's list cut to `budget` characters, and the pages it still lists. */
+export function cutIndex(groups: readonly IndexGroup[], budget = Number.POSITIVE_INFINITY): { text: string; pageIds: string[] } {
+  const kept = groups.map((group) => ({ type: group.type, lines: [...group.lines], pageIds: [...group.pageIds] }));
   let dropped = 0;
   let text = joinGroups(kept, 0);
   while (text.length > budget) {
     const largest = kept.reduce((a, b) => (b.lines.length > a.lines.length ? b : a), kept[0]!);
     if (!largest || largest.lines.length === 0) break;
     largest.lines.pop();
+    largest.pageIds.pop();
     dropped += 1;
     text = joinGroups(kept, dropped);
   }
-  return text;
+  return { text, pageIds: kept.flatMap((group) => group.pageIds) };
 }
+
+/** One layer's list, cut to `budget` characters (no cut by default). */
+export const renderIndex = (groups: readonly IndexGroup[], budget?: number): string => cutIndex(groups, budget).text;
 
 /**
  * Character budgets per layer: Company 3,000, the other layers 5,000 split
@@ -98,20 +104,26 @@ export function splitBudget(layers: readonly { scope: 'company' | 'channel' | 'd
 }
 
 const CACHE_MAX = 5_000;
-// replica-local: rendered index text per (layer, version); a version bump makes a new key, so entries never go stale.
-const cache = new Map<string, string>();
+// replica-local: rendered index per (layer, version); a version bump makes a new key, so entries never go stale.
+const cache = new Map<string, unknown>();
 
-/** The rendered text of a layer at a version, from the cache when this replica rendered it before. */
-export function cachedIndex(layerId: string, version: number | string, render: () => string): string {
+/** The cached value of a layer at a version (marked recently used), or undefined. */
+export function peekIndex<T>(layerId: string, version: number | string): T | undefined {
   const key = `${layerId}:${version}`;
   const hit = cache.get(key);
   if (hit !== undefined) {
     cache.delete(key);
     cache.set(key, hit);
-    return hit;
   }
-  const text = render();
-  cache.set(key, text);
+  return hit as T | undefined;
+}
+
+/** The rendered index of a layer at a version, from the cache when this replica rendered it before. */
+export function cachedIndex<T>(layerId: string, version: number | string, render: () => T): T {
+  const hit = peekIndex<T>(layerId, version);
+  if (hit !== undefined) return hit;
+  const value = render();
+  cache.set(`${layerId}:${version}`, value);
   if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!);
-  return text;
+  return value;
 }

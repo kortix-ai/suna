@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 908,
+  "count": 910,
   "routes": [
     {
       "method": "GET",
@@ -2543,6 +2543,10 @@
       "path": "/v1/projects/:projectId/memory/remember"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/memory/search"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/memory/versions/:versionId/undo"
     },
@@ -2905,6 +2909,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/log/switch-preflight"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/memory-usage"
     },
     {
       "method": "GET",

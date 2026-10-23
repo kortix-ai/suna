@@ -25,7 +25,10 @@ import {
   MemoryRememberInputSchema,
   MemoryRememberResultSchema,
   MemoryRestoreInputSchema,
+  MEMORY_SEARCH_LIMITS,
+  MemorySearchResultSchema,
   MemoryUndoResultSchema,
+  MemoryUsageSchema,
   MemoryVersionListSchema,
 } from '@kortix/api-contract';
 import type { Context } from 'hono';
@@ -45,6 +48,8 @@ import {
   remember,
   resolveLayerKey,
   restorePage,
+  searchMemory,
+  threadUsage,
   undoVersion,
   updatePage,
   type Viewer,
@@ -52,7 +57,7 @@ import {
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { auth, errors, json } from '../../openapi';
 import type { AppEnv } from '../../types';
-import { loadProjectForUser, loadVisibleSessionsForList, projectCapabilityAllowed } from '../lib/access';
+import { loadProjectForUser, loadVisibleSession, loadVisibleSessionsForList, projectCapabilityAllowed } from '../lib/access';
 import { projectsApp } from '../lib/app';
 
 const projectParams = z.object({ projectId: z.string() });
@@ -65,7 +70,12 @@ const cursorQuery = (max: number) =>
     before: z.string().optional(),
   });
 
-type Caller = { project: { projectId: string; metadata: unknown }; viewer: Viewer };
+type Caller = {
+  project: { projectId: string; metadata: unknown };
+  viewer: Viewer;
+  /** The session read rule for one thread of this project. */
+  canOpenSession: (sessionId: string) => Promise<boolean>;
+};
 
 /**
  * The project (`session` access), the `project_channels` flag and the viewer,
@@ -87,7 +97,11 @@ export async function withMemoryCaller<R>(c: Context<AppEnv>, run: (caller: Call
     canOpenThreads: async (ids) => new Set((await loadVisibleSessionsForList(loaded, ids, null, null)).keys()),
   };
   try {
-    return await run({ project: { projectId: row.projectId, metadata: row.metadata }, viewer });
+    return await run({
+      project: { projectId: row.projectId, metadata: row.metadata },
+      viewer,
+      canOpenSession: async (sessionId) => (await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, viewer.sessionId)) !== null,
+    });
   } catch (error) {
     if (error instanceof MemoryError) return c.json(error.body, error.status);
     throw error;
@@ -351,6 +365,60 @@ export function registerProjectMemoryRoutes(): void {
         const live = await undoVersion(project.projectId, c.req.valid('param').versionId, viewer);
         const pages = await Promise.all(live.map((pageId) => getPage(project.projectId, pageId, viewer)));
         return c.json({ pages }, 200);
+      }),
+    memoryValidationHook,
+  );
+
+  // GET /v1/projects/:projectId/memory/search
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/memory/search',
+      tags: ['memory'],
+      summary: 'Search memory pages',
+      description:
+        'Full text over title, summary and body, then titles containing `q`. A person searches Company, every live channel and their own DMs, ' +
+        'or the one layer `layer` names. A session token searches its thread’s layers, confirmed pages only.',
+      ...auth,
+      request: {
+        params: projectParams,
+        query: z.object({
+          q: z.string().trim().min(MEMORY_SEARCH_LIMITS.q_min).max(MEMORY_SEARCH_LIMITS.q_max),
+          layer: z.string().optional(),
+          type: MemoryPageTypeSchema.optional(),
+          limit: z.coerce.number().int().min(1).max(MEMORY_SEARCH_LIMITS.limit).optional(),
+        }),
+      },
+      responses: { 200: json(MemorySearchResultSchema, 'The hits, best first'), ...READ_ERRORS },
+    }),
+    (c) =>
+      withMemoryCaller(c, async ({ project, viewer }) => {
+        const query = c.req.valid('query');
+        const result = await searchMemory(project, viewer, { ...query, limit: query.limit ?? MEMORY_SEARCH_LIMITS.limit });
+        return c.json(result, 200);
+      }),
+    memoryValidationHook,
+  );
+
+  // GET /v1/projects/:projectId/sessions/:sessionId/memory-usage — "Used memory".
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/sessions/{sessionId}/memory-usage',
+      tags: ['memory'],
+      summary: 'List the memory pages a thread’s agent was given',
+      description:
+        'The pages listed to the agent at the thread’s first turn, by layer; pages deleted since are left out. `loaded_at` is null before the first turn. ' +
+        'A thread the caller cannot open is 404 `session_not_found`.',
+      ...auth,
+      request: { params: projectParams.extend({ sessionId: z.string() }) },
+      responses: { 200: json(MemoryUsageSchema, 'The pages, by layer'), ...READ_ERRORS },
+    }),
+    (c) =>
+      withMemoryCaller(c, async ({ viewer, canOpenSession }) => {
+        const sessionId = c.req.valid('param').sessionId;
+        if (!(await canOpenSession(sessionId))) throw new MemoryError(404, 'session_not_found', 'Thread not found.');
+        return c.json(await threadUsage(sessionId, viewer.userId), 200);
       }),
     memoryValidationHook,
   );

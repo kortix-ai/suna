@@ -3,6 +3,7 @@ import { cachedIndex, indexGroups, type IndexPage, renderIndex, splitBudget } fr
 
 const at = (day: number) => new Date(Date.UTC(2026, 9, day));
 const page = (over: Partial<IndexPage>): IndexPage => ({
+  pageId: over.path ?? 'p',
   type: 'decisions',
   title: 'Pricing',
   summary: 'What we charge',
