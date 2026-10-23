@@ -29,7 +29,7 @@ import {
   projects,
 } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
-import { runFeatureFlagToggleEffects } from '../feature-flags/toggle-effects';
+import { runFeatureFlagToggleEffects, toggleEffectsSettled } from '../feature-flags/toggle-effects';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
 import { db } from '../shared/db';
@@ -48,6 +48,7 @@ const SAM = crypto.randomUUID();
 const OFF_WHILE = crypto.randomUUID();
 const RETRY_A = crypto.randomUUID();
 const RETRY_B = crypto.randomUUID();
+const FAIL_ONCE = crypto.randomUUID();
 const minted: string[] = [];
 const keys: Record<string, string> = {};
 
@@ -75,8 +76,8 @@ const OFF = { experimental: { project_channels: false } };
 /**
  * PATCH the flag, then run the toggle effect once more and await it, with the
  * context the write produced (`writtenAt` = the row's `updated_at`). The copy
- * the route started behind its response converges to the same state, so the
- * test needs no polling.
+ * the route started behind its response converges to the same state; the test
+ * awaits it too (`toggleEffectsSettled`), so nothing writes after an assertion.
  */
 async function toggle(projectId: string, enabled: boolean, between?: () => Promise<unknown>) {
   const res = await req('PATCH', `/v1/projects/${projectId}/features`, keys[`manager:${projectId}`]!, { feature: 'project_channels', enabled });
@@ -85,6 +86,7 @@ async function toggle(projectId: string, enabled: boolean, between?: () => Promi
   const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId));
   const ctx = { key: 'project_channels' as const, projectId, accountId: ACCOUNT, metadata: row!.metadata, previousMetadata: enabled ? OFF : ON, writtenAt: row!.updatedAt };
   await runFeatureFlagToggleEffects(ctx);
+  await toggleEffectsSettled();
   return ctx;
 }
 
@@ -185,6 +187,34 @@ describe('turning Channels on again', () => {
     await runFeatureFlagToggleEffects(ctx);
     const channels = await channelsMeta();
     expect(channels).toEqual({ reenabled_at: ctx.writtenAt.toISOString(), reenabled_count: 2 });
+  });
+
+  test('the marks insert fails once: the retry keeps the recorded count and writes the marks', async () => {
+    await toggle(PROJECT, false);
+    await db.insert(projectSessions).values({ sessionId: FAIL_ONCE, accountId: ACCOUNT, projectId: PROJECT, branchName: 'f', createdBy: PRIYA, agentName: 'kortix' });
+    await db.delete(projectUserMarks).where(eq(projectUserMarks.projectId, PROJECT));
+    // Turn on without the route, so this effect is the only one: the flag write as `writeProjectFeatureFlag` does it.
+    const [row] = await db
+      .update(projects)
+      .set({ metadata: { experimental: { project_channels: true } }, updatedAt: sql`date_trunc('milliseconds', now())` })
+      .where(eq(projects.projectId, PROJECT))
+      .returning();
+    // The first marks INSERT for this project fails once (a sequence survives the rollback).
+    const name = `kortix.onb_fail_${PROJECT.replaceAll('-', '')}`;
+    await db.execute(sql.raw(`create sequence ${name}`));
+    await db.execute(
+      sql.raw(`create function ${name}() returns trigger language plpgsql as $$ begin
+        if new.project_id = '${PROJECT}' and nextval('${name}') = 1 then raise exception 'synthetic marks failure'; end if;
+        return new; end $$`),
+    );
+    await db.execute(sql.raw(`create trigger onb_fail before insert on kortix.project_user_marks for each row execute function ${name}()`));
+    try {
+      await runFeatureFlagToggleEffects({ key: 'project_channels', projectId: PROJECT, accountId: ACCOUNT, metadata: row!.metadata, previousMetadata: OFF, writtenAt: row!.updatedAt });
+    } finally {
+      await db.execute(sql.raw(`drop trigger onb_fail on kortix.project_user_marks; drop function ${name}(); drop sequence ${name}`));
+    }
+    expect(await channelsMeta()).toEqual({ reenabled_at: row!.updatedAt.toISOString(), reenabled_count: 1 });
+    expect(await introMarks(PROJECT)).toEqual([MANAGER, PRIYA].sort());
   });
 
   test('a repeated "on" (on before the write too) records nothing new', async () => {

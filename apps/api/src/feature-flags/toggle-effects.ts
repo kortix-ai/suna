@@ -85,7 +85,21 @@ const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
  * error-level log that names the flag and project so a failed convergence is
  * findable instead of a silent console.warn.
  */
-export async function runFeatureFlagToggleEffects(ctx: FeatureFlagToggleContext): Promise<void> {
+export function runFeatureFlagToggleEffects(ctx: FeatureFlagToggleContext): Promise<void> {
+  const run = runWithRetry(ctx).finally(() => inflight.delete(run));
+  inflight.add(run);
+  return run;
+}
+
+// replica-local: the effects this process started; tests await them (toggleEffectsSettled).
+const inflight = new Set<Promise<void>>();
+
+/** Resolves when every toggle effect this process started has finished. */
+export async function toggleEffectsSettled(): Promise<void> {
+  await Promise.all([...inflight]);
+}
+
+async function runWithRetry(ctx: FeatureFlagToggleContext): Promise<void> {
   // Every flag reaches the box as boot-only env (KORTIX_FEATURE_FLAGS, KORTIX_GENUI): a warm box
   // from before the change must not be adopted, or its skills and CLI keep the old flag.
   const own = TOGGLE_EFFECTS[ctx.key];
