@@ -10,6 +10,7 @@ import {
   useCapabilityAccess,
 } from '../../internal/layout/project-settings-nav';
 import { ProjectCapabilityNav } from '../../internal/layout/project-capability-nav';
+import { ProjectSpacesNav } from './project-spaces-nav';
 import { cn } from '../../lib/utils';
 import {
   DropdownMenu,
@@ -50,6 +51,7 @@ export function ProjectNavItems({ projectId }: { projectId: string }) {
   const items = hydrated ? saved : SIDEBAR_NAV_DEFAULTS;
   return (
     <>
+      <ProjectSpacesNav projectId={projectId} />
       {items.map((entry) => (
         <NavItem key={entry.id} entry={entry} projectId={projectId} />
       ))}

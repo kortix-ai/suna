@@ -66,9 +66,6 @@ mock.module('@kortix/ui/internal/notifications/notification-bell', () => ({
 mock.module('@kortix/ui/workspace/sidebar/project-session-list', () => ({
   ProjectSessionList: () => React.createElement('div', { 'data-testid': 'session-list' }),
 }));
-mock.module('@kortix/ui/workspace/sidebar/domain-space-rail', () => ({
-  DomainSpaceRail: () => null,
-}));
 mock.module('@/features/workspace/project-sidebar/workspace-switcher', () => ({
   WorkspaceSwitcher: () => React.createElement('div', { 'data-testid': 'switcher' }),
 }));

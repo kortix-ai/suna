@@ -24,7 +24,6 @@ import { ProjectManifestUpgradeAlert } from './footer/project-manifest-upgrade-a
 import { ProjectSandboxAlert } from './footer/project-sandbox-alert';
 import { ProjectRepositoryDisconnectedAlert } from '../repository-disconnected';
 import { ProjectNavItems } from './project-nav-items';
-import { DomainSpaceRail } from './domain-space-rail';
 import { ProjectSessionList } from './project-session-list';
 import { useIsCreatingProjectSession } from '../../internal/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '../../internal/hooks/projects/use-new-project-session';
@@ -144,12 +143,6 @@ export function ProjectSidebar({
       // square fill behind the flyout card and it showed at all four corners.
       className="[scrollbar-width:'none'] [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden"
     >
-      <div className="flex h-full min-h-0 w-full">
-        {/* Domain space switcher: the full-height icon rail on the left edge.
-            Renders nothing until the project declares a domain, so a project
-            without domains keeps the single-column sidebar. */}
-        <DomainSpaceRail projectId={projectId} />
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <SidebarHeader
         className="kx-project-sidebar-header space-y-2"
         data-peek={peek ? '' : undefined}
@@ -342,8 +335,6 @@ export function ProjectSidebar({
           </SidebarGroup>
         </div>
       </SidebarContent>
-        </div>
-      </div>
 
       <SidebarRail aria-label={t('resize')} title={t('resizeHelp')} />
     </Sidebar>
