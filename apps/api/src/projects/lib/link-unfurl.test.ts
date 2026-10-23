@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, jest, test } from 'bun:test';
+import { afterEach, describe, expect, jest, mock, test } from 'bun:test';
 import { type safeEgressFetch, UnsafeEgressError } from '../../shared/ssrf-guard';
-import { fetchLinkMeta, needsUnfurl, parseLinkMeta, UNFURL_MAX_BYTES, UNFURL_TIMEOUT_MS } from './link-unfurl';
+import { fetchLinkMeta, needsUnfurl, parseLinkMeta, UNFURL_MAX_BYTES, UNFURL_TIMEOUT_MS, unfurlLink } from './link-unfurl';
 import { linkPathTitle } from './project-space-links';
 
 const BASE = 'https://northwind.example/docs/pricing';
@@ -40,6 +40,17 @@ describe('parseLinkMeta', () => {
     expect(parseLinkMeta('<link rel="icon" href="data:image/png;base64,AAAA">', BASE).iconUrl).toBeNull();
   });
 
+  test('stored text is plain: no tags, control, bidi or zero-width characters', () => {
+    const meta = parseLinkMeta(
+      '<title>&lt;script&gt;alert(1)&lt;/script&gt; <b>Acme</b> &#x202E;Ev\u200Bil\u0007&#xD800;&#x2066;!</title>' +
+        '<meta property="og:site_name" content="North&#x200F;wind&#0;\u0000">',
+      BASE,
+    );
+    expect(meta.title).toBe('alert(1) Acme Evil!');
+    expect(meta.siteName).toBe('Northwind&#0;');
+    expect(parseLinkMeta('<title>Acme pricing &lt;2026&gt; &amp; 1 &lt; 2</title>', BASE).title).toBe('Acme pricing <2026> & 1 < 2');
+  });
+
   test('tags after the head are not read', () => {
     expect(parseLinkMeta('<head></head><body><meta property="og:title" content="x"></body>', BASE).title).toBeNull();
   });
@@ -77,6 +88,30 @@ describe('fetchLinkMeta', () => {
     expect(calls).toBe(0);
   });
 
+  test('refuses a port other than 80/443 before any request', async () => {
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls++;
+      return new Response('');
+    }) as unknown as typeof fetch;
+    await expect(fetchLinkMeta('http://93.184.216.34:6379/')).rejects.toBeInstanceOf(UnsafeEgressError);
+    await expect(fetchLinkMeta('https://93.184.216.34:8443/')).rejects.toBeInstanceOf(UnsafeEgressError);
+    expect(calls).toBe(0);
+  });
+
+  test.each([
+    ['https://93.184.216.34/start', 'http://93.184.216.34/plain'],
+    ['http://93.184.216.34/start', 'http://93.184.216.34:8080/admin'],
+  ])('refuses the redirect %s → %s', async (from, to) => {
+    const seen: string[] = [];
+    globalThis.fetch = (async (input: string | URL) => {
+      seen.push(String(input));
+      return new Response(null, { status: 302, headers: { location: to } });
+    }) as unknown as typeof fetch;
+    await expect(fetchLinkMeta(from)).rejects.toBeInstanceOf(UnsafeEgressError);
+    expect(seen).toEqual([from]);
+  });
+
   test('refuses a redirect to a private address', async () => {
     const seen: string[] = [];
     globalThis.fetch = (async (input: string | URL) => {
@@ -105,23 +140,26 @@ describe('fetchLinkMeta', () => {
         headers: { 'content-type': 'text/html; charset=utf-8' },
       });
     }) as unknown as typeof fetch;
-    expect(await fetchLinkMeta('http://93.184.216.34/page')).toEqual({
+    expect(await fetchLinkMeta('https://93.184.216.34/page')).toEqual({
       title: 'Acme',
       siteName: null,
-      iconUrl: 'http://93.184.216.34/f.ico',
+      iconUrl: 'https://93.184.216.34/f.ico',
     });
     expect(headers!.get('user-agent')).toContain('KortixLinkPreview');
     expect(headers!.get('cookie')).toBeNull();
     expect(headers!.get('authorization')).toBeNull();
   });
 
-  test('an icon on a private address is not stored', async () => {
-    globalThis.fetch = (async () =>
-      new Response('<title>Acme</title><link rel="icon" href="http://169.254.169.254/i.ico">', {
-        headers: { 'content-type': 'text/html' },
-      })) as unknown as typeof fetch;
-    expect((await fetchLinkMeta('http://93.184.216.34/')).iconUrl).toBeNull();
-  });
+  test.each(['http://169.254.169.254/i.ico', 'https://[::1]/i.ico', 'http://93.184.216.34/i.ico', 'https://93.184.216.34:8443/i.ico'])(
+    'the icon %s is not stored (https on 443 and a public address only)',
+    async (icon) => {
+      globalThis.fetch = (async () =>
+        new Response(`<title>Acme</title><link rel="icon" href="${icon}">`, {
+          headers: { 'content-type': 'text/html' },
+        })) as unknown as typeof fetch;
+      expect((await fetchLinkMeta('http://93.184.216.34/')).iconUrl).toBeNull();
+    },
+  );
 
   test('a page that is not HTML answers no title; a non-2xx answer fails', async () => {
     globalThis.fetch = (async () =>
@@ -182,5 +220,28 @@ describe('linkPathTitle', () => {
     expect(linkPathTitle('https://en.wiki.example/wiki/C++?q=a+b')).toBe('wiki/C++?q=a b');
     expect(linkPathTitle('https://www.acme.example/')).toBe('acme.example');
     expect(linkPathTitle('https://acme.example/%E0%A4%A')).toBe('%E0%A4%A');
+  });
+});
+
+describe('unfurlLink', () => {
+  test('a database error never carries the URL into the queue log', async () => {
+    const secretUrl = 'https://acme.example/private/Priya-offer';
+    const results: Array<() => unknown> = [
+      () => [{ projectId: 'p', url: secretUrl, fetchedAt: null, fetchFailedAt: null }],
+      () => {
+        throw new Error(`Failed query: select … params: p,${secretUrl}`);
+      },
+    ];
+    const chain: Record<string, unknown> = {};
+    for (const name of ['select', 'from', 'where', 'update', 'set']) chain[name] = () => chain;
+    chain.limit = async () => results.shift()!();
+    mock.module('../../shared/db', () => ({ db: chain }));
+    const error = await unfurlLink('11111111-1111-4111-8111-111111111111').then(
+      () => null,
+      (err: unknown) => err as Error,
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect(String(error)).not.toContain('acme.example');
+    expect(String(error)).toContain('link unfurl');
   });
 });

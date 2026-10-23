@@ -36,7 +36,18 @@ export type LinkMeta = { title: string | null; siteName: string | null; iconUrl:
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
 
-/** HTML entities decoded (the common named ones and every numeric one), whitespace collapsed, capped. */
+/** Control, bidi, zero-width and BOM characters, and lone surrogates: never stored. */
+const INVISIBLE = /[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+/** Anything shaped like an HTML tag, after decoding. `1 < 2` and `<2026>` are not tags. */
+const TAG_LIKE = /<\/?[a-z!?][^<>]*>/gi;
+
+/**
+ * Plain text from page text: entities decoded (the common named ones and every
+ * numeric one), then tag-shaped text, control, bidi and zero-width characters
+ * removed, whitespace collapsed, capped. The result is untrusted outside text:
+ * a consumer that is not React escaping must still escape it, and an agent
+ * prompt must frame it as outside content.
+ */
 function cleanText(raw: string, max: number): string | null {
   const text = raw
     .replace(/&(#x[0-9a-f]{1,6}|#[0-9]{1,7}|[a-z]{2,6});/gi, (whole, name: string) => {
@@ -45,8 +56,20 @@ function cleanText(raw: string, max: number): string | null {
       return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
     })
     .replace(/\s+/g, ' ')
+    .replace(INVISIBLE, '')
+    .replace(TAG_LIKE, '')
+    .replace(/\s+/g, ' ')
     .trim();
   return text ? text.slice(0, max) : null;
+}
+
+/**
+ * Page fetches stay on the default ports (80, 443) and never go from https
+ * to http on a redirect.
+ */
+function checkPageUrl(url: URL, from: URL | null): void {
+  if (url.port !== '') throw new UnsafeEgressError('only ports 80 and 443', url.href);
+  if (from?.protocol === 'https:' && url.protocol === 'http:') throw new UnsafeEgressError('https to http redirect', url.href);
 }
 
 /** The attributes of one tag, names lowercased. */
@@ -164,6 +187,7 @@ export async function fetchLinkMeta(
         method: 'GET',
         allowHttp: true,
         maxRedirects: UNFURL_MAX_REDIRECTS,
+        checkUrl: checkPageUrl,
         signal: controller.signal,
         credentials: 'omit',
         headers: { 'user-agent': USER_AGENT, accept: 'text/html,application/xhtml+xml;q=0.9' },
@@ -180,11 +204,15 @@ export async function fetchLinkMeta(
       const html = new TextDecoder().decode(await readCapped(res, UNFURL_MAX_BYTES));
       const meta = parseLinkMeta(html, url);
       if (meta.iconUrl) {
-        // The icon is stored only when its host passes the same address check.
-        meta.iconUrl = await assertSafeEgressUrl(meta.iconUrl, { allowHttp: true }).then(
-          () => meta.iconUrl,
-          () => null,
-        );
+        // The icon is stored only when it is https on 443 and its host passes the same address check.
+        const icon = new URL(meta.iconUrl);
+        meta.iconUrl =
+          icon.protocol === 'https:' && icon.port === ''
+            ? await assertSafeEgressUrl(meta.iconUrl).then(
+                () => meta.iconUrl,
+                () => null,
+              )
+            : null;
       }
       return meta;
     };
@@ -222,7 +250,17 @@ export async function enqueueLinkUnfurls(rows: UnfurlState[]): Promise<void> {
  * records `fetch_failed_at` and is not retried by the queue (the next share
  * after 24 h queues it again).
  */
-async function unfurlLink(linkId: string): Promise<void> {
+export async function unfurlLink(linkId: string): Promise<void> {
+  try {
+    await unfurlLinkUnsafe(linkId);
+  } catch {
+    // A database error message carries the query parameters, the URL among
+    // them: the queue logs and stores only this, and retries with backoff.
+    throw new Error('link unfurl: database error');
+  }
+}
+
+async function unfurlLinkUnsafe(linkId: string): Promise<void> {
   const t = projectSpaceLinks;
   const [row] = await db
     .select({ projectId: t.projectId, url: t.url, fetchedAt: t.fetchedAt, fetchFailedAt: t.fetchFailedAt })
