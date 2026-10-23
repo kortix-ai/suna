@@ -57,6 +57,7 @@ export const STATIC_PUBLIC_ROUTES = [
   '/automations',
   '/careers',
   '/changelog',
+  '/changelog/releases',
   '/channels',
   '/company-as-code',
   '/contact',
@@ -137,8 +138,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     kind: 'marketing',
     slug: 'changelog',
     title: 'Changelog',
-    description:
-      'Every Kortix release, straight from the source. New features, fixes, and improvements — versioned and dated.',
+    description: 'What shipped in Kortix each week, straight from our production releases.',
     htmlPath: '/changelog',
   },
   {
