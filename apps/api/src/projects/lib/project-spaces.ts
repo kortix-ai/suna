@@ -102,14 +102,14 @@ export async function ensureDefaultSpace(projectId: string, accountId: string): 
 
 /**
  * The turn-on step of `project_channels`: `#general` (made if missing) and every
- * session in no space filed into it. `reenabled`: `#general` existed before,
- * so Channels was on once already.
+ * session in no space filed into it. `generalCreatedAt` tells a first turn-on
+ * from a turn-on again (the caller compares it with the flag write's time).
  */
-export async function turnOnChannels(projectId: string, accountId: string): Promise<{ reenabled: boolean; filed: number }> {
+export async function turnOnChannels(projectId: string, accountId: string): Promise<{ generalCreatedAt: Date; filed: number }> {
   const general = await ensureDefaultSpaceCreated(projectId, accountId);
   if (general.created) void makeChannelFolders(accountId, projectId, DEFAULT_SLUG);
   const filed = await assignUnassignedSessions(projectId, general.space.spaceId);
-  return { reenabled: !general.created, filed };
+  return { generalCreatedAt: general.space.createdAt, filed };
 }
 
 /**

@@ -417,7 +417,8 @@ export function registerProjectSpacesRoutes(): void {
       summary: 'Read the caller’s Channels onboarding state',
       description:
         'A "Get started" row is done when its mark is present or its fact is true: the caller created a channel, ' +
-        'saved memory in `#general`, or owns a direct message. `visible` is false once dismissed or all three are done.',
+        'saved memory in `#general` (an unconfirmed proposal counts), or owns a direct message. ' +
+        '`visible` is false once dismissed or all three are done.',
       ...auth,
       request: { params: projectParams },
       responses: { 200: json(ChannelsOnboardingSchema, 'The caller’s onboarding state'), ...errors(403, 404) },

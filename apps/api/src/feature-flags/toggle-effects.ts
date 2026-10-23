@@ -33,8 +33,10 @@ export interface FeatureFlagToggleContext {
   accountId: string;
   /** The project's metadata AFTER the write. */
   metadata: unknown;
-  /** The project's metadata BEFORE the write; absent = unknown (treated as off). */
+  /** The project's metadata BEFORE the write, read in the write's transaction; absent = unknown. */
   previousMetadata?: unknown;
+  /** The write's DB time (`projects.updated_at`, ms). Absent: not a flag write, never "turned on again". */
+  writtenAt?: Date;
 }
 
 type ToggleEffect = (ctx: FeatureFlagToggleContext) => Promise<void>;
@@ -63,14 +65,15 @@ const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
     else await releaseProjectEventSubscriptions(projectId);
   },
   // On: create `#general` and file every session that has no space into it. Off: nothing is deleted.
-  // On again (off before the write, `#general` already there): record the `#general` line and the
-  // filed count, and mark the intro seen for every member (D8: no intro on turn-on again).
+  // On again (off before the write, `#general` older than the write): mark the intro seen for the
+  // project's members (D8: no intro on turn-on again) and record the `#general` line with the count.
+  // A `#general` made after the write (a channel list in the window before this effect) is a first on.
   // Both: running threads' /drives/README.md gains or drops its channel section (that never throws).
-  project_channels: async ({ projectId, accountId, metadata, previousMetadata }) => {
+  project_channels: async ({ projectId, accountId, metadata, previousMetadata, writtenAt }) => {
     if (resolveFeatureFlag(metadata, 'project_channels')) {
-      const { reenabled, filed } = await turnOnChannels(projectId, accountId);
-      if (reenabled && !resolveFeatureFlag(previousMetadata, 'project_channels')) {
-        await recordChannelsReenabled(projectId, accountId, filed);
+      const { generalCreatedAt, filed } = await turnOnChannels(projectId, accountId);
+      if (writtenAt && generalCreatedAt < writtenAt && !resolveFeatureFlag(previousMetadata, 'project_channels')) {
+        await recordChannelsReenabled({ accountId, projectId }, filed, writtenAt);
       }
     }
     await refreshRunningThreadNotes(projectId);

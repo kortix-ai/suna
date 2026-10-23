@@ -5,13 +5,14 @@
  */
 import type { ChannelsOnboarding, ChannelsOnboardingMark, SpaceGeneralNotice } from '@kortix/api-contract';
 import { memoryLayers, memoryPageVersions, projectSpaces, projectUserMarks, projects } from '@kortix/db';
-import { and, eq, or } from 'drizzle-orm';
-import { accountMemberUserIds } from '../../iam/membership-read';
+import { and, eq, or, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { isPlainObject } from '../../shared/json';
-import { metadataMergeSubtree } from './metadata-merge';
+import { loadProjectRosterIds } from './project-access-view';
 
 const NOTICE_MS = 7 * 24 * 60 * 60 * 1000;
+/** Marks per INSERT: 3 bind parameters each, far below the 65,535 limit. */
+const MARK_BATCH = 5_000;
 
 export async function addChannelsMark(projectId: string, userId: string, mark: ChannelsOnboardingMark): Promise<void> {
   await db.insert(projectUserMarks).values({ projectId, userId, mark }).onConflictDoNothing();
@@ -31,6 +32,7 @@ export async function channelsOnboarding(projectId: string, userId: string): Pro
       .where(and(eq(projectSpaces.projectId, projectId), eq(projectSpaces.kind, 'channel'), eq(projectSpaces.createdBy, userId), eq(projectSpaces.isDefault, false)))
       .limit(1),
     // A page change in `#general`'s layer by the caller, or by an agent on the caller's behalf.
+    // An unconfirmed proposal counts too: the step is "tell #general something", done once tried.
     db
       .select({ id: memoryPageVersions.versionId })
       .from(memoryPageVersions)
@@ -66,20 +68,34 @@ export async function channelsOnboarding(projectId: string, userId: string): Pro
 }
 
 /**
- * Channels turned on again: `#general` shows the line for 7 days, and no
- * member sees the intro (every account member gets `channels_intro`).
+ * Channels turned on again at `writtenAt` (the flag write's DB time): no
+ * project member sees the intro, and `#general` shows the line for 7 days.
+ * Marks first, so a failure cannot leave the line without them. A retry of the
+ * same turn-on (same `reenabled_at`) adds to the count it already recorded
+ * instead of replacing it: the retry files only what the first attempt left.
  */
-export async function recordChannelsReenabled(projectId: string, accountId: string, filed: number): Promise<void> {
+export async function recordChannelsReenabled(
+  project: { accountId: string; projectId: string },
+  filed: number,
+  writtenAt: Date,
+): Promise<void> {
+  const { projectId } = project;
+  const { ids } = await loadProjectRosterIds({ row: project });
+  for (let i = 0; i < ids.length; i += MARK_BATCH) {
+    await db
+      .insert(projectUserMarks)
+      .values(ids.slice(i, i + MARK_BATCH).map((userId) => ({ projectId, userId, mark: 'channels_intro' })))
+      .onConflictDoNothing();
+  }
+  const at = writtenAt.toISOString();
+  const channels = sql`coalesce(${projects.metadata} -> 'channels', '{}'::jsonb)`;
+  const earlier = sql`case when ${channels} ->> 'reenabled_at' = ${at} then coalesce((${channels} ->> 'reenabled_count')::int, 0) else 0 end`;
   await db
     .update(projects)
-    .set({ metadata: metadataMergeSubtree('channels', { reenabled_at: new Date().toISOString(), reenabled_count: filed }) })
+    .set({
+      metadata: sql`coalesce(${projects.metadata}, '{}'::jsonb) || jsonb_build_object('channels', ${channels} || jsonb_build_object('reenabled_at', ${at}::text, 'reenabled_count', ${filed}::int + ${earlier}))`,
+    })
     .where(eq(projects.projectId, projectId));
-  const members = await accountMemberUserIds(accountId);
-  if (members.length === 0) return;
-  await db
-    .insert(projectUserMarks)
-    .values(members.map(({ userId }) => ({ projectId, userId, mark: 'channels_intro' })))
-    .onConflictDoNothing();
 }
 
 /** The "turned on again" line, from `metadata.channels`: 7 days, and only when it filed a session. */
