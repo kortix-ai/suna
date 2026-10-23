@@ -22486,6 +22486,8 @@
         "title": "Недавне измене",
         "empty": "Још нема измена.",
         "loadError": "Недавне измене нису учитане.",
+        "viewPage": "Прикажи {title}",
+        "undoPage": "Опозови измену на {title}",
         "op": {
           "create": "{author} је направио/ла <page>{title}</page>",
           "update": "{author} је уредио/ла <page>{title}</page>",
@@ -22589,7 +22591,8 @@
         "undone": "Опозвано",
         "superseded": "Промењено у међувремену —",
         "openHistory": "отвори историју",
-        "undoFailed": "Опозивање није успело."
+        "undoFailed": "Опозивање није успело.",
+        "failedGeneric": "Није сачувано у меморију."
       }
     },
     "create": {

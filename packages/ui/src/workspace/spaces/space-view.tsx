@@ -266,6 +266,8 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
                 {/* Apps counts the host's cards: no host gallery, no count over the empty state. */}
                 {(value === 'links' || value === 'triggers' || (value === 'apps' && renderApps)) && summary.data?.[value] ? (
                   <CountBadge count={summary.data[value]} />
+                ) : value === 'memory' && memoryCount ? (
+                  <CountBadge count={memoryCount} />
                 ) : null}
               </TabsTrigger>
             ))}

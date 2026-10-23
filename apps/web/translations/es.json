@@ -22486,6 +22486,8 @@
         "title": "Cambios recientes",
         "empty": "Aún no hay cambios.",
         "loadError": "No se pudieron cargar los cambios recientes.",
+        "viewPage": "Ver {title}",
+        "undoPage": "Deshacer el cambio en {title}",
         "op": {
           "create": "{author} creó <page>{title}</page>",
           "update": "{author} editó <page>{title}</page>",
@@ -22589,7 +22591,8 @@
         "undone": "Deshecho",
         "superseded": "Cambió desde entonces —",
         "openHistory": "abrir el Historial",
-        "undoFailed": "No se pudo deshacer."
+        "undoFailed": "No se pudo deshacer.",
+        "failedGeneric": "No se guardó en la memoria."
       }
     },
     "create": {

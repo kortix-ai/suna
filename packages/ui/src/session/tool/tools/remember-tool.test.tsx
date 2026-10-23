@@ -38,10 +38,9 @@ describe('rememberLine', () => {
       state: 'failed',
       reason: 'That looks like a secret.',
     });
-    expect(rememberLine('error', '', 'memory is unavailable (503)')).toEqual({
-      state: 'failed',
-      reason: 'memory is unavailable (503)',
-    });
+    // A thrown error (it can carry a response body) or text without a code: no reason shown.
+    expect(rememberLine('error', '', 'memory is unavailable (503): <html>…')).toEqual({ state: 'failed', reason: null });
+    expect(rememberLine('completed', 'Error: something broke')).toEqual({ state: 'failed', reason: null });
   });
 
   test('text that is not the result falls back to the default row', () => {
@@ -111,5 +110,11 @@ describe('RememberLineView', () => {
       <RememberLineView line={{ state: 'failed', reason: 'That looks like a secret.' }} viewHref={null} undo="idle" onUndo={() => {}} />,
     );
     expect(text(html)).toContain('Not saved to memory: That looks like a secret.');
+  });
+
+  test('failed without a reason: "Not saved to memory." only', () => {
+    const html = render(<RememberLineView line={{ state: 'failed', reason: null }} viewHref={null} undo="idle" onUndo={() => {}} />);
+    expect(text(html)).toContain('Not saved to memory.');
+    expect(text(html)).not.toContain('unavailable');
   });
 });

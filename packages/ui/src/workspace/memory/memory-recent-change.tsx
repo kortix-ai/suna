@@ -22,17 +22,20 @@ const RECENT_MS = 24 * 60 * 60 * 1000;
 export function useUndoMemoryChange(projectId: string) {
   const t = useTranslations('spaces.memory');
   const undo = useUndoProjectMemoryVersion(projectId);
+  // `mutateAsync`, not call-time `mutate` callbacks: TanStack drops those once
+  // the caller unmounts (the toast's Undo after the last page was deleted),
+  // and the hook's own `onError` is silent.
   const run = (versionId: string, onUndone?: (result: ProjectMemoryUndoResult) => void) =>
-    undo.mutate(versionId, {
-      onSuccess: (result) => {
+    undo.mutateAsync(versionId).then(
+      (result) => {
         successToast(t('undone'));
         onUndone?.(result);
       },
-      onError: (err) => {
+      (err: unknown) => {
         const code = err instanceof ApiError ? err.code : null;
         errorToast(code === 'superseded' ? t('superseded') : code === 'already_undone' ? t('alreadyUndone') : t('undoFailed'));
       },
-    });
+    );
   return { run, isPending: undo.isPending };
 }
 

@@ -11,6 +11,7 @@ import { cn } from '../../lib/utils';
 import { Button } from '../../primitives/button';
 import { CountBadge } from '../../primitives/count-badge';
 import { ErrorState } from '../../primitives/error-state';
+import Loading from '../../primitives/loading';
 import Hint from '../../primitives/hint';
 import {
   InputGroupSearch,
@@ -45,6 +46,7 @@ export function MemoryPageList({
   projectId,
   layerKey,
   pages,
+  total,
   selectedId,
   onSelect,
   onViewChange,
@@ -53,6 +55,8 @@ export function MemoryPageList({
   projectId: string;
   layerKey: string;
   pages: readonly ProjectMemoryPageSummary[];
+  /** "All pages": the layer's pages without notes, the number the tab shows (`memoryPageCount`). */
+  total: number;
   selectedId: string | null;
   onSelect: (pageId: string) => void;
   /** A Recent changes row's View: the page, at that version. */
@@ -64,7 +68,6 @@ export function MemoryPageList({
   const [collapsed, setCollapsed] = useState<ReadonlySet<ProjectMemoryPageType>>(new Set());
   const { groups, unconfirmed } = useMemo(() => groupMemoryPages(pages), [pages]);
   const needle = query.trim().toLowerCase();
-  const total = MEMORY_GROUPS.reduce((sum, type) => sum + groups.get(type)!.length, 0);
   const visible = MEMORY_GROUPS.map((type) => {
     const all = groups.get(type)!;
     return { type, all, shown: needle ? all.filter((page) => page.title.toLowerCase().includes(needle)) : all };
@@ -218,7 +221,13 @@ function RecentChanges({
         }
       />
     );
-  } else if (changes.data && rows.length === 0) {
+  } else if (!changes.data) {
+    body = (
+      <div className="flex justify-center py-8">
+        <Loading className="size-4 shrink-0" />
+      </div>
+    );
+  } else if (rows.length === 0) {
     body = <p className="text-muted-foreground px-2 py-8 text-center text-xs">{t('changes.empty')}</p>;
   } else if (rows.length > 0) {
     body = (
@@ -293,7 +302,13 @@ function ChangeRow({ projectId, change, onView }: { projectId: string; change: P
       </div>
       <div className="flex shrink-0 items-center gap-0.5">
         {change.op !== 'delete' || change.undone ? (
-          <Button variant="ghost" size="toolbar" className="text-muted-foreground" onClick={onView}>
+          <Button
+            variant="ghost"
+            size="toolbar"
+            className="text-muted-foreground"
+            aria-label={t('changes.viewPage', { title: change.page_title })}
+            onClick={onView}
+          >
             {t('view')}
           </Button>
         ) : null}
@@ -305,6 +320,7 @@ function ChangeRow({ projectId, change, onView }: { projectId: string; change: P
             size="toolbar"
             disabled={undo.isPending}
             aria-busy={undo.isPending || undefined}
+            aria-label={t('changes.undoPage', { title: change.page_title })}
             onClick={() => undo.run(change.version_id)}
           >
             {t('undo')}

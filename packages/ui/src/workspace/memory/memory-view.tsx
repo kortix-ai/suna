@@ -7,18 +7,21 @@ import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
 import { Button } from '../../primitives/button';
 import { ErrorState } from '../../primitives/error-state';
+import { Skeleton } from '../../primitives/skeleton';
 import { SplitSheet, SplitSheetMain } from '../../primitives/split-sheet';
 import { useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
 import { MemoryEditor } from './memory-editor';
 import { MemoryEmpty } from './memory-empty';
 import { MemoryHistory } from './memory-history';
-import { MEMORY_GROUPS } from './memory-labels';
+import { MEMORY_GROUPS, memoryPageCount } from './memory-labels';
 import { groupMemoryPages, MemoryPageList } from './memory-page-list';
 import { MemoryReader } from './memory-reader';
 import { RememberBar } from './remember-bar';
 
 /** The open page, in the URL so a page can be linked (the thread's "Saved to memory · View" uses it). */
 export const MEMORY_PAGE_PARAM = 'page';
+/** Set with `page`: the page opens with its History beside it. */
+export const MEMORY_HISTORY_PARAM = 'history';
 
 export interface MemoryViewProps {
   projectId: string;
@@ -49,7 +52,10 @@ export function MemoryView({ projectId, layerKey, place }: MemoryViewProps) {
   // own onSuccess (TanStack skips call-time callbacks of an unmounted caller).
   const [editorRun, setEditorRun] = useState(0);
   // Open History: `versionId` null shows the newest version.
-  const [history, setHistory] = useState<{ versionId: string | null } | null>(null);
+  // `?history=1` (the thread line's "open History") opens it on arrival.
+  const [history, setHistory] = useState<{ versionId: string | null } | null>(() =>
+    searchParams.get(MEMORY_HISTORY_PARAM) ? { versionId: null } : null,
+  );
 
   // A page this view just deleted (or whose creation it undid) leaves the list
   // at once, until the list refetches (an Undo may bring it back after that).
@@ -78,6 +84,7 @@ export function MemoryView({ projectId, layerKey, place }: MemoryViewProps) {
     const params = new URLSearchParams(searchParams.toString());
     if (pageId) params.set(MEMORY_PAGE_PARAM, pageId);
     else params.delete(MEMORY_PAGE_PARAM);
+    params.delete(MEMORY_HISTORY_PARAM);
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, {
       scroll: false,
@@ -106,7 +113,19 @@ export function MemoryView({ projectId, layerKey, place }: MemoryViewProps) {
       </div>
     );
   }
-  if (!layer.data || !list.data) return null;
+  if (!layer.data || !list.data) {
+    // The list's shape is known: its rows load as skeletons, the page waits.
+    return (
+      <div aria-busy className="flex min-h-0 flex-1">
+        <div className="flex w-72 shrink-0 flex-col gap-2.5 border-r px-3 py-4">
+          <Skeleton className="h-8 w-full rounded-md" />
+          {['w-3/5', 'w-2/5', 'w-3/4', 'w-1/2', 'w-2/5', 'w-2/3'].map((width, index) => (
+            <Skeleton key={index} className={cn('h-4 rounded-sm', width)} />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   const canWrite = layer.data.can_write && !layer.data.read_only;
   const kind = layer.data.scope === 'dm' ? 'dm' : 'channel';
@@ -146,6 +165,7 @@ export function MemoryView({ projectId, layerKey, place }: MemoryViewProps) {
             projectId={projectId}
             layerKey={layerKey}
             pages={pages}
+            total={memoryPageCount(layer.data.counts)}
             selectedId={selected.page_id}
             onSelect={setPage}
             onViewChange={(pageId, versionId) => {
@@ -209,6 +229,5 @@ export function MemoryView({ projectId, layerKey, place }: MemoryViewProps) {
 
 /** The Memory tab's count: the layer's live pages, notes not included. */
 export function useMemoryPageCount(projectId: string, layerKey: string | null | undefined): number {
-  const counts = useProjectMemoryLayer(projectId, layerKey).data?.counts;
-  return counts ? counts.people + counts.decisions + counts.workstreams + counts.playbooks : 0;
+  return memoryPageCount(useProjectMemoryLayer(projectId, layerKey).data?.counts);
 }

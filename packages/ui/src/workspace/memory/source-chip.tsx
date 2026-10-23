@@ -72,7 +72,10 @@ export function SourceChip({ source, projectId }: { source: ProjectMemorySource;
   }
   return (
     <Hint side="top" label={t(`source.${STATIC_HINT[source.kind]}`, { label: text })}>
-      <span className={CHIP}>{label}</span>
+      {/* Focusable, so a keyboard reaches the hint that says what the source is. */}
+      <span tabIndex={0} className={cn(CHIP, 'focus-visible:ring-ring outline-none focus-visible:ring-2')}>
+        {label}
+      </span>
     </Hint>
   );
 }

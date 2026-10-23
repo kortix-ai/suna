@@ -22486,6 +22486,8 @@
         "title": "最近の変更",
         "empty": "まだ変更はありません。",
         "loadError": "最近の変更を読み込めませんでした。",
+        "viewPage": "{title} を表示",
+        "undoPage": "{title} への変更を元に戻す",
         "op": {
           "create": "{author} が <page>{title}</page> を作成",
           "update": "{author} が <page>{title}</page> を編集",
@@ -22589,7 +22591,8 @@
         "undone": "元に戻しました",
         "superseded": "その後に変更されました —",
         "openHistory": "履歴を開く",
-        "undoFailed": "元に戻せませんでした。"
+        "undoFailed": "元に戻せませんでした。",
+        "failedGeneric": "メモリに保存されませんでした。"
       }
     },
     "create": {

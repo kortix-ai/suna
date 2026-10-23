@@ -10,6 +10,7 @@ import { cn } from '../../lib/utils';
 import { Badge } from '../../primitives/badge';
 import { Button } from '../../primitives/button';
 import { ErrorState } from '../../primitives/error-state';
+import Loading from '../../primitives/loading';
 import {
   SplitSheetBody,
   SplitSheetContent,
@@ -89,6 +90,10 @@ export function MemoryHistory({
               </Button>
             }
           />
+        ) : !history.data ? (
+          <div className="flex justify-center py-8">
+            <Loading className="size-4 shrink-0" />
+          </div>
         ) : (
           <ol className="flex flex-col gap-0.5">
             {versions.map((version, index) => (

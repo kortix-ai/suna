@@ -122,7 +122,7 @@ export function RememberBar({
           aria-busy={add.isPending || undefined}
           className="shrink-0"
         >
-          <ArrowUpIcon weight="bold" className="size-3.5" />
+          <ArrowUpIcon className="size-3.5" />
         </Button>
       </form>
     </div>

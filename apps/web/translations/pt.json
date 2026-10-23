@@ -22486,6 +22486,8 @@
         "title": "Alterações recentes",
         "empty": "Nenhuma alteração ainda.",
         "loadError": "Não foi possível carregar as alterações recentes.",
+        "viewPage": "Ver {title}",
+        "undoPage": "Desfazer a alteração em {title}",
         "op": {
           "create": "{author} criou <page>{title}</page>",
           "update": "{author} editou <page>{title}</page>",
@@ -22589,7 +22591,8 @@
         "undone": "Desfeito",
         "superseded": "Alterado desde então —",
         "openHistory": "abrir o Histórico",
-        "undoFailed": "Não foi possível desfazer."
+        "undoFailed": "Não foi possível desfazer.",
+        "failedGeneric": "Não salvo na memória."
       }
     },
     "create": {

@@ -7319,6 +7319,8 @@ const catalog = {
         "title": "Recent changes",
         "empty": "No changes yet.",
         "loadError": "Could not load the recent changes.",
+        "viewPage": "View {title}",
+        "undoPage": "Undo the change to {title}",
         "op": {
           "create": "{author} created <page>{title}</page>",
           "update": "{author} edited <page>{title}</page>",
@@ -7422,7 +7424,8 @@ const catalog = {
         "undone": "Undone",
         "superseded": "Changed since —",
         "openHistory": "open History",
-        "undoFailed": "Could not undo."
+        "undoFailed": "Could not undo.",
+        "failedGeneric": "Not saved to memory."
       }
     },
     "create": {

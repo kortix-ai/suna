@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from '../../primitives/dropdown-menu';
 import { ErrorState } from '../../primitives/error-state';
+import { Skeleton } from '../../primitives/skeleton';
 import { errorToast, successToast, undoToast } from '../../primitives/toast';
 import { type MemoryBlock, type MemoryInline, memoryBlocks } from './body-tokens';
 import { MEMORY_TYPE_ICON, MemoryAuthorAvatar, useMemoryAuthorName } from './memory-labels';
@@ -123,7 +124,7 @@ export function MemoryReader({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon-sm" aria-label={t('more')}>
-                  <DotsThreeIcon weight="bold" className="size-4" />
+                  <DotsThreeIcon className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-44">
@@ -153,7 +154,13 @@ export function MemoryReader({
           />
         ) : page ? (
           <PageBody projectId={projectId} page={page} pages={pages} onSelectPage={onSelectPage} />
-        ) : null}
+        ) : (
+          <div aria-busy className="flex max-w-2xl flex-col gap-3 pt-1">
+            <Skeleton className="h-4 w-11/12 rounded-sm" />
+            <Skeleton className="h-4 w-3/4 rounded-sm" />
+            <Skeleton className="h-4 w-1/2 rounded-sm" />
+          </div>
+        )}
       </article>
       <ConfirmDialog
         open={deleting}

@@ -22486,6 +22486,8 @@
         "title": "最近更改",
         "empty": "暂无更改。",
         "loadError": "无法加载最近更改。",
+        "viewPage": "查看 {title}",
+        "undoPage": "撤销对 {title} 的更改",
         "op": {
           "create": "{author} 创建了 <page>{title}</page>",
           "update": "{author} 编辑了 <page>{title}</page>",
@@ -22589,7 +22591,8 @@
         "undone": "已撤销",
         "superseded": "此后已有更改 —",
         "openHistory": "打开历史记录",
-        "undoFailed": "无法撤销。"
+        "undoFailed": "无法撤销。",
+        "failedGeneric": "未保存到记忆。"
       }
     },
     "create": {

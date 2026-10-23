@@ -22486,6 +22486,8 @@
         "title": "Letzte Änderungen",
         "empty": "Noch keine Änderungen.",
         "loadError": "Die letzten Änderungen konnten nicht geladen werden.",
+        "viewPage": "{title} ansehen",
+        "undoPage": "Änderung an {title} rückgängig machen",
         "op": {
           "create": "{author} hat <page>{title}</page> erstellt",
           "update": "{author} hat <page>{title}</page> bearbeitet",
@@ -22589,7 +22591,8 @@
         "undone": "Rückgängig gemacht",
         "superseded": "Seitdem geändert —",
         "openHistory": "Verlauf öffnen",
-        "undoFailed": "Rückgängig machen fehlgeschlagen."
+        "undoFailed": "Rückgängig machen fehlgeschlagen.",
+        "failedGeneric": "Nicht im Speicher gesichert."
       }
     },
     "create": {

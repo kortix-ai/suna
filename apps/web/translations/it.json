@@ -22486,6 +22486,8 @@
         "title": "Modifiche recenti",
         "empty": "Ancora nessuna modifica.",
         "loadError": "Impossibile caricare le modifiche recenti.",
+        "viewPage": "Vedi {title}",
+        "undoPage": "Annulla la modifica a {title}",
         "op": {
           "create": "{author} ha creato <page>{title}</page>",
           "update": "{author} ha modificato <page>{title}</page>",
@@ -22589,7 +22591,8 @@
         "undone": "Annullato",
         "superseded": "Modificato nel frattempo —",
         "openHistory": "apri la Cronologia",
-        "undoFailed": "Impossibile annullare."
+        "undoFailed": "Impossibile annullare.",
+        "failedGeneric": "Non salvato nella memoria."
       }
     },
     "create": {

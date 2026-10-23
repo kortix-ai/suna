@@ -86,17 +86,17 @@ export function useProjectMemoryHistory(projectId: Id, pageId: Id, options?: Rea
   });
 }
 
-/**
- * After a memory write: put the pages the response returned into their slots,
- * then refetch every memory read of the project (layer counts, page lists,
- * Recent changes, pages, history) and the channel tab counts.
- */
 // Every memory mutation sets this hook-level `onError`. The caller shows its
 // own message per code (`version_conflict`, `secret_detected`, …) in the
 // call-time `onError`; without a hook-level one, TanStack also runs the
 // QueryClient's default mutation `onError`, a second, generic error toast.
 const callerShowsError = () => {};
 
+/**
+ * After a memory write: put the pages the response returned into their slots,
+ * then refetch every memory read of the project (layer counts, page lists,
+ * Recent changes, pages, history) and the channel tab counts.
+ */
 function useMemoryWritten(projectId: string) {
   const queryClient = useQueryClient();
   return (pages: ProjectMemoryPage[] = []) => {

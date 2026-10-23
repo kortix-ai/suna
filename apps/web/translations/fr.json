@@ -22486,6 +22486,8 @@
         "title": "Modifications récentes",
         "empty": "Aucune modification pour l’instant.",
         "loadError": "Impossible de charger les modifications récentes.",
+        "viewPage": "Voir {title}",
+        "undoPage": "Annuler la modification de {title}",
         "op": {
           "create": "{author} a créé <page>{title}</page>",
           "update": "{author} a modifié <page>{title}</page>",
@@ -22589,7 +22591,8 @@
         "undone": "Annulé",
         "superseded": "Modifié depuis —",
         "openHistory": "ouvrir l’historique",
-        "undoFailed": "Impossible d’annuler."
+        "undoFailed": "Impossible d’annuler.",
+        "failedGeneric": "Non enregistré dans la mémoire."
       }
     },
     "create": {

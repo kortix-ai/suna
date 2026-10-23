@@ -2,11 +2,11 @@
 
 import { ApiError, type ProjectMemoryLayerScope } from '@kortix/sdk';
 import { useProjectSpaces, useUndoProjectMemoryVersion } from '@kortix/sdk/react';
+import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
 import { SunDimIcon } from '@phosphor-icons/react';
 import { type ReactNode, useState } from 'react';
 
 import { useTranslations } from '../../../i18n';
-import { agentDisplayName } from '../../../internal/agent-avatar';
 import { uiRoutes } from '../../../lib/routes';
 import { TextShimmer } from '../../../primitives/text-shimmer';
 import { UiLink as Link, useUiPathname, useUiSearchParams } from '../../../providers/ui-provider';
@@ -26,16 +26,19 @@ export type RememberLine =
       title: string;
       layer: { scope: ProjectMemoryLayerScope; name: string; key: string };
     }
-  | { state: 'failed'; reason: string }
+  /** `reason` null: a thrown error or text without a code; the line says only that it was not saved. */
+  | { state: 'failed'; reason: string | null }
   | { state: 'other' };
 
 const SCOPES: readonly string[] = ['company', 'channel', 'dm'];
 
-/** `Error: <code>: <message>` (kortixd's refusal text) → the message, else the text after `Error:`. */
-function refusalReason(text: string): string {
-  const rest = text.replace(/^Error:\s*/i, '');
-  const match = /^[a-z0-9_]+:\s*([\s\S]+)$/i.exec(rest);
-  return (match?.[1] ?? rest).trim();
+/** A DM layer's name is its agent's name; shown as the agent's display name. */
+const agentName = (name: string) => (isMetaAgentName(name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(name));
+
+/** `Error: <code>: <message>` (kortixd's refusal text) → the message; any other text → null (shown as a generic failure). */
+function refusalReason(text: string): string | null {
+  const match = /^Error:\s*[a-z0-9_]+:\s*([\s\S]+)$/i.exec(text.trim());
+  return match?.[1]?.trim() || null;
 }
 
 /**
@@ -99,7 +102,11 @@ export function RememberLineView({
   if (line.state === 'running') {
     text = <TextShimmer className="min-w-0 truncate text-xs">{t('running')}</TextShimmer>;
   } else if (line.state === 'failed') {
-    text = <span className="min-w-0 [overflow-wrap:anywhere]">{t('failed', { reason: line.reason })}</span>;
+    text = (
+      <span className="min-w-0 [overflow-wrap:anywhere]">
+        {line.reason ? t('failed', { reason: line.reason }) : t('failedGeneric')}
+      </span>
+    );
   } else {
     const key = line.layer.scope === 'company' ? 'company' : line.layer.scope === 'dm' ? 'dm' : 'channel';
     text = (
@@ -107,7 +114,7 @@ export function RememberLineView({
         {undo === 'undone'
           ? t('undone')
           : t.rich(key, {
-              place: line.layer.scope === 'dm' ? agentDisplayName(line.layer.name) : line.layer.name,
+              place: line.layer.scope === 'dm' ? agentName(line.layer.name) : line.layer.name,
               title: line.title,
               page: (chunks) => <span className="text-foreground">{chunks}</span>,
             })}
@@ -153,12 +160,12 @@ export function RememberLineView({
 }
 
 /**
- * Where View opens the page: its channel's or DM's Memory tab with `?page=`.
- * Company pages open in the current channel or DM's Memory tab until the
- * project Memory page exists (P2). A space of the page the reader is on keeps
- * the open thread beside it.
+ * Where View opens the page: its channel's or DM's Memory tab with `?page=`
+ * (`&history=1` when the change was superseded). None for a Company page until
+ * the project Memory page exists (P2). A space of the page the reader is on
+ * keeps the open thread beside it.
  */
-function useViewHref(line: RememberLine): string | null {
+function useViewHref(line: RememberLine, history: boolean): string | null {
   const projectId = useSessionIds().projectId;
   const pathname = useUiPathname();
   const searchParams = useUiSearchParams();
@@ -166,18 +173,18 @@ function useViewHref(line: RememberLine): string | null {
   const spaces = useProjectSpaces(projectId, { enabled: !!saved && saved.layer.scope !== 'company' });
   if (!saved || !projectId) return null;
   let path: string | null = null;
-  if (saved.layer.scope === 'company') {
-    path = /\/projects\/[^/]+\/(c|dm)\/[^/]+$/.test(pathname) ? pathname : null;
-  } else {
-    const space = spaces.data?.find((candidate) => candidate.space_id === saved.layer.key);
-    if (space?.kind === 'channel' && space.slug) path = uiRoutes().channel(projectId, space.slug);
-    else if (space?.kind === 'dm' && space.dm_agent_name) path = uiRoutes().dm(projectId, space.dm_agent_name);
-  }
+  // Company pages get their own Memory page in P2; until then no space lists them.
+  if (saved.layer.scope === 'company') return null;
+  const space = spaces.data?.find((candidate) => candidate.space_id === saved.layer.key);
+  if (space?.kind === 'channel' && space.slug) path = uiRoutes().channel(projectId, space.slug);
+  else if (space?.kind === 'dm' && space.dm_agent_name) path = uiRoutes().dm(projectId, space.dm_agent_name);
   if (!path) return null;
   const here = pathname === path || pathname.endsWith(path);
   const params = new URLSearchParams(here ? searchParams.toString() : '');
   params.set('tab', 'memory');
   params.set('page', saved.pageId);
+  if (history) params.set('history', '1');
+  else params.delete('history');
   return `${here ? pathname : path}?${params.toString()}`;
 }
 
@@ -188,7 +195,7 @@ export function RememberTool(props: ToolProps) {
   const projectId = useSessionIds().projectId ?? '';
   const undo = useUndoProjectMemoryVersion(projectId);
   const [undoState, setUndoState] = useState<UndoState>('idle');
-  const viewHref = useViewHref(line);
+  const viewHref = useViewHref(line, undoState === 'superseded');
   if (line.state === 'other') return <GenericTool {...props} />;
   const runUndo = () => {
     if (line.state !== 'saved' || undo.isPending) return;
