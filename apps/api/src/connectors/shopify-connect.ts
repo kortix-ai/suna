@@ -161,11 +161,24 @@ export async function startShopifyConnect(input: {
   };
 }
 
-/** Whether an account holds a Shopify token. Finalize reads this. */
+/**
+ * Whether the account's latest Connect completed. Finalize reads this. An
+ * older token does not count: a reconnect (a revoked token) stays "not
+ * connected" until its own grant lands, so the popup is not closed early.
+ */
 export async function shopifyAccountConnected(input: {
   connectorId: string;
   connectionId: string;
 }): Promise<boolean> {
+  const [row] = await db
+    .select({ metadata: connectorConnections.metadata })
+    .from(connectorConnections)
+    .where(eq(connectorConnections.connectionId, input.connectionId))
+    .limit(1);
+  const metadata = (row?.metadata ?? {}) as { auth_request_id?: unknown; shopify?: { connected_request?: unknown } };
+  if (typeof metadata.auth_request_id === 'string' && metadata.shopify?.connected_request !== metadata.auth_request_id) {
+    return false;
+  }
   return connectionCredentialExists(input);
 }
 

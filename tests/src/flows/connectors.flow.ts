@@ -5592,6 +5592,7 @@ flow(
     routes: [
       'POST /v1/connectors/projects/:projectId/connectors',
       'POST /v1/connectors/projects/:projectId/connectors/:slug/connect',
+      'POST /v1/connectors/projects/:projectId/connectors/:slug/connect/finalize',
       'GET /v1/connectors/app-form/:token',
       'POST /v1/connectors/app-form/:token',
       'GET /v1/connectors/shopify/callback',
@@ -5646,6 +5647,12 @@ flow(
       )).status(200).json<{ provider: string; connectUrl?: string }>();
       token = /\/connect\/app\/(kaf_[A-Za-z0-9_-]+)$/.exec(started.connectUrl ?? '')?.[1] ?? '';
       if (started.provider !== 'shopify' || !token) throw new Error(`connect did not answer a form link: ${JSON.stringify(started)}`);
+      // Until Shopify's grant lands, finalize keeps the connect popup open.
+      (await owner.post(
+        '/v1/connectors/projects/:projectId/connectors/:slug/connect/finalize',
+        { owner: 'me' },
+        { params: { ...params, slug: 'store' } },
+      )).status(200).body().has('$.connected', false);
       const info = (await anon.get('/v1/connectors/app-form/:token', { params: { token } }))
         .status(200)
         .json<{ flow: string; shop: string; shared_app: boolean; scopes: string[]; redirect_uri: string; connected: boolean }>();
