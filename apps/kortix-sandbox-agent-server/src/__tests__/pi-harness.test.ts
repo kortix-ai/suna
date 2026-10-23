@@ -3938,7 +3938,7 @@ describe('pi codemode', () => {
     expect(String(results[0]!.content)).toContain('one+two')
   })
 
-  test('off removes codemode; only declares codemode alone and still runs every tool through it', async () => {
+  test('off removes codemode; only declares codemode and presentation and runs workspace tools through scripts', async () => {
     const off = await boot({ script: [{ text: 'hi' }], env: { KORTIX_PI_CODEMODE: 'off' } })
     let first = gateway.sampling.length
     await run(off)
@@ -3948,9 +3948,48 @@ describe('pi codemode', () => {
     const only = await boot({ script: [script("return await tools.bash({ command: 'echo only' })"), { text: 'done' }], env: { KORTIX_PI_CODEMODE: 'only' } })
     first = gateway.sampling.length
     const parts = await run(only)
-    expect(gateway.sampling[first]!.toolNames).toEqual(['codemode'])
-    expect(String(gateway.sent[first]!.find((m) => m.role === 'system')?.content)).toContain('Every tool runs from a codemode script')
+    expect(gateway.sampling[first]!.toolNames.sort()).toEqual(['codemode', 'show'])
+    expect(String(gateway.sent[first]!.find((m) => m.role === 'system')?.content)).toContain('Call show directly to present outputs')
     expect(parts[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('only') })
+  })
+
+  test('only keeps presentation model-only and records show as a native transcript block', async () => {
+    const r = await boot({
+      script: [{ tool: 'show', args: { action: 'show', type: 'text', content: 'Presentation proof' } }, { text: 'done' }],
+      env: { KORTIX_PI_CODEMODE: 'only' },
+    })
+    const first = gateway.sampling.length
+    const [part] = await run(r)
+    expect(gateway.sampling[first]?.toolNames.sort()).toEqual(['codemode', 'show'])
+    expect(part?.tool).toBe('show')
+    expect(part?.state).toMatchObject({ status: 'completed', input: { type: 'text', content: 'Presentation proof' } })
+    expect(JSON.parse(part?.state.output)).toMatchObject({ success: true, entry: { type: 'text', content: 'Presentation proof' } })
+    const snapshot = r.service.runtime()?.sessionLogSnapshot()
+    if (!snapshot) throw new Error('Missing session snapshot')
+    const { log } = piSessionLog(snapshot)
+    expect(log.threads[0]?.messages.flatMap((m) => m.blocks)).toContainEqual(expect.objectContaining({ type: 'tool_call', name: 'show', status: 'complete' }))
+  })
+
+  test('only presentation still obeys tool access and permission policy', async () => {
+    for (const agent of [{ tools: { show: false } }, { permission: { show: 'deny' } }]) {
+      const r = await boot({
+        script: [{ tool: 'show', args: { action: 'show', type: 'text', content: 'Hidden' } }, { text: 'done' }],
+        env: { KORTIX_PI_CODEMODE: 'only', KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: agent } }) },
+      })
+      const [part] = await run(r)
+      expect(part?.state.status).toBe('error')
+      expect(part?.state.output).toBeUndefined()
+    }
+  })
+
+  test('only scripts cannot hide presentation inside codemode', async () => {
+    const r = await boot({
+      script: [script("return await tools.show({ action: 'show', type: 'text', content: 'Hidden' })"), { text: 'done' }],
+      env: { KORTIX_PI_CODEMODE: 'only' },
+    })
+    const [part] = await run(r)
+    expect(part?.state.status).toBe('error')
+    expect(part?.state.error).toContain('show')
   })
 
   test('the project policy denies a script\'s call like a direct one', async () => {
