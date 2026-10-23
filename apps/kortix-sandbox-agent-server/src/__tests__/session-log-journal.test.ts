@@ -1182,6 +1182,32 @@ describe('no batch is dropped', () => {
     expect(api.order()).toEqual(ids)
   })
 
+  test('403 (the credential lost access) keeps the batch and backs off; it lands once access returns', async () => {
+    let allowed = false
+    const api = fakeApi((body) => (allowed ? ack(body) : Response.json({ error: 'The session log takes the session sandbox credential' }, { status: 403 })))
+    const fake = fakeAdapter()
+    fake.put('m1', 1, 'one')
+    const journal = new SessionLogJournal(fake.port, { generation: 0, retryMs: 10, maxRetryMs: 20 })
+
+    expect(await journal.flush(300)).toBe(false)
+    expect(journal.clean).toBe(false)
+    allowed = true
+    await until(() => journal.clean)
+
+    expect(putIds(api.received).filter((id) => id === 'm1').length).toBeGreaterThan(1)
+    await journal.stop(0)
+  })
+
+  test('recovery: a daemon restart (restore off) re-sends every message of the native store, also one an older daemon dropped', async () => {
+    const api = storeApi([['old1', 1], ['old2', 2]])
+    const fake = fakeAdapter()
+    // An older daemon dropped new1 on a 422: the store holds it, the log does not.
+    fake.put('new1', 1, 'turn 3 question')
+    const restarted = new SessionLogJournal(fake.port, (await reconcileSessionLog(fake.port))!)
+    expect(await restarted.flush(5_000)).toBe(true)
+    expect(api.order()).toEqual(['old1', 'old2', 'new1'])
+  })
+
   test('400: the batch minus the invalid put is saved, and the invalid put is not posted again', async () => {
     const api = storeApi()
     const fake = fakeAdapter()

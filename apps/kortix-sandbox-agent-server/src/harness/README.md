@@ -684,12 +684,16 @@ it off for the boot and stop the drain at once. No refused batch is dropped:
   patch, are logged (`journal refused a record`, with the issue path) and
   dropped; the rest goes again at once. A 400 that names nothing (a body that is
   not gzip or JSON) drops the batch.
-- Any other 4xx backs off and keeps the dirty set.
+- Any other 4xx backs off and keeps the dirty set. 403: the credential lost
+  access to the session; a credential that regains it sends the batch.
 
 apps/api logs one WARN `[session-log] journal rejected` (status, code, project
-and session id) for each 400, 409, 413 and 422, because this log stays in the
-box. A 200 that does not acknowledge a batch is retried 3 times, then its pairs
-are dropped: the native store still holds them. A second
+and session id) for each 400, 403, 409, 413 and 422, because this log stays in
+the box. A 200 that does not acknowledge a batch is retried 3 times, then its
+pairs are dropped: the native store still holds them. The next boot sends every
+stored message again (a journal that restored nothing has no cursors), so a
+message an older kortixd dropped on a 422 reaches the log at the box's next
+boot on this kortixd. A second
 `startSessionLogJournal` stops the first journal.
 
 ## Health and capabilities (E19, E1)

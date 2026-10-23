@@ -40,9 +40,14 @@
  *   - 400: the puts, tombstones and threads the zod `issues` name (and the
  *     session patch) are logged and dropped, and the rest is sent again. A 400
  *     that names nothing (a body that is not gzip or JSON) drops the batch.
- *   - Any other 4xx backs off and keeps the dirty set.
+ *   - Any other 4xx backs off and keeps the dirty set. 403: the credential
+ *     lost access to the session; a credential that regains it sends the batch.
  *   A 200 that does not acknowledge a batch is retried 3 times, then its pairs
- *   are dropped (an API bug). A dropped message stays in the native store.
+ *   are dropped (an API bug). A dropped message stays in the native store, and
+ *   the next boot sends it again: a journal that restored nothing starts with
+ *   no cursors, so its first collection exports every stored message (the API
+ *   keeps an unchanged one as it is). That also recovers what an older daemon
+ *   dropped on a 422.
  *
  * Live stream (P4.3): each collection publishes what it put in the dirty set
  * on `sessionLogEventBus()`, the bus of `/kortix/runtime/events?schema=v2`

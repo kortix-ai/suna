@@ -117,10 +117,10 @@ async function readBlobBody(request: Request, ms: number): Promise<Buffer | 'lat
 }
 
 /**
- * One WARN per journal request the API refuses (400, 409, 413, 422). kortixd's own log stays in the box and
+ * One WARN per journal request the API refuses (400, 403, 409, 413, 422). kortixd's own log stays in the box and
  * never reaches CloudWatch, so this line is how a refused batch shows up.
  */
-function journalRejected(scope: SessionLogScope, status: number, code: string, detail: Record<string, unknown> = {}): void {
+function journalRejected(scope: Pick<SessionLogScope, 'projectId' | 'sessionId'>, status: number, code: string, detail: Record<string, unknown> = {}): void {
   logger.warn('[session-log] journal rejected', { status, code, projectId: scope.projectId, sessionId: scope.sessionId, ...detail });
 }
 
@@ -261,7 +261,11 @@ export function registerSessionLogRoutes(): void {
     }),
     async (c) => {
       const scope = sandboxScope(c);
-      if (!scope) return c.json({ error: 'The session log takes the session sandbox credential' }, 403);
+      if (!scope) {
+        // kortixd keeps the batch and backs off: a credential that regains access sends it.
+        journalRejected({ projectId: c.req.param('projectId') ?? '', sessionId: c.req.param('sessionId') ?? '' }, 403, 'not_session_credential');
+        return c.json({ error: 'The session log takes the session sandbox credential' }, 403);
+      }
       if (!config.SESSION_LOG_INGEST_ENABLED) return c.json({ error: 'Session log ingest is off' }, 503);
       const read = await readJournalBody(c);
       if (!read.ok) {
