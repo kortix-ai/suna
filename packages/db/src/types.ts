@@ -1,4 +1,4 @@
-import { sandboxes, kortixApiKeys, accounts, accountMembers, accountInvitations, accountGithubInstallations, auditEvents, usageEvents, gatewayRequestLogs, gatewayApiKeys, gatewayBudgets, projects, projectGitConnections, projectGitCredentials, projectMembers, projectSecrets, projectSessions, projectSessionSecretHandles, projectSnapshotBuilds, sandboxTemplates, sessionSandboxes, legacySandboxMigrations, creditAccounts, tunnelConnections, tunnelPermissions, tunnelPermissionRequests, tunnelAuditLogs, chatChannelBindings, chatInstalls, chatThreads } from './schema/kortix';
+import { sandboxes, kortixApiKeys, accounts, accountMembers, accountInvitations, accountGithubInstallations, auditEvents, usageEvents, gatewayRequestLogs, gatewayApiKeys, gatewayBudgets, projects, projectGitConnections, projectGitCredentials, projectMembers, projectSecrets, projectSessions, projectSessionSecretHandles, projectSnapshotBuilds, sandboxTemplates, sessionSandboxes, legacySandboxMigrations, creditAccounts, tunnelConnections, tunnelPermissions, tunnelPermissionRequests, tunnelAuditLogs, chatChannelBindings, chatInstalls, chatThreads, memoryLayers, memoryPages, memoryPageVersions, memoryPageSources, memoryThreadLoads } from './schema/kortix';
 import { apiKeys } from './schema/public';
 
 // Select types (what you get back from queries)
@@ -65,6 +65,18 @@ export type TunnelPermissionRequest = typeof tunnelPermissionRequests.$inferSele
 export type NewTunnelPermissionRequest = typeof tunnelPermissionRequests.$inferInsert;
 export type TunnelAuditLog = typeof tunnelAuditLogs.$inferSelect;
 export type NewTunnelAuditLog = typeof tunnelAuditLogs.$inferInsert;
+
+// Memory pages
+export type MemoryLayer = typeof memoryLayers.$inferSelect;
+export type NewMemoryLayer = typeof memoryLayers.$inferInsert;
+export type MemoryPage = typeof memoryPages.$inferSelect;
+export type NewMemoryPage = typeof memoryPages.$inferInsert;
+export type MemoryPageVersion = typeof memoryPageVersions.$inferSelect;
+export type NewMemoryPageVersion = typeof memoryPageVersions.$inferInsert;
+export type MemoryPageSource = typeof memoryPageSources.$inferSelect;
+export type NewMemoryPageSource = typeof memoryPageSources.$inferInsert;
+export type MemoryThreadLoad = typeof memoryThreadLoads.$inferSelect;
+export type NewMemoryThreadLoad = typeof memoryThreadLoads.$inferInsert;
 
 // Aliases
 export type SandboxSelect = Sandbox;
