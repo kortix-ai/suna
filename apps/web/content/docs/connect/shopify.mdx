@@ -14,8 +14,7 @@ If this Kortix deployment has a shared Shopify app, Connect asks only for the st
 ## Create the app in Shopify
 
 1. In the [Shopify Dev Dashboard](https://dev.shopify.com/dashboard), create an app in the organization that owns the store.
-2. Under **Distribution**, choose **Custom distribution** and select the store.
-3. In the app version, add the redirect URL and the Admin API scopes, then release the version:
+2. In the app version, add the redirect URL and the Admin API scopes, then release the version:
 
    ```text
    https://api.kortix.com/v1/connectors/shopify/callback
@@ -24,6 +23,7 @@ If this Kortix deployment has a shared Shopify app, Connect asks only for the st
    On a self-hosted instance the URL is `<KORTIX_URL>/v1/connectors/shopify/callback`. The Connect form shows the exact URL for your deployment.
 
    The default scopes are `read_orders`, `write_orders`, `read_draft_orders`, `write_draft_orders`, `read_products`, `write_products`, `read_customers`, `write_customers`, `read_inventory`, `write_inventory` and `read_locations`.
+3. Under **Distribution**, choose **Custom distribution** and select the store.
 4. Install the app on the store.
 5. From the app's **Settings**, copy the **Client ID** and the **Client secret**.
 

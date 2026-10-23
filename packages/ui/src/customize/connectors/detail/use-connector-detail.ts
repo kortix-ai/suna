@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import { connectorDisplayName } from '../connector-filter';
-import { isManagedConnectorProvider } from '../provider-label';
+import { signsInWithConnectLink } from '../provider-label';
 import { connectorSetupStatus } from '../../sections/connector-connection-form';
 import { connectorConnectionRows } from '../../sections/view/connector-connections';
 import { emptyProjectSlot } from '../../../internal/hooks/connectors/use-add-account';
@@ -37,7 +37,9 @@ export function useConnectorDetail({
   /** Refetch every authorization-derived query. */
   onChanged: () => void;
 }) {
-  const isManagedProvider = isManagedConnectorProvider(connector.provider);
+  // "Managed" here means its accounts sign in with a Connect Link: Composio,
+  // Pipedream, and Shopify (Kortix's form, then Shopify's OAuth).
+  const isManagedProvider = signsInWithConnectLink(connector.provider);
   const isChannel = connector.provider === 'channel';
   const isComputer = connector.provider === 'computer';
   const displayName = connectorDisplayName(connector);

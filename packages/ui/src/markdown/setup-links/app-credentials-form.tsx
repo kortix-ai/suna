@@ -1,7 +1,9 @@
 'use client';
 
+import { CopyRow } from '../../access/access/copy-row';
 import { Button } from '../../primitives/button';
 import { Field, FieldGroup, FieldLabel } from '../../primitives/field';
+import { InfoBanner } from '../../primitives/info-banner';
 import { Input } from '../../primitives/input';
 import { InputGroup, InputGroupAddon, InputGroupInput } from '../../primitives/input-group';
 import Loading from '../../primitives/loading';
@@ -22,12 +24,34 @@ import {
 import { useEffect, useState, type ReactNode } from 'react';
 import { setupLinkApiBase } from './api-base';
 import { StatusNotice } from './secret-intake-form';
+import { ShopifyAccessList } from './shopify-access';
 
 type Phase = 'loading' | 'ready' | 'submitting' | 'done' | 'expired' | 'invalid' | 'stale' | 'error';
 
 const DEV_DASHBOARD_URL = 'https://dev.shopify.com/dashboard';
+const SHOP_SUFFIX = '.myshopify.com';
 /** Long enough to read the confirmation before the window closes itself. */
 const CLOSE_AFTER_MS = 1_500;
+
+/** `?error=<code>`: the Shopify callback sent the browser back with a failure. */
+const CALLBACK_ERROR = {
+  invalid_signature: 'errorInvalidSignature',
+  shop_mismatch: 'errorShopMismatch',
+  token_exchange_failed: 'errorTokenExchange',
+  app_missing: 'errorAppMissing',
+  authorization_failed: 'errorAuthorizationFailed',
+  authorization_strategy_changed: 'errorStrategyChanged',
+} as const;
+
+type CallbackErrorKey = (typeof CALLBACK_ERROR)[keyof typeof CALLBACK_ERROR] | 'errorUnknown';
+
+function callbackErrorKey(search: string): CallbackErrorKey | null {
+  const code = new URLSearchParams(search).get('error');
+  if (!code) return null;
+  return Object.hasOwn(CALLBACK_ERROR, code)
+    ? CALLBACK_ERROR[code as keyof typeof CALLBACK_ERROR]
+    : 'errorUnknown';
+}
 
 function statusOf(cause: unknown): number | null {
   return cause instanceof HostBoundaryError ? cause.status : null;
@@ -50,13 +74,20 @@ function DashboardLink({ children }: { children: ReactNode }) {
 }
 
 /**
- * The form behind an own-app connect link (`/connect/app/[token]`): the app's
- * client credentials and the store, for a Composio toolkit that runs on the
- * customer's own app. Shopify is the one such app today.
+ * The form behind an own-app connect link (`/connect/app/[token]`). Two flows:
+ *
+ * - `oauth` (the native Shopify connector): the store, and the Client ID and
+ *   secret of the merchant's own app unless the deployment has a shared app.
+ *   Submit answers Shopify's authorize URL; this window goes there. Shopify's
+ *   callback sends it back here with `?connected=1` or `?error=<code>`.
+ * - `client_credentials` (a Composio toolkit on the customer's own app, the
+ *   default for older servers): the store and the app's credentials connect at
+ *   once.
  *
  * The page opens in the connect popup. The window that opened it polls the
- * connection, so after a success this window only confirms and closes itself
- * (or follows the native app's return link).
+ * connection and closes the popup, so after a success this window only
+ * confirms (a Composio connect also closes itself or follows the native app's
+ * return link).
  */
 export function AppCredentialsForm({ token }: { token: string }) {
   const t = useTranslations('connectAppForm');
@@ -68,6 +99,7 @@ export function AppCredentialsForm({ token }: { token: string }) {
   const [clientSecret, setClientSecret] = useState('');
   const [connectedAs, setConnectedAs] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [callbackError, setCallbackError] = useState<CallbackErrorKey | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -76,6 +108,10 @@ export function AppCredentialsForm({ token }: { token: string }) {
         if (cancelled) return;
         setInfo(body);
         setConnectedAs(body.connected_as);
+        if (body.flow === 'oauth') {
+          setStore((body.shop ?? '').replace(SHOP_SUFFIX, ''));
+          setCallbackError(callbackErrorKey(window.location.search));
+        }
         setPhase(body.connected ? 'done' : 'ready');
       },
       (cause: unknown) => {
@@ -90,20 +126,41 @@ export function AppCredentialsForm({ token }: { token: string }) {
     };
   }, [base, token]);
 
+  // Back from Shopify's consent page restores this page from the back-forward
+  // cache, still `submitting`: give the form back.
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) setPhase((current) => (current === 'submitting' ? 'ready' : current));
+    };
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
+  }, []);
+
+  const oauth = info?.flow === 'oauth';
+  const sharedApp = oauth && info?.shared_app === true;
+
   async function submit() {
-    if (!store.trim() || !clientId.trim() || !clientSecret.trim()) {
-      setMessage(t.raw('missingFields'));
+    if (!store.trim() || (!sharedApp && (!clientId.trim() || !clientSecret.trim()))) {
+      setMessage(t.raw(sharedApp ? 'missingStore' : 'missingFields'));
       return;
     }
     setPhase('submitting');
     setMessage(null);
+    setCallbackError(null);
     try {
       const result = await submitConnectorAppForm(
         token,
-        { store: store.trim(), clientId: clientId.trim(), clientSecret: clientSecret.trim() },
+        sharedApp
+          ? { store: store.trim() }
+          : { store: store.trim(), clientId: clientId.trim(), clientSecret: clientSecret.trim() },
         { backendUrl: base },
       );
-      setConnectedAs(result.connected_as);
+      if (result.authorize_url) {
+        // Shopify's consent page. The phase stays `submitting` while it loads.
+        window.location.assign(result.authorize_url);
+        return;
+      }
+      setConnectedAs(result.connected_as ?? null);
       setPhase('done');
       window.setTimeout(() => {
         if (result.success_redirect_uri) window.location.assign(result.success_redirect_uri);
@@ -162,14 +219,17 @@ export function AppCredentialsForm({ token }: { token: string }) {
       return <StatusNotice icon={WarningCircleIcon} tone="destructive" title={message ?? t.raw('failed')} />;
     case 'done':
       return (
-        <StatusNotice
-          icon={CheckIcon}
-          tone="success"
-          title={t('connectedTitle', { app })}
-          description={
-            connectedAs ? t('connectedDescription', { store: connectedAs }) : t.raw('closeWindow')
-          }
-        />
+        <div className="space-y-5">
+          <StatusNotice
+            icon={CheckIcon}
+            tone="success"
+            title={t('connectedTitle', { app })}
+            description={
+              connectedAs ? t('connectedDescription', { store: connectedAs }) : t.raw('closeWindow')
+            }
+          />
+          {oauth && info?.access ? <ShopifyAccessList access={info.access} /> : null}
+        </div>
       );
   }
 
@@ -177,16 +237,52 @@ export function AppCredentialsForm({ token }: { token: string }) {
 
   return (
     <div className="space-y-5">
-      <div className="space-y-2">
-        <p className="text-foreground text-sm font-medium">{t.raw('stepsTitle')}</p>
-        <ol className="text-muted-foreground list-decimal space-y-1 pl-4 text-xs text-pretty">
-          <li>{t.rich('step1', { link: (chunks) => <DashboardLink>{chunks}</DashboardLink> })}</li>
-          <li>{t.raw('step2')}</li>
-          <li>{t.raw('step3')}</li>
-          <li>{t.raw('step4')}</li>
-        </ol>
-        <p className="text-muted-foreground text-xs text-pretty">{t.raw('sameOrganization')}</p>
-      </div>
+      {callbackError ? (
+        <InfoBanner
+          role="alert"
+          tone="destructive"
+          icon={WarningCircleIcon}
+          title={t('callbackErrorTitle', { app })}
+        >
+          {t.raw(callbackError)}
+        </InfoBanner>
+      ) : null}
+
+      {sharedApp ? (
+        <p className="text-muted-foreground text-xs text-pretty">{t.raw('sharedAppNote')}</p>
+      ) : oauth ? (
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <p className="text-foreground text-sm font-medium">{t.raw('stepsTitle')}</p>
+            <ol className="text-muted-foreground list-decimal space-y-1 pl-4 text-xs text-pretty">
+              <li>{t.rich('step1', { link: (chunks) => <DashboardLink>{chunks}</DashboardLink> })}</li>
+              {/* The Dev Dashboard order: configure and release a version, then distribute it. */}
+              <li>{t.raw('oauthStep3')}</li>
+              <li>{t.raw('oauthStep2')}</li>
+              <li>{t.raw('step3')}</li>
+              <li>{t.raw('step4')}</li>
+            </ol>
+            <p className="text-muted-foreground text-xs text-pretty">{t.raw('protectedDataNote')}</p>
+          </div>
+          {info?.redirect_uri ? (
+            <CopyRow label={t.raw('redirectUrlLabel')} value={info.redirect_uri} />
+          ) : null}
+          {info?.scopes?.length ? (
+            <CopyRow label={t.raw('scopesLabel')} value={info.scopes.join(',')} />
+          ) : null}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-foreground text-sm font-medium">{t.raw('stepsTitle')}</p>
+          <ol className="text-muted-foreground list-decimal space-y-1 pl-4 text-xs text-pretty">
+            <li>{t.rich('step1', { link: (chunks) => <DashboardLink>{chunks}</DashboardLink> })}</li>
+            <li>{t.raw('step2')}</li>
+            <li>{t.raw('step3')}</li>
+            <li>{t.raw('step4')}</li>
+          </ol>
+          <p className="text-muted-foreground text-xs text-pretty">{t.raw('sameOrganization')}</p>
+        </div>
+      )}
 
       <FieldGroup className="gap-5">
         <Field className="space-y-2">
@@ -205,45 +301,52 @@ export function AppCredentialsForm({ token }: { token: string }) {
               value={store}
               disabled={submitting}
               onChange={(e) => setStore(e.target.value)}
+              onKeyDown={(e) => {
+                if (sharedApp && e.key === 'Enter') void submit();
+              }}
             />
-            <InputGroupAddon align="inline-end">.myshopify.com</InputGroupAddon>
+            <InputGroupAddon align="inline-end">{SHOP_SUFFIX}</InputGroupAddon>
           </InputGroup>
         </Field>
-        <Field className="space-y-2">
-          <FieldLabel htmlFor="app-form-client-id" className="text-foreground">
-            {t.raw('clientIdLabel')}
-          </FieldLabel>
-          <Input
-            id="app-form-client-id"
-            name="client_id"
-            autoComplete="off"
-            spellCheck={false}
-            className="font-mono max-sm:text-base"
-            value={clientId}
-            disabled={submitting}
-            onChange={(e) => setClientId(e.target.value)}
-          />
-        </Field>
-        <Field className="space-y-2">
-          <FieldLabel htmlFor="app-form-client-secret" className="text-foreground">
-            {t.raw('clientSecretLabel')}
-          </FieldLabel>
-          <Input
-            id="app-form-client-secret"
-            name="client_secret"
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
-            className="font-mono max-sm:text-base"
-            placeholder="••••••••••••"
-            value={clientSecret}
-            disabled={submitting}
-            onChange={(e) => setClientSecret(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void submit();
-            }}
-          />
-        </Field>
+        {sharedApp ? null : (
+          <>
+            <Field className="space-y-2">
+              <FieldLabel htmlFor="app-form-client-id" className="text-foreground">
+                {t.raw('clientIdLabel')}
+              </FieldLabel>
+              <Input
+                id="app-form-client-id"
+                name="client_id"
+                autoComplete="off"
+                spellCheck={false}
+                className="font-mono max-sm:text-base"
+                value={clientId}
+                disabled={submitting}
+                onChange={(e) => setClientId(e.target.value)}
+              />
+            </Field>
+            <Field className="space-y-2">
+              <FieldLabel htmlFor="app-form-client-secret" className="text-foreground">
+                {t.raw('clientSecretLabel')}
+              </FieldLabel>
+              <Input
+                id="app-form-client-secret"
+                name="client_secret"
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                className="font-mono max-sm:text-base"
+                placeholder="••••••••••••"
+                value={clientSecret}
+                disabled={submitting}
+                onChange={(e) => setClientSecret(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void submit();
+                }}
+              />
+            </Field>
+          </>
+        )}
       </FieldGroup>
 
       <div className="space-y-3">
@@ -252,11 +355,27 @@ export function AppCredentialsForm({ token }: { token: string }) {
             {message}
           </p>
         ) : null}
-        <Button type="button" className="w-full" onClick={submit} disabled={submitting}>
+        <Button
+          type="button"
+          className="w-full"
+          onClick={submit}
+          disabled={submitting}
+          aria-busy={submitting}
+        >
           {submitting ? <Loading className="size-4 shrink-0" /> : null}
-          {submitting ? t.raw('connecting') : t('submit', { app })}
+          {oauth
+            ? submitting
+              ? t('openingApp', { app })
+              : t('continueToApp', { app })
+            : submitting
+              ? t.raw('connecting')
+              : t('submit', { app })}
         </Button>
-        <p className="text-muted-foreground text-center text-xs text-pretty">{t.raw('secretNote')}</p>
+        {sharedApp ? null : (
+          <p className="text-muted-foreground text-center text-xs text-pretty">
+            {t.raw(oauth ? 'oauthSecretNote' : 'secretNote')}
+          </p>
+        )}
       </div>
     </div>
   );

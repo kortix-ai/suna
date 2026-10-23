@@ -158,6 +158,23 @@ describe('runInstall', () => {
     }
   });
 
+  test("the managed catalogue's Shopify app adds the native shopify connector, then reuses it", async () => {
+    const shopify = easyConnectInstallTarget({ slug: 'shopify', name: 'Shopify', provider: 'composio' });
+    const { deps, drafts } = fakeDeps();
+    const result = await runInstall(deps, { projectId: 'p1', target: shopify, connectors: [] });
+    expect(result).toEqual({ status: 'installed', slug: 'shopify-abc123' });
+    expect(drafts).toEqual([
+      { slug: 'shopify-abc123', name: 'Shopify', provider: 'shopify', create_only: true },
+    ]);
+    const again = await runInstall(deps, {
+      projectId: 'p1',
+      target: shopify,
+      connectors: [{ slug: 'shopify-abc123', provider: 'shopify', name: 'Shopify' }],
+    });
+    expect(again).toEqual({ status: 'installed', slug: 'shopify-abc123' });
+    expect(drafts).toHaveLength(1);
+  });
+
   test('an app the project already has reuses its profile, never a second one', async () => {
     const { deps, drafts } = fakeDeps();
     const result = await runInstall(deps, {

@@ -76,7 +76,12 @@ import { EmptyState } from '../../primitives/empty-state';
 import { ComputerConnectModal, ComputerStateDot } from '../../internal/tunnel/computer-connect';
 import { mcpServerIdentity } from '../connectors/add-mcp/add-mcp-server';
 import { connectorDisplayName } from '../connectors/connector-filter';
-import { isManagedConnectorProvider } from '../connectors/provider-label';
+import { signsInWithConnectLink } from '../connectors/provider-label';
+import {
+  ShopifyAccessInline,
+  shopifyAccessNeedsReconnect,
+  shopifyAccessOf,
+} from '../../markdown/setup-links/shopify-access';
 import { AccessDialog } from '../../access/access/access-dialog';
 import {
   type EmailInstallation,
@@ -290,6 +295,10 @@ function ConnectionRow({
   const mayMutate = isProjectAuthorization ? canManage : isMine;
   const visibility = accountVisibility(connection, viewerId);
   const everyoneWithAccess = (connection.shared_with ?? []).map((share) => share.label);
+  // A Shopify account: what its token could read when it connected. A read the
+  // app's settings refuse is fixed in Shopify, then by connecting again.
+  const shopifyAccess = active ? shopifyAccessOf(connection.metadata) : null;
+  const reconnect = !needsSignIn && shopifyAccessNeedsReconnect(shopifyAccess);
 
   const { copy } = useCopy({ successMessage: tI18nComplete.raw('text56ee71f3ece0') });
 
@@ -353,14 +362,17 @@ function ConnectionRow({
           {/* The connection id is not shown: it is a value for a backend, and the
               row menu copies it. */}
         </InlineMeta>
+        {shopifyAccess ? <ShopifyAccessInline access={shopifyAccess} /> : null}
       </div>
       {/* Share and the row menu: one control group, so the pair reads as one
           set of actions for this account. */}
       {/* An account that never finished signing in (an abandoned OAuth flow)
           gets its next step on the row, not behind the menu. */}
-      {onConnect && mayMutate && needsSignIn ? (
+      {onConnect && mayMutate && (needsSignIn || reconnect) ? (
         <Button size="sm" className="shrink-0" onClick={onConnect} disabled={pending || disabled}>
-          {tConnectorPages('connectAccount')}
+          {reconnect
+            ? tI18nComplete.raw('textbf8a9eab9e7e')
+            : tConnectorPages('connectAccount')}
         </Button>
       ) : null}
       <ButtonGroup className="shrink-0">
@@ -519,7 +531,7 @@ export function ConnectionsList({
   // A computer account is a paired machine: "Add" pairs one (desktop one-click,
   // or download + npx) instead of asking for a credential.
   const isComputer = connector.provider === 'computer';
-  const isDirectProvider = !isManagedConnectorProvider(connector.provider) && !isComputer;
+  const isDirectProvider = !signsInWithConnectLink(connector.provider) && !isComputer;
   const [computerOpen, setComputerOpen] = useState(false);
   const user = useUiViewer();
   const viewerId = user?.id ?? null;
