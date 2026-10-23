@@ -86,7 +86,7 @@ export function registerProjectFilesRoutes(): void {
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: z.object({
+        body: { required: true, content: { 'application/json': { schema: z.object({
           path: z.string().min(1), ref: z.string().regex(/^[A-Za-z0-9._\-/]+$/).refine((ref) => !ref.startsWith('-') && !ref.includes('..')),
           content: z.string().max(2_000_000),
           expected_revision: z.string().regex(/^[0-9a-f]{40}$/),
