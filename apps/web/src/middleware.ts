@@ -6,6 +6,7 @@ import {
   ENVIRONMENT_ACCESS_COOKIE,
 } from '@/lib/environment-protection';
 import { legalShortPathRedirectUrl, legalTermsRedirectUrl } from '@/lib/legal-terms-redirect';
+import { lowercasePublicPath } from '@/lib/path-case-redirect';
 import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import {
@@ -424,6 +425,14 @@ export async function middleware(request: NextRequest) {
   const legalDestination = legalShortPathRedirectUrl(pathname, request.nextUrl.searchParams, request.nextUrl);
   if (legalDestination) {
     return finalizeEnvironmentAccess(NextResponse.redirect(legalDestination, 308));
+  }
+  // /Pricing, /DOCS, /DE/Pricing: a public page in another letter case was a
+  // 200 "Page not found" page (KRTX-3312).
+  const lowercasePath = lowercasePublicPath(pathname, [...MARKETING_ROUTES, '/docs'], locales);
+  if (lowercasePath) {
+    const destination = request.nextUrl.clone();
+    destination.pathname = lowercasePath;
+    return finalizeEnvironmentAccess(NextResponse.redirect(destination, 308));
   }
 
   // Normalize app paths before maintenance, desktop and authentication gates.

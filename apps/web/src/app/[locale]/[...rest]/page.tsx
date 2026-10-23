@@ -15,7 +15,12 @@ export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('hardcodedUi');
   // A plain string, so the root layout's `title.template` composes the full
   // document title exactly as it does for every other page.
-  return { title: t.raw('autoAppNotFoundJsxText404PageNotFoundf7ea8161') };
+  // `robots` replaces the root layout's `index, follow`: this route renders its
+  // own metadata before notFound() adds its `noindex` tag (KRTX-3253).
+  return {
+    title: t.raw('autoAppNotFoundJsxText404PageNotFoundf7ea8161'),
+    robots: { index: false, follow: true },
+  };
 }
 
 // The root layout lives in app/[locale], so an unmatched path under a locale
