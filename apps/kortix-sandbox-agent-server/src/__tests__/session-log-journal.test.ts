@@ -12,7 +12,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fromV1, toV1 } from '@kortix/api-contract/session-log'
+import { fromV1, SessionLogJournalRequestSchema, toV1 } from '@kortix/api-contract/session-log'
 import type {
   AdapterCapabilities,
   ExportCursor,
@@ -26,11 +26,13 @@ import { __resetRelayedTurnSignatures, relayTurnEndToApi } from '@/harness/open-
 import type { OpenCodeConfig } from '@/harness/open-code/config'
 import {
   JOURNAL_MAX_BATCH_BYTES,
+  JOURNAL_TRUNCATION_MARK,
   JOURNAL_UNACKED_RETRIES,
   SessionLogJournal,
   resetSessionLogJournalForTests,
   startSessionLogJournal,
 } from '@/harness/shared/session-log-journal'
+import { reconcileSessionLog } from '@/harness/shared/session-log-boot'
 import { relayTurnEnd } from '@/harness/shared/turn-relay'
 import { kortixEventBus, resetKortixEventBusForTests, sessionLogEventBus } from '@/services/event-bus/kortix-event-bus'
 import { resetDaemonShutdownStateForTests } from '@/lib/shutdown-state'
@@ -1036,5 +1038,165 @@ describe('attachment bytes (P2.13)', () => {
       rmSync(process.env.KORTIX_SESSION_LOG_DUMP_DIR, { recursive: true, force: true })
       delete process.env.KORTIX_SESSION_LOG_DUMP_DIR
     }
+  })
+})
+
+// ── No batch is dropped (422, 413, 400) ─────────────────────────────────────
+
+/**
+ * The API's write rules in miniature, for thread `thr_root`: rows by message id with their seq,
+ * the whole batch rolled back on a seq another message holds (422 `seq_conflict` with the
+ * thread's `seq_max`), the route's 413 caps, and the route's 400 on a body the schema rejects.
+ */
+function storeApi(held: Array<[id: string, seq: number]> = [], caps = { gzip: 2 * 1024 * 1024, raw: 16 * 1024 * 1024 }) {
+  const rows = new Map<string, { seq: number; text: string }>(held.map(([id, seq]) => [id, { seq, text: `stored ${id}` }]))
+  const statuses: number[] = []
+  const answer = (status: number, body: unknown) => {
+    statuses.push(status)
+    return Response.json(body, { status })
+  }
+  const api = fakeApi((body, n) => {
+    const raw = Buffer.byteLength(JSON.stringify(body))
+    if (api.received[n - 1]!.gzippedBytes > caps.gzip || raw > caps.raw) return answer(413, { error: 'Journal body exceeds the cap' })
+    const parsed = SessionLogJournalRequestSchema.safeParse(body)
+    if (!parsed.success) return answer(400, { error: 'Invalid journal body', issues: parsed.error.issues.slice(0, 5) })
+    const next = new Map(rows)
+    for (const p of body.puts) {
+      const m = p.message
+      for (const [id, row] of next) {
+        if (row.seq !== m.seq || id === m.message_id) continue
+        const seq_max = Math.max(...[...rows.values()].map((r) => r.seq))
+        return answer(422, { error: 'seq_conflict', message_id: m.message_id, rev: p.rev, thread_id: m.thread_id, seq: m.seq, seq_max })
+      }
+      next.set(m.message_id, { seq: m.seq, text: m.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('') })
+    }
+    rows.clear()
+    for (const [id, row] of next) rows.set(id, row)
+    statuses.push(200)
+    return ack(body)
+  })
+  /** The stored ids in seq order: what `GET …/log` serves. */
+  const order = () => [...rows].sort((a, b) => a[1].seq - b[1].seq).map(([id]) => id)
+  return { ...api, rows, statuses, order }
+}
+
+describe('no batch is dropped', () => {
+  let stateDir = ''
+  beforeEach(() => {
+    stateDir = join(tmpdir(), `journal-state-${randomBytes(4).toString('hex')}`)
+    process.env.KORTIX_RUNTIME_STATE_DIR = stateDir
+  })
+  afterEach(() => {
+    rmSync(stateDir, { recursive: true, force: true })
+    delete process.env.KORTIX_RUNTIME_STATE_DIR
+    delete process.env.KORTIX_SESSION_LOG_RESTORE
+  })
+
+  test('422: a box that lost its store reuses seqs the log holds; its messages move above the log, in order, and none is dropped', async () => {
+    // The log holds turns 1-2 at seqs 1, 2, 4, 5 (3 is a gap). The new store numbers from 1 again.
+    const api = storeApi([['old1', 1], ['old2', 2], ['old4', 4], ['old5', 5]])
+    const fake = fakeAdapter()
+    fake.put('new3', 3, 'turn 3 question')
+    const journal = new SessionLogJournal(fake.port, { generation: 0, retryMs: 10 })
+    // seq 3 is free: the API takes it, inside the old history.
+    expect(await journal.flush()).toBe(true)
+    fake.put('new4', 4, 'turn 3 answer')
+
+    expect(await journal.flush(5_000)).toBe(true)
+
+    expect(api.statuses).toContain(422)
+    expect(api.order()).toEqual(['old1', 'old2', 'old4', 'old5', 'new3', 'new4'])
+    expect(api.rows.get('new4')!.seq - api.rows.get('new3')!.seq).toBe(1)
+    expect(journal.clean).toBe(true)
+  })
+
+  test('422: the live turn after a re-sequence streams at the moved seqs; a restarted daemon keeps them (restore off) and posts no 422', async () => {
+    resetKortixEventBusForTests()
+    const api = storeApi([['old1', 1], ['old2', 2]])
+    const fake = fakeAdapter()
+    fake.put('new1', 1, 'turn 3 question')
+    const journal = new SessionLogJournal(fake.port, { generation: 0, retryMs: 10 })
+    expect(await journal.flush(5_000)).toBe(true)
+    const moved = api.rows.get('new1')!.seq
+    expect(moved).toBeGreaterThan(2)
+
+    const frames: Array<{ type: string; payload: any }> = []
+    sessionLogEventBus().subscribe((e) => void frames.push(e), {})
+    fake.liveSeq('new2', 2)
+    kortixEventBus().publish('message.updated', { sessionID: 'thr_root', info: { id: 'new2', sessionID: 'thr_root', role: 'assistant', parentID: 'new1', time: { created: 3_000 }, modelID: 'fake-1', providerID: 'fake' } }, 'thr_root')
+    expect(frames.map((f) => f.payload.message?.seq)).toEqual([moved + 1])
+    await journal.stop(0)
+
+    // The daemon restarts on the same store, restore off: the boot hands the journal the offsets.
+    const boot = await reconcileSessionLog(fake.port)
+    const before = api.statuses.length
+    const restarted = new SessionLogJournal(fake.port, boot!)
+    fake.put('new2', 2, 'turn 3 answer')
+    expect(await restarted.flush(5_000)).toBe(true)
+    expect(api.statuses.slice(before)).toEqual([200])
+    expect(api.order()).toEqual(['old1', 'old2', 'new1', 'new2'])
+  })
+
+  test('413: one message over the API cap is saved with its longest text cut to a preview and a marker; the rest of the dirty set lands', async () => {
+    const api = storeApi()
+    const fake = fakeAdapter()
+    fake.put('small', 1, 'before')
+    // ~4 MB of base64, ~3 MB gzipped: over the route's 2 MB gzipped cap on its own.
+    fake.put('huge', 2, randomBytes(3 * 1024 * 1024).toString('base64'))
+    fake.put('after', 3, 'after')
+    const journal = new SessionLogJournal(fake.port, { generation: 0, retryMs: 10 })
+
+    expect(await journal.flush(15_000)).toBe(true)
+
+    expect(api.order()).toEqual(['small', 'huge', 'after'])
+    const text = api.rows.get('huge')!.text
+    expect(text.length).toBeLessThan(64 * 1024)
+    expect(text).toContain(JOURNAL_TRUNCATION_MARK)
+    expect(api.statuses).not.toContain(413)
+  })
+
+  test('413: a dirty set over 16 MB raw that gzips small goes in batches the route takes', async () => {
+    const api = storeApi()
+    const fake = fakeAdapter()
+    const ids = Array.from({ length: 20 }, (_, i) => `m${String(i).padStart(2, '0')}`)
+    ids.forEach((id, i) => fake.put(id, i + 1, 'a'.repeat(1024 * 1024)))
+    const journal = new SessionLogJournal(fake.port, { generation: 0, retryMs: 10 })
+
+    expect(await journal.flush(15_000)).toBe(true)
+
+    expect(api.order()).toEqual(ids)
+    expect(api.statuses).not.toContain(413)
+    expect([...api.rows.values()].every((r) => r.text.length === 1024 * 1024)).toBe(true)
+  })
+
+  test('413 from a smaller cap than the route\'s: the journal halves its batches until they land', async () => {
+    const api = storeApi([], { gzip: 100 * 1024, raw: 16 * 1024 * 1024 })
+    const fake = fakeAdapter()
+    const ids = ['m1', 'm2', 'm3']
+    ids.forEach((id, i) => fake.put(id, i + 1, randomBytes(45_000).toString('base64')))
+    const journal = new SessionLogJournal(fake.port, { generation: 0, retryMs: 10 })
+
+    expect(await journal.flush(10_000)).toBe(true)
+
+    expect(api.statuses).toContain(413)
+    expect(api.order()).toEqual(ids)
+  })
+
+  test('400: the batch minus the invalid put is saved, and the invalid put is not posted again', async () => {
+    const api = storeApi()
+    const fake = fakeAdapter()
+    fake.put('m1', 1, 'one')
+    fake.put('bad', 1.5, 'a seq the schema rejects')
+    fake.put('m2', 2, 'two')
+    const journal = new SessionLogJournal(fake.port, { generation: 0, retryMs: 10 })
+
+    expect(await journal.flush()).toBe(true)
+
+    expect(api.statuses[0]).toBe(400)
+    expect(api.order()).toEqual(['m1', 'm2'])
+    expect(journal.clean).toBe(true)
+    const posts = api.received.length
+    expect(await journal.flush()).toBe(true)
+    expect(api.received).toHaveLength(posts)
   })
 })

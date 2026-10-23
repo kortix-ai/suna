@@ -284,9 +284,16 @@ root. No turn runs at either point.
   session), or a live id is neither held nor one the last restore left
   unwritten (a `context` record both harnesses rebuild).
 - **Flag off after state loss (as before P6.4).** A box whose native store is
-  gone starts empty: the agent does not know the history, and its first turn's
-  journal batch reuses seqs the log holds (422 `seq_conflict`, the batch is
-  dropped). The stored transcript still shows the whole history.
+  gone starts empty: the agent does not know the history. Its first turn's
+  journal batch reuses seqs the log holds and gets 422 `seq_conflict` with the
+  thread's `seq_max`. The journal then numbers that thread above `seq_max`
+  (native seq + `seq_max + 1`, on the dirty set and on the live stream) and
+  sends the batch again, so the session log keeps the old history and the new
+  turns after it. The offsets persist in `session-log-restore.json` for a
+  restarted daemon; a restore writes the store at the log's seqs and clears
+  them. Prod runs with the flag off unless a project sets
+  `session_log_restore` (`SESSION_LOG_RESTORE_DEFAULT_ENABLED` is on only on
+  dev).
 - **Unsent work never reads as behind.** Only ids are compared, one way: a
   message the store holds that the log lacks (a turn not yet journaled), a
   newer version of a stored message, and a message OpenCode deleted after the
@@ -643,9 +650,12 @@ tool output, which would land in the project tree.
 The journal (`shared/session-log-journal.ts`) drops a message whose native hash
 equals its cursor's (schema rule C13), so an unchanged or restored message is
 never sent again, and a thread equal to the last one it collected. It posts the
-rest in order, in gzipped batches of at most 1 MB, each message with a `rev`
-that is monotonic across boots (`max(Date.now() * 1000, last + 1)`), and keeps
-them dirty until apps/api acknowledges `(message_id, rev)`.
+rest in order, in gzipped batches of at most 1 MB and 8 MB raw, each message
+with a `rev` that is monotonic across boots (`max(Date.now() * 1000, last +
+1)`), and keeps them dirty until apps/api acknowledges `(message_id, rev)`. One
+message over the route's cap (2 MB gzipped, 16 MB raw) goes alone, with its
+longest strings cut to their first 16 kB and `JOURNAL_TRUNCATION_MARK`,
+longest first, until it fits; the native store keeps the whole message.
 
 Both harnesses flush it before a turn's end is relayed: pi and the OpenCode
 orphan path through `relayTurnEnd`, OpenCode's normal turn end through
@@ -663,10 +673,24 @@ and the P6 boot reconcile carry the log.
 Network errors, 401, 408, 429 and 5xx (503: the operator switch is off) back
 off like the audit relay; a dead session token (the KRTX-446 breaker) sends
 nothing. 404 (an older API) and 409 (a newer generation owns the session) turn
-it off for the boot and stop the drain at once. Another 4xx drops the batch. A
-200 that does not acknowledge a batch is retried 3 times, then its pairs are
-dropped: the native store still holds them. A second `startSessionLogJournal`
-stops the first journal.
+it off for the boot and stop the drain at once. No refused batch is dropped:
+
+- 422 `seq_conflict`: the thread moves above the log's `seq_max` (see "Flag
+  off after state loss"); every message of the thread is collected again at
+  its new seq, and the batch goes again at once.
+- 413: the batch limit halves for the boot, down to 64 kB, and the dirty set is
+  packed again; at 64 kB the journal backs off.
+- 400: the puts, tombstones and threads the zod `issues` name, and the session
+  patch, are logged (`journal refused a record`, with the issue path) and
+  dropped; the rest goes again at once. A 400 that names nothing (a body that is
+  not gzip or JSON) drops the batch.
+- Any other 4xx backs off and keeps the dirty set.
+
+apps/api logs one WARN `[session-log] journal rejected` (status, code, project
+and session id) for each 400, 409, 413 and 422, because this log stays in the
+box. A 200 that does not acknowledge a batch is retried 3 times, then its pairs
+are dropped: the native store still holds them. A second
+`startSessionLogJournal` stops the first journal.
 
 ## Health and capabilities (E19, E1)
 
