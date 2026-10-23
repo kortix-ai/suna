@@ -140,8 +140,11 @@ describe('memory search', () => {
     );
   });
 
-  test('is disabled below 2 characters after trimming, without a project, or when the caller disables it', () => {
+  test('is disabled outside 2–200 characters after trimming, without a project, or when the caller disables it', () => {
     expect((useProjectMemorySearch('P1', { q: '' }) as any).enabled).toBe(false);
+    // The route answers 400 above 200; an enabled query would re-fire that 400 on the error self-heal interval.
+    expect((useProjectMemorySearch('P1', { q: 'x'.repeat(201) }) as any).enabled).toBe(false);
+    expect((useProjectMemorySearch('P1', { q: ` ${'x'.repeat(200)} ` }) as any).enabled).toBe(true);
     expect((useProjectMemorySearch('P1', { q: ' P ' }) as any).enabled).toBe(false);
     expect((useProjectMemorySearch('P1', { q: 'Pr' }) as any).enabled).toBe(true);
     expect((useProjectMemorySearch(null, { q: 'Priya' }) as any).enabled).toBe(false);

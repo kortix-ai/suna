@@ -535,11 +535,12 @@ const used = await m.usage(sessionId); // a thread's "Used memory": { loaded_at,
   `useDeleteProjectMemoryPage(pid)`, `useRestoreProjectMemoryPage(pid)`,
   `useUndoProjectMemoryVersion(pid)`. Each write refreshes every memory read of
   the project (`qk.project.memory(pid)`) and the channel tab counts.
-  `useProjectMemorySearch(pid, { q, layer?, type?, limit? })` runs once `q` has
-  2 characters after trimming and keeps the previous hits while the next query
-  loads; debounce the input in the host. A write refreshes its hits.
+  `useProjectMemorySearch(pid, { q, layer?, type?, limit? })` runs while `q`
+  has 2–200 characters after trimming and keeps the previous hits while the
+  next query loads (also when `q` drops below 2: render hits only for a valid
+  `q`); debounce the input in the host. A write refreshes its hits.
   `useSessionMemoryUsage(pid, sessionId)` reads "Used memory"; once `loaded_at`
-  is set it never refetches, and no write invalidates it.
+  is set it never goes stale, and no memory write invalidates it.
 
 ### Apps
 

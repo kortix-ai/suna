@@ -91,16 +91,18 @@ export function useProjectMemoryHistory(projectId: Id, pageId: Id, options?: Rea
 }
 
 /**
- * Search the pages the caller can read. Disabled until `q` has 2 characters
- * after trimming; the previous hits stay while the next query loads. Debounce
- * the input in the host: every distinct `q` is one request.
+ * Search the pages the caller can read. Enabled only while `q` has 2–200
+ * characters after trimming (the route answers 400 outside that range); the
+ * previous hits stay while the next query loads, also when `q` drops below 2,
+ * so render hits only for a valid `q`. Debounce the input in the host: every
+ * distinct `q` is one request.
  */
 export function useProjectMemorySearch(projectId: Id, input: ProjectMemorySearchInput, options?: ReadOptions) {
   const query = { ...input, q: input.q.trim() };
   return useQuery({
     queryKey: qk.project.memorySearch(projectId ?? '', query),
     queryFn: () => searchProjectMemory(projectId as string, query),
-    enabled: on(options, projectId) && query.q.length >= 2,
+    enabled: on(options, projectId) && query.q.length >= 2 && query.q.length <= 200,
     placeholderData: keepPreviousData,
     ...contract('inventory'),
   });
@@ -109,7 +111,7 @@ export function useProjectMemorySearch(projectId: Id, input: ProjectMemorySearch
 /**
  * A thread's "Used memory": the pages its agent was given at the first turn.
  * Fixed once `loaded_at` is set, so it never refetches after that; while
- * `loaded_at` is null (no turn yet) the next mount or focus reads it again.
+ * `loaded_at` is null (no turn yet) the next mount reads it again.
  */
 export function useSessionMemoryUsage(projectId: Id, sessionId: Id, options?: ReadOptions) {
   return useQuery({
