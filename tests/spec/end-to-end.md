@@ -48,6 +48,7 @@ Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema)
 `SYS-6` `GET /v1/system/maintenance` → public read of the maintenance config (banner + maintenance page); default `{level:"none",…}`. Write is admin-only (`ADM-6`).
 `SYS-7` `POST /v1/system/demo-request` → public lead capture for the marketing "book a demo" form; invalid email → 400; valid → 200 `{ok:true, emailed}` (emails `DEMO_LEAD_NOTIFY_EMAIL` via the transactional-email provider chain (SES → Resend → Mailtrap); `emailed:false` when no provider is configured — graceful skip). IP rate-limited (`KORTIX_DEMO_REQUEST_REQS_PER_MIN`, 429 on flood).
 `SYS-10` `GET /v1/clients/mobile` → public (no auth) mobile release policy `{minimum_version, store_url_ios, store_url_android}`: each field is a string or `null`; `null` means the operator did not set `MOBILE_MIN_VERSION` / `MOBILE_STORE_URL_IOS` / `MOBILE_STORE_URL_ANDROID`, and a null `minimum_version` means no gate.
+`SYS-11` Public discovery files on the API origin, no auth: `GET /.well-known/security.txt` → 200 `text/plain` with `Contact: mailto:security@kortix.com` and an `Expires` in the future (RFC 9116); `GET /robots.txt` → 200 `User-agent: *` / `Disallow: /`; `GET /sitemap.xml` → 200 `application/xml` with an empty `urlset`.
 `DOCS-1` `GET /v1/openapi.json` → public OpenAPI 3.1 spec (typed via `@hono/zod-openapi`). `GET /v1/docs` → public Scalar API reference (HTML).
 
 ### Kortix system skills (`/v1/skills`, `combinedAuth`)
