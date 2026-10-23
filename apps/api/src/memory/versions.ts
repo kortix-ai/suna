@@ -102,7 +102,7 @@ export async function pageHistory(
   return { versions: page.map(({ version, undoable }) => versionOf(version, refs, undoable && !blocked.has(version.changeId))), next };
 }
 
-/** Recent changes of a layer, newest first. */
+/** Recent changes of a layer, newest first. An agent's token: changes of confirmed, live pages only. */
 export async function layerChanges(
   layer: LayerRef,
   viewer: Viewer,
@@ -114,9 +114,15 @@ export async function layerChanges(
         SELECT created_at, version_id FROM kortix.memory_page_versions
          WHERE version_id = ${opts.before}::uuid AND layer_id = ${layer.layerId}::uuid)`
     : undefined;
+  // An agent's token sees no change of an unconfirmed or trashed page, nor an unconfirmed version: titles from outside content reach no agent unconfirmed.
+  const agentVisible = viewer.sessionId
+    ? sql`${memoryPageVersions.status} = 'confirmed' AND EXISTS (
+        SELECT 1 FROM kortix.memory_pages p
+         WHERE p.page_id = ${sql.raw('"memory_page_versions"."page_id"')} AND p.status = 'confirmed' AND p.deleted_at IS NULL)`
+    : undefined;
   const { page, refs, next } = await versionPage(
     viewer,
-    and(eq(memoryPageVersions.layerId, layer.layerId), cursor),
+    and(eq(memoryPageVersions.layerId, layer.layerId), cursor, agentVisible),
     [desc(memoryPageVersions.createdAt), desc(memoryPageVersions.versionId)],
     opts.limit,
   );
