@@ -3,6 +3,8 @@
 import type { CSSProperties } from 'react';
 
 import { cn } from '../lib/utils';
+import { Hint } from '../../primitives/hint';
+import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
 import { PIXEL_MARK_SIZE, pixelMark } from '../lib/pixel-mark';
 
 /** Mark size → tile size. The mark is a multiple of 7, so each pixel lands on
@@ -48,15 +50,19 @@ export function AgentMark({
   slug,
   size = 14,
   tile = TILE[size],
+  label,
   className,
 }: {
   slug: string;
   size?: AgentMarkSize;
   /** Tile edge in px, when the tile must match a neighbour's height. */
   tile?: number;
+  /** The hover hint. Defaults to the agent's display name. */
+  label?: string;
   className?: string;
 }) {
-  return (
+  // A mark is a face, not a name: the hover hint says whose face it is.
+  const mark = (
     <span
       aria-hidden
       style={{ ...agentMarkVars(slug), width: tile, height: tile }}
@@ -69,4 +75,13 @@ export function AgentMark({
       <AgentMarkGlyph slug={slug} size={size} />
     </span>
   );
+  return (
+    <Hint side="top" sideOffset={6} alignOffset={0} label={label ?? agentLabel(slug)}>
+      {mark}
+    </Hint>
+  );
+}
+
+function agentLabel(slug: string): string {
+  return isMetaAgentName(slug) ? META_AGENT_DISPLAY_NAME : capitalizeWords(slug);
 }

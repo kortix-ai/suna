@@ -1561,11 +1561,11 @@ function FixedPrincipals({ principals }: { principals: AccessDialogPrincipal[] }
         >
           {principal.avatar ??
             (principal.type === 'group' ? (
-              <EntityAvatar label={principal.label} size="sm" />
+              <EntityAvatar label={principal.label} hint={principal.label} size="sm" />
             ) : principal.type === 'agent' ? (
               <AgentMark slug={principal.label} />
             ) : (
-              <UserAvatar email={principal.label} size="sm" />
+              <UserAvatar email={principal.label} hint={principal.label} size="sm" />
             ))}
           <span className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
             {principal.label}

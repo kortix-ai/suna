@@ -38,7 +38,7 @@ export function MessageAuthorLabel({ author }: { author: SessionMessageAuthor })
       className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium"
       data-testid="message-author"
     >
-      <UserAvatar email={author.email ?? ''} name={author.name} size="xs" />
+      <UserAvatar email={author.email ?? ''} name={author.name} hint={author.name} size="xs" />
       {author.name}
     </span>
   );
