@@ -1863,7 +1863,9 @@
             "lsp",
             "invalid",
             "execute",
-            "plan_exit"
+            "plan_exit",
+            "remember",
+            "memory_search"
           ]
         }
       },

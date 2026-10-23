@@ -14,6 +14,7 @@ import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-d
 import { logger } from '@/lib/log/logger'
 import imageSearch from './kortix/image_search'
 import memory from './kortix/memory'
+import remember from './platform/remember'
 import scrapeWebpage from './kortix/scrape_webpage'
 import show from './kortix/show'
 import webSearch from './kortix/web_search'
@@ -35,9 +36,18 @@ export const KORTIX_TOOLS: Readonly<Record<string, KortixTool>> = {
   show,
 }
 
+/**
+ * The platform tools: Kortix's own, loaded in every channel or DM thread
+ * (`KORTIX_SPACE_ID`, set only with `project_channels` on), whatever
+ * `kortix_tools` lists. kortix.yaml cannot list, eject or replace them
+ * (`@kortix/manifest-schema` reserves the names); an agent's tool access can
+ * remove one by name (`toolAllowed`).
+ */
+export const PLATFORM_TOOLS: Readonly<Record<string, KortixTool>> = { remember }
+
 export interface HostedTool extends KortixTool {
   name: string
-  /** `kortix` for a Kortix tool, else the project module's repo-relative path. */
+  /** `kortix` for a Kortix tool, `platform` for a platform tool, else the project module's repo-relative path. */
   source: string
 }
 
@@ -57,11 +67,13 @@ let loaded = new Map<string, HostedTool>()
  * to `root`, the checkout the runtime reads its config from); one with a
  * Kortix tool's name replaces it. A module is imported again when its file
  * changed since the last load. A module that fails to load is reported and
- * skipped; the rest still load.
+ * skipped; the rest still load. Last, the platform tools, in a channel or DM
+ * thread only.
  */
 export async function loadTools(
   root: string | null,
   compiled: Pick<CompiledAgentSet, 'project_tools' | 'kortix_tools'> | null | undefined,
+  env: Record<string, string | undefined> = sessionEnv(),
 ): Promise<ToolLoad> {
   const kortix = Object.entries(KORTIX_TOOLS).filter(([name]) => !compiled?.kortix_tools || compiled.kortix_tools.includes(name))
   const tools = new Map<string, HostedTool>(kortix.map(([name, tool]) => [name, { ...tool, name, source: 'kortix' }]))
@@ -75,6 +87,7 @@ export async function loadTools(
   // release, whose agent may call none of these tools): not a load failure.
   if (failed.length > 0 && !root) logger.info('[tools] no project tree is served; project tools are not loaded', { tools: failed.map(({ name }) => name) })
   else if (failed.length > 0) logger.warn('[tools] project tools that did not load', { failed })
+  if (env.KORTIX_SPACE_ID?.trim()) for (const [name, tool] of Object.entries(PLATFORM_TOOLS)) tools.set(name, { ...tool, name, source: 'platform' })
   loaded = tools
   return { tools: [...tools.values()], failed }
 }

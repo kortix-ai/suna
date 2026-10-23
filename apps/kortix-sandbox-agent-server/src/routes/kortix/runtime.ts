@@ -9,6 +9,8 @@ import { etagMatches, notModified, timedJson } from './kortix-http'
 import type { HarnessQueryService } from '@/harness/contract/queries'
 import type { HarnessReadiness } from '@/harness/contract/proxy'
 import type { HarnessTurnService, RuntimePromptInput } from '@/harness/contract/turns'
+import { MEMORY_COPY_DIRS, syncMemoryCopy, type MemoryLayerRef } from '@/services/tools/memory-copy'
+import { sessionEnv } from '@/services/tools/host'
 
 /** Existing transcript page-size contract. */
 export const DEFAULT_MESSAGE_PAGE = 20
@@ -56,9 +58,25 @@ function authorize(cfg: Config, c: Context): AuthOutcome {
 
 const optionalString = (value: unknown): value is string | undefined => value === undefined || typeof value === 'string'
 
+/** `memory_layers`: `[{ layer_id, version, dir }]`, the version a number or its text. */
+function parseMemoryLayers(value: unknown): MemoryLayerRef[] | string {
+  const error = 'memory_layers must be [{ layer_id, version, dir: company | channel | personal }]'
+  if (!Array.isArray(value)) return error
+  const layers: MemoryLayerRef[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return error
+    const { layer_id, version, dir } = entry as Record<string, unknown>
+    if (typeof layer_id !== 'string' || !layer_id.trim()) return error
+    if (!(typeof version === 'number' && Number.isInteger(version)) && !(typeof version === 'string' && /^\d+$/.test(version))) return error
+    if (!(MEMORY_COPY_DIRS as readonly unknown[]).includes(dir)) return error
+    layers.push({ layer_id: layer_id.trim(), version: String(version), dir: dir as MemoryLayerRef['dir'] })
+  }
+  return layers
+}
+
 /**
  * Validate a `POST /sessions/:id/prompt` body:
- * `{ message_id?, parts, agent?, model?: "provider/model", variant?, directory?, no_reply? }`.
+ * `{ message_id?, parts, agent?, model?: "provider/model", variant?, directory?, no_reply?, memory_layers? }`.
  */
 export function parseRuntimePromptBody(raw: unknown): RuntimePromptInput | string {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return 'body must be a JSON object'
@@ -69,6 +87,8 @@ export function parseRuntimePromptBody(raw: unknown): RuntimePromptInput | strin
     if (!optionalString(body[key])) return `${key} must be a string`
   }
   if (body.no_reply !== undefined && typeof body.no_reply !== 'boolean') return 'no_reply must be a boolean'
+  const memoryLayers = body.memory_layers === undefined ? undefined : parseMemoryLayers(body.memory_layers)
+  if (typeof memoryLayers === 'string') return memoryLayers
   let model: RuntimePromptInput['model']
   if (typeof body.model === 'string') {
     const slash = body.model.indexOf('/')
@@ -84,6 +104,7 @@ export function parseRuntimePromptBody(raw: unknown): RuntimePromptInput | strin
     ...(text('variant') ? { variant: text('variant') } : {}),
     ...(text('directory') ? { directory: text('directory') } : {}),
     ...(body.no_reply === true ? { noReply: true } : {}),
+    ...(memoryLayers?.length ? { memoryLayers } : {}),
   }
 }
 
@@ -101,6 +122,8 @@ export function createRuntimeRouter(
     turns?: HarnessTurnService
     /** The runtime gate the compatibility proxy runs before every request. */
     readiness?: () => Promise<HarnessReadiness>
+    /** Default `syncMemoryCopy`. */
+    syncMemory?: typeof syncMemoryCopy
   } = {},
 ): Hono {
   const app = new Hono()
@@ -134,7 +157,11 @@ export function createRuntimeRouter(
       const raw = await c.req.json().catch(() => undefined)
       const input = parseRuntimePromptBody(raw)
       if (typeof input === 'string') return c.json({ error: input }, 400)
-      return answer(c, () => turns.prompt(c.req.param('sessionId'), input))
+      return answer(c, async () => {
+        // The turn reads the memory copy at these versions; a layer that cannot sync in 3 s keeps its old copy.
+        if (input.memoryLayers && !input.noReply) await (options.syncMemory ?? syncMemoryCopy)(input.memoryLayers, sessionEnv())
+        return turns.prompt(c.req.param('sessionId'), input)
+      })
     })
 
     // The `/prompt` body; the running turn reads it at its next step boundary.

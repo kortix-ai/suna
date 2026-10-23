@@ -218,6 +218,7 @@ export {
   SLUG_RE,
   HARNESS_TOOL_NAMES,
   KORTIX_TOOL_NAMES,
+  PLATFORM_TOOL_NAMES,
   KORTIX_TOOL_PREFIX,
   kortixToolRef,
   selectedKortixTools,

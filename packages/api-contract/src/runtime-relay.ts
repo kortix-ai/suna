@@ -397,10 +397,19 @@ export interface CompiledAgentSet {
   extensions?: Record<string, CompiledExtension>;
 }
 
-/** May an agent with this compiled `tools` map use `tool`? Its own entry, else `*`, else yes. */
+/**
+ * The platform tools kortixd hosts in every channel or DM thread
+ * (`project_channels`). An allowlist (`*: false`) keeps them: only an entry
+ * that names one removes it. Same list as `PLATFORM_TOOL_NAMES` in
+ * `@kortix/manifest-schema`, which reserves the names.
+ */
+export const PLATFORM_TOOL_NAMES: readonly string[] = ['remember', 'memory_search'];
+
+/** May an agent with this compiled `tools` map use `tool`? Its own entry, else yes for a platform tool, else `*`, else yes. */
 export function toolAllowed(tools: Record<string, boolean> | undefined, tool: string): boolean {
   if (!tools) return true;
   if (Object.hasOwn(tools, tool)) return tools[tool] !== false;
+  if (PLATFORM_TOOL_NAMES.includes(tool)) return true;
   return !Object.hasOwn(tools, '*') || tools['*'] !== false;
 }
 

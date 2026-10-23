@@ -398,9 +398,17 @@ export const PI_PACKAGE_NAME_RE = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-
 /** A tool name: what the model calls. Snake case, as every model API accepts. */
 export const TOOL_NAME_RE = /^[a-z][a-z0-9_]{0,63}$/;
 /**
+ * The platform tools kortixd hosts in every channel or DM thread
+ * (`project_channels`), whatever the project's `tools` lists. Keep in sync
+ * with `PLATFORM_TOOL_NAMES` in `@kortix/api-contract/runtime-relay`, which
+ * kortixd bundles (it cannot import this package).
+ */
+export const PLATFORM_TOOL_NAMES = ['remember', 'memory_search'] as const;
+/**
  * Tools the harnesses implement themselves (OpenCode's and pi's native tool
- * ids). A project tool cannot take one of these names, nor a `pty_` name
- * (the shell plugin's). An agent's `tools` access may name them.
+ * ids), plus the platform tools. A project tool cannot take one of these
+ * names, nor a `pty_` name (the shell plugin's). An agent's `tools` access
+ * may name them.
  */
 export const HARNESS_TOOL_NAMES = [
   'bash',
@@ -422,6 +430,7 @@ export const HARNESS_TOOL_NAMES = [
   'invalid',
   'execute',
   'plan_exit',
+  ...PLATFORM_TOOL_NAMES,
 ] as const;
 /**
  * The Kortix tools (apps/kortix-sandbox-agent-server `src/services/tools/kortix/`).

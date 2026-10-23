@@ -324,7 +324,7 @@ function validateToolsV3(node: unknown, path: string, issues: ManifestIssue[]): 
   for (const [name, file] of registryEntries(node, path, 'tool name to module path', issues)) {
     const where = `${path}.${name}`;
     if ((HARNESS_TOOL_NAMES as readonly string[]).includes(name) || name.startsWith('pty_')) {
-      issues.push({ path: where, message: `"${name}" is a harness tool; pick another name.`, severity: 'error' });
+      issues.push({ path: where, message: `"${name}" is a built-in tool; pick another name.`, severity: 'error' });
       continue;
     }
     if (!TOOL_NAME_RE.test(name) && !(KORTIX_TOOL_NAMES as readonly string[]).includes(name)) {

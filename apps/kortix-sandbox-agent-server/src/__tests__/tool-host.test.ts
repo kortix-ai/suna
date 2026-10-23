@@ -110,6 +110,19 @@ describe('loadTools', () => {
     })
   })
 
+  test('the platform tools load in a channel or DM thread only, after the rest, whatever kortix_tools lists', async () => {
+    const names = async (env: Record<string, string | undefined>, compiled: Parameters<typeof loadTools>[1] = undefined) =>
+      (await loadTools(root, compiled, env)).tools.map((tool) => [tool.name, tool.source])
+    expect((await names({})).map(([name]) => name)).not.toContain('remember')
+    expect(await names({ KORTIX_SPACE_ID: '  ' }, { kortix_tools: [] })).toEqual([])
+    expect(await names({ KORTIX_SPACE_ID: 'space-1' }, { kortix_tools: [] })).toEqual([['remember', 'platform']])
+    expect((await names({ KORTIX_SPACE_ID: 'space-1' })).at(-1)).toEqual(['remember', 'platform'])
+    expect(hostedTool('remember')?.source).toBe('platform')
+    // A compiled config from before the name was reserved cannot shadow it.
+    write('tools/remember.ts', `export default { description: 'Ours.', parameters: { type: 'object', properties: {} }, execute: () => 'ours' }\n`)
+    expect(await names({ KORTIX_SPACE_ID: 'space-1' }, { kortix_tools: [], project_tools: { remember: 'tools/remember.ts' } })).toEqual([['remember', 'platform']])
+  })
+
   test('with no project checkout only the Kortix tools load', async () => {
     const { tools, failed } = await loadTools(null, { project_tools: { lookup_order: 'tools/lookup.ts' } })
     expect(tools).toHaveLength(Object.keys(KORTIX_TOOLS).length)

@@ -26,4 +26,11 @@ describe('toolAllowed', () => {
     expect(toolAllowed({ '*': false }, 'constructor')).toBe(false);
     expect(toolAllowed({ bash: false }, 'constructor')).toBe(true);
   });
+
+  test('an allowlist keeps the platform tools; only an entry that names one removes it', () => {
+    expect(toolAllowed({ '*': false, read: true }, 'remember')).toBe(true);
+    expect(toolAllowed({ '*': false }, 'memory_search')).toBe(true);
+    expect(toolAllowed({ '*': false, remember: false }, 'remember')).toBe(false);
+    expect(toolAllowed({ remember: false }, 'remember')).toBe(false);
+  });
 });
