@@ -64,20 +64,23 @@ function getRunningChannel(): VersionChannel {
   return detectVersionChannel(getRunningVersion());
 }
 
-function githubHeaders(): Record<string, string> {
+function githubRequest(path: string, token?: string): Promise<Response> {
   const headers: Record<string, string> = {
     Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
   };
-  if (config.GITHUB_TOKEN) headers.Authorization = `Bearer ${config.GITHUB_TOKEN}`;
-  return headers;
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return fetch(`${GITHUB_API_BASE}${path}`, { headers, signal: AbortSignal.timeout(8_000) });
 }
 
 async function githubFetch<T>(path: string): Promise<T> {
-  const res = await fetch(`${GITHUB_API_BASE}${path}`, {
-    headers: githubHeaders(),
-    signal: AbortSignal.timeout(8_000),
-  });
+  let res = await githubRequest(path, config.GITHUB_TOKEN);
+  // The repo is public. A token GitHub rejects (expired, revoked, or a
+  // fine-grained token the kortix-ai org forbids, KRTX-3152) reads anonymously.
+  if (config.GITHUB_TOKEN && (res.status === 401 || res.status === 403)) {
+    logger.warn(`[version] GitHub rejected GITHUB_TOKEN (${res.status}); reading ${path} anonymously`);
+    res = await githubRequest(path);
+  }
   if (!res.ok) throw new Error(`GitHub API ${path} failed: ${res.status}`);
   return res.json() as Promise<T>;
 }
