@@ -25,7 +25,7 @@ import { ProjectSandboxAlert } from './footer/project-sandbox-alert';
 import { ProjectRepositoryDisconnectedAlert } from '../repository-disconnected';
 import { CustomizeSidebarModal } from './customize-sidebar-modal';
 import { ProjectNavItems } from './project-nav-items';
-import { DomainSelector } from './domain-selector';
+import { DomainSpaceRail } from './domain-space-rail';
 import { ProjectSessionList } from './project-session-list';
 import { useIsCreatingProjectSession } from '../../internal/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '../../internal/hooks/projects/use-new-project-session';
@@ -270,10 +270,12 @@ export function ProjectSidebar({
           (header `p-2` + switcher `px-1` + half of the `size-6` tile). Left
           side only: right padding still clears trailing badges. */}
       <SidebarContent className="relative min-h-0 flex-1 [scrollbar-width:'none'] overflow-hidden [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden [&_[data-sidebar=menu-button]]:pl-2">
-        <div className="flex h-full min-h-0 flex-col space-y-2">
-          {/* Domain switcher: the active space Customize scopes to. Renders
-              nothing until the project declares a domain. */}
-          <DomainSelector projectId={projectId} />
+        <div className="flex h-full min-h-0">
+          {/* Domain space switcher: the icon rail on the left edge. Renders
+              nothing until the project declares a domain, so a project without
+              domains keeps the single-column sidebar. */}
+          <DomainSpaceRail projectId={projectId} />
+          <div className="flex h-full min-h-0 flex-1 flex-col space-y-2 overflow-hidden">
           <SidebarGroup className="py-0">
             <SidebarMenu>
               <SidebarMenuItem>
@@ -338,6 +340,7 @@ export function ProjectSidebar({
               <SidebarUpgradeButton accountId={accountId} />
             </SidebarMenu>
           </SidebarGroup>
+          </div>
         </div>
       </SidebarContent>
 
