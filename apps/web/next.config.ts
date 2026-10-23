@@ -823,6 +823,14 @@ const nextConfig = (): NextConfig => ({
         source: '/docs',
         destination: '/docs/index.html',
       },
+      // Blume links /docs/apple-touch-icon.png (it detects the app's
+      // public/apple-touch-icon.png) but never copies it into the docs build,
+      // so the directory rule below turned it into a 404 (KRTX-3226). Serve the
+      // app's one icon file.
+      {
+        source: '/docs/apple-touch-icon.png',
+        destination: '/apple-touch-icon.png',
+      },
       {
         source: '/docs/:path*',
         destination: '/docs/:path*/index.html',
