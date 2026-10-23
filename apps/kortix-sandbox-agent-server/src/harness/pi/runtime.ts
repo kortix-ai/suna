@@ -38,7 +38,7 @@ import { CODEMODE_TOOL, type CodemodeMode } from './codemode'
 import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
 import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule } from './interactions'
 import type { PiModels, SelectedModel } from './model'
-import { nativeModelId } from './model'
+import { compactionSettings, nativeModelId } from './model'
 import { TranscriptStore, type RuntimeFrame } from './transcript'
 import { PiTurnEvents, assistantInfoFields, assistantMessageError, type TurnEventEmission } from './turn-events'
 import { withAgentSampling } from './sampling'
@@ -641,6 +641,7 @@ export class PiRuntime {
         systemPrompt: () => this.systemPrompt(),
         skillAllowed: (name) => skillGranted(this.policy, name),
         provider: this.models.models.getProvider(this.selected.providerID),
+        compaction: (floor) => compactionSettings(this.models!.catalog, floor),
       })
       const extensionsMs = performance.now() - extensionsStartedAt
       this.rebuildSystemPrompt()
@@ -724,6 +725,8 @@ export class PiRuntime {
     })
     this.selected = this.models.select(this.selected?.modelID ?? null)
     this.agent.state.model = this.selected.model
+    // A model whose limits the catalog now reports differently compacts at a different threshold.
+    await this.pi?.applyCompaction((floor) => compactionSettings(this.models!.catalog, floor))
   }
 
   /** Reload skills and the root AGENTS.md from disk (after a repo refresh). */
@@ -906,7 +909,7 @@ export class PiRuntime {
     const entryId = this.unreadNoReply.get(messageId)
     if (entryId && this.pi) {
       this.unreadNoReply.delete(messageId)
-      // Null omits the entry from the model context, as `omitFailedAttempt` does.
+      // Null omits the entry from the model context, as a retried failed attempt is.
       this.pi.session.sessionManager.appendContextEdit(entryId, null)
       this.pi.session.refreshContext()
       this.completedTurns.delete(messageId)
@@ -1128,9 +1131,9 @@ export class PiRuntime {
       this.turnSystem = turn.input.system ?? null
       // pi's prompt path: `input` and `before_agent_start` handlers, extension commands, `/skill:` and templates.
       const images = await this.images(turn.input)
-      // A transient model error continues the turn instead of ending it (transient-retry.ts).
+      // A transient model error continues the turn at the settle boundary (`turnExtension`).
       armWatchdog()
-      await retry.run(agent, () => this.pi!.session.prompt(turn.input.text || '(attachment)', { source: 'rpc', ...(images.length ? { images } : {}) }), () => this.omitFailedAttempt())
+      await this.pi!.session.prompt(turn.input.text || '(attachment)', { source: 'rpc', ...(images.length ? { images } : {}) })
       for (const frame of this.adapter!.settleRetry()) this.publish(frame)
       if (timedOut) {
         outcome = 'error'
@@ -1192,22 +1195,11 @@ export class PiRuntime {
     await this.runTurn({ messageId: next.messageId, input: next.input, agent: this.agentName, resolve: resolveNext, outcome: nextOutcome })
   }
 
-  /** Omit the failed model attempt from pi's session store, so the retry does not send it again. */
-  private omitFailedAttempt(): void {
-    const session = this.pi!.session
-    const failed = session.sessionManager.getBranch().findLast((entry) => entry.type === 'message')
-    if (failed?.type === 'message' && failed.message.role === 'assistant') session.sessionManager.appendContextEdit(failed.id, null)
-    session.refreshContext()
-  }
-
   /**
    * pi compacts and retries a failed model attempt once: a context overflow, or
    * a reply cut by the length limit. True for the attempt it will try to recover.
    */
   private recovers(message: AgentMessage): boolean {
-    // ponytail: a step that a Kortix retry continued runs outside pi's prompt loop, so pi does not
-    // compact after it and the error is final. Move the retry into pi's loop (`agent_before_settle`) to recover it too.
-    if (this.turnRetry?.retried) return false
     if (this.recoveryTried || !this.pi?.session.autoCompactionEnabled || message.role !== 'assistant') return false
     if (message.stopReason !== 'length' && !isContextOverflow(message, this.selected?.model.contextWindow ?? 0)) return false
     this.recoveryTried = true
@@ -1427,6 +1419,20 @@ export class PiRuntime {
       hidden: true,
       factory: (pi) => {
         pi.on('before_agent_start', (event) => ({ systemPrompt: [event.systemPrompt, todayLine(this.now()), this.turnSystem].filter(Boolean).join('\n\n') }))
+        // A transient model error retries inside pi's loop, so every step after the retry runs
+        // pi's own post-run checks: a context threshold, an overflow or a cut answer then still
+        // compacts (Kortix's retry no longer steps outside the loop).
+        pi.on('agent_before_settle', async (event) => {
+          const retry = this.turnRetry
+          const plan = retry?.plan(this.turnAssistant ?? undefined)
+          if (!retry || !plan) return undefined
+          retry.adopt(plan.attempt)
+          if (!(await retry.wait(plan.delayMs))) return { continue: false }
+          // Drop the failed attempt from the model context, as pi's own retry does: never resend it.
+          const failed = this.turnAssistant
+          const entry = failed ? event.context.contextEntries.find((projected) => projected.messages.includes(failed as never)) : undefined
+          return { ...(entry ? { entries: [{ type: 'context_edit' as const, targetId: entry.sourceEntry.id, replacement: null }] } : {}), continue: true }
+        })
       },
     }
   }

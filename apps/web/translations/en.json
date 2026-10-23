@@ -18181,6 +18181,7 @@
       "texteaca91e7a784": "Invited to this project",
       "texteacdf25c58f8": "Built-in roles — on every plan",
       "textead07c84baac": "Changelog",
+      "text19e6841a618f": "What shipped in Kortix each week, straight from our production releases.",
       "texteae96e02bbc4": "Icons",
       "texteaef0b00e1d6": "Download to view",
       "texteaf72e534b81": "A tool-name rule can only ask “may the agent send email?” — which is rarely the question. A condition points at a value inside the call and matches it with a glob or a regular expression, so a rule can allow sending to your own domain and stop at everything else. A list argument passes only when every entry passes, so one off-list recipient is enough to hold the call. Anything the rule cannot decide resolves toward less access, never more.",

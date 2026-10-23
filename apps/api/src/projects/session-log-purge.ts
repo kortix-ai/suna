@@ -95,6 +95,7 @@ import type { PgColumn } from 'drizzle-orm/pg-core';
 import { logger } from '../lib/logger';
 import { deleteSessionWorkspaceVolume, WORKSPACE_VOLUME_SESSION_KEY } from '../platform/services/workspace-volume';
 import { db } from '../shared/db';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { sessionAttachmentStore } from './lib/session-attachments';
 import { mirrorDrained } from './session-log-capture';
 
@@ -268,7 +269,7 @@ async function purgeRows(row: DueSession, now: Date, drained: boolean): Promise<
       await tx
         .update(projectSessions)
         .set({
-          metadata: sql`(select coalesce(jsonb_object_agg(k, v), '{}'::jsonb) from jsonb_each(coalesce(${projectSessions.metadata}, '{}'::jsonb)) e(k, v) where k in ${SHELL_METADATA_KEYS})
+          metadata: sql`(select coalesce(jsonb_object_agg(k, v), '{}'::jsonb) from jsonb_each(coalesce(${qualifiedColumn(projectSessions.metadata)}, '{}'::jsonb)) e(k, v) where k in ${SHELL_METADATA_KEYS})
             || jsonb_build_object('copiesPurgedAt', ${now.toISOString()}::text)`,
           labels: [],
           error: null,

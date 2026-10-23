@@ -23,6 +23,10 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { setupLinkApiBase } from './api-base';
 import { StatusNotice } from './secret-intake-form';
 
+// Machine values, not prose: Shopify serves every store at <handle>.myshopify.com.
+const SHOPIFY_HOST_SUFFIX = '.myshopify.com';
+const EXAMPLE_STORE_HANDLE = 'acme';
+
 type Phase = 'loading' | 'ready' | 'submitting' | 'done' | 'expired' | 'invalid' | 'stale' | 'error';
 
 const DEV_DASHBOARD_URL = 'https://dev.shopify.com/dashboard';
@@ -201,12 +205,12 @@ export function AppCredentialsForm({ token }: { token: string }) {
               spellCheck={false}
               // 16px below `sm` so iOS Safari does not zoom the page on focus.
               className="font-mono max-sm:text-base"
-              placeholder="acme"
+              placeholder={EXAMPLE_STORE_HANDLE}
               value={store}
               disabled={submitting}
               onChange={(e) => setStore(e.target.value)}
             />
-            <InputGroupAddon align="inline-end">.myshopify.com</InputGroupAddon>
+            <InputGroupAddon align="inline-end">{SHOPIFY_HOST_SUFFIX}</InputGroupAddon>
           </InputGroup>
         </Field>
         <Field className="space-y-2">

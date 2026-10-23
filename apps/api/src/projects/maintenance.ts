@@ -5,6 +5,7 @@ import { tickRunningComputeCharges } from '../billing/services/compute-metering'
 import { cleanupExpiredConnectorAttachments } from '../connectors/attachments';
 import { db } from '../shared/db';
 import { recordAuditEvent } from '../shared/audit';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { reconcileStaleBuilds } from '../snapshots/builder';
 import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
 import { EMPTY_APP_IMAGE_RECLAIM_RESULT, reclaimAppDeploymentImages } from '../apps/images';
@@ -208,8 +209,8 @@ export async function selectExpiredSessionBranches(now: Date) {
           OR lower(COALESCE(${projectSessions.metadata}->'pr'->>'state', '')) = 'open'
         )`,
         // (3) the head of an open change request: deleting it would end the request.
-        sql`NOT EXISTS (select 1 from ${changeRequests} where ${changeRequests.projectId} = ${projectSessions.projectId}
-          and ${changeRequests.headRef} = ${projectSessions.branchName} and ${changeRequests.status} = 'open')`,
+        sql`NOT EXISTS (select 1 from ${changeRequests} where ${changeRequests.projectId} = ${qualifiedColumn(projectSessions.projectId)}
+          and ${changeRequests.headRef} = ${qualifiedColumn(projectSessions.branchName)} and ${changeRequests.status} = 'open')`,
       ),
     )
     // Oldest deletable rows first — deterministic drain so the planner's scan
