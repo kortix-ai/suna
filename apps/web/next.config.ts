@@ -945,6 +945,14 @@ const nextConfig = (): NextConfig => ({
         source: '/:locale/projects/:projectId/sessions/:sessionId',
         headers: embedFrameHeaders(),
       },
+      // Apple reads this file as JSON (Universal Links for /share and
+      // /auth/callback, shared web credentials). It has no extension, so it
+      // was served as application/octet-stream (KRTX-3255). The static file
+      // server keeps a Content-Type that a rule already set.
+      {
+        source: '/.well-known/apple-app-site-association',
+        headers: [{ key: 'Content-Type', value: 'application/json' }],
+      },
       {
         source: '/fonts/:path*',
         headers: [
