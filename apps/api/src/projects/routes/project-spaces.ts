@@ -20,7 +20,7 @@ import { gridApps } from '@kortix/shared/app-config';
 import type { Context } from 'hono';
 import { AppObject, appsJson } from '../../apps/serialize';
 import { spaceApps } from '../../apps/space-apps';
-import { makeChannelFolders, moveChannelFolder } from '../../drives/space-folders';
+import { makeChannelFolders, makeDmFolders, moveChannelFolder } from '../../drives/space-folders';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import type { AppEnv } from '../../types';
@@ -170,6 +170,9 @@ export function registerProjectSpacesRoutes(): void {
         return c.json({ error: `No agent "${agentName}" in this project.`, code: 'agent_not_found' }, 404);
       }
       const space = await getOrCreateDm(loaded.row.projectId, loaded.row.accountId, loaded.userId, agentName);
+      // Its Files and Memory folders in the caller's own folder, best effort and off the response path.
+      // The web opens a DM only when it is not listed yet, so this runs about once per DM; a repeat is a no-op.
+      void makeDmFolders(loaded.row.accountId, loaded.row.projectId, loaded.userId, agentName);
       return c.json(serializeSpace(space, { userId: loaded.userId, manager: false }), 200);
     },
   );

@@ -17,6 +17,7 @@
  */
 import type { FeatureFlagKey } from '@kortix/api-contract';
 import { reconcileChannelConnectors } from '../connectors/sync';
+import { refreshRunningThreadNotes } from '../drives/space-folders';
 import {
   assignUnassignedSessions,
   ensureDefaultSpace,
@@ -60,10 +61,13 @@ const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
     else await releaseProjectEventSubscriptions(projectId);
   },
   // On: create `#general` and file every session that has no space into it. Off: nothing is deleted.
+  // Both: running threads' /drives/README.md gains or drops its channel section (that never throws).
   project_channels: async ({ projectId, accountId, metadata }) => {
-    if (!resolveFeatureFlag(metadata, 'project_channels')) return;
-    const general = await ensureDefaultSpace(projectId, accountId);
-    await assignUnassignedSessions(projectId, general.spaceId);
+    if (resolveFeatureFlag(metadata, 'project_channels')) {
+      const general = await ensureDefaultSpace(projectId, accountId);
+      await assignUnassignedSessions(projectId, general.spaceId);
+    }
+    await refreshRunningThreadNotes(projectId);
   },
 };
 

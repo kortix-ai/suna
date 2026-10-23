@@ -13,6 +13,7 @@ import type { Space, SpaceCreateInput, SpaceUpdateInput } from '@kortix/api-cont
 import { projectSessions, projectSpaces } from '@kortix/db';
 import { spaceSlug } from '@kortix/shared';
 import { type SQL, and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { makeChannelFolders } from '../../drives/space-folders';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { db } from '../../shared/db';
 import { uniqueViolationConstraint } from '../../shared/postgres-errors';
@@ -87,10 +88,15 @@ async function ensureDefaultSpaceCreated(projectId: string, accountId: string): 
  * no space into it, so every path that needs `#general` (the toggle effect, a
  * channel list, a session create, a warm claim) converges a project whose
  * toggle effect failed before `#general` existed. No later call checks again.
+ * It also makes `#general`'s Files and Memory folders, best effort and off the
+ * caller's path (the Files tab makes them on open when this fails).
  */
 export async function ensureDefaultSpace(projectId: string, accountId: string): Promise<SpaceRow> {
   const general = await ensureDefaultSpaceCreated(projectId, accountId);
-  if (general.created) await assignUnassignedSessions(projectId, general.space.spaceId);
+  if (general.created) {
+    void makeChannelFolders(accountId, projectId, DEFAULT_SLUG);
+    await assignUnassignedSessions(projectId, general.space.spaceId);
+  }
   return general.space;
 }
 
