@@ -55,19 +55,24 @@ for (const c of await page.evaluate(() => window.CHIPS)) {
   await shot(c.svg, `${upload}/${c.id}.png`, chip, { x: 0, y: 0, ...chip });
 }
 
-// Flags at 4 px per mm: 150 cm wide = 6000 px, about 100 dpi at full size.
-const fp = await browser.newPage({ viewport: { width: 1500, height: 1300 }, deviceScaleFactor: 4 });
-await fp.goto(`file://${path.join(here, 'merch.html')}#export`);
-for (const f of await fp.evaluate(() => window.FLAGS)) {
-  fs.writeFileSync(`${full}/svg/${f.id}.svg`, f.svg);
-  await fp.evaluate(([s, w, h]) => {
+// Flags, posters, mugs, mats, totes, tees, stickers: drawn in mm, rendered at each item's px per mm.
+const items = await page.evaluate(() => window.ITEMS);
+for (const it of items) {
+  fs.writeFileSync(`${full}/svg/${it.id}.svg`, it.svg);
+  // Exact pixel size: the SVG viewBox (mm) scales to fill a 1:1 viewport.
+  const pw = Math.round(it.w * it.ppm), ph = Math.round(it.h * it.ppm);
+  const ip = await browser.newPage({ viewport: { width: pw, height: ph } });
+  await ip.goto(`file://${path.join(here, 'merch.html')}#export`);
+  await ip.evaluate(([s, w, h]) => {
+    document.body.style.background = 'transparent';
     const stage = document.getElementById('stage');
     stage.style.width = `${w}px`; stage.style.height = `${h}px`;
     stage.innerHTML = s;
     stage.firstChild.style.width = `${w}px`; stage.firstChild.style.height = `${h}px`;
-  }, [f.svg, f.w, f.h]);
-  await fp.screenshot({ path: `${upload}/${f.id}.png`, clip: { x: 0, y: 0, width: f.w, height: f.h } });
+  }, [it.svg, pw, ph]);
+  await ip.screenshot({ path: `${upload}/${it.id}.png`, clip: { x: 0, y: 0, width: pw, height: ph }, omitBackground: it.transparent });
+  await ip.close();
 }
 
 await browser.close();
-console.log(`${cards.length} cards -> ${full}\nupload files -> ${upload}`);
+console.log(`${cards.length} cards, ${items.length} items -> ${full}\nupload files -> ${upload}`);
