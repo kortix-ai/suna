@@ -45,6 +45,7 @@ export const loadPublicResponse = cache(async (token: string): Promise<PublicRes
 /** The first ~160 characters of the response as plain text, for a link preview. */
 export function plainTextExcerpt(markdown: string, max = 160): string {
   const text = markdown
+    .slice(0, 4000)
     .replace(/```[^\n]*\n?/g, ' ')
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')

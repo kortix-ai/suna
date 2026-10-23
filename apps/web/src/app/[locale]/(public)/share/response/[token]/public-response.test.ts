@@ -8,7 +8,13 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-const { loadPublicResponse } = await import('./public-response');
+const { loadPublicResponse, plainTextExcerpt } = await import('./public-response');
+
+test('metadata bounds bracket-heavy responses before parsing markdown', () => {
+  const started = performance.now();
+  expect(plainTextExcerpt('['.repeat(256 * 1024))).toHaveLength(160);
+  expect(performance.now() - started).toBeLessThan(100);
+});
 
 test('the shared response is read with no-store, never from the Next fetch cache', async () => {
   // Next caches only 200 responses: a cached 200 would outlive a revoke (410) forever.

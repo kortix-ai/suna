@@ -22,6 +22,7 @@ export const MAX_PUBLISHED_BYTES = 256 * 1024;
 /** Markdown syntax off one line: emphasis, code ticks, links/images to their text, quote and list markers. */
 function plainLine(line: string): string {
   return line
+    .slice(0, 4000)
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/[*_`~]/g, '')
     .replace(/^\s*(?:#{1,6}\s+|>\s*|[-+]\s+|\d+[.)]\s+)+/, '')
