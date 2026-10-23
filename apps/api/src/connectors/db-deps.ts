@@ -382,8 +382,11 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     // No hosted page (raw http/mcp/graphql connector, or no provider app bound)
     // means no link exists to hand over. The denial still names the connector.
     if (!eligibility.ok) return null;
-    const composio = await loadComposioAdapter();
-    if (!(composio?.composioConfigured?.() ?? false) && !pipedreamConfigured()) return null;
+    // MCP and Shopify sign in through Kortix itself; only a hosted provider needs one configured.
+    if (eligibility.providerType === 'composio' || eligibility.providerType === 'pipedream') {
+      const composio = await loadComposioAdapter();
+      if (!(composio?.composioConfigured?.() ?? false) && !pipedreamConfigured()) return null;
+    }
     // The denial's remedy is always "authorize YOURSELF": the human reading it
     // is the one who can, and a shared account is a deliberate admin choice made
     // from settings. A link with no member behind it would resolve to nobody.
