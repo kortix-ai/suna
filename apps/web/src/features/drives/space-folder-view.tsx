@@ -200,7 +200,12 @@ function SpaceExplorer({
       capabilities: { ...driveExplorerSource.capabilities, write: canWrite },
       useFileList: (dirPath) => {
         const list = driveExplorerSource.useFileList(dirPath);
-        const data = useMemo(() => list.data?.filter((n) => n.absolute !== hidden), [list.data]);
+        // A local, so the memo below re-filters when the source swaps in a new `hidden`.
+        const hide = hidden;
+        const data = useMemo(
+          () => list.data?.filter((n) => !(n.type === 'directory' && n.absolute === hide)),
+          [list.data, hide],
+        );
         return { ...list, data };
       },
     }),

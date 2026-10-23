@@ -484,7 +484,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
     platformDefault: () => false,
     enforcement: 'routes',
     enforcementNote:
-      'Every /projects/:id/spaces route returns 403 feature_disabled while off. Session create/list ignore space_id while off.',
+      'Every /projects/:id/spaces route returns 403 feature_disabled while off. Session create/list ignore space_id while off. ' +
+      'BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-channel-memory skill; a change reaches the next new box and retires warm sessions (feature-flags/toggle-effects.ts).',
   },
   {
     key: 'agent_rooms',
