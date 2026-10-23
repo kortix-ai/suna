@@ -299,6 +299,13 @@ import { publicResponsesApp, registerPublicResponseRoutes } from './public-respo
 registerPublicResponseRoutes();
 app.route('/v1/public/responses', publicResponsesApp); // GET /v1/public/responses/:token
 
+// Artifact content — PUBLIC, capability-gated. A signed view token (minted by
+// /v1/projects/:id/artifacts*) or a public artifact's id is the capability;
+// every page is served as a CSP sandbox. See artifacts/content-routes.ts.
+import { artifactContentApp, registerArtifactContentRoutes } from './artifacts/content-routes';
+registerArtifactContentRoutes();
+app.route('/v1/artifacts', artifactContentApp); // GET /v1/artifacts/{s/:token,p/:artifactId}/*
+
 
 
 

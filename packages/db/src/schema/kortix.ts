@@ -8304,3 +8304,56 @@ export const cliDeviceGrants = kortixSchema.table('cli_device_grants', {
   accountId: uuid('account_id'),
   status: text('status').notNull().default('pending'),
 });
+
+/** One file of an artifact version: its blob on the project's artifact volume. */
+export interface ArtifactFileRecord {
+  sha256: string;
+  size: number;
+  content_type: string;
+}
+
+/**
+ * An artifact (flag `artifacts`): an HTML page a person or an agent published
+ * in a project, with its supporting files. The bytes live on the project's
+ * artifact volume as content-addressed blobs (`/<artifact_id>/<sha256>`); a
+ * version is a manifest of path → blob in `artifact_versions`.
+ *   visibility  private: the creator and `shared_with_user_ids`
+ *               project: every member who may read the project's files
+ *               public:  anyone with the link
+ */
+export const artifacts = kortixSchema.table('artifacts', {
+  artifactId: uuid('artifact_id').defaultRandom().primaryKey(),
+  projectId: uuid('project_id').notNull(),
+  accountId: uuid('account_id').notNull(),
+  title: text('title').notNull(),
+  description: text('description'),
+  type: varchar('type', { length: 16 }).default('page').notNull(),
+  icon: varchar('icon', { length: 40 }),
+  visibility: varchar('visibility', { length: 16 }).default('private').notNull(),
+  sharedWithUserIds: uuid('shared_with_user_ids').array().default(sql`'{}'::uuid[]`).notNull(),
+  pinnedByUserIds: uuid('pinned_by_user_ids').array().default(sql`'{}'::uuid[]`).notNull(),
+  currentVersion: integer('current_version').default(1).notNull(),
+  createdByUserId: uuid('created_by_user_id').notNull(),
+  createdBySessionId: text('created_by_session_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'artifacts_project_fk' }).onDelete('cascade'),
+  index('idx_artifacts_project_updated').on(table.projectId, table.updatedAt),
+  check('artifacts_type_check', sql`${table.type} in ('page', 'doc', 'slides', 'board', 'dashboard')`),
+  check('artifacts_visibility_check', sql`${table.visibility} in ('private', 'project', 'public')`),
+]);
+
+/** One published version of an artifact: the manifest of its files. Immutable. */
+export const artifactVersions = kortixSchema.table('artifact_versions', {
+  artifactId: uuid('artifact_id').notNull(),
+  version: integer('version').notNull(),
+  files: jsonb('files').$type<Record<string, ArtifactFileRecord>>().notNull(),
+  label: varchar('label', { length: 60 }),
+  createdByUserId: uuid('created_by_user_id').notNull(),
+  createdBySessionId: text('created_by_session_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.artifactId, table.version] }),
+  foreignKey({ columns: [table.artifactId], foreignColumns: [artifacts.artifactId], name: 'artifact_versions_artifact_fk' }).onDelete('cascade'),
+]);

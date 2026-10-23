@@ -88,6 +88,7 @@ export async function enforceRateLimit(
 const inviteAcceptLimiter = new TokenBucketRateLimiter('invite_accept');
 const sandboxProxyLimiter = new TokenBucketRateLimiter('sandbox_proxy');
 const publicResponseLimiter = new TokenBucketRateLimiter('public_response');
+const artifactContentLimiter = new TokenBucketRateLimiter('artifact_content');
 const demoRequestLimiter = new TokenBucketRateLimiter('demo_request');
 const checkEmailLimiter = new TokenBucketRateLimiter('check_email');
 const projectWebhookLimiter = new TokenBucketRateLimiter('project_webhook');
@@ -234,6 +235,20 @@ export function createPublicResponseRateLimitMiddleware() {
  * user id — every credential type resolves one, and auth runs first on the
  * mounted app — so one identity cannot fill the triage surface.
  */
+/**
+ * The artifact content server (`/v1/artifacts/*`): one bucket per artifact,
+ * shared by every viewer. A view token or an artifact id is the key: both
+ * carry 122+ random bits, so enumeration is infeasible without a per-IP bucket.
+ */
+export function createArtifactContentRateLimitMiddleware(keyOf: (c: Context) => string) {
+  return async (c: Context, next: Next) => {
+    const result = artifactContentLimiter.check(keyOf(c), { limit: 3000, windowMs: 60_000 });
+    if (!result.allowed) return quietRateLimited(c, result);
+    setHeaders(c, result);
+    await next();
+  };
+}
+
 export function createFeedbackRateLimitMiddleware() {
   return createAuditedRateLimitMiddleware(feedbackLimiter, (c) => {
     const userId = c.get('userId') as string | undefined;
@@ -428,6 +443,7 @@ export function resetRateLimiters() {
   inviteAcceptLimiter.reset();
   sandboxProxyLimiter.reset();
   publicResponseLimiter.reset();
+  artifactContentLimiter.reset();
   demoRequestLimiter.reset();
   checkEmailLimiter.reset();
   projectWebhookLimiter.reset();

@@ -831,6 +831,10 @@ const catalog = {
         "goals": {
           "name": "Goals",
           "description": "Give an agent an objective it owns until an independent check confirms the outcome. It plans, works, waits, follows up with people, and keeps its state in a Goals folder in Files. Needs Volumes and Reminders on."
+        },
+        "artifacts": {
+          "name": "Artifacts",
+          "description": "Agents and people publish docs, slides, boards and dashboards as pages in the project. Every publish is a version, docs edit in place, and a share link makes a page private, for the project, for chosen people, or public. Adds the Artifacts page and `kortix artifacts`."
         }
       }
     },
@@ -1015,6 +1019,7 @@ const catalog = {
   "sidebar": {
     "rooms": "Rooms",
     "goals": "Goals",
+    "artifacts": "Artifacts",
     "referAndEarn": "Refer & Earn",
     "referralShareTitle": "Refer Friends",
     "referralShareSubtitle": "Get 400 credits",
@@ -7240,6 +7245,32 @@ const catalog = {
     "manage": "Manage",
     "overviewTitle": "Overview"
   },
+  "connectAppForm": {
+    "title": "Connect Shopify",
+    "description": "Kortix reaches your store through a Shopify app in your organization. Enter its credentials once.",
+    "loading": "Loading the form…",
+    "stepsTitle": "Create the app in Shopify",
+    "step1": "Open the <link>Shopify Dev Dashboard</link> and create an app in the organization that owns your store.",
+    "step2": "On the app's version, select the Admin API scopes your agents need, then release the version.",
+    "step3": "Install the app on your store.",
+    "step4": "Copy the Client ID and Client secret from the app's Settings.",
+    "sameOrganization": "The app and the store must be in the same Shopify organization.",
+    "storeLabel": "Store",
+    "clientIdLabel": "Client ID",
+    "clientSecretLabel": "Client secret",
+    "submit": "Connect {app}",
+    "connecting": "Connecting…",
+    "missingFields": "Enter the store, the Client ID and the Client secret.",
+    "failed": "Could not connect. Check your connection and try again.",
+    "secretNote": "Kortix sends the secret to Composio, which runs the connection. Kortix keeps no copy.",
+    "connectedTitle": "{app} is connected",
+    "connectedDescription": "Kortix reaches {store}. You can close this window.",
+    "closeWindow": "You can close this window.",
+    "expiredTitle": "This link expired",
+    "invalidTitle": "This link does not work",
+    "staleTitle": "This link was replaced",
+    "startAgain": "Start Connect again in Kortix."
+  },
   "turnShare": {
     "shareResponse": "Share response",
     "whatToInclude": "What to include",
@@ -7269,32 +7300,6 @@ const catalog = {
     "busyHint": "Refresh in a moment.",
     "fallbackTitle": "Shared response",
     "stopNote": "The link will stop working."
-  },
-  "connectAppForm": {
-    "title": "Connect Shopify",
-    "description": "Kortix reaches your store through a Shopify app in your organization. Enter its credentials once.",
-    "loading": "Loading the form…",
-    "stepsTitle": "Create the app in Shopify",
-    "step1": "Open the <link>Shopify Dev Dashboard</link> and create an app in the organization that owns your store.",
-    "step2": "On the app's version, select the Admin API scopes your agents need, then release the version.",
-    "step3": "Install the app on your store.",
-    "step4": "Copy the Client ID and Client secret from the app's Settings.",
-    "sameOrganization": "The app and the store must be in the same Shopify organization.",
-    "storeLabel": "Store",
-    "clientIdLabel": "Client ID",
-    "clientSecretLabel": "Client secret",
-    "submit": "Connect {app}",
-    "connecting": "Connecting…",
-    "missingFields": "Enter the store, the Client ID and the Client secret.",
-    "failed": "Could not connect. Check your connection and try again.",
-    "secretNote": "Kortix sends the secret to Composio, which runs the connection. Kortix keeps no copy.",
-    "connectedTitle": "{app} is connected",
-    "connectedDescription": "Kortix reaches {store}. You can close this window.",
-    "closeWindow": "You can close this window.",
-    "expiredTitle": "This link expired",
-    "invalidTitle": "This link does not work",
-    "staleTitle": "This link was replaced",
-    "startAgain": "Start Connect again in Kortix."
   }
 };
 

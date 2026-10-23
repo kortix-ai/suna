@@ -472,6 +472,7 @@ export const REGISTRY_NAME_MAX = 64;
 export const KORTIX_SKILL_NAMES = [
   'kortix-cli',
   'kortix-apps',
+  'kortix-artifacts',
   'kortix-computer',
   'kortix-connectors',
   'kortix-drives',

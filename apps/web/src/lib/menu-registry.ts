@@ -49,6 +49,7 @@ import {
   GitDiffIcon as GitCompareArrows,
   GlobeIcon as Globe,
   HardDrivesIcon as HardDrives,
+  CardsThreeIcon as GalleryVerticalEnd,
   KeyIcon as KeyRound,
   StackIcon as Layers,
   SquaresFourIcon as LayoutDashboard,
@@ -750,6 +751,20 @@ export const menuRegistry: MenuItemDef[] = [
     requiresProject: true,
     requiresFlag: 'drives',
     keywords: 'files folders drive shared company my folder access share',
+  },
+  {
+    // The project's artifacts (flag `artifacts`): docs, slides, boards and
+    // dashboards published as pages. Only where the sidebar row shows.
+    id: 'proj-artifacts',
+    label: 'Artifacts',
+    icon: GalleryVerticalEnd,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/artifacts',
+    requiresProject: true,
+    requiresFlag: 'artifacts',
+    keywords: 'artifacts docs doc slides deck presentation board design dashboard page published share',
   },
   {
     // The repo browser under Customize → Repo, where it moves when the

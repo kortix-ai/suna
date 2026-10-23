@@ -1290,6 +1290,10 @@
         "goals": {
           "name": "目標",
           "description": "エージェントに目標を与えると、独立したチェックが結果を確認するまでエージェントが責任を持ちます。計画し、作業し、待機し、人にフォローアップし、状態をファイルの Goals フォルダーに保存します。ボリュームとリマインダーを有効にする必要があります。"
+        },
+        "artifacts": {
+          "name": "アーティファクト",
+          "description": "エージェントやメンバーが、ドキュメント、スライド、ボード、ダッシュボードをプロジェクト内のページとして公開します。公開するたびに1つのバージョンになり、ドキュメントはその場で編集でき、共有リンクでページを非公開、プロジェクト内、指定したメンバー、一般公開から選べます。アーティファクトページと `kortix artifacts` が追加されます。"
         }
       }
     },
@@ -1506,6 +1510,7 @@
   "sidebar": {
     "rooms": "ルーム",
     "goals": "ゴール",
+    "artifacts": "アーティファクト",
     "referAndEarn": "紹介して獲得",
     "referralShareTitle": "友達を紹介",
     "referralShareSubtitle": "400クレジット獲得",
@@ -22478,5 +22483,108 @@
     "busyHint": "しばらくしてから再読み込みしてください。",
     "fallbackTitle": "共有された回答",
     "stopNote": "リンクは機能しなくなります。"
+  },
+  "artifacts": {
+    "title": "アーティファクト",
+    "gateDescription": "エージェントやメンバーがページとして公開するドキュメント、スライド、ボード、ダッシュボード。バージョンと共有リンク付き。",
+    "makeNew": "新しく作成",
+    "type": {
+      "doc": "ドキュメント",
+      "slides": "スライド",
+      "board": "ボード",
+      "dashboard": "ダッシュボード",
+      "page": "ページ"
+    },
+    "typeHint": {
+      "doc": "仕様書、レポート、メモ。テキストをその場で編集できます。",
+      "slides": "全画面で発表できる16:9のスライド。",
+      "board": "画面やモックアップを、移動・ズーム可能なキャンバスに配置します。",
+      "dashboard": "KPI、グラフ、表を1ページに。",
+      "page": "任意のHTMLページ：ツール、解説、アプリ。"
+    },
+    "scope": {
+      "all": "すべて",
+      "mine": "自分",
+      "shared": "共有されたもの",
+      "pinned": "ピン留め"
+    },
+    "search": "アーティファクトを検索",
+    "loadError": "アーティファクトを読み込めませんでした。",
+    "retry": "再試行",
+    "empty": "アーティファクトはまだありません",
+    "emptyHint": "エージェントにドキュメント、スライド、デザイン、ダッシュボードを依頼するか、上から作成を始めましょう。",
+    "emptyFiltered": "一致するアーティファクトはありません",
+    "updated": "{time}に更新",
+    "pinned": "ピン留め済み",
+    "visibility": {
+      "private": "プライベート",
+      "project": "プロジェクト",
+      "public": "公開"
+    },
+    "visibilityHint": {
+      "private": "あなたと、追加したメンバーのみ。",
+      "project": "このプロジェクトの全員。",
+      "public": "リンクを知っている人なら誰でも、サインインなしで開けます。"
+    },
+    "actions": "アクション",
+    "openNewTab": "新しいタブで開く",
+    "pin": "ピン留め",
+    "unpin": "ピン留めを解除",
+    "share": "共有",
+    "rename": "名前を変更",
+    "delete": "削除",
+    "deleteTitle": "このアーティファクトを削除しますか？",
+    "deleteHint": "すべてのバージョンとファイルが削除され、リンクは使えなくなります。",
+    "deleted": "アーティファクトを削除しました",
+    "untitled": "無題の{type}",
+    "newTitle": "新規{type}",
+    "newPlaceholder": "作りたいものを説明してください。データ、メモ、リンクを貼り付けられます。",
+    "startBlank": "空白から始める",
+    "createWithAgent": "エージェントで作成",
+    "shareTitle": "「{title}」を共有",
+    "shareHint": "このアーティファクトを開ける人を選択します。",
+    "generalAccess": "一般アクセス",
+    "people": "アクセスできるメンバー",
+    "appLink": "リンク",
+    "publicLink": "公開リンク",
+    "copyLink": "コピー",
+    "linkCopied": "リンクをコピーしました",
+    "publicAfterSave": "公開リンクは保存後に有効になります。",
+    "shareSaved": "共有設定を更新しました",
+    "cancel": "キャンセル",
+    "save": "保存",
+    "saving": "保存中…",
+    "close": "閉じる",
+    "saved": "バージョン {version} として保存しました",
+    "back": "アーティファクトに戻る",
+    "versions": "バージョン",
+    "versionShort": "v{version}",
+    "current": "現在",
+    "viewingOld": "バージョン {version} を表示中です。現在のバージョンは {current} です。",
+    "backToCurrent": "現在のバージョンに戻る",
+    "restore": "復元",
+    "restored": "バージョン {version} がバージョン {current} になりました",
+    "edit": "編集",
+    "editSource": "ソースを編集",
+    "editingHint": "ページ内をクリックしてテキストを編集します。",
+    "bold": "太字",
+    "italic": "斜体",
+    "heading": "見出し",
+    "subheading": "小見出し",
+    "bulletList": "箇条書き",
+    "link": "リンク",
+    "linkPrompt": "リンクURL",
+    "present": "発表",
+    "fullScreen": "全画面",
+    "download": "HTMLをダウンロード",
+    "askAgent": "エージェントに依頼",
+    "askAgentTitle": "エージェントにこのアーティファクトの変更を依頼",
+    "askAgentPlaceholder": "何を変更しますか？",
+    "askAgentSend": "セッションを開始",
+    "notFoundTitle": "このアーティファクトは利用できません",
+    "notFoundHint": "削除されたか、所有者が共有を停止しました。",
+    "busyTitle": "Kortixは混み合っています",
+    "busyHint": "1分後にもう一度お試しください。",
+    "tryKortix": "Kortixを試す"
   }
 }

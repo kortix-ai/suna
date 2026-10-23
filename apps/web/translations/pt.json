@@ -1290,6 +1290,10 @@
         "goals": {
           "name": "Objetivos",
           "description": "Dê a um agente um objetivo pelo qual ele responde até que uma verificação independente confirme o resultado. Ele planeja, trabalha, espera, cobra as pessoas e guarda seu estado em uma pasta Goals em Arquivos. Requer Volumes e Lembretes ativados."
+        },
+        "artifacts": {
+          "name": "Artefatos",
+          "description": "Agentes e pessoas publicam documentos, apresentações, boards e painéis como páginas no projeto. Cada publicação é uma versão, os documentos são editados no próprio lugar e um link de compartilhamento deixa a página privada, visível para o projeto, para pessoas escolhidas ou pública. Adiciona a página Artefatos e `kortix artifacts`."
         }
       }
     },
@@ -1506,6 +1510,7 @@
   "sidebar": {
     "rooms": "Salas",
     "goals": "Objetivos",
+    "artifacts": "Artefatos",
     "referAndEarn": "Indicar e Ganhar",
     "referralShareTitle": "Indicar Amigos",
     "referralShareSubtitle": "Ganhe 400 créditos",
@@ -22478,5 +22483,108 @@
     "busyHint": "Atualize em instantes.",
     "fallbackTitle": "Resposta compartilhada",
     "stopNote": "O link deixará de funcionar."
+  },
+  "artifacts": {
+    "title": "Artefatos",
+    "gateDescription": "Documentos, apresentações, boards e painéis que agentes e pessoas publicam como páginas, com versões e links de compartilhamento.",
+    "makeNew": "Criar algo novo",
+    "type": {
+      "doc": "Documento",
+      "slides": "Apresentação",
+      "board": "Board",
+      "dashboard": "Painel",
+      "page": "Página"
+    },
+    "typeHint": {
+      "doc": "Uma especificação, um relatório ou um memorando. Edite o texto diretamente.",
+      "slides": "Uma apresentação 16:9 que você pode exibir em tela cheia.",
+      "board": "Telas e mockups em uma tela que você pode mover e ampliar.",
+      "dashboard": "KPIs, gráficos e tabelas em uma só página.",
+      "page": "Qualquer página HTML: uma ferramenta, uma explicação, um app."
+    },
+    "scope": {
+      "all": "Todos",
+      "mine": "Seus",
+      "shared": "Compartilhados com você",
+      "pinned": "Fixados"
+    },
+    "search": "Pesquisar artefatos",
+    "loadError": "Não foi possível carregar os artefatos.",
+    "retry": "Tentar novamente",
+    "empty": "Nenhum artefato ainda",
+    "emptyHint": "Peça a um agente um documento, uma apresentação, um design ou um painel, ou comece um acima.",
+    "emptyFiltered": "Nenhum artefato corresponde",
+    "updated": "Atualizado {time}",
+    "pinned": "Fixado",
+    "visibility": {
+      "private": "Privado",
+      "project": "Projeto",
+      "public": "Público"
+    },
+    "visibilityHint": {
+      "private": "Somente você e as pessoas que você adicionar.",
+      "project": "Todos neste projeto.",
+      "public": "Qualquer pessoa com o link, sem fazer login."
+    },
+    "actions": "Ações",
+    "openNewTab": "Abrir em nova guia",
+    "pin": "Fixar",
+    "unpin": "Desafixar",
+    "share": "Compartilhar",
+    "rename": "Renomear",
+    "delete": "Excluir",
+    "deleteTitle": "Excluir este artefato?",
+    "deleteHint": "Todas as versões e arquivos são excluídos, e os links deixam de funcionar.",
+    "deleted": "Artefato excluído",
+    "untitled": "{type} sem título",
+    "newTitle": "Novo: {type}",
+    "newPlaceholder": "Descreva o que criar. Cole dados, notas ou links.",
+    "startBlank": "Começar em branco",
+    "createWithAgent": "Criar com o agente",
+    "shareTitle": "Compartilhar “{title}”",
+    "shareHint": "Escolha quem pode abrir este artefato.",
+    "generalAccess": "Acesso geral",
+    "people": "Pessoas com acesso",
+    "appLink": "Link",
+    "publicLink": "Link público",
+    "copyLink": "Copiar",
+    "linkCopied": "Link copiado",
+    "publicAfterSave": "O link público funciona depois que você salvar.",
+    "shareSaved": "Compartilhamento atualizado",
+    "cancel": "Cancelar",
+    "save": "Salvar",
+    "saving": "Salvando…",
+    "close": "Fechar",
+    "saved": "Salvo como versão {version}",
+    "back": "Voltar aos artefatos",
+    "versions": "Versões",
+    "versionShort": "v{version}",
+    "current": "Atual",
+    "viewingOld": "Você está vendo a versão {version}. A versão atual é a {current}.",
+    "backToCurrent": "Voltar à atual",
+    "restore": "Restaurar",
+    "restored": "A versão {version} agora é a versão {current}",
+    "edit": "Editar",
+    "editSource": "Editar origem",
+    "editingHint": "Clique na página para editar o texto.",
+    "bold": "Negrito",
+    "italic": "Itálico",
+    "heading": "Título",
+    "subheading": "Subtítulo",
+    "bulletList": "Lista com marcadores",
+    "link": "Link",
+    "linkPrompt": "URL do link",
+    "present": "Apresentar",
+    "fullScreen": "Tela cheia",
+    "download": "Baixar HTML",
+    "askAgent": "Perguntar ao agente",
+    "askAgentTitle": "Peça a um agente para alterar este artefato",
+    "askAgentPlaceholder": "O que deve mudar?",
+    "askAgentSend": "Iniciar sessão",
+    "notFoundTitle": "Este artefato não está disponível",
+    "notFoundHint": "Ele foi excluído, ou o proprietário parou de compartilhá-lo.",
+    "busyTitle": "O Kortix está ocupado",
+    "busyHint": "Tente novamente em um minuto.",
+    "tryKortix": "Experimentar o Kortix"
   }
 }

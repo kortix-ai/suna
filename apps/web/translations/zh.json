@@ -1290,6 +1290,10 @@
         "goals": {
           "name": "目标",
           "description": "给代理一个目标，它会一直负责，直到独立检查确认结果。它会规划、执行、等待、跟进相关人员，并把状态保存在“文件”中的 Goals 文件夹里。需要开启卷和提醒。"
+        },
+        "artifacts": {
+          "name": "工件",
+          "description": "智能体和用户可将文档、幻灯片、画板和控制面板作为页面发布到项目中。每次发布都是一个版本，文档可直接编辑，分享链接可将页面设为私有、对整个项目可见、对指定成员可见或公开。新增“工件”页面和 `kortix artifacts`。"
         }
       }
     },
@@ -1506,6 +1510,7 @@
   "sidebar": {
     "rooms": "聊天室",
     "goals": "目标",
+    "artifacts": "工件",
     "referAndEarn": "推荐赚取",
     "referralShareTitle": "推荐好友",
     "referralShareSubtitle": "获得 400 积分",
@@ -22478,5 +22483,108 @@
     "busyHint": "请稍后刷新。",
     "fallbackTitle": "分享的回复",
     "stopNote": "该链接将失效。"
+  },
+  "artifacts": {
+    "title": "工件",
+    "gateDescription": "智能体和用户以页面形式发布的文档、幻灯片、画板和控制面板，支持版本和分享链接。",
+    "makeNew": "新建内容",
+    "type": {
+      "doc": "文档",
+      "slides": "幻灯片",
+      "board": "画板",
+      "dashboard": "控制面板",
+      "page": "页面"
+    },
+    "typeHint": {
+      "doc": "规格说明、报告或备忘录。可直接编辑文本。",
+      "slides": "可全屏演示的 16:9 幻灯片。",
+      "board": "在可平移、可缩放的画布上放置界面和原型。",
+      "dashboard": "一页展示 KPI、图表和表格。",
+      "page": "任意 HTML 页面：工具、说明或应用。"
+    },
+    "scope": {
+      "all": "全部",
+      "mine": "我的",
+      "shared": "与我共享",
+      "pinned": "已置顶"
+    },
+    "search": "搜索工件",
+    "loadError": "无法加载工件。",
+    "retry": "重试",
+    "empty": "暂无工件",
+    "emptyHint": "向智能体索取文档、幻灯片、设计或控制面板，或在上方新建。",
+    "emptyFiltered": "没有匹配的工件",
+    "updated": "更新于 {time}",
+    "pinned": "已置顶",
+    "visibility": {
+      "private": "私有",
+      "project": "项目",
+      "public": "公开"
+    },
+    "visibilityHint": {
+      "private": "仅你和你添加的人可见。",
+      "project": "此项目中的所有成员。",
+      "public": "任何拥有链接的人，无需登录。"
+    },
+    "actions": "操作",
+    "openNewTab": "在新标签页中打开",
+    "pin": "置顶",
+    "unpin": "取消置顶",
+    "share": "分享",
+    "rename": "重命名",
+    "delete": "删除",
+    "deleteTitle": "删除此工件？",
+    "deleteHint": "所有版本和文件都会被删除，相关链接将失效。",
+    "deleted": "工件已删除",
+    "untitled": "未命名{type}",
+    "newTitle": "新建{type}",
+    "newPlaceholder": "描述要创建的内容。可粘贴数据、笔记或链接。",
+    "startBlank": "从空白开始",
+    "createWithAgent": "用智能体创建",
+    "shareTitle": "分享“{title}”",
+    "shareHint": "选择谁可以打开此工件。",
+    "generalAccess": "常规访问权限",
+    "people": "有权访问的人员",
+    "appLink": "链接",
+    "publicLink": "公开链接",
+    "copyLink": "复制",
+    "linkCopied": "链接已复制",
+    "publicAfterSave": "保存后公开链接才会生效。",
+    "shareSaved": "分享设置已更新",
+    "cancel": "取消",
+    "save": "保存",
+    "saving": "保存中…",
+    "close": "关闭",
+    "saved": "已保存为版本 {version}",
+    "back": "返回工件",
+    "versions": "版本",
+    "versionShort": "v{version}",
+    "current": "当前",
+    "viewingOld": "你正在查看版本 {version}。当前版本为 {current}。",
+    "backToCurrent": "返回当前版本",
+    "restore": "恢复",
+    "restored": "版本 {version} 现在是版本 {current}",
+    "edit": "编辑",
+    "editSource": "编辑源码",
+    "editingHint": "点击页面即可编辑文本。",
+    "bold": "加粗",
+    "italic": "斜体",
+    "heading": "标题",
+    "subheading": "副标题",
+    "bulletList": "项目符号列表",
+    "link": "链接",
+    "linkPrompt": "链接地址",
+    "present": "演示",
+    "fullScreen": "全屏",
+    "download": "下载 HTML",
+    "askAgent": "询问智能体",
+    "askAgentTitle": "请智能体修改此工件",
+    "askAgentPlaceholder": "需要修改什么？",
+    "askAgentSend": "开始会话",
+    "notFoundTitle": "此工件不可用",
+    "notFoundHint": "它已被删除，或所有者已停止分享。",
+    "busyTitle": "Kortix 正忙",
+    "busyHint": "请一分钟后重试。",
+    "tryKortix": "试用 Kortix"
   }
 }

@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 891,
+  "count": 911,
   "routes": [
     {
       "method": "GET",
@@ -17,6 +17,10 @@
     {
       "method": "GET",
       "path": "/.well-known/openid-configuration"
+    },
+    {
+      "method": "GET",
+      "path": "/.well-known/security.txt"
     },
     {
       "method": "GET",
@@ -81,6 +85,10 @@
     {
       "method": "GET",
       "path": "/metrics"
+    },
+    {
+      "method": "GET",
+      "path": "/robots.txt"
     },
     {
       "method": "GET",
@@ -149,6 +157,10 @@
     {
       "method": "PUT",
       "path": "/scim/v2/accounts/:accountId/Users/:userId"
+    },
+    {
+      "method": "GET",
+      "path": "/sitemap.xml"
     },
     {
       "method": "POST",
@@ -881,6 +893,26 @@
     {
       "method": "GET",
       "path": "/v1/apps/edge/tls-check"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/artifacts/meta/:artifactId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/artifacts/p/:artifactId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/artifacts/p/:artifactId/*"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/artifacts/s/:token"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/artifacts/s/:token/*"
     },
     {
       "method": "GET",
@@ -1981,6 +2013,54 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/apps/artifacts/:artifactId/finalize"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/content"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/pin"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/pin"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/restore"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/versions"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/types"
     },
     {
       "method": "POST",

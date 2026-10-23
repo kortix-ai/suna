@@ -1112,6 +1112,10 @@
         "goals": {
           "name": "Goals",
           "description": "Give an agent an objective it owns until an independent check confirms the outcome. It plans, works, waits, follows up with people, and keeps its state in a Goals folder in Files. Needs Volumes and Reminders on."
+        },
+        "artifacts": {
+          "name": "Artifacts",
+          "description": "Agents and people publish docs, slides, boards and dashboards as pages in the project. Every publish is a version, docs edit in place, and a share link makes a page private, for the project, for chosen people, or public. Adds the Artifacts page and `kortix artifacts`."
         }
       }
     },
@@ -1506,6 +1510,7 @@
   "sidebar": {
     "rooms": "Rooms",
     "goals": "Goals",
+    "artifacts": "Artifacts",
     "referAndEarn": "Refer & Earn",
     "referralShareTitle": "Refer Friends",
     "referralShareSubtitle": "Get 400 credits",
@@ -22478,5 +22483,108 @@
     "busyHint": "Refresh in a moment.",
     "fallbackTitle": "Shared response",
     "stopNote": "The link will stop working."
+  },
+  "artifacts": {
+    "title": "Artifacts",
+    "gateDescription": "Docs, slides, boards and dashboards that agents and people publish as pages, with versions and share links.",
+    "makeNew": "Make something new",
+    "type": {
+      "doc": "Doc",
+      "slides": "Slides",
+      "board": "Board",
+      "dashboard": "Dashboard",
+      "page": "Page"
+    },
+    "typeHint": {
+      "doc": "A spec, report or memo. Edit the text in place.",
+      "slides": "A 16:9 deck you can present full screen.",
+      "board": "Screens and mockups on a canvas you can pan and zoom.",
+      "dashboard": "KPIs, charts and tables on one page.",
+      "page": "Any HTML page: a tool, an explainer, an app."
+    },
+    "scope": {
+      "all": "All",
+      "mine": "Yours",
+      "shared": "Shared with you",
+      "pinned": "Pinned"
+    },
+    "search": "Search artifacts",
+    "loadError": "Could not load artifacts.",
+    "retry": "Try again",
+    "empty": "No artifacts yet",
+    "emptyHint": "Ask an agent for a doc, a deck, a design or a dashboard, or start one above.",
+    "emptyFiltered": "No artifacts match",
+    "updated": "Updated {time}",
+    "pinned": "Pinned",
+    "visibility": {
+      "private": "Private",
+      "project": "Project",
+      "public": "Public"
+    },
+    "visibilityHint": {
+      "private": "Only you and the people you add.",
+      "project": "Everyone in this project.",
+      "public": "Anyone with the link, without signing in."
+    },
+    "actions": "Actions",
+    "openNewTab": "Open in new tab",
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "share": "Share",
+    "rename": "Rename",
+    "delete": "Delete",
+    "deleteTitle": "Delete this artifact?",
+    "deleteHint": "Every version and file is deleted, and its links stop working.",
+    "deleted": "Artifact deleted",
+    "untitled": "Untitled {type}",
+    "newTitle": "New {type}",
+    "newPlaceholder": "Describe what to make. Paste data, notes or links.",
+    "startBlank": "Start blank",
+    "createWithAgent": "Create with agent",
+    "shareTitle": "Share “{title}”",
+    "shareHint": "Choose who can open this artifact.",
+    "generalAccess": "General access",
+    "people": "People with access",
+    "appLink": "Link",
+    "publicLink": "Public link",
+    "copyLink": "Copy",
+    "linkCopied": "Link copied",
+    "publicAfterSave": "The public link works after you save.",
+    "shareSaved": "Sharing updated",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving…",
+    "close": "Close",
+    "saved": "Saved as version {version}",
+    "back": "Back to artifacts",
+    "versions": "Versions",
+    "versionShort": "v{version}",
+    "current": "Current",
+    "viewingOld": "You are viewing version {version}. The current version is {current}.",
+    "backToCurrent": "Back to current",
+    "restore": "Restore",
+    "restored": "Version {version} is now version {current}",
+    "edit": "Edit",
+    "editSource": "Edit source",
+    "editingHint": "Click into the page to edit its text.",
+    "bold": "Bold",
+    "italic": "Italic",
+    "heading": "Heading",
+    "subheading": "Subheading",
+    "bulletList": "Bulleted list",
+    "link": "Link",
+    "linkPrompt": "Link URL",
+    "present": "Present",
+    "fullScreen": "Full screen",
+    "download": "Download HTML",
+    "askAgent": "Ask agent",
+    "askAgentTitle": "Ask an agent to change this artifact",
+    "askAgentPlaceholder": "What should change?",
+    "askAgentSend": "Start session",
+    "notFoundTitle": "This artifact is not available",
+    "notFoundHint": "It was deleted, or its owner stopped sharing it.",
+    "busyTitle": "Kortix is busy",
+    "busyHint": "Try again in a minute.",
+    "tryKortix": "Try Kortix"
   }
 }

@@ -152,6 +152,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       connectors_v2: false,
       agent_rooms: false,
       goals: false,
+      artifacts: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -833,6 +834,7 @@ describe('envelopes', () => {
       'connectors_v2',
       'agent_rooms',
       'goals',
+      'artifacts',
     ]);
   });
 

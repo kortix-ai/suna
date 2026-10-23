@@ -1290,6 +1290,10 @@
         "goals": {
           "name": "Ziele",
           "description": "Gib einem Agenten ein Ziel, für das er verantwortlich bleibt, bis eine unabhängige Prüfung das Ergebnis bestätigt. Er plant, arbeitet, wartet, fragt bei Personen nach und speichert seinen Stand in einem Ordner „Goals“ unter Dateien. Erfordert aktivierte Volumes und Erinnerungen."
+        },
+        "artifacts": {
+          "name": "Artefakte",
+          "description": "Agenten und Personen veröffentlichen Dokumente, Folien, Boards und Dashboards als Seiten im Projekt. Jede Veröffentlichung ist eine Version, Dokumente werden direkt bearbeitet, und ein Freigabelink macht eine Seite privat, für das Projekt, für ausgewählte Personen oder öffentlich. Fügt die Seite „Artefakte“ und `kortix artifacts` hinzu."
         }
       }
     },
@@ -1506,6 +1510,7 @@
   "sidebar": {
     "rooms": "Räume",
     "goals": "Ziele",
+    "artifacts": "Artefakte",
     "referAndEarn": "Empfehlen",
     "referralShareTitle": "Freunde empfehlen",
     "referralShareSubtitle": "Erhalte 400 Credits",
@@ -22478,5 +22483,108 @@
     "busyHint": "Lade sie gleich neu.",
     "fallbackTitle": "Geteilte Antwort",
     "stopNote": "Der Link funktioniert dann nicht mehr."
+  },
+  "artifacts": {
+    "title": "Artefakte",
+    "gateDescription": "Dokumente, Folien, Boards und Dashboards, die Agenten und Personen als Seiten veröffentlichen, mit Versionen und Freigabelinks.",
+    "makeNew": "Etwas Neues erstellen",
+    "type": {
+      "doc": "Dokument",
+      "slides": "Folien",
+      "board": "Board",
+      "dashboard": "Dashboard",
+      "page": "Seite"
+    },
+    "typeHint": {
+      "doc": "Eine Spezifikation, ein Bericht oder ein Memo. Text direkt bearbeiten.",
+      "slides": "Eine 16:9-Präsentation für den Vollbildmodus.",
+      "board": "Bildschirme und Mockups auf einer Fläche zum Verschieben und Zoomen.",
+      "dashboard": "KPIs, Diagramme und Tabellen auf einer Seite.",
+      "page": "Beliebige HTML-Seite: ein Tool, eine Erklärung, eine App."
+    },
+    "scope": {
+      "all": "Alle",
+      "mine": "Von dir",
+      "shared": "Mit dir geteilt",
+      "pinned": "Angeheftet"
+    },
+    "search": "Artefakte suchen",
+    "loadError": "Artefakte konnten nicht geladen werden.",
+    "retry": "Erneut versuchen",
+    "empty": "Noch keine Artefakte",
+    "emptyHint": "Bitte einen Agenten um ein Dokument, eine Präsentation, ein Design oder ein Dashboard, oder starte oben selbst eines.",
+    "emptyFiltered": "Keine passenden Artefakte",
+    "updated": "Aktualisiert {time}",
+    "pinned": "Angeheftet",
+    "visibility": {
+      "private": "Privat",
+      "project": "Projekt",
+      "public": "Öffentlich"
+    },
+    "visibilityHint": {
+      "private": "Nur du und die Personen, die du hinzufügst.",
+      "project": "Alle in diesem Projekt.",
+      "public": "Alle mit dem Link, ohne Anmeldung."
+    },
+    "actions": "Aktionen",
+    "openNewTab": "In neuem Tab öffnen",
+    "pin": "Anheften",
+    "unpin": "Lösen",
+    "share": "Teilen",
+    "rename": "Umbenennen",
+    "delete": "Löschen",
+    "deleteTitle": "Dieses Artefakt löschen?",
+    "deleteHint": "Alle Versionen und Dateien werden gelöscht, und die Links funktionieren nicht mehr.",
+    "deleted": "Artefakt gelöscht",
+    "untitled": "{type} ohne Titel",
+    "newTitle": "Neu: {type}",
+    "newPlaceholder": "Beschreibe, was erstellt werden soll. Füge Daten, Notizen oder Links ein.",
+    "startBlank": "Leer starten",
+    "createWithAgent": "Mit Agent erstellen",
+    "shareTitle": "„{title}“ teilen",
+    "shareHint": "Lege fest, wer dieses Artefakt öffnen kann.",
+    "generalAccess": "Allgemeiner Zugriff",
+    "people": "Personen mit Zugriff",
+    "appLink": "Link",
+    "publicLink": "Öffentlicher Link",
+    "copyLink": "Kopieren",
+    "linkCopied": "Link kopiert",
+    "publicAfterSave": "Der öffentliche Link funktioniert nach dem Speichern.",
+    "shareSaved": "Freigabe aktualisiert",
+    "cancel": "Abbrechen",
+    "save": "Speichern",
+    "saving": "Speichern…",
+    "close": "Schließen",
+    "saved": "Als Version {version} gespeichert",
+    "back": "Zurück zu den Artefakten",
+    "versions": "Versionen",
+    "versionShort": "v{version}",
+    "current": "Aktuell",
+    "viewingOld": "Du siehst Version {version}. Die aktuelle Version ist {current}.",
+    "backToCurrent": "Zurück zur aktuellen",
+    "restore": "Wiederherstellen",
+    "restored": "Version {version} ist jetzt Version {current}",
+    "edit": "Bearbeiten",
+    "editSource": "Quelltext bearbeiten",
+    "editingHint": "Klicke in die Seite, um den Text zu bearbeiten.",
+    "bold": "Fett",
+    "italic": "Kursiv",
+    "heading": "Überschrift",
+    "subheading": "Zwischenüberschrift",
+    "bulletList": "Aufzählung",
+    "link": "Link",
+    "linkPrompt": "Link-URL",
+    "present": "Präsentieren",
+    "fullScreen": "Vollbild",
+    "download": "HTML herunterladen",
+    "askAgent": "Agent fragen",
+    "askAgentTitle": "Einen Agenten bitten, dieses Artefakt zu ändern",
+    "askAgentPlaceholder": "Was soll sich ändern?",
+    "askAgentSend": "Sitzung starten",
+    "notFoundTitle": "Dieses Artefakt ist nicht verfügbar",
+    "notFoundHint": "Es wurde gelöscht, oder der Inhaber teilt es nicht mehr.",
+    "busyTitle": "Kortix ist ausgelastet",
+    "busyHint": "Versuche es in einer Minute erneut.",
+    "tryKortix": "Kortix testen"
   }
 }

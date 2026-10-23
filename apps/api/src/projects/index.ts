@@ -80,6 +80,7 @@ import { registerSessionListStateRoutes } from './routes/session-list-state';
 import { registerSessionParticipantsRoutes } from './routes/session-participants';
 import { registerSessionPromptsRoutes } from './routes/session-prompts';
 import { registerRoomsRoutes } from './routes/rooms';
+import { registerArtifactRoutes } from './routes/artifacts';
 import { registerSessionRemindersRoutes } from './routes/session-reminders';
 import { registerChangeRequestsRoutes } from './routes/change-requests';
 import { registerPromptAttachmentsRoutes } from './routes/prompt-attachments';
@@ -169,6 +170,7 @@ export function registerAllProjectRoutes(): void {
   registerSessionParticipantsRoutes();
   registerSessionPromptsRoutes();
   registerRoomsRoutes();
+  registerArtifactRoutes();
   registerSessionRemindersRoutes();
   registerChangeRequestsRoutes();
   registerPromptAttachmentsRoutes();

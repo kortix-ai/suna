@@ -224,6 +224,9 @@ export const uncoveredAllow: AllowEntry[] = [
     })),
   ),
 { method: "POST", path: "/v1/projects/:*/transfer", reason: "project transfer between accounts (KRTX-1747): an end-user settings action, not a browser journey — covered against the real route table by apps/api/src/projects/routes/project-transfer.test.ts (gate order, error mapping), by the real-PostgreSQL movement suite apps/api/src/projects/lib/project-transfer.integration.test.ts (movement, role re-pointing, real-engine non-member deny, classification completeness), and exercised live in the PR sandbox" },
+  { method: "GET", path: "/.well-known/security.txt", reason: "public discovery files (KRTX-3347, #10824): static text the API serves on its own host for crawlers and security researchers, no auth and no data; asserted by apps/api/src/apps/static-site.integration.test.ts. The route manifest first listed them on 2026-10-23" },
+  { method: "GET", path: "/robots.txt", reason: "public discovery files (KRTX-3347, #10824): static text the API serves on its own host for crawlers and security researchers, no auth and no data; asserted by apps/api/src/apps/static-site.integration.test.ts. The route manifest first listed them on 2026-10-23" },
+  { method: "GET", path: "/sitemap.xml", reason: "public discovery files (KRTX-3347, #10824): static text the API serves on its own host for crawlers and security researchers, no auth and no data; asserted by apps/api/src/apps/static-site.integration.test.ts. The route manifest first listed them on 2026-10-23" },
 ];
 
 export const externalRoutes: AllowEntry[] = [

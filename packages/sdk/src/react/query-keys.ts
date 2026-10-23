@@ -548,6 +548,17 @@ export const qk = {
      *  of every `sessionReminders` key, so invalidating it refreshes the
      *  project page and every session's reminder chip together. */
     reminders: (id: string) => [...qk.project.scope(id), 'reminders'] as const,
+    /** Every artifact read of a project (flag `artifacts`): the prefix of the
+     *  keys below, so a publish refreshes the gallery and the open artifact. */
+    artifacts: (id: string) => [...qk.project.scope(id), 'artifacts'] as const,
+    /** `listArtifacts` — the gallery, per scope/type/search. */
+    artifactList: (id: string, filter: string) => [...qk.project.artifacts(id), 'list', filter] as const,
+    /** `getArtifact` — one artifact at one version (`current` for the newest). */
+    artifact: (id: string, artifactId: string, version: number | 'current' = 'current') => [...qk.project.artifacts(id), 'one', artifactId, version] as const,
+    /** `listArtifactVersions`. */
+    artifactVersions: (id: string, artifactId: string) => [...qk.project.artifacts(id), 'versions', artifactId] as const,
+    /** `listArtifactTypes`. */
+    artifactTypes: (id: string) => [...qk.project.artifacts(id), 'types'] as const,
     /** `listProjectGoals` — the goal folders in Files with their heartbeats. */
     goals: (id: string) => [...qk.project.scope(id), 'goals'] as const,
     /** `getProjectGoalFiles` — one goal folder's log, notes and verification. */
