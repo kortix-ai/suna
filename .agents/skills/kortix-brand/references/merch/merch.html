@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Kortix playing cards</title>
+<title>Kortix merch</title>
 <style>
   body { margin: 0; background: #ededed; font-family: Roobert, sans-serif; }
   #grid { display: flex; flex-wrap: wrap; gap: 24px; padding: 24px; }
@@ -264,9 +264,48 @@ function chipBack() {
 }
 window.CHIPS = [{ id: 'chip-front', svg: chipFront() }, { id: 'chip-back', svg: chipBack() }];
 
+// Flags: logo lockup on the card-back dot field. Units are mm (1500 = 150 cm wide).
+// Logo: apps/web/public/brandkit/Logo/Logomark/SVG/Logomark Black.svg (708 x 142), path data inlined.
+const LOGO_DS = [
+  'M139.522 139.53H162.84C162.84 109.932 147.046 84.0225 123.427 69.7694C147.046 55.5163 162.839 29.6068 162.839 0.00859395H139.522C139.522 28.0165 119.455 51.4472 93.0774 56.9407V0.00859395H69.7625V56.9407C43.2607 51.5428 23.3183 28.1045 23.3183 0.00859395H0.000517529C0.000517529 29.6068 15.7941 55.5163 39.4134 69.7694C15.7938 84.0225 0 109.932 0 139.53H23.3178C23.3178 111.434 43.2606 87.996 69.7625 82.5981V139.556H93.0774V82.598C119.579 87.9957 139.522 111.434 139.522 139.53Z',
+  'M379.024 141.074C348.339 141.074 326.422 119.156 326.422 89.2687C326.422 59.3811 348.339 37.4636 379.024 37.4636C409.509 37.4636 431.426 59.3811 431.426 89.2687C431.426 119.156 409.509 141.074 379.024 141.074ZM379.024 119.953C395.561 119.953 406.719 107.4 406.719 89.2687C406.719 71.1369 395.561 58.5842 379.024 58.5842C362.287 58.5842 351.129 71.1369 351.129 89.2687C351.129 107.4 362.287 119.953 379.024 119.953Z',
+  'M500.433 59.5804V39.0577H492.199C475.462 39.0577 441.988 49.0999 441.988 89.2687V139.48H466.496L467.243 89.2687C467.243 70.1407 472.673 59.5804 488.214 59.5804H500.433Z',
+  'M255.933 0.000104096H231.24V139.452H255.933V82.5926C282.273 88.0977 302.057 111.452 302.057 139.426H325.359C325.359 109.848 309.576 83.9564 285.972 69.713C309.575 55.4697 325.358 29.5779 325.358 0H302.056C302.056 27.8862 282.15 51.2318 255.933 56.832V0.000104096Z',
+  'M509.742 8.77166H534.25V39.0577H568.298V59.5804H534.25V103.415C534.25 113.577 539.63 118.758 548.795 118.758H568.298V139.48H546.006C524.088 139.48 509.742 126.728 509.742 104.412V8.77166Z',
+  'M578.743 13.1152C578.762 5.86622 584.644 0 591.893 0C599.17 0 605.063 5.90915 605.044 13.1857L605.042 13.7245C605.023 20.9735 599.141 26.8397 591.892 26.8397C584.615 26.8397 578.722 20.9306 578.742 13.654L578.743 13.1152ZM579.774 139.48V39.0577H604.282V139.48H579.774Z',
+  'M638.582 139.42H616.248C616.248 118.788 626.473 100.544 642.133 89.479C626.474 78.4143 616.249 60.1716 616.249 39.5397H638.583C638.583 55.3892 648.093 69.0176 661.718 75.0301C675.342 69.0176 684.852 55.3892 684.852 39.5397H707.187C707.187 60.1716 696.961 78.4143 681.302 89.479C696.962 100.544 707.188 118.788 707.188 139.42H684.853C684.853 123.571 675.343 109.943 661.718 103.93C648.092 109.943 638.582 123.571 638.582 139.42Z',
+];
+const LOGO_W = 708, LOGO_H = 142;
+function logoPaths(cx, cy, w, color) {
+  const k = w / LOGO_W;
+  return `<g fill="${color}" transform="translate(${cx - w / 2} ${cy - LOGO_H * k / 2}) scale(${k})">` +
+    LOGO_DS.map(d => `<path d="${d}"/>`).join('') + '</g>';
+}
+function flag(fw, fh, light) {
+  const bg = light ? C.paper : C.night, dotC = light ? C.hair : C.nightDot, ink = light ? C.ink : C.nightInk;
+  const fx = fw / 2, fy = fh / 2, pitch = 30, dot = 12;
+  const nx = Math.ceil(fw / pitch / 2), ny = Math.ceil(fh / pitch / 2);
+  let dots = `<g shape-rendering="crispEdges" fill="${dotC}">`;
+  for (let j = -ny; j <= ny; j++) for (let i = -nx; i <= nx; i++) {
+    const x = fx + i * pitch, y = fy + j * pitch;
+    // Wide ellipse: the field clears around the logo, not around a point.
+    const v = smooth(250, 500, Math.hypot((x - fx) / 2.2, y - fy));
+    if (v > BAYER[(j + 400) % 4][(i + 400) % 4]) dots += `<rect x="${x - dot / 2}" y="${y - dot / 2}" width="${dot}" height="${dot}"/>`;
+  }
+  dots += '</g>';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${fw} ${fh}" width="${fw}" height="${fh}"><rect width="${fw}" height="${fh}" fill="${bg}"/>${dots}${logoPaths(fx, fy, fw * 0.62, ink)}</svg>`;
+}
+// 70x100 and 105x150 cm share 10:7; 130x150 cm is its own shape.
+window.FLAGS = [
+  { id: 'flag-black-150x105', w: 1500, h: 1050, svg: flag(1500, 1050, false) },
+  { id: 'flag-white-150x105', w: 1500, h: 1050, svg: flag(1500, 1050, true) },
+  { id: 'flag-black-150x130', w: 1500, h: 1300, svg: flag(1500, 1300, false) },
+  { id: 'flag-white-150x130', w: 1500, h: 1300, svg: flag(1500, 1300, true) },
+];
+
 
 if (!location.hash.includes('export')) {
-  document.getElementById('grid').innerHTML = CARDS.map(c => c.svg).join('') + CHIPS.map(c => c.svg).join('');
+  document.getElementById('grid').innerHTML = CARDS.map(c => c.svg).join('') + CHIPS.map(c => c.svg).join('') + FLAGS.map(f => f.svg.replace('<svg ', '<svg style="width:460px" ')).join('');
   document.getElementById('stage').remove();
 }
 </script>

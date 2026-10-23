@@ -1,6 +1,6 @@
-# Kortix playing cards and poker chips
+# Kortix merch
 
-Print artwork for a Kortix card deck (54 cards plus a back) and poker chip inlays. `deck.html` draws every file. `export.mjs` renders them.
+Print artwork for a Kortix card deck (54 cards plus a back), poker chip inlays and flags. `merch.html` draws every file. `export.mjs` renders them.
 
 ## Upload files (`upload/`)
 
@@ -11,6 +11,8 @@ Print artwork for a Kortix card deck (54 cards plus a back) and poker chip inlay
 | `card-back-with-bleed.png`, `card-back-white-with-bleed.png` | 1650 x 2250 px | The same backs plus 1/8 in bleed per side, for a printer that asks for bleed. |
 | `chip-front.png` | 1200 x 1200 px | Chip inlay front: the symbol in a dither dot ring. White ground, black ink. |
 | `chip-back.png` | 1200 x 1200 px | Chip inlay back: the pixel mark in a ring of 36 square dots. |
+| `flag-black-150x105.png`, `flag-white-150x105.png` | 6000 x 4200 px (10:7, about 100 dpi at 150 cm) | Flag for the 70 x 100 cm and 105 x 150 cm sizes. |
+| `flag-black-150x130.png`, `flag-white-150x130.png` | 6000 x 5200 px | Flag for the 130 x 150 cm size. |
 
 Chip inlays are white so they fit any chip body color (tested on black and sky blue mockups). All chip art stays inside the round print area, so a round crop cuts only white.
 
@@ -21,18 +23,19 @@ Chip inlays are white so they fit any chip body color (tested on black and sky b
 - **Ace of spades:** the symbol (`brandkit/Logo/Brandmark/SVG/Brandmark Black.svg`, composited, not redrawn).
 - **Courts:** pixel crowns over each suit sampled onto a grid, in the `#` / `+` cell language of `PixelKortixMark` (`packages/ui/src/primitives/pixel-kortix-mark.tsx`).
 - **Jokers:** the pixel mark. Big joker on the dark `--background`, little joker on the light one.
+- **Flags:** the logo (`brandkit/Logo/Logomark/SVG/Logomark Black.svg`, path data inlined) at 62% of the width, on the card-back dot field. The field clears in a wide ellipse around the logo. One file per shape, so the shop does not crop the logo.
 
-Colors are the `tokens.css` values, inlined in `deck.html` with their token names, because a print file cannot read CSS variables.
+Colors are the `tokens.css` values, inlined in `merch.html` with their token names, because a print file cannot read CSS variables.
 
 ## Regenerate
 
 1. Install Google Chrome and the Roobert fonts locally.
-2. Run `node .agents/skills/kortix-brand/references/merch/playing-cards/export.mjs` from the repo root.
-3. It rewrites `upload/` and writes all 56 cards (PNG at 300 dpi with bleed, plus SVG) to `output/merch/playing-cards/` (gitignored).
+2. Run `node .agents/skills/kortix-brand/references/merch/export.mjs` from the repo root.
+3. It rewrites `upload/` and writes all 56 cards (PNG at 300 dpi with bleed) and an SVG of every item to `output/merch/` (gitignored).
 
-Open `deck.html` in a browser to see every card on one sheet.
+Open `merch.html` in a browser to see every item on one sheet.
 
 ## Open
 
-- Clear space and minimum print size for the mark are OPEN (D8b in [decisions.md](../../decisions.md)). The sizes here are a choice for this item only.
+- Clear space and minimum print size for the mark are OPEN (D8b in [decisions.md](../decisions.md)). The sizes here are a choice for this item only.
 - `kortix-red` is a screen color. Check a printed proof before a large order.
