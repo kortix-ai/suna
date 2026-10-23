@@ -18,7 +18,7 @@ import { db } from '../shared/db';
 import { copyPages, forbidden, threadOf } from './export';
 import { layerKeyOf, type LayerRef } from './layers';
 import { checkSecrets, MemoryError, notFound, titleKey } from './limits';
-import { appendFact } from './merge';
+import { appendFact, rewriteAdditions } from './merge';
 import { newUrls, hostOf, pendingTitle } from './outside';
 import { addSource, type Author, changeWithVersions, lockPage, type PageRow, readOnlyError, savePage, snapshotOf, type Tx } from './pages';
 import { copyPath, pageSlugs } from './render';
@@ -57,6 +57,39 @@ async function livePageOfTitle(tx: Tx, layerId: string, title: string): Promise<
     .where(and(eq(memoryPages.layerId, layerId), eq(memoryPages.titleKey, titleKey(title)), isNull(memoryPages.deletedAt), ne(memoryPages.type, 'note')))
     .limit(1);
   return found ? lockPage(tx, found.pageId) : null;
+}
+
+/** The live unconfirmed page that holds pending additions to `pageId` (it names the page in `related`). */
+async function pendingPageOf(tx: Tx, layerId: string, pageId: string): Promise<PageRow | null> {
+  const [pending] = await tx
+    .select({ pageId: memoryPages.pageId })
+    .from(memoryPages)
+    .where(
+      and(
+        eq(memoryPages.layerId, layerId),
+        isNull(memoryPages.deletedAt),
+        eq(memoryPages.status, 'unconfirmed'),
+        ne(memoryPages.type, 'note'),
+        sql`${memoryPages.related} @> ARRAY[${pageId}]::uuid[]`,
+      ),
+    )
+    .orderBy(memoryPages.createdAt)
+    .limit(1);
+  return pending ? lockPage(tx, pending.pageId) : null;
+}
+
+/** "<title> (to confirm)", or the first numbered one no live page holds. */
+async function freePendingTitle(tx: Tx, layerId: string, title: string): Promise<string> {
+  for (let n = 1; n < 20; n += 1) {
+    const candidate = pendingTitle(title, n);
+    const [taken] = await tx
+      .select({ pageId: memoryPages.pageId })
+      .from(memoryPages)
+      .where(and(eq(memoryPages.layerId, layerId), eq(memoryPages.titleKey, titleKey(candidate)), isNull(memoryPages.deletedAt)))
+      .limit(1);
+    if (!taken) return candidate;
+  }
+  throw new MemoryError(409, 'title_taken', 'Too many pages hold this page’s "(to confirm)" title.');
 }
 
 async function sourceUrls(tx: Tx, pageId: string): Promise<string[]> {
@@ -121,19 +154,22 @@ export async function remember(projectId: string, sessionId: string, input: Memo
     }
     const found = await livePageOfTitle(tx, layer.layerId, input.title);
     // Outside content waits for a person: declared with `outside`, or a URL the page does not already cite or contain.
-    const known = found ? [found.body, ...(await sourceUrls(tx, found.pageId))] : [];
-    const urls = newUrls(input.fact ?? input.body ?? '', known);
+    const known = found ? [found.body, found.summary, ...(await sourceUrls(tx, found.pageId))] : [];
+    const urls = newUrls([input.fact ?? input.body ?? '', input.summary ?? '', input.section ?? ''].join('\n'), known);
     const outside = input.outside ?? (urls[0] ? { label: hostOf(urls[0]), url: urls[0] } : null);
     const source = outside ? { kind: 'outside' as const, label: outside.label, url: outside.url ?? urls[0] ?? null } : threadSource;
-    // An outside addition to a confirmed page goes to its "(to confirm)" page, which a person confirms into it.
+    // An outside addition to a confirmed page goes to its pending page (unconfirmed, `related` names the page), which a person confirms into it.
     const pendingFor = outside && found?.status === 'confirmed' ? found : null;
-    const existing = pendingFor ? await livePageOfTitle(tx, layer.layerId, pendingTitle(found!.title)) : found;
+    const existing = pendingFor ? await pendingPageOf(tx, layer.layerId, pendingFor.pageId) : found;
     const pageId = existing?.pageId ?? randomUUID();
     let result: Awaited<ReturnType<typeof savePage>>;
     if (existing) {
       const n = await addSource(tx, pageId, source);
       const current = snapshotOf(existing);
-      const body = input.fact ? appendFact(current.body, input.fact, n, input.section) : input.body!;
+      let body: string;
+      if (input.fact) body = appendFact(current.body, input.fact, n, input.section);
+      // Append-only: the pending page gets the rewrite's new lines, not the rewrite.
+      else body = pendingFor ? rewriteAdditions(pendingFor.body, current.body, input.body!, n) : input.body!;
       result = await savePage(tx, {
         layerId: layer.layerId,
         projectId,
@@ -144,7 +180,7 @@ export async function remember(projectId: string, sessionId: string, input: Memo
         author,
       });
     } else {
-      const title = pendingFor ? pendingTitle(pendingFor.title) : input.title;
+      const title = pendingFor ? await freePendingTitle(tx, layer.layerId, pendingFor.title) : input.title;
       // A live note of this title holds it: the agent files the note instead of colliding with it.
       const [noteOfTitle] = await tx
         .select({ pageId: memoryPages.pageId })
@@ -164,7 +200,10 @@ export async function remember(projectId: string, sessionId: string, input: Memo
         });
       }
       // A new page's first source is number 1.
-      const body = input.fact ? appendFact('', input.fact, 1, input.section) : input.body!;
+      let body: string;
+      if (input.fact) body = appendFact('', input.fact, 1, input.section);
+      else body = pendingFor ? rewriteAdditions(pendingFor.body, '', input.body!, 1) : input.body!;
+      if (!body.trim()) throw new MemoryError(409, 'nothing_new', 'The page already has every line of this text.');
       result = await savePage(tx, {
         layerId: layer.layerId,
         projectId,

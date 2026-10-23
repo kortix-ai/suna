@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { titleKey } from './limits';
-import { appendFact, mergePending } from './merge';
+import { appendFact, citedNumbers, mergePending, pendingLines, rewriteAdditions } from './merge';
 
 describe('remember merges a fact into a page', () => {
   test('an empty page gets the fact as its first line', () => {
@@ -57,5 +57,32 @@ describe('confirming a "(to confirm)" page merges it into its page', () => {
     expect(mergePending('- Owner is Priya ⟦1⟧', 'Northwind is a design partner.', new Map())).toBe(
       '- Owner is Priya ⟦1⟧\n\nNorthwind is a design partner.',
     );
+  });
+});
+
+describe('an outside rewrite of a confirmed page stays append-only', () => {
+  const page = '## Status\n\n- Launch is Nov 12 ⟦1⟧\n- Owner is Priya ⟦2⟧';
+  const rewrite = '## Status\n\n- Launch is Nov 12 ⟦1⟧\n- Launch moved to Nov 19 ⟦1⟧\n\n## Risks\n\n- Vendor delay';
+
+  test('the pending page holds only the new lines, each citing the outside source', () => {
+    expect(rewriteAdditions(page, '', rewrite, 1)).toBe('## Status\n\n- Launch moved to Nov 19 ⟦1⟧\n\n## Risks\n\n- Vendor delay ⟦1⟧');
+  });
+
+  test('a later rewrite adds only lines the pending page lacks too', () => {
+    const pending = rewriteAdditions(page, '', rewrite, 1);
+    expect(rewriteAdditions(page, pending, `${rewrite}\n- Booth 14`, 2)).toBe(`${pending}\n- Booth 14 ⟦2⟧`);
+  });
+
+  test('confirm adds exactly what the pending page shows', () => {
+    const pending = rewriteAdditions(page, '', rewrite, 1);
+    expect(pendingLines(page, pending).map((l) => l.line)).toEqual(['- Launch moved to Nov 19 ⟦1⟧', '- Vendor delay ⟦1⟧']);
+    expect(citedNumbers(pendingLines(page, pending))).toEqual(new Set([1]));
+    expect(mergePending(page, pending, new Map([[1, 3]]))).toBe(
+      '## Status\n\n- Launch is Nov 12 ⟦1⟧\n- Owner is Priya ⟦2⟧\n- Launch moved to Nov 19 ⟦3⟧\n\n## Risks\n\n- Vendor delay ⟦3⟧',
+    );
+  });
+
+  test('a source cited only by a line the page has already is not cited', () => {
+    expect(citedNumbers(pendingLines('- Owner is Priya ⟦1⟧', '- Owner is Priya ⟦1⟧\n- Renews in March ⟦2⟧'))).toEqual(new Set([2]));
   });
 });

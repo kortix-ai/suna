@@ -12,10 +12,14 @@ describe('memory maintenance picks what to delete', () => {
     expect(deletedAt('2026-11-29T12:00:00.000Z')).toBe(false);
   });
 
-  test('a page keeps its newest 100 versions', () => {
-    expect(versionPruned(1, 100)).toBe(false);
-    expect(versionPruned(1, 101)).toBe(true);
+  test('a page keeps its first version and its newest 100', () => {
+    expect(versionPruned(1, 500)).toBe(false);
     expect(versionPruned(2, 101)).toBe(false);
-    expect(Array.from({ length: 250 }, (_, i) => i + 1).filter((n) => !versionPruned(n, 250))).toHaveLength(100);
+    expect(versionPruned(2, 102)).toBe(true);
+    expect(versionPruned(3, 102)).toBe(false);
+    const kept = Array.from({ length: 250 }, (_, i) => i + 1).filter((n) => !versionPruned(n, 250));
+    expect(kept).toHaveLength(101);
+    expect(kept[0]).toBe(1);
+    expect(kept[1]).toBe(151);
   });
 });

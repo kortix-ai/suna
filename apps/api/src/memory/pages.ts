@@ -22,8 +22,8 @@ import { isUuid } from '../shared/validate';
 import { layerById, livePageCount, type LayerRef, type Viewer, viewerWrites } from './layers';
 import { checkPage, MemoryError, notFound, titleKey } from './limits';
 import { loadRefs, pageOf, summaryOf, threadGateFor } from './serialize';
-import { mergePending } from './merge';
-import { PENDING_SUFFIX } from './outside';
+import { citedNumbers, mergePending, pendingLines } from './merge';
+import { stripPending } from './outside';
 import type { Snapshot } from './undo';
 
 const { search: _search, ...PAGE_COLUMNS } = getTableColumns(memoryPages);
@@ -224,7 +224,8 @@ export async function loadPage(projectId: string, pageId: string, viewer: Viewer
     .from(memoryPages)
     .where(and(eq(memoryPages.projectId, projectId), eq(memoryPages.pageId, pageId)))
     .limit(1);
-  if (!page) throw notFound();
+  // An agent's token sees what agents get: confirmed, live pages.
+  if (!page || (viewer.sessionId && (page.status !== 'confirmed' || page.deletedAt))) throw notFound();
   return { page, layer: await layerById(projectId, page.layerId, viewer) };
 }
 
@@ -280,9 +281,10 @@ export async function listPages(
     .where(
       and(
         eq(memoryPages.layerId, layer.layerId),
-        filter.deleted ? isNotNull(memoryPages.deletedAt) : isNull(memoryPages.deletedAt),
+        filter.deleted && !viewer.sessionId ? isNotNull(memoryPages.deletedAt) : isNull(memoryPages.deletedAt),
         filter.type ? eq(memoryPages.type, filter.type) : undefined,
-        filter.status ? eq(memoryPages.status, filter.status) : undefined,
+        // An agent's token lists confirmed pages only.
+        viewer.sessionId ? eq(memoryPages.status, 'confirmed') : filter.status ? eq(memoryPages.status, filter.status) : undefined,
       ),
     )
     .orderBy(desc(memoryPages.updatedAt))
@@ -379,11 +381,13 @@ export async function deletePage(projectId: string, pageId: string, viewer: View
   const { page, layer } = await loadPage(projectId, pageId, viewer);
   assertWrites(layer, viewer);
   if (page.deletedAt) throw notFound();
-  if (page.status !== 'unconfirmed' && (await pageCreator(pageId)) !== viewer.userId && !(await viewer.isManager())) {
-    throw new MemoryError(403, 'forbidden', 'Only the person who made this page or a project manager can delete it.');
-  }
+  const owns = (await pageCreator(pageId)) === viewer.userId || (await viewer.isManager());
   return change([layer.layerId], async (tx, changeId) => {
     const live = await liveLocked(tx, pageId);
+    // Checked on the locked row: a page confirmed meanwhile is no longer open to every writer.
+    if (live.status !== 'unconfirmed' && !owns) {
+      throw new MemoryError(403, 'forbidden', 'Only the person who made this page or a project manager can delete it.');
+    }
     const saved = await savePage(tx, {
       layerId: layer.layerId,
       projectId,
@@ -429,19 +433,19 @@ export async function confirmPage(projectId: string, pageId: string, viewer: Vie
     const page = await liveLocked(tx, pageId);
     if (page.status !== 'unconfirmed') throw new MemoryError(409, 'not_unconfirmed', 'This page is confirmed already.');
     const author = personAuthor(viewer);
-    const targetId = page.title.endsWith(PENDING_SUFFIX) ? page.related[0] : undefined;
-    const target = targetId ? await lockPage(tx, targetId) : null;
-    if (!target || target.deletedAt || target.layerId !== page.layerId) {
-      // A page on its own, or one whose page is gone: it becomes a confirmed page, without the suffix.
-      const title = page.title.endsWith(PENDING_SUFFIX) ? page.title.slice(0, -PENDING_SUFFIX.length) : page.title;
-      const next: Snapshot = { ...snapshotOf(page), title, status: 'confirmed', related: page.related.filter((id) => id !== targetId) };
+    const target = await pendingTarget(tx, page);
+    if (!target) {
+      // A page on its own: it becomes a confirmed page, without a "(to confirm)" suffix.
+      const next: Snapshot = { ...snapshotOf(page), title: stripPending(page.title), status: 'confirmed' };
       await savePage(tx, { layerId: layer.layerId, projectId, existing: page, next, op: 'confirm', changeId, author });
       return pageId;
     }
+    const current = snapshotOf(target);
+    // Only the sources the added lines cite move to the page.
+    const cited = citedNumbers(pendingLines(current.body, page.body));
     const sources = await tx.select().from(memoryPageSources).where(eq(memoryPageSources.pageId, pageId)).orderBy(asc(memoryPageSources.number));
     const renumber = new Map<number, number>();
-    for (const source of sources) renumber.set(source.number, await addSource(tx, target.pageId, source));
-    const current = snapshotOf(target);
+    for (const source of sources) if (cited.has(source.number)) renumber.set(source.number, await addSource(tx, target.pageId, source));
     await savePage(tx, {
       layerId: layer.layerId,
       projectId,
@@ -454,4 +458,25 @@ export async function confirmPage(projectId: string, pageId: string, viewer: Vie
     await savePage(tx, { layerId: layer.layerId, projectId, existing: page, next: { ...snapshotOf(page), deleted: true }, op: 'confirm', changeId, author });
     return target.pageId;
   });
+}
+
+/**
+ * The confirmed page a "(to confirm)" page adds to, locked: the page `related`
+ * names (live, same layer, confirmed, not a note), else the live confirmed
+ * page of its title without the suffix (its page was deleted and made again).
+ * Null for an unconfirmed page on its own.
+ */
+async function pendingTarget(tx: Tx, page: PageRow): Promise<PageRow | null> {
+  const title = stripPending(page.title);
+  if (title === page.title) return null;
+  const usable = (row: PageRow | null) =>
+    row && !row.deletedAt && row.layerId === page.layerId && row.status === 'confirmed' && row.type !== 'note' ? row : null;
+  const named = page.related[0] ? usable(await lockPage(tx, page.related[0])) : null;
+  if (named) return named;
+  const [byTitle] = await tx
+    .select({ pageId: memoryPages.pageId })
+    .from(memoryPages)
+    .where(and(eq(memoryPages.layerId, page.layerId), eq(memoryPages.titleKey, titleKey(title)), isNull(memoryPages.deletedAt)))
+    .limit(1);
+  return byTitle ? usable(await lockPage(tx, byTitle.pageId)) : null;
 }

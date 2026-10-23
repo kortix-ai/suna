@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { hostOf, newUrls, pendingTitle, urlsIn } from './outside';
+import { hostOf, newUrls, pendingTitle, stripPending, urlsIn } from './outside';
 
 describe('outside content is a URL the page does not hold', () => {
   test('http(s) URLs are found and normalized; trailing punctuation is not part of one', () => {
@@ -19,6 +19,14 @@ describe('outside content is a URL the page does not hold', () => {
   test('the "(to confirm)" title stays within 120 characters', () => {
     expect(pendingTitle('Q4 launch')).toBe('Q4 launch (to confirm)');
     expect(pendingTitle('x'.repeat(120))).toHaveLength(120);
+    expect(pendingTitle('Q4 launch', 2)).toBe('Q4 launch (to confirm 2)');
+    expect(pendingTitle('x'.repeat(120), 2)).toHaveLength(120);
+  });
+
+  test('the suffix comes off on confirm', () => {
+    expect(stripPending('Q4 launch (to confirm)')).toBe('Q4 launch');
+    expect(stripPending('Q4 launch (to confirm 3)')).toBe('Q4 launch');
+    expect(stripPending('Q4 launch')).toBe('Q4 launch');
   });
 
   test('a source label is the host', () => {

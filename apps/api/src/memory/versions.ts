@@ -2,7 +2,8 @@
  * History, Recent changes and Undo. A change is every version row with one
  * `change_id` (both pages of a `file_note`). Undo reverts the whole change:
  * 409 `already_undone` when it was undone, 409 `superseded` when any of its
- * pages has a newer version that is not undone.
+ * pages has a newer version that is not undone, 409 `undo_expired` when it is
+ * older than the 30-day trash.
  */
 import type { MemoryChange, MemoryVersion } from '@kortix/api-contract';
 import { memoryPageVersions } from '@kortix/db';
@@ -11,6 +12,7 @@ import { db } from '../shared/db';
 import { isUuid } from '../shared/validate';
 import { layerById, type LayerRef, type Viewer, viewerWrites } from './layers';
 import { MemoryError, notFound } from './limits';
+import { TRASH_DAYS, trashCutoff } from './maintenance';
 import { assertWrites, change, loadPage, lockPage, personAuthor, savePage, type Tx } from './pages';
 import { changeOf, loadRefs, threadGateFor, versionOf } from './serialize';
 import { planUndo, type Snapshot, type UndoVersion } from './undo';
@@ -23,8 +25,10 @@ type VersionRow = typeof memoryPageVersions.$inferSelect;
  * a one-table select leaves its columns unqualified.
  */
 const outerChange = sql.raw('"memory_page_versions"."change_id"');
+const outerCreated = sql.raw('"memory_page_versions"."created_at"');
 const undoable = sql<boolean>`(
-  NOT EXISTS (
+  ${outerCreated} > now() - make_interval(days => ${TRASH_DAYS})
+  AND NOT EXISTS (
     SELECT 1 FROM kortix.memory_page_versions c
      WHERE c.change_id = ${outerChange} AND c.undone_by_version_id IS NOT NULL)
   AND NOT EXISTS (
@@ -172,6 +176,10 @@ export async function undoVersion(projectId: string, versionId: string, viewer: 
   if (!isUuid(versionId)) throw notFound();
   const [target] = await db.select().from(memoryPageVersions).where(eq(memoryPageVersions.versionId, versionId)).limit(1);
   if (!target) throw notFound();
+  // A page purged from the trash took its rows of older changes with it: such an Undo would be partial.
+  if (target.createdAt < trashCutoff(new Date())) {
+    throw new MemoryError(409, 'undo_expired', `A change older than ${TRASH_DAYS} days cannot be undone. Restore a version from History instead.`);
+  }
   const layers = await db
     .selectDistinct({ layerId: memoryPageVersions.layerId })
     .from(memoryPageVersions)

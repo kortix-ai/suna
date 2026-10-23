@@ -52,7 +52,10 @@ Save with the `remember` tool, in the same turn you learn the fact:
 - **`section`**: the `## ` heading the fact goes under ("Status", "Who does
   what", "Next steps"). It is made when missing.
 - **`outside`**: set `{ label, url? }` for a fact from a web page, an email,
-  a file or a connector, not from the people in this thread.
+  a file or a connector, not from the people in this thread. Such a fact, and
+  one that holds a link the page does not cite yet, waits under "Needs
+  confirming": no agent gets it until a person confirms it. On a page that
+  exists, it waits on a "<title> (to confirm)" page.
 - Facts only. Never a secret, a password, a key or a token: the call is
   refused.
 - Never a person's private facts in the channel or company layer. Keep them

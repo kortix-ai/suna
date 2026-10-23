@@ -30,9 +30,18 @@ export function newUrls(text: string, known: readonly string[]): string[] {
   return urlsIn(text).filter((url) => !seen.has(url));
 }
 
-/** The title of the page that holds unconfirmed additions to `title`, within the title cap. */
-export const pendingTitle = (title: string) =>
-  `${title.trim().slice(0, MEMORY_LIMITS.title_chars - PENDING_SUFFIX.length).trimEnd()}${PENDING_SUFFIX}`;
+/**
+ * The title of the page that holds unconfirmed additions to `title`, within
+ * the title cap: "<title> (to confirm)", or "<title> (to confirm 2)" when a
+ * page already holds the first. The link to the page is `related`, never the title.
+ */
+export function pendingTitle(title: string, n = 1): string {
+  const suffix = n > 1 ? ` (to confirm ${n})` : PENDING_SUFFIX;
+  return `${title.trim().slice(0, MEMORY_LIMITS.title_chars - suffix.length).trimEnd()}${suffix}`;
+}
+
+/** A title without its "(to confirm)" / "(to confirm n)" suffix. */
+export const stripPending = (title: string) => title.replace(/ \(to confirm(?: \d+)?\)$/, '');
 
 /** The source label of a URL: its host. */
 export const hostOf = (url: string) => {

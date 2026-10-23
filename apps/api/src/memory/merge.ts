@@ -40,30 +40,63 @@ function joinAppended(lines: string[], block: string): string {
   return `${lines.join('\n')}${tight ? '\n' : '\n\n'}${block}`;
 }
 
+const bare = (text: string) => text.replace(/\s*⟦\d+⟧/g, '').trim();
+const sectionName = (line: string) => /^##\s+(.+?)\s*#*\s*$/.exec(line)?.[1]?.trim();
+
+/** The content lines of `body` with the `## ` section each sits in. */
+function sectionLines(body: string): { section: string | undefined; line: string }[] {
+  const out: { section: string | undefined; line: string }[] = [];
+  let section: string | undefined;
+  for (const raw of body.split('\n')) {
+    const name = sectionName(raw);
+    if (name) section = name;
+    else if (raw.trim()) out.push({ section, line: raw.trimEnd() });
+  }
+  return out;
+}
+
+/** The lines of a "(to confirm)" page that Confirm adds to `target`: those the target does not have (tokens aside). */
+export function pendingLines(target: string, pending: string): { section: string | undefined; line: string }[] {
+  const have = new Set(target.split('\n').map(bare).filter(Boolean));
+  return sectionLines(pending).filter(({ line }) => !have.has(bare(line)));
+}
+
+/** The source numbers the lines cite. */
+export const citedNumbers = (lines: { line: string }[]) =>
+  new Set(lines.flatMap(({ line }) => [...line.matchAll(/⟦(\d+)⟧/g)].map((m) => Number(m[1]))));
+
 /**
- * Confirming a "(to confirm)" page: each of its lines goes to the end of the
- * same `## ` section of the target (or the end). `renumber` maps the pending
- * page's source numbers to the numbers they got on the target; a token with
- * no mapping is dropped. A line the target already has (tokens aside) is
- * skipped, so a proposed whole page adds only its new lines.
+ * Confirming a "(to confirm)" page: each line `pendingLines` keeps goes to the
+ * end of the same `## ` section of the target (or the end). `renumber` maps
+ * the pending page's source numbers to the numbers they got on the target; a
+ * token with no mapping is dropped.
  */
 export function mergePending(target: string, pending: string, renumber: ReadonlyMap<number, number>): string {
-  const bare = (text: string) => text.replace(/\s*⟦\d+⟧/g, '').trim();
-  const have = new Set(target.split('\n').map(bare).filter(Boolean));
   let body = target;
-  let section: string | undefined;
-  for (const raw of pending.split('\n')) {
-    const name = /^##\s+(.+?)\s*#*\s*$/.exec(raw)?.[1]?.trim();
-    if (name) {
-      section = name;
-      continue;
-    }
-    if (!raw.trim() || have.has(bare(raw))) continue;
-    const line = raw.replace(/\s*⟦(\d+)⟧/g, (token, n: string) => {
+  for (const { section, line } of pendingLines(target, pending)) {
+    const renumbered = line.replace(/\s*⟦(\d+)⟧/g, (_token, n: string) => {
       const mapped = renumber.get(Number(n));
       return mapped ? ` ${sourceToken(mapped)}` : '';
     });
-    body = appendLine(body, line.trimEnd(), section);
+    body = appendLine(body, renumbered, section);
+  }
+  return body;
+}
+
+/**
+ * An outside rewrite of a confirmed page stays append-only: the "(to confirm)"
+ * page gets only the rewrite's lines that neither the page nor the pending
+ * page has, citation-free, each citing the outside source `n`. Confirm then
+ * adds exactly what the pending page shows.
+ */
+export function rewriteAdditions(target: string, pending: string, rewrite: string, n: number): string {
+  const have = new Set([...target.split('\n'), ...pending.split('\n')].map(bare).filter(Boolean));
+  let body = pending;
+  for (const { section, line } of sectionLines(rewrite)) {
+    const text = bare(line);
+    if (have.has(text)) continue;
+    have.add(text);
+    body = appendLine(body, `${text} ${sourceToken(n)}`, section);
   }
   return body;
 }
