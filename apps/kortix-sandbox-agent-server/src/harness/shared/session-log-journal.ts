@@ -44,10 +44,10 @@
  *     lost access to the session; a credential that regains it sends the batch.
  *   A 200 that does not acknowledge a batch is retried 3 times, then its pairs
  *   are dropped (an API bug). A dropped message stays in the native store, and
- *   the next boot sends it again: a journal that restored nothing starts with
- *   no cursors, so its first collection exports every stored message (the API
- *   keeps an unchanged one as it is). That also recovers what an older daemon
- *   dropped on a 422.
+ *   the first flush after the next boot (a turn end or the daemon stop) sends it
+ *   again: a journal that restored nothing starts with no cursors, so its first
+ *   collection exports every stored message (the API keeps an unchanged one as
+ *   it is). That also recovers what an older daemon dropped on a 422.
  *
  * Live stream (P4.3): each collection publishes what it put in the dirty set
  * on `sessionLogEventBus()`, the bus of `/kortix/runtime/events?schema=v2`
