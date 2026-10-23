@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { titleKey } from './limits';
-import { appendFact } from './merge';
+import { appendFact, mergePending } from './merge';
 
 describe('remember merges a fact into a page', () => {
   test('an empty page gets the fact as its first line', () => {
@@ -29,5 +29,33 @@ describe('remember merges a fact into a page', () => {
 
   test('the page of a title is found by its normalized key', () => {
     expect(titleKey('  Q4  Launch')).toBe(titleKey('q4 launch'));
+  });
+});
+
+describe('confirming a "(to confirm)" page merges it into its page', () => {
+  test('each line goes to its section, with the sources renumbered', () => {
+    const target = '## Status\n\n- Draft ⟦1⟧\n\n## Next steps\n\n- Review ⟦2⟧';
+    const pending = '## Status\n\n- Launch moved to Nov 19 ⟦1⟧\n\n## Risks\n\n- Vendor delay ⟦2⟧';
+    expect(mergePending(target, pending, new Map([[1, 3], [2, 4]]))).toBe(
+      '## Status\n\n- Draft ⟦1⟧\n- Launch moved to Nov 19 ⟦3⟧\n\n## Next steps\n\n- Review ⟦2⟧\n\n## Risks\n\n- Vendor delay ⟦4⟧',
+    );
+  });
+
+  test('lines without a section go at the end; an unmapped token is dropped', () => {
+    expect(mergePending('- Owner is Priya ⟦1⟧', '- Price is $49 ⟦1⟧\n- Seats: 10 ⟦9⟧', new Map([[1, 2]]))).toBe(
+      '- Owner is Priya ⟦1⟧\n- Price is $49 ⟦2⟧\n- Seats: 10',
+    );
+  });
+
+  test('a line the page already has is not added twice', () => {
+    expect(mergePending('- Owner is Priya ⟦1⟧', '- Owner is Priya\n- Renews in March ⟦1⟧', new Map([[1, 2]]))).toBe(
+      '- Owner is Priya ⟦1⟧\n- Renews in March ⟦2⟧',
+    );
+  });
+
+  test('prose goes after a blank line', () => {
+    expect(mergePending('- Owner is Priya ⟦1⟧', 'Northwind is a design partner.', new Map())).toBe(
+      '- Owner is Priya ⟦1⟧\n\nNorthwind is a design partner.',
+    );
   });
 });

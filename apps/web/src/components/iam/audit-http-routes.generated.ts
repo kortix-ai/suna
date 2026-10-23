@@ -634,6 +634,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "DELETE|v1|projects|:projectId|memory|pages|:pageId",
   "GET|v1|projects|:projectId|memory|pages|:pageId",
   "PATCH|v1|projects|:projectId|memory|pages|:pageId",
+  "POST|v1|projects|:projectId|memory|pages|:pageId|confirm",
   "GET|v1|projects|:projectId|memory|pages|:pageId|history",
   "POST|v1|projects|:projectId|memory|pages|:pageId|restore",
   "POST|v1|projects|:projectId|memory|remember",

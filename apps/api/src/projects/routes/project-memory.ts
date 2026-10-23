@@ -36,6 +36,7 @@ import { requireFeatureFlag } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import {
   addNote,
+  confirmPage,
   createPage,
   deletePage,
   exportLayer,
@@ -292,7 +293,9 @@ export function registerProjectMemoryRoutes(): void {
       path: '/{projectId}/memory/pages/{pageId}',
       tags: ['memory'],
       summary: 'Move a memory page to the trash',
-      description: 'Only the page’s creator or a project manager (`project.members.manage`); anyone else gets 403 `forbidden`.',
+      description:
+        'Only the page’s creator or a project manager (`project.members.manage`); anyone else gets 403 `forbidden`. ' +
+        'An unconfirmed page (Discard in Needs confirming) is open to anyone who writes the layer.',
       ...auth,
       request: { params: pageParams },
       responses: { 200: json(MemoryDeleteResultSchema, 'Deleted'), ...WRITE_ERRORS },
@@ -342,6 +345,28 @@ export function registerProjectMemoryRoutes(): void {
       withMemoryCaller(c, async ({ project, viewer }) => {
         const pageId = c.req.valid('param').pageId;
         await restorePage(project.projectId, pageId, c.req.valid('json').version_id, viewer);
+        return c.json(await getPage(project.projectId, pageId, viewer), 200);
+      }),
+    memoryValidationHook,
+  );
+
+  // POST /v1/projects/:projectId/memory/pages/:pageId/confirm — Needs confirming.
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/memory/pages/{pageId}/confirm',
+      tags: ['memory'],
+      summary: 'Confirm an unconfirmed memory page',
+      description:
+        'Agents get an unconfirmed page (outside content) only after a person confirms it. A "(to confirm)" page merges into the page it names ' +
+        'and goes to the trash; the response is that page. Discard is `DELETE`. 409 `not_unconfirmed` for a confirmed page.',
+      ...auth,
+      request: { params: pageParams },
+      responses: { 200: json(MemoryPageSchema, 'The confirmed page'), ...WRITE_ERRORS },
+    }),
+    (c) =>
+      withMemoryCaller(c, async ({ project, viewer }) => {
+        const pageId = await confirmPage(project.projectId, c.req.valid('param').pageId, viewer);
         return c.json(await getPage(project.projectId, pageId, viewer), 200);
       }),
     memoryValidationHook,

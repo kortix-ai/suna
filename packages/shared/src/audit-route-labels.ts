@@ -764,6 +764,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'DELETE /v1/projects/:projectId/memory/pages/:pageId': { action: 'project.memory.page.delete', title: 'Deleted memory page' },
   'GET /v1/projects/:projectId/memory/pages/:pageId/history': { action: 'project.memory.page.history', title: 'Viewed memory page history' },
   'POST /v1/projects/:projectId/memory/pages/:pageId/restore': { action: 'project.memory.page.restore', title: 'Restored memory page version' },
+  'POST /v1/projects/:projectId/memory/pages/:pageId/confirm': { action: 'project.memory.page.confirm', title: 'Confirmed memory page' },
   'POST /v1/projects/:projectId/memory/versions/:versionId/undo': { action: 'project.memory.change.undo', title: 'Undid memory change' },
   'POST /v1/projects/:projectId/memory/remember': { action: 'project.memory.remember', title: 'Agent saved to memory' },
   'GET /v1/projects/:projectId/memory/layers/:layerId/export': { action: 'project.memory.layer.export', title: 'Agent read memory copy' },

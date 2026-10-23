@@ -22,6 +22,8 @@ import { isUuid } from '../shared/validate';
 import { layerById, livePageCount, type LayerRef, type Viewer, viewerWrites } from './layers';
 import { checkPage, MemoryError, notFound, titleKey } from './limits';
 import { loadRefs, pageOf, summaryOf, threadGateFor } from './serialize';
+import { mergePending } from './merge';
+import { PENDING_SUFFIX } from './outside';
 import type { Snapshot } from './undo';
 
 const { search: _search, ...PAGE_COLUMNS } = getTableColumns(memoryPages);
@@ -256,7 +258,9 @@ export async function pageView(page: PageRow, layer: LayerRef, viewer: Viewer): 
     threadGateFor(viewer),
   );
   const edit = viewerWrites(layer, viewer) && page.deletedAt === null;
-  return pageOf(page, sources, related, refs, { edit, delete: edit && (creator === viewer.userId || (await viewer.isManager())) });
+  // An unconfirmed page is discarded by anyone who writes the layer.
+  const deletes = page.status === 'unconfirmed' || creator === viewer.userId || (await viewer.isManager());
+  return pageOf(page, sources, related, refs, { edit, delete: edit && deletes });
 }
 
 export async function getPage(projectId: string, pageId: string, viewer: Viewer): Promise<MemoryPage> {
@@ -370,12 +374,12 @@ export async function updatePage(projectId: string, pageId: string, viewer: View
   });
 }
 
-/** A person moves a page to the trash: its creator or a project manager. Returns the delete's version id. */
+/** A person moves a page to the trash: its creator or a project manager; an unconfirmed page, anyone who writes the layer (Discard). Returns the delete's version id. */
 export async function deletePage(projectId: string, pageId: string, viewer: Viewer): Promise<string> {
   const { page, layer } = await loadPage(projectId, pageId, viewer);
   assertWrites(layer, viewer);
   if (page.deletedAt) throw notFound();
-  if ((await pageCreator(pageId)) !== viewer.userId && !(await viewer.isManager())) {
+  if (page.status !== 'unconfirmed' && (await pageCreator(pageId)) !== viewer.userId && !(await viewer.isManager())) {
     throw new MemoryError(403, 'forbidden', 'Only the person who made this page or a project manager can delete it.');
   }
   return change([layer.layerId], async (tx, changeId) => {
@@ -408,5 +412,46 @@ export async function restorePage(projectId: string, pageId: string, versionId: 
     if (!version) throw notFound();
     const next: Snapshot = { ...version, deleted: false };
     await savePage(tx, { layerId: layer.layerId, projectId, existing: page, next, op: 'restore', changeId, author: personAuthor(viewer) });
+  });
+}
+
+/**
+ * A person confirms an unconfirmed page (`op: confirm`), so agents get it. A
+ * "(to confirm)" page whose page in `related` is live merges into that page
+ * (its lines, sources and summary) and goes to the trash, in one change, so
+ * one Undo brings both back. 409 `not_unconfirmed` for a confirmed page.
+ * Returns the id of the page that holds the content now.
+ */
+export async function confirmPage(projectId: string, pageId: string, viewer: Viewer): Promise<string> {
+  const { layer } = await loadPage(projectId, pageId, viewer);
+  assertWrites(layer, viewer);
+  return change([layer.layerId], async (tx, changeId) => {
+    const page = await liveLocked(tx, pageId);
+    if (page.status !== 'unconfirmed') throw new MemoryError(409, 'not_unconfirmed', 'This page is confirmed already.');
+    const author = personAuthor(viewer);
+    const targetId = page.title.endsWith(PENDING_SUFFIX) ? page.related[0] : undefined;
+    const target = targetId ? await lockPage(tx, targetId) : null;
+    if (!target || target.deletedAt || target.layerId !== page.layerId) {
+      // A page on its own, or one whose page is gone: it becomes a confirmed page, without the suffix.
+      const title = page.title.endsWith(PENDING_SUFFIX) ? page.title.slice(0, -PENDING_SUFFIX.length) : page.title;
+      const next: Snapshot = { ...snapshotOf(page), title, status: 'confirmed', related: page.related.filter((id) => id !== targetId) };
+      await savePage(tx, { layerId: layer.layerId, projectId, existing: page, next, op: 'confirm', changeId, author });
+      return pageId;
+    }
+    const sources = await tx.select().from(memoryPageSources).where(eq(memoryPageSources.pageId, pageId)).orderBy(asc(memoryPageSources.number));
+    const renumber = new Map<number, number>();
+    for (const source of sources) renumber.set(source.number, await addSource(tx, target.pageId, source));
+    const current = snapshotOf(target);
+    await savePage(tx, {
+      layerId: layer.layerId,
+      projectId,
+      existing: target,
+      next: { ...current, body: mergePending(current.body, page.body, renumber), summary: page.summary || current.summary },
+      op: 'confirm',
+      changeId,
+      author,
+    });
+    await savePage(tx, { layerId: layer.layerId, projectId, existing: page, next: { ...snapshotOf(page), deleted: true }, op: 'confirm', changeId, author });
+    return target.pageId;
   });
 }

@@ -10,6 +10,8 @@
  * success the tool refreshes that layer's read-only copy at once, so the
  * agent reads its own write, and returns the API's result (the UI renders
  * it). A refusal is returned as `Error: <code>: <message>` for the model.
+ * Outside content (`outside`, or a new link in the text) is saved
+ * `unconfirmed` and stays out of the copy until a person confirms it.
  */
 import { syncMemoryCopy, type MemoryCopyDir } from '../memory-copy'
 import type { ToolContext } from '../tool'
@@ -48,6 +50,7 @@ export default {
     'One topic per page: the title names the topic ("Priya", "Q4 launch"), and a page of that title gets the fact added; a new title makes a new page. ' +
     'One fact per call, in `fact`; send `body` only to rewrite the whole page. Facts only: never a secret, a password, a key or a token. ' +
     'Anything learned from a web page, an email, a file or a connector, not from the people in this thread: set `outside` to where it came from. ' +
+    'Such a fact, or one that holds a link the page does not cite yet, waits under "Needs confirming" (status `unconfirmed`): agents do not get it until a person confirms it. ' +
     'The saved pages are read-only files under /opt/kortix/memory/; read them there, write only with this tool.',
   parameters: {
     type: 'object',
@@ -66,7 +69,7 @@ export default {
       from_note_id: { type: 'string', description: 'A note this fact files into the page; the note is deleted.' },
       outside: {
         type: 'object',
-        description: 'Where a fact from outside this thread came from.',
+        description: 'Where a fact from outside this thread came from. The fact waits for a person to confirm it.',
         properties: {
           label: { type: 'string', description: 'The source: a site, a mail subject, a file or a connector name.' },
           url: { type: 'string', description: 'Its address, when it has one.' },

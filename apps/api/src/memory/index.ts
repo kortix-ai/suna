@@ -13,7 +13,7 @@ export { exportLayer } from './export';
 export { resolveLayerKey, type LayerRef, type Viewer } from './layers';
 export { MemoryError } from './limits';
 export { addNote } from './notes';
-export { createPage, deletePage, getPage, listPages, restorePage, updatePage } from './pages';
+export { confirmPage, createPage, deletePage, getPage, listPages, restorePage, updatePage } from './pages';
 export { remember } from './remember';
 export { searchMemory } from './search';
 export { recordThreadLoad, threadUsage } from './thread-loads';

@@ -6,9 +6,12 @@
  * is made. An existing page keeps its type. A note is never the target: notes
  * are filed only with `from_note_id`. `from_note_id` deletes that note in
  * the same change (`op: file_note` on both pages, so one Undo restores both).
+ * Outside content (`outside`, or a URL the page does not hold) waits for a
+ * person: a new page is `unconfirmed`; an addition to a confirmed page goes
+ * to its unconfirmed "<title> (to confirm)" page (see `outside.ts`).
  */
 import { MEMORY_SCOPE_COPY_DIR, type MemoryRememberInput, type MemoryRememberResult } from '@kortix/api-contract';
-import { memoryPages } from '@kortix/db';
+import { memoryPageSources, memoryPages } from '@kortix/db';
 import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db } from '../shared/db';
@@ -16,7 +19,8 @@ import { copyPages, forbidden, threadOf } from './export';
 import { layerKeyOf, type LayerRef } from './layers';
 import { checkSecrets, MemoryError, notFound, titleKey } from './limits';
 import { appendFact } from './merge';
-import { addSource, type Author, changeWithVersions, lockPage, readOnlyError, savePage, snapshotOf } from './pages';
+import { newUrls, hostOf, pendingTitle } from './outside';
+import { addSource, type Author, changeWithVersions, lockPage, type PageRow, readOnlyError, savePage, snapshotOf, type Tx } from './pages';
 import { copyPath, pageSlugs } from './render';
 import { threadLabel } from './serialize';
 import type { ThreadLayers } from './thread-layers';
@@ -43,6 +47,21 @@ async function threadFirstPrompt(sessionId: string): Promise<unknown> {
     sql`SELECT metadata->>'first_prompt' AS first_prompt FROM kortix.project_sessions WHERE session_id = ${sessionId}`,
   )) as unknown as { first_prompt: unknown }[];
   return rows[0]?.first_prompt;
+}
+
+/** The live page (not a note) of a title in a layer, locked; null when none. A note is never merged into. */
+async function livePageOfTitle(tx: Tx, layerId: string, title: string): Promise<PageRow | null> {
+  const [found] = await tx
+    .select({ pageId: memoryPages.pageId })
+    .from(memoryPages)
+    .where(and(eq(memoryPages.layerId, layerId), eq(memoryPages.titleKey, titleKey(title)), isNull(memoryPages.deletedAt), ne(memoryPages.type, 'note')))
+    .limit(1);
+  return found ? lockPage(tx, found.pageId) : null;
+}
+
+async function sourceUrls(tx: Tx, pageId: string): Promise<string[]> {
+  const rows = await tx.select({ url: memoryPageSources.url }).from(memoryPageSources).where(eq(memoryPageSources.pageId, pageId));
+  return rows.flatMap((row) => (row.url ? [row.url] : []));
 }
 
 export async function remember(projectId: string, sessionId: string, input: MemoryRememberInput): Promise<MemoryRememberResult> {
@@ -81,9 +100,7 @@ export async function remember(projectId: string, sessionId: string, input: Memo
     sessionId: thread.threadSessionId,
     messageId,
   };
-  const source = input.outside
-    ? { kind: 'outside' as const, label: input.outside.label, url: input.outside.url ?? null }
-    : { kind: 'thread' as const, sessionId: thread.threadSessionId, messageId, label: threadLabel(firstPrompt) };
+  const threadSource = { kind: 'thread' as const, sessionId: thread.threadSessionId, messageId, label: threadLabel(firstPrompt) };
   const layerIds = note ? [layer.layerId, note.layerId] : [layer.layerId];
 
   const { result: saved, versions } = await changeWithVersions(layerIds, async (tx, changeId) => {
@@ -102,20 +119,15 @@ export async function remember(projectId: string, sessionId: string, input: Memo
         author,
       });
     }
-    // A note is never merged into: notes are filed only with `from_note_id`.
-    const [found] = await tx
-      .select({ pageId: memoryPages.pageId })
-      .from(memoryPages)
-      .where(
-        and(
-          eq(memoryPages.layerId, layer.layerId),
-          eq(memoryPages.titleKey, titleKey(input.title)),
-          isNull(memoryPages.deletedAt),
-          ne(memoryPages.type, 'note'),
-        ),
-      )
-      .limit(1);
-    const existing = found ? await lockPage(tx, found.pageId) : null;
+    const found = await livePageOfTitle(tx, layer.layerId, input.title);
+    // Outside content waits for a person: declared with `outside`, or a URL the page does not already cite or contain.
+    const known = found ? [found.body, ...(await sourceUrls(tx, found.pageId))] : [];
+    const urls = newUrls(input.fact ?? input.body ?? '', known);
+    const outside = input.outside ?? (urls[0] ? { label: hostOf(urls[0]), url: urls[0] } : null);
+    const source = outside ? { kind: 'outside' as const, label: outside.label, url: outside.url ?? urls[0] ?? null } : threadSource;
+    // An outside addition to a confirmed page goes to its "(to confirm)" page, which a person confirms into it.
+    const pendingFor = outside && found?.status === 'confirmed' ? found : null;
+    const existing = pendingFor ? await livePageOfTitle(tx, layer.layerId, pendingTitle(found!.title)) : found;
     const pageId = existing?.pageId ?? randomUUID();
     let result: Awaited<ReturnType<typeof savePage>>;
     if (existing) {
@@ -132,6 +144,7 @@ export async function remember(projectId: string, sessionId: string, input: Memo
         author,
       });
     } else {
+      const title = pendingFor ? pendingTitle(pendingFor.title) : input.title;
       // A live note of this title holds it: the agent files the note instead of colliding with it.
       const [noteOfTitle] = await tx
         .select({ pageId: memoryPages.pageId })
@@ -139,7 +152,7 @@ export async function remember(projectId: string, sessionId: string, input: Memo
         .where(
           and(
             eq(memoryPages.layerId, layer.layerId),
-            eq(memoryPages.titleKey, titleKey(input.title)),
+            eq(memoryPages.titleKey, titleKey(title)),
             isNull(memoryPages.deletedAt),
             eq(memoryPages.type, 'note'),
           ),
@@ -157,7 +170,15 @@ export async function remember(projectId: string, sessionId: string, input: Memo
         projectId,
         existing: null,
         pageId,
-        next: { type: input.type, title: input.title, summary: input.summary ?? '', body, status: 'confirmed', related: [], deleted: false },
+        next: {
+          type: pendingFor?.type ?? input.type,
+          title,
+          summary: input.summary ?? '',
+          body,
+          status: outside ? 'unconfirmed' : 'confirmed',
+          related: pendingFor ? [pendingFor.pageId] : [],
+          deleted: false,
+        },
         op: op ?? 'create',
         changeId,
         author,

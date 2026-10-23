@@ -305,7 +305,7 @@ export const MemoryRememberInputSchema = z
     section: z.string().trim().min(1).max(MEMORY_LIMITS.title_chars).optional(),
     layer: MemoryLayerScopeSchema.optional(),
     from_note_id: z.string().uuid().optional(),
-    /** Where a fact from outside the thread came from. Accepted in P1; the page goes `unconfirmed` from P3. */
+    /** Where a fact from outside the thread came from: it waits for a person (`unconfirmed`, or a "(to confirm)" page for an addition to a confirmed page). */
     outside: z
       .object({
         label: z.string().trim().min(1).max(MEMORY_LIMITS.source_label_chars),
