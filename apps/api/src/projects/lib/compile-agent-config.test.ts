@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { describe, expect, mock, spyOn, test } from 'bun:test';
 import { KORTIX_SKILL_NAMES, parseManifestText } from '@kortix/manifest-schema';
 
 // compile-agent-config.ts's I/O half imports the real ../git module, which
@@ -760,11 +760,16 @@ describe('resolveCompiledAgentConfigForSession — read failures', () => {
       // pr-bot.md deliberately absent
     };
 
-    const compiled = await resolveCompiledAgentConfigForSession(project);
-
-    expect(compiled).not.toBeNull();
-    expect(JSON.parse(compiled as string).agent['pr-bot']).toBeDefined();
-    expect(JSON.parse(compiled as string).agent.support.prompt).toBe('Support prompt.');
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const compiled = await resolveCompiledAgentConfigForSession(project);
+      expect(compiled).not.toBeNull();
+      expect(compiled && JSON.parse(compiled).agent['pr-bot']).toBeDefined();
+      expect(compiled && JSON.parse(compiled).agent.support.prompt).toBe('Support prompt.');
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   test('a TRANSIENT git failure yields null, not an agent stripped of its prompt', async () => {

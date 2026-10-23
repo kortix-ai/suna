@@ -876,11 +876,7 @@ export async function resolveCompiledAgentConfigForSession(
         const md = await readAgentMarkdownFile(project, raw, name, ref);
         if (md.content !== null) {
           agentMdFiles[md.path] = md.content;
-          return;
         }
-        console.warn(
-          `[compile-agent-config] project ${project.projectId}: agent "${name}" has no behavior file at "${md.path}"`,
-        );
       }),
     );
 
