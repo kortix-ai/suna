@@ -59,7 +59,7 @@ const OFFICIAL_SURFACE_ENRICHMENTS: Record<string, ConnectorSurfaceVariant[]> = 
 };
 
 /** `composio`: a managed Composio toolkit (`connectors_v2` catalogue only). */
-export type ConnectorCatalogKind = 'openapi' | 'mcp' | 'graphql' | 'cli' | 'composio';
+export type ConnectorCatalogKind = 'openapi' | 'mcp' | 'graphql' | 'composio';
 
 /** A Composio toolkit as the managed catalogue routes publish it. */
 export interface ComposioCatalogCard {
@@ -115,7 +115,7 @@ export interface ConnectorTemplate {
 export interface ConnectorSurfaceVariant {
   id: string;
   /** `composio`: a managed toolkit (`connectors_v2` only), installed from `composio`. */
-  kind: 'openapi' | 'postman' | 'mcp' | 'graphql' | 'http' | 'cli' | 'composio';
+  kind: 'openapi' | 'postman' | 'mcp' | 'graphql' | 'http' | 'composio';
   name: string;
   url: string | null;
   docs: string | null;
@@ -138,7 +138,7 @@ export function variantRank(variant: ConnectorSurfaceVariant): number {
   if (variant.kind === 'composio') return 1;
   if (!variant.connector) return 10;
   if (variant.kind === 'mcp') return variant.oneClick ? 0 : 2;
-  return { openapi: 3, postman: 3, graphql: 4, http: 5, cli: 6 }[variant.kind] ?? 6;
+  return { openapi: 3, postman: 3, graphql: 4, http: 5 }[variant.kind] ?? 6;
 }
 
 export interface ConnectorCatalogDetail {
@@ -175,7 +175,8 @@ function normalizeItem(value: unknown): ConnectorCatalogItem | null {
   if (!value || typeof value !== 'object') return null;
   const raw = value as Record<string, unknown>;
   const kind = raw.kind;
-  if (kind !== 'openapi' && kind !== 'mcp' && kind !== 'graphql' && kind !== 'cli') return null;
+  // A CLI record is not a connector: Kortix cannot install it, so it is not listed.
+  if (kind !== 'openapi' && kind !== 'mcp' && kind !== 'graphql') return null;
   const id = nullableString(raw.id);
   const slug = nullableString(raw.slug);
   const name = nullableString(raw.name);
@@ -333,20 +334,6 @@ function normalizeSurface(value: unknown, index: number): ConnectorSurfaceVarian
       connector: url ? withAuth({ provider: 'graphql', endpoint: url }) : null,
     };
   }
-  if (type === 'cli') {
-    return {
-      id: slug,
-      kind: 'cli',
-      name,
-      url,
-      docs,
-      description: null,
-      transports,
-      requiresAuth,
-      command: nullableString(surface.command),
-      connector: null,
-    };
-  }
   if (type === 'postman') {
     const source = spec ?? url;
     return {
@@ -381,7 +368,6 @@ const SURFACE_RANK: Record<ConnectorCatalogKind, number> = {
   mcp: 2,
   openapi: 3,
   graphql: 4,
-  cli: 5,
 };
 export const surfaceRank = (item: ConnectorCatalogItem) =>
   item.kind === 'mcp' && item.oneClick ? 0 : SURFACE_RANK[item.kind];
@@ -575,7 +561,7 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
         : query
           ? rankByName(searched, query)
           : searched;
-      // The feed has one record per surface (MCP, OpenAPI, CLI). A card is an
+      // The feed has one record per surface (MCP, OpenAPI, GraphQL). A card is an
       // app: its page lists every surface, so a list shows each app once.
       const apps = onePerApp(scoped);
       const parsedOffset = Number.parseInt(input.cursor ?? '0', 10);
@@ -616,7 +602,7 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
       const items = filtered(await loadIndex(), input);
       const groups = groupIntoSections(items, (item) => item.categories);
       // The feed publishes one record per surface (`stripe-com`,
-      // `stripe-com-openapi`, `stripe-com-cli`). A card resolves every surface
+      // `stripe-com-openapi`, `stripe-com-mcp`). A card resolves every surface
       // for its domain, so a slice shows one card per domain. `total` counts
       // apps (domains), because \"View all\" (`list`) shows each app once.
       const onePerDomain = (candidates: ConnectorCatalogItem[]) => {

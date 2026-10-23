@@ -9,7 +9,7 @@ const detail: ConnectorCatalogDetail = {
     { id: 'kortix:stripe:mcp', kind: 'mcp', name: 'Stripe', url: 'https://mcp.stripe.com', docs: null, description: null, transports: ['http'], requiresAuth: true, command: null, connector: { provider: 'mcp', url: 'https://mcp.stripe.com', transport: 'http' }, oneClick: true, recommended: true },
     { id: 'composio:stripe', kind: 'composio', name: 'Stripe', url: null, docs: null, description: null, transports: [], requiresAuth: true, command: null, connector: null, oneClick: true, composio: { slug: 'stripe', name: 'Stripe', logo: null, description: null, categories: [], isNoAuth: false, connected: false } },
     { id: 'stripe-api', kind: 'openapi', name: 'Stripe API', url: null, docs: null, description: null, transports: [], requiresAuth: true, command: null, connector: { provider: 'openapi', spec: 'https://example.test/spec.json', auth: { type: 'bearer', in: 'header', name: 'Authorization', prefix: 'Bearer' } } },
-    { id: 'stripe-cli', kind: 'cli', name: 'Stripe CLI', url: null, docs: 'https://docs.example.test/cli', description: null, transports: [], requiresAuth: false, command: 'stripe', connector: null },
+    { id: 'stripe-http', kind: 'http', name: 'Stripe HTTP', url: null, docs: 'https://docs.example.test/http', description: null, transports: [], requiresAuth: false, command: null, connector: null },
   ],
 };
 
@@ -24,7 +24,7 @@ describe('install from the catalogue', () => {
   });
 
   test('a way Kortix cannot install, or no such way, is refused with the reason', () => {
-    expect(() => catalogInstallDraft(detail, { way: 'stripe-cli' })).toThrow(CatalogInstallError);
+    expect(() => catalogInstallDraft(detail, { way: 'stripe-http' })).toThrow(CatalogInstallError);
     expect(() => catalogInstallDraft(detail, { way: 'nope' })).toThrow('"nope" is not a way to connect Stripe');
     expect(() => catalogInstallDraft(detail, { name: '!!!' })).toThrow('a letter or a digit');
     expect(catalogSlug('  Gmail — Support Inbox ')).toBe('gmail-support-inbox');

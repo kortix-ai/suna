@@ -8,7 +8,7 @@ import {
 import { useTranslations as useI18nTranslations } from '../../i18n';
 import { getProjectDetail, listConnectors, type AdminConnector } from '@kortix/sdk';
 import { contract, FRESHNESS, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
-import { MagnifyingGlassIcon, PlugIcon, PlugsConnectedIcon } from '@phosphor-icons/react';
+import { CaretDownIcon, MagnifyingGlassIcon, PlugIcon, PlugsConnectedIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { lazyClient } from '../../lib/lazy-client';
 import {
@@ -23,6 +23,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PoliciesPanel } from '../../workspace/projects/policies-panel';
 import { Button } from '../../primitives/button';
 import { Switch } from '../../primitives/switch';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '../../primitives/dropdown-menu';
 import { cn } from '../../lib/utils';
 import {
   InputGroupSearch,
@@ -110,7 +117,6 @@ const CATALOG_KIND_FILTERS = {
   composio: ['composio'],
   openapi: ['openapi'],
   graphql: ['graphql'],
-  cli: ['cli'],
 } satisfies Record<string, DiscoverConnectorKind[]>;
 type CatalogKindFilter = keyof typeof CATALOG_KIND_FILTERS;
 
@@ -598,12 +604,46 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                 Not gated on `canWrite` — anyone who can open the page can read
                 the project's approval policy. */}
                 {mcpApps && catalogActive ? (
-                  <Switch
-                    label={tPages('oneClickOnly')}
-                    checked={oneClick}
-                    onCheckedChange={setOneClick}
-                    className="ml-auto px-0 py-0"
-                  />
+                  <div className="ml-auto flex items-center gap-4">
+                    {/* Quiet on purpose: a filter, not a second tab strip. */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="text"
+                          size="sm"
+                          className={cn('gap-1 px-0 transition-colors', kindFilter !== 'all' && 'text-foreground')}
+                          aria-label={tPages('typeFilterLabel')}
+                        >
+                          {kindFilter === 'all' ? tPages('typeFilterAll') : wayKindLabel(kindFilter)}
+                          <CaretDownIcon className="size-3 shrink-0" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="end"
+                        className="w-40"
+                        // A pointer pick returns no focus ring to the quiet trigger.
+                        onCloseAutoFocus={(event) => event.preventDefault()}
+                      >
+                        <DropdownMenuRadioGroup
+                          value={kindFilter}
+                          onValueChange={(next) => setKindFilter(next as CatalogKindFilter)}
+                        >
+                          {(Object.keys(CATALOG_KIND_FILTERS) as CatalogKindFilter[]).map((value) => (
+                            <DropdownMenuRadioItem key={value} value={value}>
+                              {value === 'all' ? tPages('typeFilterAll') : wayKindLabel(value)}
+                            </DropdownMenuRadioItem>
+                          ))}
+                        </DropdownMenuRadioGroup>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <Switch
+                      label={tPages('oneClickOnly')}
+                      checked={oneClick}
+                      onCheckedChange={setOneClick}
+                      className="px-0 py-0"
+                    />
+                  </div>
                 ) : null}
                 <Button
                   type="button"
@@ -642,17 +682,6 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                     {ownMatches.map(ownConnectorCard)}
                   </CatalogGrid>
                 </div>
-              ) : null}
-              {mcpApps ? (
-                <Tabs value={kindFilter} onValueChange={(next) => setKindFilter(next as CatalogKindFilter)} className="max-w-full overflow-x-auto">
-                  <TabsList type="underline" underlineSize="md" size="sm" aria-label={tPages('typeFilterLabel')} className="h-8 justify-start gap-5">
-                    {(Object.keys(CATALOG_KIND_FILTERS) as CatalogKindFilter[]).map((value) => (
-                      <TabsTrigger key={value} value={value} className="flex-none px-0 text-xs font-medium">
-                        {value === 'all' ? tPages('typeFilterAll') : wayKindLabel(value)}
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                </Tabs>
               ) : null}
               <ConnectorBrowse
                 state={catalog}

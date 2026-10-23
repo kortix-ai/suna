@@ -108,6 +108,5 @@ export function wayDescription(
 ): string {
   if (way.kind === 'composio') return t('wayComposio', { name: appName });
   if (way.kind === 'mcp') return way.oneClick ? t('wayMcpOneClick', { name: appName }) : t('wayMcpSetup', { name: appName });
-  if (way.kind === 'cli') return t('wayCli', { name: appName });
   return t('wayApi', { name: appName, kind: wayKindLabel(way.kind) });
 }

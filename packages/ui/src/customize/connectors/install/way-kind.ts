@@ -11,7 +11,6 @@ const LABELS: Record<WayKind, string> = {
   graphql: 'GraphQL',
   postman: 'Postman',
   http: 'HTTP API',
-  cli: 'CLI',
 };
 
 /** The badge a way to connect carries everywhere: cards, the app page, Install. */

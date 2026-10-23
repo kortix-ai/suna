@@ -168,8 +168,6 @@ export function catalogEntryKindLabel(entry: CatalogEntry): string {
       return 'MCP';
     case 'graphql':
       return 'GraphQL';
-    case 'cli':
-      return 'CLI';
     default:
       return 'API';
   }

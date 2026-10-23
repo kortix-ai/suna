@@ -287,7 +287,7 @@ kortix connectors connect gmail                                # authorize your 
 - Without `--apply`, `add` and `rm` edit your local `kortix.yaml`. Run `kortix ship` to apply the change, then `kortix connectors sync` to reconcile the connector.
 - With `--apply`, Kortix commits the change to the default branch and syncs the connector at once, like the web app.
 - `kortix connectors rm <slug> [--apply]` removes a connector. `kortix connectors rename <slug> <name>` sets its display name and applies at once.
-- `kortix connectors catalog [<query>]` lists every app, one row per app by its best way in. `--kind mcp,composio,openapi,graphql,cli` filters by how it connects, `--one-click` keeps the apps you connect by signing in, and `--category` and `--limit` narrow the page.
+- `kortix connectors catalog [<query>]` lists every app you can install as a connector, one row per app by its best way in. `--kind mcp,composio,openapi,graphql` filters by how it connects, `--one-click` keeps the apps you connect by signing in, and `--category` and `--limit` narrow the page.
 - `kortix connectors catalog show <id>` lists every way to connect the app, recommended first, and the tools of one way (`--way <id>`). `catalog tools <id> --way <id>` lists every tool of one way.
 - `kortix connectors catalog install <id> [--way <id>] [--name <name>] [--slug <slug>]` adds the connector profile, the recommended way unless `--way`. Then `kortix connectors connect <slug>`.
 - The catalog commands need the `connectors_v2` or the `connectors_api_discover` flag.

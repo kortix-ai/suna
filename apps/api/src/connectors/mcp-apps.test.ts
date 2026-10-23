@@ -145,14 +145,14 @@ describe('the ways to connect one app (connectors_v2 detail)', () => {
     ];
     const surfaces = async (domain: string) =>
       domain === 'stripe.com'
-        ? [variant('registry-mcp', 'mcp', 'https://mcp.stripe.com', true), variant('stripe-api', 'openapi', null, true), variant('stripe-cli', 'cli', null, false)]
+        ? [variant('registry-mcp', 'mcp', 'https://mcp.stripe.com', true), variant('stripe-api', 'openapi', null, true), variant('stripe-http', 'http', null, false)]
         : [];
     const ways = await connectorsV2Surfaces('stripe.com', { items, surfaces });
     expect(ways.map((way) => [way.id, way.kind, way.oneClick === true, way.recommended === true])).toEqual([
       ['kortix:stripe:mcp', 'mcp', true, true],
       ['composio:stripe', 'composio', true, false],
       ['stripe-api', 'openapi', false, false],
-      ['stripe-cli', 'cli', false, false],
+      ['stripe-http', 'http', false, false],
     ]);
   });
 

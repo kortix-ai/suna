@@ -159,7 +159,7 @@ export const CONNECTOR_TOOLS = [
         query: { type: 'string', description: 'App name or keyword, e.g. "calendar".' },
         limit: { type: 'number', description: 'Maximum apps (default 20, max 100).' },
         cursor: { type: 'string', description: 'The `cursor` of the previous page.' },
-        kind: { type: 'string', description: 'Connectors v2: only apps that connect these ways, comma separated: mcp, composio, openapi, graphql, cli.' },
+        kind: { type: 'string', description: 'Connectors v2: only apps that connect these ways, comma separated: mcp, composio, openapi, graphql.' },
         one_click: { type: 'boolean', description: 'Connectors v2: only apps the human connects by signing in (a public or self-registering MCP server, or Composio). Default false: every app.' },
       },
       required: ['project_id', 'query'],

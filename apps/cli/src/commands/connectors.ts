@@ -129,7 +129,7 @@ interface ProjectPoliciesView {
  *  Connectors v2 every MCP server, API and managed app. */
 interface DiscoverConnector {
   id: string;
-  /** How its best way in connects: mcp, composio, openapi, graphql, cli. */
+  /** How its best way in connects: mcp, composio, openapi, graphql. */
   kind: string;
   slug: string;
   name: string;
@@ -166,7 +166,6 @@ const WAY_LABEL: Record<string, string> = {
   graphql: 'GraphQL',
   postman: 'Postman',
   http: 'HTTP API',
-  cli: 'CLI',
 };
 const wayLabel = (kind: string) => WAY_LABEL[kind] ?? kind;
 
@@ -299,7 +298,7 @@ Subcommands:
   catalog [<query>] [--kind <k,k>]  Browse the app catalogue: every MCP server,
           [--one-click]             REST (OpenAPI) and GraphQL API, CLI and
           [--category <c>]          Composio app, one row per app by its best
-          [--limit <n>] [--cursor]  way in. --kind mcp,composio,openapi,graphql,cli
+          [--limit <n>] [--cursor]  way in. --kind mcp,composio,openapi,graphql
           [--json]                  filters by how it connects; --one-click keeps
                                     the apps the human connects by signing in.
                                     Needs \`connectors_v2\` or \`connectors_api_discover\`.

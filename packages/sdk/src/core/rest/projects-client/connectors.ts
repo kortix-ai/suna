@@ -1867,7 +1867,7 @@ export async function listConnectSections(
 
 /** `composio`: a managed app (Connectors v2 catalogue only). Install it as a
  *  Composio toolkit from `DiscoverConnector.composio`. */
-export type DiscoverConnectorKind = 'openapi' | 'mcp' | 'graphql' | 'cli' | 'composio';
+export type DiscoverConnectorKind = 'openapi' | 'mcp' | 'graphql' | 'composio';
 
 export interface DiscoverConnector {
   id: string;
@@ -1909,7 +1909,7 @@ export interface DiscoverConnectorTemplate {
 export interface DiscoverConnectorVariant {
   id: string;
   /** `composio`: a Composio app (Connectors v2), installed from `composio`. */
-  kind: 'openapi' | 'postman' | 'mcp' | 'graphql' | 'http' | 'cli' | 'composio';
+  kind: 'openapi' | 'postman' | 'mcp' | 'graphql' | 'http' | 'composio';
   name: string;
   url: string | null;
   docs: string | null;

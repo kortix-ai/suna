@@ -223,7 +223,6 @@ describe('catalogEntryKindLabel', () => {
     expect(catalogEntryKindLabel(discover('mcp'))).toBe('MCP');
     expect(catalogEntryKindLabel(discover('openapi'))).toBe('API');
     expect(catalogEntryKindLabel(discover('graphql'))).toBe('GraphQL');
-    expect(catalogEntryKindLabel(discover('cli'))).toBe('CLI');
     expect(catalogEntryKindLabel(discover('composio'))).toBe('Composio');
     expect(catalogEntryKindLabel({ source: 'easy-connect' } as unknown as CatalogEntry)).toBe(
       'Composio',

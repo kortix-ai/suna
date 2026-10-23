@@ -7,7 +7,7 @@
  *             An OAuth server lists its tools only after sign-in.
  *   composio  Composio's tool list for the toolkit, live.
  *   openapi   the spec's operations, live, through the connector egress.
- *   graphql, postman, http, cli: nothing to read before install.
+ *   graphql, postman, http: nothing to read before install.
  */
 import { composioRestClient } from './composio-catalog-search';
 import type { ConnectorSurfaceVariant } from './connector-catalog';
