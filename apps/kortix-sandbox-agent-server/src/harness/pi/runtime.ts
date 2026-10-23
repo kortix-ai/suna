@@ -38,7 +38,7 @@ import { CODEMODE_TOOL, type CodemodeMode } from './codemode'
 import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
 import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule } from './interactions'
 import type { PiModels, SelectedModel } from './model'
-import { nativeModelId } from './model'
+import { compactionSettings, nativeModelId } from './model'
 import { TranscriptStore, type RuntimeFrame } from './transcript'
 import { PiTurnEvents, assistantInfoFields, assistantMessageError, type TurnEventEmission } from './turn-events'
 import { withAgentSampling } from './sampling'
@@ -641,6 +641,7 @@ export class PiRuntime {
         systemPrompt: () => this.systemPrompt(),
         skillAllowed: (name) => skillGranted(this.policy, name),
         provider: this.models.models.getProvider(this.selected.providerID),
+        compaction: compactionSettings(this.models.catalog),
       })
       const extensionsMs = performance.now() - extensionsStartedAt
       this.rebuildSystemPrompt()
@@ -724,6 +725,8 @@ export class PiRuntime {
     })
     this.selected = this.models.select(this.selected?.modelID ?? null)
     this.agent.state.model = this.selected.model
+    // A model whose limits the catalog now reports differently compacts at a different threshold.
+    await this.pi?.setCompaction(compactionSettings(this.models.catalog))
   }
 
   /** Reload skills and the root AGENTS.md from disk (after a repo refresh). */
