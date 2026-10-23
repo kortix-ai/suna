@@ -145,6 +145,12 @@ export function ProjectSidebar({
       // square fill behind the flyout card and it showed at all four corners.
       className="[scrollbar-width:'none'] [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden"
     >
+      <div className="flex h-full min-h-0 w-full">
+        {/* Domain space switcher: the full-height icon rail on the left edge.
+            Renders nothing until the project declares a domain, so a project
+            without domains keeps the single-column sidebar. */}
+        <DomainSpaceRail projectId={projectId} />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <SidebarHeader
         className="kx-project-sidebar-header space-y-2"
         data-peek={peek ? '' : undefined}
@@ -270,12 +276,7 @@ export function ProjectSidebar({
           (header `p-2` + switcher `px-1` + half of the `size-6` tile). Left
           side only: right padding still clears trailing badges. */}
       <SidebarContent className="relative min-h-0 flex-1 [scrollbar-width:'none'] overflow-hidden [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden [&_[data-sidebar=menu-button]]:pl-2">
-        <div className="flex h-full min-h-0">
-          {/* Domain space switcher: the icon rail on the left edge. Renders
-              nothing until the project declares a domain, so a project without
-              domains keeps the single-column sidebar. */}
-          <DomainSpaceRail projectId={projectId} />
-          <div className="flex h-full min-h-0 flex-1 flex-col space-y-2 overflow-hidden">
+        <div className="flex h-full min-h-0 flex-col space-y-2">
           <SidebarGroup className="py-0">
             <SidebarMenu>
               <SidebarMenuItem>
@@ -340,9 +341,10 @@ export function ProjectSidebar({
               <SidebarUpgradeButton accountId={accountId} />
             </SidebarMenu>
           </SidebarGroup>
-          </div>
         </div>
       </SidebarContent>
+        </div>
+      </div>
 
       <SidebarRail aria-label={t('resize')} title={t('resizeHelp')} />
     </Sidebar>
