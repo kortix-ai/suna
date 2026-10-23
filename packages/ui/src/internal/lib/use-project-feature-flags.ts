@@ -48,6 +48,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const agentRooms = useFeatureFlag(projectId, 'agent_rooms');
   const goals = useFeatureFlag(projectId, 'goals');
   const artifacts = useFeatureFlag(projectId, 'artifacts');
+  const workspaceVolume = useFeatureFlag(projectId, 'workspace_volume');
 
   return {
     flags: {
@@ -72,8 +73,9 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       agent_rooms: agentRooms.enabled,
       goals: goals.enabled,
       artifacts: artifacts.enabled,
+      workspace_volume: workspaceVolume.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: artifacts.isLoading,
+    isLoading: workspaceVolume.isLoading,
   };
 }

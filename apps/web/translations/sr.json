@@ -1291,6 +1291,10 @@
           "name": "Циљеви",
           "description": "Дајте агенту циљ за који је одговоран док независна провера не потврди исход. Планира, ради, чека, подсећа људе и чува своје стање у фасцикли Goals у Фајловима. Захтева укључене Volumene и Подсетнике."
         },
+        "workspace_volume": {
+          "name": "Workspace volumen",
+          "description": "Čuva /workspace svake nove sesije na zasebnom volumenu, pa se zaustavljen sandbox može obrisati, a sledeći se pokreće sa istim fajlovima i razgovorom. Kortix ga uključuje po projektu."
+        },
         "artifacts": {
           "name": "Артефакти",
           "description": "Дели документе (Markdown) и HTML странице (презентације, контролне табле, макете, алате) из Датотека са пројектом, изабраним особама или свима са линком. Документи се уређују на месту, свако чување је једна верзија из историје Датотека, а документи се могу извести у PDF. Додаје страницу Артефакти и `kortix artifacts`."

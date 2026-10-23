@@ -1291,6 +1291,10 @@
           "name": "Obiettivi",
           "description": "Assegna a un agente un obiettivo di cui resta responsabile finché un controllo indipendente non conferma il risultato. Pianifica, lavora, attende, sollecita le persone e conserva il suo stato in una cartella Goals in File. Richiede Volumi e Promemoria attivi."
         },
+        "workspace_volume": {
+          "name": "Volume del workspace",
+          "description": "Mantiene la /workspace di ogni nuova sessione su un volume dedicato, così una sandbox ferma può essere eliminata e la successiva si avvia con gli stessi file e la stessa conversazione. Kortix lo attiva per progetto."
+        },
         "artifacts": {
           "name": "Artefatti",
           "description": "Condividi documenti (Markdown) e pagine HTML (presentazioni, dashboard, mockup, strumenti) da File con il progetto, persone scelte o chiunque abbia un link. I documenti si modificano direttamente, ogni salvataggio è una versione dalla cronologia di File e i documenti si esportano in PDF. Aggiunge la pagina Artefatti e `kortix artifacts`."

@@ -1291,6 +1291,10 @@
           "name": "Objectifs",
           "description": "Confiez à un agent un objectif dont il reste responsable jusqu’à ce qu’une vérification indépendante confirme le résultat. Il planifie, travaille, attend, relance les personnes et conserve son état dans un dossier Goals dans Fichiers. Nécessite Volumes et Rappels activés."
         },
+        "workspace_volume": {
+          "name": "Volume de workspace",
+          "description": "Conserve le /workspace de chaque nouvelle session sur son propre volume : une sandbox arrêtée peut être supprimée et la suivante démarre avec les mêmes fichiers et la même conversation. Kortix l'active par projet."
+        },
         "artifacts": {
           "name": "Artefacts",
           "description": "Partagez des documents (Markdown) et des pages HTML (présentations, tableaux de bord, maquettes, outils) depuis Fichiers avec le projet, des personnes choisies ou toute personne disposant d’un lien. Les documents se modifient directement, chaque enregistrement est une version de l’historique de Fichiers et les documents s’exportent en PDF. Ajoute la page Artefacts et `kortix artifacts`."

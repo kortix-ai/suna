@@ -3,7 +3,7 @@
  * JavaScript script that calls the other tools as `tools.<name>(args)`, in a QuickJS
  * sandbox, and only the script's output reaches the model. kortix.yaml
  * `harnesses.pi.codemode` (`KORTIX_PI_CODEMODE`) picks `off`, `on` (the other tools stay
- * declared; the default) or `only` (the model gets codemode alone).
+ * declared; the default) or `only` (the model gets codemode plus direct output presentation).
  *
  * A script's tool calls are nested calls (`ctx.executeTool`): pi runs them through the
  * extension `tool_call` handlers, never through `agent.beforeToolCall`, so the runtime

@@ -60,7 +60,7 @@ type ToolCall = { tool: string; args: Record<string, unknown> }
  * (`message` is its error text). `promptTokens` is the context size the reply reports in its usage.
  */
 type Step =
-  | { text: string; finish?: 'stop' | 'length'; promptTokens?: number }
+  | { text: string; finish?: 'stop' | 'length'; promptTokens?: number; completionTokens?: number }
   | ToolCall
   | { tools: ToolCall[] }
   | { cut: string }
@@ -125,7 +125,8 @@ function startFakeGateway() {
         body += chunk({}, step.finish ?? 'stop')
       }
       const promptTokens = 'promptTokens' in step && step.promptTokens ? step.promptTokens : 1
-      body += `data: ${JSON.stringify({ id: 'chatcmpl-test', object: 'chat.completion.chunk', created: 0, model: MODEL_ID, choices: [], usage: { prompt_tokens: promptTokens, completion_tokens: 1, total_tokens: promptTokens + 1 } })}\n\n`
+      const completionTokens = 'completionTokens' in step && step.completionTokens ? step.completionTokens : 1
+      body += `data: ${JSON.stringify({ id: 'chatcmpl-test', object: 'chat.completion.chunk', created: 0, model: MODEL_ID, choices: [], usage: { prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: promptTokens + completionTokens } })}\n\n`
       body += 'data: [DONE]\n\n'
       return new Response(body, { headers: { 'content-type': 'text/event-stream' } })
     },
@@ -3111,6 +3112,47 @@ describe('pi compaction', () => {
     expect(compactionTurns(page)[0]!.part).toMatchObject({ type: 'compaction', auto: true, overflow: true })
     expect(page.messages.at(-1)!.parts.find((p) => p.type === 'text')).toMatchObject({ text: 'answer after the retry compacted' })
   })
+
+  test('a session that failed at its limit heals before the next prompt answers', async () => {
+    // The flagged shape: a turn ends with output_length at a context over the window. pi's own
+    // post-run check compacts it before it settles, and the next prompt must reach the model on
+    // the compacted history — never the full one, and never another output_length.
+    const r = await boot({
+      script: [
+        // 64,096 tokens used, the answer cut at the model's whole 4,096 output budget: not recoverable.
+        { text: 'half an answer', finish: 'length', promptTokens: 60_000, completionTokens: 4_096 },
+        // One summary call: the whole session is one user span, so only the turn prefix is summarized.
+        { text: 'SUMMARY-ONE' },
+        { text: 'answer after the session healed' },
+      ],
+      prepare: compactEverything,
+    })
+    const root = r.service.runtime()!.rootId
+    const messageID = 'msg_0198e2a4b0e5ABCDEFGHIJKLMN'
+    expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'ALPHA question' }] })).status).toBe(204)
+    await waitFor(() => r.service.runtime()!.idle())
+    const first = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
+    expect(first.turn_end).toBe('failed')
+
+    // The failed turn left a compaction behind: the session is repaired, not stuck at the limit.
+    const healed = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(compactionTurns(healed)).toHaveLength(1)
+    expect(compactionTurns(healed)[0]!.part).toMatchObject({ type: 'compaction', auto: true })
+
+    // The next prompt answers from the compacted history with no error.
+    const calls = gateway.requests.length
+    expect((await prompt(r, root, { messageID: 'msg_0198e2a4b0e6ABCDEFGHIJKLMN', parts: [{ type: 'text', text: 'BETA question' }] })).status).toBe(204)
+    await waitFor(() => r.service.runtime()!.idle())
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(page.messages.filter((m) => m.info.error)).toHaveLength(1)
+    const answers = page.messages.filter((m) => m.info.role === 'assistant' && !m.info.summary)
+    expect(answers.at(-1)!.info.error).toBeUndefined()
+    expect(answers.at(-1)!.parts.find((p) => p.type === 'text')).toMatchObject({ text: 'answer after the session healed' })
+    // One model call for BETA, and it carries the summary, not the pre-compaction history.
+    expect(gateway.requests.length - calls).toBe(1)
+    expect(sentText(gateway.sent.at(-1)!)).toContain('SUMMARY-ONE')
+    expect(sentText(gateway.sent.at(-1)!)).not.toContain('ALPHA question')
+  })
 })
 
 describe('pi slash commands', () => {
@@ -3938,7 +3980,7 @@ describe('pi codemode', () => {
     expect(String(results[0]!.content)).toContain('one+two')
   })
 
-  test('off removes codemode; only declares codemode alone and still runs every tool through it', async () => {
+  test('off removes codemode; only declares codemode and presentation and runs workspace tools through scripts', async () => {
     const off = await boot({ script: [{ text: 'hi' }], env: { KORTIX_PI_CODEMODE: 'off' } })
     let first = gateway.sampling.length
     await run(off)
@@ -3948,9 +3990,48 @@ describe('pi codemode', () => {
     const only = await boot({ script: [script("return await tools.bash({ command: 'echo only' })"), { text: 'done' }], env: { KORTIX_PI_CODEMODE: 'only' } })
     first = gateway.sampling.length
     const parts = await run(only)
-    expect(gateway.sampling[first]!.toolNames).toEqual(['codemode'])
-    expect(String(gateway.sent[first]!.find((m) => m.role === 'system')?.content)).toContain('Every tool runs from a codemode script')
+    expect(gateway.sampling[first]!.toolNames.sort()).toEqual(['codemode', 'show'])
+    expect(String(gateway.sent[first]!.find((m) => m.role === 'system')?.content)).toContain('Call show directly to present outputs')
     expect(parts[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('only') })
+  })
+
+  test('only keeps presentation model-only and records show as a native transcript block', async () => {
+    const r = await boot({
+      script: [{ tool: 'show', args: { action: 'show', type: 'text', content: 'Presentation proof' } }, { text: 'done' }],
+      env: { KORTIX_PI_CODEMODE: 'only' },
+    })
+    const first = gateway.sampling.length
+    const [part] = await run(r)
+    expect(gateway.sampling[first]?.toolNames.sort()).toEqual(['codemode', 'show'])
+    expect(part?.tool).toBe('show')
+    expect(part?.state).toMatchObject({ status: 'completed', input: { type: 'text', content: 'Presentation proof' } })
+    expect(JSON.parse(part?.state.output)).toMatchObject({ success: true, entry: { type: 'text', content: 'Presentation proof' } })
+    const snapshot = r.service.runtime()?.sessionLogSnapshot()
+    if (!snapshot) throw new Error('Missing session snapshot')
+    const { log } = piSessionLog(snapshot)
+    expect(log.threads[0]?.messages.flatMap((m) => m.blocks)).toContainEqual(expect.objectContaining({ type: 'tool_call', name: 'show', status: 'complete' }))
+  })
+
+  test('only presentation still obeys tool access and permission policy', async () => {
+    for (const agent of [{ tools: { show: false } }, { permission: { show: 'deny' } }]) {
+      const r = await boot({
+        script: [{ tool: 'show', args: { action: 'show', type: 'text', content: 'Hidden' } }, { text: 'done' }],
+        env: { KORTIX_PI_CODEMODE: 'only', KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: agent } }) },
+      })
+      const [part] = await run(r)
+      expect(part?.state.status).toBe('error')
+      expect(part?.state.output).toBeUndefined()
+    }
+  })
+
+  test('only scripts cannot hide presentation inside codemode', async () => {
+    const r = await boot({
+      script: [script("return await tools.show({ action: 'show', type: 'text', content: 'Hidden' })"), { text: 'done' }],
+      env: { KORTIX_PI_CODEMODE: 'only' },
+    })
+    const [part] = await run(r)
+    expect(part?.state.status).toBe('error')
+    expect(part?.state.error).toContain('show')
   })
 
   test('the project policy denies a script\'s call like a direct one', async () => {

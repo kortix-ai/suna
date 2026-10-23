@@ -1291,6 +1291,10 @@
           "name": "Objetivos",
           "description": "Asigna a un agente un objetivo del que se encarga hasta que una comprobación independiente confirme el resultado. Planifica, trabaja, espera, hace seguimiento con las personas y guarda su estado en una carpeta Goals en Archivos. Requiere Volúmenes y Recordatorios activados."
         },
+        "workspace_volume": {
+          "name": "Volumen de workspace",
+          "description": "Guarda el /workspace de cada nueva sesión en su propio volumen, para que un sandbox detenido pueda eliminarse y el siguiente arranque con los mismos archivos y la misma conversación. Kortix lo activa por proyecto."
+        },
         "artifacts": {
           "name": "Artefactos",
           "description": "Comparte documentos (Markdown) y páginas HTML (presentaciones, paneles, maquetas, herramientas) desde Archivos con el proyecto, personas elegidas o cualquiera con un enlace. Los documentos se editan en su sitio, cada guardado es una versión del historial de Archivos y los documentos se exportan a PDF. Añade la página Artefactos y `kortix artifacts`."
