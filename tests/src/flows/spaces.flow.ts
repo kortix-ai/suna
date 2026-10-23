@@ -7,6 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import { SpaceLinkListSchema, SpaceLinkPinResultSchema, SpaceLinkSchema, SpaceListSchema, SpaceSchema, SpaceSummarySchema } from '@kortix/api-contract';
 import { flow } from '../core/flow';
+import { waitFor } from '../core/poll';
 import type { FlowContext, FlowMeta } from '../core/types';
 import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
 
@@ -1323,3 +1324,72 @@ flow(
     }
   },
 );
+
+/**
+ * Link titles fetched in the background (job `link-unfurl`). Every fetch goes
+ * through the egress guard, which refuses loopback, private, link-local and
+ * metadata addresses after DNS. A local fixture page is therefore never
+ * fetchable, so this flow proves only the refused path. The titled path
+ * (`og:title` → `display_title`) would need a public page and the open
+ * internet, which no flow capability declares: `parseLinkMeta` and
+ * `fetchLinkMeta` are pinned by apps/api/src/projects/lib/link-unfurl.test.ts.
+ */
+flow('SPACE-21', meta([TAB_ROUTES.links, TAB_ROUTES.addLink, ROUTES.create, FEATURES_ROUTE]), async (ctx) => {
+  const { project, world } = await openWorld(ctx);
+  const params = { projectId: project.id };
+  try {
+    await world.setFeature('project_channels', true);
+    const channel = (await world.owner.post(SPACES, { name: 'Unfurl' }, { params })).status(201).json<Space>().space_id;
+    const at = { ...params, spaceId: channel };
+    type Row = { link_id: string; fetched_title: string | null; site_name: string | null; icon_url: string | null; fetched_at: Date | null; fetch_failed_at: Date | null };
+    const PRIVATE = [
+      { url: 'http://localhost/launch-notes', display: 'launch-notes' },
+      { url: 'http://10.0.0.5/board', title: 'Ops board', display: 'Ops board' },
+      { url: 'http://169.254.169.254/latest/meta-data/', display: 'latest/meta-data' },
+    ];
+    const ids: string[] = [];
+
+    await ctx.step('the owner adds 3 links on private addresses (localhost, 10.0.0.5, the metadata address) → 201 each, with no fetched title yet', async () => {
+      for (const link of PRIVATE) {
+        const r = await world.owner.post(SPACE_LINKS, link.title ? { url: link.url, title: link.title } : { url: link.url }, { params: at });
+        r.status(201).body().schema(SpaceLinkSchema).has('$.site_name', null).has('$.icon_url', null);
+        ids.push(r.json<{ link_id: string }>().link_id);
+      }
+    });
+
+    await ctx.step('the background job refuses each address: fetch_failed_at is set, and no title, site name, icon or fetched_at is stored (bounded wait, 30 s)', async () => {
+      const rows = await waitFor(
+        async () =>
+          (
+            await world.db.query<Row>(
+              'SELECT link_id, fetched_title, site_name, icon_url, fetched_at, fetch_failed_at FROM kortix.project_space_links WHERE link_id = ANY($1::uuid[])',
+              [ids],
+            )
+          ).rows,
+        {
+          until: (found) => found.length === ids.length && found.every((row) => row.fetch_failed_at !== null),
+          timeoutMs: 30_000,
+          intervalMs: 250,
+          description: 'the link-unfurl job to record a refused fetch for every link',
+        },
+      );
+      for (const row of rows) {
+        if (row.fetched_title !== null || row.site_name !== null || row.icon_url !== null || row.fetched_at !== null) {
+          throw new Error(`a refused address stored fetched values: ${JSON.stringify(row)}`);
+        }
+      }
+    });
+
+    await ctx.step('GET links → display_title is the member title, else the decoded path; site_name and icon_url stay null', async () => {
+      const links = (await world.owner.get(SPACE_LINKS, { params: at })).status(200).json<{ links: { link_id: string; display_title: string; site_name: string | null; icon_url: string | null }[] }>().links;
+      PRIVATE.forEach((link, i) => {
+        const row = links.find((l) => l.link_id === ids[i]);
+        if (!row || row.display_title !== link.display || row.site_name !== null || row.icon_url !== null) {
+          throw new Error(`${link.url}: expected display_title ${link.display}, got ${JSON.stringify(row)}`);
+        }
+      });
+    });
+  } finally {
+    await world.close();
+  }
+});

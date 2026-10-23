@@ -1,6 +1,7 @@
 /**
- * MEMORY-1..13 — Memory pages (`project_channels`): `/v1/projects/:projectId/memory/*`
- * and "Used memory" (`/sessions/:sessionId/memory-usage`).
+ * MEMORY-1..16 — Memory pages (`project_channels`): `/v1/projects/:projectId/memory/*`,
+ * "Used memory" (`/sessions/:sessionId/memory-usage`), Needs confirming and the
+ * trash (MEMORY-14, 15), and Channels onboarding (`/onboarding/channels`, MEMORY-16).
  * Spec: tests/spec/end-to-end.md § 7b. Source of truth: apps/api/src/memory/ and
  * apps/api/src/projects/routes/project-memory.ts; shapes in
  * packages/api-contract/src/memory.ts. Pure rules (byte cap, secret shapes,
@@ -14,6 +15,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import {
+  ChannelsOnboardingSchema,
   MemoryChangeListSchema,
   MemorySearchResultSchema,
   MemoryUsageSchema,
@@ -25,6 +27,8 @@ import {
   MemoryRememberResultSchema,
   MemoryUndoResultSchema,
   MemoryVersionListSchema,
+  SpaceListSchema,
+  type ChannelsOnboarding,
   type MemoryChange,
   type MemoryLayer,
   type MemoryLayerExport,
@@ -34,6 +38,7 @@ import {
   type MemorySearchHit,
   type MemoryUsage,
   type MemoryVersion,
+  type SpaceList,
 } from '@kortix/api-contract';
 import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
@@ -1319,6 +1324,392 @@ flow(
         const plain = await bootedThread(ctx, world, { initial_prompt: 'Reply with the single word OK.' });
         await world.setFeature('project_channels', true);
         (await usageOf(plain)).status(200).body().has('$.loaded_at', null).has('$.layers', []);
+      });
+    } finally {
+      await world.close();
+    }
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P3: Needs confirming, the trash and archived channels, Channels onboarding.
+
+const CONFIRM_ROUTE = 'POST /v1/projects/:projectId/memory/pages/:pageId/confirm';
+const CONFIRM = '/v1/projects/:projectId/memory/pages/:pageId/confirm';
+
+flow(
+  'MEMORY-14',
+  meta([R.remember, R.layer, R.pages, R.page, R.update, R.remove, R.history, R.changes, R.search, R.export, CONFIRM_ROUTE, FEATURES, SPACE_CREATE, TOKEN_MINT]),
+  async (ctx) => {
+    const { team, project, world } = await openWorld(ctx);
+    const projectId = project.id;
+    const p = { params: { projectId } };
+    const pageOf = (pageId: string) => ({ params: { projectId, pageId } });
+    try {
+      await world.setFeature('project_channels', true);
+      const launch = await channel(world, 'Launch');
+      const L = { params: { projectId, layerKey: launch.space_id } };
+      const agent = await thread(ctx, world, { spaceId: launch.space_id, visibility: 'project', firstPrompt: 'Plan the Q4 launch with Priya' });
+      const member = await team.addMember('member');
+      await team.grantProjectRole(projectId, member.userId!, 'member');
+      const asMember = ctx.client.as(member);
+      const layerId = (await world.owner.get(LAYER, L)).status(200).json<MemoryLayer>().layer_id;
+      const agentSees = {
+        listed: async () => (await agent.client.get(PAGES, L)).status(200).json<{ pages: MemoryPageSummary[] }>().pages.map((x) => x.page_id),
+        searched: async () =>
+          read<{ hits: MemorySearchHit[] }>((await agent.client.get(SEARCH, { params: { projectId }, query: { q: 'Northwind' } })).status(200), (b) =>
+            b.schema(MemorySearchResultSchema),
+          ).hits.map((h) => h.page_id),
+        changed: async () => (await agent.client.get(CHANGES, L)).status(200).json<{ changes: MemoryChange[] }>().changes,
+        exported: async () => (await agent.client.get(EXPORT, { params: { projectId, layerId } })).status(200).json<MemoryLayerExport>(),
+      };
+
+      let renewal: MemoryRememberResult;
+      await ctx.step('a fact remembered with `outside` → 200 {status: unconfirmed, created: true, copy_path: null}: it waits under Needs confirming', async () => {
+        renewal = read<MemoryRememberResult>(
+          (await agent.client.post(REMEMBER, { title: 'Northwind renewal', type: 'decisions', fact: 'Renewal moves to March', outside: { label: 'Customer email' } }, p)).status(200),
+          (b) => b.schema(MemoryRememberResultSchema).has('$.status', 'unconfirmed').has('$.created', true).has('$.merged', false).has('$.copy_path', null).has('$.title', 'Northwind renewal'),
+        );
+      });
+
+      await ctx.step('a person sees it: counts.unconfirmed 1, ?status=unconfirmed lists it, one outside source {label: "Customer email", url: null}', async () => {
+        (await world.owner.get(LAYER, L)).status(200).body().has('$.counts.unconfirmed', 1).has('$.counts.decisions', 1);
+        (await world.owner.get(PAGES, { ...L, query: { status: 'unconfirmed' } })).status(200).body().has('$.pages.length', 1).has('$.pages[0].page_id', renewal!.page_id);
+        (await world.owner.get(PAGE, pageOf(renewal!.page_id)))
+          .status(200).body().schema(MemoryPageSchema)
+          .has('$.status', 'unconfirmed').has('$.body', '- Renewal moves to March ⟦1⟧')
+          .has('$.sources.length', 1).has('$.sources[0].kind', 'outside').has('$.sources[0].label', 'Customer email')
+          .has('$.sources[0].url', null).has('$.sources[0].session_id', null);
+      });
+
+      await ctx.step("the thread's session token never sees it: page, history and confirm → 404; absent from the list, search, Recent changes and the export", async () => {
+        for (const r of [
+          await agent.client.get(PAGE, pageOf(renewal!.page_id)),
+          await agent.client.get(HISTORY, pageOf(renewal!.page_id)),
+          await agent.client.post(CONFIRM, undefined, pageOf(renewal!.page_id)),
+        ]) {
+          r.status(404).body().has('$.code', 'memory_not_found');
+        }
+        if ((await agentSees.listed()).includes(renewal!.page_id)) fail('the token lists an unconfirmed page', renewal!.page_id);
+        if ((await agentSees.searched()).includes(renewal!.page_id)) fail('the token finds an unconfirmed page', renewal!.page_id);
+        if ((await agentSees.changed()).some((c) => c.page_id === renewal!.page_id)) fail('the token reads a change of an unconfirmed page', renewal!.page_id);
+        const exp = await agentSees.exported();
+        if (exp.pages.some((x) => x.page_id === renewal!.page_id) || exp.index.includes('Northwind renewal')) fail('the export holds an unconfirmed page', exp);
+      });
+
+      let priya: MemoryRememberResult;
+      let pending: MemoryRememberResult;
+      const URL_FACT = 'Moved to the Berlin office, see https://example.test/team-update';
+      await ctx.step('a fact holding a URL, added to a confirmed page → a separate unconfirmed "Priya (to confirm)" page naming Priya in related; Priya is unchanged', async () => {
+        priya = (await agent.client.post(REMEMBER, { title: 'Priya', type: 'people', fact: 'Approves all launch copy' }, p)).status(200).json<MemoryRememberResult>();
+        if (priya.status !== 'confirmed') fail('a thread fact without a URL is not confirmed', priya);
+        pending = read<MemoryRememberResult>((await agent.client.post(REMEMBER, { title: 'Priya', type: 'people', fact: URL_FACT }, p)).status(200), (b) =>
+          b.schema(MemoryRememberResultSchema).has('$.status', 'unconfirmed').has('$.created', true).has('$.merged', false).has('$.title', 'Priya (to confirm)').has('$.copy_path', null),
+        );
+        if (pending.page_id === priya.page_id) fail('the URL fact went into the confirmed page', pending);
+        (await world.owner.get(PAGE, pageOf(pending.page_id)))
+          .status(200).body().has('$.type', 'people').has('$.status', 'unconfirmed')
+          .has('$.related', [{ page_id: priya.page_id, title: 'Priya' }])
+          .has('$.body', `- ${URL_FACT} ⟦1⟧`)
+          .has('$.sources[0].kind', 'outside').has('$.sources[0].label', 'example.test').has('$.sources[0].url', 'https://example.test/team-update');
+        (await world.owner.get(PAGE, pageOf(priya.page_id))).status(200).body().has('$.version_no', 1).has('$.body', '- Approves all launch copy ⟦1⟧');
+      });
+
+      await ctx.step('a second outside fact for Priya goes into the same "(to confirm)" page → {created: false, merged: true}', async () => {
+        (await agent.client.post(REMEMBER, { title: 'Priya', type: 'people', fact: 'Speaks at the Berlin meetup', outside: { label: 'Team wiki', url: 'https://example.test/wiki' } }, p))
+          .status(200).body().has('$.page_id', pending!.page_id).has('$.created', false).has('$.merged', true).has('$.status', 'unconfirmed');
+      });
+
+      await ctx.step('an outside rewrite of Priya with no line she lacks → 409 nothing_new and the "(to confirm)" page stays at version 2', async () => {
+        (await agent.client.post(REMEMBER, { title: 'Priya', type: 'people', body: '- Approves all launch copy', outside: { label: 'Team wiki' } }, p))
+          .status(409).body().has('$.code', 'nothing_new');
+        (await world.owner.get(PAGE, pageOf(pending!.page_id))).status(200).body().has('$.version_no', 2);
+      });
+
+      await ctx.step('an outside rewrite with one new line adds only that line to the "(to confirm)" page, append-only', async () => {
+        (await agent.client.post(REMEMBER, { title: 'Priya', type: 'people', body: '- Approves all launch copy\n- Leads the Berlin office', outside: { label: 'Team wiki' } }, p))
+          .status(200).body().has('$.page_id', pending!.page_id).has('$.merged', true);
+        (await world.owner.get(PAGE, pageOf(pending!.page_id)))
+          .status(200).body().has('$.body', `- ${URL_FACT} ⟦1⟧\n- Speaks at the Berlin meetup ⟦2⟧\n- Leads the Berlin office ⟦3⟧`);
+      });
+
+      await ctx.step("a person links Priya to the pending page: the person reads its title in related; the session token reads related [] and Priya's old body", async () => {
+        (await world.owner.patch(PAGE, { base_version: 1, related: [pending!.page_id] }, pageOf(priya!.page_id)))
+          .status(200).body().has('$.related', [{ page_id: pending!.page_id, title: 'Priya (to confirm)' }]);
+        (await agent.client.get(PAGE, pageOf(priya!.page_id))).status(200).body().has('$.related', []).has('$.body', '- Approves all launch copy ⟦1⟧');
+      });
+
+      await ctx.step('confirm the standalone page → 200 {status: confirmed, title unchanged, version_no 2}; a second confirm → 409 not_unconfirmed', async () => {
+        (await world.owner.post(CONFIRM, undefined, pageOf(renewal!.page_id)))
+          .status(200).body().schema(MemoryPageSchema).has('$.page_id', renewal!.page_id).has('$.status', 'confirmed').has('$.title', 'Northwind renewal').has('$.version_no', 2);
+        (await world.owner.post(CONFIRM, undefined, pageOf(renewal!.page_id))).status(409).body().has('$.code', 'not_unconfirmed');
+      });
+
+      await ctx.step('the session token now reads it, finds it and exports it; its history and Recent changes hold only the confirm version (the person sees create and confirm)', async () => {
+        (await agent.client.get(PAGE, pageOf(renewal!.page_id))).status(200).body().has('$.status', 'confirmed');
+        if (!(await agentSees.searched()).includes(renewal!.page_id)) fail('the token does not find the confirmed page', renewal!.page_id);
+        if (!(await agentSees.exported()).pages.some((x) => x.page_id === renewal!.page_id)) fail('the export lacks the confirmed page', renewal!.page_id);
+        const agentOps = (await agent.client.get(HISTORY, pageOf(renewal!.page_id))).status(200).json<{ versions: MemoryVersion[] }>().versions.map((v) => v.op);
+        const ownerOps = (await world.owner.get(HISTORY, pageOf(renewal!.page_id))).status(200).json<{ versions: MemoryVersion[] }>().versions.map((v) => v.op);
+        if (agentOps.join() !== 'confirm' || ownerOps.join() !== 'confirm,create') fail('history', { agentOps, ownerOps });
+        const changed = (await agentSees.changed()).filter((c) => c.page_id === renewal!.page_id).map((c) => c.op);
+        if (changed.join() !== 'confirm') fail('the token’s Recent changes of the page', changed);
+      });
+
+      await ctx.step('confirm "Priya (to confirm)" → 200 the Priya page with the 3 lines merged under renumbered sources; the pending page goes to the trash', async () => {
+        (await world.owner.post(CONFIRM, undefined, pageOf(pending!.page_id)))
+          .status(200).body().schema(MemoryPageSchema)
+          .has('$.page_id', priya!.page_id).has('$.status', 'confirmed').has('$.version_no', 3)
+          .has('$.body', `- Approves all launch copy ⟦1⟧\n- ${URL_FACT} ⟦2⟧\n- Speaks at the Berlin meetup ⟦3⟧\n- Leads the Berlin office ⟦4⟧`)
+          .has('$.sources.length', 4).has('$.sources[1].kind', 'outside').has('$.sources[1].url', 'https://example.test/team-update')
+          .has('$.sources[2].label', 'Team wiki').has('$.sources[3].label', 'Team wiki');
+        const trash = (await world.owner.get(PAGES, { ...L, query: { deleted: '1' } })).status(200).json<{ pages: MemoryPageSummary[] }>().pages;
+        if (!trash.some((x) => x.page_id === pending!.page_id)) fail('the confirmed "(to confirm)" page is not in the trash', trash);
+        (await world.owner.get(LAYER, L)).status(200).body().has('$.counts.unconfirmed', 0);
+        (await agent.client.get(PAGE, pageOf(priya!.page_id))).status(200).body().has('$.version_no', 3);
+      });
+
+      await ctx.step('Discard: a member who did not make an unconfirmed page deletes it → 200 (a confirmed page of the agent → 403 forbidden)', async () => {
+        const rumor = (await agent.client.post(REMEMBER, { title: 'Northwind rumor', type: 'decisions', fact: 'A partner may resell Northwind', outside: { label: 'Forum post' } }, p))
+          .status(200).json<MemoryRememberResult>();
+        (await asMember.get(PAGE, pageOf(rumor.page_id))).status(200).body().has('$.can_delete', true);
+        (await asMember.del(PAGE, pageOf(priya!.page_id))).status(403).body().has('$.code', 'forbidden');
+        (await asMember.del(PAGE, pageOf(rumor.page_id))).status(200).body().schema(MemoryDeleteResultSchema).has('$.ok', true);
+        (await world.owner.get(LAYER, L)).status(200).body().has('$.counts.unconfirmed', 0);
+      });
+    } finally {
+      await world.close();
+    }
+  },
+);
+
+flow(
+  'MEMORY-15',
+  meta([R.layer, R.pages, R.create, R.note, R.page, R.update, R.remove, R.history, R.restore, R.undo, R.remember, CONFIRM_ROUTE, FEATURES, SPACE_CREATE, SPACE_UPDATE, TOKEN_MINT]),
+  async (ctx) => {
+    const { project, world } = await openWorld(ctx);
+    const projectId = project.id;
+    const p = { params: { projectId } };
+    const pageOf = (pageId: string) => ({ params: { projectId, pageId } });
+    try {
+      await world.setFeature('project_channels', true);
+      const launch = await channel(world, 'Launch');
+      const L = { params: { projectId, layerKey: launch.space_id } };
+      const agent = await thread(ctx, world, { spaceId: launch.space_id, visibility: 'project', firstPrompt: 'Plan the Q4 launch' });
+      const trashOf = async (client: Client) => (await client.get(PAGES, { ...L, query: { deleted: '1' } })).status(200).json<{ pages: MemoryPageSummary[] }>().pages;
+      const historyOf = async (pageId: string) => (await world.owner.get(HISTORY, pageOf(pageId))).status(200).json<{ versions: MemoryVersion[] }>().versions;
+
+      let plan = '';
+      await ctx.step('a page is made, edited once, then deleted → 200; it lists only with deleted=1 and counts.trash is 1', async () => {
+        plan = (await world.owner.post(PAGES, { type: 'workstreams', title: 'Q4 Launch', body: '- Draft' }, L)).status(201).json<MemoryPage>().page_id;
+        (await world.owner.patch(PAGE, { base_version: 1, body: '- Copy approved' }, pageOf(plan))).status(200);
+        (await world.owner.del(PAGE, pageOf(plan))).status(200).body().has('$.ok', true);
+        if ((await trashOf(world.owner)).map((x) => x.page_id).join() !== plan) fail('the trash', await trashOf(world.owner));
+        const live = (await world.owner.get(PAGES, L)).status(200).json<{ pages: MemoryPageSummary[] }>().pages;
+        if (live.some((x) => x.page_id === plan)) fail('a trashed page lists as live', live);
+        (await world.owner.get(LAYER, L)).status(200).body().has('$.counts.trash', 1).has('$.counts.workstreams', 0);
+      });
+
+      await ctx.step("no route empties the trash by hand (it empties itself after 30 days): a second DELETE → 404; the thread's session token has no trash (deleted=1 → []) and gets 404 on the page", async () => {
+        (await world.owner.del(PAGE, pageOf(plan))).status(404).body().has('$.code', 'memory_not_found');
+        if ((await trashOf(agent.client)).length !== 0) fail('the session token lists the trash', await trashOf(agent.client));
+        (await agent.client.get(PAGE, pageOf(plan))).status(404).body().has('$.code', 'memory_not_found');
+      });
+
+      await ctx.step('restore from the trash to v2 → 200 {version_no: 4, body: v2, can_edit: true}; the trash is empty, the page lists again, the newest history op is restore', async () => {
+        const versions = await historyOf(plan);
+        if (versions.map((v) => v.op).join() !== 'delete,update,create') fail('history before restore', versions.map((v) => v.op));
+        (await world.owner.post(RESTORE, { version_id: randomUUID() }, pageOf(plan))).status(404).body().has('$.code', 'memory_not_found');
+        (await world.owner.post(RESTORE, { version_id: versions[1]!.version_id }, pageOf(plan)))
+          .status(200).body().schema(MemoryPageSchema).has('$.version_no', 4).has('$.body', '- Copy approved').has('$.can_edit', true);
+        if ((await trashOf(world.owner)).length !== 0) fail('the trash after restore', await trashOf(world.owner));
+        (await world.owner.get(LAYER, L)).status(200).body().has('$.counts.trash', 0).has('$.counts.workstreams', 1);
+        if ((await historyOf(plan))[0]!.op !== 'restore') fail('the newest history op', (await historyOf(plan))[0]);
+        (await agent.client.get(PAGE, pageOf(plan))).status(200).body().has('$.version_no', 4);
+      });
+
+      // Seed what the archived channel must refuse to change: an unconfirmed page, a trashed page, an undoable version.
+      const unconfirmed = (await agent.client.post(REMEMBER, { title: 'Northwind renewal', type: 'decisions', fact: 'Renewal moves to March', outside: { label: 'Customer email' } }, p))
+        .status(200).json<MemoryRememberResult>();
+      const discounts = (await world.owner.post(PAGES, { type: 'decisions', title: 'Discounts', body: 'No discounts in Q4.' }, L)).status(201).json<MemoryPage>().page_id;
+      (await world.owner.del(PAGE, pageOf(discounts))).status(200);
+      const discountsLive = (await historyOf(discounts))[1]!.version_id;
+      const restoreVersion = (await historyOf(plan))[0]!.version_id;
+
+      await ctx.step('archive #launch → every write → 409 layer_read_only: create, note, edit, delete, restore, confirm, Discard, undo and remember', async () => {
+        (await world.owner.patch(SPACE, { archived: true }, { params: { projectId, spaceId: launch.space_id } })).status(200);
+        for (const r of [
+          await world.owner.post(PAGES, { type: 'people', title: 'Mateo' }, L),
+          await world.owner.post(NOTES, { text: 'One more fact' }, L),
+          await world.owner.patch(PAGE, { base_version: 4, body: '- Shipped' }, pageOf(plan)),
+          await world.owner.del(PAGE, pageOf(plan)),
+          await world.owner.post(RESTORE, { version_id: discountsLive }, pageOf(discounts)),
+          await world.owner.post(CONFIRM, undefined, pageOf(unconfirmed.page_id)),
+          await world.owner.del(PAGE, pageOf(unconfirmed.page_id)),
+          await world.owner.post(UNDO, undefined, { params: { projectId, versionId: restoreVersion } }),
+          await agent.client.post(REMEMBER, { title: 'Priya', type: 'people', fact: 'Late fact' }, p),
+        ]) {
+          r.status(409).body().has('$.code', 'layer_read_only');
+        }
+      });
+
+      await ctx.step('nothing changed: the page stays at version 4, the unconfirmed page unconfirmed, Discounts in the trash', async () => {
+        (await world.owner.get(PAGE, pageOf(plan))).status(200).body().has('$.version_no', 4).has('$.can_edit', false);
+        (await world.owner.get(PAGE, pageOf(unconfirmed.page_id))).status(200).body().has('$.status', 'unconfirmed');
+        if (!(await trashOf(world.owner)).some((x) => x.page_id === discounts)) fail('Discounts left the trash', await trashOf(world.owner));
+      });
+
+      await ctx.step('unarchive #launch → restore Discounts and confirm the unconfirmed page → 200 each', async () => {
+        (await world.owner.patch(SPACE, { archived: false }, { params: { projectId, spaceId: launch.space_id } })).status(200);
+        (await world.owner.post(RESTORE, { version_id: discountsLive }, pageOf(discounts))).status(200).body().has('$.body', 'No discounts in Q4.');
+        (await world.owner.post(CONFIRM, undefined, pageOf(unconfirmed.page_id))).status(200).body().has('$.status', 'confirmed');
+      });
+    } finally {
+      await world.close();
+    }
+  },
+);
+
+const FEATURES_PATH = '/v1/projects/:projectId/features';
+const ONBOARDING = '/v1/projects/:projectId/onboarding/channels';
+const MARKS = '/v1/projects/:projectId/onboarding/channels/marks';
+const ONBOARDING_ROUTES = ['GET /v1/projects/:projectId/onboarding/channels', 'POST /v1/projects/:projectId/onboarding/channels/marks'];
+const SPACE_LIST = 'GET /v1/projects/:projectId/spaces';
+
+/**
+ * Channels onboarding (spec section 14, D7, D8). The flag's toggle effect runs
+ * behind the PATCH response, so every step after a toggle polls for the
+ * effect's result with a bounded wait.
+ */
+flow(
+  'MEMORY-16',
+  meta([...ONBOARDING_ROUTES, FEATURES, SPACE_LIST, SPACE_CREATE, SPACE_DM, R.note]),
+  async (ctx) => {
+    const { team, project, world } = await openWorld(ctx);
+    const projectId = project.id;
+    const params = { projectId };
+    const member = await team.addMember('member');
+    await team.grantProjectRole(projectId, member.userId!, 'member');
+    // An account member with no access to this project: never on its roster.
+    const outsider = await team.addMember('member');
+    const asMember = ctx.client.as(member);
+    const stateOf = async (client: Client) => read<ChannelsOnboarding>((await client.get(ONBOARDING, { params })).status(200), (b) => b.schema(ChannelsOnboardingSchema));
+    const mark = (client: Client, value: string) => client.post(MARKS, { mark: value }, { params });
+    const closed = { visible: true, create_channel: false, remember: false, open_dm: false };
+    /** A session started while Channels is off: no space. `world.close()` deletes it. */
+    const offSession = async () => {
+      const sessionId = randomUUID();
+      world.sessions.push(sessionId);
+      await world.db.query(
+        `INSERT INTO kortix.project_sessions (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility)
+         VALUES ($1, $2, $3, $1, 'kortix', 'stopped', $4, 'project')`,
+        [sessionId, world.accountId, projectId, world.ownerUserId],
+      );
+      return sessionId;
+    };
+    /** The toggle effect filed `sessionId` into `#general`: poll the row, at most 30 s. */
+    const filedIntoGeneral = (sessionId: string) =>
+      waitFor(
+        async () =>
+          (
+            await world.db.query<{ filed: boolean }>(
+              `SELECT s.space_id IS NOT NULL AND s.space_id = g.space_id AS filed
+                 FROM kortix.project_sessions s
+                 LEFT JOIN kortix.project_spaces g ON g.project_id = s.project_id AND g.is_default
+                WHERE s.session_id = $1`,
+              [sessionId],
+            )
+          ).rows[0]?.filed === true,
+        { until: Boolean, timeoutMs: 30_000, intervalMs: 250, description: 'the toggle effect to file the session into #general' },
+      );
+    const channelsMeta = async () =>
+      (await world.db.query<{ channels: unknown }>("SELECT metadata->'channels' AS channels FROM kortix.projects WHERE project_id = $1", [projectId])).rows[0]?.channels ?? null;
+    const introMarks = async () =>
+      (await world.db.query<{ user_id: string }>("SELECT user_id FROM kortix.project_user_marks WHERE project_id = $1 AND mark = 'channels_intro'", [projectId])).rows.map((r) => r.user_id);
+    try {
+      await ctx.step('with project_channels off, GET /onboarding/channels and POST …/marks → 403 feature_disabled', async () => {
+        for (const r of [await world.owner.get(ONBOARDING, { params }), await mark(world.owner, 'channels_intro')]) {
+          r.status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'project_channels');
+        }
+      });
+
+      await ctx.step('D7: a project member turning project_channels on → 403 and the flag stays off', async () => {
+        (await asMember.patch(FEATURES_PATH, { feature: 'project_channels', enabled: true }, { params })).status(403);
+        (await world.owner.get(ONBOARDING, { params })).status(403).body().has('$.code', 'feature_disabled');
+      });
+
+      const firstOff = await offSession();
+      await ctx.step('the first turn-on by the owner files the session started while off into #general, records no "turned on again" line and marks no intro', async () => {
+        await world.setFeature('project_channels', true);
+        await filedIntoGeneral(firstOff);
+        (await world.owner.get(SPACES, { params })).status(200).body().schema(SpaceListSchema).has('$.general_notice', undefined);
+        if ((await channelsMeta()) !== null) fail('a first turn-on recorded metadata.channels', await channelsMeta());
+        if ((await introMarks()).length !== 0) fail('a first turn-on marked intros', await introMarks());
+      });
+
+      await ctx.step('a new member: {intro_seen: false, get_started: {visible: true, every row false}}; so is the owner', async () => {
+        (await asMember.get(ONBOARDING, { params })).status(200).body().has('$.intro_seen', false).has('$.get_started', closed);
+        (await world.owner.get(ONBOARDING, { params })).status(200).body().has('$.intro_seen', false).has('$.get_started', closed);
+      });
+
+      await ctx.step('marks: channels_intro → 204, again → 204 (idempotent), an unknown mark → 400; the member reads intro_seen true, the owner still false', async () => {
+        (await mark(asMember, 'channels_intro')).status(204);
+        (await mark(asMember, 'channels_intro')).status(204);
+        (await mark(asMember, 'tour')).status(400);
+        if ((await stateOf(asMember)).intro_seen !== true) fail('the member’s intro mark', await stateOf(asMember));
+        if ((await stateOf(world.owner)).intro_seen !== false) fail('one member’s mark changed the owner’s state', await stateOf(world.owner));
+      });
+
+      await ctx.step('each fact flips its own row: a channel created, then a note saved in #general, then a DM opened; all three hide the block', async () => {
+        (await asMember.post(SPACES, { name: 'Onboarding' }, { params })).status(201);
+        (await asMember.get(ONBOARDING, { params })).status(200).body().has('$.get_started', { visible: true, create_channel: true, remember: false, open_dm: false });
+        const general = (await world.owner.get(SPACES, { params })).status(200).json<{ spaces: (Space & { is_default: boolean })[] }>().spaces.find((s) => s.is_default);
+        if (!general) fail('no #general', null);
+        (await asMember.post(NOTES, { text: 'Launch moves to Monday' }, { params: { projectId, layerKey: general.space_id } })).status(201);
+        (await asMember.get(ONBOARDING, { params })).status(200).body().has('$.get_started', { visible: true, create_channel: true, remember: true, open_dm: false });
+        (await asMember.post(DM, { agent_name: 'kortix' }, { params })).status(200);
+        (await asMember.get(ONBOARDING, { params })).status(200).body().has('$.get_started', { visible: false, create_channel: true, remember: true, open_dm: true });
+        // The member's facts are the member's: the owner's rows stay open.
+        (await world.owner.get(ONBOARDING, { params })).status(200).body().has('$.get_started', closed);
+      });
+
+      await ctx.step('the owner dismisses "Get started" → 204; visible false with every row still false', async () => {
+        (await mark(world.owner, 'get_started.dismissed')).status(204);
+        (await world.owner.get(ONBOARDING, { params })).status(200).body().has('$.get_started', { ...closed, visible: false });
+      });
+
+      await ctx.step('D7: a project member turning project_channels off → 403 and Channels stays on', async () => {
+        (await asMember.patch(FEATURES_PATH, { feature: 'project_channels', enabled: false }, { params })).status(403);
+        (await asMember.get(ONBOARDING, { params })).status(200);
+      });
+
+      let secondOff = '';
+      await ctx.step('flag off → both onboarding routes 403 feature_disabled; a session started now has no space', async () => {
+        await world.setFeature('project_channels', false);
+        for (const r of [await asMember.get(ONBOARDING, { params }), await mark(asMember, 'get_started.dm')]) r.status(403).body().has('$.code', 'feature_disabled');
+        secondOff = await offSession();
+      });
+
+      await ctx.step('turned on again: the session moves into #general, GET /spaces carries general_notice {kind: reenabled, count: 1}, and the owner’s intro is marked seen', async () => {
+        await world.setFeature('project_channels', true);
+        await filedIntoGeneral(secondOff);
+        const owner = await waitFor(() => stateOf(world.owner), {
+          until: (s) => s.intro_seen,
+          timeoutMs: 30_000,
+          intervalMs: 250,
+          description: 'the turn-on-again effect to mark the intros',
+        });
+        if (owner.intro_seen !== true) fail('owner intro', owner);
+        const list = read<SpaceList>((await world.owner.get(SPACES, { params })).status(200), (b) => b.schema(SpaceListSchema).has('$.general_notice.kind', 'reenabled').has('$.general_notice.count', 1));
+        const recorded = (await channelsMeta()) as { reenabled_at?: string; reenabled_count?: number } | null;
+        if (recorded?.reenabled_count !== 1 || list.general_notice?.at !== recorded.reenabled_at) fail('metadata.channels', { recorded, notice: list.general_notice });
+      });
+
+      await ctx.step('the intro is marked for project members only: the owner and the member, never the account member without project access', async () => {
+        const marked = await introMarks();
+        for (const userId of [world.ownerUserId, member.userId!]) if (!marked.includes(userId)) fail('a project member has no intro mark', { userId, marked });
+        if (marked.includes(outsider.userId!)) fail('an account member without project access got an intro mark', marked);
+        (await ctx.client.as(outsider).get(ONBOARDING, { params })).status([403, 404]);
       });
     } finally {
       await world.close();
