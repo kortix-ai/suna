@@ -22432,6 +22432,153 @@
     "overviewTitle": "Panoramica"
   },
   "spaces": {
+    "memory": {
+      "search": "Cerca nella memoria",
+      "pagesLabel": "Pagine di memoria",
+      "allPages": "Tutte le pagine",
+      "type": {
+        "people": "Persone",
+        "decisions": "Decisioni",
+        "workstreams": "Filoni di lavoro",
+        "playbooks": "Procedure",
+        "note": "Note"
+      },
+      "needsConfirming": "Da confermare",
+      "noMatches": "Nessuna pagina corrisponde a “{query}”.",
+      "loadError": "Impossibile caricare questa memoria.",
+      "pageLoadError": "Impossibile caricare questa pagina.",
+      "retry": "Riprova",
+      "close": "Chiudi",
+      "loadOlder": "Mostra precedenti",
+      "updatedBy": "Aggiornata da {author}",
+      "fromThread": "da “{thread}”",
+      "author": {
+        "system": "Kortix",
+        "unknown": "Qualcuno"
+      },
+      "edit": "Modifica",
+      "more": "Altre azioni",
+      "copyLink": "Copia link",
+      "linkCopied": "Link copiato",
+      "copyFailed": "Impossibile copiare il link.",
+      "delete": "Elimina",
+      "deleteTitle": "Eliminare questa pagina?",
+      "deleteDescription": "Gli agenti smettono di vedere “{title}” dal turno successivo. Puoi annullare da Modifiche recenti.",
+      "deleted": "Pagina eliminata",
+      "deleteFailed": "Impossibile eliminare la pagina. Riprova.",
+      "undo": "Annulla",
+      "undone": "Modifica annullata",
+      "undoFailed": "Impossibile annullare la modifica. Riprova.",
+      "superseded": "La pagina è cambiata dopo questa modifica. Apri la Cronologia per ripristinare una versione precedente.",
+      "alreadyUndone": "Questa modifica è già stata annullata.",
+      "undoUnavailable": "La pagina è cambiata dopo questa modifica, quindi non si può annullare.",
+      "view": "Vedi",
+      "relatedPages": "Pagine correlate",
+      "pageLimit": "Questa memoria ha 200 pagine, il suo limite. Elimina prima una pagina.",
+      "emptyPage": "Questa pagina è ancora vuota.",
+      "recent": {
+        "added": "{author} ha aggiornato questa pagina {time}: aggiunto “{fact}”",
+        "updated": "{author} ha aggiornato questa pagina {time}",
+        "created": "{author} ha creato questa pagina {time}",
+        "viewChange": "Vedi modifica"
+      },
+      "changes": {
+        "title": "Modifiche recenti",
+        "empty": "Ancora nessuna modifica.",
+        "loadError": "Impossibile caricare le modifiche recenti.",
+        "op": {
+          "create": "{author} ha creato <page>{title}</page>",
+          "update": "{author} ha modificato <page>{title}</page>",
+          "append": "{author} ha aggiunto a <page>{title}</page>",
+          "delete": "{author} ha eliminato <page>{title}</page>",
+          "restore": "{author} ha ripristinato <page>{title}</page>",
+          "undo": "{author} ha annullato una modifica a <page>{title}</page>",
+          "confirm": "{author} ha confermato <page>{title}</page>",
+          "file_note": "{author} ha archiviato una nota in <page>{title}</page>",
+          "import": "{author} ha importato <page>{title}</page>"
+        }
+      },
+      "history": {
+        "title": "Cronologia",
+        "description": "Ogni modifica a “{title}”, dalla più recente.",
+        "loadError": "Impossibile caricare la cronologia.",
+        "current": "Attuale",
+        "undone": "Annullata",
+        "restore": "Ripristina questa versione",
+        "restored": "Versione ripristinata",
+        "restoreFailed": "Impossibile ripristinare questa versione. Riprova.",
+        "op": {
+          "create": "{author} ha creato la pagina",
+          "update": "{author} ha modificato la pagina",
+          "append": "{author} ha aggiunto un fatto",
+          "delete": "{author} ha eliminato la pagina",
+          "restore": "{author} ha ripristinato una versione",
+          "undo": "{author} ha annullato una modifica",
+          "confirm": "{author} ha confermato la pagina",
+          "file_note": "{author} ha archiviato una nota",
+          "import": "{author} ha importato la pagina"
+        }
+      },
+      "editor": {
+        "title": "Titolo",
+        "type": "Tipo",
+        "summary": "Riepilogo",
+        "summaryPlaceholder": "Una riga che gli agenti vedono nell’elenco delle pagine",
+        "body": "Pagina",
+        "bodyHint": "Markdown. Una riga che inizia con ## apre una sezione; ⟦1⟧ cita la fonte 1.",
+        "save": "Salva",
+        "cancel": "Annulla",
+        "saved": "Pagina salvata",
+        "conflict": "Qualcuno ha modificato questa pagina. Ricarica per vederla.",
+        "reload": "Ricarica",
+        "error": {
+          "tooLarge": "Questa pagina supera 8 KB. Accorciala.",
+          "titleTaken": "Un’altra pagina ha già questo titolo.",
+          "secret": "Sembra un segreto. Conserva i segreti in Segreti.",
+          "readOnly": "Questa memoria è di sola lettura.",
+          "failed": "Impossibile salvare la pagina. Riprova."
+        }
+      },
+      "remember": {
+        "label": "Qualcosa che {place} deve ricordare",
+        "placeholder": "Di’ a {place} qualcosa da ricordare…",
+        "hint": "Salvato come nota con il tuo nome",
+        "send": "Salva nella memoria",
+        "status": {
+          "saved": "Salvato in Note",
+          "secret": "Sembra un segreto. Conserva i segreti in Segreti.",
+          "limit": "Questa memoria ha 200 pagine, il suo limite. Elimina prima una pagina.",
+          "readOnly": "Questa memoria è di sola lettura.",
+          "failed": "Impossibile salvare. Riprova."
+        }
+      },
+      "empty": {
+        "title": "{place} non ha ancora memoria",
+        "titleDm": "Ancora nessuna memoria con {place}",
+        "description": "Gli agenti salvano ciò su cui questo canale si accorda, così ogni nuovo thread parte da lì. Ogni fatto rimanda al thread da cui proviene; modifica o annulla qualsiasi cambiamento.",
+        "descriptionDm": "{place} salva ciò su cui vi accordate in questa conversazione, così ogni nuovo thread parte da lì. Ogni fatto rimanda al thread da cui proviene; modifica o annulla qualsiasi cambiamento.",
+        "example": {
+          "people": "Northwind — il referente è Sam, rinnovo a marzo",
+          "decisions": "Il prezzo resta 49 $ per postazione",
+          "workstreams": "Lancio Q4 — stato, responsabile, prossimi passi",
+          "playbooks": "Come scriviamo le note di rilascio"
+        },
+        "tryOne": "Provane una",
+        "try": {
+          "one": "Il nostro lancio è il 12 nov.",
+          "two": "Priya approva tutti i testi del lancio",
+          "three": "Scrivi in parole semplici, senza enfasi"
+        }
+      },
+      "source": {
+        "thread": "Apri il thread “{label}”",
+        "threadGone": "Dal thread “{label}”",
+        "outside": "Apri {label} in una nuova scheda",
+        "outsideText": "Da {label}",
+        "person": "Aggiunto da {label}",
+        "import": "Importato da {label}"
+      }
+    },
     "create": {
       "title": "Crea un canale",
       "description": "Tutti in questo progetto possono vedere e usare il canale.",

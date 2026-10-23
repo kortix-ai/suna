@@ -22432,6 +22432,153 @@
     "overviewTitle": "概览"
   },
   "spaces": {
+    "memory": {
+      "search": "搜索记忆",
+      "pagesLabel": "记忆页面",
+      "allPages": "所有页面",
+      "type": {
+        "people": "人员",
+        "decisions": "决策",
+        "workstreams": "工作流",
+        "playbooks": "操作手册",
+        "note": "笔记"
+      },
+      "needsConfirming": "待确认",
+      "noMatches": "没有与“{query}”匹配的页面。",
+      "loadError": "无法加载此记忆。",
+      "pageLoadError": "无法加载此页面。",
+      "retry": "重试",
+      "close": "关闭",
+      "loadOlder": "显示更早的",
+      "updatedBy": "由 {author} 更新",
+      "fromThread": "来自“{thread}”",
+      "author": {
+        "system": "Kortix",
+        "unknown": "某人"
+      },
+      "edit": "编辑",
+      "more": "更多操作",
+      "copyLink": "复制链接",
+      "linkCopied": "链接已复制",
+      "copyFailed": "无法复制链接。",
+      "delete": "删除",
+      "deleteTitle": "删除此页面？",
+      "deleteDescription": "智能体将从下一轮起不再看到“{title}”。你可以在“最近更改”中撤销。",
+      "deleted": "页面已删除",
+      "deleteFailed": "无法删除页面，请重试。",
+      "undo": "撤销",
+      "undone": "更改已撤销",
+      "undoFailed": "无法撤销更改，请重试。",
+      "superseded": "此后页面又有更改。打开历史记录以恢复更早的版本。",
+      "alreadyUndone": "此更改已撤销。",
+      "undoUnavailable": "此后页面又有更改，因此无法撤销此更改。",
+      "view": "查看",
+      "relatedPages": "相关页面",
+      "pageLimit": "此记忆已有 200 个页面，达到上限。请先删除一个页面。",
+      "emptyPage": "此页面还没有内容。",
+      "recent": {
+        "added": "{author} {time}更新了此页面：添加了“{fact}”",
+        "updated": "{author} {time}更新了此页面",
+        "created": "{author} {time}创建了此页面",
+        "viewChange": "查看更改"
+      },
+      "changes": {
+        "title": "最近更改",
+        "empty": "暂无更改。",
+        "loadError": "无法加载最近更改。",
+        "op": {
+          "create": "{author} 创建了 <page>{title}</page>",
+          "update": "{author} 编辑了 <page>{title}</page>",
+          "append": "{author} 补充了 <page>{title}</page>",
+          "delete": "{author} 删除了 <page>{title}</page>",
+          "restore": "{author} 恢复了 <page>{title}</page>",
+          "undo": "{author} 撤销了对 <page>{title}</page> 的更改",
+          "confirm": "{author} 确认了 <page>{title}</page>",
+          "file_note": "{author} 将一条笔记归入 <page>{title}</page>",
+          "import": "{author} 导入了 <page>{title}</page>"
+        }
+      },
+      "history": {
+        "title": "历史记录",
+        "description": "“{title}”的所有更改，最新的在前。",
+        "loadError": "无法加载历史记录。",
+        "current": "当前",
+        "undone": "已撤销",
+        "restore": "恢复此版本",
+        "restored": "版本已恢复",
+        "restoreFailed": "无法恢复此版本，请重试。",
+        "op": {
+          "create": "{author} 创建了页面",
+          "update": "{author} 编辑了页面",
+          "append": "{author} 添加了一条事实",
+          "delete": "{author} 删除了页面",
+          "restore": "{author} 恢复了一个版本",
+          "undo": "{author} 撤销了一项更改",
+          "confirm": "{author} 确认了页面",
+          "file_note": "{author} 归档了一条笔记",
+          "import": "{author} 导入了页面"
+        }
+      },
+      "editor": {
+        "title": "标题",
+        "type": "类型",
+        "summary": "摘要",
+        "summaryPlaceholder": "智能体在页面列表中看到的一行",
+        "body": "页面",
+        "bodyHint": "Markdown。以 ## 开头的行开始一个小节；⟦1⟧ 引用来源 1。",
+        "save": "保存",
+        "cancel": "取消",
+        "saved": "页面已保存",
+        "conflict": "有人更改了此页面。重新加载以查看。",
+        "reload": "重新加载",
+        "error": {
+          "tooLarge": "此页面超过 8 KB，请缩短。",
+          "titleTaken": "已有其他页面使用此标题。",
+          "secret": "这看起来像密钥。请将密钥保存在“密钥”中。",
+          "readOnly": "此记忆为只读。",
+          "failed": "无法保存页面，请重试。"
+        }
+      },
+      "remember": {
+        "label": "{place} 需要记住的事",
+        "placeholder": "告诉 {place} 需要记住的事…",
+        "hint": "以你的名字保存为笔记",
+        "send": "保存到记忆",
+        "status": {
+          "saved": "已保存到笔记",
+          "secret": "这看起来像密钥。请将密钥保存在“密钥”中。",
+          "limit": "此记忆已有 200 个页面，达到上限。请先删除一个页面。",
+          "readOnly": "此记忆为只读。",
+          "failed": "无法保存，请重试。"
+        }
+      },
+      "empty": {
+        "title": "{place} 还没有记忆",
+        "titleDm": "与 {place} 还没有记忆",
+        "description": "智能体会保存此频道达成的共识，每个新话题都从这里开始。每条事实都链接到它的来源话题；任何更改都可以编辑或撤销。",
+        "descriptionDm": "{place} 会保存你们在此对话中达成的共识，每个新话题都从这里开始。每条事实都链接到它的来源话题；任何更改都可以编辑或撤销。",
+        "example": {
+          "people": "Northwind — 主要联系人是 Sam，3 月续约",
+          "decisions": "价格保持每席位 49 美元",
+          "workstreams": "Q4 发布 — 状态、负责人、后续步骤",
+          "playbooks": "我们如何撰写发布说明"
+        },
+        "tryOne": "试试看",
+        "try": {
+          "one": "我们的发布日期是 11 月 12 日",
+          "two": "所有发布文案由 Priya 审批",
+          "three": "用平实的语言写作，不夸大"
+        }
+      },
+      "source": {
+        "thread": "打开话题“{label}”",
+        "threadGone": "来自话题“{label}”",
+        "outside": "在新标签页中打开 {label}",
+        "outsideText": "来自 {label}",
+        "person": "由 {label} 添加",
+        "import": "从 {label} 导入"
+      }
+    },
     "create": {
       "title": "创建频道",
       "description": "此项目中的所有人都可以查看和使用该频道。",

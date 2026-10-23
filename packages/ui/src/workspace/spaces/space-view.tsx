@@ -14,6 +14,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useTranslations } from '../../i18n';
 import { Close } from '../../icons/close';
 import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
+import { MemoryView, useMemoryPageCount } from '../memory/memory-view';
 import { useIsMobile } from '../../internal/hooks';
 import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
 import { type CanResult, useProjectCan, useProjectPageCans } from '../../internal/lib/use-project-can';
@@ -58,15 +59,16 @@ export interface SpaceViewProps {
   /** Runs first on every send. Throw to refuse it: the composer keeps the draft (apps/web checks billing here). */
   beforeSend?: () => Promise<void>;
   /**
-   * The Files and Memory tabs: the host's Drive folder view for the space
-   * (apps/web passes its Drive explorer). Absent: those tabs show their empty state.
+   * The Files tab: the host's Drive folder view for the space (apps/web
+   * passes its Drive explorer). Absent: the tab shows its empty state. The
+   * Memory tab is the space's memory pages (`MemoryView`).
    */
   renderFolder?: (folder: SpaceFolder) => ReactNode;
   /** A channel's Apps tab: the host's App gallery for the channel. Absent: its empty state. */
   renderApps?: (space: ProjectSpace) => ReactNode;
 }
 
-/** What a host's folder view draws: one space's Files or Memory tab. `place` is "#general" or the DM's agent. */
+/** What a host's folder view draws: one space's Files tab. `place` is "#general" or the DM's agent. */
 export interface SpaceFolder {
   space: ProjectSpace;
   tab: 'files' | 'memory';
@@ -153,6 +155,8 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
   const threads = useSpaceThreads(projectId, space?.space_id);
   // The counts beside the Apps, Links and Triggers labels (a DM has Triggers only).
   const summary = useProjectSpaceSummary(projectId, space?.space_id);
+  // Memory counts its pages (notes not included).
+  const memoryCount = useMemoryPageCount(projectId, space?.space_id);
   const threadId = searchParams.get(THREAD_PARAM);
   const tabs = useReadableSpaceTabs(projectId, target.kind);
   const requestedTab = spaceTabFromParam(searchParams.get(TAB_PARAM), target.kind);
@@ -296,10 +300,10 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
 }
 
 /**
- * The tab panels. Chat and Threads read the space's threads; Files and
- * Memory are the host's folder view, Apps the host's App gallery, Links the
- * channel's links, Triggers the triggers that post here. Files and Memory
- * without a host view draw their empty state with the action disabled.
+ * The tab panels. Chat and Threads read the space's threads; Files is the
+ * host's folder view, Memory the space's memory pages, Apps the host's App
+ * gallery, Links the channel's links, Triggers the triggers that post here.
+ * Files without a host view draws its empty state with the action disabled.
  */
 function SpaceTabs({
   projectId,
@@ -338,7 +342,11 @@ function SpaceTabs({
       {tabs
         .filter((tab): tab is Exclude<SpaceTab, 'chat' | 'threads'> => tab !== 'chat' && tab !== 'threads')
         .map((tab) =>
-          renderFolder && (tab === 'files' || tab === 'memory') ? (
+          tab === 'memory' ? (
+            <TabsContent key={tab} value={tab} className="flex min-h-0 flex-col">
+              <MemoryView projectId={projectId} layerKey={space.space_id} place={place} />
+            </TabsContent>
+          ) : renderFolder && tab === 'files' ? (
             <TabsContent key={tab} value={tab} className="flex min-h-0 flex-col">
               {renderFolder({ space, tab, place })}
             </TabsContent>

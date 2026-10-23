@@ -187,4 +187,19 @@ describe('memory mutations', () => {
     const prefix = qk.project.memory('P1');
     expect(qk.project.memoryPage('P1', 'PG1').slice(0, prefix.length)).toEqual([...prefix]);
   });
+
+  test('every mutation handles its own error, so the app-wide default error toast does not fire as well', () => {
+    // Each caller shows a specific message for 409/413/422. Without a hook-level
+    // onError, TanStack also runs the QueryClient's default mutation onError.
+    for (const hook of [
+      useCreateProjectMemoryPage('P1', 'company'),
+      useAddProjectMemoryNote('P1', 'company'),
+      useUpdateProjectMemoryPage('P1'),
+      useDeleteProjectMemoryPage('P1'),
+      useRestoreProjectMemoryPage('P1'),
+      useUndoProjectMemoryVersion('P1'),
+    ] as any[]) {
+      expect(typeof hook.onError).toBe('function');
+    }
+  });
 });

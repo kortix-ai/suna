@@ -22432,6 +22432,153 @@
     "overviewTitle": "概要"
   },
   "spaces": {
+    "memory": {
+      "search": "メモリを検索",
+      "pagesLabel": "メモリのページ",
+      "allPages": "すべてのページ",
+      "type": {
+        "people": "人物",
+        "decisions": "決定事項",
+        "workstreams": "ワークストリーム",
+        "playbooks": "プレイブック",
+        "note": "メモ"
+      },
+      "needsConfirming": "確認が必要",
+      "noMatches": "「{query}」に一致するページはありません。",
+      "loadError": "このメモリを読み込めませんでした。",
+      "pageLoadError": "このページを読み込めませんでした。",
+      "retry": "再試行",
+      "close": "閉じる",
+      "loadOlder": "以前の項目を表示",
+      "updatedBy": "{author} が更新",
+      "fromThread": "「{thread}」から",
+      "author": {
+        "system": "Kortix",
+        "unknown": "誰か"
+      },
+      "edit": "編集",
+      "more": "その他の操作",
+      "copyLink": "リンクをコピー",
+      "linkCopied": "リンクをコピーしました",
+      "copyFailed": "リンクをコピーできませんでした。",
+      "delete": "削除",
+      "deleteTitle": "このページを削除しますか？",
+      "deleteDescription": "エージェントは次のターンから「{title}」を参照しなくなります。「最近の変更」から元に戻せます。",
+      "deleted": "ページを削除しました",
+      "deleteFailed": "ページを削除できませんでした。もう一度お試しください。",
+      "undo": "元に戻す",
+      "undone": "変更を元に戻しました",
+      "undoFailed": "変更を元に戻せませんでした。もう一度お試しください。",
+      "superseded": "この後にページが変更されています。以前のバージョンに戻すには履歴を開いてください。",
+      "alreadyUndone": "この変更はすでに元に戻されています。",
+      "undoUnavailable": "この後にページが変更されたため、この変更は元に戻せません。",
+      "view": "表示",
+      "relatedPages": "関連ページ",
+      "pageLimit": "このメモリは上限の 200 ページに達しています。先にページを 1 つ削除してください。",
+      "emptyPage": "このページにはまだ内容がありません。",
+      "recent": {
+        "added": "{author} が {time}にこのページを更新：「{fact}」を追加",
+        "updated": "{author} が {time}にこのページを更新",
+        "created": "{author} が {time}にこのページを作成",
+        "viewChange": "変更を表示"
+      },
+      "changes": {
+        "title": "最近の変更",
+        "empty": "まだ変更はありません。",
+        "loadError": "最近の変更を読み込めませんでした。",
+        "op": {
+          "create": "{author} が <page>{title}</page> を作成",
+          "update": "{author} が <page>{title}</page> を編集",
+          "append": "{author} が <page>{title}</page> に追記",
+          "delete": "{author} が <page>{title}</page> を削除",
+          "restore": "{author} が <page>{title}</page> を復元",
+          "undo": "{author} が <page>{title}</page> への変更を取り消し",
+          "confirm": "{author} が <page>{title}</page> を確認",
+          "file_note": "{author} がメモを <page>{title}</page> に整理",
+          "import": "{author} が <page>{title}</page> をインポート"
+        }
+      },
+      "history": {
+        "title": "履歴",
+        "description": "「{title}」へのすべての変更（新しい順）。",
+        "loadError": "履歴を読み込めませんでした。",
+        "current": "現在",
+        "undone": "取り消し済み",
+        "restore": "このバージョンに戻す",
+        "restored": "バージョンを復元しました",
+        "restoreFailed": "このバージョンを復元できませんでした。もう一度お試しください。",
+        "op": {
+          "create": "{author} がページを作成",
+          "update": "{author} がページを編集",
+          "append": "{author} が事実を追加",
+          "delete": "{author} がページを削除",
+          "restore": "{author} がバージョンを復元",
+          "undo": "{author} が変更を取り消し",
+          "confirm": "{author} がページを確認",
+          "file_note": "{author} がメモを整理",
+          "import": "{author} がページをインポート"
+        }
+      },
+      "editor": {
+        "title": "タイトル",
+        "type": "種類",
+        "summary": "概要",
+        "summaryPlaceholder": "エージェントがページ一覧で見る 1 行",
+        "body": "ページ",
+        "bodyHint": "Markdown。## で始まる行がセクションになります。⟦1⟧ は出典 1 を示します。",
+        "save": "保存",
+        "cancel": "キャンセル",
+        "saved": "ページを保存しました",
+        "conflict": "誰かがこのページを変更しました。再読み込みして確認してください。",
+        "reload": "再読み込み",
+        "error": {
+          "tooLarge": "このページは 8 KB を超えています。短くしてください。",
+          "titleTaken": "同じタイトルのページがすでにあります。",
+          "secret": "シークレットのようです。シークレットは「シークレット」に保管してください。",
+          "readOnly": "このメモリは読み取り専用です。",
+          "failed": "ページを保存できませんでした。もう一度お試しください。"
+        }
+      },
+      "remember": {
+        "label": "{place} に覚えてほしいこと",
+        "placeholder": "{place} に覚えてほしいことを入力…",
+        "hint": "あなたの名前でメモとして保存されます",
+        "send": "メモリに保存",
+        "status": {
+          "saved": "メモに保存しました",
+          "secret": "シークレットのようです。シークレットは「シークレット」に保管してください。",
+          "limit": "このメモリは上限の 200 ページに達しています。先にページを 1 つ削除してください。",
+          "readOnly": "このメモリは読み取り専用です。",
+          "failed": "保存できませんでした。もう一度お試しください。"
+        }
+      },
+      "empty": {
+        "title": "{place} にはまだメモリがありません",
+        "titleDm": "{place} とのメモリはまだありません",
+        "description": "エージェントはこのチャンネルで合意したことを保存するので、新しいスレッドはそこから始まります。各事実は元のスレッドにリンクされ、どの変更も編集や取り消しができます。",
+        "descriptionDm": "{place} はこの会話で合意したことを保存するので、新しいスレッドはそこから始まります。各事実は元のスレッドにリンクされ、どの変更も編集や取り消しができます。",
+        "example": {
+          "people": "Northwind — 主な担当者は Sam、3 月に更新",
+          "decisions": "価格は 1 席あたり 49 ドルのまま",
+          "workstreams": "Q4 ローンチ — 状況、担当者、次のステップ",
+          "playbooks": "リリースノートの書き方"
+        },
+        "tryOne": "試してみる",
+        "try": {
+          "one": "ローンチ日は 11 月 12 日",
+          "two": "ローンチの文章はすべて Priya が承認する",
+          "three": "平易な言葉で、誇張しない"
+        }
+      },
+      "source": {
+        "thread": "スレッド「{label}」を開く",
+        "threadGone": "スレッド「{label}」から",
+        "outside": "{label} を新しいタブで開く",
+        "outsideText": "{label} から",
+        "person": "{label} が追加",
+        "import": "{label} からインポート"
+      }
+    },
     "create": {
       "title": "チャンネルを作成",
       "description": "このプロジェクトの全員がチャンネルを表示して使用できます。",

@@ -91,6 +91,12 @@ export function useProjectMemoryHistory(projectId: Id, pageId: Id, options?: Rea
  * then refetch every memory read of the project (layer counts, page lists,
  * Recent changes, pages, history) and the channel tab counts.
  */
+// Every memory mutation sets this hook-level `onError`. The caller shows its
+// own message per code (`version_conflict`, `secret_detected`, …) in the
+// call-time `onError`; without a hook-level one, TanStack also runs the
+// QueryClient's default mutation `onError`, a second, generic error toast.
+const callerShowsError = () => {};
+
 function useMemoryWritten(projectId: string) {
   const queryClient = useQueryClient();
   return (pages: ProjectMemoryPage[] = []) => {
@@ -107,6 +113,7 @@ export function useCreateProjectMemoryPage(projectId: string, layerKey: string) 
   const written = useMemoryWritten(projectId);
   return useMutation({
     mutationFn: (input: CreateProjectMemoryPageInput) => createProjectMemoryPage(projectId, layerKey, input),
+    onError: callerShowsError,
     onSuccess: () => written(),
   });
 }
@@ -116,6 +123,7 @@ export function useAddProjectMemoryNote(projectId: string, layerKey: string) {
   const written = useMemoryWritten(projectId);
   return useMutation({
     mutationFn: (input: AddProjectMemoryNoteInput) => addProjectMemoryNote(projectId, layerKey, input),
+    onError: callerShowsError,
     onSuccess: () => written(),
   });
 }
@@ -126,6 +134,7 @@ export function useUpdateProjectMemoryPage(projectId: string) {
   return useMutation({
     mutationFn: (args: { pageId: string; input: UpdateProjectMemoryPageInput }) =>
       updateProjectMemoryPage(projectId, args.pageId, args.input),
+    onError: callerShowsError,
     onSuccess: (page: ProjectMemoryPage) => written([page]),
   });
 }
@@ -135,6 +144,7 @@ export function useDeleteProjectMemoryPage(projectId: string) {
   const written = useMemoryWritten(projectId);
   return useMutation({
     mutationFn: (pageId: string) => deleteProjectMemoryPage(projectId, pageId),
+    onError: callerShowsError,
     onSuccess: () => written(),
   });
 }
@@ -145,6 +155,7 @@ export function useRestoreProjectMemoryPage(projectId: string) {
   return useMutation({
     mutationFn: (args: { pageId: string; versionId: string }) =>
       restoreProjectMemoryPage(projectId, args.pageId, args.versionId),
+    onError: callerShowsError,
     onSuccess: (page: ProjectMemoryPage) => written([page]),
   });
 }
@@ -158,6 +169,7 @@ export function useUndoProjectMemoryVersion(projectId: string) {
   const written = useMemoryWritten(projectId);
   return useMutation({
     mutationFn: (versionId: string) => undoProjectMemoryVersion(projectId, versionId),
+    onError: callerShowsError,
     onSuccess: (result: { pages: ProjectMemoryPage[] }) => written(result.pages),
   });
 }

@@ -22432,6 +22432,153 @@
     "overviewTitle": "Resumen"
   },
   "spaces": {
+    "memory": {
+      "search": "Buscar en la memoria",
+      "pagesLabel": "Páginas de memoria",
+      "allPages": "Todas las páginas",
+      "type": {
+        "people": "Personas",
+        "decisions": "Decisiones",
+        "workstreams": "Líneas de trabajo",
+        "playbooks": "Guías",
+        "note": "Notas"
+      },
+      "needsConfirming": "Por confirmar",
+      "noMatches": "Ninguna página coincide con «{query}».",
+      "loadError": "No se pudo cargar esta memoria.",
+      "pageLoadError": "No se pudo cargar esta página.",
+      "retry": "Reintentar",
+      "close": "Cerrar",
+      "loadOlder": "Ver anteriores",
+      "updatedBy": "Actualizada por {author}",
+      "fromThread": "desde «{thread}»",
+      "author": {
+        "system": "Kortix",
+        "unknown": "Alguien"
+      },
+      "edit": "Editar",
+      "more": "Más acciones",
+      "copyLink": "Copiar enlace",
+      "linkCopied": "Enlace copiado",
+      "copyFailed": "No se pudo copiar el enlace.",
+      "delete": "Eliminar",
+      "deleteTitle": "¿Eliminar esta página?",
+      "deleteDescription": "Los agentes dejan de ver «{title}» en su siguiente turno. Puedes deshacerlo desde Cambios recientes.",
+      "deleted": "Página eliminada",
+      "deleteFailed": "No se pudo eliminar la página. Inténtalo de nuevo.",
+      "undo": "Deshacer",
+      "undone": "Cambio deshecho",
+      "undoFailed": "No se pudo deshacer el cambio. Inténtalo de nuevo.",
+      "superseded": "La página cambió después de esto. Abre el Historial para restaurar una versión anterior.",
+      "alreadyUndone": "Este cambio ya está deshecho.",
+      "undoUnavailable": "La página cambió después de esto, así que este cambio no se puede deshacer.",
+      "view": "Ver",
+      "relatedPages": "Páginas relacionadas",
+      "pageLimit": "Esta memoria tiene 200 páginas, su límite. Elimina una página primero.",
+      "emptyPage": "Esta página aún está vacía.",
+      "recent": {
+        "added": "{author} actualizó esta página {time}: añadió «{fact}»",
+        "updated": "{author} actualizó esta página {time}",
+        "created": "{author} creó esta página {time}",
+        "viewChange": "Ver cambio"
+      },
+      "changes": {
+        "title": "Cambios recientes",
+        "empty": "Aún no hay cambios.",
+        "loadError": "No se pudieron cargar los cambios recientes.",
+        "op": {
+          "create": "{author} creó <page>{title}</page>",
+          "update": "{author} editó <page>{title}</page>",
+          "append": "{author} añadió a <page>{title}</page>",
+          "delete": "{author} eliminó <page>{title}</page>",
+          "restore": "{author} restauró <page>{title}</page>",
+          "undo": "{author} deshizo un cambio en <page>{title}</page>",
+          "confirm": "{author} confirmó <page>{title}</page>",
+          "file_note": "{author} archivó una nota en <page>{title}</page>",
+          "import": "{author} importó <page>{title}</page>"
+        }
+      },
+      "history": {
+        "title": "Historial",
+        "description": "Cada cambio en «{title}», del más reciente al más antiguo.",
+        "loadError": "No se pudo cargar el historial.",
+        "current": "Actual",
+        "undone": "Deshecho",
+        "restore": "Restaurar esta versión",
+        "restored": "Versión restaurada",
+        "restoreFailed": "No se pudo restaurar esta versión. Inténtalo de nuevo.",
+        "op": {
+          "create": "{author} creó la página",
+          "update": "{author} editó la página",
+          "append": "{author} añadió un dato",
+          "delete": "{author} eliminó la página",
+          "restore": "{author} restauró una versión",
+          "undo": "{author} deshizo un cambio",
+          "confirm": "{author} confirmó la página",
+          "file_note": "{author} archivó una nota",
+          "import": "{author} importó la página"
+        }
+      },
+      "editor": {
+        "title": "Título",
+        "type": "Tipo",
+        "summary": "Resumen",
+        "summaryPlaceholder": "Una línea que los agentes ven en la lista de páginas",
+        "body": "Página",
+        "bodyHint": "Markdown. Una línea que empieza con ## inicia una sección; ⟦1⟧ cita la fuente 1.",
+        "save": "Guardar",
+        "cancel": "Cancelar",
+        "saved": "Página guardada",
+        "conflict": "Alguien cambió esta página. Recarga para verla.",
+        "reload": "Recargar",
+        "error": {
+          "tooLarge": "Esta página supera los 8 KB. Acórtala.",
+          "titleTaken": "Otra página ya tiene este título.",
+          "secret": "Eso parece un secreto. Guarda los secretos en Secretos.",
+          "readOnly": "Esta memoria es de solo lectura.",
+          "failed": "No se pudo guardar la página. Inténtalo de nuevo."
+        }
+      },
+      "remember": {
+        "label": "Algo que {place} debe recordar",
+        "placeholder": "Dile a {place} algo que recordar…",
+        "hint": "Se guarda como nota con tu nombre",
+        "send": "Guardar en la memoria",
+        "status": {
+          "saved": "Guardado en Notas",
+          "secret": "Eso parece un secreto. Guarda los secretos en Secretos.",
+          "limit": "Esta memoria tiene 200 páginas, su límite. Elimina una página primero.",
+          "readOnly": "Esta memoria es de solo lectura.",
+          "failed": "No se pudo guardar. Inténtalo de nuevo."
+        }
+      },
+      "empty": {
+        "title": "{place} aún no tiene memoria",
+        "titleDm": "Aún no hay memoria con {place}",
+        "description": "Los agentes guardan lo que este canal acuerda, así cada hilo nuevo empieza con ello. Cada dato enlaza al hilo del que salió; edita o deshaz cualquier cambio.",
+        "descriptionDm": "{place} guarda lo que acordáis en esta conversación, así cada hilo nuevo empieza con ello. Cada dato enlaza al hilo del que salió; edita o deshaz cualquier cambio.",
+        "example": {
+          "people": "Northwind — el contacto principal es Sam, renueva en marzo",
+          "decisions": "El precio se mantiene en 49 $ por puesto",
+          "workstreams": "Lanzamiento del T4 — estado, responsable, próximos pasos",
+          "playbooks": "Cómo escribimos las notas de versión"
+        },
+        "tryOne": "Prueba uno",
+        "try": {
+          "one": "Nuestro lanzamiento es el 12 de nov.",
+          "two": "Priya aprueba todos los textos del lanzamiento",
+          "three": "Escribe con palabras sencillas, sin exageraciones"
+        }
+      },
+      "source": {
+        "thread": "Abrir el hilo «{label}»",
+        "threadGone": "Del hilo «{label}»",
+        "outside": "Abrir {label} en una pestaña nueva",
+        "outsideText": "De {label}",
+        "person": "Añadido por {label}",
+        "import": "Importado de {label}"
+      }
+    },
     "create": {
       "title": "Crear un canal",
       "description": "Todos en este proyecto pueden ver y usar el canal.",

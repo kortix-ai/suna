@@ -22432,6 +22432,153 @@
     "overviewTitle": "Übersicht"
   },
   "spaces": {
+    "memory": {
+      "search": "Speicher durchsuchen",
+      "pagesLabel": "Speicherseiten",
+      "allPages": "Alle Seiten",
+      "type": {
+        "people": "Personen",
+        "decisions": "Entscheidungen",
+        "workstreams": "Arbeitsbereiche",
+        "playbooks": "Playbooks",
+        "note": "Notizen"
+      },
+      "needsConfirming": "Zu bestätigen",
+      "noMatches": "Keine Seite passt zu „{query}“.",
+      "loadError": "Dieser Speicher konnte nicht geladen werden.",
+      "pageLoadError": "Diese Seite konnte nicht geladen werden.",
+      "retry": "Erneut versuchen",
+      "close": "Schließen",
+      "loadOlder": "Ältere anzeigen",
+      "updatedBy": "Aktualisiert von {author}",
+      "fromThread": "aus „{thread}“",
+      "author": {
+        "system": "Kortix",
+        "unknown": "Jemand"
+      },
+      "edit": "Bearbeiten",
+      "more": "Weitere Aktionen",
+      "copyLink": "Link kopieren",
+      "linkCopied": "Link kopiert",
+      "copyFailed": "Der Link konnte nicht kopiert werden.",
+      "delete": "Löschen",
+      "deleteTitle": "Diese Seite löschen?",
+      "deleteDescription": "Agenten sehen „{title}“ ab ihrem nächsten Zug nicht mehr. Du kannst das unter „Letzte Änderungen“ rückgängig machen.",
+      "deleted": "Seite gelöscht",
+      "deleteFailed": "Die Seite konnte nicht gelöscht werden. Versuche es erneut.",
+      "undo": "Rückgängig",
+      "undone": "Änderung rückgängig gemacht",
+      "undoFailed": "Die Änderung konnte nicht rückgängig gemacht werden. Versuche es erneut.",
+      "superseded": "Die Seite wurde danach geändert. Öffne den Verlauf, um eine frühere Version wiederherzustellen.",
+      "alreadyUndone": "Diese Änderung ist bereits rückgängig gemacht.",
+      "undoUnavailable": "Die Seite wurde danach geändert, daher lässt sich diese Änderung nicht rückgängig machen.",
+      "view": "Ansehen",
+      "relatedPages": "Verwandte Seiten",
+      "pageLimit": "Dieser Speicher hat 200 Seiten, sein Limit. Lösche zuerst eine Seite.",
+      "emptyPage": "Auf dieser Seite steht noch nichts.",
+      "recent": {
+        "added": "{author} hat diese Seite {time} aktualisiert: „{fact}“ hinzugefügt",
+        "updated": "{author} hat diese Seite {time} aktualisiert",
+        "created": "{author} hat diese Seite {time} erstellt",
+        "viewChange": "Änderung ansehen"
+      },
+      "changes": {
+        "title": "Letzte Änderungen",
+        "empty": "Noch keine Änderungen.",
+        "loadError": "Die letzten Änderungen konnten nicht geladen werden.",
+        "op": {
+          "create": "{author} hat <page>{title}</page> erstellt",
+          "update": "{author} hat <page>{title}</page> bearbeitet",
+          "append": "{author} hat <page>{title}</page> ergänzt",
+          "delete": "{author} hat <page>{title}</page> gelöscht",
+          "restore": "{author} hat <page>{title}</page> wiederhergestellt",
+          "undo": "{author} hat eine Änderung an <page>{title}</page> rückgängig gemacht",
+          "confirm": "{author} hat <page>{title}</page> bestätigt",
+          "file_note": "{author} hat eine Notiz in <page>{title}</page> abgelegt",
+          "import": "{author} hat <page>{title}</page> importiert"
+        }
+      },
+      "history": {
+        "title": "Verlauf",
+        "description": "Jede Änderung an „{title}“, neueste zuerst.",
+        "loadError": "Der Verlauf konnte nicht geladen werden.",
+        "current": "Aktuell",
+        "undone": "Rückgängig gemacht",
+        "restore": "Diese Version wiederherstellen",
+        "restored": "Version wiederhergestellt",
+        "restoreFailed": "Diese Version konnte nicht wiederhergestellt werden. Versuche es erneut.",
+        "op": {
+          "create": "{author} hat die Seite erstellt",
+          "update": "{author} hat die Seite bearbeitet",
+          "append": "{author} hat einen Fakt hinzugefügt",
+          "delete": "{author} hat die Seite gelöscht",
+          "restore": "{author} hat eine Version wiederhergestellt",
+          "undo": "{author} hat eine Änderung rückgängig gemacht",
+          "confirm": "{author} hat die Seite bestätigt",
+          "file_note": "{author} hat eine Notiz abgelegt",
+          "import": "{author} hat die Seite importiert"
+        }
+      },
+      "editor": {
+        "title": "Titel",
+        "type": "Typ",
+        "summary": "Zusammenfassung",
+        "summaryPlaceholder": "Eine Zeile, die Agenten in der Seitenliste sehen",
+        "body": "Seite",
+        "bodyHint": "Markdown. Eine Zeile, die mit ## beginnt, startet einen Abschnitt; ⟦1⟧ verweist auf Quelle 1.",
+        "save": "Speichern",
+        "cancel": "Abbrechen",
+        "saved": "Seite gespeichert",
+        "conflict": "Jemand hat diese Seite geändert. Lade sie neu, um die Änderung zu sehen.",
+        "reload": "Neu laden",
+        "error": {
+          "tooLarge": "Diese Seite ist größer als 8 KB. Kürze sie.",
+          "titleTaken": "Eine andere Seite hat bereits diesen Titel.",
+          "secret": "Das sieht wie ein Geheimnis aus. Bewahre Geheimnisse unter „Secrets“ auf.",
+          "readOnly": "Dieser Speicher ist schreibgeschützt.",
+          "failed": "Die Seite konnte nicht gespeichert werden. Versuche es erneut."
+        }
+      },
+      "remember": {
+        "label": "Etwas, das sich {place} merken soll",
+        "placeholder": "Sag {place}, was es sich merken soll …",
+        "hint": "Als Notiz mit deinem Namen gespeichert",
+        "send": "Im Speicher sichern",
+        "status": {
+          "saved": "In Notizen gespeichert",
+          "secret": "Das sieht wie ein Geheimnis aus. Bewahre Geheimnisse unter „Secrets“ auf.",
+          "limit": "Dieser Speicher hat 200 Seiten, sein Limit. Lösche zuerst eine Seite.",
+          "readOnly": "Dieser Speicher ist schreibgeschützt.",
+          "failed": "Speichern fehlgeschlagen. Versuche es erneut."
+        }
+      },
+      "empty": {
+        "title": "{place} hat noch keinen Speicher",
+        "titleDm": "Noch kein Speicher mit {place}",
+        "description": "Agenten speichern, worauf sich dieser Kanal einigt, damit jeder neue Thread damit beginnt. Jeder Fakt verlinkt den Thread, aus dem er stammt; jede Änderung lässt sich bearbeiten oder rückgängig machen.",
+        "descriptionDm": "{place} speichert, worauf ihr euch in dieser Unterhaltung einigt, damit jeder neue Thread damit beginnt. Jeder Fakt verlinkt den Thread, aus dem er stammt; jede Änderung lässt sich bearbeiten oder rückgängig machen.",
+        "example": {
+          "people": "Northwind — Ansprechpartner ist Sam, Verlängerung im März",
+          "decisions": "Der Preis bleibt bei 49 $ pro Platz",
+          "workstreams": "Q4-Launch — Status, Verantwortliche, nächste Schritte",
+          "playbooks": "Wie wir Release Notes schreiben"
+        },
+        "tryOne": "Probier eins",
+        "try": {
+          "one": "Unser Launch ist am 12. Nov.",
+          "two": "Priya gibt alle Launch-Texte frei",
+          "three": "Schreib in einfachen Worten, ohne Hype"
+        }
+      },
+      "source": {
+        "thread": "Thread „{label}“ öffnen",
+        "threadGone": "Aus dem Thread „{label}“",
+        "outside": "{label} in einem neuen Tab öffnen",
+        "outsideText": "Aus {label}",
+        "person": "Hinzugefügt von {label}",
+        "import": "Importiert aus {label}"
+      }
+    },
     "create": {
       "title": "Kanal erstellen",
       "description": "Alle in diesem Projekt können den Kanal sehen und nutzen.",
