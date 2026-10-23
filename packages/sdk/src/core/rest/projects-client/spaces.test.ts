@@ -202,6 +202,14 @@ const link: ProjectSpaceLink = {
   icon_url: 'https://example.test/favicon.ico',
 };
 
+// A link built by a consumer without the fetched fields (an older API, a hand-made fixture) still type-checks.
+const legacyLink: ProjectSpaceLink = (({ display_title, site_name, icon_url, ...rest }) => rest)(link);
+
+test('a link from an API without the fetched fields lists unchanged', async () => {
+  nextResponse = { status: 200, body: { links: [legacyLink] } };
+  expect(await listProjectSpaceLinks('P1', 'S1')).toEqual([legacyLink]);
+});
+
 test('listProjectSpaceApps GETs the channel apps and returns the array', async () => {
   nextResponse = { status: 200, body: { apps: [{ app_id: 'A1' }] } };
   const apps = await listProjectSpaceApps('P1', 'S1');

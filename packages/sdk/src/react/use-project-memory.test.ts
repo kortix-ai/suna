@@ -300,6 +300,11 @@ describe('memory mutations', () => {
     await confirm.onSuccess(merged);
     expect(cached).toEqual([{ key: [...qk.project.memoryPage('P1', 'PG1')], data: merged }]);
     expect(invalidated).toEqual(everyMemoryKey());
+    // The confirmed "(to confirm)" page went to the trash: its slot sits under the
+    // invalidated memory prefix, so it refetches and is never written with the merged page.
+    const prefix = qk.project.memory('P1');
+    expect(qk.project.memoryPage('P1', 'PG9').slice(0, prefix.length)).toEqual([...prefix]);
+    expect(cached.some((c) => JSON.stringify(c.key) === JSON.stringify(qk.project.memoryPage('P1', 'PG9')))).toBe(false);
   });
 
   test('every mutation handles its own error, so the app-wide default error toast does not fire as well', () => {

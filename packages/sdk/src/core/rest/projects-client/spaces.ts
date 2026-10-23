@@ -140,12 +140,12 @@ export interface ProjectSpaceLink {
   /** How many messages shared it. */
   share_count: number;
   last_shared_at: string;
-  /** The row's name: the title a member gave, else the page's fetched title, else the decoded path, else the host. */
-  display_title: string;
-  /** The page's `og:site_name`, fetched by the server; null until fetched or when the page has none. */
-  site_name: string | null;
-  /** The page's icon URL, fetched by the server; null until fetched or when none passed the address check. A remote URL: load it only through an image proxy. */
-  icon_url: string | null;
+  /** The row's name: the title a member gave, else the page's fetched title, else the decoded path, else the host. Absent on older APIs: fall back to `title ?? url`. */
+  display_title?: string;
+  /** The page's `og:site_name`, fetched by the server; null until fetched or when the page has none. Absent on older APIs. */
+  site_name?: string | null;
+  /** The page's icon URL, fetched by the server; null until fetched or when none passed the address check. A remote URL: load it only through an image proxy. Absent on older APIs. */
+  icon_url?: string | null;
 }
 
 export interface AddProjectSpaceLinkInput {

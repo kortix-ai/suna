@@ -50,15 +50,18 @@ export function useProjectSpaceGeneralNotice(projectId: string | null | undefine
 }
 
 /**
- * Refetch the spaces list. `completesGetStarted`: the write also completes a
- * "Get started" row (a new channel, a DM), so the onboarding state refetches too.
+ * Refetch the spaces list; resolves when the refetch is done, so a caller's
+ * `onSuccess` (a navigation to the new channel) sees the new list.
+ * `completesGetStarted`: the write also completes a "Get started" row (a new
+ * channel, a DM), so the onboarding state refetches too.
  */
 function useInvalidateSpaces(projectId: string, completesGetStarted = false) {
   const queryClient = useQueryClient();
-  return () => {
-    queryClient.invalidateQueries({ queryKey: qk.project.spaces(projectId) });
-    if (completesGetStarted) queryClient.invalidateQueries({ queryKey: qk.project.channelsOnboarding(projectId) });
-  };
+  return () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: qk.project.spaces(projectId) }),
+      ...(completesGetStarted ? [queryClient.invalidateQueries({ queryKey: qk.project.channelsOnboarding(projectId) })] : []),
+    ]);
 }
 
 /** Create a channel. A taken slug rejects with `ApiError` code `slug_taken` (see `createProjectSpace`). */
@@ -171,11 +174,16 @@ export function useChannelsOnboarding(projectId: Id, options?: { enabled?: boole
   });
 }
 
-/** Record one onboarding mark for the caller (`channels_intro`, `get_started.dismissed`, …), then refetch the state. */
+/**
+ * Record one onboarding mark for the caller (`channels_intro`, `get_started.dismissed`, …),
+ * then refetch the state. A failed mark is silent (no default error toast):
+ * the next view reads the state again and offers the mark again.
+ */
 export function useMarkChannelsOnboarding(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (mark: ChannelsOnboardingMark) => markChannelsOnboarding(projectId, mark),
+    onError: () => {},
     onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.project.channelsOnboarding(projectId) }),
   });
 }

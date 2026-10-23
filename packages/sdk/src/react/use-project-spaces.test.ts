@@ -3,12 +3,17 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 // Same harness as `./use-reminders.test.ts`: `useQuery`/`useMutation` return
 // their config so the wiring can be asserted without a render tree.
 let invalidated: unknown[][] = [];
+// Keys whose refetch finished: `invalidateQueries` resolves after the refetch, like TanStack's.
+let refetched: unknown[][] = [];
 mock.module('@tanstack/react-query', () => ({
   useQuery: (config: Record<string, unknown>) => config,
   useMutation: (config: Record<string, unknown>) => config,
   useQueryClient: () => ({
     invalidateQueries: (opts: { queryKey: unknown[] }) => {
       invalidated.push(opts.queryKey);
+      return Promise.resolve().then(() => {
+        refetched.push(opts.queryKey);
+      });
     },
   }),
 }));
@@ -34,6 +39,7 @@ const { configureKortix } = await import('../core/http/config');
 let calls: { url: string; method: string; body: unknown }[] = [];
 beforeEach(() => {
   invalidated = [];
+  refetched = [];
   calls = [];
   configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
   globalThis.fetch = mock(async (url: unknown, opts: { method?: string; body?: string } = {}) => {
@@ -84,6 +90,25 @@ describe('space mutations', () => {
   });
 });
 
+describe('space mutations wait for the refetch', () => {
+  test('create, update and dm resolve onSuccess only after every refetch, so the caller sees the new list', async () => {
+    const key = [...qk.project.spaces('P1')];
+    const onboarding = [...qk.project.channelsOnboarding('P1')];
+    for (const [hook, keys] of [
+      [useCreateProjectSpace('P1'), [key, onboarding]],
+      [useUpdateProjectSpace('P1'), [key]],
+      [useOpenProjectDm('P1'), [key, onboarding]],
+    ] as const) {
+      refetched = [];
+      const pending = (hook as any).onSuccess();
+      expect(pending).toBeInstanceOf(Promise);
+      expect(refetched).toEqual([]);
+      await pending;
+      expect(refetched).toEqual(keys as unknown as unknown[][]);
+    }
+  });
+});
+
 describe('#general turned-on-again line', () => {
   test('reads general_notice from the spaces route under the spaces key, so a spaces refresh refreshes it', async () => {
     const query = useProjectSpaceGeneralNotice('P1') as any;
@@ -118,6 +143,11 @@ describe('Channels onboarding', () => {
     ]);
     await mark.onSuccess();
     expect(invalidated).toEqual([[...qk.project.channelsOnboarding('P1')]]);
+  });
+
+  test('a failed mark is silent: the hook handles its own error, so the default error toast does not fire', () => {
+    // The next view reads the state again and offers the mark again.
+    expect(typeof (useMarkChannelsOnboarding('P1') as any).onError).toBe('function');
   });
 });
 
