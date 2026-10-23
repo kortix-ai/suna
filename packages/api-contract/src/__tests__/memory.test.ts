@@ -1,10 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  MemoryChangeListSchema,
+  MemoryDeleteResultSchema,
   MemoryLayerExportSchema,
   MemoryLayerKeySchema,
   MemoryPageCreateInputSchema,
   MemoryRememberInputSchema,
   MemoryRememberResultSchema,
+  MemoryTurnLayersSchema,
+  MemoryUndoResultSchema,
+  MemoryVersionListSchema,
 } from '../index';
 
 describe('MemoryRememberInputSchema', () => {
@@ -25,6 +30,12 @@ describe('MemoryRememberInputSchema', () => {
     expect(MemoryRememberInputSchema.safeParse(base).success).toBe(false);
     expect(MemoryRememberInputSchema.safeParse({ ...base, fact: 'a', body: 'b' }).success).toBe(false);
     expect(MemoryRememberInputSchema.safeParse({ ...base, body: '## Status\nOn track' }).success).toBe(true);
+  });
+
+  test('a summary is one line', () => {
+    const base = { title: 'Priya', type: 'people', fact: 'a' } as const;
+    expect(MemoryRememberInputSchema.safeParse({ ...base, summary: 'Owns launch' }).success).toBe(true);
+    expect(MemoryRememberInputSchema.safeParse({ ...base, summary: 'Owns\nlaunch' }).success).toBe(false);
   });
 
   test('a note is not a type an agent or person files', () => {
@@ -49,9 +60,32 @@ test('the remember result carries what kortixd reads to refresh the copy', () =>
     status: 'confirmed',
     created: false,
     merged: true,
-    copy_path: '/opt/kortix/memory/channel/people/priya.md',
+    copy_path: null,
   });
   expect(result.layer).toMatchObject({ layer_id: 'l1', version: '7', scope: 'channel' });
+});
+
+test('turn layers: at most 3, each folder once, a canonical version', () => {
+  const layer = (dir: string, version = '7') => ({ layer_id: `l-${dir}`, version, dir });
+  expect(MemoryTurnLayersSchema.safeParse([layer('company'), layer('channel'), layer('personal')]).success).toBe(true);
+  expect(MemoryTurnLayersSchema.safeParse([layer('personal'), layer('personal')]).success).toBe(false);
+  expect(MemoryTurnLayersSchema.safeParse([{ layer_id: '', version: '1', dir: 'company' }]).success).toBe(false);
+  expect(MemoryTurnLayersSchema.safeParse([layer('company', '007')]).success).toBe(false);
+  expect(MemoryTurnLayersSchema.safeParse([layer('company', '0')]).success).toBe(true);
+});
+
+test('changes and history page with next; delete and undo results', () => {
+  expect(MemoryChangeListSchema.safeParse({ changes: [], next: null }).success).toBe(true);
+  expect(MemoryChangeListSchema.safeParse({ changes: [] }).success).toBe(false);
+  const author = { kind: 'agent', user_id: null, name: null, agent: 'writer' };
+  const version = {
+    version_id: 'v2', change_id: 'c2', version_no: 2, op: 'append', author, source: null,
+    created_at: '2026-10-23T00:00:00Z', undone: false, can_undo: true,
+    snapshot: { type: 'people', title: 'Priya', summary: '', body: 'a', status: 'confirmed', related: [], deleted: false },
+  };
+  expect(MemoryVersionListSchema.safeParse({ versions: [version], next: 'v1' }).success).toBe(true);
+  expect(MemoryDeleteResultSchema.safeParse({ ok: true, version_id: 'v3' }).success).toBe(true);
+  expect(MemoryUndoResultSchema.safeParse({ pages: [] }).success).toBe(true);
 });
 
 test('the layer export rejects a slug kortixd would not write', () => {

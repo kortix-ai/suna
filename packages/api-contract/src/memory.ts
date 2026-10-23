@@ -14,7 +14,7 @@
  */
 import { z } from 'zod';
 
-/** The caps of `apps/api/src/memory/limits.ts`. */
+/** The caps of `apps/api/src/memory/limits.ts`. `*_chars` are JS string lengths (UTF-16 units): `limits.ts` uses `.length` too. */
 export const MEMORY_LIMITS = {
   title_chars: 120,
   summary_chars: 200,
@@ -74,8 +74,9 @@ export const MemoryLayerKeySchema = z.union([z.literal('company'), z.string().uu
 export type MemoryLayerKey = z.infer<typeof MemoryLayerKeySchema>;
 
 /** `memory_layers.version` (a bigint) as decimal text. */
-const LayerVersionSchema = z.string().regex(/^\d+$/);
+const LayerVersionSchema = z.string().regex(/^(0|[1-9]\d*)$/);
 
+/** `memory_pages.updated_by_kind` null serializes as `kind: 'system'`. */
 export const MemoryAuthorSchema = z
   .object({
     kind: z.enum(['person', 'agent', 'system']),
@@ -89,7 +90,7 @@ export const MemoryAuthorSchema = z
   .strict();
 export type MemoryAuthor = z.infer<typeof MemoryAuthorSchema>;
 
-/** The thread a change came from; `label` is its title at write time. */
+/** The thread a change came from; `label` is read from the session at read time. Null (where nullable) when the thread is gone. */
 export const MemoryThreadRefSchema = z.object({ session_id: z.string(), label: z.string() }).strict();
 export type MemoryThreadRef = z.infer<typeof MemoryThreadRefSchema>;
 
@@ -195,7 +196,10 @@ export const MemoryChangeSchema = z
   .strict();
 export type MemoryChange = z.infer<typeof MemoryChangeSchema>;
 
-export const MemoryChangeListSchema = z.object({ changes: z.array(MemoryChangeSchema) }).strict();
+/** `next`: the `before` value of the next page; null on the last page. */
+export const MemoryChangeListSchema = z
+  .object({ changes: z.array(MemoryChangeSchema), next: z.string().nullable() })
+  .strict();
 export type MemoryChangeList = z.infer<typeof MemoryChangeListSchema>;
 
 /** One entry of a page's history: the page as it was after that change. */
@@ -209,6 +213,7 @@ export const MemoryVersionSchema = z
     source: MemoryThreadRefSchema.nullable(),
     created_at: z.string(),
     undone: z.boolean(),
+    can_undo: z.boolean(),
     snapshot: z
       .object({
         type: MemoryPageTypeSchema,
@@ -224,11 +229,25 @@ export const MemoryVersionSchema = z
   .strict();
 export type MemoryVersion = z.infer<typeof MemoryVersionSchema>;
 
-export const MemoryVersionListSchema = z.object({ versions: z.array(MemoryVersionSchema) }).strict();
+/** `next`: the `before` value of the next page; null on the last page. */
+export const MemoryVersionListSchema = z
+  .object({ versions: z.array(MemoryVersionSchema), next: z.string().nullable() })
+  .strict();
+
+/** `DELETE …/pages/:pageId`: the page went to the trash in version `version_id`. */
+export const MemoryDeleteResultSchema = z.object({ ok: z.literal(true), version_id: z.string() }).strict();
+export type MemoryDeleteResult = z.infer<typeof MemoryDeleteResultSchema>;
+
+/**
+ * `POST …/versions/:versionId/undo`: every live page the undo touched (both
+ * pages of a `file_note`); empty when the undo removed a page it had created.
+ */
+export const MemoryUndoResultSchema = z.object({ pages: z.array(MemoryPageSchema) }).strict();
+export type MemoryUndoResult = z.infer<typeof MemoryUndoResultSchema>;
 export type MemoryVersionList = z.infer<typeof MemoryVersionListSchema>;
 
 const TitleInput = z.string().trim().min(1).max(MEMORY_LIMITS.title_chars);
-const SummaryInput = z.string().trim().max(MEMORY_LIMITS.summary_chars);
+const SummaryInput = z.string().trim().max(MEMORY_LIMITS.summary_chars).regex(/^[^\r\n]*$/, 'summary is one line');
 /** The byte cap (413 `page_too_large`) is the API's. */
 const BodyInput = z.string();
 const RelatedInput = z.array(z.string().uuid()).max(MEMORY_LIMITS.related);
@@ -323,8 +342,8 @@ export const MemoryRememberResultSchema = z
     created: z.boolean(),
     /** The fact went into an existing page. */
     merged: z.boolean(),
-    /** The page's file in the read-only copy, e.g. `/opt/kortix/memory/channel/people/priya.md`. */
-    copy_path: z.string(),
+    /** The page's file in the read-only copy, e.g. `/opt/kortix/memory/channel/people/priya.md`; null when the page is not in the copy (unconfirmed). */
+    copy_path: z.string().nullable(),
   })
   .strict();
 export type MemoryRememberResult = z.infer<typeof MemoryRememberResultSchema>;
@@ -346,7 +365,7 @@ export const MemoryLayerExportSchema = z
         .object({
           page_id: z.string(),
           type: MemoryPageTypeSchema,
-          /** Unique per layer: the ASCII title slug, else `page-<first 8 of page_id>`. */
+          /** Unique per layer: the ASCII title slug, else `page-<first 8 of page_id>`; on a clash, suffix `-<first 6 of page_id>`. */
           slug: z.string().regex(/^[a-z0-9-]+$/),
           markdown: z.string(),
         })
@@ -356,8 +375,13 @@ export const MemoryLayerExportSchema = z
   .strict();
 export type MemoryLayerExport = z.infer<typeof MemoryLayerExportSchema>;
 
-/** `memory_layers` on the Kortix prompt body at turn start: the thread's layers and their versions. */
-export const MemoryTurnLayersSchema = z.array(
-  z.object({ layer_id: z.string(), version: LayerVersionSchema, dir: MemoryCopyDirSchema }).strict(),
-);
+/**
+ * `memory_layers` on the Kortix prompt body at turn start: the thread's layers
+ * and their versions. kortixd rejects the whole prompt on a value this schema
+ * rejects, so the turn hook `safeParse`s and forwards the body unchanged on failure.
+ */
+export const MemoryTurnLayersSchema = z
+  .array(z.object({ layer_id: z.string().min(1), version: LayerVersionSchema, dir: MemoryCopyDirSchema }).strict())
+  .max(MEMORY_COPY_DIRS.length)
+  .refine((layers) => new Set(layers.map((layer) => layer.dir)).size === layers.length, 'each dir once');
 export type MemoryTurnLayers = z.infer<typeof MemoryTurnLayersSchema>;
