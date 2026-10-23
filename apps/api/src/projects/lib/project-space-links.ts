@@ -12,6 +12,7 @@ import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
+import { enqueueLinkUnfurls } from './link-unfurl';
 import { extractMessageLinks } from './message-links';
 import { findLiveChannel } from './project-spaces';
 import { resolveSessionOwnerIdentities } from './user-identity';
@@ -45,7 +46,33 @@ function serializeLink(row: LinkRow, viewer: LinkViewer, names: Map<string, { na
     session_id: row.sessionId,
     share_count: row.shareCount,
     last_shared_at: row.lastSharedAt.toISOString(),
+    display_title: row.title?.trim() || row.fetchedTitle || linkPathTitle(row.url),
+    site_name: row.siteName,
+    icon_url: row.iconUrl,
   };
+}
+
+/** The URL's path and query, decoded, without the outer slashes; the host for a bare host. */
+export function linkPathTitle(url: string): string {
+  const decode = (raw: string) => {
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  };
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return url;
+  }
+  // `+` means a space in a query only; in a path it is a plus (`wiki/C++`).
+  const text = (decode(parsed.pathname) + decode(parsed.search.replace(/\+/g, ' ')))
+    .replace(/^\/+|\/+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text || parsed.hostname.replace(/^www\./, '');
 }
 
 async function serializeLinks(rows: LinkRow[], viewer: LinkViewer, accountId: string): Promise<SpaceLink[]> {
@@ -97,6 +124,7 @@ export async function addSpaceLink(
       },
     })
     .returning();
+  await enqueueLinkUnfurls([row!]);
   const [link] = await serializeLinks([row!], viewer, accountId);
   return link!;
 }
@@ -173,6 +201,7 @@ async function countPinnedLinks(spaceId: string): Promise<number> {
  * thread every project member sees (`project` visibility) of a live channel:
  * a DM or a private thread shares nothing. An address the channel holds keeps
  * its first sharer; it counts one more share and points at this thread.
+ * Each link without a fresh title is queued for the background fetch (`link-unfurl.ts`).
  * Callers run it after the prompt is accepted and ignore its failure.
  */
 export async function collectMessageLinks(input: {
@@ -188,7 +217,7 @@ export async function collectMessageLinks(input: {
   const urls = extractMessageLinks(input.text).sort();
   if (urls.length === 0 || !(await findLiveChannel(input.projectId, input.spaceId))) return;
   const t = projectSpaceLinks;
-  await db
+  const rows = await db
     .insert(t)
     .values(
       urls.map((url) => ({
@@ -209,7 +238,9 @@ export async function collectMessageLinks(input: {
         lastSharedAt: sql`now()`,
         sessionId: sql`excluded.session_id`,
       },
-    });
+    })
+    .returning({ linkId: t.linkId, fetchedAt: t.fetchedAt, fetchFailedAt: t.fetchFailedAt });
+  await enqueueLinkUnfurls(rows);
   await pruneSharedLinks(input.spaceId);
 }
 

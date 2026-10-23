@@ -1341,6 +1341,12 @@ export const SpaceLinkSchema = z
     /** How many messages shared it. */
     share_count: z.number().int(),
     last_shared_at: z.string(),
+    /** The row's name: the title a member gave, else the page's fetched title, else the decoded path, else the host. */
+    display_title: z.string(),
+    /** The page's `og:site_name`, fetched by the server; null until fetched or when the page has none. */
+    site_name: z.string().nullable(),
+    /** The page's icon URL, fetched by the server; null until fetched or when none passed the address check. A remote URL: load it only through an image proxy. */
+    icon_url: z.string().nullable(),
   })
   .strict();
 export type SpaceLink = z.infer<typeof SpaceLinkSchema>;
