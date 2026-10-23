@@ -1558,6 +1558,28 @@ describe('project tools on pi', () => {
     expect(toolParts(await page(r), 'bash')[0]!.state.status).toBe('error')
     expect(existsSync(join(r.workspace, 'ran.txt'))).toBe(false)
   })
+
+  test('in a channel thread an allowlist keeps remember; remember: false or edit: deny removes it, and a call is refused', async () => {
+    const saved = process.env.KORTIX_SPACE_ID
+    process.env.KORTIX_SPACE_ID = 'space-1' // the box env; loadTools reads the session env, not the rig's
+    try {
+      const agent = (build: Record<string, unknown>) => ({ KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build } }) })
+      const allowlist = await boot({ script: [{ text: 'ok' }], env: agent({ tools: { '*': false, read: true } }) })
+      expect(await ids(allowlist)).toEqual(['read', 'remember'])
+      const named = await boot({ script: [{ text: 'ok' }], env: agent({ tools: { '*': false, read: true, remember: false } }) })
+      expect(await ids(named)).toEqual(['read'])
+      const readOnly = await boot({
+        script: [{ tool: 'remember', args: { title: 'Priya', type: 'people', fact: 'Runs marketing' } }, { text: 'done' }],
+        env: agent({ permission: { edit: 'deny' } }),
+      })
+      expect(await ids(readOnly)).not.toContain('remember')
+      await promptAndSettle(readOnly, 'remember Priya')
+      expect(toolParts(await page(readOnly), 'remember')[0]!.state.status).toBe('error')
+    } finally {
+      if (saved === undefined) delete process.env.KORTIX_SPACE_ID
+      else process.env.KORTIX_SPACE_ID = saved
+    }
+  })
 })
 
 describe('pi extensions', () => {

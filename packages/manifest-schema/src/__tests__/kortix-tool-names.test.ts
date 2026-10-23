@@ -38,20 +38,3 @@ test('a v3 agent that names an unknown tool is still an error', async () => {
   const raw = { kortix_version: 3, default_agent: 'kortix', agents: { kortix: { mode: 'primary', tools: { exclude: ['kortix-connectors_other'] } } } };
   expect(validateManifest(raw as never, 'yaml').valid).toBe(false);
 });
-
-// kortixd hosts `remember` and `memory_search` in every channel or DM thread:
-// a project tool of that name would shadow the platform tool.
-test('a project tool with a platform tool name is an error; an agent may exclude one by name', async () => {
-  const { validateManifest, PLATFORM_TOOL_NAMES } = await import('../index');
-  expect([...PLATFORM_TOOL_NAMES]).toEqual(['remember', 'memory_search']);
-  for (const name of PLATFORM_TOOL_NAMES) {
-    const v2 = { kortix_version: 2, default_agent: 'kortix', agents: { kortix: { file: 'agents/kortix.md' } }, tools: { [name]: `tools/${name}.ts` } };
-    const v3 = { kortix_version: 3, default_agent: 'kortix', agents: { kortix: { mode: 'primary' } }, tools: { [name]: `tools/${name}.ts` } };
-    for (const raw of [v2, v3]) {
-      const issues = validateManifest(raw as never, 'yaml').issues.filter((issue) => issue.path === `tools.${name}`);
-      expect(issues.map((issue) => [issue.severity, issue.message])).toEqual([['error', `"${name}" is a built-in tool; pick another name.`]]);
-    }
-  }
-  const exclude = { kortix_version: 3, default_agent: 'kortix', agents: { kortix: { mode: 'primary', tools: { exclude: ['remember'] } } } };
-  expect(validateManifest(exclude as never, 'yaml').issues.filter((issue) => issue.path === 'agents.kortix.tools')).toEqual([]);
-});

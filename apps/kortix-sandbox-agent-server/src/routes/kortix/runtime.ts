@@ -58,17 +58,17 @@ function authorize(cfg: Config, c: Context): AuthOutcome {
 
 const optionalString = (value: unknown): value is string | undefined => value === undefined || typeof value === 'string'
 
-/** `memory_layers`: `[{ layer_id, version, dir }]`, the version a number or its text. */
+/** `memory_layers`: `[{ layer_id, version, dir }]`, the version a number or its text, each folder at most once. */
 function parseMemoryLayers(value: unknown): MemoryLayerRef[] | string {
-  const error = 'memory_layers must be [{ layer_id, version, dir: company | channel | personal }]'
-  if (!Array.isArray(value)) return error
+  const error = 'memory_layers must be [{ layer_id, version, dir: company | channel | personal }], each dir once'
+  if (!Array.isArray(value) || value.length > MEMORY_COPY_DIRS.length) return error
   const layers: MemoryLayerRef[] = []
   for (const entry of value) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return error
     const { layer_id, version, dir } = entry as Record<string, unknown>
     if (typeof layer_id !== 'string' || !layer_id.trim()) return error
     if (!(typeof version === 'number' && Number.isInteger(version)) && !(typeof version === 'string' && /^\d+$/.test(version))) return error
-    if (!(MEMORY_COPY_DIRS as readonly unknown[]).includes(dir)) return error
+    if (!(MEMORY_COPY_DIRS as readonly unknown[]).includes(dir) || layers.some((layer) => layer.dir === dir)) return error
     layers.push({ layer_id: layer_id.trim(), version: String(version), dir: dir as MemoryLayerRef['dir'] })
   }
   return layers
@@ -129,6 +129,8 @@ export function createRuntimeRouter(
   const app = new Hono()
   const now = options.now ?? (() => Date.now())
   const turns = options.turns
+  // replica-local: one daemon per box; the memory sync a session's latest prompt waits on.
+  const memorySyncs = new Map<string, Promise<void>>()
 
   if (turns) {
     // The same gate and upstream failure as the compatibility proxy these
@@ -157,10 +159,25 @@ export function createRuntimeRouter(
       const raw = await c.req.json().catch(() => undefined)
       const input = parseRuntimePromptBody(raw)
       if (typeof input === 'string') return c.json({ error: input }, 400)
+      const sessionId = c.req.param('sessionId')
       return answer(c, async () => {
         // The turn reads the memory copy at these versions; a layer that cannot sync in 3 s keeps its old copy.
-        if (input.memoryLayers && !input.noReply) await (options.syncMemory ?? syncMemoryCopy)(input.memoryLayers, sessionEnv())
-        return turns.prompt(c.req.param('sessionId'), input)
+        // A prompt that arrives while an earlier one of the session syncs waits for it, so prompts keep their order.
+        const earlier = memorySyncs.get(sessionId)
+        const sync = input.memoryLayers && !input.noReply
+        if (earlier || sync) {
+          const mine = (async () => {
+            await earlier
+            if (sync) await (options.syncMemory ?? syncMemoryCopy)(input.memoryLayers!, sessionEnv())
+          })()
+          memorySyncs.set(sessionId, mine)
+          try {
+            await mine
+          } finally {
+            if (memorySyncs.get(sessionId) === mine) memorySyncs.delete(sessionId)
+          }
+        }
+        return turns.prompt(sessionId, input)
       })
     })
 

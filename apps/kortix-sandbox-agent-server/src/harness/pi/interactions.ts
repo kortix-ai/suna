@@ -213,9 +213,14 @@ function resolveRule(config: PermissionRuleConfig | undefined, subject: string |
   return config['*']
 }
 
-/** pi's tools whose name is not their capability: `write` writes a file, which `edit` governs; the search and scrape tools reach the web. */
+/**
+ * pi's tools whose name is not their capability: `write` writes a file, which `edit` governs; `remember` writes
+ * memory pages, an edit too (a read-only agent must not write memory every thread reads); the search and scrape
+ * tools reach the web.
+ */
 const TOOL_CAPABILITY: Record<string, RuntimePermissionCapability> = {
   write: 'edit',
+  remember: 'edit',
   web_search: 'websearch',
   image_search: 'websearch',
   scrape_webpage: 'webfetch',

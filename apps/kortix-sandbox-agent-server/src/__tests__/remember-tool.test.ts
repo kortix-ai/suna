@@ -124,3 +124,15 @@ describe('remember', () => {
     expect(synced).toEqual([])
   })
 })
+
+describe('remember under a permission policy (pi)', () => {
+  test('remember is an edit: edit: deny refuses it, edit: ask asks, its own rule wins', async () => {
+    const { compilePermissionPolicy, resolvePolicyRule } = await import('@/harness/pi/interactions')
+    const args = { title: 'Priya', type: 'people', fact: 'Runs marketing' }
+    const rule = (permission: unknown) => resolvePolicyRule(compilePermissionPolicy(permission), 'remember', args, '/workspace')
+    expect(rule({ edit: 'deny' })).toBe('deny')
+    expect(rule({ edit: 'ask' })).toBe('ask')
+    expect(rule({ edit: 'deny', remember: 'allow' })).toBe('allow')
+    expect(rule({ bash: 'deny' })).toBeUndefined()
+  })
+})
