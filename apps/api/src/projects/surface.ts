@@ -134,3 +134,6 @@ export { registerRuntimeFork } from './lib/runtime-session-snapshot';
 // `project_channels` on: file every session into `#general` (consumed by
 // ../feature-flags/toggle-effects).
 export { assignUnassignedSessions, ensureDefaultSpace } from './lib/project-spaces';
+
+// Author names of memory pages (consumed by ../memory/serialize.ts).
+export { resolveUserIdentities } from './lib/user-identity';
