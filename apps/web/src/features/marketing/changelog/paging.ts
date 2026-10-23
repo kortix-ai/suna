@@ -1,12 +1,13 @@
 /* Pure paging helpers. Kept apart from render.ts so the client-side anchor
  * redirect does not pull the markdown pipeline into the browser bundle. */
 
-/** Releases per changelog page. Page 1 is `/changelog`. */
+/** Releases per Release history page. Page 1 is `/changelog/releases`. */
 export const CHANGELOG_PAGE_SIZE = 10;
 
-/** The URL of a changelog page; page 1 is the bare `/changelog`. */
+/** The URL of a Release history page; page 1 is the bare `/changelog/releases`.
+ *  The weekly summary owns `/changelog`. */
 export function changelogPageHref(page: number): string {
-  return page <= 1 ? '/changelog' : `/changelog/page/${page}`;
+  return page <= 1 ? '/changelog/releases' : `/changelog/releases/page/${page}`;
 }
 
 /**

@@ -9,8 +9,10 @@ How a clean, accurate production release happens. Three parts: **what version**
 (the bump philosophy), **how a candidate gets tested** (one Promote dispatch takes
 the `dev` HEAD through staging to a release PR; its one release suite is the
 only gate), and **how prod gets it** (merge → deploy → verify). The release notes you write become the GitHub Release, which
-is exactly what the public **`/changelog`** page renders — so they must reflect
-what actually shipped, nothing invented, nothing missed.
+the public **`/changelog/releases`** page (Release history) renders as written, and the
+weekly **`/changelog`** page merges by section (New / Improved / Fixed) into the
+week the release was published — so they must reflect what actually shipped,
+nothing invented, nothing missed.
 
 Pairs with **kortix-voice** (how the notes read) and **kortix-rollback** (the
 reverse direction). The version source of truth is the root **`VERSION`** file;
@@ -266,8 +268,10 @@ written, evidence-backed justification, never silently.
 - **deploy-prod retags; it does not rebuild.** The staging build for the exact
   promoted commit must already be green:
   `gh run list --repo kortix-ai/suna --workflow build-staging.yml --branch staging --limit 3 --json status,conclusion,headSha`.
-- **The `/changelog` page shows only `≥ 1.0.0`** and reads GitHub Release bodies — so a
-  thin/auto-generated body shows up as a thin entry. Write real notes (Step 7).
+- **`/changelog` and `/changelog/releases` show every published `vX.Y.Z` release** and read
+  GitHub Release bodies — so a thin/auto-generated body shows up as a thin entry. The weekly
+  page reads only the bullets under `### New`, `### Improved` and `### Fixed`; a body without
+  those headings shows as its title alone. Write real notes (Step 7).
 - **VERSION is the source of truth**; the version field in `/v1/health` is stamped by
   deploy-prod's task-def, not baked into the image.
 - **A promotion PR is not a normal PR.** Do not squash it, do not push new

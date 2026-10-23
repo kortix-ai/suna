@@ -298,6 +298,60 @@ export function finalizeConnectorSetupLink(
   });
 }
 
+/**
+ * What `GET /connectors/app-form/:token` answers: the form that connects a
+ * toolkit on the customer's own app (Shopify). The token is the capability,
+ * so the call is anonymous.
+ */
+export interface ConnectorAppFormInfo {
+  app: string;
+  /** The app's display name ("Shopify"). */
+  name: string;
+  /** The connector's name in the project. */
+  connector: string;
+  /** The link already connected the account. */
+  connected: boolean;
+  /** The store the account reaches, once connected. */
+  connected_as: string | null;
+  expires_at: string;
+}
+
+export interface ConnectorAppFormInput {
+  /** The store's myshopify.com name, host, or admin URL. */
+  store: string;
+  clientId: string;
+  clientSecret: string;
+}
+
+export interface ConnectorAppFormResult {
+  connected: true;
+  connected_as: string;
+  /** Where to send the browser next, when the connect asked for it. */
+  success_redirect_uri?: string;
+}
+
+export function getConnectorAppForm(
+  token: string,
+  options: HostRequestOptions,
+): Promise<ConnectorAppFormInfo> {
+  return requestJson(`/connectors/app-form/${encodeURIComponent(token)}`, options);
+}
+
+/**
+ * Connect with the app's credentials. A refusal (wrong credentials, unknown
+ * store) rejects with a `HostBoundaryError` whose message is the reason.
+ */
+export function submitConnectorAppForm(
+  token: string,
+  input: ConnectorAppFormInput,
+  options: HostRequestOptions,
+): Promise<ConnectorAppFormResult> {
+  return requestJson(`/connectors/app-form/${encodeURIComponent(token)}`, options, {
+    method: 'POST',
+    body: { store: input.store, client_id: input.clientId, client_secret: input.clientSecret },
+  });
+}
+
 export interface SecretSetupLinkInfo {
   /** Signed delivery scope. Absent on older servers. */
   scope?: 'runtime' | 'connector';

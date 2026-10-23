@@ -227,6 +227,7 @@
     "./inline-meta": "./src/primitives/inline-meta.tsx",
     "./input": "./src/primitives/input.tsx",
     "./input-group": "./src/primitives/input-group.tsx",
+    "./internal/components/agent-mark": "./src/internal/components/agent-mark.tsx",
     "./internal/account-hub/account-hub-entry": "./src/internal/account-hub/account-hub-entry.tsx",
     "./internal/account-hub/account-hub-location": "./src/internal/account-hub/account-hub-location.tsx",
     "./internal/account-hub/account-settings-shell": "./src/internal/account-hub/account-settings-shell.tsx",
@@ -386,6 +387,7 @@
     "./markdown": "./src/markdown/index.tsx",
     "./markdown/copy-button": "./src/markdown/copy-button.tsx",
     "./markdown/setup-links/api-base": "./src/markdown/setup-links/api-base.ts",
+    "./markdown/setup-links/app-credentials-form": "./src/markdown/setup-links/app-credentials-form.tsx",
     "./markdown/setup-links/approval-decision": "./src/markdown/setup-links/approval-decision.tsx",
     "./markdown/setup-links/connector-handshake": "./src/markdown/setup-links/connector-handshake.tsx",
     "./markdown/setup-links/connector-link-info": "./src/markdown/setup-links/connector-link-info.ts",
@@ -1365,6 +1367,10 @@
         "types": "./dist/primitives/input-group.d.ts",
         "import": "./dist/primitives/input-group.js"
       },
+      "./internal/components/agent-mark": {
+        "types": "./dist/internal/components/agent-mark.d.ts",
+        "import": "./dist/internal/components/agent-mark.js"
+      },
       "./internal/account-hub/account-hub-entry": {
         "types": "./dist/internal/account-hub/account-hub-entry.d.ts",
         "import": "./dist/internal/account-hub/account-hub-entry.js"
@@ -2000,6 +2006,10 @@
       "./markdown/setup-links/api-base": {
         "types": "./dist/markdown/setup-links/api-base.d.ts",
         "import": "./dist/markdown/setup-links/api-base.js"
+      },
+      "./markdown/setup-links/app-credentials-form": {
+        "types": "./dist/markdown/setup-links/app-credentials-form.d.ts",
+        "import": "./dist/markdown/setup-links/app-credentials-form.js"
       },
       "./markdown/setup-links/approval-decision": {
         "types": "./dist/markdown/setup-links/approval-decision.d.ts",

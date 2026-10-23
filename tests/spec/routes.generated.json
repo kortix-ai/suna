@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 889,
+  "count": 891,
   "routes": [
     {
       "method": "GET",
@@ -1213,6 +1213,14 @@
     {
       "method": "GET",
       "path": "/v1/clients/mobile"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/app-form/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/connectors/app-form/:token"
     },
     {
       "method": "POST",

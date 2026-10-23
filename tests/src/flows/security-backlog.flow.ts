@@ -298,6 +298,10 @@ flow(
       const r = await pat().get('/v1/projects/:projectId', { params: { projectId: projA.id } });
       r.status(200);
     });
+    await ctx.step('current alias returns the bound project → 200', async () => {
+      const r = await pat().get('/v1/projects/:projectId', { params: { projectId: 'current' } });
+      r.status(200).body().has('$.project_id', projA.id);
+    });
     await ctx.step('allowed: self-identity probe GET /accounts/me → 200', async () => {
       const r = await pat().get('/v1/accounts/me');
       r.status(200);

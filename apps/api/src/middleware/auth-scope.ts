@@ -166,6 +166,8 @@ export async function enforceTokenProjectScope(
   // connector-management routes: the unified Connector MCP exposes add/remove
   // connector tools from inside the sandbox, while individual routes still gate
   // mutations via project.write in resolveAdmin.
+  if (c.req.method === 'GET' && path === '/v1/projects/current') return;
+
   const m =
     path.match(/^\/v1\/projects\/([^/]+)/) ?? path.match(/^\/v1\/connectors\/projects\/([^/]+)/);
   if (m) {

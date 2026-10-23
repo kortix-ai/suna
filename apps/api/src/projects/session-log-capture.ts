@@ -1,5 +1,5 @@
 /**
- * Two writers of the session log for what no journal wrote.
+ * Three writers of the session log for what no journal wrote.
  *
  * - `writeSessionLogFromMirror` converts a session's v1 mirror (`session_transcript_*`, written
  *   until P8) into the log. Since P8.2 nothing writes the mirror and no read serves it; this is
@@ -9,6 +9,8 @@
  *   (`recover-lost-session.ts`) and a fork (`session-create.ts`). It converts only into a log
  *   with no message yet: a session whose log holds a message never reads the mirror here. Once
  *   the mirror is drained (`mirrorDrained`) it reads no mirror table at all and answers `skipped`.
+ * - `mergeMirrorIntoLog` writes into an existing log the mirror messages whose content it lacks
+ *   (Release B prerequisite): the backfill's merge pass, after the mirror-only sessions converted.
  * - `writeSessionLogFromRead` is the capture of a box without a journal
  *   (`lib/session-transcript-capture.ts`): the box read goes straight into the log.
  *
@@ -44,7 +46,16 @@
  * the backfill of old sessions (P3.1, `session-log-backfill.ts`) counts. `dry`
  * stops before the write and returns the batch it would write.
  */
-import { fromV1, SessionLogSchema, toV1, type SessionLog, type SessionLogJournalRequest, type V1Row } from '@kortix/api-contract/session-log';
+import {
+  fromV1,
+  SessionLogSchema,
+  toV1,
+  type SessionLog,
+  type SessionLogJournalRequest,
+  type SessionLogMessage,
+  type SessionLogThread,
+  type V1Row,
+} from '@kortix/api-contract/session-log';
 import {
   projectSessions,
   sessionLogMessages,
@@ -59,8 +70,10 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
+import { jsonbSafeValue } from './lib/jsonb-safe';
 import { restoreStrippedToolParts } from './lib/session-transcript-mirror';
-import { SESSION_LOG_CAPTURE_REV_LIMIT, sessionLogContentHash, writeCapturedSessionLog } from './session-log-ingest';
+import { offloadLargeTexts } from './session-log-blobs';
+import { applyPut, SESSION_LOG_CAPTURE_REV_LIMIT, sessionLogContentHash, writeCapturedSessionLog } from './session-log-ingest';
 
 const READ_ONLY = { isolationLevel: 'repeatable read', accessMode: 'read only' } as const;
 
@@ -97,7 +110,10 @@ export const breathe = () => new Promise<void>((resolve) => setImmediate(resolve
 
 /**
  * The v1 mirror is drained: a backfill pass selected no session (`drainedWithDeleted` in the pass
- * state, `session-log-backfill.ts`). Nothing writes the mirror since P8.2, so it stays drained.
+ * state, `session-log-backfill.ts`), and a merge pass after it found no mirror message whose content
+ * the log lacks (`mergedMissing`, `mergeMirrorIntoLog`). Nothing writes the mirror since P8.2, so it
+ * stays drained. While the merge is pending this answers false and every path below reads the
+ * mirror as it did before Release B1.
  * Every code path that would touch `session_transcript_*` asks this first and touches neither table
  * when it is true (Release B1): the conversion here, the `/log` read, the retention purge and the
  * project transfer. So the Release B2 migration can drop both tables under the code that is live then.
@@ -108,7 +124,7 @@ export const breathe = () => new Promise<void>((resolve) => setImmediate(resolve
  */
 export async function mirrorDrained(): Promise<boolean> {
   const [row] = await db
-    .select({ drained: sql<boolean | null>`(${sessionLogBackfillState.state} ->> 'drainedWithDeleted')::boolean` })
+    .select({ drained: sql<boolean | null>`(${sessionLogBackfillState.state} ->> 'drainedWithDeleted')::boolean AND (${sessionLogBackfillState.state} ->> 'mergedMissing')::boolean` })
     .from(sessionLogBackfillState)
     .where(eq(sessionLogBackfillState.id, 'pass'));
   return row?.drained === true;
@@ -307,6 +323,26 @@ function rewoundIds(input: { root: string; rows: V1Row[]; complete: boolean; bef
 }
 
 /**
+ * `fromV1` of `rows` as the v1 read serves them (see `writeConverted`), with the harness the capture
+ * picks. Null when the log fails `SessionLogSchema`.
+ */
+async function convertRows(sessionId: string, s: { harness: string | null; root: string | null }, rows: V1Row[]) {
+  const harnessFrom = s.harness === 'pi' || s.harness === 'opencode' ? 'projection' : s.root?.startsWith('ses_pi') ? 'root' : 'default';
+  const harness = harnessFrom === 'projection' ? (s.harness as 'pi' | 'opencode') : harnessFrom === 'root' ? 'pi' : 'opencode';
+  const served = rows.map((row) => (Array.isArray(row.parts) ? { ...row, parts: restoreStrippedToolParts(row.parts as unknown as Array<Record<string, unknown>>) as unknown as V1Row['parts'] } : row));
+  const log = fromV1({ session_id: sessionId, root_id: s.root, rows: served }, { harness });
+  await breathe();
+  const valid = SessionLogSchema.safeParse(log);
+  if (!valid.success) {
+    const issue = valid.error.issues[0];
+    logger.warn('[session-log] capture: fromV1 output fails SessionLogSchema; nothing written', { sessionId, path: issue?.path.join('.'), code: issue?.code });
+    return null;
+  }
+  await breathe();
+  return { log, served, harnessFrom: harnessFrom as 'projection' | 'root' | 'default' };
+}
+
+/**
  * `fromV1` of `rows` written through the journal's apply path. Only a message whose `content_hash`
  * changed is put, at the next capture rev. `puts` limits the puts to those message ids and the
  * tombstones to the stored ids in `tombstones`; without it, a stored message `fromV1` no longer
@@ -323,18 +359,9 @@ async function writeConverted(
   stored: StoredMessage[],
   options: { dry?: boolean; puts?: ReadonlySet<string>; tombstones?: ReadonlySet<string>; current: (tx: Tx) => Promise<boolean> },
 ): Promise<MirrorLogWrite> {
-  const harnessFrom = s.harness === 'pi' || s.harness === 'opencode' ? 'projection' : s.root?.startsWith('ses_pi') ? 'root' : 'default';
-  const harness = harnessFrom === 'projection' ? (s.harness as 'pi' | 'opencode') : harnessFrom === 'root' ? 'pi' : 'opencode';
-  const served = rows.map((row) => (Array.isArray(row.parts) ? { ...row, parts: restoreStrippedToolParts(row.parts as unknown as Array<Record<string, unknown>>) as unknown as V1Row['parts'] } : row));
-  const log = fromV1({ session_id: sessionId, root_id: s.root, rows: served }, { harness });
-  await breathe();
-  const valid = SessionLogSchema.safeParse(log);
-  if (!valid.success) {
-    const issue = valid.error.issues[0];
-    logger.warn('[session-log] capture: fromV1 output fails SessionLogSchema; nothing written', { sessionId, path: issue?.path.join('.'), code: issue?.code });
-    return { outcome: 'invalid' };
-  }
-  await breathe();
+  const converted = await convertRows(sessionId, s, rows);
+  if (!converted) return { outcome: 'invalid' };
+  const { log, served, harnessFrom } = converted;
   const { threads, ...session } = log;
   const byId = new Map(stored.map((r) => [r.id, r]));
   let rev = maxCaptureRev(stored);
@@ -366,4 +393,176 @@ async function writeConverted(
     return { outcome: 'failed', status: outcome.status };
   }
   return { outcome: 'written', log, rows: served, batch, harnessFrom };
+}
+
+/** The `ext` key that marks every message and thread record the mirror merge wrote. */
+export const MIRROR_MERGE_EXT = 'kortix-mirror-merge';
+const MERGE_MARK = { [MIRROR_MERGE_EXT]: { version: 'kortix.mirror-merge.v1' } };
+
+/**
+ * - `merged`: `merged` messages written, `threads` thread rows created. `misplaced`: of `merged`, messages
+ *   whose seq could not go before every newer stored message of their thread. `unplaced`: missing mirror
+ *   messages this pass cannot write (a compaction summary whose marker message the log holds).
+ * - `skipped`: the switch is off, the mirror is drained, nothing is missing, another writer holds the
+ *   session lock, or the capture revs are exhausted. `too_large`, `invalid`, `failed`: as `MirrorLogWrite`.
+ */
+export type MirrorMerge =
+  | { outcome: 'skipped' | 'invalid' | 'too_large' | 'failed' }
+  | { outcome: 'merged'; merged: number; threads: number; misplaced: number; unplaced: number };
+
+/** The mirror message ids of one session whose content the log lacks (`kortix.mirror_messages_missing_from_log`). */
+async function missingIds(tx: Tx, sessionId: string): Promise<Set<string>> {
+  const rows = await tx.execute<{ message_id: string }>(sql`
+    SELECT message_id FROM kortix.mirror_messages_missing_from_log(ARRAY[${sessionId}]::text[]) WHERE content = 'missing'`);
+  return new Set(rows.map((r) => r.message_id));
+}
+
+/** `created_at` in ms, a missing one first; then the id: the v1 order the hooks render (`toV1`). */
+const v1Key = (at: number, id: string) => ({ at: Number.isFinite(at) ? at : -Infinity, id });
+const keyBefore = (a: { at: number; id: string }, b: { at: number; id: string }) => a.at < b.at || (a.at === b.at && a.id < b.id);
+
+/**
+ * Release B prerequisite: write into an existing session log the v1 mirror messages whose content it
+ * lacks (`kortix.mirror_messages_missing_from_log`, the one definition the Release B guard reads too).
+ * Only the backfill's merge pass calls it (`session-log-backfill.ts`).
+ *
+ * - Records: `convertRows` of the whole mirror, the backfill's conversion. A message is written when
+ *   its id, or the id of the compaction summary row `fromV1` folds into it, is missing, and the log
+ *   does not hold its id. Each record keeps `fromV1`'s fields and gets `ext[MIRROR_MERGE_EXT]`.
+ * - Threads: `fromV1`'s root thread is the log's root thread (parent null) when the log has one. A
+ *   thread the log lacks gets its `fromV1` row (marked too), its parent mapped the same way.
+ * - Order: the hooks render a thread in seq order. Each message takes the first seq that no row of
+ *   its thread holds (tombstones included) above every seq of the thread's live rows that come before
+ *   it in v1 order (`created_at`, then id) and above the merged message before it. So a message lands
+ *   in its place when the thread has a free seq there; else just after it (`misplaced`).
+ * - Revs: capture revs (below `SESSION_LOG_CAPTURE_REV_LIMIT`), so the rows are provisional as a
+ *   capture's: a journal put that later claims the same seq wins, and the merged row becomes a
+ *   tombstone at seq `-rev` (kept, still marked). Generation: the session's.
+ * - `in_context`: false when a journal wrote the log (as P3.3 takes capture rows out of context: the
+ *   model view is the native store's); else `fromV1`'s.
+ * - Nothing stored changes: thread rows insert on no conflict, messages are new ids. One transaction
+ *   under the session's advisory lock (try: a busy lock skips; the next pass retries), and the missing
+ *   set is read again under it, so a second pass merges nothing.
+ * - Size cap: as `writeSessionLogFromMirror` (`too_large` above `mirrorStoredCap`; `uncapped` in the
+ *   backfill's thread).
+ */
+export async function mergeMirrorIntoLog(sessionId: string, options: { uncapped?: boolean } = {}): Promise<MirrorMerge> {
+  try {
+    if (!config.SESSION_LOG_INGEST_ENABLED) return SKIPPED;
+    if (await mirrorDrained()) return SKIPPED;
+    const read = await db.transaction(async (tx) => {
+      const missing = await missingIds(tx, sessionId);
+      if (missing.size === 0) return null;
+      const [s] = await tx
+        .select({ projectId: projectSessions.projectId, accountId: projectSessions.accountId, harness: sessionRuntimeProjections.harness, root: sessionTranscriptMirrors.runtimeSessionId })
+        .from(projectSessions)
+        .innerJoin(sessionTranscriptMirrors, eq(sessionTranscriptMirrors.sessionId, projectSessions.sessionId))
+        .leftJoin(sessionRuntimeProjections, eq(sessionRuntimeProjections.sessionId, projectSessions.sessionId))
+        .where(eq(projectSessions.sessionId, sessionId))
+        .limit(1);
+      if (!s) return null;
+      if (!options.uncapped) {
+        const [size] = await tx.execute<{ bytes: string }>(sql`
+          SELECT coalesce(sum(pg_column_size(info) + coalesce(pg_column_size(parts), 0)), 0)::bigint AS bytes
+            FROM kortix.session_transcript_messages WHERE session_id = ${sessionId}`);
+        if (Number(size?.bytes ?? 0) > mirrorStoredCap()) return TOO_LARGE;
+      }
+      const rows = await tx
+        .select({ runtime_session_id: sessionTranscriptMessages.runtimeSessionId, info: sessionTranscriptMessages.info, parts: sessionTranscriptMessages.parts })
+        .from(sessionTranscriptMessages)
+        .where(eq(sessionTranscriptMessages.sessionId, sessionId));
+      return { s, missing, rows: rows as unknown as V1Row[] };
+    }, READ_ONLY);
+    if (!read) return SKIPPED;
+    if ('outcome' in read) return read;
+    const converted = await convertRows(sessionId, read.s, read.rows);
+    if (!converted) return { outcome: 'invalid' };
+    const { log } = converted;
+    // The summary rows `fromV1` folds into their compaction marker's message.
+    const folded = new Map<string, string[]>();
+    for (const row of read.rows) {
+      const info = row.info as { id?: unknown; role?: unknown; summary?: unknown; parentID?: unknown };
+      if (info?.role === 'assistant' && info.summary === true && typeof info.parentID === 'string') folded.set(info.parentID, [...(folded.get(info.parentID) ?? []), String(info.id)]);
+    }
+    const idsOf = (m: SessionLogMessage) => [m.message_id, ...(folded.get(m.message_id) ?? [])];
+    const fromRoot = log.threads.find((t) => t.parent_thread_id === null)?.thread_id;
+    const scope = { sessionId, projectId: read.s.projectId, accountId: read.s.accountId };
+    // Large texts go to their objects before the transaction, as the ingest does.
+    const candidates: Array<{ thread: SessionLogThread; message: SessionLogMessage; record: SessionLogMessage }> = [];
+    for (const thread of log.threads) {
+      for (const m of thread.messages) {
+        if (!idsOf(m).some((id) => read.missing.has(id))) continue;
+        const message = jsonbSafeValue(m);
+        candidates.push({ thread, message, record: await offloadLargeTexts(scope, message) });
+      }
+    }
+    await breathe();
+    return await db.transaction(async (tx) => {
+      const [lock] = await tx.execute<{ locked: boolean }>(sql`SELECT pg_try_advisory_xact_lock(hashtext(${`session-log:${sessionId}`})) AS locked`);
+      if (!lock?.locked) return SKIPPED;
+      const missing = await missingIds(tx, sessionId);
+      if (missing.size === 0) return SKIPPED;
+      const [stored] = await tx.select({ generation: sessionLogs.generation, journalSeenAt: sessionLogs.journalSeenAt }).from(sessionLogs).where(eq(sessionLogs.sessionId, sessionId));
+      if (!stored) return SKIPPED;
+      const threads = await tx.select({ threadId: sessionLogThreads.threadId, parent: sessionLogThreads.parentThreadId }).from(sessionLogThreads).where(eq(sessionLogThreads.sessionId, sessionId)).orderBy(sessionLogThreads.createdAt, sessionLogThreads.threadId);
+      const messages = await tx
+        .select({ id: sessionLogMessages.messageId, threadId: sessionLogMessages.threadId, seq: sessionLogMessages.seq, rev: sessionLogMessages.rev, createdAt: sessionLogMessages.createdAt, deletedAt: sessionLogMessages.deletedAt })
+        .from(sessionLogMessages)
+        .where(eq(sessionLogMessages.sessionId, sessionId));
+      const held = new Set(messages.map((m) => m.id));
+      const logRoot = threads.find((t) => t.parent === null)?.threadId;
+      const mapThread = (id: string | null) => (id !== null && id === fromRoot && logRoot ? logRoot : id);
+      const picked = candidates.filter((c) => !held.has(c.message.message_id) && idsOf(c.message).some((id) => missing.has(id)));
+      const covered = new Set(picked.flatMap((c) => idsOf(c.message)));
+      const unplaced = [...missing].filter((id) => !covered.has(id)).length;
+      let rev = messages.reduce((max, r) => (r.rev < SESSION_LOG_CAPTURE_REV_LIMIT ? Math.max(max, r.rev) : max), 0);
+      if (rev + picked.length >= SESSION_LOG_CAPTURE_REV_LIMIT) {
+        logger.warn('[session-log] mirror merge: capture revs exhausted; nothing merged', { sessionId });
+        return SKIPPED;
+      }
+      // Thread rows the log lacks, from `fromV1`, marked.
+      const known = new Set(threads.map((t) => t.threadId));
+      const newThreads = new Map<string, SessionLogThread>();
+      for (const { thread } of picked) {
+        const id = mapThread(thread.thread_id)!;
+        if (known.has(id) || newThreads.has(id)) continue;
+        const { messages: _m, ...head } = thread;
+        newThreads.set(id, { ...head, thread_id: id, parent_thread_id: mapThread(thread.parent_thread_id), ext: { ...head.ext, ...MERGE_MARK }, messages: [] });
+      }
+      if (newThreads.size > 0) {
+        await tx
+          .insert(sessionLogThreads)
+          .values([...newThreads.values()].map(({ messages: _m, ...t }) => ({ sessionId, threadId: t.thread_id, parentThreadId: t.parent_thread_id, v: t.v, record: t as unknown as Record<string, unknown> })))
+          .onConflictDoNothing();
+      }
+      // Seqs, per thread, in v1 order (see the header).
+      const keyOf = (m: SessionLogMessage) => v1Key(Date.parse(m.created_at), m.message_id);
+      picked.sort((a, b) => (keyBefore(keyOf(a.message), keyOf(b.message)) ? -1 : keyBefore(keyOf(b.message), keyOf(a.message)) ? 1 : 0));
+      const perThread = new Map<string, { taken: Set<number>; live: Array<{ key: ReturnType<typeof v1Key>; seq: number }>; last: number }>();
+      for (const m of messages) {
+        const t = perThread.get(m.threadId) ?? perThread.set(m.threadId, { taken: new Set(), live: [], last: 0 }).get(m.threadId)!;
+        t.taken.add(m.seq);
+        if (!m.deletedAt) t.live.push({ key: v1Key(m.createdAt.getTime(), m.id), seq: m.seq });
+      }
+      let misplaced = 0;
+      for (const c of picked) {
+        const threadId = mapThread(c.thread.thread_id)!;
+        const t = perThread.get(threadId) ?? perThread.set(threadId, { taken: new Set(), live: [], last: 0 }).get(threadId)!;
+        const key = keyOf(c.message);
+        let seq = t.last;
+        for (const m of t.live) if (keyBefore(m.key, key)) seq = Math.max(seq, m.seq);
+        seq = Math.max(seq, 0) + 1;
+        while (t.taken.has(seq)) seq++;
+        if (t.live.some((m) => keyBefore(key, m.key) && m.seq < seq)) misplaced++;
+        t.taken.add(seq);
+        t.last = seq;
+        const patch = { thread_id: threadId, seq, in_context: stored.journalSeenAt ? false : c.message.in_context, ext: { ...c.message.ext, ...MERGE_MARK } };
+        await applyPut(tx, sessionId, stored.generation, { rev: ++rev, message: { ...c.message, ...patch } }, { ...c.record, ...patch });
+      }
+      return { outcome: 'merged' as const, merged: picked.length, threads: newThreads.size, misplaced, unplaced };
+    });
+  } catch (err) {
+    logger.warn('[session-log] mirror merge failed', { sessionId, error: err instanceof Error ? err.message : String(err) });
+    return { outcome: 'failed' };
+  }
 }
