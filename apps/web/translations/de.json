@@ -22414,5 +22414,35 @@
   "agentEditor": {
     "manage": "Verwalten",
     "overviewTitle": "Übersicht"
+  },
+  "turnShare": {
+    "shareResponse": "Antwort teilen",
+    "title": "Teilen",
+    "close": "Schließen",
+    "whoCanRead": "Wer kann lesen",
+    "sessionMembers": "Mitglieder der Sitzung",
+    "anyoneWithLink": "Alle mit dem Link",
+    "link": "Link",
+    "copyLink": "Link kopieren",
+    "copied": "Kopiert",
+    "stopSharing": "Teilen beenden",
+    "linkCopied": "Link kopiert",
+    "linkUpdated": "Link aktualisiert",
+    "responseShared": "Antwort geteilt",
+    "stale": "Die Antwort hat sich seit dem Teilen geändert",
+    "updateLink": "Link aktualisieren",
+    "shareOn": "Auf {network} teilen",
+    "loadError": "Die Freigabe konnte nicht geladen werden. Versuche es erneut.",
+    "shareError": "Die Antwort konnte nicht geteilt werden. Versuche es erneut.",
+    "unshareError": "Das Teilen konnte nicht beendet werden. Versuche es erneut.",
+    "copyError": "Der Link konnte nicht kopiert werden. Kopiere ihn aus dem Feld.",
+    "noText": "Diese Antwort hat noch keinen Text zum Teilen.",
+    "sharedFrom": "Geteilt aus Kortix",
+    "tryKortix": "Kortix ausprobieren",
+    "goneTitle": "Diese Antwort wird nicht mehr geteilt",
+    "goneHint": "Die Person, die sie geteilt hat, hat den Link deaktiviert.",
+    "fallbackTitle": "Geteilte Antwort",
+    "confirmStop": "Erneut klicken, um das Teilen zu beenden",
+    "stopNote": "Der Link funktioniert dann nicht mehr."
   }
 }

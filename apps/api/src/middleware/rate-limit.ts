@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { Context, Next } from 'hono';
 import { config } from '../config';
 import { requestClientIp, requestClientKey } from './client-ip';
+import { shareIdFromPublicRef } from '../shared/public-share-ref';
 import { recordAuditEvent } from '../shared/audit';
 import { RATE_LIMIT_EXCEEDED_ACTION } from '../shared/rate-limit-audit';
 import { TokenBucketRateLimiter, type RateLimitPolicy, type RateLimitResult } from '../shared/rate-limit';
@@ -86,6 +87,7 @@ export async function enforceRateLimit(
 // limit × API replicas. They stop runaways and floods; none meters a quota.
 const inviteAcceptLimiter = new TokenBucketRateLimiter('invite_accept');
 const sandboxProxyLimiter = new TokenBucketRateLimiter('sandbox_proxy');
+const publicResponseLimiter = new TokenBucketRateLimiter('public_response');
 const demoRequestLimiter = new TokenBucketRateLimiter('demo_request');
 const checkEmailLimiter = new TokenBucketRateLimiter('check_email');
 const projectWebhookLimiter = new TokenBucketRateLimiter('project_webhook');
@@ -185,6 +187,30 @@ export function createSandboxProxyRateLimitMiddleware() {
         resourceType: 'sandbox_proxy',
         resourceId: sandboxId,
         metadata: { limiter: 'sandbox_proxy' },
+      },
+    };
+  });
+}
+
+/**
+ * Guards the anonymous `GET /v1/public/responses/:token`. No identity to key on,
+ * so it keys on the share the token names: every visitor to one shared link is
+ * behind the same bucket, and one caller cycling links from a shared NAT does
+ * not starve other links. A token that names no share falls back to client IP
+ * BEFORE it can key a bucket, so unique garbage tokens cannot grow the bucket
+ * Map without bound.
+ */
+export function createPublicResponseRateLimitMiddleware() {
+  return createAuditedRateLimitMiddleware(publicResponseLimiter, (c) => {
+    const shareId = shareIdFromPublicRef(c.req.param('token') ?? '') ?? `ip:${requestClientKey(c)}`;
+    return {
+      key: shareId,
+      policy: { limit: positiveInt(config.KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN, 60), windowMs: 60_000 },
+      auditContext: {
+        action: RATE_LIMIT_EXCEEDED_ACTION,
+        resourceType: 'public_response',
+        resourceId: shareId,
+        metadata: { limiter: 'public_response' },
       },
     };
   });
@@ -388,6 +414,7 @@ export function createLlmGatewayRateLimitMiddleware() {
 export function resetRateLimiters() {
   inviteAcceptLimiter.reset();
   sandboxProxyLimiter.reset();
+  publicResponseLimiter.reset();
   demoRequestLimiter.reset();
   checkEmailLimiter.reset();
   projectWebhookLimiter.reset();

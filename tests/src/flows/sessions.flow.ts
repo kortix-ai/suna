@@ -3542,3 +3542,148 @@ flow(
     }
   },
 );
+
+/**
+ * SESS-57 — share one assistant response through a public read-only link.
+ * `PUT …/turns/:turnId/share` snapshots the response text from the stored
+ * session log; `GET /v1/public/responses/:token` serves only that snapshot to
+ * anyone; a re-share keeps the URL; `DELETE` revokes it (410).
+ *
+ * Runs on the local profile: the session is a database row and its log rows
+ * are inserted in the shape the daemon journal writes (`kortix.session/2`).
+ */
+flow(
+  'SESS-57',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: [
+      'GET /v1/projects/:projectId/sessions/:sessionId/turns/:turnId/share',
+      'PUT /v1/projects/:projectId/sessions/:sessionId/turns/:turnId/share',
+      'DELETE /v1/projects/:projectId/sessions/:sessionId/turns/:turnId/share',
+      'GET /v1/public/responses/:token',
+      'GET /v1/projects/:projectId/sessions/:sessionId/public-shares',
+      'GET /v1/p/public-share/:token',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const sessionId = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: team.id,
+      userId: ctx.P.OWNER.userId!,
+      visibility: 'private',
+      metadata: { custom_name: 'Quarterly plan' },
+    });
+    ctx.track('session', sessionId, { projectId: project.id });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const anon = ctx.client.as(ctx.P.ANON);
+    const shareRoute = '/v1/projects/:projectId/sessions/:sessionId/turns/:turnId/share';
+    const publicRoute = '/v1/public/responses/:token';
+    const turn = { projectId: project.id, sessionId, turnId: 'msg_user_1' };
+
+    const T = '2026-10-23T10:00:00.000Z';
+    const message = (id: string, seq: number, role: 'user' | 'assistant', blocks: unknown[], over: Record<string, unknown> = {}) => ({
+      schema: 'kortix.session/2', v: 1, message_id: id, thread_id: 'main', seq, role, kind: 'turn', status: 'complete',
+      in_context: true, model: role === 'assistant' ? { provider: 'kortix', model: 'test-model' } : null, usage: null,
+      finish: null, error: null, created_at: T, completed_at: T, agent: role === 'assistant' ? 'general' : null,
+      producer: { harness: 'pi', harness_version: '1', adapter_version: '1' }, blocks, ext: {}, ...over,
+    });
+    const db = await openFlowDb(ctx.env);
+    const put = (m: ReturnType<typeof message>) =>
+      db.query(
+        `INSERT INTO kortix.session_log_messages
+           (session_id, message_id, thread_id, seq, role, kind, in_context, created_at, v, producer, generation, rev, content_hash, record)
+         VALUES ($1, $2, 'main', $3, $4, 'turn', true, $5, 1, $6, 1, 1, 'h', $7)
+         ON CONFLICT (session_id, message_id) DO UPDATE SET record = excluded.record`,
+        [sessionId, m.message_id, m.seq, m.role, T, JSON.stringify(m.producer), JSON.stringify(m)],
+      );
+    try {
+      await put(message('msg_user_1', 1, 'user', [{ id: 'u', type: 'text', text: 'SECRET PROMPT' }]));
+      await put(
+        message('msg_asst_1', 2, 'assistant', [
+          { id: 'r', type: 'reasoning', text: 'PRIVATE REASONING' },
+          { id: 't1', type: 'text', text: 'Hello' },
+          { id: 'c', type: 'tool_call', call_id: 'c', name: 'bash', kind: 'shell', input: { cmd: 'TOOL INPUT' }, status: 'complete' },
+          { id: 's', type: 'text', text: 'SYNTHETIC', synthetic: true },
+        ], { reply_to: 'msg_user_1' }),
+      );
+      await put(message('msg_asst_2', 3, 'assistant', [{ id: 't2', type: 'text', text: 'World' }], { reply_to: 'msg_user_1' }));
+      await put(message('msg_user_2', 4, 'user', [{ id: 'u2', type: 'text', text: 'second prompt' }]));
+
+      await ctx.step('ANON cannot share a response → 401', async () => {
+        (await anon.put(shareRoute, undefined, { params: turn })).status(401);
+      });
+
+      await ctx.step('the owner reads the share of an unshared turn → {share:null}', async () => {
+        (await owner.get(shareRoute, { params: turn })).status(200).body().has('$.share', null);
+      });
+
+      await ctx.step('unknown turn → 404; a turn with no reply text yet → 409', async () => {
+        (await owner.put(shareRoute, undefined, { params: { ...turn, turnId: 'msg_missing' } })).status(404);
+        (await owner.put(shareRoute, undefined, { params: { ...turn, turnId: 'msg_user_2' } })).status(409);
+      });
+
+      let token = '';
+      await ctx.step('the owner shares the turn → 200 with a /r/<token> URL, not stale', async () => {
+        const res = (await owner.put(shareRoute, undefined, { params: turn })).status(200);
+        const share = res.json<{ share: { token: string; url: string; turn_id: string; stale: boolean } }>().share;
+        if (!share.token.startsWith('kps_') || !share.url.endsWith(`/r/${share.token}`)) throw new Error(`bad share ${JSON.stringify(share)}`);
+        if (share.turn_id !== 'msg_user_1' || share.stale !== false) throw new Error(`bad share ${JSON.stringify(share)}`);
+        token = share.token;
+      });
+
+      await ctx.step('anon reads the snapshot: only the response text, cacheable for 60 s', async () => {
+        const res = (await anon.get(publicRoute, { params: { token } })).status(200).headerEquals('cache-control', 'public, max-age=60');
+        const body = res.json<{ response: Record<string, unknown> }>();
+        const expected = {
+          title: 'Quarterly plan',
+          markdown: 'Hello\n\nWorld',
+          agent_name: 'general',
+          model_id: 'test-model',
+          responded_at: T,
+        };
+        for (const [k, v] of Object.entries(expected)) {
+          if (body.response[k] !== v) throw new Error(`response.${k} = ${JSON.stringify(body.response[k])}, expected ${JSON.stringify(v)}`);
+        }
+        if (Object.keys(body.response).sort().join() !== 'agent_name,markdown,model_id,responded_at,shared_at,title') {
+          throw new Error(`response leaks fields: ${Object.keys(body.response).join()}`);
+        }
+        const raw = JSON.stringify(body);
+        for (const leak of ['SECRET PROMPT', 'PRIVATE REASONING', 'TOOL INPUT', 'SYNTHETIC', sessionId, project.id]) {
+          if (raw.includes(leak)) throw new Error(`public response leaks ${leak}`);
+        }
+      });
+
+      await ctx.step('the response token opens no sandbox proxy and is not in the preview/file share list', async () => {
+        (await anon.get('/v1/p/public-share/:token', { params: { token } })).status(404);
+        const list = (await owner.get('/v1/projects/:projectId/sessions/:sessionId/public-shares', { params: turn })).status(200);
+        if (list.json<{ shares: unknown[] }>().shares.length !== 0) throw new Error('response share listed as a preview/file share');
+      });
+
+      await ctx.step('a regenerated reply marks the share stale; re-sharing keeps the URL and refreshes the text', async () => {
+        await put(message('msg_asst_2', 3, 'assistant', [{ id: 't2', type: 'text', text: 'World, revised' }], { reply_to: 'msg_user_1' }));
+        (await owner.get(shareRoute, { params: turn })).status(200).body().has('$.share.stale', true);
+        const again = (await owner.put(shareRoute, undefined, { params: turn })).status(200);
+        const share = again.json<{ share: { token: string; stale: boolean } }>().share;
+        if (share.token !== token || share.stale) throw new Error(`re-share changed the token or stayed stale: ${JSON.stringify(share)}`);
+        (await anon.get(publicRoute, { params: { token } })).status(200).body().has('$.response.markdown', 'Hello\n\nWorld, revised');
+      });
+
+      await ctx.step('the owner revokes → {share:null}; the link answers 410; an unknown token answers 404', async () => {
+        (await owner.del(shareRoute, { params: turn })).status(200).body().has('$.share', null);
+        (await anon.get(publicRoute, { params: { token } })).status(410);
+        (await owner.get(shareRoute, { params: turn })).status(200).body().has('$.share', null);
+        (await anon.get(publicRoute, { params: { token: `kps_${crypto.randomUUID().replaceAll('-', '')}` } })).status(404);
+      });
+
+      await ctx.step('sharing again after a revoke mints a NEW link', async () => {
+        const res = (await owner.put(shareRoute, undefined, { params: turn })).status(200);
+        if (res.json<{ share: { token: string } }>().share.token === token) throw new Error('a revoked token came back');
+      });
+    } finally {
+      await db.end();
+    }
+  },
+);

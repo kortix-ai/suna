@@ -34,6 +34,17 @@ const cases = [
     ipKey: false,
   },
   {
+    factory: rate.createPublicResponseRateLimitMiddleware,
+    setting: 'KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN',
+    path: '/:token',
+    url: '/kps_11111111111141118111111111111111',
+    other: '/kps_22222222222242228222222222222222',
+    resource: 'public_response',
+    id: '11111111-1111-4111-8111-111111111111',
+    limiter: 'public_response',
+    ipKey: false,
+  },
+  {
     factory: rate.createDemoRequestRateLimitMiddleware,
     setting: 'KORTIX_DEMO_REQUEST_REQS_PER_MIN',
     path: '/:id',

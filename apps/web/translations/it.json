@@ -22414,5 +22414,35 @@
   "agentEditor": {
     "manage": "Gestisci",
     "overviewTitle": "Panoramica"
+  },
+  "turnShare": {
+    "shareResponse": "Condividi risposta",
+    "title": "Condividi",
+    "close": "Chiudi",
+    "whoCanRead": "Chi può leggere",
+    "sessionMembers": "Membri della sessione",
+    "anyoneWithLink": "Chiunque abbia il link",
+    "link": "Link",
+    "copyLink": "Copia link",
+    "copied": "Copiato",
+    "stopSharing": "Interrompi condivisione",
+    "linkCopied": "Link copiato",
+    "linkUpdated": "Link aggiornato",
+    "responseShared": "Risposta condivisa",
+    "stale": "La risposta è cambiata da quando l’hai condivisa",
+    "updateLink": "Aggiorna link",
+    "shareOn": "Condividi su {network}",
+    "loadError": "Impossibile caricare le impostazioni di condivisione. Riprova.",
+    "shareError": "Impossibile condividere la risposta. Riprova.",
+    "unshareError": "Impossibile interrompere la condivisione. Riprova.",
+    "copyError": "Impossibile copiare il link. Copialo dal campo.",
+    "noText": "Questa risposta non ha ancora testo da condividere.",
+    "sharedFrom": "Condiviso da Kortix",
+    "tryKortix": "Prova Kortix",
+    "goneTitle": "Questa risposta non è più condivisa",
+    "goneHint": "La persona che l’ha condivisa ha disattivato il link.",
+    "fallbackTitle": "Risposta condivisa",
+    "confirmStop": "Fai di nuovo clic per interrompere la condivisione",
+    "stopNote": "Il link smetterà di funzionare."
   }
 }

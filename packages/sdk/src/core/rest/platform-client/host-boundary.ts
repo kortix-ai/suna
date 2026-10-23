@@ -10,6 +10,7 @@
 import { retiredEndpointError } from '../../http/api/errors';
 import { auditFilterQuery } from '../projects-client/audit-filter';
 import { platformApiBase } from './shared';
+import { getBackendUrl } from '../../session/server-store/url-helpers';
 
 export interface HostRequestOptions {
   /** Kortix API base URL. Both `https://host` and `https://host/v1` are valid. */
@@ -369,6 +370,32 @@ export function getPublicShareByToken<T = Record<string, unknown>>(
   options: HostRequestOptions,
 ): Promise<T> {
   return requestJson<T>(`/p/public-share/${encodeURIComponent(token)}`, options);
+}
+
+/** One shared assistant response, as the anonymous `/r/:token` page reads it. */
+export interface PublicResponse {
+  title: string;
+  markdown: string;
+  agent_name: string | null;
+  model_id: string | null;
+  responded_at: string;
+  shared_at: string;
+}
+
+/**
+ * Read a shared response anonymously (no token is sent). Throws
+ * `HostBoundaryError` with `status` 404 for an unknown link and 410 for a
+ * revoked one. `options.backendUrl` defaults to the configured backend.
+ */
+export async function getPublicResponse(
+  token: string,
+  options: HostRequestOptions = { backendUrl: getBackendUrl() },
+): Promise<PublicResponse> {
+  const body = await requestJson<{ response: PublicResponse }>(
+    `/public/responses/${encodeURIComponent(token)}`,
+    { ...options, accessToken: null },
+  );
+  return body.response;
 }
 
 export function startSessionWithToken(

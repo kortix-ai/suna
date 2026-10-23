@@ -22414,5 +22414,35 @@
   "agentEditor": {
     "manage": "管理",
     "overviewTitle": "概览"
+  },
+  "turnShare": {
+    "shareResponse": "分享回复",
+    "title": "分享",
+    "close": "关闭",
+    "whoCanRead": "谁可以阅读",
+    "sessionMembers": "会话成员",
+    "anyoneWithLink": "任何拥有链接的人",
+    "link": "链接",
+    "copyLink": "复制链接",
+    "copied": "已复制",
+    "stopSharing": "停止分享",
+    "linkCopied": "链接已复制",
+    "linkUpdated": "链接已更新",
+    "responseShared": "回复已分享",
+    "stale": "分享后回复已更改",
+    "updateLink": "更新链接",
+    "shareOn": "分享到 {network}",
+    "loadError": "无法加载分享设置。请重试。",
+    "shareError": "无法分享回复。请重试。",
+    "unshareError": "无法停止分享。请重试。",
+    "copyError": "无法复制链接。请从字段中复制。",
+    "noText": "此回复还没有可分享的文本。",
+    "sharedFrom": "分享自 Kortix",
+    "tryKortix": "试用 Kortix",
+    "goneTitle": "此回复已不再分享",
+    "goneHint": "分享者已关闭此链接。",
+    "fallbackTitle": "分享的回复",
+    "confirmStop": "再次点击以停止分享",
+    "stopNote": "该链接将失效。"
   }
 }

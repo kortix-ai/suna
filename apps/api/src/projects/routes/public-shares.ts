@@ -3,9 +3,14 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import {
   DEFAULT_PREVIEW_CANDIDATES,
   createPublicShare,
+  getLiveResponseShare,
   listPublicSharesForSession,
   revokePublicShare,
+  revokeResponseShare,
+  serializeTurnShare,
+  upsertResponseShare,
 } from '../../shared/session-public-shares';
+import { buildResponseSnapshot } from '../lib/response-snapshot';
 import { loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { guardSession, guardSessionSharing, sessionAccessDenied } from '../lib/http-session-access';
@@ -13,6 +18,17 @@ import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
 import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bindings';
 import { sessionPersonOnlyPlaintextSecrets } from '../lib/secret-audience';
+
+const TurnShareSchema = z.object({
+  share_id: z.string(),
+  turn_id: z.string().openapi({ description: 'The user message id that starts the turn.' }),
+  token: z.string(),
+  url: z.string().openapi({ description: 'The public web page of the response.' }),
+  created_at: z.string(),
+  snapshot_at: z.string(),
+  stale: z.boolean().openapi({ description: 'The live response text differs from the published snapshot.' }),
+});
+const TurnParams = z.object({ projectId: z.string(), sessionId: z.string(), turnId: z.string().min(1).max(200) });
 
 export function registerPublicSharesRoutes(): void {
   // GET /v1/projects/:projectId/sessions/:sessionId/previews
@@ -200,6 +216,99 @@ export function registerPublicSharesRoutes(): void {
       const share = await revokePublicShare(sessionId, shareId);
       if (!share) return c.json({ error: 'Not found' }, 404);
       return c.json({ share });
+    },
+  );
+
+  // ── Response shares: one assistant response (one turn), by its user message id ──
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/sessions/{sessionId}/turns/{turnId}/share',
+      tags: ['sessions'],
+      summary: 'Read the public share of one assistant response',
+      ...auth,
+      request: { params: TurnParams },
+      responses: {
+        200: json(z.object({ share: TurnShareSchema.nullable() }), 'The live share, or null'),
+        ...errors(400, 403, 404),
+      },
+    }),
+    async (c) => {
+      const { projectId, sessionId, turnId } = c.req.valid('param');
+      if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      const guard = await guardSessionSharing(c, loaded, sessionId, 'list');
+      if (!guard.ok) return c.json({ error: guard.error }, guard.status);
+
+      const row = await getLiveResponseShare(sessionId, turnId);
+      if (!row) return c.json({ share: null }, 200);
+      const live = await buildResponseSnapshot({ sessionId, projectId, turnId, sessionMetadata: guard.session.row.metadata });
+      return c.json({ share: serializeTurnShare(row, live.ok ? live.snapshot.markdown : null) }, 200);
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'put',
+      path: '/{projectId}/sessions/{sessionId}/turns/{turnId}/share',
+      tags: ['sessions'],
+      summary: 'Share one assistant response publicly, or refresh its snapshot',
+      description:
+        'Publishes the text of the response as an immutable snapshot built from the stored session log. A second call re-snapshots the same share: the URL does not change. Reasoning, tool calls, files and the prompt are never published.',
+      ...auth,
+      request: { params: TurnParams },
+      responses: {
+        200: json(z.object({ share: TurnShareSchema }), 'The live share'),
+        ...errors(400, 403, 404, 409),
+      },
+    }),
+    async (c) => {
+      const { projectId, sessionId, turnId } = c.req.valid('param');
+      if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      const guard = await guardSessionSharing(c, loaded, sessionId, 'mint');
+      if (!guard.ok) return c.json({ error: guard.error }, guard.status);
+
+      const built = await buildResponseSnapshot({ sessionId, projectId, turnId, sessionMetadata: guard.session.row.metadata });
+      if (!built.ok) return c.json({ error: built.error }, built.status);
+      const row = await upsertResponseShare({
+        sessionId,
+        projectId,
+        accountId: guard.session.row.accountId,
+        userId: loaded.userId,
+        turnId,
+        snapshot: built.snapshot,
+      });
+      return c.json({ share: serializeTurnShare(row, built.snapshot.markdown) }, 200);
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/{projectId}/sessions/{sessionId}/turns/{turnId}/share',
+      tags: ['sessions'],
+      summary: 'Revoke the public share of one assistant response',
+      ...auth,
+      request: { params: TurnParams },
+      responses: {
+        200: json(z.object({ share: z.null() }), 'Revoked'),
+        ...errors(400, 403, 404),
+      },
+    }),
+    async (c) => {
+      const { projectId, sessionId, turnId } = c.req.valid('param');
+      if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      const guard = await guardSessionSharing(c, loaded, sessionId, 'revoke');
+      if (!guard.ok) return c.json({ error: guard.error }, guard.status);
+
+      await revokeResponseShare(sessionId, turnId);
+      return c.json({ share: null }, 200);
     },
   );
 }

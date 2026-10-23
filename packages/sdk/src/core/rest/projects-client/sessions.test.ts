@@ -17,6 +17,7 @@ import type {
   SessionReloadResult,
   SessionTurn,
   SessionTurnStatus,
+  TurnShare,
 } from './sessions';
 import {
   type UpdateProjectSessionInput,
@@ -30,6 +31,9 @@ import {
   ensureWarmProjectSession,
   interruptSessionPrompt,
   findActiveTranscriptShare,
+  getTurnShare,
+  shareTurn,
+  unshareTurn,
   getProjectSession,
   getProjectSessionConfigState,
   getProjectSessionScope,
@@ -369,6 +373,45 @@ test('revokeSessionPublicShare DELETEs the specific share', async () => {
   await revokeSessionPublicShare('P1', 'S1', 'SH1');
   expect(last().url).toContain('/projects/P1/sessions/S1/public-shares/SH1');
   expect(last().method).toBe('DELETE');
+});
+
+const TURN_SHARE: TurnShare = {
+  share_id: 'SH9',
+  turn_id: 'msg_user_1',
+  token: 'kps_abc',
+  url: 'https://kortix.test/r/kps_abc',
+  created_at: '2026-10-23T00:00:00.000Z',
+  snapshot_at: '2026-10-23T00:00:00.000Z',
+  stale: false,
+};
+
+test('getTurnShare GETs the share of one turn and answers null when none is live', async () => {
+  nextResponse = { status: 200, body: { share: null } };
+  const result = await getTurnShare('P1', 'S1', 'msg/user 1');
+  expect(last().url).toContain('/projects/P1/sessions/S1/turns/msg%2Fuser%201/share');
+  expect(last().method).toBe('GET');
+  expect(result).toEqual({ share: null });
+});
+
+test('shareTurn PUTs the turn share with no body and returns the live share', async () => {
+  nextResponse = { status: 200, body: { share: TURN_SHARE } };
+  const result = await shareTurn('P1', 'S1', 'msg_user_1');
+  expect(last().url).toContain('/projects/P1/sessions/S1/turns/msg_user_1/share');
+  expect(last().method).toBe('PUT');
+  expect(result.share.url).toBe('https://kortix.test/r/kps_abc');
+});
+
+test('shareTurn rejects with the status when the turn has no text yet', async () => {
+  nextResponse = { status: 409, body: { error: 'This response has no text to share yet' } };
+  await expect(shareTurn('P1', 'S1', 'msg_user_1')).rejects.toMatchObject({ status: 409 });
+});
+
+test('unshareTurn DELETEs the turn share', async () => {
+  nextResponse = { status: 200, body: { share: null } };
+  const result = await unshareTurn('P1', 'S1', 'msg_user_1');
+  expect(last().url).toContain('/projects/P1/sessions/S1/turns/msg_user_1/share');
+  expect(last().method).toBe('DELETE');
+  expect(result).toEqual({ share: null });
 });
 
 test('createProjectSession POSTs the input and marks the new session fresh', async () => {

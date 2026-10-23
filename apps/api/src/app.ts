@@ -288,6 +288,13 @@ import { approvalLinksApp } from './setup-links/approval-app';
 app.use('/v1/approval-links/*', supabaseAuth);
 app.route('/v1/approval-links', approvalLinksApp); // GET /v1/approval-links/:token
 
+// Shared responses — PUBLIC, token-gated. One assistant response a member
+// published as a stored text snapshot (the authenticated half is
+// /v1/projects/:id/sessions/:sid/turns/:turnId/share). No auth, no sandbox.
+import { publicResponsesApp, registerPublicResponseRoutes } from './public-responses';
+registerPublicResponseRoutes();
+app.route('/v1/public/responses', publicResponsesApp); // GET /v1/public/responses/:token
+
 
 
 
