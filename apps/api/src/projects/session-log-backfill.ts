@@ -38,6 +38,16 @@
  *   the build changes, because each dry pass reads and converts every old
  *   mirror. A skipped dry tick says so once per process at info. Run it again on
  *   the same build: `DELETE FROM kortix.session_log_backfill_state`.
+ * - Merge pass (Release B prerequisite). Once `drainedWithDeleted`, each `write` tick walks every
+ *   session with a mirror and a log (`(created_at, session_id)` cursor) and asks
+ *   `kortix.mirror_messages_missing_from_log` (migration
+ *   `20261023124001597_mirror_messages_missing_from_log.sql`, the one definition the Release B guard
+ *   reads too) which mirror messages the log lacks by id: `missing` (some content not in the log),
+ *   `present` (all of it under another id) or `empty`. A session with a `missing` one goes through
+ *   `mergeMirrorIntoLog` (`session-log-capture.ts`); a session over the cap through the same thread,
+ *   memory guard and poison pill as a conversion. A merge pass that counts no `missing` sets
+ *   `mergedMissing`; only then does `mirrorDrained` answer true. `mergePasses` and `mergeTotals`
+ *   (the passes' counts summed) stay in the state row as the record of what the merge did.
  * - Size cap (P3.4). A mirror over the capture's cap (`mirrorStoredCap`, `session-log-capture.ts`)
  *   makes the capture answer `too_large` after one cheap size query. The backfill counts it
  *   (`too_large`) and converts it in a Bun `Worker` (`session-log-backfill-thread.ts`): the same
