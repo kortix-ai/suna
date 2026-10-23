@@ -138,6 +138,8 @@ export function serializeSession(
     ownerType?: 'user' | 'service_account' | 'unknown' | null;
     /** Whether the viewer may read/open the session, independent of inventory visibility. */
     canAccess?: boolean;
+    /** `mayPublishTurn` for the viewer (`turnPublishVerdict`). Single-session reads only; omitted elsewhere. */
+    canPublishResponse?: boolean;
     /** Exact state of the backing runtime resource, if one still exists. */
     runtimeStatus?: 'provisioning' | 'active' | 'stopped' | 'error' | 'archived' | null;
     /** Server-managed soft-deletion audit fields. */
@@ -254,6 +256,7 @@ export function serializeSession(
       ownerIsMachine: ctx?.ownerIsMachine ?? !row.createdBy,
     }),
     can_manage_lifecycle: isOwner || Boolean(ctx?.canManageProject),
+    ...(ctx?.canPublishResponse !== undefined ? { can_publish_response: ctx.canPublishResponse } : {}),
     can_access: canAccess,
     runtime_status: ctx?.runtimeStatus ?? null,
     deleted_at: ctx?.deletedAt ?? null,

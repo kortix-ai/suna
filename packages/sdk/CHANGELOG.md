@@ -5,6 +5,16 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (share one assistant response)
+- `getTurnShare`, `shareTurn`, `unshareTurn` and the `TurnShare` type: the public share of one
+  turn's response (`/projects/:id/sessions/:sid/turns/:turnId/share`, GET / PUT / DELETE). The
+  server publishes the response text as a snapshot; `shareTurn` again refreshes it and keeps the URL.
+  `shareTurn(…, { include_prompt: true })` also publishes the prompt text (`TurnShare.include_prompt`).
+- `ProjectSession.can_publish_response`: whether the viewer may publish a response of the session
+  (a human owner or project manager who can read it). Single-session reads only; absent means unknown.
+- `getPublicResponse` and the `PublicResponse` type: the anonymous read of a shared response
+  (`GET /public/responses/:token`); `prompt` is null unless the sharer included it. Throws `HostBoundaryError` with `status` 404 or 410.
+
 ### Changed (pi runs every new session; OpenCode is sunset)
 - `FeatureFlagKey` `'pi_harness'` is deprecated and no longer a flag: absent from `FEATURE_FLAG_KEYS`
   and from the feature-flag catalog. The API sends `experimental.pi_harness: true` for every

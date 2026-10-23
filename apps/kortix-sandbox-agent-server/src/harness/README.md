@@ -691,9 +691,10 @@ apps/api logs one WARN `[session-log] journal rejected` (status, code, project
 and session id) for each 400, 403, 409, 413 and 422, because this log stays in
 the box. A 200 that does not acknowledge a batch is retried 3 times, then its
 pairs are dropped: the native store still holds them. The next boot sends every
-stored message again (a journal that restored nothing has no cursors), so a
-message an older kortixd dropped on a 422 reaches the log at the box's next
-boot on this kortixd. A second
+stored message again at its first flush (a turn end or the daemon stop; a
+journal that restored nothing has no cursors), so a message an older kortixd
+dropped on a 422 reaches the log at the first turn end after the box's next
+boot on this kortixd (verified on dev 2026-10-23). A second
 `startSessionLogJournal` stops the first journal.
 
 ## Health and capabilities (E19, E1)

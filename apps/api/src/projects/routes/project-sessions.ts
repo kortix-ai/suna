@@ -69,6 +69,7 @@ import { readRuntimeControlState } from '../lib/session-control-readers';
 import { sessionCreateSurface } from '../lib/session-surface';
 
 import { readSessionsWorking } from '../lib/session-working-read';
+import { turnPublishVerdict } from '../lib/http-session-access';
 
 const NO_USER_STATE = { pinnedAt: null, archivedAt: null };
 
@@ -123,6 +124,7 @@ async function sessionReadResponse(c: Context<AppEnv>, projectId: string, sessio
     viewerId: loaded.userId,
     canManageProject: visible.canManageProject,
     ownerIsMachine: visible.ownerIsMachine,
+    canPublishResponse: (await turnPublishVerdict(c, loaded, visible)) === 'allow',
     ownerEmail: owner?.email ?? null,
     ownerName: owner?.name ?? null,
     ownerAvatarUrl: owner?.avatarUrl ?? null,

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { Context, Next } from 'hono';
 import { config } from '../config';
 import { requestClientIp, requestClientKey } from './client-ip';
+import { shareIdFromPublicRef } from '../shared/public-share-ref';
 import { recordAuditEvent } from '../shared/audit';
 import { RATE_LIMIT_EXCEEDED_ACTION } from '../shared/rate-limit-audit';
 import { TokenBucketRateLimiter, type RateLimitPolicy, type RateLimitResult } from '../shared/rate-limit';
@@ -86,6 +87,7 @@ export async function enforceRateLimit(
 // limit × API replicas. They stop runaways and floods; none meters a quota.
 const inviteAcceptLimiter = new TokenBucketRateLimiter('invite_accept');
 const sandboxProxyLimiter = new TokenBucketRateLimiter('sandbox_proxy');
+const publicResponseLimiter = new TokenBucketRateLimiter('public_response');
 const demoRequestLimiter = new TokenBucketRateLimiter('demo_request');
 const checkEmailLimiter = new TokenBucketRateLimiter('check_email');
 const projectWebhookLimiter = new TokenBucketRateLimiter('project_webhook');
@@ -188,6 +190,43 @@ export function createSandboxProxyRateLimitMiddleware() {
       },
     };
   });
+}
+
+/** A 429 with `Retry-After`, and no audit row: a flood must not become a DB-write amplifier. */
+function quietRateLimited(c: Context, result: RateLimitResult): Response {
+  setHeaders(c, result);
+  return c.json(
+    {
+      error: 'rate_limit_exceeded',
+      message: 'Rate limit exceeded. Please retry shortly.',
+      retry_after_seconds: Math.ceil((result.retryAfterMs ?? result.resetMs) / 1000),
+    },
+    429,
+  );
+}
+
+/**
+ * Guards the anonymous `GET /v1/public/responses/:token`: one bucket per share
+ * (`KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN`, 3000), shared by every visitor of the
+ * link (the web page reads with no-store, so every view arrives), so it is a
+ * flood cap sized for a popular link. A token that names no
+ * share falls back to the client IP BEFORE it can key a bucket, so unique
+ * garbage tokens cannot grow the bucket Map without bound. No audit row (a
+ * flood must not become a DB-write amplifier), and the token or share id is
+ * never logged: the token is the share id, a bearer secret.
+ */
+export function createPublicResponseRateLimitMiddleware() {
+  return async (c: Context, next: Next) => {
+    // No per-IP bucket: tokens carry 122 random bits, so enumeration is infeasible, and the IP seen here is the web tier's, shared by every visitor.
+    const shareKey = shareIdFromPublicRef(c.req.param('token') ?? '') ?? `ip:${requestClientKey(c)}`;
+    const share = publicResponseLimiter.check(shareKey, {
+      limit: positiveInt(config.KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN, 3000),
+      windowMs: 60_000,
+    });
+    if (!share.allowed) return quietRateLimited(c, share);
+    setHeaders(c, share);
+    await next();
+  };
 }
 
 /**
@@ -388,6 +427,7 @@ export function createLlmGatewayRateLimitMiddleware() {
 export function resetRateLimiters() {
   inviteAcceptLimiter.reset();
   sandboxProxyLimiter.reset();
+  publicResponseLimiter.reset();
   demoRequestLimiter.reset();
   checkEmailLimiter.reset();
   projectWebhookLimiter.reset();
