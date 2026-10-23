@@ -5576,3 +5576,162 @@ flow(
     });
   },
 );
+
+// The native Shopify connector (`provider: shopify`). The local profile has no
+// Shopify, so this flow covers everything up to the store: the fixed catalog,
+// Connect's form link, the form (`flow: oauth`), the authorize URL its submit
+// answers, and the callback's refusals — a bad HMAC, a store other than the
+// one the form named (signed with the secret the flow itself submitted), a
+// replayed state. The code exchange, the access check and real calls are
+// pinned by apps/api/src/connectors/shopify.test.ts and were run end to end on
+// a local stack against a fake Shopify.
+flow(
+  'CONN-39',
+  {
+    domain: 'connectors',
+    routes: [
+      'POST /v1/connectors/projects/:projectId/connectors',
+      'POST /v1/connectors/projects/:projectId/connectors/:slug/connect',
+      'GET /v1/connectors/app-form/:token',
+      'POST /v1/connectors/app-form/:token',
+      'GET /v1/connectors/shopify/callback',
+      'POST /v1/connectors/projects/:projectId/call',
+    ],
+  },
+  async (ctx) => {
+    const { createHmac } = await import('node:crypto');
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const anon = ctx.client.as(ctx.P.ANON);
+    const project = await ctx.fixtures.project({ managedGit: true });
+    const params = { projectId: project.id };
+    let token = '';
+    let state = '';
+
+    await ctx.step('a shopify connector with a bare store name materializes the 16 Shopify actions', async () => {
+      (await owner.post(
+        '/v1/connectors/projects/:projectId/connectors',
+        { slug: 'store', name: 'Shopify', provider: 'shopify', shop: 'ke2e-store', create_only: true },
+        { params, timeoutMs: 60_000 },
+      )).status(200);
+      const list = (await owner.get('/v1/connectors/projects/:projectId/connectors', { params }))
+        .status(200)
+        .json<{ connectors: Array<{ slug: string; provider: string; actions?: Array<{ path: string }> }> }>();
+      const store = list.connectors.find((c) => c.slug === 'store');
+      const paths = (store?.actions ?? []).map((a) => a.path);
+      if (store?.provider !== 'shopify' || paths.length !== 16 || !paths.includes('graphql') || !paths.includes('list_orders')) {
+        throw new Error(`shopify catalog is wrong: ${JSON.stringify({ provider: store?.provider, paths })}`);
+      }
+    });
+
+    await ctx.step('a shopify connector with `auth` is refused: it signs in through Shopify', async () => {
+      (await owner.post(
+        '/v1/connectors/projects/:projectId/connectors',
+        { slug: 'store-auth', provider: 'shopify', auth: { type: 'bearer' }, create_only: true },
+        { params, timeoutMs: 60_000 },
+      )).status([400, 409, 422]);
+    });
+
+    await ctx.step('an unconnected account cannot call: the gateway denies before any store request', async () => {
+      (await owner.post('/v1/connectors/projects/:projectId/call', { connector: 'store', action: 'get_shop' }, { params }))
+        .status([403, 424])
+        .body()
+        .exists('$.reason');
+    });
+
+    await ctx.step('Connect answers the Kortix form link; the form is the OAuth flow for the default store', async () => {
+      const started = (await owner.post(
+        '/v1/connectors/projects/:projectId/connectors/:slug/connect',
+        { owner: 'me' },
+        { params: { ...params, slug: 'store' } },
+      )).status(200).json<{ provider: string; connectUrl?: string }>();
+      token = /\/connect\/app\/(kaf_[A-Za-z0-9_-]+)$/.exec(started.connectUrl ?? '')?.[1] ?? '';
+      if (started.provider !== 'shopify' || !token) throw new Error(`connect did not answer a form link: ${JSON.stringify(started)}`);
+      const info = (await anon.get('/v1/connectors/app-form/:token', { params: { token } }))
+        .status(200)
+        .json<{ flow: string; shop: string; shared_app: boolean; scopes: string[]; redirect_uri: string; connected: boolean }>();
+      if (
+        info.flow !== 'oauth' ||
+        info.shop !== 'ke2e-store.myshopify.com' ||
+        info.shared_app !== false ||
+        !info.scopes.includes('read_orders') ||
+        !info.redirect_uri.endsWith('/v1/connectors/shopify/callback') ||
+        info.connected
+      ) {
+        throw new Error(`form info is wrong: ${JSON.stringify(info)}`);
+      }
+    });
+
+    await ctx.step('submit refuses a custom domain and a missing secret, then answers the store\'s authorize URL', async () => {
+      (await anon.post('/v1/connectors/app-form/:token', { store: 'shop.example.com', client_id: 'id', client_secret: 's' }, { params: { token } }))
+        .status(400)
+        .body()
+        .has('$.code', 'app_form_invalid');
+      (await anon.post('/v1/connectors/app-form/:token', { store: 'ke2e-store', client_id: 'id' }, { params: { token } }))
+        .status(400)
+        .body()
+        .has('$.code', 'app_form_invalid');
+      const submitted = (await anon.post(
+        '/v1/connectors/app-form/:token',
+        { store: 'ke2e-store', client_id: 'ke2e-client-id', client_secret: 'ke2e-client-secret' },
+        { params: { token } },
+      )).status(200).json<{ connected: boolean; authorize_url?: string }>();
+      const url = new URL(submitted.authorize_url ?? 'about:blank');
+      state = url.searchParams.get('state') ?? '';
+      if (
+        submitted.connected ||
+        `${url.origin}${url.pathname}` !== 'https://ke2e-store.myshopify.com/admin/oauth/authorize' ||
+        url.searchParams.get('client_id') !== 'ke2e-client-id' ||
+        !url.searchParams.get('scope')?.includes('read_orders,') ||
+        !url.searchParams.get('redirect_uri')?.endsWith('/v1/connectors/shopify/callback') ||
+        !state
+      ) {
+        throw new Error(`authorize URL is wrong: ${submitted.authorize_url}`);
+      }
+    });
+
+    const signed = (query: Record<string, string>, secret: string) => {
+      const message = Object.entries(query).sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, v]) => `${k}=${v}`).join('&');
+      return { ...query, hmac: createHmac('sha256', secret).update(message).digest('hex') };
+    };
+
+    await ctx.step('the callback refuses a bad HMAC; the form page shows invalid_signature', async () => {
+      const r = await anon.get('/v1/connectors/shopify/callback', {
+        query: { code: 'c', shop: 'ke2e-store.myshopify.com', state, timestamp: '1', hmac: '0'.repeat(64) },
+      });
+      r.status(302).headerExists('location');
+      const location = new URL(r.header('location') ?? '');
+      if (!location.pathname.endsWith(`/connect/app/${token}`) || location.searchParams.get('error') !== 'invalid_signature') {
+        throw new Error(`bad-HMAC callback redirected to ${location.href}`);
+      }
+    });
+
+    await ctx.step('a used state is refused: the sign-in starts again', async () => {
+      (await anon.get('/v1/connectors/shopify/callback', {
+        query: signed({ code: 'c', shop: 'ke2e-store.myshopify.com', state, timestamp: '1' }, 'ke2e-client-secret'),
+      })).status(400);
+    });
+
+    await ctx.step('a correctly signed callback for another store is refused (shop_mismatch), before any exchange', async () => {
+      const fresh = (await owner.post(
+        '/v1/connectors/projects/:projectId/connectors/:slug/connect',
+        { owner: 'me' },
+        { params: { ...params, slug: 'store' } },
+      )).status(200).json<{ connectUrl?: string }>();
+      const freshToken = /\/connect\/app\/(kaf_[A-Za-z0-9_-]+)$/.exec(fresh.connectUrl ?? '')?.[1] ?? '';
+      (await anon.get('/v1/connectors/app-form/:token', { params: { token } })).status(409).body().has('$.code', 'app_form_superseded');
+      const submitted = (await anon.post(
+        '/v1/connectors/app-form/:token',
+        { store: 'ke2e-store', client_id: 'ke2e-client-id', client_secret: 'ke2e-client-secret' },
+        { params: { token: freshToken } },
+      )).status(200).json<{ authorize_url?: string }>();
+      const freshState = new URL(submitted.authorize_url ?? 'about:blank').searchParams.get('state') ?? '';
+      const r = await anon.get('/v1/connectors/shopify/callback', {
+        query: signed({ code: 'c', shop: 'other-store.myshopify.com', state: freshState, timestamp: '1' }, 'ke2e-client-secret'),
+      });
+      r.status(302);
+      if (new URL(r.header('location') ?? 'about:blank').searchParams.get('error') !== 'shop_mismatch') {
+        throw new Error(`mismatched store redirected to ${r.header('location')}`);
+      }
+    });
+  },
+);

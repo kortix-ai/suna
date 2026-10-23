@@ -524,8 +524,9 @@ export class ShopifyInputError extends Error {}
 // ─── Calls ──────────────────────────────────────────────────────────────────
 
 export const PROTECTED_DATA_REMEDIATION =
-  'This Shopify app is not approved for protected customer data. In the Shopify Dev Dashboard, give the app Custom distribution for this store, ' +
-  'select the order and customer data your agents need under Protected customer data, release a new version, approve it on the store, and connect the account again.';
+  'This Shopify app is not approved for protected customer data (orders, customers). An app with Custom distribution for this store has it without review: ' +
+  'in the Shopify Dev Dashboard, give the app Custom distribution for this store (or create such an app) and connect the account again with it. ' +
+  "A public app needs Shopify's protected customer data review first.";
 
 export const RECONNECT_REQUIRED =
   'reconnect_required: Shopify no longer accepts this account\'s token (the app was uninstalled or its access was revoked). Connect the account again.';

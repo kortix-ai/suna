@@ -224,6 +224,11 @@ export const uncoveredAllow: AllowEntry[] = [
     })),
   ),
 { method: "POST", path: "/v1/projects/:*/transfer", reason: "project transfer between accounts (KRTX-1747): an end-user settings action, not a browser journey — covered against the real route table by apps/api/src/projects/routes/project-transfer.test.ts (gate order, error mapping), by the real-PostgreSQL movement suite apps/api/src/projects/lib/project-transfer.integration.test.ts (movement, role re-pointing, real-engine non-member deny, classification completeness), and exercised live in the PR sandbox" },
+  ...['/.well-known/security.txt', '/robots.txt', '/sitemap.xml'].map((path) => ({
+    method: "GET",
+    path,
+    reason: "public discovery file served from @kortix/shared/well-known (KRTX-3347); packages/shared/src/well-known.test.ts covers every body",
+  })),
 ];
 
 export const externalRoutes: AllowEntry[] = [
