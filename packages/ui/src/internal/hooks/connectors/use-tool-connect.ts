@@ -8,7 +8,7 @@ import {
 } from '@kortix/sdk';
 
 import {
-  buildEasyConnectConnectorDraft,
+  buildAppConnectorDraft,
 } from '../../../customize/sections/connector-connection-form';
 
 export interface ToolConnectInput {
@@ -20,7 +20,7 @@ export interface ToolConnectInput {
 }
 
 export function buildToolConnectorDraft(input: ToolConnectInput) {
-  return buildEasyConnectConnectorDraft(
+  return buildAppConnectorDraft(
     { slug: input.appSlug, name: input.appName, provider: input.provider },
     { name: input.connectorName, slug: input.connectorSlug },
   );

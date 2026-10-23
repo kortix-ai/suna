@@ -16,6 +16,8 @@
  *                                  does not list, and Install names the
  *                                  connector after the app.
  *
+ *   shopify                      → the catalogue icon of shopify.com.
+ *
  *   mcp on a Kortix catalogue app → its icon, served by the web app
  *                                  (`connectors/mcp-apps.ts`). No lookup.
  *
@@ -48,6 +50,8 @@ export function fallbackIconSource(provider: string, config: unknown): FallbackI
   if (provider === 'composio') {
     return typeof cfg.app === 'string' && cfg.app ? { kind: 'composio', app: cfg.app } : null;
   }
+  // Every store is `<name>.myshopify.com`: the catalogue lists Shopify under its own domain.
+  if (provider === 'shopify') return { kind: 'catalog', host: 'shopify.com' };
   if (!(provider in HOST_KEY)) return null;
   const raw = cfg[HOST_KEY[provider] ?? ''];
   if (provider === 'mcp' && typeof raw === 'string') {

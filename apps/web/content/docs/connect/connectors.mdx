@@ -27,7 +27,8 @@ Connectors live in `kortix.yaml` under `connectors:`, or in a file it lists unde
 | `mcp` | A remote MCP server. | `url`; `transport` is `http` (default) or `sse` |
 | `openapi` | An API with an OpenAPI document. | `spec` (a URL or a repo path) |
 | `postman` | An API described by a Postman collection. | `spec` |
-| `graphql` | A GraphQL endpoint. Kortix introspects it when `spec` is absent. | `endpoint` |
+| `graphql` | A GraphQL endpoint. Kortix introspects it when `spec` is absent. A server that answers but refuses introspection gets one `graphql` action that takes the document; it asks for approval unless a policy names `graphql` exactly. | `endpoint` |
+| `shopify` | A Shopify store's Admin API, connected with your own Shopify app. See [Shopify](/docs/connect/shopify). | none; `shop` and `scopes` are optional |
 | `http` | A raw HTTP API. | `base_url` |
 | `channel` | Slack, Microsoft Teams or email. Kortix writes it when you connect a [channel](/docs/connect/channels). | `platform` |
 | `computer` | Built in. Each connected [computer](/docs/connect/computers) is one account. It is never written to `kortix.yaml`. | — |
@@ -375,19 +376,9 @@ kortix connectors connect-finalize gmail                 # confirm; pass the sam
 
 ### Connect Shopify
 
-Composio holds no Shopify app, and Shopify stopped issuing admin-created app tokens (`shpat_…`) on January 1, 2026. A Shopify account therefore runs on a Shopify app that you own. **Connect** on a `composio` Shopify connector opens a Kortix form, not a sign-in page:
+Use a `shopify` connector: Connect asks for the store and your Shopify app's Client ID and secret, then Shopify asks you to approve the app. See [Shopify](/docs/connect/shopify).
 
-1. In the [Shopify Dev Dashboard](https://dev.shopify.com/dashboard), create an app in the organization that owns the store.
-2. On the app's version, select the Admin API scopes that your agents need, then release the version.
-3. Install the app on the store.
-4. In Kortix, select **Connect** on the Shopify connector. Enter the store's myshopify.com name (`acme` for `acme.myshopify.com`), and the **Client ID** and **Client secret** from the app's **Settings**.
-
-- Composio runs Shopify's client-credentials grant with the app's credentials. Kortix passes the secret to Composio and keeps no copy. Each account gets its own Composio auth config.
-- The app and the store must be in the same Shopify organization. A store in another organization, such as a client's store, cannot connect this way.
-- When Shopify refuses the exchange, the form shows the reason: no store at that name, no app with that Client ID, an app in another organization, or a wrong secret. The API answers `422` `shopify_refused`.
-- The form link works for 1 hour. A newer **Connect** on the same account replaces it (`409`).
-- `kortix connectors connect <slug>` prints the same form link.
-- To change the app or the store, add a new account. An account connected earlier with an admin token keeps working.
+A `composio` connector with `app: shopify` keeps its own form: the Client ID and secret of an app in the same Shopify organization as the store, then Composio runs Shopify's client-credentials grant. A refused exchange answers `422` `shopify_refused` with Shopify's reason. Composio's shared app cannot read orders, so prefer the `shopify` connector.
 
 ### Connect links inside a session
 

@@ -1037,3 +1037,49 @@ describe('handleCall — channel misfire undo', () => {
     expect(fetchCalls[1]!.url).toBe('https://slack.com/api/chat.delete');
   });
 });
+
+// A GraphQL server that refuses introspection gets one raw document action. It
+// runs whatever the caller writes, so only a rule that names it exactly may run
+// it unattended: not the project default, not a wildcard.
+describe('handleCall — raw GraphQL document actions', () => {
+  const GRAPHQL: GatewayConnector = {
+    ...STRIPE,
+    connectorId: 'conn-gql',
+    slug: 'api',
+    provider: 'graphql',
+    baseUrl: 'https://gql.example.test/graphql',
+  };
+  const RAW: GatewayAction = {
+    path: 'api.graphql',
+    relPath: 'graphql',
+    inputSchema: { type: 'object', properties: { query: {} } },
+    risk: 'write',
+    binding: { kind: 'graphql_document' },
+  };
+  const input: CallInput = { ...baseInput, connectorSlug: 'api', actionPath: 'graphql', args: { query: 'mutation { deleteAll }' } };
+
+  test('the project default (allow_all) does not run it unattended', async () => {
+    const { deps, fetchCalls } = makeDeps({ connector: GRAPHQL, action: RAW, defaultMode: 'allow_all' });
+    expect((await handleCall(deps, input)).status).toBe('pending_approval');
+    expect(fetchCalls).toHaveLength(0);
+  });
+
+  test('a wildcard allow rule does not run it unattended', async () => {
+    const { deps, fetchCalls } = makeDeps({
+      connector: GRAPHQL,
+      action: RAW,
+      projectPolicies: [{ match: '*', action: 'always_run', position: 0 }],
+    });
+    expect((await handleCall(deps, input)).status).toBe('pending_approval');
+    expect(fetchCalls).toHaveLength(0);
+  });
+
+  test('a rule that names it runs it; a block rule still blocks', async () => {
+    const named = makeDeps({ connector: GRAPHQL, action: RAW, policies: [{ match: 'graphql', action: 'always_run', position: 0 }] });
+    expect((await handleCall(named.deps, input)).status).toBe('ok');
+    expect(JSON.parse(named.fetchCalls[0]!.body!)).toEqual({ query: 'mutation { deleteAll }', variables: {} });
+
+    const blocked = makeDeps({ connector: GRAPHQL, action: RAW, projectPolicies: [{ match: 'api.*', action: 'block', position: 0 }] });
+    expect((await handleCall(blocked.deps, input)).status).toBe('denied');
+  });
+});

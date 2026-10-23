@@ -215,7 +215,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
         params: ProjectParam,
         body: { content: { 'application/json': { schema: lenientBody({
             slug: z.string().openapi({ description: 'Connector slug (its name in kortix.yaml).' }),
-            provider: z.enum(['composio', 'pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http', 'channel']).openapi({ description: 'Connector provider. Use composio for managed SaaS apps.' }),
+            provider: z.enum(['composio', 'pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http', 'channel', 'shopify']).openapi({ description: 'Connector provider. Use composio for managed SaaS apps, shopify for a Shopify store.' }),
             name: z.string().optional().openapi({ description: 'Display name.' }),
             app: z.string().optional().openapi({ description: 'Composio app slug, e.g. gmail (composio providers).' }),
             url: z.string().optional().openapi({ description: 'MCP server URL (provider mcp).' }),
@@ -223,6 +223,8 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
             endpoint: z.string().optional().openapi({ description: 'GraphQL endpoint (provider graphql).' }),
             baseUrl: z.string().optional().openapi({ description: 'Base URL (provider http or openapi).' }),
             spec: z.string().optional().openapi({ description: 'OpenAPI or Postman spec URL.' }),
+            shop: z.string().optional().openapi({ description: 'Default Shopify store, <name>.myshopify.com (provider shopify).' }),
+            scopes: z.array(z.string()).optional().openapi({ description: 'Shopify Admin API scopes Connect requests (provider shopify).' }),
             authorization_strategy: z.string().optional().openapi({ description: 'Who owns connections: project or user.' }),
             auth: z.record(z.string(), z.any()).optional().openapi({ description: 'Auth scheme: { type: none|bearer|basic|custom|api_key|..., in, name, prefix }. Discovered when omitted.' }),
             headers: z.record(z.string(), z.any()).optional().openapi({ description: 'Static request headers (plaintext, committed to kortix.yaml).' }),

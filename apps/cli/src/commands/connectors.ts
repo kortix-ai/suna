@@ -39,7 +39,7 @@ import { renderConnectorTypes } from './connector-types.ts';
 
 // ── Shapes (mirror apps/api/src/connectors) ───────────────────────────────────
 
-type Provider = 'composio' | 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http';
+type Provider = 'composio' | 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http' | 'shopify';
 
 interface ConnectorAction {
   path: string;
@@ -101,6 +101,8 @@ interface ConnectorAccountRow {
   connected_as?: string | null;
   /** When the upstream rejected the stored credential (401). Absent: not rejected. */
   credential_rejected_at?: string | null;
+  /** Shopify: what the account's token could read when it connected. */
+  access?: ShopifyAccessView | null;
 }
 
 /** One condition on a policy rule: a dot path into the call's arguments, the
@@ -163,7 +165,38 @@ const PROVIDERS: readonly Provider[] = [
   'postman',
   'graphql',
   'http',
+  'shopify',
 ];
+
+/** A bare store name becomes `<name>.myshopify.com`; anything else goes to the server as typed. */
+function shopifyShopFlag(value: string): string {
+  const text = value.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  return /^[a-z0-9][a-z0-9-]*$/.test(text) ? `${text}.myshopify.com` : text;
+}
+
+function scopesFlag(value: string): string[] {
+  return value.split(/[\s,]+/).map((scope) => scope.trim()).filter(Boolean);
+}
+
+/** The access a Shopify account's token had when it connected, one line. */
+function shopifyAccessLine(access: ShopifyAccessView | null | undefined): string {
+  if (!access) return '';
+  const cell = (name: string, value: string) =>
+    `${name} ${value === 'ok' ? `${C.green}ok${C.reset}` : value === 'blocked' ? `${C.red}blocked${C.reset}` : `${C.yellow}${value.replace('_', ' ')}${C.reset}`}`;
+  return [
+    cell('catalog', access.catalog),
+    cell('orders', access.orders),
+    cell('customers', access.customers),
+    cell('inventory', access.inventory),
+  ].join('  ');
+}
+
+interface ShopifyAccessView {
+  catalog: string;
+  orders: string;
+  customers: string;
+  inventory: string;
+}
 
 const HELP = help`Usage: kortix connectors <subcommand> [options]
 
@@ -317,6 +350,11 @@ Add options (provider-specific):
   --url <url>              MCP server URL (provider=mcp).
   --transport <http|sse>   MCP transport (provider=mcp).
   --endpoint <url>         GraphQL endpoint (provider=graphql).
+  --shop <store>           Default Shopify store, <name>.myshopify.com or the
+                           bare name (provider=shopify).
+  --scopes <a,b>           Shopify Admin API scopes Connect requests
+                           (provider=shopify). Default: orders, draft orders,
+                           products, customers, inventory, locations.
   --base-url <url>         HTTP base URL (provider=http).
   --spec <url|path>        OpenAPI/Postman/GraphQL/HTTP spec or source ref.
   --auth-type <t>          Manual override: none|bearer|basic|custom|oauth1.
@@ -498,6 +536,8 @@ export async function runConnectors(argv: string[]): Promise<number> {
     f.url = takeFlagValue(rest, ['--url']);
     f.transport = takeFlagValue(rest, ['--transport']);
     f.endpoint = takeFlagValue(rest, ['--endpoint']);
+    f.shop = takeFlagValue(rest, ['--shop']);
+    f.scopes = takeFlagValue(rest, ['--scopes']);
     f.baseUrl = takeFlagValue(rest, ['--base-url']);
     f.spec = takeFlagValue(rest, ['--spec']);
     f.authType = takeFlagValue(rest, ['--auth-type']);
@@ -608,6 +648,8 @@ export async function runConnectors(argv: string[]): Promise<number> {
         if (f.endpoint) draft.endpoint = f.endpoint;
         if (f.baseUrl) draft.baseUrl = f.baseUrl;
         if (f.spec) draft.spec = f.spec;
+        if (f.shop) draft.shop = shopifyShopFlag(f.shop);
+        if (f.scopes) draft.scopes = scopesFlag(f.scopes);
         if (f.credential) draft.credential = f.credential;
         if (f.authType) draft.auth = { type: f.authType };
         const resp = await ctx.client.post<{
@@ -627,7 +669,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
             (resp.authDiscovery?.recommended?.type
               ? `  ${C.dim}Authentication: ${C.reset}${resp.authDiscovery.recommended.type}${C.dim} (auto-detected; set the credential next)${C.reset}\n`
               : '') +
-            `  ${C.dim}Next: ${C.reset}${C.cyan}${f.provider === 'composio' || f.provider === 'pipedream' ? `kortix connectors connect ${slug}` : `kortix connectors credential ${slug}`}${C.reset}\n`,
+            `  ${C.dim}Next: ${C.reset}${C.cyan}${f.provider === 'composio' || f.provider === 'pipedream' || f.provider === 'shopify' ? `kortix connectors connect ${slug}` : `kortix connectors credential ${slug}`}${C.reset}\n`,
         );
         return 0;
       }
@@ -958,7 +1000,11 @@ export async function runConnectors(argv: string[]): Promise<number> {
         process.stdout.write(
           `\n  ${C.bold}Connect ${slug}${C.reset}\n` +
             (output.url
-              ? `  ${C.cyan}${output.url}${C.reset}\n\n  ${C.dim}Open the URL and approve the ${output.provider} connection. ${ownerNote}${C.reset}\n\n`
+              ? output.provider === 'shopify'
+                ? `  ${C.cyan}${output.url}${C.reset}\n\n  ${C.dim}Open the URL. Kortix asks for the store and, unless this deployment has a shared Shopify app, ` +
+                  `the Client ID and secret of your Shopify app (Custom distribution, with the redirect URL the page shows). ` +
+                  `Then Shopify asks you to approve the app. ${ownerNote}${C.reset}\n\n`
+                : `  ${C.cyan}${output.url}${C.reset}\n\n  ${C.dim}Open the URL and approve the ${output.provider} connection. ${ownerNote}${C.reset}\n\n`
               : `  ${C.green}${output.connected ? 'Connected' : 'No authorization URL returned'}${C.reset}\n\n`),
         );
         return 0;
@@ -1104,7 +1150,8 @@ export async function runConnectors(argv: string[]): Promise<number> {
               `${pad(accountOwnerLabel(account.owner_type), 8)} ` +
               `${pad(account.is_default ? 'yes' : 'no', 8)} ${account.connection_id}` +
               `${account.is_default ? `  ${C.dim}(pinned default)${C.reset}` : ''}` +
-              `${account.credential_rejected_at ? `  ${C.red}(credential rejected — replace it)${C.reset}` : ''}\n`,
+              `${account.credential_rejected_at ? `  ${C.red}(credential rejected — replace it)${C.reset}` : ''}\n` +
+              (account.access ? `  ${' '.repeat(labelWidth)}  ${C.dim}access:${C.reset} ${shopifyAccessLine(account.access)}\n` : ''),
           );
         }
         process.stdout.write('\n');
@@ -1923,13 +1970,15 @@ function connectorAddLocal(
     if (f.endpoint) fields.endpoint = f.endpoint;
     if (f.baseUrl) fields.base_url = f.baseUrl;
     if (f.spec) fields.spec = f.spec;
+    if (f.shop) fields.shop = shopifyShopFlag(f.shop);
+    if (f.scopes) fields.scopes = scopesFlag(f.scopes);
     if (f.credential) fields.credential = f.credential;
     if (f.authType) fields.auth = { type: f.authType };
     appendArrayBlock('connectors', fields);
     process.stdout.write(
       `${status.ok(`Added [[connectors]] ${C.bold}${slug}${C.reset} to kortix.yaml`)}\n` +
         `  ${C.dim}Apply it with ${C.reset}${C.cyan}kortix ship${C.reset}${C.dim}; authentication will be detected from the source unless --auth-type overrides it.${C.reset}\n` +
-        `  ${C.dim}Then ${f.provider === 'composio' || f.provider === 'pipedream' ? 'connect it with' : 'set the credential with'} ${C.reset}${C.cyan}kortix connectors ${f.provider === 'composio' || f.provider === 'pipedream' ? `connect ${slug}` : `credential ${slug}`}${C.reset}\n`,
+        `  ${C.dim}Then ${f.provider === 'composio' || f.provider === 'pipedream' || f.provider === 'shopify' ? 'connect it with' : 'set the credential with'} ${C.reset}${C.cyan}kortix connectors ${f.provider === 'composio' || f.provider === 'pipedream' || f.provider === 'shopify' ? `connect ${slug}` : `credential ${slug}`}${C.reset}\n`,
     );
     return 0;
   } catch (err) {

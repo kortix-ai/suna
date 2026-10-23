@@ -86,11 +86,14 @@ import {
   loadComposioAdapter,
   loadComposioConnector,
   loadMcpConnector,
+  loadShopifyConnector,
   loadPipedreamConnector,
   mergeRequestingSession,
   readRequestingSessionId,
 } from './db-deps-connect';
-import { appFormInfo, submitAppForm } from './composio-app-form';
+import { appFormInfo, submitAppForm } from './app-form';
+import { completeShopifyCallback, shopifyAccountConnected, startShopifyConnect } from './shopify-connect';
+import { shopifyAccessOf } from './shopify';
 import { makeDbGatewayDeps } from './db-deps-gateway';
 import {
   resolveAdmin,
@@ -211,6 +214,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
       }
     : undefined,
   appForm: { info: appFormInfo, submit: submitAppForm },
+  shopifyCallback: (requestUrl) => completeShopifyCallback(requestUrl),
   pipedreamWebhook: pipedreamConfigured()
     ? async (extUserId, sig) => {
         const rejected = { ok: false, connected: false } as const;
@@ -370,6 +374,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
       is_default: connection.isDefault,
       connected_as: connectedAsOf(connection.metadata),
       credential_rejected_at: credentialRejectedAt(connection.metadata),
+      ...(shopifyAccessOf(connection.metadata) ? { access: shopifyAccessOf(connection.metadata) } : {}),
     }));
   },
   mintConnectorConnectLink: async ({ projectId, slug, userId, sessionId }) => {
@@ -377,8 +382,11 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     // No hosted page (raw http/mcp/graphql connector, or no provider app bound)
     // means no link exists to hand over. The denial still names the connector.
     if (!eligibility.ok) return null;
-    const composio = await loadComposioAdapter();
-    if (!(composio?.composioConfigured?.() ?? false) && !pipedreamConfigured()) return null;
+    // MCP and Shopify sign in through Kortix itself; only a hosted provider needs one configured.
+    if (eligibility.providerType === 'composio' || eligibility.providerType === 'pipedream') {
+      const composio = await loadComposioAdapter();
+      if (!(composio?.composioConfigured?.() ?? false) && !pipedreamConfigured()) return null;
+    }
     // The denial's remedy is always "authorize YOURSELF": the human reading it
     // is the one who can, and a shared account is a deliberate admin choice made
     // from settings. A link with no member behind it would resolve to nobody.
@@ -505,6 +513,29 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
         connectionId,
         connected: result.connected,
         isNoAuth: result.isNoAuth,
+      };
+    }
+    const shopify = await loadShopifyConnector(projectId, slug);
+    if (shopify) {
+      // Kortix's own form, then Shopify's OAuth grant (shopify-connect.ts).
+      if (!userId) return null;
+      const connectionId =
+        connectOwner === 'me'
+          ? await ensureMemberConnection({ projectId, connectorId: shopify.connectorId, userId })
+          : await ensureDefaultConnection({ projectId, connectorId: shopify.connectorId });
+      await mergeRequestingSession(connectionId, requestingSessionId);
+      const started = await startShopifyConnect({
+        projectId,
+        connectionId,
+        userId,
+        successRedirect: redirects?.success,
+      });
+      return {
+        provider: 'shopify',
+        app: 'shopify',
+        connectUrl: started.connectUrl,
+        requestId: started.requestId,
+        connectionId,
       };
     }
     const mcp = await loadMcpConnector(projectId, slug);
@@ -665,6 +696,54 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
         isNoAuth: result.isNoAuth,
         connectedAs,
         ...(label ? { label } : {}),
+      };
+    }
+    const shopify = await loadShopifyConnector(projectId, slug);
+    if (shopify) {
+      if (finalizeOwner === 'me' && !_userId) return null;
+      const connectionId =
+        selector?.connectionId ??
+        (finalizeOwner === 'me'
+          ? await ensureMemberConnection({ projectId, connectorId: shopify.connectorId, userId: _userId! })
+          : await defaultConnectionIdForConnector(shopify.connectorId));
+      if (!connectionId) return { provider: 'shopify', connected: false };
+      const [connection] = await db
+        .select({ connectionId: connectorConnections.connectionId, metadata: connectorConnections.metadata })
+        .from(connectorConnections)
+        .where(
+          and(
+            eq(connectorConnections.connectorId, shopify.connectorId),
+            eq(connectorConnections.connectionId, connectionId),
+            finalizeOwner === 'me'
+              ? and(eq(connectorConnections.ownerType, 'member'), eq(connectorConnections.ownerId, _userId ?? ''))
+              : and(eq(connectorConnections.ownerType, 'project'), isNull(connectorConnections.ownerId)),
+          ),
+        )
+        .limit(1);
+      if (!connection) {
+        if (selector?.connectionId) throw new HTTPException(404, { message: 'connector connection not found' });
+        return { provider: 'shopify', connected: false };
+      }
+      const connected = await shopifyAccountConnected({ connectorId: shopify.connectorId, connectionId });
+      if (connected) {
+        // Told once: only the call that clears the waiting session notifies it.
+        const rows = (await db.execute(sql`
+          update kortix.connector_connections c
+             set metadata = c.metadata - 'requesting_session_id'
+            from (select connection_id, metadata->>'requesting_session_id' as waiting
+                    from kortix.connector_connections
+                   where connection_id = ${connectionId}
+                     for update) old
+           where c.connection_id = old.connection_id and old.waiting is not null
+          returning old.waiting as waiting`)) as unknown as Array<{ waiting: string }>;
+        const waiting = rows[0]?.waiting;
+        if (waiting) void notifyConnectorSession(waiting, projectId, _userId ?? null, slug, 'shopify');
+      }
+      return {
+        provider: 'shopify',
+        connected,
+        connectionId,
+        connectedAs: connectedAsOf((connection.metadata ?? {}) as Record<string, unknown>),
       };
     }
     const mcp = await loadMcpConnector(projectId, slug);

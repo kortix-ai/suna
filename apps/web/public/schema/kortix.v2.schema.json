@@ -1669,11 +1669,12 @@
                   "postman",
                   "graphql",
                   "http",
-                  "channel"
+                  "channel",
+                  "shopify"
                 ]
               },
               {
-                "pattern": "^\\s*(?:[pP][iI][pP][eE][dD][rR][eE][aA][mM]|[cC][oO][mM][pP][oO][sS][iI][oO]|[mM][cC][pP]|[oO][pP][eE][nN][aA][pP][iI]|[pP][oO][sS][tT][mM][aA][nN]|[gG][rR][aA][pP][hH][qQ][lL]|[hH][tT][tT][pP]|[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                "pattern": "^\\s*(?:[pP][iI][pP][eE][dD][rR][eE][aA][mM]|[cC][oO][mM][pP][oO][sS][iI][oO]|[mM][cC][pP]|[oO][pP][eE][nN][aA][pP][iI]|[pP][oO][sS][tT][mM][aA][nN]|[gG][rR][aA][pP][hH][qQ][lL]|[hH][tT][tT][pP]|[cC][hH][aA][nN][nN][eE][lL]|[sS][hH][oO][pP][iI][fF][yY])\\s*$(?![\\s\\S])"
               }
             ]
           },
@@ -1724,6 +1725,17 @@
                 "pattern": "^\\s*(?:[sS][lL][aA][cC][kKK]|[tT][eE][aA][mM][sS]|[eE][mM][aA][iI][lL]|[tT][eE][lL][eE][gG][rR][aA][mM])\\s*$(?![\\s\\S])"
               }
             ]
+          },
+          "shop": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*\\.myshopify\\.com$"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "\\S"
+            }
           },
           "credential": {
             "type": "string",
@@ -2063,6 +2075,49 @@
               "required": [
                 "platform"
               ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "shopify"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[sS][hH][oO][pP][iI][fF][yY])\\s*$(?![\\s\\S])"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "auth"
+              ]
+            },
+            "then": {
+              "properties": {
+                "auth": {
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "none"
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
             }
           },
           {

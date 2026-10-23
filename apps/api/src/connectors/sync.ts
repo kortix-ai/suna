@@ -66,6 +66,7 @@ import { assertConnectorEndpointUrl, connectorEgressFetch } from './egress';
 import type { ProjectPolicySpec } from '../projects/policies';
 import { connectorConfig, toPolicyRows, toProjectPolicyRows } from './materialize';
 import {
+  graphqlDocumentAction,
   normalizeComposio,
   normalizeGraphql,
   normalizeHttp,
@@ -88,6 +89,7 @@ import {
   mergeAuthDiscoveries,
 } from './auth-discovery';
 import type { HttpRouteSpec, NormalizedAction } from './types';
+import { shopifyCatalog } from './shopify';
 
 export interface SyncResult {
   synced: number;
@@ -1415,12 +1417,21 @@ export async function resolveCatalog(
         return { actions: normalizeHttp(routes), server: spec.baseUrl };
       }
       case 'graphql': {
+        // A request that fails stays an error (the catalog is not replaced).
         const introspection = await introspectGraphql(spec.endpoint!);
+        const actions = normalizeGraphql(introspection);
+        if (actions.length > 0) return { actions, server: spec.endpoint };
+        // The server answered but refuses introspection (Shopify does): one raw
+        // action, which the gateway never runs unattended without a rule that
+        // names it (see `graphql_document` in gateway.ts).
         return {
-          actions: normalizeGraphql(introspection),
+          actions: introspectionRefused(introspection) ? [graphqlDocumentAction()] : [],
           server: spec.endpoint,
         };
       }
+      case 'shopify':
+        // A fixed catalog: Shopify disables introspection, and no network call is needed.
+        return { actions: shopifyCatalog(), server: null };
       case 'mcp': {
         assertAllowedEndpointUrl(spec.url!);
         const tools = await listMcpTools({
@@ -1669,6 +1680,13 @@ async function loadHttpRoutes(
   const parsed = /\.toml$/i.test(spec) ? (parseToml(raw) as any) : JSON.parse(raw);
   const routes = Array.isArray(parsed?.routes) ? parsed.routes : [];
   return routes as HttpRouteSpec[];
+}
+
+/** The server answered the introspection query with errors and no schema. */
+function introspectionRefused(body: unknown): boolean {
+  const payload = (body ?? {}) as { data?: { __schema?: unknown } | null; errors?: unknown };
+  const errors = payload.errors;
+  return !payload.data?.__schema && (typeof errors === 'string' ? errors.length > 0 : Array.isArray(errors) && errors.length > 0);
 }
 
 async function introspectGraphql(endpoint: string): Promise<any> {

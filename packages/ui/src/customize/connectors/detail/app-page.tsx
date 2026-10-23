@@ -270,8 +270,9 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
     value: ReactNode;
   }> = [];
   // The Provider cell follows the primary way to connect: the app itself for
-  // its API/MCP server, Kortix for a managed-only app.
-  const managedOnly = managed && !detail;
+  // its API/MCP server or a native connector (Shopify), Kortix for a
+  // managed-only app.
+  const managedOnly = managed && !detail && primary?.target.managed;
   const managedBy = managedOnly ? connectorRunsOver(provider) : null;
   if (primary)
     infoCells.push({
@@ -290,7 +291,8 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
         label: t('infoCategory'),
         value: readableCategory(category),
       });
-    if (managed.hasTriggers)
+    // The provider's events come with its managed surface, not with a native one.
+    if (managed.hasTriggers && easyConnectInstallTarget(managed).managed)
       infoCells.push({ key: 'events', label: t('infoAppEvents'), value: t('infoAppEventsYes') });
   }
   if (primary?.kind) infoCells.push({ key: 'runs', label: t('infoRunsOver'), value: primary.kind });

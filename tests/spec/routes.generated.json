@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 894,
+  "count": 895,
   "routes": [
     {
       "method": "GET",
@@ -1385,6 +1385,10 @@
     {
       "method": "GET",
       "path": "/v1/connectors/projects/:projectId/sessions/:sessionId/connect-requests"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/shopify/callback"
     },
     {
       "method": "POST",
