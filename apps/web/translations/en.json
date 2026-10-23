@@ -22593,6 +22593,25 @@
         "openHistory": "open History",
         "undoFailed": "Could not undo.",
         "failedGeneric": "Not saved to memory."
+      },
+      "used": {
+        "label": "Used {places} memory · {count, plural, one {# page} other {# pages}}",
+        "title": "Pages this thread started with",
+        "company": "Company",
+        "removed": "Removed"
+      },
+      "searchError": "Could not search this memory.",
+      "searchResults": "Search results",
+      "searchTool": {
+        "title": "Searched memory",
+        "count": "{count, plural, one {# page} other {# pages}}",
+        "running": "Searching memory…",
+        "failed": "Memory search failed: {reason}",
+        "failedGeneric": "Memory search failed.",
+        "none": "No page matches “{query}”."
+      },
+      "palette": {
+        "heading": "Memory"
       }
     },
     "create": {
@@ -22764,8 +22783,8 @@
     "folder": {
       "memory": "Memory",
       "loadError": "Couldn't load this folder",
-      "memoryNoteChannel": "What agents in {place} remember. Agents are told to read this at the start of every thread.",
-      "memoryNoteDm": "What {agent} remembers from this DM. It is told to read this at the start of every thread.",
+      "memoryNoteChannel": "What agents in {place} remember. Agents read this at the start of every thread.",
+      "memoryNoteDm": "What {agent} remembers from this DM. It reads this at the start of every thread.",
       "off": {
         "title": "Turn on Drive",
         "description": "Files and memory for {place} live in Drive. Turn on Volumes in Feature flags to use them.",

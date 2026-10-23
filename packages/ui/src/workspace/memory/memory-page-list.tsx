@@ -1,11 +1,12 @@
 'use client';
 
 import type { ProjectMemoryChange, ProjectMemoryPageSummary, ProjectMemoryPageType } from '@kortix/sdk';
-import { useProjectMemoryChanges } from '@kortix/sdk/react';
+import { useProjectMemoryChanges, useProjectMemorySearch } from '@kortix/sdk/react';
 import { CaretDownIcon, ClockCounterClockwiseIcon, FileTextIcon, MagnifyingGlassIcon, WarningCircleIcon } from '@phosphor-icons/react';
 import { type ReactNode, useMemo, useState } from 'react';
 
 import { useLocale, useTranslations } from '../../i18n';
+import { useDebounce } from '../../internal/hooks/use-debounced-value';
 import { relativeTime } from '../../internal/lib/relative-time';
 import { cn } from '../../lib/utils';
 import { Button } from '../../primitives/button';
@@ -67,7 +68,13 @@ export function MemoryPageList({
   const [query, setQuery] = useState('');
   const [collapsed, setCollapsed] = useState<ReadonlySet<ProjectMemoryPageType>>(new Set());
   const { groups, unconfirmed } = useMemo(() => groupMemoryPages(pages), [pages]);
-  const needle = query.trim().toLowerCase();
+  // 2 characters or more: the server's search (titles, summaries and text),
+  // results in place of the groups. 1 character: the titles, filtered here.
+  const trimmed = query.trim();
+  const searching = trimmed.length >= 2;
+  const debounced = useDebounce(trimmed, 250);
+  const search = useProjectMemorySearch(projectId, { q: debounced, layer: layerKey }, { enabled: searching });
+  const needle = searching ? '' : trimmed.toLowerCase();
   const visible = MEMORY_GROUPS.map((type) => {
     const all = groups.get(type)!;
     return { type, all, shown: needle ? all.filter((page) => page.title.toLowerCase().includes(needle)) : all };
@@ -104,51 +111,61 @@ export function MemoryPageList({
         </InputGroupSearch>
         <RecentChanges projectId={projectId} layerKey={layerKey} onView={onViewChange} />
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 pb-4">
-        <div className={cn(ROW, 'text-foreground gap-2 px-2')}>
-          <span className="flex w-4 shrink-0 justify-center">
-            <FileTextIcon aria-hidden className="text-muted-foreground size-3.5" />
-          </span>
-          <span className="flex-1 truncate">{t('allPages')}</span>
-          {total > 0 ? <CountBadge count={total} /> : null}
+      {searching ? (
+        <SearchResults
+          query={trimmed}
+          search={search}
+          ready={debounced.length >= 2}
+          selectedId={selectedId}
+          onSelect={onSelect}
+        />
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 pb-4">
+          <div className={cn(ROW, 'text-foreground gap-2 px-2')}>
+            <span className="flex w-4 shrink-0 justify-center">
+              <FileTextIcon aria-hidden className="text-muted-foreground size-3.5" />
+            </span>
+            <span className="flex-1 truncate">{t('allPages')}</span>
+            {total > 0 ? <CountBadge count={total} /> : null}
+          </div>
+          {visible.map(({ type, all, shown }) => {
+            const Glyph = MEMORY_TYPE_ICON[type];
+            const open = needle ? true : !collapsed.has(type);
+            return (
+              <div key={type} className="flex flex-col gap-0.5 pt-2.5">
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  onClick={() => toggle(type)}
+                  disabled={!!needle}
+                  className={cn(ROW, 'group/type text-foreground hover:bg-hover gap-2 px-2 font-medium disabled:hover:bg-transparent')}
+                >
+                  <span className="flex w-4 shrink-0 justify-center">
+                    <Glyph aria-hidden className="text-muted-foreground size-3.5 group-hover/type:hidden group-focus-visible/type:hidden group-disabled/type:block" />
+                    <CaretDownIcon
+                      aria-hidden
+                      className={cn(
+                        'text-muted-foreground hidden size-3.5 group-hover/type:block group-focus-visible/type:block group-disabled/type:hidden',
+                        !open && '-rotate-90',
+                      )}
+                    />
+                  </span>
+                  <span className="flex-1 truncate">{t(`type.${type}`)}</span>
+                  {shown.length > 0 ? <CountBadge count={shown.length} /> : null}
+                </button>
+                {open
+                  ? shown.map((page) => (
+                      <PageRow key={page.page_id} page={page} selected={page.page_id === selectedId} onSelect={onSelect} />
+                    ))
+                  : null}
+              </div>
+            );
+          })}
+          {needle && visible.length === 0 ? (
+            <p className="text-muted-foreground px-2 py-8 text-xs">{t('noMatches', { query: query.trim() })}</p>
+          ) : null}
         </div>
-        {visible.map(({ type, all, shown }) => {
-          const Glyph = MEMORY_TYPE_ICON[type];
-          const open = needle ? true : !collapsed.has(type);
-          return (
-            <div key={type} className="flex flex-col gap-0.5 pt-2.5">
-              <button
-                type="button"
-                aria-expanded={open}
-                onClick={() => toggle(type)}
-                disabled={!!needle}
-                className={cn(ROW, 'group/type text-foreground hover:bg-hover gap-2 px-2 font-medium disabled:hover:bg-transparent')}
-              >
-                <span className="flex w-4 shrink-0 justify-center">
-                  <Glyph aria-hidden className="text-muted-foreground size-3.5 group-hover/type:hidden group-focus-visible/type:hidden group-disabled/type:block" />
-                  <CaretDownIcon
-                    aria-hidden
-                    className={cn(
-                      'text-muted-foreground hidden size-3.5 group-hover/type:block group-focus-visible/type:block group-disabled/type:hidden',
-                      !open && '-rotate-90',
-                    )}
-                  />
-                </span>
-                <span className="flex-1 truncate">{t(`type.${type}`)}</span>
-                {shown.length > 0 ? <CountBadge count={shown.length} /> : null}
-              </button>
-              {open
-                ? shown.map((page) => (
-                    <PageRow key={page.page_id} page={page} selected={page.page_id === selectedId} onSelect={onSelect} />
-                  ))
-                : null}
-            </div>
-          );
-        })}
-        {needle && visible.length === 0 ? (
-          <p className="text-muted-foreground px-2 py-8 text-xs">{t('noMatches', { query: query.trim() })}</p>
-        ) : null}
-      </div>
+      )}
       {unconfirmed.length > 0 ? (
         <div className="shrink-0 px-3 pb-4">
           <button
@@ -166,6 +183,74 @@ export function MemoryPageList({
       ) : null}
     </nav>
   );
+}
+
+/**
+ * The server's hits for the search field, best first: title and summary. The
+ * hits of the previous query stay while the next one loads.
+ */
+function SearchResults({
+  query,
+  search,
+  ready,
+  selectedId,
+  onSelect,
+}: {
+  query: string;
+  search: ReturnType<typeof useProjectMemorySearch>;
+  /** The debounced query has 2 characters: until then the hits are of no query of this field. */
+  ready: boolean;
+  selectedId: string | null;
+  onSelect: (pageId: string) => void;
+}) {
+  const t = useTranslations('spaces.memory');
+  const hits = ready ? search.data?.hits : undefined;
+  let body: ReactNode;
+  if (search.isError && !hits) {
+    body = (
+      <ErrorState
+        size="sm"
+        title={t('searchError')}
+        action={
+          <Button variant="outline" size="sm" onClick={() => search.refetch()}>
+            {t('retry')}
+          </Button>
+        }
+      />
+    );
+  } else if (!hits) {
+    body = (
+      <div className="flex justify-center py-8">
+        <Loading className="size-4 shrink-0" />
+      </div>
+    );
+  } else if (hits.length === 0) {
+    body = <p className="text-muted-foreground px-2 py-8 text-xs">{t('noMatches', { query })}</p>;
+  } else {
+    body = (
+      <ul aria-label={t('searchResults')} className="flex flex-col gap-0.5">
+        {hits.map((hit) => (
+          <li key={hit.page_id}>
+            <button
+              type="button"
+              aria-current={hit.page_id === selectedId ? 'page' : undefined}
+              onClick={() => onSelect(hit.page_id)}
+              className={cn(
+                'focus-visible:ring-ring flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left text-xs outline-none focus-visible:ring-2',
+                hit.page_id === selectedId ? 'bg-active' : 'hover:bg-hover',
+              )}
+            >
+              <span className="text-foreground truncate font-medium">{hit.title}</span>
+              {hit.summary || hit.snippet ? (
+                <span className="text-muted-foreground line-clamp-2">{hit.summary || hit.snippet}</span>
+              ) : null}
+            </button>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  return <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pt-1 pb-4">{body}</div>;
 }
 
 function PageRow({

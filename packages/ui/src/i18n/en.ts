@@ -7426,6 +7426,25 @@ const catalog = {
         "openHistory": "open History",
         "undoFailed": "Could not undo.",
         "failedGeneric": "Not saved to memory."
+      },
+      "used": {
+        "label": "Used {places} memory · {count, plural, one {# page} other {# pages}}",
+        "title": "Pages this thread started with",
+        "company": "Company",
+        "removed": "Removed"
+      },
+      "searchError": "Could not search this memory.",
+      "searchResults": "Search results",
+      "searchTool": {
+        "title": "Searched memory",
+        "count": "{count, plural, one {# page} other {# pages}}",
+        "running": "Searching memory…",
+        "failed": "Memory search failed: {reason}",
+        "failedGeneric": "Memory search failed.",
+        "none": "No page matches “{query}”."
+      },
+      "palette": {
+        "heading": "Memory"
       }
     },
     "create": {

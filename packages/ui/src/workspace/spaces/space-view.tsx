@@ -15,6 +15,7 @@ import { useTranslations } from '../../i18n';
 import { Close } from '../../icons/close';
 import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
 import { MemoryView, useMemoryPageCount } from '../memory/memory-view';
+import { UsedMemoryChip } from '../memory/used-memory-chip';
 import { useIsMobile } from '../../internal/hooks';
 import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
 import { type CanResult, useProjectCan, useProjectPageCans } from '../../internal/lib/use-project-can';
@@ -715,10 +716,19 @@ function ThreadPanel({
   // Null from an older API that does not count replies.
   const replyCount = thread?.reply_count ?? null;
   const dividerOnTop = Boolean(replyCount) && session.hasOlder;
+  // A turn has finished: the thread's "Used memory" record can be read.
+  const turnDone = !session.isBusy && session.messages.some((message) => message.info.role === 'assistant');
   // Stable across stream frames: every memoized turn reads this context.
+  // "Used memory" sits under the first prompt, or heads the panel with the divider.
   const afterFirstPrompt = useMemo(
-    () => (replyCount && !dividerOnTop ? <RepliesDivider count={replyCount} className="py-2" /> : null),
-    [replyCount, dividerOnTop],
+    () =>
+      dividerOnTop ? null : (
+        <>
+          {replyCount ? <RepliesDivider count={replyCount} className="py-2" /> : null}
+          <UsedMemoryChip projectId={projectId} sessionId={sessionId} ready={turnDone} className="px-5" />
+        </>
+      ),
+    [replyCount, dividerOnTop, projectId, sessionId, turnDone],
   );
   const agentName = session.agentName ?? thread?.agent_name ?? agentFallback;
   const rows = useMemo(
@@ -761,7 +771,12 @@ function ThreadPanel({
       {/* The parent message, then "N replies", then the replies. While older
           history is not loaded, the first turn on screen is not the parent
           message, so the divider heads the panel instead. */}
-      {replyCount && dividerOnTop ? <RepliesDivider count={replyCount} className="shrink-0 pt-3" /> : null}
+      {replyCount && dividerOnTop ? (
+        <div className="shrink-0 pt-3">
+          <RepliesDivider count={replyCount} />
+          <UsedMemoryChip projectId={projectId} sessionId={sessionId} ready={turnDone} className="px-5" />
+        </div>
+      ) : null}
       <TranscriptRowsContext.Provider value={rows}>
         <AfterFirstPromptContext.Provider value={afterFirstPrompt}>
           <SessionThread session={session} hideHeader composerPlaceholder={t('replyPlaceholder')} className="min-h-0 flex-1" />

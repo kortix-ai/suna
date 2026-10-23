@@ -22593,6 +22593,25 @@
         "openHistory": "Verlauf öffnen",
         "undoFailed": "Rückgängig machen fehlgeschlagen.",
         "failedGeneric": "Nicht im Speicher gesichert."
+      },
+      "used": {
+        "label": "Speicher von {places} genutzt · {count, plural, one {# Seite} other {# Seiten}}",
+        "title": "Seiten, mit denen dieser Thread begann",
+        "company": "Unternehmen",
+        "removed": "Entfernt"
+      },
+      "searchError": "Dieser Speicher konnte nicht durchsucht werden.",
+      "searchResults": "Suchergebnisse",
+      "searchTool": {
+        "title": "Speicher durchsucht",
+        "count": "{count, plural, one {# Seite} other {# Seiten}}",
+        "running": "Speicher wird durchsucht…",
+        "failed": "Speichersuche fehlgeschlagen: {reason}",
+        "failedGeneric": "Speichersuche fehlgeschlagen.",
+        "none": "Keine Seite passt zu „{query}“."
+      },
+      "palette": {
+        "heading": "Speicher"
       }
     },
     "create": {
@@ -22764,8 +22783,8 @@
     "folder": {
       "memory": "Speicher",
       "loadError": "Dieser Ordner konnte nicht geladen werden",
-      "memoryNoteChannel": "Was sich Agenten in {place} merken. Agenten werden angewiesen, das zu Beginn jedes Threads zu lesen.",
-      "memoryNoteDm": "Was sich {agent} aus dieser DM merkt. Der Agent wird angewiesen, das zu Beginn jedes Threads zu lesen.",
+      "memoryNoteChannel": "Was sich Agenten in {place} merken. Agenten lesen das zu Beginn jedes Threads.",
+      "memoryNoteDm": "Was sich {agent} aus dieser DM merkt. Der Agent liest das zu Beginn jedes Threads.",
       "off": {
         "title": "Drive aktivieren",
         "description": "Dateien und Speicher für {place} liegen in Drive. Aktiviere Volumes unter Feature-Flags, um sie zu nutzen.",

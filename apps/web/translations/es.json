@@ -22593,6 +22593,25 @@
         "openHistory": "abrir el Historial",
         "undoFailed": "No se pudo deshacer.",
         "failedGeneric": "No se guardó en la memoria."
+      },
+      "used": {
+        "label": "Usó la memoria de {places} · {count, plural, one {# página} other {# páginas}}",
+        "title": "Páginas con las que empezó este hilo",
+        "company": "Empresa",
+        "removed": "Eliminada"
+      },
+      "searchError": "No se pudo buscar en esta memoria.",
+      "searchResults": "Resultados de búsqueda",
+      "searchTool": {
+        "title": "Buscó en la memoria",
+        "count": "{count, plural, one {# página} other {# páginas}}",
+        "running": "Buscando en la memoria…",
+        "failed": "La búsqueda en la memoria falló: {reason}",
+        "failedGeneric": "La búsqueda en la memoria falló.",
+        "none": "Ninguna página coincide con «{query}»."
+      },
+      "palette": {
+        "heading": "Memoria"
       }
     },
     "create": {
@@ -22764,8 +22783,8 @@
     "folder": {
       "memory": "Memoria",
       "loadError": "No se pudo cargar esta carpeta",
-      "memoryNoteChannel": "Lo que recuerdan los agentes de {place}. Se les indica que lo lean al inicio de cada hilo.",
-      "memoryNoteDm": "Lo que {agent} recuerda de este DM. Se le indica que lo lea al inicio de cada hilo.",
+      "memoryNoteChannel": "Lo que recuerdan los agentes de {place}. Los agentes lo leen al inicio de cada hilo.",
+      "memoryNoteDm": "Lo que {agent} recuerda de este DM. Lo lee al inicio de cada hilo.",
       "off": {
         "title": "Activa Drive",
         "description": "Los archivos y la memoria de {place} están en Drive. Activa Volumes en Feature flags para usarlos.",

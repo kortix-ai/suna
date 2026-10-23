@@ -22593,6 +22593,25 @@
         "openHistory": "abrir o Histórico",
         "undoFailed": "Não foi possível desfazer.",
         "failedGeneric": "Não salvo na memória."
+      },
+      "used": {
+        "label": "Usou a memória de {places} · {count, plural, one {# página} other {# páginas}}",
+        "title": "Páginas com que esta thread começou",
+        "company": "Empresa",
+        "removed": "Removida"
+      },
+      "searchError": "Não foi possível pesquisar nesta memória.",
+      "searchResults": "Resultados da pesquisa",
+      "searchTool": {
+        "title": "Pesquisou na memória",
+        "count": "{count, plural, one {# página} other {# páginas}}",
+        "running": "Pesquisando na memória…",
+        "failed": "A pesquisa na memória falhou: {reason}",
+        "failedGeneric": "A pesquisa na memória falhou.",
+        "none": "Nenhuma página corresponde a “{query}”."
+      },
+      "palette": {
+        "heading": "Memória"
       }
     },
     "create": {
@@ -22764,8 +22783,8 @@
     "folder": {
       "memory": "Memória",
       "loadError": "Não foi possível carregar esta pasta",
-      "memoryNoteChannel": "O que os agentes em {place} lembram. Eles são instruídos a ler isto no início de cada thread.",
-      "memoryNoteDm": "O que {agent} lembra desta DM. Ele é instruído a ler isto no início de cada thread.",
+      "memoryNoteChannel": "O que os agentes em {place} lembram. Eles leem isto no início de cada thread.",
+      "memoryNoteDm": "O que {agent} lembra desta DM. Ele lê isto no início de cada thread.",
       "off": {
         "title": "Ative o Drive",
         "description": "Os arquivos e a memória de {place} ficam no Drive. Ative Volumes em Feature flags para usá-los.",

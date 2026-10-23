@@ -22593,6 +22593,25 @@
         "openHistory": "apri la Cronologia",
         "undoFailed": "Impossibile annullare.",
         "failedGeneric": "Non salvato nella memoria."
+      },
+      "used": {
+        "label": "Ha usato la memoria di {places} · {count, plural, one {# pagina} other {# pagine}}",
+        "title": "Pagine con cui è iniziato questo thread",
+        "company": "Azienda",
+        "removed": "Rimossa"
+      },
+      "searchError": "Impossibile cercare in questa memoria.",
+      "searchResults": "Risultati della ricerca",
+      "searchTool": {
+        "title": "Ricerca nella memoria",
+        "count": "{count, plural, one {# pagina} other {# pagine}}",
+        "running": "Ricerca nella memoria…",
+        "failed": "Ricerca nella memoria non riuscita: {reason}",
+        "failedGeneric": "Ricerca nella memoria non riuscita.",
+        "none": "Nessuna pagina corrisponde a “{query}”."
+      },
+      "palette": {
+        "heading": "Memoria"
       }
     },
     "create": {
@@ -22764,8 +22783,8 @@
     "folder": {
       "memory": "Memoria",
       "loadError": "Impossibile caricare questa cartella",
-      "memoryNoteChannel": "Ciò che ricordano gli agenti in {place}. Gli agenti hanno l’istruzione di leggerlo all’inizio di ogni thread.",
-      "memoryNoteDm": "Ciò che {agent} ricorda di questo DM. Ha l’istruzione di leggerlo all’inizio di ogni thread.",
+      "memoryNoteChannel": "Ciò che ricordano gli agenti in {place}. Gli agenti lo leggono all’inizio di ogni thread.",
+      "memoryNoteDm": "Ciò che {agent} ricorda di questo DM. Lo legge all’inizio di ogni thread.",
       "off": {
         "title": "Attiva Drive",
         "description": "File e memoria di {place} sono in Drive. Attiva Volumes in Feature flags per usarli.",

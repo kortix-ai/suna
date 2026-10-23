@@ -1,16 +1,16 @@
 'use client';
 
 import { ApiError, type ProjectMemoryLayerScope } from '@kortix/sdk';
-import { useProjectSpaces, useUndoProjectMemoryVersion } from '@kortix/sdk/react';
+import { useUndoProjectMemoryVersion } from '@kortix/sdk/react';
 import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
 import { SunDimIcon } from '@phosphor-icons/react';
 import { type ReactNode, useState } from 'react';
 
 import { useTranslations } from '../../../i18n';
-import { uiRoutes } from '../../../lib/routes';
 import { TextShimmer } from '../../../primitives/text-shimmer';
-import { UiLink as Link, useUiPathname, useUiSearchParams } from '../../../providers/ui-provider';
+import { UiLink as Link } from '../../../providers/ui-provider';
 import { useSessionIds } from '../../../providers/session-ids';
+import { useMemoryPageHref } from '../../../internal/lib/memory-href';
 import { GenericTool } from '../generic-tool';
 import { partError, partOutput, partStatus } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
@@ -159,33 +159,12 @@ export function RememberLineView({
   );
 }
 
-/**
- * Where View opens the page: its channel's or DM's Memory tab with `?page=`
- * (`&history=1` when the change was superseded). None for a Company page until
- * the project Memory page exists (P2). A space of the page the reader is on
- * keeps the open thread beside it.
- */
+/** Where View opens the page (`useMemoryPageHref`); with History when the change was superseded. */
 function useViewHref(line: RememberLine, history: boolean): string | null {
   const projectId = useSessionIds().projectId;
-  const pathname = useUiPathname();
-  const searchParams = useUiSearchParams();
   const saved = line.state === 'saved' ? line : null;
-  const spaces = useProjectSpaces(projectId, { enabled: !!saved && saved.layer.scope !== 'company' });
-  if (!saved || !projectId) return null;
-  let path: string | null = null;
-  // Company pages get their own Memory page in P2; until then no space lists them.
-  if (saved.layer.scope === 'company') return null;
-  const space = spaces.data?.find((candidate) => candidate.space_id === saved.layer.key);
-  if (space?.kind === 'channel' && space.slug) path = uiRoutes().channel(projectId, space.slug);
-  else if (space?.kind === 'dm' && space.dm_agent_name) path = uiRoutes().dm(projectId, space.dm_agent_name);
-  if (!path) return null;
-  const here = pathname === path || pathname.endsWith(path);
-  const params = new URLSearchParams(here ? searchParams.toString() : '');
-  params.set('tab', 'memory');
-  params.set('page', saved.pageId);
-  if (history) params.set('history', '1');
-  else params.delete('history');
-  return `${here ? pathname : path}?${params.toString()}`;
+  const href = useMemoryPageHref(projectId, !!saved && saved.layer.scope !== 'company');
+  return saved ? href(saved.layer, saved.pageId, { history }) : null;
 }
 
 /** A `remember` call: one quiet line, no card. Output it cannot read falls back to the default row. */

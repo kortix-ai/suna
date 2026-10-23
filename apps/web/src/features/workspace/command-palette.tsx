@@ -65,6 +65,7 @@ import {
   paletteRowPermitted,
 } from '@/features/workspace/command-palette-visibility';
 import { useAppsRowVisible } from '@kortix/ui/workspace/sidebar/footer/project-apps-nav';
+import { useMemoryPageHref } from '@kortix/ui/workspace';
 import { ModelCapabilityIcons } from '@kortix/ui/customize/sections/llm-provider/model-capability-icons';
 import { modelIdAddsInformation } from '@/features/workspace/model-id-display';
 import {
@@ -152,6 +153,7 @@ import {
   useCreatePty,
   useCreateRuntimeSession,
   useModelStore,
+  useProjectMemorySearch,
   useProjectSessions,
   useRuntimeConnectionStore,
   useRuntimeProviders,
@@ -173,6 +175,7 @@ import {
   ChatCircleIcon as MessageCircle,
   MinusIcon as Minus,
   MagnifyingGlassIcon as Search,
+  SunDimIcon,
   TextAlignLeftIcon as TextAlignLeft,
   UsersIcon as UsersSolid,
   XIcon as X,
@@ -1045,6 +1048,35 @@ export function CommandPalette() {
   // per-project feature flags this gates on.
   const { flags: projectFlags } = useProjectFeatureFlags(open ? projectId : null);
 
+  // Memory pages (`project_channels`): the server's search, at 2 characters
+  // or more. Hits of an older query stay in the hook while the next loads, so
+  // a query cut below 2 characters shows none.
+  const tMemory = useTranslations('spaces.memory');
+  const memoryOn = open && !!projectId && projectFlags.project_channels === true && page === 'root';
+  const memorySearch = useProjectMemorySearch(
+    projectId ?? '',
+    { q: serverSessionQuery, limit: 5 },
+    { enabled: memoryOn },
+  );
+  const memoryHref = useMemoryPageHref(projectId, memoryOn);
+  const memoryQueryLongEnough = query.trim().length >= 2 && serverSessionQuery.length >= 2;
+  const rootMemoryResults = useMemo(
+    () =>
+      memoryOn && memoryQueryLongEnough
+        ? (memorySearch.data?.hits ?? []).flatMap((hit) => {
+            const href = memoryHref({ scope: hit.scope, key: hit.layer_key }, hit.page_id);
+            const place =
+              hit.scope === 'company'
+                ? tMemory('used.company')
+                : hit.scope === 'dm'
+                  ? capitalizeWords(hit.layer_name)
+                  : hit.layer_name;
+            return href ? [{ hit, href, place }] : [];
+          })
+        : [],
+    [memoryOn, memoryQueryLongEnough, memorySearch.data, memoryHref, tMemory],
+  );
+
   const allModels = useMemo(
     () => flattenModels(providers, { providerMode: modelProviderMode(providers) }),
     [providers],
@@ -1802,12 +1834,14 @@ export function CommandPalette() {
   );
 
   const hasSessionResults = rootSessionResults.length > 0 || firstChatResult;
+  const hasMemoryResults = rootMemoryResults.length > 0;
   const hasWorkspaceResults = rootWorkspaceRows.length > 0;
   const hasSettingsResults = settingsResultCount > 0;
   const hasAnyResults =
     rootCopyResults.length > 0 ||
     hasNavResults ||
     hasSessionResults ||
+    hasMemoryResults ||
     hasWorkspaceResults ||
     hasSessionActionResults ||
     hasSettingsResults;
@@ -2361,6 +2395,7 @@ export function CommandPalette() {
       filteredNavItems.length +
       rootSessionResults.length +
       (firstChatResult ? 1 : 0) +
+      rootMemoryResults.length +
       rootWorkspaceRows.length +
       sessionActionItems.length +
       settingsResultCount +
@@ -2372,6 +2407,7 @@ export function CommandPalette() {
     filteredNavItems,
     rootSessionResults,
     firstChatResult,
+    rootMemoryResults,
     rootWorkspaceRows,
     sessionActionItems,
     settingsResultCount,
@@ -2853,6 +2889,26 @@ export function CommandPalette() {
                             <span className="flex-1 truncate">{firstChatTitle}</span>
                           </CommandItem>
                         )}
+                      </CommandGroup>
+                    )}
+
+                    {hasMemoryResults && (
+                      <CommandGroup heading={tMemory('palette.heading')} forceMount>
+                        {rootMemoryResults.map(({ hit, href, place }) => (
+                          <CommandItem
+                            key={hit.page_id}
+                            // Label plus curated keywords: the title, its layer, its summary.
+                            value={sanitizeCmdkValue(`memory ${hit.title} ${place} ${hit.summary}`)}
+                            onSelect={() => {
+                              router.push(href);
+                              close();
+                            }}
+                          >
+                            <SunDimIcon className="size-4 shrink-0" />
+                            <span className="flex-1 truncate">{hit.title}</span>
+                            <span className="text-muted-foreground max-w-40 shrink-0 truncate text-xs">{place}</span>
+                          </CommandItem>
+                        ))}
                       </CommandGroup>
                     )}
 

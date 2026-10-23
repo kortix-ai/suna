@@ -22593,6 +22593,25 @@
         "openHistory": "ouvrir l’historique",
         "undoFailed": "Impossible d’annuler.",
         "failedGeneric": "Non enregistré dans la mémoire."
+      },
+      "used": {
+        "label": "A utilisé la mémoire de {places} · {count, plural, one {# page} other {# pages}}",
+        "title": "Pages avec lesquelles ce fil a commencé",
+        "company": "Entreprise",
+        "removed": "Supprimée"
+      },
+      "searchError": "Impossible de rechercher dans cette mémoire.",
+      "searchResults": "Résultats de recherche",
+      "searchTool": {
+        "title": "Recherche dans la mémoire",
+        "count": "{count, plural, one {# page} other {# pages}}",
+        "running": "Recherche dans la mémoire…",
+        "failed": "La recherche dans la mémoire a échoué : {reason}",
+        "failedGeneric": "La recherche dans la mémoire a échoué.",
+        "none": "Aucune page ne correspond à « {query} »."
+      },
+      "palette": {
+        "heading": "Mémoire"
       }
     },
     "create": {
@@ -22764,8 +22783,8 @@
     "folder": {
       "memory": "Mémoire",
       "loadError": "Impossible de charger ce dossier",
-      "memoryNoteChannel": "Ce dont les agents de {place} se souviennent. Ils ont pour consigne de le lire au début de chaque fil.",
-      "memoryNoteDm": "Ce dont {agent} se souvient de ce DM. Il a pour consigne de le lire au début de chaque fil.",
+      "memoryNoteChannel": "Ce dont les agents de {place} se souviennent. Ils le lisent au début de chaque fil.",
+      "memoryNoteDm": "Ce dont {agent} se souvient de ce DM. Il le lit au début de chaque fil.",
       "off": {
         "title": "Activer Drive",
         "description": "Les fichiers et la mémoire de {place} sont dans Drive. Activez Volumes dans Feature flags pour les utiliser.",

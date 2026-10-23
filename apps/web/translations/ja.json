@@ -22593,6 +22593,25 @@
         "openHistory": "履歴を開く",
         "undoFailed": "元に戻せませんでした。",
         "failedGeneric": "メモリに保存されませんでした。"
+      },
+      "used": {
+        "label": "{places} のメモリを使用 · {count, plural, other {# ページ}}",
+        "title": "このスレッドの開始時に読み込んだページ",
+        "company": "会社",
+        "removed": "削除済み"
+      },
+      "searchError": "このメモリを検索できませんでした。",
+      "searchResults": "検索結果",
+      "searchTool": {
+        "title": "メモリを検索しました",
+        "count": "{count, plural, other {# ページ}}",
+        "running": "メモリを検索中…",
+        "failed": "メモリの検索に失敗しました：{reason}",
+        "failedGeneric": "メモリの検索に失敗しました。",
+        "none": "「{query}」に一致するページはありません。"
+      },
+      "palette": {
+        "heading": "メモリ"
       }
     },
     "create": {
@@ -22764,8 +22783,8 @@
     "folder": {
       "memory": "メモリ",
       "loadError": "このフォルダを読み込めませんでした",
-      "memoryNoteChannel": "{place} のエージェントが覚えていること。エージェントはスレッドの開始時に毎回これを読むよう指示されています。",
-      "memoryNoteDm": "{agent} がこの DM から覚えていること。スレッドの開始時に毎回これを読むよう指示されています。",
+      "memoryNoteChannel": "{place} のエージェントが覚えていること。エージェントはスレッドの開始時に毎回これを読みます。",
+      "memoryNoteDm": "{agent} がこの DM から覚えていること。スレッドの開始時に毎回これを読みます。",
       "off": {
         "title": "Drive をオンにする",
         "description": "{place} のファイルとメモリは Drive にあります。使うには Feature flags で Volumes をオンにしてください。",

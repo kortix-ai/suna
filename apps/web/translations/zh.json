@@ -22593,6 +22593,25 @@
         "openHistory": "打开历史记录",
         "undoFailed": "无法撤销。",
         "failedGeneric": "未保存到记忆。"
+      },
+      "used": {
+        "label": "使用了 {places} 的记忆 · {count, plural, other {# 个页面}}",
+        "title": "此线程开始时使用的页面",
+        "company": "公司",
+        "removed": "已删除"
+      },
+      "searchError": "无法搜索此记忆。",
+      "searchResults": "搜索结果",
+      "searchTool": {
+        "title": "已搜索记忆",
+        "count": "{count, plural, other {# 个页面}}",
+        "running": "正在搜索记忆…",
+        "failed": "记忆搜索失败：{reason}",
+        "failedGeneric": "记忆搜索失败。",
+        "none": "没有与“{query}”匹配的页面。"
+      },
+      "palette": {
+        "heading": "记忆"
       }
     },
     "create": {
@@ -22764,8 +22783,8 @@
     "folder": {
       "memory": "记忆",
       "loadError": "无法加载此文件夹",
-      "memoryNoteChannel": "{place} 中的智能体记住的内容。智能体会被要求在每个线程开始时阅读这些内容。",
-      "memoryNoteDm": "{agent} 在此私信中记住的内容。它会被要求在每个线程开始时阅读这些内容。",
+      "memoryNoteChannel": "{place} 中的智能体记住的内容。智能体会在每个线程开始时阅读这些内容。",
+      "memoryNoteDm": "{agent} 在此私信中记住的内容。它会在每个线程开始时阅读这些内容。",
       "off": {
         "title": "开启 Drive",
         "description": "{place} 的文件和记忆保存在 Drive 中。在 Feature flags 中开启 Volumes 即可使用。",

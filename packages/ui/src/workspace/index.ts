@@ -58,6 +58,7 @@ export {
 export { ProjectSessionsView } from './sessions/project-sessions-view';
 export { SpaceView, type SpaceFolder, type SpaceTarget, type SpaceViewProps } from './spaces/space-view';
 export { MemoryView, type MemoryViewProps } from './memory/memory-view';
+export { type MemoryLayerRef, useMemoryPageHref } from '../internal/lib/memory-href';
 export { ProjectSessionList } from './sidebar/project-session-list';
 export { ProjectSidebar } from './sidebar/project-sidebar';
 export { ShareSessionModal } from './sidebar/modal/share-session-modal';
