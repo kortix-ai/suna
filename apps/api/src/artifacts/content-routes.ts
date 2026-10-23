@@ -92,9 +92,18 @@ async function serve(c: Context, row: ArtifactRow | null, at: string | null, res
   return new Response(found.response.body, { status: found.response.status === 206 ? 206 : 200, headers });
 }
 
+/** A public route's bucket: the artifact id when it is one, else the client's. */
+function publicKey(c: Context): string | null {
+  const id = c.req.param('artifactId');
+  return id && isUuid(id) ? `a:${id}` : null;
+}
+
 export function registerArtifactContentRoutes(): void {
-  artifactContentApp.use('/s/:token/*', createArtifactContentRateLimitMiddleware((c) => `s:${c.req.param('token')?.split('.')[0] ?? ''}`));
-  artifactContentApp.use('/p/:artifactId/*', createArtifactContentRateLimitMiddleware((c) => `p:${c.req.param('artifactId') ?? ''}`));
+  artifactContentApp.use('/s/:token/*', createArtifactContentRateLimitMiddleware((c) => {
+    const artifact = verifyChannelState('artifact-view', c.req.param('token'))?.a;
+    return typeof artifact === 'string' ? `a:${artifact}` : null;
+  }));
+  artifactContentApp.use('/p/:artifactId/*', createArtifactContentRateLimitMiddleware(publicKey));
 
   // Without the trailing slash, relative URLs in the page would resolve one level up.
   artifactContentApp.get('/s/:token', (c) => c.redirect(`${c.req.path}/`, 301));
@@ -111,7 +120,7 @@ export function registerArtifactContentRoutes(): void {
   });
 
   // The public page's chrome (title, type): a public artifact of a flag-on project, else 404.
-  artifactContentApp.use('/meta/:artifactId', createArtifactContentRateLimitMiddleware((c) => `p:${c.req.param('artifactId') ?? ''}`));
+  artifactContentApp.use('/meta/:artifactId', createArtifactContentRateLimitMiddleware(publicKey));
   artifactContentApp.get('/meta/:artifactId', async (c) => {
     const id = c.req.param('artifactId');
     const row = isUuid(id) ? await getArtifactById(id) : null;

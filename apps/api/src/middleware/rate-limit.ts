@@ -231,24 +231,28 @@ export function createPublicResponseRateLimitMiddleware() {
 }
 
 /**
- * Guards the authenticated `POST /v1/feedback` endpoint. Keyed on the caller's
- * user id — every credential type resolves one, and auth runs first on the
- * mounted app — so one identity cannot fill the triage surface.
- */
-/**
  * The artifact content server (`/v1/artifacts/*`): one bucket per artifact,
- * shared by every viewer. A view token or an artifact id is the key: both
- * carry 122+ random bits, so enumeration is infeasible without a per-IP bucket.
+ * shared by every viewer, plus a backstop bucket per client. The key must name
+ * an identity the caller cannot invent (a verified token's artifact, a UUID):
+ * a raw path segment would give every request a fresh bucket. `keyOf` answers
+ * null otherwise, and the client address takes over.
  */
-export function createArtifactContentRateLimitMiddleware(keyOf: (c: Context) => string) {
+export function createArtifactContentRateLimitMiddleware(keyOf: (c: Context) => string | null) {
   return async (c: Context, next: Next) => {
-    const result = artifactContentLimiter.check(keyOf(c), { limit: 3000, windowMs: 60_000 });
+    const client = artifactContentLimiter.check(`client:${requestClientKey(c)}`, { limit: 3000, windowMs: 60_000 });
+    if (!client.allowed) return quietRateLimited(c, client);
+    const result = artifactContentLimiter.check(keyOf(c) ?? `ip:${requestClientKey(c)}`, { limit: 3000, windowMs: 60_000 });
     if (!result.allowed) return quietRateLimited(c, result);
     setHeaders(c, result);
     await next();
   };
 }
 
+/**
+ * Guards the authenticated `POST /v1/feedback` endpoint. Keyed on the caller's
+ * user id — every credential type resolves one, and auth runs first on the
+ * mounted app — so one identity cannot fill the triage surface.
+ */
 export function createFeedbackRateLimitMiddleware() {
   return createAuditedRateLimitMiddleware(feedbackLimiter, (c) => {
     const userId = c.get('userId') as string | undefined;
