@@ -193,7 +193,7 @@ export async function cancelAccountDeletion(accountId: string) {
  * whole routine. The caller owns the request row (`completed` only after this
  * returns).
  */
-async function runAccountDeletion(accountId: string, userId?: string, requestId?: string) {
+export async function runAccountDeletion(accountId: string, userId?: string, requestId?: string) {
   const requester = userId === accountId ? userId : undefined;
   await performDeletion(accountId, requester);
   await deleteAccountData(accountId, requestId);

@@ -117,6 +117,8 @@ export { readStoredTranscriptWindow } from './session-log-read';
 
 // The retention purge of session content (consumed by workers/session-log-purge-worker.ts).
 export { PURGE_BATCH_SIZE, purgeSessionContent } from './session-log-purge';
+// The liveness rule of a closed account, shared with billing/services/retention-erasure.ts.
+export { LIVE as liveClosedAccountSql } from './session-log-purge';
 // The backfill of old sessions into the session log (consumed by workers/session-log-backfill-worker.ts).
 export { backfillSessionLogs } from './session-log-backfill';
 

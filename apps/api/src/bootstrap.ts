@@ -42,6 +42,7 @@ import { startProviderTransitionWorker, stopProviderTransitionWorker } from './w
 import { startSessionLifecycleWorker, stopSessionLifecycleWorker } from './workers/session-lifecycle-worker';
 import { startSessionLogBackfillWorker, stopSessionLogBackfillWorker } from './workers/session-log-backfill-worker';
 import { startSessionLogPurgeWorker, stopSessionLogPurgeWorker } from './workers/session-log-purge-worker';
+import { startRetentionErasureWorker, stopRetentionErasureWorker } from './workers/retention-erasure-worker';
 import { startSessionModelFallbackWorker, stopSessionModelFallbackWorker } from './workers/session-model-fallback-worker';
 import { handBackClaims } from './projects/surface';
 import { startSlackTurnGc, stopSlackTurnGc } from './workers/slack-turn-gc-worker';
@@ -274,6 +275,8 @@ async function startSingletonWorkers() {
   // processor of the managed table — its SQL never reached `kortix` before
   // (KRTX-1260). First tick runs immediately to drain the inherited backlog.
   startAccountDeletionSchedule();
+  // The 90-day retention backstop: closures still open 80 days after their date.
+  startRetentionErasureWorker();
   // Notification inbox: the unread-row email digest and the 90-day retention sweep.
   startNotificationWorker();
   // Retention purge of session content: rows after the D6 windows, files 7 days later.
@@ -309,6 +312,7 @@ async function stopSingletonWorkers() {
   stopSlackTurnGc();
   stopTeamsTurnGc();
   drains.push(stopAccountDeletionSchedule());
+  stopRetentionErasureWorker();
   stopNotificationWorker();
   stopSessionLogPurgeWorker();
   stopSessionModelFallbackWorker();
