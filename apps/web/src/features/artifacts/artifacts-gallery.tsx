@@ -1,6 +1,6 @@
 'use client';
 
-import type { Artifact, ArtifactListScope, ArtifactType } from '@kortix/sdk';
+import type { Artifact, ArtifactListScope } from '@kortix/sdk';
 import { useArtifactMutations, useArtifacts } from '@kortix/sdk/react';
 import { Button } from '@kortix/ui/button';
 import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
@@ -22,12 +22,14 @@ import {
   ArrowSquareOutIcon,
   DotsThreeIcon,
   MagnifyingGlassIcon,
+  PlusIcon,
   PushPinIcon,
   PushPinSlashIcon,
   ShareNetworkIcon,
-  TrashIcon,
+  XCircleIcon,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import { useLocale, useTranslations } from '@/i18n/use-translations';
@@ -35,59 +37,41 @@ import { useLocale, useTranslations } from '@/i18n/use-translations';
 import {
   ARTIFACT_TYPE_ICON,
   ArtifactFrame,
-  CREATE_TYPES,
   VISIBILITY_ICON,
   artifactHref,
   relativeTime,
   useStableViewUrl,
 } from './artifact-meta';
-import { NewArtifactDialog } from './new-artifact-dialog';
 import { ShareArtifactDialog } from './share-artifact-dialog';
 
 const SCOPES: ArtifactListScope[] = ['all', 'mine', 'shared', 'pinned'];
 
 /**
- * /projects/[id]/artifacts — the gallery: make a new doc or HTML page, and
- * every artifact the viewer may see, as live previews.
+ * /projects/[id]/artifacts — every artifact the viewer may see, as live
+ * previews, and a New doc button.
  */
 export function ArtifactsGallery({ projectId }: { projectId: string }) {
   const t = useTranslations('artifacts');
   const [scope, setScope] = useState<ArtifactListScope>('all');
   const [q, setQ] = useState('');
-  const [creating, setCreating] = useState<ArtifactType | null>(null);
+  const router = useRouter();
+  const { create } = useArtifactMutations(projectId);
+  const newDoc = async () => {
+    const a = await create.mutateAsync({ files: { 'index.md': { content: `# ${t('untitledDoc')}\n\n` } } });
+    router.push(artifactHref(projectId, a.artifact_id));
+  };
   const list = useArtifacts(projectId, { scope, q: q.trim() || undefined });
   const items = list.data ?? [];
 
   return (
     <div className="flex h-svh flex-col overflow-hidden">
-      <ProjectPageHeader title={t('title')} />
+      <ProjectPageHeader title={t('title')}>
+        <Button size="sm" variant="ghost" onClick={newDoc} disabled={create.isPending}>
+          <PlusIcon /> {t('newDoc')}
+        </Button>
+      </ProjectPageHeader>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-8 pb-20 md:px-8">
-          <section className="flex flex-col gap-3">
-            <h2 className="text-muted-foreground text-xs font-medium">{t('makeNew')}</h2>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {CREATE_TYPES.map((type) => {
-                const TypeIcon = ARTIFACT_TYPE_ICON[type];
-                return (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => setCreating(type)}
-                    className="group bg-card hover:bg-accent focus-visible:ring-ring flex flex-col items-start gap-6 rounded-lg border p-4 text-left transition-colors outline-none focus-visible:ring-2"
-                  >
-                    <span className="bg-background text-foreground grid size-10 place-items-center rounded-md border transition-transform group-hover:-translate-y-0.5">
-                      <TypeIcon className="size-5" />
-                    </span>
-                    <span className="flex flex-col gap-0.5">
-                      <span className="text-sm font-medium">{t(`type.${type}`)}</span>
-                      <span className="text-muted-foreground line-clamp-2 text-xs">{t(`typeHint.${type}`)}</span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-
           <section className="flex flex-col gap-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <Tabs value={scope} onValueChange={(v) => setScope(v as ArtifactListScope)}>
@@ -135,7 +119,6 @@ export function ArtifactsGallery({ projectId }: { projectId: string }) {
           </section>
         </div>
       </div>
-      <NewArtifactDialog projectId={projectId} type={creating} onOpenChange={(open) => !open && setCreating(null)} />
     </div>
   );
 }
@@ -149,7 +132,7 @@ function ArtifactCard({ projectId, artifact }: { projectId: string; artifact: Ar
   const TypeIcon = ARTIFACT_TYPE_ICON[artifact.type];
   const VisIcon = VISIBILITY_ICON[artifact.visibility];
   const href = artifactHref(projectId, artifact.artifact_id);
-  const viewUrl = useStableViewUrl(`${artifact.artifact_id}:${artifact.current_version}`, artifact.view_url);
+  const viewUrl = useStableViewUrl(`${artifact.artifact_id}:${artifact.updated_at}`, artifact.view_url);
 
   return (
     <div className="group bg-card hover:border-foreground/20 relative flex flex-col overflow-hidden rounded-lg border transition-colors">
@@ -192,14 +175,14 @@ function ArtifactCard({ projectId, artifact }: { projectId: string; artifact: Ar
             <DropdownMenuItem onSelect={() => mutations.pin.mutate({ artifactId: artifact.artifact_id, pinned: !artifact.pinned })}>
               {artifact.pinned ? <PushPinSlashIcon /> : <PushPinIcon />} {artifact.pinned ? t('unpin') : t('pin')}
             </DropdownMenuItem>
-            {artifact.can_edit ? (
+            {artifact.can_manage ? (
               <>
                 <DropdownMenuItem onSelect={() => setSharing(true)}>
                   <ShareNetworkIcon /> {t('share')}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}>
-                  <TrashIcon /> {t('delete')}
+                  <XCircleIcon /> {t('remove')}
                 </DropdownMenuItem>
               </>
             ) : null}
@@ -210,15 +193,15 @@ function ArtifactCard({ projectId, artifact }: { projectId: string; artifact: Ar
       <ConfirmDialog
         open={deleting}
         onOpenChange={setDeleting}
-        title={t('deleteTitle')}
-        description={t('deleteHint')}
-        confirmLabel={t('delete')}
+        title={t('removeTitle')}
+        description={t('removeHint')}
+        confirmLabel={t('remove')}
         confirmVariant="destructive"
         isPending={mutations.remove.isPending}
         onConfirm={async () => {
           await mutations.remove.mutateAsync(artifact.artifact_id);
           setDeleting(false);
-          successToast(t('deleted'));
+          successToast(t('removed'));
         }}
       />
     </div>

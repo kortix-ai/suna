@@ -1,6 +1,6 @@
-// `kortix artifacts` (flag `artifacts`): publish docs and HTML pages to the
-// project, and list, read, share, version and delete them. The API is the
-// contract; this file only maps flags to it.
+// `kortix artifacts` (flag `artifacts`): share paths of the project's Files as
+// docs (Markdown) and pages (HTML), and list, read, save, version and unshare
+// them. The API is the contract; this file only maps flags to it.
 import { readFile, readdir, stat, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, sep } from 'node:path';
 import {
@@ -11,10 +11,11 @@ import {
   listArtifactTypes,
   listArtifactVersions,
   listArtifacts,
-  publishArtifactVersion,
   readArtifactFile,
   restoreArtifactVersion,
+  saveArtifact,
   setArtifactPinned,
+  shareArtifactPath,
   updateArtifact,
   type Artifact,
   type ArtifactFileInput,
@@ -29,45 +30,47 @@ import { C, help, pad, status } from '../style.ts';
 
 const HELP = help`Usage: kortix artifacts <subcommand> [options]
 
-An artifact is published to the project as one of two types:
-  doc    a document people read and edit in place (publish Markdown or HTML)
-  html   any page or bundle: a deck, a dashboard, a mockup, a tool
-Each publish is a new version. People open it in the Kortix app (Artifacts)
-and can download it as PDF; a share link can make it public.
+An artifact is a path in the project's Files shared as one of two types:
+  doc    a Markdown file people read and edit in place (export as PDF)
+  html   an HTML page, or a folder with index.html and its assets: a deck,
+         a dashboard, a mockup, a tool
+The files are plain files in Files: edit them there (in a session, under
+/drives) or with \`publish --id\`. Every save is a version.
 
 Subcommands:
   types [<type>]             The types. With a type: its format and a starter
-                             page to copy (--starter prints only the page).
-  publish <file|dir>         Publish a new artifact. A .md file is a doc; an
-                             .html file is published as index.html; a folder
-                             publishes every file in it (it needs an
-                             index.html). Prints the link.
-                             --type doc|html (default: doc for .md, else html)
-                             --title "<title>" (default: the page's <title>)
-                             --description "<one sentence>"
+                             (--starter prints only the starter).
+  publish <file|dir>         Upload and share as a new artifact, stored in your
+                             folder in Files under Artifacts/. A .md file is a
+                             doc; an .html file or a folder with index.html is
+                             a page. Prints the link.
+                             --title "<title>" (default: the doc's # heading or
+                             the page's <title>), --description "<sentence>",
                              --visibility private|project|public (default private)
+  add <path>                 Share a path already in Files (a .md or .html
+                             file, or a folder with an index). Same options.
   publish <file|dir> --id <artifact>
-                             Publish a new version of that artifact. Files you
-                             leave out are kept. --remove <path> drops one.
-                             --base-version <n> refuses if someone published
-                             after version n (exit 3).
+                             Save the files into that artifact. A doc takes a
+                             .md file. --base-version <v> refuses the save
+                             (exit 3) when someone saved after version <v>
+                             (the entry_version from \`info\` or \`pull\`).
   ls                         Artifacts you may view, newest first.
-                             --mine, --shared (others made), --pinned,
-                             --type <type>, --search "<text>"
-  info <artifact>            Title, type, visibility, versions, files, links.
-  cat <artifact> [<path>]    Print one file's source (default index.html).
-                             --version <n> reads an old version.
-  pull <artifact> <dir>      Download every file, to edit and publish again.
+                             --mine, --shared (others shared), --pinned,
+                             --type doc|html, --search "<text>"
+  info <artifact>            Title, type, path in Files, files, links.
+  cat <artifact> [<path>]    Print one file (default the entry).
+                             --version <id> reads an old version.
+  pull <artifact> <dir>      Download its files, to edit and publish again.
   open <artifact>            Print its links (app, view, public).
   share <artifact>           --visibility private|project|public
                              --with <email|user-id> (repeat) shares a private
                              artifact with those people; --with "" clears.
   rename <artifact> "<title>"
-  versions <artifact>        Every version, newest first.
-  restore <artifact> <n>     Make version n the current version again.
+  versions <artifact>        Every save, newest first (from the Files history).
+  restore <artifact> <version-id>
+                             Write that version back, as a new save.
   pin <artifact> / unpin <artifact>
-  rm <artifact>              Delete it, every version and file. Its creator
-                             or a project manager.
+  rm <artifact>              Stop sharing it. Its files stay in Files.
 
 <artifact> is an artifact id (or its first 8 characters from \`ls\`).
 
@@ -85,18 +88,17 @@ Options:
 Exit codes: 0 ok, 1 API error, 2 usage error, 3 version conflict.
 
 Examples:
-  kortix artifacts types doc
   kortix artifacts publish report.md --title "Q3 churn report"
   kortix artifacts publish ./deck --visibility project
-  kortix artifacts publish report.html --id 3f2a1b9c --base-version 2
+  kortix artifacts add /Company/Plans/roadmap.md --visibility project
   kortix artifacts share 3f2a1b9c --visibility public
 `;
 
 const TYPES = ['doc', 'html'];
 const VISIBILITIES = ['private', 'project', 'public'];
-const KNOWN = ['types', 'publish', 'ls', 'list', 'info', 'cat', 'pull', 'open', 'share', 'rename', 'versions', 'restore', 'pin', 'unpin', 'rm', 'delete'];
+const KNOWN = ['types', 'publish', 'add', 'ls', 'list', 'info', 'cat', 'pull', 'open', 'share', 'rename', 'versions', 'restore', 'pin', 'unpin', 'rm', 'delete'];
 
-/** Every file under a folder, as published path → content. */
+/** The files to publish: a folder's tree, or one file as `index.md` / `index.html`. */
 async function collectFiles(path: string): Promise<Record<string, ArtifactFileInput>> {
   const info = await stat(path);
   if (!info.isDirectory()) return { [/\.(md|markdown)$/i.test(path) ? 'index.md' : 'index.html']: await fileInput(path) };
@@ -126,6 +128,7 @@ const ago = (iso: string) => {
 };
 
 function printLinks(a: Artifact) {
+  process.stdout.write(`  ${C.dim}files${C.reset}   ${a.path}\n`);
   process.stdout.write(`  ${C.dim}app${C.reset}     ${a.web_url}\n`);
   if (a.public_url) process.stdout.write(`  ${C.dim}public${C.reset}  ${a.public_url}\n`);
   process.stdout.write(`  ${C.dim}view${C.reset}    ${a.view_url}  ${C.dim}(signed, 12 h)${C.reset}\n`);
@@ -138,8 +141,8 @@ export async function runArtifacts(argv: string[]): Promise<number> {
   const rest = argv.slice(1);
   let f: {
     json: boolean; projectArg?: string; hostArg?: string; type?: string; title?: string; description?: string;
-    visibility?: string; id?: string; label?: string; baseVersion?: string; version?: string; search?: string;
-    remove: string[]; with: string[]; mine: boolean; shared: boolean; pinned: boolean; starter: boolean;
+    visibility?: string; id?: string; baseVersion?: string; version?: string; search?: string;
+    with: string[]; mine: boolean; shared: boolean; pinned: boolean; starter: boolean;
   };
   try {
     f = {
@@ -151,11 +154,9 @@ export async function runArtifacts(argv: string[]): Promise<number> {
       description: takeFlagValue(rest, ['--description']),
       visibility: takeFlagValue(rest, ['--visibility']),
       id: takeFlagValue(rest, ['--id']),
-      label: takeFlagValue(rest, ['--label']),
       baseVersion: takeFlagValue(rest, ['--base-version']),
       version: takeFlagValue(rest, ['--version']),
       search: takeFlagValue(rest, ['--search']),
-      remove: takeFlagValues(rest, ['--remove']),
       with: takeFlagValues(rest, ['--with']),
       mine: takeFlagBool(rest, ['--mine']),
       shared: takeFlagBool(rest, ['--shared']),
@@ -168,12 +169,8 @@ export async function runArtifacts(argv: string[]): Promise<number> {
   const unknown = rest.find((arg) => arg.startsWith('-') && arg !== '-');
   if (unknown) return fail(`unknown option "${unknown}". Run \`kortix artifacts --help\`.`);
   if (!KNOWN.includes(sub)) return fail(`unknown subcommand "${sub}". Run \`kortix artifacts --help\`.`);
-  if (f.type && !TYPES.includes(f.type)) return fail(`--type must be one of ${TYPES.join(', ')}.`);
+  if (f.type && !TYPES.includes(f.type)) return fail(`--type must be doc or html.`);
   if (f.visibility && !VISIBILITIES.includes(f.visibility)) return fail(`--visibility must be private, project or public.`);
-  const version = f.version ? Number(f.version) : undefined;
-  if (f.version && !(Number.isInteger(version) && version! > 0)) return fail('--version must be a version number.');
-  const baseVersion = f.baseVersion ? Number(f.baseVersion) : undefined;
-  if (f.baseVersion && !(Number.isInteger(baseVersion) && baseVersion! > 0)) return fail('--base-version must be a version number.');
 
   const ctx = await resolveProjectContext({ projectArg: f.projectArg, hostArg: f.hostArg });
   if (!ctx) return 1;
@@ -182,6 +179,11 @@ export async function runArtifacts(argv: string[]): Promise<number> {
     if (f.json) emitJson(payload);
     else process.stdout.write(`${line}\n`);
     return 0;
+  };
+  const meta = {
+    ...(f.title ? { title: f.title } : {}),
+    ...(f.description ? { description: f.description } : {}),
+    ...(f.visibility ? { visibility: f.visibility as ArtifactVisibility } : {}),
   };
 
   try {
@@ -196,6 +198,12 @@ export async function runArtifacts(argv: string[]): Promise<number> {
         return null;
       };
       const [a0, a1] = rest;
+      const shared = (a: Artifact, verb: string) => {
+        if (f.json) return out(a, '');
+        process.stdout.write(`${status.ok(`${verb} "${a.title}" (${a.type}, ${a.visibility})`)} ${C.dim}${short(a.artifact_id)}${C.reset}\n`);
+        printLinks(a);
+        return 0;
+      };
 
       switch (sub) {
         case 'types': {
@@ -205,44 +213,38 @@ export async function runArtifacts(argv: string[]): Promise<number> {
             if (!t) return fail(`unknown type "${a0}". One of ${TYPES.join(', ')}.`);
             if (f.json) return out(t, '');
             if (f.starter) return out(null, t.starter);
-            process.stdout.write(`${C.bold}${t.name}${C.reset} (${t.type}): ${t.description}\n\nFormat:\n${t.format.split('\n').map((l) => `  - ${l}`).join('\n')}\n\nStarter page:\n\n${t.starter}`);
+            process.stdout.write(`${C.bold}${t.name}${C.reset} (${t.type}): ${t.description}\n\nFormat:\n${t.format.split('\n').map((l) => `  - ${l}`).join('\n')}\n\nStarter:\n\n${t.starter}`);
             return 0;
           }
           if (f.json) return out(types, '');
-          for (const t of types) process.stdout.write(`${pad(t.type, 11)}${t.description}\n`);
-          process.stdout.write(`\nRun \`kortix artifacts types <type>\` for its format and a starter page.\n`);
+          for (const t of types) process.stdout.write(`${pad(t.type, 7)}${t.description}\n`);
+          process.stdout.write(`\nRun \`kortix artifacts types <type>\` for its format and a starter.\n`);
           return 0;
         }
         case 'publish': {
-          if (!a0) return missing('an HTML file or a folder');
-          let files: Record<string, ArtifactFileInput | null>;
+          if (!a0) return missing('a file or a folder');
+          let files: Record<string, ArtifactFileInput>;
           try {
             files = await collectFiles(a0);
           } catch {
             return fail(`Cannot read ${a0}.`);
           }
-          for (const p of f.remove) files[p] = null;
-          const common = {
-            files,
-            ...(f.title ? { title: f.title } : {}),
-            ...(f.description ? { description: f.description } : {}),
-            ...(f.type ? { type: f.type as ArtifactType } : files['index.md'] && !files['index.html'] ? { type: 'doc' as const } : {}),
-            ...(f.label ? { label: f.label } : {}),
-          };
           if (f.id) {
             const id = await resolve(f.id);
             if (!id) return 1;
-            const a = await publishArtifactVersion(pid, id, { ...common, ...(baseVersion ? { base_version: baseVersion } : {}) });
-            if (f.json) return out(a, '');
-            process.stdout.write(`${status.ok(`Published version ${a.current_version} of "${a.title}"`)} ${C.dim}${short(a.artifact_id)}${C.reset}\n`);
-            printLinks(a);
-            return 0;
+            const a = await saveArtifact(pid, id, {
+              files,
+              ...(f.title ? { title: f.title } : {}),
+              ...(f.description ? { description: f.description } : {}),
+              ...(f.baseVersion ? { base_version: f.baseVersion } : {}),
+            });
+            return shared(a, 'Saved');
           }
-          const a = await createArtifact(pid, { ...common, ...(f.visibility ? { visibility: f.visibility as ArtifactVisibility } : {}) });
-          if (f.json) return out(a, '');
-          process.stdout.write(`${status.ok(`Published "${a.title}" (${a.type}, ${a.visibility})`)} ${C.dim}${short(a.artifact_id)}${C.reset}\n`);
-          printLinks(a);
-          return 0;
+          return shared(await createArtifact(pid, { files, ...meta }), 'Published');
+        }
+        case 'add': {
+          if (!a0) return missing('a path in Files');
+          return shared(await shareArtifactPath(pid, { path: a0.startsWith('/') ? a0 : `/${a0}`, ...meta }), 'Shared');
         }
         case 'ls':
         case 'list': {
@@ -251,7 +253,7 @@ export async function runArtifacts(argv: string[]): Promise<number> {
           if (f.json) return out(list, '');
           if (!list.length) return out(null, 'No artifacts yet. Publish one with `kortix artifacts publish <file>`.');
           for (const a of list) {
-            process.stdout.write(`${C.dim}${short(a.artifact_id)}${C.reset}  ${pad(a.type, 10)}${pad(a.visibility, 9)}${pad(`v${a.current_version}`, 5)}${pad(ago(a.updated_at), 9)}${a.pinned ? '★ ' : ''}${a.title}\n`);
+            process.stdout.write(`${C.dim}${short(a.artifact_id)}${C.reset}  ${pad(a.type, 6)}${pad(a.visibility, 9)}${pad(ago(a.updated_at), 9)}${a.pinned ? '★ ' : ''}${a.title}  ${C.dim}${a.path}${C.reset}\n`);
           }
           return 0;
         }
@@ -259,11 +261,12 @@ export async function runArtifacts(argv: string[]): Promise<number> {
         case 'open': {
           const id = await resolve(a0);
           if (!id) return a0 ? 1 : missing('an artifact id');
-          const a = await getArtifact(pid, id, version ? { version } : {});
+          const a = await getArtifact(pid, id, f.version ? { version: f.version } : {});
           if (f.json) return out(a, '');
           process.stdout.write(`${C.bold}${a.title}${C.reset}  ${C.dim}${a.artifact_id}${C.reset}\n`);
           if (sub === 'info') {
-            process.stdout.write(`  ${a.type} · ${a.visibility}${a.shared_with_user_ids.length ? ` + ${a.shared_with_user_ids.length} people` : ''} · version ${a.version.version} of ${a.current_version} · by ${a.created_by.name ?? a.created_by.email ?? a.created_by.user_id} · updated ${ago(a.updated_at)}\n`);
+            process.stdout.write(`  ${a.type} · ${a.visibility}${a.shared_with_user_ids.length ? ` + ${a.shared_with_user_ids.length} people` : ''} · by ${a.created_by.name ?? a.created_by.email ?? a.created_by.user_id} · updated ${ago(a.updated_at)}${a.can_edit ? '' : ' · view only'}\n`);
+            process.stdout.write(`  ${C.dim}entry_version${C.reset} ${a.entry_version ?? '-'}\n`);
             if (a.description) process.stdout.write(`  ${a.description}\n`);
             for (const file of a.version.files) process.stdout.write(`  ${C.dim}${pad(String(file.size), 9)}${C.reset}${file.path}\n`);
           }
@@ -273,7 +276,7 @@ export async function runArtifacts(argv: string[]): Promise<number> {
         case 'cat': {
           const id = await resolve(a0);
           if (!id) return a0 ? 1 : missing('an artifact id');
-          const blob = await readArtifactFile(pid, id, { path: a1, version });
+          const blob = await readArtifactFile(pid, id, { ...(a1 ? { path: a1 } : {}), ...(f.version ? { version: f.version } : {}) });
           process.stdout.write(new Uint8Array(await blob.arrayBuffer()));
           return 0;
         }
@@ -281,14 +284,16 @@ export async function runArtifacts(argv: string[]): Promise<number> {
           const id = await resolve(a0);
           if (!id) return a0 ? 1 : missing('an artifact id');
           if (!a1) return missing('a folder to download into');
-          const a = await getArtifact(pid, id, version ? { version } : {});
+          const a = await getArtifact(pid, id, f.version ? { version: f.version } : {});
           for (const file of a.version.files) {
             const target = join(a1, ...file.path.split('/'));
             await mkdir(dirname(target), { recursive: true });
-            await writeFile(target, new Uint8Array(await (await readArtifactFile(pid, id, { path: file.path, version: a.version.version })).arrayBuffer()));
+            const blob = await readArtifactFile(pid, id, { path: file.path, ...(f.version ? { version: f.version } : {}) });
+            await writeFile(target, new Uint8Array(await blob.arrayBuffer()));
           }
-          return out({ dir: a1, version: a.version.version, files: a.version.files.map((x) => x.path) },
-            status.ok(`Downloaded version ${a.version.version} (${a.version.files.length} files) to ${a1}. Publish changes with \`kortix artifacts publish ${a1} --id ${short(id)} --base-version ${a.version.version}\`.`));
+          const source = a.version.files.length === 1 ? join(a1, a.version.files[0]!.path) : a1;
+          return out({ dir: a1, entry_version: a.entry_version, files: a.version.files.map((x) => x.path) },
+            status.ok(`Downloaded ${a.version.files.length} file(s) to ${a1}. Save changes with \`kortix artifacts publish ${source} --id ${short(id)} --base-version ${a.entry_version}\`.`));
         }
         case 'share': {
           const id = await resolve(a0);
@@ -330,18 +335,16 @@ export async function runArtifacts(argv: string[]): Promise<number> {
           if (!id) return a0 ? 1 : missing('an artifact id');
           const versions = await listArtifactVersions(pid, id);
           if (f.json) return out(versions, '');
-          for (const v of versions) {
-            process.stdout.write(`${pad(`v${v.version}`, 6)}${pad(ago(v.created_at), 9)}${pad(`${v.files.length} files`, 10)}${v.label ?? ''}${v.created_by_session_id ? ` ${C.dim}(session ${short(v.created_by_session_id)})${C.reset}` : ''}\n`);
-          }
+          if (!versions.length) return out(null, 'No saves in the recent Files history.');
+          for (const v of versions) process.stdout.write(`${pad(`#${v.number}`, 6)}${pad(ago(v.created_at), 9)}${C.dim}${v.id}${C.reset}\n`);
           return 0;
         }
         case 'restore': {
           const id = await resolve(a0);
-          const n = Number(a1);
           if (!id) return a0 ? 1 : missing('an artifact id');
-          if (!Number.isInteger(n) || n < 1) return missing('the version number to restore');
-          const a = await restoreArtifactVersion(pid, id, n);
-          return out(a, status.ok(`Version ${n} is now version ${a.current_version} of "${a.title}"`));
+          if (!a1) return missing('the version id to restore (from `kortix artifacts versions`)');
+          const a = await restoreArtifactVersion(pid, id, a1);
+          return out(a, status.ok(`Restored "${a.title}" to that version, as a new save`));
         }
         case 'pin':
         case 'unpin': {
@@ -354,7 +357,7 @@ export async function runArtifacts(argv: string[]): Promise<number> {
           const id = await resolve(a0);
           if (!id) return a0 ? 1 : missing('an artifact id');
           await deleteArtifact(pid, id);
-          return out({ deleted: true, artifact_id: id }, status.ok(`Deleted ${short(id)}`));
+          return out({ deleted: true, artifact_id: id }, status.ok(`Stopped sharing ${short(id)}; its files stay in Files`));
         }
       }
     });

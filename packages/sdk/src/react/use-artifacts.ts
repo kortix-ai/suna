@@ -8,13 +8,16 @@ import {
   listArtifactTypes,
   listArtifactVersions,
   listArtifacts,
-  publishArtifactVersion,
+  saveArtifact,
+  shareArtifactPath,
   restoreArtifactVersion,
   setArtifactPinned,
   updateArtifact,
   type ArtifactListScope,
   type ArtifactType,
   type PublishArtifactInput,
+  type SaveArtifactInput,
+  type ShareArtifactPathInput,
   type UpdateArtifactInput,
 } from '../core/rest/projects-client';
 import { contract } from './query-contracts';
@@ -33,8 +36,8 @@ export function useArtifacts(
   });
 }
 
-/** One artifact at a version (default current), with its files and a signed `view_url`. */
-export function useArtifact(projectId: string | null | undefined, artifactId: string | null | undefined, version?: number) {
+/** One artifact now, or at a version (a Files commit), with its files and a signed `view_url`. */
+export function useArtifact(projectId: string | null | undefined, artifactId: string | null | undefined, version?: string) {
   return useQuery({
     queryKey: qk.project.artifact(projectId ?? '', artifactId ?? '', version ?? 'current'),
     queryFn: () => getArtifact(projectId as string, artifactId as string, version ? { version } : {}),
@@ -69,9 +72,9 @@ export function useArtifactMutations(projectId: string) {
   const opts = { onSuccess: refresh };
   return {
     create: useMutation({ mutationFn: (input: PublishArtifactInput) => createArtifact(projectId, input), ...opts }),
-    publish: useMutation({
-      mutationFn: ({ artifactId, ...input }: Omit<PublishArtifactInput, 'visibility'> & { artifactId: string }) =>
-        publishArtifactVersion(projectId, artifactId, input),
+    share: useMutation({ mutationFn: (input: ShareArtifactPathInput) => shareArtifactPath(projectId, input), ...opts }),
+    save: useMutation({
+      mutationFn: ({ artifactId, ...input }: SaveArtifactInput & { artifactId: string }) => saveArtifact(projectId, artifactId, input),
       ...opts,
     }),
     update: useMutation({
@@ -84,7 +87,7 @@ export function useArtifactMutations(projectId: string) {
       ...opts,
     }),
     restore: useMutation({
-      mutationFn: ({ artifactId, version }: { artifactId: string; version: number }) => restoreArtifactVersion(projectId, artifactId, version),
+      mutationFn: ({ artifactId, version }: { artifactId: string; version: string }) => restoreArtifactVersion(projectId, artifactId, version),
       ...opts,
     }),
   };

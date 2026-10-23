@@ -1293,7 +1293,7 @@
         },
         "artifacts": {
           "name": "Artefakte",
-          "description": "Agenten und Personen veröffentlichen Dokumente und HTML-Seiten (Präsentationen, Dashboards, Mockups, Tools) im Projekt. Dokumente werden direkt bearbeitet, jede Veröffentlichung ist eine Version, jedes Artefakt lässt sich als PDF exportieren, und ein Freigabelink macht es privat, für das Projekt, für ausgewählte Personen oder öffentlich. Fügt die Seite „Artefakte“ und `kortix artifacts` hinzu."
+          "description": "Teile Dokumente (Markdown) und HTML-Seiten (Präsentationen, Dashboards, Mockups, Tools) aus Dateien mit dem Projekt, ausgewählten Personen oder allen mit einem Link. Dokumente werden direkt bearbeitet, jedes Speichern ist eine Version aus dem Dateien-Verlauf, und Dokumente lassen sich als PDF exportieren. Fügt die Seite „Artefakte“ und `kortix artifacts` hinzu."
         }
       }
     },
@@ -22487,15 +22487,10 @@
   },
   "artifacts": {
     "title": "Artefakte",
-    "gateDescription": "Dokumente und HTML-Seiten, die Agenten und Personen veröffentlichen, mit Versionen, PDF-Export und Freigabelinks.",
-    "makeNew": "Etwas Neues erstellen",
+    "gateDescription": "Teile Dokumente und HTML-Seiten aus Dateien mit deinem Team oder allen mit einem Link. Dokumente werden direkt bearbeitet; jedes Speichern ist eine Version.",
     "type": {
       "doc": "Dokument",
       "html": "HTML"
-    },
-    "typeHint": {
-      "doc": "Eine Spezifikation, ein Bericht oder ein Memo. Schreibe und bearbeite es wie ein Dokument.",
-      "html": "Eine beliebige Seite: eine Präsentation, ein Dashboard, ein Mockup oder ein Tool."
     },
     "scope": {
       "all": "Alle",
@@ -22507,7 +22502,7 @@
     "loadError": "Artefakte konnten nicht geladen werden.",
     "retry": "Erneut versuchen",
     "empty": "Noch keine Artefakte",
-    "emptyHint": "Bitte einen Agenten um ein Dokument, eine Präsentation oder ein Dashboard, oder starte oben selbst eines.",
+    "emptyHint": "Bitte einen Agenten um ein Dokument, eine Präsentation oder ein Dashboard, oder starte ein neues Dokument.",
     "emptyFiltered": "Keine passenden Artefakte",
     "updated": "Aktualisiert {time}",
     "pinned": "Angeheftet",
@@ -22527,15 +22522,6 @@
     "unpin": "Lösen",
     "share": "Teilen",
     "rename": "Umbenennen",
-    "delete": "Löschen",
-    "deleteTitle": "Dieses Artefakt löschen?",
-    "deleteHint": "Alle Versionen und Dateien werden gelöscht, und die Links funktionieren nicht mehr.",
-    "deleted": "Artefakt gelöscht",
-    "untitled": "{type} ohne Titel",
-    "newTitle": "Neu: {type}",
-    "newPlaceholder": "Beschreibe, was erstellt werden soll. Füge Daten, Notizen oder Links ein.",
-    "startBlank": "Leer starten",
-    "createWithAgent": "Mit Agent erstellen",
     "shareTitle": "„{title}“ teilen",
     "shareHint": "Lege fest, wer dieses Artefakt öffnen kann.",
     "generalAccess": "Allgemeiner Zugriff",
@@ -22548,23 +22534,18 @@
     "shareSaved": "Freigabe aktualisiert",
     "cancel": "Abbrechen",
     "save": "Speichern",
-    "saving": "Speichern…",
-    "saved": "Als Version {version} gespeichert",
     "back": "Zurück zu den Artefakten",
-    "versions": "Versionen",
-    "versionShort": "v{version}",
     "current": "Aktuell",
-    "viewingOld": "Du siehst Version {version}. Die aktuelle Version ist {current}.",
+    "viewingOld": "Du siehst die Version von {time}.",
     "backToCurrent": "Zurück zur aktuellen",
     "restore": "Wiederherstellen",
-    "restored": "Version {version} ist jetzt Version {current}",
+    "restored": "Als neuer Stand wiederhergestellt",
     "bold": "Fett",
     "italic": "Kursiv",
     "bulletList": "Aufzählung",
     "link": "Link",
     "linkPrompt": "Link-URL",
     "fullScreen": "Vollbild",
-    "download": "HTML herunterladen",
     "askAgent": "Agent fragen",
     "askAgentTitle": "Einen Agenten bitten, dieses Artefakt zu ändern",
     "askAgentPlaceholder": "Was soll sich ändern?",
@@ -22579,8 +22560,6 @@
       "saving": "Speichern…",
       "error": "Nicht gespeichert"
     },
-    "editCode": "Code bearbeiten",
-    "downloadPdf": "PDF herunterladen",
     "placeholder": "Schreibe etwas, oder tippe # für eine Überschrift, - für eine Liste, [ ] für eine Aufgabe",
     "placeholderHeading": "Titel",
     "strike": "Durchgestrichen",
@@ -22600,6 +22579,18 @@
     "addColumn": "Spalte hinzufügen",
     "deleteRow": "Zeile löschen",
     "deleteTable": "Tabelle löschen",
-    "conflict": "Jemand anderes hat eine neuere Version veröffentlicht. Lade die Seite neu, um sie zu sehen; deine letzten Änderungen wurden nicht gespeichert."
+    "conflict": "Jemand anderes hat dieses Dokument gespeichert, nachdem du es geöffnet hast. Lade die Seite neu, um die Version zu sehen; deine letzten Änderungen wurden nicht gespeichert.",
+    "newDoc": "Neues Dokument",
+    "untitledDoc": "Unbenanntes Dokument",
+    "history": "Verlauf",
+    "historyEmpty": "Keine Speicherstände im letzten Dateien-Verlauf.",
+    "saves": "{count} Speicherstände",
+    "viewing": "Ansicht",
+    "exportPdf": "Als PDF exportieren",
+    "openInFiles": "In Dateien anzeigen",
+    "remove": "Nicht mehr teilen",
+    "removeTitle": "Dieses Artefakt nicht mehr teilen?",
+    "removeHint": "Es verschwindet aus den Artefakten, und seine Links funktionieren nicht mehr. Die Dateien bleiben in Dateien erhalten.",
+    "removed": "Wird nicht mehr geteilt"
   }
 }

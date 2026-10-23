@@ -434,9 +434,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'artifacts',
     name: 'Artifacts',
     description:
-      'Agents and people publish docs, slides, boards and dashboards as HTML pages: a gallery per project, versions, editing, and share links that are private, for the project, for chosen people, or public.',
+      'Share docs (Markdown) and HTML pages from Files: a gallery per project, a doc editor, versions from the Files history, PDF export for docs, and share links that are private, for the project, for chosen people, or public.',
     stability: 'beta',
-    // The pages live on a Platinum volume per project.
+    // Artifacts are paths in Files, a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
     platformDefault: () => false,
     enforcement: 'routes',

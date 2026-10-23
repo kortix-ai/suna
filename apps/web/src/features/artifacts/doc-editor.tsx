@@ -36,6 +36,8 @@ import { BubbleMenu, FloatingMenu } from '@tiptap/react/menus';
 import StarterKit from '@tiptap/starter-kit';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 
+import { htmlToMarkdown, markdownToHtml } from './markdown';
+
 import { useTranslations } from '@/i18n/use-translations';
 
 export type DocSaveStatus = 'saved' | 'unsaved' | 'saving' | 'error';
@@ -50,38 +52,14 @@ const THEME_VARS = {
   '--kx-doc-accent': 'var(--kortix-blue)',
 } as CSSProperties;
 
-const AUTOSAVE_MS = 1_200;
-
-/** The stored page → the body the editor loads, with relative image paths made absolute against the page. */
-function parseDoc(html: string, baseUrl: string): { body: string; images: Map<string, string> } {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  const images = new Map<string, string>();
-  doc.body.querySelectorAll('img[src]').forEach((img) => {
-    const src = img.getAttribute('src')!;
-    if (/^([a-z]+:|\/\/|data:)/i.test(src)) return;
-    const absolute = new URL(src, baseUrl).toString();
-    images.set(absolute, src);
-    img.setAttribute('src', absolute);
-  });
-  return { body: doc.body.innerHTML, images };
-}
-
-/** The editor's content → the stored page: a full HTML document titled by its first heading. */
-function serializeDoc(editor: Editor, images: Map<string, string>, fallbackTitle: string): { html: string; title: string } {
-  let body = editor.getHTML();
-  for (const [absolute, relative] of images) body = body.split(absolute).join(relative);
-  const firstHeading = editor.$node('heading')?.textContent.trim();
-  const title = firstHeading || fallbackTitle;
-  const escaped = title.replace(/[<>&"]/g, (c) => `&#${c.charCodeAt(0)};`);
-  return { html: `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><title>${escaped}</title></head>\n<body>\n${body}\n</body></html>\n`, title };
-}
+const AUTOSAVE_MS = 2_000;
 
 /**
- * A doc artifact, edited in place: the same stylesheet the published page uses,
- * Markdown shortcuts (`# `, `- `, `1. `, `[ ] `, `> `, ``` ```), a menu on
- * selected text, a `+` menu on an empty line, tables, task lists, links and
- * images. Changes save by themselves; saves within 10 minutes fold into one
- * version (`amend`).
+ * A doc artifact, edited in place: its Markdown file in Files, shown with the
+ * same stylesheet the published page uses. Markdown shortcuts (`# `, `- `,
+ * `1. `, `[ ] `, `> `, ``` ```), a menu on selected text, a `+` menu on an
+ * empty line, tables, task lists, links and images. Changes save themselves
+ * back to the file; each save is a commit of the Files volume.
  */
 export function DocEditor({
   projectId,
@@ -95,22 +73,22 @@ export function DocEditor({
   onStatus: (status: DocSaveStatus) => void;
 }) {
   const t = useTranslations('artifacts');
-  const { publish } = useArtifactMutations(projectId);
-  const [loaded, setLoaded] = useState<{ body: string; images: Map<string, string> } | null>(null);
-  const base = useRef(artifact.current_version);
+  const { save: saveMutation } = useArtifactMutations(projectId);
+  const [loaded, setLoaded] = useState<string | null>(null);
+  const base = useRef(artifact.entry_version);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saving = useRef<Promise<unknown> | null>(null);
   const stopped = useRef(false);
-  const latest = useRef({ publish, onStatus, artifact });
+  const latest = useRef({ save: saveMutation, onStatus, artifact });
   useEffect(() => {
-    latest.current = { publish, onStatus, artifact };
+    latest.current = { save: saveMutation, onStatus, artifact };
   });
 
   useEffect(() => {
     let live = true;
-    readArtifactFile(projectId, artifact.artifact_id, { version: artifact.version.version })
+    readArtifactFile(projectId, artifact.artifact_id, artifact.version.id ? { version: artifact.version.id } : {})
       .then((blob) => blob.text())
-      .then((html) => live && setLoaded(parseDoc(html, artifact.version.view_url)))
+      .then((markdown) => live && setLoaded(markdownToHtml(markdown)))
       .catch((err: Error) => errorToast(err.message));
     return () => {
       live = false;
@@ -121,21 +99,18 @@ export function DocEditor({
   }, []);
 
   const save = async (editor: Editor) => {
-    if (stopped.current || !loaded) return;
-    const { publish: run, onStatus: report, artifact: current } = latest.current;
-    const { html, title } = serializeDoc(editor, loaded.images, current.title);
+    if (stopped.current || loaded === null) return;
+    const { save: run, onStatus: report, artifact: current } = latest.current;
     report('saving');
     const attempt = run.mutateAsync({
       artifactId: current.artifact_id,
-      base_version: base.current,
-      amend: true,
-      ...(title !== current.title ? { title } : {}),
-      files: { 'index.html': { content: html } },
+      ...(base.current ? { base_version: base.current } : {}),
+      files: { 'index.md': { content: htmlToMarkdown(editor.getHTML()) } },
     });
     saving.current = attempt;
     try {
       const next = await attempt;
-      base.current = next.current_version;
+      base.current = next.entry_version;
       report(timer.current ? 'unsaved' : 'saved');
     } catch (err) {
       const conflict = (err as { status?: number }).status === 409;
@@ -159,7 +134,7 @@ export function DocEditor({
           placeholder: ({ node }) => (node.type.name === 'heading' ? t('placeholderHeading') : t('placeholder')),
         }),
       ],
-      content: loaded?.body ?? '',
+      content: loaded ?? '',
       onUpdate: ({ editor: e }) => {
         if (!editable) return;
         latest.current.onStatus('unsaved');
@@ -204,7 +179,7 @@ export function DocEditor({
   return (
     <div className="kx-doc min-h-full" style={THEME_VARS}>
       <style>{ARTIFACT_DOC_CSS}</style>
-      {!loaded || !editor ? (
+      {loaded === null || !editor ? (
         <div className="flex flex-col gap-3">
           <Skeleton className="h-10 w-2/3" />
           <Skeleton className="h-4 w-full" />

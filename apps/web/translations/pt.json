@@ -1293,7 +1293,7 @@
         },
         "artifacts": {
           "name": "Artefatos",
-          "description": "Agentes e pessoas publicam documentos e páginas HTML (apresentações, painéis, mockups, ferramentas) no projeto. Os documentos são editados no próprio lugar, cada publicação é uma versão, qualquer artefato pode ser exportado em PDF e um link de compartilhamento o deixa privado, visível para o projeto, para pessoas escolhidas ou público. Adiciona a página Artefatos e `kortix artifacts`."
+          "description": "Compartilhe documentos (Markdown) e páginas HTML (apresentações, painéis, mockups, ferramentas) de Arquivos com o projeto, pessoas escolhidas ou qualquer pessoa com um link. Os documentos são editados no próprio lugar, cada salvamento é uma versão do histórico de Arquivos e os documentos podem ser exportados em PDF. Adiciona a página Artefatos e `kortix artifacts`."
         }
       }
     },
@@ -22487,15 +22487,10 @@
   },
   "artifacts": {
     "title": "Artefatos",
-    "gateDescription": "Documentos e páginas HTML que agentes e pessoas publicam, com versões, exportação em PDF e links de compartilhamento.",
-    "makeNew": "Criar algo novo",
+    "gateDescription": "Compartilhe documentos e páginas HTML de Arquivos com sua equipe ou qualquer pessoa com um link. Os documentos são editados no próprio lugar; cada salvamento é uma versão.",
     "type": {
       "doc": "Documento",
       "html": "HTML"
-    },
-    "typeHint": {
-      "doc": "Uma especificação, um relatório ou um memorando. Escreva e edite como um documento.",
-      "html": "Qualquer página: uma apresentação, um painel, um mockup ou uma ferramenta."
     },
     "scope": {
       "all": "Todos",
@@ -22507,7 +22502,7 @@
     "loadError": "Não foi possível carregar os artefatos.",
     "retry": "Tentar novamente",
     "empty": "Nenhum artefato ainda",
-    "emptyHint": "Peça a um agente um documento, uma apresentação ou um painel, ou comece um acima.",
+    "emptyHint": "Peça a um agente um documento, uma apresentação ou um painel, ou crie um novo documento.",
     "emptyFiltered": "Nenhum artefato corresponde",
     "updated": "Atualizado {time}",
     "pinned": "Fixado",
@@ -22527,15 +22522,6 @@
     "unpin": "Desafixar",
     "share": "Compartilhar",
     "rename": "Renomear",
-    "delete": "Excluir",
-    "deleteTitle": "Excluir este artefato?",
-    "deleteHint": "Todas as versões e arquivos são excluídos, e os links deixam de funcionar.",
-    "deleted": "Artefato excluído",
-    "untitled": "{type} sem título",
-    "newTitle": "Novo: {type}",
-    "newPlaceholder": "Descreva o que criar. Cole dados, notas ou links.",
-    "startBlank": "Começar em branco",
-    "createWithAgent": "Criar com o agente",
     "shareTitle": "Compartilhar “{title}”",
     "shareHint": "Escolha quem pode abrir este artefato.",
     "generalAccess": "Acesso geral",
@@ -22548,23 +22534,18 @@
     "shareSaved": "Compartilhamento atualizado",
     "cancel": "Cancelar",
     "save": "Salvar",
-    "saving": "Salvando…",
-    "saved": "Salvo como versão {version}",
     "back": "Voltar aos artefatos",
-    "versions": "Versões",
-    "versionShort": "v{version}",
     "current": "Atual",
-    "viewingOld": "Você está vendo a versão {version}. A versão atual é a {current}.",
+    "viewingOld": "Você está vendo a versão de {time}.",
     "backToCurrent": "Voltar à atual",
     "restore": "Restaurar",
-    "restored": "A versão {version} agora é a versão {current}",
+    "restored": "Restaurado como um novo salvamento",
     "bold": "Negrito",
     "italic": "Itálico",
     "bulletList": "Lista com marcadores",
     "link": "Link",
     "linkPrompt": "URL do link",
     "fullScreen": "Tela cheia",
-    "download": "Baixar HTML",
     "askAgent": "Perguntar ao agente",
     "askAgentTitle": "Peça a um agente para alterar este artefato",
     "askAgentPlaceholder": "O que deve mudar?",
@@ -22579,8 +22560,6 @@
       "saving": "Salvando…",
       "error": "Não salvo"
     },
-    "editCode": "Editar código",
-    "downloadPdf": "Baixar PDF",
     "placeholder": "Escreva, ou digite # para um título, - para uma lista, [ ] para uma tarefa",
     "placeholderHeading": "Título",
     "strike": "Tachado",
@@ -22600,6 +22579,18 @@
     "addColumn": "Adicionar coluna",
     "deleteRow": "Excluir linha",
     "deleteTable": "Excluir tabela",
-    "conflict": "Outra pessoa publicou uma versão mais recente. Recarregue a página para vê-la; suas últimas alterações não foram salvas."
+    "conflict": "Outra pessoa salvou este documento depois que você o abriu. Recarregue para ver a versão dela; suas últimas alterações não foram salvas.",
+    "newDoc": "Novo documento",
+    "untitledDoc": "Documento sem título",
+    "history": "Histórico",
+    "historyEmpty": "Nenhum salvamento no histórico recente de Arquivos.",
+    "saves": "{count} salvamentos",
+    "viewing": "Visualizando",
+    "exportPdf": "Exportar como PDF",
+    "openInFiles": "Mostrar em Arquivos",
+    "remove": "Parar de compartilhar",
+    "removeTitle": "Parar de compartilhar este artefato?",
+    "removeHint": "Ele sai de Artefatos e seus links deixam de funcionar. Os arquivos continuam em Arquivos.",
+    "removed": "Não é mais compartilhado"
   }
 }

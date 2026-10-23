@@ -516,6 +516,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "PUT|v1|projects|:projectId|artifacts|:artifactId|pin",
   "POST|v1|projects|:projectId|artifacts|:artifactId|restore",
   "GET|v1|projects|:projectId|artifacts|:artifactId|versions",
+  "POST|v1|projects|:projectId|artifacts|share",
   "GET|v1|projects|:projectId|artifacts|types",
   "POST|v1|projects|:projectId|attachments",
   "DELETE|v1|projects|:projectId|attachments|:attachmentId",

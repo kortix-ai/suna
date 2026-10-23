@@ -1293,7 +1293,7 @@
         },
         "artifacts": {
           "name": "Artefatti",
-          "description": "Agenti e persone pubblicano documenti e pagine HTML (presentazioni, dashboard, mockup, strumenti) nel progetto. I documenti si modificano direttamente, ogni pubblicazione è una versione, ogni artefatto si esporta in PDF e un link di condivisione lo rende privato, visibile al progetto, a persone scelte o pubblico. Aggiunge la pagina Artefatti e `kortix artifacts`."
+          "description": "Condividi documenti (Markdown) e pagine HTML (presentazioni, dashboard, mockup, strumenti) da File con il progetto, persone scelte o chiunque abbia un link. I documenti si modificano direttamente, ogni salvataggio è una versione dalla cronologia di File e i documenti si esportano in PDF. Aggiunge la pagina Artefatti e `kortix artifacts`."
         }
       }
     },
@@ -22487,15 +22487,10 @@
   },
   "artifacts": {
     "title": "Artefatti",
-    "gateDescription": "Documenti e pagine HTML che agenti e persone pubblicano, con versioni, esportazione PDF e link di condivisione.",
-    "makeNew": "Crea qualcosa di nuovo",
+    "gateDescription": "Condividi documenti e pagine HTML da File con il tuo team o con chiunque abbia un link. I documenti si modificano direttamente; ogni salvataggio è una versione.",
     "type": {
       "doc": "Documento",
       "html": "HTML"
-    },
-    "typeHint": {
-      "doc": "Una specifica, un rapporto o un memo. Scrivilo e modificalo come un documento.",
-      "html": "Una pagina qualsiasi: una presentazione, una dashboard, un mockup o uno strumento."
     },
     "scope": {
       "all": "Tutti",
@@ -22507,7 +22502,7 @@
     "loadError": "Impossibile caricare gli artefatti.",
     "retry": "Riprova",
     "empty": "Ancora nessun artefatto",
-    "emptyHint": "Chiedi a un agente un documento, una presentazione o una dashboard, oppure creane uno qui sopra.",
+    "emptyHint": "Chiedi a un agente un documento, una presentazione o una dashboard, oppure crea un nuovo documento.",
     "emptyFiltered": "Nessun artefatto corrisponde",
     "updated": "Aggiornato {time}",
     "pinned": "Fissato",
@@ -22527,15 +22522,6 @@
     "unpin": "Rimuovi",
     "share": "Condividi",
     "rename": "Rinomina",
-    "delete": "Elimina",
-    "deleteTitle": "Eliminare questo artefatto?",
-    "deleteHint": "Tutte le versioni e i file vengono eliminati e i relativi link smettono di funzionare.",
-    "deleted": "Artefatto eliminato",
-    "untitled": "{type} senza titolo",
-    "newTitle": "Nuovo: {type}",
-    "newPlaceholder": "Descrivi cosa creare. Incolla dati, note o link.",
-    "startBlank": "Inizia da zero",
-    "createWithAgent": "Crea con l’agente",
     "shareTitle": "Condividi “{title}”",
     "shareHint": "Scegli chi può aprire questo artefatto.",
     "generalAccess": "Accesso generale",
@@ -22548,23 +22534,18 @@
     "shareSaved": "Condivisione aggiornata",
     "cancel": "Annulla",
     "save": "Salva",
-    "saving": "Salvataggio…",
-    "saved": "Salvato come versione {version}",
     "back": "Torna agli artefatti",
-    "versions": "Versioni",
-    "versionShort": "v{version}",
     "current": "Corrente",
-    "viewingOld": "Stai visualizzando la versione {version}. La versione corrente è la {current}.",
+    "viewingOld": "Stai visualizzando la versione del {time}.",
     "backToCurrent": "Torna alla corrente",
     "restore": "Ripristina",
-    "restored": "La versione {version} è ora la versione {current}",
+    "restored": "Ripristinata come nuovo salvataggio",
     "bold": "Grassetto",
     "italic": "Corsivo",
     "bulletList": "Elenco puntato",
     "link": "Link",
     "linkPrompt": "URL del link",
     "fullScreen": "Schermo intero",
-    "download": "Scarica HTML",
     "askAgent": "Chiedi all’agente",
     "askAgentTitle": "Chiedi a un agente di modificare questo artefatto",
     "askAgentPlaceholder": "Cosa va cambiato?",
@@ -22579,8 +22560,6 @@
       "saving": "Salvataggio…",
       "error": "Non salvato"
     },
-    "editCode": "Modifica codice",
-    "downloadPdf": "Scarica PDF",
     "placeholder": "Scrivi, oppure digita # per un titolo, - per un elenco, [ ] per un’attività",
     "placeholderHeading": "Titolo",
     "strike": "Barrato",
@@ -22600,6 +22579,18 @@
     "addColumn": "Aggiungi colonna",
     "deleteRow": "Elimina riga",
     "deleteTable": "Elimina tabella",
-    "conflict": "Qualcun altro ha pubblicato una versione più recente. Ricarica la pagina per vederla; le tue ultime modifiche non sono state salvate."
+    "conflict": "Qualcun altro ha salvato questo documento dopo che lo hai aperto. Ricarica per vedere la sua versione; le tue ultime modifiche non sono state salvate.",
+    "newDoc": "Nuovo documento",
+    "untitledDoc": "Documento senza titolo",
+    "history": "Cronologia",
+    "historyEmpty": "Nessun salvataggio nella cronologia recente di File.",
+    "saves": "{count} salvataggi",
+    "viewing": "Visualizzazione",
+    "exportPdf": "Esporta come PDF",
+    "openInFiles": "Mostra in File",
+    "remove": "Interrompi condivisione",
+    "removeTitle": "Interrompere la condivisione di questo artefatto?",
+    "removeHint": "Esce da Artefatti e i suoi link smettono di funzionare. I suoi file restano in File.",
+    "removed": "Non più condiviso"
   }
 }

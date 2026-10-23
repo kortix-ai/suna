@@ -1,6 +1,7 @@
--- Migration: artifacts — HTML pages people and agents publish in a project
--- (flag `artifacts`), and their immutable versions. Two new tables, server-only
--- (RLS on, no policy): the API reads and writes them.
+-- Migration: artifacts — paths in a project's Files volume shared as a doc or
+-- a page (flag `artifacts`). The files and their history live in the volume;
+-- this table says what is shared, how and with whom. One new table,
+-- server-only (RLS on, no policy).
 --
 -- SAFETY HEADER (house rules -- see packages/db/MIGRATIONS.md#zero-downtime-rules).
 -- Tune these down further for large/hot tables; raise statement_timeout only
@@ -23,29 +24,20 @@ set statement_timeout = '30s';
 --   [ ] Any ALTER TYPE ... ADD VALUE needs:
 -- enum-value-checked: <how you verified every env, including any faked baseline, has this value>
 
-CREATE TABLE "kortix"."artifact_versions" (
-	"artifact_id" uuid NOT NULL,
-	"version" integer NOT NULL,
-	"files" jsonb NOT NULL,
-	"label" varchar(60),
-	"created_by_user_id" uuid NOT NULL,
-	"created_by_session_id" text,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "artifact_versions_artifact_id_version_pk" PRIMARY KEY("artifact_id","version")
-);
---> statement-breakpoint
 CREATE TABLE "kortix"."artifacts" (
 	"artifact_id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"project_id" uuid NOT NULL,
 	"account_id" uuid NOT NULL,
+	"drive_id" uuid NOT NULL,
+	"root" text NOT NULL,
+	"entry" text NOT NULL,
+	"folder" boolean NOT NULL,
 	"title" text NOT NULL,
 	"description" text,
-	"type" varchar(16) DEFAULT 'html' NOT NULL,
-	"icon" varchar(40),
+	"type" varchar(16) NOT NULL,
 	"visibility" varchar(16) DEFAULT 'private' NOT NULL,
 	"shared_with_user_ids" uuid[] DEFAULT '{}'::uuid[] NOT NULL,
 	"pinned_by_user_ids" uuid[] DEFAULT '{}'::uuid[] NOT NULL,
-	"current_version" integer DEFAULT 1 NOT NULL,
 	"created_by_user_id" uuid NOT NULL,
 	"created_by_session_id" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -54,8 +46,8 @@ CREATE TABLE "kortix"."artifacts" (
 	CONSTRAINT "artifacts_visibility_check" CHECK ("kortix"."artifacts"."visibility" in ('private', 'project', 'public'))
 );
 --> statement-breakpoint
-ALTER TABLE "kortix"."artifact_versions" ADD CONSTRAINT "artifact_versions_artifact_fk" FOREIGN KEY ("artifact_id") REFERENCES "kortix"."artifacts"("artifact_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "kortix"."artifacts" ADD CONSTRAINT "artifacts_project_fk" FOREIGN KEY ("project_id") REFERENCES "kortix"."projects"("project_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "kortix"."artifacts" ADD CONSTRAINT "artifacts_drive_fk" FOREIGN KEY ("drive_id") REFERENCES "kortix"."drives"("drive_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "idx_artifacts_project_updated" ON "kortix"."artifacts" USING btree ("project_id","updated_at");--> statement-breakpoint
-ALTER TABLE "kortix"."artifacts" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
-ALTER TABLE "kortix"."artifact_versions" ENABLE ROW LEVEL SECURITY;
+CREATE UNIQUE INDEX "idx_artifacts_drive_path" ON "kortix"."artifacts" USING btree ("drive_id","root","entry");--> statement-breakpoint
+ALTER TABLE "kortix"."artifacts" ENABLE ROW LEVEL SECURITY;

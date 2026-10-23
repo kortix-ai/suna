@@ -158,7 +158,6 @@ export {
   sessionIdleWatches,
   // Artifacts: published HTML pages (flag artifacts)
   artifacts,
-  artifactVersions,
   // Product feedback (POST /v1/feedback)
   feedback,
   // Billing v2 — per-seat + compute metering + per-member YOLO
@@ -304,7 +303,6 @@ export {
 export type { AgentGrant, StoredAgentGrant } from './schema/kortix';
 export { readStoredAgentGrant } from './schema/kortix';
 export type { AccountBrandingRecord } from './schema/kortix';
-export type { ArtifactFileRecord } from './schema/kortix';
 export type { SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot } from './schema/kortix';
 
 export type {

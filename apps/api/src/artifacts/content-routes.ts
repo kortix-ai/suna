@@ -1,9 +1,9 @@
 // The artifact content server — UNAUTHENTICATED, capability-gated. It serves an
-// artifact's files from its version manifest; a doc's index.html gets the doc
-// stylesheet, and `?print=1` opens the print dialog (Download PDF). Forms:
+// artifact's files from Files (at a commit for an old version); a doc's Markdown is rendered with the doc
+// stylesheet, and `?print=1` on a doc opens the print dialog (Export as PDF). Forms:
 //   /v1/artifacts/s/:token/<path>   a signed view token (private, project and
 //                                   shared artifacts; minted by the
-//                                   authenticated routes for one version)
+//                                   authenticated routes, latest or one commit)
 //   /v1/artifacts/p/:artifactId/<path>  a public artifact's current version
 //   /v1/artifacts/meta/:artifactId      a public artifact's title and type
 // Every response is a CSP sandbox without same-origin: the page runs scripts
@@ -15,8 +15,8 @@ import { createArtifactContentRateLimitMiddleware } from '../middleware/rate-lim
 import { PUBLIC_SHARE_SANDBOX_CSP } from '../sandbox-proxy/routes/public-share';
 import { isUuid } from '../shared/validate';
 import { DriveStorageError } from '../drives/volumes';
-import { renderEntry } from './formats';
-import { ARTIFACTS_FLAG, ENTRY_PATH, artifactPublicContentUrl, getArtifactById, getVersion, normalizeArtifactPath, readArtifactFile, type ArtifactRow } from './service';
+import { renderDoc } from './formats';
+import { ARTIFACTS_FLAG, artifactPublicContentUrl, contentTypeFor, getArtifactById, normalizeArtifactPath, readArtifactFile, type ArtifactRow } from './service';
 
 export const artifactContentApp = new Hono();
 
@@ -40,35 +40,37 @@ function restOf(c: Context, key: string): string | null {
   }
 }
 
-async function serve(c: Context, row: ArtifactRow | null, version: number | null, rest: string, cache: string): Promise<Response> {
-  if (!row || !(await projectFeatureFlagEnabled(row.projectId, ARTIFACTS_FLAG))) return notFound(c);
-  const v = await getVersion(row.artifactId, version ?? row.currentVersion);
-  if (!v) return notFound(c);
-  const wanted = rest === '' || rest.endsWith('/') ? `${rest}${ENTRY_PATH}` : rest;
-  const path = normalizeArtifactPath(wanted);
-  const resolved = path && (v.files[path] ? path : v.files[`${path}/${ENTRY_PATH}`] ? `${path}/${ENTRY_PATH}` : v.files[`${path}.html`] ? `${path}.html` : null);
-  if (!resolved) return notFound(c);
-  const file = v.files[resolved]!;
-  let upstream: Response;
-  try {
-    upstream = await readArtifactFile(row, file);
-  } catch (err) {
-    if (err instanceof DriveStorageError && err.status === 404) return notFound(c);
-    throw err;
+/** Read one file of the artifact, trying `x/index.html` and `x.html` for a path without one. Null when none exists. */
+async function readFirst(row: ArtifactRow, paths: string[], at: string | null) {
+  for (const path of paths) {
+    try {
+      return { path, response: await readArtifactFile(row, path, at) };
+    } catch (err) {
+      if (!(err instanceof DriveStorageError && err.status === 404)) throw err;
+    }
   }
+  return null;
+}
+
+async function serve(c: Context, row: ArtifactRow | null, at: string | null, rest: string, cache: string): Promise<Response> {
+  if (!row || !(await projectFeatureFlagEnabled(row.projectId, ARTIFACTS_FLAG))) return notFound(c);
+  const wanted = rest === '' ? row.entry : normalizeArtifactPath(rest.endsWith('/') ? `${rest}index.html` : rest);
+  if (!wanted) return notFound(c);
+  const found = await readFirst(row, /\.[a-z0-9]+$/i.test(wanted) ? [wanted] : [wanted, `${wanted}/index.html`, `${wanted}.html`], at);
+  if (!found) return notFound(c);
   const headers: Record<string, string> = {
-    'Content-Type': file.content_type,
+    'Content-Type': contentTypeFor(found.path),
     'Content-Security-Policy': PUBLIC_SHARE_SANDBOX_CSP,
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
     'Cache-Control': cache,
     'Access-Control-Allow-Origin': '*',
   };
-  const print = c.req.query('print') === '1';
-  if (resolved === ENTRY_PATH && (row.type === 'doc' || print)) {
-    return c.body(renderEntry(await upstream.text(), row.type, { print }), 200, headers);
+  if (found.path === row.entry && row.type === 'doc') {
+    const html = renderDoc(await found.response.text(), { print: c.req.query('print') === '1' });
+    return c.body(html, 200, { ...headers, 'Content-Type': 'text/html; charset=utf-8' });
   }
-  return new Response(upstream.body, { status: 200, headers: { ...headers, 'Content-Length': String(file.size) } });
+  return new Response(found.response.body, { status: 200, headers });
 }
 
 export function registerArtifactContentRoutes(): void {
@@ -83,9 +85,10 @@ export function registerArtifactContentRoutes(): void {
     const token = c.req.param('token');
     const claim = verifyChannelState('artifact-view', token);
     const rest = restOf(c, token);
-    if (!claim || typeof claim.a !== 'string' || typeof claim.v !== 'number' || rest === null) return notFound(c);
-    // A version never changes, so the browser may keep it as long as the token lives.
-    return serve(c, await getArtifactById(claim.a), claim.v, rest, 'private, max-age=3600');
+    if (!claim || typeof claim.a !== 'string' || rest === null) return notFound(c);
+    const at = typeof claim.c === 'string' ? claim.c : null;
+    // A commit never changes, so the browser may keep it; the latest state must revalidate.
+    return serve(c, await getArtifactById(claim.a), at, rest, at ? 'private, max-age=3600' : 'private, no-cache');
   });
 
   // The public page's chrome (title, type): a public artifact of a flag-on project, else 404.

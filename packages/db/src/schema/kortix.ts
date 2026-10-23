@@ -8305,55 +8305,41 @@ export const cliDeviceGrants = kortixSchema.table('cli_device_grants', {
   status: text('status').notNull().default('pending'),
 });
 
-/** One file of an artifact version: its blob on the project's artifact volume. */
-export interface ArtifactFileRecord {
-  sha256: string;
-  size: number;
-  content_type: string;
-}
-
 /**
- * An artifact (flag `artifacts`): an HTML page a person or an agent published
- * in a project, with its supporting files. The bytes live on the project's
- * artifact volume as content-addressed blobs (`/<artifact_id>/<sha256>`); a
- * version is a manifest of path → blob in `artifact_versions`.
+ * An artifact (flag `artifacts`): a path in the project's Files volume shared
+ * as a doc or a page. The files are plain files in Files (`root`, with `entry`
+ * the page a reader opens); their history is the volume's commit log. This
+ * row only says that the path is shared, how, and with whom.
+ *   entry       `index.md` / `index.html` in a folder `root`; a single file's
+ *               name otherwise (then only that file is served)
+ *   type        doc: the entry is Markdown; html: the entry is an HTML page
  *   visibility  private: the creator and `shared_with_user_ids`
- *               project: every member who may read the project's files
+ *               project: every member who may read the project
  *               public:  anyone with the link
  */
 export const artifacts = kortixSchema.table('artifacts', {
   artifactId: uuid('artifact_id').defaultRandom().primaryKey(),
   projectId: uuid('project_id').notNull(),
   accountId: uuid('account_id').notNull(),
+  driveId: uuid('drive_id').notNull(),
+  root: text('root').notNull(),
+  entry: text('entry').notNull(),
+  folder: boolean('folder').notNull(),
   title: text('title').notNull(),
   description: text('description'),
-  type: varchar('type', { length: 16 }).default('html').notNull(),
-  icon: varchar('icon', { length: 40 }),
+  type: varchar('type', { length: 16 }).notNull(),
   visibility: varchar('visibility', { length: 16 }).default('private').notNull(),
   sharedWithUserIds: uuid('shared_with_user_ids').array().default(sql`'{}'::uuid[]`).notNull(),
   pinnedByUserIds: uuid('pinned_by_user_ids').array().default(sql`'{}'::uuid[]`).notNull(),
-  currentVersion: integer('current_version').default(1).notNull(),
   createdByUserId: uuid('created_by_user_id').notNull(),
   createdBySessionId: text('created_by_session_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'artifacts_project_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.driveId], foreignColumns: [drives.driveId], name: 'artifacts_drive_fk' }).onDelete('cascade'),
   index('idx_artifacts_project_updated').on(table.projectId, table.updatedAt),
+  uniqueIndex('idx_artifacts_drive_path').on(table.driveId, table.root, table.entry),
   check('artifacts_type_check', sql`${table.type} in ('doc', 'html')`),
   check('artifacts_visibility_check', sql`${table.visibility} in ('private', 'project', 'public')`),
-]);
-
-/** One published version of an artifact: the manifest of its files. Immutable. */
-export const artifactVersions = kortixSchema.table('artifact_versions', {
-  artifactId: uuid('artifact_id').notNull(),
-  version: integer('version').notNull(),
-  files: jsonb('files').$type<Record<string, ArtifactFileRecord>>().notNull(),
-  label: varchar('label', { length: 60 }),
-  createdByUserId: uuid('created_by_user_id').notNull(),
-  createdBySessionId: text('created_by_session_id'),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-}, (table) => [
-  primaryKey({ columns: [table.artifactId, table.version] }),
-  foreignKey({ columns: [table.artifactId], foreignColumns: [artifacts.artifactId], name: 'artifact_versions_artifact_fk' }).onDelete('cascade'),
 ]);

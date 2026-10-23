@@ -1,5 +1,5 @@
 {
-  "id": "362f8e60-8100-4399-a6cc-57d8aa175591",
+  "id": "ed273110-3c1f-4588-8001-1d7c6c0e0f8e",
   "prevId": "2467172b-43c0-4220-8dfb-9655730a71a5",
   "version": "7",
   "dialect": "postgresql",
@@ -4599,85 +4599,6 @@
       },
       "isRLSEnabled": false
     },
-    "kortix.artifact_versions": {
-      "name": "artifact_versions",
-      "schema": "kortix",
-      "columns": {
-        "artifact_id": {
-          "name": "artifact_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version": {
-          "name": "version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "files": {
-          "name": "files",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "label": {
-          "name": "label",
-          "type": "varchar(60)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by_user_id": {
-          "name": "created_by_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_by_session_id": {
-          "name": "created_by_session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "artifact_versions_artifact_fk": {
-          "name": "artifact_versions_artifact_fk",
-          "tableFrom": "artifact_versions",
-          "tableTo": "artifacts",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "artifact_id"
-          ],
-          "columnsTo": [
-            "artifact_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "artifact_versions_artifact_id_version_pk": {
-          "name": "artifact_versions_artifact_id_version_pk",
-          "columns": [
-            "artifact_id",
-            "version"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "kortix.artifacts": {
       "name": "artifacts",
       "schema": "kortix",
@@ -4701,6 +4622,30 @@
           "primaryKey": false,
           "notNull": true
         },
+        "drive_id": {
+          "name": "drive_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "root": {
+          "name": "root",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entry": {
+          "name": "entry",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "folder": {
+          "name": "folder",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
         "title": {
           "name": "title",
           "type": "text",
@@ -4717,14 +4662,7 @@
           "name": "type",
           "type": "varchar(16)",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'html'"
-        },
-        "icon": {
-          "name": "icon",
-          "type": "varchar(40)",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "visibility": {
           "name": "visibility",
@@ -4746,13 +4684,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'::uuid[]"
-        },
-        "current_version": {
-          "name": "current_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
         },
         "created_by_user_id": {
           "name": "created_by_user_id",
@@ -4802,6 +4733,33 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_artifacts_drive_path": {
+          "name": "idx_artifacts_drive_path",
+          "columns": [
+            {
+              "expression": "drive_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "root",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "entry",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -4815,6 +4773,20 @@
           ],
           "columnsTo": [
             "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "artifacts_drive_fk": {
+          "name": "artifacts_drive_fk",
+          "tableFrom": "artifacts",
+          "tableTo": "drives",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "drive_id"
+          ],
+          "columnsTo": [
+            "drive_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"

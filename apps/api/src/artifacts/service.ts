@@ -1,35 +1,45 @@
-// Artifacts (flag `artifacts`): HTML pages a person or an agent publishes in a
-// project. One Platinum volume per project holds the bytes as content-addressed
-// blobs (`/<artifact_id>/<sha256>`); `artifact_versions` holds each version's
-// manifest (path → blob). A blob never changes, so a new version writes only
-// the files it adds or changes, and a restore is a manifest copy.
+// Artifacts (flag `artifacts`): paths in the project's Files volume shared as
+// a doc (a Markdown file) or a page (an HTML file, or a folder with
+// index.html). The bytes are plain files in Files; agents and people write
+// them like any file. History is the volume's commit log, restricted to the
+// commits that changed the artifact's entry file. The `artifacts` row only says
+// that a path is shared, how, and with whom.
 //
 // Who may do what (the routes enforce the project leaves first):
 //   view   the creator, anyone in shared_with_user_ids, every project member
 //          when visibility is `project` or `public`, anyone with the link
 //          when `public` (the content server)
-//   edit   the creator, or a member with project.write who may view it
-import { createHash } from 'node:crypto';
-import { artifactVersions, artifacts, type ArtifactFileRecord } from '@kortix/db';
+//   edit   who may write the path in Files (the folder rules of the drive)
+//   share  the creator, or project.write
+import { artifacts } from '@kortix/db';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { signChannelState } from '../channels/core/signed-state';
 import { db } from '../shared/db';
-import { logger } from '../lib/logger';
-import { openDriveVolume, readVolumeFile, removeVolumeFile, writeVolumeFile } from '../drives/volumes';
-import { ARTIFACT_TYPE_KEYS, markdownDoc, type ArtifactType } from './formats';
+import { normalizeDrivePath } from '../drives/access';
+import { folderAccess, folderAccessAtLeast, type FolderLevel } from '../drives/folders';
+import { ensurePersonalFolder, ensureProjectDrive, getDrive, listFolderGrants, readDriveVolume, writeDriveVolume, type DriveRow } from '../drives/service';
+import {
+  DriveStorageError,
+  listVolumeCommits,
+  listVolumeFiles,
+  readVolumeFile,
+  statVolumeFile,
+  writeVolumeFile,
+} from '../drives/volumes';
+import { ARTIFACT_TYPE_KEYS, docTitle, htmlTitle, typeOfEntry, type ArtifactType } from './formats';
 
 export const ARTIFACTS_FLAG = 'artifacts' as const;
 export const ARTIFACT_VISIBILITIES = ['private', 'project', 'public'] as const;
 export type ArtifactVisibility = (typeof ARTIFACT_VISIBILITIES)[number];
 export type ArtifactRow = typeof artifacts.$inferSelect;
-export type ArtifactVersionRow = typeof artifactVersions.$inferSelect;
-export type { ArtifactType, ArtifactFileRecord };
+export type { ArtifactType };
 
-export const ENTRY_PATH = 'index.html';
 export const MAX_FILE_BYTES = 16 * 1024 * 1024;
 export const MAX_PUBLISH_BYTES = 32 * 1024 * 1024;
-export const MAX_FILES = 255;
+/** How far back the history reads the Files commit log. */
+const HISTORY_COMMITS = 200;
+const ENTRIES = ['index.md', 'index.html'] as const;
 
 // Content URLs: served by artifacts/content-routes.ts.
 const VIEW_TTL_MS = 12 * 60 * 60_000;
@@ -38,9 +48,9 @@ function apiBase(): string {
   return (config.KORTIX_URL ?? 'http://localhost:8008').replace(/\/+$/, '');
 }
 
-/** A signed URL that shows one version of the artifact for VIEW_TTL_MS. */
-export function artifactViewUrl(artifactId: string, version: number): string {
-  return `${apiBase()}/v1/artifacts/s/${signChannelState('artifact-view', { a: artifactId, v: version }, VIEW_TTL_MS)}/`;
+/** A signed URL that shows the artifact for VIEW_TTL_MS: as it was at `commit`, or now when null. */
+export function artifactViewUrl(artifactId: string, commit: string | null): string {
+  return `${apiBase()}/v1/artifacts/s/${signChannelState('artifact-view', { a: artifactId, c: commit }, VIEW_TTL_MS)}/`;
 }
 
 /** The public URL of the raw page (no Kortix chrome). */
@@ -53,22 +63,6 @@ export class ArtifactError extends Error {
     super(message);
     this.name = 'ArtifactError';
   }
-}
-
-/** The project's artifact volume: stable, unique, a valid volume name. */
-export function artifactVolumeName(projectId: string): string {
-  return `ka-${projectId.replace(/-/g, '').slice(0, 20)}`;
-}
-
-// replica-local: volumes this process already opened; a miss costs one idempotent PUT.
-const openedVolumes = new Set<string>();
-async function ensureVolume(projectId: string): Promise<string> {
-  const name = artifactVolumeName(projectId);
-  if (!openedVolumes.has(name)) {
-    await openDriveVolume(name);
-    openedVolumes.add(name);
-  }
-  return name;
 }
 
 const TYPES_BY_EXT: Record<string, string> = {
@@ -89,7 +83,7 @@ export function isTextType(contentType: string): boolean {
   return /^text\/|json|xml|svg|javascript/.test(contentType);
 }
 
-/** A file path inside an artifact: relative, no `.`/`..`/empty segment. Null when it cannot be one. */
+/** A file path inside an artifact folder: relative, no `.`/`..`/empty segment. Null when it cannot be one. */
 export function normalizeArtifactPath(raw: string): string | null {
   const value = raw.trim().replace(/^\/+/, '');
   if (!value || value.length > 512 || value.includes('\0') || value.includes('\\')) return null;
@@ -98,46 +92,39 @@ export function normalizeArtifactPath(raw: string): string | null {
   return parts.join('/');
 }
 
+const join = (folder: string, rel: string) => (folder === '/' ? `/${rel}` : `${folder}/${rel}`);
+
+/** The entry file's path in Files. */
+export function entryPath(row: Pick<ArtifactRow, 'root' | 'entry'>): string {
+  return join(row.root, row.entry);
+}
+
+/** The Files path the artifact shares: its folder, or its single file. */
+export function sharedPath(row: Pick<ArtifactRow, 'root' | 'entry' | 'folder'>): string {
+  return row.folder ? row.root : entryPath(row);
+}
+
 export interface FileInput {
   /** UTF-8 text. */
   content?: string;
   /** Bytes, base64. */
   content_base64?: string;
-  content_type?: string;
-}
-
-export interface PublishInput {
-  title?: string;
-  description?: string | null;
-  type?: ArtifactType;
-  icon?: string | null;
-  visibility?: ArtifactVisibility;
-  label?: string | null;
-  /** path → new content, or null to remove the path (updates only). */
-  files: Record<string, FileInput | null>;
-  /** The version the caller edited; a different current version answers 409. */
-  base_version?: number;
-  /**
-   * Fold this save into the current version when the same person (and
-   * session) made it less than AMEND_WINDOW_MS ago: the doc editor's autosave,
-   * so one editing burst is one version.
-   */
-  amend?: boolean;
-}
-
-const AMEND_WINDOW_MS = 10 * 60_000;
-
-/** A doc published as Markdown (`index.md`, no `index.html`) is stored as its HTML page. */
-function docFiles(files: Record<string, FileInput | null>, type: string): Record<string, FileInput | null> {
-  const md = files['index.md'];
-  if (type !== 'doc' || !md || typeof md.content !== 'string' || files[ENTRY_PATH]) return files;
-  const { 'index.md': _markdown, ...rest } = files;
-  return { ...rest, [ENTRY_PATH]: { content: markdownDoc(md.content) } };
 }
 
 export interface Author {
   userId: string;
   sessionId: string | null;
+}
+
+/** Who asks, as the Files folder rules see them. ponytail: group grants are not resolved here; add groupIds if teams share artifact folders. */
+export interface Viewer {
+  userId: string;
+  projectWrite: boolean;
+}
+
+async function accessAt(drive: DriveRow, path: string, viewer: Viewer, level: FolderLevel): Promise<boolean> {
+  const access = folderAccess(path, await listFolderGrants(drive), { userId: viewer.userId, projectMember: true, admin: viewer.projectWrite });
+  return folderAccessAtLeast(access, level);
 }
 
 function decodeFile(path: string, file: FileInput): Uint8Array<ArrayBuffer> {
@@ -146,138 +133,251 @@ function decodeFile(path: string, file: FileInput): Uint8Array<ArrayBuffer> {
   throw new ArtifactError(400, `File ${path} needs content or content_base64`, 'invalid_file');
 }
 
-/** Write the changed files as blobs and return the next manifest. */
-async function writeFiles(
-  projectId: string,
-  artifactId: string,
-  previous: Record<string, ArtifactFileRecord>,
-  files: Record<string, FileInput | null>,
-): Promise<Record<string, ArtifactFileRecord>> {
-  const next: Record<string, ArtifactFileRecord> = { ...previous };
-  const writes: Array<{ path: string; bytes: Uint8Array<ArrayBuffer>; record: ArtifactFileRecord }> = [];
+function encodeFiles(files: Record<string, FileInput>) {
+  const out: Array<{ rel: string; bytes: Uint8Array<ArrayBuffer> }> = [];
   let total = 0;
-  for (const [rawPath, file] of Object.entries(files)) {
-    const path = normalizeArtifactPath(rawPath);
-    if (!path) throw new ArtifactError(400, `Invalid file path: ${rawPath}`, 'invalid_path');
-    if (file === null) {
-      delete next[path];
-      continue;
-    }
-    const bytes = decodeFile(path, file);
-    if (bytes.byteLength > MAX_FILE_BYTES) throw new ArtifactError(413, `${path} is larger than 16 MB`, 'file_too_large');
+  for (const [raw, file] of Object.entries(files)) {
+    const rel = normalizeArtifactPath(raw);
+    if (!rel) throw new ArtifactError(400, `Invalid file path: ${raw}`, 'invalid_path');
+    const bytes = decodeFile(rel, file);
+    if (bytes.byteLength > MAX_FILE_BYTES) throw new ArtifactError(413, `${rel} is larger than 16 MB`, 'file_too_large');
     total += bytes.byteLength;
-    const record: ArtifactFileRecord = {
-      sha256: createHash('sha256').update(bytes).digest('hex'),
-      size: bytes.byteLength,
-      content_type: file.content_type?.trim() || contentTypeFor(path),
-    };
-    next[path] = record;
-    if (!Object.values(previous).some((f) => f.sha256 === record.sha256)) writes.push({ path, bytes, record });
+    out.push({ rel, bytes });
   }
   if (total > MAX_PUBLISH_BYTES) throw new ArtifactError(413, 'One publish carries at most 32 MB', 'publish_too_large');
-  if (!next[ENTRY_PATH]) throw new ArtifactError(400, 'An artifact needs an index.html', 'missing_entry');
-  if (Object.keys(next).length > MAX_FILES) throw new ArtifactError(400, `An artifact holds at most ${MAX_FILES} files`, 'too_many_files');
-  if (writes.length) {
-    const volume = await ensureVolume(projectId);
-    const unique = new Map(writes.map((w) => [w.record.sha256, w]));
-    await Promise.all([...unique.values()].map((w) =>
-      writeVolumeFile(volume, `/${artifactId}/${w.record.sha256}`, w.bytes, { overwrite: true })));
+  // The entry last, so a reader never sees it before its assets.
+  return out.sort((a, b) => Number(ENTRIES.includes(a.rel as never)) - Number(ENTRIES.includes(b.rel as never)));
+}
+
+function titleOf(type: ArtifactType, text: string): string | null {
+  return type === 'doc' ? docTitle(text) : htmlTitle(text);
+}
+
+function slugify(value: string): string {
+  return value.normalize('NFKD').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'untitled';
+}
+
+async function exists(volume: string, path: string): Promise<boolean> {
+  try {
+    await statVolumeFile(volume, path);
+    return true;
+  } catch (err) {
+    if (err instanceof DriveStorageError && err.status === 404) return false;
+    throw err;
   }
-  return next;
 }
 
-/** The <title> of an HTML page, for an artifact published without a title. */
-function htmlTitle(files: Record<string, FileInput | null>): string | null {
-  const entry = files[ENTRY_PATH];
-  if (!entry || typeof entry.content !== 'string') return null;
-  const m = /<title[^>]*>([^<]{1,200})<\/title>/i.exec(entry.content);
-  return m?.[1]?.trim() || null;
-}
-
-export async function createArtifact(
+/**
+ * Publish new files as an artifact in the author's own folder in Files,
+ * `/Users/<them>/Artifacts/`: one `index.md` or `index.html` becomes a single
+ * file (`<slug>.md`), anything more a folder (`<slug>/`).
+ */
+export async function publishNew(
   scope: { accountId: string; projectId: string },
   author: Author,
-  input: PublishInput,
-): Promise<{ artifact: ArtifactRow; version: ArtifactVersionRow }> {
-  if (Object.values(input.files).some((f) => f === null)) throw new ArtifactError(400, 'A new artifact has no file to remove', 'invalid_file');
-  const artifactId = crypto.randomUUID();
-  const type = input.type ?? 'html';
-  const files = docFiles(input.files, type);
-  const manifest = await writeFiles(scope.projectId, artifactId, {}, files);
-  const title = input.title?.trim() || htmlTitle(files) || 'Untitled';
-  return db.transaction(async (tx) => {
-    const [artifact] = await tx.insert(artifacts).values({
-      artifactId,
-      projectId: scope.projectId,
-      accountId: scope.accountId,
-      title,
-      description: input.description ?? null,
-      type,
-      icon: input.icon ?? null,
-      visibility: input.visibility ?? 'private',
-      currentVersion: 1,
-      createdByUserId: author.userId,
-      createdBySessionId: author.sessionId,
-    }).returning();
-    const [version] = await tx.insert(artifactVersions).values({
-      artifactId, version: 1, files: manifest, label: input.label ?? null,
-      createdByUserId: author.userId, createdBySessionId: author.sessionId,
-    }).returning();
-    return { artifact: artifact!, version: version! };
+  input: { title?: string; description?: string | null; visibility?: ArtifactVisibility; files: Record<string, FileInput> },
+): Promise<ArtifactRow> {
+  const files = encodeFiles(input.files);
+  const entry = ENTRIES.find((e) => files.some((f) => f.rel === e));
+  if (!entry) throw new ArtifactError(400, 'An artifact needs an index.md (a doc) or an index.html (a page)', 'missing_entry');
+  const type = typeOfEntry(entry)!;
+  const entryText = new TextDecoder().decode(files.find((f) => f.rel === entry)!.bytes);
+  const title = input.title?.trim() || titleOf(type, entryText) || 'Untitled';
+  const drive = await ensureProjectDrive(scope.accountId, scope.projectId);
+  const home = await ensurePersonalFolder(drive, author.userId);
+  const folder = files.length > 1;
+  const ext = type === 'doc' ? '.md' : '.html';
+  const target = await writeDriveVolume(drive, async (volume) => {
+    const base = join(join(home, 'Artifacts'), slugify(title));
+    let candidate = base;
+    for (let n = 2; await exists(volume, folder ? candidate : `${candidate}${ext}`); n++) candidate = `${base}-${n}`;
+    if (folder) {
+      for (const f of files) await writeVolumeFile(volume, join(candidate, f.rel), f.bytes, { overwrite: false });
+      return { root: candidate, entry };
+    }
+    const name = `${candidate.split('/').pop()}${ext}`;
+    await writeVolumeFile(volume, join(join(home, 'Artifacts'), name), files[0]!.bytes, { overwrite: false });
+    return { root: join(home, 'Artifacts'), entry: name };
   });
+  const [row] = await db.insert(artifacts).values({
+    projectId: scope.projectId, accountId: scope.accountId, driveId: drive.driveId,
+    root: target.root, entry: target.entry, folder, title, type,
+    description: input.description ?? null, visibility: input.visibility ?? 'private',
+    createdByUserId: author.userId, createdBySessionId: author.sessionId,
+  }).returning();
+  return row!;
 }
 
-/** A new version: `files` adds or replaces paths, null removes one, every other path carries over. */
-export async function publishVersion(
-  current: ArtifactRow,
+/**
+ * Share a path that is already in Files: a `.md` or `.html` file, or a folder
+ * with an index.md or index.html. The caller must be able to read it.
+ */
+export async function share(
+  scope: { accountId: string; projectId: string },
   author: Author,
-  input: Omit<PublishInput, 'visibility'> & { files: Record<string, FileInput | null> },
-  manifestOverride?: Record<string, ArtifactFileRecord>,
-): Promise<{ artifact: ArtifactRow; version: ArtifactVersionRow }> {
-  if (input.base_version !== undefined && input.base_version !== current.currentVersion) {
-    throw new ArtifactError(409, `This artifact is at version ${current.currentVersion}; you edited version ${input.base_version}. Read it again and merge your change.`, 'version_conflict');
-  }
-  const prev = await getVersion(current.artifactId, current.currentVersion);
-  const manifest = manifestOverride ?? await writeFiles(current.projectId, current.artifactId, prev?.files ?? {}, docFiles(input.files, input.type ?? current.type));
-  const amend = input.amend && prev && prev.version > 1 && prev.createdByUserId === author.userId
-    && prev.createdBySessionId === author.sessionId && Date.now() - prev.createdAt.getTime() < AMEND_WINDOW_MS;
-  if (amend) {
-    // ponytail: an amended version's replaced blobs stay on the volume until the artifact is deleted.
-    return db.transaction(async (tx) => {
-      const [artifact] = await tx.update(artifacts).set({
-        updatedAt: new Date(),
-        ...(input.title?.trim() ? { title: input.title.trim() } : {}),
-      }).where(and(eq(artifacts.artifactId, current.artifactId), eq(artifacts.currentVersion, current.currentVersion))).returning();
-      if (!artifact) throw new ArtifactError(409, 'Someone published a newer version at the same time. Read it again and merge your change.', 'version_conflict');
-      const [version] = await tx.update(artifactVersions).set({ files: manifest })
-        .where(and(eq(artifactVersions.artifactId, current.artifactId), eq(artifactVersions.version, current.currentVersion))).returning();
-      return { artifact, version: version! };
+  viewer: Viewer,
+  input: { path: string; title?: string; description?: string | null; visibility?: ArtifactVisibility },
+): Promise<ArtifactRow> {
+  const path = normalizeDrivePath(input.path);
+  if (!path || path === '/') throw new ArtifactError(400, 'Name a file or a folder in Files', 'invalid_path');
+  const drive = await ensureProjectDrive(scope.accountId, scope.projectId);
+  if (!(await accessAt(drive, path, viewer, 'read'))) throw new ArtifactError(404, 'File or folder not found', 'not_found');
+  const target = await readDriveVolume(drive, async (volume) => {
+    const stat = await statVolumeFile(volume, path).catch((err) => {
+      if (err instanceof DriveStorageError && err.status === 404) return null;
+      throw err;
     });
-  }
-  const nextVersion = current.currentVersion + 1;
-  return db.transaction(async (tx) => {
-    // The version guard makes two concurrent publishes from one version collide here.
-    const [artifact] = await tx.update(artifacts).set({
-      currentVersion: nextVersion,
-      updatedAt: new Date(),
-      ...(input.title?.trim() ? { title: input.title.trim() } : {}),
-      ...(input.description !== undefined ? { description: input.description } : {}),
-      ...(input.type ? { type: input.type } : {}),
-      ...(input.icon !== undefined ? { icon: input.icon } : {}),
-    }).where(and(eq(artifacts.artifactId, current.artifactId), eq(artifacts.currentVersion, current.currentVersion))).returning();
-    if (!artifact) throw new ArtifactError(409, 'Someone published a newer version at the same time. Read it again and merge your change.', 'version_conflict');
-    const [version] = await tx.insert(artifactVersions).values({
-      artifactId: current.artifactId, version: nextVersion, files: manifest, label: input.label ?? null,
-      createdByUserId: author.userId, createdBySessionId: author.sessionId,
-    }).returning();
-    return { artifact, version: version! };
-  });
+    if (!stat) return null;
+    if (stat.type === 'dir') {
+      for (const e of ENTRIES) if (await exists(volume, join(path, e))) return { root: path, entry: e, folder: true };
+      throw new ArtifactError(400, 'A folder needs an index.md or an index.html to be an artifact', 'missing_entry');
+    }
+    const name = path.split('/').pop()!;
+    if (!typeOfEntry(name)) throw new ArtifactError(400, 'Share a .md or .html file, or a folder with an index', 'invalid_type');
+    return { root: path.slice(0, path.lastIndexOf('/')) || '/', entry: name, folder: false };
+  }, () => null);
+  if (!target) throw new ArtifactError(404, 'File or folder not found', 'not_found');
+  const type = typeOfEntry(target.entry)!;
+  const text = await (await readVolumeFile(drive.platinumVolumeName, join(target.root, target.entry))).text();
+  const [row] = await db.insert(artifacts).values({
+    projectId: scope.projectId, accountId: scope.accountId, driveId: drive.driveId,
+    root: target.root, entry: target.entry, folder: target.folder, type,
+    title: input.title?.trim() || titleOf(type, text) || target.entry,
+    description: input.description ?? null, visibility: input.visibility ?? 'private',
+    createdByUserId: author.userId, createdBySessionId: author.sessionId,
+  }).onConflictDoNothing().returning();
+  if (!row) throw new ArtifactError(409, 'This path is already an artifact', 'already_shared');
+  return row;
 }
 
-export async function restoreVersion(current: ArtifactRow, author: Author, version: number) {
-  const old = await getVersion(current.artifactId, version);
-  if (!old) throw new ArtifactError(404, `Version ${version} not found`, 'version_not_found');
-  return publishVersion(current, author, { files: {}, label: `Restored version ${version}` }, old.files);
+async function driveOf(row: ArtifactRow): Promise<DriveRow> {
+  const drive = await getDrive(row.driveId);
+  if (!drive) throw new ArtifactError(404, 'Files not found', 'not_found');
+  return drive;
+}
+
+/** May the viewer change the artifact's files? Who may write its path in Files. */
+export async function mayWrite(row: ArtifactRow, viewer: Viewer): Promise<boolean> {
+  return accessAt(await driveOf(row), sharedPath(row), viewer, 'write');
+}
+
+/** The entry file's current version (its ETag): what `base_version` names. Null when the file is gone. */
+export async function entryVersion(row: ArtifactRow): Promise<string | null> {
+  const drive = await driveOf(row);
+  return readDriveVolume(drive, async (volume) => (await statVolumeFile(volume, entryPath(row))).version, () => null)
+    .catch((err) => {
+      if (err instanceof DriveStorageError && err.status === 404) return null;
+      throw err;
+    });
+}
+
+/**
+ * Write new content to the artifact's path in Files. A single-file artifact
+ * takes only its entry; a folder takes any file inside it. `base_version`
+ * (the entry's version the caller read) makes the entry write conditional:
+ * someone else's save in between answers 409.
+ */
+export async function publishChanges(
+  row: ArtifactRow,
+  input: { title?: string; description?: string | null; files: Record<string, FileInput>; base_version?: string },
+): Promise<ArtifactRow> {
+  const drive = await driveOf(row);
+  const files = encodeFiles(input.files).map((f) => ({ ...f, rel: row.folder ? f.rel : f.rel === 'index.md' || f.rel === 'index.html' ? row.entry : f.rel }));
+  if (!row.folder && files.some((f) => f.rel !== row.entry)) throw new ArtifactError(400, `This artifact is one file: publish only ${row.entry}`, 'single_file');
+  try {
+    await writeDriveVolume(drive, async (volume) => {
+      for (const f of files) {
+        const isEntry = f.rel === row.entry;
+        await writeVolumeFile(volume, join(row.root, f.rel), f.bytes, { overwrite: true, ...(isEntry && input.base_version ? { ifMatch: input.base_version } : {}) });
+      }
+    });
+  } catch (err) {
+    if (err instanceof DriveStorageError && err.code === 'file_changed') {
+      throw new ArtifactError(409, 'Someone saved a newer version after the one you edited. Read it again and merge your change.', 'version_conflict');
+    }
+    throw err;
+  }
+  const entry = files.find((f) => f.rel === row.entry);
+  const title = input.title?.trim() || (entry ? titleOf(row.type as ArtifactType, new TextDecoder().decode(entry.bytes)) : null);
+  const [updated] = await db.update(artifacts).set({
+    updatedAt: new Date(),
+    ...(title ? { title } : {}),
+    ...(input.description !== undefined ? { description: input.description } : {}),
+  }).where(eq(artifacts.artifactId, row.artifactId)).returning();
+  return updated!;
+}
+
+export interface ArtifactVersion {
+  /** The Files commit that made this version: what `at` reads and `restore` brings back. */
+  id: string;
+  /** 1 for the oldest version in the history window. */
+  number: number;
+  created_at: string;
+}
+
+/**
+ * The artifact's history from the Files commit log, newest first: every commit
+ * after which the entry file differs from before (each save). Reads the last
+ * HISTORY_COMMITS commits of Files.
+ * ponytail: one stat per commit (16 at a time); a per-path log from Platinum would make this one call.
+ */
+export async function listVersions(row: ArtifactRow): Promise<ArtifactVersion[]> {
+  const drive = await driveOf(row);
+  return readDriveVolume(drive, async (volume) => {
+    const commits = (await listVolumeCommits(volume, HISTORY_COMMITS)).filter((c) => c.kind !== 'init').reverse();
+    const versions: Array<string | null> = new Array(commits.length).fill(null);
+    for (let i = 0; i < commits.length; i += 16) {
+      await Promise.all(commits.slice(i, i + 16).map(async (c, j) => {
+        try {
+          versions[i + j] = (await statVolumeFile(volume, entryPath(row), c.id)).version ?? `${c.id}`;
+        } catch (err) {
+          if (!(err instanceof DriveStorageError && err.status === 404)) throw err;
+        }
+      }));
+    }
+    const changes: Array<(typeof commits)[number]> = [];
+    let previous: string | null = null;
+    commits.forEach((c, i) => {
+      const v = versions[i];
+      if (v && v !== previous) changes.push(c);
+      if (v) previous = v;
+    });
+    return changes.map((c, i) => ({ id: c.id, number: i + 1, created_at: c.created_at })).reverse();
+  }, () => []);
+}
+
+/** Bring an old version back: its entry file (and, for a folder, every file it had) written again, as a new save. */
+export async function restoreVersion(row: ArtifactRow, commit: string): Promise<ArtifactRow> {
+  const files: Record<string, FileInput> = {};
+  for (const f of await listFiles(row, commit)) {
+    const bytes = new Uint8Array(await (await readArtifactFile(row, f.path, commit)).arrayBuffer());
+    files[f.path] = { content_base64: Buffer.from(bytes).toString('base64') };
+  }
+  if (!Object.keys(files).length) throw new ArtifactError(404, 'Version not found', 'version_not_found');
+  return publishChanges(row, { files });
+}
+
+/** The artifact's files, now or at a commit: a folder's tree, or the single file. */
+export async function listFiles(row: ArtifactRow, at?: string): Promise<Array<{ path: string; size: number; content_type: string }>> {
+  const drive = await driveOf(row);
+  return readDriveVolume(drive, async (volume) => {
+    if (!row.folder) {
+      const stat = await statVolumeFile(volume, entryPath(row), at);
+      return [{ path: row.entry, size: stat.size, content_type: contentTypeFor(row.entry) }];
+    }
+    const prefix = row.root === '/' ? '/' : `${row.root}/`;
+    return (await listVolumeFiles(volume, row.root, true, undefined, at))
+      .filter((e) => e.type === 'file')
+      .map((e) => ({ path: e.path.slice(prefix.length), size: e.size, content_type: contentTypeFor(e.path) }))
+      .sort((a, b) => a.path.localeCompare(b.path));
+  }, () => []);
+}
+
+/** One file of the artifact, now or at a commit. A single-file artifact serves only its entry. */
+export async function readArtifactFile(row: ArtifactRow, rel: string, at?: string | null): Promise<Response> {
+  if (!row.folder && rel !== row.entry) throw new DriveStorageError(404, 'File not found');
+  const drive = await driveOf(row);
+  return readVolumeFile(drive.platinumVolumeName, join(row.root, rel), undefined, at ?? undefined);
 }
 
 export async function getArtifact(projectId: string, artifactId: string): Promise<ArtifactRow | null> {
@@ -290,16 +390,6 @@ export async function getArtifact(projectId: string, artifactId: string): Promis
 export async function getArtifactById(artifactId: string): Promise<ArtifactRow | null> {
   const [row] = await db.select().from(artifacts).where(eq(artifacts.artifactId, artifactId)).limit(1);
   return row ?? null;
-}
-
-export async function getVersion(artifactId: string, version: number): Promise<ArtifactVersionRow | null> {
-  const [row] = await db.select().from(artifactVersions)
-    .where(and(eq(artifactVersions.artifactId, artifactId), eq(artifactVersions.version, version))).limit(1);
-  return row ?? null;
-}
-
-export async function listVersions(artifactId: string): Promise<ArtifactVersionRow[]> {
-  return db.select().from(artifactVersions).where(eq(artifactVersions.artifactId, artifactId)).orderBy(desc(artifactVersions.version));
 }
 
 export type ListScope = 'all' | 'mine' | 'shared' | 'pinned';
@@ -320,19 +410,18 @@ export function canView(row: ArtifactRow, userId: string): boolean {
   return row.visibility !== 'private' || row.createdByUserId === userId || row.sharedWithUserIds.includes(userId);
 }
 
-export function canEdit(row: ArtifactRow, userId: string, projectWrite: boolean): boolean {
-  return row.createdByUserId === userId || (projectWrite && canView(row, userId));
+/** May change how the artifact is shared, rename it or remove it from Artifacts. */
+export function canManage(row: ArtifactRow, viewer: Viewer): boolean {
+  return row.createdByUserId === viewer.userId || (viewer.projectWrite && canView(row, viewer.userId));
 }
 
 export async function updateArtifactMeta(
   row: ArtifactRow,
-  patch: { title?: string; description?: string | null; icon?: string | null; type?: ArtifactType; visibility?: ArtifactVisibility; shared_with_user_ids?: string[] },
+  patch: { title?: string; description?: string | null; visibility?: ArtifactVisibility; shared_with_user_ids?: string[] },
 ): Promise<ArtifactRow> {
   const [updated] = await db.update(artifacts).set({
     ...(patch.title?.trim() ? { title: patch.title.trim() } : {}),
     ...(patch.description !== undefined ? { description: patch.description } : {}),
-    ...(patch.icon !== undefined ? { icon: patch.icon } : {}),
-    ...(patch.type ? { type: patch.type } : {}),
     ...(patch.visibility ? { visibility: patch.visibility } : {}),
     ...(patch.shared_with_user_ids ? { sharedWithUserIds: [...new Set(patch.shared_with_user_ids)] } : {}),
     updatedAt: new Date(),
@@ -349,19 +438,9 @@ export async function setPinned(row: ArtifactRow, userId: string, pinned: boolea
   return updated!;
 }
 
-export async function deleteArtifact(row: ArtifactRow): Promise<void> {
+/** Stop sharing: the artifact leaves Artifacts and every link stops working. Its files stay in Files. */
+export async function unshare(row: ArtifactRow): Promise<void> {
   await db.delete(artifacts).where(eq(artifacts.artifactId, row.artifactId));
-  // The row is gone, so nothing serves the blobs; a failed sweep leaves only bytes.
-  try {
-    await removeVolumeFile(artifactVolumeName(row.projectId), `/${row.artifactId}`, true);
-  } catch (err) {
-    logger.warn('[artifacts] blob sweep failed', { artifactId: row.artifactId, error: err instanceof Error ? err.message : String(err) });
-  }
-}
-
-/** One file's bytes. */
-export async function readArtifactFile(row: ArtifactRow, file: ArtifactFileRecord): Promise<Response> {
-  return readVolumeFile(artifactVolumeName(row.projectId), `/${row.artifactId}/${file.sha256}`);
 }
 
 export function isArtifactType(value: string): value is ArtifactType {

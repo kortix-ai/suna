@@ -22,9 +22,6 @@ export const VISIBILITY_ICON: Record<ArtifactVisibility, Icon> = {
  */
 const ARTIFACT_CANVAS = 'bg-white';
 
-/** The types offered under "Make something new", in order. */
-export const CREATE_TYPES: ArtifactType[] = ['doc', 'html'];
-
 export function artifactHref(projectId: string, artifactId: string): string {
   return `/projects/${projectId}/artifacts/${artifactId}`;
 }

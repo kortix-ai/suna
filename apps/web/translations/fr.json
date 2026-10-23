@@ -1293,7 +1293,7 @@
         },
         "artifacts": {
           "name": "Artefacts",
-          "description": "Les agents et les personnes publient des documents et des pages HTML (présentations, tableaux de bord, maquettes, outils) dans le projet. Les documents se modifient directement, chaque publication est une version, tout artefact s’exporte en PDF et un lien de partage le rend privé, accessible au projet, à des personnes choisies ou public. Ajoute la page Artefacts et `kortix artifacts`."
+          "description": "Partagez des documents (Markdown) et des pages HTML (présentations, tableaux de bord, maquettes, outils) depuis Fichiers avec le projet, des personnes choisies ou toute personne disposant d’un lien. Les documents se modifient directement, chaque enregistrement est une version de l’historique de Fichiers et les documents s’exportent en PDF. Ajoute la page Artefacts et `kortix artifacts`."
         }
       }
     },
@@ -22487,15 +22487,10 @@
   },
   "artifacts": {
     "title": "Artefacts",
-    "gateDescription": "Documents et pages HTML que les agents et les personnes publient, avec versions, export PDF et liens de partage.",
-    "makeNew": "Créer quelque chose",
+    "gateDescription": "Partagez des documents et des pages HTML depuis Fichiers avec votre équipe ou toute personne disposant d’un lien. Les documents se modifient directement ; chaque enregistrement est une version.",
     "type": {
       "doc": "Document",
       "html": "HTML"
-    },
-    "typeHint": {
-      "doc": "Une spécification, un rapport ou une note. Rédigez-le et modifiez-le comme un document.",
-      "html": "N’importe quelle page : une présentation, un tableau de bord, une maquette ou un outil."
     },
     "scope": {
       "all": "Tous",
@@ -22507,7 +22502,7 @@
     "loadError": "Impossible de charger les artefacts.",
     "retry": "Réessayer",
     "empty": "Aucun artefact pour l’instant",
-    "emptyHint": "Demandez un document, une présentation ou un tableau de bord à un agent, ou lancez-en un ci-dessus.",
+    "emptyHint": "Demandez un document, une présentation ou un tableau de bord à un agent, ou créez un nouveau document.",
     "emptyFiltered": "Aucun artefact ne correspond",
     "updated": "Mis à jour {time}",
     "pinned": "Épinglé",
@@ -22527,15 +22522,6 @@
     "unpin": "Désépingler",
     "share": "Partager",
     "rename": "Renommer",
-    "delete": "Supprimer",
-    "deleteTitle": "Supprimer cet artefact ?",
-    "deleteHint": "Toutes les versions et tous les fichiers sont supprimés, et ses liens cessent de fonctionner.",
-    "deleted": "Artefact supprimé",
-    "untitled": "{type} sans titre",
-    "newTitle": "Nouveau : {type}",
-    "newPlaceholder": "Décrivez ce qu’il faut créer. Collez des données, des notes ou des liens.",
-    "startBlank": "Partir de zéro",
-    "createWithAgent": "Créer avec l’agent",
     "shareTitle": "Partager « {title} »",
     "shareHint": "Choisissez qui peut ouvrir cet artefact.",
     "generalAccess": "Accès général",
@@ -22548,23 +22534,18 @@
     "shareSaved": "Partage mis à jour",
     "cancel": "Annuler",
     "save": "Enregistrer",
-    "saving": "Enregistrement…",
-    "saved": "Enregistré comme version {version}",
     "back": "Retour aux artefacts",
-    "versions": "Versions",
-    "versionShort": "v{version}",
     "current": "Actuelle",
-    "viewingOld": "Vous consultez la version {version}. La version actuelle est la {current}.",
+    "viewingOld": "Vous consultez la version du {time}.",
     "backToCurrent": "Retour à la version actuelle",
     "restore": "Restaurer",
-    "restored": "La version {version} est maintenant la version {current}",
+    "restored": "Restaurée comme un nouvel enregistrement",
     "bold": "Gras",
     "italic": "Italique",
     "bulletList": "Liste à puces",
     "link": "Lien",
     "linkPrompt": "URL du lien",
     "fullScreen": "Plein écran",
-    "download": "Télécharger le HTML",
     "askAgent": "Demander à l’agent",
     "askAgentTitle": "Demander à un agent de modifier cet artefact",
     "askAgentPlaceholder": "Que faut-il changer ?",
@@ -22579,8 +22560,6 @@
       "saving": "Enregistrement…",
       "error": "Non enregistré"
     },
-    "editCode": "Modifier le code",
-    "downloadPdf": "Télécharger le PDF",
     "placeholder": "Écrivez, ou tapez # pour un titre, - pour une liste, [ ] pour une tâche",
     "placeholderHeading": "Titre",
     "strike": "Barré",
@@ -22600,6 +22579,18 @@
     "addColumn": "Ajouter une colonne",
     "deleteRow": "Supprimer la ligne",
     "deleteTable": "Supprimer le tableau",
-    "conflict": "Quelqu’un d’autre a publié une version plus récente. Rechargez la page pour la voir ; vos dernières modifications n’ont pas été enregistrées."
+    "conflict": "Quelqu’un d’autre a enregistré ce document après que vous l’avez ouvert. Rechargez pour voir sa version ; vos dernières modifications n’ont pas été enregistrées.",
+    "newDoc": "Nouveau document",
+    "untitledDoc": "Document sans titre",
+    "history": "Historique",
+    "historyEmpty": "Aucun enregistrement dans l’historique récent de Fichiers.",
+    "saves": "{count} enregistrements",
+    "viewing": "Aperçu",
+    "exportPdf": "Exporter en PDF",
+    "openInFiles": "Afficher dans Fichiers",
+    "remove": "Arrêter le partage",
+    "removeTitle": "Arrêter de partager cet artefact ?",
+    "removeHint": "Il quitte Artefacts et ses liens cessent de fonctionner. Ses fichiers restent dans Fichiers.",
+    "removed": "Plus partagé"
   }
 }

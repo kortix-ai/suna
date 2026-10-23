@@ -553,8 +553,8 @@ export const qk = {
     artifacts: (id: string) => [...qk.project.scope(id), 'artifacts'] as const,
     /** `listArtifacts` — the gallery, per scope/type/search. */
     artifactList: (id: string, filter: string) => [...qk.project.artifacts(id), 'list', filter] as const,
-    /** `getArtifact` — one artifact at one version (`current` for the newest). */
-    artifact: (id: string, artifactId: string, version: number | 'current' = 'current') => [...qk.project.artifacts(id), 'one', artifactId, version] as const,
+    /** `getArtifact` — one artifact now (`current`) or at a Files commit. */
+    artifact: (id: string, artifactId: string, version: string = 'current') => [...qk.project.artifacts(id), 'one', artifactId, version] as const,
     /** `listArtifactVersions`. */
     artifactVersions: (id: string, artifactId: string) => [...qk.project.artifacts(id), 'versions', artifactId] as const,
     /** `listArtifactTypes`. */

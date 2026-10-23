@@ -834,7 +834,7 @@ const catalog = {
         },
         "artifacts": {
           "name": "Artifacts",
-          "description": "Agents and people publish docs and HTML pages (decks, dashboards, mockups, tools) in the project. Docs edit in place, every publish is a version, any artifact exports to PDF, and a share link makes it private, for the project, for chosen people, or public. Adds the Artifacts page and `kortix artifacts`."
+          "description": "Share docs (Markdown) and HTML pages (decks, dashboards, mockups, tools) from Files with the project, chosen people or anyone with a link. Docs edit in place, every save is a version from the Files history, and docs export to PDF. Adds the Artifacts page and `kortix artifacts`."
         }
       }
     },

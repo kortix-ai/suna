@@ -1293,7 +1293,7 @@
         },
         "artifacts": {
           "name": "工件",
-          "description": "智能体和用户可在项目中发布文档和 HTML 页面（演示文稿、控制面板、原型、工具）。文档可直接编辑，每次发布都是一个版本，任何工件都可导出为 PDF，分享链接可将其设为私有、对整个项目可见、对指定成员可见或公开。新增“工件”页面和 `kortix artifacts`。"
+          "description": "将“文件”中的文档（Markdown）和 HTML 页面（演示文稿、控制面板、原型、工具）分享给项目、指定成员或任何拥有链接的人。文档可直接编辑，每次保存都是“文件”历史中的一个版本，文档可导出为 PDF。新增“工件”页面和 `kortix artifacts`。"
         }
       }
     },
@@ -22487,15 +22487,10 @@
   },
   "artifacts": {
     "title": "工件",
-    "gateDescription": "智能体和用户发布的文档和 HTML 页面，支持版本、PDF 导出和分享链接。",
-    "makeNew": "新建内容",
+    "gateDescription": "将“文件”中的文档和 HTML 页面分享给你的团队或任何拥有链接的人。文档可直接编辑；每次保存都是一个版本。",
     "type": {
       "doc": "文档",
       "html": "HTML"
-    },
-    "typeHint": {
-      "doc": "规格说明、报告或备忘录。像文档一样撰写和编辑。",
-      "html": "任意页面：演示文稿、控制面板、原型或工具。"
     },
     "scope": {
       "all": "全部",
@@ -22507,7 +22502,7 @@
     "loadError": "无法加载工件。",
     "retry": "重试",
     "empty": "暂无工件",
-    "emptyHint": "向智能体索取文档、演示文稿或控制面板，或在上方新建。",
+    "emptyHint": "向智能体索取文档、演示文稿或控制面板，或新建文档。",
     "emptyFiltered": "没有匹配的工件",
     "updated": "更新于 {time}",
     "pinned": "已置顶",
@@ -22527,15 +22522,6 @@
     "unpin": "取消置顶",
     "share": "分享",
     "rename": "重命名",
-    "delete": "删除",
-    "deleteTitle": "删除此工件？",
-    "deleteHint": "所有版本和文件都会被删除，相关链接将失效。",
-    "deleted": "工件已删除",
-    "untitled": "未命名{type}",
-    "newTitle": "新建{type}",
-    "newPlaceholder": "描述要创建的内容。可粘贴数据、笔记或链接。",
-    "startBlank": "从空白开始",
-    "createWithAgent": "用智能体创建",
     "shareTitle": "分享“{title}”",
     "shareHint": "选择谁可以打开此工件。",
     "generalAccess": "常规访问权限",
@@ -22548,23 +22534,18 @@
     "shareSaved": "分享设置已更新",
     "cancel": "取消",
     "save": "保存",
-    "saving": "保存中…",
-    "saved": "已保存为版本 {version}",
     "back": "返回工件",
-    "versions": "版本",
-    "versionShort": "v{version}",
     "current": "当前",
-    "viewingOld": "你正在查看版本 {version}。当前版本为 {current}。",
+    "viewingOld": "你正在查看 {time} 的版本。",
     "backToCurrent": "返回当前版本",
     "restore": "恢复",
-    "restored": "版本 {version} 现在是版本 {current}",
+    "restored": "已恢复为新的保存记录",
     "bold": "加粗",
     "italic": "斜体",
     "bulletList": "项目符号列表",
     "link": "链接",
     "linkPrompt": "链接地址",
     "fullScreen": "全屏",
-    "download": "下载 HTML",
     "askAgent": "询问智能体",
     "askAgentTitle": "请智能体修改此工件",
     "askAgentPlaceholder": "需要修改什么？",
@@ -22579,8 +22560,6 @@
       "saving": "保存中…",
       "error": "未保存"
     },
-    "editCode": "编辑代码",
-    "downloadPdf": "下载 PDF",
     "placeholder": "开始书写，或输入 # 添加标题、- 添加列表、[ ] 添加任务",
     "placeholderHeading": "标题",
     "strike": "删除线",
@@ -22600,6 +22579,18 @@
     "addColumn": "添加列",
     "deleteRow": "删除行",
     "deleteTable": "删除表格",
-    "conflict": "其他人发布了更新的版本。请重新加载页面查看；你最近的更改未保存。"
+    "conflict": "你打开此文档后，其他人保存了它。请重新加载以查看对方的版本；你最近的更改未保存。",
+    "newDoc": "新建文档",
+    "untitledDoc": "未命名文档",
+    "history": "历史记录",
+    "historyEmpty": "“文件”最近的历史中没有保存记录。",
+    "saves": "{count} 次保存",
+    "viewing": "正在查看",
+    "exportPdf": "导出为 PDF",
+    "openInFiles": "在“文件”中显示",
+    "remove": "停止分享",
+    "removeTitle": "停止分享此工件？",
+    "removeHint": "它将从“工件”中移除，其链接将失效。其文件仍保留在“文件”中。",
+    "removed": "已停止分享"
   }
 }

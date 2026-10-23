@@ -1,7 +1,8 @@
-// Artifacts (project flag `artifacts`): HTML people and agents publish in a
-// project — a `doc` (a document edited in place; publish Markdown or HTML) or
-// an `html` page or bundle (decks, dashboards, mockups, tools). Each publish is
-// a version (`listArtifactTypes` has each format and a starter page). Visibility: private (the creator and
+// Artifacts (project flag `artifacts`): paths in the project's Files volume
+// shared as a `doc` (a Markdown file people edit in place) or an `html` page
+// (a file, or a folder with index.html: decks, dashboards, mockups, tools).
+// The files are plain files in Files; their history is the Files commit log
+// (`listArtifactVersions`). `listArtifactTypes` has each format and a starter. Visibility: private (the creator and
 // `shared_with_user_ids`), project (every member), public (anyone with the
 // link). Reading needs `project.read`; publishing `project.session.start`;
 // changing an artifact its creator or project.write.
@@ -30,17 +31,19 @@ export interface Artifact {
   title: string;
   description: string | null;
   type: ArtifactType;
-  icon: string | null;
+  /** The shared path in Files: a folder, or a single file. */
+  path: string;
+  /** The page a reader opens: `index.md` / `index.html` in a folder, or the file's name. */
+  entry: string;
   visibility: ArtifactVisibility;
   shared_with_user_ids: string[];
   /** Pinned by the caller. */
   pinned: boolean;
-  current_version: number;
   created_by: ArtifactPerson;
   created_by_session_id: string | null;
-  /** The caller may publish, rename, share or delete it. */
-  can_edit: boolean;
-  /** Signed URL of the current version, valid 12 h. Embed it in an iframe. */
+  /** The caller may share, rename or unshare it. */
+  can_manage: boolean;
+  /** Signed URL of the current state, valid 12 h. Embed it in an iframe. */
   view_url: string;
   /** The artifact in the Kortix app. */
   web_url: string;
@@ -58,17 +61,21 @@ export interface ArtifactFile {
   content_type: string;
 }
 
+/** One save of the artifact, read from the Files commit log. */
 export interface ArtifactVersion {
-  version: number;
-  label: string | null;
-  files: ArtifactFile[];
-  created_by_user_id: string;
-  created_by_session_id: string | null;
+  /** The Files commit that made it: pass it as `version` to read or restore it. */
+  id: string;
+  /** 1 for the oldest save in the history window. */
+  number: number;
   created_at: string;
 }
 
 export interface ArtifactDetail extends Artifact {
-  version: ArtifactVersion & { view_url: string };
+  /** The caller may write its files (write access to its path in Files). */
+  can_edit: boolean;
+  /** The entry file's version now: pass it as `base_version` when you save. */
+  entry_version: string | null;
+  version: { id: string | null; files: ArtifactFile[]; view_url: string };
 }
 
 export interface ArtifactTypeInfo {
@@ -77,7 +84,7 @@ export interface ArtifactTypeInfo {
   description: string;
   /** How to write this type, in Markdown. */
   format: string;
-  /** A complete example page; also the "start blank" template. */
+  /** A complete example. */
   starter: string;
 }
 
@@ -85,31 +92,37 @@ export interface ArtifactTypeInfo {
 export interface ArtifactFileInput {
   content?: string;
   content_base64?: string;
-  content_type?: string;
 }
 
 export interface PublishArtifactInput {
   title?: string;
   description?: string | null;
-  type?: ArtifactType;
-  icon?: string | null;
-  /** New artifacts only. Default private. */
+  /** Default private. */
   visibility?: ArtifactVisibility;
-  /** A short name for this version. */
-  label?: string | null;
-  /** path → file. A new artifact needs index.html (a doc may send index.md). On an update, null removes a path and every unlisted path carries over. */
-  files: Record<string, ArtifactFileInput | null>;
-  /** The version you edited; a newer current version fails with 409 `version_conflict`. */
-  base_version?: number;
-  /** Fold this save into the current version when you published it less than 10 minutes ago (autosave). */
-  amend?: boolean;
+  /** path → file. `index.md` makes a doc, `index.html` a page. Stored in your folder in Files. */
+  files: Record<string, ArtifactFileInput>;
+}
+
+export interface ShareArtifactPathInput {
+  /** A path in Files: a .md or .html file, or a folder with index.md or index.html. */
+  path: string;
+  title?: string;
+  description?: string | null;
+  visibility?: ArtifactVisibility;
+}
+
+export interface SaveArtifactInput {
+  title?: string;
+  description?: string | null;
+  /** path → file, written into the artifact in Files. */
+  files: Record<string, ArtifactFileInput>;
+  /** The `entry_version` you edited; a newer save fails with 409 `version_conflict`. */
+  base_version?: string;
 }
 
 export interface UpdateArtifactInput {
   title?: string;
   description?: string | null;
-  icon?: string | null;
-  type?: ArtifactType;
   visibility?: ArtifactVisibility;
   /** People who may view a private artifact. Replaces the list. */
   shared_with_user_ids?: string[];
@@ -135,7 +148,7 @@ export async function listArtifacts(
   return unwrap(await backendApi.get<{ artifacts: Artifact[] }>(`${base(projectId)}${query(options)}`)).artifacts;
 }
 
-export async function getArtifact(projectId: string, artifactId: string, options: { version?: number } = {}) {
+export async function getArtifact(projectId: string, artifactId: string, options: { version?: string } = {}) {
   return unwrap(await backendApi.get<ArtifactDetail>(`${base(projectId)}/${artifactId}${query(options)}`));
 }
 
@@ -143,16 +156,22 @@ export async function createArtifact(projectId: string, input: PublishArtifactIn
   return unwrap(await backendApi.post<ArtifactDetail>(base(projectId), input));
 }
 
-/** Publish a new version of an artifact. */
-export async function publishArtifactVersion(projectId: string, artifactId: string, input: Omit<PublishArtifactInput, 'visibility'>) {
+/** Share a path that is already in Files as an artifact. */
+export async function shareArtifactPath(projectId: string, input: ShareArtifactPathInput) {
+  return unwrap(await backendApi.post<ArtifactDetail>(`${base(projectId)}/share`, input));
+}
+
+/** Save files into the artifact in Files. */
+export async function saveArtifact(projectId: string, artifactId: string, input: SaveArtifactInput) {
   return unwrap(await backendApi.put<ArtifactDetail>(`${base(projectId)}/${artifactId}`, input));
 }
 
-/** Rename, retype or share. */
+/** Rename or share. */
 export async function updateArtifact(projectId: string, artifactId: string, input: UpdateArtifactInput) {
   return unwrap(await backendApi.patch<Artifact>(`${base(projectId)}/${artifactId}`, input));
 }
 
+/** Stop sharing: it leaves Artifacts; its files stay in Files. */
 export async function deleteArtifact(projectId: string, artifactId: string) {
   return unwrap(await backendApi.delete<{ deleted: true }>(`${base(projectId)}/${artifactId}`));
 }
@@ -166,16 +185,16 @@ export async function listArtifactVersions(projectId: string, artifactId: string
   return unwrap(await backendApi.get<{ versions: ArtifactVersion[] }>(`${base(projectId)}/${artifactId}/versions`)).versions;
 }
 
-/** Restore an old version as a new current version. */
-export async function restoreArtifactVersion(projectId: string, artifactId: string, version: number) {
+/** Write an old version back to Files, as a new save. */
+export async function restoreArtifactVersion(projectId: string, artifactId: string, version: string) {
   return unwrap(await backendApi.post<ArtifactDetail>(`${base(projectId)}/${artifactId}/restore`, { version }));
 }
 
-/** One file's source as stored (no kit), default index.html of the current version. */
+/** One file's source as stored in Files, default the entry file now. */
 export async function readArtifactFile(
   projectId: string,
   artifactId: string,
-  options: { path?: string; version?: number; signal?: AbortSignal } = {},
+  options: { path?: string; version?: string; signal?: AbortSignal } = {},
 ): Promise<Blob> {
   const url = `${stripTrailingSlashes(platformConfig().backendUrl)}${base(projectId)}/${artifactId}/content${query({ path: options.path, version: options.version })}`;
   const response = await authenticatedFetch(url, { signal: options.signal });

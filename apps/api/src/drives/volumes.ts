@@ -126,14 +126,16 @@ export async function listVolumeFiles(
   path: string,
   recursive: boolean,
   signal?: AbortSignal,
+  at?: string,
 ): Promise<VolumeEntry[]> {
-  const q = new URLSearchParams({ path, recursive: String(recursive), limit: '10000' });
+  const q = new URLSearchParams({ path, recursive: String(recursive), limit: '10000', ...(at ? { at } : {}) });
   const r = await callJson<{ entries: VolumeEntry[] }>(`${v(volume)}/files?${q}`, signal ? { signal } : {});
   return r.entries ?? [];
 }
 
-export async function readVolumeFile(volume: string, path: string, range?: string): Promise<Response> {
-  const q = new URLSearchParams({ path });
+/** A file's bytes; `at` reads it as it was at that commit. */
+export async function readVolumeFile(volume: string, path: string, range?: string, at?: string): Promise<Response> {
+  const q = new URLSearchParams({ path, ...(at ? { at } : {}) });
   return call(`${v(volume)}/files/content?${q}`, {
     signal: AbortSignal.timeout(FILE_TIMEOUT_MS),
     headers: range ? { Range: range } : {},
@@ -177,8 +179,9 @@ export interface VolumeFileStat extends VolumeEntry {
   version: string | null;
 }
 
-export async function statVolumeFile(volume: string, path: string): Promise<VolumeFileStat> {
-  const q = new URLSearchParams({ path });
+/** A file's metadata; `at` stats it as it was at that commit. */
+export async function statVolumeFile(volume: string, path: string, at?: string): Promise<VolumeFileStat> {
+  const q = new URLSearchParams({ path, ...(at ? { at } : {}) });
   const r = await callJson<VolumeFileStat>(`${v(volume)}/files/stat?${q}`, { signal: AbortSignal.timeout(30_000) });
   return { path: r.path, type: r.type, size: Number(r.size ?? 0), mtime: Number(r.mtime ?? 0), version: r.version ?? null };
 }

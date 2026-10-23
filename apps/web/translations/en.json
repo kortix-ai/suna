@@ -1115,7 +1115,7 @@
         },
         "artifacts": {
           "name": "Artifacts",
-          "description": "Agents and people publish docs and HTML pages (decks, dashboards, mockups, tools) in the project. Docs edit in place, every publish is a version, any artifact exports to PDF, and a share link makes it private, for the project, for chosen people, or public. Adds the Artifacts page and `kortix artifacts`."
+          "description": "Share docs (Markdown) and HTML pages (decks, dashboards, mockups, tools) from Files with the project, chosen people or anyone with a link. Docs edit in place, every save is a version from the Files history, and docs export to PDF. Adds the Artifacts page and `kortix artifacts`."
         }
       }
     },
@@ -22487,15 +22487,10 @@
   },
   "artifacts": {
     "title": "Artifacts",
-    "gateDescription": "Docs and HTML pages that agents and people publish, with versions, PDF export and share links.",
-    "makeNew": "Make something new",
+    "gateDescription": "Share docs and HTML pages from Files with your team or anyone with a link. Docs edit in place; every save is a version.",
     "type": {
       "doc": "Doc",
       "html": "HTML"
-    },
-    "typeHint": {
-      "doc": "A spec, report or memo. Write and edit it like a document.",
-      "html": "Any page: a deck, a dashboard, a mockup or a tool."
     },
     "scope": {
       "all": "All",
@@ -22507,7 +22502,7 @@
     "loadError": "Could not load artifacts.",
     "retry": "Try again",
     "empty": "No artifacts yet",
-    "emptyHint": "Ask an agent for a doc, a deck or a dashboard, or start one above.",
+    "emptyHint": "Ask an agent for a doc, a deck or a dashboard, or start a new doc.",
     "emptyFiltered": "No artifacts match",
     "updated": "Updated {time}",
     "pinned": "Pinned",
@@ -22527,15 +22522,6 @@
     "unpin": "Unpin",
     "share": "Share",
     "rename": "Rename",
-    "delete": "Delete",
-    "deleteTitle": "Delete this artifact?",
-    "deleteHint": "Every version and file is deleted, and its links stop working.",
-    "deleted": "Artifact deleted",
-    "untitled": "Untitled {type}",
-    "newTitle": "New {type}",
-    "newPlaceholder": "Describe what to make. Paste data, notes or links.",
-    "startBlank": "Start blank",
-    "createWithAgent": "Create with agent",
     "shareTitle": "Share “{title}”",
     "shareHint": "Choose who can open this artifact.",
     "generalAccess": "General access",
@@ -22548,23 +22534,18 @@
     "shareSaved": "Sharing updated",
     "cancel": "Cancel",
     "save": "Save",
-    "saving": "Saving…",
-    "saved": "Saved as version {version}",
     "back": "Back to artifacts",
-    "versions": "Versions",
-    "versionShort": "v{version}",
     "current": "Current",
-    "viewingOld": "You are viewing version {version}. The current version is {current}.",
+    "viewingOld": "You are viewing the version from {time}.",
     "backToCurrent": "Back to current",
     "restore": "Restore",
-    "restored": "Version {version} is now version {current}",
+    "restored": "Restored as a new save",
     "bold": "Bold",
     "italic": "Italic",
     "bulletList": "Bulleted list",
     "link": "Link",
     "linkPrompt": "Link URL",
     "fullScreen": "Full screen",
-    "download": "Download HTML",
     "askAgent": "Ask agent",
     "askAgentTitle": "Ask an agent to change this artifact",
     "askAgentPlaceholder": "What should change?",
@@ -22579,8 +22560,6 @@
       "saving": "Saving…",
       "error": "Not saved"
     },
-    "editCode": "Edit code",
-    "downloadPdf": "Download PDF",
     "placeholder": "Write, or type # for a heading, - for a list, [ ] for a task",
     "placeholderHeading": "Title",
     "strike": "Strikethrough",
@@ -22600,6 +22579,18 @@
     "addColumn": "Add column",
     "deleteRow": "Delete row",
     "deleteTable": "Delete table",
-    "conflict": "Someone else published a newer version. Reload the page to see it; your last changes were not saved."
+    "conflict": "Someone else saved this doc after you opened it. Reload to see their version; your last changes were not saved.",
+    "newDoc": "New doc",
+    "untitledDoc": "Untitled doc",
+    "history": "History",
+    "historyEmpty": "No saves in the recent history of Files.",
+    "saves": "{count} saves",
+    "viewing": "Viewing",
+    "exportPdf": "Export as PDF",
+    "openInFiles": "Show in Files",
+    "remove": "Stop sharing",
+    "removeTitle": "Stop sharing this artifact?",
+    "removeHint": "It leaves Artifacts and its links stop working. Its files stay in Files.",
+    "removed": "No longer shared"
   }
 }
