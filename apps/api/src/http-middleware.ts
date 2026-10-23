@@ -21,6 +21,7 @@ import {
 import { installFetchTiming } from './lib/server-timing';
 import { addBreadcrumb } from './lib/sentry';
 import { compressResponse } from './middleware/compress';
+import { protectResponseCache } from './middleware/cache-control';
 import { createCorsMiddleware } from './middleware/cors';
 import { requestDeadline } from './middleware/request-deadline';
 import { createPublicEdgeRateLimitMiddleware } from './middleware/public-edge-rate-limit';
@@ -66,6 +67,9 @@ app.use('*', async (c, next) => {
 });
 
 // === Global Middleware ===
+
+// Apply cache protection after compression and all downstream response rewrites.
+app.use("*", protectResponseCache);
 
 // Response compression. Mounted at the OUTSIDE of the chain so it sees the
 // final response of every route, including the ones the middleware below
