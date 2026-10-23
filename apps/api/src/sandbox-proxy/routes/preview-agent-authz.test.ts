@@ -103,6 +103,7 @@ mock.module('../../projects/sandbox-turn-lifecycle', () => ({
 }));
 mock.module('../../projects/session-open', () => ({
   resumeStoppedSandboxByExternalId: async () => true,
+  stoppedSandboxWakePending: async () => false,
 }));
 mock.module('../backend', () => ({
   loadSandbox: async () => ({ ...ACTIVE_RECORD, agentName: sessionAgentName }),
