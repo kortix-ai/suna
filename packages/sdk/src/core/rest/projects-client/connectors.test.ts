@@ -994,6 +994,20 @@ test('listDiscoverConnectors accepts a query object with a category filter and p
   expect(result.total).toBe(70);
 });
 
+test('listDiscoverConnectors and listDiscoverSections send the one-click filter', async () => {
+  const gmail = { id: 'composio:gmail', kind: 'composio', slug: 'gmail', name: 'Gmail', oneClick: true, composio: { slug: 'gmail', name: 'Gmail', logo: null, description: null, categories: [], isNoAuth: false, connected: false } };
+  nextResponse = { status: 200, body: { items: [gmail], total: 1, hasMore: false } };
+  const page = await listDiscoverConnectors('P1', { q: 'mail', oneClick: true });
+  expect(last().url).toContain('oneClick=1');
+  expect(page.items[0]?.composio?.slug).toBe('gmail');
+  expect(page.items[0]?.oneClick).toBe(true);
+  await listDiscoverConnectors('P1', { q: 'mail' });
+  expect(last().url).not.toContain('oneClick');
+  nextResponse = { status: 200, body: { popular: [], sections: [], categories: [] } };
+  await listDiscoverSections('P1', { perCategory: 6, oneClick: true });
+  expect(last().url).toContain('oneClick=1');
+});
+
 test('listDiscoverSections GETs the Discover browse page with true category totals', async () => {
   const stripe = { id: 'mcp/stripe', slug: 'stripe', name: 'Stripe', categories: ['payments'] };
   nextResponse = {

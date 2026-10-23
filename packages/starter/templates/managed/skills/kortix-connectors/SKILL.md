@@ -247,18 +247,31 @@ connectors:
       type: bearer
 ```
 
-Use `composio` for managed SaaS apps. Other supported direct providers are
-`mcp`, `openapi`, `postman`, `graphql`, and `http`. Add and connect a Composio
-toolkit with:
+To add an app, go MCP first. Search the app catalogue:
 
 ```sh
-kortix connectors add github --provider composio --app github --apply
-kortix connectors connect github
+kortix connectors catalog gmail --json
 ```
+
+It lists one entry per app, by its best way in, and only apps that connect in
+one click (the human signs in, nothing to set up). `--all` adds the apps that
+need setup. Each entry's `kind` says how to add it:
+
+- `mcp` — the vendor's own MCP server. Add its `mcpUrl`:
+  `kortix connectors add linear --provider mcp --url https://mcp.linear.app/mcp --transport http --apply`
+- `composio` — a managed app, for an app with no one-click MCP server (Gmail,
+  Outlook, …). Add its `composio.slug`:
+  `kortix connectors add gmail --provider composio --app gmail --apply`
+- `openapi`, `graphql`, `cli` (with `--all`) — needs a key or an OAuth app of
+  the human's own. `kortix connectors catalog show <id>` lists its surfaces.
+
+Then `kortix connectors connect <slug>`. If `catalog` answers that the
+catalogue is off for this project, use the managed apps:
+`kortix connectors apps <query>`, then `--provider composio --app <slug>`.
 
 Pipedream exists only for rollback compatibility with already-declared
 connectors. Never add a new Pipedream connector automatically. If Composio
-cannot satisfy the request, stop, explain the gap, and ask the human before any
+and the MCP catalogue cannot satisfy the request, stop, explain the gap, and ask the human before any
 explicit `--allow-legacy-pipedream` retry.
 
 Surface the returned connection URL. For an API key you already have (the user
@@ -281,8 +294,9 @@ kortix channels connect
 - Use `kortix connectors` for one-off agent actions.
 - Use `@kortix/sdk` for durable or testable workflows, and for App, Convex
   backend, and external-program code (see **From apps and backends**).
-- Use Composio for every new managed SaaS connector. Never select Pipedream
-  unless the human explicitly approves the legacy rollback path.
+- Add an app through its one-click MCP server first, then its managed
+  (Composio) app. Never select Pipedream unless the human explicitly approves
+  the legacy rollback path.
 - Do not use raw provider tokens from the sandbox.
 - Treat `denied`, `not_shared`, `needs_auth`, `account_required`, and
   `ok: false` as real outcomes — `account_required` means several accounts

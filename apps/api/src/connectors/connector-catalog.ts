@@ -6,6 +6,11 @@ import {
   sortByPicks,
 } from '@kortix/shared/connector-sections';
 import { logger } from '../lib/logger';
+import oneClickMcp from './one-click-mcp.json';
+
+/** MCP endpoints a client connects to with the URL alone, from the last
+ *  `scripts/probe-one-click-mcp.ts` run. */
+const ONE_CLICK_MCP: ReadonlySet<string> = new Set(Object.keys(oneClickMcp.servers));
 
 const INTEGRATIONS_BASE_URL = 'https://integrations.sh';
 const DEFAULT_TTL_MS = 15 * 60_000;
@@ -49,7 +54,19 @@ const OFFICIAL_SURFACE_ENRICHMENTS: Record<string, ConnectorSurfaceVariant[]> = 
   ],
 };
 
-export type ConnectorCatalogKind = 'openapi' | 'mcp' | 'graphql' | 'cli';
+/** `composio`: a managed Composio toolkit (`connectors_v2` catalogue only). */
+export type ConnectorCatalogKind = 'openapi' | 'mcp' | 'graphql' | 'cli' | 'composio';
+
+/** A Composio toolkit as the managed catalogue routes publish it. */
+export interface ComposioCatalogCard {
+  slug: string;
+  name: string;
+  logo: string | null;
+  description: string | null;
+  categories: string[];
+  isNoAuth: boolean;
+  connected: boolean;
+}
 
 export interface ConnectorCatalogItem {
   id: string;
@@ -67,6 +84,11 @@ export interface ConnectorCatalogItem {
   mcpUrl?: string;
   /** The index's curated, OAuth-signed-in servers rank first. */
   oauth?: boolean;
+  /** Connects with nothing to set up: a public or self-registering MCP server
+   *  (`one-click-mcp.json`), a Kortix catalogue app, or a managed toolkit. */
+  oneClick?: boolean;
+  /** The toolkit a `composio` record installs. */
+  composio?: ComposioCatalogCard;
 }
 
 export interface ConnectorTemplate {
@@ -111,8 +133,8 @@ interface CatalogOptions {
   /** A catalogue other than integrations.sh, held in memory: its records and
    *  each domain's surfaces, served as they are (no fetch, no enrichment). */
   source?: {
-    items(): ConnectorCatalogItem[];
-    surfaces(domain: string): ConnectorSurfaceVariant[];
+    items(): ConnectorCatalogItem[] | Promise<ConnectorCatalogItem[]>;
+    surfaces(domain: string): ConnectorSurfaceVariant[] | Promise<ConnectorSurfaceVariant[]>;
   };
 }
 
@@ -151,6 +173,7 @@ function normalizeItem(value: unknown): ConnectorCatalogItem | null {
       typeof raw.popularity === 'number' && Number.isFinite(raw.popularity) ? raw.popularity : null,
     ...(kind === 'mcp' && httpsUrl(raw.connectUrl) ? { mcpUrl: httpsUrl(raw.connectUrl)! } : {}),
     ...((raw.auth as { kind?: unknown } | undefined)?.kind === 'oauth' ? { oauth: true } : {}),
+    ...(kind === 'mcp' && ONE_CLICK_MCP.has(String(raw.connectUrl).trim()) ? { oneClick: true } : {}),
   };
 }
 
@@ -328,13 +351,17 @@ function appCount(items: ConnectorCatalogItem[]): number {
   return new Set(items.map((item) => item.domain)).size;
 }
 
-/** The surface an app's card stands for: MCP first, as Install picks it. */
+/** The surface an app's card stands for: a one-click MCP server, then a
+ *  managed toolkit, then any MCP server, then the APIs. */
 const SURFACE_RANK: Record<ConnectorCatalogKind, number> = {
-  mcp: 0,
-  openapi: 1,
-  graphql: 2,
-  cli: 3,
+  composio: 1,
+  mcp: 2,
+  openapi: 3,
+  graphql: 4,
+  cli: 5,
 };
+const surfaceRank = (item: ConnectorCatalogItem) =>
+  item.kind === 'mcp' && item.oneClick ? 0 : SURFACE_RANK[item.kind];
 
 /**
  * One record per app (domain), at the position of the app's first record, and
@@ -348,7 +375,7 @@ function onePerApp(items: ConnectorCatalogItem[]): ConnectorCatalogItem[] {
     if (!current) {
       order.push(item.domain);
       best.set(item.domain, item);
-    } else if (SURFACE_RANK[item.kind] < SURFACE_RANK[current.kind]) {
+    } else if (surfaceRank(item) < surfaceRank(current)) {
       best.set(item.domain, item);
     }
   }
@@ -374,6 +401,10 @@ function rankByName(items: ConnectorCatalogItem[], query: string): ConnectorCata
     .sort((a, b) => a.rank - b.rank || a.index - b.index)
     .map((entry) => entry.item);
 }
+
+/** With `oneClick`, only the records that connect with nothing to set up. */
+const oneClickOnly = (items: ConnectorCatalogItem[], oneClick?: boolean) =>
+  oneClick ? items.filter((item) => item.oneClick) : items;
 
 export function createConnectorCatalog(options: CatalogOptions = {}) {
   const fetchImpl = options.fetch ?? fetch;
@@ -474,14 +505,20 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
   };
 
   return {
+    /** Every record, one per surface, unpaged. */
+    items: loadIndex,
+    /** One domain's surfaces. */
+    surfaces: loadSurfaces,
     /**
      * A page of the catalogue. `category` is a browse-section key from
      * `sections()` — membership uses the same shared rule that built the
      * section, and picks lead in the same order, so "View all" opens exactly
      * the set and order the section heading counted.
      */
-    async list(input: { q?: string; cursor?: string; limit?: number; category?: string } = {}) {
-      const items = await loadIndex();
+    async list(
+      input: { q?: string; cursor?: string; limit?: number; category?: string; oneClick?: boolean } = {},
+    ) {
+      const items = oneClickOnly(await loadIndex(), input.oneClick);
       const query = input.q?.trim().toLowerCase() ?? '';
       const category = input.category?.trim();
       const searched = query
@@ -527,10 +564,10 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
      * whole index here fixes the count at the source. Sections follow the
      * shared curated order; limits and defaults match the other providers.
      */
-    async sections(input: { perCategory?: number; maxCategories?: number } = {}) {
+    async sections(input: { perCategory?: number; maxCategories?: number; oneClick?: boolean } = {}) {
       const perCategory = boundedCount(input.perCategory, 6, 24);
       const maxCategories = boundedCount(input.maxCategories, 12, 40);
-      const items = await loadIndex();
+      const items = oneClickOnly(await loadIndex(), input.oneClick);
       const groups = groupIntoSections(items, (item) => item.categories);
       // The feed publishes one record per surface (`stripe-com`,
       // `stripe-com-openapi`, `stripe-com-cli`). A card resolves every surface
@@ -596,7 +633,7 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
       for (const item of await loadIndex()) {
         const key = appNameKey(item.name);
         const current = best.get(key);
-        if (!current || SURFACE_RANK[item.kind] < SURFACE_RANK[current.kind]) best.set(key, item);
+        if (!current || surfaceRank(item) < surfaceRank(current)) best.set(key, item);
       }
       return new Map([...best].map(([key, item]) => [key, item.id]));
     },
@@ -607,7 +644,7 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
      */
     async directMcpUrls(): Promise<Map<string, string>> {
       const rank = (item: ConnectorCatalogItem) =>
-        (item.feeds.includes('curated') ? 2 : 0) + (item.oauth ? 1 : 0);
+        (item.oneClick ? 4 : 0) + (item.feeds.includes('curated') ? 2 : 0) + (item.oauth ? 1 : 0);
       const best = new Map<string, ConnectorCatalogItem>();
       for (const item of await loadIndex()) {
         if (!item.mcpUrl) continue;
@@ -647,3 +684,5 @@ export const getConnectorCatalogDetail = catalog.detail;
 export const connectorCatalogIcons = catalog.icons;
 export const connectorCatalogDirectIds = catalog.directIds;
 export const connectorCatalogDirectMcpUrls = catalog.directMcpUrls;
+export const connectorCatalogItems = catalog.items;
+export const connectorCatalogSurfaces = catalog.surfaces;

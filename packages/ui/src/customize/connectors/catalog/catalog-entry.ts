@@ -1,5 +1,5 @@
 import type { UiTranslator } from '../../../i18n';
-import type { AdminConnector, DiscoverConnector, PipedreamApp } from '@kortix/sdk';
+import type { AdminConnector, ConnectToolkit, DiscoverConnector, PipedreamApp } from '@kortix/sdk';
 
 import { faviconUrlForHostname } from '../../../lib/favicon';
 
@@ -83,7 +83,34 @@ export function discoverEntryIcon(
   return connector.icon ?? faviconUrlForHostname(connector.domain);
 }
 
+export type EasyConnectApp = PipedreamApp & { provider?: 'composio' | 'pipedream' };
+
+/** A Composio toolkit as the card the Easy Connect grid renders. The paged
+ *  catalogue and the browse sections both use this, so a card is identical in
+ *  a section and behind its "View all". */
+export function connectToolkitApp(toolkit: ConnectToolkit): EasyConnectApp {
+  return {
+    slug: toolkit.slug,
+    name: toolkit.name,
+    description: toolkit.description ?? null,
+    imgSrc: toolkit.logo,
+    authType: toolkit.isNoAuth ? 'none' : 'oauth',
+    categories: toolkit.categories ?? [],
+    hasActions: true,
+    hasTriggers: false,
+    featuredWeight: 0,
+    provider: 'composio',
+    directId: toolkit.directId ?? null,
+    directMcpUrl: toolkit.directMcpUrl ?? null,
+  };
+}
+
+/** A Discover record as its card. A managed app (`composio`, Connectors v2)
+ *  is an Easy Connect card, so it installs through Composio. */
 export function catalogEntryFromDiscover(connector: DiscoverConnector): CatalogEntry {
+  if (connector.kind === 'composio' && connector.composio) {
+    return catalogEntryFromEasyConnect(connectToolkitApp(connector.composio));
+  }
   return {
     source: 'discover',
     connector,

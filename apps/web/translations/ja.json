@@ -21042,6 +21042,7 @@
     "backToConnectors": "コネクターに戻る",
     "installed": "{name} をインストールしました",
     "yourConnectors": "あなたのコネクター",
+    "oneClickOnly": "ワンクリックのみ",
     "installedSyncFailed": "{name} をインストールしました。Kortix はツールを読み込めませんでした: {error}",
     "newSession": "新しいセッション",
     "sections": "{name} のセクション",

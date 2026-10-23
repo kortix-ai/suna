@@ -622,13 +622,21 @@ describe('kortix connectors — capability-page parity', () => {
     });
   });
 
-  test('catalog lists records and forwards q + cursor', async () => {
+  test('catalog lists one-click records by default and forwards q + cursor', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'catalog', 'pay', '--cursor', 'cur_1', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors?q=pay&cursor=cur_1`);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors?q=pay&cursor=cur_1&oneClick=1`);
     expect(r.stdout).toContain('stripe');
     expect(r.stdout).toContain('--cursor cur_2');
+    expect(r.stdout).toContain('--all adds apps that need setup');
+  });
+
+  test('catalog --all lists the apps that need setup too', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'catalog', 'pay', '--all', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors?q=pay`);
   });
 
   test('catalog show reads the detail route by id', async () => {

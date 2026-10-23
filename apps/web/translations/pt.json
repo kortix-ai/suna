@@ -21042,6 +21042,7 @@
     "backToConnectors": "Voltar aos conectores",
     "installed": "{name} está instalado",
     "yourConnectors": "Seus conectores",
+    "oneClickOnly": "Só um clique",
     "installedSyncFailed": "{name} está instalado. O Kortix não conseguiu carregar as ferramentas: {error}",
     "newSession": "Nova sessão",
     "sections": "Seções de {name}",

@@ -21042,6 +21042,7 @@
     "backToConnectors": "Назад на конекторе",
     "installed": "{name} је инсталиран",
     "yourConnectors": "Ваши конектори",
+    "oneClickOnly": "Samo jednim klikom",
     "installedSyncFailed": "{name} је инсталиран. Kortix није могао да учита алате: {error}",
     "newSession": "Нова сесија",
     "sections": "Одељци за {name}",

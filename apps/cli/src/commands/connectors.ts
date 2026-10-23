@@ -125,15 +125,18 @@ interface ProjectPoliciesView {
   connectorRules?: { slug: string; count: number }[];
 }
 
-/** One record in the direct-connector catalogue (integrations.sh). */
+/** One record in the Discover catalogue: integrations.sh, or under
+ *  Connectors v2 every MCP server, API and managed app. */
 interface DiscoverConnector {
   id: string;
+  /** How it connects: mcp, composio, openapi, graphql, cli. */
   kind: string;
   slug: string;
   name: string;
   description: string | null;
   url: string | null;
   categories: string[];
+  oneClick?: boolean;
 }
 
 /** One connectable surface on a catalogue record. */
@@ -263,8 +266,12 @@ Subcommands:
        [--cursor <c>] [--limit <n>]  slugs that add --provider composio --app
        [--pipedream] [--json]        accepts. Alias: toolkits. Use --pipedream
                                      for the legacy Pipedream catalog.
-  catalog [<query>] [--cursor <c>]  Browse the direct-connector catalogue.
-          [--json]                  Needs the \`connectors_api_discover\` flag.
+  catalog [<query>] [--cursor <c>]  Browse the app catalogue: apps that connect
+          [--all] [--json]          in one click (public or self-registering
+                                    MCP servers, managed apps). --all adds the
+                                    apps that need setup (own OAuth app, API
+                                    key, OpenAPI, GraphQL, CLI). Needs
+                                    \`connectors_v2\` or \`connectors_api_discover\`.
   catalog show <id> [--json]        Show one catalogue record's surfaces.
   sensitive <slug> on|off           Gate this connector's READS too — every
                                     call needs approval (applies now).
@@ -1372,9 +1379,11 @@ export async function runConnectors(argv: string[]): Promise<number> {
           return 0;
         }
         const q = positional[0];
+        const all = allConnections;
         const qs = [
           q ? `q=${encodeURIComponent(q)}` : '',
           f.cursor ? `cursor=${encodeURIComponent(f.cursor)}` : '',
+          all ? '' : 'oneClick=1',
         ]
           .filter(Boolean)
           .join('&');
@@ -1390,19 +1399,20 @@ export async function runConnectors(argv: string[]): Promise<number> {
         const items = page.items ?? [];
         if (items.length === 0) {
           process.stdout.write(
-            `  ${C.dim}No catalogue records${q ? ` matching "${q}"` : ''}.${C.reset}\n`,
+            `  ${C.dim}No ${all ? '' : 'one-click '}catalogue records${q ? ` matching "${q}"` : ''}.${all ? '' : ' --all lists the apps that need setup too.'}${C.reset}\n`,
           );
           return 0;
         }
         const idW = Math.max(...items.map((i) => i.id.length), 2);
         process.stdout.write('\n');
         for (const item of items) {
+          const via = `${item.kind}${item.oneClick ? ' ·1-click' : ''}`;
           process.stdout.write(
-            `  ${C.cyan}${pad(item.id, idW)}${C.reset}  ${trim(item.name, 30)}  ${C.dim}${trim(item.description ?? '', 40)}${C.reset}\n`,
+            `  ${C.cyan}${pad(item.id, idW)}${C.reset}  ${pad(trim(item.name, 24), 24)}  ${pad(via, 17)}  ${C.dim}${trim(item.description ?? '', 40)}${C.reset}\n`,
           );
         }
         process.stdout.write(
-          `\n  ${C.dim}${items.length} record${items.length === 1 ? '' : 's'}${page.hasMore && page.nextCursor ? ` · more: --cursor ${page.nextCursor}` : ''}${C.reset}\n\n`,
+          `\n  ${C.dim}${items.length} ${all ? '' : 'one-click '}record${items.length === 1 ? '' : 's'}${page.hasMore && page.nextCursor ? ` · more: --cursor ${page.nextCursor}` : ''}${all ? '' : ' · --all adds apps that need setup'}${C.reset}\n\n`,
         );
         return 0;
       }

@@ -6374,6 +6374,7 @@ const catalog = {
     "backToConnectors": "Back to connectors",
     "installed": "{name} is installed",
     "yourConnectors": "Your connectors",
+    "oneClickOnly": "One-click only",
     "installedSyncFailed": "{name} is installed. Kortix could not load its tools: {error}",
     "newSession": "New session",
     "sections": "{name} sections",

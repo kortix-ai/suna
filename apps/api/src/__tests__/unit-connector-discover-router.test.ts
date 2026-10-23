@@ -61,12 +61,14 @@ describe('Discover catalogue routes', () => {
       }),
     );
     expect((await request(app, `/projects/${PROJECT}/discover/connectors?q=mail`, { headers: ADMIN })).status).toBe(200);
+    expect((await request(app, `/projects/${PROJECT}/discover/connectors?oneClick=1`, { headers: ADMIN })).status).toBe(200);
+    expect((await request(app, `/projects/${PROJECT}/discover/connectors?oneClick=nope`, { headers: ADMIN })).status).toBe(400);
     expect((await request(app, `/projects/${PROJECT}/discover/connectors/detail?id=kortix:gmail`, { headers: ADMIN })).status).toBe(200);
-    expect(seen).toEqual([{ catalogue: 'kortix', q: 'mail' }, { id: 'kortix:gmail', catalogue: 'kortix' }]);
+    expect(seen).toEqual([{ catalogue: 'kortix', q: 'mail' }, { catalogue: 'kortix', oneClick: true }, { id: 'kortix:gmail', catalogue: 'kortix' }]);
     flags = new Set();
     const gated = await request(app, `/projects/${PROJECT}/discover/connectors`, { headers: ADMIN });
     expect(gated.status).toBe(403);
-    expect(seen).toHaveLength(2);
+    expect(seen).toHaveLength(3);
   });
 
   test('sections forward their limits behind admin and the Discover flag', async () => {

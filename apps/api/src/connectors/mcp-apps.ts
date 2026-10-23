@@ -27,9 +27,14 @@
 import type { OAuth2ApplicationInput } from '@kortix/api-contract';
 import { config } from '../config';
 import { logger } from '../lib/logger';
+import { composioVisibleToolkits, publicToolkit } from './composio-catalog-search';
+import { appNameKey } from './connect-direct-twins';
 import {
+  type ComposioCatalogCard,
   type ConnectorCatalogItem,
   type ConnectorSurfaceVariant,
+  connectorCatalogItems,
+  connectorCatalogSurfaces,
   createConnectorCatalog,
 } from './connector-catalog';
 
@@ -256,9 +261,11 @@ export function mcpAppCatalogItem(app: McpApp): ConnectorCatalogItem {
     domain: app.domain,
     categories: app.categories,
     feeds: ['kortix'],
-    popularity: rank === -1 ? null : POPULAR.length - rank,
+    // Above every integrations.sh score, so Popular opens with these.
+    popularity: rank === -1 ? null : 1_000_000 + POPULAR.length - rank,
     mcpUrl: app.url,
     oauth: true,
+    oneClick: true,
   };
 }
 
@@ -278,10 +285,71 @@ export function mcpAppSurface(app: McpApp): ConnectorSurfaceVariant {
   };
 }
 
-/** The Discover catalogue a `connectors_v2` project browses: Kortix's own list. */
+/** A managed toolkit as a catalogue record. `domain` is the same app's domain
+ *  in the other catalogues, so one card stands for both; else a pseudo-domain
+ *  with no surfaces. */
+export function composioCatalogItem(card: ComposioCatalogCard, domain: string | undefined): ConnectorCatalogItem {
+  return {
+    id: `composio:${card.slug}`,
+    kind: 'composio',
+    slug: card.slug,
+    name: card.name,
+    description: card.description,
+    url: null,
+    icon: card.logo,
+    domain: domain ?? `${card.slug}.composio`,
+    categories: card.categories,
+    feeds: ['composio'],
+    popularity: null,
+    oneClick: true,
+    composio: card,
+  };
+}
+
+/**
+ * Every way to connect, one record per surface: Kortix's apps, integrations.sh
+ * (MCP, OpenAPI, GraphQL, CLI) and the managed toolkits. `list` shows each app
+ * once, by its best surface (`surfaceRank`): a one-click MCP server, then the
+ * managed toolkit, then the rest. A source that is down drops out; the others
+ * still list.
+ */
+export async function connectorsV2Items(
+  load: {
+    apps?: () => McpApp[];
+    index?: () => Promise<ConnectorCatalogItem[]>;
+    toolkits?: () => Promise<ComposioCatalogCard[]>;
+  } = {},
+): Promise<ConnectorCatalogItem[]> {
+  const kortix = (load.apps ?? availableMcpApps)().map(mcpAppCatalogItem);
+  const [index, toolkits] = await Promise.all([
+    (load.index ?? connectorCatalogItems)().catch(() => [] as ConnectorCatalogItem[]),
+    (load.toolkits ?? (async () => (await composioVisibleToolkits()).map(publicToolkit)))().catch(
+      () => [] as ComposioCatalogCard[],
+    ),
+  ]);
+  // A Kortix app is the one way to its domain: its endpoints are verified.
+  const curated = new Set(kortix.map((item) => item.domain));
+  const direct = index.filter((item) => !curated.has(item.domain));
+  const domainOf = new Map<string, string>();
+  for (const item of [...kortix, ...direct]) {
+    const key = appNameKey(item.name);
+    if (!domainOf.has(key)) domainOf.set(key, item.domain);
+  }
+  return [
+    ...kortix,
+    ...direct,
+    ...toolkits.map((card) => composioCatalogItem(card, domainOf.get(appNameKey(card.name)))),
+  ];
+}
+
+/** The Discover catalogue a `connectors_v2` project browses. */
 export const kortixMcpCatalog = createConnectorCatalog({
   source: {
-    items: () => availableMcpApps().map(mcpAppCatalogItem),
-    surfaces: (domain) => availableMcpApps().filter((app) => app.domain === domain).map(mcpAppSurface),
+    items: () => connectorsV2Items(),
+    surfaces: async (domain) => {
+      const apps = availableMcpApps().filter((app) => app.domain === domain);
+      if (apps.length) return apps.map(mcpAppSurface);
+      return domain.endsWith('.composio') ? [] : connectorCatalogSurfaces(domain);
+    },
   },
 });

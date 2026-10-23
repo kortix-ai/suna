@@ -1,10 +1,14 @@
-/** Catalogue browse routes: Discover (integrations.sh), easy-connect toolkits, Pipedream apps. */
+/** Catalogue browse routes: Discover (integrations.sh, or everything under connectors_v2), easy-connect toolkits, Pipedream apps. */
 import { withDirectIds, withDirectMcpUrls } from '../connect-direct-twins';
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { featureDisabledBody } from '../../feature-flags/gate';
 import { auth, errors, json } from '../../openapi';
 import type { ConnectorRouterDeps } from '../router';
 import { OpaqueSchema, ProjectParam, featureNotSupportedResponse } from './shared';
+
+const OneClickParam = z.enum(['1', 'true', '0', 'false']).optional();
+const oneClickQuery = (c: { req: { query(name: string): string | undefined } }) =>
+  ['1', 'true'].includes(c.req.query('oneClick') ?? '');
 
 export function registerDiscoverRoutes(app: OpenAPIHono, deps: ConnectorRouterDeps): void {
   // ── Admin: browse direct connector surfaces ───────────────────────────
@@ -23,6 +27,8 @@ export function registerDiscoverRoutes(app: OpenAPIHono, deps: ConnectorRouterDe
           /** A browse-section key from `/discover/sections`. */
           category: z.string().optional(),
           limit: z.coerce.number().int().positive().max(96).optional(),
+          /** `1`: only the apps that connect with nothing to set up. */
+          oneClick: OneClickParam,
         }),
       },
       responses: {
@@ -47,6 +53,7 @@ export function registerDiscoverRoutes(app: OpenAPIHono, deps: ConnectorRouterDe
             cursor: c.req.query('cursor') || undefined,
             category: c.req.query('category') || undefined,
             ...(Number.isFinite(limit) && limit > 0 ? { limit } : {}),
+            ...(oneClickQuery(c) ? { oneClick: true } : {}),
           }),
         );
       } catch (error) {
@@ -70,6 +77,7 @@ export function registerDiscoverRoutes(app: OpenAPIHono, deps: ConnectorRouterDe
         query: z.object({
           perCategory: z.coerce.number().int().positive().max(24).optional(),
           maxCategories: z.coerce.number().int().positive().max(40).optional(),
+          oneClick: OneClickParam,
         }),
       },
       responses: {
@@ -93,6 +101,7 @@ export function registerDiscoverRoutes(app: OpenAPIHono, deps: ConnectorRouterDe
             catalogue,
             ...(Number.isFinite(perCategory) && perCategory > 0 ? { perCategory } : {}),
             ...(Number.isFinite(maxCategories) && maxCategories > 0 ? { maxCategories } : {}),
+            ...(oneClickQuery(c) ? { oneClick: true } : {}),
           }),
         );
       } catch (error) {
@@ -138,8 +147,9 @@ export function registerDiscoverDetailRoutes(app: OpenAPIHono, deps: ConnectorRo
 }
 
 /**
- * Which catalogue Discover serves: Kortix's own MCP apps for a `connectors_v2`
- * project (`connectors/mcp-apps.ts`), integrations.sh behind
+ * Which catalogue Discover serves: for a `connectors_v2` project, Kortix's MCP
+ * apps, integrations.sh and the managed toolkits as one (`connectors/mcp-apps.ts`);
+ * integrations.sh alone behind
  * `connectors_api_discover`, else none.
  */
 async function discoverCatalogue(

@@ -110,29 +110,45 @@ describe('apps on a Connectors v2 project', () => {
         calls.push({ method, path, ...opts });
         if (path === '/v1/projects/proj-1') return { status: 200, body: JSON.stringify({ project: { experimental: { connectors_v2: true } } }) };
         if (path.endsWith('/discover/connectors')) {
-          return { status: 200, body: JSON.stringify({ items: [{ slug: 'linear', name: 'Linear', description: 'Issues.', categories: ['productivity'], mcpUrl: 'https://mcp.linear.app/mcp' }], nextCursor: undefined }) };
+          return { status: 200, body: JSON.stringify({ items: [{ id: 'kortix:linear', kind: 'mcp', slug: 'linear', name: 'Linear', description: 'Issues.', categories: ['productivity'], mcpUrl: 'https://mcp.linear.app/mcp', oneClick: true }], nextCursor: undefined }) };
         }
         if (path.endsWith('/discover/connectors/detail')) {
-          return { status: 200, body: JSON.stringify({ item: { slug: 'linear', name: 'Linear', mcpUrl: 'https://mcp.linear.app/mcp' }, variants: [] }) };
+          const id = (opts.query as { id: string }).id;
+          const item =
+            id === 'composio:gmail'
+              ? { id, kind: 'composio', slug: 'gmail', name: 'Gmail', composio: { slug: 'gmail' } }
+              : { id, kind: 'mcp', slug: 'linear', name: 'Linear', mcpUrl: 'https://mcp.linear.app/mcp' };
+          return { status: 200, body: JSON.stringify({ item, variants: [] }) };
         }
         return { status: 201, body: JSON.stringify({ sync: { synced: 1 } }) };
       },
     } as unknown as Host;
   }
 
-  test('search_connector_apps lists MCP apps from Kortix’s catalogue, not Composio', async () => {
-    const calls: Array<{ method: string; path: string }> = [];
+  test('search_connector_apps lists one-click apps from the merged catalogue, not the Composio route', async () => {
+    const calls: Array<{ method: string; path: string; query?: unknown }> = [];
     const result = (await runConnectorTool('search_connector_apps', { project_id: 'proj-1', query: 'linear' }, v2Host(calls))) as { content: Array<{ text: string }> };
     expect(JSON.parse(result.content[0]!.text).apps).toEqual([
-      { slug: 'linear', name: 'Linear', description: 'Issues.', categories: ['productivity'], mcp_url: 'https://mcp.linear.app/mcp' },
+      { app: 'kortix:linear', name: 'Linear', description: 'Issues.', categories: ['productivity'], via: 'mcp', one_click: true, mcp_url: 'https://mcp.linear.app/mcp' },
     ]);
+    expect(calls.find((c) => c.path.endsWith('/discover/connectors'))?.query).toMatchObject({ oneClick: '1' });
     expect(calls.some((c) => c.path.includes('/connect/toolkits'))).toBe(false);
+    await runConnectorTool('search_connector_apps', { project_id: 'proj-1', query: 'linear', all: true }, v2Host(calls));
+    expect(calls.filter((c) => c.path.endsWith('/discover/connectors')).at(-1)?.query).toMatchObject({ oneClick: undefined });
   });
 
-  test('add_connector with app adds the app’s MCP server', async () => {
+  test('add_connector with app adds the app’s MCP server, a bare slug being a Kortix app', async () => {
     const calls: Array<{ method: string; path: string; body?: unknown }> = [];
     await runConnectorTool('add_connector', { project_id: 'proj-1', app: 'linear' }, v2Host(calls));
     const created = calls.find((c) => c.method === 'POST' && c.path.endsWith('/connectors'));
     expect(created?.body).toEqual({ slug: 'linear', provider: 'mcp', name: 'Linear', url: 'https://mcp.linear.app/mcp', transport: 'http' });
+  });
+
+  test('add_connector with a managed app adds it through Composio', async () => {
+    const calls: Array<{ method: string; path: string; body?: unknown }> = [];
+    const result = (await runConnectorTool('add_connector', { project_id: 'proj-1', app: 'composio:gmail' }, v2Host(calls))) as { content: Array<{ text: string }> };
+    const created = calls.find((c) => c.method === 'POST' && c.path.endsWith('/connectors'));
+    expect(created?.body).toEqual({ slug: 'gmail', provider: 'composio', app: 'gmail', name: 'Gmail' });
+    expect(JSON.parse(result.content[0]!.text).next).toContain('connect_connector');
   });
 });

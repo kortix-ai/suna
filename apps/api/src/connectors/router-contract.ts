@@ -496,8 +496,8 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
     categories: Array<{ key: string; label: string; count: number }>;
     indexReady: boolean;
   }>;
-  /** Browse the Discover catalogue: integrations.sh, or Kortix's own MCP apps
-   *  (`connectors_v2`). */
+  /** Browse the Discover catalogue: integrations.sh, or (`connectors_v2`)
+   *  Kortix's MCP apps, integrations.sh and the managed toolkits as one. */
   listDiscoverConnectors?(input: {
     catalogue?: DiscoverCatalogue;
     q?: string;
@@ -505,6 +505,8 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
     /** A browse-section key from `listDiscoverSections`. */
     category?: string;
     limit?: number;
+    /** Only the apps that connect with nothing to set up. */
+    oneClick?: boolean;
   }): Promise<unknown>;
   /** The Discover browse page: Popular plus a fixed top slice of each
    *  section, each with the section's true total across the whole catalogue. */
@@ -512,6 +514,7 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
     catalogue?: DiscoverCatalogue;
     perCategory?: number;
     maxCategories?: number;
+    oneClick?: boolean;
   }): Promise<unknown>;
   /** Resolve every known surface for one trusted catalogue record. */
   getDiscoverConnector?(id: string, catalogue?: DiscoverCatalogue): Promise<unknown>;

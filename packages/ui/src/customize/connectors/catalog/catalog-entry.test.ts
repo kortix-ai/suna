@@ -246,3 +246,22 @@ describe('catalogEntryKindLabel', () => {
     ).toBe('MCP · App');
   });
 });
+
+describe('a managed app in the Connectors v2 catalogue', () => {
+  test('is an Easy Connect card, so it installs through Composio', () => {
+    const entry = catalogEntryFromDiscover(
+      connector({
+        id: 'composio:gmail',
+        kind: 'composio',
+        slug: 'gmail',
+        name: 'Gmail',
+        oneClick: true,
+        composio: { slug: 'gmail', name: 'Gmail', logo: 'https://logo/gmail.svg', description: 'Email', categories: ['email'], isNoAuth: false, connected: false },
+      }),
+    );
+    expect(entry.source).toBe('easy-connect');
+    expect(entry).toMatchObject({ key: 'easy-connect:gmail', slug: 'gmail', icon: 'https://logo/gmail.svg' });
+    expect(entry.source === 'easy-connect' && entry.app.provider).toBe('composio');
+    expect(catalogEntryKindLabel(entry)).toBe('App');
+  });
+});

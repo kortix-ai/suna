@@ -337,7 +337,7 @@ export function setComposioRestClientForTest(next: ComposioCatalogClient | null)
 
 /** The public card shape. `connected` is always false: connection state is
  *  per project and must never enter this deployment-wide cache. */
-function publicToolkit(item: CatalogToolkit) {
+export function publicToolkit(item: CatalogToolkit) {
   return {
     slug: item.slug,
     name: item.name,

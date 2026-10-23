@@ -78,7 +78,17 @@ A connector page has up to four tabs:
 
 ### The MCP app catalog (experimental)
 
-With the project flag **Connectors v2** (`connectors_v2`, off by default) on, the **All** tab lists the Kortix MCP app catalog instead of the managed apps. Every app in it is a remote MCP server that its vendor runs, and Kortix connects to it directly. Turn the flag on under **Customize → Settings → [Feature flags](/docs/project#feature-flags)**.
+With the project flag **Connectors v2** (`connectors_v2`, off by default) on, the **All** tab lists one catalog of every way to connect: the Kortix MCP apps below, every MCP server, REST (OpenAPI) and GraphQL API and CLI in the [integrations.sh](https://integrations.sh) registry, and the managed apps. Turn the flag on under **Customize → Settings → [Feature flags](/docs/project#feature-flags)**.
+
+Each app shows once, by its best way in:
+
+1. **A one-click MCP server.** The vendor's server is public, or its OAuth server registers Kortix on the fly. You only sign in.
+2. **A managed app.** For an app with no one-click MCP server, for example Gmail or Outlook. You only sign in.
+3. **Everything else.** An MCP server that needs your own OAuth app or an API key, or a REST or GraphQL API.
+
+**One-click only** is on by default and lists ways 1 and 2. Turn it off to see every app. Kortix probes every MCP server in the registry for its sign-in; `apps/api/scripts/probe-one-click-mcp.ts` refreshes the list.
+
+To install a catalog MCP app:
 
 1. Find the app and select **Install**.
 2. **Connect** *app* opens. Choose **Who can use it** and select **Connect**.
@@ -94,7 +104,7 @@ Apps sign in one of three ways:
 
 - Kortix's own OAuth client is used only for the exact MCP server URL in the catalog, with the catalog's endpoints and scopes. Its client secret stays on the server.
 - Connectors you added from the managed catalog keep working with the flag on.
-- Agents see the same catalog: the `search_connector_apps` tool of the [Kortix MCP server](/docs/connect/mcp) lists the MCP apps, and `add_connector` with `app` adds the app's MCP server.
+- Agents see the same catalog: the `search_connector_apps` tool of the [Kortix MCP server](/docs/connect/mcp) lists the one-click apps (`all: true` adds the rest), and `add_connector` with `app` adds the app the way its entry connects: its MCP server, its managed app or its API.
 
 Catalog apps can start [triggers](/docs/connect/triggers#app-events). With the project flag `event_triggers` also on, Kortix checks an installed app's MCP server for new items, such as a new email in Gmail, and fires the trigger once for each one. Every tool that lists items and only reads can be an event, on catalog apps and on your own MCP servers. The trigger runs on an account shared with the whole project.
 
@@ -271,7 +281,7 @@ kortix connectors connect gmail                                # authorize your 
 - Without `--apply`, `add` and `rm` edit your local `kortix.yaml`. Run `kortix ship` to apply the change, then `kortix connectors sync` to reconcile the connector.
 - With `--apply`, Kortix commits the change to the default branch and syncs the connector at once, like the web app.
 - `kortix connectors rm <slug> [--apply]` removes a connector. `kortix connectors rename <slug> <name>` sets its display name and applies at once.
-- `kortix connectors catalog [<query>]` and `catalog show <id>` browse the direct API catalog. They need the `connectors_api_discover` flag.
+- `kortix connectors catalog [<query>]` lists the apps that connect in one click; `--all` adds the apps that need setup. `catalog show <id>` lists one app's surfaces. They need the `connectors_v2` or the `connectors_api_discover` flag.
 - `--auth-type none|bearer|basic|custom|oauth1` overrides the authentication Kortix detects from the source.
 
 ### In kortix.yaml

@@ -2,11 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { config } from '../config';
+import { type ConnectorCatalogItem, createConnectorCatalog } from './connector-catalog';
 import { fallbackIconSource } from './connector-icon';
 import {
   MCP_APPS,
   availableMcpApps,
   kortixClientApplication,
+  connectorsV2Items,
   kortixMcpCatalog,
   kortixOAuthClients,
   mcpAppForUrl,
@@ -71,17 +73,71 @@ describe('the Kortix MCP app catalogue', () => {
   });
 
   test('the catalogue serves Discover: list, sections and detail with the MCP surface', async () => {
-    const page = await kortixMcpCatalog.list({ q: 'linear' });
-    expect(page.items[0]).toMatchObject({ id: 'kortix:linear', kind: 'mcp', mcpUrl: 'https://mcp.linear.app/mcp', icon: '/connector-icons/linear.svg' });
-    const sections = await kortixMcpCatalog.sections();
-    expect(sections.popular.length).toBeGreaterThan(0);
+    const catalog = v2Catalog();
+    const page = await catalog.list({ q: 'linear' });
+    expect(page.items[0]).toMatchObject({ id: 'kortix:linear', kind: 'mcp', mcpUrl: 'https://mcp.linear.app/mcp', icon: '/connector-icons/linear.svg', oneClick: true });
+    const sections = await catalog.sections();
+    expect(sections.popular[0]?.id).toBe('kortix:gmail');
     expect(sections.sections.length).toBeGreaterThan(0);
     const detail = await kortixMcpCatalog.detail('kortix:notion');
     expect(detail.variants).toEqual([
       expect.objectContaining({ kind: 'mcp', connector: { provider: 'mcp', url: 'https://mcp.notion.com/mcp', transport: 'http' } }),
     ]);
   });
+
+  test('one card per app: a one-click MCP server, else the managed toolkit, else the API', async () => {
+    const catalog = v2Catalog();
+    const card = async (q: string) => (await catalog.list({ q })).items[0];
+    // integrations.sh has a one-click server for Acme: it beats Acme's toolkit.
+    expect(await card('acme')).toMatchObject({ id: 'acme-mcp', kind: 'mcp', oneClick: true });
+    // Outlook's MCP server needs setup, so its managed toolkit is the card.
+    expect(await card('outlook')).toMatchObject({ id: 'composio:outlook', kind: 'composio', domain: 'outlook.com', oneClick: true });
+    // A Kortix app is the only record for its domain: Linear's toolkit is gone.
+    expect((await catalog.list({ q: 'linear' })).items.map((item) => item.id)).toEqual(['kortix:linear']);
+    // An API-only app lists, but not under the one-click filter.
+    expect(await card('billing')).toMatchObject({ id: 'billing-openapi', kind: 'openapi' });
+    const oneClick = (await catalog.list({ oneClick: true, limit: 96 })).items.map((item) => item.id);
+    expect(oneClick).toContain('composio:outlook');
+    expect(oneClick).toContain('acme-mcp');
+    expect(oneClick).not.toContain('billing-openapi');
+    expect(oneClick).not.toContain('outlook-mcp');
+  });
+
+  test('a source that is down drops out and the others still list', async () => {
+    const items = await connectorsV2Items({
+      apps: () => availableMcpApps(new Map()),
+      index: async () => { throw new Error('integrations.sh is down'); },
+      toolkits: async () => [toolkit('outlook', 'Outlook')],
+    });
+    expect(items.some((item) => item.id === 'kortix:linear')).toBe(true);
+    expect(items.find((item) => item.kind === 'composio')).toMatchObject({ domain: 'outlook.composio' });
+  });
 });
+
+const toolkit = (slug: string, name: string) => ({ slug, name, logo: null, description: null, categories: ['productivity'], isNoAuth: false, connected: false });
+const record = (id: string, kind: ConnectorCatalogItem['kind'], name: string, domain: string, extra: Partial<ConnectorCatalogItem> = {}): ConnectorCatalogItem => ({
+  id, kind, slug: id, name, description: null, url: null, icon: null, domain, categories: ['productivity'], feeds: ['claude'], popularity: null, ...extra,
+});
+
+/** The connectors_v2 catalogue over fixed sources: no network. */
+function v2Catalog() {
+  return createConnectorCatalog({
+    source: {
+      items: () =>
+        connectorsV2Items({
+          apps: () => availableMcpApps(GOOGLE),
+          index: async () => [
+            record('acme-mcp', 'mcp', 'Acme', 'acme.com', { mcpUrl: 'https://mcp.acme.com/mcp', oneClick: true }),
+            record('outlook-mcp', 'mcp', 'Outlook', 'outlook.com', { mcpUrl: 'https://mcp.outlook.example/mcp' }),
+            record('billing-openapi', 'openapi', 'Billing', 'billing.dev'),
+            record('linear-openapi', 'openapi', 'Linear', 'linear.app'),
+          ],
+          toolkits: async () => [toolkit('acme', 'Acme'), toolkit('outlook', 'Outlook'), toolkit('linear', 'Linear')],
+        }),
+      surfaces: () => [],
+    },
+  });
+}
 
 describe('sign-in for an app on a Kortix client', () => {
   test('discovery comes from the catalogue, without probing the server, and is one click', async () => {

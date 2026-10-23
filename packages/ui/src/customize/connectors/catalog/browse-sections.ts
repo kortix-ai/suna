@@ -1,8 +1,6 @@
 import type {
   ConnectSectionsPage,
-  ConnectToolkit,
   DiscoverSectionsPage,
-  PipedreamApp,
   PipedreamCategory,
   PipedreamSection,
 } from '@kortix/sdk';
@@ -10,13 +8,15 @@ import type {
 import {
   catalogEntryFromDiscover,
   catalogEntryFromEasyConnect,
+  connectToolkitApp,
   foldKey,
   type CatalogEntry,
 } from './catalog-entry';
+
+export { connectToolkitApp, type EasyConnectApp } from './catalog-entry';
 import { POPULAR_SECTION } from './connector-categories';
 import type { CatalogSection } from './use-catalog';
 
-export type EasyConnectApp = PipedreamApp & { provider?: 'composio' | 'pipedream' };
 
 /** The browse page in one shape for every catalogue, cards already mapped. */
 export interface BrowseSectionsPage {
@@ -26,25 +26,6 @@ export interface BrowseSectionsPage {
   categories: PipedreamCategory[];
 }
 
-/** A Composio toolkit as the card the Easy Connect grid renders. The paged
- *  catalogue and the browse sections both use this, so a card is identical in
- *  a section and behind its "View all". */
-export function connectToolkitApp(toolkit: ConnectToolkit): EasyConnectApp {
-  return {
-    slug: toolkit.slug,
-    name: toolkit.name,
-    description: toolkit.description ?? null,
-    imgSrc: toolkit.logo,
-    authType: toolkit.isNoAuth ? 'none' : 'oauth',
-    categories: toolkit.categories ?? [],
-    hasActions: true,
-    hasTriggers: false,
-    featuredWeight: 0,
-    provider: 'composio',
-    directId: toolkit.directId ?? null,
-    directMcpUrl: toolkit.directMcpUrl ?? null,
-  };
-}
 
 /**
  * The Composio browse page.

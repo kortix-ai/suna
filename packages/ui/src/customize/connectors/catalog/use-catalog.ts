@@ -175,11 +175,17 @@ export const connectStatusQuery = {
 export function catalogSectionsQuery(
   projectId: string,
   catalogue: 'kortix' | 'discover' | 'composio' | 'pipedream' | null,
+  /** `kortix` only: just the apps that connect with nothing to set up. */
+  oneClick = false,
 ) {
   return {
-    queryKey: ['catalog-sections', projectId, catalogue] as const,
+    queryKey: ['catalog-sections', projectId, catalogue, ...(oneClick ? ['one-click'] : [])] as const,
     queryFn: async (): Promise<BrowseSectionsPage> => {
-      const limits = { perCategory: SECTION_CARD_COUNT, maxCategories: SECTION_COUNT };
+      const limits = {
+        perCategory: SECTION_CARD_COUNT,
+        maxCategories: SECTION_COUNT,
+        ...(oneClick && catalogue === 'kortix' ? { oneClick } : {}),
+      };
       // `kortix` is the same Discover route: the API serves Kortix's own MCP
       // apps to a `connectors_v2` project (apps/api/src/connectors/mcp-apps.ts).
       if (catalogue === 'discover' || catalogue === 'kortix') {
@@ -262,11 +268,13 @@ export function useCatalog(
     enabled: boolean;
     /** The API/MCP catalogue is on for this project (`connectors_api_discover`). */
     discoverEnabled: boolean;
-    /** `connectors_v2`: the catalogue is Kortix's own MCP apps, served on the
-     *  Discover routes. No Composio or Pipedream request is sent. */
+    /** `connectors_v2`: one catalogue on the Discover routes (Kortix's MCP
+     *  apps, integrations.sh and the managed apps). No other request is sent. */
     mcpApps?: boolean;
     /** Show the native Computer card: this deployment can connect computers. */
     computers?: boolean;
+    /** `mcpApps` only: list just the apps that connect with nothing to set up. */
+    oneClick?: boolean;
   },
 ): CatalogState {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -292,6 +300,7 @@ export function useCatalog(
   const searchDirect = opts.discoverEnabled && source === 'easy-connect' && searching;
   // Keys the Discover cache by the catalogue the API answers with.
   const discoverCatalogue = mcpApps ? 'kortix' : 'discover';
+  const oneClick = mcpApps && opts.oneClick === true;
 
   // `unknown` proceeds: the probe failed, and refusing to load a catalogue that
   // may well exist is the worse of the two mistakes.
@@ -304,12 +313,13 @@ export function useCatalog(
     // An open category is a server-side filter, so it is part of the key. The
     // unfiltered key stays exactly the one `discover-catalogue.tsx` shares.
     queryKey: mcpApps
-      ? ['discover-connectors', projectId, activeQuery, 'kortix']
+      ? ['discover-connectors', projectId, activeQuery, 'kortix', oneClick]
       : ['discover-connectors', projectId, activeQuery],
     queryFn: ({ pageParam }) =>
       listDiscoverConnectors(projectId, {
         q: activeQuery || undefined,
         cursor: pageParam as string | undefined,
+        ...(oneClick ? { oneClick } : {}),
       }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => (last.hasMore ? last.nextCursor : undefined),
@@ -346,7 +356,7 @@ export function useCatalog(
   // request. Pipedream's paged endpoint carries its own facet.
   const sectionsCatalogue = source === 'discover' ? discoverCatalogue : easyConnectProvider;
   const sectionsQuery = useQuery({
-    ...catalogSectionsQuery(projectId, sectionsCatalogue),
+    ...catalogSectionsQuery(projectId, sectionsCatalogue, oneClick),
     enabled: opts.enabled && (source === 'discover' || easyConnectRunnable) && !searching,
   });
 

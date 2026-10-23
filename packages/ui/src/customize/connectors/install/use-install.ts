@@ -137,10 +137,12 @@ export function useInstall(
             return;
           }
           const mcpUrl = variant.kind === 'mcp' ? variant.template.url : undefined;
-          // A Kortix catalogue app (connectors_v2) is its vendor's MCP server:
-          // a one-click sign-in opens the one-step MCP dialog, a public server
-          // installs with no account to add, anything else installs as before.
-          if (entry.connector.feeds.includes('kortix') && mcpUrl && onMcpServer) {
+          // A Kortix catalogue app or a one-click server (connectors_v2) is the
+          // vendor's MCP server: a one-click sign-in opens the one-step MCP
+          // dialog, a public server installs with no account to add, anything
+          // else installs as before.
+          const oneClickServer = entry.connector.feeds.includes('kortix') || entry.connector.oneClick === true;
+          if (oneClickServer && mcpUrl && onMcpServer) {
             const check = await checkMcpServerSignIn(projectId, mcpUrl).catch(() => null);
             if (check?.one_click) {
               setPendingKey(null);

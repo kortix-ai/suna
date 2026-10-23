@@ -1865,7 +1865,9 @@ export async function listConnectSections(
   );
 }
 
-export type DiscoverConnectorKind = 'openapi' | 'mcp' | 'graphql' | 'cli';
+/** `composio`: a managed app (Connectors v2 catalogue only). Install it as a
+ *  Composio toolkit from `DiscoverConnector.composio`. */
+export type DiscoverConnectorKind = 'openapi' | 'mcp' | 'graphql' | 'cli' | 'composio';
 
 export interface DiscoverConnector {
   id: string;
@@ -1879,6 +1881,15 @@ export interface DiscoverConnector {
   categories: string[];
   feeds: string[];
   popularity: number | null;
+  /** The app's hosted MCP server. MCP entries only. */
+  mcpUrl?: string;
+  /** The server signs in with OAuth. */
+  oauth?: boolean;
+  /** Connects with nothing to set up: a public or self-registering MCP server,
+   *  a Kortix catalogue app, or a managed app. */
+  oneClick?: boolean;
+  /** The managed toolkit a `composio` entry installs. */
+  composio?: ConnectToolkit;
 }
 
 export interface DiscoverConnectorTemplate {
@@ -1940,6 +1951,8 @@ export interface DiscoverConnectorsQuery {
    *  exactly the connectors that section counted, picks first. */
   category?: string;
   limit?: number;
+  /** Only the entries that connect with nothing to set up (`oneClick`). */
+  oneClick?: boolean;
 }
 
 /**
@@ -1960,6 +1973,7 @@ export async function listDiscoverConnectors(
   if (query.category) params.set('category', query.category);
   if (query.cursor) params.set('cursor', query.cursor);
   if (query.limit) params.set('limit', String(query.limit));
+  if (query.oneClick) params.set('oneClick', '1');
   const qs = params.toString();
   return unwrap(
     await backendApi.get<DiscoverConnectorsPage>(
@@ -2000,11 +2014,12 @@ export interface DiscoverSectionsPage {
  */
 export async function listDiscoverSections(
   projectId: string,
-  opts?: { perCategory?: number; maxCategories?: number },
+  opts?: { perCategory?: number; maxCategories?: number; oneClick?: boolean },
 ) {
   const params = new URLSearchParams();
   if (opts?.perCategory) params.set('perCategory', String(opts.perCategory));
   if (opts?.maxCategories) params.set('maxCategories', String(opts.maxCategories));
+  if (opts?.oneClick) params.set('oneClick', '1');
   const qs = params.toString();
   return unwrap(
     await backendApi.get<DiscoverSectionsPage>(

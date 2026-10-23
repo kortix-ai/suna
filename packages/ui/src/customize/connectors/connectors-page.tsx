@@ -22,6 +22,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { PoliciesPanel } from '../../workspace/projects/policies-panel';
 import { Button } from '../../primitives/button';
+import { Switch } from '../../primitives/switch';
+import { cn } from '../../lib/utils';
 import {
   InputGroupSearch,
   InputGroupSearchIcon,
@@ -282,6 +284,8 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // a server the user pastes (New → MCP server).
   const [mcpApp, setMcpApp] = useState<McpServerApp | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
+  // Connectors v2: the catalogue opens on the apps that connect in one click.
+  const [oneClick, setOneClick] = useState(true);
   const tSharing = useI18nTranslations('accessSharing');
   const tPages = useI18nTranslations('connectorPages');
 
@@ -328,7 +332,8 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // `qk.project.detail(projectId)` entry `projectQuery` above holds, so this is
   // the same fetch and the same fail-closed semantics — `projectQuery` stays
   // only to surface a load FAILURE and drive Retry (see `isError`/`retry`).
-  // `connectors_v2`: the catalogue is Kortix's own MCP apps, on the Discover routes.
+  // `connectors_v2`: one catalogue on the Discover routes: Kortix's MCP apps,
+  // integrations.sh and the managed apps, each app by its best way in.
   const mcpApps = useFeatureFlag(projectId, 'connectors_v2').enabled;
   const discoverEnabled = useFeatureFlag(projectId, 'connectors_api_discover').enabled || mcpApps;
   const emailChannelEnabled = useFeatureFlag(projectId, 'agentmail_email').enabled;
@@ -414,6 +419,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
     discoverEnabled,
     mcpApps,
     computers: computersEnabled,
+    oneClick,
   });
 
   const filtered = useMemo(
@@ -573,12 +579,20 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
 
                 Not gated on `canWrite` — anyone who can open the page can read
                 the project's approval policy. */}
+                {mcpApps && catalogActive ? (
+                  <Switch
+                    label={tPages('oneClickOnly')}
+                    checked={oneClick}
+                    onCheckedChange={setOneClick}
+                    className="ml-auto px-0 py-0"
+                  />
+                ) : null}
                 <Button
                   type="button"
                   variant="text"
                   size="sm"
                   onClick={() => setRulesOpen(true)}
-                  className="ml-auto px-0 transition-colors"
+                  className={cn('px-0 transition-colors', !(mcpApps && catalogActive) && 'ml-auto')}
                 >
                   {tI18nComplete.raw('text1d59a5e09714')}
                 </Button>
