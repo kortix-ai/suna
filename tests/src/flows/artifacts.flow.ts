@@ -94,8 +94,8 @@ flow(
     });
 
     let storage = true;
-    await ctx.step('OWNER publishes index.md → 201: a doc, private, stored as one Markdown file in their folder in Files, titled by its heading (503 without volume storage)', async () => {
-      const r = await owner.post(LIST, { files: { 'index.md': { content: DOC_V1 } } }, { params: p });
+    await ctx.step('OWNER publishes index.md (+ notes.md) → 201: a doc, private, stored as a folder in their folder in Files, titled by its heading (503 without volume storage)', async () => {
+      const r = await owner.post(LIST, { files: { 'index.md': { content: DOC_V1 }, 'notes.md': { content: '# Notes\n' } } }, { params: p });
       if (r.statusCode === 503) {
         r.body().has('$.code', 'drive_storage_unavailable');
         storage = false;
@@ -103,21 +103,26 @@ flow(
       }
       const a = r.status(201).json<Detail>();
       if (a.title !== 'Churn report' || a.type !== 'doc' || a.visibility !== 'private' || !a.can_edit || !a.can_manage || !a.entry_version) throw new Error(JSON.stringify(a));
-      if (!/^\/Users\/[^/]+\/Artifacts\/churn-report\.md$/.test(a.path) || a.version.files.map((f) => f.path).join() !== 'churn-report.md') throw new Error(`${a.path} ${JSON.stringify(a.version.files)}`);
+      if (!/^\/Users\/[^/]+\/Artifacts\/churn-report$/.test(a.path) || a.version.files.map((f) => f.path).join() !== 'index.md,notes.md') throw new Error(`${a.path} ${JSON.stringify(a.version.files)}`);
       doc = a.artifact_id;
       docPath = a.path;
     });
     if (!storage) return;
 
-    await ctx.step('the signed view_url renders the Markdown with the doc stylesheet as a CSP sandbox; ?print=1 adds the print call; a sibling path, a forged token → 404; no trailing slash → 301', async () => {
+    await ctx.step('the signed view_url renders the Markdown with the doc stylesheet as a CSP sandbox and keeps one URL across reads; ?print=1 adds the print call; a single shared file never serves its sibling; a forged token → 404; no trailing slash → 301', async () => {
       const a = (await owner.get(ONE, one())).status(200).json<Detail>();
       const view = await get(a.view_url);
       if (view.status !== 200 || !view.headers.get('content-type')?.startsWith('text/html')) throw new Error(`view ${view.status} ${view.headers.get('content-type')}`);
       const csp = view.headers.get('content-security-policy') ?? '';
-      if (!/sandbox allow-scripts/.test(csp) || /allow-same-origin/.test(csp)) throw new Error(`CSP ${csp}`);
+      // Opaque on the API host; the page's own origin only on a separate content host (ARTIFACT_CONTENT_URL).
+      const ownHost = new URL(a.view_url).host !== new URL(ctx.env.apiUrl).host;
+      if (!/sandbox allow-scripts/.test(csp) || /allow-same-origin/.test(csp) !== ownHost) throw new Error(`CSP ${csp}`);
+      if ((await owner.get(ONE, one())).json<Detail>().view_url !== a.view_url) throw new Error('the view URL changed between two reads');
       if (!view.text.includes('class="kx-doc"') || !view.text.includes('<strong>2.1%</strong>') || !view.text.includes('data-type="taskList"')) throw new Error(view.text.slice(0, 400));
       if (!(await get(`${a.view_url}?print=1`)).text.includes('print()')) throw new Error('?print=1 does not open the print dialog');
-      if ((await get(`${a.view_url}other.md`)).status !== 404) throw new Error('a single-file artifact served a sibling');
+      const single = (await owner.post(SHARE, { path: `${docPath}/notes.md` }, { params: p })).status(201).json<Detail>();
+      if ((await get(single.view_url)).status !== 200 || (await get(`${single.view_url}index.md`)).status !== 404) throw new Error('a single-file artifact served a sibling');
+      (await owner.del(ONE, one(single.artifact_id))).status(200);
       if ((await get(a.view_url.replace(/\/s\/[^.]+/, '/s/forged'))).status !== 404) throw new Error('a forged token served');
       const bare = await get(a.view_url.replace(/\/$/, ''));
       if (bare.status !== 301 || !bare.headers.get('location')?.endsWith('/')) throw new Error(`bare view URL ${bare.status}`);
@@ -265,20 +270,20 @@ flow(
         page = out.artifact_id;
       });
 
-      await ctx.step('`publish report.md` makes a doc: one Markdown file in Files titled by its heading', async () => {
+      await ctx.step('`publish report.md` makes a doc: a folder in Files with index.md, titled by its heading', async () => {
         sandbox.writeFile('report.md', '# Churn report\n\nChurn fell to **2.1%**.\n');
         const out = JSON.parse(ok(await run(['artifacts', 'publish', 'report.md', '--json']), 'publish md').stdout);
-        if (out.type !== 'doc' || out.title !== 'Churn report' || !out.path.endsWith('/Artifacts/churn-report.md')) throw new Error(JSON.stringify(out));
+        if (out.type !== 'doc' || out.title !== 'Churn report' || !out.path.endsWith('/Artifacts/churn-report')) throw new Error(JSON.stringify(out));
         doc = out.artifact_id;
         docPath = out.path;
       });
 
       await ctx.step('`pull` + edit + `publish --id --base-version` saves; the same save again exits 3; `cat` and `versions` show the new state', async () => {
         const pulled = JSON.parse(ok(await run(['artifacts', 'pull', doc, 'work', '--json']), 'pull').stdout);
-        const md = sandbox.readFile('work/churn-report.md');
-        sandbox.writeFile('work/churn-report.md', md.replace('2.1%', '1.9%'));
-        ok(await run(['artifacts', 'publish', 'work/churn-report.md', '--id', doc, '--base-version', pulled.entry_version]), 'save');
-        ok(await run(['artifacts', 'publish', 'work/churn-report.md', '--id', doc, '--base-version', pulled.entry_version]), 'stale save', 3);
+        const md = sandbox.readFile('work/index.md');
+        sandbox.writeFile('work/index.md', md.replace('2.1%', '1.9%'));
+        ok(await run(['artifacts', 'publish', 'work', '--id', doc, '--base-version', pulled.entry_version]), 'save');
+        ok(await run(['artifacts', 'publish', 'work', '--id', doc, '--base-version', pulled.entry_version]), 'stale save', 3);
         if (!ok(await run(['artifacts', 'cat', doc]), 'cat').stdout.includes('1.9%')) throw new Error('cat shows the old doc');
         const versions = JSON.parse(ok(await run(['artifacts', 'versions', doc, '--json']), 'versions').stdout);
         if (versions.length !== 2) throw new Error(JSON.stringify(versions));

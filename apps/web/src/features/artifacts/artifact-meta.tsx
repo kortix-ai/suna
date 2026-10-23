@@ -1,9 +1,10 @@
 'use client';
 
 import type { ArtifactType, ArtifactVisibility } from '@kortix/sdk';
-import { framePolicy } from '@kortix/ui/file-viewer';
 import { BrowserIcon, FileTextIcon, GlobeSimpleIcon, LockSimpleIcon, UsersThreeIcon, type Icon } from '@phosphor-icons/react';
-import { forwardRef, useState } from 'react';
+import { forwardRef } from 'react';
+
+import { ARTIFACT_FRAME_ALLOW, ARTIFACT_IFRAME_SANDBOX } from './frame-sandbox';
 
 export const ARTIFACT_TYPE_ICON: Record<ArtifactType, Icon> = {
   doc: FileTextIcon,
@@ -38,22 +39,7 @@ export function relativeTime(iso: string, locale: string): string {
   return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(iso));
 }
 
-/**
- * The signed view URL changes on every read (a fresh token), and a new `src`
- * reloads the frame. Keep the first URL per artifact version, so a background
- * refetch never reloads the page under the reader.
- */
-export function useStableViewUrl(key: string | null, url: string | undefined): string | undefined {
-  const [stable, setStable] = useState<{ key: string; url: string } | null>(null);
-  if (key && url && stable?.key !== key) setStable({ key, url });
-  return key && stable?.key === key ? stable.url : url;
-}
-
-/**
- * An artifact page. The content server already answers with a CSP sandbox
- * without same-origin; the iframe sandbox repeats it, so the page never runs
- * with this app's origin.
- */
+/** An artifact page, sandboxed by the content server and by this iframe. */
 export const ArtifactFrame = forwardRef<HTMLIFrameElement, { src: string; title: string; className?: string; preview?: boolean }>(
   function ArtifactFrame({ src, title, className, preview }, ref) {
     return (
@@ -62,8 +48,8 @@ export const ArtifactFrame = forwardRef<HTMLIFrameElement, { src: string; title:
         src={src}
         title={title}
         className={`${className ?? ''} ${ARTIFACT_CANVAS}`}
-        sandbox={framePolicy('document', src).sandbox}
-        allow="fullscreen; clipboard-write"
+        sandbox={ARTIFACT_IFRAME_SANDBOX}
+        allow={ARTIFACT_FRAME_ALLOW}
         referrerPolicy="no-referrer"
         loading={preview ? 'lazy' : 'eager'}
         // The viewer hands the keyboard to the page, so a deck's arrow keys work at once.

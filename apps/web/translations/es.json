@@ -22591,6 +22591,8 @@
     "remove": "Dejar de compartir",
     "removeTitle": "¿Dejar de compartir este artefacto?",
     "removeHint": "Sale de Artefactos y sus enlaces dejan de funcionar. Sus archivos siguen en Archivos.",
-    "removed": "Ya no se comparte"
+    "removed": "Ya no se comparte",
+    "mediaSingleFile": "Las imágenes y los vídeos necesitan un documento en su propia carpeta. Publica el documento como carpeta para añadir medios.",
+    "mediaTooLarge": "Este archivo supera los 16 MB."
   }
 }

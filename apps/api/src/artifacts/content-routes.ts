@@ -6,9 +6,12 @@
 //                                   authenticated routes, latest or one commit)
 //   /v1/artifacts/p/:artifactId/<path>  a public artifact's current version
 //   /v1/artifacts/meta/:artifactId      a public artifact's title and type
-// Every response is a CSP sandbox without same-origin: the page runs scripts
-// in an opaque origin, so it reaches no Kortix cookie, storage or API session.
+// Every response is a CSP sandbox. On the API origin it has no same-origin: the
+// page runs in an opaque origin and reaches no Kortix cookie, storage or API
+// session. On ARTIFACT_CONTENT_URL (another site) the page keeps that origin, so
+// an embedded player that needs an origin (YouTube, Vimeo) plays.
 import { Hono, type Context } from 'hono';
+import { config } from '../config';
 import { verifyChannelState } from '../channels/core/signed-state';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { createArtifactContentRateLimitMiddleware } from '../middleware/rate-limit';
@@ -41,10 +44,10 @@ function restOf(c: Context, key: string): string | null {
 }
 
 /** Read one file of the artifact, trying `x/index.html` and `x.html` for a path without one. Null when none exists. */
-async function readFirst(row: ArtifactRow, paths: string[], at: string | null) {
+async function readFirst(row: ArtifactRow, paths: string[], at: string | null, range?: string) {
   for (const path of paths) {
     try {
-      return { path, response: await readArtifactFile(row, path, at) };
+      return { path, response: await readArtifactFile(row, path, at, range) };
     } catch (err) {
       if (!(err instanceof DriveStorageError && err.status === 404)) throw err;
     }
@@ -52,17 +55,28 @@ async function readFirst(row: ArtifactRow, paths: string[], at: string | null) {
   return null;
 }
 
+// ponytail: one origin for every artifact (pages share its storage); a wildcard
+// host per artifact (`<id>.<content host>`) when that matters.
+function sandboxCsp(c: Context): string {
+  const own = config.ARTIFACT_CONTENT_URL && new URL(config.ARTIFACT_CONTENT_URL).host === new URL(c.req.url).host;
+  return own ? `${PUBLIC_SHARE_SANDBOX_CSP} allow-same-origin` : PUBLIC_SHARE_SANDBOX_CSP;
+}
+
 async function serve(c: Context, row: ArtifactRow | null, at: string | null, rest: string, cache: string): Promise<Response> {
   if (!row || !(await projectFeatureFlagEnabled(row.projectId, ARTIFACTS_FLAG))) return notFound(c);
   const wanted = rest === '' ? row.entry : normalizeArtifactPath(rest.endsWith('/') ? `${rest}index.html` : rest);
   if (!wanted) return notFound(c);
-  const found = await readFirst(row, /\.[a-z0-9]+$/i.test(wanted) ? [wanted] : [wanted, `${wanted}/index.html`, `${wanted}.html`], at);
+  const isEntry = wanted === row.entry;
+  // A Range read (a video seeking) passes through; the entry page is always read whole.
+  const range = isEntry ? undefined : c.req.header('range');
+  const found = await readFirst(row, /\.[a-z0-9]+$/i.test(wanted) ? [wanted] : [wanted, `${wanted}/index.html`, `${wanted}.html`], at, range);
   if (!found) return notFound(c);
   const headers: Record<string, string> = {
     'Content-Type': contentTypeFor(found.path),
-    'Content-Security-Policy': PUBLIC_SHARE_SANDBOX_CSP,
+    'Content-Security-Policy': sandboxCsp(c),
     'X-Content-Type-Options': 'nosniff',
-    'Referrer-Policy': 'no-referrer',
+    // Third parties (an embedded player) see only the API origin, never the token in the path.
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
     'Cache-Control': cache,
     'Access-Control-Allow-Origin': '*',
   };
@@ -70,7 +84,12 @@ async function serve(c: Context, row: ArtifactRow | null, at: string | null, res
     const html = renderDoc(await found.response.text(), { print: c.req.query('print') === '1' });
     return c.body(html, 200, { ...headers, 'Content-Type': 'text/html; charset=utf-8' });
   }
-  return new Response(found.response.body, { status: 200, headers });
+  for (const name of ['content-length', 'content-range', 'etag', 'last-modified']) {
+    const value = found.response.headers.get(name);
+    if (value) headers[name] = value;
+  }
+  headers['Accept-Ranges'] = 'bytes';
+  return new Response(found.response.body, { status: found.response.status === 206 ? 206 : 200, headers });
 }
 
 export function registerArtifactContentRoutes(): void {

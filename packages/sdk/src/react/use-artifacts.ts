@@ -32,6 +32,8 @@ export function useArtifacts(
     queryKey: qk.project.artifactList(projectId ?? '', JSON.stringify(filter)),
     queryFn: () => listArtifacts(projectId as string, filter),
     enabled: !!projectId,
+    // A new filter keeps the cards (and their loaded previews) until the next list arrives.
+    placeholderData: (prev) => prev,
     ...contract('inventory'),
   });
 }

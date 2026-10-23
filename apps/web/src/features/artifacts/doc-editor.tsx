@@ -36,6 +36,7 @@ import { BubbleMenu, FloatingMenu } from '@tiptap/react/menus';
 import StarterKit from '@tiptap/starter-kit';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 
+import { DocCodeBlock, Video, fileBase64, isMedia, mediaPath, mediaUrls, tooLarge } from './doc-media';
 import { htmlToMarkdown, markdownToHtml } from './markdown';
 
 import { useTranslations } from '@/i18n/use-translations';
@@ -83,12 +84,16 @@ export function DocEditor({
   useEffect(() => {
     latest.current = { save: saveMutation, onStatus, artifact };
   });
+  // Relative media paths in the Markdown ↔ absolute URLs in the editor (the page URL of this version).
+  const [media] = useState(() => mediaUrls(artifact.version.view_url));
+  /** Single-file docs serve only themselves: their media must be absolute URLs. */
+  const holdsMedia = !artifact.path.endsWith(`/${artifact.entry}`);
 
   useEffect(() => {
     let live = true;
     readArtifactFile(projectId, artifact.artifact_id, artifact.version.id ? { version: artifact.version.id } : {})
       .then((blob) => blob.text())
-      .then((markdown) => live && setLoaded(markdownToHtml(markdown)))
+      .then((markdown) => live && setLoaded(media.resolveHtml(markdownToHtml(markdown))))
       .catch((err: Error) => errorToast(err.message));
     return () => {
       live = false;
@@ -105,7 +110,7 @@ export function DocEditor({
     const attempt = run.mutateAsync({
       artifactId: current.artifact_id,
       ...(base.current ? { base_version: base.current } : {}),
-      files: { 'index.md': { content: htmlToMarkdown(editor.getHTML()) } },
+      files: { 'index.md': { content: htmlToMarkdown(media.restore(editor.getHTML())) } },
     });
     saving.current = attempt;
     try {
@@ -117,17 +122,50 @@ export function DocEditor({
       if (conflict) stopped.current = true;
       report('error');
       errorToast(conflict ? t('conflict') : (err as Error).message);
+    } finally {
+      saving.current = null;
     }
   };
+
+  /** Pasted, dropped or picked images and videos: written next to the doc in Files (`media/…`), then placed in it. */
+  const upload = async (editor: Editor, files: File[], pos?: number) => {
+    const { save: run, onStatus: report, artifact: current } = latest.current;
+    for (const file of files) {
+      const kind = isMedia(file);
+      if (!kind) continue;
+      if (!holdsMedia) return errorToast(t('mediaSingleFile'));
+      if (tooLarge(file)) {
+        errorToast(t('mediaTooLarge'));
+        continue;
+      }
+      const path = mediaPath(file);
+      report('saving');
+      try {
+        await run.mutateAsync({ artifactId: current.artifact_id, files: { [path]: { content_base64: await fileBase64(file) } } });
+      } catch (err) {
+        report('error');
+        errorToast((err as Error).message);
+        continue;
+      }
+      const node = { type: kind, attrs: { src: media.absolute(path) } };
+      editor.chain().focus().insertContentAt(pos ?? editor.state.selection.to, node).run();
+    }
+  };
+  const uploadRef = useRef(upload);
+  useEffect(() => {
+    uploadRef.current = upload;
+  });
 
   const editor = useEditor(
     {
       immediatelyRender: false,
       editable,
       extensions: [
-        StarterKit.configure({ link: { openOnClick: !editable, autolink: true, defaultProtocol: 'https' } }),
+        StarterKit.configure({ codeBlock: false, link: { openOnClick: !editable, autolink: true, defaultProtocol: 'https' } }),
+        DocCodeBlock,
         TableKit.configure({ table: { resizable: false } }),
         Image,
+        Video,
         TaskList,
         TaskItem.configure({ nested: true }),
         Placeholder.configure({
@@ -135,6 +173,24 @@ export function DocEditor({
         }),
       ],
       content: loaded ?? '',
+      editorProps: {
+        handlePaste: (view, event) => {
+          const files = Array.from(event.clipboardData?.files ?? []).filter(isMedia);
+          if (!editable || !files.length) return false;
+          const ed = editorRef.current;
+          if (ed) void uploadRef.current(ed, files);
+          return true;
+        },
+        handleDrop: (view, event) => {
+          const files = Array.from(event.dataTransfer?.files ?? []).filter(isMedia);
+          if (!editable || !files.length) return false;
+          event.preventDefault();
+          const at = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
+          const ed = editorRef.current;
+          if (ed) void uploadRef.current(ed, files, at);
+          return true;
+        },
+      },
       onUpdate: ({ editor: e }) => {
         if (!editable) return;
         latest.current.onStatus('unsaved');
@@ -147,6 +203,10 @@ export function DocEditor({
     },
     [loaded, editable],
   );
+  const editorRef = useRef<Editor | null>(null);
+  useEffect(() => {
+    editorRef.current = editor;
+  }, [editor]);
 
   // Save now on ⌘S, and before the page goes away.
   useEffect(() => {
@@ -187,7 +247,7 @@ export function DocEditor({
         </div>
       ) : (
         <>
-          {editable ? <DocMenus editor={editor} /> : null}
+          {editable ? <DocMenus editor={editor} onPickMedia={(files) => void upload(editor, files)} /> : null}
           <EditorContent editor={editor} />
         </>
       )}
@@ -218,7 +278,7 @@ function MenuButton({ icon: IconCmp, label, active, onClick }: { icon: Icon; lab
 
 const MENU = 'bg-popover text-popover-foreground flex items-center gap-0.5 rounded-md border p-1 shadow-md';
 
-function DocMenus({ editor }: { editor: Editor }) {
+function DocMenus({ editor, onPickMedia }: { editor: Editor; onPickMedia: (files: File[]) => void }) {
   const t = useTranslations('artifacts');
   const state = useEditorState({
     editor,
@@ -243,10 +303,8 @@ function DocMenus({ editor }: { editor: Editor }) {
     if (url.trim() === '') chain().extendMarkRange('link').unsetLink().run();
     else chain().extendMarkRange('link').setLink({ href: url.trim() }).run();
   };
-  const addImage = () => {
-    const url = window.prompt(t('imagePrompt'), 'https://');
-    if (url?.trim()) chain().setImage({ src: url.trim() }).run();
-  };
+  const picker = useRef<HTMLInputElement>(null);
+  const addMedia = () => picker.current?.click();
 
   return (
     <>
@@ -284,10 +342,21 @@ function DocMenus({ editor }: { editor: Editor }) {
           <MenuButton icon={QuotesIcon} label={t('quote')} onClick={() => chain().toggleBlockquote().run()} />
           <MenuButton icon={CodeBlockIcon} label={t('codeBlock')} onClick={() => chain().toggleCodeBlock().run()} />
           <MenuButton icon={TableIcon} label={t('table')} onClick={() => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} />
-          <MenuButton icon={ImageIcon} label={t('image')} onClick={addImage} />
+          <MenuButton icon={ImageIcon} label={t('image')} onClick={addMedia} />
           <MenuButton icon={MinusIcon} label={t('divider')} onClick={() => chain().setHorizontalRule().run()} />
         </div>
       </FloatingMenu>
+      <input
+        ref={picker}
+        type="file"
+        accept="image/*,video/*"
+        multiple
+        hidden
+        onChange={(e) => {
+          onPickMedia(Array.from(e.target.files ?? []));
+          e.target.value = '';
+        }}
+      />
     </>
   );
 }

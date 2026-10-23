@@ -6,6 +6,7 @@ import type { Metadata } from 'next';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import Link from '@/components/site-link';
+import { ARTIFACT_FRAME_ALLOW, ARTIFACT_IFRAME_SANDBOX } from '@/features/artifacts/frame-sandbox';
 import { getTranslations } from '@/i18n/get-translations';
 
 import { SHARE_FILE_IFRAME_CLASS, SHARE_PAGE_ROOT_CLASS } from '../../session/[token]/share-layout';
@@ -35,8 +36,8 @@ export async function generateMetadata({ params }: PublicArtifactRouteProps): Pr
 
 /**
  * /share/artifact/[id] — a public artifact: the Kortix bar (symbol, title, one
- * action) above the page. The page is served by the API as a CSP sandbox, and
- * the iframe repeats the sandbox, so it never runs with this site's origin.
+ * action) above the page. The content server's CSP sandbox isolates the page
+ * (see ARTIFACT_IFRAME_SANDBOX); it never runs with this site's origin.
  */
 export default async function PublicArtifactPage({ params }: PublicArtifactRouteProps) {
   const { id } = await params;
@@ -78,8 +79,8 @@ export default async function PublicArtifactPage({ params }: PublicArtifactRoute
           src={artifact.content_url}
           title={artifact.title}
           className={SHARE_FILE_IFRAME_CLASS}
-          sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
-          allow="fullscreen; clipboard-write"
+          sandbox={ARTIFACT_IFRAME_SANDBOX}
+          allow={ARTIFACT_FRAME_ALLOW}
           referrerPolicy="no-referrer"
         />
       </section>

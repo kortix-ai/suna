@@ -10,6 +10,8 @@ import { ARTIFACT_DOC_CSS } from '@kortix/shared/artifact-doc';
 import { marked } from 'marked';
 
 export const ARTIFACT_TYPE_KEYS = ['doc', 'html'] as const;
+
+const MERMAID_CDN = 'https://cdn.jsdelivr.net/npm/mermaid@11.12.0/dist/mermaid.esm.min.mjs';
 export type ArtifactType = (typeof ARTIFACT_TYPE_KEYS)[number];
 
 /** The type of an entry file, or null when it is neither. */
@@ -44,7 +46,7 @@ export const ARTIFACT_TYPES = [
     description: 'A document to read and edit: a spec, report, memo or plan. A Markdown file in Files; people edit it in place in Kortix.',
     format: [
       'A Markdown file (GitHub flavored). Start with one `# Title`. Kortix renders and styles it; add no HTML layout, CSS or scripts.',
-      'Supported: headings, paragraphs, bold, italic, strikethrough, inline code, links, bulleted, numbered and task lists (`- [ ]`), blockquotes, code blocks, tables, images (an absolute URL) and horizontal rules.',
+      'Supported: headings, paragraphs, bold, italic, strikethrough, inline code, links, bulleted, numbered and task lists (`- [ ]`), blockquotes, code blocks, tables, horizontal rules, ```mermaid diagrams, images (`![alt](media/chart.png)` next to index.md, or an absolute URL) and videos (`<video src="media/demo.mp4" controls></video>`).',
       'Need layout, charts or interaction? Make an html artifact instead.',
     ].join('\n'),
     starter: DOC_STARTER,
@@ -69,8 +71,16 @@ export function renderDoc(markdown: string, opts: { print: boolean }): string {
     .replace(/<ul>(\s*<li data-type="taskItem")/g, '<ul data-type="taskList">$1');
   const title = docTitle(markdown) ?? 'Untitled doc';
   const escaped = title.replace(/[<>&"]/g, (c) => `&#${c.charCodeAt(0)};`);
-  const print = opts.print ? '<script>addEventListener("load",function(){setTimeout(function(){print()},400)})</script>' : '';
-  return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escaped}</title><style>${ARTIFACT_DOC_CSS}</style>${print}</head>\n<body class="kx-doc">\n${body}</body></html>\n`;
+  // ```mermaid blocks render as diagrams (the CDN build, pinned); print waits for them.
+  const diagrams = body.includes('class="language-mermaid"');
+  const html = diagrams ? body.replace(/<pre><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/g, '<pre class="mermaid">$1</pre>') : body;
+  const mermaid = diagrams
+    ? `<script type="module">import m from "${MERMAID_CDN}";m.initialize({startOnLoad:false,securityLevel:"strict",theme:matchMedia("(prefers-color-scheme: dark)").matches?"dark":"neutral"});await m.run();window.__kxDiagrams=true;</script>`
+    : '';
+  const print = opts.print
+    ? `<script>addEventListener("load",function(){var t=Date.now();(function go(){if(${diagrams ? '!window.__kxDiagrams&&' : ''}Date.now()-t<8000)return setTimeout(go,150);setTimeout(function(){print()},300)})()})</script>`
+    : '';
+  return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escaped}</title><style>${ARTIFACT_DOC_CSS}</style>${mermaid}${print}</head>\n<body class="kx-doc">\n${html}</body></html>\n`;
 }
 
 /** A doc's title: its first `# ` heading. */

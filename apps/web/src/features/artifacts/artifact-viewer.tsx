@@ -41,7 +41,7 @@ import { useRef, useState } from 'react';
 import { drivePathToParam } from '@/features/drives/drive-path-param';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
-import { ARTIFACT_TYPE_ICON, ArtifactFrame, VISIBILITY_ICON, relativeTime, useStableViewUrl } from './artifact-meta';
+import { ARTIFACT_TYPE_ICON, ArtifactFrame, VISIBILITY_ICON, relativeTime } from './artifact-meta';
 import { DocEditor, type DocSaveStatus } from './doc-editor';
 import { ShareArtifactDialog } from './share-artifact-dialog';
 
@@ -92,7 +92,7 @@ export function ArtifactViewer({ projectId, artifactId }: { projectId: string; a
   const [renaming, setRenaming] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const versions = useArtifactVersions(projectId, artifactId, historyOpen);
-  const viewUrl = useStableViewUrl(artifact ? `${artifact.artifact_id}:${artifact.version.id ?? 'now'}` : null, artifact?.version.view_url);
+  const viewUrl = artifact?.version.view_url;
   const viewingOld = !!artifact?.version.id;
   const canEdit = !!artifact?.can_edit && !viewingOld;
   const isDoc = artifact?.type === 'doc';
@@ -303,7 +303,7 @@ export function ArtifactViewer({ projectId, artifactId }: { projectId: string; a
         ) : (
           <div className="bg-muted relative min-w-0 flex-1">
             {viewUrl ? (
-              <ArtifactFrame ref={frame} key={viewUrl} src={viewUrl} title={artifact.title} className="absolute inset-0 size-full border-0" />
+              <ArtifactFrame ref={frame} key={`${viewUrl}${artifact.entry_version}`} src={viewUrl} title={artifact.title} className="absolute inset-0 size-full border-0" />
             ) : null}
           </div>
         )}

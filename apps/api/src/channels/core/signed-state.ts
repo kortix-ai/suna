@@ -48,6 +48,16 @@ export function signChannelState(
 }
 
 /**
+ * The same payload and `exp` always sign to the same token (no nonce): a URL
+ * that carries it stays identical across requests, so a browser keeps a page
+ * loaded and may reuse its cache.
+ */
+export function signStableChannelState(purpose: ChannelStatePurpose, payload: Record<string, unknown>, exp: number): string {
+  const body = Buffer.from(JSON.stringify({ ...payload, exp, nonce: '' })).toString('base64url');
+  return `${body}.${mac(purpose, body)}`;
+}
+
+/**
  * The payload of a value signed for `purpose`, or null when the token is
  * malformed, forged, expired, or no key is configured. Callers check the
  * shape of their own fields.

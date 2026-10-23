@@ -32,7 +32,11 @@ html:has(body.kx-doc){background:var(--kx-doc-bg)}
 .kx-doc pre{background:var(--kx-doc-subtle);border-radius:10px;padding:1em 1.1em;overflow-x:auto;font-size:.85rem;line-height:1.55}
 .kx-doc pre code{background:none;padding:0;font-size:inherit}
 .kx-doc hr{border:0;border-top:1px solid var(--kx-doc-border);margin:2.4em 0}
-.kx-doc img{max-width:100%;height:auto;border-radius:8px}
+.kx-doc :where(img,video){display:block;max-width:100%;height:auto;border-radius:8px;margin:0 0 1em}
+.kx-doc video{width:100%;background:#000}
+.kx-doc pre.mermaid,.kx-doc .kx-diagram{background:none;text-align:center;padding:.5em 0;margin:0 0 1em}
+.kx-doc .kx-diagram svg{max-width:100%;height:auto}
+.kx-doc img.ProseMirror-selectednode,.kx-doc video.ProseMirror-selectednode{outline:2px solid var(--kx-doc-accent)}
 .kx-doc table{width:100%;border-collapse:collapse;font-size:.92rem;table-layout:auto}
 .kx-doc :where(th,td){border:1px solid var(--kx-doc-border);padding:.5em .75em;text-align:left;vertical-align:top;position:relative}
 .kx-doc th{background:var(--kx-doc-subtle);font-weight:500}

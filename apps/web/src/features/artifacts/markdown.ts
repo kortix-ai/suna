@@ -26,6 +26,8 @@ function turndown(): TurndownService {
     replacement: (content, node) => `- [${(node as HTMLElement).getAttribute('data-checked') === 'true' ? 'x' : ' '}] ${content.trim().replace(/\n+/g, ' ')}\n`,
   });
   td.remove(['label']);
+  // A video stays an HTML tag inside the Markdown: Markdown has none.
+  td.keep(['video']);
   service = td;
   return td;
 }

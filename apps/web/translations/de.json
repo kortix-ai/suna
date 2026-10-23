@@ -22591,6 +22591,8 @@
     "remove": "Nicht mehr teilen",
     "removeTitle": "Dieses Artefakt nicht mehr teilen?",
     "removeHint": "Es verschwindet aus den Artefakten, und seine Links funktionieren nicht mehr. Die Dateien bleiben in Dateien erhalten.",
-    "removed": "Wird nicht mehr geteilt"
+    "removed": "Wird nicht mehr geteilt",
+    "mediaSingleFile": "Bilder und Videos brauchen ein Dokument in einem eigenen Ordner. Veröffentliche das Dokument als Ordner, um Medien hinzuzufügen.",
+    "mediaTooLarge": "Diese Datei ist größer als 16 MB."
   }
 }

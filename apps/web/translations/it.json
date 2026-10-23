@@ -22591,6 +22591,8 @@
     "remove": "Interrompi condivisione",
     "removeTitle": "Interrompere la condivisione di questo artefatto?",
     "removeHint": "Esce da Artefatti e i suoi link smettono di funzionare. I suoi file restano in File.",
-    "removed": "Non più condiviso"
+    "removed": "Non più condiviso",
+    "mediaSingleFile": "Immagini e video richiedono un documento nella propria cartella. Pubblica il documento come cartella per aggiungere contenuti multimediali.",
+    "mediaTooLarge": "Questo file supera i 16 MB."
   }
 }

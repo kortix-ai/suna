@@ -40,7 +40,6 @@ import {
   VISIBILITY_ICON,
   artifactHref,
   relativeTime,
-  useStableViewUrl,
 } from './artifact-meta';
 import { ShareArtifactDialog } from './share-artifact-dialog';
 
@@ -132,16 +131,17 @@ function ArtifactCard({ projectId, artifact }: { projectId: string; artifact: Ar
   const TypeIcon = ARTIFACT_TYPE_ICON[artifact.type];
   const VisIcon = VISIBILITY_ICON[artifact.visibility];
   const href = artifactHref(projectId, artifact.artifact_id);
-  const viewUrl = useStableViewUrl(`${artifact.artifact_id}:${artifact.updated_at}`, artifact.view_url);
 
   return (
     <div className="group bg-card hover:border-foreground/20 relative flex flex-col overflow-hidden rounded-lg border transition-colors">
       <Link href={href} className="focus-visible:ring-ring flex flex-col outline-none focus-visible:ring-2" aria-label={artifact.title}>
         <div className="bg-muted relative aspect-[16/10] overflow-hidden border-b">
-          {viewUrl ? (
+          {artifact.view_url ? (
             <ArtifactFrame
+              // The view URL is stable: a new key reloads the preview only after an edit.
+              key={artifact.updated_at}
               preview
-              src={viewUrl}
+              src={artifact.view_url}
               title={artifact.title}
               className="pointer-events-none absolute top-0 left-0 h-[400%] w-[400%] origin-top-left scale-25 border-0"
             />

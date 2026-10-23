@@ -1095,6 +1095,9 @@ importers:
       '@tiptap/extension-bubble-menu':
         specifier: 3.30.5
         version: 3.30.5(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
+      '@tiptap/extension-code-block':
+        specifier: 3.30.5
+        version: 3.30.5(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
       '@tiptap/extension-document':
         specifier: 3.30.5
         version: 3.30.5(@tiptap/core@3.30.5)

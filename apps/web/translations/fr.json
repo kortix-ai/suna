@@ -22591,6 +22591,8 @@
     "remove": "Arrêter le partage",
     "removeTitle": "Arrêter de partager cet artefact ?",
     "removeHint": "Il quitte Artefacts et ses liens cessent de fonctionner. Ses fichiers restent dans Fichiers.",
-    "removed": "Plus partagé"
+    "removed": "Plus partagé",
+    "mediaSingleFile": "Les images et les vidéos nécessitent un document dans son propre dossier. Publiez le document comme dossier pour ajouter des médias.",
+    "mediaTooLarge": "Ce fichier dépasse 16 Mo."
   }
 }

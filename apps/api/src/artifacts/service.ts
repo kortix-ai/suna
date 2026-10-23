@@ -14,7 +14,7 @@
 import { artifacts } from '@kortix/db';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { config } from '../config';
-import { signChannelState } from '../channels/core/signed-state';
+import { signStableChannelState } from '../channels/core/signed-state';
 import { db } from '../shared/db';
 import { normalizeDrivePath } from '../drives/access';
 import { folderAccess, folderAccessAtLeast, type FolderLevel } from '../drives/folders';
@@ -41,16 +41,20 @@ export const MAX_PUBLISH_BYTES = 32 * 1024 * 1024;
 const HISTORY_COMMITS = 200;
 const ENTRIES = ['index.md', 'index.html'] as const;
 
-// Content URLs: served by artifacts/content-routes.ts.
+// Content URLs: served by artifacts/content-routes.ts. A view URL is valid for
+// 12–18 h and stays the same within each 6 h window, so a refetch never
+// reloads an open page.
 const VIEW_TTL_MS = 12 * 60 * 60_000;
+const VIEW_WINDOW_MS = 6 * 60 * 60_000;
 
 function apiBase(): string {
-  return (config.KORTIX_URL ?? 'http://localhost:8008').replace(/\/+$/, '');
+  return (config.ARTIFACT_CONTENT_URL ?? config.KORTIX_URL ?? 'http://localhost:8008').replace(/\/+$/, '');
 }
 
-/** A signed URL that shows the artifact for VIEW_TTL_MS: as it was at `commit`, or now when null. */
+/** A signed URL that shows the artifact: as it was at `commit`, or now when null. */
 export function artifactViewUrl(artifactId: string, commit: string | null): string {
-  return `${apiBase()}/v1/artifacts/s/${signChannelState('artifact-view', { a: artifactId, c: commit }, VIEW_TTL_MS)}/`;
+  const exp = Math.ceil((Date.now() + VIEW_TTL_MS) / VIEW_WINDOW_MS) * VIEW_WINDOW_MS;
+  return `${apiBase()}/v1/artifacts/s/${signStableChannelState('artifact-view', { a: artifactId, c: commit }, exp)}/`;
 }
 
 /** The public URL of the raw page (no Kortix chrome). */
@@ -168,9 +172,9 @@ async function exists(volume: string, path: string): Promise<boolean> {
 }
 
 /**
- * Publish new files as an artifact in the author's own folder in Files,
- * `/Users/<them>/Artifacts/`: one `index.md` or `index.html` becomes a single
- * file (`<slug>.md`), anything more a folder (`<slug>/`).
+ * Publish new files as an artifact in the author's own folder in Files: a
+ * folder `/Users/<them>/Artifacts/<slug>/` with `index.md` or `index.html`
+ * and everything beside it (a doc's images and videos land there too).
  */
 export async function publishNew(
   scope: { accountId: string; projectId: string },
@@ -185,23 +189,16 @@ export async function publishNew(
   const title = input.title?.trim() || titleOf(type, entryText) || 'Untitled';
   const drive = await ensureProjectDrive(scope.accountId, scope.projectId);
   const home = await ensurePersonalFolder(drive, author.userId);
-  const folder = files.length > 1;
-  const ext = type === 'doc' ? '.md' : '.html';
-  const target = await writeDriveVolume(drive, async (volume) => {
+  const root = await writeDriveVolume(drive, async (volume) => {
     const base = join(join(home, 'Artifacts'), slugify(title));
     let candidate = base;
-    for (let n = 2; await exists(volume, folder ? candidate : `${candidate}${ext}`); n++) candidate = `${base}-${n}`;
-    if (folder) {
-      for (const f of files) await writeVolumeFile(volume, join(candidate, f.rel), f.bytes, { overwrite: false });
-      return { root: candidate, entry };
-    }
-    const name = `${candidate.split('/').pop()}${ext}`;
-    await writeVolumeFile(volume, join(join(home, 'Artifacts'), name), files[0]!.bytes, { overwrite: false });
-    return { root: join(home, 'Artifacts'), entry: name };
+    for (let n = 2; await exists(volume, candidate); n++) candidate = `${base}-${n}`;
+    for (const f of files) await writeVolumeFile(volume, join(candidate, f.rel), f.bytes, { overwrite: false });
+    return candidate;
   });
   const [row] = await db.insert(artifacts).values({
     projectId: scope.projectId, accountId: scope.accountId, driveId: drive.driveId,
-    root: target.root, entry: target.entry, folder, title, type,
+    root, entry, folder: true, title, type,
     description: input.description ?? null, visibility: input.visibility ?? 'private',
     createdByUserId: author.userId, createdBySessionId: author.sessionId,
   }).returning();
@@ -373,11 +370,11 @@ export async function listFiles(row: ArtifactRow, at?: string): Promise<Array<{ 
   }, () => []);
 }
 
-/** One file of the artifact, now or at a commit. A single-file artifact serves only its entry. */
-export async function readArtifactFile(row: ArtifactRow, rel: string, at?: string | null): Promise<Response> {
+/** One file of the artifact, now or at a commit; `range` reads part of it (video seeking). A single-file artifact serves only its entry. */
+export async function readArtifactFile(row: ArtifactRow, rel: string, at?: string | null, range?: string): Promise<Response> {
   if (!row.folder && rel !== row.entry) throw new DriveStorageError(404, 'File not found');
   const drive = await driveOf(row);
-  return readVolumeFile(drive.platinumVolumeName, join(row.root, rel), undefined, at ?? undefined);
+  return readVolumeFile(drive.platinumVolumeName, join(row.root, rel), range, at ?? undefined);
 }
 
 export async function getArtifact(projectId: string, artifactId: string): Promise<ArtifactRow | null> {
