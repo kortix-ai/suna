@@ -657,6 +657,14 @@ describe('dry: converts in memory, writes nothing, reports the counts', () => {
         roundtrip_mismatch_messages: 0,
         max_session_messages: Math.max(...logs.map(sizeOf)),
         max_session_record_bytes: Math.max(...logs.map(bytesOf)),
+        // The merge pass's counts (`integration-session-log-merge.test.ts`).
+        missing: 0,
+        present: 0,
+        empty: 0,
+        merged: 0,
+        threads_created: 0,
+        misplaced: 0,
+        unplaced: 0,
       });
       expect(grades.partial).toBeGreaterThan(0);
       // The tick line carries the same counts.
@@ -779,7 +787,17 @@ async function withMirrorHidden<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-describe('drained (P8.2): once a pass selects nothing, the mirror is never read again', () => {
+/**
+ * After the pass that drained: the merge passes (`integration-session-log-merge.test.ts`) until one
+ * finds nothing to merge (an earlier test here leaves a mirror that grew after its log); then the
+ * mirror is never read again.
+ */
+async function merged() {
+  for (let i = 0; i < 2 && !(await stateRow())!.state.mergedMissing; i++) expect(total(await pass('write'), 'failed')).toBe(0);
+  expect((await stateRow())!.state.mergedMissing).toBe(true);
+}
+
+describe('drained (P8.2): once a pass selects nothing and the merge pass finds nothing, the mirror is never read again', () => {
   test('a restorable deleted mirror-only session keeps the backfill undrained until it converts; then no tick reads a mirror table, and its restore reads the history from the log', async () => {
     const deleted = await oldSession([plain(0), plain(1), plain(2), plain(3)]);
     await markDeleted(deleted, DAY_MS);
@@ -796,6 +814,7 @@ describe('drained (P8.2): once a pass selects nothing, the mirror is never read 
     expect((await stateRow())!.state.drainedWithDeleted).toBe(false);
     expect(total(await pass('write'), 'sessions')).toBe(0);
     expect((await stateRow())!.state.drainedWithDeleted).toBe(true);
+    await merged();
 
     const warn = spyOn(logger, 'warn');
     try {
@@ -825,6 +844,7 @@ describe('drained (P8.2): once a pass selects nothing, the mirror is never read 
 
     await pass('write');
     expect((await stateRow())!.state.drainedWithDeleted).toBe(true);
+    await merged();
     const fresh = await seedSession(project, OWNER);
     // Not drained, the conversion reads the mirror (and fails without it); drained, it never does.
     const warn = spyOn(logger, 'warn');
@@ -849,6 +869,7 @@ describe('drained (P8.2): once a pass selects nothing, the mirror is never read 
     expect(await hasLog(old)).toBe(true);
     await pass('write');
     expect((await stateRow())!.state.drainedWithDeleted).toBe(true);
+    await merged();
     const fresh = await seedSession(project, OWNER);
     const expired = await seedSession(project, OWNER);
     await markDeleted(expired, (SESSION_DELETE_ROWS_DAYS + 1) * DAY_MS);

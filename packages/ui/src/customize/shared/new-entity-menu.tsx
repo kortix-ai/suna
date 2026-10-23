@@ -61,7 +61,9 @@ export function RichRowBody({
  */
 export function NewEntityMenu({
   label = 'New',
-  size = 'sm',
+  // `default` is `h-9`, the height of the `size="sm"` search input every
+  // Customize header puts beside it. `sm` (`h-8`) left the pair 4px apart.
+  size = 'default',
   variant = 'secondary',
   caret = true,
   pending = false,

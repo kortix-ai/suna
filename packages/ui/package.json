@@ -227,6 +227,7 @@
     "./inline-meta": "./src/primitives/inline-meta.tsx",
     "./input": "./src/primitives/input.tsx",
     "./input-group": "./src/primitives/input-group.tsx",
+    "./internal/components/agent-mark": "./src/internal/components/agent-mark.tsx",
     "./internal/account-hub/account-hub-entry": "./src/internal/account-hub/account-hub-entry.tsx",
     "./internal/account-hub/account-hub-location": "./src/internal/account-hub/account-hub-location.tsx",
     "./internal/account-hub/account-settings-shell": "./src/internal/account-hub/account-settings-shell.tsx",
@@ -1365,6 +1366,10 @@
       "./input-group": {
         "types": "./dist/primitives/input-group.d.ts",
         "import": "./dist/primitives/input-group.js"
+      },
+      "./internal/components/agent-mark": {
+        "types": "./dist/internal/components/agent-mark.d.ts",
+        "import": "./dist/internal/components/agent-mark.js"
       },
       "./internal/account-hub/account-hub-entry": {
         "types": "./dist/internal/account-hub/account-hub-entry.d.ts",
