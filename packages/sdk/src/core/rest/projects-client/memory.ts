@@ -7,7 +7,7 @@
 // and a rejection is an `ApiError` whose `code` names it (`version_conflict`,
 // `title_taken`, `page_limit`, `layer_read_only`, `page_too_large`,
 // `secret_detected`, `superseded`, `already_undone`, `memory_not_found`,
-// `invalid_input`, `session_not_found`).
+// `invalid_input`, `session_not_found`, `not_unconfirmed`).
 // The types carry the same fields as `@kortix/api-contract/memory`
 // (held equal by `src/contract-drift.test.ts`).
 
@@ -161,6 +161,15 @@ export interface ProjectMemoryVersionList {
   next: string | null;
 }
 
+/** Which pages `listProjectMemoryPages` lists. */
+export interface ProjectMemoryPageListOptions {
+  type?: ProjectMemoryPageType;
+  /** `unconfirmed`: the layer's Needs confirming list. */
+  status?: ProjectMemoryPageStatus;
+  /** `true`: the layer's trash instead of its live pages. */
+  deleted?: boolean;
+}
+
 /** One page of Recent changes or of a page's history. */
 export interface ProjectMemoryPageOptions {
   /** Rows per page; the API caps it. */
@@ -303,12 +312,25 @@ export async function getProjectMemoryLayer(projectId: string, layerKey: Project
   return unwrap(await backendApi.get<ProjectMemoryLayer>(layer(projectId, layerKey), quiet));
 }
 
-/** The layer's live pages (at most 200), without bodies. A background read. */
+/**
+ * The layer's live pages (at most 200), newest first, without bodies; with
+ * `deleted: true` its trash (a page stays 30 days, then is deleted for good).
+ * `status: 'unconfirmed'` is the Needs confirming list. A background read.
+ */
 export async function listProjectMemoryPages(
   projectId: string,
   layerKey: ProjectMemoryLayerKey,
+  options?: ProjectMemoryPageListOptions,
 ): Promise<ProjectMemoryPageSummary[]> {
-  const body = unwrap(await backendApi.get<{ pages: ProjectMemoryPageSummary[] }>(`${layer(projectId, layerKey)}/pages`, quiet));
+  const query = new URLSearchParams();
+  if (options?.type) query.set('type', options.type);
+  if (options?.status) query.set('status', options.status);
+  if (options?.deleted) query.set('deleted', '1');
+  const text = query.toString();
+  const suffix = text ? `?${text}` : '';
+  const body = unwrap(
+    await backendApi.get<{ pages: ProjectMemoryPageSummary[] }>(`${layer(projectId, layerKey)}/pages${suffix}`, quiet),
+  );
   return body.pages;
 }
 
@@ -363,7 +385,10 @@ export async function updateProjectMemoryPage(
   return unwrap(await backendApi.patch<ProjectMemoryPage>(page(projectId, pageId), input, quiet));
 }
 
-/** Move a page to the trash. Without `can_delete` it rejects with 403 `forbidden`. */
+/**
+ * Move a page to the trash. Without `can_delete` it rejects with 403
+ * `forbidden`. Also Discard for an unconfirmed page, open to anyone who writes the layer.
+ */
 export async function deleteProjectMemoryPage(projectId: string, pageId: string): Promise<ProjectMemoryDeleteResult> {
   return unwrap(await backendApi.delete<ProjectMemoryDeleteResult>(page(projectId, pageId), quiet));
 }
@@ -379,7 +404,11 @@ export async function listProjectMemoryHistory(
   );
 }
 
-/** Make an older version the page's content again (a new version). Rejects with 409 `page_limit` or `title_taken`. */
+/**
+ * Make an older version the page's content again (a new version). Also brings
+ * a page back from the trash: pass the version before its delete. Rejects with
+ * 409 `page_limit` (the layer is full) or `title_taken`.
+ */
 export async function restoreProjectMemoryPage(
   projectId: string,
   pageId: string,
@@ -388,6 +417,16 @@ export async function restoreProjectMemoryPage(
   return unwrap(
     await backendApi.post<ProjectMemoryPage>(`${page(projectId, pageId)}/restore`, { version_id: versionId }, quiet),
   );
+}
+
+/**
+ * Confirm an unconfirmed page (outside content) from Needs confirming: agents
+ * read it from now on. A "(to confirm)" page merges into the page it names and
+ * goes to the trash; the result is then that page. A confirmed page rejects
+ * with 409 `not_unconfirmed`. Discard is `deleteProjectMemoryPage`.
+ */
+export async function confirmProjectMemoryPage(projectId: string, pageId: string): Promise<ProjectMemoryPage> {
+  return unwrap(await backendApi.post<ProjectMemoryPage>(`${page(projectId, pageId)}/confirm`, undefined, quiet));
 }
 
 /**

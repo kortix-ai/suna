@@ -39,7 +39,14 @@ import type {
   SessionMemoryUsage,
   UpdateProjectMemoryPageInput,
 } from './core/rest/projects-client/memory';
-import type { ProjectSpace, ProjectSpaceLink, ProjectSpaceSummary } from './core/rest/projects-client/spaces';
+import type {
+  ChannelsOnboarding,
+  ChannelsOnboardingMark,
+  ProjectSpace,
+  ProjectSpaceGeneralNotice,
+  ProjectSpaceLink,
+  ProjectSpaceSummary,
+} from './core/rest/projects-client/spaces';
 import type {
   CreateSessionPromptResult,
   ProjectSession,
@@ -92,6 +99,15 @@ export function contractDrift(): void {
 
   fits<ProjectSpaceLink>(wire<C.SpaceLink>());
   noPhantom<NoPhantom<ProjectSpaceLink, C.SpaceLink>>();
+  // The fetched title and icon (P3): the SDK declares every field the Links tab reads.
+  noPhantom<NoPhantom<C.SpaceLink, ProjectSpaceLink>>();
+  fits<ProjectSpaceGeneralNotice>(wire<NonNullable<C.SpaceList['general_notice']>>());
+  noPhantom<NoPhantom<ProjectSpaceGeneralNotice, C.SpaceGeneralNotice>>();
+  fits<ChannelsOnboarding>(wire<C.ChannelsOnboarding>());
+  noPhantom<NoPhantom<ChannelsOnboarding, C.ChannelsOnboarding>>();
+  noPhantom<NoPhantom<ChannelsOnboarding['get_started'], C.ChannelsOnboarding['get_started']>>();
+  fits<C.ChannelsOnboardingMark>(wire<ChannelsOnboardingMark>());
+  fits<ChannelsOnboardingMark>(wire<C.ChannelsOnboardingMark>());
 
   fits<ProjectSpaceSummary>(wire<C.SpaceSummary>());
   noPhantom<NoPhantom<ProjectSpaceSummary, C.SpaceSummary>>();

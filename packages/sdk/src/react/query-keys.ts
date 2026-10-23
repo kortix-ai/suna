@@ -52,7 +52,7 @@
  * can ever prefix-match the other. Do not "tidy" this back to `'kortix'`.
  */
 import type { ReviewItemsQuery } from '../core/rest/projects-client/review';
-import type { ProjectMemorySearchInput } from '../core/rest/projects-client/memory';
+import type { ProjectMemoryPageListOptions, ProjectMemorySearchInput } from '../core/rest/projects-client/memory';
 import type { ListProjectSessionsOptions } from '../core/rest/projects-client/sessions';
 
 type SessionListFilters = Pick<
@@ -564,12 +564,20 @@ export const qk = {
     spaceSummaries: (id: string) => [...qk.project.spaces(id), 'summary'] as const,
     /** `getProjectSpaceSummary` — one channel's tab counts. */
     spaceSummary: (id: string, spaceId: string) => [...qk.project.spaceSummaries(id), spaceId] as const,
+    /** `getProjectSpaceGeneralNotice` — `#general`'s turned-on-again line. Under `spaces`, so a spaces refresh refreshes it. */
+    spaceGeneralNotice: (id: string) => [...qk.project.spaces(id), 'general-notice'] as const,
+    /** `getChannelsOnboarding` — the caller's intro and "Get started" state. */
+    channelsOnboarding: (id: string) => [...qk.project.scope(id), 'onboarding', 'channels'] as const,
     /** Every memory read of the project. Memory writes invalidate it: one change can touch two pages, even in two layers. */
     memory: (id: string) => [...qk.project.scope(id), 'memory'] as const,
     /** `getProjectMemoryLayer` — one layer (`company` or a space id) and its counts. */
     memoryLayer: (id: string, layerKey: string) => [...qk.project.memory(id), 'layer', layerKey] as const,
-    /** `listProjectMemoryPages` — the layer's live pages. */
-    memoryPages: (id: string, layerKey: string) => [...qk.project.memoryLayer(id, layerKey), 'pages'] as const,
+    /** `listProjectMemoryPages` — the layer's live pages; with a filter, its trash or Needs confirming list. */
+    memoryPages: (id: string, layerKey: string, filter?: ProjectMemoryPageListOptions) =>
+      // The filter only when set, so the live list's key stays byte-identical.
+      filter && (filter.type || filter.status || filter.deleted)
+        ? ([...qk.project.memoryLayer(id, layerKey), 'pages', filter] as const)
+        : ([...qk.project.memoryLayer(id, layerKey), 'pages'] as const),
     /** `listProjectMemoryChanges` — the layer's Recent changes (an infinite query). */
     memoryChanges: (id: string, layerKey: string) => [...qk.project.memoryLayer(id, layerKey), 'changes'] as const,
     /** `getProjectMemoryPage` — one page, by id: its route has no layer. */

@@ -40,6 +40,14 @@ export function bindProjectOperationsReview(projectId: string) {
       },
       /** The counts beside the channel's tab labels. */
       summary: (spaceId: string) => P.getProjectSpaceSummary(projectId, spaceId),
+      /** `#general`'s "turned on again" line, or null. */
+      generalNotice: () => P.getProjectSpaceGeneralNotice(projectId),
+      /** The caller's Channels onboarding: the intro dialog and the `#general` "Get started" rows. */
+      onboarding: {
+        get: () => P.getChannelsOnboarding(projectId),
+        /** Record one mark for the caller. Idempotent. */
+        mark: (mark: P.ChannelsOnboardingMark) => P.markChannelsOnboarding(projectId, mark),
+      },
     },
 
     /** Memory pages (`project_channels` flag). A layer key is `company` or a channel's or DM's space id. */
@@ -49,13 +57,16 @@ export function bindProjectOperationsReview(projectId: string) {
       /** One page of Recent changes; walk older ones with `next` → `before`. */
       changes: (...a: DropFirst<Parameters<typeof P.listProjectMemoryChanges>>) => P.listProjectMemoryChanges(projectId, ...a),
       pages: {
-        list: (layerKey: string) => P.listProjectMemoryPages(projectId, layerKey),
+        /** Live pages; `{ deleted: true }` the trash, `{ status: 'unconfirmed' }` Needs confirming. */
+        list: (...a: DropFirst<Parameters<typeof P.listProjectMemoryPages>>) => P.listProjectMemoryPages(projectId, ...a),
         create: (...a: DropFirst<Parameters<typeof P.createProjectMemoryPage>>) => P.createProjectMemoryPage(projectId, ...a),
         get: (pageId: string) => P.getProjectMemoryPage(projectId, pageId),
         update: (...a: DropFirst<Parameters<typeof P.updateProjectMemoryPage>>) => P.updateProjectMemoryPage(projectId, ...a),
         delete: (pageId: string) => P.deleteProjectMemoryPage(projectId, pageId),
         history: (...a: DropFirst<Parameters<typeof P.listProjectMemoryHistory>>) => P.listProjectMemoryHistory(projectId, ...a),
         restore: (...a: DropFirst<Parameters<typeof P.restoreProjectMemoryPage>>) => P.restoreProjectMemoryPage(projectId, ...a),
+        /** Confirm an unconfirmed page (Needs confirming). Discard is `delete`. */
+        confirm: (pageId: string) => P.confirmProjectMemoryPage(projectId, pageId),
       },
       /** Remember-box sentences, saved as `note` pages. */
       notes: {

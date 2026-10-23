@@ -4,8 +4,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   addProjectSpaceLink,
   createProjectSpace,
+  getChannelsOnboarding,
   getOrCreateProjectDm,
+  getProjectSpaceGeneralNotice,
   getProjectSpaceSummary,
+  markChannelsOnboarding,
   listProjectSpaceApps,
   listProjectSpaceLinks,
   pinProjectSpaceLink,
@@ -13,6 +16,7 @@ import {
   removeProjectSpaceLink,
   updateProjectSpace,
   type AddProjectSpaceLinkInput,
+  type ChannelsOnboardingMark,
   type UpdateProjectSpaceInput,
 } from '../core/rest/projects-client/spaces';
 import { contract } from './query-contracts';
@@ -32,14 +36,34 @@ export function useProjectSpaces(projectId: string | null | undefined, options?:
   });
 }
 
-function useInvalidateSpaces(projectId: string) {
+/**
+ * `#general`'s "turned on again" line (`kind`, `at`, `count`), or null. Reads
+ * the spaces route; its key sits under the spaces key, so a spaces refresh refreshes it.
+ */
+export function useProjectSpaceGeneralNotice(projectId: string | null | undefined, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: qk.project.spaceGeneralNotice(projectId ?? ''),
+    queryFn: () => getProjectSpaceGeneralNotice(projectId as string),
+    enabled: !!projectId && (options?.enabled ?? true),
+    ...contract('inventory'),
+  });
+}
+
+/**
+ * Refetch the spaces list. `completesGetStarted`: the write also completes a
+ * "Get started" row (a new channel, a DM), so the onboarding state refetches too.
+ */
+function useInvalidateSpaces(projectId: string, completesGetStarted = false) {
   const queryClient = useQueryClient();
-  return () => queryClient.invalidateQueries({ queryKey: qk.project.spaces(projectId) });
+  return () => {
+    queryClient.invalidateQueries({ queryKey: qk.project.spaces(projectId) });
+    if (completesGetStarted) queryClient.invalidateQueries({ queryKey: qk.project.channelsOnboarding(projectId) });
+  };
 }
 
 /** Create a channel. A taken slug rejects with `ApiError` code `slug_taken` (see `createProjectSpace`). */
 export function useCreateProjectSpace(projectId: string) {
-  const invalidate = useInvalidateSpaces(projectId);
+  const invalidate = useInvalidateSpaces(projectId, true);
   return useMutation({
     mutationFn: (input: Parameters<typeof createProjectSpace>[1]) => createProjectSpace(projectId, input),
     onSuccess: invalidate,
@@ -58,7 +82,7 @@ export function useUpdateProjectSpace(projectId: string) {
 
 /** Open the caller's DM with an agent (created on the first call). Resolves the DM space. */
 export function useOpenProjectDm(projectId: string) {
-  const invalidate = useInvalidateSpaces(projectId);
+  const invalidate = useInvalidateSpaces(projectId, true);
   return useMutation({
     mutationFn: (agentName: string) => getOrCreateProjectDm(projectId, agentName),
     onSuccess: invalidate,
@@ -131,5 +155,27 @@ export function useRemoveProjectSpaceLink(projectId: string, spaceId: string) {
   return useMutation({
     mutationFn: (linkId: string) => removeProjectSpaceLink(projectId, spaceId, linkId),
     onSuccess: invalidate,
+  });
+}
+
+/**
+ * The caller's Channels onboarding state: `intro_seen` and the `#general`
+ * "Get started" rows. Pass `enabled: false` while `project_channels` is off.
+ */
+export function useChannelsOnboarding(projectId: Id, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: qk.project.channelsOnboarding(projectId ?? ''),
+    queryFn: () => getChannelsOnboarding(projectId as string),
+    enabled: !!projectId && (options?.enabled ?? true),
+    ...contract('inventory'),
+  });
+}
+
+/** Record one onboarding mark for the caller (`channels_intro`, `get_started.dismissed`, …), then refetch the state. */
+export function useMarkChannelsOnboarding(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (mark: ChannelsOnboardingMark) => markChannelsOnboarding(projectId, mark),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.project.channelsOnboarding(projectId) }),
   });
 }

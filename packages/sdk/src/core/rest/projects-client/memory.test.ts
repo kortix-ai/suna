@@ -3,6 +3,7 @@ import { ApiError } from '../../http/api/errors';
 import { configureKortix } from '../../http/config';
 import {
   addProjectMemoryNote,
+  confirmProjectMemoryPage,
   createProjectMemoryPage,
   deleteProjectMemoryPage,
   getProjectMemoryLayer,
@@ -91,6 +92,24 @@ test('listProjectMemoryPages GETs the layer pages and returns the array', async 
   nextResponse = { status: 200, body: { pages: [summary] } };
   expect(await listProjectMemoryPages('P1', 'company')).toEqual([summary]);
   expect(calls).toEqual([{ url: `${base}/layers/company/pages`, method: 'GET', body: undefined }]);
+});
+
+test('listProjectMemoryPages lists the trash with deleted: true, and filters by type and status', async () => {
+  nextResponse = { status: 200, body: { pages: [] } };
+  await listProjectMemoryPages('P1', SPACE, { deleted: true });
+  await listProjectMemoryPages('P1', SPACE, { type: 'people', status: 'unconfirmed' });
+  await listProjectMemoryPages('P1', SPACE, { deleted: false });
+  expect(calls.map((c) => c.url)).toEqual([
+    `${base}/layers/${SPACE}/pages?deleted=1`,
+    `${base}/layers/${SPACE}/pages?type=people&status=unconfirmed`,
+    `${base}/layers/${SPACE}/pages`,
+  ]);
+});
+
+test('confirmProjectMemoryPage POSTs to the page confirm route and returns the page agents now read', async () => {
+  nextResponse = { status: 200, body: page };
+  expect(await confirmProjectMemoryPage('P1', PAGE)).toEqual(page);
+  expect(calls).toEqual([{ url: `${base}/pages/${PAGE}/confirm`, method: 'POST', body: undefined }]);
 });
 
 test('createProjectMemoryPage POSTs the input to the layer pages', async () => {
@@ -209,6 +228,8 @@ test.each([
   ['addProjectMemoryNote', 422, 'secret_detected', () => addProjectMemoryNote('P1', SPACE, { text: 'a key' })],
   ['undoProjectMemoryVersion', 409, 'superseded', () => undoProjectMemoryVersion('P1', VERSION)],
   ['getProjectMemoryLayer', 404, 'memory_not_found', () => getProjectMemoryLayer('P1', SPACE)],
+  ['confirmProjectMemoryPage', 409, 'not_unconfirmed', () => confirmProjectMemoryPage('P1', PAGE)],
+  ['restoreProjectMemoryPage', 409, 'page_limit', () => restoreProjectMemoryPage('P1', PAGE, VERSION)],
 ] as const)('%s rejects %i with ApiError code %s and never reaches the host error handler', async (_name, status, code, call) => {
   nextResponse = { status, body: { error: 'rejected', code, page_id: PAGE } };
   const error = await call().catch((e: unknown) => e);

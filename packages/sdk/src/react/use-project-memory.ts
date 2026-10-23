@@ -3,6 +3,7 @@
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   addProjectMemoryNote,
+  confirmProjectMemoryPage,
   createProjectMemoryPage,
   deleteProjectMemoryPage,
   getProjectMemoryLayer,
@@ -18,6 +19,7 @@ import {
   type AddProjectMemoryNoteInput,
   type CreateProjectMemoryPageInput,
   type ProjectMemoryPage,
+  type ProjectMemoryPageListOptions,
   type ProjectMemorySearchInput,
   type SessionMemoryUsage,
   type UpdateProjectMemoryPageInput,
@@ -44,11 +46,20 @@ export function useProjectMemoryLayer(projectId: Id, layerKey: Id, options?: Rea
   });
 }
 
-/** The layer's live pages, without bodies. */
-export function useProjectMemoryPages(projectId: Id, layerKey: Id, options?: ReadOptions) {
+/**
+ * The layer's live pages, without bodies. `{ deleted: true }` reads its trash,
+ * `{ status: 'unconfirmed' }` its Needs confirming list; each list has its own
+ * cache slot, and every memory write refreshes them all.
+ */
+export function useProjectMemoryPages(
+  projectId: Id,
+  layerKey: Id,
+  options?: ReadOptions & ProjectMemoryPageListOptions,
+) {
+  const filter: ProjectMemoryPageListOptions = { type: options?.type, status: options?.status, deleted: options?.deleted };
   return useQuery({
-    queryKey: qk.project.memoryPages(projectId ?? '', layerKey ?? ''),
-    queryFn: () => listProjectMemoryPages(projectId as string, layerKey as string),
+    queryKey: qk.project.memoryPages(projectId ?? '', layerKey ?? '', filter),
+    queryFn: () => listProjectMemoryPages(projectId as string, layerKey as string, filter),
     enabled: on(options, projectId, layerKey),
     ...contract('inventory'),
   });
@@ -132,7 +143,9 @@ const callerShowsError = () => {};
 /**
  * After a memory write: put the pages the response returned into their slots,
  * then refetch every memory read of the project (layer counts, page lists,
- * Recent changes, pages, history) and the channel tab counts.
+ * the trash and Needs confirming, Recent changes, pages, history), the channel
+ * tab counts and the onboarding state (memory saved in `#general` completes a
+ * "Get started" row).
  */
 function useMemoryWritten(projectId: string) {
   const queryClient = useQueryClient();
@@ -141,6 +154,7 @@ function useMemoryWritten(projectId: string) {
     return Promise.all([
       queryClient.invalidateQueries({ queryKey: qk.project.memory(projectId) }),
       queryClient.invalidateQueries({ queryKey: qk.project.spaceSummaries(projectId) }),
+      queryClient.invalidateQueries({ queryKey: qk.project.channelsOnboarding(projectId) }),
     ]);
   };
 }
@@ -176,7 +190,7 @@ export function useUpdateProjectMemoryPage(projectId: string) {
   });
 }
 
-/** Move a page to the trash. Resolves `{ ok, version_id }`: pass `version_id` to undo it. */
+/** Move a page to the trash, or Discard an unconfirmed one. Resolves `{ ok, version_id }`: pass `version_id` to undo it. */
 export function useDeleteProjectMemoryPage(projectId: string) {
   const written = useMemoryWritten(projectId);
   return useMutation({
@@ -186,7 +200,7 @@ export function useDeleteProjectMemoryPage(projectId: string) {
   });
 }
 
-/** Make an older version the page's content again. */
+/** Make an older version the page's content again; also brings a page back from the trash (pass the version before its delete). */
 export function useRestoreProjectMemoryPage(projectId: string) {
   const written = useMemoryWritten(projectId);
   return useMutation({
@@ -208,5 +222,19 @@ export function useUndoProjectMemoryVersion(projectId: string) {
     mutationFn: (versionId: string) => undoProjectMemoryVersion(projectId, versionId),
     onError: callerShowsError,
     onSuccess: (result: { pages: ProjectMemoryPage[] }) => written(result.pages),
+  });
+}
+
+/**
+ * Confirm an unconfirmed page from Needs confirming. Resolves the page agents
+ * now read: for a "(to confirm)" page, the page it merged into. A confirmed
+ * page rejects with `ApiError` code `not_unconfirmed`.
+ */
+export function useConfirmProjectMemoryPage(projectId: string) {
+  const written = useMemoryWritten(projectId);
+  return useMutation({
+    mutationFn: (pageId: string) => confirmProjectMemoryPage(projectId, pageId),
+    onError: callerShowsError,
+    onSuccess: (page: ProjectMemoryPage) => written([page]),
   });
 }

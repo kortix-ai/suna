@@ -4,14 +4,18 @@ import { configureKortix } from '../../http/config';
 import {
   addProjectSpaceLink,
   createProjectSpace,
+  getChannelsOnboarding,
   getOrCreateProjectDm,
+  getProjectSpaceGeneralNotice,
   getProjectSpaceSummary,
+  markChannelsOnboarding,
   listProjectSpaceApps,
   listProjectSpaceLinks,
   listProjectSpaces,
   pinProjectSpaceLink,
   removeProjectSpaceLink,
   updateProjectSpace,
+  type ChannelsOnboarding,
   type ProjectSpace,
   type ProjectSpaceLink,
 } from './spaces';
@@ -55,6 +59,50 @@ test('listProjectSpaces GETs the project spaces and returns the array', async ()
   const spaces = await listProjectSpaces('P1');
   expect(calls).toEqual([{ url: 'http://test.local/v1/projects/P1/spaces', method: 'GET', body: undefined }]);
   expect(spaces).toEqual([general]);
+});
+
+test('getProjectSpaceGeneralNotice reads #general\'s turned-on-again line from the spaces list, or null', async () => {
+  const notice = { kind: 'reenabled' as const, at: '2026-10-23T00:00:00.000Z', count: 4 };
+  nextResponse = { status: 200, body: { spaces: [general], general_notice: notice } };
+  expect(await getProjectSpaceGeneralNotice('P1')).toEqual(notice);
+  nextResponse = { status: 200, body: { spaces: [general] } };
+  expect(await getProjectSpaceGeneralNotice('P1')).toBeNull();
+  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+    'GET http://test.local/v1/projects/P1/spaces',
+    'GET http://test.local/v1/projects/P1/spaces',
+  ]);
+});
+
+test('getChannelsOnboarding GETs the caller\'s onboarding state', async () => {
+  const state: ChannelsOnboarding = {
+    intro_seen: false,
+    get_started: { visible: true, create_channel: true, remember: false, open_dm: false },
+  };
+  nextResponse = { status: 200, body: state };
+  expect(await getChannelsOnboarding('P1')).toEqual(state);
+  expect(calls).toEqual([{ url: 'http://test.local/v1/projects/P1/onboarding/channels', method: 'GET', body: undefined }]);
+});
+
+test('markChannelsOnboarding POSTs { mark } and resolves on 204', async () => {
+  globalThis.fetch = mock(async (url: unknown, opts: { method?: string; body?: string } = {}) => {
+    calls.push({ url: String(url), method: opts.method ?? 'GET', body: opts.body ? JSON.parse(opts.body) : undefined });
+    return new Response(null, { status: 204 });
+  }) as unknown as typeof fetch;
+  expect(await markChannelsOnboarding('P1', 'channels_intro')).toBeUndefined();
+  expect(calls).toEqual([
+    { url: 'http://test.local/v1/projects/P1/onboarding/channels/marks', method: 'POST', body: { mark: 'channels_intro' } },
+  ]);
+});
+
+test('markChannelsOnboarding rejects an unknown mark with 400 and never reaches the host error handler', async () => {
+  const errors: unknown[] = [];
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'tok', onError: (e: unknown) => errors.push(e) });
+  nextResponse = { status: 400, body: { error: true, message: 'Validation failed' } };
+  const error = await markChannelsOnboarding('P1', 'nope' as never).catch((e: unknown) => e);
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'tok' });
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error).toMatchObject({ status: 400 });
+  expect(errors).toEqual([]);
 });
 
 test('createProjectSpace POSTs the name and description', async () => {
@@ -149,6 +197,9 @@ const link: ProjectSpaceLink = {
   session_id: 'T1',
   share_count: 2,
   last_shared_at: '2026-10-22T00:00:00.000Z',
+  display_title: 'Spec',
+  site_name: 'Example',
+  icon_url: 'https://example.test/favicon.ico',
 };
 
 test('listProjectSpaceApps GETs the channel apps and returns the array', async () => {

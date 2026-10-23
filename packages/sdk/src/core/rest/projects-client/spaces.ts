@@ -55,6 +55,29 @@ export async function listProjectSpaces(projectId: string): Promise<ProjectSpace
 }
 
 /**
+ * `#general`'s "turned on again" line: `count` sessions started while Channels
+ * was off were filed into `#general` at `at`. Present for 7 days after the switch.
+ */
+export interface ProjectSpaceGeneralNotice {
+  kind: 'reenabled';
+  at: string;
+  count: number;
+}
+
+/**
+ * `#general`'s "turned on again" line, or null when there is none. Read from
+ * the spaces list (`GET /spaces`), so it costs the same request. A background read.
+ */
+export async function getProjectSpaceGeneralNotice(projectId: string): Promise<ProjectSpaceGeneralNotice | null> {
+  const body = unwrap(
+    await backendApi.get<{ general_notice?: ProjectSpaceGeneralNotice }>(`/projects/${projectId}/spaces`, {
+      showErrors: false,
+    }),
+  );
+  return body.general_notice ?? null;
+}
+
+/**
  * Create a channel. A name whose slug is taken rejects with an `ApiError`:
  * `status` 409, `code` `'slug_taken'`, and `data.space_id` / `data.archived`
  * name the existing channel; `data.can_edit` says whether the caller may
@@ -117,6 +140,12 @@ export interface ProjectSpaceLink {
   /** How many messages shared it. */
   share_count: number;
   last_shared_at: string;
+  /** The row's name: the title a member gave, else the page's fetched title, else the decoded path, else the host. */
+  display_title: string;
+  /** The page's `og:site_name`, fetched by the server; null until fetched or when the page has none. */
+  site_name: string | null;
+  /** The page's icon URL, fetched by the server; null until fetched or when none passed the address check. A remote URL: load it only through an image proxy. */
+  icon_url: string | null;
 }
 
 export interface AddProjectSpaceLinkInput {
@@ -204,5 +233,44 @@ export async function pinProjectSpaceLink(
 export async function getProjectSpaceSummary(projectId: string, spaceId: string): Promise<ProjectSpaceSummary> {
   return unwrap(
     await backendApi.get<ProjectSpaceSummary>(`/projects/${projectId}/spaces/${spaceId}/summary`, { showErrors: false }),
+  );
+}
+
+/** A mark a member leaves once per project: the intro dialog seen, or a "Get started" row done or dismissed. */
+export type ChannelsOnboardingMark =
+  | 'channels_intro'
+  | 'get_started.dismissed'
+  | 'get_started.channel'
+  | 'get_started.remember'
+  | 'get_started.dm';
+
+/**
+ * The caller's Channels onboarding state. A "Get started" row is done when its
+ * mark is present or its fact is true: the caller created a channel, saved
+ * memory in `#general`, or owns a DM.
+ */
+export interface ChannelsOnboarding {
+  /** The member intro dialog was seen (or Channels was turned on again). */
+  intro_seen: boolean;
+  get_started: {
+    /** Show the block: not dismissed and not every row done. */
+    visible: boolean;
+    create_channel: boolean;
+    remember: boolean;
+    open_dm: boolean;
+  };
+}
+
+/** The caller's Channels onboarding state. A background read. */
+export async function getChannelsOnboarding(projectId: string): Promise<ChannelsOnboarding> {
+  return unwrap(
+    await backendApi.get<ChannelsOnboarding>(`/projects/${projectId}/onboarding/channels`, { showErrors: false }),
+  );
+}
+
+/** Record one onboarding mark for the caller. Idempotent. An unknown mark rejects with 400; the caller shows it. */
+export async function markChannelsOnboarding(projectId: string, mark: ChannelsOnboardingMark): Promise<void> {
+  unwrap(
+    await backendApi.post<unknown>(`/projects/${projectId}/onboarding/channels/marks`, { mark }, { showErrors: false }),
   );
 }

@@ -172,6 +172,31 @@ test('project(id).memory searches pages and reads a thread’s Used memory', asy
   ]);
 });
 
+test('project(id).memory lists the trash and Needs confirming, and confirms a page', async () => {
+  const memory = kortix.project('P1').memory;
+  await memory.pages.list('S1', { deleted: true });
+  await memory.pages.list('S1', { status: 'unconfirmed' });
+  await memory.pages.confirm('PG1');
+  const base = 'http://test.local/projects/P1/memory';
+  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+    `GET ${base}/layers/S1/pages?deleted=1`,
+    `GET ${base}/layers/S1/pages?status=unconfirmed`,
+    `POST ${base}/pages/PG1/confirm`,
+  ]);
+});
+
+test('project(id).spaces reads #general\'s notice and the caller\'s onboarding, and records a mark', async () => {
+  const spaces = kortix.project('P1').spaces;
+  await spaces.generalNotice();
+  await spaces.onboarding.get();
+  await spaces.onboarding.mark('channels_intro');
+  expect(calls).toEqual([
+    { method: 'GET', url: 'http://test.local/projects/P1/spaces', body: undefined },
+    { method: 'GET', url: 'http://test.local/projects/P1/onboarding/channels', body: undefined },
+    { method: 'POST', url: 'http://test.local/projects/P1/onboarding/channels/marks', body: { mark: 'channels_intro' } },
+  ]);
+});
+
 test('project(id).spaces reaches a channel’s apps, links and summary', async () => {
   const spaces = kortix.project('P1').spaces;
   await spaces.apps('S1');

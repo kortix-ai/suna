@@ -432,6 +432,7 @@ const dm = await p.spaces.dm("kortix"); // the caller's DM, created on the first
 const apps = await p.spaces.apps(ch.space_id); // Apps deployed from its threads, only those the caller may open
 const link = await p.spaces.links.add(ch.space_id, { url: "https://example.com/spec", title: "Spec" }); // http(s) only, ≤ 2,048 chars; title ≤ 200; else 400; 200 links per channel, then 409 link_limit
 await p.spaces.links.list(ch.space_id); // pinned and shared in its threads, most recently shared first; `can_delete` per link
+// each link: display_title (member title, else fetched title, else decoded path), site_name, icon_url (null until fetched; load it only through an image proxy)
 await p.spaces.links.pin(ch.space_id, link.link_id, false); // any member; unpinning a link no thread shared removes it (→ null)
 await p.spaces.links.remove(ch.space_id, link.link_id); // its creator or a project manager; else 403 forbidden
 await p.spaces.summary(ch.space_id); // { apps, links, triggers }: the tab counts (a DM: apps and links are 0)
@@ -477,7 +478,21 @@ rows[0].reply_count; // messages after it; a space list only, null elsewhere
   while the flag is on. `useProjectTriggers` create, update and remove refresh
   every space summary.
 - Turning the flag on files every session in no space into `#general`;
-  turning it off deletes nothing.
+  turning it off deletes nothing. Turning it on again (with `#general`
+  already there) sets `#general`'s notice for 7 days:
+  `await p.spaces.generalNotice()` → `{ kind: "reenabled", at, count }` (the
+  sessions started while it was off) or `null`. React:
+  `useProjectSpaceGeneralNotice(pid, { enabled })`, under the spaces key.
+- Onboarding: `await p.spaces.onboarding.get()` →
+  `{ intro_seen, get_started: { visible, create_channel, remember, open_dm } }`.
+  A "Get started" row is done when its mark is present or the caller created a
+  channel, saved memory in `#general`, or owns a DM; `visible` is false once
+  dismissed or all done. `await p.spaces.onboarding.mark("channels_intro")`
+  records a mark (`channels_intro`, `get_started.dismissed`,
+  `get_started.channel`, `get_started.remember`, `get_started.dm`;
+  idempotent; another value → `400`). React: `useChannelsOnboarding(pid, { enabled })`
+  and `useMarkChannelsOnboarding(pid)`; creating a channel, opening a DM and
+  every memory write refresh it.
 
 ### Memory pages (experimental)
 
@@ -505,6 +520,10 @@ const { changes, next } = await m.changes(ch.space_id); // Recent changes, newes
 await m.changes(ch.space_id, { before: next ?? undefined, limit: 20 }); // the next older page
 const { versions } = await m.pages.history(page.page_id); // each version's snapshot; same paging
 await m.pages.restore(page.page_id, versions[1].version_id); // a new version with that content
+const trash = await m.pages.list(ch.space_id, { deleted: true }); // the trash: a page stays 30 days, then is deleted for good
+// restore(pageId, <the version before its delete>) brings it back; a full layer → 409 page_limit
+const toConfirm = await m.pages.list(ch.space_id, { status: "unconfirmed" }); // Needs confirming: facts from outside content
+await m.pages.confirm(toConfirm[0].page_id); // agents read it from now on; a "(to confirm)" page merges into its page (the result); discard is pages.delete
 const { hits } = await m.search({ q: "launch date", type: "decisions" }); // best first; `layer` limits it to one layer
 const used = await m.usage(sessionId); // a thread's "Used memory": { loaded_at, layers: [{ layer_key, scope, name, pages }] }
 ```
@@ -513,8 +532,11 @@ const used = await m.usage(sessionId); // a thread's "Used memory": { loaded_at,
   `page_limit` (200 live pages per layer), `layer_read_only` (archived
   channel), `version_conflict`, `superseded`, `already_undone`; `413`
   `page_too_large` (body over 8,192 UTF-8 bytes); `422` `secret_detected`;
-  `404` `memory_not_found` (another member's DM, an unknown id). None reaches
-  the host error handler.
+  `404` `memory_not_found` (another member's DM, an unknown id); `409`
+  `not_unconfirmed` (confirm on a confirmed page). None reaches the host
+  error handler.
+- An agent's fact from outside content (a web page, a URL in the fact) waits
+  as an `unconfirmed` page: agents do not read it until a person confirms it.
 - `search({ q, layer?, type?, limit? })` searches Company, every live channel
   and the caller's own DMs (or the one `layer`): full text over title, summary
   and body, then titles that contain `q`. `q` is 2–200 characters (shorter →
@@ -530,11 +552,14 @@ const used = await m.usage(sessionId); // a thread's "Used memory": { loaded_at,
 - React: `useProjectMemoryLayer(pid, layerKey)`, `useProjectMemoryPages(pid, layerKey)`,
   `useProjectMemoryChanges(pid, layerKey)` and `useProjectMemoryHistory(pid, pageId)`
   (infinite queries: `fetchNextPage`), `useProjectMemoryPage(pid, pageId)`; every
-  read takes `{ enabled }`. Mutations: `useCreateProjectMemoryPage(pid, layerKey)`,
+  read takes `{ enabled }`; `useProjectMemoryPages(pid, layerKey, { deleted: true })`
+  reads the trash and `{ status: "unconfirmed" }` Needs confirming, each in its
+  own cache slot. Mutations: `useCreateProjectMemoryPage(pid, layerKey)`,
   `useAddProjectMemoryNote(pid, layerKey)`, `useUpdateProjectMemoryPage(pid)`,
   `useDeleteProjectMemoryPage(pid)`, `useRestoreProjectMemoryPage(pid)`,
-  `useUndoProjectMemoryVersion(pid)`. Each write refreshes every memory read of
-  the project (`qk.project.memory(pid)`) and the channel tab counts.
+  `useUndoProjectMemoryVersion(pid)`, `useConfirmProjectMemoryPage(pid)`. Each
+  write refreshes every memory read of the project (`qk.project.memory(pid)`),
+  the channel tab counts and the onboarding state.
   `useProjectMemorySearch(pid, { q, layer?, type?, limit? })` runs while `q`
   has 2–200 characters after trimming and keeps the previous hits while the
   next query loads (also when `q` drops below 2: render hits only for a valid
@@ -738,7 +763,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.mobileClientPolicy()` | the operator's mobile release policy, `GET /v1/clients/mobile`, **no token needed** (read before login): resolves `{ minimum_version, store_url_ios, store_url_android }`, each a string or `null`; a non-200 answer throws `ApiError`. A mobile host compares its app version to `minimum_version` with `compareSemver(a, b)` (`-1 \| 0 \| 1`, or `null` when either side does not parse; ignores a leading `v` and `-pre`/`+build` suffixes) and fails open on `null`. Also exported standalone as `getMobileClientPolicy` and the `MobileClientPolicy` type. The operator sets `MOBILE_MIN_VERSION`, `MOBILE_STORE_URL_IOS`, `MOBILE_STORE_URL_ANDROID` on the API |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
-| `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events; `.fire(slug, { payload, dryRun })`; run history `.runs(slug)` / `.projectRuns({ status })`; `.replay(slug, runId)`) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.spaces.{list,create,update,dm,apps,links,summary}` (channels and DMs; experimental, `project_channels` flag) · `.memory.{layer,changes,pages,notes,undo,search,usage}` (memory pages; experimental, `project_channels` flag) · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
+| `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events; `.fire(slug, { payload, dryRun })`; run history `.runs(slug)` / `.projectRuns({ status })`; `.replay(slug, runId)`) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.spaces.{list,create,update,dm,apps,links,summary,generalNotice,onboarding}` (channels and DMs; experimental, `project_channels` flag) · `.memory.{layer,changes,pages,notes,undo,search,usage}` (memory pages; experimental, `project_channels` flag) · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`restore`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`watch`/`setWatch`/`presence`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · runtime REST escape hatches: `stream()` and the deprecated `.runtime` |
 | `kortix.runtime()` | the runtime REST client for the active sandbox (the SDK's own `RuntimeClient`, frozen at the `@opencode-ai/sdk` 1.18.23 route shapes); use a session-scoped handle in multi-tenant code |
 

@@ -255,10 +255,13 @@ export * from './use-session-participants';
 export * from './use-project-sessions';
 export {
   useAddProjectSpaceLink,
+  useChannelsOnboarding,
   useCreateProjectSpace,
+  useMarkChannelsOnboarding,
   useOpenProjectDm,
   usePinProjectSpaceLink,
   useProjectSpaceApps,
+  useProjectSpaceGeneralNotice,
   useProjectSpaceLinks,
   useProjectSpaces,
   useProjectSpaceSummary,

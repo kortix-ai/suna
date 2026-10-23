@@ -22,6 +22,7 @@ mock.module('@tanstack/react-query', () => ({
 
 const {
   useAddProjectMemoryNote,
+  useConfirmProjectMemoryPage,
   useCreateProjectMemoryPage,
   useDeleteProjectMemoryPage,
   useProjectMemoryChanges,
@@ -106,6 +107,25 @@ describe('memory reads', () => {
       expect(query.getNextPageParam({ next: 'N2' })).toBe('N2');
       expect(query.getNextPageParam({ next: null })).toBeUndefined();
     }
+  });
+
+  test('the trash and a filtered list get their own slot under the layer pages key, and read with the filter', async () => {
+    response = { pages: [] };
+    const live = useProjectMemoryPages('P1', 'S1') as any;
+    const trash = useProjectMemoryPages('P1', 'S1', { deleted: true }) as any;
+    const unconfirmed = useProjectMemoryPages('P1', 'S1', { status: 'unconfirmed' }) as any;
+    expect(live.queryKey).toEqual(qk.project.memoryPages('P1', 'S1'));
+    expect(trash.queryKey).toEqual(qk.project.memoryPages('P1', 'S1', { deleted: true }));
+    expect(trash.queryKey).not.toEqual(live.queryKey);
+    expect(unconfirmed.queryKey).not.toEqual(trash.queryKey);
+    // A write invalidates the layer pages prefix, so the trash refreshes with the live list.
+    const prefix = qk.project.memoryPages('P1', 'S1');
+    expect(trash.queryKey.slice(0, prefix.length)).toEqual([...prefix]);
+    // `enabled` is not a filter: it never changes the key.
+    expect((useProjectMemoryPages('P1', 'S1', { enabled: false }) as any).queryKey).toEqual(live.queryKey);
+    await trash.queryFn();
+    await unconfirmed.queryFn();
+    expect(calls.map((c) => c.url)).toEqual([`${base}/layers/S1/pages?deleted=1`, `${base}/layers/S1/pages?status=unconfirmed`]);
   });
 
   test('a read is disabled without its ids or when the caller disables it', () => {
@@ -194,7 +214,12 @@ describe('Used memory', () => {
 describe('memory mutations', () => {
   // Every write can change the layer counts, its page list, Recent changes and
   // any page of the change (a filed note touches two pages), and the tab counts.
-  const everyMemoryKey = () => [[...qk.project.memory('P1')], [...qk.project.spaceSummaries('P1')]];
+  // Saving memory in #general completes a "Get started" row, so the onboarding state refreshes too.
+  const everyMemoryKey = () => [
+    [...qk.project.memory('P1')],
+    [...qk.project.spaceSummaries('P1')],
+    [...qk.project.channelsOnboarding('P1')],
+  ];
 
   test('create and note POST to the layer and invalidate memory and the tab counts', async () => {
     const create = useCreateProjectMemoryPage('P1', 'S1') as any;
@@ -265,6 +290,18 @@ describe('memory mutations', () => {
     expect(qk.project.memoryPage('P1', 'PG1').slice(0, prefix.length)).toEqual([...prefix]);
   });
 
+  test('confirm POSTs the page confirm route, writes the returned page into its slot and invalidates memory', async () => {
+    const confirm = useConfirmProjectMemoryPage('P1') as any;
+    // A "(to confirm)" page merges into the page it names: the response is that page.
+    const merged = { page_id: 'PG1', version_no: 8 };
+    response = merged;
+    await confirm.mutationFn('PG9');
+    expect(calls).toEqual([{ method: 'POST', url: `${base}/pages/PG9/confirm`, body: undefined }]);
+    await confirm.onSuccess(merged);
+    expect(cached).toEqual([{ key: [...qk.project.memoryPage('P1', 'PG1')], data: merged }]);
+    expect(invalidated).toEqual(everyMemoryKey());
+  });
+
   test('every mutation handles its own error, so the app-wide default error toast does not fire as well', () => {
     // Each caller shows a specific message for 409/413/422. Without a hook-level
     // onError, TanStack also runs the QueryClient's default mutation onError.
@@ -275,6 +312,7 @@ describe('memory mutations', () => {
       useDeleteProjectMemoryPage('P1'),
       useRestoreProjectMemoryPage('P1'),
       useUndoProjectMemoryVersion('P1'),
+      useConfirmProjectMemoryPage('P1'),
     ] as any[]) {
       expect(typeof hook.onError).toBe('function');
     }

@@ -15,6 +15,9 @@ mock.module('@tanstack/react-query', () => ({
 
 const {
   useAddProjectSpaceLink,
+  useChannelsOnboarding,
+  useMarkChannelsOnboarding,
+  useProjectSpaceGeneralNotice,
   useCreateProjectSpace,
   useOpenProjectDm,
   usePinProjectSpaceLink,
@@ -75,7 +78,46 @@ describe('space mutations', () => {
     update.onSuccess();
     dm.onSuccess();
     const key = [...qk.project.spaces('P1')];
-    expect(invalidated).toEqual([key, key, key]);
+    // Creating a channel or opening a DM completes a "Get started" row.
+    const onboarding = [...qk.project.channelsOnboarding('P1')];
+    expect(invalidated).toEqual([key, onboarding, key, key, onboarding]);
+  });
+});
+
+describe('#general turned-on-again line', () => {
+  test('reads general_notice from the spaces route under the spaces key, so a spaces refresh refreshes it', async () => {
+    const query = useProjectSpaceGeneralNotice('P1') as any;
+    expect(query.queryKey).toEqual(qk.project.spaceGeneralNotice('P1'));
+    const prefix = qk.project.spaces('P1');
+    expect(query.queryKey.slice(0, prefix.length)).toEqual([...prefix]);
+    expect(query.queryKey).not.toEqual(prefix);
+    expect(await query.queryFn()).toBeNull();
+    expect(calls[0]).toMatchObject({ method: 'GET', url: 'http://test.local/projects/P1/spaces' });
+    expect((useProjectSpaceGeneralNotice(null) as any).enabled).toBe(false);
+    expect((useProjectSpaceGeneralNotice('P1', { enabled: false }) as any).enabled).toBe(false);
+  });
+});
+
+describe('Channels onboarding', () => {
+  test('reads the onboarding route under its own project key', async () => {
+    const query = useChannelsOnboarding('P1') as any;
+    expect(query.queryKey).toEqual(qk.project.channelsOnboarding('P1'));
+    expect(query.queryKey.slice(0, qk.project.scope('P1').length)).toEqual([...qk.project.scope('P1')]);
+    expect(query.enabled).toBe(true);
+    await query.queryFn();
+    expect(calls[0]).toMatchObject({ method: 'GET', url: 'http://test.local/projects/P1/onboarding/channels' });
+    expect((useChannelsOnboarding(undefined) as any).enabled).toBe(false);
+    expect((useChannelsOnboarding('P1', { enabled: false }) as any).enabled).toBe(false);
+  });
+
+  test('a mark POSTs { mark } and refreshes the onboarding state only', async () => {
+    const mark = useMarkChannelsOnboarding('P1') as any;
+    await mark.mutationFn('get_started.dismissed');
+    expect(calls).toEqual([
+      { method: 'POST', url: 'http://test.local/projects/P1/onboarding/channels/marks', body: { mark: 'get_started.dismissed' } },
+    ]);
+    await mark.onSuccess();
+    expect(invalidated).toEqual([[...qk.project.channelsOnboarding('P1')]]);
   });
 });
 
