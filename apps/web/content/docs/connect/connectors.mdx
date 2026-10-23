@@ -83,10 +83,16 @@ With the project flag **Connectors v2** (`connectors_v2`, off by default) on, th
 Each app shows once, by its best way in:
 
 1. **A one-click MCP server.** The vendor's server is public, or its OAuth server registers Kortix on the fly. You only sign in.
-2. **A managed app.** For an app with no one-click MCP server, for example Gmail or Outlook. You only sign in.
-3. **Everything else.** An MCP server that needs your own OAuth app or an API key, or a REST or GraphQL API.
+2. **Composio.** A third-party partner that runs the sign-in for you, for an app with no one-click MCP server, for example Gmail or Outlook. You only sign in.
+3. **Everything else.** An MCP server that needs your own OAuth app or an API key, then the REST (OpenAPI) and GraphQL APIs, then a CLI.
 
-**One-click only** is on by default and lists ways 1 and 2. Turn it off to see every app. Kortix probes every MCP server in the registry for its sign-in; `apps/api/scripts/probe-one-click-mcp.ts` refreshes the list.
+- **One-click only** is on by default and lists ways 1 and 2. Turn it off to see every app.
+- The type tabs (**MCP**, **Composio**, **REST API**, **GraphQL**, **CLI**) list the apps that connect that way.
+- An app's page lists every way to connect it, best first. The first is marked **Recommended**; **One click** marks the ways where you only sign in. **Install** at the top installs the recommended way; each row installs its own way.
+- **Tools** on each way lists what it can do before you install it: a public MCP server's own tools, the tool names a public MCP directory lists for an OAuth server, Composio's tools, or the operations in an OpenAPI document.
+- Install asks for a **name**. It is the name of the connector profile Kortix adds: the project's entry in `kortix.yaml`. The profile's accounts, who can use them and its tool rules live on it.
+
+Kortix probes every MCP server in the registry for its sign-in and its tools; `apps/api/scripts/probe-one-click-mcp.ts` refreshes both lists.
 
 To install a catalog MCP app:
 
@@ -104,7 +110,7 @@ Apps sign in one of three ways:
 
 - Kortix's own OAuth client is used only for the exact MCP server URL in the catalog, with the catalog's endpoints and scopes. Its client secret stays on the server.
 - Connectors you added from the managed catalog keep working with the flag on.
-- Agents see the same catalog: the `search_connector_apps` tool of the [Kortix MCP server](/docs/connect/mcp) lists the one-click apps (`all: true` adds the rest), and `add_connector` with `app` adds the app the way its entry connects: its MCP server, its managed app or its API.
+- Agents see the same catalog: the `search_connector_apps` tool of the [Kortix MCP server](/docs/connect/mcp) lists every app, with `kind` and `one_click` filters, and `add_connector` with `app` installs its recommended way, or `way`. The catalog is large, not complete: for an app it lacks, agents search the web for the vendor's MCP server or API and add it directly.
 
 Catalog apps can start [triggers](/docs/connect/triggers#app-events). With the project flag `event_triggers` also on, Kortix checks an installed app's MCP server for new items, such as a new email in Gmail, and fires the trigger once for each one. Every tool that lists items and only reads can be an event, on catalog apps and on your own MCP servers. The trigger runs on an account shared with the whole project.
 
@@ -281,7 +287,10 @@ kortix connectors connect gmail                                # authorize your 
 - Without `--apply`, `add` and `rm` edit your local `kortix.yaml`. Run `kortix ship` to apply the change, then `kortix connectors sync` to reconcile the connector.
 - With `--apply`, Kortix commits the change to the default branch and syncs the connector at once, like the web app.
 - `kortix connectors rm <slug> [--apply]` removes a connector. `kortix connectors rename <slug> <name>` sets its display name and applies at once.
-- `kortix connectors catalog [<query>]` lists the apps that connect in one click; `--all` adds the apps that need setup. `catalog show <id>` lists one app's surfaces. They need the `connectors_v2` or the `connectors_api_discover` flag.
+- `kortix connectors catalog [<query>]` lists every app, one row per app by its best way in. `--kind mcp,composio,openapi,graphql,cli` filters by how it connects, `--one-click` keeps the apps you connect by signing in, and `--category` and `--limit` narrow the page.
+- `kortix connectors catalog show <id>` lists every way to connect the app, recommended first, and the tools of one way (`--way <id>`). `catalog tools <id> --way <id>` lists every tool of one way.
+- `kortix connectors catalog install <id> [--way <id>] [--name <name>] [--slug <slug>]` adds the connector profile, the recommended way unless `--way`. Then `kortix connectors connect <slug>`.
+- The catalog commands need the `connectors_v2` or the `connectors_api_discover` flag.
 - `--auth-type none|bearer|basic|custom|oauth1` overrides the authentication Kortix detects from the source.
 
 ### In kortix.yaml

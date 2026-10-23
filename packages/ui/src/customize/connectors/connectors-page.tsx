@@ -98,6 +98,21 @@ import {
 } from './connector-routes';
 import type { McpServerApp } from './install/mcp-first';
 import { useInstall } from './install/use-install';
+import { InstallDialog } from './install/install-dialog';
+import { wayKindLabel } from './install/way-kind';
+import type { DiscoverConnectorKind } from '@kortix/sdk';
+
+/** The catalogue's type filter (Connectors v2): every app, or the apps that
+ *  connect one way. REST covers OpenAPI documents. */
+const CATALOG_KIND_FILTERS = {
+  all: [],
+  mcp: ['mcp'],
+  composio: ['composio'],
+  openapi: ['openapi'],
+  graphql: ['graphql'],
+  cli: ['cli'],
+} satisfies Record<string, DiscoverConnectorKind[]>;
+type CatalogKindFilter = keyof typeof CATALOG_KIND_FILTERS;
 
 /**
  * The click-gated Add form, split out of this route's initial chunk.
@@ -286,6 +301,8 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const [computerOpen, setComputerOpen] = useState(false);
   // Connectors v2: the catalogue opens on the apps that connect in one click.
   const [oneClick, setOneClick] = useState(true);
+  const [kindFilter, setKindFilter] = useState<CatalogKindFilter>('all');
+  const kinds = useMemo(() => CATALOG_KIND_FILTERS[kindFilter], [kindFilter]);
   const tSharing = useI18nTranslations('accessSharing');
   const tPages = useI18nTranslations('connectorPages');
 
@@ -303,7 +320,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const connectors = useMemo(() => connectorsQuery.data?.connectors ?? [], [connectorsQuery.data]);
   const connectedKeys = useMemo(() => connectedCatalogKeys(connectors), [connectors]);
 
-  const { installEntry, pendingKey } = useInstall(projectId, {
+  const { installEntry, pendingKey, request: installRequest, setRequest: setInstallRequest, confirm: confirmInstall } = useInstall(projectId, {
     onMcpServer: (server) => {
       setMcpApp(server);
       setPanel('mcp');
@@ -420,6 +437,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
     mcpApps,
     computers: computersEnabled,
     oneClick,
+    kinds,
   });
 
   const filtered = useMemo(
@@ -625,6 +643,17 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                   </CatalogGrid>
                 </div>
               ) : null}
+              {mcpApps ? (
+                <Tabs value={kindFilter} onValueChange={(next) => setKindFilter(next as CatalogKindFilter)} className="max-w-full overflow-x-auto">
+                  <TabsList type="underline" underlineSize="md" size="sm" aria-label={tPages('typeFilterLabel')} className="h-8 justify-start gap-5">
+                    {(Object.keys(CATALOG_KIND_FILTERS) as CatalogKindFilter[]).map((value) => (
+                      <TabsTrigger key={value} value={value} className="flex-none px-0 text-xs font-medium">
+                        {value === 'all' ? tPages('typeFilterAll') : wayKindLabel(value)}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+              ) : null}
               <ConnectorBrowse
                 state={catalog}
                 connectedKeys={connectedKeys}
@@ -700,6 +729,18 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
             takenSlugs={connectors.map((connector) => connector.slug)}
             onAdded={invalidate}
           />
+
+          {installRequest ? (
+            <InstallDialog
+              key={installRequest.target.appName}
+              appName={installRequest.target.appName}
+              way={installRequest.way}
+              open
+              pending={false}
+              onOpenChange={(open) => !open && setInstallRequest(null)}
+              onConfirm={confirmInstall}
+            />
+          ) : null}
 
           {/* Custom upload only. `CustomConnectorForm` prints no heading of its
           own, so unlike the `AddAppPanel` this replaced it gets a real visible

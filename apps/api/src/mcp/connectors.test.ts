@@ -112,43 +112,43 @@ describe('apps on a Connectors v2 project', () => {
         if (path.endsWith('/discover/connectors')) {
           return { status: 200, body: JSON.stringify({ items: [{ id: 'kortix:linear', kind: 'mcp', slug: 'linear', name: 'Linear', description: 'Issues.', categories: ['productivity'], mcpUrl: 'https://mcp.linear.app/mcp', oneClick: true }], nextCursor: undefined }) };
         }
-        if (path.endsWith('/discover/connectors/detail')) {
-          const id = (opts.query as { id: string }).id;
-          const item =
-            id === 'composio:gmail'
-              ? { id, kind: 'composio', slug: 'gmail', name: 'Gmail', composio: { slug: 'gmail' } }
-              : { id, kind: 'mcp', slug: 'linear', name: 'Linear', mcpUrl: 'https://mcp.linear.app/mcp' };
-          return { status: 200, body: JSON.stringify({ item, variants: [] }) };
+        if (path.endsWith('/discover/install')) {
+          const body = opts.body as { id: string; way?: string; name?: string };
+          if (body.id === 'kortix:missing') return { status: 404, body: JSON.stringify({ error: 'Connector not found' }) };
+          const managed = body.way === 'composio:linear' || body.id === 'composio:gmail';
+          const slug = body.name ? body.name.toLowerCase() : body.id.split(':')[1];
+          return { status: 200, body: JSON.stringify({ ok: true, slug, name: body.name ?? slug, provider: managed ? 'composio' : 'mcp', way: { kind: managed ? 'composio' : 'mcp' }, sync: { synced: 1 }, next: 'connect' }) };
         }
         return { status: 201, body: JSON.stringify({ sync: { synced: 1 } }) };
       },
     } as unknown as Host;
   }
 
-  test('search_connector_apps lists one-click apps from the merged catalogue, not the Composio route', async () => {
+  test('search_connector_apps searches the whole catalogue; kind and one_click filter it', async () => {
     const calls: Array<{ method: string; path: string; query?: unknown }> = [];
     const result = (await runConnectorTool('search_connector_apps', { project_id: 'proj-1', query: 'linear' }, v2Host(calls))) as { content: Array<{ text: string }> };
     expect(JSON.parse(result.content[0]!.text).apps).toEqual([
       { app: 'kortix:linear', name: 'Linear', description: 'Issues.', categories: ['productivity'], via: 'mcp', one_click: true, mcp_url: 'https://mcp.linear.app/mcp' },
     ]);
-    expect(calls.find((c) => c.path.endsWith('/discover/connectors'))?.query).toMatchObject({ oneClick: '1' });
+    expect(calls.find((c) => c.path.endsWith('/discover/connectors'))?.query).toMatchObject({ oneClick: undefined, kind: undefined });
     expect(calls.some((c) => c.path.includes('/connect/toolkits'))).toBe(false);
-    await runConnectorTool('search_connector_apps', { project_id: 'proj-1', query: 'linear', all: true }, v2Host(calls));
-    expect(calls.filter((c) => c.path.endsWith('/discover/connectors')).at(-1)?.query).toMatchObject({ oneClick: undefined });
+    await runConnectorTool('search_connector_apps', { project_id: 'proj-1', query: 'linear', one_click: true, kind: 'mcp,composio' }, v2Host(calls));
+    expect(calls.filter((c) => c.path.endsWith('/discover/connectors')).at(-1)?.query).toMatchObject({ oneClick: '1', kind: 'mcp,composio' });
   });
 
-  test('add_connector with app adds the app’s MCP server, a bare slug being a Kortix app', async () => {
+  test('add_connector installs the recommended way through the catalogue, a bare slug being a Kortix app', async () => {
     const calls: Array<{ method: string; path: string; body?: unknown }> = [];
-    await runConnectorTool('add_connector', { project_id: 'proj-1', app: 'linear' }, v2Host(calls));
-    const created = calls.find((c) => c.method === 'POST' && c.path.endsWith('/connectors'));
-    expect(created?.body).toEqual({ slug: 'linear', provider: 'mcp', name: 'Linear', url: 'https://mcp.linear.app/mcp', transport: 'http' });
+    const result = (await runConnectorTool('add_connector', { project_id: 'proj-1', app: 'linear' }, v2Host(calls))) as { content: Array<{ text: string }> };
+    expect(calls.find((c) => c.path.endsWith('/discover/install'))?.body).toEqual({ id: 'kortix:linear', way: undefined, name: undefined, slug: undefined });
+    expect(calls.some((c) => c.method === 'POST' && c.path.endsWith('/connectors'))).toBe(false);
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({ connector: 'linear', via: 'mcp' });
   });
 
-  test('add_connector with a managed app adds it through Composio', async () => {
+  test('add_connector with a way and a name; an app the catalogue lacks is an input error', async () => {
     const calls: Array<{ method: string; path: string; body?: unknown }> = [];
-    const result = (await runConnectorTool('add_connector', { project_id: 'proj-1', app: 'composio:gmail' }, v2Host(calls))) as { content: Array<{ text: string }> };
-    const created = calls.find((c) => c.method === 'POST' && c.path.endsWith('/connectors'));
-    expect(created?.body).toEqual({ slug: 'gmail', provider: 'composio', app: 'gmail', name: 'Gmail' });
+    const result = (await runConnectorTool('add_connector', { project_id: 'proj-1', app: 'kortix:linear', way: 'composio:linear', name: 'Tracker' }, v2Host(calls))) as { content: Array<{ text: string }> };
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({ connector: 'tracker', via: 'composio' });
     expect(JSON.parse(result.content[0]!.text).next).toContain('connect_connector');
+    await expect(runConnectorTool('add_connector', { project_id: 'proj-1', app: 'missing' }, v2Host(calls))).rejects.toThrow('not in the app catalogue');
   });
 });

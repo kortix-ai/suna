@@ -12,8 +12,8 @@ describe('providerLabel', () => {
   });
 
   test('normalizes managed connector providers behind one product label', () => {
-    expect(providerLabel('composio')).toBe('App');
-    expect(providerLabel('pipedream')).toBe('App');
+    expect(providerLabel('composio')).toBe('Composio');
+    expect(providerLabel('pipedream')).toBe('Pipedream');
     expect(isManagedConnectorProvider('composio')).toBe(true);
     expect(isManagedConnectorProvider('pipedream')).toBe(true);
     expect(isManagedConnectorProvider('openapi')).toBe(false);

@@ -12,7 +12,7 @@ import { useUiRouter } from '../../../providers/ui-provider';
 import { useCallback, useState } from 'react';
 
 import { errorToast, successToast, warningToast } from '../../../primitives/toast';
-import type { CatalogEntry } from '../catalog/catalog-entry';
+import { connectToolkitApp, type CatalogEntry } from '../catalog/catalog-entry';
 import {
   appHref,
   appRefFromEntry,
@@ -28,8 +28,18 @@ import {
   type InstallDeps,
   type InstallTarget,
 } from './install';
+import type { InstallWay } from './install-dialog';
 import { mcpServerFor, type McpServerApp } from './mcp-first';
 import { pickSurface } from './pick-surface';
+
+/** An Install waiting for the user to name the profile (`InstallDialog`). */
+export interface InstallRequest {
+  target: InstallTarget;
+  way: InstallWay;
+  connectors: readonly AdminConnector[];
+  app: AppRef | null;
+  addAccount?: boolean;
+}
 
 const sdkInstallDeps: InstallDeps = { createConnector };
 
@@ -52,6 +62,7 @@ export function useInstall(
   const router = useUiRouter();
   const queryClient = useQueryClient();
   const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [request, setRequest] = useState<InstallRequest | null>(null);
 
   const install = useCallback(
     (
@@ -62,12 +73,14 @@ export function useInstall(
         /** Open "Add account" on the connector page. False for a server with
          *  nothing to sign in to: its project account is the connection. */
         addAccount?: boolean;
+        /** The profile's name, as the user chose it. */
+        name?: string;
       },
     ) => {
       /** Settles when every invalidated query has refetched. Never rejects. */
       const refresh = () => invalidateConnections(queryClient, projectId);
       setPendingKey(options.app?.slug ?? target.appName);
-      void runInstall(sdkInstallDeps, { projectId, target, connectors: options.connectors })
+      void runInstall(sdkInstallDeps, { projectId, target, connectors: options.connectors, name: options.name })
         .then(async (result) => {
           // Before the navigation: the connector page reads the fresh list.
           await refresh();
@@ -77,7 +90,7 @@ export function useInstall(
           if (failed) {
             warningToast(t('installedSyncFailed', { name: result.name, error: result.error }));
           } else {
-            successToast(t('installed', { name: target.appName }));
+            successToast(t('installed', { name: options.name?.trim() || target.appName }));
           }
           router.push(
             connectorHref(projectId, result.slug, {
@@ -98,13 +111,42 @@ export function useInstall(
     [projectId, queryClient, router, t, tI18nComplete],
   );
 
-  /** Install straight from a catalogue card. */
+  /** Ask for the profile's name, then install (`confirm`). */
+  const ask = useCallback((next: InstallRequest) => {
+    setPendingKey(null);
+    setRequest(next);
+  }, []);
+
+  /** The user named the profile in `InstallDialog`: install it. */
+  const confirm = useCallback(
+    (name: string) => {
+      if (!request) return;
+      setRequest(null);
+      install(request.target, {
+        connectors: request.connectors,
+        app: request.app,
+        addAccount: request.addAccount,
+        name,
+      });
+    },
+    [install, request],
+  );
+
+  /** Install straight from a catalogue card: its recommended way, after the
+   *  user names the profile. A one-click MCP server opens the MCP dialog. */
   const installEntry = useCallback(
     (entry: CatalogEntry, connectors: readonly AdminConnector[]) => {
       const app = appRefFromEntry(entry);
       if (entry.source === 'easy-connect') {
+        const managedRequest = () =>
+          ask({
+            target: easyConnectInstallTarget(entry.app),
+            way: { kind: entry.app.provider === 'pipedream' ? 'pipedream' : 'composio', oneClick: true },
+            connectors,
+            app,
+          });
         if (!onMcpServer || !entry.app.directMcpUrl) {
-          install(easyConnectInstallTarget(entry.app), { connectors, app });
+          managedRequest();
           return;
         }
         setPendingKey(app?.slug ?? entry.app.name);
@@ -113,14 +155,14 @@ export function useInstall(
             setPendingKey(null);
             onMcpServer(server);
           } else {
-            install(easyConnectInstallTarget(entry.app), { connectors, app });
+            managedRequest();
           }
         });
         return;
       }
       if (entry.source !== 'discover' || !app) return;
-      // A Discover card does not carry its surfaces; the detail does. Direct
-      // providers open no provider window, so this fetch costs no click.
+      // A Discover card does not carry its ways to connect; the detail does,
+      // best first, with the recommended one marked (Connectors v2).
       setPendingKey(app.slug);
       void queryClient
         .fetchQuery({
@@ -129,7 +171,17 @@ export function useInstall(
           staleTime: 15 * 60_000,
         })
         .then(async (detail) => {
-          const variant = pickSurface(detail.variants);
+          const recommended = detail.variants.find((variant) => variant.recommended);
+          if (recommended?.kind === 'composio' && recommended.composio) {
+            ask({
+              target: easyConnectInstallTarget(connectToolkitApp(recommended.composio)),
+              way: { kind: 'composio', oneClick: true },
+              connectors,
+              app,
+            });
+            return;
+          }
+          const variant = pickSurface(recommended ? [recommended] : detail.variants);
           if (!variant) {
             // Nothing installable from here: the app page shows its surfaces.
             setPendingKey(null);
@@ -137,11 +189,11 @@ export function useInstall(
             return;
           }
           const mcpUrl = variant.kind === 'mcp' ? variant.template.url : undefined;
-          // A Kortix catalogue app or a one-click server (connectors_v2) is the
-          // vendor's MCP server: a one-click sign-in opens the one-step MCP
-          // dialog, a public server installs with no account to add, anything
-          // else installs as before.
-          const oneClickServer = entry.connector.feeds.includes('kortix') || entry.connector.oneClick === true;
+          // A Kortix catalogue app or a one-click server is the vendor's MCP
+          // server: a one-click sign-in opens the one-step MCP dialog (which
+          // names the profile too); anything else asks for the name first.
+          const oneClickServer = entry.connector.feeds.includes('kortix') || recommended?.oneClick === true || entry.connector.oneClick === true;
+          let addAccount: boolean | undefined;
           if (oneClickServer && mcpUrl && onMcpServer) {
             const check = await checkMcpServerSignIn(projectId, mcpUrl).catch(() => null);
             if (check?.one_click) {
@@ -149,22 +201,23 @@ export function useInstall(
               onMcpServer({ name: entry.name, url: mcpUrl });
               return;
             }
-            install(discoverInstallTarget(entry.name, variant), {
-              connectors,
-              app,
-              addAccount: check?.requires_sign_in !== false,
-            });
-            return;
+            addAccount = check?.requires_sign_in !== false;
           }
-          install(discoverInstallTarget(entry.name, variant), { connectors, app });
+          ask({
+            target: discoverInstallTarget(entry.name, variant),
+            way: { kind: variant.kind, oneClick: recommended?.oneClick === true },
+            connectors,
+            app,
+            ...(addAccount !== undefined ? { addAccount } : {}),
+          });
         })
         .catch((error: Error) => {
           setPendingKey(null);
           errorToast(error.message || tI18nComplete.raw('texta34a2714da91'));
         });
     },
-    [install, onMcpServer, projectId, queryClient, router, tI18nComplete],
+    [ask, onMcpServer, projectId, queryClient, router, tI18nComplete],
   );
 
-  return { install, installEntry, pendingKey, setPendingKey };
+  return { install, installEntry, ask, confirm, request, setRequest, pendingKey, setPendingKey };
 }

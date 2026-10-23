@@ -14,10 +14,20 @@
  * project for every tool call, so it is left out too. No OAuth client is
  * registered anywhere: the verdict reads published metadata only.
  *
+ * Also writes `src/connectors/mcp-tools.json`, the tools an app page shows
+ * before install: a public server's own `tools/list` (names and
+ * descriptions), else the tool names the Claude directory lists for the
+ * server (integrations.sh `sources/claude.json`). An OAuth server answers
+ * `tools/list` only after sign-in, so the directory is its one source.
+ *
  *   bun apps/api/scripts/probe-one-click-mcp.ts   (~2 min, 32 parallel probes)
  */
 const output = new URL("../src/connectors/one-click-mcp.json", import.meta.url)
   .pathname;
+const toolsOutput = new URL("../src/connectors/mcp-tools.json", import.meta.url)
+  .pathname;
+const CLAUDE_DIRECTORY =
+  "https://raw.githubusercontent.com/UsefulSoftwareCo/integrations/main/sources/claude.json";
 const TIMEOUT = 12_000;
 const CONCURRENCY = 32;
 
@@ -144,12 +154,20 @@ async function classify(url: string) {
         detail: "initialize ok, tools/list 401",
         www: t.headers.get("www-authenticate") ?? "",
       };
-    const tools = tb?.result?.tools?.length;
-    if (tools !== undefined)
+    const list = tb?.result?.tools;
+    if (Array.isArray(list))
       return {
         verdict: "authless",
         detail: `initialize + tools/list ok`,
-        tools,
+        tools: list.length,
+        toolList: list
+          .filter((tool: any) => typeof tool?.name === "string")
+          .map((tool: any) => [
+            tool.name,
+            typeof tool.description === "string"
+              ? tool.description.replace(/\s+/g, " ").trim().slice(0, 200)
+              : "",
+          ]),
       };
     return {
       verdict: "authless",
@@ -270,4 +288,27 @@ await Bun.write(
 );
 console.log(
   `${Object.keys(servers).length} one-click of ${urls.length} probed → ${output}`,
+);
+
+// [name, description] per tool, keyed by MCP URL.
+const tools: Record<string, [string, string][]> = {};
+for (const url of Object.keys(servers)) {
+  if (out[url].toolList?.length) tools[url] = out[url].toolList;
+}
+const directory = (
+  (await (await fetch(CLAUDE_DIRECTORY)).json()) as {
+    servers: { remote?: { url?: string }; tool_names?: string[] }[];
+  }
+).servers;
+for (const server of directory) {
+  const url = server.remote?.url?.trim();
+  if (url && !tools[url] && server.tool_names?.length)
+    tools[url] = server.tool_names.map((name) => [name, ""]);
+}
+const sorted = Object.fromEntries(
+  Object.entries(tools).sort(([a], [b]) => a.localeCompare(b)),
+);
+await Bun.write(toolsOutput, JSON.stringify(sorted) + "\n");
+console.log(
+  `tools for ${Object.keys(sorted).length} MCP servers → ${toolsOutput}`,
 );

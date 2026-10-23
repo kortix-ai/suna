@@ -151,7 +151,7 @@ export const CONNECTOR_TOOLS = [
     name: 'search_connector_apps',
     title: 'Search connector apps',
     description:
-      'Search the catalogue of apps (Gmail, Slack, GitHub, Notion, Linear, …) a new connector can be added from. On a project with Connectors v2 the catalogue is every MCP server, API and managed app, one entry per app: `app` is its id, `via` how it connects (mcp, composio, openapi, graphql, cli) and `one_click` whether the human only signs in. Only one-click apps are listed unless `all` is true. Without Connectors v2 it returns managed apps by slug. Pass `app` to add_connector. Returns `cursor` when more exist: pass it back as `cursor`.',
+      'Search the catalogue of apps (Gmail, Slack, GitHub, Notion, Linear, …) a new connector can be added from. On a project with Connectors v2 the catalogue is every MCP server, REST (OpenAPI) and GraphQL API, CLI and Composio app, one entry per app by its best way in: `app` is its id, `via` how that entry connects (mcp, composio, openapi, graphql, cli) and `one_click` whether the human only signs in. Filter with `kind` and `one_click`. Pass `app` to add_connector; it installs the recommended way unless you pass `way`. The catalogue is large, not complete: when nothing matches, search the web for the vendor\'s MCP server or API and add it with `provider`. Without Connectors v2 it returns Composio apps by slug. Returns `cursor` when more exist: pass it back as `cursor`.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -159,7 +159,8 @@ export const CONNECTOR_TOOLS = [
         query: { type: 'string', description: 'App name or keyword, e.g. "calendar".' },
         limit: { type: 'number', description: 'Maximum apps (default 20, max 100).' },
         cursor: { type: 'string', description: 'The `cursor` of the previous page.' },
-        all: { type: 'boolean', description: 'Connectors v2: also list apps that need setup (an own OAuth app, an API key). Default false.' },
+        kind: { type: 'string', description: 'Connectors v2: only apps that connect these ways, comma separated: mcp, composio, openapi, graphql, cli.' },
+        one_click: { type: 'boolean', description: 'Connectors v2: only apps the human connects by signing in (a public or self-registering MCP server, or Composio). Default false: every app.' },
       },
       required: ['project_id', 'query'],
       additionalProperties: false,
@@ -170,12 +171,13 @@ export const CONNECTOR_TOOLS = [
     name: 'add_connector',
     title: 'Add a connector',
     description:
-      'Add (or update) a connector on the project now: it is committed to kortix.yaml on main and synced, like the dashboard\'s "Add app". For an app (Gmail, Slack, GitHub, …) pass `app` from search_connector_apps; on a project with Connectors v2 the connector is what that entry connects through (its MCP server, its managed app or its API), else Composio, and the slug defaults to the app. For your own server pass `provider` and `slug` with `url` (mcp, plus `transport` http|sse), `endpoint` (graphql), `spec` (openapi, postman) or `base_url` (http). The result says what is next: call connect_connector for an OAuth app; an API-key connector needs its credential set by the human in Kortix. To remove a connector call remove_connector. Needs the connector-write permission.',
+      'Add (or update) a connector on the project now: it is committed to kortix.yaml on main and synced, like the dashboard\'s "Add app". For an app (Gmail, Slack, GitHub, …) pass `app` from search_connector_apps; on a project with Connectors v2 Kortix adds the app\'s recommended way (a one-click MCP server, else Composio, else its API) unless you pass `way`, else Composio. The connector is a profile in kortix.yaml: its accounts, who may use them and its tool rules live on it. `name` names it; the slug defaults from the name. For your own server pass `provider` and `slug` with `url` (mcp, plus `transport` http|sse), `endpoint` (graphql), `spec` (openapi, postman) or `base_url` (http). The result says what is next: call connect_connector for an OAuth app; an API-key connector needs its credential set by the human in Kortix. To remove a connector call remove_connector. Needs the connector-write permission.',
     inputSchema: {
       type: 'object',
       properties: {
         project_id: PROJECT_ID,
-        app: { type: 'string', description: 'The `app` from search_connector_apps, e.g. "kortix:linear" or "composio:gmail" (Connectors v2), or a managed app slug, e.g. "gmail".' },
+        app: { type: 'string', description: 'The `app` from search_connector_apps, e.g. "kortix:linear" or "composio:gmail" (Connectors v2), or a Composio app slug, e.g. "gmail".' },
+        way: { type: 'string', description: 'Connectors v2: one of the app\'s ways to connect by id (call_api GET /v1/connectors/projects/{projectId}/discover/connectors/detail?id=<app> lists them). Default: the recommended way.' },
         slug: { type: 'string', description: 'The connector\'s name in kortix.yaml (lowercase letters, digits, - and _). Defaults to `app`.' },
         provider: { type: 'string', enum: ['composio', 'mcp', 'openapi', 'postman', 'graphql', 'http'], description: 'Default composio when `app` is given; required otherwise.' },
         name: { type: 'string', description: 'Display name.' },
@@ -308,27 +310,6 @@ const validBase64 = (s: string) => /^[A-Za-z0-9+/=\s]*$/.test(s) && s.replace(/[
 async function mcpAppsCatalogue(h: Host, pid: string): Promise<boolean> {
   const r = await h.call('GET', `/v1/projects/${pid}`);
   return r.status < 400 && parse(r.body)?.project?.experimental?.connectors_v2 === true;
-}
-
-/**
- * The connector draft for a Connectors v2 catalogue app: its managed toolkit,
- * its MCP server, or its first installable surface (MCP first). `app` is a
- * catalogue id; a bare slug is a Kortix app (`kortix:<slug>`). `undefined`
- * when the catalogue has no such app or nothing installable.
- */
-async function findCatalogApp(h: Host, base: string, app: string): Promise<Record<string, unknown> | undefined> {
-  const id = /[:/]/.test(app) ? app : `kortix:${app}`;
-  const r = await h.call('GET', `${base}/discover/connectors/detail`, { query: { id } });
-  const detail = r.status < 400 ? parse(r.body) : null;
-  const item = detail?.item;
-  if (!item) return undefined;
-  const slug = String(item.slug).toLowerCase().replace(/[^a-z0-9_-]+/g, '-');
-  if (item.kind === 'composio') return { slug, provider: 'composio', app: item.composio?.slug ?? item.slug, name: item.name };
-  if (typeof item.mcpUrl === 'string') return { slug, provider: 'mcp', name: item.name, url: item.mcpUrl, transport: 'http' };
-  const variants = ((detail.variants ?? []) as any[]).filter((v) => v?.connector);
-  const t = (variants.find((v) => v.kind === 'mcp') ?? variants[0])?.connector;
-  if (!t) return undefined;
-  return { slug, provider: t.provider, name: item.name, ...(t.url ? { url: t.url } : {}), ...(t.transport ? { transport: t.transport } : {}), ...(t.endpoint ? { endpoint: t.endpoint } : {}), ...(t.spec ? { spec: t.spec } : {}) };
 }
 
 // ─── The tools ──────────────────────────────────────────────────────────────
@@ -554,8 +535,8 @@ export async function runConnectorTool(name: string, input: Record<string, unkno
     case 'search_connector_apps': {
       const limit = Math.min(Math.max(Math.trunc(Number(input.limit)) || 20, 1), 100);
       if (await mcpAppsCatalogue(h, pid)) {
-        const oneClick = input.all === true ? undefined : '1';
-        const r = await h.call('GET', `${base}/discover/connectors`, { query: { q: h.arg(input, 'query'), limit, cursor: h.optionalArg(input, 'cursor'), oneClick } });
+        const oneClick = input.one_click === true ? '1' : undefined;
+        const r = await h.call('GET', `${base}/discover/connectors`, { query: { q: h.arg(input, 'query'), limit, cursor: h.optionalArg(input, 'cursor'), oneClick, kind: h.optionalArg(input, 'kind') } });
         if (r.status >= 400) return h.apiResult(r);
         const page = parse(r.body) ?? {};
         const apps = ((page.items ?? []) as any[]).map((a) => ({
@@ -574,9 +555,7 @@ export async function runConnectorTool(name: string, input: Record<string, unkno
               cursor: page.nextCursor ?? null,
               next: apps.length
                 ? 'add_connector with app=<app> adds it; then connect_connector signs in.'
-                : oneClick
-                  ? 'No one-click app matches: try another word, or all=true for apps that need setup.'
-                  : 'No app matches: try another word.',
+                : 'No app matches: try another word, drop the filters, or search the web for the vendor\'s MCP server or API and add it with provider.',
             },
             null,
             2,
@@ -603,22 +582,47 @@ export async function runConnectorTool(name: string, input: Record<string, unkno
     }
     case 'add_connector': {
       const app = h.optionalArg(input, 'app');
-      // Connectors v2: the app connects the way its catalogue entry does.
-      const found = app && !h.optionalArg(input, 'provider') && (await mcpAppsCatalogue(h, pid)) ? await findCatalogApp(h, base, app) : null;
-      if (app && found === undefined) throw h.input(`"${app}" is not in the app catalogue: search_connector_apps lists the apps`);
-      const provider = (found?.provider as string | undefined) ?? h.optionalArg(input, 'provider') ?? (app ? 'composio' : undefined);
-      const slug = h.optionalArg(input, 'slug') ?? (found?.slug as string | undefined) ?? app;
+      // Connectors v2: the catalogue installs the app's recommended way, or `way`.
+      if (app && !h.optionalArg(input, 'provider') && (await mcpAppsCatalogue(h, pid))) {
+        const id = /[:/]/.test(app) ? app : `kortix:${app}`;
+        const r = await h.call('POST', `${base}/discover/install`, {
+          body: { id, way: h.optionalArg(input, 'way'), name: h.optionalArg(input, 'name'), slug: h.optionalArg(input, 'slug') },
+        });
+        if (r.status === 404) throw h.input(`"${app}" is not in the app catalogue: search_connector_apps lists the apps`);
+        if (r.status >= 400) return h.apiResult(r);
+        const done = parse(r.body) ?? {};
+        return h.text(
+          JSON.stringify(
+            {
+              connector: done.slug,
+              name: done.name,
+              via: done.way?.kind ?? null,
+              live: true,
+              sync: done.sync ?? null,
+              next:
+                done.next === 'connect'
+                  ? `Live on the project (a connector profile in kortix.yaml on main). Call connect_connector for "${done.slug}" and give the human the url.`
+                  : done.next === 'credential'
+                    ? `Live on the project. It needs a credential: the human sets it in Kortix (the connector's settings); then list_connectors shows connected: true.`
+                    : 'Live on the project and usable: list_connectors shows it.',
+            },
+            null,
+            2,
+          ),
+        );
+      }
+      const provider = h.optionalArg(input, 'provider') ?? (app ? 'composio' : undefined);
+      const slug = h.optionalArg(input, 'slug') ?? app;
       if (!provider || !slug) throw h.input('pass `app` (a managed app from search_connector_apps), or `provider` and `slug` for your own server');
-      const draft: Record<string, unknown> = found ? { ...found, slug } : { slug, provider };
+      const draft: Record<string, unknown> = { slug, provider };
       for (const [from, to] of [['app', 'app'], ['name', 'name'], ['url', 'url'], ['transport', 'transport'], ['endpoint', 'endpoint'], ['spec', 'spec'], ['base_url', 'baseUrl']] as const) {
-        if (found && from === 'app') continue;
         const v = h.optionalArg(input, from);
         if (v) draft[to] = v;
       }
       const r = await h.call('POST', `${base}/connectors`, { body: draft });
       if (r.status >= 400) return h.apiResult(r);
       const done = parse(r.body) ?? {};
-      const oauth = provider === 'composio' || found?.provider === 'mcp';
+      const oauth = provider === 'composio';
       return h.text(
         JSON.stringify(
           {

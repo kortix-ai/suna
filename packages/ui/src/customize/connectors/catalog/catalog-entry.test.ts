@@ -224,9 +224,13 @@ describe('catalogEntryKindLabel', () => {
     expect(catalogEntryKindLabel(discover('openapi'))).toBe('API');
     expect(catalogEntryKindLabel(discover('graphql'))).toBe('GraphQL');
     expect(catalogEntryKindLabel(discover('cli'))).toBe('CLI');
+    expect(catalogEntryKindLabel(discover('composio'))).toBe('Composio');
     expect(catalogEntryKindLabel({ source: 'easy-connect' } as unknown as CatalogEntry)).toBe(
-      'App',
+      'Composio',
     );
+    expect(
+      catalogEntryKindLabel({ source: 'easy-connect', app: { provider: 'pipedream' } } as unknown as CatalogEntry),
+    ).toBe('Pipedream');
     expect(catalogEntryKindLabel({ source: 'computer' } as unknown as CatalogEntry)).toBe('Native');
   });
 
@@ -236,32 +240,30 @@ describe('catalogEntryKindLabel', () => {
         source: 'easy-connect',
         app: { directId: 'mcp/linear' },
       } as unknown as CatalogEntry),
-    ).toBe('App · MCP');
+    ).toBe('Composio · MCP');
     expect(
       catalogEntryKindLabel({
         source: 'discover',
         connector: { kind: 'mcp' },
         alsoApp: true,
       } as unknown as CatalogEntry),
-    ).toBe('MCP · App');
+    ).toBe('MCP · Composio');
   });
 });
 
-describe('a managed app in the Connectors v2 catalogue', () => {
-  test('is an Easy Connect card, so it installs through Composio', () => {
+describe('a Composio app in the Connectors v2 catalogue', () => {
+  test('is a catalogue card named Composio; its app page lists every way to connect it', () => {
     const entry = catalogEntryFromDiscover(
       connector({
         id: 'composio:gmail',
         kind: 'composio',
         slug: 'gmail',
         name: 'Gmail',
+        icon: 'https://logo/gmail.svg',
         oneClick: true,
-        composio: { slug: 'gmail', name: 'Gmail', logo: 'https://logo/gmail.svg', description: 'Email', categories: ['email'], isNoAuth: false, connected: false },
       }),
     );
-    expect(entry.source).toBe('easy-connect');
-    expect(entry).toMatchObject({ key: 'easy-connect:gmail', slug: 'gmail', icon: 'https://logo/gmail.svg' });
-    expect(entry.source === 'easy-connect' && entry.app.provider).toBe('composio');
-    expect(catalogEntryKindLabel(entry)).toBe('App');
+    expect(entry).toMatchObject({ source: 'discover', key: 'discover:composio:gmail', slug: 'gmail', icon: 'https://logo/gmail.svg' });
+    expect(catalogEntryKindLabel(entry)).toBe('Composio');
   });
 });

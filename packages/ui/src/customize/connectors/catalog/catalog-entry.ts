@@ -105,12 +105,7 @@ export function connectToolkitApp(toolkit: ConnectToolkit): EasyConnectApp {
   };
 }
 
-/** A Discover record as its card. A managed app (`composio`, Connectors v2)
- *  is an Easy Connect card, so it installs through Composio. */
 export function catalogEntryFromDiscover(connector: DiscoverConnector): CatalogEntry {
-  if (connector.kind === 'composio' && connector.composio) {
-    return catalogEntryFromEasyConnect(connectToolkitApp(connector.composio));
-  }
   return {
     source: 'discover',
     connector,
@@ -160,10 +155,15 @@ export function appNameKey(name: string): string {
 
 export function catalogEntryKindLabel(entry: CatalogEntry): string {
   if (entry.source === 'computer') return 'Native';
-  // An app with both ways to connect names both.
-  if (entry.source === 'easy-connect') return entry.app?.directId ? 'App · MCP' : 'App';
-  if (entry.alsoApp && entry.connector.kind === 'mcp') return 'MCP · App';
+  // A managed app names its partner; an app with both ways to connect names both.
+  if (entry.source === 'easy-connect') {
+    const partner = entry.app?.provider === 'pipedream' ? 'Pipedream' : 'Composio';
+    return entry.app?.directId ? `${partner} · MCP` : partner;
+  }
+  if (entry.alsoApp && entry.connector.kind === 'mcp') return 'MCP · Composio';
   switch (entry.connector.kind) {
+    case 'composio':
+      return 'Composio';
     case 'mcp':
       return 'MCP';
     case 'graphql':

@@ -4,6 +4,8 @@
  * is built against. Types only, so services (db-deps.ts and its siblings) can
  * implement them without importing the HTTP layer.
  */
+import type { CatalogTools } from './catalog-tools';
+import type { ConnectorCatalogKind, ConnectorSurfaceVariant } from './connector-catalog';
 import type { UpdateConnectionCredentialInput } from '@kortix/api-contract';
 import type { AgentGrant } from '@kortix/db';
 import type { ConnectorRouterAuth } from './http-principal';
@@ -507,6 +509,7 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
     limit?: number;
     /** Only the apps that connect with nothing to set up. */
     oneClick?: boolean;
+    kinds?: readonly ConnectorCatalogKind[];
   }): Promise<unknown>;
   /** The Discover browse page: Popular plus a fixed top slice of each
    *  section, each with the section's true total across the whole catalogue. */
@@ -515,9 +518,12 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
     perCategory?: number;
     maxCategories?: number;
     oneClick?: boolean;
+    kinds?: readonly ConnectorCatalogKind[];
   }): Promise<unknown>;
   /** Resolve every known surface for one trusted catalogue record. */
   getDiscoverConnector?(id: string, catalogue?: DiscoverCatalogue): Promise<unknown>;
+  /** The tools one way to connect offers, before install (`catalog-tools.ts`). */
+  discoverConnectorTools?(variant: ConnectorSurfaceVariant): Promise<CatalogTools>;
   /** Read project-level `policies:` list + `policy.default_mode` from kortix.yaml. */
   getProjectPolicies?(projectId: string): Promise<ProjectPoliciesViewResponse | null>;
   /** Replace project policies + default_mode (CRUD round-trips to kortix.yaml). */

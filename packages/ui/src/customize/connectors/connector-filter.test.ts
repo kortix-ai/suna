@@ -99,7 +99,7 @@ describe('connectorSummary', () => {
   // A connector that has never synced carries no actions. "0 tools" is the
   // honest reading and is itself a signal, so it is not suppressed.
   test('a connector with no synced tools still says so', () => {
-    expect(connectorSummary(conn(), 'App')).toBe('0 tools · App');
+    expect(connectorSummary(conn(), 'Composio')).toBe('0 tools · Composio');
   });
 });
 

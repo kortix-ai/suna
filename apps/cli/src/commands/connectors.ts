@@ -129,7 +129,7 @@ interface ProjectPoliciesView {
  *  Connectors v2 every MCP server, API and managed app. */
 interface DiscoverConnector {
   id: string;
-  /** How it connects: mcp, composio, openapi, graphql, cli. */
+  /** How its best way in connects: mcp, composio, openapi, graphql, cli. */
   kind: string;
   slug: string;
   name: string;
@@ -139,14 +139,44 @@ interface DiscoverConnector {
   oneClick?: boolean;
 }
 
-/** One connectable surface on a catalogue record. */
+/** One way to connect a catalogue app. Connectors v2 ranks them best first. */
 interface DiscoverVariant {
   id: string;
   kind: string;
   name: string;
   url: string | null;
+  docs?: string | null;
   requiresAuth: boolean;
+  connector?: unknown;
+  oneClick?: boolean;
+  recommended?: boolean;
 }
+
+interface DiscoverTools {
+  way: { id: string; kind: string; name: string };
+  tools: { name: string; description: string }[];
+  total: number;
+  source: 'mcp' | 'directory' | 'composio' | 'spec' | 'none';
+}
+
+const WAY_LABEL: Record<string, string> = {
+  mcp: 'MCP',
+  composio: 'Composio',
+  openapi: 'REST API',
+  graphql: 'GraphQL',
+  postman: 'Postman',
+  http: 'HTTP API',
+  cli: 'CLI',
+};
+const wayLabel = (kind: string) => WAY_LABEL[kind] ?? kind;
+
+const TOOLS_SOURCE: Record<DiscoverTools['source'], string> = {
+  mcp: 'listed by the server',
+  directory: 'names from a public MCP directory; the server lists the full set after sign-in',
+  composio: 'listed by Composio',
+  spec: 'operations in its OpenAPI document',
+  none: 'listed after install',
+};
 
 /** POST .../oauth2/device — RFC 8628 device authorization start. */
 interface DeviceAuthorizationStart {
@@ -266,13 +296,19 @@ Subcommands:
        [--cursor <c>] [--limit <n>]  slugs that add --provider composio --app
        [--pipedream] [--json]        accepts. Alias: toolkits. Use --pipedream
                                      for the legacy Pipedream catalog.
-  catalog [<query>] [--cursor <c>]  Browse the app catalogue: apps that connect
-          [--all] [--json]          in one click (public or self-registering
-                                    MCP servers, managed apps). --all adds the
-                                    apps that need setup (own OAuth app, API
-                                    key, OpenAPI, GraphQL, CLI). Needs
-                                    \`connectors_v2\` or \`connectors_api_discover\`.
-  catalog show <id> [--json]        Show one catalogue record's surfaces.
+  catalog [<query>] [--kind <k,k>]  Browse the app catalogue: every MCP server,
+          [--one-click]             REST (OpenAPI) and GraphQL API, CLI and
+          [--category <c>]          Composio app, one row per app by its best
+          [--limit <n>] [--cursor]  way in. --kind mcp,composio,openapi,graphql,cli
+          [--json]                  filters by how it connects; --one-click keeps
+                                    the apps the human connects by signing in.
+                                    Needs \`connectors_v2\` or \`connectors_api_discover\`.
+  catalog show <id> [--way <id>]    Every way to connect the app (recommended
+          [--json]                  first) and the tools of one way.
+  catalog tools <id> [--way <id>]   Every tool one way to connect offers.
+  catalog install <id>              Install the app as a connector profile:
+          [--way <id>] [--name <n>] the recommended way unless --way. Its
+          [--slug <s>] [--json]     accounts, access and tool rules live on it.
   sensitive <slug> on|off           Gate this connector's READS too — every
                                     call needs approval (applies now).
   owner <slug> project|user         Deprecated, does nothing. Ownership is per
@@ -528,6 +564,10 @@ export async function runConnectors(argv: string[]): Promise<number> {
     f.connector = takeFlagValue(rest, ['--connector']);
     f.out = takeFlagValue(rest, ['--out']);
     if (takeFlagBool(rest, ['--pipedream', '--legacy-pipedream'])) f.pipedream = 'true';
+    if (takeFlagBool(rest, ['--one-click'])) f.oneClick = 'true';
+    f.kind = takeFlagValue(rest, ['--kind', '--type']);
+    f.way = takeFlagValue(rest, ['--way']);
+    f.slug = takeFlagValue(rest, ['--slug']);
     conditions = takeFlagValues(rest, ['--condition', '--cond']);
     shareGroups = takeFlagValues(rest, ['--group']);
     shareUsers = takeFlagValues(rest, ['--user', '--member']);
@@ -1346,15 +1386,39 @@ export async function runConnectors(argv: string[]): Promise<number> {
       }
       case 'catalog':
       case 'discover-catalog': {
-        if (positional[0] === 'show' || positional[0] === 'info') {
+        const action = positional[0];
+        const printTools = (id: string, tools: DiscoverTools, limit: number) => {
+          process.stdout.write(
+            `  ${C.bold}Tools${C.reset} ${C.faded}· ${wayLabel(tools.way.kind)} · ${tools.total} · ${TOOLS_SOURCE[tools.source]}${C.reset}\n`,
+          );
+          if (tools.tools.length === 0) {
+            process.stdout.write(`  ${C.dim}This ${wayLabel(tools.way.kind)} lists its tools after install.${C.reset}\n\n`);
+            return;
+          }
+          for (const tool of tools.tools.slice(0, limit)) {
+            process.stdout.write(`  ${C.cyan}${tool.name}${C.reset}${tool.description ? `  ${C.dim}${trim(tool.description, 70)}${C.reset}` : ''}\n`);
+          }
+          if (tools.tools.length > limit) {
+            process.stdout.write(`  ${C.dim}… ${tools.tools.length - limit} more: kortix connectors catalog tools ${id} --way ${tools.way.id}${C.reset}\n`);
+          }
+          process.stdout.write('\n');
+        };
+        const readTools = (id: string, way?: string) =>
+          ctx.client.get<DiscoverTools>(
+            `${ex}/discover/connectors/tools?id=${encodeURIComponent(id)}${way ? `&way=${encodeURIComponent(way)}` : ''}`,
+          );
+
+        if (action === 'show' || action === 'info') {
           const id = positional[1];
           if (!id) return missing('a catalogue record id');
           const detail = await ctx.client.get<{
             item: DiscoverConnector;
             variants: DiscoverVariant[];
           }>(`${ex}/discover/connectors/detail?id=${encodeURIComponent(id)}`);
+          const shown = f.way ?? detail.variants.find((v) => v.recommended)?.id ?? detail.variants[0]?.id;
+          const tools = shown ? await readTools(id, shown).catch(() => null) : null;
           if (json) {
-            emitJson(detail);
+            emitJson({ ...detail, tools });
             return 0;
           }
           process.stdout.write(
@@ -1365,30 +1429,90 @@ export async function runConnectors(argv: string[]): Promise<number> {
           }
           process.stdout.write('\n');
           if (detail.variants.length === 0) {
-            process.stdout.write(`  ${C.dim}No connectable surfaces.${C.reset}\n\n`);
+            process.stdout.write(`  ${C.dim}No way to connect it.${C.reset}\n\n`);
             return 0;
           }
+          process.stdout.write(`  ${C.bold}Ways to connect${C.reset}\n`);
+          const idW = Math.max(...detail.variants.map((v) => v.id.length), 2);
           for (const v of detail.variants) {
+            const marks = [
+              v.recommended ? 'recommended' : '',
+              v.oneClick ? '1-click' : '',
+              !v.connector && v.kind !== 'composio' ? 'not installable' : '',
+            ].filter(Boolean).join(', ');
             process.stdout.write(
-              `  ${C.cyan}${v.id}${C.reset}  ${pad(v.kind, 8)}  ${trim(v.name, 30)}${v.requiresAuth ? ` ${C.faded}(auth)${C.reset}` : ''}${v.url ? `  ${C.dim}${v.url}${C.reset}` : ''}\n`,
+              `  ${C.cyan}${pad(v.id, idW)}${C.reset}  ${pad(wayLabel(v.kind), 9)}  ${trim(v.name, 28)}${marks ? ` ${C.faded}(${marks})${C.reset}` : ''}${v.url ? `  ${C.dim}${v.url}${C.reset}` : ''}\n`,
             );
           }
           process.stdout.write(
-            `\n  ${C.dim}${detail.variants.length} surface${detail.variants.length === 1 ? '' : 's'}${C.reset}\n\n`,
+            `\n  ${C.dim}Composio is a third-party partner that runs the sign-in for you (one click).${C.reset}\n`,
+          );
+          process.stdout.write(
+            `  ${C.dim}Install: kortix connectors catalog install ${detail.item.id} [--way <id>] [--name <name>]${C.reset}\n\n`,
+          );
+          if (tools) printTools(id, tools, 25);
+          return 0;
+        }
+
+        if (action === 'tools') {
+          const id = positional[1];
+          if (!id) return missing('a catalogue record id');
+          const tools = await readTools(id, f.way);
+          if (json) {
+            emitJson(tools);
+            return 0;
+          }
+          process.stdout.write('\n');
+          printTools(id, tools, Number.POSITIVE_INFINITY);
+          return 0;
+        }
+
+        if (action === 'install' || action === 'add') {
+          const id = positional[1];
+          if (!id) return missing('a catalogue record id');
+          const done = await ctx.client.post<{
+            slug: string;
+            name: string;
+            provider: string;
+            way: { id: string; kind: string; name: string; oneClick: boolean };
+            next: 'connect' | 'credential' | 'ready';
+          }>(`${ex}/discover/install`, {
+            id,
+            ...(f.way ? { way: f.way } : {}),
+            ...(f.name ? { name: f.name } : {}),
+            ...(f.slug ? { slug: f.slug } : {}),
+          });
+          if (json) {
+            emitJson(done);
+            return 0;
+          }
+          process.stdout.write(
+            `${status.ok(`Installed ${C.bold}${done.name}${C.reset} as connector profile ${C.bold}${done.slug}${C.reset}`)} ${C.dim}(via ${wayLabel(done.way.kind)}; kortix.yaml on main)${C.reset}\n`,
+          );
+          process.stdout.write(
+            `  ${C.dim}Accounts, who can use them and tool rules live on the profile: kortix connectors accounts ${done.slug} · kortix connectors policy ${done.slug}${C.reset}\n`,
+          );
+          process.stdout.write(
+            `  ${C.dim}Next: ${C.reset}${C.cyan}${done.next === 'connect' ? `kortix connectors connect ${done.slug}` : done.next === 'credential' ? `kortix connectors credential ${done.slug}` : `kortix connectors show ${done.slug}`}${C.reset}\n`,
           );
           return 0;
         }
-        const q = positional[0];
-        const all = allConnections;
+
+        const q = action;
+        const oneClick = f.oneClick === 'true';
         const qs = [
           q ? `q=${encodeURIComponent(q)}` : '',
           f.cursor ? `cursor=${encodeURIComponent(f.cursor)}` : '',
-          all ? '' : 'oneClick=1',
+          f.category ? `category=${encodeURIComponent(f.category)}` : '',
+          f.limit ? `limit=${encodeURIComponent(f.limit)}` : '',
+          f.kind ? `kind=${encodeURIComponent(f.kind)}` : '',
+          oneClick ? 'oneClick=1' : '',
         ]
           .filter(Boolean)
           .join('&');
         const page = await ctx.client.get<{
           items: DiscoverConnector[];
+          total?: number;
           nextCursor?: string | null;
           hasMore?: boolean;
         }>(`${ex}/discover/connectors${qs ? `?${qs}` : ''}`);
@@ -1399,20 +1523,20 @@ export async function runConnectors(argv: string[]): Promise<number> {
         const items = page.items ?? [];
         if (items.length === 0) {
           process.stdout.write(
-            `  ${C.dim}No ${all ? '' : 'one-click '}catalogue records${q ? ` matching "${q}"` : ''}.${all ? '' : ' --all lists the apps that need setup too.'}${C.reset}\n`,
+            `  ${C.dim}No catalogue app${q ? ` matches "${q}"` : ''}${f.kind || oneClick ? ' with these filters' : ''}. The catalogue is large, not complete: search the web for the vendor's MCP server or API, then kortix connectors add.${C.reset}\n`,
           );
           return 0;
         }
         const idW = Math.max(...items.map((i) => i.id.length), 2);
         process.stdout.write('\n');
         for (const item of items) {
-          const via = `${item.kind}${item.oneClick ? ' ·1-click' : ''}`;
+          const via = `${wayLabel(item.kind)}${item.oneClick ? ' ·1-click' : ''}`;
           process.stdout.write(
-            `  ${C.cyan}${pad(item.id, idW)}${C.reset}  ${pad(trim(item.name, 24), 24)}  ${pad(via, 17)}  ${C.dim}${trim(item.description ?? '', 40)}${C.reset}\n`,
+            `  ${C.cyan}${pad(item.id, idW)}${C.reset}  ${pad(trim(item.name, 24), 24)}  ${pad(via, 18)}  ${C.dim}${trim(item.description ?? '', 40)}${C.reset}\n`,
           );
         }
         process.stdout.write(
-          `\n  ${C.dim}${items.length} ${all ? '' : 'one-click '}record${items.length === 1 ? '' : 's'}${page.hasMore && page.nextCursor ? ` · more: --cursor ${page.nextCursor}` : ''}${all ? '' : ' · --all adds apps that need setup'}${C.reset}\n\n`,
+          `\n  ${C.dim}${items.length}${typeof page.total === 'number' ? ` of ${page.total}` : ''} app${items.length === 1 ? '' : 's'}${page.hasMore && page.nextCursor ? ` · more: --cursor ${page.nextCursor}` : ''} · ways and tools: kortix connectors catalog show <id>${C.reset}\n\n`,
         );
         return 0;
       }

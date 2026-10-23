@@ -36,7 +36,9 @@ import {
   connectorCatalogItems,
   connectorCatalogSurfaces,
   createConnectorCatalog,
+  isOneClickMcpUrl,
   surfaceRank,
+  variantRank,
 } from './connector-catalog';
 
 export type KortixOAuthClientName = 'google' | 'github' | 'slack' | 'hubspot' | 'asana' | 'box';
@@ -283,6 +285,25 @@ export function mcpAppSurface(app: McpApp): ConnectorSurfaceVariant {
     requiresAuth: true,
     command: null,
     connector: { provider: 'mcp', url: app.url, transport: 'http' },
+    oneClick: true,
+  };
+}
+
+/** A managed toolkit as a way to connect its app. */
+export function composioSurface(item: ConnectorCatalogItem): ConnectorSurfaceVariant {
+  return {
+    id: item.id,
+    kind: 'composio',
+    name: item.name,
+    url: null,
+    docs: null,
+    description: item.description,
+    transports: [],
+    requiresAuth: item.composio?.isNoAuth !== true,
+    command: null,
+    connector: null,
+    oneClick: true,
+    ...(item.composio ? { composio: item.composio } : {}),
   };
 }
 
@@ -307,6 +328,12 @@ export function composioCatalogItem(card: ComposioCatalogCard, domain: string | 
   };
 }
 
+/** One app across the catalogues: `appNameKey`, a trailing "API" or
+ *  "GraphQL" dropped too ("Bitbucket API" is Bitbucket). Empty: no key. */
+export function v2AppKey(name: string): string {
+  return appNameKey(name).replace(/(rest)?(api|graphql)$/, '');
+}
+
 /**
  * Every way to connect, one record per surface: Kortix's apps, integrations.sh
  * (MCP, OpenAPI, GraphQL, CLI) and the managed toolkits. `list` shows each app
@@ -328,19 +355,23 @@ export async function connectorsV2Items(
       () => [] as ComposioCatalogCard[],
     ),
   ]);
-  // A Kortix app is the one way to its app, by domain and by name (Notion is
-  // notion.so here and notion.com in the registry): its endpoints are verified.
-  const curated = new Set(kortix.flatMap((item) => [item.domain, appNameKey(item.name)]));
-  const direct = index.filter((item) => !curated.has(item.domain) && !curated.has(appNameKey(item.name)));
+  // A Kortix app owns its app's records, by domain and by name (Notion is
+  // notion.so here and notion.com in the registry): they file under its
+  // domain, so the list shows one card and the app page every way in.
+  const curatedDomain = new Map(kortix.map((item) => [v2AppKey(item.name), item.domain]));
+  const direct = index.map((item) => {
+    const domain = curatedDomain.get(v2AppKey(item.name));
+    return domain && domain !== item.domain ? { ...item, domain, registryDomain: item.domain } : item;
+  });
   const domainOf = new Map<string, string>();
   for (const item of [...kortix, ...direct]) {
-    const key = appNameKey(item.name);
-    if (!domainOf.has(key)) domainOf.set(key, item.domain);
+    const key = v2AppKey(item.name);
+    if (key && !domainOf.has(key)) domainOf.set(key, item.domain);
   }
   const items = [
     ...kortix,
     ...direct,
-    ...toolkits.map((card) => composioCatalogItem(card, domainOf.get(appNameKey(card.name)))),
+    ...toolkits.map((card) => composioCatalogItem(card, domainOf.get(v2AppKey(card.name)))),
   ];
   // Every record stays: a search must still find a worse surface of an app,
   // and the registry files several apps under one domain (Microsoft Graph).
@@ -380,10 +411,52 @@ export async function connectorsV2Items(
 export const kortixMcpCatalog = createConnectorCatalog({
   source: {
     items: () => connectorsV2Items(),
-    surfaces: async (domain) => {
-      const apps = availableMcpApps().filter((app) => app.domain === domain);
-      if (apps.length) return apps.map(mcpAppSurface);
-      return domain.endsWith('.composio') ? [] : connectorCatalogSurfaces(domain);
-    },
+    surfaces: (domain) => connectorsV2Surfaces(domain),
   },
 });
+
+/**
+ * Every way to connect one app, best first (`variantRank`), the first marked
+ * `recommended`: Kortix's MCP app, the integrations.sh surfaces of every
+ * domain its records come from, and its managed toolkit. A surface that is
+ * down drops out; the others still list.
+ */
+export async function connectorsV2Surfaces(
+  domain: string,
+  load: {
+    items?: () => Promise<ConnectorCatalogItem[]>;
+    surfaces?: (domain: string) => Promise<ConnectorSurfaceVariant[]>;
+  } = {},
+): Promise<ConnectorSurfaceVariant[]> {
+  const records = (await (load.items ?? connectorsV2Items)()).filter((item) => item.domain === domain);
+  const curated = availableMcpApps()
+    .filter((app) => app.domain === domain)
+    .map(mcpAppSurface);
+  const registryDomains = new Set(
+    records.filter((item) => !item.feeds.includes('kortix') && item.kind !== 'composio').map((item) => item.registryDomain ?? item.domain),
+  );
+  if (!curated.length && !domain.endsWith('.composio')) registryDomains.add(domain);
+  const registry = (
+    await Promise.all(
+      [...registryDomains].map((d) => (load.surfaces ?? connectorCatalogSurfaces)(d).catch(() => [])),
+    )
+  )
+    .flat()
+    .map((variant) =>
+      variant.kind === 'mcp' && isOneClickMcpUrl(variant.url) ? { ...variant, oneClick: true } : variant,
+    );
+  // One row per endpoint: the registry often lists a Kortix app's server too.
+  const seen = new Set<string>();
+  const ways = [...curated, ...registry, ...records.filter((item) => item.kind === 'composio').map(composioSurface)].filter(
+    (variant) => {
+      const key = variant.kind === 'composio' ? variant.id : `${variant.kind}:${(variant.url ?? variant.connector?.spec ?? variant.id).replace(/\/+$/, '')}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    },
+  );
+  return ways
+    .map((variant, index) => ({ variant, index }))
+    .sort((a, b) => variantRank(a.variant) - variantRank(b.variant) || a.index - b.index)
+    .map(({ variant }, index) => (index === 0 && variantRank(variant) < 10 ? { ...variant, recommended: true } : variant));
+}

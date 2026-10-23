@@ -149,9 +149,17 @@ function startServer(): string {
         return Response.json({
           item: { id: 'stripe', kind: 'api', slug: 'stripe', name: 'Stripe', description: 'Payments', url: null, categories: ['finance'] },
           variants: [
+            { id: 'stripe-mcp', kind: 'mcp', name: 'Stripe', url: 'https://mcp.stripe.test', docs: null, description: null, transports: ['http'], requiresAuth: true, command: null, connector: { provider: 'mcp' }, oneClick: true, recommended: true },
+            { id: 'composio:stripe', kind: 'composio', name: 'Stripe', url: null, docs: null, description: null, transports: [], requiresAuth: true, command: null, connector: null, oneClick: true },
             { id: 'stripe-openapi', kind: 'openapi', name: 'Stripe REST', url: 'https://stripe.test/openapi.json', docs: null, description: null, transports: [], requiresAuth: true, command: null, connector: null },
           ],
         });
+      }
+      if (url.pathname === `${ex}/discover/connectors/tools` && req.method === 'GET') {
+        return Response.json({ way: { id: url.searchParams.get('way'), kind: 'mcp', name: 'Stripe' }, tools: [{ name: 'list_customers', description: 'List customers' }], total: 1, source: 'directory' });
+      }
+      if (url.pathname === `${ex}/discover/install` && req.method === 'POST') {
+        return Response.json({ ok: true, slug: 'billing', name: 'Billing', provider: 'composio', way: { id: 'composio:stripe', kind: 'composio', name: 'Stripe', oneClick: true }, next: 'connect' });
       }
       if (url.pathname === `${ex}/discover/connectors` && req.method === 'GET') {
         if (!discoverEnabled) {
@@ -622,30 +630,44 @@ describe('kortix connectors — capability-page parity', () => {
     });
   });
 
-  test('catalog lists one-click records by default and forwards q + cursor', async () => {
+  test('catalog lists every app by default and forwards q + cursor', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'catalog', 'pay', '--cursor', 'cur_1', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors?q=pay&cursor=cur_1&oneClick=1`);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors?q=pay&cursor=cur_1`);
     expect(r.stdout).toContain('stripe');
     expect(r.stdout).toContain('--cursor cur_2');
-    expect(r.stdout).toContain('--all adds apps that need setup');
+    expect(r.stdout).toContain('catalog show <id>');
   });
 
-  test('catalog --all lists the apps that need setup too', async () => {
+  test('catalog filters by type, one-click, category and page size', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['connectors', 'catalog', 'pay', '--all', '--project', PROJECT], config);
+    const r = await runCli(['connectors', 'catalog', 'pay', '--kind', 'mcp,composio', '--one-click', '--category', 'finance', '--limit', '10', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors?q=pay`);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors?q=pay&category=finance&limit=10&kind=mcp%2Ccomposio&oneClick=1`);
+  });
+
+  test('catalog install posts the id, way, name and slug and names the profile', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'catalog', 'install', 'kortix:stripe', '--way', 'composio:stripe', '--name', 'Billing', '--slug', 'billing', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)).toMatchObject({ method: 'POST', path: `/v1/connectors/projects/${PROJECT}/discover/install`, body: { id: 'kortix:stripe', way: 'composio:stripe', name: 'Billing', slug: 'billing' } });
+    expect(r.stdout).toContain('connector profile');
+    expect(r.stdout).toContain('kortix connectors connect billing');
   });
 
   test('catalog show reads the detail route by id', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'catalog', 'show', 'stripe', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors/detail?id=stripe`);
-    expect(r.stdout).toContain('stripe-openapi');
-    expect(r.stdout).toContain('(auth)');
+    expect(calls.at(-2)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors/detail?id=stripe`);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors/tools?id=stripe&way=stripe-mcp`);
+    expect(r.stdout).toContain('stripe-mcp');
+    expect(r.stdout).toContain('(recommended, 1-click)');
+    expect(r.stdout).toContain('Composio');
+    expect(r.stdout).toContain('third-party partner');
+    expect(r.stdout).toContain('(not installable)');
+    expect(r.stdout).toContain('list_customers');
   });
 
   test('catalog surfaces the connectors_api_discover gate verbatim', async () => {

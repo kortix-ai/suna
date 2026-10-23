@@ -1,7 +1,8 @@
 import type { AdminConnector } from '@kortix/sdk';
 
 /**
- * Forward-facing provider label — "App" for the 1-click (Pipedream) connectors.
+ * Forward-facing provider label. A managed connector names its partner
+ * (Composio, Pipedream): it is never just an "App".
  *
  * Lives here, in the connectors feature folder, rather than in
  * `customize/sections/connectors-view.tsx` where it started. That module is
@@ -15,7 +16,8 @@ import type { AdminConnector } from '@kortix/sdk';
  * deliberate: when `connectors-view.tsx` is retired, this module does not move.
  */
 export function providerLabel(p: AdminConnector['provider']): string {
-  if (isManagedConnectorProvider(p)) return 'App';
+  if (p === 'composio') return 'Composio';
+  if (p === 'pipedream') return 'Pipedream';
   if (p === 'channel') return 'Channel';
   if (p === 'computer') return 'Computer';
   if (p === 'postman') return 'Postman';

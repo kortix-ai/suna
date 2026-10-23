@@ -66,6 +66,7 @@ import {
   listConnectorCatalog,
 } from './connector-catalog';
 import { kortixMcpCatalog, mcpAppForUrl } from './mcp-apps';
+import { catalogTools } from './catalog-tools';
 import { oauth2ConnectionStatus, startConnectionSignIn } from './oauth2-store';
 import { discoverDraftConnectorAuth, syncProjectConnectors } from './sync';
 import {
@@ -751,6 +752,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
   catalogDirectMcpUrls: () => connectorCatalogDirectMcpUrls(),
   listDiscoverSections: ({ catalogue, ...input }) =>
     catalogue === 'kortix' ? kortixMcpCatalog.sections(input) : connectorCatalogSections(input),
+  discoverConnectorTools: (variant) => catalogTools(variant),
   getDiscoverConnector: (id, catalogue) =>
     catalogue === 'kortix' ? kortixMcpCatalog.detail(id) : getConnectorCatalogDetail(id),
   getProjectPolicies: getProjectPoliciesFromManifest,

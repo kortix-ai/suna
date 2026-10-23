@@ -26,6 +26,8 @@ import {
   listConnectors,
   listDiscoverConnectors,
   listDiscoverSections,
+  getDiscoverConnectorTools,
+  installDiscoverConnector,
   listPipedreamApps,
   listPipedreamSections,
   listSessionConnectRequests,
@@ -1006,6 +1008,27 @@ test('listDiscoverConnectors and listDiscoverSections send the one-click filter'
   nextResponse = { status: 200, body: { popular: [], sections: [], categories: [] } };
   await listDiscoverSections('P1', { perCategory: 6, oneClick: true });
   expect(last().url).toContain('oneClick=1');
+});
+
+test('the Discover catalogue filters by kind, lists a way\'s tools and installs a way as a profile', async () => {
+  nextResponse = { status: 200, body: { items: [], total: 0, hasMore: false } };
+  await listDiscoverConnectors('P1', { kinds: ['mcp', 'composio'] });
+  expect(last().url).toContain('kind=mcp%2Ccomposio');
+  nextResponse = { status: 200, body: { popular: [], sections: [], categories: [] } };
+  await listDiscoverSections('P1', { kinds: ['openapi'] });
+  expect(last().url).toContain('kind=openapi');
+
+  nextResponse = { status: 200, body: { way: { id: 'composio:stripe', kind: 'composio', name: 'Stripe' }, tools: [{ name: 'STRIPE_LIST', description: 'List' }], total: 1, source: 'composio' } };
+  const tools = await getDiscoverConnectorTools('P1', 'kortix:stripe', 'composio:stripe');
+  expect(last().url).toContain('/connectors/projects/P1/discover/connectors/tools?id=kortix%3Astripe&way=composio%3Astripe');
+  expect(tools.tools[0]?.name).toBe('STRIPE_LIST');
+
+  nextResponse = { status: 200, body: { ok: true, slug: 'billing', name: 'Billing', provider: 'composio', way: { id: 'composio:stripe', kind: 'composio', name: 'Stripe', oneClick: true }, next: 'connect' } };
+  const installed = await installDiscoverConnector('P1', { id: 'kortix:stripe', way: 'composio:stripe', name: 'Billing' });
+  expect(last().method).toBe('POST');
+  expect(last().url).toContain('/connectors/projects/P1/discover/install');
+  expect(last().body).toEqual({ id: 'kortix:stripe', way: 'composio:stripe', name: 'Billing' });
+  expect(installed.next).toBe('connect');
 });
 
 test('listDiscoverSections GETs the Discover browse page with true category totals', async () => {

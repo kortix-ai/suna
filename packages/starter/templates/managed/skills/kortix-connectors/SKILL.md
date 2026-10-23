@@ -247,27 +247,51 @@ connectors:
       type: bearer
 ```
 
-To add an app, go MCP first. Search the app catalogue:
+To add an app, search the app catalogue first:
 
 ```sh
-kortix connectors catalog gmail --json
+kortix connectors catalog gmail                     # every way in, one row per app
+kortix connectors catalog crm --kind mcp,composio   # filter: mcp, composio, openapi, graphql, cli
+kortix connectors catalog notes --one-click         # only apps the human connects by signing in
+kortix connectors catalog show composio:gmail       # every way to connect it + its tools
 ```
 
-It lists one entry per app, by its best way in, and only apps that connect in
-one click (the human signs in, nothing to set up). `--all` adds the apps that
-need setup. Each entry's `kind` says how to add it:
+Each app lists its ways to connect, best first, the first marked
+`recommended`:
 
-- `mcp` — the vendor's own MCP server. Add its `mcpUrl`:
-  `kortix connectors add linear --provider mcp --url https://mcp.linear.app/mcp --transport http --apply`
-- `composio` — a managed app, for an app with no one-click MCP server (Gmail,
-  Outlook, …). Add its `composio.slug`:
-  `kortix connectors add gmail --provider composio --app gmail --apply`
-- `openapi`, `graphql`, `cli` (with `--all`) — needs a key or an OAuth app of
-  the human's own. `kortix connectors catalog show <id>` lists its surfaces.
+1. a one-click MCP server — the vendor's own server; the human only signs in;
+2. Composio — a third-party partner that runs the sign-in (one click), for an
+   app with no one-click MCP server (Gmail, Outlook, …);
+3. an MCP server that needs the human's own OAuth app or key, then the REST
+   (OpenAPI) and GraphQL APIs — they need a key or token after install.
 
-Then `kortix connectors connect <slug>`. If `catalog` answers that the
-catalogue is off for this project, use the managed apps:
-`kortix connectors apps <query>`, then `--provider composio --app <slug>`.
+`catalog show` prints the tools of the recommended way; `catalog tools <id>
+--way <way-id>` prints another way's. Install the recommended way, or pick one,
+and name the profile:
+
+```sh
+kortix connectors catalog install kortix:linear
+kortix connectors catalog install composio:gmail --name "Support inbox"
+kortix connectors catalog install <id> --way <way-id>
+kortix connectors connect <slug>                    # the human signs in
+```
+
+Install adds a connector PROFILE (an entry in `kortix.yaml`): its accounts, who
+may use them and its tool rules (`kortix connectors policy`) live on it.
+
+The catalogue is large, not complete. When it has no entry for the app, search
+the web for the vendor's MCP server (`<vendor> MCP server`, the vendor's
+developer docs, the MCP registry at registry.modelcontextprotocol.io) or its
+OpenAPI spec, then add it directly:
+
+```sh
+kortix connectors add acme --provider mcp --url https://mcp.acme.com/mcp --transport http --apply
+kortix connectors add acme --provider openapi --spec https://acme.com/openapi.json --apply
+```
+
+If `catalog` answers that the catalogue is off for this project, use Composio:
+`kortix connectors apps <query>`, then
+`kortix connectors add <slug> --provider composio --app <slug> --apply`.
 
 Pipedream exists only for rollback compatibility with already-declared
 connectors. Never add a new Pipedream connector automatically. If Composio
@@ -294,9 +318,10 @@ kortix channels connect
 - Use `kortix connectors` for one-off agent actions.
 - Use `@kortix/sdk` for durable or testable workflows, and for App, Convex
   backend, and external-program code (see **From apps and backends**).
-- Add an app through its one-click MCP server first, then its managed
-  (Composio) app. Never select Pipedream unless the human explicitly approves
-  the legacy rollback path.
+- Add an app through the catalogue's recommended way: a one-click MCP server,
+  else Composio, else its API. Search the web when the catalogue lacks it.
+  Never select Pipedream unless the human explicitly approves the legacy
+  rollback path.
 - Do not use raw provider tokens from the sandbox.
 - Treat `denied`, `not_shared`, `needs_auth`, `account_required`, and
   `ok: false` as real outcomes — `account_required` means several accounts

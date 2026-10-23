@@ -12,6 +12,10 @@ import oneClickMcp from './one-click-mcp.json';
  *  `scripts/probe-one-click-mcp.ts` run. */
 const ONE_CLICK_MCP: ReadonlySet<string> = new Set(Object.keys(oneClickMcp.servers));
 
+/** A client connects to this MCP server with its URL alone. */
+export const isOneClickMcpUrl = (url: string | null | undefined): boolean =>
+  !!url && ONE_CLICK_MCP.has(url.trim());
+
 const INTEGRATIONS_BASE_URL = 'https://integrations.sh';
 const DEFAULT_TTL_MS = 15 * 60_000;
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -89,6 +93,9 @@ export interface ConnectorCatalogItem {
   oneClick?: boolean;
   /** The toolkit a `composio` record installs. */
   composio?: ComposioCatalogCard;
+  /** `connectors_v2`: the integrations.sh domain of a record filed under a
+   *  Kortix app's domain (Notion is notion.so here, notion.com there). */
+  registryDomain?: string;
 }
 
 export interface ConnectorTemplate {
@@ -107,7 +114,8 @@ export interface ConnectorTemplate {
 
 export interface ConnectorSurfaceVariant {
   id: string;
-  kind: 'openapi' | 'postman' | 'mcp' | 'graphql' | 'http' | 'cli';
+  /** `composio`: a managed toolkit (`connectors_v2` only), installed from `composio`. */
+  kind: 'openapi' | 'postman' | 'mcp' | 'graphql' | 'http' | 'cli' | 'composio';
   name: string;
   url: string | null;
   docs: string | null;
@@ -116,6 +124,21 @@ export interface ConnectorSurfaceVariant {
   requiresAuth: boolean;
   command: string | null;
   connector: ConnectorTemplate | null;
+  /** Connects with nothing to set up (`connectors_v2`). */
+  oneClick?: boolean;
+  /** The way Install uses without asking: the first variant (`connectors_v2`). */
+  recommended?: boolean;
+  /** The toolkit a `composio` variant installs. */
+  composio?: ComposioCatalogCard;
+}
+
+/** A way to connect, best first: a one-click MCP server, the managed toolkit,
+ *  any MCP server, the APIs; a surface Kortix cannot install comes last. */
+export function variantRank(variant: ConnectorSurfaceVariant): number {
+  if (variant.kind === 'composio') return 1;
+  if (!variant.connector) return 10;
+  if (variant.kind === 'mcp') return variant.oneClick ? 0 : 2;
+  return { openapi: 3, postman: 3, graphql: 4, http: 5, cli: 6 }[variant.kind] ?? 6;
 }
 
 export interface ConnectorCatalogDetail {
@@ -402,9 +425,18 @@ function rankByName(items: ConnectorCatalogItem[], query: string): ConnectorCata
     .map((entry) => entry.item);
 }
 
-/** With `oneClick`, only the records that connect with nothing to set up. */
-const oneClickOnly = (items: ConnectorCatalogItem[], oneClick?: boolean) =>
-  oneClick ? items.filter((item) => item.oneClick) : items;
+/** The records a filter keeps: `oneClick`, only those that connect with
+ *  nothing to set up; `kinds`, only those that connect that way. */
+const filtered = (
+  items: ConnectorCatalogItem[],
+  input: { oneClick?: boolean; kinds?: readonly ConnectorCatalogKind[] },
+) =>
+  input.oneClick || input.kinds?.length
+    ? items.filter(
+        (item) =>
+          (!input.oneClick || item.oneClick) && (!input.kinds?.length || input.kinds.includes(item.kind)),
+      )
+    : items;
 
 export function createConnectorCatalog(options: CatalogOptions = {}) {
   const fetchImpl = options.fetch ?? fetch;
@@ -516,9 +548,16 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
      * the set and order the section heading counted.
      */
     async list(
-      input: { q?: string; cursor?: string; limit?: number; category?: string; oneClick?: boolean } = {},
+      input: {
+        q?: string;
+        cursor?: string;
+        limit?: number;
+        category?: string;
+        oneClick?: boolean;
+        kinds?: readonly ConnectorCatalogKind[];
+      } = {},
     ) {
-      const items = oneClickOnly(await loadIndex(), input.oneClick);
+      const items = filtered(await loadIndex(), input);
       const query = input.q?.trim().toLowerCase() ?? '';
       const category = input.category?.trim();
       const searched = query
@@ -538,20 +577,20 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
           : searched;
       // The feed has one record per surface (MCP, OpenAPI, CLI). A card is an
       // app: its page lists every surface, so a list shows each app once.
-      const filtered = onePerApp(scoped);
+      const apps = onePerApp(scoped);
       const parsedOffset = Number.parseInt(input.cursor ?? '0', 10);
       const offset = Number.isFinite(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
       const limit = Math.min(
         MAX_PAGE_SIZE,
         Math.max(1, Math.floor(input.limit ?? DEFAULT_PAGE_SIZE)),
       );
-      const page = filtered.slice(offset, offset + limit);
+      const page = apps.slice(offset, offset + limit);
       const nextOffset = offset + page.length;
       return {
         items: page,
-        total: filtered.length,
-        nextCursor: nextOffset < filtered.length ? String(nextOffset) : undefined,
-        hasMore: nextOffset < filtered.length,
+        total: apps.length,
+        nextCursor: nextOffset < apps.length ? String(nextOffset) : undefined,
+        hasMore: nextOffset < apps.length,
       };
     },
 
@@ -564,10 +603,17 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
      * whole index here fixes the count at the source. Sections follow the
      * shared curated order; limits and defaults match the other providers.
      */
-    async sections(input: { perCategory?: number; maxCategories?: number; oneClick?: boolean } = {}) {
+    async sections(
+      input: {
+        perCategory?: number;
+        maxCategories?: number;
+        oneClick?: boolean;
+        kinds?: readonly ConnectorCatalogKind[];
+      } = {},
+    ) {
       const perCategory = boundedCount(input.perCategory, 6, 24);
       const maxCategories = boundedCount(input.maxCategories, 12, 40);
-      const items = oneClickOnly(await loadIndex(), input.oneClick);
+      const items = filtered(await loadIndex(), input);
       const groups = groupIntoSections(items, (item) => item.categories);
       // The feed publishes one record per surface (`stripe-com`,
       // `stripe-com-openapi`, `stripe-com-cli`). A card resolves every surface
