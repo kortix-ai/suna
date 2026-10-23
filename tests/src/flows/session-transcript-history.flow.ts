@@ -680,7 +680,7 @@ storeFlow(
             [`${project.id}/${sessionId}/${attachmentId}`],
           );
           // KRTX-1734: the session is restorable for 30 days, so its file is
-          // kept. The purge deletes it 37 days after the delete (SESS-51).
+          // kept. The purge deletes it 30 days after the delete (SESS-51).
           if (result.rows[0].count !== 1)
             throw new Error(`a deleted session's file should stay until the purge, found ${result.rows[0].count}`);
         } finally {

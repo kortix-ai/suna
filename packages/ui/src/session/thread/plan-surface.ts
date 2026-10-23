@@ -27,6 +27,7 @@ import { planBelongsToChat } from '../turn/plan-anchor';
  * `isActionPanelOpen` / `isSidePanelOpen` / `panelMode`: those made the plan
  * hop surfaces on every panel toggle, and they also re-rendered the whole
  * transcript each time one of them changed.
+ * @deprecated Renders an OpenCode-only tool or todo list in an OpenCode session (pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode.
  */
 export function usePlanInChat(): boolean {
   return planBelongsToChat({ isMobile: useIsMobile() });

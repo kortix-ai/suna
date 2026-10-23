@@ -1,3 +1,4 @@
+import { wellKnownResponse } from '@kortix/shared/well-known';
 import {
   DEFAULT_BODY_AMPLIFICATION,
   DEFAULT_MAX_REQUEST_BYTES,
@@ -119,7 +120,7 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
       '[gateway] LANGFUSE_PUBLIC_KEY/LANGFUSE_SECRET_KEY unset — Langfuse disabled (request logs still persist via the API)',
     );
 
-  const { recordOutcome, recordUpstream, trafficSnapshot, upstreamIncidents } = createTraffic();
+  const { recordOutcome, recordUpstream, trafficSnapshot, upstreamSignals } = createTraffic();
   const gateway = createGateway(
     {
       authenticate: api.authenticate,
@@ -151,8 +152,11 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
     // Permissions-Policy has no wildcard directive: deny each browser capability explicitly.
     c.header('Permissions-Policy', 'accelerometer=(), ambient-light-sensor=(), attribution-reporting=(), autoplay=(), battery=(), bluetooth=(), browsing-topics=(), camera=(), clipboard-read=(), clipboard-write=(), compute-pressure=(), display-capture=(), encrypted-media=(), fullscreen=(), gamepad=(), geolocation=(), gyroscope=(), hid=(), identity-credentials-get=(), idle-detection=(), keyboard-map=(), local-fonts=(), magnetometer=(), microphone=(), midi=(), otp-credentials=(), payment=(), picture-in-picture=(), publickey-credentials-create=(), publickey-credentials-get=(), screen-wake-lock=(), serial=(), speaker-selection=(), storage-access=(), sync-xhr=(), usb=(), web-share=(), window-management=(), xr-spatial-tracking=()');
   });
+  for (const path of ['/.well-known/security.txt', '/robots.txt', '/sitemap.xml']) {
+    app.get(path, (c) => wellKnownResponse(c.req.path) ?? c.notFound());
+  }
   const inflightRequests = trackInflight(app);
-  registerHealth(app, api, inflight, traces, trafficSnapshot, upstreamIncidents);
+  registerHealth(app, api, inflight, traces, trafficSnapshot, upstreamSignals);
   registerRoutes(app, gateway, inflight, recordOutcome);
   return { app, traces, inflightRequests };
 }

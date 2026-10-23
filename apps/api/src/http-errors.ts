@@ -371,6 +371,17 @@ function handleHttpException(
     appLogger[level](line, fields);
   }
 
+  // Unexpected server failures may contain SQL, upstream bodies or local paths.
+  // Keep diagnostics in the log above, not in the client response. The typed
+  // request deadline is a public retry contract, not an unexpected failure.
+  // So is a JSON body the thrower built (drives' 503 `drive_storage_unavailable`):
+  // it passes through below.
+  const typedBody = err.res?.headers.get('content-type')?.startsWith('application/json') ?? false;
+  if (err.status >= 500 && !isRequestDeadlineHTTPException(err) && !typedBody) {
+    if (err.status === 503) c.header('Retry-After', '10');
+    return c.json({ error: true, message: 'Internal server error', status: err.status }, err.status);
+  }
+
   // An HTTPException built with an explicit `res` carries a machine-readable
   // body its thrower needs the CLIENT to branch on — `code:'account_mfa_required'`
   // (iam/denial-message.ts's buildDenialError, which the web app's step-up dialog

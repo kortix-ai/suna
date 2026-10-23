@@ -310,10 +310,14 @@ function entryToCatalogItem(e: CatalogEntry): CatalogItem {
   };
 }
 
-function bundlesFirst(a: CatalogItem, b: CatalogItem): number {
+/** The catalog's one order: bundles first, then by name, then by id. Two
+ *  sources can publish the same name; without the id, ties kept the order in
+ *  which sources finished resolving, so `offset` paging skipped or repeated
+ *  rows between requests (KRTX-3284). Ids are unique, so the order is total. */
+export function compareCatalogItems(a: CatalogItem, b: CatalogItem): number {
   if (a.type === "registry:bundle" && b.type !== "registry:bundle") return -1;
   if (b.type === "registry:bundle" && a.type !== "registry:bundle") return 1;
-  return a.name.localeCompare(b.name);
+  return a.name.localeCompare(b.name) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
 
 function readmeOf(item: RegistryItem): string | null {
@@ -680,7 +684,7 @@ function getBaseCatalog(): Catalog {
       items.push(entryToCatalogItem(entry));
     }
   }
-  items.sort(bundlesFirst);
+  items.sort(compareCatalogItems);
   BASE = { items, byId };
   return BASE;
 }
@@ -1158,7 +1162,7 @@ function progressiveMerge(): Catalog {
     if (!byName.has(it.name)) byName.set(it.name, e);
     items.push(it);
   }
-  items.sort(bundlesFirst);
+  items.sort(compareCatalogItems);
   CACHE.merged = { items, byId, byName };
   CACHE.mergedGen = CACHE.gen;
   return CACHE.merged;

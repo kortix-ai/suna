@@ -2,10 +2,12 @@
  * The 1×1 PNG an offloaded attachment keeps inline (attachment-offload.ts moves
  * the real bytes to a sidecar). Host-level: every transcript reader treats it
  * as "hand out a ref", whichever harness produced the row.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export const OFFLOAD_PLACEHOLDER_URL =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 
+/** @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function isOffloadPlaceholder(url: unknown): boolean {
   return url === OFFLOAD_PLACEHOLDER_URL;
 }

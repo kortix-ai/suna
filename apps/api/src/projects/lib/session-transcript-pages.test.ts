@@ -220,3 +220,13 @@ test("the next page is asked for by `before`, the spelling OpenCode reads", () =
   expect(next.searchParams.get("before")).toBe("msg_oldest_on_page");
   expect(next.searchParams.has("cursor")).toBe(false);
 });
+
+test("a full page with no cursor does not prove the head: an old build that ignores paging answers the newest `limit` rows", async () => {
+  const result = await readTranscriptPages(async () => page([3, 4, 5]), true, undefined, 3);
+  expect(result.rows).toHaveLength(3);
+  expect(result.headComplete).toBe(false);
+  expect(result.complete).toBe(false);
+  // A short last page with no cursor still proves it.
+  const short = await readTranscriptPages(async () => page([4, 5]), true, undefined, 3);
+  expect(short.complete).toBe(true);
+});

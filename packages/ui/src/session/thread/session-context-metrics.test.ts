@@ -10,7 +10,7 @@ import { describe, expect, test } from 'bun:test';
 import type { ModelPricingLookup, SessionLogBlock, SessionLogMessage, SessionLogThread } from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import { estimateBreakdown } from './session-context-modal';
-import { getSessionContextMetrics } from './session-context-metrics';
+import { getSessionContextMetrics, sessionStartedAt } from './session-context-metrics';
 
 // ─── fixtures ────────────────────────────────────────────────────────────────
 
@@ -146,7 +146,7 @@ describe('getSessionContextMetrics', () => {
     expect(metrics.context?.reasoning).toBe(0);
   });
 
-  test('maps every token field and total = input+output+reasoning+cache', () => {
+  test('total = input+output+cache: reasoning is a subset of output, never counted twice', () => {
     const msg = assistant({ usage: { input: 100, output: 200, reasoning: 30, cache_read: 120, cache_write: 50 } });
     const ctx = getSessionContextMetrics(thread([msg]), undefined, freeLookup).context;
     expect(ctx?.input).toBe(100);
@@ -154,7 +154,7 @@ describe('getSessionContextMetrics', () => {
     expect(ctx?.reasoning).toBe(30);
     expect(ctx?.cacheRead).toBe(120);
     expect(ctx?.cacheWrite).toBe(50);
-    expect(ctx?.total).toBe(500);
+    expect(ctx?.total).toBe(470);
   });
 
   test('usage = round(total / limit * 100); limit passes through', () => {
@@ -165,7 +165,8 @@ describe('getSessionContextMetrics', () => {
       freeLookup,
     );
     expect(metrics.context?.limit).toBe(2000);
-    expect(metrics.context?.usage).toBe(25);
+    // 470 / 2000 = 23.5%: the 30 reasoning tokens are inside the 200 output.
+    expect(metrics.context?.usage).toBe(24);
   });
 
   test('no model → limit undefined, usage null', () => {
@@ -308,5 +309,22 @@ describe('estimateBreakdown', () => {
   test('non-countable blocks contribute nothing', () => {
     const segments = estimateBreakdown([assistant({}, [step(), text('')])], 100);
     expect(segments).toEqual([{ key: 'other', tokens: 100, width: 100, percent: 100 }]);
+  });
+});
+
+describe('sessionStartedAt', () => {
+  const row = { created_at: '2026-10-01T10:00:00.000Z', runtime_session_id: 'ses_root', opencode_session_id: 'ses_root' };
+  // A box that booted after the last reply: pi stamps its runtime session at boot.
+  const booted = { id: 'ses_root', time: { created: Date.parse('2026-10-20T08:00:00.000Z') } };
+
+  test("the session's own row: its creation, not the runtime's boot", () => {
+    expect(sessionStartedAt(booted, row)).toBe(Date.parse(row.created_at));
+    expect(sessionStartedAt(undefined, row)).toBe(Date.parse(row.created_at));
+  });
+
+  test("a sub-agent (the runtime is not the row's root) or no row: the runtime's time", () => {
+    expect(sessionStartedAt({ ...booted, id: 'ses_child' }, row)).toBe(booted.time.created);
+    expect(sessionStartedAt(booted, null)).toBe(booted.time.created);
+    expect(sessionStartedAt(undefined, null)).toBeUndefined();
   });
 });

@@ -2,6 +2,8 @@
 
 # Permissions
 
+> **Deprecated: OpenCode is sunset.** Every new Kortix session runs pi (`../pi/overview.md`). This page applies only to a session that still runs OpenCode. Do not add OpenCode config to a project.
+
 Control which actions require approval to run.
 
 OpenCode uses the `permission` config to decide whether a given action should run automatically, prompt you, or be blocked.

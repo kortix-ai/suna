@@ -26,6 +26,7 @@
  *   • there is no existing root (the caller creates one anyway),
  *   • there is no seed marker (a cold session, or a fork that already rotated), or
  *   • the existing root differs from the seed id (it is already the fork's own).
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function isSharedSeedBakedRoot(
   existingRootId: string | null | undefined,

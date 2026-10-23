@@ -9,8 +9,10 @@ How a clean, accurate production release happens. Three parts: **what version**
 (the bump philosophy), **how a candidate gets tested** (one Promote dispatch takes
 the `dev` HEAD through staging to a release PR; its one release suite is the
 only gate), and **how prod gets it** (merge → deploy → verify). The release notes you write become the GitHub Release, which
-is exactly what the public **`/changelog`** page renders — so they must reflect
-what actually shipped, nothing invented, nothing missed.
+the public **`/changelog/releases`** page (Release history) renders as written, and the
+weekly **`/changelog`** page merges by section (New / Improved / Fixed) into the
+week the release was published — so they must reflect what actually shipped,
+nothing invented, nothing missed.
 
 Pairs with **kortix-voice** (how the notes read) and **kortix-rollback** (the
 reverse direction). The version source of truth is the root **`VERSION`** file;
@@ -204,7 +206,12 @@ never gets past its own bootstrap gives no signal: it is rerun like any other.
 ### Step 9 — prod
 
 Merge the release PR once `full suite + quality gates` is green on its head
-SHA:
+SHA **and** one team member approved it. Since 2026-10-23 the `prod` ruleset
+(20587235) requires 1 approving review with `require_last_push_approval`: an
+approval counts only for the last push, so a re-promote that updates the
+release branch needs a new approval. Under the SOC 2 Change Management Policy
+the approver is not the person who started the release. Ask the owner for an
+approver as soon as the gate goes green. Never bypass the review.
 
 ```bash
 gh pr merge <release-pr> --repo kortix-ai/suna --merge
@@ -261,8 +268,10 @@ written, evidence-backed justification, never silently.
 - **deploy-prod retags; it does not rebuild.** The staging build for the exact
   promoted commit must already be green:
   `gh run list --repo kortix-ai/suna --workflow build-staging.yml --branch staging --limit 3 --json status,conclusion,headSha`.
-- **The `/changelog` page shows only `≥ 1.0.0`** and reads GitHub Release bodies — so a
-  thin/auto-generated body shows up as a thin entry. Write real notes (Step 7).
+- **`/changelog` and `/changelog/releases` show every published `vX.Y.Z` release** and read
+  GitHub Release bodies — so a thin/auto-generated body shows up as a thin entry. The weekly
+  page reads only the bullets under `### New`, `### Improved` and `### Fixed`; a body without
+  those headings shows as its title alone. Write real notes (Step 7).
 - **VERSION is the source of truth**; the version field in `/v1/health` is stamped by
   deploy-prod's task-def, not baked into the image.
 - **A promotion PR is not a normal PR.** Do not squash it, do not push new
@@ -299,7 +308,8 @@ no `vX.Y.Z` Release.
    `staging`, staging served the SHA, and the release PR opened.
 5. `full suite + quality gates` green on the release PR head (every check on
    that commit green); red fixed on `dev` and re-promoted with a new dispatch.
-6. Release PR merged into `prod` with `--merge` (`--admin` only with the
+6. Release PR approved by a team member who did not start the release, then
+   merged into `prod` with `--merge` (`--admin` only with the
    owner's explicit OK).
 7. `Deploy Prod` confirmed for the merge SHA; api/gateway/frontend `/health`,
    the three npm packages, the GitHub Release (24 assets), and Better Stack all

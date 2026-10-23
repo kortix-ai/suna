@@ -46,7 +46,7 @@ export function getSessionContextMetrics(
     ? model.provider
     : undefined;
   const limit = model?.limit?.context;
-  const total = u.input + u.output + (u.reasoning ?? 0) + u.cache_read + u.cache_write;
+  const total = u.input + u.output + u.cache_read + u.cache_write; // reasoning is a subset of output
 
   // The gateway registers every model under the single synthetic `kortix`
   // opencode provider, so `provider.name` is always "Kortix" — even for a
@@ -73,4 +73,17 @@ export function getSessionContextMetrics(
       usage: limit ? Math.round((total / limit) * 100) : null,
     },
   };
+}
+
+/**
+ * When the session started. The session row's creation, when the runtime is the row's root (or
+ * not up): a pi box stamps its runtime session at boot, so a woken session's runtime time is after
+ * its last reply. A sub-agent's runtime (not the row's root) keeps its own time.
+ */
+export function sessionStartedAt(
+  runtime: { id: string; time: { created: number } } | undefined,
+  row: { created_at: string; runtime_session_id?: string | null; opencode_session_id?: string | null } | null | undefined,
+): number | undefined {
+  const own = row && (!runtime || (row.runtime_session_id ?? row.opencode_session_id) === runtime.id);
+  return own ? Date.parse(row.created_at) : runtime?.time.created;
 }

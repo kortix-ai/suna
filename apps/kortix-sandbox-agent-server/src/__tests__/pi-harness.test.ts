@@ -875,6 +875,24 @@ describe('pi harness', () => {
     expect(existsSync(join(r.workspace, 'new.txt'))).toBe(false)
   })
 
+  test('a path deny holds for every spelling of the path the read tool resolves', async () => {
+    const permission = { read: { 'secrets/*': 'deny', '*': 'allow' } }
+    for (const path of ['./secrets/a', 'x/../secrets/a', '@secrets/a']) {
+      const r = await boot({
+        script: [{ tool: 'read', args: { path } }, { text: 'blocked' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission } } }) },
+        prepare: (workspace) => {
+          mkdirSync(join(workspace, 'secrets'))
+          writeFileSync(join(workspace, 'secrets', 'a'), 'sentinel-secret')
+        },
+      })
+      const tool = await firstToolPart(r)
+      expect(tool.state.status).toBe('error')
+      expect(tool.state.error).toContain('denies')
+      expect(JSON.stringify(tool)).not.toContain('sentinel-secret')
+    }
+  })
+
   test('the manifest skills grant hides every other skill: managed, project and pi skill dirs (W1 B3)', async () => {
     const skill = (dir: string, name: string) => {
       mkdirSync(join(dir, name), { recursive: true })
@@ -2969,6 +2987,31 @@ describe('pi compaction', () => {
     expect(turn!.part).toMatchObject({ type: 'compaction', auto: true })
     expect(turn!.summary.parts[0]!.text).toContain('SUMMARY-ONE')
     expect(page.messages.filter((m) => m.info.error)).toEqual([])
+  })
+
+  test('compaction leaves the model its whole output budget, not pi default 16k reserve', async () => {
+    // 128,000 window and a 32,768 output limit: a request needs 32,768 tokens of room for the
+    // answer, so compaction must start at 95,232, not at pi's default window - 16,384 = 111,616.
+    const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
+    const catalog = join(workspace, 'catalog.json')
+    writeFileSync(catalog, JSON.stringify({ models: { [MODEL_ID]: { name: 'Test Model', limit: { context: 128_000, output: 32_768 } } } }))
+    const r = await boot({
+      workspace,
+      env: { KORTIX_LLM_CATALOG_FILE: catalog },
+      // 100,001 tokens is over 95,232 and under 111,616: the report the session meter shows.
+      script: [{ text: 'first answer', promptTokens: 100_000 }, ...SUMMARY, { text: 'answer after compaction' }],
+      prepare: compactEverything,
+    })
+    const root = r.service.runtime()!.rootId
+    await promptAndSettle(r, 'ALPHA question')
+    await promptAndSettle(r, 'BETA question')
+    await waitFor(() => r.service.runtime()!.idle())
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    const [turn] = compactionTurns(page)
+    expect(turn!.part).toMatchObject({ type: 'compaction', auto: true })
+    expect(page.messages.filter((m) => m.info.error)).toEqual([])
+    // The second prompt reaches the model after the summary cut, never with the full history.
+    expect(sentText(gateway.sent.at(-1)!)).toContain('SUMMARY-ONE')
   })
 
   test('a context overflow compacts and retries: the turn completes with no error on the wire', async () => {

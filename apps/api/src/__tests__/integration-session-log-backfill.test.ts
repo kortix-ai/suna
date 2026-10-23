@@ -28,7 +28,7 @@ import { asc, eq, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { fakeSessionStorage } from './helpers/fake-session-storage';
-import { removeSeeded, seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';
+import { removeSeeded, seedAccount, seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';
 import { syntheticOpencodeSession } from './helpers/synthetic-opencode-session';
 
 const bucket = fakeSessionStorage();
@@ -36,9 +36,10 @@ const realSupabase = await import('../shared/supabase');
 mock.module('../shared/supabase', () => ({ ...realSupabase, getSupabase: () => ({ storage: bucket.storage }) }));
 
 const { backfillSessionLogs, convertMirrorOnRead, roundTripMismatches, newBackfillState, BACKFILL_BATCH_SIZE } = await import('../projects/session-log-backfill');
-const { SESSION_DELETE_ROWS_DAYS } = await import('../projects/session-log-purge');
+const { SESSION_DELETE_ROWS_DAYS, purgeSessionContent } = await import('../projects/session-log-purge');
+const { transferProjectOwnership } = await import('../projects/lib/project-transfer');
 const { restoreSession } = await import('../projects/session-lifecycle/restore-session');
-const { readStoredTranscriptWindow } = await import('../projects/session-log-read');
+const { readSessionLogPage, readStoredTranscriptWindow } = await import('../projects/session-log-read');
 const { writeSessionLogFromMirror } = await import('../projects/session-log-capture');
 const { ingestSessionLogJournal } = await import('../projects/session-log-ingest');
 const { claimSessionLog } = await import('../projects/session-log-restore');
@@ -656,6 +657,14 @@ describe('dry: converts in memory, writes nothing, reports the counts', () => {
         roundtrip_mismatch_messages: 0,
         max_session_messages: Math.max(...logs.map(sizeOf)),
         max_session_record_bytes: Math.max(...logs.map(bytesOf)),
+        // The merge pass's counts (`integration-session-log-merge.test.ts`).
+        missing: 0,
+        present: 0,
+        empty: 0,
+        merged: 0,
+        threads_created: 0,
+        misplaced: 0,
+        unplaced: 0,
       });
       expect(grades.partial).toBeGreaterThan(0);
       // The tick line carries the same counts.
@@ -778,7 +787,17 @@ async function withMirrorHidden<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-describe('drained (P8.2): once a pass selects nothing, the mirror is never read again', () => {
+/**
+ * After the pass that drained: the merge passes (`integration-session-log-merge.test.ts`) until one
+ * finds nothing to merge (an earlier test here leaves a mirror that grew after its log); then the
+ * mirror is never read again.
+ */
+async function merged() {
+  for (let i = 0; i < 2 && !(await stateRow())!.state.mergedMissing; i++) expect(total(await pass('write'), 'failed')).toBe(0);
+  expect((await stateRow())!.state.mergedMissing).toBe(true);
+}
+
+describe('drained (P8.2): once a pass selects nothing and the merge pass finds nothing, the mirror is never read again', () => {
   test('a restorable deleted mirror-only session keeps the backfill undrained until it converts; then no tick reads a mirror table, and its restore reads the history from the log', async () => {
     const deleted = await oldSession([plain(0), plain(1), plain(2), plain(3)]);
     await markDeleted(deleted, DAY_MS);
@@ -795,6 +814,7 @@ describe('drained (P8.2): once a pass selects nothing, the mirror is never read 
     expect((await stateRow())!.state.drainedWithDeleted).toBe(false);
     expect(total(await pass('write'), 'sessions')).toBe(0);
     expect((await stateRow())!.state.drainedWithDeleted).toBe(true);
+    await merged();
 
     const warn = spyOn(logger, 'warn');
     try {
@@ -824,6 +844,7 @@ describe('drained (P8.2): once a pass selects nothing, the mirror is never read 
 
     await pass('write');
     expect((await stateRow())!.state.drainedWithDeleted).toBe(true);
+    await merged();
     const fresh = await seedSession(project, OWNER);
     // Not drained, the conversion reads the mirror (and fails without it); drained, it never does.
     const warn = spyOn(logger, 'warn');
@@ -836,5 +857,38 @@ describe('drained (P8.2): once a pass selects nothing, the mirror is never read 
     } finally {
       warn.mockRestore();
     }
+  });
+
+  test('Release B1: once drained, the conversion (fork, restore, recovery), the /log read, the retention purge and the project transfer run with both mirror tables gone', async () => {
+    const old = await oldSession([plain(0), plain(1)]);
+    const transferred = await seedProject('session-log-backfill-transfer');
+    const target = await seedAccount('session-log-backfill-transfer-target');
+    await db.insert(sessionTranscriptMirrors).values({ sessionId: await seedSession(transferred, OWNER), projectId: transferred.project_id, accountId: transferred.account_id, runtimeSessionId: ROOT });
+    // The first pass converts `old`; the second selects nothing and drains.
+    await pass('write');
+    expect(await hasLog(old)).toBe(true);
+    await pass('write');
+    expect((await stateRow())!.state.drainedWithDeleted).toBe(true);
+    await merged();
+    const fresh = await seedSession(project, OWNER);
+    const expired = await seedSession(project, OWNER);
+    await markDeleted(expired, (SESSION_DELETE_ROWS_DAYS + 1) * DAY_MS);
+    const warn = spyOn(logger, 'warn');
+    try {
+      await withMirrorHidden(async () => {
+        expect(await writeSessionLogFromMirror(fresh)).toEqual({ outcome: 'skipped' });
+        expect(await readSessionLogPage({ sessionId: fresh, threadId: null, beforeSeq: null, limit: 50 })).toBeNull();
+        expect(await purgeSessionContent({ store: { removeSession: async () => {} } })).toMatchObject({ failed: 0 });
+        await transferProjectOwnership({ projectId: transferred.project_id, fromAccountId: transferred.account_id, toAccountId: target });
+      });
+      expect(warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('capture write failed'))).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
+    expect(await db.select({ id: sessionContentPurges.sessionId }).from(sessionContentPurges).where(eq(sessionContentPurges.sessionId, expired))).toHaveLength(1);
+    expect((await db.select({ accountId: projects.accountId }).from(projects).where(eq(projects.projectId, transferred.project_id)))[0]!.accountId).toBe(target);
+    // The mirror rows stay as they were: the Release B2 migration drops them.
+    expect(await db.select({ accountId: sessionTranscriptMirrors.accountId }).from(sessionTranscriptMirrors).where(eq(sessionTranscriptMirrors.projectId, transferred.project_id))).toEqual([{ accountId: transferred.account_id }]);
+    await removeSeeded([{ account_id: target, project_id: transferred.project_id }, transferred]);
   });
 });

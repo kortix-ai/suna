@@ -87,6 +87,7 @@ import type {
 import type { TurnServedModel } from '../turn/served-model';
 import { SessionBusyIndicator } from '../status/session-busy-indicator';
 import { SessionTurnMeta } from './session-turn-meta';
+import { TurnShareButton } from './turn-share';
 import {
   sessionTurnDurationMs,
   sessionTurnEndedAt,
@@ -398,6 +399,10 @@ interface SessionTurnProps {
   isLast: boolean;
   ownsPlan: boolean;
   sessionId: string;
+  /** The Kortix project and project-session ids. With both, a settled turn
+   *  offers Share (`TurnShareButton`). Absent (a child session): no Share. */
+  projectId?: string;
+  projectSessionId?: string;
   sessionStatus: import('../../internal/session-types').SessionStatus | undefined;
   permissions: PermissionRequest[];
   questions: QuestionRequest[];
@@ -1369,7 +1374,10 @@ const segments = useMemo(() => {
 //   - When done: it's HIDDEN from steps (hideResponsePart=true) and shown below as Response
 // ============================================================================
 
-/** Shell mode — a live shell tool replaces the whole turn scaffold. */
+/**
+ * Shell mode — a live shell tool replaces the whole turn scaffold.
+ * @deprecated Renders an OpenCode shell turn (session.shell; pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode.
+ */
 function TurnShellMode(
   props: Pick<SessionTurnProps, 'sessionId' | 'disableToolNavigation' | 'onPermissionReply' | 'providers' | 'permissions'> & {
     call: ToolCallBlock;
@@ -1973,7 +1981,7 @@ function TurnAutoRetryNote({ count }: { count: number }) {
 /** The turn's footer: the working row, the error banner, the outcomes, the
  *  action bar, the connect-provider dialog, and who stopped the turn. */
 function TurnFooter(
-  props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'suppressBusyIndicator' | 'awaitingUser' | 'providers' | 'servedModel' | 'stoppedBy' | 'modelOptions'> & {
+  props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'projectId' | 'projectSessionId' | 'suppressBusyIndicator' | 'awaitingUser' | 'providers' | 'servedModel' | 'stoppedBy' | 'modelOptions'> & {
     model: TurnModelState;
     errors: TurnErrorState;
     answered: TurnAnsweredState;
@@ -1988,6 +1996,7 @@ function TurnFooter(
   const {
     turn, providers, model, errors, answered, status, retry, meta, tHardcodedUi,
     connectProviderOpen, onConnectProviderOpenChange, servedModel, stoppedBy, modelOptions,
+    projectId, projectSessionId,
   } = props;
   const { working, response } = model;
   const { turnError, turnErrorRow, turnErrorRowDetails, turnErrorRaw } = errors;
@@ -2052,6 +2061,17 @@ function TurnFooter(
           costInfo={costInfo}
           servedModel={servedModel}
           tHardcodedUi={tHardcodedUi}
+          // A continuation turn's id names a compaction marker, not a user
+          // message, so it has no response of its own to share.
+          share={
+            turn.continues
+              ? undefined
+              : {
+                  projectId,
+                  sessionId: projectSessionId,
+                  turnId: turn.id,
+                }
+          }
         />
       )}
     <ConnectProviderDialog
@@ -2121,6 +2141,7 @@ function TurnActionBar({
   costInfo,
   servedModel,
   tHardcodedUi,
+  share,
 }: {
   response: string;
   inlineContentParts: TurnAnsweredState['inlineContentParts'];
@@ -2129,6 +2150,7 @@ function TurnActionBar({
   costInfo: TurnSettledMeta['costInfo'];
   servedModel?: TurnServedModel;
   tHardcodedUi: ReturnType<typeof useTranslations>;
+  share?: { projectId?: string; sessionId?: string; turnId: string };
 }) {
   const [copied, setCopied] = useState(false);
 // ---- Copy response ----
@@ -2181,6 +2203,9 @@ const handleCopy = async () => {
               </AnimatePresence>
             </span>
           </Button>
+      ) : null}
+      {response && share ? (
+        <TurnShareButton projectId={share.projectId} sessionId={share.sessionId} turnId={share.turnId} />
       ) : null}
         <SessionTurnMeta
           endedAt={turnEndedAt}

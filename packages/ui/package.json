@@ -248,6 +248,7 @@
     "./internal/billing/use-transactions": "./src/internal/billing/use-transactions.ts",
     "./internal/branding/branding-provider": "./src/internal/branding/branding-provider.tsx",
     "./internal/capture/use-capture-area": "./src/internal/capture/use-capture-area.ts",
+    "./internal/components/agent-mark": "./src/internal/components/agent-mark.tsx",
     "./internal/components/hover-prefetch-link": "./src/internal/components/hover-prefetch-link.tsx",
     "./internal/components/mobile-store-qr": "./src/internal/components/mobile-store-qr.tsx",
     "./internal/desktop/desktop-back-button": "./src/internal/desktop/desktop-back-button.tsx",
@@ -386,6 +387,7 @@
     "./markdown": "./src/markdown/index.tsx",
     "./markdown/copy-button": "./src/markdown/copy-button.tsx",
     "./markdown/setup-links/api-base": "./src/markdown/setup-links/api-base.ts",
+    "./markdown/setup-links/app-credentials-form": "./src/markdown/setup-links/app-credentials-form.tsx",
     "./markdown/setup-links/approval-decision": "./src/markdown/setup-links/approval-decision.tsx",
     "./markdown/setup-links/connector-handshake": "./src/markdown/setup-links/connector-handshake.tsx",
     "./markdown/setup-links/connector-link-info": "./src/markdown/setup-links/connector-link-info.ts",
@@ -1449,6 +1451,10 @@
         "types": "./dist/internal/capture/use-capture-area.d.ts",
         "import": "./dist/internal/capture/use-capture-area.js"
       },
+      "./internal/components/agent-mark": {
+        "types": "./dist/internal/components/agent-mark.d.ts",
+        "import": "./dist/internal/components/agent-mark.js"
+      },
       "./internal/components/hover-prefetch-link": {
         "types": "./dist/internal/components/hover-prefetch-link.d.ts",
         "import": "./dist/internal/components/hover-prefetch-link.js"
@@ -2000,6 +2006,10 @@
       "./markdown/setup-links/api-base": {
         "types": "./dist/markdown/setup-links/api-base.d.ts",
         "import": "./dist/markdown/setup-links/api-base.js"
+      },
+      "./markdown/setup-links/app-credentials-form": {
+        "types": "./dist/markdown/setup-links/app-credentials-form.d.ts",
+        "import": "./dist/markdown/setup-links/app-credentials-form.js"
       },
       "./markdown/setup-links/approval-decision": {
         "types": "./dist/markdown/setup-links/approval-decision.d.ts",

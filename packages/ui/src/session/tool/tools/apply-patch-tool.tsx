@@ -43,6 +43,7 @@ const PATCH_ICON = {
   edit: PencilSimpleIcon,
 } as const;
 
+/** @deprecated Renders an OpenCode-only tool or todo list in an OpenCode session (pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode. */
 export function ApplyPatchTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const patchTypeStyle = useLocalizedUiCatalog(PATCH_TYPE_STYLE);

@@ -373,6 +373,22 @@ kortix connectors connect-finalize gmail                 # confirm; pass the sam
 - A project secret works as the credential when it is an active project secret, not a personal one, stored with `--scope connector`: `kortix secrets set BILLING_KEY=- --scope connector`. A binding answers `409` when the connector needs no credential, is a channel, or already has a stored credential, or when the secret is missing, inactive or not connector-scoped. A secret narrowed to some people works only in their private sessions (`credential_not_shared`). See [Secrets](/docs/project/secrets).
 - A connect link for an account that is already authorized shows **Already connected**. To change the login, add a new account, [make it the default](#which-account-a-call-uses), then disconnect the old one.
 
+### Connect Shopify
+
+Composio holds no Shopify app, and Shopify stopped issuing admin-created app tokens (`shpat_…`) on January 1, 2026. A Shopify account therefore runs on a Shopify app that you own. **Connect** on a `composio` Shopify connector opens a Kortix form, not a sign-in page:
+
+1. In the [Shopify Dev Dashboard](https://dev.shopify.com/dashboard), create an app in the organization that owns the store.
+2. On the app's version, select the Admin API scopes that your agents need, then release the version.
+3. Install the app on the store.
+4. In Kortix, select **Connect** on the Shopify connector. Enter the store's myshopify.com name (`acme` for `acme.myshopify.com`), and the **Client ID** and **Client secret** from the app's **Settings**.
+
+- Composio runs Shopify's client-credentials grant with the app's credentials. Kortix passes the secret to Composio and keeps no copy. Each account gets its own Composio auth config.
+- The app and the store must be in the same Shopify organization. A store in another organization, such as a client's store, cannot connect this way.
+- When Shopify refuses the exchange, the form shows the reason: no store at that name, no app with that Client ID, an app in another organization, or a wrong secret. The API answers `422` `shopify_refused`.
+- The form link works for 1 hour. A newer **Connect** on the same account replaces it (`409`).
+- `kortix connectors connect <slug>` prints the same form link.
+- To change the app or the store, add a new account. An account connected earlier with an admin token keeps working.
+
 ### Connect links inside a session
 
 A session starts even when a granted connector has no account. The first call is denied with `connector_not_connected` and a `connect_url`. The web transcript shows it as a **Connect** button. This works on `composio` connectors and on `mcp` connectors with one-click sign-in. The button opens the **Add account** dialog with the name and audience the agent suggests. By default the account is private. Kortix tells the agent the new account's name. For a shared account from a terminal, run `kortix connectors connect <slug> --owner project`.

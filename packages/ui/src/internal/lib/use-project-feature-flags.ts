@@ -36,7 +36,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
   const secretsEgress = useFeatureFlag(projectId, 'secrets_egress');
   const pooledProviderSecrets = useFeatureFlag(projectId, 'pooled_provider_secrets');
-  const piHarness = useFeatureFlag(projectId, 'pi_harness');
   const genui = useFeatureFlag(projectId, 'genui');
   const usRegion = useFeatureFlag(projectId, 'us_region');
   const eventTriggers = useFeatureFlag(projectId, 'event_triggers');
@@ -60,7 +59,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       warm_sessions: warmSessions.enabled,
       secrets_egress: secretsEgress.enabled,
       pooled_provider_secrets: pooledProviderSecrets.enabled,
-      pi_harness: piHarness.enabled,
       genui: genui.enabled,
       us_region: usRegion.enabled,
       event_triggers: eventTriggers.enabled,

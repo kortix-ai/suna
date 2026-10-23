@@ -87,6 +87,29 @@ export function languageAlternates(pathname: string): Record<string, string> {
   return languages;
 }
 
+// Open Graph names a locale as language_TERRITORY. The Portuguese copy is
+// Brazilian (arquivo, tela, celular).
+const OPEN_GRAPH_LOCALE: Record<Locale, string> = {
+  en: 'en_US',
+  de: 'de_DE',
+  it: 'it_IT',
+  zh: 'zh_CN',
+  ja: 'ja_JP',
+  pt: 'pt_BR',
+  fr: 'fr_FR',
+  es: 'es_ES',
+  sr: 'sr_RS',
+};
+
+/** `og:locale` for the page's own locale and `og:locale:alternate` for the
+ *  others, matching the hreflang set (KRTX-3254). */
+export function openGraphLocales(locale: Locale): { locale: string; alternateLocale: string[] } {
+  return {
+    locale: OPEN_GRAPH_LOCALE[locale],
+    alternateLocale: locales.filter((other) => other !== locale).map((other) => OPEN_GRAPH_LOCALE[other]),
+  };
+}
+
 // Every page renders under app/[locale]. The locale comes from that segment
 // (next/root-params via i18n/request.ts), not from a request header, so each
 // locale variant stays static and self-canonicalizes to its own URL.
@@ -117,6 +140,6 @@ export async function localizedMarketingMetadata(pathname: string): Promise<Meta
     // leaving the page with no <title> in the served HTML.
     ...(pathname === '/' ? { title: { absolute: record?.title ?? siteMetadata.title } } : {}),
     alternates: { canonical, languages: languageAlternates(pathname) },
-    openGraph: { ...base.openGraph, url: canonical },
+    openGraph: { ...base.openGraph, url: canonical, ...openGraphLocales(locale) },
   };
 }

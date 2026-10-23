@@ -6,7 +6,7 @@ import {
   projectSessions,
   sessionSandboxes,
 } from '@kortix/db';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { db } from './db';
 import { qualifiedColumn } from './sql-qualified-column';
@@ -20,9 +20,10 @@ export { shareIdFromPublicRef } from './public-share-ref';
  * workspace document. `transcript` named the session conversation; public
  * transcript sharing was removed (KRTX-2358) and no new transcript share can
  * be minted — the type keeps the name only because legacy rows still carry it
- * (every one of them revoked, see the revoke migration).
+ * (every one of them revoked, see the revoke migration). `response` is one
+ * assistant response, a stored snapshot (see "Response shares" below).
  */
-export type PublicShareResourceType = 'preview' | 'file' | 'transcript';
+export type PublicShareResourceType = 'preview' | 'file' | 'transcript' | 'response';
 
 export const STATIC_FILE_SHARE_PORT = 3211;
 // Both halves of the opencode port pair — a verified reload swaps which one is
@@ -194,7 +195,8 @@ export async function listPublicSharesForSession(sessionId: string) {
   const rows = await db
     .select()
     .from(projectSessionPublicShares)
-    .where(eq(projectSessionPublicShares.sessionId, sessionId))
+    // Response shares have their own per-turn routes; this list is previews and files.
+    .where(and(eq(projectSessionPublicShares.sessionId, sessionId), ne(projectSessionPublicShares.resourceType, 'response')))
     .orderBy(desc(projectSessionPublicShares.createdAt));
   // One lookup for the whole list: every share of a session names the same
   // sandbox, and without the external id every row would fall back to the path
@@ -393,7 +395,8 @@ export async function resolvePublicShare(token: string) {
     .where(eq(projectSessionPublicShares.tokenHash, publicShareTokenHash(token)))
     .limit(1);
 
-  if (!row) return { ok: false as const, status: 404, error: 'Share link not found' };
+  // A response share is a stored text snapshot. Its token never opens the sandbox proxy.
+  if (!row || row.resourceType === 'response') return { ok: false as const, status: 404, error: 'Share link not found' };
   if (row.revokedAt) return { ok: false as const, status: 410, error: 'Share link revoked' };
   if (row.expiresAt && row.expiresAt.getTime() <= Date.now()) {
     return { ok: false as const, status: 410, error: 'Share link expired' };
@@ -445,4 +448,108 @@ export async function resolvePublicShare(token: string) {
     return { ok: false as const, status: 400, error: 'Shared file path is missing' };
   }
   return { ok: true as const, row };
+}
+
+// ─── Response shares: one assistant response, as a stored snapshot ─────────────
+
+/**
+ * The published text of one assistant response (`resource_type = 'response'`).
+ * Built server-side from the session log (`projects/lib/response-snapshot.ts`),
+ * never from client-sent text: a client body would let anyone publish
+ * arbitrary text under a Kortix URL.
+ */
+export interface ResponseSnapshot {
+  title: string;
+  /** The prompt's text blocks; null unless the sharer chose `include_prompt`. */
+  prompt: string | null;
+  include_prompt: boolean;
+  markdown: string;
+  agent_name: string | null;
+  model_id: string | null;
+  responded_at: string;
+}
+
+/** The web page a response share opens at. */
+export function responseShareUrl(token: string): string {
+  return `${config.FRONTEND_URL.replace(/\/+$/, '')}/share/response/${token}`;
+}
+
+const liveResponse = (sessionId: string, turnId: string) =>
+  and(
+    eq(projectSessionPublicShares.sessionId, sessionId),
+    eq(projectSessionPublicShares.messageId, turnId),
+    eq(projectSessionPublicShares.resourceType, 'response'),
+    isNull(projectSessionPublicShares.revokedAt),
+  );
+
+/** The live share of one turn, or null. */
+export async function getLiveResponseShare(sessionId: string, turnId: string): Promise<PublicShareRow | null> {
+  const [row] = await db.select().from(projectSessionPublicShares).where(liveResponse(sessionId, turnId)).limit(1);
+  return row ?? null;
+}
+
+/**
+ * Creates the live share of one turn, or re-snapshots the existing one. The
+ * partial unique index keeps one live row per (session, turn), so a re-share
+ * keeps its token and URL.
+ */
+export async function upsertResponseShare(input: {
+  sessionId: string;
+  projectId: string;
+  accountId: string;
+  userId: string;
+  turnId: string;
+  snapshot: ResponseSnapshot;
+}): Promise<PublicShareRow> {
+  const shareId = randomUUID();
+  const now = new Date();
+  const [row] = await db
+    .insert(projectSessionPublicShares)
+    .values({
+      shareId,
+      tokenHash: publicShareTokenHash(publicShareToken(shareId)),
+      sessionId: input.sessionId,
+      projectId: input.projectId,
+      accountId: input.accountId,
+      createdBy: input.userId,
+      resourceType: 'response',
+      label: input.snapshot.title,
+      path: '/',
+      mode: 'view',
+      messageId: input.turnId,
+      snapshot: { ...input.snapshot },
+      snapshotAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [projectSessionPublicShares.sessionId, projectSessionPublicShares.messageId],
+      targetWhere: sql`${projectSessionPublicShares.resourceType} = 'response' and ${projectSessionPublicShares.revokedAt} is null`,
+      set: { snapshot: { ...input.snapshot }, snapshotAt: now, label: input.snapshot.title, updatedAt: now },
+    })
+    .returning();
+  return row!;
+}
+
+/** Revokes the live share of one turn. Idempotent. */
+export async function revokeResponseShare(sessionId: string, turnId: string): Promise<void> {
+  const now = new Date();
+  await db
+    .update(projectSessionPublicShares)
+    .set({ revokedAt: now, updatedAt: now })
+    .where(liveResponse(sessionId, turnId));
+}
+
+/** `TurnShare` on the wire. `liveMarkdown` null: the live response could not be read, so not stale. */
+export function serializeTurnShare(row: PublicShareRow, liveMarkdown: string | null) {
+  const token = publicShareToken(row.shareId);
+  const snapshot = row.snapshot as ResponseSnapshot | null;
+  return {
+    share_id: row.shareId,
+    turn_id: row.messageId ?? '',
+    token,
+    url: responseShareUrl(token),
+    created_at: row.createdAt.toISOString(),
+    snapshot_at: (row.snapshotAt ?? row.createdAt).toISOString(),
+    stale: liveMarkdown !== null && liveMarkdown !== (snapshot?.markdown ?? ''),
+    include_prompt: snapshot?.include_prompt === true,
+  };
 }

@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 885,
+  "count": 894,
   "routes": [
     {
       "method": "GET",
@@ -17,6 +17,10 @@
     {
       "method": "GET",
       "path": "/.well-known/openid-configuration"
+    },
+    {
+      "method": "GET",
+      "path": "/.well-known/security.txt"
     },
     {
       "method": "GET",
@@ -81,6 +85,10 @@
     {
       "method": "GET",
       "path": "/metrics"
+    },
+    {
+      "method": "GET",
+      "path": "/robots.txt"
     },
     {
       "method": "GET",
@@ -149,6 +157,10 @@
     {
       "method": "PUT",
       "path": "/scim/v2/accounts/:accountId/Users/:userId"
+    },
+    {
+      "method": "GET",
+      "path": "/sitemap.xml"
     },
     {
       "method": "POST",
@@ -1213,6 +1225,14 @@
     {
       "method": "GET",
       "path": "/v1/clients/mobile"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/app-form/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/connectors/app-form/:token"
     },
     {
       "method": "POST",
@@ -3031,6 +3051,18 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/turn"
     },
     {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/turns/:turnId/share"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/turns/:turnId/share"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/turns/:turnId/share"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/watch"
     },
@@ -3213,6 +3245,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/suna-migration/status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/public/responses/:token"
     },
     {
       "method": "POST",

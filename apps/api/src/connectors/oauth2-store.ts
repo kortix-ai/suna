@@ -39,6 +39,7 @@ import { validateAuthorizationIssuer } from './oauth2-issuer';
 import { oauthCompletionRematerializeInput } from './oauth2-rematerialize';
 import { kortixClientApplication } from './mcp-apps';
 import { registerOAuth2Client } from './oauth2-registration';
+import { allowedReturnUri } from './return-uri';
 import {
   type ProtectedResourceProvider,
   discoverProtectedResourceOAuth2,
@@ -375,20 +376,6 @@ export async function registerConnectionOAuth2Client(
   return application;
 }
 
-/** A return page the OAuth callback may send the browser to: the web app, or the
- *  mobile app's `kortix:` scheme. Anything else ends on the API's own "Connected" page. */
-function signInReturnUri(value: string | undefined): string | undefined {
-  if (!value) return undefined;
-  try {
-    const uri = new URL(value);
-    if (uri.protocol === 'kortix:') return uri.href;
-    const allowed = new Set([new URL(config.FRONTEND_URL).origin, 'https://kortix.com', 'https://dev.kortix.com', 'https://staging.kortix.com']);
-    return allowed.has(uri.origin) ? uri.href : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * Start a one-click sign-in for a connection server-side: discover the MCP
  * authorization chain, register Kortix as a client (or take Kortix's own
@@ -438,8 +425,8 @@ export async function startConnectionSignIn(input: {
     initiatedBy: input.initiatedBy,
     callbackUrl,
     ...(discovery.scopes.length ? { scopes: discovery.scopes } : {}),
-    successRedirectUri: signInReturnUri(input.redirects?.success),
-    errorRedirectUri: signInReturnUri(input.redirects?.error),
+    successRedirectUri: allowedReturnUri(input.redirects?.success),
+    errorRedirectUri: allowedReturnUri(input.redirects?.error),
   });
   return started.authorizationUrl;
 }

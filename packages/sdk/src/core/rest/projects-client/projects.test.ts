@@ -1009,7 +1009,6 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'reminders',
     'secrets_egress',
     'pooled_provider_secrets',
-    'pi_harness',
     'genui',
     'us_region',
     'event_triggers',

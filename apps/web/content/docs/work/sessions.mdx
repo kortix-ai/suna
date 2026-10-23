@@ -15,7 +15,7 @@ A session is one unit of agent work. It runs in its own sandbox, on its own git 
     Kortix boots a sandbox from the session's sandbox template, or from the platform default image when the project has none. See [Sandboxes & previews](/docs/work/runtime#the-image-and-templates).
   </Step>
   <Step title="The agent starts">
-    The sandbox clones the repo to `/workspace` and starts the harness, OpenCode or pi. The session status becomes `running`.
+    The sandbox clones the repo to `/workspace` and starts the harness, pi. The session status becomes `running`.
   </Step>
   <Step title="The agent works and pushes">
     The agent commits and pushes to its session branch. By default a session may push only its own branch.
@@ -65,7 +65,7 @@ kortix sessions new -p "Fix the failing test in src/billing and open a change re
 | `--agent <name>` | Run this agent. Default: the project's default agent. |
 | `--model <id>` | Run this model. See [Models](/docs/project/models). |
 | `--wait` | Return when the sandbox is ready, after at most about 5 minutes. |
-| `--connect` | Attach the OpenCode TUI when the session is ready. Implies `--wait`. |
+| `--connect` | Deprecated with OpenCode. Attach the OpenCode TUI when the session is ready; a new session runs pi, so it exits `1`. Implies `--wait`. |
 | `--with-file <path>` | Upload a local file to `/workspace/incoming/<name>` before the prompt runs. Repeatable. Implies `--wait`. |
 | `--label <label>` | Add a label. Repeatable. |
 | `--meta <key>=<value>` | Set a metadata key. Repeatable. |
@@ -190,7 +190,7 @@ See [Connectors](/docs/connect/connectors#policies-and-approvals).
 | Stored files: uploads and what the agent showed | `kortix sessions attachments <id> [--download <id> \| --all]` | — |
 | Live events | — | `GET .../sessions/<session_id>/events` |
 
-The transcript, `log`, `info`, `attachments`, and the events stream never wake a stopped sandbox. `kortix sessions log` reads the session log the server stores at the end of every turn; a running session adds the turn it runs now. A session with no stored log yet is read from its v1 transcript. `--json` prints the session log (`"schema": "kortix.session/2"`): the session record, `source` (`log`, or `v1` for a converted transcript) and `threads`, the root thread and each sub-agent's, with their newest messages and `has_more`. A running turn's messages the log does not hold yet carry `ext.kortix.data.provisional: true`. Read that key: the top-level `"provisional": true` they also carry is deprecated and goes in the next release. Without `--json`, the header names the sandbox status (`sandbox running`) and, for a running session, whether the agent is `working` or `idle`. `--schema v1` prints the old message array for one more release. To build a live view, use the SDK: see [Sessions from code](/docs/sdk/sessions#stream-events) and [React](/docs/sdk/react).
+The transcript, `log`, `info`, `attachments`, and the events stream never wake a stopped sandbox. `kortix sessions log` reads the session log the server stores at the end of every turn; a running session adds the turn it runs now. A session with no stored log yet is read from its v1 transcript. `--json` prints the session log (`"schema": "kortix.session/2"`): the session record, `source` (`log`, or `v1` for a converted transcript) and `threads`, the root thread and each sub-agent's, with their newest messages and `has_more`. A running turn's messages the log does not hold yet carry `ext.kortix.data.provisional: true`. Without `--json`, the header names the sandbox status (`sandbox running`) and, for a running session, whether the agent is `working` or `idle`. `--schema v1` prints the old message array for one more release. To build a live view, use the SDK: see [Sessions from code](/docs/sdk/sessions#stream-events) and [React](/docs/sdk/react).
 
 ## Stop, resume and delete
 
@@ -199,11 +199,11 @@ The transcript, `log`, `info`, `attachments`, and the events stream never wake a
 | Stop | `kortix sessions stop <id>` | The sandbox disk, the branch, the conversation | Running processes and memory. It ends the running turn. |
 | Start | `kortix sessions start <id> [--wait]` | Everything a stop keeps | Nothing. It resumes a stopped sandbox, or boots a missing one. |
 | Restart | `kortix sessions restart <id>` | Everything a stop keeps | Running processes and memory. It stops and starts the sandbox in place, or boots a new one when the sandbox is gone. |
-| Delete | `kortix sessions rm <id>...` | The pushed branch. For 30 days also the conversation and the stored files. | The sandbox and its public links. The session leaves the list. |
+| Delete | `kortix sessions rm <id>...` | For 30 days: the pushed branch, the conversation and the stored files. | The sandbox and its public links. The session leaves the list. After 30 days, everything the delete kept. |
 | Restore | `kortix sessions restore <id>` | Everything a delete keeps | Nothing. The session returns to the list, stopped. |
 | Recover | `kortix sessions recover <id>` | The branch and the conversation of a lost session | Nothing more: the lost sandbox is already gone. The next start boots a new one. |
 
-The session branch persists after a stop and after a delete. Only work the agent committed and pushed survives a delete: the sandbox and its uncommitted files are gone.
+The session branch persists after a stop. After a delete it persists for the 30-day restore window, then it is deleted. To keep the work, merge it before the window ends. A branch that heads an open change request is kept until the request is merged or closed. Only work the agent committed and pushed survives a delete: the sandbox and its uncommitted files are gone.
 
 ### Restore a deleted session
 
@@ -221,9 +221,9 @@ A restore needs the same permission as the delete: the session owner or a person
 | `200` | The session is back. |
 | `409` `session_not_deleted` | The session is not deleted. |
 | `409` `session_sandbox_removal_pending` | The provider has not confirmed that the old sandbox is gone, or the session was deleted while its first sandbox was starting and that sandbox can still arrive (up to 10 minutes). Try again in a minute. |
-| `410` `session_purged` | More than 30 days passed. Its conversation and files are deleted; only the branch remains. |
+| `410` `session_purged` | More than 30 days passed. Its conversation, files and branch are deleted. |
 
-Kortix deletes a deleted session's conversation 30 days after the delete, and its stored files 7 days after that.
+30 days after the delete, Kortix deletes the session's conversation, its stored files, the copies of its messages (model requests, notifications, voice turns) and its branch. A branch that heads an open change request stays until the request is merged or closed. Usage and audit records keep the session ID, with no content.
 
 A stopped session wakes when it gets:
 

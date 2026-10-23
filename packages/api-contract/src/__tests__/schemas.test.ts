@@ -142,7 +142,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       warm_sessions: false,
       secrets_egress: false,
       pooled_provider_secrets: false,
-      pi_harness: false,
       genui: false,
       us_region: false,
       event_triggers: false,
@@ -347,6 +346,13 @@ describe('ProjectSchema', () => {
     const experimental = projectFixture().experimental as Record<string, boolean>;
     expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, session_log: true } })).experimental.session_log).toBe(true);
     expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, session_log: false } }))).toThrow();
+  });
+
+  test('experimental carries the graduated pi_harness key only as a constant true', () => {
+    // Wire compat: the API still sends `pi_harness: true` for older SDK, CLI and mobile clients.
+    const experimental = projectFixture().experimental as Record<string, boolean>;
+    expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, pi_harness: true } })).experimental.pi_harness).toBe(true);
+    expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, pi_harness: false } }))).toThrow();
   });
 
   test('accepts a null icon', () => {
@@ -817,7 +823,6 @@ describe('envelopes', () => {
       'warm_sessions',
       'secrets_egress',
       'pooled_provider_secrets',
-      'pi_harness',
       'genui',
       'us_region',
       'event_triggers',

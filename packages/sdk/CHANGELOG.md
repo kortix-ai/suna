@@ -5,6 +5,30 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (share one assistant response)
+- `getTurnShare`, `shareTurn`, `unshareTurn` and the `TurnShare` type: the public share of one
+  turn's response (`/projects/:id/sessions/:sid/turns/:turnId/share`, GET / PUT / DELETE). The
+  server publishes the response text as a snapshot; `shareTurn` again refreshes it and keeps the URL.
+  `shareTurn(…, { include_prompt: true })` also publishes the prompt text (`TurnShare.include_prompt`).
+- `ProjectSession.can_publish_response`: whether the viewer may publish a response of the session
+  (a human owner or project manager who can read it). Single-session reads only; absent means unknown.
+- `getPublicResponse` and the `PublicResponse` type: the anonymous read of a shared response
+  (`GET /public/responses/:token`); `prompt` is null unless the sharer included it. Throws `HostBoundaryError` with `status` 404 or 410.
+
+### Changed (pi runs every new session; OpenCode is sunset)
+- `FeatureFlagKey` `'pi_harness'` is deprecated and no longer a flag: absent from `FEATURE_FLAG_KEYS`
+  and from the feature-flag catalog. The API sends `experimental.pi_harness: true` for every
+  project, and `useFeatureFlag(id, 'pi_harness')` reports `true`.
+  `KortixProject.experimental.pi_harness` is optional in the type.
+
+### Deprecated (OpenCode-only; pi does not serve them)
+- `useRuntimeConfig`, `useUpdateRuntimeConfig`, `configKeys` (`/global/config`), `useRuntimeSessionTodo`,
+  `logRuntimeEvent`, `RuntimeConfigIssue`, `RuntimeConfigInvalidError`, `getRuntimeConfigInvalidError`,
+  `isRuntimeConfigInvalidError`, `isShellMode`, `getShellModePart`, `AddMcpServerParams`,
+  `ProjectConfigSummary.open_code_raw`, and the frozen runtime types `Config`, `McpStatus`,
+  `McpLocalConfig`, `McpRemoteConfig`, `Todo`, `EventTodoUpdated`, `EventPty*`, `EventMcpToolsChanged`.
+  They keep working for sessions that still run OpenCode and are removed with OpenCode support.
+
 ### Changed (the session log is the only saved history, P8.2)
 - `FeatureFlagKey` `'session_log'` is no longer a flag: absent from `FEATURE_FLAG_KEYS` and from
   the feature-flag catalog. The API sends `experimental.session_log: true` for every project, so

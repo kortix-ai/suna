@@ -15,7 +15,7 @@
  * `requires: ["funded", "sandbox"]`; the local runner self-skips it cleanly
  * (planLocalFlows), and it runs for real against a deployed target.
  *
- * RUN-9, SESS-23 and SESS-24 run once per harness (`harnessFlow`) and read the
+ * RUN-9, SESS-23 and SESS-24 run on pi (`harnessFlow`) and read the
  * conversation through `GET .../transcript`: live while the session runs, the
  * durable mirror once it is stopped (`source` says which). The client Stop is
  * the runtime abort the web sends (`abortTurn`, fixtures/session-run.ts); no
@@ -347,7 +347,7 @@ harnessFlow(
     ],
   },
   async (ctx, harness) => {
-    const project = await ctx.fixtures.sharedSeededProject(harness);
+    const project = await ctx.fixtures.sharedSeededProject();
     const owner = ctx.client.as(ctx.P.OWNER);
     const markerA = `SESS24_SESSION_A_${Date.now()}`;
     const markerB = `SESS24_SESSION_B_${Date.now()}`;

@@ -156,6 +156,14 @@ type ComposioAdapter = {
     sessionId: string;
     connectedAccountId: string;
   }): Promise<string | null>;
+  /** A connection on the customer's own app (`composio-own-app.ts`). */
+  connectOwnApp?(input: {
+    connectionId: string;
+    toolkit: string;
+    store: string;
+    clientId: string;
+    clientSecret: string;
+  }): Promise<{ sessionId: string; connectedAccountId: string }>;
 };
 
 export async function loadComposioAdapter(): Promise<ComposioAdapter | null> {

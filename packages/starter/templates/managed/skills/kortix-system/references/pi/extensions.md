@@ -56,7 +56,6 @@ Declare npm packages in `kortix.yaml`. Each entry is the pi.dev install line
 with an exact version:
 
 ```yaml
-runtime: pi
 harnesses:
   pi:
     packages:

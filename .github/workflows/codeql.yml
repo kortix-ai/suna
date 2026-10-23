@@ -4,9 +4,12 @@ name: CodeQL
 # Findings appear under the repo's Security > Code scanning tab.
 
 on:
-  # One scan per release tree: the release pull request into `prod`. Not on a
-  # push, and not on the pull request into `staging`, which runs nothing
-  # (2026-10-16). `dev` is scanned weekly.
+  # One scan per release tree: the release pull request into `prod`, and the
+  # merge push into `prod` so prod-ref alerts close when the fix ships
+  # (2026-10-23, SOC 2 CC7.1). Not on the pull request into `staging`, which
+  # runs nothing (2026-10-16). `dev` is scanned weekly.
+  push:
+    branches: [prod]
   pull_request:
     branches: [prod]
   schedule:

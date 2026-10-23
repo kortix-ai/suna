@@ -2,7 +2,7 @@ import { afterAll, expect, test } from 'bun:test'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createPiModels } from '@/harness/pi/model'
+import { createPiModels, compactionSettings } from '@/harness/pi/model'
 
 // The image-baked catalog never holds a project's custom endpoint models.
 const dir = mkdtempSync(join(tmpdir(), 'pi-model-limits-'))
@@ -33,4 +33,23 @@ test('a dead picker keeps the baked catalog', async () => {
   picker = () => new Response('down', { status: 503 })
   const models = await createPiModels({ env: env(), defaultModelRef: 'kortix/baked/model' })
   expect(models.select('baked/model').model.contextWindow).toBe(64_000)
+})
+
+test('the compaction reserve is the model output limit, so the answer always has room', () => {
+  const overrides = compactionSettings({
+    'agent/big': { limit: { context: 128_000, output: 32_768 } },
+    'agent/long-answer': { limit: { context: 200_000, output: 64_000 } },
+    // A model that claims most of its window as output still compacts at half the window.
+    'agent/greedy': { limit: { context: 1_048_576, output: 943_718 } },
+    // pi's own default already covers a small output limit: no override.
+    'agent/small': { limit: { context: 64_000, output: 8_000 } },
+    // No output limit reported: pi caps the request at the window, so the reserve is capped too.
+    'agent/window-only': { limit: { context: 1_048_576 } },
+  }).modelOverrides
+  expect(overrides).toEqual({
+    'kortix/agent/big': { reserveTokens: 32_768 },
+    'kortix/agent/long-answer': { reserveTokens: 64_000 },
+    'kortix/agent/greedy': { reserveTokens: 524_288 },
+    'kortix/agent/window-only': { reserveTokens: 524_288 },
+  })
 })

@@ -4,7 +4,7 @@ import { InflightBudget } from '@kortix/llm-gateway';
 import { createApiClient } from './clients/api-client';
 import { registerHealth } from './health';
 
-function health(options: { down?: boolean; degraded?: boolean; authDown?: boolean } = {}) {
+function health(options: { down?: boolean; degraded?: boolean; authDown?: boolean; upstream?: { incidents: string[]; warnings: string[] } } = {}) {
   const api = createApiClient({
     baseUrl: 'http://api.test', token: 'synthetic-internal-token',
     fetchImpl: async (url, init) => {
@@ -20,7 +20,7 @@ function health(options: { down?: boolean; degraded?: boolean; authDown?: boolea
   const app = new Hono();
   registerHealth(app, api, new InflightBudget({ maxBytes: 1024, perRequestMaxBytes: 1024 }), null,
     () => ({ window_s: 300, requests: 20, errors: options.degraded ? 20 : 0, error_rate: options.degraded ? 1 : 0 }),
-    () => []);
+    () => options.upstream ?? { incidents: [], warnings: [] });
   return app;
 }
 
@@ -42,6 +42,16 @@ describe('gateway health disclosure boundary', () => {
     const response = await health({ degraded: true }).request('/health');
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ status: 'degraded' });
+  });
+  test('upstream capacity the fallbacks absorb stays healthy; failures after every fallback are degraded', async () => {
+    const warnings = ['upstream capacity: glm-5.3-flash 50% of 40 requests met an upstream failure (429x20) over 300s'];
+    const absorbed = health({ upstream: { incidents: [], warnings } });
+    expect(await (await absorbed.request('/health')).json()).toEqual({ status: 'healthy' });
+    const detailed = await (await absorbed.request('/health', { headers: { authorization: 'Bearer synthetic-valid-token' } })).json();
+    expect(detailed.incidents).toEqual([]);
+    expect(detailed.warnings).toEqual(warnings);
+    const failing = health({ upstream: { incidents: ['upstream failure: glm-5.3-flash 25% of 40 requests failed after every fallback over 300s'], warnings } });
+    expect(await (await failing.request('/health')).json()).toEqual({ status: 'degraded' });
   });
   test('valid gateway credentials retain the detailed checks', async () => {
     const response = await health().request('/health', { headers: { authorization: 'bEaReR synthetic-valid-token' } });

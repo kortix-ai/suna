@@ -38,6 +38,7 @@ export interface HarnessEnvironmentResult {
 
 export interface HarnessRefreshInput {
   syncBase: boolean
+  /** @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
   skipRestart: boolean
   /** Leave the checkout exactly as it is — no pull of the session branch. */
   skipRepo?: boolean
@@ -47,6 +48,7 @@ export interface HarnessRefreshInput {
    * session's own edits and commits, never moves a ref). The runtime reloads
    * its config when files changed, even with `skipRestart`, because it reads
    * those files only when it loads its config.
+   * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
    */
   syncBaseConfig?: boolean
   baseSha?: string
@@ -126,7 +128,10 @@ export interface HarnessConfigConvergeOptions {
   delayBeforeSwapMs?: number
 }
 
-/** Response of `POST /kortix/catalog/converge`. See `convergeManagedModelCatalog`. */
+/**
+ * Response of `POST /kortix/catalog/converge`. See `convergeManagedModelCatalog`.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export interface HarnessCatalogConvergeResult {
   /** false only for `outcome: 'no-gateway'` — every other outcome is a real
    *  answer, including 'declined', which the caller must still read the reason
@@ -156,6 +161,7 @@ export interface HarnessControlOperations {
    * everything the project's listing serves. One in-place config reload when
    * idle, never across a running turn. Absent on a runtime that keeps no
    * model list (pi). See `convergeManagedModelCatalog`.
+   * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
    */
   convergeCatalog?(options?: { model?: string }): Promise<HarnessCatalogConvergeResult>
   abort(): Promise<HarnessAbortResult>
