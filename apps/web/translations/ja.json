@@ -22518,7 +22518,7 @@
         },
         "links": {
           "title": "まだリンクはありません",
-          "description": "{place} で共有されたリンクがここに表示されます。"
+          "description": "{place} のスレッドで共有されたリンクがここに表示されます。固定すると、チャンネルのすべてのエージェントに渡されます。"
         },
         "triggers": {
           "title": "まだトリガーはありません",
@@ -22547,13 +22547,13 @@
       },
       "links": {
         "add": "リンクを追加",
-        "addDescription": "{place} にリンクを固定します。エージェントは各スレッドの開始時にチャンネルのリンクを読みます。",
+        "addDescription": "{place} にリンクを固定します。チャンネルのすべてのエージェントが固定されたリンクを受け取ります。",
         "urlLabel": "URL",
         "titleLabel": "タイトル（任意）",
         "titlePlaceholder": "内容",
         "invalidUrl": "http:// または https:// で始まるリンクを入力してください。",
         "addFailed": "リンクを追加できませんでした。もう一度お試しください。",
-        "limit": "このチャンネルにはすでに 200 件のリンクがあります。先に 1 件削除してください。",
+        "limit": "このチャンネルにはすでに 200 件の固定リンクがあります。先に 1 件の固定を解除してください。",
         "added": "リンクを追加しました",
         "addedBy": "{name} · {time}",
         "remove": "リンクを削除",
@@ -22561,7 +22561,22 @@
         "removeDescription": "{link} は全員の {place} から削除されます。",
         "removed": "リンクを削除しました",
         "removeFailed": "リンクを削除できませんでした。もう一度お試しください。",
-        "loadError": "リンクを読み込めませんでした。"
+        "loadError": "リンクを読み込めませんでした。",
+        "intro": "{place} のスレッドで共有されたリンク。リンクを固定すると、チャンネルのすべてのエージェントに渡されます。",
+        "pinnedTitle": "固定済み · エージェントが読むリンク",
+        "sharedTitle": "スレッドで共有",
+        "sharedNote": "メンバーのメッセージから自動で収集",
+        "pinnedBy": "{name} が固定",
+        "pinnedLabel": "固定済み",
+        "fromThread": "「{thread}」から",
+        "inThread": "「{thread}」で",
+        "sharedTimes": "{count} 回共有",
+        "pin": "固定",
+        "unpin": "固定解除",
+        "pinnedToast": "リンクを固定しました",
+        "unpinnedToast": "リンクの固定を解除しました",
+        "pinFailed": "リンクを固定できませんでした。もう一度お試しください。",
+        "unpinFailed": "リンクの固定を解除できませんでした。もう一度お試しください。"
       },
       "appsLoadError": "アプリを読み込めませんでした。",
       "triggers": {
@@ -22587,8 +22602,8 @@
     "folder": {
       "memory": "メモリ",
       "loadError": "このフォルダを読み込めませんでした",
-      "memoryNoteChannel": "{place} のエージェントが覚えていること。エージェントはスレッドの開始時に毎回これを読みます。",
-      "memoryNoteDm": "{agent} がこの DM から覚えていること。スレッドの開始時に毎回これを読みます。",
+      "memoryNoteChannel": "{place} のエージェントが覚えていること。エージェントはスレッドの開始時に毎回これを読むよう指示されています。",
+      "memoryNoteDm": "{agent} がこの DM から覚えていること。スレッドの開始時に毎回これを読むよう指示されています。",
       "off": {
         "title": "Drive をオンにする",
         "description": "{place} のファイルとメモリは Drive にあります。使うには Feature flags で Volumes をオンにしてください。",

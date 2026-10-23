@@ -1,12 +1,18 @@
 'use client';
 
 import { ApiError, type ProjectSpace, type ProjectSpaceLink } from '@kortix/sdk';
-import { useAddProjectSpaceLink, useProjectSpaceLinks, useRemoveProjectSpaceLink } from '@kortix/sdk/react';
-import { PlusIcon, TrashIcon } from '@phosphor-icons/react';
-import { useId, useState } from 'react';
+import {
+  useAddProjectSpaceLink,
+  usePinProjectSpaceLink,
+  useProjectSpaceLinks,
+  useRemoveProjectSpaceLink,
+} from '@kortix/sdk/react';
+import { PushPinIcon, TrashIcon } from '@phosphor-icons/react';
+import { useId, useMemo, useState } from 'react';
 
 import { useLocale, useTranslations } from '../../i18n';
 import { relativeTime } from '../../internal/lib/relative-time';
+import { cn } from '../../internal/lib/utils';
 import { Button } from '../../primitives/button';
 import { ConfirmDialog } from '../../primitives/confirm-dialog';
 import { EmptyState } from '../../primitives/empty-state';
@@ -25,19 +31,15 @@ import {
   ModalTitle,
 } from '../../primitives/modal';
 import { errorToast, successToast } from '../../primitives/toast';
+import { sessionDisplayLabel } from '../../session/actions/session-label';
 import { participantLabel } from '../../session/participants/session-participants';
+import { linkHost, linkTitle } from './space-link-label';
+import { dayKind } from './space-timeline';
+import { useSpaceThreads } from './space-timeline-view';
 
 /** The API's limits: an http(s) URL of at most 2,048 characters, a title of at most 200. */
 const URL_MAX = 2048;
 const TITLE_MAX = 200;
-
-function hostnameOf(url: string): string {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return url;
-  }
-}
 
 function isHttpUrl(value: string): boolean {
   try {
@@ -48,17 +50,85 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
-/** A channel's Links tab: the pinned links, newest first, and "Add link". */
+/** Unpinning a link no thread shared ("Add link" only) removes it. */
+function unpinRemoves(link: ProjectSpaceLink): boolean {
+  return link.source === 'manual' && link.session_id === null;
+}
+
+const personName = (name: string | null) => (name ? participantLabel({ name, email: null }) : '');
+
+type SharedDay = { key: string; label: string; links: ProjectSpaceLink[] };
+
+/**
+ * A channel's Links tab: "Pinned · agents read these" (added with "Add link",
+ * or shared and pinned by a member), then "Shared in threads" (collected from
+ * people's messages), by day. Pin and Unpin move a link between the two.
+ */
 export function SpaceLinks({ projectId, space, place }: { projectId: string; space: ProjectSpace; place: string }) {
   const t = useTranslations('spaces.view');
+  const locale = useLocale();
   const links = useProjectSpaceLinks(projectId, space.space_id);
+  // The space view already reads these; the thread titles come from that cache.
+  const threads = useSpaceThreads(projectId, space.space_id);
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<ProjectSpaceLink | null>(null);
   const remove = useRemoveProjectSpaceLink(projectId, space.space_id);
+  const pin = usePinProjectSpaceLink(projectId, space.space_id);
+
+  const threadTitles = useMemo(() => {
+    const titles = new Map<string, string>();
+    for (const session of threads.sessions) titles.set(session.session_id, sessionDisplayLabel(session));
+    return titles;
+  }, [threads.sessions]);
+
+  const { pinned, shared } = useMemo(() => {
+    const all = links.data ?? [];
+    const pinnedLinks = all
+      .filter((link) => link.pinned)
+      .sort((a, b) => Date.parse(b.pinned_at ?? b.created_at) - Date.parse(a.pinned_at ?? a.created_at));
+    const now = new Date();
+    const days: SharedDay[] = [];
+    for (const link of all) {
+      if (link.pinned) continue;
+      const date = new Date(link.last_shared_at);
+      const kind = dayKind(date, now);
+      const key = kind === 'earlier' ? date.toDateString() : kind;
+      let day = days.find((d) => d.key === key);
+      if (!day) {
+        const label =
+          kind === 'today'
+            ? t('today')
+            : kind === 'yesterday'
+              ? t('yesterday')
+              : date.toLocaleDateString(locale, { weekday: 'long', month: 'long', day: 'numeric' });
+        day = { key, label, links: [] };
+        days.push(day);
+      }
+      day.links.push(link);
+    }
+    return { pinned: pinnedLinks, shared: days };
+  }, [links.data, locale, t]);
+
+  const setPinned = (link: ProjectSpaceLink, next: boolean) => {
+    pin.mutate(
+      { linkId: link.link_id, pinned: next },
+      {
+        onSuccess: (result) =>
+          successToast(result === null ? t('links.removed') : next ? t('links.pinnedToast') : t('links.unpinnedToast')),
+        onError: (err) =>
+          errorToast(
+            err instanceof ApiError && err.code === 'link_limit'
+              ? t('links.limit')
+              : next
+                ? t('links.pinFailed')
+                : t('links.unpinFailed'),
+          ),
+      },
+    );
+  };
 
   const addButton = (
-    <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
-      <PlusIcon aria-hidden />
+    <Button variant="secondary" size="sm" className="shrink-0" onClick={() => setAdding(true)}>
       {t('links.add')}
     </Button>
   );
@@ -88,30 +158,70 @@ export function SpaceLinks({ projectId, space, place }: { projectId: string; spa
       />
     );
   } else {
+    const rowProps = { threadTitles, busy: pin.isPending };
     body = (
-      <div className="flex flex-col gap-3">
-        <div className="flex justify-end">{addButton}</div>
-        <ul className="flex flex-col">
-          {links.data.map((link) => (
-            <LinkRow key={link.link_id} link={link} onRemove={() => setRemoving(link)} />
-          ))}
-        </ul>
+      <div className="flex max-w-4xl flex-col gap-8">
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+          <p className="text-muted-foreground text-sm">{t('links.intro', { place })}</p>
+          {addButton}
+        </header>
+        {pinned.length > 0 ? (
+          <section aria-label={t('links.pinnedTitle')} className="flex flex-col gap-1">
+            <h3 className="text-muted-foreground flex items-center gap-1.5 pb-1.5 text-xs font-medium">
+              <PushPinIcon aria-hidden className="size-3.5" />
+              {t('links.pinnedTitle')}
+            </h3>
+            <ul className="flex flex-col gap-1">
+              {pinned.map((link) => (
+                <LinkRow
+                  key={link.link_id}
+                  link={link}
+                  {...rowProps}
+                  onPin={() => (unpinRemoves(link) ? setRemoving(link) : setPinned(link, false))}
+                />
+              ))}
+            </ul>
+          </section>
+        ) : null}
+        {shared.length > 0 ? (
+          <section aria-label={t('links.sharedTitle')} className="flex flex-col">
+            <div className="flex items-center justify-between gap-3 pb-1.5">
+              <h3 className="text-muted-foreground text-xs font-medium">{t('links.sharedTitle')}</h3>
+              <p className="text-muted-foreground text-xs max-sm:hidden">{t('links.sharedNote')}</p>
+            </div>
+            {shared.map((day, index) => (
+              <div key={day.key}>
+                <p className={cn('text-muted-foreground px-3 pb-1 text-xs', index === 0 ? 'pt-2.5' : 'pt-3.5')}>
+                  {day.label}
+                </p>
+                <ul className="flex flex-col">
+                  {day.links.map((link) => (
+                    <LinkRow
+                      key={link.link_id}
+                      link={link}
+                      {...rowProps}
+                      onPin={() => setPinned(link, true)}
+                      onRemove={link.can_delete ? () => setRemoving(link) : undefined}
+                    />
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </section>
+        ) : null}
       </div>
     );
   }
 
   return (
-    <div className={links.data?.length ? 'px-5 py-4' : 'px-5 py-16'}>
+    <div className={links.data?.length ? 'p-6' : 'px-5 py-16'}>
       {body}
       <AddLinkModal projectId={projectId} space={space} place={place} open={adding} onOpenChange={setAdding} />
       <ConfirmDialog
         open={!!removing}
         onOpenChange={(open) => !open && setRemoving(null)}
         title={t('links.removeTitle')}
-        description={t('links.removeDescription', {
-          link: removing ? removing.title || hostnameOf(removing.url) : '',
-          place,
-        })}
+        description={t('links.removeDescription', { link: removing ? linkTitle(removing) : '', place })}
         confirmLabel={t('links.remove')}
         confirmVariant="destructive"
         isPending={remove.isPending}
@@ -130,42 +240,102 @@ export function SpaceLinks({ projectId, space, place }: { projectId: string; spa
   );
 }
 
-function LinkRow({ link, onRemove }: { link: ProjectSpaceLink; onRemove: () => void }) {
+/**
+ * One link: a tile with the site's first letter, the title over the host, who
+ * shared or pinned it, and Pin / Unpin. The columns have fixed widths, so the
+ * rows line up. A shared row shows Pin on hover (always without hover).
+ */
+function LinkRow({
+  link,
+  threadTitles,
+  busy,
+  onPin,
+  onRemove,
+}: {
+  link: ProjectSpaceLink;
+  threadTitles: Map<string, string>;
+  busy: boolean;
+  onPin: () => void;
+  onRemove?: () => void;
+}) {
   const t = useTranslations('spaces.view');
   const locale = useLocale();
-  const name = link.created_by_name ? participantLabel({ name: link.created_by_name, email: null }) : '';
-  const time = relativeTime(link.created_at, locale);
+  const host = linkHost(link.url);
+  const thread = link.session_id ? threadTitles.get(link.session_id) : undefined;
+  let meta: string[];
+  if (link.pinned) {
+    const name = personName(link.pinned_by_name);
+    const when = thread
+      ? t('links.fromThread', { thread })
+      : new Date(link.pinned_at ?? link.created_at).toLocaleDateString(locale, { month: 'short', day: 'numeric' });
+    meta = [name ? t('links.pinnedBy', { name }) : t('links.pinnedLabel'), when];
+  } else {
+    meta = [
+      personName(link.created_by_name),
+      thread ? t('links.inThread', { thread }) : '',
+      link.share_count > 1
+        ? t('links.sharedTimes', { count: link.share_count })
+        : relativeTime(link.last_shared_at, locale),
+    ].filter(Boolean);
+  }
+  // Pinned rows sit on a lifted fill; shared rows lift on hover.
+  const reveal =
+    'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100 [@media(hover:none)]:opacity-100';
   return (
-    <li className="group hover:bg-hover relative -mx-2 flex items-center gap-3 rounded-md px-2 py-2">
-      <div className="min-w-0 flex-1">
+    <li
+      className={cn(
+        'group relative flex items-center gap-3 rounded-md px-3 py-2',
+        link.pinned ? 'bg-card' : 'hover:bg-hover',
+      )}
+    >
+      <span
+        aria-hidden
+        className="bg-muted text-muted-foreground flex size-6 shrink-0 items-center justify-center rounded-sm text-xs font-medium"
+      >
+        {host.charAt(0).toUpperCase()}
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <a
           // A row another writer stored with a non-http(s) URL is shown, never linked.
           href={isHttpUrl(link.url) ? link.url : undefined}
           target="_blank"
           rel="noopener noreferrer"
+          title={link.url}
           className="focus-visible:ring-ring block truncate text-sm font-medium outline-none after:absolute after:inset-0 after:rounded-md focus-visible:ring-2"
         >
-          {link.title || hostnameOf(link.url)}
+          {linkTitle(link)}
         </a>
-        <p className="text-muted-foreground truncate text-xs">{link.url}</p>
+        <p className="text-muted-foreground truncate text-xs">{host}</p>
       </div>
-      <span className="text-muted-foreground shrink-0 text-xs">
-        {name ? t('links.addedBy', { name, time }) : time}
-      </span>
-      {link.can_delete ? (
-        <Hint label={t('links.remove')}>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={t('links.remove')}
-            onClick={onRemove}
-            // Above the row's stretched link; shown on hover, keyboard focus, or always without hover (touch).
-            className="relative z-10 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 [@media(hover:none)]:opacity-100"
-          >
-            <TrashIcon aria-hidden />
-          </Button>
-        </Hint>
-      ) : null}
+      <p className="text-muted-foreground w-72 shrink-0 truncate text-xs max-sm:hidden">{meta.join(' · ')}</p>
+      <div className="relative z-10 flex w-20 shrink-0 items-center justify-end gap-1">
+        {link.pinned ? (
+          link.can_delete || !unpinRemoves(link) ? (
+            <Button variant="ghost" size="xs" className="text-muted-foreground" disabled={busy} onClick={onPin}>
+              {t('links.unpin')}
+            </Button>
+          ) : null
+        ) : (
+          <>
+            {onRemove ? (
+              <Hint label={t('links.remove')}>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={t('links.remove')}
+                  onClick={onRemove}
+                  className={reveal}
+                >
+                  <TrashIcon aria-hidden />
+                </Button>
+              </Hint>
+            ) : null}
+            <Button variant="secondary" size="xs" disabled={busy} onClick={onPin} className={reveal}>
+              {t('links.pin')}
+            </Button>
+          </>
+        )}
+      </div>
     </li>
   );
 }

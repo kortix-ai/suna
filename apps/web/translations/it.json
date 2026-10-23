@@ -22518,7 +22518,7 @@
         },
         "links": {
           "title": "Ancora nessun link",
-          "description": "I link condivisi in {place} compaiono qui."
+          "description": "I link condivisi nei thread di {place} compaiono qui. Fissane uno per darlo a ogni agente del canale."
         },
         "triggers": {
           "title": "Ancora nessun trigger",
@@ -22547,13 +22547,13 @@
       },
       "links": {
         "add": "Aggiungi link",
-        "addDescription": "Fissa un link in {place}. Gli agenti leggono i link del canale all’inizio di ogni thread.",
+        "addDescription": "Fissa un link in {place}. Ogni agente del canale riceve i link fissati.",
         "urlLabel": "URL",
         "titleLabel": "Titolo (facoltativo)",
         "titlePlaceholder": "Di cosa si tratta",
         "invalidUrl": "Inserisci un link che inizia con http:// o https://.",
         "addFailed": "Impossibile aggiungere il link. Riprova.",
-        "limit": "Questo canale ha già 200 link. Rimuovine prima uno.",
+        "limit": "Questo canale ha già 200 link fissati. Sbloccane prima uno.",
         "added": "Link aggiunto",
         "addedBy": "{name} · {time}",
         "remove": "Rimuovi link",
@@ -22561,7 +22561,22 @@
         "removeDescription": "{link} viene rimosso da {place} per tutti.",
         "removed": "Link rimosso",
         "removeFailed": "Impossibile rimuovere il link. Riprova.",
-        "loadError": "Impossibile caricare i link."
+        "loadError": "Impossibile caricare i link.",
+        "intro": "Link condivisi nei thread di {place}. Fissa un link per darlo a ogni agente del canale.",
+        "pinnedTitle": "Fissati · gli agenti li leggono",
+        "sharedTitle": "Condivisi nei thread",
+        "sharedNote": "Raccolti automaticamente dai messaggi delle persone",
+        "pinnedBy": "Fissato da {name}",
+        "pinnedLabel": "Fissato",
+        "fromThread": "da “{thread}”",
+        "inThread": "in “{thread}”",
+        "sharedTimes": "condiviso {count}×",
+        "pin": "Fissa",
+        "unpin": "Sblocca",
+        "pinnedToast": "Link fissato",
+        "unpinnedToast": "Link sbloccato",
+        "pinFailed": "Impossibile fissare il link. Riprova.",
+        "unpinFailed": "Impossibile sbloccare il link. Riprova."
       },
       "appsLoadError": "Impossibile caricare le app.",
       "triggers": {
@@ -22587,8 +22602,8 @@
     "folder": {
       "memory": "Memoria",
       "loadError": "Impossibile caricare questa cartella",
-      "memoryNoteChannel": "Ciò che ricordano gli agenti in {place}. Gli agenti lo leggono all'inizio di ogni thread.",
-      "memoryNoteDm": "Ciò che {agent} ricorda di questo DM. Lo legge all'inizio di ogni thread.",
+      "memoryNoteChannel": "Ciò che ricordano gli agenti in {place}. Gli agenti hanno l’istruzione di leggerlo all’inizio di ogni thread.",
+      "memoryNoteDm": "Ciò che {agent} ricorda di questo DM. Ha l’istruzione di leggerlo all’inizio di ogni thread.",
       "off": {
         "title": "Attiva Drive",
         "description": "File e memoria di {place} sono in Drive. Attiva Volumes in Feature flags per usarli.",

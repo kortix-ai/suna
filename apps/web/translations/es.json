@@ -22518,7 +22518,7 @@
         },
         "links": {
           "title": "Aún no hay enlaces",
-          "description": "Los enlaces compartidos en {place} aparecen aquí."
+          "description": "Los enlaces que se comparten en los hilos de {place} aparecen aquí. Fija uno para dárselo a todos los agentes del canal."
         },
         "triggers": {
           "title": "Aún no hay activadores",
@@ -22547,13 +22547,13 @@
       },
       "links": {
         "add": "Añadir enlace",
-        "addDescription": "Fija un enlace en {place}. Los agentes leen los enlaces del canal al inicio de cada hilo.",
+        "addDescription": "Fija un enlace en {place}. Todos los agentes del canal reciben sus enlaces fijados.",
         "urlLabel": "URL",
         "titleLabel": "Título (opcional)",
         "titlePlaceholder": "Qué es",
         "invalidUrl": "Introduce un enlace que empiece por http:// o https://.",
         "addFailed": "No se pudo añadir el enlace. Inténtalo de nuevo.",
-        "limit": "Este canal ya tiene 200 enlaces. Quita uno primero.",
+        "limit": "Este canal ya tiene 200 enlaces fijados. Desfija uno primero.",
         "added": "Enlace añadido",
         "addedBy": "{name} · {time}",
         "remove": "Quitar enlace",
@@ -22561,7 +22561,22 @@
         "removeDescription": "{link} se quita de {place} para todos.",
         "removed": "Enlace quitado",
         "removeFailed": "No se pudo quitar el enlace. Inténtalo de nuevo.",
-        "loadError": "No se pudieron cargar los enlaces."
+        "loadError": "No se pudieron cargar los enlaces.",
+        "intro": "Enlaces compartidos en los hilos de {place}. Fija un enlace para dárselo a todos los agentes del canal.",
+        "pinnedTitle": "Fijados · los agentes los leen",
+        "sharedTitle": "Compartidos en hilos",
+        "sharedNote": "Recopilados automáticamente de los mensajes de las personas",
+        "pinnedBy": "Fijado por {name}",
+        "pinnedLabel": "Fijado",
+        "fromThread": "de «{thread}»",
+        "inThread": "en «{thread}»",
+        "sharedTimes": "compartido {count}×",
+        "pin": "Fijar",
+        "unpin": "Desfijar",
+        "pinnedToast": "Enlace fijado",
+        "unpinnedToast": "Enlace desfijado",
+        "pinFailed": "No se pudo fijar el enlace. Inténtalo de nuevo.",
+        "unpinFailed": "No se pudo desfijar el enlace. Inténtalo de nuevo."
       },
       "appsLoadError": "No se pudieron cargar las apps.",
       "triggers": {
@@ -22587,8 +22602,8 @@
     "folder": {
       "memory": "Memoria",
       "loadError": "No se pudo cargar esta carpeta",
-      "memoryNoteChannel": "Lo que recuerdan los agentes en {place}. Los agentes lo leen al inicio de cada hilo.",
-      "memoryNoteDm": "Lo que {agent} recuerda de este DM. Lo lee al inicio de cada hilo.",
+      "memoryNoteChannel": "Lo que recuerdan los agentes de {place}. Se les indica que lo lean al inicio de cada hilo.",
+      "memoryNoteDm": "Lo que {agent} recuerda de este DM. Se le indica que lo lea al inicio de cada hilo.",
       "off": {
         "title": "Activa Drive",
         "description": "Los archivos y la memoria de {place} están en Drive. Activa Volumes en Feature flags para usarlos.",

@@ -22518,7 +22518,7 @@
         },
         "links": {
           "title": "还没有链接",
-          "description": "在 {place} 中分享的链接会显示在这里。"
+          "description": "在 {place} 的线程中分享的链接会显示在这里。固定一个链接即可将其提供给频道中的每个智能体。"
         },
         "triggers": {
           "title": "还没有触发器",
@@ -22547,13 +22547,13 @@
       },
       "links": {
         "add": "添加链接",
-        "addDescription": "在 {place} 中固定一个链接。智能体会在每个线程开始时读取频道的链接。",
+        "addDescription": "将链接固定到 {place}。频道中的每个智能体都会获得已固定的链接。",
         "urlLabel": "URL",
         "titleLabel": "标题（可选）",
         "titlePlaceholder": "它是什么",
         "invalidUrl": "请输入以 http:// 或 https:// 开头的链接。",
         "addFailed": "无法添加链接，请重试。",
-        "limit": "此频道已有 200 个链接。请先移除一个。",
+        "limit": "此频道已固定 200 个链接。请先取消固定一个。",
         "added": "已添加链接",
         "addedBy": "{name} · {time}",
         "remove": "移除链接",
@@ -22561,7 +22561,22 @@
         "removeDescription": "{link} 将从 {place} 中移除，对所有人生效。",
         "removed": "已移除链接",
         "removeFailed": "无法移除链接，请重试。",
-        "loadError": "无法加载链接。"
+        "loadError": "无法加载链接。",
+        "intro": "在 {place} 的线程中分享的链接。固定一个链接即可将其提供给频道中的每个智能体。",
+        "pinnedTitle": "已固定 · 智能体会阅读",
+        "sharedTitle": "线程中分享的链接",
+        "sharedNote": "从成员的消息中自动收集",
+        "pinnedBy": "{name} 固定",
+        "pinnedLabel": "已固定",
+        "fromThread": "来自“{thread}”",
+        "inThread": "在“{thread}”中",
+        "sharedTimes": "分享 {count} 次",
+        "pin": "固定",
+        "unpin": "取消固定",
+        "pinnedToast": "已固定链接",
+        "unpinnedToast": "已取消固定链接",
+        "pinFailed": "无法固定链接，请重试。",
+        "unpinFailed": "无法取消固定链接，请重试。"
       },
       "appsLoadError": "无法加载应用。",
       "triggers": {
@@ -22587,8 +22602,8 @@
     "folder": {
       "memory": "记忆",
       "loadError": "无法加载此文件夹",
-      "memoryNoteChannel": "{place} 中的智能体记住的内容。智能体在每个话题开始时都会读取。",
-      "memoryNoteDm": "{agent} 从这个私信中记住的内容。它在每个话题开始时都会读取。",
+      "memoryNoteChannel": "{place} 中的智能体记住的内容。智能体会被要求在每个线程开始时阅读这些内容。",
+      "memoryNoteDm": "{agent} 在此私信中记住的内容。它会被要求在每个线程开始时阅读这些内容。",
       "off": {
         "title": "开启 Drive",
         "description": "{place} 的文件和记忆保存在 Drive 中。在 Feature flags 中开启 Volumes 即可使用。",

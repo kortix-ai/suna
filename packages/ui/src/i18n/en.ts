@@ -7351,7 +7351,7 @@ const catalog = {
         },
         "links": {
           "title": "No links yet",
-          "description": "Links shared in {place} show up here."
+          "description": "Links people share in {place} threads show up here. Pin one to give it to every agent in the channel."
         },
         "triggers": {
           "title": "No triggers yet",
@@ -7380,13 +7380,13 @@ const catalog = {
       },
       "links": {
         "add": "Add link",
-        "addDescription": "Pin a link to {place}. Agents read the channel's links at the start of every thread.",
+        "addDescription": "Pin a link to {place}. Every agent in the channel gets its pinned links.",
         "urlLabel": "URL",
         "titleLabel": "Title (optional)",
         "titlePlaceholder": "What it is",
         "invalidUrl": "Enter a link that starts with http:// or https://.",
         "addFailed": "Could not add the link. Try again.",
-        "limit": "This channel already has 200 links. Remove one first.",
+        "limit": "This channel already pins 200 links. Unpin one first.",
         "added": "Link added",
         "addedBy": "{name} · {time}",
         "remove": "Remove link",
@@ -7394,7 +7394,22 @@ const catalog = {
         "removeDescription": "{link} is removed from {place} for everyone.",
         "removed": "Link removed",
         "removeFailed": "Could not remove the link. Try again.",
-        "loadError": "Could not load the links."
+        "loadError": "Could not load the links.",
+        "intro": "Links people shared in {place} threads. Pin a link to give it to every agent in the channel.",
+        "pinnedTitle": "Pinned · agents read these",
+        "sharedTitle": "Shared in threads",
+        "sharedNote": "Collected automatically from people’s messages",
+        "pinnedBy": "Pinned by {name}",
+        "pinnedLabel": "Pinned",
+        "fromThread": "from “{thread}”",
+        "inThread": "in “{thread}”",
+        "sharedTimes": "shared {count}×",
+        "pin": "Pin",
+        "unpin": "Unpin",
+        "pinnedToast": "Link pinned",
+        "unpinnedToast": "Link unpinned",
+        "pinFailed": "Could not pin the link. Try again.",
+        "unpinFailed": "Could not unpin the link. Try again."
       },
       "appsLoadError": "Could not load the apps.",
       "triggers": {

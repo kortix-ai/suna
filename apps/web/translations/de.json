@@ -22518,7 +22518,7 @@
         },
         "links": {
           "title": "Noch keine Links",
-          "description": "Links, die in {place} geteilt werden, erscheinen hier."
+          "description": "Links, die in Threads von {place} geteilt werden, erscheinen hier. Hefte einen an, damit jeder Agent im Kanal ihn erhält."
         },
         "triggers": {
           "title": "Noch keine Trigger",
@@ -22547,13 +22547,13 @@
       },
       "links": {
         "add": "Link hinzufügen",
-        "addDescription": "Hefte einen Link an {place}. Agents lesen die Links des Kanals zu Beginn jedes Threads.",
+        "addDescription": "Hefte einen Link an {place}. Jeder Agent im Kanal erhält die angehefteten Links.",
         "urlLabel": "URL",
         "titleLabel": "Titel (optional)",
         "titlePlaceholder": "Worum es geht",
         "invalidUrl": "Gib einen Link ein, der mit http:// oder https:// beginnt.",
         "addFailed": "Der Link konnte nicht hinzugefügt werden. Versuche es erneut.",
-        "limit": "Dieser Kanal hat bereits 200 Links. Entferne zuerst einen.",
+        "limit": "Dieser Kanal hat bereits 200 angeheftete Links. Löse zuerst einen.",
         "added": "Link hinzugefügt",
         "addedBy": "{name} · {time}",
         "remove": "Link entfernen",
@@ -22561,7 +22561,22 @@
         "removeDescription": "{link} wird für alle aus {place} entfernt.",
         "removed": "Link entfernt",
         "removeFailed": "Der Link konnte nicht entfernt werden. Versuche es erneut.",
-        "loadError": "Die Links konnten nicht geladen werden."
+        "loadError": "Die Links konnten nicht geladen werden.",
+        "intro": "Links, die in Threads von {place} geteilt wurden. Hefte einen Link an, damit jeder Agent im Kanal ihn erhält.",
+        "pinnedTitle": "Angeheftet · Agenten lesen diese",
+        "sharedTitle": "In Threads geteilt",
+        "sharedNote": "Automatisch aus Nachrichten von Personen gesammelt",
+        "pinnedBy": "Angeheftet von {name}",
+        "pinnedLabel": "Angeheftet",
+        "fromThread": "aus „{thread}“",
+        "inThread": "in „{thread}“",
+        "sharedTimes": "{count}× geteilt",
+        "pin": "Anheften",
+        "unpin": "Lösen",
+        "pinnedToast": "Link angeheftet",
+        "unpinnedToast": "Link gelöst",
+        "pinFailed": "Der Link konnte nicht angeheftet werden. Versuche es erneut.",
+        "unpinFailed": "Der Link konnte nicht gelöst werden. Versuche es erneut."
       },
       "appsLoadError": "Die Apps konnten nicht geladen werden.",
       "triggers": {
@@ -22587,8 +22602,8 @@
     "folder": {
       "memory": "Speicher",
       "loadError": "Dieser Ordner konnte nicht geladen werden",
-      "memoryNoteChannel": "Was sich Agenten in {place} merken. Agenten lesen das zu Beginn jedes Threads.",
-      "memoryNoteDm": "Was sich {agent} aus dieser DM merkt. Der Agent liest das zu Beginn jedes Threads.",
+      "memoryNoteChannel": "Was sich Agenten in {place} merken. Agenten werden angewiesen, das zu Beginn jedes Threads zu lesen.",
+      "memoryNoteDm": "Was sich {agent} aus dieser DM merkt. Der Agent wird angewiesen, das zu Beginn jedes Threads zu lesen.",
       "off": {
         "title": "Drive aktivieren",
         "description": "Dateien und Speicher für {place} liegen in Drive. Aktiviere Volumes unter Feature-Flags, um sie zu nutzen.",
