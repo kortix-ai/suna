@@ -291,10 +291,15 @@ async function selectMergeBatch(after: BackfillState['after']) {
 
 /** Per session of `ids`: its mirror messages the log lacks by id, by `content` (`kortix.mirror_messages_missing_from_log`). */
 async function contentBySession(ids: string[]): Promise<Map<string, Record<'missing' | 'present' | 'empty', number>>> {
-  const rows = await db.execute<{ session_id: string; content: 'missing' | 'present' | 'empty'; n: number }>(sql`
-    SELECT session_id, content, count(*)::int AS n
-      FROM kortix.mirror_messages_missing_from_log(${`{${ids.map((id) => JSON.stringify(id)).join(',')}}`}::text[])
-     GROUP BY 1, 2`);
+  // A batch reads every block of its sessions' logs: 31 s on prod's 50 largest mirrors, over the
+  // pool's 25 s. Timed out, the tick fails before it saves the cursor and repeats the same batch.
+  const rows = await db.transaction(async (tx) => {
+    await tx.execute(sql`set local statement_timeout = '2min'`);
+    return tx.execute<{ session_id: string; content: 'missing' | 'present' | 'empty'; n: number }>(sql`
+      SELECT session_id, content, count(*)::int AS n
+        FROM kortix.mirror_messages_missing_from_log(${`{${ids.map((id) => JSON.stringify(id)).join(',')}}`}::text[])
+       GROUP BY 1, 2`);
+  });
   const out = new Map<string, Record<'missing' | 'present' | 'empty', number>>();
   for (const r of rows) {
     const one = out.get(r.session_id) ?? { missing: 0, present: 0, empty: 0 };

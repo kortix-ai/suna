@@ -69,6 +69,25 @@ flow("SYS-10", { domain: "system", tags: ["smoke"], routes: ["GET /v1/clients/mo
   });
 });
 
+flow("SYS-11", { domain: "system", tags: ["smoke"], routes: ["GET /.well-known/security.txt", "GET /robots.txt", "GET /sitemap.xml"] }, async (ctx) => {
+  await ctx.step("GET /.well-known/security.txt (public) → 200 text naming the security contact and a future Expires", async () => {
+    const r = await ctx.client.get("/.well-known/security.txt");
+    r.status(200).headerEquals("content-type", /text\/plain/);
+    const expires = /^Expires: (.+)$/m.exec(r.text())?.[1];
+    if (!r.text().includes("Contact: mailto:security@kortix.com") || !expires || Date.parse(expires) <= Date.now()) throw new Error(`security.txt: ${r.text()}`);
+  });
+  await ctx.step("GET /robots.txt (public) → 200 text that disallows every crawler path", async () => {
+    const r = await ctx.client.get("/robots.txt");
+    r.status(200).headerEquals("content-type", /text\/plain/);
+    if (!/^User-agent: \*$/m.test(r.text()) || !/^Disallow: \/$/m.test(r.text())) throw new Error(`robots.txt: ${r.text()}`);
+  });
+  await ctx.step("GET /sitemap.xml (public) → 200 XML with an empty urlset", async () => {
+    const r = await ctx.client.get("/sitemap.xml");
+    r.status(200).headerEquals("content-type", /application\/xml/);
+    if (!r.text().includes('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"/>')) throw new Error(`sitemap.xml: ${r.text()}`);
+  });
+});
+
 flow("DOCS-1", { domain: "system", tags: ["smoke"], routes: ["GET /v1/openapi.json", "GET /v1/docs"] }, async (ctx) => {
   await ctx.step("GET /v1/openapi.json (public) → 200 OpenAPI 3.1 spec", async () => {
     const r = await ctx.client.get("/v1/openapi.json");

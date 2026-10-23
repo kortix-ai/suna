@@ -105,6 +105,7 @@
     "./internal/billing/use-transactions",
     "./internal/branding/branding-provider",
     "./internal/capture/use-capture-area",
+    "./internal/components/agent-mark",
     "./internal/components/hover-prefetch-link",
     "./internal/components/mobile-store-qr",
     "./internal/desktop/desktop-back-button",

@@ -18175,6 +18175,7 @@
       "texteaca91e7a784": "Zu diesem Projekt eingeladen",
       "texteacdf25c58f8": "Integrierte Rollen – in jedem Tarif",
       "textead07c84baac": "Änderungsprotokoll",
+      "text19e6841a618f": "Was jede Woche in Kortix ausgeliefert wurde, direkt aus unseren Produktions-Releases.",
       "texteae96e02bbc4": "Symbole",
       "texteaef0b00e1d6": "Zum Anzeigen herunterladen",
       "texteaf72e534b81": "Eine Tool-Namen-Regel kann nur fragen: „Darf der Agent E-Mails senden?“ — was selten die eigentliche Frage ist. Eine Bedingung verweist auf einen Wert innerhalb des Aufrufs und gleicht ihn mit einem Glob oder regulären Ausdruck ab. So kann eine Regel das Senden an deine eigene Domain erlauben und alles andere stoppen. Ein Listenargument wird nur akzeptiert, wenn jeder Eintrag die Prüfung besteht. Ein einziger Empfänger außerhalb der Liste genügt also, um den Aufruf anzuhalten. Alles, was die Regel nicht entscheiden kann, wird in Richtung weniger Zugriff aufgelöst, niemals in Richtung mehr.",

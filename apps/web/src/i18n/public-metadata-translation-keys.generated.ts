@@ -65,6 +65,8 @@ export const PUBLIC_METADATA_TRANSLATION_KEYS: Readonly<Record<string, string>> 
     'textad70f35eaccc',
   'Field notes on building, running, and governing AI agents that do real work — from the team building Kortix.':
     'text66b6392a2418',
+  'What shipped in Kortix each week, straight from our production releases.':
+    'text19e6841a618f',
   "Contact sales and book a demo": 'text228359b08506',
   "About": 'text4efca0d10c5f',
   "Legal": 'text4787eaf7c938',

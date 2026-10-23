@@ -18175,6 +18175,7 @@
       "texteaca91e7a784": "Convidado para este projeto",
       "texteacdf25c58f8": "Funções integradas — em todos os planos",
       "textead07c84baac": "Registro de alterações",
+      "text19e6841a618f": "O que foi lançado no Kortix a cada semana, direto das nossas versões de produção.",
       "texteae96e02bbc4": "Ícones",
       "texteaef0b00e1d6": "Baixe para visualizar",
       "texteaf72e534b81": "Uma regra baseada no nome da ferramenta só pode perguntar “o agente pode enviar email?” — o que raramente é a pergunta certa. Uma condição aponta para um valor dentro da chamada e o compara com um glob ou uma expressão regular, permitindo autorizar envios para seu próprio domínio e bloquear todo o resto. Um argumento de lista só passa quando todas as entradas passam, então um único destinatário fora da lista já basta para reter a chamada. Tudo que a regra não consegue decidir é resolvido para menos acesso, nunca mais.",

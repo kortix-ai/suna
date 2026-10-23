@@ -18175,6 +18175,7 @@
       "texteaca91e7a784": "Invitato a questo progetto",
       "texteacdf25c58f8": "Ruoli integrati, per ogni piano",
       "textead07c84baac": "Registro delle modifiche",
+      "text19e6841a618f": "Cosa è stato rilasciato in Kortix ogni settimana, direttamente dalle nostre release di produzione.",
       "texteae96e02bbc4": "Icone",
       "texteaef0b00e1d6": "Scarica per visualizzare",
       "texteaf72e534b81": "Una regola basata sul nome dello strumento può chiedere solo “l’agente può inviare email?” — che raramente è la domanda giusta. Una condizione individua un valore nella chiamata e lo confronta con un glob o una regular expression, così una regola può consentire l’invio al tuo dominio e fermare tutto il resto. Un argomento elenco passa solo quando ogni elemento passa, quindi un solo destinatario fuori elenco basta a sospendere la chiamata. Se la regola non può decidere, l’esito è sempre quello con meno accesso, mai quello con più accesso.",
