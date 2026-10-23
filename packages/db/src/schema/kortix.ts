@@ -1332,6 +1332,8 @@ export const memoryPageVersions = kortixSchema.table(
       .notNull()
       .references(() => memoryLayers.layerId, { onDelete: 'cascade' }),
     versionNo: integer('version_no').notNull(),
+    /** Shared by every version row one change writes (both pages of a `file_note`); Undo restores them all. */
+    changeId: uuid('change_id').notNull(),
     type: memoryPageTypeEnum('type').notNull(),
     title: text('title').notNull(),
     summary: text('summary').notNull(),
@@ -1358,6 +1360,7 @@ export const memoryPageVersions = kortixSchema.table(
     }).onDelete('set null'),
     uniqueIndex('uniq_memory_page_versions_page_no').on(table.pageId, table.versionNo),
     index('idx_memory_page_versions_layer_created').on(table.layerId, table.createdAt.desc()),
+    index('idx_memory_page_versions_change').on(table.changeId),
     // Serves the source_session_id FK: a session delete sets null without a scan.
     index('idx_memory_page_versions_session')
       .on(table.sourceSessionId)
@@ -1398,7 +1401,7 @@ export const memoryPageSources = kortixSchema.table(
 /** One entry of `memory_thread_loads.layers`. */
 export interface MemoryThreadLoadLayer {
   layer_id: string;
-  scope: 'company' | 'channel' | 'dm';
+  scope: (typeof memoryLayerScopeEnum.enumValues)[number];
   name: string;
   version: number;
   page_ids: string[];
