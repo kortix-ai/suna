@@ -220,15 +220,24 @@ if [ "${KORTIX_DRIVES:-}" = "1" ]; then
   start_drive_owner || true
 fi
 
-# /workspace is a Platinum volume (KORTIX_WORKSPACE_VOLUME=1): an ext4 root
-# whose empty, root-only `lost+found` the runtime user can neither list nor
-# remove, so a checkout swap into /workspace would fail on it. Root removes it
-# while it is empty. The loop below hands the mountpoint to the runtime user.
+# /workspace is a Platinum volume (KORTIX_WORKSPACE_VOLUME=1), the only copy
+# of the session's files. Platinum mounts it before the guest runs; a box whose
+# mount is missing must not start on its own empty disk (kortixd would fill it
+# and the session would continue without its files), so wait out a late mount
+# for 60 s, then fail the boot. The ext4 root has an empty, root-only
+# `lost+found` the runtime user can neither list nor remove, so a checkout swap
+# into /workspace would fail on it: root removes it while it is empty. The loop
+# below hands the mountpoint to the runtime user.
 if [ "${KORTIX_WORKSPACE_VOLUME:-}" = "1" ]; then
+  for _ in $(seq 1 240); do mountpoint -q "${WORKSPACE}" && break; sleep 0.25; done
+  if ! mountpoint -q "${WORKSPACE}"; then
+    echo "[entrypoint] ${WORKSPACE} is not mounted, and this session's files are on its volume: not starting" >&2
+    exit 1
+  fi
   if [ "$(id -u)" -eq 0 ]; then
-    rmdir "${KORTIX_WORKSPACE:-/workspace}/lost+found" 2>/dev/null || true
+    rmdir "${WORKSPACE}/lost+found" 2>/dev/null || true
   else
-    sudo -n rmdir "${KORTIX_WORKSPACE:-/workspace}/lost+found" 2>/dev/null || true
+    sudo -n rmdir "${WORKSPACE}/lost+found" 2>/dev/null || true
   fi
 fi
 
