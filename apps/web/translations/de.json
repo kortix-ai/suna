@@ -1923,8 +1923,8 @@
     }
   },
   "sessionDelete": {
-    "description": "Löscht <name>{label}</name> und entfernt ihre Sandbox. Du kannst sie {days} Tage lang unter „Zuletzt gelöscht“ wiederherstellen. Danach werden ihre Nachrichten und Dateien gelöscht. Ihr Branch bleibt erhalten.",
-    "bulkDescription": "Löscht jede ausgewählte Sitzung und entfernt ihre Sandbox. Du kannst jede {days} Tage lang unter „Zuletzt gelöscht“ wiederherstellen. Danach werden ihre Nachrichten und Dateien gelöscht. Ihr Branch bleibt erhalten.",
+    "description": "Löscht <name>{label}</name> und entfernt ihre Sandbox. Du kannst sie {days} Tage lang unter „Zuletzt gelöscht“ wiederherstellen. Danach werden ihre Nachrichten, Dateien und ihr Branch gelöscht.",
+    "bulkDescription": "Löscht jede ausgewählte Sitzung und entfernt ihre Sandbox. Du kannst jede {days} Tage lang unter „Zuletzt gelöscht“ wiederherstellen. Danach werden ihre Nachrichten, Dateien und ihr Branch gelöscht.",
     "restoring": "Sitzung wird wiederhergestellt…",
     "undo": "Rückgängig",
     "restored": "Sitzung wiederhergestellt",

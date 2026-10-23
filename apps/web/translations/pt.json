@@ -1923,8 +1923,8 @@
     }
   },
   "sessionDelete": {
-    "description": "Exclui <name>{label}</name> e remove o sandbox dela. Você pode restaurá-la em Excluídas recentemente por {days} dias. Depois disso, as mensagens e os arquivos dela são excluídos. A branch é mantida.",
-    "bulkDescription": "Exclui cada sessão selecionada e remove o sandbox dela. Você pode restaurar cada uma em Excluídas recentemente por {days} dias. Depois disso, as mensagens e os arquivos dela são excluídos. A branch é mantida.",
+    "description": "Exclui <name>{label}</name> e remove o sandbox dela. Você pode restaurá-la em Excluídas recentemente por {days} dias. Depois disso, as mensagens, os arquivos e a branch dela são excluídos.",
+    "bulkDescription": "Exclui cada sessão selecionada e remove o sandbox dela. Você pode restaurar cada uma em Excluídas recentemente por {days} dias. Depois disso, as mensagens, os arquivos e a branch dela são excluídos.",
     "restoring": "Restaurando a sessão…",
     "undo": "Desfazer",
     "restored": "Sessão restaurada",

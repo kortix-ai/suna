@@ -1798,8 +1798,8 @@ export async function updateProjectSession(
 
 /**
  * Delete a session. It stays restorable until `restore_until` (30 days):
- * `restoreProjectSession` brings it back. Its branch is kept for good; its
- * messages and stored files are deleted after the window. `restore_until` is
+ * `restoreProjectSession` brings it back. After the window its messages,
+ * stored files and branch are deleted. `restore_until` is
  * absent from an API that predates restore.
  */
 export async function deleteProjectSession(projectId: string, sessionId: string) {
