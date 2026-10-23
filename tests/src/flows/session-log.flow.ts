@@ -111,11 +111,11 @@ flow(
         (await post(batch(0, [{ rev: REV + 4, message: message("msg_zombie", 3) }]))).status(409).body().has("$", { generation: 1 });
       });
 
-      await ctx.step("a put that reuses a seq its thread holds → 422 with the offending pair, nothing written", async () => {
+      await ctx.step("a put that reuses a seq its thread holds → 422 with the offending pair and the thread's seq_max, nothing written", async () => {
         (await post(batch(1, [{ rev: REV + 5, message: message("msg_dup", 1) }])))
           .status(422)
           .body()
-          .has("$", { error: "seq_conflict", message_id: "msg_dup", rev: REV + 5, thread_id: "main", seq: 1 });
+          .has("$", { error: "seq_conflict", message_id: "msg_dup", rev: REV + 5, thread_id: "main", seq: 1, seq_max: 2 });
       });
 
       await ctx.step("the manifest lists the generation and each stored message with its rev as a JSON number", async () => {

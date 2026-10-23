@@ -55,7 +55,7 @@ const RELEASE_PROSE = [
 /** Notes arrive as sanitized HTML rendered once per cache fill (see render.ts).
  *  A single HTML string is also far smaller in the RSC payload than the element
  *  tree `<ReactMarkdown>` produced. */
-function ReleaseNotes({ html }: { html: string }) {
+export function ReleaseNotes({ html }: { html: string }) {
   return <div className={RELEASE_PROSE} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
@@ -68,7 +68,7 @@ async function ChangelogPagination({ page, pageCount }: { page: number; pageCoun
   const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   const pages = Array.from({ length: pageCount }, (_, i) => i + 1);
   return (
-    <nav aria-label={tI18nComplete.raw('textead07c84baac')}>
+    <nav aria-label={tI18nComplete.raw('textf952fee736ed')}>
       <Separator />
       <div className="flex items-center justify-between gap-4 py-14 sm:py-20">
         <div className="min-w-0">
@@ -121,10 +121,10 @@ export async function ChangelogView({ data }: { data: ChangelogPage }) {
   return (
     <main className="bg-background min-h-screen">
       <ChangelogAnchorRedirect page={page} tagPages={tagPages} />
-      <div className="mx-auto max-w-6xl px-6 pb-24 sm:pb-32">
+      <div className="mx-auto max-w-7xl px-6 pb-24 sm:pb-32">
         <header className="pt-28 pb-16 sm:pt-36 sm:pb-28">
           <h1 className="text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">
-            {tI18nComplete.raw('textead07c84baac')}
+            {tI18nComplete.raw('textf952fee736ed')}
           </h1>
         </header>
 

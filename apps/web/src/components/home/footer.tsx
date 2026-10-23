@@ -73,6 +73,7 @@ const FOOTER_SECTIONS: FooterSection[] = [
       { label: 'Careers', href: '/careers' },
       { label: 'Blog', href: '/blog' },
       { label: 'Changelog', href: '/changelog' },
+      { label: 'Release history', href: '/changelog/releases' },
       { label: 'Use Cases', href: '/use-cases' },
       { label: 'Brand', href: '/design-system' },
     ],

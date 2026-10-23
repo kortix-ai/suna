@@ -130,3 +130,4 @@ export type { GitBackedProject } from './git/types';
 export { readRunningTurn, sessionLifecycleStandingFor, turnPrompterOf } from './session-lifecycle/turn-stop-authority';
 
 export { registerRuntimeFork } from './lib/runtime-session-snapshot';
+export { readPublicResponse } from './lib/public-response';

@@ -1339,8 +1339,8 @@ const catalog = {
     }
   },
   "sessionDelete": {
-    "description": "Deletes <name>{label}</name> and removes its sandbox. You can restore it from Recently deleted for {days} days. After that, its messages and files are deleted. Its branch is kept.",
-    "bulkDescription": "Deletes each selected session and removes its sandbox. You can restore each one from Recently deleted for {days} days. After that, its messages and files are deleted. Its branch is kept.",
+    "description": "Deletes <name>{label}</name> and removes its sandbox. You can restore it from Recently deleted for {days} days. After that, its messages, files and branch are deleted.",
+    "bulkDescription": "Deletes each selected session and removes its sandbox. You can restore each one from Recently deleted for {days} days. After that, its messages, files and branch are deleted.",
     "restoring": "Restoring the session…",
     "undo": "Undo",
     "restored": "Session restored",
@@ -7239,6 +7239,36 @@ const catalog = {
   "agentEditor": {
     "manage": "Manage",
     "overviewTitle": "Overview"
+  },
+  "turnShare": {
+    "shareResponse": "Share response",
+    "whatToInclude": "What to include",
+    "responseOnly": "Response only",
+    "responseOnlyHint": "Your prompt stays private",
+    "promptAndResponse": "Prompt and response",
+    "promptAndResponseHint": "Includes the prompt",
+    "publicLink": "Public link",
+    "publicLinkHint": "Anyone with the link can read it",
+    "turnOffLink": "Turn off link",
+    "cancel": "Cancel",
+    "copyLink": "Copy link",
+    "copied": "Copied",
+    "linkCopied": "Link copied",
+    "linkUpdated": "Link updated",
+    "responseShared": "Response shared",
+    "stale": "Response changed since you shared it",
+    "updateLink": "Update link",
+    "loadError": "Could not load the share settings. Try again.",
+    "shareError": "Could not share the response. Try again.",
+    "unshareError": "Could not stop sharing. Try again.",
+    "copyError": "Could not copy the link. Copy it from the field.",
+    "tryKortix": "Try Kortix",
+    "goneTitle": "This link is no longer active",
+    "goneHint": "The response it pointed to is no longer public.",
+    "busyTitle": "This page is busy",
+    "busyHint": "Refresh in a moment.",
+    "fallbackTitle": "Shared response",
+    "stopNote": "The link will stop working."
   },
   "connectAppForm": {
     "title": "Connect Shopify",

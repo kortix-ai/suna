@@ -317,3 +317,17 @@ describe('standalone chat and messages admission', () => {
     }
   });
 });
+
+describe('public discovery without credentials', () => {
+  const { app } = buildServer();
+  for (const path of ['/.well-known/security.txt', '/robots.txt', '/sitemap.xml']) {
+    test(path, async () => {
+      const res = await app.request(path);
+      expect(res.status).toBe(200);
+      const text = await res.text();
+      expect(text).not.toContain('/admin');
+      if (path.endsWith('security.txt')) expect(text).toContain('Contact: mailto:security@kortix.com');
+      if (path === '/sitemap.xml') expect(text).not.toContain('<loc>');
+    });
+  }
+});

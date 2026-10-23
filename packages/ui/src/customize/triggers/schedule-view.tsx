@@ -165,6 +165,8 @@ export function TriggerToolbarMenu({
         <Button
           variant="secondary"
           size="icon-base"
+          // `size-9`: the New trigger button and the search input beside it are `h-9`.
+          className="size-9"
           disabled={isPending}
           aria-label={tI18nComplete.raw('textd47d7cb0e4f8')}
         >
@@ -637,7 +639,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
            Both are hidden until the list has loaded — neither means anything
            on an error or a 403. */
             showContent ? (
-              // Search, then one group: ⋯ and New trigger, both `secondary` at `h-8`.
+              // Search, then one group: ⋯ and New trigger, both `secondary` at `h-9`, the search input's height.
               <ButtonGroup>
                 {triggers.length > 0 || paused ? (
                   <TriggerActivationMenu

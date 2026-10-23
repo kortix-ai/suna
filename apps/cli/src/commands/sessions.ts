@@ -274,8 +274,8 @@ Subcommands:
   unarchive <session-id>...         Put archived sessions back in your
                                     list. --json.
   rm <session-id>...                Stop + delete one or more sessions. Each
-                                    stays restorable for 30 days; its branch
-                                    is kept. --json.
+                                    stays restorable for 30 days, then its
+                                    content and branch are deleted. --json.
   restore <session-id>              Restore a deleted session within 30 days.
                                     Pass the full id. --json.
   recover <session-id>              Continue a lost session on a new computer

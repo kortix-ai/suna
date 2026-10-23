@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 887,
+  "count": 891,
   "routes": [
     {
       "method": "GET",
@@ -3039,6 +3039,18 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/turn"
     },
     {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/turns/:turnId/share"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/turns/:turnId/share"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/turns/:turnId/share"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/watch"
     },
@@ -3221,6 +3233,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/suna-migration/status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/public/responses/:token"
     },
     {
       "method": "POST",

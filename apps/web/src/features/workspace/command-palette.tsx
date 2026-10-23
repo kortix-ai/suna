@@ -23,6 +23,7 @@ import {
 } from '@kortix/ui/command';
 import { useCommandState } from 'cmdk';
 import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import { AgentMark } from '@kortix/ui/internal/components/agent-mark';
 import { FadedScrollArea } from '@kortix/ui/faded-scroll-area';
 import { Kbd } from '@kortix/ui/kbd';
 import Loading from '@kortix/ui/loading';
@@ -157,7 +158,7 @@ import {
   useRuntimeProviders,
   useVisibleAgents,
 } from '@kortix/sdk/react';
-import { capitalizeWords, chalkColors, formatRelativeTime } from '@kortix/shared';
+import { capitalizeWords, formatRelativeTime } from '@kortix/shared';
 import {
   ArrowDownIcon as ArrowDown,
   ArrowUpIcon as ArrowUp,
@@ -2566,7 +2567,7 @@ export function CommandPalette() {
                             value="suggestion change agent worker switch"
                             onSelect={() => goToPage('agents')}
                           >
-                            <Bot className="size-4" />
+                            {currentAgent ? <AgentMark slug={currentAgent.name} /> : <Bot className="size-4" />}
                             <span className="flex-1">
                               {tHardcodedUi.raw(
                                 'componentsCommandPalette.line1209JsxTextChangeAgent',
@@ -2705,7 +2706,7 @@ export function CommandPalette() {
                             onSelect={() => goToPage(item.targetPage)}
                           >
                             {item.id === 'change-agent' ? (
-                              <Bot className="size-4" />
+                              currentAgent ? <AgentMark slug={currentAgent.name} /> : <Bot className="size-4" />
                             ) : (
                               <Cpu className="size-4" />
                             )}
@@ -2960,7 +2961,6 @@ export function CommandPalette() {
                   <CommandGroup heading="Agents" forceMount>
                     {filteredAgents.map((agent) => {
                       const isActive = currentAgent?.name === agent.name;
-                      const chalk = chalkColors(agent.name);
                       return (
                         <CommandItem
                           key={agent.name}
@@ -2969,16 +2969,8 @@ export function CommandPalette() {
                           )}
                           onSelect={() => handleSelectAgent(agent.name)}
                         >
-                          <div
-                            className="inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold"
-                            style={{
-                              backgroundColor: chalk.background,
-                              color: chalk.foreground,
-                              borderColor: chalk.border,
-                            }}
-                          >
-                            <Bot className="size-5 shrink-0" />
-                          </div>
+                          {/* The agent's pixel mark, its face on every surface. */}
+                          <AgentMark slug={agent.name} size={21} />
                           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
                             <span className="truncate text-sm font-medium">
                               {capitalizeWords(agent.name)}

@@ -512,6 +512,14 @@ const nextConfig = (): NextConfig => ({
         destination: '/auth',
         permanent: false,
       },
+      // The per-release changelog moved to /changelog/releases (2026-10-19);
+      // /changelog is the weekly summary now. Page 1 of the old list is
+      // /changelog itself, which stays valid.
+      {
+        source: '/changelog/page/:page',
+        destination: '/changelog/releases/page/:page',
+        permanent: true,
+      },
       // Capability tabs moved under /customize/ (2026-09-03). The old
       // top-level segments were shared in Slack, saved as bookmarks and baked
       // into agent transcripts, so every one keeps resolving. `agent` became
