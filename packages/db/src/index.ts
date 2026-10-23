@@ -136,6 +136,7 @@ export {
   creditLedger,
   creditUsage,
   accountDeletionRequests,
+  retentionErasures,
   creditPurchases,
   // Mobile push notification device tokens
   pushDeviceTokens,

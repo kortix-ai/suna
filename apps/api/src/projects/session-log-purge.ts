@@ -124,9 +124,11 @@ const CLOSING = sql`
 /**
  * A closing account that still acts as a live customer: a paid tier whose payment is
  * not cancelled, or any session created, or any turn started, after the close. The
- * backstop leaves it for a person, like the account-deletion worker does.
+ * backstop leaves it for a person, like the account-deletion worker does. The
+ * account retention backstop (`billing/services/retention-erasure.ts`) reads `LIVE`
+ * too, so the two backstops skip the same accounts.
  */
-const LIVE = (k: string) => sql.raw(`(
+export const LIVE = (k: string) => sql.raw(`(
   exists (select 1 from kortix.credit_accounts c
     where c.account_id = ${k}.account_id and coalesce(c.tier, 'free') <> 'free'
       and coalesce(c.payment_status, '') not in ('canceled', 'cancelled', 'deleted'))

@@ -5391,7 +5391,41 @@ export const accountDeletionRequests = kortixSchema.table(
   ],
 );
 
-export const creditPurchases = kortixSchema.table('credit_purchases', {
+/**
+ * The retention backstop's evidence: one row per closed account, UTC day and
+ * mode the backstop decided about it (`billing/services/retention-erasure.ts`).
+ * Ids, dates and an outcome only, no personal data. No foreign key: the row
+ * outlives the account it proves erased.
+ */
+export const retentionErasures = kortixSchema.table(
+  'retention_erasures',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    accountId: uuid('account_id').notNull(),
+    requestId: uuid('request_id').notNull(),
+    /** When the customer asked to close the account. */
+    requestedAt: timestamp('requested_at', { withTimezone: true }),
+    /** The termination date: the request's `scheduled_for` (end of the 14-day grace). */
+    closedAt: timestamp('closed_at', { withTimezone: true }).notNull(),
+    runOn: date('run_on', { mode: 'string' }).notNull(),
+    mode: text('mode').notNull(),
+    outcome: text('outcome').notNull(),
+    /** The failed step's message, truncated; null unless `outcome = 'failed'`. */
+    error: text('error'),
+    decidedAt: timestamp('decided_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('retention_erasures_account_day_mode_key').on(table.accountId, table.runOn, table.mode),
+    index('retention_erasures_run_on_idx').on(table.runOn),
+    check('retention_erasures_mode_check', sql`${table.mode} IN ('dry_run', 'execute')`),
+    check(
+      'retention_erasures_outcome_check',
+      sql`${table.outcome} IN ('would_erase', 'erased', 'failed', 'skipped_live')`,
+    ),
+  ],
+);
+
+export const creditPurchases =kortixSchema.table('credit_purchases', {
   id: uuid().defaultRandom().primaryKey().notNull(),
   accountId: uuid('account_id').notNull(),
   amountDollars: numeric('amount_dollars', { precision: 10, scale: 2 }).notNull(),

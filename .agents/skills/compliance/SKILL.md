@@ -1,16 +1,19 @@
 ---
 name: compliance
-description: "Customer-facing compliance duties that code runs: the subprocessor list and its automatic 30-day DPA notice, and the audit evidence it leaves. Load WHENEVER you add, remove or change a subprocessor (a new model provider, host, email or analytics vendor), route customer data to a new third party, touch apps/web/.../legal/subprocessors, packages/shared/src/subprocessors.ts or apps/api/src/billing/services/subprocessor-notices.ts, or need proof for an auditor that customers were notified. Load too for staff access to a customer account: act-as impersonation, 'Open as admin', and its audit trail; and for a penetration test report: the status of each finding and the risks Kortix accepts."
+description: "Customer-facing compliance duties that code runs: the subprocessor list and its automatic 30-day DPA notice, and the audit evidence it leaves. Load WHENEVER you add, remove or change a subprocessor (a new model provider, host, email or analytics vendor), route customer data to a new third party, touch apps/web/.../legal/subprocessors, packages/shared/src/subprocessors.ts or apps/api/src/billing/services/subprocessor-notices.ts, or need proof for an auditor that customers were notified. Load too for staff access to a customer account: act-as impersonation, 'Open as admin', and its audit trail; and for a penetration test report: the status of each finding and the risks Kortix accepts. Load too for the 90-day deletion of a terminated account's data (the retention backstop, kortix.retention_erasures, RETENTION_ERASURE_MODE) and its monthly evidence."
 ---
 
 # Compliance
 
-The Data Processing Addendum (DPA) promises two things that code keeps:
+The Data Processing Addendum (DPA) promises three things that code keeps:
 
 - Section 7.2 / Annex III: `/legal/subprocessors` lists every third party that
   processes customer personal data.
 - Section 7.3: a new subprocessor gets at least 30 days' notice before it
   processes customer personal data.
+- The DPA and the Data Retention Policy: a terminated account's personal data
+  is deleted within 90 days of the termination (section "Delete a terminated
+  account within 90 days").
 
 ## Add a subprocessor
 
@@ -65,6 +68,46 @@ The privacy@kortix.com reports give the per-sweep totals.
 
 `apps/api/src/__tests__/integration-subprocessor-notices.test.ts`:
 `pnpm test -- --db-only integration-subprocessor-notices`.
+
+## Delete a terminated account within 90 days
+
+Terminated means closed (decision D6b, 2026-10-14): an open
+`kortix.account_deletion_requests` row. `POST /v1/account/request-deletion`
+writes it with a 14-day grace; deleting the auth user writes it due now. The
+account closes at `scheduled_for`. A plan cancellation, a downgrade to Free, a
+payment failure or an idle account is not a termination.
+
+Two workers delete a closed account, both through `runAccountDeletion`
+(`apps/api/src/billing/services/account-deletion.ts`):
+
+1. `account-deletion` (every 15 min): a request due within the last 2 days.
+2. `retention-erasure` (daily, `apps/api/src/billing/services/retention-erasure.ts`):
+   every request still open `RETENTION_ERASURE_AFTER_DAYS` (default 80) after
+   `scheduled_for`. It skips an account that still acts live (a paid plan whose
+   payment is not cancelled, or a session or turn after the close) and records
+   `skipped_live` for a person.
+
+`RETENTION_ERASURE_MODE`: `dry_run` (default) records `would_erase` and
+deletes nothing; `execute` deletes; `off` stops the tick.
+`ACCOUNT_DELETION_SWEEP_PAUSED=true` forces `dry_run`.
+
+### Monthly evidence
+
+One `kortix.retention_erasures` row per account, UTC day and mode: ids, dates,
+outcome, no personal data. It outlives the account.
+
+```sql
+select account_id, request_id, requested_at, closed_at, run_on, mode, outcome, error,
+       run_on - closed_at::date as days_after_close
+from kortix.retention_erasures
+where run_on >= date '<YYYY-MM-01>' and run_on < date '<YYYY-MM-01>' + interval '1 month'
+order by run_on, account_id;
+```
+
+An `erased` row is the proof. A `failed` or `skipped_live` row past day 80 is
+an open item for a person: fix the failure, or decide the live account.
+
+Tests: `pnpm test -- --db-only integration-retention-erasure`.
 
 ## Staff access to a customer account (act-as)
 
