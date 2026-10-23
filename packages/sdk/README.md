@@ -431,7 +431,8 @@ const dm = await p.spaces.dm("kortix"); // the caller's DM, created on the first
 // A channel's tabs (channels only; a DM, an archived or unknown id → 404 space_not_found)
 const apps = await p.spaces.apps(ch.space_id); // Apps deployed from its threads, only those the caller may open
 const link = await p.spaces.links.add(ch.space_id, { url: "https://example.com/spec", title: "Spec" }); // http(s) only, ≤ 2,048 chars; title ≤ 200; else 400; 200 links per channel, then 409 link_limit
-await p.spaces.links.list(ch.space_id); // newest first; `can_delete` per link
+await p.spaces.links.list(ch.space_id); // pinned and shared in its threads, most recently shared first; `can_delete` per link
+await p.spaces.links.pin(ch.space_id, link.link_id, false); // any member; unpinning a link no thread shared removes it (→ null)
 await p.spaces.links.remove(ch.space_id, link.link_id); // its creator or a project manager; else 403 forbidden
 await p.spaces.summary(ch.space_id); // { apps, links, triggers }: the tab counts (a DM: apps and links are 0)
 
@@ -461,8 +462,8 @@ rows[0].reply_count; // messages after it; a space list only, null elsewhere
   older APIs omit them.
 - React: `useProjectSpaces(pid, { enabled })`, `useCreateProjectSpace`,
   `useUpdateProjectSpace`, `useOpenProjectDm`, `useProjectSpaceApps(pid, spaceId)`,
-  `useProjectSpaceLinks(pid, spaceId)`, `useAddProjectSpaceLink(pid, spaceId)` and
-  `useRemoveProjectSpaceLink(pid, spaceId)` (both refresh the links and the summary),
+  `useProjectSpaceLinks(pid, spaceId)`, `useAddProjectSpaceLink(pid, spaceId)`,
+  `usePinProjectSpaceLink(pid, spaceId)`, `useRemoveProjectSpaceLink(pid, spaceId)` (each refreshes the links and the summary),
   `useProjectSpaceSummary(pid, spaceId)`, and
   `useProjectSessions(pid, { spaceId, parent: "root", refetchInterval, pollFirstPageOnly: true })`
   (`pollFirstPageOnly` polls page one only; experimental).

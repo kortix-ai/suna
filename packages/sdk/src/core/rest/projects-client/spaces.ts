@@ -92,7 +92,7 @@ export async function getOrCreateProjectDm(projectId: string, agentName: string)
   );
 }
 
-/** A link pinned to a channel (its Links tab). Same fields as the API's `SpaceLink`. */
+/** A link of a channel (its Links tab): added with "Add link" or shared in a thread. Same fields as the API's `SpaceLink`. */
 export interface ProjectSpaceLink {
   link_id: string;
   space_id: string;
@@ -104,6 +104,19 @@ export interface ProjectSpaceLink {
   created_at: string;
   /** The caller may remove it: they added it, or they manage the project. */
   can_delete: boolean;
+  /** Agents in the channel read pinned links. "Add link" pins; a link shared in a thread is unpinned until a member pins it. */
+  pinned: boolean;
+  /** Who pinned it; null while unpinned or when unknown. */
+  pinned_by_name: string | null;
+  /** When it was pinned; null while unpinned. */
+  pinned_at: string | null;
+  /** `manual`: added with "Add link". `message`: collected from a person's message in a thread of the channel. */
+  source: 'manual' | 'message';
+  /** The latest thread that shared it; null for a link no thread shared. */
+  session_id: string | null;
+  /** How many messages shared it. */
+  share_count: number;
+  last_shared_at: string;
 }
 
 export interface AddProjectSpaceLinkInput {
@@ -163,6 +176,28 @@ export async function removeProjectSpaceLink(projectId: string, spaceId: string,
       showErrors: false,
     }),
   );
+}
+
+/**
+ * Pin or unpin a link. Agents in the channel read the pinned ones. Returns the
+ * link, or null when unpinning a link no thread shared removed it (only its
+ * creator or a project manager may: anyone else gets 403 `forbidden`). A
+ * channel that already pins 200 links rejects pinning with 409 `link_limit`.
+ */
+export async function pinProjectSpaceLink(
+  projectId: string,
+  spaceId: string,
+  linkId: string,
+  pinned: boolean,
+): Promise<ProjectSpaceLink | null> {
+  const body = unwrap(
+    await backendApi.patch<{ link: ProjectSpaceLink | null }>(
+      `/projects/${projectId}/spaces/${spaceId}/links/${linkId}`,
+      { pinned },
+      { showErrors: false },
+    ),
+  );
+  return body.link;
 }
 
 /** The counts beside a channel's or the caller's DM's tab labels (a DM has no Apps or links: 0). A background read. */

@@ -9,6 +9,7 @@ import {
   listProjectSpaceApps,
   listProjectSpaceLinks,
   listProjectSpaces,
+  pinProjectSpaceLink,
   removeProjectSpaceLink,
   updateProjectSpace,
   type ProjectSpace,
@@ -141,6 +142,13 @@ const link: ProjectSpaceLink = {
   created_by_name: 'Ana',
   created_at: '2026-10-21T00:00:00.000Z',
   can_delete: true,
+  pinned: false,
+  pinned_by_name: null,
+  pinned_at: null,
+  source: 'message',
+  session_id: 'T1',
+  share_count: 2,
+  last_shared_at: '2026-10-22T00:00:00.000Z',
 };
 
 test('listProjectSpaceApps GETs the channel apps and returns the array', async () => {
@@ -162,6 +170,29 @@ test('space links: list GETs, add POSTs url and title, remove DELETEs by id', as
     { url: 'http://test.local/v1/projects/P1/spaces/S1/links', method: 'POST', body: { url: link.url, title: 'Spec' } },
     { url: 'http://test.local/v1/projects/P1/spaces/S1/links/L1', method: 'DELETE', body: undefined },
   ]);
+});
+
+test('pinProjectSpaceLink PATCHes { pinned } and returns the link, or null when unpinning removed it', async () => {
+  const pinned = { ...link, pinned: true, pinned_by_name: 'Ana', pinned_at: '2026-10-23T00:00:00.000Z' };
+  nextResponse = { status: 200, body: { link: pinned } };
+  expect(await pinProjectSpaceLink('P1', 'S1', 'L1', true)).toEqual(pinned);
+  nextResponse = { status: 200, body: { link: null } };
+  expect(await pinProjectSpaceLink('P1', 'S1', 'L1', false)).toBeNull();
+  expect(calls).toEqual([
+    { url: 'http://test.local/v1/projects/P1/spaces/S1/links/L1', method: 'PATCH', body: { pinned: true } },
+    { url: 'http://test.local/v1/projects/P1/spaces/S1/links/L1', method: 'PATCH', body: { pinned: false } },
+  ]);
+});
+
+test('pinProjectSpaceLink rejects a full channel with 409 link_limit and never reaches the host error handler', async () => {
+  const errors: unknown[] = [];
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'tok', onError: (e: unknown) => errors.push(e) });
+  nextResponse = { status: 409, body: { error: 'A channel pins at most 200 links. Unpin one first.', code: 'link_limit' } };
+  const error = await pinProjectSpaceLink('P1', 'S1', 'L1', true).catch((e: unknown) => e);
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'tok' });
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error).toMatchObject({ status: 409, code: 'link_limit' });
+  expect(errors).toEqual([]);
 });
 
 test('addProjectSpaceLink rejects a bad url with 400 and never reaches the host error handler', async () => {

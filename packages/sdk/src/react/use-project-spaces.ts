@@ -8,6 +8,7 @@ import {
   getProjectSpaceSummary,
   listProjectSpaceApps,
   listProjectSpaceLinks,
+  pinProjectSpaceLink,
   listProjectSpaces,
   removeProjectSpaceLink,
   updateProjectSpace,
@@ -76,7 +77,7 @@ export function useProjectSpaceApps(projectId: Id, spaceId: Id) {
   });
 }
 
-/** A channel's links, newest first. */
+/** A channel's links, pinned and shared in its threads, the most recently shared first. */
 export function useProjectSpaceLinks(projectId: Id, spaceId: Id) {
   return useQuery({
     queryKey: qk.project.spaceLinks(projectId ?? '', spaceId ?? ''),
@@ -110,6 +111,16 @@ export function useAddProjectSpaceLink(projectId: string, spaceId: string) {
   const invalidate = useInvalidateSpaceLinks(projectId, spaceId);
   return useMutation({
     mutationFn: (input: AddProjectSpaceLinkInput) => addProjectSpaceLink(projectId, spaceId, input),
+    onSuccess: invalidate,
+  });
+}
+
+/** Pin or unpin a link of a channel (see `pinProjectSpaceLink`): resolves to the link, or null when unpinning removed it. */
+export function usePinProjectSpaceLink(projectId: string, spaceId: string) {
+  const invalidate = useInvalidateSpaceLinks(projectId, spaceId);
+  return useMutation({
+    mutationFn: ({ linkId, pinned }: { linkId: string; pinned: boolean }) =>
+      pinProjectSpaceLink(projectId, spaceId, linkId, pinned),
     onSuccess: invalidate,
   });
 }

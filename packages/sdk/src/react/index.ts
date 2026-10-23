@@ -257,6 +257,7 @@ export {
   useAddProjectSpaceLink,
   useCreateProjectSpace,
   useOpenProjectDm,
+  usePinProjectSpaceLink,
   useProjectSpaceApps,
   useProjectSpaceLinks,
   useProjectSpaces,

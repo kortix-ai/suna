@@ -30,10 +30,12 @@ export function bindProjectOperationsReview(projectId: string) {
       dm: (agentName: string) => P.getOrCreateProjectDm(projectId, agentName),
       /** The channel's Apps: deployed from one of its threads, only those the caller may open. */
       apps: (spaceId: string) => P.listProjectSpaceApps(projectId, spaceId),
-      /** Links pinned to a channel. Only the creator or a project manager may remove one. */
+      /** A channel's links: added ("Add link", pinned) or shared in its threads. Agents read the pinned ones. Only the creator or a project manager may remove one. */
       links: {
         list: (spaceId: string) => P.listProjectSpaceLinks(projectId, spaceId),
         add: (...a: DropFirst<Parameters<typeof P.addProjectSpaceLink>>) => P.addProjectSpaceLink(projectId, ...a),
+        /** `pin(spaceId, linkId, pinned)`: the link, or null when unpinning removed it. */
+        pin: (...a: DropFirst<Parameters<typeof P.pinProjectSpaceLink>>) => P.pinProjectSpaceLink(projectId, ...a),
         remove: (...a: DropFirst<Parameters<typeof P.removeProjectSpaceLink>>) => P.removeProjectSpaceLink(projectId, ...a),
       },
       /** The counts beside the channel's tab labels. */

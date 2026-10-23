@@ -17,6 +17,7 @@ const {
   useAddProjectSpaceLink,
   useCreateProjectSpace,
   useOpenProjectDm,
+  usePinProjectSpaceLink,
   useProjectSpaceApps,
   useProjectSpaceLinks,
   useProjectSpaces,
@@ -125,5 +126,17 @@ describe('channel tabs', () => {
     await remove.onSuccess();
     const both = [[...qk.project.spaceLinks('P1', 'S1')], [...qk.project.spaceSummary('P1', 'S1')]];
     expect(invalidated).toEqual([...both, ...both]);
+  });
+
+  test('pinning or unpinning a link PATCHes it and refetches the links and the summary', async () => {
+    const pin = usePinProjectSpaceLink('P1', 'S1') as any;
+    await pin.mutationFn({ linkId: 'L1', pinned: true });
+    await pin.mutationFn({ linkId: 'L1', pinned: false });
+    expect(calls.map((c) => `${c.method} ${c.url} ${JSON.stringify(c.body)}`)).toEqual([
+      'PATCH http://test.local/projects/P1/spaces/S1/links/L1 {"pinned":true}',
+      'PATCH http://test.local/projects/P1/spaces/S1/links/L1 {"pinned":false}',
+    ]);
+    await pin.onSuccess();
+    expect(invalidated).toEqual([[...qk.project.spaceLinks('P1', 'S1')], [...qk.project.spaceSummary('P1', 'S1')]]);
   });
 });
