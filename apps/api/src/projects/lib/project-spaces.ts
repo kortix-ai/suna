@@ -88,8 +88,8 @@ async function ensureDefaultSpaceCreated(projectId: string, accountId: string): 
  * no space into it, so every path that needs `#general` (the toggle effect, a
  * channel list, a session create, a warm claim) converges a project whose
  * toggle effect failed before `#general` existed. No later call checks again.
- * It also makes `#general`'s Files and Memory folders, best effort and off the
- * caller's path (the Files tab makes them on open when this fails).
+ * It also makes `#general`'s Files folder, best effort and off the
+ * caller's path (the Files tab makes it on open when this fails).
  */
 export async function ensureDefaultSpace(projectId: string, accountId: string): Promise<SpaceRow> {
   const general = await ensureDefaultSpaceCreated(projectId, accountId);

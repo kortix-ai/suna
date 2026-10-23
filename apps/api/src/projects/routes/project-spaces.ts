@@ -136,7 +136,7 @@ export function registerProjectSpacesRoutes(): void {
       const viewer = await spaceViewer(c, loaded);
       const result = await createChannel(row.projectId, row.accountId, viewer, c.req.valid('json'));
       if ('error' in result) return c.json(result.error.body, result.error.status);
-      // Its Files folder and Memory folder, best effort and off the response path.
+      // Its Files folder, best effort and off the response path.
       void makeChannelFolders(row.accountId, row.projectId, result.space.slug!);
       return c.json(serializeSpace(result.space, viewer), 201);
     },
@@ -173,7 +173,7 @@ export function registerProjectSpacesRoutes(): void {
         return c.json({ error: `No agent "${agentName}" in this project.`, code: 'agent_not_found' }, 404);
       }
       const space = await getOrCreateDm(loaded.row.projectId, loaded.row.accountId, loaded.userId, agentName);
-      // Its Files and Memory folders in the caller's own folder, best effort and off the response path.
+      // Its Files folder in the caller’s own folder, best effort and off the response path.
       // The web opens a DM only when it is not listed yet, so this runs about once per DM; a repeat is a no-op.
       void makeDmFolders(loaded.row.accountId, loaded.row.projectId, loaded.userId, agentName);
       return c.json(serializeSpace(space, { userId: loaded.userId, manager: false }), 200);

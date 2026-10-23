@@ -11,6 +11,7 @@
 //   its owner shares it.
 // - `/` and `/Users` hold the tree together and cannot be granted.
 
+import { MEMORY_COPY_DIR } from '@kortix/api-contract/sandbox-layout';
 import { spaceDriveFolders } from '@kortix/shared';
 
 export type FolderLevel = 'read' | 'write' | 'manage';
@@ -291,9 +292,10 @@ function mountedAt(path: string, mounts: readonly NotesMount[]): string | null {
 
 /**
  * The "This thread's channel" (or DM) section of /drives/README.md: the
- * space's files and memory folders as this sandbox mounts them, and the rule
- * to read the memory first. `name` is the channel slug or the DM's agent.
- * A channel's pinned links follow, newest pin first, at most `SPACE_NOTES_LINKS`.
+ * space's files folder as this sandbox mounts it, and where its memory is
+ * (database pages, read from the read-only copy, saved with `remember`).
+ * `name` is the channel slug or the DM's agent. A channel's pinned links
+ * follow, newest pin first, at most `SPACE_NOTES_LINKS`.
  */
 export function spaceNotesLines(
   space: { kind: 'channel' | 'dm'; name: string; links?: readonly SpaceNotesLink[] },
@@ -302,23 +304,21 @@ export function spaceNotesLines(
   const me = mounts.find((m) => m.role === 'me');
   const folders = spaceDriveFolders(space.kind, space.name, me?.subdir ?? null);
   const files = folders && mountedAt(folders.files, mounts);
-  const memory = folders && mountedAt(folders.memory, mounts);
   // A DM's agent name is member text: one line, so it cannot start a heading.
   const name = oneLine(space.name);
   const place = space.kind === 'channel' ? `#${name}` : `your DM with ${name}`;
+  const memory = `- Memory of ${place}: pages at ${MEMORY_COPY_DIR}/ (read-only); save with the \`remember\` tool (load the kortix-channel-memory skill).`;
   const lines = [
     space.kind === 'channel' ? `## This thread’s channel: #${name}` : `## This thread’s DM with ${name}`,
     '',
   ];
-  if (!files || !memory) {
-    lines.push(`The folders of ${place} are not mounted in this thread.`, '');
+  if (!files) {
+    lines.push(`The files folder of ${place} is not mounted in this thread.`, memory, '');
     return [...lines, ...linkLines(place, space.links)];
   }
   lines.push(
     `- Files of ${place}: ${files}/ (shown in the Files tab)`,
-    `- Memory of ${place}: ${memory}/ (shown in the Memory tab)`,
-    '',
-    `Read ${memory}/ at the start of the thread (\`MEMORY.md\` first when it exists). When you learn something the next thread in ${place} should know, write durable facts there in the same turn. Keep one fact per bullet; no secrets.`,
+    memory,
     '',
     // A rename moves the folder and rewrites this file, but not the thread's env.
     'These paths are current. They win over `KORTIX_SPACE_SLUG`, which keeps the name the thread started with. Create a missing folder only at a path named here.',
