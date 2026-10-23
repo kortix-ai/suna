@@ -369,11 +369,11 @@ interface SessionProvisionState {
   // provider drops them itself when Platinum refuses the create over them.
   driveMounts: SessionDriveMounts | undefined;
   driveMountsResolved: boolean;
-  // /workspace on a Platinum volume (workspace-volume.ts): resolved on the
-  // first Platinum attempt, undefined until then, null for a box-disk session.
+  // /workspace on a Platinum volume (workspace-volume.ts): undefined until the
+  // first attempt resolves it, null for a box-disk session.
   workspaceVolume: WorkspaceVolume | null | undefined;
-  // Started with the provisioning (startWorkspaceVolume), so the volume open
-  // runs alongside row+tokens and the env build instead of before the create.
+  // Started with the provisioning, so the volume open runs alongside row+tokens
+  // and the env build instead of before the create. Read once.
   workspaceVolumePromise: Promise<WorkspaceVolume | null> | undefined;
 }
 
@@ -607,13 +607,11 @@ export async function provisionSessionSandbox(opts: {
 
   // The /workspace volume opens in parallel with row+tokens and the env build:
   // it needs only the session row, which exists before provisioning starts.
-  // The first Platinum attempt awaits it (prepareAttemptVolumes).
-  if (state.providerName === 'platinum' && slug !== META_SANDBOX_SLUG) {
-    state.workspaceVolumePromise = import('./workspace-volume').then(({ resolveWorkspaceVolume }) =>
-      resolveWorkspaceVolume({ sessionId: sandboxId, projectMetadata: opts.projectMetadata, location }),
-    );
-    state.workspaceVolumePromise.catch(() => {});
-  }
+  // The first attempt awaits it (prepareAttemptVolumes).
+  state.workspaceVolumePromise = import('./workspace-volume').then(({ resolveWorkspaceVolume }) =>
+    resolveWorkspaceVolume(sandboxId),
+  );
+  state.workspaceVolumePromise.catch(() => {});
 
   // Sandbox-row insert + tokens + credit lookup all run in parallel. None of
   // them depend on the others — `sandboxId` is known up front, so even the
@@ -831,22 +829,21 @@ async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: Sessio
       [],
     );
   }
-  if (providerName !== 'platinum' || slug === META_SANDBOX_SLUG) {
-    providerCreateInput.volumes = undefined;
-    return;
-  }
   const { applyWorkspaceVolume, resolveWorkspaceVolume } = await import('./workspace-volume');
   if (state.workspaceVolume === undefined) {
     // The early open is used once: a retry after it failed opens again.
     const early = state.workspaceVolumePromise;
     state.workspaceVolumePromise = undefined;
-    state.workspaceVolume = await (early ??
-      resolveWorkspaceVolume({
-        sessionId: sandbox.sandboxId,
-        projectMetadata: opts.projectMetadata,
-        location: providerCreateInput.location,
-      }));
+    state.workspaceVolume = await (early ?? resolveWorkspaceVolume(sandbox.sandboxId));
     if (state.workspaceVolume) ctx.tl.mark('workspace-volume');
+  }
+  if (state.workspaceVolume && (providerName !== 'platinum' || slug === META_SANDBOX_SLUG)) {
+    // A box anywhere else would boot without the session's files.
+    throw new Error('[workspace] This session’s files are on a Platinum volume, and this box would not mount it, so the session did not start.');
+  }
+  if (providerName !== 'platinum' || slug === META_SANDBOX_SLUG) {
+    providerCreateInput.volumes = undefined;
+    return;
   }
   if (!state.driveMountsResolved) {
     state.driveMounts = await planDrives();

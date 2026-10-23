@@ -491,22 +491,24 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'workspace_volume',
     name: 'Workspace volume',
     description:
-      "Keep each new Platinum session's /workspace on its own Platinum volume instead of the sandbox disk. The box still stops and resumes in place. Not a Settings toggle: Kortix enables it per project.",
+      "Keep each new Platinum session's /workspace on its own Platinum volume instead of the sandbox disk, so the sandbox is disposable: one stopped for an hour is deleted, and the next open boots a new sandbox on the same files and conversation. Not a Settings toggle: Kortix enables it per project.",
     stability: 'experimental',
     // Every workspace volume is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
     platformDefault: () => false,
-    // Internal-only (2026-10-16), step 1 of stateless sandboxes. A Kortix operator
-    // sets it per project (PUT /v1/admin/api/projects/:id/features).
+    // Internal-only: stateless sandboxes roll out project by project. A Kortix
+    // operator sets it (PUT /v1/admin/api/projects/:id/features).
     catalogHidden: true,
     enforcement: 'behavioral',
     enforcementNote:
-      'BEHAVIORAL only. Read once per session, at the first provisioning of a Platinum box ' +
-      '(platform/services/workspace-volume.ts): on, the session records `workspace_volume` and ' +
-      'every box it ever gets mounts volume kws-<session_id> at /workspace, in the region the ' +
-      'volume was created in, with KORTIX_WORKSPACE_VOLUME=1. Turning the flag off changes no ' +
-      'session that already has a volume. KORTIX_WORKSPACE_VOLUMES=off stops new volumes everywhere. ' +
-      'A session delete deletes the volume after the box is removed (reaping/archived-box-removal.ts).',
+      'BEHAVIORAL only. Read once per session, at POST /sessions (platform/services/workspace-volume.ts): on, a ' +
+      'Platinum session is inserted with `metadata.workspace_volume` and every box it ever gets mounts volume ' +
+      'kws-<session_id> at /workspace, in the region the volume was created in, with KORTIX_WORKSPACE_VOLUME=1 and ' +
+      'the session-log restore on. Turning the flag off changes no session that has a volume; ' +
+      'KORTIX_WORKSPACE_VOLUMES=off stops new volumes everywhere. A box stopped longer than ' +
+      'KORTIX_SANDBOX_IDLE_DELETE_MINUTES (default 60) is deleted (projects/reaping/idle-volume-retire.ts). The ' +
+      'volume is deleted with the session content: by the retention purge after the trash window ' +
+      '(projects/session-log-purge.ts) or by account erasure.',
   },
 ];
 

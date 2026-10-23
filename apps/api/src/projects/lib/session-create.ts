@@ -36,7 +36,7 @@ import { selectProvider } from '../../platform/services/provider-balancer';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
 import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-region';
-import { openWorkspaceVolumeEarly } from '../../platform/services/workspace-volume';
+import { startWorkspaceVolume, WORKSPACE_VOLUME_SESSION_KEY, type WorkspaceVolume } from '../../platform/services/workspace-volume';
 import { WARM_SESSION_LOCATION_KEY, WARM_SESSION_METADATA_KEY } from './warm-sessions';
 
 
@@ -954,6 +954,7 @@ function buildSessionCreateMetadata(params: {
   parentSession: ParentSession;
   repositoryAccess: boolean;
   sandboxSlug: string;
+  workspaceVolume: WorkspaceVolume | null;
 }) {
   const {
     input,
@@ -974,6 +975,7 @@ function buildSessionCreateMetadata(params: {
     parentSession,
     repositoryAccess,
     sandboxSlug,
+    workspaceVolume,
   } = params;
   const { project, userId, body } = input;
   // A name supplied at create is an EXPLICIT, user-chosen name — the same thing
@@ -1066,6 +1068,8 @@ function buildSessionCreateMetadata(params: {
     // Rollback compatibility: older API replicas must also enforce this restriction.
     workspace_mode: repositoryAccess ? 'branch' : 'runtime',
     sandbox_slug: sandboxSlug,
+    // The session's /workspace volume: every box of the session mounts it (platform/services/workspace-volume.ts).
+    ...(workspaceVolume ? { [WORKSPACE_VOLUME_SESSION_KEY]: workspaceVolume } : {}),
     audit_v2: {
       actor_type: auditAttribution.actorType,
       authoritative_source: auditAttribution.authoritativeSource,
@@ -1570,7 +1574,7 @@ export async function createProjectSession(input: {
   // so the open runs alongside the checks below instead of before the box create.
   const identity = resolveSessionIdentity({ input, projectId, accountId });
   if (identity.error) return { error: identity.error };
-  openWorkspaceVolumeEarly({
+  const workspaceVolume = startWorkspaceVolume({
     sessionId: identity.sessionId,
     projectMetadata: project.metadata,
     location: resolveSessionSandboxRegion(project.metadata),
@@ -1726,6 +1730,8 @@ export async function createProjectSession(input: {
     parentSession,
     repositoryAccess,
     sandboxSlug,
+    // Only a Platinum session box mounts it. An unrecorded open is deleted.
+    workspaceVolume: providerName === 'platinum' && sandboxSlug !== META_SANDBOX_SLUG ? workspaceVolume : null,
   });
 
   let sessionRow: ProjectSessionRow | null = null;

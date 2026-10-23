@@ -5,7 +5,7 @@
  * S3 route (acquire.ts) both finish here, so `/workspace` looks the same
  * whichever route delivered it.
  */
-import { mkdir, readdir, rename, rm } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, readdir, rename, rm } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 
 import type { Config } from '@/lib/config/config'
@@ -398,4 +398,22 @@ export async function adoptOrClearBakedCheckout(cfg: Config): Promise<boolean> {
 function refuseVolumeClear(target: string, why: string): never {
   logger.error('[git] refusing to clear the workspace volume', { event: 'workspace_volume_clear_refused', target, why })
   throw new Error(`refusing to clear ${target}: it is a volume and ${why}. The session files stay; this box does not boot.`)
+}
+
+/**
+ * pnpm puts its store at the root of the project's filesystem when $HOME is on
+ * another one: on a volume that is `/workspace/.pnpm-store`, inside the
+ * checkout, where `git add -A` would commit it. Hide it the way the CLI hides
+ * its own files (`.git/info/exclude`: never committed). Never throws.
+ */
+export async function excludeVolumePnpmStore(target: string): Promise<void> {
+  const exclude = join(target, '.git', 'info', 'exclude')
+  try {
+    const existing = await readFile(exclude, 'utf8').catch(() => '')
+    if (existing.split(/\r?\n/).includes('/.pnpm-store/')) return
+    await mkdir(join(target, '.git', 'info'), { recursive: true })
+    await appendFile(exclude, `${existing && !existing.endsWith('\n') ? '\n' : ''}/.pnpm-store/\n`)
+  } catch (err) {
+    logger.warn('[git] could not hide the pnpm store on the workspace volume', { error: (err as Error).message })
+  }
 }

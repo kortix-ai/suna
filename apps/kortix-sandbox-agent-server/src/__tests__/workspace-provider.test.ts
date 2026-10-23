@@ -723,6 +723,8 @@ describe('provideWorkspace — require-s3 and git', () => {
     expect(result.provider).toBe('s3')
     expect(result.summary).toMatchObject({ volume: true, fallback: false, sha_matches: true })
     await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
+    // pnpm's store lands at the volume root: git never sees it.
+    expect(readFileSync(join(target, '.git', 'info', 'exclude'), 'utf8')).toContain('/.pnpm-store/\n')
   })
 
   test('with KORTIX_PROJECT_SNAPSHOT_MODE unset the box boots from git, with zero snapshot traffic', async () => {

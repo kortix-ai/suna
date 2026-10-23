@@ -30,7 +30,7 @@ import { readRepoInfo } from '@/lib/git/git'
 import { logger } from '@/lib/log/logger'
 import type { SnapshotHydrationSummary } from '@/lib/project-snapshot/hydrate'
 import { acquire, type S3Attempt } from './acquire'
-import { adoptOrClearBakedCheckout } from './checkout'
+import { adoptOrClearBakedCheckout, excludeVolumePnpmStore } from './checkout'
 import { scheduleHistoryBackfill } from './git'
 import type { MaterializeRequest, MaterializedProject, WorkspaceProviderSummary } from './types'
 
@@ -144,6 +144,7 @@ export async function provideWorkspace(
     const adopted = await adoptOrClearBakedCheckout(cfg)
     timings.warm = Date.now() - t0
     if (adopted) {
+      if (cfg.workspaceVolume) await excludeVolumePnpmStore(cfg.projectTarget)
       const info = await readRepoInfo(cfg.projectTarget)
       return finish({
         provider: 'git',
@@ -159,6 +160,7 @@ export async function provideWorkspace(
       inactivityTimeoutMs: opts.inactivityTimeoutMs,
       tarBinary: opts.tarBinary,
     })
+    if (cfg.workspaceVolume) await excludeVolumePnpmStore(cfg.projectTarget)
     const finished = finish(acquired)
     const hydration = acquired.hydration
     if (hydration) {
