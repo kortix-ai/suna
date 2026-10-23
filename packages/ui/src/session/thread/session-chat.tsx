@@ -4490,6 +4490,8 @@ export function SessionChat({
                               isLast={turn.id === lastUserMessageId}
                               ownsPlan={turn.id === planAnchorId}
                               sessionId={sessionId}
+                              projectId={projectId}
+                              projectSessionId={projectSessionId}
                               sessionStatus={sessionStatus}
                               permissions={pendingPermissions}
                               questions={pendingQuestions}

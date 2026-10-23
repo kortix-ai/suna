@@ -1186,6 +1186,8 @@ export const ProjectSessionSchema = z.object({
   can_manage_sharing: z.boolean(),
   /** May stop / restart / delete it and change its model — owner or project manager. */
   can_manage_lifecycle: z.boolean().optional(),
+  /** May publish one assistant response through a public link: a human owner or project manager who can read it. Single-session reads only. */
+  can_publish_response: z.boolean().optional(),
   can_access: z.boolean().optional(),
   runtime_status: z
     .enum(['provisioning', 'active', 'stopped', 'error', 'archived'])

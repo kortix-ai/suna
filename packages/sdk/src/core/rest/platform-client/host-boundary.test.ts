@@ -363,3 +363,29 @@ describe('host boundary transport', () => {
     expect(new URL(requests[0]!.url).searchParams.get('actor_type')).toBe('anonymous');
   });
 });
+
+describe('public response share', () => {
+  test('getPublicResponse reads the anonymous route without credentials', async () => {
+    const response = {
+      title: 'T',
+      prompt: null,
+      markdown: 'Hello',
+      agent_name: null,
+      model_id: 'm',
+      responded_at: '2026-10-23T00:00:00.000Z',
+      shared_at: '2026-10-23T00:00:01.000Z',
+    };
+    responseFactory = () => Response.json({ response });
+    const result = await boundary.getPublicResponse('kps_a b', { backendUrl: 'https://api.example.test/v1' });
+    expect(requests[0]?.url).toBe('https://api.example.test/v1/public/responses/kps_a%20b');
+    expect(new Headers(requests[0]?.init?.headers).has('Authorization')).toBe(false);
+    expect(result).toEqual(response);
+  });
+
+  test('getPublicResponse throws with a readable status on 410', async () => {
+    responseFactory = () => Response.json({ error: 'Share link revoked' }, { status: 410 });
+    await expect(boundary.getPublicResponse('kps_x', { backendUrl: 'https://api.example.test' })).rejects.toMatchObject({
+      status: 410,
+    });
+  });
+});

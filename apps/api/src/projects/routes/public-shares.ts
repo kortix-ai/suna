@@ -3,16 +3,56 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import {
   DEFAULT_PREVIEW_CANDIDATES,
   createPublicShare,
+  getLiveResponseShare,
   listPublicSharesForSession,
   revokePublicShare,
+  revokeResponseShare,
+  serializeTurnShare,
+  upsertResponseShare,
 } from '../../shared/session-public-shares';
+import { buildResponseSnapshot } from '../lib/response-snapshot';
 import { loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { guardSession, guardSessionSharing, sessionAccessDenied } from '../lib/http-session-access';
+import { guardSession, guardSessionSharing, guardTurnPublish, guardTurnRevoke, sessionAccessDenied } from '../lib/http-session-access';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
 import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bindings';
 import { sessionPersonOnlyPlaintextSecrets } from '../lib/secret-audience';
+
+const TurnShareSchema = z.object({
+  share_id: z.string(),
+  turn_id: z.string().openapi({ description: 'The user message id that starts the turn.' }),
+  token: z.string(),
+  url: z.string().openapi({ description: 'The public web page of the response.' }),
+  created_at: z.string(),
+  snapshot_at: z.string(),
+  stale: z.boolean().openapi({ description: 'The live response text differs from the published snapshot.' }),
+  include_prompt: z.boolean().openapi({ description: 'The snapshot also publishes the prompt text.' }),
+});
+const TurnParams = z.object({ projectId: z.string(), sessionId: z.string(), turnId: z.string().min(1).max(200) });
+
+/**
+ * A public link must never carry a member's PERSONAL data: a session bound to a
+ * personal connector, or holding person-only plaintext secrets, is refused with
+ * 409. One check for every public share kind (preview/file and response).
+ */
+async function personalDataRefusal(input: { accountId: string; projectId: string; sessionId: string }) {
+  if (await sessionHasPersonalConnectorBinding(input)) {
+    return {
+      error: 'Sessions using a personal connection cannot be shared publicly',
+      code: 'PERSONAL_CONNECTOR_CONNECTION_REQUIRES_PRIVATE_SESSION',
+    };
+  }
+  const held = await sessionPersonOnlyPlaintextSecrets(input);
+  if (held.length > 0) {
+    return {
+      error: `This session holds ${held.join(', ')}, shared only with you, and cannot be shared publicly. Start a new session to share.`,
+      code: 'PERSONAL_SECRET_REQUIRES_PRIVATE_SESSION',
+      secrets: held,
+    };
+  }
+  return null;
+}
 
 export function registerPublicSharesRoutes(): void {
   // GET /v1/projects/:projectId/sessions/:sessionId/previews
@@ -122,37 +162,8 @@ export function registerPublicSharesRoutes(): void {
       const guard = await guardSessionSharing(c, loaded, sessionId, 'mint');
       if (!guard.ok) return sessionAccessDenied(c, guard);
       const visible = guard.session;
-      if (
-        await sessionHasPersonalConnectorBinding({
-          accountId: visible.row.accountId,
-          projectId,
-          sessionId,
-        })
-      ) {
-        return c.json(
-          {
-            error: 'Sessions using a personal connection cannot be shared publicly',
-            code: 'PERSONAL_CONNECTOR_CONNECTION_REQUIRES_PRIVATE_SESSION',
-          },
-          409,
-        );
-      }
-
-      const held = await sessionPersonOnlyPlaintextSecrets({
-        accountId: visible.row.accountId,
-        projectId,
-        sessionId,
-      });
-      if (held.length > 0) {
-        return c.json(
-          {
-            error: `This session holds ${held.join(', ')}, shared only with you, and cannot be shared publicly. Start a new session to share.`,
-            code: 'PERSONAL_SECRET_REQUIRES_PRIVATE_SESSION',
-            secrets: held,
-          },
-          409,
-        );
-      }
+      const personal = await personalDataRefusal({ accountId: visible.row.accountId, projectId, sessionId });
+      if (personal) return c.json(personal, 409);
 
       const result = await createPublicShare(body, {
         sessionId,
@@ -200,6 +211,113 @@ export function registerPublicSharesRoutes(): void {
       const share = await revokePublicShare(sessionId, shareId);
       if (!share) return c.json({ error: 'Not found' }, 404);
       return c.json({ share });
+    },
+  );
+
+  // ── Response shares: one assistant response (one turn), by its user message id ──
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/sessions/{sessionId}/turns/{turnId}/share',
+      tags: ['sessions'],
+      summary: 'Read the public share of one assistant response',
+      ...auth,
+      request: { params: TurnParams },
+      responses: {
+        200: json(z.object({ share: TurnShareSchema.nullable() }), 'The live share, or null'),
+        ...errors(400, 403, 404),
+      },
+    }),
+    async (c) => {
+      const { projectId, sessionId, turnId } = c.req.valid('param');
+      if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      // The PUT rule (mayPublishTurn): only someone who could publish sees the token and URL.
+      const guard = await guardTurnPublish(c, loaded, sessionId);
+      if (!guard.ok) return c.json({ error: guard.error }, guard.status);
+
+      const row = await getLiveResponseShare(sessionId, turnId);
+      if (!row) return c.json({ share: null }, 200);
+      const live = await buildResponseSnapshot({ sessionId, projectId, turnId, includePrompt: false });
+      return c.json({ share: serializeTurnShare(row, live.ok ? live.snapshot.markdown : null) }, 200);
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'put',
+      path: '/{projectId}/sessions/{sessionId}/turns/{turnId}/share',
+      tags: ['sessions'],
+      summary: 'Share one assistant response publicly, or refresh its snapshot',
+      description:
+        'Publishes the text of the response as an immutable snapshot built from the stored session log. A second call re-snapshots the same share: the URL does not change. `include_prompt: true` also publishes the prompt text (default false; every call sets it anew). Reasoning, tool calls and files are never published.',
+      ...auth,
+      request: {
+        params: TurnParams,
+        body: {
+          required: false,
+          content: { 'application/json': { schema: lenientBody({
+            include_prompt: z.boolean().optional().openapi({ description: 'Also publish the prompt text. Default false.' }),
+          }) } },
+        },
+      },
+      responses: {
+        200: json(z.object({ share: TurnShareSchema }), 'The live share'),
+        ...errors(400, 403, 404, 409, 413),
+      },
+    }),
+    async (c) => {
+      const { projectId, sessionId, turnId } = c.req.valid('param');
+      if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      // Owner or project manager, human, and able to read the session (mayPublishTurn).
+      const guard = await guardTurnPublish(c, loaded, sessionId);
+      if (!guard.ok) return c.json({ error: guard.error }, guard.status);
+      const personal = await personalDataRefusal({ accountId: guard.session.row.accountId, projectId, sessionId });
+      if (personal) return c.json(personal, 409);
+
+      const body = await readJsonObject(c);
+      const built = await buildResponseSnapshot({ sessionId, projectId, turnId, includePrompt: body.include_prompt === true });
+      if (!built.ok) return c.json({ error: built.error }, built.status);
+      const row = await upsertResponseShare({
+        sessionId,
+        projectId,
+        accountId: guard.session.row.accountId,
+        userId: loaded.userId,
+        turnId,
+        snapshot: built.snapshot,
+      });
+      return c.json({ share: serializeTurnShare(row, built.snapshot.markdown) }, 200);
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/{projectId}/sessions/{sessionId}/turns/{turnId}/share',
+      tags: ['sessions'],
+      summary: 'Revoke the public share of one assistant response',
+      ...auth,
+      request: { params: TurnParams },
+      responses: {
+        200: json(z.object({ share: z.null() }), 'Revoked'),
+        ...errors(400, 403, 404),
+      },
+    }),
+    async (c) => {
+      const { projectId, sessionId, turnId } = c.req.valid('param');
+      if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      // Human owner or project manager; no read check (revoking only removes access).
+      const guard = await guardTurnRevoke(c, loaded, sessionId);
+      if (!guard.ok) return c.json({ error: guard.error }, guard.status);
+
+      await revokeResponseShare(sessionId, turnId);
+      return c.json({ share: null }, 200);
     },
   );
 }

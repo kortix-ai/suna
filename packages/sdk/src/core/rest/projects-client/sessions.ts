@@ -152,6 +152,13 @@ export interface ProjectSession {
    * re-share its contents.
    */
   can_manage_lifecycle?: boolean;
+  /**
+   * May the viewer publish one assistant response of this session through a
+   * public link (`shareTurn`)? A human (not an agent or service credential) who
+   * can read the session and is its owner or a project manager. Only the
+   * single-session reads carry it; absent means unknown, so hide the control.
+   */
+  can_publish_response?: boolean;
   /** Whether the current viewer may open/read this session. */
   can_access?: boolean;
   /** Exact lifecycle state of the backing runtime resource, when present. */
@@ -715,6 +722,65 @@ export async function revokeSessionPublicShare(
     await backendApi.delete<{ share: SessionPublicShare }>(
       `/projects/${projectId}/sessions/${sessionId}/public-shares/${shareId}`,
     ),
+  );
+}
+
+/**
+ * The public share of ONE assistant response (one turn). The turn is keyed by
+ * its user message id (`SessionLogTurn.id`). The server publishes the response
+ * text as an immutable snapshot at `url`; `stale` is true when the live
+ * response no longer matches it (edited or regenerated): `shareTurn` again
+ * refreshes the snapshot and keeps the URL.
+ */
+export interface TurnShare {
+  share_id: string;
+  turn_id: string;
+  token: string;
+  url: string;
+  created_at: string;
+  snapshot_at: string;
+  stale: boolean;
+  /** The snapshot also publishes the prompt that started the turn. */
+  include_prompt: boolean;
+}
+
+function turnSharePath(projectId: string, sessionId: string, turnId: string): string {
+  return `/projects/${projectId}/sessions/${sessionId}/turns/${encodeURIComponent(turnId)}/share`;
+}
+
+/** The live share of one turn, or `{ share: null }`. */
+export async function getTurnShare(projectId: string, sessionId: string, turnId: string): Promise<{ share: TurnShare | null }> {
+  return unwrap(
+    await backendApi.get<{ share: TurnShare | null }>(turnSharePath(projectId, sessionId, turnId), { showErrors: false }),
+  );
+}
+
+/**
+ * Share one response publicly, or refresh the snapshot of its live share (same
+ * URL). `include_prompt: true` also publishes the prompt's text (default off;
+ * every call sets it anew). Rejects with status 409 while the turn has no
+ * response text, 404 for an unknown turn.
+ */
+export async function shareTurn(
+  projectId: string,
+  sessionId: string,
+  turnId: string,
+  options?: { include_prompt?: boolean },
+): Promise<{ share: TurnShare }> {
+  return unwrap(
+    // `showErrors: false`: the share dialog shows the failure inline, once.
+    await backendApi.put<{ share: TurnShare }>(
+      turnSharePath(projectId, sessionId, turnId),
+      { include_prompt: options?.include_prompt === true },
+      { showErrors: false },
+    ),
+  );
+}
+
+/** Revoke the public share of one turn. The link answers 410 afterwards. */
+export async function unshareTurn(projectId: string, sessionId: string, turnId: string): Promise<{ share: null }> {
+  return unwrap(
+    await backendApi.delete<{ share: null }>(turnSharePath(projectId, sessionId, turnId), { showErrors: false }),
   );
 }
 
