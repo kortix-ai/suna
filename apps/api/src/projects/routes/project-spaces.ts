@@ -22,7 +22,7 @@ import { gridApps } from '@kortix/shared/app-config';
 import type { Context } from 'hono';
 import { AppObject, appsJson } from '../../apps/serialize';
 import { spaceApps } from '../../apps/space-apps';
-import { makeChannelFolders, makeDmFolders, moveChannelFolder } from '../../drives/space-folders';
+import { makeChannelFolders, makeDmFolders, moveChannelFolder, refreshRunningThreadNotes } from '../../drives/space-folders';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import type { AppEnv } from '../../types';
@@ -291,6 +291,8 @@ export function registerProjectSpacesRoutes(): void {
       if (link === 'link_limit') {
         return c.json({ error: `A channel pins at most ${SPACE_LINKS_MAX} links. Unpin one first.`, code: 'link_limit' }, 409);
       }
+      // Running threads of the channel list its pinned links in their notes file.
+      void refreshRunningThreadNotes(loaded.row.projectId, space.spaceId);
       return c.json(link, 201);
     },
   );
@@ -328,6 +330,7 @@ export function registerProjectSpacesRoutes(): void {
       if (result === 'link_limit') {
         return c.json({ error: `A channel pins at most ${SPACE_LINKS_MAX} links. Unpin one first.`, code: 'link_limit' }, 409);
       }
+      void refreshRunningThreadNotes(loaded.row.projectId, space.spaceId);
       return c.json({ link: result === 'removed' ? null : result }, 200);
     },
   );
@@ -353,6 +356,7 @@ export function registerProjectSpacesRoutes(): void {
       if (result === 'forbidden') {
         return c.json({ error: 'Only the person who added the link or a project manager can remove it.', code: 'forbidden' }, 403);
       }
+      void refreshRunningThreadNotes(loaded.row.projectId, space.spaceId);
       return c.json({ ok: true as const }, 200);
     },
   );

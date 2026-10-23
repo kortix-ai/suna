@@ -5,7 +5,7 @@
  * projects/lib/project-spaces.ts + feature-flags/toggle-effects.ts.
  */
 import { randomUUID } from 'node:crypto';
-import { SpaceLinkListSchema, SpaceLinkSchema, SpaceListSchema, SpaceSchema, SpaceSummarySchema } from '@kortix/api-contract';
+import { SpaceLinkListSchema, SpaceLinkPinResultSchema, SpaceLinkSchema, SpaceListSchema, SpaceSchema, SpaceSummarySchema } from '@kortix/api-contract';
 import { flow } from '../core/flow';
 import type { FlowContext, FlowMeta } from '../core/types';
 import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
@@ -21,6 +21,7 @@ const TAB_ROUTES = {
   links: 'GET /v1/projects/:projectId/spaces/:spaceId/links',
   addLink: 'POST /v1/projects/:projectId/spaces/:spaceId/links',
   removeLink: 'DELETE /v1/projects/:projectId/spaces/:spaceId/links/:linkId',
+  pinLink: 'PATCH /v1/projects/:projectId/spaces/:spaceId/links/:linkId',
   summary: 'GET /v1/projects/:projectId/spaces/:spaceId/summary',
 };
 const SPACE_APPS = '/v1/projects/:projectId/spaces/:spaceId/apps';
@@ -727,12 +728,13 @@ flow('SPACE-14', meta([...Object.values(TAB_ROUTES), FEATURES_ROUTE]), async (ct
   const { project, world } = await openWorld(ctx);
   const params = { projectId: project.id, spaceId: randomUUID() };
   try {
-    await ctx.step('with project_channels off, the apps, links and summary routes → 403 feature_disabled', async () => {
+    await ctx.step('with project_channels off, the apps, links, pin and summary routes → 403 feature_disabled', async () => {
       for (const r of [
         await world.owner.get(SPACE_APPS, { params }),
         await world.owner.get(SPACE_LINKS, { params }),
         await world.owner.post(SPACE_LINKS, { url: 'https://example.test' }, { params }),
         await world.owner.del(SPACE_LINK, { params: { ...params, linkId: randomUUID() } }),
+        await world.owner.patch(SPACE_LINK, { pinned: true }, { params: { ...params, linkId: randomUUID() } }),
         await world.owner.get(SPACE_SUMMARY, { params }),
       ]) {
         r.status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'project_channels');
@@ -1170,6 +1172,151 @@ flow(
         if (again.visibility !== 'restricted' || again.grants.join() !== world.ownerUserId) {
           throw new Error(`a DM run under a stored project policy is ${again.visibility} with grants ${again.grants.join()}`);
         }
+      });
+    } finally {
+      await world.close();
+    }
+  },
+);
+
+const PROMPTS = '/v1/projects/:projectId/sessions/:sessionId/prompts';
+type Link = {
+  link_id: string;
+  url: string;
+  source: string;
+  pinned: boolean;
+  pinned_by_name: string | null;
+  session_id: string | null;
+  share_count: number;
+  created_by: string | null;
+};
+
+flow(
+  'SPACE-20',
+  meta([TAB_ROUTES.links, TAB_ROUTES.addLink, TAB_ROUTES.pinLink, ROUTES.create, ROUTES.dm, FEATURES_ROUTE, `POST ${PROMPTS}`]),
+  async (ctx) => {
+    const { team, project, world } = await openWorld(ctx, { manifest: true });
+    const params = { projectId: project.id };
+    try {
+      await world.setFeature('project_channels', true);
+      const channel = (await world.owner.post(SPACES, { name: 'Shared links' }, { params })).status(201).json<Space>().space_id;
+      const at = { ...params, spaceId: channel };
+      const thread = await insertSession(world, world.ownerUserId, 'project', { spaceId: channel });
+      const secondThread = await insertSession(world, world.ownerUserId, 'project', { spaceId: channel });
+      const member = await team.addMember('member');
+      await team.grantProjectRole(project.id, member.userId!, 'member');
+      const asMember = ctx.client.as(member);
+
+      const prompt = async (sessionId: string, text: string) =>
+        (
+          await world.owner.post(
+            PROMPTS,
+            { client_message_id: randomUUID(), parts: [{ type: 'text', text }] },
+            { params: { ...params, sessionId } },
+          )
+        ).status([200, 202]);
+      const links = async () => (await world.owner.get(SPACE_LINKS, { params: at })).status(200).json<{ links: Link[] }>().links;
+      /** Collection runs after the prompt is accepted: wait (at most 15 s) until `ready` holds. */
+      const waitFor = async (ready: (rows: Link[]) => boolean): Promise<Link[]> => {
+        const deadline = Date.now() + 15_000;
+        for (;;) {
+          const rows = await links();
+          if (ready(rows)) return rows;
+          if (Date.now() > deadline) throw new Error(`links never settled: ${JSON.stringify(rows)}`);
+          await Bun.sleep(200);
+        }
+      };
+      const byUrl = (rows: Link[], url: string) => rows.find((l) => l.url === url);
+      const PLAN = 'https://example.test/launch-plan';
+      const DOC = 'https://example.test/doc';
+
+      await ctx.step('a person’s prompt in a channel thread → its links listed as source message, unpinned, share_count 1, pointing at the thread', async () => {
+        await prompt(thread, `See ${PLAN}. And [the doc](${DOC}), and javascript:alert(1)`);
+        const rows = await waitFor((r) => r.length === 2);
+        const r = (await world.owner.get(SPACE_LINKS, { params: at })).status(200);
+        r.body().schema(SpaceLinkListSchema);
+        for (const url of [PLAN, DOC]) {
+          const link = byUrl(rows, url);
+          if (!link) throw new Error(`${url} was not collected`);
+          if (link.source !== 'message' || link.pinned || link.share_count !== 1 || link.session_id !== thread || link.created_by !== world.ownerUserId) {
+            throw new Error(`unexpected collected link ${JSON.stringify(link)}`);
+          }
+        }
+      });
+
+      await ctx.step('the same address in another thread → one row, share_count 2, now pointing at that thread, first sharer kept', async () => {
+        await prompt(secondThread, `again: ${PLAN}`);
+        const rows = await waitFor((r) => byUrl(r, PLAN)?.share_count === 2);
+        const link = byUrl(rows, PLAN)!;
+        if (rows.length !== 2 || link.session_id !== secondThread || link.created_by !== world.ownerUserId) {
+          throw new Error(`unexpected after a second share ${JSON.stringify(rows)}`);
+        }
+      });
+
+      await ctx.step('a member pins it → 200 { link } pinned with pinned_by_name; unpinning returns it to the shared links', async () => {
+        const id = byUrl(await links(), PLAN)!.link_id;
+        const pinned = await asMember.patch(SPACE_LINK, { pinned: true }, { params: { ...at, linkId: id } });
+        pinned.status(200).body().schema(SpaceLinkPinResultSchema).has('$.link.pinned', true).has('$.link.source', 'message');
+        if (!pinned.json<{ link: Link }>().link.pinned_by_name) throw new Error('a pinned link names no pinner');
+        if (!byUrl(await links(), PLAN)!.pinned) throw new Error('the pin did not persist');
+        (await asMember.patch(SPACE_LINK, { pinned: false }, { params: { ...at, linkId: id } }))
+          .status(200).body().has('$.link.pinned', false).has('$.link.pinned_by_name', null);
+        const after = byUrl(await links(), PLAN);
+        if (!after || after.pinned) throw new Error('an unpinned collected link left the list or stayed pinned');
+      });
+
+      await ctx.step('an added link is pinned and manual; unpinning it removes it: 403 forbidden for another member, 200 { link: null } for its creator', async () => {
+        const added = (await world.owner.post(SPACE_LINKS, { url: 'https://example.test/brand' }, { params: at })).status(201);
+        added.body().has('$.pinned', true).has('$.source', 'manual').has('$.session_id', null);
+        const id = added.json<Link>().link_id;
+        (await asMember.patch(SPACE_LINK, { pinned: false }, { params: { ...at, linkId: id } })).status(403).body().has('$.code', 'forbidden');
+        (await world.owner.patch(SPACE_LINK, { pinned: false }, { params: { ...at, linkId: id } })).status(200).body().has('$.link', null);
+        if ((await links()).some((l) => l.link_id === id)) throw new Error('an unpinned manual link is still listed');
+      });
+
+      await ctx.step('adding an address the channel already collected pins that row instead of a second one', async () => {
+        const r = await world.owner.post(SPACE_LINKS, { url: DOC, title: 'The doc' }, { params: at });
+        r.status(201).body().has('$.pinned', true).has('$.source', 'message').has('$.title', 'The doc');
+        if ((await links()).filter((l) => l.url === DOC).length !== 1) throw new Error('the add duplicated a collected link');
+      });
+
+      await ctx.step('bad pin input → 400; an unknown or malformed link id → 404 link_not_found', async () => {
+        const id = byUrl(await links(), PLAN)!.link_id;
+        (await world.owner.patch(SPACE_LINK, { pinned: 'yes' }, { params: { ...at, linkId: id } })).status(400);
+        (await world.owner.patch(SPACE_LINK, {}, { params: { ...at, linkId: id } })).status(400);
+        for (const linkId of [randomUUID(), 'not-a-uuid']) {
+          (await world.owner.patch(SPACE_LINK, { pinned: true }, { params: { ...at, linkId } })).status(404).body().has('$.code', 'link_not_found');
+        }
+      });
+
+      await ctx.step('with 200 pinned links, pinning one more → 409 link_limit', async () => {
+        const id = byUrl(await links(), PLAN)!.link_id;
+        await world.db.query(
+          `INSERT INTO kortix.project_space_links (space_id, project_id, url, created_by)
+           SELECT $1, $2, 'https://example.test/pinned-' || n, $3 FROM generate_series(1, 199) AS n`,
+          [channel, project.id, world.ownerUserId],
+        );
+        (await world.owner.patch(SPACE_LINK, { pinned: true }, { params: { ...at, linkId: id } })).status(409).body().has('$.code', 'link_limit');
+        await world.db.query(`DELETE FROM kortix.project_space_links WHERE space_id = $1 AND url LIKE 'https://example.test/pinned-%'`, [channel]);
+      });
+
+      await ctx.step('a DM thread, a private channel thread and a prompt while the flag is off collect nothing', async () => {
+        const dm = (await world.owner.post(DM, { agent_name: 'kortix' }, { params })).status(200).json<Space>().space_id;
+        const dmThread = await insertSession(world, world.ownerUserId, 'private', { spaceId: dm });
+        const privateThread = await insertSession(world, world.ownerUserId, 'private', { spaceId: channel });
+        await prompt(dmThread, 'https://example.test/from-dm');
+        await prompt(privateThread, 'https://example.test/from-private');
+        await world.setFeature('project_channels', false);
+        await prompt(thread, 'https://example.test/flag-off');
+        await world.setFeature('project_channels', true);
+        // A positive control after the three: once it is listed, the three were decided.
+        await prompt(thread, 'https://example.test/control');
+        const rows = await waitFor((r) => !!byUrl(r, 'https://example.test/control'));
+        for (const url of ['https://example.test/from-private', 'https://example.test/flag-off']) {
+          if (byUrl(rows, url)) throw new Error(`${url} was collected`);
+        }
+        const { rows: dmRows } = await world.db.query('SELECT 1 FROM kortix.project_space_links WHERE space_id = $1', [dm]);
+        if (dmRows.length !== 0) throw new Error('a DM thread collected a link');
       });
     } finally {
       await world.close();
