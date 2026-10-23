@@ -327,7 +327,7 @@ async function captureSessionTranscript(
         sqlstate: errorSqlstate(err) ?? 'unknown',
       });
     } else {
-      console.warn(`[session-log] box capture failed for session ${sessionId}`, {
+      console.warn('[session-log] box capture failed for session %s', sessionId, {
         sessionId,
         error: detail,
         sqlstate: errorSqlstate(err) ?? 'unknown',
