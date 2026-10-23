@@ -62,12 +62,16 @@ const BLOCKING_TURN_PATH = new RegExp(`^/session/[^/]+/(?:${BLOCKING_TURN_VERBS.
  * proxy (`isLongTurnCompletionRequest`) reads the same `BLOCKING_TURN_VERBS`:
  * the two layers must agree, or the inner one aborts what the outer one is
  * patiently waiting for.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function isBlockingTurnRequest(method: string, path: string): boolean {
   return method.toUpperCase() === 'POST' && BLOCKING_TURN_PATH.test(path)
 }
 
-/** Native readiness and upstream protocol handling, without route registration. */
+/**
+ * Native readiness and upstream protocol handling, without route registration.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function createOpenCodeProxyService(
   opencode: Opencode,
   instanceGuard: Pick<InstanceGuard, 'settled'>,

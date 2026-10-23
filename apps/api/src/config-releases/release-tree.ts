@@ -182,7 +182,10 @@ interface ReleaseTreeSource {
   configDir: string | null;
   /** The commit's root tree ID in the mirror. */
   rootTree: string;
-  /** Selected plugins; null keeps the legacy, globally auto-discovered set. */
+  /**
+   * Selected plugins; null keeps the legacy, globally auto-discovered set.
+   * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+   */
   plugins: string[] | null;
   /** Files left out of the release: `export-ignore`d ones, and a v3 tree's leftover `opencode.json[c]`. */
   exportIgnored: string[];
@@ -437,7 +440,10 @@ export async function toolModuleFiles(mirror: string, rootTree: string, modules:
   return [...found.values()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
 }
 
-/** v2 only: filename references, the implementation stays in the repository. v3 has no plugin variants. */
+/**
+ * v2 only: filename references, the implementation stays in the repository. v3 has no plugin variants.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ */
 export function selectedOpenCodePlugins(manifest: Record<string, unknown> | null, agent: string): string[] | null {
   if (manifest?.kortix_version !== 2) return null;
   const global = (manifest.harnesses as { opencode?: { plugins?: string[] } } | undefined)?.opencode?.plugins;

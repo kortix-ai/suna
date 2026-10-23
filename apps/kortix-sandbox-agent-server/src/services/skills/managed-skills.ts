@@ -162,6 +162,7 @@ export async function withheldManagedSkills(
  * earlier boot left (or a skill an earlier flag-off boot withheld) survives restarts and env
  * changes; every OpenCode spawn calls this. `unseal` opens a sealed release dir for the write and
  * puts the seal back. Never throws.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function syncFlaggedManagedSkills(
   skillsDir: string,
@@ -226,6 +227,7 @@ async function removeInjectedSkill(skillsDir: string, name: string, unseal: bool
  * Defensive by design: never throws (a failure just leaves the repo's own copy
  * in place), and no-ops when the baked dir is absent (e.g. a pre-bake image) —
  * exactly like `ensureOpencodeConfigDeps`, which it's called right after.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function ensureInjectedManagedSkills(
   configDir: string,

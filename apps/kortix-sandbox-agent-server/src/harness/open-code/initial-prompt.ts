@@ -2,6 +2,7 @@ import { relayTurnAbandoned, relayTurnAccepted } from '../shared/turn-relay'
 import type { Opencode } from './lifecycle'
 import { observeOpencodeDelivery } from './opencode-turn-state'
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function createInitialOpenCodeSession(
   opencode: Opencode,
   workspace: string,
@@ -12,6 +13,7 @@ export async function createInitialOpenCodeSession(
   return { id: session.id }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function deliverInitialOpenCodePrompt(
   opencode: Opencode,
   sessionId: string,
@@ -32,6 +34,7 @@ export async function deliverInitialOpenCodePrompt(
   }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export type InitialTurnAcceptanceReconciliation = 'accepted' | 'inactive' | 'unknown'
 
 /**
@@ -39,6 +42,7 @@ export type InitialTurnAcceptanceReconciliation = 'accepted' | 'inactive' | 'unk
  * before boot calls it abandoned. Matches the control plane's delivery grace
  * (`KORTIX_SANDBOX_TURN_DELIVERY_GRACE_MINUTES`, 15 min): the `delivering`
  * record expires on that grace anyway, so a longer wait buys nothing.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export const INITIAL_TURN_PICKUP_GRACE_MS = 15 * 60_000
 
@@ -49,6 +53,7 @@ export const INITIAL_TURN_PICKUP_GRACE_MS = 15 * 60_000
  * A restart can reuse a root that already contains an older prompt. Root-level
  * `hasMessages` evidence is therefore insufficient: it would promote a new
  * token for work that the daemon deliberately did not rerun.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function reconcileInitialTurnAcceptanceToApi(
   opencodeBaseUrl: string,
@@ -108,11 +113,15 @@ export async function reconcileInitialTurnAcceptanceToApi(
  * loop.
  */
 let sessionCreateAttemptTimeoutMs = 10_000
-/** Tests shorten the attempt timeout; it stays above the 1.6 s slow create they also prove. */
+/**
+ * Tests shorten the attempt timeout; it stays above the 1.6 s slow create they also prove.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function setSessionCreateAttemptTimeoutMsForTests(ms: number): void {
   sessionCreateAttemptTimeoutMs = ms
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function waitForInitialSessionCreate(baseUrl: string, workspace: string): Promise<Response> {
   const url = `${baseUrl}/session?directory=${encodeURIComponent(workspace)}`
   const deadline = Date.now() + 20_000
@@ -148,6 +157,7 @@ export async function waitForInitialSessionCreate(baseUrl: string, workspace: st
  * The session model from KORTIX_OPENCODE_MODEL on the one OpenCode provider,
  * `kortix`. The model id is the complete gateway wire ref (`codex/gpt-5.6-sol`),
  * never split into an OpenCode provider and model.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function resolveOpencodeModel(): { providerID: string; modelID: string } | undefined {
   const raw = (process.env.KORTIX_OPENCODE_MODEL ?? '').trim()
@@ -155,7 +165,10 @@ export function resolveOpencodeModel(): { providerID: string; modelID: string } 
   return modelID ? { providerID: 'kortix', modelID } : undefined
 }
 
-/** Build the first-turn request from the session-bound runtime environment. */
+/**
+ * Build the first-turn request from the session-bound runtime environment.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function buildInitialPromptBody(prompt: string, claimedMessageId?: string, context?: string): {
   messageID?: string
   parts: Array<{ type: 'text'; text: string; synthetic?: boolean }>

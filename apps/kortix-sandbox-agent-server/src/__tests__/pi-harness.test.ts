@@ -875,6 +875,24 @@ describe('pi harness', () => {
     expect(existsSync(join(r.workspace, 'new.txt'))).toBe(false)
   })
 
+  test('a path deny holds for every spelling of the path the read tool resolves', async () => {
+    const permission = { read: { 'secrets/*': 'deny', '*': 'allow' } }
+    for (const path of ['./secrets/a', 'x/../secrets/a', '@secrets/a']) {
+      const r = await boot({
+        script: [{ tool: 'read', args: { path } }, { text: 'blocked' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission } } }) },
+        prepare: (workspace) => {
+          mkdirSync(join(workspace, 'secrets'))
+          writeFileSync(join(workspace, 'secrets', 'a'), 'sentinel-secret')
+        },
+      })
+      const tool = await firstToolPart(r)
+      expect(tool.state.status).toBe('error')
+      expect(tool.state.error).toContain('denies')
+      expect(JSON.stringify(tool)).not.toContain('sentinel-secret')
+    }
+  })
+
   test('the manifest skills grant hides every other skill: managed, project and pi skill dirs (W1 B3)', async () => {
     const skill = (dir: string, name: string) => {
       mkdirSync(join(dir, name), { recursive: true })
@@ -2969,32 +2987,6 @@ describe('pi compaction', () => {
     expect(turn!.part).toMatchObject({ type: 'compaction', auto: true })
     expect(turn!.summary.parts[0]!.text).toContain('SUMMARY-ONE')
     expect(page.messages.filter((m) => m.info.error)).toEqual([])
-  })
-
-  test('KORTIX_PI_COMPACT_AT_TOKENS compacts a context far below the model window', async () => {
-    // Window 64,000: pi alone waits until 47,616. A 30,000 context stays put without the budget...
-    const plain = await boot({ script: [{ text: 'first answer' }, { text: 'big answer', promptTokens: 30_000 }], prepare: compactEverything })
-    await promptAndSettle(plain, 'ALPHA question')
-    await promptAndSettle(plain, 'BETA question')
-    await waitFor(() => plain.service.runtime()!.idle())
-    const plainPage = (await plain.bearer(`/kortix/runtime/messages/${plain.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
-    expect(compactionTurns(plainPage)).toEqual([])
-
-    // ...and compacts by itself once the budget (20,000) is below it.
-    const r = await boot({
-      script: [{ text: 'first answer' }, { text: 'big answer', promptTokens: 30_000 }, ...SUMMARY],
-      prepare: compactEverything,
-      env: { KORTIX_PI_COMPACT_AT_TOKENS: '20000' },
-    })
-    const root = r.service.runtime()!.rootId
-    await promptAndSettle(r, 'ALPHA question')
-    await promptAndSettle(r, 'BETA question')
-    await waitFor(() => r.service.runtime()!.idle())
-    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
-    const [turn] = compactionTurns(page)
-    expect(turn!.part).toMatchObject({ type: 'compaction', auto: true })
-    // The transcript keeps the history before the cut.
-    expect(JSON.stringify(page.messages)).toContain('ALPHA question')
   })
 
   test('a context overflow compacts and retries: the turn completes with no error on the wire', async () => {

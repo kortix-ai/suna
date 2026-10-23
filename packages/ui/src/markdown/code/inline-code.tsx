@@ -20,6 +20,7 @@ import { useSessionBrowserStore } from '../../internal/stores/session-browser-st
 import { useUiLink } from '../../providers/ui-provider';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useInsideLink } from './inside-link-context';
+import { outputPathForName, useOutputPaths } from './output-paths-context';
 
 import { childrenToText } from './children-text';
 // Server-safe by design — see `inline-chip.tsx`. Re-exported so the client
@@ -152,6 +153,7 @@ export function ClickableInlineCode({ children }: { children: React.ReactNode })
   const { proxyUrl } = useSandboxProxy();
   const openPreview = useOpenPreviewLink();
   const insideLink = useInsideLink();
+  const outputPaths = useOutputPaths();
   const text = childrenToText(children).trim();
 
   // Before the URL and path checks: a hex is neither, and the test is a single
@@ -222,6 +224,13 @@ export function ClickableInlineCode({ children }: { children: React.ReactNode })
 
   if (looksLikeFilePath(text)) {
     return <FilePathCode text={text}>{children}</FilePathCode>;
+  }
+
+  // A bare filename (`claims.md`) is no path, but it may name one of this
+  // session's outputs: open that file, still showing the name.
+  const outputPath = outputPathForName(text, outputPaths);
+  if (outputPath) {
+    return <FilePathCode text={outputPath}>{children}</FilePathCode>;
   }
 
   return <code className={INLINE_CODE}>{children}</code>;

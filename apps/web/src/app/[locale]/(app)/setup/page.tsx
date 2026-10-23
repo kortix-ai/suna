@@ -1,7 +1,4 @@
-'use client';
-
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { redirect } from 'next/navigation';
 
 import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 
@@ -10,11 +7,5 @@ import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing
  * account and project settings rather than the legacy dashboard workspace.
  */
 export default function SetupPage() {
-  const router = useRouter();
-
-  useEffect(() => {
-    router.replace(PROJECT_LANDING_PATH);
-  }, [router]);
-
-  return null;
+  redirect(PROJECT_LANDING_PATH);
 }

@@ -2,7 +2,7 @@
 
 import { NewEntityMenu } from '../shared/new-entity-menu';
 import { useTranslations as useI18nTranslations } from '../../i18n';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 import { Button } from '../../primitives/button';
 import {
@@ -112,9 +112,7 @@ export function SkillsPage({ projectId }: { projectId: string }) {
 
   // The one honest auto-close: the config came back and this skill is not in
   // it, so it really was deleted or renamed.
-  useEffect(() => {
-    if (detail.isMissing) setSelectedPath(null);
-  }, [detail.isMissing]);
+  if (detail.isMissing) setSelectedPath(null);
 
   // `null` = render the grid. Otherwise which "nothing to show" copy applies:
   // genuinely zero skills vs. skills exist but this filter/search hid all of
@@ -204,7 +202,7 @@ export function SkillsPage({ projectId }: { projectId: string }) {
               secondaryAction={
                 <Button asChild variant="ghost" size="sm" className="gap-1.5">
                   <a
-                    href="https://opencode.ai/docs/skills/"
+                    href="/docs/project/agents#skills"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -229,6 +227,7 @@ export function SkillsPage({ projectId }: { projectId: string }) {
         projectId={projectId}
         entity={detail.record}
         kind="skill"
+        removable
         open={detail.open}
         isResolving={detail.isResolving}
         onOpenChange={(next) => {

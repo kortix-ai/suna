@@ -46,17 +46,17 @@ import {
 import { useNotificationPreferences } from '@kortix/sdk/react';
 import { SettingsTabHeader } from '@kortix/ui/customize/settings/settings-tab-header';
 
-const SOUND_PACKS: { id: SoundPack; label: string; description: string }[] = [
-  { id: 'off', label: 'Off', description: 'All sounds disabled' },
-  { id: 'opencode', label: 'Default', description: 'Default sound pack' },
-  { id: 'kortix', label: 'Seshion Pack', description: 'Whistlin' },
+const SOUND_PACKS: { id: SoundPack }[] = [
+  { id: 'off' },
+  { id: 'opencode' },
+  { id: 'kortix' },
 ];
 
-const SOUND_EVENTS: { id: SoundEvent; label: string; description: string }[] = [
-  { id: 'completion', label: 'Task Completion', description: 'When AI finishes a task' },
-  { id: 'error', label: 'Error', description: 'When a session encounters an error' },
-  { id: 'notification', label: 'Notification', description: 'Questions and permission requests' },
-  { id: 'send', label: 'Message Sent', description: 'When you send a message' },
+const SOUND_EVENTS: { id: SoundEvent }[] = [
+  { id: 'completion' },
+  { id: 'error' },
+  { id: 'notification' },
+  { id: 'send' },
 ];
 
 type NotificationPrefKey = Exclude<keyof WebNotificationPreferences, 'enabled'>;
@@ -78,52 +78,36 @@ interface LabelDescription {
 const NOTIFICATION_TYPE_TOGGLES: {
   key: NotificationTypeKey;
   icon: PhosphorIcon;
-  label: string;
-  description: string;
 }[] = [
   {
     key: 'onCompletion',
     icon: CheckCircleSolid,
-    label: 'Task completions',
-    description: 'When a session finishes its task',
   },
   {
     key: 'onError',
     icon: DangerTriangleSolid,
-    label: 'Errors',
-    description: 'When a session encounters an error',
   },
   {
     key: 'onQuestion',
     icon: QuestionCircleSolid,
-    label: 'Questions',
-    description: 'When Kortix needs your input to continue',
   },
   {
     key: 'onPermission',
     icon: ShieldCheckSolid,
-    label: 'Permission requests',
-    description: 'When Kortix needs permission to use a tool',
   },
 ];
 
 const NOTIFICATION_BEHAVIOR_TOGGLES: {
   key: NotificationBehaviorKey;
   icon: PhosphorIcon;
-  label: string;
-  description: string;
 }[] = [
   {
     key: 'onlyWhenHidden',
     icon: EyeOffSolid,
-    label: 'Only when tab is hidden',
-    description: "Only notify when you're on another tab",
   },
   {
     key: 'playSound',
     icon: Volume2,
-    label: 'Notification sound',
-    description: 'Play a sound when a notification is sent',
   },
 ];
 
@@ -269,9 +253,9 @@ export function SessionsTabView({
               <>
                 {!notificationCenter && (
                   <div className="flex flex-col space-y-3">
-                    <label className="text-muted-foreground text-sm font-medium">
+                    <p className="text-muted-foreground text-sm font-medium">
                       {copy.notificationTypes}
-                    </label>
+                    </p>
                     <div className="divide-y rounded-md border">
                       {NOTIFICATION_TYPE_TOGGLES.map((toggle) => (
                         <NotificationToggle
@@ -289,9 +273,9 @@ export function SessionsTabView({
                 )}
 
                 <div className="flex flex-col space-y-3">
-                  <label className="text-muted-foreground text-sm font-medium">
+                  <p className="text-muted-foreground text-sm font-medium">
                     {copy.behavior}
-                  </label>
+                  </p>
                   <div className="divide-y rounded-md border">
                     {NOTIFICATION_BEHAVIOR_TOGGLES.map((toggle) => (
                       <NotificationToggle
@@ -453,6 +437,7 @@ export function SessionsTabView({
                         <Button
                           variant="ghost"
                           size="icon"
+                          aria-label={copy.preview}
                           className="text-muted-foreground duration-moderate opacity-0 transition-opacity group-hover:opacity-100"
                           onClick={() => onSoundPreview(event.id)}
                         >

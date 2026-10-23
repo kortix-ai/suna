@@ -38,7 +38,11 @@ import { useSessionIds } from '../../providers/session-ids';
 import { useUiComponents } from '../../providers/ui-provider';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { ModelSearchEmpty } from './model-search-empty';
-import { resolveAvailableSelectedModel } from './model-availability';
+import {
+  isRunnableModel,
+  resolveAvailableSelectedModel,
+  unavailableModelConnection,
+} from './model-availability';
 import {
   isPickerGroupOpen,
   modelItemValue,
@@ -135,6 +139,7 @@ function ModelRow({
   onSelect,
   scope,
   showSubscriptionTag = true,
+  connectLabel,
 }: {
   model: FlatModel;
   groupProviderID: string;
@@ -149,8 +154,13 @@ function ModelRow({
   /** False inside a section whose heading already names the billing, so the
    *  same fact is not repeated on every row. */
   showSubscriptionTag?: boolean;
+  /** Tag for a model whose provider is not connected (`available: false`). */
+  connectLabel: string;
 }) {
   const t = useTranslations('modelSelector');
+  // Kept in the list so a default stays visible, but not runnable: the row
+  // reads "Connect" and selecting it opens the connection (KRTX-3011).
+  const unavailable = model.available === false;
   const isFree = shouldShowFreeTag(model);
   const isSubscription = isSubscriptionModel(model);
   // Display name only — `model.modelName` still carries " (ChatGPT)" for search
@@ -197,7 +207,7 @@ function ModelRow({
         className="size-4 rounded-none bg-transparent"
       />
 
-      <span className="min-w-0 flex-1 truncate leading-tight">
+      <span className={cn('min-w-0 flex-1 truncate leading-tight', unavailable && 'opacity-60')}>
         <span className="text-foreground font-medium">{lead}</span>
         {trail ? <span className="text-muted-foreground font-normal"> {trail}</span> : null}
       </span>
@@ -209,7 +219,9 @@ function ModelRow({
         Neutral on purpose: this is metadata, not status, and the seven
         `kortix-*` accents are reserved for state.
       */}
-      {isFree ? (
+      {unavailable ? (
+        <Tag>{connectLabel}</Tag>
+      ) : isFree ? (
         <Tag variant="free">{t('free')}</Tag>
       ) : isSubscription && showSubscriptionTag ? (
         <Tag>{t('included')}</Tag>
@@ -502,7 +514,7 @@ export function ModelSelector({
   /** Does this member already have ChatGPT subscription models? Then the row
    *  manages their accounts instead of offering to connect one. */
   const hasChatGptModels = useMemo(
-    () => models.some((m) => m.enabled !== false && pickerGroupId(m) === 'codex'),
+    () => models.some((m) => isRunnableModel(m) && pickerGroupId(m) === 'codex'),
     [models],
   );
 
@@ -577,14 +589,6 @@ export function ModelSelector({
     };
   }, [defaultControls?.accountDefault, visibleModels]);
 
-  const handleSelect = useCallback(
-    (model: FlatModel) => {
-      onSelect({ providerID: model.providerID, modelID: model.modelID });
-      setOpen(false);
-    },
-    [onSelect, setOpen],
-  );
-
   const handleOpenProviderModal = useCallback(
     (tab: ProviderModalTab) => {
       setOpen(false);
@@ -593,15 +597,27 @@ export function ModelSelector({
     [openConnectProvider, setOpen],
   );
 
-  const handleUpgrade = useCallback(() => {
-    setOpen(false);
-    openUpgrade();
-  }, [openUpgrade, setOpen]);
-
   const handleOpenChatGpt = useCallback(() => {
     setOpen(false);
     setChatGptOpen(true);
   }, [setOpen]);
+
+  const handleSelect = useCallback(
+    (model: FlatModel) => {
+      // An unavailable model is never chosen: the turn would fail after Send.
+      const connect = unavailableModelConnection(model, { chatGptAvailable });
+      if (connect === 'chatgpt') return handleOpenChatGpt();
+      if (connect === 'provider') return handleOpenProviderModal('providers');
+      onSelect({ providerID: model.providerID, modelID: model.modelID });
+      setOpen(false);
+    },
+    [onSelect, setOpen, chatGptAvailable, handleOpenChatGpt, handleOpenProviderModal],
+  );
+
+  const handleUpgrade = useCallback(() => {
+    setOpen(false);
+    openUpgrade();
+  }, [openUpgrade, setOpen]);
 
   return (
     <>
@@ -712,6 +728,7 @@ export function ModelSelector({
                           isAccountDefault
                           defaultControls={rowDefaultControls}
                           onSelect={handleSelect}
+                          connectLabel={tPooled('connect')}
                           scope="pinned"
                         />
                       </CommandGroup>
@@ -804,6 +821,7 @@ export function ModelSelector({
                                 }
                                 defaultControls={rowDefaultControls}
                                 onSelect={handleSelect}
+                                connectLabel={tPooled('connect')}
                                 scope="model"
                                 showSubscriptionTag={false}
                               />

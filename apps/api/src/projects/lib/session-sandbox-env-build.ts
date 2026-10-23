@@ -40,7 +40,7 @@ import { resolveSessionSecretGrant } from './secret-grant';
 import { AmbiguousSecretGrantError, intersectSecretGrants, listProjectSecretsSnapshotForUser } from '../secrets';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 import { piPackageBundleForSession } from '../../pi-packages/bundle';
-import { manifestPiCodemode, manifestPiPackages, manifestRuntime, resolveCompiledAgentConfigForSession, resolveSelectedAgentConfigForSession, selectSessionHarness } from './compile-agent-config';
+import { manifestPiCodemode, manifestPiPackages, resolveCompiledAgentConfigForSession, resolveSelectedAgentConfigForSession } from './compile-agent-config';
 
 
 
@@ -135,7 +135,6 @@ type SessionSandboxEnvInput = {
 async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise<{
   agentGrantEnv: string[] | 'all' | undefined;
   compiledAgentConfig: string | null;
-  manifestHarness: 'opencode' | 'pi' | null;
   manifestPackages: unknown[];
   manifestCodemode: 'off' | 'on' | 'only' | null;
 }> {
@@ -151,14 +150,8 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
   let compiledAgentConfig: string | null = input.platformMetaAgent
     ? buildPlatformMetaOpenCodeConfig()
     : null;
-  // The harness the daemon boots — `selectSessionHarness`: the project's
-  // `pi_harness` flag (on ⇒ pi) OR the manifest's `runtime: pi`, and only
-  // with the LLM gateway on (pi has no other model path). The manifest
-  // is read off the SAME fetch that compiles the agent config, so selecting
-  // pi costs no extra git round trip. Every provisioning path (create,
-  // restart, resume, open/ensure) builds its env here, so a pi project stays
-  // on pi across the session's whole life.
-  let manifestHarness: 'opencode' | 'pi' | null = null;
+  // The agent's pi packages and codemode, read off the SAME fetch that
+  // compiles the agent config, so they cost no extra git round trip.
   let manifestPackages: unknown[] = [];
   let manifestCodemode: 'off' | 'on' | 'only' | null = null;
   if (input.defaultBranch && !input.platformMetaAgent) {
@@ -170,7 +163,6 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
       gitAuthToken: null,
     };
     const onManifest = (raw: Record<string, unknown>) => {
-      manifestHarness = manifestRuntime(raw);
       manifestPackages = manifestPiPackages(raw, input.agentName);
       manifestCodemode = manifestPiCodemode(raw, input.agentName);
     };
@@ -209,18 +201,14 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
       sessionAgent: input.agentName,
     });
   }
-  return { agentGrantEnv, compiledAgentConfig, manifestHarness, manifestPackages, manifestCodemode };
+  return { agentGrantEnv, compiledAgentConfig, manifestPackages, manifestCodemode };
 }
 
 /**
- * The harness the daemon boots, from the project flags and the manifest runtime, and
- * whether the daemon restores its native store from the session log at boot
+ * Whether the daemon restores its native store from the session log at boot
  * (`session_log_restore`, kortixd `harness/shared/session-log-boot.ts`).
  */
-async function resolveSessionHarness(
-  input: SessionSandboxEnvInput,
-  manifestHarness: 'opencode' | 'pi' | null,
-): Promise<{ harness: 'opencode' | 'pi'; sessionLogRestore: boolean }> {
+async function resolveSessionLogRestore(input: SessionSandboxEnvInput): Promise<boolean> {
   // One indexed read for the flag: the callers hold the project row in
   // different shapes (or not at all on the reload paths), and the flag must
   // apply on every provisioning path, not only create.
@@ -237,22 +225,12 @@ async function resolveSessionHarness(
   // `recover-lost-session.ts`) and a restored deleted session
   // (`restore-session.ts`) restore from their log whatever the project flag says.
   const sessionMetadata = (projectRow?.sessionMetadata ?? null) as Record<string, unknown> | null;
-  const sessionLogRestore =
+  return (
     resolveFeatureFlag(projectRow?.metadata, 'session_log_restore') ||
     typeof sessionMetadata?.lostRecoveredAt === 'string' ||
     typeof sessionMetadata?.restoredAt === 'string' ||
-    typeof sessionMetadata?.forkedFromSessionId === 'string';
-  if (input.platformMetaAgent) {
-    // SUNA runs on the pi harness (the pi coding-agent path), not OpenCode.
-    // pi reads the SAME KORTIX_COMPILED_AGENT_CONFIG the OpenCode path receives
-    // (harness/pi/config.ts:19-22), so the compiled agent prompt is unchanged.
-    return { harness: 'pi', sessionLogRestore };
-  }
-  const harness = selectSessionHarness({
-    piHarnessFlag: resolveFeatureFlag(projectRow?.metadata, 'pi_harness'),
-    runtime: manifestHarness,
-  });
-  return { harness, sessionLogRestore };
+    typeof sessionMetadata?.forkedFromSessionId === 'string'
+  );
 }
 
 /** Read the session's runtime secrets and drop the ones the sandbox must never hold. */
@@ -328,12 +306,12 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
   // value to the sandbox. Every OTHER secret is project-wide (secret
   // sharing was retired — authorization is centralized on the running agent's
   // `secrets` grant, applied below by identifier).
-  const { agentGrantEnv, compiledAgentConfig, manifestHarness, manifestPackages, manifestCodemode } =
+  const { agentGrantEnv, compiledAgentConfig, manifestPackages, manifestCodemode } =
     await resolveSessionAgentConfig(input);
-  const { harness, sessionLogRestore } = await resolveSessionHarness(input, manifestHarness);
+  const sessionLogRestore = await resolveSessionLogRestore(input);
   // The prebuilt bundle of the project's pi packages (one S3 HEAD + presign; none without npm packages).
   const piPackagesBundle =
-    harness === 'pi' && manifestPackages.length > 0
+    manifestPackages.length > 0
       ? await piPackageBundleForSession(manifestPackages, { projectId: input.projectId, sessionId: input.sessionId })
       : null;
 
@@ -414,7 +392,7 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
   // pi boots from the published release: signed store URLs, no API call (config-releases/publish.ts).
   // Any other session, and any lookup that fails, leaves it out: the box asks the descriptor route.
   const configRelease =
-    harness === 'pi' && (input.repositoryAccess ?? true) && !input.platformMetaAgent
+    (input.repositoryAccess ?? true) && !input.platformMetaAgent
       ? await configReleaseEnvForSession({
           projectId: input.projectId,
           ref: input.baseRef,
@@ -481,7 +459,6 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
       // the session's OpenCode config default.
       opencodeModel,
       compiledAgentConfig,
-      harness,
       piPackages: manifestPackages,
       piCodemode: manifestCodemode,
       piPackagesBundle,

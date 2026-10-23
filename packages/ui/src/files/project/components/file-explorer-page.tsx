@@ -576,7 +576,11 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
         />
       </div>
 
-      <ChangeRequestDetailDialog crId={createdCrId} onClose={() => setCreatedCrId(null)} />
+      <ChangeRequestDetailDialog
+        crId={createdCrId}
+        onClose={() => setCreatedCrId(null)}
+        onOpenChangeRequest={setCreatedCrId}
+      />
 
       <ExplorerFilePreview />
       {searchEnabled && isSearchOpen && <FileSearch />}

@@ -1,4 +1,12 @@
 {
+  "agentNavPrototype": {
+    "variantRail": "Left rail (today)",
+    "variantTabs": "Grouped underline tabs",
+    "variantGroups": "Group switch + tabs",
+    "variantInline": "Vertical tabs with values",
+    "previousVariant": "Previous variant",
+    "nextVariant": "Next variant"
+  },
   "repositoryDisconnected": {
     "title": "GitHub disconnected",
     "reconnect": "Reconnect GitHub",
@@ -728,6 +736,9 @@
       "iconDescription": "Shown next to the project name.",
       "name": "Project name",
       "nameDescription": "Shown in the project switcher and anywhere this project is listed.",
+      "defaultEffort": "Default reasoning effort",
+      "defaultEffortDescription": "Applied to new prompts that carry no explicit effort pick, when the session's model supports it.",
+      "defaultEffortAutomatic": "Automatic",
       "saving": "Saving…",
       "archived": "Project archived",
       "archiveFailed": "Failed to archive project",
@@ -747,7 +758,19 @@
         "access": "Access for everyone on the team — nobody can reach this project again"
       },
       "reassurance": "Git repositories you connected yourself are not deleted. Any code already pushed to them stays where it is.",
-      "keepWorkspace": "Keep project"
+      "keepWorkspace": "Keep project",
+      "transferWorkspace": "Transfer project",
+      "transferDescription": "Move this project — its sessions, files, settings and member access — to another organization.",
+      "transferTitle": "Transfer project",
+      "transferDialog": "Sessions, files and settings follow the project. System member roles follow; groups, pending invitations and custom roles must be granted again in the target organization. Recorded usage stays on this organization’s bill.",
+      "transferTargetLabel": "Target organization",
+      "transferTargetPlaceholder": "Choose an organization",
+      "transferLoadingTargets": "Loading organizations…",
+      "transferNoTargets": "You are not a member of any other organization.",
+      "transferMove": "Move project",
+      "transferMoveTo": "Move to {name}",
+      "transferSuccess": "Project transferred",
+      "transferFailed": "Transfer failed"
     },
     "sandbox": {
       "states": {
@@ -773,12 +796,6 @@
         "kortixDefault": "Kortix default",
         "definedIn": "Defined in"
       },
-      "routing": {
-        "title": "Routing",
-        "automatic": "Automatic",
-        "pinned": "Pinned",
-        "pinnedWithProvider": "Pinned · {provider}"
-      },
       "toasts": {
         "rebuildStarted": "Rebuild started for “{name}”",
         "buildFailed": "Failed to start build",
@@ -796,9 +813,7 @@
         "building": "Building",
         "failed": "Failed",
         "notReady": "Not ready",
-        "unavailable": "Unavailable",
-        "selected": "Selected",
-        "selectedAria": "selected"
+        "unavailable": "Unavailable"
       },
       "defaultBadge": "Default",
       "runtime": "Session runtime",
@@ -809,14 +824,6 @@
         "confirm": "Delete"
       },
       "provider": {
-        "label": "Sandbox provider",
-        "experimental": "Experimental",
-        "description": "Pin this project to a specific sandbox provider, overriding the platform default. New sessions here run on the chosen provider — “Automatic” follows the platform default.",
-        "preparing": "Preparing {provider}… this can take a few minutes",
-        "fallback": "the sandbox provider",
-        "switched": "Switched to {provider}",
-        "switchFailed": "Sandbox provider switch failed",
-        "updateFailed": "Failed to update sandbox provider",
         "legacy": "Legacy",
         "legacyNote": "Daytona is a legacy fallback provider. Its removal is scheduled. Existing Daytona sessions keep working for now, but Daytona gets no new features and no support guarantee. Use Platinum."
       },
@@ -1062,10 +1069,6 @@
           "name": "Pooled Provider Secrets",
           "description": "Members connect their own ChatGPT subscriptions and provider keys, share them when needed, and choose which ones each session uses."
         },
-        "pi_harness": {
-          "name": "Pi Harness (in-sandbox)",
-          "description": "Run sessions on the pi harness inside the session sandbox instead of OpenCode. Off, `runtime: pi` in the manifest still selects pi."
-        },
         "genui": {
           "name": "Generative UI",
           "description": "The agent may answer with cards, comparisons, charts, maps, and tabs instead of long text."
@@ -1093,10 +1096,6 @@
         "drives": {
           "name": "Drive",
           "description": "Shared folders that stay in sync with sessions: your own drive, one per agent, and company drives an admin attaches to the project. New sessions see them under /drives."
-        },
-        "session_log": {
-          "name": "Session log v2",
-          "description": "Reads a session through the v2 session log instead of the v1 transcript. Kortix enables it per project."
         },
         "session_log_restore": {
           "name": "Session log restore",
@@ -1140,6 +1139,7 @@
     },
     "credits": {
       "loadFailed": "Could not load this account.",
+      "resetAt": "Plan credits reset on",
       "availableBalance": "Available balance",
       "creditCount": "{count, plural, one {{formatted} credit} other {{formatted} credits}}",
       "owed": "owed",
@@ -1505,6 +1505,7 @@
   },
   "sidebar": {
     "rooms": "Rooms",
+    "goals": "Goals",
     "referAndEarn": "Refer & Earn",
     "referralShareTitle": "Refer Friends",
     "referralShareSubtitle": "Get 400 credits",
@@ -1593,6 +1594,10 @@
       "showMore": "Show more",
       "brief": {
         "status": "Status",
+        "subAgent": "Sub-agent",
+        "spawned": "Spawned session",
+        "subAgentCount": "{count, plural, one {# sub-agent} other {# sub-agents}}",
+        "spawnedCount": "{count, plural, one {# spawned session} other {# spawned sessions}}",
         "created": "Created",
         "source": "Source",
         "changeRequests": "Change requests",
@@ -1606,11 +1611,12 @@
         }
       },
       "status": {
-        "needsYou": "Needs you",
-        "starting": "Starting",
-        "running": "Running",
-        "done": "Done",
-        "stopped": "Stopped",
+        "needsYou": "Needs review",
+        "needsInput": "Needs input",
+        "starting": "Waking",
+        "running": "Working",
+        "done": "Ready",
+        "stopped": "Asleep",
         "failed": "Failed",
         "legacy": "Legacy"
       }
@@ -2201,6 +2207,11 @@
   },
   "billing": {
     "plan": {
+      "members": "Members",
+      "unlimitedMembers": "Unlimited members",
+      "loadingMembers": "Loading members…",
+      "membersUnavailable": "Member count unavailable",
+      "memberCount": "{count, plural, one {# member} other {# members}}",
       "cancels": "Cancels {date}",
       "cancelsAtPeriodEnd": "Cancels at period end",
       "renews": "Renews {date}",
@@ -5125,7 +5136,14 @@
       "youHaveBeenInvitedToAProject": "You have been invited to a project.",
       "joinProjectDescription": "You'll join {projectName} as {roleLabel}.",
       "roleManager": "a manager",
-      "signOutAndContinue": "Sign out and continue"
+      "signOutAndContinue": "Sign out and continue",
+      "ssoTitle": "Sign in with single sign-on",
+      "ssoDescription": "Your organization's directory added you to this account. Sign in with your organization's single sign-on to join. If you cannot, ask an account admin to resend the invite.",
+      "ssoContinue": "Continue with single sign-on",
+      "askAdminTitle": "Ask an admin to resend",
+      "askAdminDescription": "Your organization's directory added you to this account, and this instance cannot confirm your email address. Ask an account admin to resend the invite, then open this link again.",
+      "ssoDomainUnverified": "Your single sign-on provider has not verified this email's domain. Sign out and sign back in with your email address to use this invite.",
+      "ssoUnavailable": "Single sign-on is not available right now. Ask an account admin to resend the invite."
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – The open-source AI Operating System",
@@ -10653,7 +10671,7 @@
       "text1458e20a1642": "Optional. Kortix also deletes the local token on disconnect.",
       "text1459df2e344c": "A Linux machine boots from the sandbox image your project declares. It is its own isolated machine: its own filesystem, its own process table, its own network. Nothing is shared with another session.",
       "text14683b379324": "Revoke token",
-      "text146b38e7fa80": "When the default fails",
+      "text146b38e7fa80": "When a model fails",
       "text146cd06d5026": "Env:",
       "text146fd497badf": "Email skipped — copy invite link to share manually",
       "text147251df4759": "This usually takes a few seconds",
@@ -10916,7 +10934,6 @@
       "text1bffac0197ca": "goes fullscreen, and",
       "text1c01c6630cab": "Icon: {value0}. Change it",
       "text1c049715ebdd": "- connectors: warehouse, metabase",
-      "text1c145081eddd": "Switched to {provider}",
       "text1c1a67e4558f": "Members will be able to sign in with a password alone. Any policy you set a second-factor condition on individually still enforces it — only the account-wide rule is removed.",
       "text1c22fac2a9fd": "Shared with the project",
       "text1c27f2b12cec": "On the app’s \"Sign On\" tab, in the \"Metadata details\" section, locate the \"Metadata URL\" and click \"Copy\". Paste it below to continue.",
@@ -11129,7 +11146,6 @@
       "text221ff19c904c": "Schedules",
       "text22206bc67806": "Exit selection",
       "text222b8d57e366": "Failed to save overrides",
-      "text22412aa281cb": "the sandbox provider",
       "text22489bebb98f": "Deleted service account",
       "text224a3369a5c9": "Value:",
       "text224f87a75a67": "oncall-handoff",
@@ -11691,7 +11707,6 @@
       "text32d3603f57c7": "Could not open the account",
       "text32d61a2331fe": "Product deck",
       "text32d7e8208247": "Control",
-      "text32f14aa9ea33": "Preparing {provider}… this can take a few minutes",
       "text32f4468b0b6f": "Search agents...",
       "text32f69946e3c3": "No projects match your filters",
       "text330010f40240": "Not ready",
@@ -11959,7 +11974,6 @@
       "text3b13192b9d88": "Discard your changes?",
       "text3b349c99c012": "How your company does one job, written down once.",
       "text3b39a1eeb288": "This is the function where \"the agent handled it\" is the wrong answer. The first row is the product position. The rest are the platform controls.",
-      "text3b3c31642567": "Pinned provider",
       "text3b4153c0d3c8": "Pick a date and time",
       "text3b41ba9c7cb8": "No data",
       "text3b4a27ee118e": "Input SHA-256",
@@ -14754,7 +14768,7 @@
       "text8bb2b50055b6": "A connector belongs to the project, not to a laptop or a login. Add it once and every session that project starts can reach it — with no second setup and no key passed around in a DM.",
       "text8bbecc2acd82": "Set identity provider metadata",
       "text8bc1d53cc57c": "In",
-      "text8bcac7908eb9": "-----BEGIN RSA PRIVATE KEY-----",
+      "text8bcac7908eb9": "Paste the contents of the .pem file",
       "text8bd901c25ba7": "R&D — platform",
       "text8bf73992ff9b": "There is no separate provisioning step and no console to click through. One command brings the stack up. One more decides which Kortix your CLI is talking to.",
       "text8bf926d1ef32": "Set up SSO",
@@ -14953,7 +14967,6 @@
       "text9136c4647e36": "Identity Management → \"Test Connection\" → \"Activate\", then bind user groups on the \"User Groups\" tab — bound groups and their members push automatically.",
       "text91399bbb1fbb": "Viewed project audit log",
       "text9145379b9103": "Google custom SAML app dialog with the App name and icon fields",
-      "text914be6d9bb89": "Failed to update sandbox provider",
       "text914d43beac26": "Remove access?",
       "text91546e704c9e": "Sign On tab with the Metadata URL and Copy button",
       "text91549baf8cfd": "read once, used every session",
@@ -15632,6 +15645,8 @@
       "texta4f264c3ab5f": "Admin Grant",
       "texta4f6c318a669": "Delete this app?",
       "texta4fc39798651": "Change request #{number}",
+      "textddcd87c21894": "Superseded by #{number}",
+      "texta8ef31fa7d25": "View #{number}",
       "texta505da26f529": "Could not remove profile picture",
       "texta514a684676a": "Edit access",
       "texta515cf580dd9": "Updated IAM role permissions",
@@ -16026,7 +16041,7 @@
       "textafb32719ca9e": "Bot client secret",
       "textafb5023c3c05": "Changes applied",
       "textafb837ec251a": "Okta pushes changes as they happen (assignments, profile updates, group pushes) — a quiet period just means nothing changed.",
-      "textafb9890f7c72": "Where a request goes when the project default can't take it.",
+      "textafb9890f7c72": "Where a request goes when its model can't take it.",
       "textafc19f1734c1": "Principal",
       "textafc8e3a5d5db": "It clusters requests by what people actually want rather than by the words they used, counts how many distinct accounts raised each one, and attaches the quotes. When someone asks \"who asked for this\", the answer is in the document.",
       "textafdc7d79dccb": "Automatic provisioning from OneLogin",
@@ -16271,6 +16286,11 @@
       "textb6bb289a7a2c": "accounts teams organizations switch manage",
       "textb6bcbb175d23": "Regular · 400",
       "textb6c70926c1aa": "Admins only",
+      "textf19611c61ca5": "Full access",
+      "text15589a542412": "{count, plural, =0 {No connectors} one {# connector} other {# connectors}}",
+      "texte96d99ad9896": "{count, plural, =0 {No secrets} one {# secret} other {# secrets}}",
+      "text70b8d7e10749": "All Kortix actions",
+      "text2d3f4433505a": "{count, plural, =0 {No Kortix actions} one {# Kortix action} other {# Kortix actions}}",
       "textb6cde9030cef": "Create key",
       "textb6d85433a7ee": "Sessions could not be loaded",
       "textb6daf93376cc": "Loading finance.weekly",
@@ -16734,7 +16754,7 @@
       "textc3d2e79ebdd0": "Connectors",
       "textc3e3a6edeaa5": "Terms and conditions",
       "textc3e58a73609d": "Destructive",
-      "textc3ecd3cd791b": "Tried in order after the project default.",
+      "textc3ecd3cd791b": "Tried in order after the model a request names.",
       "textc3f282c05f3f": "policies approval block require_approval rules tools connector guardrails",
       "textc3f348ffaf7a": "Attach to project",
       "textc3f7bdf537c4": "req",
@@ -17316,7 +17336,6 @@
       "textd45336ed23b4": "We couldn't reach the runtime to ask whether a turn is running. Reloading restarts it, and if one is in flight it will be lost.",
       "textd45f25a6299a": "Members confirm a second factor before any protected action. Super-admins and API keys are exempt.",
       "textd460f97920a4": "One shared credential that everyone on this project uses — the agent and your triggers run on it.",
-      "textd461a493a375": "Automatic",
       "textd465f57b1d0d": "registry · push",
       "textd4673300c1d2": "Notifications are working correctly!",
       "textd46958e8ca77": "Entra tip:",
@@ -18127,7 +18146,6 @@
       "texte9b7cf835375": "In your words",
       "texte9bef0b0f3c2": "Keyboard shortcuts",
       "texte9c29ff50cc7": "Modes",
-      "texte9ca8360a34d": "Sandbox provider switch failed",
       "texte9cff3023aa2": "Easy connect covers 3,000+ apps through their own OAuth screens. If your feedback lives somewhere that is not in the catalogue — a community forum, an in-house portal — it is reachable through OpenAPI, GraphQL, raw HTTP or a remote MCP server instead.",
       "texte9d6212ef873": "Setting up...",
       "texte9e3243084ee": "An agent you name",
@@ -20069,6 +20087,7 @@
       "texta37dd5ef6ef2": "Customize Sidebar",
       "text8c712bd7c1ec": "sidebar customize reorder hide show navigation rows",
       "text2313fe21ea84": "Edit {name}",
+      "text2b2c3ec032a6": "Transferred project to another account",
       "text44f9fff8bdae": "Changed the credits plan",
       "text3fa17bba73e1": "Your account has no plan yet. Pick a monthly amount of credits to run sessions. Every member shares one pool.",
       "text6821e42be2c1": "Your wallet is empty, so sessions can’t run. Top up to keep compute and the latest AI models going — your plan is unaffected.",
@@ -20320,7 +20339,18 @@
       "text08f3c151d323": "Ask for custom terms",
       "texta0990a4a86dc": "White-label: your AI product on Platinum.dev compute",
       "text6189ab6313de": "Fork Kortix, put your brand on it, and sell it as your own product. The license is free. The one requirement is that your compute runs on Platinum.dev.",
-      "text7971dd752669": "Reminders"
+      "text7971dd752669": "Reminders",
+      "text724b09397472": "Adding {name} to {project}",
+      "text1e007c47254d": "It sets up in the background. You get a notification when it is done.",
+      "text57f57edb6f16": "Change request #{number} is ready to review.",
+      "texta8597db6f24b": "Remove skill",
+      "text5f6ba69d66d1": "Skill removed",
+      "textcb8d6b0c94c9": " and every file in it, edits included, and removes the skill from every agent that lists it. One commit on the default branch.",
+      "cliDeviceTitle": "Authorize Kortix CLI",
+      "cliDeviceWarning": "Approve only a login you started. Type the code your terminal shows.",
+      "cliDeviceCode": "Login code",
+      "cliDeviceApproved": "Login approved. Return to your terminal.",
+      "cliDeviceAction": "Authorize CLI"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -20336,18 +20366,6 @@
       "cancel": "Cancel",
       "expiryNever": "Never",
       "expiryDays": "{count, plural, one {# day} other {# days}}"
-    },
-    "publicTranscriptShare": {
-      "sectionTitle": "Public link",
-      "sectionDescription": "Anyone with the link can read this conversation without signing in.",
-      "create": "Create public link",
-      "revokeDescription": "The conversation stops loading for everyone with the link. You can create a new link afterwards.",
-      "rowMeta": "Read-only conversation",
-      "unavailable": "This conversation is temporarily unavailable.",
-      "unavailableDescription": "The conversation could not be read right now. Try again in a moment.",
-      "loadFailedDescription": "The conversation could not be loaded.",
-      "empty": "No messages yet",
-      "savedCopy": "Saved copy from {date}"
     },
     "chatIdentityConnect": {
       "chatAccount": "{service} account",
@@ -20465,6 +20483,12 @@
       "title": "Saved, but {agent} can't read it yet",
       "grant": "{names} {count, plural, one {is} other {are}} not in the {agent} agent's secrets. Open Customize → Agents → {agent} → Secrets and enable {count, plural, one {it} other {them}}.",
       "allowlist": "{names} {count, plural, one {is} other {are}} outside this session's secrets. Start a new session to use {count, plural, one {it} other {them}}."
+    },
+    "sessionEmbed": {
+      "sectionTitle": "Embed",
+      "sectionDescription": "For same-site pages only. Viewers must already be signed in with access to this session; signing in inside a cross-site iframe is not supported.",
+      "copy": "Copy embed code",
+      "copied": "Embed code copied"
     },
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "Delivery: runtime — the real value loads into the sandbox environment. Agent code can read it.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Delivery: connector — server-side only. The value never enters the sandbox environment.",
@@ -20596,7 +20620,12 @@
     "deleteTitle": "Delete this provider?",
     "deleteBody": "{name} and its API key leave this project for every member, and sessions stop offering its models. This cannot be undone.",
     "deleted": "Provider deleted",
-    "deleteFailed": "Could not delete the provider"
+    "deleteFailed": "Could not delete the provider",
+    "readsImages": "Reads images",
+    "reasoning": "Reasoning",
+    "traitsHint": "Kortix reads these from the endpoint when it reports them. Turn them on when it does not.",
+    "contextWindow": "{tokens} context",
+    "contextDefault": "128K context (the endpoint reports none)"
   },
   "providerSheet": {
     "inUse": "In use",
@@ -20613,7 +20642,7 @@
     "metaKey": "API key",
     "metaSignIn": "Sign in",
     "metaSignInOrKey": "Sign in or API key",
-    "metaIncluded": "Paid from credits",
+    "metaIncluded": "Paid from credits · Platinum Inference",
     "apiKey": "API key",
     "savedKey": "Saved key",
     "replace": "Replace",
@@ -20681,14 +20710,7 @@
   },
   "modelsList": {
     "onCount": "{on} of {total} on",
-    "perMillion": "{model} · per 1M",
-    "estimate": "estimate",
-    "route": "Route",
-    "input": "In",
-    "cached": "Cached",
-    "output": "Out",
     "context": "{value} context",
-    "fromPrice": "from {input} / {output} per 1M",
     "price": "{input} / {output} per 1M",
     "hiddenLine": "Not in the model picker · direct requests still work",
     "blockedLine": "Requests to this model are blocked",
@@ -20767,17 +20789,12 @@
     "credentialsHint": "Disable inference without removing credentials.",
     "providerError": "Could not update provider access.",
     "managedTitle": "Kortix Managed Models",
-    "managedDescription": "Provider base price plus a {fee}% platform fee, paid from credits. No API key needed.",
+    "managedDescription": "Models from Platinum Inference, at its price plus a {fee}% platform fee, paid from credits. No API key needed.",
     "managedUpgradeHint": "Upgrade to use Kortix's managed models, or connect your own provider.",
-    "pricingEstimate": "Provider base price, before the platform fee. The serving route determines the charge.",
-    "pricingRoute": "{route}: {input} input / {cacheRead} cached / {output} output per 1M tokens",
-    "pricingPreferred": "Preferred",
     "textImage": "Text + image",
     "textOnly": "Text only",
     "zdrTitle": "Zero data retention",
     "zdrDescription": "Zero data retention (ZDR) means the model provider processes your text and images, then does not keep the input or reply after the request. Kortix stores your project and conversation history separately.",
-    "usProvidersTitle": "Hosted in the US",
-    "usProvidersDescription": "Kortix models run in US data centers. We only partner with American inference providers.",
     "hiddenHint": "Hidden from the picker. Direct requests are still allowed; use the model menu to disable them.",
     "hidden": "Hidden from picker",
     "disableModel": "Disable model",
@@ -21142,6 +21159,24 @@
     "chipLabel": "{count, plural, one {# active reminder} other {# active reminders}}",
     "chipTitle": "Reminders on this session",
     "manage": "Manage reminders",
+    "openInReminders": "Open in Reminders",
+    "nextRun": "Next run {time}",
+    "repeats": "Repeats",
+    "timeZone": "Time zone",
+    "lastRun": "Last run",
+    "lastRunFailed": "Last run failed",
+    "runQueued": "Reminder sent to the session",
+    "runFailed": "Could not run the reminder",
+    "neverRun": "Not run yet",
+    "searchPlaceholder": "Search reminders",
+    "statusAll": "All",
+    "timeFilterLabel": "Next run",
+    "timeAny": "Any time",
+    "timeHour": "Next hour",
+    "timeDay": "Next 24 hours",
+    "timeWeek": "Next 7 days",
+    "timeLater": "Later",
+    "noMatch": "No reminders match",
     "cardLabel": "Reminder",
     "cardOneTime": "One-time",
     "cardRecurring": "Recurring",
@@ -21974,6 +22009,41 @@
         "exceptTitle": "Never record, even if included",
         "memberInclusions": "People can add their own included apps and websites",
         "memberInclusionsHint": "Off: computers record only the apps and websites listed here. People can still add apps and websites to skip."
+      },
+      "localHours": "On the computer",
+      "localHoursHint": "How long each computer keeps local copies before deleting them. 0 keeps none locally.",
+      "hours": "hours",
+      "storage": {
+        "title": "Storage",
+        "hint": "Where this account keeps its recordings. Switching does not move recordings already stored — they stay where they were.",
+        "kortix": "Kortix-managed",
+        "kortixHint": "Kortix keeps and indexes the recordings. Nothing to set up.",
+        "s3": "Your own S3 bucket",
+        "s3Hint": "Kortix reads, indexes and signs recordings in a bucket you own.",
+        "endpoint": "Endpoint",
+        "endpointHint": "Leave empty for AWS. For MinIO or another S3-compatible store, the full URL.",
+        "region": "Region",
+        "bucket": "Bucket",
+        "pathStyle": "Path-style URLs",
+        "pathStyleHint": "On for MinIO and most self-hosted stores; off for AWS.",
+        "credsTitle": "Access",
+        "credsHint": "Give one credential form: an IAM role Kortix assumes, or a static access key pair.",
+        "credRole": "IAM role (STS)",
+        "credKeys": "Access key",
+        "roleArn": "Role ARN",
+        "roleArnHint": "Kortix assumes this role. Recommended: each computer gets credentials scoped to its own folder.",
+        "accessKeyId": "Access key ID",
+        "secretAccessKey": "Secret access key",
+        "secretSet": "A secret is stored. Type a new one to replace it, or leave empty to keep it.",
+        "staticWarning": "Static keys cannot be scoped per computer: every computer gets account-wide access to the bucket. Prefer a role.",
+        "indexingNote": "Kortix reads the bucket to index and search recordings. Client-side encryption is incompatible with indexing — choose one.",
+        "save": "Save storage",
+        "saved": "Storage updated",
+        "probeFailed": "Could not write to the bucket: {error}",
+        "saveFailed": "Could not save the storage config",
+        "currentManaged": "Recordings are kept in the Kortix-managed store.",
+        "currentOwn": "Recordings are kept in your bucket {bucket}.",
+        "loadFailed": "Could not load the storage config"
       }
     },
     "area": {
@@ -22254,6 +22324,92 @@
     "join": "Join",
     "openRoom": "Open",
     "gateDescription": "Turn on Rooms to let agent sessions and people of this project talk in named chat rooms."
+  },
+  "goals": {
+    "title": "Goals",
+    "gateDescription": "Agents own an objective until it is verifiably done: the goal lives in Files, a daily heartbeat wakes it, the agent chases people for what it needs, and an independent check closes it.",
+    "empty": "No goals yet",
+    "emptyHint": "Start one in a session: describe the outcome, for example \"make sure our old bank account is closed\". The agent creates the goal and it shows here.",
+    "loadError": "Could not load goals. Try again.",
+    "retry": "Try again",
+    "needsYou": "Needs you",
+    "open": "Open",
+    "closed": "Closed",
+    "waitingFor": "Waiting for: {title}",
+    "criteria": "{met}/{total} criteria",
+    "nextWake": "Next wake {time}",
+    "noWake": "No wake scheduled",
+    "heartbeat": "Heartbeat",
+    "heartbeatPaused": "Paused",
+    "lastWakeLabel": "Last wake",
+    "progress": "Progress",
+    "scope": {
+      "company": "Company",
+      "personal": "Only you"
+    },
+    "status": {
+      "draft": "Draft",
+      "active": "Active",
+      "waiting_on_user": "Waiting on you",
+      "waiting_external": "Waiting",
+      "verifying": "Verifying",
+      "done": "Done",
+      "abandoned": "Abandoned"
+    },
+    "health": {
+      "healthy": "Running",
+      "attention": "Needs attention",
+      "closed": "Closed"
+    },
+    "issue": {
+      "no_heartbeat": "Nothing will wake this goal: its heartbeat reminder is missing.",
+      "heartbeat_paused": "The heartbeat reminder is paused.",
+      "heartbeat_failed": "The last wake failed: {error}",
+      "missed_wake": "The last wake is overdue.",
+      "ask_overdue": "An ask is past its due time.",
+      "verification_stalled": "Verification started more than 24 hours ago.",
+      "unreadable": "goal.json is missing or is not valid JSON."
+    },
+    "sessionChip": "Goal",
+    "sessionRole": {
+      "coordinator": "This session runs this goal.",
+      "worker": "This session works on this goal.",
+      "verifier": "This session verifies this goal."
+    },
+    "openGoal": "Open goal",
+    "openSession": "Open main session",
+    "openFolder": "Open folder",
+    "back": "All goals",
+    "healthTitle": "Health",
+    "successCriteria": "Success criteria",
+    "met": "Met",
+    "notMet": "Not met",
+    "items": "Items",
+    "noItems": "No items yet.",
+    "noCriteria": "No criteria yet: the agent writes them before the goal becomes active.",
+    "kind": {
+      "task": "Task",
+      "ask": "Ask",
+      "wait": "Wait"
+    },
+    "itemStatus": {
+      "open": "open",
+      "doing": "doing",
+      "done": "done",
+      "dropped": "dropped"
+    },
+    "due": "Due {time}",
+    "sessions": "Sessions",
+    "role": {
+      "coordinator": "Main session",
+      "worker": "Worker",
+      "verifier": "Verifier"
+    },
+    "timeline": "Timeline",
+    "verification": "Verification",
+    "notes": "Notes",
+    "log": "Log",
+    "notFound": "This goal no longer exists."
   },
   "agentEditor": {
     "manage": "Manage",

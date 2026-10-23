@@ -59,14 +59,15 @@ export function contextTone(ratio: number): StatusTone {
 export function getContextLimit(
   models: FlatModel[] | undefined,
   selectedModel: { providerID: string; modelID: string } | null | undefined,
-): number {
+): number | null {
   if (selectedModel && models) {
     const model = models.find(
       (m) => m.providerID === selectedModel.providerID && m.modelID === selectedModel.modelID,
     );
     if (model?.contextWindow && model.contextWindow > 0) return model.contextWindow;
   }
-  return 200000;
+  // Unknown: the meter shows what is used and no invented window.
+  return null;
 }
 
 export function getSelectedModelName(
@@ -101,7 +102,8 @@ export interface ContextReading {
 
 export interface ContextUsage extends ContextReading {
   breakdown: ContextBreakdown;
-  limit: number;
+  /** The model's context window; null when no source knows it. */
+  limit: number | null;
   ratio: number;
   modelName: string | null;
 }
@@ -113,7 +115,7 @@ export function getContextUsage(
 ): ContextUsage {
   const breakdown = getLastAssistantTokenBreakdown(messages);
   const limit = getContextLimit(models, selectedModel);
-  const ratio = breakdown.total > 0 ? Math.min(breakdown.total / limit, 1) : 0;
+  const ratio = limit && breakdown.total > 0 ? Math.min(breakdown.total / limit, 1) : 0;
   return {
     percent: Math.round(ratio * 100),
     tone: contextTone(ratio),
@@ -122,13 +124,4 @@ export function getContextUsage(
     ratio,
     modelName: getSelectedModelName(models, selectedModel),
   };
-}
-
-export function getContextReading(
-  messages: SessionLogMessage[] | undefined,
-  models?: FlatModel[],
-  selectedModel?: { providerID: string; modelID: string } | null,
-): ContextReading {
-  const { percent, tone } = getContextUsage(messages, models, selectedModel);
-  return { percent, tone };
 }

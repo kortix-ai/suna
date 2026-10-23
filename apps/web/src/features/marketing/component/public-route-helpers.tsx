@@ -2,6 +2,7 @@ import { Separator } from '@kortix/ui/separator';
 import { cn } from '@kortix/ui';
 import type { ReactNode } from 'react';
 
+/** The hairline between sections, inset to the same measure as the content. */
 export function SectionDivider(): ReactNode {
   return (
     <div className="mx-auto max-w-7xl px-6">

@@ -29,7 +29,7 @@ import { sessionOversightQueryKey } from '../../../access/iam/session-oversight-
 import { ShieldCheckIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { SessionPublicLinkSection } from './session-public-link-section';
+import { SessionEmbedSection } from './session-embed-section';
 import { sessionAccessSummary, sessionAccessView } from './share-session-access';
 import { refreshAfterShare } from './share-session-cache';
 
@@ -187,10 +187,11 @@ export function ShareSessionModal({
             </InfoBanner>
           ) : null}
           {/* Next to the in-team picker: who in the project can open the
-              session, and a read-only link for anyone outside it. Same
-              server verdict as the picker (`can_manage_sharing`). */}
+              session, and an embed snippet for the actual session page (the
+              viewer inside the frame signs in). Same server verdict as the
+              picker (`can_manage_sharing`). */}
           {view.canEdit && session && publicSharesEnabled ? (
-            <SessionPublicLinkSection projectId={projectId} sessionId={session.session_id} />
+            <SessionEmbedSection projectId={projectId} sessionId={session.session_id} />
           ) : null}
         </ModalBody>
         <ModalFooter className="sm:justify-between">

@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { TooltipProvider } from '../../primitives/tooltip';
 import type { Agent } from '@kortix/sdk/react';
+import { UiProvider } from '../../providers/ui-provider';
 import { COMPOSER_SHELL_CLASS, ComposerUnderbar } from './index';
 
 /**
@@ -339,5 +340,46 @@ describe('COMPOSER_SHELL_CLASS — no viewport width can zero the gutter', () =>
     // that, it needs a container query, not a media query.
     const bothSides = classes.filter((c) => /^(max-)?(sm|md|lg|xl|2xl):px-/.test(c));
     expect(bothSides).toEqual([]);
+  });
+});
+
+describe('ComposerUnderbar — host config (white-label hosts)', () => {
+  const agents = [
+    { name: 'kortix', mode: 'primary' },
+    { name: 'lumen-counsel', mode: 'primary' },
+  ] as unknown as Agent[];
+  function hosted(config: Record<string, unknown>, selected: string | null): string {
+    return renderToStaticMarkup(
+      <IntlTestProvider messages={messages} onError={noop}>
+        <UiProvider config={config}>
+          <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+            <TooltipProvider>
+              <ComposerUnderbar
+                onAttachClick={noop}
+                agents={agents}
+                selectedAgent={selected}
+                messages={[]}
+                models={[]}
+                selectedModel={null}
+                onContextClick={noop}
+              />
+            </TooltipProvider>
+          </QueryClientProvider>
+        </UiProvider>
+      </IntlTestProvider>,
+    );
+  }
+
+  test('contextMeterEnabled: false removes the ring', () => {
+    expect(hosted({}, null)).toContain('data-slot="token-progress"');
+    expect(hosted({ contextMeterEnabled: false }, null)).not.toContain('data-slot="token-progress"');
+  });
+
+  test('offeredAgents narrows the picker and agentLabels names the agent', () => {
+    const html = hosted({ offeredAgents: ['lumen-counsel'], agentLabels: { 'lumen-counsel': 'Counsel' } }, null);
+    expect(html).toContain('Counsel');
+    expect(html).not.toContain('Lumen-Counsel');
+    expect(html).not.toContain('Kortix');
+    expect(hosted({}, 'lumen-counsel')).toContain('Lumen-Counsel');
   });
 });

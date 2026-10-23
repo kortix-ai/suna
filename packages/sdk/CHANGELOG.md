@@ -5,6 +5,29 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed (pi runs every new session; OpenCode is sunset)
+- `FeatureFlagKey` `'pi_harness'` is deprecated and no longer a flag: absent from `FEATURE_FLAG_KEYS`
+  and from the feature-flag catalog. The API sends `experimental.pi_harness: true` for every
+  project, and `useFeatureFlag(id, 'pi_harness')` reports `true`.
+  `KortixProject.experimental.pi_harness` is optional in the type.
+
+### Deprecated (OpenCode-only; pi does not serve them)
+- `useRuntimeConfig`, `useUpdateRuntimeConfig`, `configKeys` (`/global/config`), `useRuntimeSessionTodo`,
+  `logRuntimeEvent`, `RuntimeConfigIssue`, `RuntimeConfigInvalidError`, `getRuntimeConfigInvalidError`,
+  `isRuntimeConfigInvalidError`, `isShellMode`, `getShellModePart`, `AddMcpServerParams`,
+  `ProjectConfigSummary.open_code_raw`, and the frozen runtime types `Config`, `McpStatus`,
+  `McpLocalConfig`, `McpRemoteConfig`, `Todo`, `EventTodoUpdated`, `EventPty*`, `EventMcpToolsChanged`.
+  They keep working for sessions that still run OpenCode and are removed with OpenCode support.
+
+### Changed (the session log is the only saved history, P8.2)
+- `FeatureFlagKey` `'session_log'` is no longer a flag: absent from `FEATURE_FLAG_KEYS` and from
+  the feature-flag catalog. The API sends `experimental.session_log: true` for every project, so
+  `useFeatureFlag(id, 'session_log')` reports `true` once the project detail loads, as before.
+  `KortixProject.experimental.session_log` is optional in the type.
+- `GET …/sessions/:id/log` answers `503` `{ code: 'session_log_converting' }` with `Retry-After: 60`
+  for an old session whose history is still only in the v1 mirror and over the conversion size cap;
+  retry after the delay.
+
 ### Added (custom LLM providers)
 - `listCustomLlmProviders(projectId)`, `putCustomLlmProvider(projectId, providerId, input)` and
   `deleteCustomLlmProvider(projectId, providerId)` (types `CustomLlmProvider`,
@@ -15,6 +38,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `project(id)` without the project id.
 - `useCustomLlmProviders(projectId)` (`@kortix/sdk/react`): `{ providers, isLoading, error, save,
   remove, isSaving }`. Writes refresh the list and both model-picker caches.
+
+### Deprecated (managed models are served by Kortix Platinum inference)
+- `ProjectLlmCatalogResponse.managedPricingRoutes`: the API no longer sends it. Every managed
+  model has one price, its `cost` in `models`. `platformFeePercent` is unchanged.
 
 ### Deprecated (the LLM gateway is the only model path)
 - `FeatureFlagKey` `'llm_gateway'` graduated: absent from `FEATURE_FLAG_KEYS`, and
@@ -70,6 +97,18 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `missing[].kind` includes `'message'`: the log was over the API's restore cap
   (`SESSION_LOG_RESTORE_MAX_BYTES`), so the agent got none of those earlier
   messages; the transcript keeps them.
+
+### Deprecated (public transcript shares removed)
+The API removed public transcript sharing (KRTX-2358): no `/v1/public/session-shares/**`
+route is served and `createSessionPublicShare` with `{ transcript: true }` answers 400.
+- `getPublicSessionShare`, `getPublicSessionShareMessages`, `findActiveTranscriptShare`,
+  `PublicSessionShareError`, `PublicSessionShareMeta`, `PublicSessionTranscript`,
+  `PublicSessionTranscriptMessage` and `PublicSessionTranscriptToolCall` are `@deprecated`
+  (every call answers 404). Removed in the next major.
+- `CreateSessionPublicShareInput.transcript` is `@deprecated`; the field is still sent until
+  the next major, and a current server answers 400.
+- File and preview shares are unaffected: mint/list/revoke and the `/share/session/:token`
+  viewer keep working.
 
 ### Changed (Enterprise is a feature layer; trials removed)
 - `AccountState.enterprise` (`AccountEnterprise`, additive): `{ state: 'off' | 'demo' | 'licensed' }`.

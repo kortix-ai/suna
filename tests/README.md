@@ -184,7 +184,7 @@ The warm image contains dependencies and Docker layers only. It contains no
 preview database and no runtime secret.
 
 The runtime secret allowlist contains `PLATINUM_API_KEY`,
-`KE2E_STRIPE_SECRET_KEY`, `KE2E_STRIPE_WEBHOOK_SECRET`, `OPENROUTER_API_KEY`, `MORPH_API_KEY`, and the five fields required
+`KE2E_STRIPE_SECRET_KEY`, `KE2E_STRIPE_WEBHOOK_SECRET`, `PLATINUM_INFERENCE_API_KEY`, and the five fields required
 for the dedicated preview GitHub App installation. Mailpit handles preview
 email. The GitHub App runs the real managed repository and CLI push flows.
 OAuth initiation is the only allowed preview browser exclusion. All API flow
@@ -282,13 +282,13 @@ failed `deployed` flow fails the gate.
 | Auth and JWT against the real Supabase | AUTH-3, AUTH-1, ME-1, TOK-3 |
 | Email delivery | AUTH-2, AUTH-4 |
 | CORS, cookies, domains | PRX-1, PRX-3, OAU-5, MCP-1 |
-| Sandbox boot and the runtime proxy | RUN-2, RUN-2-pi, RUN-8 |
-| SSE through the edge | RUN-3, RUN-3-pi |
-| Sandbox stop and wake | SESS-12, SESS-12-pi |
+| Sandbox boot and the runtime proxy | RUN-2, RUN-8 |
+| SSE through the edge | RUN-3 |
+| Sandbox stop and wake | SESS-12 |
 | LLM gateway | GW-2, GW-MANAGED-1 |
 | Stripe and billing webhooks | BILL-1, BILL-3, BILL-8, BILL-18 |
 | Object storage and uploads | SESS-31, SESS-31-log, FILE-9 |
-| Git push to managed repositories | SHIP-1, RUN-7, RUN-7-pi, GH-19, FILE-1 |
+| Git push to managed repositories | SHIP-1, RUN-7, GH-19, FILE-1 |
 | Money path: prompt to merged change request, real CLI | GOLD-1, CLI-SESS |
 | MCP over HTTP with a PAT | MCP-4 |
 | Apps edge host check | APP-5 |
@@ -441,14 +441,12 @@ body with it: `r.status(200).body().schema(ProjectSchema)`. A body that drifts
 from the contract then fails `pnpm test` and names each failing path. The
 session fixture checks every session create the same way.
 
-### One flow body, every harness
+### Session flows run on pi
 
 A flow that runs a session turn registers with `harnessFlow` (`src/core/flow.ts`)
-instead of `flow`. `harnessFlow('RUN-1', meta, fn)` registers `RUN-1`, which boots
-OpenCode, and `RUN-1-pi`, which runs the same body on pi. The pi variant uses a
-shared seeded project with the `pi_harness` flag on, maps to spec `RUN-1`
-through `meta.specId`, and carries the `harness-pi` tag
-(`bun bin/ke2e.ts run --tag harness-pi` runs only pi).
+instead of `flow`. `harnessFlow('RUN-1', meta, fn)` registers `RUN-1` and calls
+the body with `harness` = `pi`: every new session runs pi since 2026-10-23
+(OpenCode is sunset). The body proves the harness from `/kortix/health`.
 
 Drive these flows through `src/fixtures/session-run.ts`, which speaks only the
 Kortix session routes: `bootSession` (boot, prove the harness from

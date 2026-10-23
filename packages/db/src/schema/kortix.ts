@@ -1975,6 +1975,8 @@ export const projectTriggerExecutions = kortixSchema.table(
     runStatus: varchar('run_status', { length: 16 }),
     runError: text('run_error'),
     runEndedAt: timestamp('run_ended_at', { withTimezone: true }),
+    // The `session_turns` row that closed this run. A turn closes one run only.
+    runTurnToken: text('run_turn_token'),
   },
   (table) => [
     foreignKey({
@@ -2023,6 +2025,9 @@ export const projectTriggerExecutions = kortixSchema.table(
     index('idx_project_trigger_executions_noncron_created')
       .on(table.createdAt)
       .where(sql`${table.source} <> 'cron'`),
+    index('idx_project_trigger_executions_open_run')
+      .on(table.sessionId)
+      .where(sql`${table.runStatus} = 'running'`),
   ],
 );
 
@@ -4025,6 +4030,61 @@ export const auditEvents = kortixSchema.table(
  * using `auditEvents`. Migration 20261001225220282_audit_events_all_view.
  */
 export const auditEventsAll = kortixSchema.view('audit_events_all', auditEventColumns()).existing();
+
+/**
+ * Who was active in an account, per UTC day: the rollup behind
+ * GET /v1/accounts/:id/audit/activity. A "who used this workspace, how often" question over raw
+ * `audit_events_all` reads millions of rows (one project-week timed out at 120 s on prod,
+ * 2026-10-21); this table answers it from a few hundred.
+ *
+ * The audit-activity worker adds one closed hour of `audit_events_all` at a time, so a row is the
+ * sum of its hours. `hours_mask` has bit N set when the group had a row in UTC hour N; OR-ing masks
+ * across rows gives exact distinct active hours. `client` is `browser` for a `Mozilla/` user agent,
+ * else `program` (CLI, SDK, sandbox, scripts): an actor_user_id names an identity, and most of an
+ * identity's rows can come from programs acting as it. `project_id` is the nil UUID for rows
+ * outside a project; `actor_type` and `credential_kind` are '' when the event had none.
+ */
+export const auditActivityDaily = kortixSchema.table(
+  'audit_activity_daily',
+  {
+    accountId: uuid('account_id').notNull(),
+    day: date('day', { mode: 'string' }).notNull(),
+    projectId: uuid('project_id').notNull(),
+    actorUserId: uuid('actor_user_id').notNull(),
+    actorType: text('actor_type').notNull(),
+    credentialKind: text('credential_kind').notNull(),
+    client: text('client').notNull(),
+    events: integer('events').notNull(),
+    hoursMask: integer('hours_mask').notNull(),
+    firstAt: timestamp('first_at', { withTimezone: true }).notNull(),
+    lastAt: timestamp('last_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: 'audit_activity_daily_pkey',
+      columns: [
+        table.accountId,
+        table.day,
+        table.projectId,
+        table.actorUserId,
+        table.actorType,
+        table.credentialKind,
+        table.client,
+      ],
+    }),
+    index('idx_audit_activity_daily_project_day').on(table.accountId, table.projectId, table.day),
+  ],
+);
+
+/** Single row: every hour before `rolled_through` is in `audit_activity_daily`. */
+export const auditActivityRollup = kortixSchema.table(
+  'audit_activity_rollup',
+  {
+    id: integer('id').primaryKey().default(1),
+    rolledThrough: timestamp('rolled_through', { withTimezone: true }).notNull(),
+  },
+  (table) => [check('audit_activity_rollup_single_row', sql`${table.id} = 1`)],
+);
 
 /**
  * One row per week of audit history the archive job has exported to S3 (weeks start Monday 00:00
@@ -7556,6 +7616,13 @@ export const captureWorkspaces = kortixSchema.table('capture_workspaces', {
     .references(() => accounts.accountId, { onDelete: 'cascade' }),
   enabled: boolean('enabled').default(false).notNull(),
   policy: jsonb('policy').$type<Record<string, unknown>>().default({}).notNull(),
+  /**
+   * Where this account's recordings are stored. `{}` or `{mode:'kortix'}` means
+   * the deployment-default store. `{mode:'s3', …}` is the account's own
+   * S3-compatible bucket; any static secret inside is encrypted. Server-only,
+   * never published to the bucket (unlike `policy`).
+   */
+  storage: jsonb('storage').$type<Record<string, unknown>>().default({}).notNull(),
   updatedBy: uuid('updated_by'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -8215,3 +8282,15 @@ export const feedback = kortixSchema.table('feedback', {
   check('feedback_source', sql`${table.source} in ('cli', 'agent', 'web')`),
   check('feedback_kind', sql`${table.kind} in ('bug', 'idea', 'friction')`),
 ]);
+
+/** CLI login grants contain no credential: only the device secret's hash and
+ * the approving identity. Polling atomically consumes approval and mints a PAT. */
+export const cliDeviceGrants = kortixSchema.table('cli_device_grants', {
+  deviceCodeHash: text('device_code_hash').primaryKey(),
+  userCode: text('user_code').notNull().unique(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  lastPolledAt: timestamp('last_polled_at', { withTimezone: true }),
+  userId: uuid('user_id'),
+  accountId: uuid('account_id'),
+  status: text('status').notNull().default('pending'),
+});

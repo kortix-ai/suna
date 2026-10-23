@@ -8,7 +8,8 @@ import {
 } from '@kortix/llm-catalog';
 import { resolveCatalogUpstream } from './provider-registry';
 import { runtimeModelCatalog } from './runtime-catalog';
-import { SERVED_MANAGED_MODELS } from './served-managed-models';
+import { getRuntimeManagedModel, managedLineupRevision, type ManagedModel } from './managed-models';
+import { servedManagedModels } from './served-managed-models';
 
 // The real upstream provider id for the ChatGPT-subscription lineup served
 // under `codex/<id>` — kept as one named constant so this file, the sandbox
@@ -80,29 +81,16 @@ function codexName(id: string): string {
     .join('-');
 }
 
-// Conservative context window for any model models.dev doesn't declare one for.
-// The gateway guarantees EVERY served model carries a `limit` — OpenCode does NOT
-// pull limits from models.dev for a custom provider, so this is the single source
-// the client trusts to size conversations + fire auto-compaction (it does no
-// backfill of its own). Better to compact a little early than never.
-const DEFAULT_SERVED_LIMIT = { context: 200_000, output: 32_000 } as const;
-
-// Coerce a (possibly partial or zero) models.dev limit into a guaranteed-positive
-// window. Some non-chat catalog entries (whisper audio, NVIDIA video/TTS models)
-// report context:0 — fall back to the default so EVERY served model can be sized.
-// `input` (max prompt tokens, when models.dev distinguishes it from the total
-// context window) is passed through verbatim when present — it's not backfilled
-// like context/output because no consumer needs a guaranteed value for it yet.
-function servedLimit(limit?: { context?: number; input?: number; output?: number }): {
-  context: number;
-  input?: number;
-  output: number;
-} {
-  return {
-    context: limit?.context && limit.context > 0 ? limit.context : DEFAULT_SERVED_LIMIT.context,
-    ...(typeof limit?.input === 'number' && limit.input > 0 ? { input: limit.input } : {}),
-    output: limit?.output && limit.output > 0 ? limit.output : DEFAULT_SERVED_LIMIT.output,
-  };
+// A model's limits exactly as models.dev reports them: each positive field
+// passes through on its own, and an unknown one stays unset. A model with no
+// known window gets no `limit`; the harness then sizes it (pi, OpenCode).
+function servedLimit(limit?: { context?: number; input?: number; output?: number }) {
+  const out: { context?: number; input?: number; output?: number } = {};
+  for (const key of ['context', 'input', 'output'] as const) {
+    const value = limit?.[key];
+    if (typeof value === 'number' && value > 0) out[key] = value;
+  }
+  return out.context ? { limit: out } : {};
 }
 
 // Capability flags for a served model. models.dev is the single source of truth:
@@ -133,7 +121,7 @@ function capabilitiesOf(model: CatalogModel | undefined): Omit<GatewayModel, 'na
       ...(typeof model.description === 'string' ? { description: model.description } : {}),
       ...(typeof model.open_weights === 'boolean' ? { open_weights: model.open_weights } : {}),
       ...(typeof model.last_updated === 'string' ? { last_updated: model.last_updated } : {}),
-      limit: servedLimit(model.limit),
+      ...servedLimit(model.limit),
     };
   }
   return {
@@ -141,7 +129,6 @@ function capabilitiesOf(model: CatalogModel | undefined): Omit<GatewayModel, 'na
     tool_call: true,
     attachment: false,
     temperature: false,
-    limit: servedLimit(undefined),
   };
 }
 
@@ -178,66 +165,49 @@ export function capabilitiesForModel(
 export const catalogModelForWireModel = (
   wireModel: string,
   catalog: Catalog = runtimeModelCatalog.snapshot(),
-): CatalogModel | undefined => catalogModelForWireModelCanonical(wireModel, catalog);
+): CatalogModel | undefined => {
+  // A bare id is a managed model: its record is what Platinum Inference says.
+  if (!wireModel.includes('/')) {
+    const managed = getRuntimeManagedModel(wireModel);
+    return managed ? managedCatalogModel(managed) : undefined;
+  }
+  return catalogModelForWireModelCanonical(wireModel, catalog);
+};
 
+function managedCatalogModel(m: ManagedModel): CatalogModel {
+  return {
+    id: m.id,
+    name: m.name,
+    reasoning: !!m.reasoningOptions?.length,
+    tool_call: true,
+    temperature: true,
+    attachment: m.vision,
+    modalities: { input: m.vision ? ['text', 'image'] : ['text'], output: ['text'] },
+    ...(m.reasoningOptions ? { reasoning_options: m.reasoningOptions } : {}),
+    limit: m.limit,
+  };
+}
+
+/** One Platinum Inference model as a served catalog entry, under `provider`. */
+export function platinumGatewayModel(m: ManagedModel, provider: string, providerName?: string): GatewayModel {
+  return {
+    ...capabilitiesOf(managedCatalogModel(m)),
+    name: m.name,
+    provider,
+    ...(providerName ? { provider_name: providerName } : {}),
+    limit: m.limit,
+    cost: {
+      input: m.pricing.inputPerMillion,
+      output: m.pricing.outputPerMillion,
+      ...(m.pricing.cachedInputPerMillion != null ? { cache_read: m.pricing.cachedInputPerMillion } : {}),
+    },
+  };
+}
+
+/** The served managed lineup as catalog entries: every field comes from Platinum Inference. */
 export function managedModels(): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
-  // SERVED_MANAGED_MODELS is empty when KORTIX_MANAGED_PROVIDER_ENABLED is off,
-  // and drops any configured model whose transport credential is absent — the
-  // catalog must never advertise a model that request-time resolution refuses.
-  if (SERVED_MANAGED_MODELS.length === 0) return out;
-  // The managed lineup is curated and its slugs don't all exist on models.dev
-  // (z-ai≠zhipuai), so vision + limit are explicit on each model and always
-  // win. Everything else (temperature, reasoning_options, structured_output,
-  // ...) comes from the model's REAL catalog record via its pricingRef when
-  // that resolves — hardcoding `temperature: true` here is exactly the bug
-  // class the sandbox fallback catalog documents: gpt-5.6-luna REJECTS a
-  // client-sent temperature, so advertising support makes OpenCode send one
-  // and 400 every turn. Unresolvable refs keep the permissive defaults.
-  for (const m of SERVED_MANAGED_MODELS) {
-    const cost = m.pricing
-      ? {
-          input: m.pricing.inputPerMillion,
-          output: m.pricing.outputPerMillion,
-          ...(m.pricing.cachedInputPerMillion != null
-            ? { cache_read: m.pricing.cachedInputPerMillion }
-            : {}),
-          ...(m.pricing.cacheWritePerMillion != null
-            ? { cache_write: m.pricing.cacheWritePerMillion }
-            : {}),
-          ...(m.pricing.contextOver200k
-            ? {
-                context_over_200k: {
-                  input: m.pricing.contextOver200k.inputPerMillion,
-                  output: m.pricing.contextOver200k.outputPerMillion,
-                  ...(m.pricing.contextOver200k.cachedInputPerMillion != null
-                    ? { cache_read: m.pricing.contextOver200k.cachedInputPerMillion }
-                    : {}),
-                  ...(m.pricing.contextOver200k.cacheWritePerMillion != null
-                    ? { cache_write: m.pricing.contextOver200k.cacheWritePerMillion }
-                    : {}),
-                },
-              }
-            : {}),
-        }
-      : undefined;
-    const real = catalogModelForWireModel(m.id);
-    const caps = real && real.attachment !== undefined ? capabilitiesOf(real) : undefined;
-    out[m.id] = {
-      name: m.name,
-      provider: m.providerBrand ?? KORTIX_PROVIDER_ID,
-      reasoning: true,
-      tool_call: true,
-      temperature: true,
-      ...(caps ?? {}),
-      // Curated fields always win over the models.dev record.
-      attachment: m.vision,
-      modalities: { input: m.vision ? ['text', 'image'] : ['text'], output: ['text'] },
-      ...(m.reasoningOptions ? { reasoning_options: m.reasoningOptions } : {}),
-      limit: m.limit,
-      ...(cost ? { cost } : {}),
-    };
-  }
+  for (const m of servedManagedModels()) out[m.id] = platinumGatewayModel(m, KORTIX_PROVIDER_ID);
   return out;
 }
 
@@ -270,6 +240,7 @@ export function gatewayModelsAll(
 export function gatewayCodexModels(
   catalog: Catalog = runtimeModelCatalog.snapshot(),
   codexIds: readonly string[] = runtimeModelCatalog.codexModelIds(),
+  codexWindows: Readonly<Record<string, number>> = runtimeModelCatalog.codexContextWindows(),
 ): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
   const catalogModelById = modelsById(catalog);
@@ -300,7 +271,10 @@ export function gatewayCodexModels(
       ...(typeof model?.description === 'string' ? { description: model.description } : {}),
       ...(typeof model?.open_weights === 'boolean' ? { open_weights: model.open_weights } : {}),
       ...(typeof model?.last_updated === 'string' ? { last_updated: model.last_updated } : {}),
-      limit: servedLimit(model?.limit),
+      // The ChatGPT backend's window (Codex models.json), not the public API's.
+      ...servedLimit(codexWindows[id]
+        ? { context: codexWindows[id], output: Math.min(model?.limit?.output ?? codexWindows[id]!, codexWindows[id]!) }
+        : model?.limit),
     };
   }
   return out;
@@ -308,27 +282,35 @@ export function gatewayCodexModels(
 
 // Runtime catalog shapes are rebuilt once per atomic API refresh revision, not
 // once per request. The bundled snapshot is only the initial/last-known fallback.
-const MANAGED_ONLY: Record<string, GatewayModel> = managedModels();
+// The managed lineup refreshes too (managedLineupRevision): either revision moving rebuilds.
 const EMPTY_CATALOG: Record<string, GatewayModel> = {};
 let cachedRevision = -1;
+let cachedManagedRevision = -1;
+let cachedManaged: Record<string, GatewayModel> = {};
 let cachedByokAndCodex: Record<string, GatewayModel> = {};
-let cachedFullCatalog: Record<string, GatewayModel> = MANAGED_ONLY;
+let cachedFullCatalog: Record<string, GatewayModel> = {};
 
 function refreshedCatalogs(): {
+  managed: Record<string, GatewayModel>;
   byokAndCodex: Record<string, GatewayModel>;
   full: Record<string, GatewayModel>;
 } {
   const revision = runtimeModelCatalog.status().revision;
+  const managedRevision = managedLineupRevision();
   if (revision !== cachedRevision) {
     const catalog = runtimeModelCatalog.snapshot();
     cachedByokAndCodex = {
       ...gatewayModelsAll(catalog),
       ...gatewayCodexModels(catalog),
     };
-    cachedFullCatalog = { ...MANAGED_ONLY, ...cachedByokAndCodex };
-    cachedRevision = revision;
   }
-  return { byokAndCodex: cachedByokAndCodex, full: cachedFullCatalog };
+  if (managedRevision !== cachedManagedRevision) cachedManaged = managedModels();
+  if (revision !== cachedRevision || managedRevision !== cachedManagedRevision) {
+    cachedFullCatalog = { ...cachedManaged, ...cachedByokAndCodex };
+    cachedRevision = revision;
+    cachedManagedRevision = managedRevision;
+  }
+  return { managed: cachedManaged, byokAndCodex: cachedByokAndCodex, full: cachedFullCatalog };
 }
 
 // `projectId` gates BYOK/codex visibility (anonymous callers see managed only).
@@ -341,5 +323,5 @@ export function gatewayModelCatalog(
 ): Record<string, GatewayModel> {
   const catalogs = refreshedCatalogs();
   if (opts?.freeManagedOnly) return projectId ? catalogs.byokAndCodex : EMPTY_CATALOG;
-  return projectId ? catalogs.full : MANAGED_ONLY;
+  return projectId ? catalogs.full : catalogs.managed;
 }

@@ -16,6 +16,7 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
+  approveCliDevice,
   listAccountTokens,
   listOAuthGrants,
   listSignedInDevices,
@@ -24,14 +25,14 @@ import {
   signOutDevice,
 } from './tokens';
 
-let calls: { url: string; method: string }[] = [];
+let calls: { url: string; method: string; body?: unknown }[] = [];
 let nextResponse: { status: number; body: unknown } = { status: 200, body: [] };
 
 beforeEach(() => {
   calls = [];
   nextResponse = { status: 200, body: [] };
-  globalThis.fetch = mock(async (url: unknown, opts: { method?: string } = {}) => {
-    calls.push({ url: String(url), method: opts.method ?? 'GET' });
+  globalThis.fetch = mock(async (url: unknown, opts: { method?: string; body?: unknown } = {}) => {
+    calls.push({ url: String(url), method: opts.method ?? 'GET', body: opts.body });
     return new Response(JSON.stringify(nextResponse.body), {
       status: nextResponse.status,
       headers: { 'content-type': 'application/json' },
@@ -153,4 +154,19 @@ test('signOutDevice(id) ends that one sign-in', async () => {
   await signOutDevice('00000000-0000-4000-8000-000000000002');
   expect(last().url).toBe('http://test.local/accounts/me/devices/00000000-0000-4000-8000-000000000002');
   expect(last().method).toBe('DELETE');
+});
+
+// The browser approval of a CLI device login (`kortix login` without a callback):
+// POST /cli/device/decide { user_code, approve: true } → { ok }.
+test('approveCliDevice(code) approves that device login', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  expect(await approveCliDevice('abcd-ef01-2345-6789')).toEqual({ ok: true });
+  expect(last().url).toBe('http://test.local/cli/device/decide');
+  expect(last().method).toBe('POST');
+  expect(JSON.parse(String(last().body))).toEqual({ user_code: 'abcd-ef01-2345-6789', approve: true });
+});
+
+test('approveCliDevice rejects with the API sentence on an expired code', async () => {
+  nextResponse = { status: 404, body: { error: 'Login code expired or already used.' } };
+  await expect(approveCliDevice('abcd-ef01-2345-6789')).rejects.toThrow('Login code expired or already used.');
 });

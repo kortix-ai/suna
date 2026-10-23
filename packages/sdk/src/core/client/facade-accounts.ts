@@ -48,6 +48,8 @@ export function bindAccounts() {
     audit: {
       log: P.listAccountAudit,
       export: P.exportAccountAudit,
+      /** Who was active and how often, per UTC day. */
+      activity: P.getAccountAuditActivity,
       webhooks: {
         list: P.listAccountAuditWebhooks,
         create: P.createAccountAuditWebhook,

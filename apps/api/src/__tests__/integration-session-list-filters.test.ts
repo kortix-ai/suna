@@ -172,6 +172,10 @@ describe('session list filters', () => {
     expect(ids((await list({ q: `dana-${tag}@` })).items)).toEqual(['teammate-chat']);
     expect(ids((await list({ q: `Dana ${tag}` })).items)).toEqual(['teammate-chat']);
     expect(ids((await list({ q: `pentester-${tag}` })).items)).toEqual(['teammate-chat']);
+    // KRTX-3017: the display name, with a space and capitals, finds the slug.
+    expect(ids((await list({ q: `Pentester ${tag}` })).items)).toEqual(['teammate-chat']);
+    // A query of separators only is no agent query; it must not match every row.
+    expect(ids((await list({ q: ' - ' })).items)).toEqual([]);
   });
 
   test('q treats % and _ literally', async () => {

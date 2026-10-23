@@ -6,7 +6,6 @@ import {
   TILE_SURFACE,
   attachmentExtension,
   isPreviewableImage,
-  middleTruncateFilename,
   splitFilenameForTile,
 } from './attachment-tile';
 
@@ -29,22 +28,6 @@ describe('attachmentExtension', () => {
     expect(attachmentExtension('README')).toBe('');
     expect(attachmentExtension('.env')).toBe('');
     expect(attachmentExtension('trailing.', 'application/octet-stream')).toBe('octet-stream');
-  });
-});
-
-describe('middleTruncateFilename', () => {
-  test('leaves a short name alone', () => {
-    expect(middleTruncateFilename('doc.pdf')).toBe('doc.pdf');
-  });
-
-  // The tail is what tells two exports of the same thing apart, and it
-  // carries the extension. An end-ellipsis threw exactly that away.
-  test('keeps the start AND the end of a long name', () => {
-    const out = middleTruncateFilename('kortix-critical-thinking-chatux.md');
-    expect(out.length).toBeLessThanOrEqual(22);
-    expect(out.startsWith('kortix-crit')).toBe(true);
-    expect(out.endsWith('-chatux.md')).toBe(true);
-    expect(out).toContain('…');
   });
 });
 

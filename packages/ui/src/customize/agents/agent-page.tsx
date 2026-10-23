@@ -79,6 +79,7 @@ import {
   agentConfigSectionKeys,
   agentEditorOptionQueries,
   DEFAULT_AGENT_CONFIG_SECTION,
+  grantSummary,
   isAgentConfigSectionKey,
   registryGrantOptions,
   useAgentDraft,
@@ -141,10 +142,7 @@ import { SETTINGS_SIDEBAR_WIDTH_PX } from '../../internal/account-hub/account-se
 import { capabilityTabHref } from '../../internal/lib/capability-tab-routes';
 import { useIsMobile } from '../../internal/hooks';
 
-import {
-  EditorSection,
-  EditorSectionStyleProvider,
-} from '../sections/view/agent-editor-primitives';
+import { EditorSection, EditorSectionStyleProvider } from '../sections/view/agent-editor-primitives';
 import { SettingsSectionHeader } from '../../primitives/settings-section-header';
 
 import { AgentDrivesSection } from './agent-drives-section';
@@ -157,6 +155,13 @@ import {
   SecretsGrantPage,
   SkillsGrantPage,
 } from './agent-grant-pages';
+import {
+  GroupedUnderlineTabs,
+  GroupSwitchTabs,
+  InlineVerticalTabs,
+  PrototypeSwitcher,
+  useNavVariant,
+} from './agent-nav.prototype';
 import { AgentPeopleSection } from './agent-people-section';
 import { AgentShareControl } from './agent-share-control';
 import { AgentTriggersSection } from './agent-triggers-section';
@@ -294,6 +299,7 @@ function AgentPageFrame({
   sectionHref,
   pane,
   footer,
+  summaries,
 }: {
   header: ReactNode;
   section: AgentConfigSectionKey;
@@ -301,11 +307,14 @@ function AgentPageFrame({
   sectionHref: (key: AgentConfigSectionKey) => string;
   pane: ReactNode;
   footer?: ReactNode;
+  /** PROTOTYPE: each topic's current value, for the `inline` nav variant. */
+  summaries?: Partial<Record<AgentConfigSectionKey, string>>;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const isMobile = useIsMobile();
   const localizedConfig = useLocalizedAgentConfigCatalog();
-  const items = localizedConfig.sections.filter((s) => sections.includes(s.key));
+  const sectionKeys = new Set(sections);
+  const items = localizedConfig.sections.filter((s) => sectionKeys.has(s.key));
   // The Preferences rail's rule: a heading over a lone group labels nothing.
   const groups = localizedConfig.groups
     .map((group) => ({
@@ -341,6 +350,40 @@ function AgentPageFrame({
       </TabsTrigger>
     );
   };
+
+  // PROTOTYPE: `?variant=` swaps the rail for one of the candidate navs.
+  const variant = useNavVariant();
+  const navProps = {
+    groups,
+    section,
+    href: (key: string) => sectionHref(key as AgentConfigSectionKey),
+    summaries,
+  };
+  if (!isMobile && variant !== 'rail') {
+    return (
+      <div className="relative flex h-full min-h-0 flex-1 flex-col">
+        <div
+          className={cn(
+            'shrink-0 px-5 py-3',
+            variant === 'inline' && 'border-border/60 border-b',
+          )}
+        >
+          {header}
+        </div>
+        {variant === 'tabs' ? <GroupedUnderlineTabs {...navProps} /> : null}
+        {variant === 'groups' ? <GroupSwitchTabs {...navProps} /> : null}
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
+          {variant === 'inline' ? (
+            <InlineVerticalTabs {...navProps}>{pane}</InlineVerticalTabs>
+          ) : (
+            <div className="mx-auto w-full max-w-2xl px-4 py-10 pb-32 lg:py-14 lg:pb-32">{pane}</div>
+          )}
+        </main>
+        {footer}
+        <PrototypeSwitcher />
+      </div>
+    );
+  }
 
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col">
@@ -397,6 +440,7 @@ function AgentPageFrame({
         </main>
       </div>
       {footer}
+      <PrototypeSwitcher />
     </div>
   );
 }
@@ -700,6 +744,22 @@ function EditableAgentPage({
     [config.manifest_raw, config.agents, agent.name],
   );
   const section = useAgentSection(sections);
+  // PROTOTYPE: the `inline` nav variant shows each topic's current value.
+  const summaries = useMemo<Partial<Record<AgentConfigSectionKey, string>>>(() => {
+    const d = editor.draft;
+    const grant = (v: Parameters<typeof grantSummary>[0]) => grantSummary(v, tI18nComplete).label;
+    return {
+      skills: grant(d.skills),
+      connectors: grant(d.connectors),
+      secrets: grant(d.secrets),
+      apps: grant(d.apps),
+      actions: grant(d.kortix_permissions ?? d.kortix_cli),
+      subagents: grant(d.subagents),
+      commands: grant(d.commands),
+      extensions: grant(d.extensions),
+      model: editor.oc.model ? (editor.oc.model.split('/').pop() ?? editor.oc.model) : 'Default',
+    };
+  }, [editor.draft, editor.oc.model, tI18nComplete]);
 
   const onSave = useCallback(async () => {
     if (!editor.isDirty || update.isPending) return;
@@ -724,6 +784,7 @@ function EditableAgentPage({
       section={section}
       sections={sections}
       sectionHref={sectionHrefFor(pathname)}
+      summaries={summaries}
       pane={
         <AgentConfigSections
           section={section}

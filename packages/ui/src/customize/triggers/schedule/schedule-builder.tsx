@@ -2,7 +2,7 @@
 
 import { CalendarDotsIcon as CalendarClock, CaretDownIcon as ChevronDown } from '@phosphor-icons/react';
 import { useTranslations } from '../../../i18n';
-import { type ReactNode, useCallback, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useState } from 'react';
 
 import { Button } from '../../../primitives/button';
 import { Input } from '../../../primitives/input';
@@ -243,12 +243,14 @@ export function ScheduleBuilder({
   const isCustom = cronToState(rawCron) === null;
   const hasPastRunAt = Boolean(runAt && new Date(runAt).getTime() <= Date.now());
 
-  useEffect(() => {
+  const [syncedValue, setSyncedValue] = useState(value);
+  if (value !== syncedValue) {
+    setSyncedValue(value);
     const parsed = cronToState(value);
     if (parsed) setState(parsed);
     setRawCron(value);
     setShowCron((visible) => visible || !parsed);
-  }, [value]);
+  }
 
   const update = useCallback(
     (partial: Partial<ScheduleState>) => {
@@ -317,6 +319,7 @@ export function ScheduleBuilder({
     tI18nComplete,
     APP_REGISTRY_TRANSLATION_KEYS,
   );
+  const selectedWeekdays = new Set(state.weekdays);
   const intervalUnit = (value: number) =>
     state.frequency === 'minutes' ? 'minutes' : `hour${value === 1 ? '' : 's'}`;
 
@@ -470,7 +473,7 @@ export function ScheduleBuilder({
       {!onceMode && cadence === 'weekly' && (
         <div className="flex flex-wrap gap-1.5" aria-label={tI18nComplete.raw('text2069f4549744')}>
           {weekdayButtons.map(({ value, label }) => {
-            const selected = state.weekdays.includes(value);
+            const selected = selectedWeekdays.has(value);
             return (
               <Button
                 key={value}

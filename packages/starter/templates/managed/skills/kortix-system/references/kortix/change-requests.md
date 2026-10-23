@@ -37,10 +37,11 @@ The contract is:
 5. **Verify it carries your diff** (`kortix cr diff <n>`). No changes
    shown = your push didn't land; push and re-check the SAME CR — it
    recomputes live. Never open a duplicate.
-6. **Surface the CR number to the user** (`kortix cr ls`) so they can
-   review.
+6. **Surface the CR to the user**: its number and title (`kortix cr ls`).
+   In the web app, point them at the **Review** button under your reply;
+   name `kortix cr merge <n>` only for a CLI or channel user.
 7. **Stop. The agent does not merge its own CR.** Merging is the
-   user's call, from the dashboard or `kortix cr merge <n>`.
+   user's call: the Review button, the dashboard, or `kortix cr merge <n>`.
 
 This mandate applies to **everything**:
 

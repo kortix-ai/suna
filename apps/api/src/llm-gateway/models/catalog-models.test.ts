@@ -3,26 +3,30 @@ import type { Catalog } from '@kortix/llm-catalog';
 
 import { gatewayCodexModels, gatewayModelCatalog, gatewayModelsAll } from './catalog-models';
 import { CODEX_SEED_MODEL_IDS } from './codex-models';
-import { SERVED_MANAGED_MODELS } from './served-managed-models';
+import { TEST_MANAGED_LINEUP } from '../../__tests__/fixtures/managed-lineup';
+import { __setManagedLineupForTest } from './managed-models';
+import { servedManagedModels } from './served-managed-models';
+
+// The lineup Platinum Inference would list (scripts/test.env sets the Platinum key).
+__setManagedLineupForTest(TEST_MANAGED_LINEUP);
+const SERVED = servedManagedModels();
 
 // The sandbox agent server injects this catalog into OpenCode verbatim and does NO
 // client-side limit backfill — so the gateway MUST guarantee a usable context window
 // on every served model, or OpenCode can't size conversations and a long session
 // pins at 100% context. These tests lock that server-side guarantee.
 //
-// The managed lineup and its prices are owned by @kortix/llm-catalog
-// (managed.test.ts). This file owns the mapping from a lineup entry to the
-// served record, so a lineup change needs no edit here.
+// The managed lineup and its prices are owned by Platinum Inference. This file
+// owns the mapping from a lineup entry to the served record.
 describe('gatewayModelCatalog — served catalog', () => {
   const full = gatewayModelCatalog('proj');
 
   // OpenCode (provider.ts) reads image support ONLY from `modalities.input`
   // and replaces image parts with "ERROR: Cannot read image" when it is
-  // missing; the thinking control is built ONLY from effort values. DeepSeek
-  // V4.1 Flash and GLM 5.3 Flash have no models.dev record, so both fields
-  // must come from the curated lineup.
+  // missing; the thinking control is built ONLY from effort values. Both come
+  // from Platinum's model list.
   test('every served vision model advertises image input and a thinking control', () => {
-    for (const managed of SERVED_MANAGED_MODELS.filter((m) => m.vision)) {
+    for (const managed of SERVED.filter((m) => m.vision)) {
       const served = full[managed.id]!;
       expect(served.modalities?.input, managed.id).toContain('image');
       const effort = served.reasoning_options?.find((o) => o.type === 'effort');
@@ -38,17 +42,17 @@ describe('gatewayModelCatalog — served catalog', () => {
       tool_call: true,
       temperature: true,
       limit: { context: 1_000_000, output: 65_536 },
-      cost: { input: 0.2, output: 0.65, cache_read: 0.03 },
+      cost: { input: 0.15, output: 0.6, cache_read: 0.003 },
     });
   });
 
-  test.each(SERVED_MANAGED_MODELS.map((model) => [model.id, model] as const))(
-    '%s is served under Kortix with its curated vision, limit, and price',
+  test.each(SERVED.map((model) => [model.id, model] as const))(
+    '%s is served under Kortix with Platinum\'s vision, limit, and price',
     (id, model) => {
-      const pricing = model.pricing!;
+      const pricing = model.pricing;
       expect(full[id]).toMatchObject({
         name: model.name,
-        provider: model.providerBrand ?? 'kortix',
+        provider: 'kortix',
         attachment: model.vision,
         limit: model.limit,
       });
@@ -57,22 +61,22 @@ describe('gatewayModelCatalog — served catalog', () => {
         input: pricing.inputPerMillion,
         output: pricing.outputPerMillion,
         ...(pricing.cachedInputPerMillion != null ? { cache_read: pricing.cachedInputPerMillion } : {}),
-        ...(pricing.cacheWritePerMillion != null ? { cache_write: pricing.cacheWritePerMillion } : {}),
       });
     },
   );
 
-  test('every served model carries a positive context limit', () => {
-    const missing = Object.entries(full)
-      .filter(([, m]) => !(typeof m.limit?.context === 'number' && m.limit.context > 0))
+  test('a served limit is never invented: present means a positive context from the source', () => {
+    const bad = Object.entries(full)
+      .filter(([, m]) => m.limit && !(typeof m.limit.context === 'number' && m.limit.context > 0))
       .map(([id]) => id);
-    expect(missing).toEqual([]);
+    expect(bad).toEqual([]);
+    expect(Object.values(full).filter((m) => m.limit).length).toBeGreaterThan(0);
   });
 
   test('synthetic auto is absent, and an anonymous caller sees exactly the served managed ids', () => {
     expect(full.auto).toBeUndefined();
     expect(Object.keys(gatewayModelCatalog(undefined)).sort()).toEqual(
-      SERVED_MANAGED_MODELS.map((model) => model.id).sort(),
+      SERVED.map((model) => model.id).sort(),
     );
   });
 
@@ -197,7 +201,7 @@ describe('served catalog field passthrough', () => {
     });
   });
 
-  test('a BYOK record without enriched capabilities gets permissive defaults and the default window', () => {
+  test('a BYOK record without enriched capabilities gets permissive defaults and no invented window', () => {
     expect(gatewayModelsAll(catalog)['anthropic/bare']).toEqual({
       name: 'Bare',
       provider: 'anthropic',
@@ -209,8 +213,15 @@ describe('served catalog field passthrough', () => {
       tool_call: true,
       attachment: false,
       temperature: false,
-      limit: { context: 200_000, output: 32_000 },
     });
+  });
+
+  test('a ChatGPT subscription model serves the backend window from Codex models.json', () => {
+    const limit = gatewayCodexModels(catalog, [codexId], { [codexId]: 272_000 })[`codex/${codexId}`]!.limit;
+    expect(limit!.context).toBe(272_000);
+    expect(limit!.output).toBeLessThanOrEqual(272_000);
+    // The public API's `input` (a larger prompt budget) does not apply to the ChatGPT backend.
+    expect(limit!.input).toBeUndefined();
   });
 
   test('a ChatGPT subscription record carries the openai record fields verbatim', () => {

@@ -52,6 +52,11 @@ export interface OutcomeAction {
   intent: 'open' | 'link';
   /** Required when `intent` is `link`; ignored otherwise. */
   href?: string;
+  /**
+   * For `open`: the source id the modal opens when it is not this outcome's
+   * own. A superseded change request opens its replacement (KRTX-3031).
+   */
+  target?: string;
 }
 
 export interface Outcome {

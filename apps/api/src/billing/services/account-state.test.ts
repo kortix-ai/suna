@@ -13,6 +13,9 @@ import * as realUsageBreakdown from './usage-breakdown';
 import * as realCreditAccounts from '../repositories/credit-accounts';
 
 let getCreditAccountCalls = 0;
+/** Mutable stand-in for `config.KORTIX_BILLING_INTERNAL_ENABLED` (the CHARGING gate). */
+let billingEnabled = true;
+let initializeFreeTierCalls = 0;
 let account: Record<string, unknown> | null = null;
 
 let inFlight = 0;
@@ -29,7 +32,9 @@ async function trackedDelay<T>(value: T, ms = 15): Promise<T> {
 mock.module('../../config', () => ({
   config: {
     ENTERPRISE_LICENSE_AVAILABLE: false,
-    KORTIX_BILLING_INTERNAL_ENABLED: true,
+    get KORTIX_BILLING_INTERNAL_ENABLED() {
+      return billingEnabled;
+    },
     INTERNAL_KORTIX_ENV: 'dev',
   },
 }));
@@ -46,7 +51,9 @@ mock.module('../repositories/credit-accounts', () => ({
 }));
 
 mock.module('./free-tier', () => ({
-  initializeFreeTierAccount: async () => undefined,
+  initializeFreeTierAccount: async () => {
+    initializeFreeTierCalls += 1;
+  },
 }));
 
 // ./credits and ./auto-topup are deliberately NOT mocked: they are two of the
@@ -95,6 +102,7 @@ function creditAccount(overrides: Record<string, unknown> = {}) {
     balance: '10.00',
     dailyCreditsBalance: '1.00',
     expiringCredits: '5.00',
+    nextCreditGrant: '2026-11-24T12:00:00Z',
     nonExpiringCredits: '4.00',
     autoTopupEnabled: false,
     autoTopupThreshold: null,
@@ -157,6 +165,7 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
       total: 10,
       daily: 1,
       monthly: 5,
+      expires_at: '2026-11-24T12:00:00.000Z',
       extra: 4,
       can_run: true,
       lifetime_granted: 0,
@@ -251,6 +260,7 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
 
   test('when no credit row exists, the account is initialized and the fresh row is still read only once more (not re-fetched by downstream helpers)', async () => {
     getCreditAccountCalls = 0;
+    initializeFreeTierCalls = 0;
     account = null;
 
     // initializeFreeTierAccount is mocked as a no-op, so the account stays
@@ -260,6 +270,37 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
     await buildMinimalAccountState('acct-1');
 
     expect(getCreditAccountCalls).toBe(2);
+    expect(initializeFreeTierCalls).toBe(1);
+  });
+});
+
+describe('buildMinimalAccountState — charging off never mints the wallet (KRTX-1832)', () => {
+  test('with the billing flag off, a row-less account stays uninitialized — no $2 ledger grant on a billing-state read (the route lifts can_run, not this service)', async () => {
+    billingEnabled = false;
+    getCreditAccountCalls = 0;
+    initializeFreeTierCalls = 0;
+    account = null;
+
+    const state = await buildMinimalAccountState('acct-1');
+
+    expect(initializeFreeTierCalls).toBe(0);
+    // The row-less read stays a single fetch: no post-init re-read either.
+    expect(getCreditAccountCalls).toBe(1);
+    // A row-less account resolves to the hidden 'none' plan ($0, no Stripe
+    // anything); /v1/billing/* forces `can_run` true on top of this while
+    // charging is off, so nobody is blocked.
+    expect(state.plan?.key).toBe('none');
+  });
+
+  test('with the billing flag on, the idempotent signup repair still initializes a row-less account', async () => {
+    billingEnabled = true;
+    getCreditAccountCalls = 0;
+    initializeFreeTierCalls = 0;
+    account = null;
+
+    await buildMinimalAccountState('acct-1');
+
+    expect(initializeFreeTierCalls).toBe(1);
   });
 });
 

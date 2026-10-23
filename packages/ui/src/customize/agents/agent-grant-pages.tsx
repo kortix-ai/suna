@@ -58,7 +58,7 @@ import {
 } from '@kortix/sdk/react';
 import { PlusIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { appGrantRows } from './agent-apps-grant';
 
 // ─── The shared catalog ──────────────────────────────────────────────────
@@ -321,9 +321,7 @@ export function ConnectorsGrantPage({
     record: connectors.find((c) => c.slug === detailSlug),
     isSuccess: connectorsQuery.isSuccess,
   });
-  useEffect(() => {
-    if (detail.isMissing) setDetailSlug(null);
-  }, [detail.isMissing]);
+  if (detail.isMissing) setDetailSlug(null);
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
 
@@ -343,10 +341,11 @@ export function ConnectorsGrantPage({
             onChange={(v) => {
               set('connectors', v);
               const required = draft.connectors_required ?? [];
+              const picked = new Set(Array.isArray(v) ? v : []);
               const kept =
                 v === 'all' || v === 'none' || !Array.isArray(v)
                   ? []
-                  : required.filter((slug) => v.includes(slug));
+                  : required.filter((slug) => picked.has(slug));
               if (kept.length !== required.length) {
                 set('connectors_required', kept.length ? kept : undefined);
               }

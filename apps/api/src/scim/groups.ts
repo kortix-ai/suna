@@ -7,7 +7,7 @@ import { accountGroupMembers, accountGroups, accountInvitations, accountScimUser
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { invalidateIamCacheForGroup, invalidateIamCacheForUsers } from '../iam/cache-invalidation';
 import { scimError } from '../middleware/scim-auth';
-import { errors, json } from '../openapi';
+import { auth, errors, json } from '../openapi';
 import { db } from '../shared/db';
 import { accountMemberRow, accountMembersAmong } from '../iam/membership-read';
 import { accountGroupFullRow, groupMemberUserIds, groupNameInAccountRow, scimGroupRow, scimGroupRowById, scimGroupRows } from '../iam/group-read';
@@ -298,7 +298,7 @@ export function registerScimGroupsRoutes(): void {
     createRoute({
       method: 'get',
       path: '/accounts/{accountId}/Groups',
-      tags: ['scim'],
+      ...auth, tags: ['scim'],
       summary: 'List SCIM Groups (filter by displayName/id/externalId eq)',
       request: {
         params: z.object({ accountId: z.string() }),
@@ -342,7 +342,7 @@ export function registerScimGroupsRoutes(): void {
     createRoute({
       method: 'get',
       path: '/accounts/{accountId}/Groups/{groupId}',
-      tags: ['scim'],
+      ...auth, tags: ['scim'],
       summary: 'Get a SCIM Group',
       request: { params: z.object({ accountId: z.string(), groupId: z.string() }) },
       responses: {
@@ -365,7 +365,7 @@ export function registerScimGroupsRoutes(): void {
     createRoute({
       method: 'post',
       path: '/accounts/{accountId}/Groups',
-      tags: ['scim'],
+      ...auth, tags: ['scim'],
       summary: 'Create a SCIM Group',
       request: {
         params: z.object({ accountId: z.string() }),
@@ -442,7 +442,7 @@ export function registerScimGroupsRoutes(): void {
 
   for (const method of ['patch', 'put'] as const) {
     scimRouter.openapi(createRoute({
-      method, path: '/accounts/{accountId}/Groups/{groupId}', tags: ['scim'],
+      method, path: '/accounts/{accountId}/Groups/{groupId}', ...auth, tags: ['scim'],
       summary: method === 'patch' ? 'Patch a SCIM Group' : 'Replace a SCIM Group',
       request: {
         params: z.object({ accountId: z.string().uuid(), groupId: z.string().uuid() }),
@@ -456,7 +456,7 @@ export function registerScimGroupsRoutes(): void {
     createRoute({
       method: 'delete',
       path: '/accounts/{accountId}/Groups/{groupId}',
-      tags: ['scim'],
+      ...auth, tags: ['scim'],
       summary: 'Delete a SCIM Group',
       request: { params: z.object({ accountId: z.string(), groupId: z.string() }) },
       responses: {

@@ -127,7 +127,10 @@ export function noticeButton<T>(
 
 /** A failure line split for the log row: `MCP tools/list failed: HTTP 401` → `401` + `MCP tools/list failed`. */
 export function splitNoticeReason(reason: string): { code: string | null; detail: string } {
-  const match = /[:\s]*\bHTTP (\d{3})\b/.exec(reason);
+  const match = /\bHTTP (\d{3})\b/.exec(reason);
   if (!match) return { code: null, detail: reason };
-  return { code: match[1]!, detail: reason.replace(match[0], '').trim() };
+  // Drop the `: ` before the status with a loop: a `[:\s]*` regex prefix is quadratic on long whitespace runs.
+  let end = match.index;
+  while (end > 0 && /[:\s]/.test(reason[end - 1]!)) end--;
+  return { code: match[1]!, detail: (reason.slice(0, end) + reason.slice(match.index + match[0].length)).trim() };
 }

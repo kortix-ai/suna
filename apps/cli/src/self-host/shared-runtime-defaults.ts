@@ -88,9 +88,22 @@ export const SHARED_FEATURE_FLAG_DEFAULTS: Record<string, string> = {
   KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION: 'true',
 };
 
+/**
+ * Kortix Capture's object store. `bundled` (the default) runs the on-box
+ * `capture-store` MinIO service and wires the API at it — zero config.
+ * `external` drops that service and points the API at an operator-owned
+ * S3-compatible store (AWS S3, Cloudflare R2, ...) via the KORTIX_CAPTURE_S3_* /
+ * KORTIX_CAPTURE_STS_* keys in .env. See compose-assets.ts
+ * renderFullDockerCompose() and references/self-host.md.
+ */
+export const SHARED_CAPTURE_DEFAULTS: Record<string, string> = {
+  KORTIX_CAPTURE_STORE: 'bundled',
+};
+
 /** Every target-agnostic default in one object, for a single spread. */
 export const SHARED_SELF_HOST_DEFAULTS: Record<string, string> = {
   ...SHARED_AUTH_DEFAULTS,
   ...SHARED_SANDBOX_DEFAULTS,
   ...SHARED_FEATURE_FLAG_DEFAULTS,
+  ...SHARED_CAPTURE_DEFAULTS,
 };

@@ -98,6 +98,8 @@ import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../primitiv
 import { useUserPreferencesStore, type ConversationDensity } from '../../internal/stores/user-preferences-store';
 import { SubSessionModal } from './sub-session-modal';
 import { ToolPartRenderer, TurnLiveContext } from '../tool/tool-renderers';
+import { RecoveredCallsContext } from '../tool/shared/infrastructure';
+import { recoveredShellFailures } from '../turn/recovered-failures';
 import { type SentAttachment } from '../composer/sent-attachment-previews';
 import { cn } from '../../lib/utils';
 import {
@@ -1367,7 +1369,10 @@ const segments = useMemo(() => {
 //   - When done: it's HIDDEN from steps (hideResponsePart=true) and shown below as Response
 // ============================================================================
 
-/** Shell mode — a live shell tool replaces the whole turn scaffold. */
+/**
+ * Shell mode — a live shell tool replaces the whole turn scaffold.
+ * @deprecated Renders an OpenCode shell turn (session.shell; pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode.
+ */
 function TurnShellMode(
   props: Pick<SessionTurnProps, 'sessionId' | 'disableToolNavigation' | 'onPermissionReply' | 'providers' | 'permissions'> & {
     call: ToolCallBlock;
@@ -1586,6 +1591,9 @@ function TurnUserBubble(
   );
 }
 
+/** One shared empty set: a live turn has no recovered calls yet. */
+const NO_RECOVERED_CALLS: ReadonlySet<string> = new Set();
+
 /** The assistant's part tree: bursts, standalone deliverables, and prose
  *  between them, under one live-context provider. */
 function TurnToolBlocks(
@@ -1613,6 +1621,11 @@ function TurnToolBlocks(
   const split = useMemo(
     () => (fold && !working ? splitSessionLogTurnWork(segments.filter(segmentRendersSomething), { working }) : null),
     [fold, segments, working],
+  );
+  // Settled turns only: while the turn runs, the next step has not happened yet.
+  const recovered = useMemo(
+    () => (working ? NO_RECOVERED_CALLS : recoveredShellFailures(turnBlocks(turn))),
+    [turn, working],
   );
   const renderSegment = (segment: TurnSegments[number]) => {
     const key = turnSegmentKey(segment);
@@ -1660,6 +1673,7 @@ function TurnToolBlocks(
       // about the TURN, and this block is the turn's whole part tree.
       // See `TurnLiveContext`.
       <TurnLiveContext.Provider value={working}>
+       <RecoveredCallsContext.Provider value={recovered}>
         <div className="space-y-3">
           {/* One keyed array in both states, so the hoisted deliverables and
               the final text keep their instances at settle: a `show` iframe
@@ -1677,6 +1691,7 @@ function TurnToolBlocks(
               ]
             : segments.map(renderSegment)}
         </div>
+       </RecoveredCallsContext.Provider>
       </TurnLiveContext.Provider>
     )}
     </>

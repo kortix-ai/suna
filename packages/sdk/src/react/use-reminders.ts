@@ -6,6 +6,7 @@ import {
   deleteSessionReminders,
   listProjectReminders,
   listSessionReminders,
+  runSessionReminder,
   updateSessionReminder,
   updateSessionReminders,
   type SessionReminderRef,
@@ -15,7 +16,7 @@ import { qk } from './query-keys';
 
 /**
  * Every reminder in a project the caller can see, plus pause/resume
- * (`update`) and `remove`. A reminder changes when it fires, when its agent
+ * (`update`), `remove` and `run` (fire once now). A reminder changes when it fires, when its agent
  * sets one, and from other members, so this is the `inventory` tier.
  *
  * `updateMany` and `removeMany` act on a selection: a few requests at a
@@ -41,6 +42,12 @@ export function useProjectReminders(projectId: string | null | undefined) {
       deleteSessionReminder(projectId as string, args.sessionId, args.reminderId),
     onSuccess: invalidate,
   });
+  /** Fire one reminder now: the Retry of a failed run. */
+  const run = useMutation({
+    mutationFn: (args: { sessionId: string; reminderId: string }) =>
+      runSessionReminder(projectId as string, args.sessionId, args.reminderId),
+    onSuccess: invalidate,
+  });
   const updateMany = useMutation({
     mutationFn: (args: { reminders: readonly SessionReminderRef[]; enabled: boolean }) =>
       updateSessionReminders(projectId as string, args.reminders, { enabled: args.enabled }),
@@ -51,10 +58,10 @@ export function useProjectReminders(projectId: string | null | undefined) {
       deleteSessionReminders(projectId as string, args.reminders),
     onSettled: invalidate,
   });
-  return { ...query, update, remove, updateMany, removeMany };
+  return { ...query, update, remove, run, updateMany, removeMany };
 }
 
-/** One session's reminders, with the same mutations bound to that session. */
+/** One session's reminders, with the same mutations bound to that session, and `run`. */
 export function useSessionReminders(
   projectId: string | null | undefined,
   sessionId: string | null | undefined,
@@ -76,5 +83,10 @@ export function useSessionReminders(
     mutationFn: (reminderId: string) => deleteSessionReminder(projectId as string, sessionId as string, reminderId),
     onSuccess: invalidate,
   });
-  return { ...query, update, remove };
+  /** Fire one reminder now: the Retry of a failed run. */
+  const run = useMutation({
+    mutationFn: (reminderId: string) => runSessionReminder(projectId as string, sessionId as string, reminderId),
+    onSuccess: invalidate,
+  });
+  return { ...query, update, remove, run };
 }

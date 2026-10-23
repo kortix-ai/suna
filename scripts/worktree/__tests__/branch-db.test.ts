@@ -66,6 +66,7 @@ describe.skipIf(!container)('--db branch mirror of auth.users + auth.sessions', 
     expect(sessionIn(branchUrl, session)).toBe('0');
   });
 
+  // Creates a database and syncs twice: ~2.7 s alone, over 5 s beside the CI DB suites.
   test('start upgrades a branch an older checkout created (no apply_rows yet)', () => {
     const OLD = `${NAME}_old`;
     const oldUrl = withDatabase(ADMIN, branchDbName(OLD));
@@ -82,7 +83,7 @@ describe.skipIf(!container)('--db branch mirror of auth.users + auth.sessions', 
     } finally {
       dropBranchDb(p, OLD);
     }
-  });
+  }, 20_000);
 
   test('start removes a session the branch kept after a missed push', () => {
     const user = q(branchUrl, 'select id from auth.users limit 1');

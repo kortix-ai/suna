@@ -1,6 +1,6 @@
 ---
 name: kortix-system
-description: "Canonical reference for Kortix projects, Apps (sites, servers, backends with volumes) and internal business apps, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and the two session harnesses, pi and OpenCode. Covers `kortix.yaml` versions 1 and 2, App deployments, harness configuration (`harnesses/pi/`, `harnesses/opencode/`), session identity, credential boundaries, and the complete pi and OpenCode references. Load when the user asks how Kortix works, what Kortix can do, how to deploy an App, how an agent discovers platform instructions, how to customize or configure this project's agents (create or fix an agent, subagent, skill, tool, plugin, extension, pi package, command, MCP server, model or permission rule; edit `opencode.jsonc`), how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
+description: "Canonical reference for Kortix projects, Apps (sites, servers, backends with volumes) and internal business apps, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and the session harness: pi runs every new session; OpenCode is deprecated. Covers `kortix.yaml` versions 1 and 2, App deployments, harness configuration (`harnesses/pi/`, `harnesses/opencode/`), session identity, credential boundaries, and the complete pi and OpenCode references. Load when the user asks how Kortix works, what Kortix can do, how to deploy an App, how an agent discovers platform instructions, how to customize or configure this project's agents (create or fix an agent, subagent, skill, tool, plugin, extension, pi package, command, MCP server, model or permission rule; edit `opencode.jsonc`), how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
 ---
 
 <skill name="kortix-system">
@@ -48,15 +48,16 @@ under `harnesses/`:
   (`<name>: kortix:<name>`) and its own tools, one module each
   (`tools/<name>.ts` by convention). Every harness runs them
   (`references/kortix/tools.md`).
-- **OpenCode config** — `harnesses/opencode/` (`opencode.config_dir`):
+- **OpenCode config (deprecated)** — `harnesses/opencode/` (`opencode.config_dir`):
   `opencode.jsonc`, plugins, commands, MCP and provider settings.
-  Only an OpenCode session reads it.
+  Only a session that still runs OpenCode reads it. Do not add to it.
 - **pi config** — `harnesses/pi/` (`pi.config_dir`): extensions, prompt
   templates, `settings.json`. Only a pi session reads it. The starter does
   not create it.
 
-A session runs one harness, **OpenCode** or **pi** (`<harnesses>` below).
-Both read the same agents, skills, memory and `kortix.yaml`.
+Every new session runs **pi**. **OpenCode** is deprecated and serves only
+sessions that started on it (`<harnesses>` below). Both read the same agents,
+skills, memory and `kortix.yaml`.
 
 Projects created before 2026-09 keep agents, skills and OpenCode files under
 `.kortix/opencode/` and memory under `.kortix/memory/`. Both layouts work,
@@ -76,19 +77,20 @@ in that harness's config directory.
 <harnesses>
 ## The harness — check it before you change agent behavior
 
-A harness is the agent runtime inside the session sandbox. Kortix has two.
-A session runs exactly one, and the two read different config files.
+A harness is the agent runtime inside the session sandbox. Every new session
+runs pi. OpenCode is deprecated: only a session that started on it before
+2026-10-23 still runs it, and Kortix will remove it. A session keeps the
+harness it started on.
 
 ```bash
-echo "${KORTIX_HARNESS:-opencode}"     # prints pi or opencode
+echo "${KORTIX_HARNESS:-opencode}"     # prints pi, or opencode in an older session
 ```
 
-Kortix selects the harness when a session starts: the `pi_harness` project
-flag on (the default) → pi; else
-`runtime: pi` in `kortix.yaml` → pi; else OpenCode. An existing session keeps
-its harness.
+Do not add OpenCode config to a project (`harnesses/opencode/`,
+`opencode.jsonc`, OpenCode plugins or commands), and do not set `runtime:` in
+`kortix.yaml`: it selects nothing. Build on pi.
 
-| You want to… | On OpenCode | On pi |
+| You want to… | On OpenCode (deprecated) | On pi |
 | --- | --- | --- |
 | Change an agent's prompt, model or permissions | `agents/<name>.md` | `agents/<name>.md` |
 | Add a skill | `skills/<name>/SKILL.md` | `skills/<name>/SKILL.md` |
@@ -656,13 +658,14 @@ When you, as an agent, have changes you believe should persist:
    If it shows no changes, your push didn't land — push and re-check
    the SAME CR (the diff recomputes live from the refs). Never open a
    duplicate CR for the same work.
-6. **Surface the CR to the user.** Print the CR number so they can
-   review:
-   ```sh
-   kortix cr ls
-   ```
-7. **Wait.** The user merges via dashboard, CLI (`kortix cr merge
-   <n>`), or asks for changes. *You do not merge your own CRs.*
+6. **Surface the CR to the user.** Name the CR number and title in your
+   reply (`kortix cr ls` gives you both). In the web app a **Review**
+   button appears under your reply: tell the user to use it to see and
+   apply the changes. Mention `kortix cr merge <n>` only when the user
+   works from the CLI or a channel without the web app.
+7. **Wait.** The user applies the CR (the Review button, the dashboard,
+   or `kortix cr merge <n>`), or asks for changes. *You do not merge your
+   own CRs.*
 
 ### Don't bypass this
 

@@ -125,7 +125,7 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'connect',
             args: '[session-id]',
-            blurb: 'Attach the full OpenCode TUI to a session (picker when no id given)',
+            blurb: 'Deprecated: attach the OpenCode TUI to an OpenCode session (pi sessions use chat or shell)',
           },
           {
             name: 'chat',

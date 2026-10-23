@@ -104,7 +104,7 @@ export function parseSessionReferences(text: string): {
 // Parse <project_ref> XML references from project mentions / selector
 // ============================================================================
 
-export interface ParsedProjectRef {
+interface ParsedProjectRef {
   id?: string;
   name: string;
   path?: string;
@@ -149,11 +149,11 @@ export function parseProjectReferences(text: string): {
 // to existing workspace files and agents, so the agent sees structured
 // metadata and the renderer strips them out of the visible text.
 
-export interface ParsedFileMentionRef {
+interface ParsedFileMentionRef {
   path: string;
   name: string;
 }
-export interface ParsedAgentMentionRef {
+interface ParsedAgentMentionRef {
   name: string;
 }
 

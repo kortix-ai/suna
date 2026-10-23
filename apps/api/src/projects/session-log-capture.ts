@@ -1,8 +1,16 @@
 /**
- * The session log of a box without a journal (P2.7): after each transcript
- * capture (`lib/session-transcript-capture.ts`) wrote the v1 mirror, this
- * writes `fromV1` of the whole mirror as v2 rows through the journal's apply
- * path (`writeCapturedSessionLog`, `session-log-ingest.ts`).
+ * Two writers of the session log for what no journal wrote.
+ *
+ * - `writeSessionLogFromMirror` converts a session's v1 mirror (`session_transcript_*`, written
+ *   until P8) into the log. Since P8.2 nothing writes the mirror and no read serves it; this is
+ *   the only reader left, and only these call it, each before it reads the log: the backfill
+ *   (`session-log-backfill.ts` and its thread), a log read of a session with no log
+ *   (`convertMirrorOnRead`), a restore (`restore-session.ts`), a lost-session recovery
+ *   (`recover-lost-session.ts`) and a fork (`session-create.ts`). It converts only into a log
+ *   with no message yet: a session whose log holds a message never reads the mirror here. Once
+ *   the mirror is drained (`mirrorDrained`) it reads no mirror table at all and answers `skipped`.
+ * - `writeSessionLogFromRead` is the capture of a box without a journal
+ *   (`lib/session-transcript-capture.ts`): the box read goes straight into the log.
  *
  * - "Without a journal" is `session_logs.journal_seen_at` null: an old daemon,
  *   a daemon in `KORTIX_SESSION_LOG_DUMP_DIR` mode, or one whose posts have not
@@ -20,44 +28,35 @@
  *   rev (1, 2, ... below `SESSION_LOG_CAPTURE_REV_LIMIT`). A stored message that
  *   `fromV1` no longer gives (the mirror removes rows only on a recorded rewind)
  *   gets a tombstone at the next rev. Nothing is ever deleted here.
- * - A newer mirror capture between the read and the write makes this write
- *   stale: `current` compares the mirror's `captured_at` under the lock and the
- *   write is skipped (the newer capture writes its own).
+ * - A write between the read and this write makes it stale: `current` compares
+ *   the mirror's `captured_at` and the stored messages under the lock, and the
+ *   write is skipped.
  * - The operator switch `SESSION_LOG_INGEST_ENABLED` gates this writer too.
  * - Size cap. The conversion is synchronous and holds the whole mirror in memory:
  *   one 200 MB session blocked a prod API task's event loop 17 s (2026-10-16).
  *   A session without a log whose mirror stores more than `mirrorStoredCap()`
  *   bytes (`pg_column_size`, read without detoasting) gets no log (`too_large`);
- *   a restore answers 413 above `SESSION_LOG_RESTORE_MAX_BYTES` anyway. A session
- *   that already has a log keeps its captures, so its log never goes stale. The
+ *   a restore answers 413 above `SESSION_LOG_RESTORE_MAX_BYTES` anyway. The
  *   stages yield to the event loop (`breathe`). The backfill converts a session over
- *   the cap in a Bun `Worker` (`uncapped`, `session-log-backfill.ts`); a capture never does.
- * - The `session_log` flag on (P8): the capture writes no mirror row. It converts
- *   the box read straight into the log (`writeSessionLogFromRead`), merged into the
- *   stored log. A mirror converts only into a log without a message (the backfill,
- *   a restore, a lost-session recovery); a session whose log holds a message never
- *   reads the mirror here.
+ *   the cap in a Bun `Worker` (`uncapped`, `session-log-backfill.ts`); no request does.
  *
- * Never throws: the mirror is the user-facing store, and a failed v2 write is
- * only a log line. The result says what happened, for the backfill of old
- * sessions (P3.1, `session-log-backfill.ts`), which converts through this
- * function so it writes exactly what the capture writes. `dry` stops before the
- * write and returns the batch it would write.
+ * Never throws: a failed write is a log line and an outcome. The outcome is what
+ * the backfill of old sessions (P3.1, `session-log-backfill.ts`) counts. `dry`
+ * stops before the write and returns the batch it would write.
  */
 import { fromV1, SessionLogSchema, toV1, type SessionLog, type SessionLogJournalRequest, type V1Row } from '@kortix/api-contract/session-log';
 import {
-  projects,
   projectSessions,
   sessionLogMessages,
   sessionLogs,
   sessionLogThreads,
+  sessionLogBackfillState,
   sessionRuntimeProjections,
   sessionTranscriptMessages,
   sessionTranscriptMirrors,
 } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { config } from '../config';
-import { resolveFeatureFlag } from '../feature-flags/registry';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { restoreStrippedToolParts } from './lib/session-transcript-mirror';
@@ -66,7 +65,7 @@ import { SESSION_LOG_CAPTURE_REV_LIMIT, sessionLogContentHash, writeCapturedSess
 const READ_ONLY = { isolationLevel: 'repeatable read', accessMode: 'read only' } as const;
 
 /**
- * - `skipped`: the switch is off, a journal owns the log, there is no mirror, nothing changed,
+ * - `skipped`: the switch is off, the mirror is drained, a journal owns the log, there is no mirror, nothing changed,
  *   a newer mirror capture ran, or the capture revs are exhausted.
  * - `invalid`: `fromV1` of the mirror fails `SessionLogSchema`; nothing written.
  * - `too_large`: no log yet, and the mirror is over the size cap; nothing read or written.
@@ -96,22 +95,41 @@ export const mirrorStoredCap = () => Math.floor(config.SESSION_LOG_RESTORE_MAX_B
  */
 export const breathe = () => new Promise<void>((resolve) => setImmediate(resolve));
 
+/**
+ * The v1 mirror is drained: a backfill pass selected no session (`drainedWithDeleted` in the pass
+ * state, `session-log-backfill.ts`). Nothing writes the mirror since P8.2, so it stays drained.
+ * Every code path that would touch `session_transcript_*` asks this first and touches neither table
+ * when it is true (Release B1): the conversion here, the `/log` read, the retention purge and the
+ * project transfer. So the Release B2 migration can drop both tables under the code that is live then.
+ * One primary-key read of the one-row state table; no mirror table.
+ * ponytail: not memoized: a flow fixture and the operator (`DELETE` of the state row) reopen the
+ * mirror on a running API, and a cached `true` would hide that. Every caller is a path that would
+ * otherwise read the mirror.
+ */
+export async function mirrorDrained(): Promise<boolean> {
+  const [row] = await db
+    .select({ drained: sql<boolean | null>`(${sessionLogBackfillState.state} ->> 'drainedWithDeleted')::boolean` })
+    .from(sessionLogBackfillState)
+    .where(eq(sessionLogBackfillState.id, 'pass'));
+  return row?.drained === true;
+}
+
 /** `uncapped`: no size cap. Only the backfill's conversion thread passes it (`session-log-backfill-thread.ts`). */
 export async function writeSessionLogFromMirror(sessionId: string, options: { dry?: boolean; uncapped?: boolean } = {}): Promise<MirrorLogWrite> {
   try {
     if (!options.dry && !config.SESSION_LOG_INGEST_ENABLED) return SKIPPED;
+    // Drained: no mirror table is read (Release B1).
+    if (await mirrorDrained()) return SKIPPED;
     const read = await db.transaction(async (tx) => {
       const [s] = await tx
         .select({
           projectId: projectSessions.projectId,
           accountId: projectSessions.accountId,
-          metadata: projects.metadata,
           journalSeenAt: sessionLogs.journalSeenAt,
           hasLog: sessionLogs.sessionId,
           harness: sessionRuntimeProjections.harness,
         })
         .from(projectSessions)
-        .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
         .leftJoin(sessionLogs, eq(sessionLogs.sessionId, projectSessions.sessionId))
         .leftJoin(sessionRuntimeProjections, eq(sessionRuntimeProjections.sessionId, projectSessions.sessionId))
         .where(eq(projectSessions.sessionId, sessionId))
@@ -119,10 +137,8 @@ export async function writeSessionLogFromMirror(sessionId: string, options: { dr
       // A journal owns the log.
       if (!s || s.journalSeenAt) return null;
       const stored = await storedMessages(tx, sessionId);
-      // P8: with the flag on the capture writes the log from the box (`writeSessionLogFromRead`) and no
-      // mirror row; a mirror converts only into a log with no message yet, and is not read otherwise.
-      const flagOn = resolveFeatureFlag(s.metadata, 'session_log');
-      if (flagOn && stored.length > 0) return null;
+      // A mirror converts only into a log with no message yet, and is not read otherwise.
+      if (stored.length > 0) return null;
       const [mirror] = await tx
         .select({ root: sessionTranscriptMirrors.runtimeSessionId, capturedAt: sessionTranscriptMirrors.capturedAt })
         .from(sessionTranscriptMirrors)
@@ -136,12 +152,12 @@ export async function writeSessionLogFromMirror(sessionId: string, options: { dr
             FROM kortix.session_transcript_messages WHERE session_id = ${sessionId}`);
         if (Number(size?.bytes ?? 0) > mirrorStoredCap()) return TOO_LARGE;
       }
-      // ponytail: the whole mirror per capture, as the capture reads the whole box history per turn end.
+      // ponytail: the whole mirror in memory, under the size cap; the backfill's thread takes the rest.
       const rows = await tx
         .select({ runtime_session_id: sessionTranscriptMessages.runtimeSessionId, info: sessionTranscriptMessages.info, parts: sessionTranscriptMessages.parts })
         .from(sessionTranscriptMessages)
         .where(eq(sessionTranscriptMessages.sessionId, sessionId));
-      return { s: { ...s, root: mirror.root, flagOn }, capturedAt: mirror.capturedAt, rows: rows as unknown as V1Row[], stored };
+      return { s: { ...s, root: mirror.root }, capturedAt: mirror.capturedAt, rows: rows as unknown as V1Row[], stored };
     }, READ_ONLY);
     if (!read) return SKIPPED;
     if ('outcome' in read) return read;
@@ -155,7 +171,7 @@ export async function writeSessionLogFromMirror(sessionId: string, options: { dr
           .where(eq(sessionTranscriptMirrors.sessionId, sessionId))
           .limit(1);
         if (!mirror || new Date(mirror.capturedAt).getTime() !== capturedAt) return false;
-        return !read.s.flagOn || (await storedMessages(tx, sessionId)).length === 0;
+        return (await storedMessages(tx, sessionId)).length === 0;
       },
     });
   } catch (err) {
@@ -178,14 +194,14 @@ const maxCaptureRev = (stored: StoredMessage[]) =>
 
 /**
  * The log as the capture of a box without a journal reads it before the box (P8): `rows` is `toV1`
- * of its live messages (exact: `fromV1` wrote them, a journal never did), `stored` every message's
+ * of its live messages (exact: `fromV1` wrote them, a journal never did), `root_id` its v1 root, `stored` every message's
  * rev and hash. A text over 256 kB is its stored preview here (F3); `writeSessionLogFromRead` never
  * puts a message it did not read from the box, so a preview is never written back.
  */
-export async function readCapturedSessionLog(sessionId: string): Promise<{ rows: V1Row[]; stored: StoredMessage[] }> {
+export async function readCapturedSessionLog(sessionId: string): Promise<{ rows: V1Row[]; root_id: string | null; stored: StoredMessage[] }> {
   return db.transaction(async (tx) => {
     const [log] = await tx.select({ record: sessionLogs.record }).from(sessionLogs).where(eq(sessionLogs.sessionId, sessionId));
-    if (!log) return { rows: [], stored: [] };
+    if (!log) return { rows: [], root_id: null, stored: [] };
     const threads = await tx
       .select({ threadId: sessionLogThreads.threadId, record: sessionLogThreads.record })
       .from(sessionLogThreads)
@@ -201,28 +217,37 @@ export async function readCapturedSessionLog(sessionId: string): Promise<{ rows:
       threads: threads.map((t) => ({ ...t.record, messages: messages.filter((m) => m.threadId === t.threadId).map((m) => m.record) })),
     } as unknown as SessionLog;
     await breathe();
-    return { rows: toV1(log1).rows, stored };
+    const v1 = toV1(log1);
+    return { rows: v1.rows, root_id: v1.root_id, stored };
   }, READ_ONLY);
 }
 
 const idOf = (row: V1Row) => String((row.info as { id?: unknown } | null)?.id ?? '');
 
 /**
- * The capture of a box without a journal, with the flag on (P8): `rows` (the box's messages just
+ * The capture of a box without a journal (P8): `rows` (the box's messages just
  * read, root and complete sub-agents) go straight into the log; no v1 row is read or written.
  *
  * - Merge, never trim, as the mirror did: `fromV1` runs over the stored log (`before`, from
  *   `readCapturedSessionLog`) with each message the box answered replacing its stored copy, so seqs
- *   and threads stay those of the whole history. Only a message the box answered is put; nothing is
- *   tombstoned (a short read cannot tell a rewind from a box that lost its state, and the log keeps
- *   no rewind marker: on such a box a rewound message stays visible).
- * - Size cap: a session without a log whose read is over `SESSION_LOG_RESTORE_MAX_BYTES` of JSON
- *   (the mirror cap, `mirrorStoredCap`, in JSON) gets no log (`too_large`).
+ *   and threads stay those of the whole history. Only a message the box answered is put.
+ * - Rewind: an OpenCode rewind removes the newest messages from the box and keeps the root. A
+ *   `complete` read of the root that lacks a suffix of the stored root messages AND lists a newer
+ *   one is that shape: the lacking messages are tombstoned (soft: the row and record stay, a later
+ *   put of the same id revives it) and leave the merge, so the seqs after them close up. Nothing
+ *   else is tombstoned: an empty, partial or tail read, a read that lacks only the newest
+ *   messages, a hole (an older message gone, a newer one kept), a sub-agent's rows, and a pi box
+ *   (pi has no rewind) keep every stored row. Residual: a box that lost exactly its newest
+ *   messages, kept its root, then took a prompt looks the same as a rewind.
+ * - Root guard: a read of a root the session no longer runs (re-pinned since the read began)
+ *   writes nothing (`current`); merged under the new root it would re-sequence the old root's rows.
+ * - No size cap: every read is written. A capture over `SESSION_LOG_RESTORE_MAX_BYTES` runs in a
+ *   Worker (`captureInThread`, `lib/session-transcript-capture.ts`), off the API's event loop.
  * - Stale: another capture that wrote since `before` was read skips this write (`current`).
  */
 export async function writeSessionLogFromRead(
   sessionId: string,
-  input: { root: string; rows: V1Row[]; before: { rows: V1Row[]; stored: StoredMessage[] } },
+  input: { root: string; rows: V1Row[]; complete: boolean; before: { rows: V1Row[]; stored: StoredMessage[] } },
 ): Promise<MirrorLogWrite> {
   try {
     if (!config.SESSION_LOG_INGEST_ENABLED) return SKIPPED;
@@ -231,7 +256,6 @@ export async function writeSessionLogFromRead(
         projectId: projectSessions.projectId,
         accountId: projectSessions.accountId,
         journalSeenAt: sessionLogs.journalSeenAt,
-        hasLog: sessionLogs.sessionId,
         harness: sessionRuntimeProjections.harness,
       })
       .from(projectSessions)
@@ -240,17 +264,18 @@ export async function writeSessionLogFromRead(
       .where(eq(projectSessions.sessionId, sessionId))
       .limit(1);
     if (!s || s.journalSeenAt) return SKIPPED;
-    if (!s.hasLog) {
-      let chars = 0;
-      for (const row of input.rows) chars += JSON.stringify(row).length;
-      if (chars > config.SESSION_LOG_RESTORE_MAX_BYTES) return TOO_LARGE;
-    }
     const read = new Set(input.rows.map(idOf));
-    const rows = [...input.before.rows.filter((row) => !read.has(idOf(row))), ...input.rows];
+    const rewound = rewoundIds(input, s.harness === 'pi' || input.root.startsWith('ses_pi'));
+    const rows = [...input.before.rows.filter((row) => !read.has(idOf(row)) && !rewound.has(idOf(row))), ...input.rows];
     const rev = maxCaptureRev(input.before.stored);
     return await writeConverted(sessionId, { ...s, root: input.root }, rows, input.before.stored, {
       puts: read,
-      current: async (tx) => maxCaptureRev(await storedMessages(tx, sessionId)) === rev,
+      tombstones: rewound,
+      current: async (tx) => {
+        const [pin] = await tx.select({ root: projectSessions.runtimeSessionId }).from(projectSessions).where(eq(projectSessions.sessionId, sessionId));
+        if (pin?.root && pin.root !== input.root) return false;
+        return maxCaptureRev(await storedMessages(tx, sessionId)) === rev;
+      },
     });
   } catch (err) {
     logger.warn('[session-log] capture write failed', { sessionId, error: err instanceof Error ? err.message : String(err) });
@@ -258,10 +283,34 @@ export async function writeSessionLogFromRead(
   }
 }
 
+const createdOf = (row: V1Row) => {
+  const at = (row.info as { time?: { created?: unknown } } | null)?.time?.created;
+  return typeof at === 'number' && Number.isFinite(at) ? at : -Infinity;
+};
+
+/**
+ * The stored root messages an OpenCode rewind removed: see `writeSessionLogFromRead`. A revert drops
+ * the newest messages after a point, so the lacking messages must be a suffix of the stored root
+ * history (every stored root message after the oldest lacking one lacks too) that a newer read
+ * message follows. A hole (an older message gone, a newer one kept) is lost box state: nothing.
+ */
+function rewoundIds(input: { root: string; rows: V1Row[]; complete: boolean; before: { rows: V1Row[] } }, pi: boolean): Set<string> {
+  if (!input.complete || pi) return new Set();
+  const read = new Set(input.rows.map(idOf));
+  const newest = Math.max(...input.rows.filter((row) => row.runtime_session_id === input.root).map(createdOf));
+  const stored = input.before.rows.filter((row) => row.runtime_session_id === input.root);
+  const lacking = stored.filter((row) => !read.has(idOf(row)));
+  if (lacking.length === 0) return new Set();
+  const from = Math.min(...lacking.map(createdOf));
+  const suffix = stored.every((row) => createdOf(row) < from || !read.has(idOf(row)));
+  return suffix && lacking.every((row) => createdOf(row) < newest) ? new Set(lacking.map(idOf)) : new Set();
+}
+
 /**
  * `fromV1` of `rows` written through the journal's apply path. Only a message whose `content_hash`
- * changed is put, at the next capture rev. `puts` limits the puts to those message ids and turns
- * tombstones off; without it, a stored message `fromV1` no longer gives gets a tombstone.
+ * changed is put, at the next capture rev. `puts` limits the puts to those message ids and the
+ * tombstones to the stored ids in `tombstones`; without it, a stored message `fromV1` no longer
+ * gives gets a tombstone.
  *
  * The rows convert as the v1 read serves them: a call the old mirror stripped (before 2026-09-28)
  * gets back the input its `title` and `metadata` prove (`restoreStrippedToolParts`), so the log, its
@@ -272,7 +321,7 @@ async function writeConverted(
   s: { projectId: string; accountId: string; harness: string | null; root: string | null },
   rows: V1Row[],
   stored: StoredMessage[],
-  options: { dry?: boolean; puts?: ReadonlySet<string>; current: (tx: Tx) => Promise<boolean> },
+  options: { dry?: boolean; puts?: ReadonlySet<string>; tombstones?: ReadonlySet<string>; current: (tx: Tx) => Promise<boolean> },
 ): Promise<MirrorLogWrite> {
   const harnessFrom = s.harness === 'pi' || s.harness === 'opencode' ? 'projection' : s.root?.startsWith('ses_pi') ? 'root' : 'default';
   const harness = harnessFrom === 'projection' ? (s.harness as 'pi' | 'opencode') : harnessFrom === 'root' ? 'pi' : 'opencode';
@@ -289,6 +338,7 @@ async function writeConverted(
   const { threads, ...session } = log;
   const byId = new Map(stored.map((r) => [r.id, r]));
   let rev = maxCaptureRev(stored);
+  // Generation 0: a restore claims generation + 1 (`session-log-restore.ts`), so a restored session's capture answers 409 and is skipped.
   const batch: SessionLogJournalRequest = { generation: 0, session, threads: threads.map(({ messages: _m, ...t }) => t), puts: [], tombstones: [] };
   const live = new Set<string>();
   for (const m of threads.flatMap((t) => t.messages)) {
@@ -298,7 +348,9 @@ async function writeConverted(
     if (prior && !prior.deletedAt && prior.hash === sessionLogContentHash(m)) continue;
     batch.puts.push({ rev: ++rev, message: m });
   }
-  if (!options.puts) for (const r of stored) if (!live.has(r.id) && !r.deletedAt) batch.tombstones.push({ message_id: r.id, rev: ++rev });
+  for (const r of stored) {
+    if (!r.deletedAt && (options.puts ? options.tombstones?.has(r.id) : !live.has(r.id))) batch.tombstones.push({ message_id: r.id, rev: ++rev });
+  }
   await breathe();
   if (batch.puts.length === 0 && batch.tombstones.length === 0) return SKIPPED;
   if (rev >= SESSION_LOG_CAPTURE_REV_LIMIT) {

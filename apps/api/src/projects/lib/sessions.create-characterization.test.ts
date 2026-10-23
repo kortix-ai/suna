@@ -51,6 +51,8 @@ mock.module('../../llm-gateway/resolution/default-model', () => ({
 mock.module('../../llm-gateway/models/served-managed-models', () => ({
   platformDefaultModelId: () => 'deepseek-v4.1-flash',
   isPlatformDefaultModelId: (id: string) => id === 'deepseek-v4.1-flash',
+  servedManagedModels: () => [],
+  platformVisionModelId: () => '',
 }));
 
 import { createProjectSession } from './sessions';
@@ -93,7 +95,7 @@ test('insert stores the exact create-time metadata fields and override order', a
   expect(result.error).toBeUndefined();
   expect(inserted?.metadata).toEqual({
     arbitrary: 7, custom_name: 'Chosen name', source: 'trigger',
-    opencode_model: 'kortix/glm-5.3-flash', opencode_model_source: 'platform',
+    opencode_model: 'kortix/deepseek-v4.1-flash', opencode_model_source: 'platform',
     repository_access: false, repository_generation: null, workspace_mode: 'runtime',
     sandbox_slug: 'default',
     audit_v2: {
@@ -139,12 +141,12 @@ test('a fresh free-tier account never boots pinned to a managed model', async ()
   expect((inserted?.metadata as Record<string, unknown> | undefined)?.opencode_model).toBeUndefined();
 });
 
-test('a paid account keeps the raw operator config as its boot fallback', async () => {
+test('a paid account boots on the resolved platform default (the configured id when Platinum serves it)', async () => {
   mayUseManagedModels = true;
   const result = await createProjectSession({ project, userId: 'synthetic-user', requestingPrincipalType: 'human', body: {} });
   expect(result.error).toBeUndefined();
   expect(inserted?.metadata).toMatchObject({
-    opencode_model: 'kortix/glm-5.3-flash',
+    opencode_model: 'kortix/deepseek-v4.1-flash',
     opencode_model_source: 'platform',
   });
 });

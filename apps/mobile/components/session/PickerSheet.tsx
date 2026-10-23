@@ -18,7 +18,7 @@
  */
 import * as React from 'react';
 import { View, useWindowDimensions } from 'react-native';
-import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 
@@ -27,6 +27,7 @@ import {
   KortixBottomSheetModal,
   useCloseThen,
   useSheetBackground,
+  useSheetHandle,
 } from '@/components/kortix/sheet';
 import { SheetTextInput } from '@/components/kortix/SheetInput';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
@@ -49,7 +50,7 @@ import { useSheetRowLimit } from '@/components/kortix/sheet-settled';
 const SEARCH_SNAP_POINTS = ['85%', '100%'];
 const FULL_SCREEN_SNAP = ['100%'];
 
-export interface PickerSheetTabs {
+interface PickerSheetTabs {
   items: FloatingTabItem[];
   activeIndex: number;
   onSelect: (index: number) => void;
@@ -85,7 +86,7 @@ interface PickerSheetProps {
 
 export const PickerSheet = React.forwardRef<SheetRef, PickerSheetProps>(
   ({ title, options, activeKey, onSelect, searchLabel, emptyLabel, children, empty, closeOnSelect = true, tabs, titleTrailing }, ref) => {
-    const modalRef = React.useRef<BottomSheetModal>(null);
+    const modalRef = useSheetHandle(ref);
     const { height } = useWindowDimensions();
     const insets = useSafeAreaInsets();
     const { colorScheme } = useColorScheme();
@@ -100,11 +101,6 @@ export const PickerSheet = React.forwardRef<SheetRef, PickerSheetProps>(
     // once (`useCloseThen`, the shared slot). `onDismiss` fires once the
     // close animation actually finishes.
     const { deferAfterClose, takeAfterClose } = useCloseThen();
-
-    React.useImperativeHandle(ref, () => ({
-      open: () => modalRef.current?.present(),
-      close: () => modalRef.current?.dismiss(),
-    }));
 
     const searchable = showsPickerSearch(options.length);
     const sections = React.useMemo(() => pickerSections(options, query), [options, query]);

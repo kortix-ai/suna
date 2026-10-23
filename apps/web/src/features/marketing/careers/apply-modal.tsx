@@ -23,7 +23,7 @@ import {
 import { Textarea } from '@kortix/ui/textarea';
 import { errorToast } from '@kortix/ui/toast';
 import { useTranslations } from '@/i18n/use-translations';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import { getLocalizedCareersContent } from './content';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -57,12 +57,14 @@ export function ApplyModal({
   const [link, setLink] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
     if (open) {
       setStep('form');
       setError(null);
     }
-  }, [open]);
+  }
 
   const submit = useCallback(async () => {
     const fail = (message: string) => {

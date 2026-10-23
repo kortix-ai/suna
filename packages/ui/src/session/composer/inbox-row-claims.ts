@@ -32,7 +32,7 @@ import { isOptimisticSessionPrompt } from '@kortix/sdk/react';
  * row that provably went out. Every refusal below is a case where the message
  * could belong to something else.
  */
-export interface FirstTurnClaim {
+interface FirstTurnClaim {
   /** The row that owns the message. */
   promptId: string;
   /** The transcript id it is on screen under (the re-minted one). */
@@ -117,7 +117,7 @@ function normalise(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
-export function promptTextMatches(rowText: string, messageText: string): boolean {
+function promptTextMatches(rowText: string, messageText: string): boolean {
   const row = normalise(rowText);
   if (!row) return false;
   const message = normalise(messageText);

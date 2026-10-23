@@ -217,6 +217,7 @@ const RING_TONE = {
  * ticks are precise but need counting, a pie is instant but coarse. Together
  * the glyph answers "roughly how far?" at a glance and "exactly how far?" on a
  * second look — at 18px, where a single encoding would have to pick one.
+ * @deprecated Renders an OpenCode-only tool or todo list in an OpenCode session (pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode.
  */
 export function PlanRing({
   done,
@@ -343,12 +344,14 @@ export function PlanRing({
  * when a plan sits under it, and `ownsPlan` alone is not that answer: the anchor
  * falls back to the last turn when no turn ever wrote todos, so a session with
  * zero todos still nominates an owner.
+ * @deprecated Renders an OpenCode-only tool or todo list in an OpenCode session (pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode.
  */
 export function useHasPlan(sessionId: string): boolean {
   const { data } = useRuntimeSessionTodo(sessionId);
   return parseTodos(data).length > 0;
 }
 
+/** @deprecated Renders an OpenCode-only tool or todo list in an OpenCode session (pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode. */
 export function planSummary(todos: ReadonlyArray<{ status: string; content: string }>) {
   const total = todos.length;
   const done = todos.filter((todo) => todo.status === 'completed').length;
@@ -379,6 +382,7 @@ export function planSummary(todos: ReadonlyArray<{ status: string; content: stri
  * Filtering AFTER `keyTodos` is deliberate. Keying first means the surviving
  * rows keep the keys they had while the running row was present, so React's
  * state stays attached to a row as the agent advances past it.
+ * @deprecated Renders an OpenCode-only tool or todo list in an OpenCode session (pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode.
  */
 export function planListTodos(
   keyed: ReadonlyArray<{ todo: TodoItem; key: string }>,
@@ -391,6 +395,7 @@ export function planListTodos(
  * repeats a line often enough ("Run the tests" twice) that keying on it alone
  * collides. An occurrence counter disambiguates the repeat, which keeps React's
  * state attached to the row rather than to its position.
+ * @deprecated Renders an OpenCode-only tool or todo list in an OpenCode session (pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode.
  */
 export function keyTodos(todos: ReadonlyArray<TodoItem>): Array<{ todo: TodoItem; key: string }> {
   const seen = new Map<string, number>();
@@ -401,6 +406,7 @@ export function keyTodos(todos: ReadonlyArray<TodoItem>): Array<{ todo: TodoItem
   });
 }
 
+/** @deprecated Renders an OpenCode-only tool or todo list in an OpenCode session (pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode. */
 export function PlanCard({ sessionId }: { sessionId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data } = useRuntimeSessionTodo(sessionId);
@@ -509,6 +515,7 @@ export function PlanCard({ sessionId }: { sessionId: string }) {
  *
  * Takes rows already keyed and filtered (`planListTodos(keyTodos(todos))`) —
  * the caller decides what the list is; this decides what it looks like.
+ * @deprecated Renders an OpenCode-only tool or todo list in an OpenCode session (pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode.
  */
 export function PlanSteps({
   rows,

@@ -12,6 +12,7 @@ import {
   listChangeRequestsForProject,
   recordRequestedChange,
   serializeChangeRequest,
+  supersededByFor,
 } from '../change-requests';
 import {
   getBranchDiff,
@@ -542,8 +543,10 @@ export function registerChangeRequestsRoutes(): void {
         project: await withProjectGitAuth(loaded.row),
       });
       cr = (await getCrById(crId, projectId))!;
+      const view = await projectReadView(c, loaded);
+      const replaced = await supersededByFor(projectId, [cr], view.where(changeRequests.originSessionId, changeRequests.createdBy));
 
-      return c.json({ change_request: serializeChangeRequest(cr) });
+      return c.json({ change_request: serializeChangeRequest(cr, replaced.get(cr.crId) ?? null) });
     },
   );
 

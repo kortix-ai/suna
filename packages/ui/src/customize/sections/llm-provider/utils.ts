@@ -1,4 +1,3 @@
-import { getManagedModel } from '@kortix/llm-catalog';
 
 import type { UiTranslator } from '../../../i18n';
 import type { LlmProviderEntry, LlmProviderModel } from '../../../internal/lib/llm-providers';
@@ -104,7 +103,6 @@ export function buildCodexProvider(
  */
 export function buildKortixManagedProvider(
   ocProviders: RuntimeProvidersSnapshot,
-  managedModelIds: ReadonlySet<string>,
   includedHint: string,
 ): LlmProviderEntry | null {
   const connectedIds = new Set(ocProviders?.connected ?? []);
@@ -112,30 +110,26 @@ export function buildKortixManagedProvider(
   if (!kortix || !connectedIds.has('kortix')) return null;
   const models: LlmProviderModel[] = [];
   for (const [id, m] of Object.entries(kortix.models ?? {})) {
-    if (!managedModelIds.has(id)) continue;
-    // Best-effort capability/limit passthrough for the "Models in depth"
-    // display (models-tab.tsx / catalog-tab.tsx) — the opencode provider
-    // snapshot mirrors these when it has them; `vision`/`limit` otherwise
-    // fall back to `@kortix/llm-catalog`'s curated managed-model table,
-    // the canonical home for both (see MANAGED_MODELS' doc comment —
-    // managed slugs aren't reliably on models.dev, so this table is
-    // authoritative for them, not a guess).
+    // Managed = served under the `kortix` provider: what Platinum Inference
+    // offers. Capabilities and limits come with the served entry.
     const raw = m as {
       name?: string;
+      provider?: string;
       release_date?: string;
       reasoning?: boolean;
       tool_call?: boolean;
+      attachment?: boolean;
       limit?: { context?: number; output?: number };
     };
-    const managed = getManagedModel(id);
+    if (raw.provider !== 'kortix' || id.includes('/')) continue;
     models.push({
       id,
       name: (raw.name || id).replace('(latest)', '').trim(),
       released: raw.release_date ?? null,
       reasoning: raw.reasoning,
       tool_call: raw.tool_call,
-      attachment: managed?.vision,
-      limit: raw.limit ?? managed?.limit,
+      attachment: raw.attachment,
+      limit: raw.limit,
     });
   }
   if (models.length === 0) return null;
@@ -217,8 +211,8 @@ export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 export function formatTokenCount(tokens: number | null | undefined): string {
   if (!tokens || tokens <= 0) return '';
   if (tokens >= 1_000_000) {
-    const millions = tokens / 1_000_000;
-    return `${Number.isInteger(millions) ? millions : millions.toFixed(1)}M`;
+    // 1,048,576 reads "1M", not "1.0M".
+    return `${Number(Math.round((tokens / 1_000_000) * 10) / 10)}M`;
   }
   if (tokens >= 1_000) return `${Math.round(tokens / 1000)}K`;
   return `${tokens}`;

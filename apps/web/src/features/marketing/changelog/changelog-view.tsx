@@ -112,8 +112,10 @@ async function ChangelogPagination({ page, pageCount }: { page: number; pageCoun
 }
 
 export async function ChangelogView({ data }: { data: ChangelogPage }) {
-  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
-  const tI18nHardcoded = await getTranslations('hardcodedUi');
+  const [tI18nComplete, tI18nHardcoded] = await Promise.all([
+    getTranslations('hardcodedUi.i18nComplete'),
+    getTranslations('hardcodedUi'),
+  ]);
   const { releases, page, pageCount, tagPages } = data;
 
   return (

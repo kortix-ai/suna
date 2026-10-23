@@ -2,7 +2,7 @@
 
 Merged on `dev`: #10314 (`b6d7c82ca7`), the flag gate #10589 (`4693ec3103`),
 the CLI help coverage #10591 (`2fdff2edba`). Production gets it with the next
-release. No web UI.
+release. Web UI behind the same flag (see "Goals UI" below).
 
 ## Turn it on
 
@@ -69,6 +69,26 @@ with a heartbeat, a coordinator that is not unattended.
 | `unattended` metadata only by the session creator or the session itself (403 otherwise) | `routes/project-sessions.ts`, flow SCOPE-11 |
 | Heartbeat successor: a reminder into a failed session starts a successor, re-pins the reminder, adopts the Slack threads | `projects/lib/trigger-fire.ts` (`fireReminderSuccessor`), post-create actions `repin_reminder`, `adopt_chat_threads` |
 | Drive mounts request Platinum node share; mount slots follow Platinum limits | `apps/api/src/drives/volumes.ts` (node share is off on every Platinum lane) |
+
+## Goals UI and health (flag `goals`)
+
+| Surface | What it shows | Source |
+|---|---|---|
+| Sidebar row "Goals" | count of goals that need a person (open ask or a health issue) | `packages/ui/src/workspace/sidebar/footer/project-goals-nav.tsx` |
+| `/projects/<id>/goals` | Needs you / Open / Closed; per goal: health dot, objective, next wake or the issue, criteria met, scope, status | `apps/web/src/features/workspace/goals/goals-page.tsx` |
+| `/projects/<id>/goals/<scope>/<slug>` | health + heartbeat (next/last wake), open asks, criteria with evidence links into Files, items, sessions, status timeline, verification, notes, log | `goal-detail.tsx` |
+| Session header "Goal" button | the session's role in the goal, status, health, progress, next wake, open asks; an orange dot when the goal needs attention | `packages/ui/src/session/header/session-goal-indicator.tsx` |
+| Sidebar session row | a target marker on a goal's main session | `project-session-list.tsx` (`SessionGoalMark`) |
+
+Data: `@kortix/sdk` `listProjectGoals` reads `/Company/Goals/*` and the caller's own
+`Goals/*` through the Files API, and matches each goal's heartbeat in
+`GET /projects/:id/reminders` (by `reminder_id`, else by the folder in the
+prompt). No new API route. `goalHealth()` turns that into `healthy`,
+`attention` or `closed` with issues `no_heartbeat`, `heartbeat_paused`,
+`heartbeat_failed`, `missed_wake` (> 15 min late), `ask_overdue`,
+`verification_stalled` (> 24 h) and `unreadable`. A mounted list re-reads
+every 60 s, so "is it still running?" is answered from the real reminder, not
+from what the agent wrote.
 
 ## Proof (dev, 2026-10-20, build `4693ec3103`, Platinum)
 

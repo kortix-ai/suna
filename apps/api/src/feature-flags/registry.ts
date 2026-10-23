@@ -68,7 +68,7 @@
  * a time. `unit-feature-flag-drift.test.ts` compares contract <-> SDK <->
  * registry and catches 1/3/5 only. List every holder before you start:
  *
- *   rg -l "meta_agent" --glob '!node_modules' . | xargs rg -l "pi_harness"
+ *   rg -l "meta_agent" --glob '!node_modules' . | xargs rg -l "genui"
  *
  * The UI renders straight from {@link buildFeatureFlagCatalog}, so a new entry
  * lights up in Settings automatically. `unit-feature-flags.test.ts` pins the
@@ -105,8 +105,8 @@
  * that makes it the default, delete it in the next one. The comment on the
  * entry names the release and the spec section that ends it.
  *
- * The same state also serves INTERNAL-ONLY surfaces (`session_log`,
- * `session_log_restore`): not offered in Settings, enabled per project by a
+ * The same state also serves INTERNAL-ONLY surfaces (`session_log_restore`):
+ * not offered in Settings, enabled per project by a
  * Kortix operator on request. Their 403 says "contact Kortix" instead of
  * naming a toggle the caller cannot see (gate.ts).
  */
@@ -300,22 +300,10 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'behavioral',
     enforcementNote: 'Session selection and provider credential resolution reject or ignore resource secrets while disabled.',
   },
-  {
-    key: 'pi_harness',
-    name: 'Pi Harness (in-sandbox)',
-    description:
-      'Run sessions on the pi agent harness inside the ordinary session sandbox instead of OpenCode (KORTIX_HARNESS=pi in kortixd). Same repo layout, same agents and skills, same wire to the UI; pi starts in-process in ~100 ms after the checkout. On by default. On ⇒ every new session of this project boots pi. Off ⇒ the manifest decides: `runtime: pi` still boots pi, anything else boots OpenCode. An existing session keeps its sandbox and so its harness.',
-    stability: 'experimental',
-    available: () => true,
-    // On by default (2026-10-20). PI_HARNESS_DEFAULT_ENABLED=false turns the default off for a deployment.
-    platformDefault: () => config.PI_HARNESS_DEFAULT_ENABLED,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'Read at session provisioning (projects/lib/sessions.ts buildSessionSandboxEnvVars → ' +
-      'selectSessionHarness). An established session keeps its sandbox (runtime-identity.ts), and a ' +
-      'restart reuses that sandbox and its env, so it keeps its harness. Only a lost or restored session ' +
-      'gets a new sandbox, and that one restores its history from the session log in either harness.',
-  },
+  // `pi_harness` graduated (2026-10-23): every new session runs pi; OpenCode is
+  // sunset and serves only sessions that already run on it. No flag, no
+  // operator lever, no manifest `runtime:` choice. A stored
+  // `experimental.pi_harness` override is inert.
   {
     key: 'genui',
     name: 'Generative UI',
@@ -442,25 +430,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'flag through the API outside a box (apps/cli/src/commands/goals.ts). The server parts goals use ' +
       '(reminders, unattended question release, reminder successors) are generic and stay on for every project.',
   },
-  {
-    key: 'session_log',
-    name: 'Session log v2',
-    description:
-      'Read a session through the v2 session log instead of the v1 transcript. Off by default and not offered in Settings: Kortix enables it per project. Prod rollout: internal projects first, then 10% of projects, then every project. It becomes the default in the release that ships v2 to everyone and is deleted in the next release.',
-    stability: 'experimental',
-    available: () => true,
-    platformDefault: () => false,
-    // Internal-only (2026-10-11): not offered in Settings.
-    // A Kortix operator enables it per project.
-    catalogHidden: true,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'BEHAVIORAL only. On, the API serves the stored v1 transcript reads ' +
-      '(transcript shape=sync and the compact fallback, the open bundle, the ' +
-      'public share, MCP read_session) from the session log, and the open ' +
-      'bundle carries a `log` leg (P4.2). With the flag on, the SDK reads the ' +
-      'history from the session log (P8.0a): pages, sub-agent threads, no v1 saved copy.',
-  },
+  // `session_log` graduated (2026-10-22, P8.2): the session log is every session's
+  // saved history and the v1 transcript mirror is no longer read. No flag and no
+  // operator lever. A stored `experimental.session_log` override is inert.
   {
     key: 'session_log_restore',
     name: 'Session log restore',

@@ -407,7 +407,7 @@ response.
 Kortix backend — projects, accounts, sessions, files, secrets, triggers, the
 session runtime, the runtime REST client, SSE streaming, model state,
 and auth-token plumbing. The apps
-(`apps/web`, `apps/whitelabel-demo`, `apps/mobile`) are **thin consumers**. Treat
+(`apps/web`, `apps/white-label/*`, `apps/mobile`) are **thin consumers**. Treat
 these as standing rules whenever you touch the data/runtime layer:
 
 > **Editing `packages/sdk` itself? Load the **sdk** skill (the rules) first.** It is a
@@ -439,15 +439,17 @@ these as standing rules whenever you touch the data/runtime layer:
   (`kortix.session(pid, sid).health() / .previewUrl() / .restart() / …`).
   The sandbox provider and the harness are server-side concerns. Host code
   must not implement a second transport.
-- **Build on the Kortix contract, not on OpenCode.** A session runs one of two
-  harnesses inside kortixd: pi (the default since 2026-10-20: the
-  `pi_harness` project flag, on by default, or `runtime: pi` in
-  `kortix.yaml`) or OpenCode (the flag off). Both call models only through
-  the LLM gateway (no `llm_gateway` flag since 2026-10-20). A flag change applies to new sessions only. pi replaces OpenCode; OpenCode support is temporary.
-  Both serve the same daemon routes (`/kortix/runtime/*`), the same transcript
+- **Build on the Kortix contract, not on OpenCode.** Every new session runs
+  pi inside kortixd. OpenCode is deprecated (2026-10-23): there is no
+  `pi_harness` flag, `runtime:` in `kortix.yaml` selects nothing, and OpenCode
+  serves only sessions that started on it. It will be deleted. Code that exists
+  only for OpenCode carries `@deprecated`: never call it from new code, never
+  add a feature to it, and change it only to fix a bug that breaks a running
+  OpenCode session. pi calls models only through the LLM gateway. pi serves
+  the daemon routes (`/kortix/runtime/*`), the transcript
   (`kortix.transcript.v1`, `packages/api-contract/src/transcript.ts`) and the
-  same events. New code reads those, never an OpenCode route, type, file or
-  process. A feature one harness lacks is a capability, not a harness check:
+  events. New code reads those, never an OpenCode route, type, file or
+  process. A feature pi lacks is a capability, not a harness check:
   `GET /kortix/health` lists `capabilities` (`RUNTIME_CAPABILITIES` in
   `packages/api-contract/src/runtime-relay.ts`), and a client gates the
   control with `runtimeSupports`. OpenCode lists all eleven (`session.steer`
@@ -737,12 +739,14 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 
 ### Frontend type/lint gate
 
-- `apps/web` `tsc --noEmit` is not clean. On `dev` at 2026-10-14 it reports
-  103 errors: 97 in 23 test files (the largest: `diff-layout-toggle.test.tsx`,
-  `hero-solutions.test.tsx`, the `@types/bun` `test.each` errors in
-  `preview-fit.test.tsx` and `easy-panel-logic.test.ts`) and 6 in 5 product
-  files. The bar is relative: a branch adds no `tsc` error to the files it
-  touches. Compare against `origin/dev`, not against a number in this file.
+- Typecheck `apps/web` with `pnpm --filter Kortix-Computer-Frontend typecheck`
+  (tsgo, incremental). Never run raw `tsc --noEmit` there. Measured on
+  2026-10-21 on a 24 GB Mac: raw `tsc` ran 817 s, held 3.18 GB, and was
+  killed before it finished. Cold `tsgo` takes 12.1 s at 5.0 GB peak. A warm
+  incremental run takes 1.1 s at 1.7 GB.
+- On 2026-10-21 the tsgo script reported 0 errors on `dev`. The bar is
+  relative: a branch adds no type error to the files it touches. Compare against `origin/dev` with the same command, not
+  against a number in this file.
   The old ~1500 `TS2786` / `IntrinsicAttributes` noise from a React 19↔18
   types mismatch (two copies of `@types/react` in one program — `packages/sdk`
   had its own) is gone as of the Next 16 upgrade. If `TS2786` appears again,
@@ -759,7 +763,7 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 | Surface | Read before changing UI | Implemented source |
 |---|---|---|
 | Web (`apps/web`) | `.agents/skills/kortix-brand/SKILL.md` (the router: values, voice, claims, decision history), then `.agents/skills/kortix-design-system/SKILL.md` for components | `apps/web/src/app/globals.css` tokens (generated from `.agents/skills/kortix-brand/references/visual/visual-system.json`), `packages/ui/src/primitives/` (apps/web imports each one as `@kortix/ui/<name>`; apps/web has no re-export shims, `tests/unit/web-no-ui-shims.test.ts` enforces it), the live `/design-system` route |
-| `@kortix/ui` hosts (Kortix Apps, `apps/whitelabel-demo`, SDK customer apps) | `packages/ui/skills/kortix-ui/SKILL.md` (setup, which component, white-label theming, the `SessionThread` chat), then the web row for Kortix-owned surfaces | `packages/ui/src/` (components, `session/` for the `SessionThread` chat, `styles/tokens.css` + `theme.css`, prebuilt `dist/styles.css`); white-label = CSS variable overrides, never a forked component |
+| `@kortix/ui` hosts (Kortix Apps, `apps/white-label/reskin`, `apps/white-label/lumen`, `apps/white-label/team-console`, SDK customer apps) | `packages/ui/skills/kortix-ui/SKILL.md` (setup, which component, white-label theming, the `SessionThread` chat), then the web row for Kortix-owned surfaces | `packages/ui/src/` (components, `session/` for the `SessionThread` chat, `styles/tokens.css` + `theme.css`, prebuilt `dist/styles.css`); white-label = CSS variable overrides, never a forked component |
 | Desktop (Electron shell) | The web row — the shell renders `apps/web` — plus `apps/desktop-electron/README.md` for the shell boundary, then the parity gate below | `apps/web` rendered by the shell; native window geometry in the shell's titlebar classes |
 | Mobile (`apps/mobile`) | `apps/mobile/design.md` for screens, `apps/mobile/AGENTS.md` for primitives | `apps/mobile/global.css` colors, `apps/mobile/components/ui/`; stock Tailwind spacing for touch targets |
 

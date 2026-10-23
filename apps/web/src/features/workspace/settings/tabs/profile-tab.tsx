@@ -268,6 +268,8 @@ export interface ProfileTabViewProps {
   };
 }
 
+const NO_ACCOUNTS: readonly AccountMembership[] = [];
+
 /** Presentational only — no hooks, no data fetching, no store or Supabase
  *  read. Kept separate from `ProfileTab` so this renders under
  *  `renderToStaticMarkup` without a `QueryClientProvider` or a Supabase
@@ -291,7 +293,7 @@ export function ProfileTabView({
   isSavingName = false,
   onSaveName = () => {},
   userEmail = '',
-  accounts = [],
+  accounts = NO_ACCOUNTS,
   accountsLoading = false,
   accountDeletionSupported = true,
   hasPendingDeletion = false,
@@ -824,14 +826,12 @@ export function ProfileTab() {
     }
   };
 
-  const formatDate = (dateString: string | null | undefined): string | null => {
-    if (!dateString) return null;
-    return new Intl.DateTimeFormat(locale, {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    }).format(new Date(dateString));
-  };
+  const dateFormat = useMemo(
+    () => new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'long', day: 'numeric' }),
+    [locale],
+  );
+  const formatDate = (dateString: string | null | undefined): string | null =>
+    dateString ? dateFormat.format(new Date(dateString)) : null;
 
   return (
     <ProfileTabView

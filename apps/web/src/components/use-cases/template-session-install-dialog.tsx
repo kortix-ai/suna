@@ -64,12 +64,18 @@ export function TemplateSessionInstallDialog({
   const { projects, projectsQuery } = useProjectPicker({ open, enabled: !!user });
   const activeProjects = useMemo(() => projects.filter((p) => p.status === 'active'), [projects]);
 
-  useEffect(() => {
-    if (!open) return;
-    setError(null);
-    setOpening(false);
-    setNewProjectName(title ?? '');
-  }, [open, title]);
+  const [prevOpenTitle, setPrevOpenTitle] = useState<{ open: boolean; title?: string }>({
+    open: false,
+    title,
+  });
+  if (open !== prevOpenTitle.open || title !== prevOpenTitle.title) {
+    setPrevOpenTitle({ open, title });
+    if (open) {
+      setError(null);
+      setOpening(false);
+      setNewProjectName(title ?? '');
+    }
+  }
 
   // Default the target once the list is known: the first project, or inline
   // creation when the account genuinely has none.

@@ -12,8 +12,6 @@
 import { useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { useQueryClient } from '@tanstack/react-query';
-import { resolveApproval } from '@kortix/sdk';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
@@ -26,7 +24,8 @@ import {
   ShieldWarningIcon,
   TerminalWindowIcon,
 } from '@/lib/icons';
-import { invalidateReviewItems, useReviewItems } from '@/lib/review/use-review';
+import { useReviewItems, useReviewVerdict } from '@/lib/review/use-review';
+import { planReviewVerdict } from '@/lib/review/review-verdict';
 import { disclosureKey } from '@/lib/session/disclosure-store';
 import {
   approvalWaitingWhoKey,
@@ -316,9 +315,16 @@ function ConnectorApprovalPrompt({
   const projectId = handoff?.projectId ?? null;
   const { t } = useTranslation();
   const toast = useToast();
-  const queryClient = useQueryClient();
-  const [busy, setBusy] = useState<'approve' | 'deny' | null>(null);
   const [localDecision, setLocalDecision] = useState<'approve' | 'deny' | null>(null);
+  // The same mutation `ReviewPage` uses: cancel-optimistic-write-invalidate,
+  // one owner for the approve/deny lifecycle.
+  const verdict = useReviewVerdict(projectId ?? '', {
+    onSuccess: ({ verdict: sent }) => {
+      setLocalDecision(sent === 'approve' ? 'approve' : 'deny');
+      toast.success(sent === 'approve' ? 'Approved' : 'Denied');
+    },
+    onError: (cause) => toast.error(cause instanceof Error ? cause.message : 'Could not record the decision.'),
+  });
   // Poll the review list only while the answer can still change. The pending
   // approvals only: the inbox is paged, and a pending call is never history
   // (KRTX-2316).
@@ -361,21 +367,13 @@ function ConnectorApprovalPrompt({
     if (stale) void refetch();
   }, [stale, refetch]);
 
-  const decide = async (decision: 'approve' | 'deny') => {
-    if (!projectId || busy) return;
-    setBusy(decision);
-    try {
-      await resolveApproval(projectId, need.executionId, decision);
-      setLocalDecision(decision);
-      invalidateReviewItems(queryClient, projectId);
-      toast.success(decision === 'approve' ? 'Approved' : 'Denied');
-    } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : 'Could not record the decision.');
-      // The call may have been decided elsewhere in the meantime.
-      invalidateReviewItems(queryClient, projectId);
-    } finally {
-      setBusy(null);
-    }
+  const decide = (decision: 'approve' | 'deny') => {
+    if (!projectId) return;
+    const sent = decision === 'approve' ? 'approve' : 'reject';
+    const itemId = `call:${need.executionId}`;
+    // A `call:` id always plans to `resolve_approval`; the guard is for types.
+    const plan = planReviewVerdict(itemId, sent);
+    if (plan) verdict.mutate({ itemId, verdict: sent, plan, kind: 'approval' });
   };
 
   // No project to decide in, or the live answer is not in yet: render nothing
@@ -455,7 +453,7 @@ function ConnectorApprovalPrompt({
             variant="secondary"
             size="sm"
             className="rounded-full"
-            disabled={!!busy}
+            disabled={verdict.isPending}
             onPress={() => decide('deny')}>
             <Text>Deny</Text>
           </Button>
@@ -465,7 +463,7 @@ function ConnectorApprovalPrompt({
             variant="default"
             size="sm"
             className="rounded-full"
-            disabled={!!busy}
+            disabled={verdict.isPending}
             onPress={() => decide('approve')}>
             <Text>Approve</Text>
           </Button>

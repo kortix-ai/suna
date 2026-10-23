@@ -11,7 +11,13 @@ import { contract, FRESHNESS, qk, useFeatureFlag, useProjectAccountId } from '@k
 import { MagnifyingGlassIcon, PlugIcon, PlugsConnectedIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { lazyClient } from '../../lib/lazy-client';
-import { useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
+import {
+  useUiPathname,
+  useUiRouter,
+  useUiSearchParams,
+  useUiShallowNavigate,
+} from '../../providers/ui-provider';
+import { useDebounce } from '../../hooks/use-debounce';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { PoliciesPanel } from '../../workspace/projects/policies-panel';
@@ -80,7 +86,14 @@ import {
   type ConnectorScope,
 } from './connector-filter';
 import { ConnectorMovesBanner } from './connector-moves-banner';
-import { appHref, appRefFromEntry, connectorHref, legacyDetailRedirect } from './connector-routes';
+import {
+  appHref,
+  appRefFromEntry,
+  connectorHref,
+  connectorSearchFromParams,
+  legacyDetailRedirect,
+  withConnectorSearch,
+} from './connector-routes';
 import type { McpServerApp } from './install/mcp-first';
 import { useInstall } from './install/use-install';
 
@@ -257,7 +270,13 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
     true;
   const queryClient = useQueryClient();
 
-  const [query, setQuery] = useState('');
+  const { search, router, pathname, replaceParams, setScope, rulesOpen, setRulesOpen } =
+    useConnectorNavigation(projectId);
+
+  // The search lives in `?q=`: opening a connector unmounts this page, and
+  // browser Back must bring the same results back (KRTX-3018).
+  const [query, setQuery] = useState(() => connectorSearchFromParams(search));
+  useSearchInUrl(query, search, pathname);
   const [panel, setPanel] = useState<Panel | null>(null);
   // The catalogue app whose own MCP server the MCP dialog connects. Null for
   // a server the user pastes (New → MCP server).
@@ -265,9 +284,6 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const [computerOpen, setComputerOpen] = useState(false);
   const tSharing = useI18nTranslations('accessSharing');
   const tPages = useI18nTranslations('connectorPages');
-
-  const { search, router, pathname, replaceParams, setScope, rulesOpen, setRulesOpen } =
-    useConnectorNavigation(projectId);
 
   const connectorsQuery = useQuery({
     queryKey: qk.project.connectors(projectId),
@@ -709,6 +725,25 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
       </SplitSheetContent>
     </SplitSheet>
   );
+}
+
+/**
+ * Mirrors the settled search into `?q=` with a shallow replace: no history
+ * entry per keystroke, and no server round trip for a view already on screen.
+ */
+function useSearchInUrl(
+  query: string,
+  search: ReturnType<typeof useUiSearchParams>,
+  pathname: string,
+) {
+  const shallowNavigate = useUiShallowNavigate();
+  const { debouncedValue } = useDebounce(query.trim(), 300);
+  useEffect(() => {
+    if (connectorSearchFromParams(search) === debouncedValue) return;
+    const params = withConnectorSearch(new URLSearchParams(search?.toString() ?? ''), debouncedValue);
+    const suffix = params.toString();
+    shallowNavigate(suffix ? `${pathname}?${suffix}` : pathname, { replace: true });
+  }, [debouncedValue, search, pathname, shallowNavigate]);
 }
 
 function useConnectorNavigation(projectId: string) {

@@ -117,6 +117,14 @@ flow(
         r.status([200, 403]);
       }
     });
+    await ctx.step('gateway spend rejects fractional days before SQL', async () => {
+      for (const leaf of ['overview', 'series', 'sessions', 'breakdown']) {
+        const r = await owner.get(`/v1/projects/:projectId/gateway/${leaf}`, {
+          params, query: { days: '1.5' },
+        });
+        r.status(400);
+      }
+    });
     await ctx.step('gateway spend by source returns the windowed rollup shape', async () => {
       const r = await owner.get('/v1/projects/:projectId/gateway/sources', {
         params,

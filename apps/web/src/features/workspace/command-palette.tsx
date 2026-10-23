@@ -116,6 +116,7 @@ import { DEFAULT_WALLPAPER_ID } from '@kortix/ui/theme';
 import { openCustomizeSidebar } from '@kortix/ui/internal/stores/sidebar-nav-store';
 import { hubTarget, openAccountPanel } from '@kortix/ui/internal/stores/account-panel-store';
 import { useChatSendStore } from '@kortix/ui/internal/stores/chat-send-store';
+import { firstChatHref, useFirstChatPending } from '@kortix/ui/internal/stores/first-chat-store';
 import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { useProjectSwitchStore } from '@kortix/ui/internal/stores/project-switch-store';
@@ -711,7 +712,7 @@ function ChangeRequestsPage({
  * **Why toggling here rather than linking there.** Every other flag surface
  * costs three navigations to answer "is Voice on for this workspace?". The
  * flags are also the one settings list whose ROWS are what people search for
- * ("warm sessions", "pi_harness" out of a changelog) — a single row pointing
+ * ("warm sessions", "us_region" out of a changelog) — a single row pointing
  * at a page they then have to search again is the defect this whole change
  * exists to remove. Selecting a row when the permission probe denies (or is
  * still in flight) navigates to the section instead of failing silently.
@@ -862,6 +863,15 @@ export function sessionMatchesPaletteQuery(session: ProjectSession, query: strin
     sessionName(session).toLowerCase().includes(query) ||
     session.session_id.toLowerCase().startsWith(query)
   );
+}
+
+/**
+ * The welcome chat (KRTX-2476). The sidebar lists "Your first chat with
+ * Kortix" under Sessions while it is pending, but it is not a session yet, so
+ * the server search never returns it. Search finds it by its title instead.
+ */
+export function firstChatMatchesPaletteQuery(pending: boolean, title: string, query: string): boolean {
+  return pending && query.length > 0 && title.toLowerCase().includes(query);
 }
 
 export function CommandPalette() {
@@ -1118,12 +1128,14 @@ export function CommandPalette() {
     return () => document.removeEventListener('keydown', down);
   }, [handleOpenTerminal]);
 
-  useEffect(() => {
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
     if (!open) {
       setQuery('');
       setPage('root');
     }
-  }, [open]);
+  }
 
   useEffect(() => {
     const openFileSearch = () => {
@@ -1210,6 +1222,7 @@ export function CommandPalette() {
         'proj-repo': customizeTabs.split(' ').includes('files'),
       },
     };
+    const customizeTabSet = new Set(customizeTabs.split(' '));
     const result: MenuItemDef[] = [];
     for (const sourceItem of getItemsForSurface('commandPalette')) {
       const item = translateMenuItem(sourceItem, tI18nComplete);
@@ -1239,7 +1252,7 @@ export function CommandPalette() {
         // A Customize tab is offered only when `capabilityAccess()` lists it:
         // the same rule the sidebar row and the tab bar follow.
         const tab = activeCapabilityTab(href.split('?')[0]);
-        if (tab && !customizeTabs.split(' ').includes(tab)) continue;
+        if (tab && !customizeTabSet.has(tab)) continue;
       }
       if (href?.includes('{accountId}')) {
         if (!selectedAccountId) continue;
@@ -1430,7 +1443,7 @@ export function CommandPalette() {
       })
       .catch(() => errorToast(tHardcodedUi.raw('i18nComplete.textb6f7df17e0a2')))
       .finally(() => setIsCreating(false));
-  }, [isCreating, projectId, newSession, createSession, openProjectTab, close, tHardcodedUi]);
+  }, [isCreating, projectId, newSession, createSession, close, tHardcodedUi]);
 
   const setSelectedAccountId = useCurrentAccountStore((s) => s.setSelectedAccountId);
 
@@ -1573,6 +1586,13 @@ export function CommandPalette() {
     if (!hasQuery || !projectId) return [];
     return filteredProjectSessionsList.slice(0, 8);
   }, [hasQuery, projectId, filteredProjectSessionsList]);
+
+  const tFirstChat = useTranslations('firstChat');
+  const firstChatPending = useFirstChatPending(projectId ?? '');
+  const firstChatTitle = tFirstChat('title');
+  const firstChatResult =
+    !!projectId &&
+    firstChatMatchesPaletteQuery(firstChatPending, firstChatTitle, query.trim().toLowerCase());
 
   /**
    * Workspaces matching a ROOT query.
@@ -1779,7 +1799,7 @@ export function CommandPalette() {
     [tPalette, close],
   );
 
-  const hasSessionResults = rootSessionResults.length > 0;
+  const hasSessionResults = rootSessionResults.length > 0 || firstChatResult;
   const hasWorkspaceResults = rootWorkspaceRows.length > 0;
   const hasSettingsResults = settingsResultCount > 0;
   const hasAnyResults =
@@ -2338,6 +2358,7 @@ export function CommandPalette() {
     return (
       filteredNavItems.length +
       rootSessionResults.length +
+      (firstChatResult ? 1 : 0) +
       rootWorkspaceRows.length +
       sessionActionItems.length +
       settingsResultCount +
@@ -2348,6 +2369,7 @@ export function CommandPalette() {
     hasQuery,
     filteredNavItems,
     rootSessionResults,
+    firstChatResult,
     rootWorkspaceRows,
     sessionActionItems,
     settingsResultCount,
@@ -2816,6 +2838,19 @@ export function CommandPalette() {
                             </span>
                           </CommandItem>
                         ))}
+                        {firstChatResult && projectId && (
+                          <CommandItem
+                            value={sanitizeCmdkValue(`session ${firstChatTitle}`)}
+                            onSelect={() => {
+                              // nav-contract: prefetch-only — a cmdk row activated by keyboard.
+                              router.push(firstChatHref(projectId));
+                              close();
+                            }}
+                          >
+                            <MessageCircle className="size-4 shrink-0" />
+                            <span className="flex-1 truncate">{firstChatTitle}</span>
+                          </CommandItem>
+                        )}
                       </CommandGroup>
                     )}
 

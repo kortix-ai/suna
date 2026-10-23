@@ -1,12 +1,12 @@
 /**
  * Integration test (real local DB): deleting a workspace closes every side
  * door (KRTX-1714). The delete sets `projects.status = 'archived'`, and the
- * readers below never looked at it: a public transcript link kept rendering,
+ * readers below never looked at it: a public share link kept resolving,
  * a kgw_ key kept authorizing billed LLM calls, an App kept serving, and a
  * chat message kept starting or continuing a session.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { accounts, apps, projectSessions, projects } from '@kortix/db';
+import { accounts, apps, projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { createGatewayKey, validateGatewayKey } from '../llm-gateway/gateway-keys';
@@ -46,8 +46,20 @@ beforeAll(async () => {
     visibility: 'project',
   });
   await db.insert(apps).values({ accountId: ACCOUNT, projectId: PROJECT, name: 'archived-doors-app', slug: ROUTE_KEY, routeKey: ROUTE_KEY });
+  // The share door is only "open" while the session's sandbox is up: a file
+  // share without a provisioned sandbox answers 503 ("Sandbox is not ready"),
+  // not ok. Seed the sandbox row so the pre-delete assertion proves the share
+  // link itself resolves, and the post-delete one proves it is gone (410).
+  await db.insert(sessionSandboxes).values({
+    sandboxId: crypto.randomUUID(),
+    sessionId: SESSION,
+    accountId: ACCOUNT,
+    projectId: PROJECT,
+    externalId: 'sandbox-archived-doors',
+    status: 'active',
+  });
   gatewaySecret = (await createGatewayKey({ accountId: ACCOUNT, projectId: PROJECT, name: 'ci', createdBy: OWNER })).secret_key;
-  const share = await createPublicShare({ transcript: true }, { sessionId: SESSION, projectId: PROJECT, accountId: ACCOUNT, userId: OWNER });
+  const share = await createPublicShare({ file: { path: '/workspace/door-probe.md' } }, { sessionId: SESSION, projectId: PROJECT, accountId: ACCOUNT, userId: OWNER });
   if (!share.ok) throw new Error('share not created');
   shareToken = share.share.public_token;
 });
@@ -60,7 +72,7 @@ afterAll(async () => {
 describe('a deleted workspace closes its side doors', () => {
   test('while the workspace is live, every door is open', async () => {
     expect(await validateGatewayKey(gatewaySecret)).not.toBeNull();
-    expect((await resolvePublicShare(shareToken, { requireTranscript: true })).ok).toBe(true);
+    expect((await resolvePublicShare(shareToken)).ok).toBe(true);
     expect(await loadPublicAppState(ROUTE_KEY)).not.toBeNull();
   });
 
@@ -76,7 +88,7 @@ describe('a deleted workspace closes its side doors', () => {
       userId: expect.any(String),
       refused: 'project_archived',
     });
-    const share = await resolvePublicShare(shareToken, { requireTranscript: true });
+    const share = await resolvePublicShare(shareToken);
     expect(share.ok).toBe(false);
     expect(share.ok ? 0 : share.status).toBe(410);
     expect(await loadPublicAppState(ROUTE_KEY)).toBeNull();

@@ -1,7 +1,9 @@
 /**
  * "Is the session behind this verified access token still live?"
  *
- * `jwt-verify.ts` checks signature and expiry locally. What it cannot see is
+ * `jwt-verify.ts` checks signature and expiry locally (on hosted envs only for
+ * ES256: their `SUPABASE_JWT_SECRET` is a random value since 2026-10-21, so an
+ * HS256 token goes to GoTrue). What it cannot see is
  * revocation: sign-out, a ban, a deleted user, a GoTrue-side session revoke.
  *
  * 2026-10-20: the check reads `auth.sessions` + `auth.users` in the same

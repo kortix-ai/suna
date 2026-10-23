@@ -1,79 +1,95 @@
 # react-doctor: documented false positives and intentional keeps
 
-Each entry records a diagnostic that remains in the report deliberately. A
-suppression is valid only while every predicate below still holds — re-verify
-before trusting an entry. Triage date: 2026-08-17, branch `react-doctor`.
+Each entry records an error-severity diagnostic that remains in the report
+deliberately. A suppression is valid only while every predicate below still
+holds. Re-verify before trusting an entry. Last triage: 2026-10-22,
+react-doctor 0.9.18, `--scope full`, projects `apps/web` and `packages/ui`.
 
-## no-layout-property-animation (17) — intentional intrinsic-size animations
+## artifact-secret-leak (18), `apps/web/public/i18n/*.json`
 
-All are `height: 0↔auto` / `width: 0↔<px>` enter-collapse animations whose
-purpose is sibling reflow. Transforms cannot reflow siblings; the rule's own
-recipe endorses keeping bounded one-shot intrinsic-size animations.
+- The files are gitignored (`apps/web/.gitignore:69`) local leftovers from
+  14 Oct and 20 Oct. No script in the tree writes `public/i18n/` now.
+- The matched value was the PEM-header placeholder of the GitHub App private-key
+  field (`text8bcac7908eb9`). The source catalogs in `translations/` now carry
+  "Paste the contents of the .pem file". Delete the local `public/i18n/` folder
+  to clear the finding.
 
-- `src/app/(public)/share/[shareId]/_components/ShareViewer.tsx:349-351,370-372` —
-  28px thumb button enter/exit; row must compact when it leaves.
-- `packages/ui/src/primitives/sliding-tab-indicator.tsx:102-103` — pill width morphs
-  across different-width tabs (the component's contract); caller-supplied
-  `indicatorClassName` owns border-radius, so layout-projection would distort it.
-- `packages/ui/src/primitives/switch.tsx:172-173` — 16px thumb ±2/4px hover/press morph
-  on a rounded-full capsule; scale distorts the capsule radius and `x` is a
-  drag-driven motionValue.
-- `src/features/billing/auto-topup-card.tsx:228-230` — `overflow-hidden`
+## no-layout-property-animation: intrinsic-size animations
+
+All are `height: 0↔auto` or width morphs whose purpose is sibling reflow.
+Transforms cannot reflow siblings, and the rule's recipe endorses bounded
+one-shot intrinsic-size animations.
+
+- `src/features/billing/auto-topup-card.tsx:272-274`: `overflow-hidden`
   accordion, one-shot on toggle.
-- `packages/ui/src/customize/sections/view/permission-editor.tsx:169-171` —
-  same accordion pattern (Rules reveal).
-- `packages/ui/src/session/panel/session-action-panel-column.tsx:217` —
-  `width: 0↔PANEL_WIDTH` exists to reflow the neighboring chat column; inner
-  content is fixed-width so no per-frame text reflow.
+- `src/features/drives/drive-conflicts-bar.tsx:98,119-121`: the pill widens to
+  the panel width and the panel expands its height. The bar must resize, not
+  scale its text.
+- `packages/ui/src/customize/sections/view/permission-editor.tsx:174-176`:
+  the same accordion pattern (Rules reveal).
+- `packages/ui/src/session/panel/session-action-panel-column.tsx:158,243`:
+  `marginLeft` and `width: 0↔PANEL_WIDTH` reflow the neighboring chat column.
+- `packages/ui/src/primitives/sliding-tab-indicator.tsx:188-189`: the pill width
+  morphs across tabs of different width. A scale distorts the caller-supplied
+  radius.
+- `packages/ui/src/primitives/switch.tsx:173-174`: a 16px thumb morph on a
+  rounded-full capsule. A scale distorts the capsule radius.
 
-## effect-needs-cleanup (12) — cleanup exists but is detector-invisible
+## effect-needs-cleanup: cleanup exists but the detector does not see it
 
-- `src/app/(app)/projects/start/page.tsx:152` — retry timer stored in
-  `retryTimer` ref, cleared in a dedicated unmount-only effect (same-effect
-  cleanup would cancel the in-flight retry chain on query-data changes).
-- `src/app/(auth)/auth/github-popup/page.tsx:26` — session-settle delay id
-  captured and cleared in the effect's existing cleanup.
-- `src/app/(public)/voice/[token]/page.tsx:347` — mutable `timer` reassigned in
-  `poll`, cleared in returned cleanup with `cancelled` guard (recipe pattern D).
-- `src/app/a1o/die-scene.tsx:575` — listener registered in R3F `onCreated`
-  hand-off, target is the renderer's own canvas destroyed with `<Canvas>`.
-- `src/components/setup-links/connector-intake.tsx:82` — pattern D: `schedule()`
-  arms mutable `timer`, returned cleanup clears it.
-- `src/components/ui/animated-bg.tsx:302` — `on('change')` returns unsubscribe;
-  effect does `return unsubscribe` (recipe pattern C).
-- `packages/ui/src/primitives/sliding-tab-indicator.tsx:68` — cleanup at lines 81-85
-  disconnects the ResizeObserver and removes both listeners; the only early
-  return precedes any registration.
-- `packages/ui/src/browser/browser-panel.tsx:428` and
-  `packages/ui/src/session/media/sandbox-url-detector.tsx:117` — effect returns the
-  memoized `clearLoadTimeout` helper.
-- `packages/ui/src/session/panel/easy/app-preview.tsx:211` — cleanup sets
-  `alive=false`, aborts the probe controller, clears `deadline` and poll timers.
-- `packages/ui/src/session/composer/composer.tsx:575` — returned cleanup calls
-  `stopObserving()` + `detachListbox()`, disconnecting both observers.
-- `packages/ui/src/session/thread/session-chat.tsx:3646` — handler-armed fade timer
-  cleared by a dedicated unmount-only effect (`escFadeTimerRef`); same-effect
-  cleanup would cancel the 4s fade on every `escCount` change.
+- `src/app/[locale]/(auth)/auth/github-connect/page.tsx:28`: `armClose` stores
+  the id in `closeTimer`. Both returned cleanups clear it.
+- `src/app/[locale]/(auth)/auth/github-popup/page.tsx:26`: every timer id is a
+  mutable local. The returned cleanup clears each one and sets `cancelled`.
+- `src/app/[locale]/(system)/debug/session-fixture/bench/bench.tsx:272`: the
+  `PerformanceObserver`s go into `observers` and are disconnected at the end of
+  the run (line ~316).
+- `src/app/[locale]/a1o/die-scene.tsx:540`: the listener sits on the renderer's
+  own canvas, which `<Canvas>` destroys on unmount.
+- `src/components/turn-attention-badge.tsx:193`: the cleanup sets `cancelled`
+  and calls `observer?.disconnect()`.
+- `src/components/ui/animated-bg.tsx:187`: `on('change')` returns the
+  unsubscribe function, and the effect returns it.
+- `packages/ui/src/browser/browser-panel.tsx:340` and
+  `packages/ui/src/session/media/sandbox-url-detector.tsx:121`: the effect
+  returns the `clearLoadTimeout` helper.
+- `packages/ui/src/session/composer/composer.tsx:1095`: the cleanup calls
+  `stopObserving()`, which disconnects both observers.
+- `packages/ui/src/session/panel/easy/app-preview.tsx:196`: the cleanup sets
+  `alive = false`, aborts the controller, and clears `deadline` and `timer`.
+- `packages/ui/src/session/thread/session-chat.tsx:3299`: a handler-armed fade
+  timer owned by `escFadeTimerRef`. A same-effect cleanup would cancel the fade
+  on every `escCount` change.
+- `packages/ui/src/session/thread/session-chat.tsx:3517`: a 50 ms
+  `scrollToBottom`. `goToEnd` returns early once `scrollRef.current` is null.
 
-## no-set-state-after-await-in-effect
+## no-hydration-branch-on-browser-global
 
-- `packages/ui/src/files/renderers/sqlite-renderer.tsx` (init effect) — every
-  post-await setState, including the `finally` loading reset, is guarded by
-  `!cancelled && !abortController.signal.aborted`; the cleanup sets `cancelled`
-  and aborts. This is the loading-flag recipe's own canonical pattern.
+- `src/features/accounts/hub/account-hub-content.tsx:368,819`: `returnUrl` and
+  `returnPath` are read only in click handlers (checkout, GitHub install). The
+  hub is a client-opened modal, so it never renders on the server.
+- `packages/ui/src/files/viewer/file-preview-modal.tsx:349`: guards
+  `createPortal(node, document.body)`. A portal adds no DOM at this tree
+  position.
+- `packages/ui/src/internal/notifications/notification-bell.tsx:328,355`:
+  `offerTurnOn` feeds a prop inside `PopoverContent`. That content mounts only
+  while `open`, which is `false` initially.
+- `packages/ui/src/markdown/genui/components/map-canvas.tsx:170`: the value
+  reaches the DOM only through `Map` children. `Map` renders them only after an
+  effect sets `mapInstance`.
 
-## no-hydration-branch-on-browser-global (2)
+## no-unguarded-browser-global-in-render-or-hook-init
 
-- `src/app/(app)/accounts/[id]/page.tsx:495` — the branch selects a
-  `returnUrl` prop consumed only inside a click handler
-  (`billing-tab.tsx:71-73`); it never reaches rendered output.
-- `packages/ui/src/files/viewer/file-preview-modal.tsx:276` — guards
-  `createPortal(node, document.body)`; portal children contribute no DOM at
-  this tree position during SSR/hydration, and `isOpen` gates first.
-
-## no-prop-callback-in-render (1)
-
-- `src/features/workspace/shared/settings-nav-context.test.tsx:73` — test
-  renders via `renderToStaticMarkup`, which never runs effects; a render-phase
-  `report(nav)` is the only way to capture the context value (documented in the
-  file at lines 62-66).
+- `src/features/marketing/download/download-modal.tsx:51`: `navigator` is read
+  only while `open`, and the modal opens from a click.
+- `src/app/[locale]/(system)/debug/session-fixture/bench/bench.tsx:223` and
+  `src/app/[locale]/(system)/debug/stream/harness.tsx:168`: loaded with
+  `dynamic(..., { ssr: false })` from their `page.tsx`.
+- `src/app/[locale]/(system)/debug/modal-stack/page.tsx:216`: the portal
+  renders only when the `useSyncExternalStore` snapshot is not null. The server
+  snapshot (`serverLayers`) is null.
+- `packages/ui/src/primitives/map.tsx:224,280`: `MapMarker` and `MarkerPopup`
+  render only under the `mapInstance` gate.
+- `packages/ui/src/workspace/sidebar/session-brief-hover-card.tsx:333`: mounted
+  only under `canShowSessionHoverCard` (`useMediaQuery`), which is `false` on
+  the server.

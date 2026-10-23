@@ -59,7 +59,8 @@ export function SessionTerminalConnectSteps({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const installCmd = useDeploymentCliInstallCommand(undefined);
-  const connectCmd = `kortix sessions connect ${projectSessionId}`;
+  // A shell through the Kortix PTY: it works on every harness. `sessions connect` attaches OpenCode's own TUI and fails on pi.
+  const connectCmd = `kortix sessions shell ${projectSessionId}`;
 
   return (
     <ol id={id} className="space-y-3 pr-1.5 pb-3 pl-3">

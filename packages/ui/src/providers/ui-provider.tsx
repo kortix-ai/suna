@@ -229,7 +229,7 @@ export interface UiHostConfig {
   terminalEnabled: boolean;
   /**
    * The Terminal panel offers "Connect from your machine": the deployment's
-   * CLI installer (`<origin>/install`) and `kortix sessions connect`. A host
+   * CLI installer (`<origin>/install`) and `kortix sessions shell`. A host
    * that serves no installer and ships no Kortix CLI sets false, and the bar
    * is hidden. Default: true.
    */
@@ -261,6 +261,62 @@ export interface UiHostConfig {
    * still enforces each route. Default: true.
    */
   accountApiEnabled: boolean;
+  /**
+   * The composer shows the model picker and the reasoning-effort picker. A
+   * host that runs one model for its users sets false: the session runs its
+   * resolved default model. Default: true.
+   */
+  modelPickerEnabled: boolean;
+  /** The composer shows the context-usage ring (and its route to the context modal). Default: true. */
+  contextMeterEnabled: boolean;
+  /**
+   * The composer shows the session-overrides gear (sandbox, secrets,
+   * connectors, provider keys, folders). A host whose users never see the
+   * infrastructure behind a session sets false. Default: true.
+   */
+  sessionOverridesEnabled: boolean;
+  /**
+   * The agents the composer's agent picker offers, by name. Unset: every
+   * selectable agent. A host that installs its own agents beside the
+   * project's defaults lists its own here.
+   */
+  offeredAgents?: readonly string[];
+  /** Display names by agent name, for the agent picker. Unset or missing: the title-cased name. */
+  agentLabels?: Readonly<Record<string, string>>;
+  /**
+   * A host that keeps files in its own store takes the composer's files here:
+   * the attach button, a drop and a pasted file. The composer then uploads
+   * none of them to the session's attachment store and shows no tray for
+   * them. Unset: they upload as prompt attachments.
+   */
+  takeFiles?: (files: File[]) => void;
+  /** The attach picker's `accept` list. Unset: images, PDF, text and code files. */
+  attachAccept?: string;
+  /**
+   * The composer's `/` menu lists the session runtime's skills and commands,
+   * and the Compact session action. A host that hides the harness from its
+   * users sets false. Default: true.
+   */
+  runtimeSlashEnabled: boolean;
+  /**
+   * Rows the host adds to the composer's `/` menu, under their own headings.
+   * A hook, so it may read the host's own data. Unset: none.
+   */
+  useSlashActions?: () => readonly UiSlashAction[];
+}
+
+/**
+ * A row the host adds to the composer's `/` menu. Selecting it deletes the
+ * `/` text and calls `onSelect`. When `onSelect` returns `{ insertText }`,
+ * the composer inserts that text at the caret.
+ */
+export interface UiSlashAction {
+  id: string;
+  label: string;
+  description: string;
+  /** The heading the row sits under, for example "Workflows". */
+  group: string;
+  onSelect: () => void | { insertText: string };
 }
 
 /** What the session browser frames: a port and path inside the session's sandbox, or a URL. */
@@ -292,6 +348,10 @@ export const defaultUiHostConfig: UiHostConfig = {
   commandPaletteShortcut: false,
   settingsShortcut: false,
   accountApiEnabled: true,
+  modelPickerEnabled: true,
+  contextMeterEnabled: true,
+  sessionOverridesEnabled: true,
+  runtimeSlashEnabled: true,
 };
 
 const useNoViewer = (): string | undefined => undefined;

@@ -24,7 +24,7 @@ import type { QueueRow } from './queue-projection';
  */
 
 /** A queued message open in the composer. */
-export interface QueuedPromptEdit {
+interface QueuedPromptEdit {
   promptId: string;
   clientMessageId?: string;
   /** The row's whole text as the server holds it: file and mention markup included. */

@@ -30,6 +30,7 @@ import type { DaemonServer } from '../contract/server'
  *  that has no session env file. */
 const ptEnvFile = () => process.env.KORTIX_PT_ENV_PATH ?? '/etc/pt-env'
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function reloadSessionEnv(paths: string[] = [ptEnvFile()]): void {
   for (const path of paths) {
     let txt: string
@@ -82,6 +83,7 @@ async function prefetchSeedCatalog(cfg: Config): Promise<void> {
   logger.info('[seed] baked full model catalog for seed', { file, models: count })
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function runWarmSeedMode(
   cfg: Config,
   bootState: SandboxBootState,
@@ -370,6 +372,7 @@ export async function runWarmSeedMode(
 }
 
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 // Adopt a forked session inside a warm-seed clone. The repo is already baked —
 // the warm adoption (provideWorkspace, Git only) takes its local-only branch
 // (remote set-url + `checkout -B <session>`), so adoption is ~100ms.

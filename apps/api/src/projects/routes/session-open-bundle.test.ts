@@ -111,6 +111,8 @@ mock.module('../../llm-gateway/resolution/default-model', () => ({
 mock.module('../../llm-gateway/models/served-managed-models', () => ({
   platformDefaultModelId: () => 'anthropic/claude-sonnet-4-6',
   isPlatformDefaultModelId: (id: string) => id === 'anthropic/claude-sonnet-4-6',
+  servedManagedModels: () => [],
+  platformVisionModelId: () => '',
 }));
 mock.module('../lib/serializers', () => ({
   ...require('../lib/serializers'),
@@ -293,6 +295,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
       base_ref: 'main',
       agent_name: 'kortix',
       llm_gateway_enabled: true,
+      default_reasoning_effort: null,
     });
     expect(body.models.known).toBe(true);
     expect(body.models.projectDefault).toBe('p');

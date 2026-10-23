@@ -123,6 +123,14 @@ export function formatSize(bytes: number): string {
 
 type GithubAsset = { name?: string; browser_download_url?: string; size?: number };
 
+function normalizeAssets(assets: GithubAsset[] | undefined): ReleaseAsset[] {
+  return (assets ?? [])
+      .filter((a): a is GithubAsset & { name: string; browser_download_url: string } =>
+        Boolean(a.name && a.browser_download_url),
+      )
+      .map((a) => ({ name: a.name, url: a.browser_download_url, size: a.size ?? 0 }));
+}
+
 /**
  * Fetch the newest release. Returns null on any failure — rate limit, network,
  * malformed payload. Callers MUST degrade rather than error: the page hides its
@@ -142,11 +150,7 @@ export async function getLatestRelease(): Promise<Release | null> {
     });
     if (!res.ok) return null;
     const data = (await res.json()) as { tag_name?: string; assets?: GithubAsset[] };
-    const assets: ReleaseAsset[] = (data.assets ?? [])
-      .filter((a): a is GithubAsset & { name: string; browser_download_url: string } =>
-        Boolean(a.name && a.browser_download_url),
-      )
-      .map((a) => ({ name: a.name, url: a.browser_download_url, size: a.size ?? 0 }));
+    const assets = normalizeAssets(data.assets);
     if (!assets.length) return null;
     return { version: (data.tag_name ?? '').replace(/^v/, ''), assets };
   } catch {
@@ -174,11 +178,7 @@ async function getTaggedRelease(tag: string): Promise<Release | null> {
     });
     if (!res.ok) return null;
     const data = (await res.json()) as { name?: string; tag_name?: string; assets?: GithubAsset[] };
-    const assets: ReleaseAsset[] = (data.assets ?? [])
-      .filter((a): a is GithubAsset & { name: string; browser_download_url: string } =>
-        Boolean(a.name && a.browser_download_url),
-      )
-      .map((a) => ({ name: a.name, url: a.browser_download_url, size: a.size ?? 0 }));
+    const assets = normalizeAssets(data.assets);
     return assets.length ? { version: data.name ?? data.tag_name ?? tag, assets } : null;
   } catch {
     return null;
@@ -204,11 +204,7 @@ export async function getLatestCaptureRelease(): Promise<Release | null> {
     if (!Array.isArray(data)) return null;
     for (const r of data as Array<{ tag_name?: string; draft?: boolean; prerelease?: boolean; assets?: GithubAsset[] }>) {
       if (r.draft || r.prerelease || !/^v\d+\.\d+\.\d+$/.test(r.tag_name ?? '')) continue;
-      const assets: ReleaseAsset[] = (r.assets ?? [])
-        .filter((a): a is GithubAsset & { name: string; browser_download_url: string } =>
-          Boolean(a.name && a.browser_download_url),
-        )
-        .map((a) => ({ name: a.name, url: a.browser_download_url, size: a.size ?? 0 }));
+      const assets = normalizeAssets(r.assets);
       if (assets.some((a) => pickCaptureAsset([a], 'windows') || pickCaptureAsset([a], 'macos') || pickCaptureAsset([a], 'linux'))) {
         return { version: (r.tag_name ?? '').slice(1), assets };
       }

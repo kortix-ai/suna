@@ -199,7 +199,7 @@ describe('scrape_webpage', () => {
 })
 
 describe('the Kortix tools follow the capability of what they do', () => {
-  const rule = (policy: unknown, tool: string, args: unknown = {}) => new PermissionBroker('ses_test', () => {}, compilePermissionPolicy(policy)).rule(tool, args)
+  const rule = (policy: unknown, tool: string, args: unknown = {}) => new PermissionBroker('ses_test', '/workspace', () => {}, compilePermissionPolicy(policy)).rule(tool, args)
 
   test.each([
     ['web_search', { websearch: 'deny' }, 'deny'],
@@ -234,7 +234,7 @@ describe('the Kortix tools follow the capability of what they do', () => {
   })
 
   test('an "always" reply to a memory write allows the edit capability, not memory reads elsewhere', async () => {
-    const broker = new PermissionBroker('ses_test', () => {}, compilePermissionPolicy({ edit: 'ask', read: 'ask' }))
+    const broker = new PermissionBroker('ses_test', '/workspace', () => {}, compilePermissionPolicy({ edit: 'ask', read: 'ask' }))
     const asked = broker.ask({ tool: 'memory', args: { command: 'create', path: 'memory/a.md' } })
     const [request] = broker.list()
     expect(request!.permission).toBe('edit')

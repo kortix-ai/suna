@@ -7,6 +7,7 @@ function isRuntimeDependencyPath(sourceRoot: string, sourcePath: string): boolea
     .some((segment) => segment === 'node_modules' || segment.startsWith('.node_modules-backup-'));
 }
 
+/** @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
 export async function stageOpencodeConfigTree(
   sourcePath: string,
   destinationPath: string,

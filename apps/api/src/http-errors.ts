@@ -1,11 +1,18 @@
-import { isRepositoryDisconnectedError, repositoryDisconnectedBody } from './shared/repository-health';
+import {
+  isRepositoryDisconnectedError,
+  repositoryDisconnectedBody,
+} from './shared/repository-health';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { BillingError } from './errors';
 import { logger as appLogger } from './lib/logger';
 import { captureException, isSentryIgnoredError } from './lib/sentry';
-import { isRequestDeadlineHTTPException, isDeadlineOrphan, REQUEST_DEADLINE_CODE } from './middleware/request-deadline';
+import {
+  isRequestDeadlineHTTPException,
+  isDeadlineOrphan,
+  REQUEST_DEADLINE_CODE,
+} from './middleware/request-deadline';
 import {
   GIT_MIRROR_UNAVAILABLE_CODE,
   isRemotePushPolicyRejection,
@@ -15,7 +22,11 @@ import {
 import { resolvePrefixEscape } from './sandbox-proxy/prefix-escape';
 import { previewBaseDomain } from './sandbox-proxy/preview-hosts';
 import { SecretUndecryptableError } from './secrets/undecryptable';
-import { deadCredentialLogDecision, deadCredentialLogKey, isDeadCredential } from './shared/dead-credential-log';
+import {
+  deadCredentialLogDecision,
+  deadCredentialLogKey,
+  isDeadCredential,
+} from './shared/dead-credential-log';
 import { inspectDatabaseError } from './shared/database-errors';
 import { isDaytonaRateLimitError } from './shared/daytona-rate-limit';
 import {
@@ -27,12 +38,20 @@ import {
   CONNECTORS_PROVIDER_UNAVAILABLE_CODE,
   isComposioTransientProviderError,
 } from './shared/composio-transient';
-import { isPlatinumSandboxNotRunningError } from './shared/platinum';
+import {
+  isPlatinumSandboxNotRunningError,
+  PlatinumExecOutcomeUnknownError,
+} from './shared/platinum';
 
 // The typed branch handlers keep every ladder branch verbatim (comment,
 // predicate, body); the dispatcher below calls them in the original ladder
 // order, so the first match still wins and the generic tail stays last.
-function handleSandboxProxyAbort(err: Error, c: Context, errName: string, path: string): Response | null {
+function handleSandboxProxyAbort(
+  err: Error,
+  c: Context,
+  errName: string,
+  path: string,
+): Response | null {
   // Suppress SSE/long-poll abort noise — these are expected timeouts on sandbox proxy,
   // not real errors. The client reconnects automatically.
   const isAbort = errName === 'DOMException' || err.name === 'AbortError';
@@ -43,7 +62,12 @@ function handleSandboxProxyAbort(err: Error, c: Context, errName: string, path: 
   return null;
 }
 
-function handlePlatinumSandboxNotRunning(err: Error, c: Context, method: string, path: string): Response | null {
+function handlePlatinumSandboxNotRunning(
+  err: Error,
+  c: Context,
+  method: string,
+  path: string,
+): Response | null {
   // Platinum auto-stops idle microVMs natively; while a box is stopped, POST
   // /:id/expose answers `409 sandbox_not_running`. That is an EXPECTED,
   // transient state, not a 500 — the caller either wakes the box and retries
@@ -65,7 +89,12 @@ function handlePlatinumSandboxNotRunning(err: Error, c: Context, method: string,
   return null;
 }
 
-function handleDaytonaRateLimit(err: Error, c: Context, method: string, path: string): Response | null {
+function handleDaytonaRateLimit(
+  err: Error,
+  c: Context,
+  method: string,
+  path: string,
+): Response | null {
   // Daytona's org-wide throttler surfaces any HTTP 429 from the Daytona API as
   // `DaytonaRateLimitError: ThrottlerException: Too Many Requests`. That is an
   // EXPECTED, transient provider state — every Daytona call site (preview link
@@ -101,7 +130,12 @@ function handleDaytonaRateLimit(err: Error, c: Context, method: string, path: st
   return null;
 }
 
-function handleTransientGitMirrorFailure(err: Error, c: Context, method: string, path: string): Response | null {
+function handleTransientGitMirrorFailure(
+  err: Error,
+  c: Context,
+  method: string,
+  path: string,
+): Response | null {
   // A bare-clone / fetch of a project's git mirror that fails for a TRANSIENT,
   // upstream reason is EXPECTED and retryable — the mirror already retries a
   // bounded number of times internally before surfacing. Two shapes:
@@ -123,14 +157,17 @@ function handleTransientGitMirrorFailure(err: Error, c: Context, method: string,
   // message. See projects/git/mirror.ts.
   const transientGitError = transientGitMirrorCause(err);
   if (transientGitError) {
-    appLogger.warn(`${method} ${path} -> 503 [GitOperationError:${transientGitError.kind}] ${transientGitError.message}`, {
-      method,
-      path,
-      errorType: 'GitOperationError',
-      gitKind: transientGitError.kind,
-      gitArgs: transientGitError.gitArgs,
-      signal: transientGitError.signal,
-    });
+    appLogger.warn(
+      `${method} ${path} -> 503 [GitOperationError:${transientGitError.kind}] ${transientGitError.message}`,
+      {
+        method,
+        path,
+        errorType: 'GitOperationError',
+        gitKind: transientGitError.kind,
+        gitArgs: transientGitError.gitArgs,
+        signal: transientGitError.signal,
+      },
+    );
     c.header('Retry-After', '10');
     return c.json(
       {
@@ -165,7 +202,8 @@ function handlePushPolicyRejection(err: Error, c: Context, method: string): Resp
     return c.json(
       {
         error: true,
-        message: 'the repository rejected the push because of its branch protection or repository rules',
+        message:
+          'the repository rejected the push because of its branch protection or repository rules',
         status: 409,
         code: 'repository_push_rejected',
       },
@@ -175,7 +213,12 @@ function handlePushPolicyRejection(err: Error, c: Context, method: string): Resp
   return null;
 }
 
-function handleDaytonaStateTransitionConflict(err: Error, c: Context, method: string, path: string): Response | null {
+function handleDaytonaStateTransitionConflict(
+  err: Error,
+  c: Context,
+  method: string,
+  path: string,
+): Response | null {
   // Daytona answers HTTP 409 when a sandbox state transition is already in
   // flight ("Sandbox state change in progress") — e.g. a second stop request
   // arrives while the first is still settling. `apps.ts hosting.stop()`'s
@@ -214,7 +257,12 @@ function handleDaytonaStateTransitionConflict(err: Error, c: Context, method: st
   return null;
 }
 
-function handleDaytonaTransientProviderError(err: Error, c: Context, method: string, path: string): Response | null {
+function handleDaytonaTransientProviderError(
+  err: Error,
+  c: Context,
+  method: string,
+  path: string,
+): Response | null {
   // A transient Daytona provider gateway / connection / timeout failure is
   // EXPECTED — the upstream Daytona API (or its nginx / Cloudflare-style
   // gateway) momentarily 502/503/504-ing, a socket reset mid-call, or the
@@ -261,91 +309,135 @@ function handleDaytonaTransientProviderError(err: Error, c: Context, method: str
   return null;
 }
 
-function handleHttpException(err: HTTPException, c: Context, method: string, path: string): Response {
-    // Only capture 5xx HTTP exceptions to Sentry (4xx are expected). The
-    // request-deadline 503 is an EXPECTED, typed, retryable degradation (the
-    // deadline net bounding a slow request) — already logged + metriced
-    // per-route and returned with Retry-After. Capturing it to Sentry produced
-    // the recurring Better Stack pattern `29af03…` "Request exceeded the 25s
-    // server processing deadline" (the system working as designed), so classify
-    // it out. See middleware/request-deadline.ts.
-    if (err.status >= 500 && !isRequestDeadlineHTTPException(err)) {
-      captureException(err, { method, path, status: err.status });
-    }
-    // The REASON belongs in the message, not only in the structured context.
-    // Better Stack groups on the message string, so `-> 403 [HTTPException]`
-    // collapsed every possible denial into one unactionable bucket: 2,338
-    // boot-timeline 403s over 7 days never revealed that the rejecting branch
-    // was `enforceTokenProjectScope`'s default-deny (see
-    // SESSION_BOUND_PLATFORM_SINKS in middleware/auth.ts). Bounded at 200 chars
-    // so a long upstream message cannot shard the grouping without limit.
-    const reason = (err.message ?? '').slice(0, 200);
-    // SEVERITY FOLLOWS THE CAUSE. A 4xx here is the gate working: an expired
-    // token, a project-scoped token refused a cross-project read, an agent
-    // without `project.session.start` in its kortix.yaml. The branch above
-    // already says so — only 5xx is captured to Sentry, "4xx are expected" —
-    // but every one of them was still written at ERROR level.
-    //
-    // PROD, 24h to 2026-09-13: 288 error-level lines, of which ~123 (43%) were
-    // 4xx denials of exactly that kind. Real faults were the minority of the
-    // error log, which is how a real fault gets missed.
-    //
-    // `warn` keeps every one of them queryable and grouped on the same message
-    // — the reason stays in the string, so the 403-shape work that motivated it
-    // is untouched — while `level = error` goes back to meaning the platform
-    // failed. Same line, same fields, same grouping; only the severity moves.
-    const level = err.status >= 500 ? 'error' : 'warn';
-    const line = `${method} ${path} -> ${err.status} [HTTPException]${reason ? ` ${reason}` : ''}`;
-    const fields = { status: err.status, message: err.message, reason, path, method };
-    // A dead-credential refusal is the one 4xx a caller can receive forever:
-    // the typed body already tells it to stop (code session_token_revoked),
-    // but a caller that does not read it — an in-sandbox agent CLI retrying
-    // per streamed step — turns every refusal into a warn line, ~1.19M in ten
-    // days across the sandbox relay routes (KRTX-1039). Rate-limit the LINE
-    // (first per window per normalized key, best-effort count in `suppressed`), never
-    // the response; see shared/dead-credential-log.ts. Every other HTTPException
-    // keeps its per-request line.
-    if (isDeadCredential(err)) {
-      // The bucket key normalizes the route's and the reason's token ids out
-      // (deadCredentialLogKey), so KRTX-1564's named refusal cannot shard the
-      // window one bucket per token. The line itself keeps the id.
-      const { log, suppressed } = deadCredentialLogDecision(deadCredentialLogKey(method, path, err.status, reason), Date.now());
-      if (log) appLogger.warn(line, { ...fields, suppressed });
-    } else {
-      appLogger[level](line, fields);
-    }
+function handleHttpException(
+  err: HTTPException,
+  c: Context,
+  method: string,
+  path: string,
+): Response {
+  // Only capture 5xx HTTP exceptions to Sentry (4xx are expected). The
+  // request-deadline 503 is an EXPECTED, typed, retryable degradation (the
+  // deadline net bounding a slow request) — already logged + metriced
+  // per-route and returned with Retry-After. Capturing it to Sentry produced
+  // the recurring Better Stack pattern `29af03…` "Request exceeded the 25s
+  // server processing deadline" (the system working as designed), so classify
+  // it out. See middleware/request-deadline.ts.
+  if (err.status >= 500 && !isRequestDeadlineHTTPException(err)) {
+    captureException(err, { method, path, status: err.status });
+  }
+  // The REASON belongs in the message, not only in the structured context.
+  // Better Stack groups on the message string, so `-> 403 [HTTPException]`
+  // collapsed every possible denial into one unactionable bucket: 2,338
+  // boot-timeline 403s over 7 days never revealed that the rejecting branch
+  // was `enforceTokenProjectScope`'s default-deny (see
+  // SESSION_BOUND_PLATFORM_SINKS in middleware/auth.ts). Bounded at 200 chars
+  // so a long upstream message cannot shard the grouping without limit.
+  const reason = (err.message ?? '').slice(0, 200);
+  // SEVERITY FOLLOWS THE CAUSE. A 4xx here is the gate working: an expired
+  // token, a project-scoped token refused a cross-project read, an agent
+  // without `project.session.start` in its kortix.yaml. The branch above
+  // already says so — only 5xx is captured to Sentry, "4xx are expected" —
+  // but every one of them was still written at ERROR level.
+  //
+  // PROD, 24h to 2026-09-13: 288 error-level lines, of which ~123 (43%) were
+  // 4xx denials of exactly that kind. Real faults were the minority of the
+  // error log, which is how a real fault gets missed.
+  //
+  // `warn` keeps every one of them queryable and grouped on the same message
+  // — the reason stays in the string, so the 403-shape work that motivated it
+  // is untouched — while `level = error` goes back to meaning the platform
+  // failed. Same line, same fields, same grouping; only the severity moves.
+  const level = err.status >= 500 ? 'error' : 'warn';
+  const line = `${method} ${path} -> ${err.status} [HTTPException]${reason ? ` ${reason}` : ''}`;
+  const fields = { status: err.status, message: err.message, reason, path, method };
+  // A dead-credential refusal is the one 4xx a caller can receive forever:
+  // the typed body already tells it to stop (code session_token_revoked),
+  // but a caller that does not read it — an in-sandbox agent CLI retrying
+  // per streamed step — turns every refusal into a warn line, ~1.19M in ten
+  // days across the sandbox relay routes (KRTX-1039). Rate-limit the LINE
+  // (first per window per normalized key, best-effort count in `suppressed`), never
+  // the response; see shared/dead-credential-log.ts. Every other HTTPException
+  // keeps its per-request line.
+  if (isDeadCredential(err)) {
+    // The bucket key normalizes the route's and the reason's token ids out
+    // (deadCredentialLogKey), so KRTX-1564's named refusal cannot shard the
+    // window one bucket per token. The line itself keeps the id.
+    const { log, suppressed } = deadCredentialLogDecision(
+      deadCredentialLogKey(method, path, err.status, reason),
+      Date.now(),
+    );
+    if (log) appLogger.warn(line, { ...fields, suppressed });
+  } else {
+    appLogger[level](line, fields);
+  }
 
-    // An HTTPException built with an explicit `res` carries a machine-readable
-    // body its thrower needs the CLIENT to branch on — `code:'account_mfa_required'`
-    // (iam/denial-message.ts's buildDenialError, which the web app's step-up dialog
-    // keys on) and `code:'impersonation_invalid'` (middleware/impersonation.ts).
-    // Rebuilding a generic `{error,message,status}` body here silently threw
-    // that field away, so every typed 4xx arrived at the client untyped. Honour
-    // the response the thrower constructed; everything else still gets the
-    // generic shape below.
-    if (err.res) {
-      return err.res;
-    }
+  // Unexpected server failures may contain SQL, upstream bodies or local paths.
+  // Keep diagnostics in the log above, not in the client response. The typed
+  // request deadline is a public retry contract, not an unexpected failure.
+  if (err.status >= 500 && !isRequestDeadlineHTTPException(err)) {
+    if (err.status === 503) c.header('Retry-After', '10');
+    return c.json({ error: true, message: 'Internal server error', status: err.status }, err.status);
+  }
 
-    const response: Record<string, unknown> = {
-      error: true,
-      message: err.message,
-      status: err.status,
-    };
+  // An HTTPException built with an explicit `res` carries a machine-readable
+  // body its thrower needs the CLIENT to branch on — `code:'account_mfa_required'`
+  // (iam/denial-message.ts's buildDenialError, which the web app's step-up dialog
+  // keys on) and `code:'impersonation_invalid'` (middleware/impersonation.ts).
+  // Rebuilding a generic `{error,message,status}` body here silently threw
+  // that field away, so every typed 4xx arrived at the client untyped. Honour
+  // the response the thrower constructed; everything else still gets the
+  // generic shape below.
+  if (err.res) {
+    return withAuthChallenge(err.res);
+  }
 
-    if (isRequestDeadlineHTTPException(err)) {
-      response.code = err.code;
-    }
+  const response: Record<string, unknown> = {
+    error: true,
+    message: err.message,
+    status: err.status,
+  };
 
-    // Add Retry-After header for 503s (sandbox waking up)
-    if (err.status === 503) {
-      c.header('Retry-After', '10');
-    }
+  // RFC 9110 §11.6.1: a 401 must advertise the challenge. Without it, generic
+  // HTTP clients cannot tell which scheme to retry with (a pentest flagged the
+  // bare 401 as non-conformant). Added here, at the single place every
+  // HTTPException 401 passes through, so no thrower has to remember.
+  if (err.status === 401) {
+    c.header('WWW-Authenticate', 'Bearer realm="kortix-api"');
+  }
 
-    return c.json(response, err.status);
+  if (isRequestDeadlineHTTPException(err)) {
+    response.code = err.code;
+  }
+
+  // Add Retry-After header for 503s (sandbox waking up)
+  if (err.status === 503) {
+    c.header('Retry-After', '10');
+  }
+
+  return c.json(response, err.status);
 }
 
-function handleDatabaseOrUnknownError(err: Error, c: Context, errName: string, method: string, path: string): Response {
+/**
+ * A thrower that built its own `res` bypasses the shared 401 branch below, so a
+ * typed 401 (e.g. `code:'account_mfa_required'`) would arrive without the
+ * challenge header. Rebuild it only when the status is 401 and the header is
+ * absent; every other response is returned untouched (its body stream must not
+ * be consumed again).
+ */
+function withAuthChallenge(res: Response): Response {
+  if (res.status !== 401 || res.headers.has('WWW-Authenticate')) return res;
+  const headers = new Headers(res.headers);
+  headers.set('WWW-Authenticate', 'Bearer realm="kortix-api"');
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
+
+function handleDatabaseOrUnknownError(
+  err: Error,
+  c: Context,
+  errName: string,
+  method: string,
+  path: string,
+): Response {
   // Database / postgres.js errors — extract the useful info, not the full SQL dump
   const databaseError = inspectDatabaseError(err);
   if (databaseError) {
@@ -419,7 +511,12 @@ function handleDatabaseOrUnknownError(err: Error, c: Context, errName: string, m
   );
 }
 
-function handleComposioTransientProviderError(err: Error, c: Context, method: string, path: string): Response | null {
+function handleComposioTransientProviderError(
+  err: Error,
+  c: Context,
+  method: string,
+  path: string,
+): Response | null {
   // A transient Composio (hosted connectors provider) API failure is EXPECTED
   // and retryable — Composio's own API 5xx-ing (e.g. their DB-backed API-key
   // lookup failing with error code 809, Better Stack pattern `0386d70c…` on
@@ -466,7 +563,12 @@ function handleComposioTransientProviderError(err: Error, c: Context, method: st
   return null;
 }
 
-function handleSecretUndecryptable(err: Error, c: Context, method: string, path: string): Response | null {
+function handleSecretUndecryptable(
+  err: Error,
+  c: Context,
+  method: string,
+  path: string,
+): Response | null {
   // A stored value this server cannot decrypt (API_KEY_SECRET changed, or the
   // row is damaged) is a state a person fixes by entering the value again, not
   // a server fault (KRTX-1719). Answer 409 with the message that names the
@@ -515,20 +617,40 @@ function handleUnhandledError(err: Error, c: Context): Response {
   // MUST NOT call c.header/c.status here: on a served context those recreate
   // the consumed body and would throw the very error this branch absorbs.
   if (isDeadlineOrphan(c, err)) {
-    appLogger.warn(`${method} ${path} -> 503 [deadline-orphan] handler resumed after its response was served`, {
-      method,
-      path,
-      errorType: 'deadline-orphan',
-      causeErrorType: errName,
-      causeMessage: err.message.slice(0, 200),
-    });
+    appLogger.warn(
+      `${method} ${path} -> 503 [deadline-orphan] handler resumed after its response was served`,
+      {
+        method,
+        path,
+        errorType: 'deadline-orphan',
+        causeErrorType: errName,
+        causeMessage: err.message.slice(0, 200),
+      },
+    );
     return c.json(
-      { error: true, message: 'Request deadline already exceeded', status: 503, code: REQUEST_DEADLINE_CODE },
+      {
+        error: true,
+        message: 'Request deadline already exceeded',
+        status: 503,
+        code: REQUEST_DEADLINE_CODE,
+      },
       503,
     );
   }
   const abort = handleSandboxProxyAbort(err, c, errName, path);
   if (abort) return abort;
+  if (err instanceof PlatinumExecOutcomeUnknownError) {
+    // Preserve ambiguity without a retry hint: the provider may have executed the write.
+    appLogger.warn('Sandbox exec outcome unknown after provider timeout', {
+      method,
+      path,
+      status: 504,
+    });
+    return c.json(
+      { error: true, code: 'sandbox_exec_outcome_unknown', message: err.message, status: 504 },
+      504,
+    );
+  }
   const platinum = handlePlatinumSandboxNotRunning(err, c, method, path);
   if (platinum) return platinum;
   const daytonaRateLimited = handleDaytonaRateLimit(err, c, method, path);
@@ -563,38 +685,38 @@ function handleUnhandledError(err: Error, c: Context): Response {
 }
 
 export function installHttpErrors(app: OpenAPIHono) {
-// === Error Handling ===
-app.onError(handleUnhandledError);
+  // === Error Handling ===
+  app.onError(handleUnhandledError);
 
-// === 404 Handler ===
-app.notFound((c) => {
-  // A root-absolute link on a path-based preview (`<a href="/learn">` inside
-  // /v1/p/{sandbox}/{port}/) resolves against THIS origin and lands here with
-  // the prefix stripped. Put the navigation back where it belongs instead of
-  // answering a JSON 404 the user can do nothing with. See prefix-escape.ts —
-  // the durable fix is the per-preview origin, this only recovers navigations.
-  const escaped = resolvePrefixEscape(c.req.raw);
-  if (escaped) {
-    // On a deployment that serves preview origins this should never fire: it
-    // means a BROWSER was handed a path preview somewhere. Say so loudly rather
-    // than silently repairing it — the repair is correct, the fact that it was
-    // needed is not.
-    if (previewBaseDomain()) {
-      appLogger.warn('[preview] browser escaped a PATH preview on a deployment with origins', {
-        path: c.req.path,
-        location: escaped.location,
-      });
+  // === 404 Handler ===
+  app.notFound((c) => {
+    // A root-absolute link on a path-based preview (`<a href="/learn">` inside
+    // /v1/p/{sandbox}/{port}/) resolves against THIS origin and lands here with
+    // the prefix stripped. Put the navigation back where it belongs instead of
+    // answering a JSON 404 the user can do nothing with. See prefix-escape.ts —
+    // the durable fix is the per-preview origin, this only recovers navigations.
+    const escaped = resolvePrefixEscape(c.req.raw);
+    if (escaped) {
+      // On a deployment that serves preview origins this should never fire: it
+      // means a BROWSER was handed a path preview somewhere. Say so loudly rather
+      // than silently repairing it — the repair is correct, the fact that it was
+      // needed is not.
+      if (previewBaseDomain()) {
+        appLogger.warn('[preview] browser escaped a PATH preview on a deployment with origins', {
+          path: c.req.path,
+          location: escaped.location,
+        });
+      }
+      return c.redirect(escaped.location, escaped.status);
     }
-    return c.redirect(escaped.location, escaped.status);
-  }
 
-  return c.json(
-    {
-      error: true,
-      message: 'Not found',
-      status: 404,
-    },
-    404,
-  );
-});
+    return c.json(
+      {
+        error: true,
+        message: 'Not found',
+        status: 404,
+      },
+      404,
+    );
+  });
 }

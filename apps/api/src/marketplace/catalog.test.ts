@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   createMarketplaceFetch,
   clampMarketplaceItemsLimit,
+  compareCatalogItems,
   getCatalogItemDetail,
   pageCatalogItems,
   type CatalogItem,
@@ -229,5 +230,32 @@ describe('marketplace fetch', () => {
     await fetchImpl('http://api.github.com/repos/o/r');
     expect(direct).toEqual([{ url: 'https://api.github.com/repos/o/r', auth: 'Bearer gh-token' }]);
     expect(guarded).toEqual(['https://api.github.com.example.com/repos/o/r', 'http://api.github.com/repos/o/r']);
+  });
+});
+
+// KRTX-3284. Two sources can publish a skill with the same name. The order of
+// those ties was the order in which sources finished resolving, which differs
+// between requests and replicas, so `offset` paging skipped or repeated rows.
+describe('compareCatalogItems', () => {
+  const davila = item({ id: 'davila7:ab-test-setup', registry: 'davila7', name: 'ab-test-setup' });
+  const alireza = item({ id: 'alirezarezvani:ab-test-setup', registry: 'alirezarezvani', name: 'ab-test-setup' });
+
+  test('items that share a name sort by id, whatever order the sources resolved in', () => {
+    expect([davila, alireza].sort(compareCatalogItems).map((i) => i.id)).toEqual([alireza.id, davila.id]);
+    expect([alireza, davila].sort(compareCatalogItems).map((i) => i.id)).toEqual([alireza.id, davila.id]);
+  });
+
+  test('the same page comes back for the same offset after the sources resolve in another order', () => {
+    const others = synthetic(4);
+    const first = [...others, davila, alireza].sort(compareCatalogItems);
+    const second = [alireza, ...others.reverse(), davila].sort(compareCatalogItems);
+    const page = (items: CatalogItem[]) => pageCatalogItems(items, { limit: 2, offset: 0 }).items.map((i) => i.id);
+    expect(page(second)).toEqual(page(first));
+  });
+
+  test('bundles still come first, then names', () => {
+    const bundle = item({ id: 'acme:zz-bundle', name: 'zz-bundle', type: 'registry:bundle' });
+    const skill = item({ id: 'acme:aa-skill', name: 'aa-skill' });
+    expect([skill, bundle].sort(compareCatalogItems).map((i) => i.id)).toEqual([bundle.id, skill.id]);
   });
 });

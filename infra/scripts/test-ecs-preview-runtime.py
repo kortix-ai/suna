@@ -179,7 +179,14 @@ class PreviewBuildIsolation(unittest.TestCase):
     def test_build_jobs_have_no_secret_no_registry_and_no_push(self):
         self.assertEqual(WORKFLOW.count("push: false"), 3)
         self.assertEqual(WORKFLOW.count("type=docker,dest=/tmp/preview-"), 3)
-        self.assertEqual(WORKFLOW.count("actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8"), 3)
+        # OLD: count("actions/download-artifact@<v8.0.1 sha> # v8") == 3 — the
+        # exact sha went stale when #10280 bumped to v8.0.2. The rule was never
+        # one release: every download-artifact use must be sha-pinned, so a
+        # bump keeps this true and a de-pin (a mutable tag) fails.
+        downloads = re.findall(r"uses: actions/download-artifact@(\S+)", WORKFLOW)
+        self.assertGreaterEqual(len(downloads), 3)
+        for ref in downloads:
+            self.assertRegex(ref, r"^[0-9a-f]{40}$")
         for name in BUILD_JOBS:
             section = job(name)
             self.assertIn("permissions:\n      contents: read", section)
@@ -227,7 +234,7 @@ class PreviewBuildIsolation(unittest.TestCase):
         self.assertNotIn("submodule update --init --recursive --remote", WORKFLOW)
         # NEW (2026-09, aws-env migration): the default-branch-only jobs below
         # (never the PR-code build-* jobs) hold an OIDC token to read
-        # PLATINUM_API_KEY/MORPH_API_KEY from the env secrets through
+        # PLATINUM_API_KEY/PLATINUM_INFERENCE_API_KEY from the env secrets through
         # .github/actions/aws-env — never a direct role assumption. The
         # invariant this test guards is narrower than "no identity anywhere":
         # a job that checks out or compiles pull request code must never hold
@@ -381,7 +388,7 @@ class PreviewRuntimeIsolation(unittest.TestCase):
             "'KORTIX_GITHUB_APP_SLUG',",
             "'MANAGED_GIT_GITHUB_INSTALL_ID',",
             "'MANAGED_GIT_GITHUB_OWNER',",
-            "'OPENROUTER_API_KEY',",
+            "'PLATINUM_INFERENCE_API_KEY',",
         ):
             self.assertIn(name, PREVIEW_STACK)
         self.assertIn("preview runtime secret is not allowlisted", PREVIEW_STACK)
