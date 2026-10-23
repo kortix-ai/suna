@@ -3721,6 +3721,35 @@ flow(
         (await anon.get(publicRoute, { params: { token } })).status(200).body().has('$.response.markdown', 'Hello\n\nWorld, revised');
       });
 
+      await ctx.step('a personal connection blocks publishing and closes an existing public link', async () => {
+        const connector = await db.query(
+          `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, enabled)
+           VALUES ($1, $2, 'private-share-test', 'Private connection', 'openapi', '{}'::jsonb, false) RETURNING connector_id`,
+          [team.id, project.id],
+        );
+        const connectorId = connector.rows[0].connector_id;
+        try {
+          const connection = await db.query(
+            `INSERT INTO kortix.connector_connections (account_id, project_id, connector_id, owner_type, owner_id, label)
+             VALUES ($1, $2, $3, 'member', $4, 'Private connection') RETURNING connection_id`,
+            [team.id, project.id, connectorId, ctx.P.OWNER.userId],
+          );
+          await db.query(
+            `INSERT INTO kortix.project_session_connector_bindings
+             (session_id, account_id, project_id, connector_alias, connector_id, connection_id)
+             VALUES ($1, $2, $3, 'private-share-test', $4, $5)`,
+            [sessionId, team.id, project.id, connectorId, connection.rows[0].connection_id],
+          );
+          (await owner.put(shareRoute, undefined, { params: turn })).status(409);
+          (await anon.get(publicRoute, { params: { token } })).status(410);
+        } finally {
+          await db.query('DELETE FROM kortix.project_session_connector_bindings WHERE session_id = $1 AND connector_id = $2', [sessionId, connectorId]);
+          await db.query('DELETE FROM kortix.connector_connections WHERE connector_id = $1', [connectorId]);
+          await db.query('DELETE FROM kortix.connectors WHERE connector_id = $1', [connectorId]);
+        }
+        (await anon.get(publicRoute, { params: { token } })).status(200);
+      });
+
       await ctx.step('the owner revokes → {share:null}; the link answers 410; an unknown token answers 404', async () => {
         (await owner.del(shareRoute, { params: turn })).status(200).body().has('$.share', null);
         (await anon.get(publicRoute, { params: { token } })).status(410);

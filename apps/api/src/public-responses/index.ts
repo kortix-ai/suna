@@ -10,7 +10,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { errors, json, makeOpenApiApp } from '../openapi';
 import { createPublicResponseRateLimitMiddleware } from '../middleware/rate-limit';
-import { readPublicResponse } from '../shared/session-public-shares';
+import { readPublicResponse } from '../projects/surface';
 
 export const publicResponsesApp = makeOpenApiApp();
 
