@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kortix playing cards</title>
+<style>
+  body { margin: 0; background: #ededed; font-family: Roobert, sans-serif; }
+  #grid { display: flex; flex-wrap: wrap; gap: 24px; padding: 24px; }
+  #grid svg { width: 220px; height: auto; }
+  #stage { position: absolute; left: 0; top: 0; width: 825px; height: 1125px; }
+  #stage svg { display: block; width: 825px; height: 1125px; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="grid"></div>
+<script>
+// Print geometry at 300 dpi: 2.5 x 3.5 in trim + 0.125 in bleed per side.
+const W = 825, H = 1125, BLEED = 37.5, CX = W / 2, CY = H / 2;
+const TRIM_R = 37.5; // 1/8 in corner radius, preview only
+
+// Colors from .agents/skills/kortix-brand/references/visual/tokens.css
+const C = {
+  paper: '#ffffff',        // --background (light)
+  ink: '#1f1f1f',          // --foreground (light)
+  red: '#f14b4c',          // --kortix-red
+  muted: '#666666',        // --muted-foreground (light)
+  hair: '#e2e2e2',         // --border (light)
+  night: '#0b0b0b',        // --background (dark)
+  nightDot: '#262626',     // --border (dark)
+  nightInk: '#ffffff',     // --foreground (dark)
+};
+
+// Master symbol: apps/web/public/brandkit/Logo/Brandmark/SVG/Brandmark Black.svg (164 x 140)
+const SYMBOL_D = 'M139.737 139.53H163.055C163.055 109.932 147.261 84.0225 123.642 69.7694C147.261 55.5163 163.054 29.6068 163.054 0.0085907H139.736C139.736 28.0165 119.67 51.4471 93.2922 56.9406V0.0085907H69.9773V56.9406C43.4754 51.5428 23.5331 28.1045 23.5331 0.0085907H0.21529C0.21529 29.6068 16.0088 55.5163 39.6282 69.7694C16.0086 84.0225 0.214773 109.932 0.214773 139.53H23.5325C23.5325 111.434 43.4754 87.996 69.9773 82.5981V139.556H93.2922V82.598C119.794 87.9957 139.737 111.434 139.737 139.53Z';
+const SYMBOL_W = 163.27, SYMBOL_H = 139.56, SYMBOL_X0 = 0.2;
+
+// Phosphor fill-weight suits (@phosphor-icons/react 2.1.10), viewBox 256.
+const SUITS = {
+  S: { d: 'M232,136a56,56,0,0,1-83.4,48.82l11.06,36.88A8,8,0,0,1,152,232H104a8,8,0,0,1-7.66-10.3l11.06-36.88A56,56,0,0,1,24,136c0-32,17.65-62.84,51-89.27a234.14,234.14,0,0,1,49.89-30.11,7.930,7.930,0,0,1,6.160,0A234.14,234.14,0,0,1,181,46.73C214.35,73.16,232,104,232,136Z', box: [24, 16, 208, 216], color: C.ink, name: 'spades' },
+  H: { d: 'M240,102c0,70-103.79,126.66-108.21,129a8,8,0,0,1-7.58,0C119.79,228.66,16,172,16,102A62.07,62.07,0,0,1,78,40c20.65,0,38.73,8.88,50,23.89C139.27,48.88,157.35,40,178,40A62.07,62.07,0,0,1,240,102Z', box: [16, 40, 224, 192], color: C.red, name: 'hearts' },
+  D: { d: 'M240,128a15.85,15.85,0,0,1-4.67,11.28l-96.05,96.06a16,16,0,0,1-22.56,0h0l-96-96.06a16,16,0,0,1,0-22.56l96.05-96.06a16,16,0,0,1,22.56,0l96.05,96.06A15.85,15.85,0,0,1,240,128Z', box: [16, 16, 224, 224], color: C.red, name: 'diamonds' },
+  C: { d: 'M240,144a56,56,0,0,1-84.81,48h-4.44l8.91,29.7A8,8,0,0,1,152,232H104a8,8,0,0,1-7.66-10.3l8.91-29.7h-4.44A56,56,0,1,1,72,88c.78,0,1.550,0,2.330,0a56,56,0,1,1,107.34,0c.77,0,1.550,0,2.330,0A56.060,56.060,0,0,1,240,144Z', box: [16, 32, 224, 200], color: C.ink, name: 'clubs' },
+};
+
+// Pixel Kortix mark: packages/ui/src/primitives/pixel-kortix-mark.tsx
+const PIXEL_KORTIX = [
+  '##   ##   ##',
+  '##   ##   ##',
+  '+#+  ##  +#+',
+  ' ##+ ## +## ',
+  '  ########  ',
+  '  ########  ',
+  ' ##+ ## +## ',
+  '+#+  ##  +#+',
+  '##   ##   ##',
+  '##   ##   ##',
+];
+
+// Court crowns, drawn in the same # / + cell language.
+const CROWNS = {
+  K: [
+    '+     #     +',
+    '#    ###    #',
+    '##  #####  ##',
+    '#############',
+    '#############',
+    '#+#+#+#+#+#+#',
+  ],
+  Q: [
+    '  #   #   #  ',
+    ' ### ### ### ',
+    '  #########  ',
+    '  #########  ',
+    ' ########### ',
+    ' #+#+#+#+#+# ',
+  ],
+  J: [
+    '      #      ',
+    '     ###     ',
+    '    #####    ',
+    '   #######   ',
+    '  #########  ',
+    '  #+#+#+#+#  ',
+  ],
+};
+const COURT_NAME = { J: 'JACK', Q: 'QUEEN', K: 'KING' };
+
+// Sample a suit path onto an n x n grid: '#' full, '+' partial (drawn as checker).
+function suitGrid(s, n) {
+  const ss = 12, px = n * ss;
+  const cv = document.createElement('canvas'); cv.width = cv.height = px;
+  const g = cv.getContext('2d');
+  const [bx, by, bw, bh] = s.box, side = Math.max(bw, bh);
+  const k = px / side;
+  g.setTransform(k, 0, 0, k, -bx * k + (side - bw) * k / 2, -by * k + (side - bh) * k / 2);
+  g.fill(new Path2D(s.d));
+  const a = g.getImageData(0, 0, px, px).data, rows = [];
+  for (let y = 0; y < n; y++) {
+    let row = '';
+    for (let x = 0; x < n; x++) {
+      let sum = 0;
+      for (let j = 0; j < ss; j++) for (let i = 0; i < ss; i++) sum += a[((y * ss + j) * px + x * ss + i) * 4 + 3];
+      const cov = sum / (ss * ss * 255);
+      row += cov > 0.62 ? '#' : cov > 0.22 ? '+' : ' ';
+    }
+    rows.push(row);
+  }
+  while (rows.length && !rows[0].trim()) rows.shift();
+  while (rows.length && !rows[rows.length - 1].trim()) rows.pop();
+  return rows;
+}
+
+let patId = 0;
+// Pixel art from rows. cx/cy = center. cell = filled size, pitch = cell + gap.
+function pixels(rows, cx, cy, pitch, gap, color) {
+  const id = 'chk' + (patId++), cell = pitch - gap, ck = cell / 5;
+  const w = rows[0].length * pitch - gap, h = rows.length * pitch - gap;
+  const x0 = cx - w / 2, y0 = cy - h / 2;
+  let out = `<defs><pattern id="${id}" width="${ck * 2}" height="${ck * 2}" patternUnits="userSpaceOnUse" x="${x0}" y="${y0}"><rect width="${ck}" height="${ck}" fill="${color}"/><rect x="${ck}" y="${ck}" width="${ck}" height="${ck}" fill="${color}"/></pattern></defs><g shape-rendering="crispEdges">`;
+  rows.forEach((r, y) => [...r].forEach((c, x) => {
+    if (c === ' ') return;
+    out += `<rect x="${x0 + x * pitch}" y="${y0 + y * pitch}" width="${cell}" height="${cell}" fill="${c === '+' ? `url(#${id})` : color}"/>`;
+  }));
+  return out + '</g>';
+}
+
+function suitPath(s, cx, cy, size, rot = 0) {
+  const [bx, by, bw, bh] = s.box, k = size / Math.max(bw, bh);
+  return `<path d="${s.d}" fill="${s.color}" transform="rotate(${rot} ${cx} ${cy}) translate(${cx - (bx + bw / 2) * k} ${cy - (by + bh / 2) * k}) scale(${k})"/>`;
+}
+
+function symbolPath(cx, cy, h, color) {
+  const k = h / SYMBOL_H;
+  return `<path d="${SYMBOL_D}" fill="${color}" transform="translate(${cx - (SYMBOL_X0 + SYMBOL_W / 2) * k} ${cy - SYMBOL_H / 2 * k}) scale(${k})"/>`;
+}
+
+// Corner index: rank over suit, top-left, repeated rotated 180 deg bottom-right.
+function index(rank, s, color) {
+  const x = 116;
+  const narrow = rank === '10' ? ' letter-spacing="-6"' : '';
+  const one = `<text x="${x}" y="186" text-anchor="middle" font-family="Roobert" font-weight="600" font-size="88"${narrow} fill="${color}">${rank}</text>` +
+    (s ? suitPath(s, x, 240, 58) : '');
+  return one + `<g transform="rotate(180 ${CX} ${CY})">${one}</g>`;
+}
+
+const svgWrap = (bg, body) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="${bg}"/>${body}</svg>`;
+
+// Pip layouts: [column, t] with column -1/0/1 and t from 0 (top) to 1 (bottom).
+const PIPS = {
+  2: [[0, 0], [0, 1]],
+  3: [[0, 0], [0, .5], [0, 1]],
+  4: [[-1, 0], [1, 0], [-1, 1], [1, 1]],
+  5: [[-1, 0], [1, 0], [0, .5], [-1, 1], [1, 1]],
+  6: [[-1, 0], [1, 0], [-1, .5], [1, .5], [-1, 1], [1, 1]],
+  7: [[-1, 0], [1, 0], [0, .25], [-1, .5], [1, .5], [-1, 1], [1, 1]],
+  8: [[-1, 0], [1, 0], [0, .25], [-1, .5], [1, .5], [0, .75], [-1, 1], [1, 1]],
+  9: [[-1, 0], [1, 0], [-1, 1 / 3], [1, 1 / 3], [0, .5], [-1, 2 / 3], [1, 2 / 3], [-1, 1], [1, 1]],
+  10: [[-1, 0], [1, 0], [0, 1 / 6], [-1, 1 / 3], [1, 1 / 3], [-1, 2 / 3], [1, 2 / 3], [0, 5 / 6], [-1, 1], [1, 1]],
+};
+const PIP_TOP = 262, PIP_BOT = 863, PIP_DX = 170, PIP_SIZE = 128;
+
+function numberCard(n, s) {
+  let body = index(String(n), s, s.color);
+  for (const [col, t] of PIPS[n]) {
+    const y = PIP_TOP + (PIP_BOT - PIP_TOP) * t;
+    body += suitPath(s, CX + col * PIP_DX, y, PIP_SIZE, t > .5 ? 180 : 0);
+  }
+  return svgWrap(C.paper, body);
+}
+
+function aceCard(sk) {
+  const s = SUITS[sk];
+  let body = index('A', s, s.color);
+  if (sk === 'S') {
+    body += symbolPath(CX, CY, 300, C.ink);
+  } else {
+    body += suitPath(s, CX, CY, 330);
+  }
+  return svgWrap(C.paper, body);
+}
+
+function courtCard(r, sk) {
+  const s = SUITS[sk];
+  const grid = suitGrid(s, 13);
+  // Fit crown + gap + suit into 330 px of the half panel.
+  const pitch = Math.min(19, Math.floor(330 / (CROWNS[r].length + 1 + grid.length))), gap = 3;
+  // One half, drawn upright above the center line, mirrored by a 180 deg turn.
+  const crownH = CROWNS[r].length * pitch, suitH = grid.length * pitch;
+  const total = crownH + pitch + suitH, top = CY - 60 - total;
+  const half =
+    pixels(CROWNS[r], CX, top + crownH / 2, pitch, gap, s.color) +
+    pixels(grid, CX, top + crownH + pitch + suitH / 2, pitch, gap, s.color) +
+    `<text x="${CX}" y="${CY - 18}" text-anchor="middle" font-family="Roobert Mono" font-weight="500" font-size="22" letter-spacing="7" fill="${C.muted}">${COURT_NAME[r]}</text>`;
+  const panel = `<rect x="182" y="118" width="${W - 364}" height="${H - 236}" rx="18" fill="none" stroke="${C.hair}" stroke-width="3"/>` +
+    `<line x1="206" y1="${CY}" x2="${W - 206}" y2="${CY}" stroke="${C.hair}" stroke-width="3"/>`;
+  return svgWrap(C.paper, index(r, s, s.color) + panel + half + `<g transform="rotate(180 ${CX} ${CY})">${half}</g>`);
+}
+
+function jokerCard(big) {
+  const bg = big ? C.night : C.paper, ink = big ? C.nightInk : C.ink;
+  const letters = (x, y0) => [...'JOKER'].map((ch, i) =>
+    `<text x="${x}" y="${y0 + i * 62}" text-anchor="middle" font-family="Roobert Mono" font-weight="600" font-size="54" fill="${ink}">${ch}</text>`).join('');
+  const corner = letters(112, 168);
+  const body = corner + `<g transform="rotate(180 ${CX} ${CY})">${corner}</g>` +
+    pixels(PIXEL_KORTIX, CX, CY, 36, 6, ink);
+  return svgWrap(bg, body);
+}
+
+// 4 x 4 Bayer matrix for the ordered dither fade on the back.
+const BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]].map(r => r.map(v => (v + .5) / 16));
+const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+function backCard(light = false) {
+  const bg = light ? C.paper : C.night, dotC = light ? C.hair : C.nightDot, ink = light ? C.ink : C.nightInk;
+  const pitch = 15, dot = 6;
+  const nx = Math.ceil(W / pitch / 2), ny = Math.ceil(H / pitch / 2);
+  let dots = '<g shape-rendering="crispEdges" fill="' + dotC + '">';
+  for (let j = -ny; j <= ny; j++) for (let i = -nx; i <= nx; i++) {
+    const x = CX + i * pitch, y = CY + j * pitch;
+    // Elliptical distance from center; field clears around the symbol.
+    const d = Math.hypot((x - CX) / 1.0, (y - CY) / 1.18);
+    const v = smooth(185, 380, d);
+    if (v > BAYER[(j + 400) % 4][(i + 400) % 4]) dots += `<rect x="${x - dot / 2}" y="${y - dot / 2}" width="${dot}" height="${dot}"/>`;
+  }
+  dots += '</g>';
+  return svgWrap(bg, dots + symbolPath(CX, CY, 196, ink));
+}
+
+const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+const CARDS = [{ id: '00-back', svg: backCard() }, { id: '00-back-white', svg: backCard(true) }];
+for (const sk of ['S', 'H', 'D', 'C']) RANKS.forEach((r, i) => {
+  const id = `${String(i + 1).padStart(2, '0')}-${SUITS[sk].name}-${r}`;
+  const svg = r === 'A' ? aceCard(sk) : 'JQK'.includes(r) ? courtCard(r, sk) : numberCard(+r, SUITS[sk]);
+  CARDS.push({ id: `${'SHDC'.indexOf(sk) + 1}${id}`, svg });
+});
+CARDS.push({ id: '5-joker-big', svg: jokerCard(true) }, { id: '5-joker-little', svg: jokerCard(false) });
+window.CARDS = CARDS;
+
+// Poker chip inlays: square 1200 px upload, round print area. Art stays inside r = 480.
+const CS = 1200, CC = 600;
+function chipRing(r, n, size, color) {
+  let out = '<g shape-rendering="crispEdges">';
+  for (let i = 0; i < n; i++) {
+    const a = i / n * Math.PI * 2, x = CC + r * Math.cos(a), y = CC + r * Math.sin(a);
+    out += `<rect x="${x - size / 2}" y="${y - size / 2}" width="${size}" height="${size}" fill="${color}" transform="rotate(${a * 180 / Math.PI} ${x} ${y})"/>`;
+  }
+  return out + '</g>';
+}
+function chipFront() {
+  // White inlay: black dither ring that fades in toward the edge, black symbol.
+  let dots = `<g shape-rendering="crispEdges" fill="${C.ink}">`;
+  const pitch = 40, dot = 20, n = Math.ceil(CS / pitch / 2);
+  for (let j = -n; j <= n; j++) for (let i = -n; i <= n; i++) {
+    const x = CC + i * pitch, y = CC + j * pitch, d = Math.hypot(x - CC, y - CC);
+    const v = smooth(250, 430, d) * (1 - smooth(440, 452, d));
+    if (v > BAYER[(j + 400) % 4][(i + 400) % 4]) dots += `<rect x="${x - dot / 2}" y="${y - dot / 2}" width="${dot}" height="${dot}"/>`;
+  }
+  dots += '</g>';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${CS} ${CS}" width="${CS}" height="${CS}"><rect width="${CS}" height="${CS}" fill="${C.paper}"/>${dots}${symbolPath(CC, CC, 250, C.ink)}</svg>`;
+}
+function chipBack() {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${CS} ${CS}" width="${CS}" height="${CS}"><rect width="${CS}" height="${CS}" fill="${C.paper}"/>${chipRing(445, 36, 24, C.ink)}${pixels(PIXEL_KORTIX, CC, CC, 40, 7, C.ink)}</svg>`;
+}
+window.CHIPS = [{ id: 'chip-front', svg: chipFront() }, { id: 'chip-back', svg: chipBack() }];
+
+
+if (!location.hash.includes('export')) {
+  document.getElementById('grid').innerHTML = CARDS.map(c => c.svg).join('') + CHIPS.map(c => c.svg).join('');
+  document.getElementById('stage').remove();
+}
+</script>
+</body>
+</html>
