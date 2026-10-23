@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { groupByDomain } from '@kortix/sdk';
 
-import { CatalogDomainSections } from './catalog-domain-sections.tsx';
+import { CatalogDomainSections } from './catalog-domain-sections';
 
 type Item = { name: string; domain?: string | null };
 
