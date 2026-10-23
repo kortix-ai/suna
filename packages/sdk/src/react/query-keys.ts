@@ -557,6 +557,9 @@ export const qk = {
     artifact: (id: string, artifactId: string, version: string = 'current') => [...qk.project.artifacts(id), 'one', artifactId, version] as const,
     /** `listArtifactVersions`. */
     artifactVersions: (id: string, artifactId: string) => [...qk.project.artifacts(id), 'versions', artifactId] as const,
+    /** `readArtifactFile` of a doc's Markdown at one entry version. Immutable,
+     *  so outside the `artifacts` prefix: a write never refetches it. */
+    artifactText: (id: string, artifactId: string, entryVersion: string) => [...qk.project.scope(id), 'artifact-text', artifactId, entryVersion] as const,
     /** `listArtifactTypes`. */
     artifactTypes: (id: string) => [...qk.project.artifacts(id), 'types'] as const,
     /** `listProjectGoals` — the goal folders in Files with their heartbeats. */

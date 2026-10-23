@@ -1,7 +1,7 @@
 'use client';
 
-import { readArtifactFile, type ArtifactDetail } from '@kortix/sdk';
-import { useArtifactMutations } from '@kortix/sdk/react';
+import type { ArtifactDetail } from '@kortix/sdk';
+import { useArtifactMutations, useArtifactText } from '@kortix/sdk/react';
 import { ARTIFACT_DOC_CSS } from '@kortix/shared/artifact-doc';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { errorToast } from '@kortix/ui/toast';
@@ -89,19 +89,15 @@ export function DocEditor({
   /** Single-file docs serve only themselves: their media must be absolute URLs. */
   const holdsMedia = !artifact.path.endsWith(`/${artifact.entry}`);
 
+  // Usually already in the cache (prefetched by the project preloader or a hover).
+  // Pinned to the version opened: our own saves move `entry_version` and must not refetch.
+  const [opened] = useState(artifact);
+  const text = useArtifactText(projectId, opened);
+  if (loaded === null && text.data !== undefined) setLoaded(media.resolveHtml(markdownToHtml(text.data)));
+  // One load per mount: our own saves (which move the version) never reload the editor.
   useEffect(() => {
-    let live = true;
-    readArtifactFile(projectId, artifact.artifact_id, artifact.version.id ? { version: artifact.version.id } : {})
-      .then((blob) => blob.text())
-      .then((markdown) => live && setLoaded(media.resolveHtml(markdownToHtml(markdown))))
-      .catch((err: Error) => errorToast(err.message));
-    return () => {
-      live = false;
-    };
-    // One load per mount: the viewer remounts the editor for another version,
-    // and our own saves (which move the version) must never reload it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (text.error) errorToast(text.error.message);
+  }, [text.error]);
 
   const save = async (editor: Editor) => {
     if (stopped.current || loaded === null) return;
@@ -110,7 +106,7 @@ export function DocEditor({
     const attempt = run.mutateAsync({
       artifactId: current.artifact_id,
       ...(base.current ? { base_version: base.current } : {}),
-      files: { 'index.md': { content: htmlToMarkdown(media.restore(editor.getHTML())) } },
+      files: { [current.entry]: { content: htmlToMarkdown(media.restore(editor.getHTML())) } },
     });
     saving.current = attempt;
     try {

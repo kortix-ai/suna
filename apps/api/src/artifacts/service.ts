@@ -48,7 +48,8 @@ const VIEW_TTL_MS = 12 * 60 * 60_000;
 const VIEW_WINDOW_MS = 6 * 60 * 60_000;
 
 function apiBase(): string {
-  return (config.ARTIFACT_CONTENT_URL ?? config.KORTIX_URL ?? 'http://localhost:8008').replace(/\/+$/, '');
+  // Unset values are '' in config, so `||`: an empty string must fall through.
+  return (config.ARTIFACT_CONTENT_URL || config.KORTIX_URL || 'http://localhost:8008').replace(/\/+$/, '');
 }
 
 /** A signed URL that shows the artifact: as it was at `commit`, or now when null. */

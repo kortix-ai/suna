@@ -1,7 +1,8 @@
 'use client';
 
 import { framesKeepAlive, pruneFrames } from '@kortix/ui/apps';
-import { useArtifacts, useFeatureFlag } from '@kortix/sdk/react';
+import { prefetchArtifact, useArtifacts, useFeatureFlag } from '@kortix/sdk/react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
 import { ensureArtifactFrame } from './artifact-meta';
@@ -12,19 +13,20 @@ import { ARTIFACT_FRAME_PREFIX, artifactFrameKey } from './frame-sandbox';
 const PRELOAD_LIMIT = 12;
 
 /**
- * Loads the project's newest artifact pages in the background once the page
- * is idle, like App previews (`AppPreviewPoolLoader`). The frames sit in the
- * shared frame pool, so the gallery and the viewer show them already loaded,
- * and they survive every page switch inside the project. Only with the
- * `artifacts` flag on.
+ * Loads the project's newest artifacts in the background once the page is
+ * idle, like App previews (`AppPreviewPoolLoader`): each page into the frame
+ * pool, and each detail (and doc text) into the query cache, so a click opens
+ * without a request. Pooled frames survive every page switch inside the
+ * project. Only with the `artifacts` flag on.
  */
 export function ArtifactFramePreloader({ projectId }: { projectId: string }) {
   const enabled = useFeatureFlag(projectId, 'artifacts').enabled;
+  const queryClient = useQueryClient();
   const list = useArtifacts(enabled ? projectId : null, { scope: 'all' });
   const [idle, setIdle] = useState(false);
 
   useEffect(() => {
-    if (!enabled || !framesKeepAlive()) return;
+    if (!enabled) return;
     // Safari has no requestIdleCallback.
     const idleCallback = 'requestIdleCallback' in window;
     const handle = idleCallback
@@ -40,9 +42,11 @@ export function ArtifactFramePreloader({ projectId }: { projectId: string }) {
     pruneFrames(new Set(artifacts.map((a) => artifactFrameKey(a))), (key) => key.startsWith(ARTIFACT_FRAME_PREFIX));
     if (!idle) return;
     for (const artifact of artifacts.slice(0, PRELOAD_LIMIT)) {
-      if (artifact.view_url) ensureArtifactFrame(artifactFrameKey(artifact), artifact.view_url, artifact.title);
+      void prefetchArtifact(queryClient, projectId, artifact.artifact_id).catch(() => {});
+      // Without moveBefore a moved frame reloads anyway: preload only the data.
+      if (artifact.view_url && framesKeepAlive()) ensureArtifactFrame(artifactFrameKey(artifact), artifact.view_url, artifact.title);
     }
-  }, [artifacts, idle]);
+  }, [artifacts, idle, projectId, queryClient]);
 
   return null;
 }
