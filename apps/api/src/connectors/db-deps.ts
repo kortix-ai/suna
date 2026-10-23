@@ -89,6 +89,7 @@ import {
   mergeRequestingSession,
   readRequestingSessionId,
 } from './db-deps-connect';
+import { appFormInfo, submitAppForm } from './composio-app-form';
 import { makeDbGatewayDeps } from './db-deps-gateway';
 import {
   resolveAdmin,
@@ -208,6 +209,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
         return { connected: r.connected, accountId: r.accountId };
       }
     : undefined,
+  appForm: { info: appFormInfo, submit: submitAppForm },
   pipedreamWebhook: pipedreamConfigured()
     ? async (extUserId, sig) => {
         const rejected = { ok: false, connected: false } as const;

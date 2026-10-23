@@ -5523,3 +5523,43 @@ flow(
     }
   },
 );
+
+// A Composio toolkit on the customer's own app (Shopify) connects through
+// Kortix's form: connect answers a `/connect/app/kaf_…` link, the form posts the
+// app's client credentials and the store here, and Composio runs Shopify's
+// client-credentials exchange. The local profile has no Composio, so this flow
+// covers the public boundary: a token that does not open is refused before any
+// provider call. `apps/api/src/connectors/composio-own-app.test.ts` pins the
+// token, the store rule and the Composio calls; the live exchange was proven on
+// a local stack against Composio and a real Shopify store.
+flow(
+  'CONN-38',
+  {
+    domain: 'connectors',
+    routes: ['GET /v1/connectors/app-form/:token', 'POST /v1/connectors/app-form/:token'],
+  },
+  async (ctx) => {
+    const anon = ctx.client.as(ctx.P.ANON);
+    const forged = `kaf_${Buffer.from('00000000-0000-4000-8000-000000000000.v1:a:b:c', 'utf8').toString('base64url')}`;
+
+    await ctx.step('GET with a bogus or forged token → 404 app_form_not_found, no login needed', async () => {
+      for (const token of ['bogus-app-form-link', forged]) {
+        (await anon.get('/v1/connectors/app-form/:token', { params: { token } }))
+          .status(404)
+          .body()
+          .has('$.code', 'app_form_not_found');
+      }
+    });
+
+    await ctx.step('POST with a forged token and a full body → 404 before any provider call', async () => {
+      (await anon.post(
+        '/v1/connectors/app-form/:token',
+        { store: 'acme', client_id: 'client-id', client_secret: 'client-secret' },
+        { params: { token: forged } },
+      ))
+        .status(404)
+        .body()
+        .has('$.code', 'app_form_not_found');
+    });
+  },
+);

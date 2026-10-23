@@ -21920,5 +21920,31 @@
       "showRevoked": "Widerrufene anzeigen ({count})",
       "hideRevoked": "Widerrufene ausblenden"
     }
+  },
+  "connectAppForm": {
+    "title": "Shopify verbinden",
+    "description": "Kortix erreicht Ihren Shop über eine Shopify-App in Ihrer Organisation. Geben Sie ihre Zugangsdaten einmal ein.",
+    "loading": "Formular wird geladen…",
+    "stepsTitle": "App in Shopify erstellen",
+    "step1": "Öffnen Sie das <link>Shopify Dev Dashboard</link> und erstellen Sie eine App in der Organisation, der Ihr Shop gehört.",
+    "step2": "Wählen Sie in der Version der App die Admin-API-Scopes, die Ihre Agents brauchen, und veröffentlichen Sie die Version.",
+    "step3": "Installieren Sie die App in Ihrem Shop.",
+    "step4": "Kopieren Sie Client-ID und Client-Secret aus den Einstellungen der App.",
+    "sameOrganization": "App und Shop müssen in derselben Shopify-Organisation sein.",
+    "storeLabel": "Shop",
+    "clientIdLabel": "Client-ID",
+    "clientSecretLabel": "Client-Secret",
+    "submit": "{app} verbinden",
+    "connecting": "Wird verbunden…",
+    "missingFields": "Geben Sie Shop, Client-ID und Client-Secret ein.",
+    "failed": "Verbindung fehlgeschlagen. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
+    "secretNote": "Kortix sendet das Secret an Composio, das die Verbindung betreibt. Kortix speichert keine Kopie.",
+    "connectedTitle": "{app} ist verbunden",
+    "connectedDescription": "Kortix erreicht {store}. Sie können dieses Fenster schließen.",
+    "closeWindow": "Sie können dieses Fenster schließen.",
+    "expiredTitle": "Dieser Link ist abgelaufen",
+    "invalidTitle": "Dieser Link funktioniert nicht",
+    "staleTitle": "Dieser Link wurde ersetzt",
+    "startAgain": "Starten Sie „Verbinden“ in Kortix erneut."
   }
 }

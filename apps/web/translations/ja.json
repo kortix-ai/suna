@@ -21920,5 +21920,31 @@
       "showRevoked": "取り消し済みを表示 ({count})",
       "hideRevoked": "取り消し済みを隠す"
     }
+  },
+  "connectAppForm": {
+    "title": "Shopify を接続",
+    "description": "Kortix は組織内の Shopify アプリを通じてストアにアクセスします。認証情報を一度入力してください。",
+    "loading": "フォームを読み込んでいます…",
+    "stepsTitle": "Shopify でアプリを作成",
+    "step1": "<link>Shopify Dev Dashboard</link> を開き、ストアを所有する組織でアプリを作成します。",
+    "step2": "アプリのバージョンで、エージェントに必要な Admin API スコープを選択し、バージョンをリリースします。",
+    "step3": "アプリをストアにインストールします。",
+    "step4": "アプリの設定から Client ID と Client secret をコピーします。",
+    "sameOrganization": "アプリとストアは同じ Shopify 組織に属している必要があります。",
+    "storeLabel": "ストア",
+    "clientIdLabel": "Client ID",
+    "clientSecretLabel": "Client secret",
+    "submit": "{app} を接続",
+    "connecting": "接続しています…",
+    "missingFields": "ストア、Client ID、Client secret を入力してください。",
+    "failed": "接続できませんでした。接続を確認して、もう一度お試しください。",
+    "secretNote": "Kortix はシークレットを、接続を実行する Composio に送信します。Kortix はコピーを保持しません。",
+    "connectedTitle": "{app} が接続されました",
+    "connectedDescription": "Kortix は {store} にアクセスできます。このウィンドウを閉じてかまいません。",
+    "closeWindow": "このウィンドウを閉じてかまいません。",
+    "expiredTitle": "このリンクは期限切れです",
+    "invalidTitle": "このリンクは使用できません",
+    "staleTitle": "このリンクは置き換えられました",
+    "startAgain": "Kortix で接続をやり直してください。"
   }
 }

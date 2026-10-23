@@ -34,7 +34,7 @@ import {
 type Phase = 'loading' | 'error' | 'expired' | 'invalid' | 'ready' | 'submitting' | 'done';
 
 /** Every phase that is not the form: tinted tile, title, one muted line. */
-function StatusNotice({
+export function StatusNotice({
   icon: Glyph,
   tone,
   title,
