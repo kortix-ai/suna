@@ -1,5 +1,6 @@
 'use client';
 
+import { AgentMark } from '../../internal/components/agent-mark';
 import type { UiTranslator } from '../../i18n';
 import { useTranslations as useI18nTranslations } from '../../i18n';
 // AccessDialog — THE modal for every "give / edit access" interaction.
@@ -1562,7 +1563,7 @@ function FixedPrincipals({ principals }: { principals: AccessDialogPrincipal[] }
             (principal.type === 'group' ? (
               <EntityAvatar label={principal.label} size="sm" />
             ) : principal.type === 'agent' ? (
-              <EntityAvatar icon={RobotIcon} label={principal.label} size="sm" />
+              <AgentMark slug={principal.label} />
             ) : (
               <UserAvatar email={principal.label} size="sm" />
             ))}

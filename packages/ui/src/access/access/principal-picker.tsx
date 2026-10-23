@@ -1,5 +1,6 @@
 'use client';
 
+import { AgentMark } from '../../internal/components/agent-mark';
 import { useTranslations } from '../../i18n';
 // PrincipalPicker — THE "who is this for?" control.
 //
@@ -34,7 +35,6 @@ import { contract, qk } from '@kortix/sdk/react';
 import {
   CheckCircleIcon,
   MagnifyingGlassIcon,
-  RobotIcon,
   UserPlusIcon,
   UsersIcon,
   UsersThreeIcon,
@@ -369,7 +369,7 @@ export function PrincipalPicker({
         {selected.kind === 'group' ? (
           <EntityAvatar icon={UsersIcon} label={label} size="sm" />
         ) : selected.kind === 'agent' ? (
-          <EntityAvatar icon={RobotIcon} label={label} size="sm" />
+          <AgentMark slug={label} />
         ) : (
           <UserAvatar email={label} size="sm" />
         )}
@@ -567,7 +567,7 @@ export function PrincipalPicker({
                     disabled={disabled}
                     onSelect={() => pick({ kind: 'agent', id: agent.service_account_id })}
                     leading={
-                      <EntityAvatar icon={RobotIcon} label={agent.agent_name ?? ''} size="sm" />
+                      <AgentMark slug={agent.agent_name ?? agent.name} />
                     }
                     label={agent.agent_name ?? agent.name}
                     suffix={tAgents('agentBadge')}
