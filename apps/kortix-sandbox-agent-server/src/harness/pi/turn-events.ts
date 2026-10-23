@@ -112,7 +112,12 @@ export function assistantMessageError(
   if (message.stopReason === 'aborted') {
     return { name: 'MessageAbortedError', data: { message: detail ?? 'The message was aborted' }, code: 'aborted' }
   }
-  if (message.stopReason === 'length') return { name: 'MessageOutputLengthError', data: {}, code: 'output_length' }
+  if (message.stopReason === 'length')
+    return {
+      name: 'MessageOutputLengthError',
+      data: { message: 'The answer reached the model output limit and was cut off. Ask for the rest, or narrow the request.' },
+      code: 'output_length',
+    }
   if (message.stopReason !== 'error') return undefined
   // pi-ai's own provider patterns; with no context window it reads only the error text.
   if (isContextOverflow(message as PiAssistantMessage)) {

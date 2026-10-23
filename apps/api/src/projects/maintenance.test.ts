@@ -30,6 +30,8 @@ function tracked<T>(result: T): () => Promise<T> {
   };
 }
 mock.module('@kortix/db', () => ({ projectSessions: {}, projects: {} }));
+// The stub tables above carry no table config for qualifiedColumn to read.
+mock.module('../shared/sql-qualified-column', () => ({ qualifiedColumn: () => '' }));
 mock.module('../connectors/attachments', () => ({
   ...realAttachments,
   cleanupExpiredConnectorAttachments: tracked({ deleted: 0, errors: 0 }),

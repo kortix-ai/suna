@@ -18170,6 +18170,7 @@
       "texteaca91e7a784": "Invitado a este proyecto",
       "texteacdf25c58f8": "Roles integrados: en todos los planes",
       "textead07c84baac": "Registro de cambios",
+      "text19e6841a618f": "Lo que se lanzó en Kortix cada semana, directamente desde nuestras versiones de producción.",
       "texteae96e02bbc4": "Iconos",
       "texteaef0b00e1d6": "Descarga para verla",
       "texteaf72e534b81": "Una regla basada en el nombre de la herramienta solo puede preguntar «¿puede el agente enviar un correo?», que rara vez es la pregunta correcta. Una condición apunta a un valor dentro de la llamada y lo compara con un glob o una expresión regular, de modo que una regla puede permitir envíos a tu propio dominio y detener todo lo demás. Un argumento de lista solo pasa cuando todos sus elementos pasan, así que un destinatario fuera de la lista basta para retener la llamada. Todo lo que la regla no puede decidir se resuelve hacia un menor acceso, nunca hacia uno mayor.",

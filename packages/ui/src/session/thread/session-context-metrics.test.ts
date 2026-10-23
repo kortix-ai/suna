@@ -146,7 +146,7 @@ describe('getSessionContextMetrics', () => {
     expect(metrics.context?.reasoning).toBe(0);
   });
 
-  test('maps every token field and total = input+output+reasoning+cache', () => {
+  test('total = input+output+cache: reasoning is a subset of output, never counted twice', () => {
     const msg = assistant({ usage: { input: 100, output: 200, reasoning: 30, cache_read: 120, cache_write: 50 } });
     const ctx = getSessionContextMetrics(thread([msg]), undefined, freeLookup).context;
     expect(ctx?.input).toBe(100);
@@ -154,7 +154,7 @@ describe('getSessionContextMetrics', () => {
     expect(ctx?.reasoning).toBe(30);
     expect(ctx?.cacheRead).toBe(120);
     expect(ctx?.cacheWrite).toBe(50);
-    expect(ctx?.total).toBe(500);
+    expect(ctx?.total).toBe(470);
   });
 
   test('usage = round(total / limit * 100); limit passes through', () => {
@@ -165,7 +165,8 @@ describe('getSessionContextMetrics', () => {
       freeLookup,
     );
     expect(metrics.context?.limit).toBe(2000);
-    expect(metrics.context?.usage).toBe(25);
+    // 470 / 2000 = 23.5%: the 30 reasoning tokens are inside the 200 output.
+    expect(metrics.context?.usage).toBe(24);
   });
 
   test('no model → limit undefined, usage null', () => {

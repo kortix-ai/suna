@@ -18170,6 +18170,7 @@
       "texteaca91e7a784": "Invité dans ce projet",
       "texteacdf25c58f8": "Rôles intégrés — sur tous les plans",
       "textead07c84baac": "Journal des modifications",
+      "text19e6841a618f": "Ce qui a été livré dans Kortix chaque semaine, directement depuis nos mises en production.",
       "texteae96e02bbc4": "Icônes",
       "texteaef0b00e1d6": "Téléchargez-la pour l’afficher",
       "texteaf72e534b81": "Une règle basée sur le nom de l’outil peut seulement demander « l’agent peut-il envoyer un email ? » — ce qui est rarement la vraie question. Une condition cible une valeur dans l’appel et la compare à un glob ou une expression régulière. Une règle peut ainsi autoriser les envois vers votre propre domaine et bloquer tout le reste. Un argument de type liste ne passe que si chaque entrée est acceptée : un seul destinataire hors liste suffit à suspendre l’appel. Toute décision impossible se résout vers moins d’accès, jamais davantage.",

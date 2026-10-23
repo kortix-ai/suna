@@ -194,12 +194,16 @@ export interface PiSessionInput {
   skillAllowed: (name: string) => boolean
   /** The provider the agent streams through; pi checks it has auth before a prompt. */
   provider: Provider | undefined
+  /** pi's per-model compaction reserves (model.ts `compactionSettings`). */
+  compaction?: object
 }
 
 export interface PiSession {
   session: AgentSession
   status: () => ExtensionStatus
   skills: () => Skill[]
+  /** Replace the per-model compaction reserves after the model catalog changes, and re-read settings. */
+  setCompaction: (compaction: object) => Promise<void>
 }
 
 /**
@@ -322,21 +326,23 @@ export async function createPiSession(input: PiSessionInput): Promise<PiSession>
     return !npm || !project.npmNames.has(npm.name)
   })
   const system = installedPackages(systemEntries, join(input.agentDir, 'npm'))
-  const settingsManager = SettingsManager.fromStorage(
-    new ScopedSettingsStorage({
-      // Kortix owns retry: a failed turn is the product's to retry (a silent pi retry would
-      // double-bill and reorder the wire). pi's compaction is on, at pi's own default
-      // (window minus its reserve). `retry` lives in storage, not `applyOverrides`:
-      // `loader.reload()` re-reads storage and drops overrides.
-      global: JSON.stringify({
-        ...globalSettings,
-        packages: system.kept,
-        retry: { enabled: false },
-      }),
-      project: JSON.stringify({ ...projectSettings, packages: project.kept }),
-    }),
-    { projectTrusted: true },
-  )
+  // pi compacts at `window - reserve`; the reserve is the model's output budget (model.ts
+  // `compactionSettings`), so a request always has room for a full answer.
+  const globalSettingsJson = (compaction: object | undefined) =>
+    JSON.stringify({
+      ...globalSettings,
+      packages: system.kept,
+      retry: { enabled: false },
+      compaction: { ...(globalSettings.compaction as object | undefined), ...compaction },
+    })
+  const storage = new ScopedSettingsStorage({
+    // Kortix owns retry: a failed turn is the product's to retry (a silent pi retry would
+    // double-bill and reorder the wire). `retry` and `compaction` live in storage, not
+    // `applyOverrides`: `loader.reload()` re-reads storage and drops overrides.
+    global: globalSettingsJson(input.compaction),
+    project: JSON.stringify({ ...projectSettings, packages: project.kept }),
+  })
+  const settingsManager = SettingsManager.fromStorage(storage, { projectTrusted: true })
   seedJitiCache(input.agentDir)
 
   const loader = new KortixResourceLoader(
@@ -390,6 +396,10 @@ export async function createPiSession(input: PiSessionInput): Promise<PiSession>
   const loaded = loader.getExtensions()
   return {
     session,
+    setCompaction: async (compaction) => {
+      storage.withLock('global', () => globalSettingsJson(compaction))
+      await settingsManager.reload()
+    },
     status: () => ({
       // A package's extension reads as its source (`npm:pi-web-access@0.30.0`), the rest as name or path.
       loaded: loaded.extensions

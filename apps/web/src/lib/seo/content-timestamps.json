@@ -32,12 +32,12 @@
   "marketing:download": "2026-10-20T16:38:11.000Z",
   "docs:accounts/identity": "2026-10-22T16:55:16.000Z",
   "docs:accounts": "2026-10-22T17:13:44.000Z",
-  "docs:api": "2026-10-15T14:01:58.000Z",
+  "docs:api": "2026-10-23T13:36:32.000Z",
   "docs:apps": "2026-10-20T17:31:57.000Z",
   "docs:audit-actions": "2026-10-23T12:25:43.000Z",
   "docs:capture": "2026-10-17T23:25:54.000Z",
   "docs:capture/rollout": "2026-10-19T16:40:22.000Z",
-  "docs:cli": "2026-10-22T23:10:00.000Z",
+  "docs:cli": "2026-10-23T13:36:32.000Z",
   "docs:clients": "2026-10-19T11:15:46.000Z",
   "docs:connect/channels": "2026-10-19T09:13:58.000Z",
   "docs:connect/computers": "2026-10-14T07:41:06.000Z",
@@ -60,9 +60,9 @@
   "docs:sdk": "2026-10-20T17:31:57.000Z",
   "docs:sdk/react": "2026-10-22T23:30:44.000Z",
   "docs:sdk/reference": "2026-10-22T17:13:44.000Z",
-  "docs:sdk/sessions": "2026-10-22T13:35:50.000Z",
+  "docs:sdk/sessions": "2026-10-23T13:36:32.000Z",
   "docs:sdk/ui": "2026-10-21T18:53:43.000Z",
   "docs:tui": "2026-10-22T23:10:00.000Z",
   "docs:work/runtime": "2026-10-20T16:32:13.000Z",
-  "docs:work/sessions": "2026-10-22T23:10:00.000Z"
+  "docs:work/sessions": "2026-10-23T13:36:32.000Z"
 }

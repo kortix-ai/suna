@@ -26,10 +26,13 @@ import { setupLinkApiBase } from './api-base';
 import { StatusNotice } from './secret-intake-form';
 import { ShopifyAccessList } from './shopify-access';
 
+// Machine values, not prose: Shopify serves every store at <handle>.myshopify.com.
+const SHOPIFY_HOST_SUFFIX = '.myshopify.com';
+const EXAMPLE_STORE_HANDLE = 'acme';
+
 type Phase = 'loading' | 'ready' | 'submitting' | 'done' | 'expired' | 'invalid' | 'stale' | 'error';
 
 const DEV_DASHBOARD_URL = 'https://dev.shopify.com/dashboard';
-const SHOP_SUFFIX = '.myshopify.com';
 /** Long enough to read the confirmation before the window closes itself. */
 const CLOSE_AFTER_MS = 1_500;
 
@@ -109,7 +112,7 @@ export function AppCredentialsForm({ token }: { token: string }) {
         setInfo(body);
         setConnectedAs(body.connected_as);
         if (body.flow === 'oauth') {
-          setStore((body.shop ?? '').replace(SHOP_SUFFIX, ''));
+          setStore((body.shop ?? '').replace(SHOPIFY_HOST_SUFFIX, ''));
           setCallbackError(callbackErrorKey(window.location.search));
         }
         setPhase(body.connected ? 'done' : 'ready');
@@ -297,7 +300,7 @@ export function AppCredentialsForm({ token }: { token: string }) {
               spellCheck={false}
               // 16px below `sm` so iOS Safari does not zoom the page on focus.
               className="font-mono max-sm:text-base"
-              placeholder="acme"
+              placeholder={EXAMPLE_STORE_HANDLE}
               value={store}
               disabled={submitting}
               onChange={(e) => setStore(e.target.value)}
@@ -305,7 +308,7 @@ export function AppCredentialsForm({ token }: { token: string }) {
                 if (sharedApp && e.key === 'Enter') void submit();
               }}
             />
-            <InputGroupAddon align="inline-end">{SHOP_SUFFIX}</InputGroupAddon>
+            <InputGroupAddon align="inline-end">{SHOPIFY_HOST_SUFFIX}</InputGroupAddon>
           </InputGroup>
         </Field>
         {sharedApp ? null : (

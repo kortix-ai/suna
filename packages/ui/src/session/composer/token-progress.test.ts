@@ -39,7 +39,8 @@ function v1Breakdown(rows: V1Row[]) {
     const output = t.output ?? 0;
     const reasoning = t.reasoning ?? 0;
     const cache = (t.cache?.read ?? 0) + (t.cache?.write ?? 0);
-    const total = input + output + reasoning + cache;
+    // reasoning is a subset of output, so it stays out of the context total.
+    const total = input + output + cache;
     if (total > 0) return { input, output, reasoning, cache, total };
   }
   return { input: 0, output: 0, reasoning: 0, cache: 0, total: 0 };
@@ -97,12 +98,13 @@ describe('getLastAssistantTokenTotal', () => {
     expect(getLastAssistantTokenTotal([])).toBe(0);
   });
 
-  test('sums input/output/reasoning/cache tokens from the most recent assistant message', () => {
+  test('sums input/output/cache tokens from the most recent assistant message, once', () => {
     const messages = [
       userMessage(),
       assistantMessage({ input: 100, output: 50, reasoning: 10, cache: { read: 5, write: 2 } }),
     ];
-    expect(getLastAssistantTokenTotal(records(...messages))).toBe(167);
+    // 100 + 50 + 7: the 10 reasoning tokens are already inside the 50 output.
+    expect(getLastAssistantTokenTotal(records(...messages))).toBe(157);
   });
 
   test('skips trailing assistant messages with no token total and finds the last real one', () => {
@@ -148,7 +150,7 @@ describe('getLastAssistantTokenBreakdown', () => {
       output: 50,
       reasoning: 10,
       cache: 7,
-      total: 167,
+      total: 157,
     });
   });
 
@@ -160,13 +162,14 @@ describe('getLastAssistantTokenBreakdown', () => {
     expect(Number.isNaN(breakdown.total)).toBe(false);
   });
 
-  test('the parts always sum to the total it reports', () => {
-    // The bar is a fraction of `total` and the rows below it are the parts —
-    // if these drift the card contradicts itself on screen.
+  test('the parts the card renders sum to the total it reports', () => {
+    // The bar is a fraction of `total` and the rows below it are input, cache and
+    // output (reasoning is a subset of output, so it has no row of its own).
     const b = getLastAssistantTokenBreakdown(
       records(assistantMessage({ input: 1234, output: 99, reasoning: 7, cache: { read: 500, write: 21 } })),
     );
-    expect(b.input + b.output + b.reasoning + b.cache).toBe(b.total);
+    expect(b.input + b.output + b.cache).toBe(b.total);
+    expect(b.reasoning).toBe(7);
   });
 
   test('skips a still-streaming trailing turn and reports the last real reading', () => {

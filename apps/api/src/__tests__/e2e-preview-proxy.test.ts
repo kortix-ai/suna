@@ -817,9 +817,10 @@ describe('Preview proxy: ownership', () => {
         hop: 'control_plane',
         upstream_status: null,
         // Stable machine code + retry flag: a readiness 503 is a pending
-        // state a client re-polls, never a terminal error.
+        // state a client re-polls, never a terminal error. A parked box
+        // never wakes on a read, so its retry is false (KRTX-3140).
         code: 'sandbox_not_ready',
-        retry: true,
+        retry: status !== 'stopped',
       });
     },
   );

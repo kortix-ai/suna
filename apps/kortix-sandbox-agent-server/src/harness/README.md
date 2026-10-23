@@ -1107,6 +1107,16 @@ transcript keeps every message. A project's `settings.json` in the pi config
 dir sets `compaction.enabled`, `reserveTokens` and `keepRecentTokens`.
 Subagent child sessions have no `AgentSession` and do not compact.
 
+The threshold is `window - reserve`, and this daemon sets the reserve from the
+catalog: the model's own output limit, floored at pi's 16,384 default and
+capped at half the window (`compactionSettings` in `pi/model.ts`). pi's default
+reserve alone lets a request enter the window with less room left than the
+answer may use, so the provider cuts the reply (`stopReason: length`,
+`output_length` on the wire) at a context the meter still calls healthy. The
+reserve follows a catalog refresh (`refreshModels`), so a custom endpoint's
+real limits apply to a running session. A model's `limit.output` therefore
+also decides when its session compacts.
+
 A `/summarize` is a turn of its own, named by its compaction marker (the user
 message with the `compaction` part), as on OpenCode: when the compaction that
 `compact()` started begins, the runtime relays `turn_begin` with the marker id,

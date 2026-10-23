@@ -22,6 +22,7 @@ import {
   type MutableModels,
 } from '@earendil-works/pi-ai'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
+import { DEFAULT_COMPACTION_SETTINGS } from '@earendil-works/pi-coding-agent'
 import { LLM_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
 import { logger } from '@/lib/log/logger'
 import type { KortixGatewayModel } from '@kortix/api-contract/fallback-models'
@@ -76,6 +77,26 @@ export async function fetchPickerCatalog(env: NodeJS.ProcessEnv): Promise<Record
     logger.warn('[pi] live model catalog unavailable; the baked catalog sizes the models', { err: String(err) })
     return {}
   }
+}
+
+/**
+ * pi compacts at `contextWindow - reserveTokens`. Its default reserve (16,384) assumes the answer
+ * never needs more than that. A model whose real output limit is larger runs out of room while pi
+ * still sees headroom, so the provider cuts the answer (`stopReason: length`) — the session then
+ * shows `output_length` at a context the meter calls nearly full. Reserve the model's own output
+ * limit instead, floored at pi's default and capped at half the window, so a model that claims most
+ * of its window as output still compacts.
+ */
+export function compactionSettings(catalog: Record<string, CatalogModel>) {
+  const modelOverrides: Record<string, { reserveTokens: number }> = {}
+  for (const [id, entry] of Object.entries(catalog)) {
+    // The window and output pi will use (gatewayModel's fallbacks), so the reserve matches the request's cap.
+    const window = entry?.limit?.context ?? 128_000
+    const output = entry?.limit?.output ?? entry?.limit?.context ?? 32_768
+    const reserveTokens = Math.min(Math.max(Math.floor(output), DEFAULT_COMPACTION_SETTINGS.reserveTokens), Math.floor(window / 2))
+    if (reserveTokens > DEFAULT_COMPACTION_SETTINGS.reserveTokens) modelOverrides[`${KORTIX_PROVIDER_ID}/${id}`] = { reserveTokens }
+  }
+  return { modelOverrides }
 }
 
 /** `kortix/<id>` and bare `<id>` both name the gateway model `<id>`. */
