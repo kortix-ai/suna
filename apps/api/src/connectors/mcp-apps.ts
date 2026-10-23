@@ -36,6 +36,7 @@ import {
   connectorCatalogItems,
   connectorCatalogSurfaces,
   createConnectorCatalog,
+  surfaceRank,
 } from './connector-catalog';
 
 export type KortixOAuthClientName = 'google' | 'github' | 'slack' | 'hubspot' | 'asana' | 'box';
@@ -327,19 +328,46 @@ export async function connectorsV2Items(
       () => [] as ComposioCatalogCard[],
     ),
   ]);
-  // A Kortix app is the one way to its domain: its endpoints are verified.
-  const curated = new Set(kortix.map((item) => item.domain));
-  const direct = index.filter((item) => !curated.has(item.domain));
+  // A Kortix app is the one way to its app, by domain and by name (Notion is
+  // notion.so here and notion.com in the registry): its endpoints are verified.
+  const curated = new Set(kortix.flatMap((item) => [item.domain, appNameKey(item.name)]));
+  const direct = index.filter((item) => !curated.has(item.domain) && !curated.has(appNameKey(item.name)));
   const domainOf = new Map<string, string>();
   for (const item of [...kortix, ...direct]) {
     const key = appNameKey(item.name);
     if (!domainOf.has(key)) domainOf.set(key, item.domain);
   }
-  return [
+  const items = [
     ...kortix,
     ...direct,
     ...toolkits.map((card) => composioCatalogItem(card, domainOf.get(appNameKey(card.name)))),
   ];
+  // One record per app, its best way in. A dropped record is a worse surface
+  // of the same app: the app page still lists every surface of its domain.
+  const best = new Map<string, ConnectorCatalogItem>();
+  for (const item of items) {
+    const current = best.get(item.domain);
+    if (!current || surfaceRank(item) < surfaceRank(current)) best.set(item.domain, item);
+  }
+  // Browse order: Kortix's apps; then the registry's popular apps and the
+  // managed apps (in their usage order) taking turns, as neither ranks the
+  // other; then the long tail.
+  const apps = [...best.values()];
+  const popular = apps.filter((item) => !item.feeds.includes('kortix') && item.popularity !== null);
+  popular.sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0));
+  // `best` keeps the position a domain was first seen at; toolkits keep theirs.
+  const position = new Map(items.map((item, index) => [item, index]));
+  const managed = apps
+    .filter((item) => item.kind === 'composio')
+    .sort((a, b) => position.get(a)! - position.get(b)!);
+  const turns: ConnectorCatalogItem[] = [];
+  for (let i = 0; i < Math.max(popular.length, managed.length); i++) {
+    if (popular[i]) turns.push(popular[i]);
+    if (managed[i]) turns.push(managed[i]);
+  }
+  const placed = new Set(turns);
+  const curatedApps = apps.filter((item) => item.feeds.includes('kortix'));
+  return [...curatedApps, ...turns, ...apps.filter((item) => !placed.has(item) && !item.feeds.includes('kortix'))];
 }
 
 /** The Discover catalogue a `connectors_v2` project browses. */

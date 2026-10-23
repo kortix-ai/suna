@@ -92,8 +92,14 @@ describe('the Kortix MCP app catalogue', () => {
     expect(await card('acme')).toMatchObject({ id: 'acme-mcp', kind: 'mcp', oneClick: true });
     // Outlook's MCP server needs setup, so its managed toolkit is the card.
     expect(await card('outlook')).toMatchObject({ id: 'composio:outlook', kind: 'composio', domain: 'outlook.com', oneClick: true });
-    // A Kortix app is the only record for its domain: Linear's toolkit is gone.
+    // A Kortix app is the only record for its app, by domain and by name:
+    // Linear's toolkit and Notion's registry entry on notion.com are gone.
     expect((await catalog.list({ q: 'linear' })).items.map((item) => item.id)).toEqual(['kortix:linear']);
+    expect((await catalog.list({ q: 'notion' })).items.map((item) => item.id)).toEqual(['kortix:notion']);
+    // Browse sections keep a domain's first record: the toolkit, not Outlook's setup-only server.
+    const productivity = (await catalog.sections({ perCategory: 24 })).sections.find((section) => section.key === 'productivity');
+    expect(productivity?.items.map((item) => item.id)).toContain('composio:outlook');
+    expect(productivity?.items.map((item) => item.id)).not.toContain('outlook-mcp');
     // An API-only app lists, but not under the one-click filter.
     expect(await card('billing')).toMatchObject({ id: 'billing-openapi', kind: 'openapi' });
     const oneClick = (await catalog.list({ oneClick: true, limit: 96 })).items.map((item) => item.id);
@@ -101,6 +107,13 @@ describe('the Kortix MCP app catalogue', () => {
     expect(oneClick).toContain('acme-mcp');
     expect(oneClick).not.toContain('billing-openapi');
     expect(oneClick).not.toContain('outlook-mcp');
+    // Browse order: Kortix's apps, then popular registry apps and managed apps
+    // taking turns, then the rest.
+    const browse = (await catalog.list({ limit: 96 })).items.map((item) => item.id);
+    const firstOther = browse.findIndex((id) => !id.startsWith('kortix:'));
+    // Managed apps keep Composio's usage order, whatever their domain's first record.
+    expect(browse.slice(firstOther, firstOther + 3)).toEqual(['acme-mcp', 'composio:zeta', 'composio:outlook']);
+    expect(browse.indexOf('composio:outlook')).toBeLessThan(browse.indexOf('billing-openapi'));
   });
 
   test('a source that is down drops out and the others still list', async () => {
@@ -127,12 +140,13 @@ function v2Catalog() {
         connectorsV2Items({
           apps: () => availableMcpApps(GOOGLE),
           index: async () => [
-            record('acme-mcp', 'mcp', 'Acme', 'acme.com', { mcpUrl: 'https://mcp.acme.com/mcp', oneClick: true }),
+            record('acme-mcp', 'mcp', 'Acme', 'acme.com', { mcpUrl: 'https://mcp.acme.com/mcp', oneClick: true, popularity: 50 }),
             record('outlook-mcp', 'mcp', 'Outlook', 'outlook.com', { mcpUrl: 'https://mcp.outlook.example/mcp' }),
             record('billing-openapi', 'openapi', 'Billing', 'billing.dev'),
             record('linear-openapi', 'openapi', 'Linear', 'linear.app'),
+            record('notion-com-mcp', 'mcp', 'Notion', 'notion.com', { mcpUrl: 'https://mcp.notion.com/mcp', oneClick: true }),
           ],
-          toolkits: async () => [toolkit('acme', 'Acme'), toolkit('outlook', 'Outlook'), toolkit('linear', 'Linear')],
+          toolkits: async () => [toolkit('zeta', 'Zeta'), toolkit('acme', 'Acme'), toolkit('outlook', 'Outlook'), toolkit('linear', 'Linear')],
         }),
       surfaces: () => [],
     },

@@ -360,7 +360,7 @@ const SURFACE_RANK: Record<ConnectorCatalogKind, number> = {
   graphql: 4,
   cli: 5,
 };
-const surfaceRank = (item: ConnectorCatalogItem) =>
+export const surfaceRank = (item: ConnectorCatalogItem) =>
   item.kind === 'mcp' && item.oneClick ? 0 : SURFACE_RANK[item.kind];
 
 /**
