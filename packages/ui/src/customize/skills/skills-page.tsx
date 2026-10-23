@@ -124,13 +124,13 @@ export function SkillsPage({ projectId }: { projectId: string }) {
   // One control, two labels. The header has a title beside it and can be terse;
   // the empty state is the whole screen and has to name what it creates. Both
   // offer the same two ways in, so they cannot drift apart.
-  // `size="sm"` is `h-8` — the same height as the search input beside it in the
-  // header group. The Button default is `h-9`, which left the pair 4px
-  // mismatched on a row that is centred, so both edges were off.
-  const createButton = (label: string) =>
+  // The header button is `h-9`, the height of the `size="sm"` search input
+  // beside it. The empty state keeps `sm` to match its `sm` docs link.
+  const createButton = (label: string, size?: 'sm') =>
     canWrite ? (
       <NewEntityMenu
         label={label}
+        size={size}
         pending={configure.pending}
         onChat={() => configure.start(newConfigPrompt('skill'))}
         manual={{
@@ -198,7 +198,7 @@ export function SkillsPage({ projectId }: { projectId: string }) {
               // The copy invites an action, so the action is here — not only in
               // the header. Docs stays as the secondary, for the reader who has
               // no write permission and gets no primary at all.
-              action={createButton('Create a skill')}
+              action={createButton('Create a skill', 'sm')}
               secondaryAction={
                 <Button asChild variant="ghost" size="sm" className="gap-1.5">
                   <a

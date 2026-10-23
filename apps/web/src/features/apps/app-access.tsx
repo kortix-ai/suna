@@ -1,5 +1,6 @@
 'use client';
 
+import { AgentMark } from '@kortix/ui/internal/components/agent-mark';
 import { Badge } from '@kortix/ui/badge';
 import { Button } from '@kortix/ui/button';
 
@@ -11,7 +12,6 @@ import { RadioGroup } from '@kortix/ui/radio-group';
 
 import { Skeleton } from '@kortix/ui/skeleton';
 import { successToast } from '@kortix/ui/toast';
-import { EntityAvatar } from '@kortix/ui/entity-avatar';
 
 import { ErrorState } from '@kortix/ui/error-state';
 
@@ -21,7 +21,6 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { listAppAgents, type App, type AppAccessConfig, type AppAccessMode, type AppViewerTokenScope } from '@kortix/sdk';
 import { useAppAccess } from '@kortix/sdk/react';
-import { RobotIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 
 import { useState } from 'react';
@@ -271,7 +270,7 @@ function AppAgentsWithAccess({ projectId, appId }: { projectId: string; appId: s
               key={agent.agent_name}
               className="bg-popover flex items-center gap-2.5 rounded-md border px-3 py-2"
             >
-              <EntityAvatar icon={RobotIcon} label={agent.agent_name} size="sm" />
+              <AgentMark slug={agent.agent_name} />
               <div className="min-w-0 flex-1">
                 <p className="text-foreground truncate text-sm font-medium">{agent.agent_name}</p>
                 <p className="text-muted-foreground truncate text-xs">

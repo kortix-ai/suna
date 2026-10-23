@@ -301,6 +301,31 @@ export function SessionBriefCardHost() {
     shown.current = true;
   }, [visible, activeSessionId, anchor, via]);
 
+  // Native listeners, not React's `onPointerEnter/Leave`. The card's content is
+  // portaled in from the row, so in React's tree it is the row's child, not
+  // this wrapper's: React fired the wrapper's leave the moment the pointer
+  // crossed from the gap onto the content, and the card closed under a pointer
+  // on its way to the Review link. The DOM tree is the one the pointer is in.
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+    const active = () => useSessionHoverStore.getState().activeSessionId;
+    const onEnter = () => {
+      const id = active();
+      if (id) openSession(id);
+    };
+    const onLeave = () => {
+      const id = active();
+      if (id) closeSession(id);
+    };
+    el.addEventListener('pointerenter', onEnter);
+    el.addEventListener('pointerleave', onLeave);
+    return () => {
+      el.removeEventListener('pointerenter', onEnter);
+      el.removeEventListener('pointerleave', onLeave);
+    };
+  }, [openSession, closeSession]);
+
   // WCAG 1.4.13: dismissible without moving the pointer. A scroll moves the
   // row away from the card, so it closes too, unless it scrolls the card itself.
   useEffect(() => {
@@ -325,8 +350,6 @@ export function SessionBriefCardHost() {
       data-slot="session-brief-card"
       className={cn('fixed top-0 left-0 pl-3.5 starting:opacity-0', !visible && 'hidden')}
       style={{ zIndex: floatingZ(depth) }}
-      onPointerEnter={() => activeSessionId && openSession(activeSessionId)}
-      onPointerLeave={() => activeSessionId && closeSession(activeSessionId)}
     >
       <div ref={setSlot} className={cn(FLOATING_PANEL_SURFACE, 'w-72 overflow-hidden rounded-md shadow-xs')} />
     </div>,
