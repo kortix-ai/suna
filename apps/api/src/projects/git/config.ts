@@ -217,6 +217,7 @@ export function resolveConfigAgents(
           mode: native?.mode ?? null,
           ...(native?.hidden === true ? { hidden: true } : {}),
           model: native?.model ?? null,
+          domain: native?.domain ?? null,
           source: 'kortix.yaml' as const,
           enabled: spec.enabled,
           sandbox: spec.sandbox ?? null,
@@ -564,7 +565,7 @@ async function loadProjectConfigV3(
   manifest: Record<string, unknown>,
   loadedAgents: LoadedAgents,
   repoPaths: ReadonlySet<string>,
-): Promise<Pick<ProjectConfigSummary, 'agent_discovery' | 'agents' | 'skills' | 'commands'>> {
+): Promise<Pick<ProjectConfigSummary, 'agent_discovery' | 'agents' | 'skills' | 'commands' | 'domains'>> {
   const map = (value: unknown) =>
     value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
   const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value : null);
@@ -578,6 +579,7 @@ async function loadProjectConfigV3(
       mode: text(block.mode),
       ...(block.hidden === true ? { hidden: true } : {}),
       model: text(block.model),
+      domain: text(block.domain),
     };
   });
   const { agents } = resolveConfigAgents(natives, loadedAgents, (spec) => text(map(blocks[spec.name]).prompt_file) ?? undefined);
@@ -605,7 +607,15 @@ async function loadProjectConfigV3(
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  return { agent_discovery: 'declarative', agents, skills, commands };
+  const domains = Object.entries(map(manifest.domains))
+    .map(([name, meta]) => {
+      const m = map(meta);
+      const order = typeof m.order === 'number' ? m.order : undefined;
+      return { name, label: text(m.label) ?? undefined, description: text(m.description) ?? undefined, order };
+    })
+    .sort((a, b) => (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER) || a.name.localeCompare(b.name));
+
+  return { agent_discovery: 'declarative', agents, skills, commands, domains };
 }
 
 function escapeRegExp(input: string): string {
