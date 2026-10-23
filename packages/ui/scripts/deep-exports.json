@@ -11,7 +11,6 @@
     "./access/iam/managed-git-notice",
     "./access/iam/session-oversight-card",
     "./access/sharing-picker",
-    "./customize/admin/project-admin-hub",
     "./customize/agents/agent-detail-aside",
     "./customize/agents/agent-page",
     "./customize/agents/agents-page",
