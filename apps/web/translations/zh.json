@@ -22577,6 +22577,19 @@
         "outsideText": "来自 {label}",
         "person": "由 {label} 添加",
         "import": "从 {label} 导入"
+      },
+      "saved": {
+        "running": "正在保存到记忆…",
+        "channel": "已保存到 {place} 的记忆：<page>{title}</page>",
+        "dm": "已保存到你与 {place} 的记忆：<page>{title}</page>",
+        "company": "已保存到公司记忆：<page>{title}</page>",
+        "failed": "未保存到记忆：{reason}",
+        "view": "查看",
+        "undo": "撤销",
+        "undone": "已撤销",
+        "superseded": "此后已有更改 —",
+        "openHistory": "打开历史记录",
+        "undoFailed": "无法撤销。"
       }
     },
     "create": {

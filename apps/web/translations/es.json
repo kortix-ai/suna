@@ -22577,6 +22577,19 @@
         "outsideText": "De {label}",
         "person": "Añadido por {label}",
         "import": "Importado de {label}"
+      },
+      "saved": {
+        "running": "Guardando en la memoria…",
+        "channel": "Guardado en la memoria de {place}: <page>{title}</page>",
+        "dm": "Guardado en tu memoria con {place}: <page>{title}</page>",
+        "company": "Guardado en la memoria de la empresa: <page>{title}</page>",
+        "failed": "No se guardó en la memoria: {reason}",
+        "view": "Ver",
+        "undo": "Deshacer",
+        "undone": "Deshecho",
+        "superseded": "Cambió desde entonces —",
+        "openHistory": "abrir el Historial",
+        "undoFailed": "No se pudo deshacer."
       }
     },
     "create": {

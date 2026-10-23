@@ -7410,6 +7410,19 @@ const catalog = {
         "outsideText": "From {label}",
         "person": "Added by {label}",
         "import": "Imported from {label}"
+      },
+      "saved": {
+        "running": "Saving to memory…",
+        "channel": "Saved to {place} memory: <page>{title}</page>",
+        "dm": "Saved to your memory with {place}: <page>{title}</page>",
+        "company": "Saved to Company memory: <page>{title}</page>",
+        "failed": "Not saved to memory: {reason}",
+        "view": "View",
+        "undo": "Undo",
+        "undone": "Undone",
+        "superseded": "Changed since —",
+        "openHistory": "open History",
+        "undoFailed": "Could not undo."
       }
     },
     "create": {

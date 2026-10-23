@@ -22577,6 +22577,19 @@
         "outsideText": "{label} から",
         "person": "{label} が追加",
         "import": "{label} からインポート"
+      },
+      "saved": {
+        "running": "メモリに保存中…",
+        "channel": "{place} のメモリに保存：<page>{title}</page>",
+        "dm": "{place} とのあなたのメモリに保存：<page>{title}</page>",
+        "company": "会社のメモリに保存：<page>{title}</page>",
+        "failed": "メモリに保存されませんでした：{reason}",
+        "view": "表示",
+        "undo": "元に戻す",
+        "undone": "元に戻しました",
+        "superseded": "その後に変更されました —",
+        "openHistory": "履歴を開く",
+        "undoFailed": "元に戻せませんでした。"
       }
     },
     "create": {

@@ -22577,6 +22577,19 @@
         "outsideText": "Da {label}",
         "person": "Aggiunto da {label}",
         "import": "Importato da {label}"
+      },
+      "saved": {
+        "running": "Salvataggio nella memoria…",
+        "channel": "Salvato nella memoria di {place}: <page>{title}</page>",
+        "dm": "Salvato nella tua memoria con {place}: <page>{title}</page>",
+        "company": "Salvato nella memoria aziendale: <page>{title}</page>",
+        "failed": "Non salvato nella memoria: {reason}",
+        "view": "Vedi",
+        "undo": "Annulla",
+        "undone": "Annullato",
+        "superseded": "Modificato nel frattempo —",
+        "openHistory": "apri la Cronologia",
+        "undoFailed": "Impossibile annullare."
       }
     },
     "create": {

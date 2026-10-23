@@ -22577,6 +22577,19 @@
         "outsideText": "Aus {label}",
         "person": "Hinzugefügt von {label}",
         "import": "Importiert aus {label}"
+      },
+      "saved": {
+        "running": "Wird im Speicher gesichert …",
+        "channel": "Im Speicher von {place} gesichert: <page>{title}</page>",
+        "dm": "In deinem Speicher mit {place} gesichert: <page>{title}</page>",
+        "company": "Im Unternehmensspeicher gesichert: <page>{title}</page>",
+        "failed": "Nicht im Speicher gesichert: {reason}",
+        "view": "Ansehen",
+        "undo": "Rückgängig",
+        "undone": "Rückgängig gemacht",
+        "superseded": "Seitdem geändert —",
+        "openHistory": "Verlauf öffnen",
+        "undoFailed": "Rückgängig machen fehlgeschlagen."
       }
     },
     "create": {

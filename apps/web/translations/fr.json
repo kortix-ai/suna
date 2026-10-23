@@ -22577,6 +22577,19 @@
         "outsideText": "De {label}",
         "person": "Ajouté par {label}",
         "import": "Importé de {label}"
+      },
+      "saved": {
+        "running": "Enregistrement dans la mémoire…",
+        "channel": "Enregistré dans la mémoire de {place} : <page>{title}</page>",
+        "dm": "Enregistré dans votre mémoire avec {place} : <page>{title}</page>",
+        "company": "Enregistré dans la mémoire de l’entreprise : <page>{title}</page>",
+        "failed": "Non enregistré dans la mémoire : {reason}",
+        "view": "Voir",
+        "undo": "Annuler",
+        "undone": "Annulé",
+        "superseded": "Modifié depuis —",
+        "openHistory": "ouvrir l’historique",
+        "undoFailed": "Impossible d’annuler."
       }
     },
     "create": {

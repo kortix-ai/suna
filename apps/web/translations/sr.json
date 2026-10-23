@@ -22577,6 +22577,19 @@
         "outsideText": "Из {label}",
         "person": "Додао/ла {label}",
         "import": "Увезено из {label}"
+      },
+      "saved": {
+        "running": "Чува се у меморију…",
+        "channel": "Сачувано у меморију канала {place}: <page>{title}</page>",
+        "dm": "Сачувано у твоју меморију са {place}: <page>{title}</page>",
+        "company": "Сачувано у меморију компаније: <page>{title}</page>",
+        "failed": "Није сачувано у меморију: {reason}",
+        "view": "Прикажи",
+        "undo": "Опозови",
+        "undone": "Опозвано",
+        "superseded": "Промењено у међувремену —",
+        "openHistory": "отвори историју",
+        "undoFailed": "Опозивање није успело."
       }
     },
     "create": {
