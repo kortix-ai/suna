@@ -94,7 +94,8 @@ export async function pageHistory(
     : undefined;
   const { page, refs, next } = await versionPage(
     viewer,
-    and(eq(memoryPageVersions.pageId, pageId), cursor),
+    // An agent's token sees only versions a person confirmed: an unconfirmed snapshot is outside content.
+    and(eq(memoryPageVersions.pageId, pageId), cursor, viewer.sessionId ? eq(memoryPageVersions.status, 'confirmed') : undefined),
     [desc(memoryPageVersions.versionNo)],
     opts.limit,
   );

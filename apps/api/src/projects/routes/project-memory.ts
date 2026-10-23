@@ -5,7 +5,10 @@
  *
  * Every route needs `session` project access and the flag. People read and
  * write the layers they see. A session-bound caller (an agent's token) reads
- * only its thread's layers and gets 403 `use_remember` on writes. Agents
+ * only its thread's layers, and there only confirmed, live pages: an
+ * unconfirmed or trashed page is 404 on every page route (read, history,
+ * write, confirm), `deleted=1` lists nothing, and history and changes leave
+ * unconfirmed versions out. A write to a page it sees is 403 `use_remember`. Agents
  * write with `POST …/memory/remember` and read their copy with the layer
  * export; both answer 403 `session_token_required` to anyone else.
  */
@@ -359,7 +362,8 @@ export function registerProjectMemoryRoutes(): void {
       summary: 'Confirm an unconfirmed memory page',
       description:
         'Agents get an unconfirmed page (outside content) only after a person confirms it. A "(to confirm)" page merges into the page it names ' +
-        'and goes to the trash; the response is that page. Discard is `DELETE`. 409 `not_unconfirmed` for a confirmed page.',
+        'and goes to the trash; the response is that page. Discard is `DELETE`. 409 `not_unconfirmed` for a confirmed page. ' +
+        'An agent’s session token never sees an unconfirmed page: 404.',
       ...auth,
       request: { params: pageParams },
       responses: { 200: json(MemoryPageSchema, 'The confirmed page'), ...WRITE_ERRORS },

@@ -250,7 +250,15 @@ export async function pageView(page: PageRow, layer: LayerRef, viewer: Viewer): 
       : db
           .select({ pageId: memoryPages.pageId, title: memoryPages.title })
           .from(memoryPages)
-          .where(and(eq(memoryPages.layerId, page.layerId), inArray(memoryPages.pageId, page.related), isNull(memoryPages.deletedAt))),
+          .where(
+            and(
+              eq(memoryPages.layerId, page.layerId),
+              inArray(memoryPages.pageId, page.related),
+              isNull(memoryPages.deletedAt),
+              // An agent's token never gets an unconfirmed page's title.
+              viewer.sessionId ? eq(memoryPages.status, 'confirmed') : undefined,
+            ),
+          ),
     pageCreator(page.pageId),
   ]);
   const refs = await loadRefs(
@@ -275,13 +283,15 @@ export async function listPages(
   viewer: Viewer,
   filter: { type?: PageRow['type']; status?: PageRow['status']; deleted?: boolean },
 ): Promise<MemoryPageSummary[]> {
+  // An agent's token has no trash.
+  if (filter.deleted && viewer.sessionId) return [];
   const rows = await db
     .select(PAGE_COLUMNS)
     .from(memoryPages)
     .where(
       and(
         eq(memoryPages.layerId, layer.layerId),
-        filter.deleted && !viewer.sessionId ? isNotNull(memoryPages.deletedAt) : isNull(memoryPages.deletedAt),
+        filter.deleted ? isNotNull(memoryPages.deletedAt) : isNull(memoryPages.deletedAt),
         filter.type ? eq(memoryPages.type, filter.type) : undefined,
         // An agent's token lists confirmed pages only.
         viewer.sessionId ? eq(memoryPages.status, 'confirmed') : filter.status ? eq(memoryPages.status, filter.status) : undefined,

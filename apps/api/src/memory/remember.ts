@@ -59,7 +59,7 @@ async function livePageOfTitle(tx: Tx, layerId: string, title: string): Promise<
   return found ? lockPage(tx, found.pageId) : null;
 }
 
-/** The live unconfirmed page that holds pending additions to `pageId` (it names the page in `related`). */
+/** The live unconfirmed page that holds pending additions to `pageId` (its `related[0]`, the page Confirm merges into). */
 async function pendingPageOf(tx: Tx, layerId: string, pageId: string): Promise<PageRow | null> {
   const [pending] = await tx
     .select({ pageId: memoryPages.pageId })
@@ -70,7 +70,8 @@ async function pendingPageOf(tx: Tx, layerId: string, pageId: string): Promise<P
         isNull(memoryPages.deletedAt),
         eq(memoryPages.status, 'unconfirmed'),
         ne(memoryPages.type, 'note'),
-        sql`${memoryPages.related} @> ARRAY[${pageId}]::uuid[]`,
+        // The page Confirm merges into is `related[0]` (PostgreSQL arrays start at 1).
+        sql`${memoryPages.related}[1] = ${pageId}::uuid`,
       ),
     )
     .orderBy(memoryPages.createdAt)
@@ -164,11 +165,14 @@ export async function remember(projectId: string, sessionId: string, input: Memo
     const pageId = existing?.pageId ?? randomUUID();
     let result: Awaited<ReturnType<typeof savePage>>;
     if (existing) {
-      const n = await addSource(tx, pageId, source);
       const current = snapshotOf(existing);
+      // Append-only: the pending page gets the rewrite's new lines, not the rewrite. None new: nothing is written.
+      if (pendingFor && input.body && rewriteAdditions(pendingFor.body, current.body, input.body, 0) === current.body) {
+        throw new MemoryError(409, 'nothing_new', 'The page already has every line of this text.');
+      }
+      const n = await addSource(tx, pageId, source);
       let body: string;
       if (input.fact) body = appendFact(current.body, input.fact, n, input.section);
-      // Append-only: the pending page gets the rewrite's new lines, not the rewrite.
       else body = pendingFor ? rewriteAdditions(pendingFor.body, current.body, input.body!, n) : input.body!;
       result = await savePage(tx, {
         layerId: layer.layerId,
