@@ -1646,6 +1646,8 @@ describe('pi extensions', () => {
     const [one, two] = gateway.sent.slice(sentBefore).map(systemSent)
     expect(one).toContain('## Memory\n- Q4 launch — dates and owners')
     expect(two).not.toContain('## Memory')
+    // pi keeps the text out of the stored transcript.
+    expect(JSON.stringify(await r.user(`/session/${root}/message`).then((res) => res.json()))).not.toContain('## Memory')
   })
 
   test("every turn tells the model today's date, a subagent included, and a session that crosses midnight gets the new day", async () => {

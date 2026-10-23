@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import memorySearch, { formatHits, type MemorySearchHit } from '@/services/tools/platform/memory_search'
@@ -76,6 +76,9 @@ describe('memory_search', () => {
     api(403, { error: 'Memory is on for channel and DM threads only.', code: 'memory_layer_forbidden' })
     expect(await call({ query: 'launch' })).toBe('Error: memory_layer_forbidden: Memory is on for channel and DM threads only.')
     server!.stop(true)
+    api(400, 'x'.repeat(2_000))
+    expect(await call({ query: 'launch' })).toBe(`Error: 400: ${'x'.repeat(500)}`)
+    server!.stop(true)
     api(503, { error: 'down' })
     await expect(call({ query: 'launch' })).rejects.toThrow('memory search is unavailable (503)')
     server!.stop(true)
@@ -115,6 +118,17 @@ describe('memory_search output', () => {
       "- [Company] Launch call — Notes (not in this thread's copy yet; it is there from the next message)",
       `  ${'y'.repeat(239)}…`,
     ])
+  })
+
+  test('a link, a FIFO or an unknown scope or type in the copy gets no path and breaks nothing', async () => {
+    page('outside/q4-launch.md', 'page-1')
+    mkdirSync(join(root, 'channel/workstreams'), { recursive: true })
+    symlinkSync(join(root, 'outside/q4-launch.md'), join(root, 'channel/workstreams/q4-launch.md'))
+    expect(Bun.spawnSync(['mkfifo', join(root, 'channel/workstreams/pipe.md')]).exitCode).toBe(0)
+    const hits = [HIT, { ...HIT, page_id: 'page-9', scope: 'constructor', type: 'toString' }]
+    const text = await formatHits('launch', hits, root)
+    expect(text).not.toContain(root)
+    expect(text.match(/not in this thread's copy yet/g)).toHaveLength(2)
   })
 
   test('the tool returns the formatted hits; with no copy on this machine the path says so', async () => {

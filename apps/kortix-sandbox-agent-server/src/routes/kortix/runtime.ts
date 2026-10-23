@@ -202,6 +202,8 @@ export function createRuntimeRouter(
       const input = parseRuntimePromptBody(raw)
       if (typeof input === 'string') return c.json({ error: input }, 400)
       if (!input.messageId) return c.json({ error: 'message_id is required' }, 400)
+      // A steer joins the running turn, which keeps its prompt's `system`: a steer's own is dropped.
+      delete input.system
       return answer(c, () => turns.steer(c.req.param('sessionId'), input))
     })
 

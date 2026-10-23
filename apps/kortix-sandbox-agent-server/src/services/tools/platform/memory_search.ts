@@ -11,7 +11,8 @@
  * yet (written after this turn's sync) gets none. A refusal is returned as
  * `Error: <code>: <message>` for the model.
  */
-import { readdir, readFile } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { open, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { MEMORY_COPY_DIR } from '@kortix/api-contract/sandbox-layout'
 import { TYPE_FOLDERS } from '../memory-copy'
@@ -54,18 +55,37 @@ function searchQuery(args: Record<string, any>): URLSearchParams | string {
 
 /** page_id → file path, for the copy folders the hits name. A folder that is missing or unreadable adds nothing. */
 async function copyPaths(hits: readonly MemorySearchHit[], root: string): Promise<Map<string, string>> {
-  const folders = new Set(hits.flatMap((hit) => (COPY_DIRS[hit.scope] && TYPE_FOLDERS[hit.type] ? [join(root, COPY_DIRS[hit.scope]!, TYPE_FOLDERS[hit.type]!)] : [])))
+  const known = (hit: MemorySearchHit) => Object.hasOwn(COPY_DIRS, hit.scope) && Object.hasOwn(TYPE_FOLDERS, hit.type)
+  const folders = new Set(hits.filter(known).map((hit) => join(root, COPY_DIRS[hit.scope]!, TYPE_FOLDERS[hit.type]!)))
   const paths = new Map<string, string>()
   for (const folder of folders) {
     const names = await readdir(folder).catch(() => [] as string[])
     for (const name of names.filter((entry) => entry.endsWith('.md'))) {
-      const text = await readFile(join(folder, name), 'utf8').catch(() => '')
       // The header line render.ts writes: `page_id: "<uuid>"`.
-      const id = /^page_id: "([^"\n]+)"$/m.exec(text.slice(0, 4096))?.[1]
+      const id = /^page_id: "([^"\n]+)"$/m.exec(await fileHead(join(folder, name)))?.[1]
       if (id) paths.set(id, join(folder, name))
     }
   }
   return paths
+}
+
+/**
+ * The first 4 KiB of a regular file, else ''. The agent can unlock and edit the
+ * copy: a link is not followed, and a FIFO or device is not read.
+ */
+async function fileHead(path: string): Promise<string> {
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK).catch(() => null)
+  if (!file) return ''
+  try {
+    if (!(await file.stat()).isFile()) return ''
+    const buffer = Buffer.alloc(4096)
+    const { bytesRead } = await file.read(buffer, 0, buffer.length, 0)
+    return buffer.subarray(0, bytesRead).toString('utf8')
+  } catch {
+    return ''
+  } finally {
+    await file.close()
+  }
 }
 
 const oneLine = (text: string | null | undefined) => (text ?? '').replace(/\s+/g, ' ').trim()
@@ -117,7 +137,7 @@ export default {
       json = JSON.parse(text)
     } catch {}
     if (response.status >= 400 && response.status < 500) {
-      return `Error: ${json?.code ?? response.status}: ${json?.error ?? json?.message ?? (text.trim() || response.statusText)}`
+      return `Error: ${json?.code ?? response.status}: ${String(json?.error ?? json?.message ?? (text.trim() || response.statusText)).slice(0, 500)}`
     }
     if (!response.ok || !Array.isArray(json?.hits)) throw new Error(`memory search is unavailable (${response.status}): ${text.slice(0, 500)}`)
     return formatHits(params.get('q')!, json.hits as MemorySearchHit[])

@@ -3,6 +3,8 @@ import type { HarnessForwardInput } from '@/harness/contract/proxy'
 import { createOpenCodeDiagnosticsService } from '@/harness/open-code/diagnostics'
 import { configureRuntimeState, resetRuntimeStateForTests } from '@/harness/open-code/runtime-state-projection'
 import { createOpenCodeTurnService, observeSteerRead, opencodeSupportsSteer, resetSteerWitnessForTests } from '@/harness/open-code/turns'
+import type { HarnessTurnService, RuntimePromptInput } from '@/harness/contract/turns'
+import { KORTIX_SERVICE_CALL_HEADER } from '@/lib/kortix-api/kortix-user-context'
 import { createRuntimeRouter, parseRuntimePromptBody } from '@/routes/kortix/runtime'
 
 /** A proxy forward that records the native request and answers from a script. */
@@ -243,6 +245,41 @@ describe('the turn system text on OpenCode (memory P2)', () => {
     await turns.prompt('ses_1', { parts, system: '## Memory\n- Q4 launch' })
     await turns.prompt('ses_1', { parts })
     expect(seen.map((call) => call.body)).toEqual([{ parts, system: '## Memory\n- Q4 launch' }, { parts }])
+  })
+
+  test("a steer carries the turn's system again, so the rest of the turn keeps it; a turn without one sends none", async () => {
+    const { proxy, seen } = fakeProxy((input) => (input.path === '/session/status' ? { status: 200, body: { ses_1: { type: 'busy' } } } : { status: 204, body: null }))
+    const turns = createOpenCodeTurnService(proxy, () => '/workspace', async () => '1.18.23')
+    const parts = [{ type: 'text', text: 'hi' }]
+    const posts = () => seen.filter((call) => call.method === 'POST').map((call) => call.body)
+    await turns.prompt('ses_1', { parts, system: 'LIST' })
+    await turns.steer('ses_1', { messageId: 'msg_s1', parts })
+    await turns.prompt('ses_1', { parts })
+    await turns.steer('ses_1', { messageId: 'msg_s2', parts })
+    expect(posts()).toEqual([
+      { parts, system: 'LIST' },
+      { messageID: 'msg_s1', parts, system: 'LIST' },
+      { parts },
+      { messageID: 'msg_s2', parts },
+    ])
+  })
+
+  test('the steer route drops a system field; the prompt route passes it on', async () => {
+    const seen: Array<[string, RuntimePromptInput]> = []
+    const record = (verb: string) => async (_id: string, input: RuntimePromptInput) => {
+      seen.push([verb, input])
+      return { status: 202, body: {} }
+    }
+    const turns = { prompt: record('prompt'), steer: record('steer') } as unknown as HarnessTurnService
+    const app = createRuntimeRouter({ sandboxToken: 'sandbox-token' } as Parameters<typeof createRuntimeRouter>[0], {} as Parameters<typeof createRuntimeRouter>[1], { turns })
+    const body = JSON.stringify({ message_id: 'msg_1', parts: [{ type: 'text', text: 'hi' }], system: 'LIST' })
+    const headers = { Authorization: 'Bearer sandbox-token', 'content-type': 'application/json', [KORTIX_SERVICE_CALL_HEADER]: '1' }
+    expect((await app.request('/sessions/ses_1/steer', { method: 'POST', headers, body })).status).toBe(202)
+    expect((await app.request('/sessions/ses_1/prompt', { method: 'POST', headers, body })).status).toBe(202)
+    expect(seen.map(([verb, input]) => [verb, input.system])).toEqual([
+      ['steer', undefined],
+      ['prompt', 'LIST'],
+    ])
   })
 })
 
