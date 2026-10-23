@@ -118,6 +118,20 @@ describe('a deleted session on day 30', () => {
     expect(Object.keys(await metadataOf(RACE)).sort()).toEqual(['branch_gc', 'deletedAt', 'deletedBy']);
   });
 
+  test('a branch whose delete fails waits a day, so it cannot hold the batch', async () => {
+    const BROKEN_PROJECT = crypto.randomUUID();
+    const BROKEN = crypto.randomUUID();
+    await db.insert(projects).values({ projectId: BROKEN_PROJECT, accountId: ACCOUNT, name: 'day-30-broken', repoUrl: join(root, 'missing.git'), defaultBranch: 'main' });
+    await db.insert(projectSessions).values({
+      sessionId: BROKEN, accountId: ACCOUNT, projectId: BROKEN_PROJECT, branchName: `session/${BROKEN}`, createdBy: USER, status: 'stopped',
+      metadata: { deletedAt: new Date(NOW.getTime() - 30 * DAY).toISOString(), deletedBy: USER },
+    });
+    expect(await sweepExpiredSessionBranches(NOW)).toMatchObject({ candidates: 1, errors: 1 });
+    expect((await metadataOf(BROKEN)).branch_gc).toEqual({ failed_at: NOW.toISOString() });
+    expect(await sweepExpiredSessionBranches(new Date(NOW.getTime() + DAY - 1))).toMatchObject({ candidates: 0 });
+    expect(await sweepExpiredSessionBranches(new Date(NOW.getTime() + DAY + 1))).toMatchObject({ candidates: 1, errors: 1 });
+  });
+
   test('a restore answers 410 session_purged', async () => {
     expect(await restoreSession({ projectId: PROJECT, sessionId: PURGE_FIRST, accountId: ACCOUNT, now: NOW })).toMatchObject({
       status: 410,

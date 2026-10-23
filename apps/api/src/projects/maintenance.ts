@@ -196,6 +196,9 @@ export async function selectExpiredSessionBranches(now: Date) {
         // hasOpenPullRequestMarker. The in-loop guards below stay as
         // defense-in-depth for a marker written AFTER selection.
         sql`(${projectSessions.metadata}->'branch_gc'->>'deleted_at') IS NULL`,
+        // A failed delete waits a day, so it cannot hold the batch every sweep.
+        sql`coalesce((${projectSessions.metadata}->'branch_gc'->>'failed_at')::timestamptz, '-infinity')
+          < ${new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString()}::timestamptz`,
         sql`NOT (
           COALESCE(${projectSessions.metadata}->>'open_pr', 'false') = 'true'
           OR COALESCE(${projectSessions.metadata}->>'has_open_pr', 'false') = 'true'
@@ -262,6 +265,16 @@ export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
     } catch (err) {
       errors += 1;
       console.error(`[project-maintenance] Failed to GC branch ${row.branchName}:`, err);
+      // Without a mark, a row that always fails heads every batch and starves the rest.
+      await db
+        .update(projectSessions)
+        .set({
+          metadata: sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || ${JSON.stringify({
+            branch_gc: { failed_at: now.toISOString() },
+          })}::jsonb`,
+        })
+        .where(eq(projectSessions.sessionId, row.sessionId))
+        .catch(() => undefined);
     }
   }
 
