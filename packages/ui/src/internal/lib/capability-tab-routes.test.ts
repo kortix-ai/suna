@@ -128,6 +128,11 @@ describe('activeCapabilityTab', () => {
     expect(activeCapabilityTab('/projects/p1/customize/skills')).toBe('skills');
     expect(activeCapabilityTab('/projects/p1/customize/triggers')).toBe('triggers');
   });
+  test('tolerates a leading locale segment the host may not strip', () => {
+    expect(activeCapabilityTab('/en/projects/p1/customize/agents')).toBe('agent');
+    expect(activeCapabilityTab('/de/projects/p1/customize/connectors/resend')).toBe('connectors');
+    expect(activeCapabilityTab('/en/projects/p1/customize/agents/churn')).toBe('agent');
+  });
   test('ignores a trailing slash', () => {
     expect(activeCapabilityTab('/projects/p1/customize/skills/')).toBe('skills');
     expect(activeCapabilityTab('/projects/p1/customize/agents/')).toBe('agent');

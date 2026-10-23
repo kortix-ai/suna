@@ -217,7 +217,14 @@ export function channelsHref(projectId: string): string {
  * `agent`, never on the last one.
  */
 export function activeCapabilityTab(pathname: string): CapabilityTab['key'] | null {
-  const segments = pathname.split('/').filter(Boolean);
+  const all = pathname.split('/').filter(Boolean);
+  // Tolerate a leading locale segment (`/en/projects/…`): anchor on `projects`
+  // wherever it sits, so the match works whether the host strips the locale or
+  // not. A project id is never the literal `projects`, so the first hit is the
+  // route segment.
+  const start = all.indexOf('projects');
+  if (start === -1) return null;
+  const segments = all.slice(start);
   if (segments[0] !== 'projects' || segments[2] !== 'customize') return null;
   if (segments.length === 5 && segments[3] === CAPABILITY_SEGMENT.agent) return 'agent';
   // An app's page (`/connectors/<app>`) and a connector's page

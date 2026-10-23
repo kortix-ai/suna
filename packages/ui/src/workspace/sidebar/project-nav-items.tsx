@@ -5,7 +5,13 @@ import { ProjectGoalsNavItem } from './footer/project-goals-nav';
 import { ProjectArtifactsNavItem } from './footer/project-artifacts-nav';
 import { ProjectRoomsNavItem } from './footer/project-rooms-nav';
 import { ProjectFilesNavItem } from './footer/project-files-nav';
-import { ProjectCustomizeNavItem } from '../../internal/layout/project-settings-nav';
+import {
+  CustomizeGlyph,
+  useCapabilityAccess,
+} from '../../internal/layout/project-settings-nav';
+import { ProjectCapabilityNav } from '../../internal/layout/project-capability-nav';
+import { useUiPathname } from '../../providers/ui-provider';
+import { cn } from '../../lib/utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,7 +30,7 @@ import {
   useSidebarNavStore,
   type SidebarNavEntry,
 } from '../../internal/stores/sidebar-nav-store';
-import { DotsThreeOutlineIcon } from '@phosphor-icons/react';
+import { CaretRightIcon, DotsThreeOutlineIcon } from '@phosphor-icons/react';
 import { UiLink as Link } from '../../providers/ui-provider';
 import { useEffect, useRef, useState, useSyncExternalStore, type PointerEvent } from 'react';
 
@@ -160,11 +166,60 @@ function MoreNavItem({
   );
 }
 
+/**
+ * Customize — one collapsible parent that holds every capability point (Agents,
+ * Skills, Connectors, Triggers, Reminders, Models, Secrets, Repo, Review,
+ * Settings) as nested sub-rows, so the config surfaces live under one row
+ * instead of a scatter of standalone menu items. Clicking the row toggles the
+ * submenu; the sub-rows navigate. The submenu auto-opens while you are on a
+ * capability page so the active point is always visible. Absent when the caller
+ * may open no capability page (same gate as the tab bar).
+ */
+function CustomizeNavEntry({ projectId }: { projectId: string }) {
+  const t = useTranslations('sidebar');
+  const pathname = useUiPathname();
+  const access = useCapabilityAccess(projectId);
+  const storeOpen = useSidebarNavStore((s) => s.customizeOpen);
+  const setCustomizeOpen = useSidebarNavStore((s) => s.setCustomizeOpen);
+  // Auto-open while anywhere under Customize, so the active point is always
+  // visible; the toggle controls it everywhere else. `includes` tolerates the
+  // locale prefix the host may or may not strip.
+  const onCapabilityPage = !!pathname && pathname.includes('/customize');
+  const open = storeOpen || onCapabilityPage;
+
+  if (!access.settled || access.tabs.length === 0) return null;
+
+  return (
+    <>
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          onClick={() => setCustomizeOpen(!open)}
+          aria-expanded={open}
+          className="group/menu-button text-sidebar-foreground"
+        >
+          <span className="shrink-0">
+            <CustomizeGlyph />
+          </span>
+          <span className="truncate">{t('customize')}</span>
+          <CaretRightIcon
+            weight="bold"
+            className={cn(
+              'text-muted-foreground ml-auto size-3.5 shrink-0 transition-transform',
+              open && 'rotate-90',
+            )}
+          />
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+      {open ? <ProjectCapabilityNav projectId={projectId} /> : null}
+    </>
+  );
+}
+
 function NavItem({ entry, projectId }: { entry: SidebarNavEntry; projectId: string }) {
   if (entry.visibility === 'never') return null;
   switch (entry.id) {
     case 'customize':
-      return <ProjectCustomizeNavItem projectId={projectId} />;
+      return <CustomizeNavEntry projectId={projectId} />;
     case 'apps':
       return <ProjectAppsNavItem projectId={projectId} />;
     case 'files':

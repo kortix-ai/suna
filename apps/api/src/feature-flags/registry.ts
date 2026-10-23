@@ -384,8 +384,10 @@ const FLAGS: readonly FeatureFlagDef[] = [
     stability: 'experimental',
     // Every volume is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
-    // Explicit opt-in. A project with `goals` needs it on.
-    platformDefault: () => false,
+    // On by default wherever Platinum is configured (Marko, 2026-10-24): Drive
+    // is the project's shared Files surface, so a new project gets it without a
+    // toggle. A project can still turn it off explicitly.
+    platformDefault: () => Boolean(config.PLATINUM_API_KEY),
     enforcement: 'behavioral',
     enforcementNote:
       'BEHAVIORAL only, through the flag derived from it: drives (Files routes and ' +
