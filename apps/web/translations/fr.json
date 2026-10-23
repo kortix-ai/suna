@@ -22570,7 +22570,9 @@
           "one": "Notre lancement est le 12 nov.",
           "two": "Priya valide tous les textes du lancement",
           "three": "Écrire simplement, sans exagération"
-        }
+        },
+        "titleCompany": "Rien dans la mémoire de l’entreprise pour l’instant",
+        "descriptionCompany": "Les agents enregistrent ce sur quoi tout le projet s’accorde, pour que chaque nouveau fil de chaque canal commence avec. Chaque fait renvoie au fil d’origine ; modifiez ou annulez n’importe quel changement."
       },
       "source": {
         "thread": "Ouvrir le fil « {label} »",
@@ -22612,6 +22614,18 @@
       },
       "palette": {
         "heading": "Mémoire"
+      },
+      "company": {
+        "subtitle": "Ce que sait chaque agent de ce projet.",
+        "gateDescription": "La mémoire de l’entreprise fait partie des canaux : chaque agent de ce projet commence chaque fil avec ce que l’équipe a enregistré ici.",
+        "title": "Mémoire",
+        "place": "Entreprise"
+      },
+      "rememberThis": {
+        "label": "Mémoriser",
+        "saved": "Enregistré dans la mémoire",
+        "saveTo": "Enregistrer dans",
+        "dm": "Votre mémoire avec {agent}"
       }
     },
     "create": {

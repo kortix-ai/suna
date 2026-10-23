@@ -3,7 +3,7 @@
 import type { SessionMemoryUsage } from '@kortix/sdk';
 import { useProjectMemoryPages, useSessionMemoryUsage } from '@kortix/sdk/react';
 import { CaretRightIcon, SunDimIcon } from '@phosphor-icons/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { useLocale, useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
@@ -78,6 +78,7 @@ export function UsedMemoryChip({
 /**
  * One layer's pages. A page deleted since the thread started is shown as
  * removed, read from the layer's live list (the one the Memory tab shares).
+ * No page request per row: a deleted page never reaches a 404.
  */
 function UsedLayer({
   projectId,
@@ -94,6 +95,12 @@ function UsedLayer({
 }) {
   const t = useTranslations('spaces.memory.used');
   const live = useProjectMemoryPages(projectId, layer.layer_key, { enabled: open });
+  // Mounted when the popover opens: read the live list again, so a page
+  // deleted since the last read shows as removed, not as a link.
+  const { refetch } = live;
+  useEffect(() => {
+    void refetch();
+  }, [refetch]);
   const href = useMemoryPageHref(projectId, open);
   return (
     <section className="flex flex-col pt-1.5">

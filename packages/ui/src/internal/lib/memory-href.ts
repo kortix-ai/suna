@@ -14,10 +14,10 @@ export interface MemoryLayerRef {
 }
 
 /**
- * Where a memory page opens: its channel's or DM's Memory tab with `?page=`
- * (`&history=1` opens its History too). A channel or DM the reader is on keeps
- * its other params, so an open thread stays beside the tab. Null when the
- * layer has no page here yet (a Company page, or a space not loaded).
+ * Where a memory page opens: the Company Memory page, or its channel's or DM's
+ * Memory tab, with `?page=` (`&history=1` opens its History too). A channel or
+ * DM the reader is on keeps its other params, so an open thread stays beside
+ * the tab. Null when the host serves no such page or the space is not loaded.
  */
 export function useMemoryPageHref(
   projectId: string | null | undefined,
@@ -27,7 +27,14 @@ export function useMemoryPageHref(
   const searchParams = useUiSearchParams();
   const spaces = useProjectSpaces(projectId, { enabled }).data;
   return useCallback((layer, pageId, options) => {
-    if (!projectId || layer.scope === 'company') return null;
+    if (!projectId) return null;
+    if (layer.scope === 'company') {
+      const memory = uiRoutes().memory(projectId);
+      if (!memory) return null;
+      const params = new URLSearchParams({ page: pageId });
+      if (options?.history) params.set('history', '1');
+      return `${memory}?${params.toString()}`;
+    }
     const space = spaces?.find((candidate) => candidate.space_id === layer.key);
     let path: string | null = null;
     if (space?.kind === 'channel' && space.slug) path = uiRoutes().channel(projectId, space.slug);

@@ -128,7 +128,7 @@ export function MemoryView({ projectId, layerKey, place }: MemoryViewProps) {
   }
 
   const canWrite = layer.data.can_write && !layer.data.read_only;
-  const kind = layer.data.scope === 'dm' ? 'dm' : 'channel';
+  const kind = layer.data.scope;
   const rememberBar = canWrite ? (
     <RememberBar
       projectId={projectId}

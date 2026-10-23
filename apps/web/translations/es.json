@@ -22570,7 +22570,9 @@
           "one": "Nuestro lanzamiento es el 12 de nov.",
           "two": "Priya aprueba todos los textos del lanzamiento",
           "three": "Escribe con palabras sencillas, sin exageraciones"
-        }
+        },
+        "titleCompany": "Todavía no hay nada en la memoria de la empresa",
+        "descriptionCompany": "Los agentes guardan lo que acuerda todo el proyecto, para que cada hilo nuevo de cada canal empiece con ello. Cada dato enlaza al hilo del que viene; edita o deshaz cualquier cambio."
       },
       "source": {
         "thread": "Abrir el hilo «{label}»",
@@ -22612,6 +22614,18 @@
       },
       "palette": {
         "heading": "Memoria"
+      },
+      "company": {
+        "subtitle": "Lo que sabe cada agente de este proyecto.",
+        "gateDescription": "La memoria de la empresa viene con Canales: cada agente de este proyecto empieza cada hilo con lo que el equipo guardó aquí.",
+        "title": "Memoria",
+        "place": "Empresa"
+      },
+      "rememberThis": {
+        "label": "Recordar esto",
+        "saved": "Guardado en la memoria",
+        "saveTo": "Guardar en",
+        "dm": "Tu memoria con {agent}"
       }
     },
     "create": {

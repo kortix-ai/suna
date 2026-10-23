@@ -22570,7 +22570,9 @@
           "one": "Nosso lançamento é em 12 de nov.",
           "two": "Priya aprova todos os textos do lançamento",
           "three": "Escreva com palavras simples, sem exagero"
-        }
+        },
+        "titleCompany": "Ainda não há nada na memória da empresa",
+        "descriptionCompany": "Os agentes salvam o que todo o projeto combina, para que cada nova thread de cada canal comece com isso. Cada fato leva à thread de origem; edite ou desfaça qualquer alteração."
       },
       "source": {
         "thread": "Abrir o tópico “{label}”",
@@ -22612,6 +22614,18 @@
       },
       "palette": {
         "heading": "Memória"
+      },
+      "company": {
+        "subtitle": "O que todo agente deste projeto sabe.",
+        "gateDescription": "A memória da empresa vem com os canais: todo agente deste projeto começa cada thread com o que a equipe salvou aqui.",
+        "title": "Memória",
+        "place": "Empresa"
+      },
+      "rememberThis": {
+        "label": "Lembrar isto",
+        "saved": "Salvo na memória",
+        "saveTo": "Salvar em",
+        "dm": "Sua memória com {agent}"
       }
     },
     "create": {

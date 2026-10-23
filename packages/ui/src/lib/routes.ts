@@ -39,6 +39,8 @@ export interface UiRoutes {
   channel: (projectId: string, slug: string) => string;
   /** The caller's direct messages with one agent, by agent name (`project_channels` flag). */
   dm: (projectId: string, agentName: string) => string;
+  /** The project's Company memory (`project_channels` flag); a page is `?page=<page_id>`. */
+  memory: (projectId: string) => string | null;
 }
 
 const DEFAULT_ROUTES = {
@@ -55,6 +57,7 @@ const DEFAULT_ROUTES = {
   customize: (p: string, path?: string) => `/projects/${p}/customize${path ? `/${path}` : ''}`,
   channel: (p: string, slug: string) => `/projects/${p}/c/${slug}`,
   dm: (p: string, agentName: string) => `/projects/${p}/dm/${encodeURIComponent(agentName)}`,
+  memory: (p: string) => `/projects/${p}/memory`,
 };
 
 export const defaultUiRoutes: UiRoutes = DEFAULT_ROUTES;

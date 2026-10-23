@@ -22570,7 +22570,9 @@
           "one": "Unser Launch ist am 12. Nov.",
           "two": "Priya gibt alle Launch-Texte frei",
           "three": "Schreib in einfachen Worten, ohne Hype"
-        }
+        },
+        "titleCompany": "Noch nichts im Unternehmensspeicher",
+        "descriptionCompany": "Agenten sichern, worauf sich das ganze Projekt einigt, damit jeder neue Thread in jedem Channel damit beginnt. Jede Angabe verweist auf den Thread, aus dem sie stammt; jede Änderung lässt sich bearbeiten oder rückgängig machen."
       },
       "source": {
         "thread": "Thread „{label}“ öffnen",
@@ -22612,6 +22614,18 @@
       },
       "palette": {
         "heading": "Speicher"
+      },
+      "company": {
+        "subtitle": "Was jeder Agent in diesem Projekt weiß.",
+        "gateDescription": "Der Unternehmensspeicher gehört zu Channels: Jeder Agent in diesem Projekt beginnt jeden Thread mit dem, was das Team hier gesichert hat.",
+        "title": "Speicher",
+        "place": "Unternehmen"
+      },
+      "rememberThis": {
+        "label": "Merken",
+        "saved": "Im Speicher gesichert",
+        "saveTo": "Sichern in",
+        "dm": "Dein Speicher mit {agent}"
       }
     },
     "create": {

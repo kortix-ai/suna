@@ -16,7 +16,7 @@ export function MemoryEmpty({
   place,
   onTry,
 }: {
-  kind: 'channel' | 'dm';
+  kind: 'company' | 'channel' | 'dm';
   place: string;
   onTry?: (text: string) => void;
 }) {
@@ -25,10 +25,10 @@ export function MemoryEmpty({
     <div className="flex min-h-0 flex-1 flex-col justify-center gap-7 overflow-y-auto px-6 py-10 @2xl/memory:px-16">
       <div className="flex max-w-xl flex-col gap-2.5">
         <h2 className="text-2xl font-semibold tracking-tight text-balance">
-          {t(kind === 'dm' ? 'empty.titleDm' : 'empty.title', { place })}
+          {t(kind === 'dm' ? 'empty.titleDm' : kind === 'company' ? 'empty.titleCompany' : 'empty.title', { place })}
         </h2>
         <p className="text-muted-foreground text-base leading-relaxed text-pretty">
-          {t(kind === 'dm' ? 'empty.descriptionDm' : 'empty.description', { place })}
+          {t(kind === 'dm' ? 'empty.descriptionDm' : kind === 'company' ? 'empty.descriptionCompany' : 'empty.description', { place })}
         </p>
       </div>
       <ul className="flex max-w-xl flex-col border-t">

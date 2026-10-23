@@ -22570,7 +22570,9 @@
           "one": "Il nostro lancio è il 12 nov.",
           "two": "Priya approva tutti i testi del lancio",
           "three": "Scrivi in parole semplici, senza enfasi"
-        }
+        },
+        "titleCompany": "Ancora niente nella memoria aziendale",
+        "descriptionCompany": "Gli agenti salvano ciò su cui tutto il progetto concorda, così ogni nuovo thread di ogni canale parte da lì. Ogni fatto rimanda al thread da cui proviene; modifica o annulla qualsiasi cambiamento."
       },
       "source": {
         "thread": "Apri il thread “{label}”",
@@ -22612,6 +22614,18 @@
       },
       "palette": {
         "heading": "Memoria"
+      },
+      "company": {
+        "subtitle": "Ciò che sa ogni agente di questo progetto.",
+        "gateDescription": "La memoria aziendale fa parte dei canali: ogni agente di questo progetto inizia ogni thread con ciò che il team ha salvato qui.",
+        "title": "Memoria",
+        "place": "Azienda"
+      },
+      "rememberThis": {
+        "label": "Ricorda questo",
+        "saved": "Salvato nella memoria",
+        "saveTo": "Salva in",
+        "dm": "La tua memoria con {agent}"
       }
     },
     "create": {

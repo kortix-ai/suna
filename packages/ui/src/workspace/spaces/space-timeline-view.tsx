@@ -29,6 +29,7 @@ import { UserAvatar } from '../../primitives/user-avatar';
 import { sessionDisplayLabel, sessionDisplayStatus } from '../../session/actions/session-label';
 import { participantLabel } from '../../session/participants/session-participants';
 import { MESSAGE_TEXT_CLASS, MessageRow } from '../../session/turn/message-row';
+import { RememberThisButton } from '../memory/remember-this';
 import { SessionStatusMark } from '../sidebar/session-status-mark';
 import {
   agentLabel,
@@ -269,7 +270,12 @@ function ThreadRow({
         gutter: gutterTime(created, locale),
         title: created.toLocaleString(locale, { dateStyle: 'full', timeStyle: 'short' }),
       }}
-      toolbar={<ThreadToolbar sessionId={session.session_id} onOpen={onOpen} />}
+      toolbar={
+        <>
+          <ThreadToolbar sessionId={session.session_id} onOpen={onOpen} />
+          <RememberThisButton session={session} space={space} />
+        </>
+      }
     >
       <p className={cn(MESSAGE_TEXT_CLASS, 'text-pretty whitespace-pre-wrap wrap-anywhere')}>
         {threadMessageText(session)}

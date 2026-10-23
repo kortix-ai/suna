@@ -7403,7 +7403,9 @@ const catalog = {
           "one": "Our launch date is Nov 12",
           "two": "Priya approves all launch copy",
           "three": "Write in plain words, no hype"
-        }
+        },
+        "titleCompany": "Nothing in Company memory yet",
+        "descriptionCompany": "Agents save what the whole project agrees on, so every new thread in every channel starts with it. Each fact links to the thread it came from; edit or undo any change."
       },
       "source": {
         "thread": "Open the thread “{label}”",
@@ -7445,6 +7447,18 @@ const catalog = {
       },
       "palette": {
         "heading": "Memory"
+      },
+      "company": {
+        "subtitle": "What every agent in this project knows.",
+        "gateDescription": "Company memory comes with Channels: every agent in this project starts each thread with what the team saved here.",
+        "title": "Memory",
+        "place": "Company"
+      },
+      "rememberThis": {
+        "label": "Remember this",
+        "saved": "Saved to memory",
+        "saveTo": "Save to",
+        "dm": "Your memory with {agent}"
       }
     },
     "create": {
