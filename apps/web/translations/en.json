@@ -22597,6 +22597,7 @@
     "removeHint": "It leaves Artifacts and its links stop working. Its files stay in Files.",
     "removed": "No longer shared",
     "mediaSingleFile": "Images and videos need a doc in its own folder. Publish the doc as a folder to add media.",
-    "mediaTooLarge": "This file is larger than 16 MB."
+    "mediaTooLarge": "This file is larger than 16 MB.",
+    "refresh": "Refresh"
   }
 }

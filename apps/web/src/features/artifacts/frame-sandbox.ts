@@ -7,3 +7,11 @@ export const ARTIFACT_IFRAME_SANDBOX = 'allow-scripts allow-same-origin allow-fo
 
 /** Features an embedded player in the page may use. */
 export const ARTIFACT_FRAME_ALLOW = 'fullscreen; clipboard-write; autoplay; encrypted-media; picture-in-picture';
+
+/** Artifact frames share the Apps frame pool (`@kortix/ui/apps`); their keys start with this. */
+export const ARTIFACT_FRAME_PREFIX = 'artifact:';
+
+/** One pooled frame per artifact state: a save (`updated_at`) or an old version gets its own. */
+export function artifactFrameKey(artifact: { artifact_id: string; updated_at: string }, version?: string | null): string {
+  return `${ARTIFACT_FRAME_PREFIX}${artifact.artifact_id}:${version ?? artifact.updated_at}`;
+}

@@ -32,6 +32,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
+import { artifactFrameKey } from './frame-sandbox';
+
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 import {
@@ -138,8 +140,7 @@ function ArtifactCard({ projectId, artifact }: { projectId: string; artifact: Ar
         <div className="bg-muted relative aspect-[16/10] overflow-hidden border-b">
           {artifact.view_url ? (
             <ArtifactFrame
-              // The view URL is stable: a new key reloads the preview only after an edit.
-              key={artifact.updated_at}
+              frameKey={artifactFrameKey(artifact)}
               preview
               src={artifact.view_url}
               title={artifact.title}

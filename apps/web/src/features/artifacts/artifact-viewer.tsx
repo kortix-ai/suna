@@ -18,7 +18,9 @@ import { Skeleton } from '@kortix/ui/skeleton';
 import { Textarea } from '@kortix/ui/textarea';
 import { successToast } from '@kortix/ui/toast';
 import { SidebarToggle } from '@kortix/ui/workspace';
+import { reloadFrame } from '@kortix/ui/apps';
 import {
+  ArrowClockwiseIcon,
   ArrowCounterClockwiseIcon,
   ArrowLeftIcon,
   ArrowSquareOutIcon,
@@ -42,6 +44,7 @@ import { drivePathToParam } from '@/features/drives/drive-path-param';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 import { ARTIFACT_TYPE_ICON, ArtifactFrame, VISIBILITY_ICON, relativeTime } from './artifact-meta';
+import { artifactFrameKey } from './frame-sandbox';
 import { DocEditor, type DocSaveStatus } from './doc-editor';
 import { ShareArtifactDialog } from './share-artifact-dialog';
 
@@ -84,7 +87,7 @@ export function ArtifactViewer({ projectId, artifactId }: { projectId: string; a
   const query = useArtifact(projectId, artifactId, version);
   const artifact = query.data;
   const mutations = useArtifactMutations(projectId);
-  const frame = useRef<HTMLIFrameElement>(null);
+  const frame = useRef<HTMLDivElement>(null);
   const [docStatus, setDocStatus] = useState<DocSaveStatus>('saved');
   const [sharing, setSharing] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -94,6 +97,7 @@ export function ArtifactViewer({ projectId, artifactId }: { projectId: string; a
   const versions = useArtifactVersions(projectId, artifactId, historyOpen);
   const viewUrl = artifact?.version.view_url;
   const viewingOld = !!artifact?.version.id;
+  const frameKey = artifact ? artifactFrameKey(artifact, artifact.version.id) : null;
   const canEdit = !!artifact?.can_edit && !viewingOld;
   const isDoc = artifact?.type === 'doc';
 
@@ -234,6 +238,11 @@ export function ArtifactViewer({ projectId, artifactId }: { projectId: string; a
                     <CornersOutIcon /> {t('fullScreen')}
                   </DropdownMenuItem>
                 )}
+                {!isDoc && viewUrl && frameKey ? (
+                  <DropdownMenuItem onSelect={() => reloadFrame(frameKey, viewUrl)}>
+                    <ArrowClockwiseIcon /> {t('refresh')}
+                  </DropdownMenuItem>
+                ) : null}
                 <DropdownMenuItem onSelect={() => window.open(artifact.version.view_url, '_blank', 'noopener')}>
                   <ArrowSquareOutIcon /> {t('openNewTab')}
                 </DropdownMenuItem>
@@ -303,7 +312,7 @@ export function ArtifactViewer({ projectId, artifactId }: { projectId: string; a
         ) : (
           <div className="bg-muted relative min-w-0 flex-1">
             {viewUrl ? (
-              <ArtifactFrame ref={frame} key={`${viewUrl}${artifact.entry_version}`} src={viewUrl} title={artifact.title} className="absolute inset-0 size-full border-0" />
+              <ArtifactFrame ref={frame} frameKey={frameKey!} src={viewUrl} title={artifact.title} className="absolute inset-0 size-full border-0" />
             ) : null}
           </div>
         )}

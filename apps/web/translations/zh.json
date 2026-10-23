@@ -22597,6 +22597,7 @@
     "removeHint": "它将从“工件”中移除，其链接将失效。其文件仍保留在“文件”中。",
     "removed": "已停止分享",
     "mediaSingleFile": "图片和视频需要文档位于单独的文件夹中。请将文档发布为文件夹以添加媒体。",
-    "mediaTooLarge": "此文件超过 16 MB。"
+    "mediaTooLarge": "此文件超过 16 MB。",
+    "refresh": "刷新"
   }
 }

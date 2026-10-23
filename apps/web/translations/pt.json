@@ -22597,6 +22597,7 @@
     "removeHint": "Ele sai de Artefatos e seus links deixam de funcionar. Os arquivos continuam em Arquivos.",
     "removed": "Não é mais compartilhado",
     "mediaSingleFile": "Imagens e vídeos precisam de um documento na sua própria pasta. Publique o documento como pasta para adicionar mídia.",
-    "mediaTooLarge": "Este arquivo tem mais de 16 MB."
+    "mediaTooLarge": "Este arquivo tem mais de 16 MB.",
+    "refresh": "Recarregar"
   }
 }

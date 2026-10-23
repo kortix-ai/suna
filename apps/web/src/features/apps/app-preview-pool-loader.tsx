@@ -8,6 +8,8 @@ import type { App } from '@kortix/sdk';
 import { useAppAccess, useProjectApps } from '@kortix/sdk/react';
 import { useEffect, useState } from 'react';
 
+import { ARTIFACT_FRAME_PREFIX } from '@/features/artifacts/frame-sandbox';
+
 import {
   ensureFrame,
   frameKey,
@@ -62,7 +64,7 @@ export function AppPreviewPoolLoader({ projectId }: { projectId: string }) {
 
   // A new release or a deleted App drops its old frame; leaving the project drops all.
   useEffect(() => {
-    if (apps.data) pruneFrames(new Set(apps.data.map(frameKey)));
+    if (apps.data) pruneFrames(new Set(apps.data.map(frameKey)), (key) => !key.startsWith(ARTIFACT_FRAME_PREFIX));
   }, [apps.data]);
   // Only another project drops them all: the shell can remount this loader
   // while it settles, and that must not throw away a loaded App.
