@@ -89,4 +89,26 @@ describe('extractMessageLinks', () => {
     expect(performance.now() - started).toBeLessThan(50);
     expect(MESSAGE_SCAN_MAX).toBe(65_536);
   });
+
+  for (const [name, text] of [
+    ['64 KB of unclosed "<reply_context"', '<reply_context'.repeat(4682) + ' https://a.com/x'],
+    ['64 KB of unclosed "<reply_context>"', '<reply_context>'.repeat(4369)],
+    ['64 KB of openers alternating with a closer at the end', '<reply_context> <reply_context '.repeat(2100) + '</reply_context> https://a.com/after'],
+  ] as const) {
+    test(`reply-context stripping on ${name} finishes in under 50 ms`, () => {
+      const started = performance.now();
+      extractMessageLinks(text);
+      expect(performance.now() - started).toBeLessThan(50);
+    });
+  }
+
+  test('an unclosed reply quote drops the rest; several quotes each drop out', () => {
+    expect(extractMessageLinks('mine https://me.com/a <reply_context>quoted https://agent.com/x')).toEqual(['https://me.com/a']);
+    expect(
+      extractMessageLinks(
+        '<reply_context>https://q.com/1</reply_context> https://me.com/b <reply_context id="2">https://q.com/2</reply_context> https://me.com/c',
+      ),
+    ).toEqual(['https://me.com/b', 'https://me.com/c']);
+    expect(extractMessageLinks('<reply_contexts> https://me.com/d')).toEqual(['https://me.com/d']);
+  });
 });

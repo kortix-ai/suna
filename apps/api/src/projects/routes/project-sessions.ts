@@ -343,25 +343,24 @@ export function registerProjectSessionsRoutes(): void {
         202,
       );
     }
-    // The thread's first message: a person's links join its channel's Links tab
-    // (once: an idempotency-key replay returns the same session, `deduped`).
+    const canManageProject = await callerHasManagerStanding(loaded, callerKortixSessionId(c));
+    // The thread's first message: a person's links join its channel's Links tab.
+    // Once: a retry with the same idempotency key (`deduped`, also while the first
+    // create still runs) collects nothing. Started after every await, right before
+    // the response.
     const pendingText = (body.pending_prompt as { text?: unknown } | undefined)?.text;
-    if (result.status !== 'deduped') collectMessageLinksInBackground({
-      projectId,
-      sessionId: result.row.sessionId,
-      spaceId: result.row.spaceId,
-      visibility: result.row.visibility,
-      userId: personUserId(c, loaded),
-      text: typeof pendingText === 'string' ? pendingText : (normalizeString(body.initial_prompt ?? body.initialPrompt) ?? ''),
-      projectMetadata: loaded.row.metadata,
-    });
-    return c.json(
-        serializeSession(result.row, {
-        viewerId: loaded.userId,
-        canManageProject: await callerHasManagerStanding(loaded, callerKortixSessionId(c)),
-      }),
-      201,
-    );
+    if (!result.deduped) {
+      collectMessageLinksInBackground({
+        projectId,
+        sessionId: result.row.sessionId,
+        spaceId: result.row.spaceId,
+        visibility: result.row.visibility,
+        userId: personUserId(c, loaded),
+        text: typeof pendingText === 'string' ? pendingText : (normalizeString(body.initial_prompt ?? body.initialPrompt) ?? ''),
+        projectMetadata: loaded.row.metadata,
+      });
+    }
+    return c.json(serializeSession(result.row, { viewerId: loaded.userId, canManageProject }), 201);
   },
   // The KaaB contract (apps/web/content/docs/sdk/sessions.mdx) promises coded
   // 400s for the three structured create fields. Schema validation runs before
