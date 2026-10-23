@@ -8,7 +8,7 @@ import {
   useRemoveProjectSpaceLink,
 } from '@kortix/sdk/react';
 import { PushPinIcon, TrashIcon } from '@phosphor-icons/react';
-import { useId, useMemo, useState } from 'react';
+import { Fragment, useId, useMemo, useState } from 'react';
 
 import { useLocale, useTranslations } from '../../i18n';
 import { relativeTime } from '../../internal/lib/relative-time';
@@ -262,17 +262,19 @@ function LinkRow({
   const locale = useLocale();
   const host = linkHost(link.url);
   const thread = link.session_id ? threadTitles.get(link.session_id) : undefined;
+  // Who and when, joined by " · ". Only the thread part may truncate.
+  const threadPart = thread ? t(link.pinned ? 'links.fromThread' : 'links.inThread', { thread }) : '';
   let meta: string[];
   if (link.pinned) {
     const name = personName(link.pinned_by_name);
-    const when = thread
-      ? t('links.fromThread', { thread })
-      : new Date(link.pinned_at ?? link.created_at).toLocaleDateString(locale, { month: 'short', day: 'numeric' });
+    const when =
+      threadPart ||
+      new Date(link.pinned_at ?? link.created_at).toLocaleDateString(locale, { month: 'short', day: 'numeric' });
     meta = [name ? t('links.pinnedBy', { name }) : t('links.pinnedLabel'), when];
   } else {
     meta = [
       personName(link.created_by_name),
-      thread ? t('links.inThread', { thread }) : '',
+      threadPart,
       link.share_count > 1
         ? t('links.sharedTimes', { count: link.share_count })
         : relativeTime(link.last_shared_at, locale),
@@ -307,7 +309,15 @@ function LinkRow({
         </a>
         <p className="text-muted-foreground truncate text-xs">{host}</p>
       </div>
-      <p className="text-muted-foreground w-72 shrink-0 truncate text-xs max-sm:hidden">{meta.join(' · ')}</p>
+      {/* A long thread title truncates; the name and the time stay whole. */}
+      <p className="text-muted-foreground flex w-72 shrink-0 text-xs whitespace-pre max-sm:hidden">
+        {meta.map((part, i) => (
+          <Fragment key={i}>
+            {i > 0 ? <span className="shrink-0">{' · '}</span> : null}
+            <span className={part === threadPart ? 'min-w-0 truncate' : 'shrink-0'}>{part}</span>
+          </Fragment>
+        ))}
+      </p>
       <div className="relative z-10 flex w-20 shrink-0 items-center justify-end gap-1">
         {link.pinned ? (
           link.can_delete || !unpinRemoves(link) ? (
