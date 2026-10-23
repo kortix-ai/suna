@@ -31,7 +31,6 @@ import {
   useConfigureThread,
 } from '../use-configure-thread';
 import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
-import { Skeleton } from '../../primitives/skeleton';
 import { useProjectCan } from '../../internal/lib/use-project-can';
 import { cn } from '../../internal/lib/utils';
 import {
@@ -43,26 +42,19 @@ import {
 } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
-import {
-  CaretRightIcon,
-  MagnifyingGlassIcon,
-  RobotIcon,
-  StarIcon as StarSolid,
-} from '@phosphor-icons/react';
+import { MagnifyingGlassIcon, RobotIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { CapabilityPageShell } from '../shared/capability-page-shell';
 import { agentHref } from '../../internal/lib/capability-tab-routes';
 import { prefetchAgentConfig } from '../../internal/hooks/projects/use-agent-config';
-import { CatalogCard } from '../shared/catalog/catalog-card';
 import { catalogEmptyKind } from '../shared/catalog/catalog-empty';
 import { CatalogNoMatch } from '../shared/catalog/catalog-empty-state';
 import { CatalogGrid } from '../shared/catalog/catalog-grid';
-import {
-  DENSE_GRID_CLASSNAME,
-  DENSE_GRID_CONTAINER_CLASSNAME,
-} from '../shared/catalog/catalog-grid-tokens';
+import { GRID_CLASSNAME } from '../shared/catalog/catalog-grid-tokens';
 
+import { AgentMark } from '../../internal/components/agent-mark';
+import { AgentCoverCard } from './agent-cover-card';
 import { agentInMode, filterAgents } from './agent-filter';
 import { useSlashFocus } from '../../internal/hooks';
 
@@ -133,8 +125,8 @@ export function AgentsPage({ projectId }: { projectId: string }) {
     return counts;
   }, [triggersQuery.data, config]);
 
-  // Who is granted each agent — the card's "N people" fact. Same key the
-  // agent page's People section reads, manager-gated like it.
+  // Who is granted each agent. Same key the agent page's People section
+  // reads, manager-gated like it.
   const grantsQuery = useQuery({
     queryKey: qk.project.resourceGrants(projectId),
     queryFn: () => listProjectResourceGrants(projectId),
@@ -150,6 +142,14 @@ export function AgentsPage({ projectId }: { projectId: string }) {
     }
     return counts;
   }, [grantsQuery.data]);
+
+  const facts = (agent: Agent) => (
+    <AgentCardFacts
+      agent={agent}
+      triggerCount={triggerCounts.get(agent.name) ?? 0}
+      grantCount={grantCounts.get(agent.name) ?? 0}
+    />
+  );
 
   const agents = useMemo(() => toArray(config?.agents), [config]);
 
@@ -172,9 +172,6 @@ export function AgentsPage({ projectId }: { projectId: string }) {
     () => filtered.filter((agent) => !agentInMode(agent, 'primary')),
     [filtered],
   );
-  const subagentTotal = agents.filter((agent) => !agentInMode(agent, 'primary')).length;
-  const primaryTotal = agents.length - subagentTotal;
-
   // `null` = render the grid. Otherwise which "nothing to show" copy applies:
   // genuinely zero agents vs. agents exist but this filter/search hid all of
   // them. Telling the user "No agents yet" in the second case is false and
@@ -185,13 +182,13 @@ export function AgentsPage({ projectId }: { projectId: string }) {
   // title beside it and can be terse; the empty state is the whole screen and
   // has to name what it creates. Both start the same configure thread, so they
   // cannot drift apart.
-  // `size="sm"` is `h-8` — the same height as the search input beside it in the
-  // header group. The Button default is `h-9`, which left the pair 4px
-  // mismatched on a row that is centred, so both edges were off.
-  const createButton = (label: string) =>
+  // The header button is `h-9`, the height of the `size="sm"` search input
+  // beside it. The empty state keeps `sm` to match its `sm` docs link.
+  const createButton = (label: string, size?: 'sm') =>
     canWrite ? (
       <NewEntityMenu
         label={label}
+        size={size}
         pending={configure.pending}
         onChat={() => configure.start(newConfigPrompt('agent'))}
         manual={{
@@ -205,7 +202,16 @@ export function AgentsPage({ projectId }: { projectId: string }) {
     <CapabilityPageShell
       title={tI18nComplete.raw('text279b44d2ab4b')}
       description={tI18nComplete.raw('text636453e23d69')}
-      action={createButton('New')}
+      action={
+        // The default-agent selector sits in the header beside New: it is a
+        // page-level setting, not a filter on the list.
+        <>
+          {config ? (
+            <DefaultAgentSelector projectId={projectId} config={config} canWrite={canWrite} />
+          ) : null}
+          {createButton('New')}
+        </>
+      }
       search={
         <InputGroupSearch>
           <InputGroupSearchIcon>
@@ -221,28 +227,6 @@ export function AgentsPage({ projectId }: { projectId: string }) {
           />
           <InputGroupSearchClear onClick={() => setQuery('')} />
         </InputGroupSearch>
-      }
-      filters={
-        // The row holds its height while the manifest loads, so the grid
-        // below does not drop when the count and the selector land.
-        detailQuery.isLoading ? (
-          <>
-            <Skeleton className="h-4 w-40 rounded-sm py-0" />
-            <Skeleton className="h-8 w-44 rounded-md py-0" />
-          </>
-        ) : config ? (
-          <>
-            <p className="text-muted-foreground text-xs">
-              {primaryTotal} {primaryTotal === 1 ? 'agent' : 'agents'}
-              {subagentTotal > 0
-                ? ` · ${subagentTotal} ${subagentTotal === 1 ? 'subagent' : 'subagents'}`
-                : null}{' '}
-              {tI18nComplete.raw('text582967534d0f')}{' '}
-              <span className="font-mono">{tI18nComplete.raw('text1965f383021e')}</span>
-            </p>
-            <DefaultAgentSelector projectId={projectId} config={config} canWrite={canWrite} />
-          </>
-        ) : undefined
       }
     >
       <CatalogGrid
@@ -260,7 +244,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
               size="sm"
               title={tI18nComplete.raw('text971b61f8cb4d')}
               description={tI18nComplete.raw('textc4e4294c6777')}
-              action={createButton('Create an agent')}
+              action={createButton('Create an agent', 'sm')}
               secondaryAction={
                 <Button asChild variant="ghost" size="sm" className="gap-1.5">
                   <a
@@ -277,22 +261,18 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         }
       >
         {primaryAgents.map((agent) => (
-          <CatalogCard
+          <AgentCoverCard
             key={agent.path}
+            slug={agent.name}
             href={agentHref(projectId, agent.name)}
             onIntent={() => prefetchAgentConfig(queryClient, projectId, agent.name)}
             title={agentTitle(agent.name)}
-            subtitle={<code className="text-muted-foreground text-xs break-all">{agent.name}</code>}
             description={agent.description}
-            badges={<AgentCardBadges agent={agent} isDefault={defaultAgent === agent.name} />}
-            meta={
-              <AgentCardFacts
-                agent={agent}
-                triggerCount={triggerCounts.get(agent.name) ?? 0}
-                peopleCount={canManageMembers ? (grantCounts.get(agent.name) ?? 0) : null}
-              />
+            badges={<AgentCardBadges agent={agent} />}
+            coverLabel={
+              defaultAgent === agent.name ? tI18nComplete.raw('text21b111cbfe6e') : undefined
             }
-            trailing={<CardCaret />}
+            meta={facts(agent)}
           />
         ))}
       </CatalogGrid>
@@ -312,31 +292,19 @@ export function AgentsPage({ projectId }: { projectId: string }) {
               {tI18nComplete.raw('agentsListSubagentsHint')}
             </p>
           </div>
-          {/* `-mx-3` cancels the plain card's `px-3`, so each title lines up
-              with the heading above it. */}
-          <div className={cn(DENSE_GRID_CONTAINER_CLASSNAME, '-mx-3')}>
-            <div className={DENSE_GRID_CLASSNAME}>
-              {subagents.map((agent) => (
-                <CatalogCard
-                  key={agent.path}
-                  variant="plain"
-                  href={agentHref(projectId, agent.name)}
-                  onIntent={() => prefetchAgentConfig(queryClient, projectId, agent.name)}
-                  title={agentTitle(agent.name)}
-                  subtitle={
-                    <code className="text-muted-foreground text-xs break-all">{agent.name}</code>
-                  }
-                  description={agent.description}
-                  badges={<AgentCardBadges agent={agent} isDefault={false} />}
-                  meta={
-                    <span className={cn('truncate', agent.model && 'font-mono')}>
-                      {agent.model?.split('/').pop() ?? tI18nComplete.raw('text3840d9d29421')}
-                    </span>
-                  }
-                  trailing={<CardCaret />}
-                />
-              ))}
-            </div>
+          <div className={GRID_CLASSNAME}>
+            {subagents.map((agent) => (
+              <AgentCoverCard
+                key={agent.path}
+                slug={agent.name}
+                href={agentHref(projectId, agent.name)}
+                onIntent={() => prefetchAgentConfig(queryClient, projectId, agent.name)}
+                title={agentTitle(agent.name)}
+                description={agent.description}
+                badges={<AgentCardBadges agent={agent} />}
+                meta={facts(agent)}
+              />
+            ))}
           </div>
         </section>
       ) : null}
@@ -348,91 +316,67 @@ function agentTitle(name: string): string {
   return isMetaAgentName(name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(name);
 }
 
-function CardCaret() {
-  return (
-    <CaretRightIcon
-      aria-hidden
-      className="text-muted-foreground group-hover:text-foreground mt-0.5 size-4 transition-colors"
-    />
-  );
+
+/**
+ * The access fact (KRTX-3025): "Full access", or the connectors an agent can
+ * reach. Nothing for an agent without connectors — the card does not list what
+ * an agent lacks.
+ */
+function accessLabelOf(access: ReturnType<typeof agentAccess>, t: UiTranslator): string | null {
+  if (!access) return null;
+  if (access.kind === 'full') return t.raw('textf19611c61ca5');
+  const connectors = access.parts.find((part) => part.kind === 'connectors')?.value ?? 0;
+  if (connectors === 'all') return t.raw('textd83250185d41');
+  return connectors > 0 ? t('text15589a542412', { count: connectors }) : null;
 }
 
 /**
- * The card's facts line: what the agent runs on, what starts it, and who may
- * use it — the three things a person configuring access wants to know before
- * opening the page. Model falls back to the project default rather than
- * printing nothing; triggers and people print their count, including zero,
- * so every card has the same three slots and the eye can compare down a
- * column. People is omitted for a reader who cannot see grants.
+ * The card's facts line, joined by `•`: access, the agent's own model,
+ * triggers, grants. A fact with nothing to say is left out — no "0 triggers",
+ * no "Default model" — so an empty slot never reads as information.
  */
 function AgentCardFacts({
   agent,
   triggerCount,
-  peopleCount,
+  grantCount,
 }: {
   agent: Agent;
   triggerCount: number;
-  peopleCount: number | null;
+  grantCount: number;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const model = agent.model ? agent.model.split('/').pop() : null;
-  const accessLabel = accessLabelOf(agentAccess(agent.scope), tI18nComplete);
-  const sep = (
-    <span aria-hidden className="text-muted-foreground">
-      ·
+  const facts = [
+    accessLabelOf(agentAccess(agent.scope), tI18nComplete),
+    agent.model ? agent.model.split('/').pop() : null,
+    triggerCount > 0 ? `${triggerCount} ${triggerCount === 1 ? 'trigger' : 'triggers'}` : null,
+    grantCount > 0 ? `${grantCount} ${grantCount === 1 ? 'grant' : 'grants'}` : null,
+  ].filter((fact): fact is string => Boolean(fact));
+  if (facts.length === 0) return null;
+  return (
+    <span className="truncate tabular-nums">
+      {facts.map((fact, index) => (
+        <span key={fact}>
+          {index > 0 ? (
+            <span aria-hidden className="px-1.5">
+              •
+            </span>
+          ) : null}
+          {fact}
+        </span>
+      ))}
     </span>
   );
-  return (
-    <>
-      <span className={cn('truncate', model && 'font-mono')}>
-        {model ?? tI18nComplete.raw('text3840d9d29421')}
-      </span>
-      {sep}
-      <span className="tabular-nums">
-        {triggerCount} {triggerCount === 1 ? 'trigger' : 'triggers'}
-      </span>
-      {peopleCount !== null ? (
-        <>
-          {sep}
-          <span className="tabular-nums">
-            {peopleCount === 0
-              ? tI18nComplete.raw('textb6c70926c1aa')
-              : `${peopleCount} ${peopleCount === 1 ? 'grant' : 'grants'}`}
-          </span>
-        </>
-      ) : null}
-      {/* Its own line, and it wraps rather than truncates: the grants are
-          the point of the slot, and a separator left dangling at a wrap
-          read as a stray dot. */}
-      {accessLabel ? <span className="basis-full tabular-nums">{accessLabel}</span> : null}
-    </>
-  );
-}
-
-/** The access slot: what the configuration grants (KRTX-3025). */
-function accessLabelOf(access: ReturnType<typeof agentAccess>, t: UiTranslator): string | null {
-  if (!access) return null;
-  if (access.kind === 'full') return t.raw('textf19611c61ca5');
-  const LABELS = {
-    connectors: { all: 'textd83250185d41', count: 'text15589a542412' },
-    secrets: { all: 'text0b38e3daeb93', count: 'texte96d99ad9896' },
-    actions: { all: 'text70b8d7e10749', count: 'text2d3f4433505a' },
-  } as const;
-  return access.parts
-    .map(({ kind, value }) =>
-      value === 'all' ? t.raw(LABELS[kind].all) : t(LABELS[kind].count, { count: value }),
-    )
-    .join(', ');
 }
 
 /**
- * Card badges — "also a subagent", the default-agent star, disabled.
+ * Card badges — "also a subagent", disabled. The default agent is marked on
+ * the cover instead.
  *
  * The section already says primary or subagent, so a mode chip only marks the
  * both-ways `all` agent: it sits with the primaries but other agents call it
  * too.
  */
-function AgentCardBadges({ agent, isDefault }: { agent: Agent; isDefault: boolean }) {
+function AgentCardBadges({ agent }: { agent: Agent }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const mode = agent.mode?.toLowerCase();
   return (
@@ -441,13 +385,6 @@ function AgentCardBadges({ agent, isDefault }: { agent: Agent; isDefault: boolea
         <Badge variant="muted" size="xs">
           {tI18nComplete.raw('agentsListAlsoSubagent')}
         </Badge>
-      ) : null}
-      {isDefault ? (
-        <StarSolid
-          weight="fill"
-          aria-label={tI18nComplete.raw('text94da52ecd6c5')}
-          className="text-kortix-orange size-3.5 shrink-0"
-        />
       ) : null}
       {agent.enabled === false ? (
         <Badge variant="muted" size="xs">
@@ -503,9 +440,6 @@ function DefaultAgentSelector({
 
   return (
     <div className="flex shrink-0 items-center gap-2">
-      <span className="text-muted-foreground hidden text-xs sm:block">
-        {tI18nComplete.raw('text21b111cbfe6e')}
-      </span>
       {mutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
       <Select
         value={current}
@@ -514,7 +448,7 @@ function DefaultAgentSelector({
       >
         <SelectTrigger
           aria-label={tI18nComplete.raw('text94da52ecd6c5')}
-          className="w-44 shrink-0"
+          className="h-9 w-44 shrink-0"
           size="sm"
         >
           <SelectValue />
@@ -522,7 +456,10 @@ function DefaultAgentSelector({
         <SelectContent align="end">
           {availableAgents.map((agent) => (
             <SelectItem key={agent.name} value={agent.name}>
-              {isMetaAgentName(agent.name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(agent.name)}
+              <span className="flex min-w-0 items-center gap-2">
+                <AgentMark slug={agent.name} />
+                <span className="truncate">{agentTitle(agent.name)}</span>
+              </span>
             </SelectItem>
           ))}
         </SelectContent>

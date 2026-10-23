@@ -18,7 +18,8 @@ import { useUiHostConfig } from '../../providers/ui-provider';
 import { cn } from '../../lib/utils';
 import type { Agent } from '@kortix/sdk/react';
 import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
-import { CaretDownIcon, CheckIcon, SparkleIcon } from '@phosphor-icons/react';
+import { CaretDownIcon, CheckIcon } from '@phosphor-icons/react';
+import { AgentMark } from '../../internal/components/agent-mark';
 import { useEffect, useMemo, useState } from 'react';
 import { composerSelectableAgents } from './composer-agent-access';
 
@@ -139,7 +140,9 @@ export function AgentSelector({
   // matching the resolver's own first-accessible pre-selection.
   const displayedName = resolveDisplayedAgentName(primaryAgents, selectedAgent);
   const displayName = displayedName ? label(displayedName) : agentDisplayLabel(offered, selectedAgent);
-  const metaSelected = isMetaAgentName(displayedName);
+  // The trigger leads with the agent's pixel mark, the same face it has on the
+  // Agents page and in every row below.
+  const triggerMark = displayedName ? <AgentMark slug={displayedName} /> : null;
 
   /**
    * One agent: name, its type, its description, and a check when it is the
@@ -174,12 +177,14 @@ export function AgentSelector({
           setOpen(false);
         }}
       >
-        {meta && (
-          // Meta is the platform agent that runs the others, so its row leads
-          // with its own mark instead of reading as one more peer in the list.
-          <span className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-md">
-            <SparkleIcon weight="fill" className="text-foreground size-4" />
-          </span>
+        {/* Every row leads with the agent's pixel mark, so the list is
+            scanned by face before names are read. The tile matches the text
+            block edge to edge: name (20px) plus description (16px) = 36px,
+            or the name line alone. */}
+        {agent.description ? (
+          <AgentMark slug={agent.name} size={28} tile={36} />
+        ) : (
+          <AgentMark slug={agent.name} size={14} />
         )}
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-1.5">
@@ -193,7 +198,7 @@ export function AgentSelector({
             )}
           </div>
           {agent.description && (
-            <p className="text-muted-foreground mt-0.5 truncate text-xs">{agent.description}</p>
+            <p className="text-muted-foreground truncate text-xs">{agent.description}</p>
           )}
         </div>
         {isSelected && (
@@ -258,7 +263,7 @@ export function AgentSelector({
         disabled
         className="text-muted-foreground rounded-lg hit-area-y-3"
       >
-        {metaSelected && <SparkleIcon className="size-3.5 shrink-0" weight="fill" />}
+        {triggerMark}
         <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
       </Button>
     );
@@ -274,7 +279,7 @@ export function AgentSelector({
           aria-label={t('selectAgent')}
           className="text-foreground/70 rounded-lg hit-area-y-3"
         >
-          {metaSelected && <SparkleIcon className="size-3.5 shrink-0" weight="fill" />}
+          {triggerMark}
           <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
           <CaretDownIcon
             className={cn(
