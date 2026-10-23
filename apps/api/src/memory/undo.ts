@@ -39,13 +39,13 @@ export function planUndo(
 ): UndoPlan {
   if (change.some((row) => row.undone)) return { error: 'already_undone' };
   if (change.some((row) => newer.has(row.pageId))) return { error: 'superseded' };
-  return {
-    steps: change.map((row) => {
-      const before = previous.get(row.pageId) ?? null;
-      const snapshot = before ?? { ...pick(row), deleted: true };
-      return { pageId: row.pageId, undoes: row.versionId, snapshot };
-    }),
-  };
+  const steps = change.map((row) => {
+    const before = previous.get(row.pageId) ?? null;
+    const snapshot = before ?? { ...pick(row), deleted: true };
+    return { pageId: row.pageId, undoes: row.versionId, snapshot };
+  });
+  // Pages leaving go first: a note brought back may take the title of a page the change made.
+  return { steps: [...steps.filter((step) => step.snapshot.deleted), ...steps.filter((step) => !step.snapshot.deleted)] };
 }
 
 const pick = (row: Snapshot): Snapshot => ({

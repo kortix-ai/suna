@@ -47,6 +47,15 @@ describe('undo plans', () => {
     });
   });
 
+  test('the trap case: a note filed into a new page of its own title; undo trashes the page before the note comes back', () => {
+    const change = [version('note', 2, { type: 'note', title: 'Launch date', deleted: true }), version('page', 1, { title: 'Launch date' })];
+    const plan = planUndo(change, new Map([['note', snap({ type: 'note', title: 'Launch date' })], ['page', null]]), new Set());
+    expect('steps' in plan && plan.steps.map((step) => [step.pageId, step.snapshot.deleted])).toEqual([
+      ['page', true],
+      ['note', false],
+    ]);
+  });
+
   test('a change with a newer version on any of its pages is superseded; an undone one is already undone', () => {
     const change = [version('page', 4), version('note', 2)];
     const previous = new Map([['page', snap()], ['note', snap()]]);

@@ -32,7 +32,7 @@ describe('memory page caps', () => {
   });
 
   test('a secret anywhere in the page is 422', () => {
-    expect(codeOf(() => checkPage(page({ body: 'key sk-abcdefghijklmnopqrst' })))).toBe('422 secret_detected');
+    expect(codeOf(() => checkPage(page({ body: 'key sk-abc123defghijklmnopqrst' })))).toBe('422 secret_detected');
   });
 
   test('title keys ignore case, outer and repeated whitespace, and width variants', () => {

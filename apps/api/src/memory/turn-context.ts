@@ -6,7 +6,12 @@
  * thread is in no space: the body is then forwarded byte for byte.
  */
 import { MEMORY_SCOPE_COPY_DIR, MemoryTurnLayersSchema, type MemoryTurnLayers } from '@kortix/api-contract';
+import { projects } from '@kortix/db';
+import { eq } from 'drizzle-orm';
+import { resolveFeatureFlag } from '../feature-flags/registry';
 import { classifyRuntimeRequest } from '../sandbox-proxy/runtime-request';
+import { db } from '../shared/db';
+import { ttlMemo } from '../shared/ttl-memo';
 import type { LayerRef } from './layers';
 import { threadLayers } from './thread-layers';
 
@@ -18,8 +23,23 @@ export function turnLayersOf(read: readonly LayerRef[]): MemoryTurnLayers | null
   return parsed.success ? parsed.data : null;
 }
 
-/** One query per turn (session → root → space → layers); layers read for the first time are made. */
-export async function memoryTurnLayers(sessionId: string): Promise<MemoryTurnLayers | null> {
+/**
+ * `project_channels` of a project, read at most once per 30 s per replica: a
+ * project with the flag off costs no thread query on its prompts. A flag
+ * change reaches turn starts within 30 s.
+ */
+const channelsOn = ttlMemo({
+  ttlMs: 30_000,
+  keyFn: (projectId: string) => projectId,
+  loader: async (projectId: string) => {
+    const [row] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
+    return resolveFeatureFlag(row?.metadata, 'project_channels');
+  },
+});
+
+/** Flag on: one query (session → root → space → layers); layers read for the first time are made. */
+export async function memoryTurnLayers(projectId: string, sessionId: string): Promise<MemoryTurnLayers | null> {
+  if (!(await channelsOn(projectId))) return null;
   const thread = await threadLayers(sessionId);
   return thread ? turnLayersOf(thread.read) : null;
 }

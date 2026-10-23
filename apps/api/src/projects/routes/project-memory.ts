@@ -52,7 +52,7 @@ import {
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { auth, errors, json } from '../../openapi';
 import type { AppEnv } from '../../types';
-import { loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
+import { loadProjectForUser, loadVisibleSessionsForList, projectCapabilityAllowed } from '../lib/access';
 import { projectsApp } from '../lib/app';
 
 const projectParams = z.object({ projectId: z.string() });
@@ -77,12 +77,17 @@ export async function withMemoryCaller<R>(c: Context<AppEnv>, run: (caller: Call
   const gate = requireFeatureFlag(c, loaded.row.metadata, 'project_channels');
   if (gate) return gate;
   const { row, userId } = loaded;
-  const manager = await projectCapabilityAllowed(c, userId, row.accountId, row.projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+  let manager: Promise<boolean> | undefined;
+  const viewer: Viewer = {
+    userId,
+    sessionId: callerKortixSessionId(c),
+    // Asked only by page delete rights, once per request.
+    isManager: () => (manager ??= projectCapabilityAllowed(c, userId, row.accountId, row.projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)),
+    // The session read rule: a source in a thread the caller cannot open shows as "a private thread".
+    canOpenThreads: async (ids) => new Set((await loadVisibleSessionsForList(loaded, ids, null, null)).keys()),
+  };
   try {
-    return await run({
-      project: { projectId: row.projectId, metadata: row.metadata },
-      viewer: { userId, manager, sessionId: callerKortixSessionId(c) },
-    });
+    return await run({ project: { projectId: row.projectId, metadata: row.metadata }, viewer });
   } catch (error) {
     if (error instanceof MemoryError) return c.json(error.body, error.status);
     throw error;
@@ -156,7 +161,7 @@ export function registerProjectMemoryRoutes(): void {
       withMemoryCaller(c, async ({ project, viewer }) => {
         const layer = await resolveLayerKey(project, c.req.valid('param').layerKey, viewer);
         const query = c.req.valid('query');
-        const pages = await listPages(layer, { type: query.type, status: query.status, deleted: query.deleted === '1' });
+        const pages = await listPages(layer, viewer, { type: query.type, status: query.status, deleted: query.deleted === '1' });
         return c.json({ pages }, 200);
       }),
     memoryValidationHook,
@@ -192,7 +197,9 @@ export function registerProjectMemoryRoutes(): void {
       path: '/{projectId}/memory/layers/{layerKey}/notes',
       tags: ['memory'],
       summary: 'Save a note to a memory layer',
-      description: 'Saves the sentence as a `note` page with the caller as its source, for an agent to file into a page.',
+      description:
+        'Saves the sentence as a `note` page with the caller as its source, for an agent to file into a page. ' +
+        'A `source_session_id` the caller cannot open is 404 `session_not_found`.',
       ...auth,
       request: { params: layerParams, body: { content: { 'application/json': { schema: MemoryNoteInputSchema } } } },
       responses: { 201: json(MemoryPageSchema, 'The note'), ...WRITE_ERRORS },

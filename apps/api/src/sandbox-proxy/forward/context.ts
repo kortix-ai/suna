@@ -44,4 +44,6 @@ export interface ForwardState {
   promptDeliveryMaybeAccepted: boolean;
   lastAttemptHop: ProxyHop;
   providerCredentialsRefreshed: boolean;
+  /** The turn hook looked up `memory_layers` for this request (once, not per attempt). */
+  memoryLayersChecked?: boolean;
 }

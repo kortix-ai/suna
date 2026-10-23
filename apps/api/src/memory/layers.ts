@@ -34,21 +34,24 @@ export interface LayerRef {
   version: number;
   /** "Company", "#marketing", or the DM's agent. */
   name: string;
-  /** An archived channel's layer. */
+  /** An archived space's layer. */
   readOnly: boolean;
   /** The DM owner; null for Company and channels. */
   dmUserId: string | null;
 }
 
 /**
- * Who asks. `manager`: may delete any page. `sessionId`: the caller is an
- * agent's session token, so it reads only its thread's layers and never
- * writes through the people routes.
+ * Who asks. `isManager`: may delete any page (asked only when it matters).
+ * `sessionId`: the caller is an agent's session token, so it reads only its
+ * thread's layers and never writes through the people routes.
+ * `canOpenThreads`: the threads among `ids` this person may open (the session
+ * read rule); a source in any other thread renders as "a private thread".
  */
 export interface Viewer {
   userId: string;
-  manager: boolean;
+  isManager: () => Promise<boolean>;
   sessionId: string | null;
+  canOpenThreads?: (ids: string[]) => Promise<Set<string>>;
 }
 
 export const MEMORY_IMPORT_QUEUE = 'memory-import';
@@ -66,7 +69,7 @@ export function layerRef(row: LayerRow, space: SpaceInfo | null): LayerRef {
     spaceId: row.spaceId,
     version: row.version,
     name,
-    readOnly: space?.kind === 'channel' && space.archivedAt !== null,
+    readOnly: (space?.archivedAt ?? null) !== null,
     dmUserId: space?.kind === 'dm' ? space.dmUserId : null,
   };
 }
@@ -137,6 +140,13 @@ export async function resolveLayerKey(
   key: string,
   viewer: Viewer,
 ): Promise<LayerRef> {
+  // A session token reads its thread's layers only: resolved from the thread, so nothing is made for a refused key.
+  if (viewer.sessionId) {
+    const thread = await threadLayers(viewer.sessionId);
+    const ref = thread?.projectId === project.projectId ? thread.read.find((layer) => layerKeyOf(layer) === key) : undefined;
+    if (!ref) throw notFound();
+    return ref;
+  }
   let ref: LayerRef;
   if (key === 'company') {
     ref = layerRef(await ensureLayerRow(project, 'company', null), null);

@@ -13,7 +13,7 @@ import { cachedIndex, indexGroups, renderIndex } from './index-text';
 import type { LayerRef } from './layers';
 import { PAGE_COLUMNS, type PageRow } from './pages';
 import { copyPath, pageSlugs, renderPageMarkdown } from './render';
-import { loadRefs } from './serialize';
+import { loadRefs, threadRuleGate, visibleSource } from './serialize';
 import { threadLayers } from './thread-layers';
 
 type Executor = Pick<typeof db, 'select'>;
@@ -38,7 +38,8 @@ export async function threadOf(projectId: string, sessionId: string) {
 
 function indexText(layer: LayerRef, pages: PageRow[], slugs: Map<string, string>, version: number): string {
   const dir = MEMORY_SCOPE_COPY_DIR[layer.scope];
-  return cachedIndex(layer.layerId, version, () => {
+  // The name is in the key: a channel rename changes the heading without a version bump.
+  return cachedIndex(layer.layerId, `${version}:${layer.name}`, () => {
     const list = renderIndex(
       indexGroups(
         pages.map((page) => ({
@@ -85,7 +86,11 @@ export async function exportLayer(projectId: string, sessionId: string, layerId:
     },
     { isolationLevel: 'repeatable read', accessMode: 'read only' },
   );
-  const refs = await loadRefs(pages.map((page) => page.updatedByUserId), []);
+  const refs = await loadRefs(
+    pages.map((page) => page.updatedByUserId),
+    sources.map((source) => source.sessionId),
+    threadRuleGate(thread),
+  );
   const slugs = pageSlugs(pages);
   return {
     layer_id: layer.layerId,
@@ -104,7 +109,10 @@ export async function exportLayer(projectId: string, sessionId: string, layerId:
         body: page.body,
         updatedAt: page.updatedAt,
         updatedBy: page.updatedByKind === 'agent' ? page.updatedByAgent : page.updatedByUserId ? (refs.names.get(page.updatedByUserId) ?? null) : null,
-        sources: sources.filter((s) => s.pageId === page.pageId).map((s) => ({ number: s.number, label: s.label, sessionId: s.sessionId })),
+        sources: sources
+          .filter((s) => s.pageId === page.pageId)
+          .map((s) => visibleSource(s, refs))
+          .map((s) => ({ number: s.number, label: s.label, sessionId: s.sessionId })),
       }),
     })),
   };

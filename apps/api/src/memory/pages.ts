@@ -20,7 +20,7 @@ import { db } from '../shared/db';
 import { isUuid } from '../shared/validate';
 import { layerById, livePageCount, type LayerRef, type Viewer, viewerWrites } from './layers';
 import { checkPage, MemoryError, notFound, titleKey } from './limits';
-import { loadRefs, pageOf, summaryOf } from './serialize';
+import { loadRefs, pageOf, summaryOf, threadGateFor } from './serialize';
 import type { Snapshot } from './undo';
 
 const { search: _search, ...PAGE_COLUMNS } = getTableColumns(memoryPages);
@@ -249,9 +249,13 @@ export async function pageView(page: PageRow, layer: LayerRef, viewer: Viewer): 
           .where(and(eq(memoryPages.layerId, page.layerId), inArray(memoryPages.pageId, page.related), isNull(memoryPages.deletedAt))),
     pageCreator(page.pageId),
   ]);
-  const refs = await loadRefs([page.updatedByUserId], [page.updatedSourceSessionId, ...sources.map((s) => s.sessionId)]);
+  const refs = await loadRefs(
+    [page.updatedByUserId],
+    [page.updatedSourceSessionId, ...sources.map((s) => s.sessionId)],
+    threadGateFor(viewer),
+  );
   const edit = viewerWrites(layer, viewer) && page.deletedAt === null;
-  return pageOf(page, sources, related, refs, { edit, delete: edit && (viewer.manager || creator === viewer.userId) });
+  return pageOf(page, sources, related, refs, { edit, delete: edit && (creator === viewer.userId || (await viewer.isManager())) });
 }
 
 export async function getPage(projectId: string, pageId: string, viewer: Viewer): Promise<MemoryPage> {
@@ -262,6 +266,7 @@ export async function getPage(projectId: string, pageId: string, viewer: Viewer)
 /** Up to 200 page summaries, newest first. `deleted`: the trash instead of the live pages. */
 export async function listPages(
   layer: LayerRef,
+  viewer: Viewer,
   filter: { type?: PageRow['type']; status?: PageRow['status']; deleted?: boolean },
 ): Promise<MemoryPageSummary[]> {
   const rows = await db
@@ -277,7 +282,11 @@ export async function listPages(
     )
     .orderBy(desc(memoryPages.updatedAt))
     .limit(MEMORY_LIMITS.pages_per_layer);
-  const refs = await loadRefs(rows.map((row) => row.updatedByUserId), rows.map((row) => row.updatedSourceSessionId));
+  const refs = await loadRefs(
+    rows.map((row) => row.updatedByUserId),
+    rows.map((row) => row.updatedSourceSessionId),
+    threadGateFor(viewer),
+  );
   return rows.map((row) => summaryOf(row, refs));
 }
 
@@ -349,7 +358,7 @@ export async function deletePage(projectId: string, pageId: string, viewer: View
   const { page, layer } = await loadPage(projectId, pageId, viewer);
   assertWrites(layer, viewer);
   if (page.deletedAt) throw notFound();
-  if (!viewer.manager && (await pageCreator(pageId)) !== viewer.userId) {
+  if ((await pageCreator(pageId)) !== viewer.userId && !(await viewer.isManager())) {
     throw new MemoryError(403, 'forbidden', 'Only the person who made this page or a project manager can delete it.');
   }
   return change([layer.layerId], async (tx, changeId) => {

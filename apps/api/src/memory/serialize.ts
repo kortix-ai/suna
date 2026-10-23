@@ -16,7 +16,8 @@ import { memoryPageSources, memoryPageVersions, projectSessions, projectSpaces }
 import { eq, inArray, sql } from 'drizzle-orm';
 import { resolveUserIdentities } from '../projects/surface';
 import { db } from '../shared/db';
-import type { LayerRef } from './layers';
+import type { LayerRef, Viewer } from './layers';
+import { threadLayers, type ThreadLayers } from './thread-layers';
 import type { PageRow } from './pages';
 
 type VersionRow = typeof memoryPageVersions.$inferSelect;
@@ -35,6 +36,8 @@ export function threadLabel(firstPrompt: unknown): string {
 interface ThreadInfo {
   label: string;
   hint: MemorySource['thread_href_hint'];
+  /** The viewer may open this thread; else it shows as "a private thread", without id or title. */
+  open: boolean;
 }
 
 export interface Refs {
@@ -42,8 +45,56 @@ export interface Refs {
   threads: Map<string, ThreadInfo>;
 }
 
-/** Display names of `userIds` and labels and places of `sessionIds`. */
-export async function loadRefs(userIds: (string | null)[], sessionIds: (string | null)[]): Promise<Refs> {
+/** A thread as the privacy rule reads it. */
+export interface ThreadFacts {
+  sessionId: string;
+  visibility: string;
+  createdBy: string | null;
+}
+
+/** Which of `threads` the viewer may open. */
+export type ThreadGate = (threads: ThreadFacts[]) => Promise<Set<string>>;
+
+export const PRIVATE_THREAD_LABEL = 'a private thread';
+
+/**
+ * What an agent may cite by name: its own thread and project-visible threads;
+ * in a private thread (only its owner prompts it), also its owner's private
+ * threads.
+ */
+export function threadRuleGate(thread: Pick<ThreadLayers, 'threadSessionId' | 'threadVisibility' | 'threadOwner'>): ThreadGate {
+  return async (threads) =>
+    new Set(
+      threads
+        .filter(
+          (t) =>
+            t.sessionId === thread.threadSessionId ||
+            t.visibility === 'project' ||
+            (thread.threadVisibility === 'private' && thread.threadOwner !== null && t.visibility === 'private' && t.createdBy === thread.threadOwner),
+        )
+        .map((t) => t.sessionId),
+    );
+}
+
+/** The gate of a viewer: a session token uses its thread's rule; a person the session read rule (`canOpenThreads`). */
+export function threadGateFor(viewer: Viewer): ThreadGate {
+  if (viewer.sessionId) {
+    const sessionId = viewer.sessionId;
+    return async (threads) => {
+      const thread = await threadLayers(sessionId);
+      return thread ? threadRuleGate(thread)(threads) : new Set();
+    };
+  }
+  if (viewer.canOpenThreads) {
+    const canOpen = viewer.canOpenThreads;
+    return async (threads) => (threads.length === 0 ? new Set() : canOpen(threads.map((t) => t.sessionId)));
+  }
+  // No session rule at hand: project-visible threads and the viewer's own.
+  return async (threads) => new Set(threads.filter((t) => t.visibility === 'project' || t.createdBy === viewer.userId).map((t) => t.sessionId));
+}
+
+/** Display names of `userIds`, and labels and places of `sessionIds` as `gate` lets the viewer see them. */
+export async function loadRefs(userIds: (string | null)[], sessionIds: (string | null)[], gate: ThreadGate): Promise<Refs> {
   const users = [...new Set(userIds.filter((id): id is string => !!id))];
   const sessions = [...new Set(sessionIds.filter((id): id is string => !!id))];
   const [identities, rows] = await Promise.all([
@@ -53,6 +104,8 @@ export async function loadRefs(userIds: (string | null)[], sessionIds: (string |
       : db
           .select({
             sessionId: projectSessions.sessionId,
+            visibility: sql<string>`${projectSessions.visibility}::text`,
+            createdBy: projectSessions.createdBy,
             firstPrompt: sql<string | null>`${projectSessions.metadata}->>'first_prompt'`,
             kind: projectSpaces.kind,
             slug: projectSpaces.slug,
@@ -62,15 +115,30 @@ export async function loadRefs(userIds: (string | null)[], sessionIds: (string |
           .leftJoin(projectSpaces, eq(projectSpaces.spaceId, projectSessions.spaceId))
           .where(inArray(projectSessions.sessionId, sessions)),
   ]);
+  const open = await gate(rows);
   const names = new Map(users.map((id) => [id, identities.get(id)?.displayName ?? identities.get(id)?.email ?? null]));
   const threads = new Map<string, ThreadInfo>();
   for (const row of rows) {
     let hint: ThreadInfo['hint'] = null;
     if (row.kind === 'channel' && row.slug) hint = { space_kind: 'channel', slug: row.slug };
     else if (row.kind === 'dm' && row.agent) hint = { space_kind: 'dm', agent: row.agent };
-    threads.set(row.sessionId, { label: threadLabel(row.firstPrompt), hint });
+    threads.set(row.sessionId, { label: threadLabel(row.firstPrompt), hint, open: open.has(row.sessionId) });
   }
   return { names, threads };
+}
+
+/** A source as the viewer may see it: a thread they cannot open loses its id, message and place, and a thread source its title. */
+export function visibleSource<T extends { kind: string; sessionId: string | null; messageId: string | null; label: string }>(
+  source: T,
+  refs: Refs,
+): T {
+  if (!source.sessionId || refs.threads.get(source.sessionId)?.open) return source;
+  return {
+    ...source,
+    sessionId: null,
+    messageId: null,
+    label: source.kind === 'thread' ? PRIVATE_THREAD_LABEL : source.label,
+  };
 }
 
 export function author(refs: Refs, kind: AuthorKind | null, userId: string | null, agent: string | null): MemoryAuthor {
@@ -82,10 +150,10 @@ export function author(refs: Refs, kind: AuthorKind | null, userId: string | nul
   };
 }
 
-/** Null when the thread is gone. */
+/** Null when the thread is gone or the viewer may not open it. */
 function threadRef(refs: Refs, sessionId: string | null): MemoryThreadRef | null {
   const thread = sessionId ? refs.threads.get(sessionId) : undefined;
-  return sessionId && thread ? { session_id: sessionId, label: thread.label } : null;
+  return sessionId && thread?.open ? { session_id: sessionId, label: thread.label } : null;
 }
 
 export function layerOf(ref: LayerRef, counts: MemoryLayer['counts'], canWrite: boolean): MemoryLayer {
@@ -115,14 +183,15 @@ export function summaryOf(row: PageRow, refs: Refs): MemoryPageSummary {
 }
 
 export function sourceOf(row: SourceRow, refs: Refs): MemorySource {
+  const seen = visibleSource(row, refs);
   return {
-    number: row.number,
-    kind: row.kind,
-    session_id: row.sessionId,
-    message_id: row.messageId,
-    label: row.label,
-    url: row.url,
-    thread_href_hint: row.sessionId ? (refs.threads.get(row.sessionId)?.hint ?? null) : null,
+    number: seen.number,
+    kind: seen.kind,
+    session_id: seen.sessionId,
+    message_id: seen.messageId,
+    label: seen.label,
+    url: seen.url,
+    thread_href_hint: seen.sessionId ? (refs.threads.get(seen.sessionId)?.hint ?? null) : null,
   };
 }
 

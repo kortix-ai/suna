@@ -27,7 +27,8 @@ export function pageSlugs(pages: readonly { pageId: string; title: string; creat
   const taken = new Set<string>();
   const slugs = new Map<string, string>();
   for (const page of ordered) {
-    const base = spaceSlug(page.title) || `page-${page.pageId.slice(0, 8)}`;
+    // Accents fold to their letter ("Café" → "cafe") before the ASCII slug drops what is left.
+    const base = spaceSlug(page.title.normalize('NFKD').replace(/\p{M}/gu, '')) || `page-${page.pageId.slice(0, 8)}`;
     let slug = base;
     if (taken.has(slug)) slug = `${base}-${page.pageId.slice(0, 6)}`;
     if (taken.has(slug)) slug = `${base}-${page.pageId.toLowerCase()}`;

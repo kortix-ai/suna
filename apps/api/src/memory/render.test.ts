@@ -30,7 +30,9 @@ describe('the read-only copy', () => {
       { pageId: 'bbbbbbbb-0000-4000-8000-000000000002', title: 'Q4 Launch!', createdAt: at(2) },
       { pageId: 'aaaaaaaa-0000-4000-8000-000000000001', title: 'q4 launch', createdAt: at(1) },
       { pageId: 'cccccccc-0000-4000-8000-000000000003', title: '発売日', createdAt: at(3) },
+      { pageId: 'dddddddd-0000-4000-8000-000000000004', title: 'Café pricing', createdAt: at(4) },
     ]);
+    expect(slugs.get('dddddddd-0000-4000-8000-000000000004')).toBe('cafe-pricing');
     expect(slugs.get('aaaaaaaa-0000-4000-8000-000000000001')).toBe('q4-launch');
     expect(slugs.get('bbbbbbbb-0000-4000-8000-000000000002')).toBe('q4-launch-bbbbbb');
     expect(slugs.get('cccccccc-0000-4000-8000-000000000003')).toBe('page-cccccccc');

@@ -12,7 +12,7 @@ import { isUuid } from '../shared/validate';
 import { layerById, type LayerRef, type Viewer, viewerWrites } from './layers';
 import { MemoryError, notFound } from './limits';
 import { assertWrites, change, loadPage, lockPage, personAuthor, savePage, type Tx } from './pages';
-import { changeOf, loadRefs, versionOf } from './serialize';
+import { changeOf, loadRefs, threadGateFor, versionOf } from './serialize';
 import { planUndo, type Snapshot, type UndoVersion } from './undo';
 
 type VersionRow = typeof memoryPageVersions.$inferSelect;
@@ -33,9 +33,31 @@ const undoable = sql<boolean>`(
         ON n.page_id = c.page_id AND n.version_no > c.version_no AND n.undone_by_version_id IS NULL
      WHERE c.change_id = ${outerChange}))`;
 
+/**
+ * The changes among `rows` that also wrote a layer the viewer may not write:
+ * their Undo would be refused, so `can_undo` is false.
+ */
+async function changesBlockedElsewhere(projectId: string, rows: VersionRow[], viewer: Viewer): Promise<Set<string>> {
+  const changeIds = [...new Set(rows.map((row) => row.changeId))];
+  if (changeIds.length === 0) return new Set();
+  const spans = await db
+    .selectDistinct({ changeId: memoryPageVersions.changeId, layerId: memoryPageVersions.layerId })
+    .from(memoryPageVersions)
+    .where(inArray(memoryPageVersions.changeId, changeIds));
+  const writes = new Map<string, boolean>();
+  const blocked = new Set<string>();
+  for (const { changeId, layerId } of spans) {
+    if (!writes.has(layerId)) {
+      writes.set(layerId, await layerById(projectId, layerId, viewer).then((ref) => viewerWrites(ref, viewer), () => false));
+    }
+    if (!writes.get(layerId)) blocked.add(changeId);
+  }
+  return blocked;
+}
+
 const invalidCursor = () => new MemoryError(400, 'invalid_input', '`before` is not a value this list returned.');
 
-async function versionPage(where: SQL | undefined, order: SQL[], limit: number) {
+async function versionPage(viewer: Viewer, where: SQL | undefined, order: SQL[], limit: number) {
   const rows = await db
     .select({ version: memoryPageVersions, undoable })
     .from(memoryPageVersions)
@@ -46,6 +68,7 @@ async function versionPage(where: SQL | undefined, order: SQL[], limit: number) 
   const refs = await loadRefs(
     page.flatMap(({ version }) => [version.authorUserId, version.onBehalfUserId]),
     page.map(({ version }) => version.sourceSessionId),
+    threadGateFor(viewer),
   );
   return { page, refs, next: rows.length > limit ? page[page.length - 1]!.version.versionId : null };
 }
@@ -57,7 +80,7 @@ export async function pageHistory(
   viewer: Viewer,
   opts: { limit: number; before?: string },
 ): Promise<{ versions: MemoryVersion[]; next: string | null }> {
-  const { layer } = await loadPage(projectId, pageId, viewer);
+  await loadPage(projectId, pageId, viewer);
   if (opts.before !== undefined && !isUuid(opts.before)) throw invalidCursor();
   const cursor = opts.before
     ? lt(
@@ -66,12 +89,13 @@ export async function pageHistory(
       )
     : undefined;
   const { page, refs, next } = await versionPage(
+    viewer,
     and(eq(memoryPageVersions.pageId, pageId), cursor),
     [desc(memoryPageVersions.versionNo)],
     opts.limit,
   );
-  const writes = viewerWrites(layer, viewer);
-  return { versions: page.map(({ version, undoable }) => versionOf(version, refs, writes && undoable)), next };
+  const blocked = await changesBlockedElsewhere(projectId, page.map(({ version }) => version), viewer);
+  return { versions: page.map(({ version, undoable }) => versionOf(version, refs, undoable && !blocked.has(version.changeId))), next };
 }
 
 /** Recent changes of a layer, newest first. */
@@ -87,12 +111,13 @@ export async function layerChanges(
          WHERE version_id = ${opts.before}::uuid AND layer_id = ${layer.layerId}::uuid)`
     : undefined;
   const { page, refs, next } = await versionPage(
+    viewer,
     and(eq(memoryPageVersions.layerId, layer.layerId), cursor),
     [desc(memoryPageVersions.createdAt), desc(memoryPageVersions.versionId)],
     opts.limit,
   );
-  const writes = viewerWrites(layer, viewer);
-  return { changes: page.map(({ version, undoable }) => changeOf(version, refs, writes && undoable)), next };
+  const blocked = await changesBlockedElsewhere(layer.projectId, page.map(({ version }) => version), viewer);
+  return { changes: page.map(({ version, undoable }) => changeOf(version, refs, undoable && !blocked.has(version.changeId))), next };
 }
 
 const asUndoVersion = (row: VersionRow): UndoVersion => ({

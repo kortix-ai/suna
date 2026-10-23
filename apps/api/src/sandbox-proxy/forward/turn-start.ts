@@ -352,9 +352,11 @@ export async function syncEnvBeforeTurnStart(
  * before the turn. Flag off, no space, or any failure: the body goes as sent.
  */
 async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Promise<void> {
-  if (!isMemoryTurnRoute(req.method, req.remainingPath)) return;
+  // Once per request: a retry attempt keeps the body the first attempt built.
+  if (state.memoryLayersChecked || !isMemoryTurnRoute(req.method, req.remainingPath)) return;
+  state.memoryLayersChecked = true;
   try {
-    const layers = await memoryTurnLayers(req.record.sessionId);
+    const layers = await memoryTurnLayers(req.record.projectId, req.record.sessionId);
     if (layers) state.requestBody = withMemoryLayers(state.requestBody, layers);
   } catch (error) {
     logger.warn('[memory] turn start forwarded without memory_layers', {

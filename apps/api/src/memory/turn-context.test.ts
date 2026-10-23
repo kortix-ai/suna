@@ -13,6 +13,7 @@ const row = (over: Partial<ThreadRow>): ThreadRow => ({
   session_created_by: 'u1',
   root_session_id: 's1',
   root_visibility: 'project',
+  root_created_by: 'u1',
   space_id: CHANNEL,
   space_kind: 'channel',
   space_slug: 'marketing',

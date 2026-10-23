@@ -5,14 +5,14 @@
  */
 import type { MemoryNoteInput } from '@kortix/api-contract';
 import { projectSessions } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db } from '../shared/db';
 import type { LayerRef, Viewer } from './layers';
 import { MemoryError } from './limits';
 import { sourceToken } from './merge';
 import { addSource, assertWrites, change, personAuthor, savePage } from './pages';
-import { loadRefs } from './serialize';
+import { loadRefs, threadGateFor } from './serialize';
 
 const NOTE_TITLE_CHARS = 80;
 
@@ -24,15 +24,19 @@ export function noteTitle(text: string): string {
 /** Save a note in `layer`; returns its page id. */
 export async function addNote(layer: LayerRef, viewer: Viewer, input: MemoryNoteInput): Promise<string> {
   assertWrites(layer, viewer);
+  const gate = threadGateFor(viewer);
   if (input.source_session_id) {
+    // A thread the caller cannot open is not found: its title would come back as the source.
     const [session] = await db
-      .select({ id: projectSessions.sessionId })
+      .select({ sessionId: projectSessions.sessionId, visibility: sql<string>`${projectSessions.visibility}::text`, createdBy: projectSessions.createdBy })
       .from(projectSessions)
       .where(and(eq(projectSessions.projectId, layer.projectId), eq(projectSessions.sessionId, input.source_session_id)))
       .limit(1);
-    if (!session) throw new MemoryError(400, 'invalid_input', 'source_session_id is not a thread of this project.');
+    if (!session || !(await gate([session])).has(session.sessionId)) {
+      throw new MemoryError(404, 'session_not_found', 'Thread not found.');
+    }
   }
-  const refs = await loadRefs([viewer.userId], []);
+  const refs = await loadRefs([viewer.userId], [], gate);
   const label = refs.names.get(viewer.userId) ?? 'A member';
   const text = input.text.trim();
   const pageId = randomUUID();

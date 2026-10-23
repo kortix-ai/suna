@@ -3,17 +3,18 @@
  * the `layer` argument, else the thread's own layer (channel or DM). A live
  * page with the same title gets the fact appended (`- <fact> ⟦n⟧`, under
  * `## <section>` when given) or its body replaced; else a new page of `type`
- * is made. An existing page keeps its type. `from_note_id` deletes that note in
+ * is made. An existing page keeps its type. A note is never the target: notes
+ * are filed only with `from_note_id`. `from_note_id` deletes that note in
  * the same change (`op: file_note` on both pages, so one Undo restores both).
  */
 import { MEMORY_SCOPE_COPY_DIR, type MemoryRememberInput, type MemoryRememberResult } from '@kortix/api-contract';
 import { memoryPages } from '@kortix/db';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db } from '../shared/db';
 import { copyPages, forbidden, threadOf } from './export';
 import { layerKeyOf, type LayerRef } from './layers';
-import { checkSecrets, notFound, titleKey } from './limits';
+import { checkSecrets, MemoryError, notFound, titleKey } from './limits';
 import { appendFact } from './merge';
 import { addSource, type Author, changeWithVersions, lockPage, readOnlyError, savePage, snapshotOf } from './pages';
 import { copyPath, pageSlugs } from './render';
@@ -48,7 +49,15 @@ export async function remember(projectId: string, sessionId: string, input: Memo
   const thread = await threadOf(projectId, sessionId);
   const layer = targetLayer(thread, input.layer);
   if (layer.readOnly) throw readOnlyError();
-  checkSecrets(input.title, input.summary ?? '', input.fact ?? '', input.body ?? '', input.section ?? '');
+  checkSecrets(
+    input.title,
+    input.summary ?? '',
+    input.fact ?? '',
+    input.body ?? '',
+    input.section ?? '',
+    input.outside?.label ?? '',
+    input.outside?.url ?? '',
+  );
   // The note must sit in a layer this thread writes.
   let note: { pageId: string; layerId: string } | null = null;
   if (input.from_note_id) {
@@ -78,14 +87,36 @@ export async function remember(projectId: string, sessionId: string, input: Memo
   const layerIds = note ? [layer.layerId, note.layerId] : [layer.layerId];
 
   const { result: saved, versions } = await changeWithVersions(layerIds, async (tx, changeId) => {
+    const op = note ? 'file_note' : undefined;
+    // The note goes to the trash first: a note titled like the target page frees the title for it.
+    if (note) {
+      const filed = await lockPage(tx, note.pageId);
+      if (!filed || filed.deletedAt) throw notFound();
+      await savePage(tx, {
+        layerId: note.layerId,
+        projectId,
+        existing: filed,
+        next: { ...snapshotOf(filed), deleted: true },
+        op: 'file_note',
+        changeId,
+        author,
+      });
+    }
+    // A note is never merged into: notes are filed only with `from_note_id`.
     const [found] = await tx
       .select({ pageId: memoryPages.pageId })
       .from(memoryPages)
-      .where(and(eq(memoryPages.layerId, layer.layerId), eq(memoryPages.titleKey, titleKey(input.title)), isNull(memoryPages.deletedAt)))
+      .where(
+        and(
+          eq(memoryPages.layerId, layer.layerId),
+          eq(memoryPages.titleKey, titleKey(input.title)),
+          isNull(memoryPages.deletedAt),
+          ne(memoryPages.type, 'note'),
+        ),
+      )
       .limit(1);
     const existing = found ? await lockPage(tx, found.pageId) : null;
     const pageId = existing?.pageId ?? randomUUID();
-    const op = note ? 'file_note' : existing ? (input.fact ? 'append' : 'update') : 'create';
     let result: Awaited<ReturnType<typeof savePage>>;
     if (existing) {
       const n = await addSource(tx, pageId, source);
@@ -96,11 +127,29 @@ export async function remember(projectId: string, sessionId: string, input: Memo
         projectId,
         existing,
         next: { ...current, body, summary: input.summary ?? current.summary },
-        op,
+        op: op ?? (input.fact ? 'append' : 'update'),
         changeId,
         author,
       });
     } else {
+      // A live note of this title holds it: the agent files the note instead of colliding with it.
+      const [noteOfTitle] = await tx
+        .select({ pageId: memoryPages.pageId })
+        .from(memoryPages)
+        .where(
+          and(
+            eq(memoryPages.layerId, layer.layerId),
+            eq(memoryPages.titleKey, titleKey(input.title)),
+            isNull(memoryPages.deletedAt),
+            eq(memoryPages.type, 'note'),
+          ),
+        )
+        .limit(1);
+      if (noteOfTitle) {
+        throw new MemoryError(409, 'title_taken', `A note to file has this title. File it with from_note_id: ${noteOfTitle.pageId}.`, {
+          page_id: noteOfTitle.pageId,
+        });
+      }
       // A new page's first source is number 1.
       const body = input.fact ? appendFact('', input.fact, 1, input.section) : input.body!;
       result = await savePage(tx, {
@@ -109,24 +158,11 @@ export async function remember(projectId: string, sessionId: string, input: Memo
         existing: null,
         pageId,
         next: { type: input.type, title: input.title, summary: input.summary ?? '', body, status: 'confirmed', related: [], deleted: false },
-        op,
+        op: op ?? 'create',
         changeId,
         author,
       });
       await addSource(tx, pageId, source);
-    }
-    if (note) {
-      const filed = await lockPage(tx, note.pageId);
-      if (!filed || filed.deletedAt) throw notFound();
-      await savePage(tx, {
-        layerId: note.layerId,
-        projectId,
-        existing: filed,
-        next: { ...snapshotOf(filed), deleted: true },
-        op,
-        changeId,
-        author,
-      });
     }
     return { ...result, created: !existing, slugs: pageSlugs(await copyPages(tx, layer.layerId)) };
   });

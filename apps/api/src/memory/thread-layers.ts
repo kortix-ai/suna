@@ -24,6 +24,7 @@ export interface ThreadRow {
   session_created_by: string | null;
   root_session_id: string;
   root_visibility: string;
+  root_created_by: string | null;
   space_id: string | null;
   space_kind: 'channel' | 'dm' | null;
   space_slug: string | null;
@@ -72,6 +73,9 @@ export interface ThreadLayers {
   sessionId: string;
   /** The thread itself: the root session (a subagent's thread is its root's). Sources and versions name it. */
   threadSessionId: string;
+  /** The thread's sharing and owner: which other threads its agent may cite by name (`threadGate`). */
+  threadVisibility: string;
+  threadOwner: string | null;
   projectId: string;
   projectMetadata: unknown;
   /** The calling session's agent and owner: the author of its `remember` writes. */
@@ -100,7 +104,7 @@ async function readThreadRow(sessionId: string): Promise<ThreadRow | null> {
     root AS (SELECT * FROM chain ORDER BY depth DESC LIMIT 1)
     SELECT r.project_id, pr.metadata AS project_metadata,
            self.agent_name AS session_agent, self.created_by AS session_created_by,
-           r.session_id AS root_session_id, r.visibility AS root_visibility,
+           r.session_id AS root_session_id, r.visibility AS root_visibility, r.created_by AS root_created_by,
            s.space_id, s.kind::text AS space_kind, s.slug AS space_slug, s.dm_user_id AS space_dm_user_id,
            s.dm_agent_name AS space_dm_agent, s.archived_at AS space_archived_at,
            dm.space_id AS dm_space_id, dm.dm_user_id, dm.dm_agent_name AS dm_agent,
@@ -153,6 +157,8 @@ export async function threadLayers(sessionId: string): Promise<ThreadLayers | nu
   return {
     sessionId,
     threadSessionId: row.root_session_id,
+    threadVisibility: row.root_visibility,
+    threadOwner: row.root_created_by,
     projectId: row.project_id,
     projectMetadata: row.project_metadata,
     agentName: row.session_agent,
