@@ -210,8 +210,12 @@ SHA **and** one team member approved it. Since 2026-10-23 the `prod` ruleset
 (20587235) requires 1 approving review with `require_last_push_approval`: an
 approval counts only for the last push, so a re-promote that updates the
 release branch needs a new approval. Under the SOC 2 Change Management Policy
-the approver is not the person who started the release. Ask the owner for an
-approver as soon as the gate goes green. Never bypass the review.
+the person who releases may approve the release PR themselves: one click, and
+that approval authorizes the release (decision of 2026-10-23). Approve as soon
+as the gate goes green. Never bypass the review. The one exception is an
+emergency rollback or fix: an admin bypass then needs an after-the-fact
+approval comment by a second person within 2 business days (compliance rule
+CM-3).
 
 ```bash
 gh pr merge <release-pr> --repo kortix-ai/suna --merge
@@ -308,7 +312,7 @@ no `vX.Y.Z` Release.
    `staging`, staging served the SHA, and the release PR opened.
 5. `full suite + quality gates` green on the release PR head (every check on
    that commit green); red fixed on `dev` and re-promoted with a new dispatch.
-6. Release PR approved by a team member who did not start the release, then
+6. Release PR approved by a team member with write access (the releaser may approve), then
    merged into `prod` with `--merge` (`--admin` only with the
    owner's explicit OK).
 7. `Deploy Prod` confirmed for the merge SHA; api/gateway/frontend `/health`,
