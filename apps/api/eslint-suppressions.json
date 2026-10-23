@@ -1498,9 +1498,6 @@
     }
   },
   "src/platform/routes/version.ts": {
-    "no-console": {
-      "count": 2
-    },
     "no-restricted-properties": {
       "count": 1
     }
