@@ -11,7 +11,9 @@
  *
  * - The flag. apps/api sets `KORTIX_SESSION_LOG_RESTORE=1` when the project flag
  *   `session_log_restore` is on. Off: no manifest read, no restore; the box keeps its native
- *   state and journals at its persisted generation (0 when it never restored).
+ *   state and journals at its persisted generation (0 when it never restored) with its persisted
+ *   seq offsets (a box that lost its store numbers above the log after the first 422:
+ *   `session-log-journal.ts`).
  * - Behind. `GET …/log/manifest` lists every stored message (`deleted` for a tombstone) and the
  *   session generation. The native store is behind the log when the log holds a live message
  *   and (1) the adapter's `held()` is null (no store, no pinned root, a lost seq map), or (2) the
@@ -86,13 +88,15 @@ export type SessionLogBoot = {
   session?: SessionLogSessionPatch
   /** The restored log's harness history: the journal keeps it and appends this box's harness when it is another (P7.1). */
   harness?: HarnessCarry
+  /** The journal's seq offsets (a 422 moved a thread above the log: `session-log-journal.ts`); a restore clears them. */
+  seq_offsets?: Record<string, number>
 }
 
 /** The log's harness history at the restore, and the root seq and time from which this box's harness serves the session. */
 export type HarnessCarry = { history: SessionLog['harness']['history']; from_seq: number; at: string }
 
 /** `claiming`: a restore POST went out and no answer settled it; the API may hold a claim above `generation`. */
-type BootState = { version: 1; generation: number; unwritten: string[]; session?: SessionLogSessionPatch; harness?: HarnessCarry; claiming?: true }
+type BootState = { version: 1; generation: number; unwritten: string[]; session?: SessionLogSessionPatch; harness?: HarnessCarry; claiming?: true; seq_offsets?: Record<string, number> }
 
 export const sessionLogBootStatePath = () => join(resolveKortixRuntimeStateDirectory(), 'session-log-restore.json')
 
@@ -113,7 +117,22 @@ function writeState(s: BootState): void {
   renameSync(`${path}.tmp`, path)
 }
 
-const kept = (s: BootState): SessionLogBoot => ({ generation: s.generation, cursors: [], ...(s.session && { session: s.session }), ...(s.harness && { harness: s.harness }) })
+const kept = (s: BootState): SessionLogBoot => ({
+  generation: s.generation,
+  cursors: [],
+  ...(s.session && { session: s.session }),
+  ...(s.harness && { harness: s.harness }),
+  ...(s.seq_offsets && { seq_offsets: s.seq_offsets }),
+})
+
+/** The journal keeps its seq offsets beside the generation they belong to. A restore writes a state without them. */
+export function saveSeqOffsets(seq_offsets: Record<string, number>): void {
+  try {
+    writeState({ ...readState(), seq_offsets })
+  } catch (err) {
+    logger.warn('[session-log] could not persist the seq offsets; a restarted daemon learns them again', { err: String(err) })
+  }
+}
 
 /** No claim above `generation` stands: clear the mark a restore POST left. */
 function settled(s: BootState): SessionLogBoot {
