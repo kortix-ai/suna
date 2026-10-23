@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 894,
+  "count": 895,
   "routes": [
     {
       "method": "GET",
@@ -3092,6 +3092,10 @@
     },
     {
       "method": "DELETE",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/links/:linkId"
+    },
+    {
+      "method": "PATCH",
       "path": "/v1/projects/:projectId/spaces/:spaceId/links/:linkId"
     },
     {

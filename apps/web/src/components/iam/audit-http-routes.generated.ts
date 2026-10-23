@@ -775,6 +775,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|projects|:projectId|spaces|:spaceId|links",
   "POST|v1|projects|:projectId|spaces|:spaceId|links",
   "DELETE|v1|projects|:projectId|spaces|:spaceId|links|:linkId",
+  "PATCH|v1|projects|:projectId|spaces|:spaceId|links|:linkId",
   "GET|v1|projects|:projectId|spaces|:spaceId|summary",
   "POST|v1|projects|:projectId|spaces|dm",
   "POST|v1|projects|:projectId|transfer",

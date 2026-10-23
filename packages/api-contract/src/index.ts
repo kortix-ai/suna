@@ -1329,9 +1329,28 @@ export const SpaceLinkSchema = z
     created_at: z.string(),
     /** The caller may delete it: they added it, or they manage the project. */
     can_delete: z.boolean(),
+    /** Agents in the channel read pinned links. "Add link" pins; a link shared in a thread is unpinned until a member pins it. */
+    pinned: z.boolean(),
+    /** Who pinned it and when; null while unpinned (or, for `pinned_by_name`, when unknown). */
+    pinned_by_name: z.string().nullable(),
+    pinned_at: z.string().nullable(),
+    /** `manual`: added with "Add link". `message`: collected from a person's message in a thread of the channel. */
+    source: z.enum(['manual', 'message']),
+    /** The latest thread that shared it; null for a link never shared in a thread (or whose thread is gone). */
+    session_id: z.string().nullable(),
+    /** How many messages shared it. */
+    share_count: z.number().int(),
+    last_shared_at: z.string(),
   })
   .strict();
 export type SpaceLink = z.infer<typeof SpaceLinkSchema>;
+
+/** `PATCH /projects/:id/spaces/:spaceId/links/:linkId`. Unpinning a link never shared in a thread removes it. */
+export const SpaceLinkPinInputSchema = z.object({ pinned: z.boolean() }).strict();
+export type SpaceLinkPinInput = z.infer<typeof SpaceLinkPinInputSchema>;
+/** The link after the change; null when unpinning removed it. */
+export const SpaceLinkPinResultSchema = z.object({ link: SpaceLinkSchema.nullable() }).strict();
+export type SpaceLinkPinResult = z.infer<typeof SpaceLinkPinResultSchema>;
 
 export const SpaceLinkListSchema = z.object({ links: z.array(SpaceLinkSchema) }).strict();
 export type SpaceLinkList = z.infer<typeof SpaceLinkListSchema>;

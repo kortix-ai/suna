@@ -293,7 +293,7 @@ function mountedAt(path: string, mounts: readonly NotesMount[]): string | null {
  * The "This thread's channel" (or DM) section of /drives/README.md: the
  * space's files and memory folders as this sandbox mounts them, and the rule
  * to read the memory first. `name` is the channel slug or the DM's agent.
- * A channel's links follow, newest first, at most `SPACE_NOTES_LINKS`.
+ * A channel's pinned links follow, newest pin first, at most `SPACE_NOTES_LINKS`.
  */
 export function spaceNotesLines(
   space: { kind: 'channel' | 'dm'; name: string; links?: readonly SpaceNotesLink[] },
@@ -333,7 +333,7 @@ export interface SpaceNotesLink {
   title: string | null;
 }
 
-/** How many of a channel's links the notes file lists. */
+/** How many of a channel's pinned links the notes file lists. */
 export const SPACE_NOTES_LINKS = 20;
 
 /** Member-typed text on one line: no newline or control character can start a heading. */

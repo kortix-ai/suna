@@ -1073,7 +1073,7 @@ export async function sessionDriveNotes(sessionId: string): Promise<{ mounts: Se
   return { mounts, text: renderDriveNotes(mounts, conflicts, skippedMessage, space ? spaceNotesLines(space, mounts) : []) };
 }
 
-/** The channel or DM a session is a thread of (a channel with its newest links), with `project_channels` on; else null. */
+/** The channel or DM a session is a thread of (a channel with its newest pinned links), with `project_channels` on; else null. */
 async function sessionNotesSpace(
   sessionId: string,
 ): Promise<{ kind: 'channel' | 'dm'; name: string; links: SpaceNotesLink[] } | null> {
@@ -1096,8 +1096,9 @@ async function sessionNotesSpace(
       ? await db
           .select({ url: projectSpaceLinks.url, title: projectSpaceLinks.title })
           .from(projectSpaceLinks)
-          .where(eq(projectSpaceLinks.spaceId, row.spaceId))
-          .orderBy(desc(projectSpaceLinks.createdAt))
+          // Only pinned links reach the agents; a link shared in a thread waits for a member to pin it.
+          .where(and(eq(projectSpaceLinks.spaceId, row.spaceId), eq(projectSpaceLinks.pinned, true)))
+          .orderBy(desc(sql`coalesce(${projectSpaceLinks.pinnedAt}, ${projectSpaceLinks.createdAt})`))
           .limit(SPACE_NOTES_LINKS)
       : [];
   return { kind: row.kind, name, links };

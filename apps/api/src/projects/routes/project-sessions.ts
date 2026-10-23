@@ -66,6 +66,7 @@ import {
 } from '../lib/session-metadata-keys';
 import { loadSessionUserStates } from '../lib/session-user-state';
 import { personUserId } from './session-watch';
+import { collectMessageLinksInBackground } from '../lib/project-space-links';
 import { readRuntimeControlState } from '../lib/session-control-readers';
 import { sessionCreateSurface } from '../lib/session-surface';
 
@@ -342,6 +343,17 @@ export function registerProjectSessionsRoutes(): void {
         202,
       );
     }
+    // The thread's first message: a person's links join its channel's Links tab.
+    const pendingText = (body.pending_prompt as { text?: unknown } | undefined)?.text;
+    collectMessageLinksInBackground({
+      projectId,
+      sessionId: result.row.sessionId,
+      spaceId: result.row.spaceId,
+      visibility: result.row.visibility,
+      userId: personUserId(c, loaded),
+      text: typeof pendingText === 'string' ? pendingText : (normalizeString(body.initial_prompt ?? body.initialPrompt) ?? ''),
+      projectMetadata: loaded.row.metadata,
+    });
     return c.json(
         serializeSession(result.row, {
         viewerId: loaded.userId,

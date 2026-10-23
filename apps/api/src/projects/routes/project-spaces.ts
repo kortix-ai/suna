@@ -10,6 +10,8 @@ import {
   SpaceDmInputSchema,
   SpaceLinkCreateInputSchema,
   SpaceLinkListSchema,
+  SpaceLinkPinInputSchema,
+  SpaceLinkPinResultSchema,
   SpaceLinkSchema,
   SpaceListSchema,
   SpaceSchema,
@@ -35,6 +37,7 @@ import {
   countSpaceLinks,
   deleteSpaceLink,
   listSpaceLinks,
+  pinSpaceLink,
   SPACE_LINKS_MAX,
   type LinkViewer,
 } from '../lib/project-space-links';
@@ -242,7 +245,7 @@ export function registerProjectSpacesRoutes(): void {
     },
   );
 
-  // GET /v1/projects/:projectId/spaces/:spaceId/links — the channel's links, newest first.
+  // GET /v1/projects/:projectId/spaces/:spaceId/links — the channel's links, the most recently shared first.
   projectsApp.openapi(
     createRoute({
       method: 'get',
@@ -251,7 +254,10 @@ export function registerProjectSpacesRoutes(): void {
       summary: 'List the links of a channel',
       ...auth,
       request: { params: spaceParams },
-      responses: { 200: json(SpaceLinkListSchema, 'The channel’s links, newest first'), ...errors(403, 404) },
+      responses: {
+        200: json(SpaceLinkListSchema, 'The channel’s links: pinned and shared in its threads, the most recently shared first'),
+        ...errors(403, 404),
+      },
     }),
     async (c) => {
       const channel = await loadChannel(c);
@@ -283,9 +289,46 @@ export function registerProjectSpacesRoutes(): void {
       const viewer = await spaceViewer(c, loaded);
       const link = await addSpaceLink(loaded.row.projectId, space.spaceId, loaded.row.accountId, viewer, c.req.valid('json'));
       if (link === 'link_limit') {
-        return c.json({ error: `A channel holds at most ${SPACE_LINKS_MAX} links. Remove one first.`, code: 'link_limit' }, 409);
+        return c.json({ error: `A channel pins at most ${SPACE_LINKS_MAX} links. Unpin one first.`, code: 'link_limit' }, 409);
       }
       return c.json(link, 201);
+    },
+  );
+
+  // PATCH /v1/projects/:projectId/spaces/:spaceId/links/:linkId — pin or unpin; any member of the channel.
+  projectsApp.openapi(
+    createRoute({
+      method: 'patch',
+      path: '/{projectId}/spaces/{spaceId}/links/{linkId}',
+      tags: ['spaces'],
+      summary: 'Pin or unpin a link of a channel',
+      description:
+        'Agents in the channel read its pinned links. Unpinning a link no thread shared (added with "Add link") removes it: ' +
+        'only its creator or a project manager may (403 `forbidden`). Pinning past 200 pinned links answers 409 `link_limit`.',
+      ...auth,
+      request: {
+        params: spaceParams.extend({ linkId: z.string() }),
+        body: { content: { 'application/json': { schema: SpaceLinkPinInputSchema } } },
+      },
+      responses: { 200: json(SpaceLinkPinResultSchema, 'The link; null when unpinning removed it'), ...errors(400, 403, 404, 409) },
+    }),
+    async (c) => {
+      const channel = await loadChannel(c);
+      if (channel instanceof Response) return channel;
+      const { loaded, space } = channel;
+      const linkId = c.req.param('linkId');
+      const viewer = await spaceViewer(c, loaded);
+      const result = isUuid(linkId)
+        ? await pinSpaceLink(space.spaceId, linkId, loaded.row.accountId, viewer, c.req.valid('json').pinned)
+        : 'not_found';
+      if (result === 'not_found') return c.json({ error: 'Link not found', code: 'link_not_found' }, 404);
+      if (result === 'forbidden') {
+        return c.json({ error: 'Only the person who added the link or a project manager can remove it.', code: 'forbidden' }, 403);
+      }
+      if (result === 'link_limit') {
+        return c.json({ error: `A channel pins at most ${SPACE_LINKS_MAX} links. Unpin one first.`, code: 'link_limit' }, 409);
+      }
+      return c.json({ link: result === 'removed' ? null : result }, 200);
     },
   );
 
