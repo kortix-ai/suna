@@ -40,7 +40,9 @@
       "enum": [
         "opencode",
         "pi"
-      ]
+      ],
+      "deprecated": true,
+      "description": "Selects nothing: every new session runs pi."
     },
     "project": {
       "type": "object",

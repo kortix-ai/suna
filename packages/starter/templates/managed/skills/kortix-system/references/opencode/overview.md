@@ -1,5 +1,7 @@
 # OpenCode reference — overview
 
+> **Deprecated: OpenCode is sunset.** Every new Kortix session runs pi (`../pi/overview.md`). This page applies only to a session that still runs OpenCode. Do not add OpenCode config to a project.
+
 OpenCode is the Kortix session runtime. Version 2 uses OpenCode REST. This
 directory is the complete OpenCode reference.
 

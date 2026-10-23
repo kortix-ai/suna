@@ -11,6 +11,7 @@ const MANAGED_OPENCODE_ENV = {
   OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: String(MANAGED_OPENCODE_OUTPUT_TOKEN_MAX),
 } as const
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function applyManagedOpencodeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return {
     ...env,

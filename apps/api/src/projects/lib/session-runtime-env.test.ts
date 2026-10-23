@@ -57,15 +57,11 @@ describe('buildSessionRuntimeEnv — server-claimed initial turn', () => {
 });
 
 describe('buildSessionRuntimeEnv — KORTIX_HARNESS', () => {
-  test('omits the key for an OpenCode session (default and explicit) — byte-for-byte unchanged', () => {
-    expect(buildSessionRuntimeEnv(BASE_INPUT)).not.toHaveProperty('KORTIX_HARNESS');
-    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'opencode' })).not.toHaveProperty('KORTIX_HARNESS');
-  });
-
-  test('sets KORTIX_HARNESS=pi for a pi session, next to the same model and compiled config keys', () => {
+  test('every new box runs pi: KORTIX_HARNESS=pi, next to the same model and compiled config keys', () => {
+    // An unset KORTIX_HARNESS boots OpenCode in kortixd, so the key is never left out.
+    expect(buildSessionRuntimeEnv(BASE_INPUT).KORTIX_HARNESS).toBe('pi');
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
-      harness: 'pi',
       opencodeModel: 'kortix/claude-sonnet-5',
       compiledAgentConfig: JSON.stringify({ agent: { build: { prompt: 'x' } } }),
     });
@@ -83,33 +79,30 @@ describe('buildSessionRuntimeEnv — KORTIX_PI_PACKAGES', () => {
   const packages = ['npm:pi-web-access@0.30.0', { source: './.kortix/pi/audit.ts' }];
 
   test('a pi session carries the project packages as JSON', () => {
-    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piPackages: packages });
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, piPackages: packages });
     expect(JSON.parse(env.KORTIX_PI_PACKAGES!)).toEqual(packages);
   });
 
   test('a built bundle travels as its URL and digest, to a pi session only', () => {
     const bundle = { digest: 'a'.repeat(64), url: 'https://bucket.example/pi-packages/x.tar.gz?sig=1', fallbackUrl: 'https://bucket.example/pi-packages/x.node_modules.tar.gz?sig=2' };
-    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piPackages: packages, piPackagesBundle: bundle });
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, piPackages: packages, piPackagesBundle: bundle });
     expect(env.KORTIX_PI_PACKAGES_BUNDLE_URL).toBe(bundle.url);
     expect(env.KORTIX_PI_PACKAGES_BUNDLE_DIGEST).toBe(bundle.digest);
     expect(env.KORTIX_PI_PACKAGES_FALLBACK_URL).toBe(bundle.fallbackUrl);
-    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'opencode', piPackagesBundle: bundle })).not.toHaveProperty('KORTIX_PI_PACKAGES_BUNDLE_URL');
-    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piPackages: packages, piPackagesBundle: null })).not.toHaveProperty('KORTIX_PI_PACKAGES_BUNDLE_URL');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, piPackages: packages, piPackagesBundle: null })).not.toHaveProperty('KORTIX_PI_PACKAGES_BUNDLE_URL');
   });
 
-  test('no key for an OpenCode session, or a pi session without packages', () => {
-    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'opencode', piPackages: packages })).not.toHaveProperty('KORTIX_PI_PACKAGES');
-    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piPackages: [] })).not.toHaveProperty('KORTIX_PI_PACKAGES');
-    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi' })).not.toHaveProperty('KORTIX_PI_PACKAGES');
+  test('no key for a session without packages', () => {
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, piPackages: [] })).not.toHaveProperty('KORTIX_PI_PACKAGES');
+    expect(buildSessionRuntimeEnv(BASE_INPUT)).not.toHaveProperty('KORTIX_PI_PACKAGES');
   });
 });
 
 describe('buildSessionRuntimeEnv — KORTIX_PI_CODEMODE', () => {
   test('a pi session carries the manifest value; none leaves the daemon default', () => {
-    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piCodemode: 'only' }).KORTIX_PI_CODEMODE).toBe('only');
-    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piCodemode: 'off' }).KORTIX_PI_CODEMODE).toBe('off');
-    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piCodemode: null })).not.toHaveProperty('KORTIX_PI_CODEMODE');
-    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'opencode', piCodemode: 'only' })).not.toHaveProperty('KORTIX_PI_CODEMODE');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, piCodemode: 'only' }).KORTIX_PI_CODEMODE).toBe('only');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, piCodemode: 'off' }).KORTIX_PI_CODEMODE).toBe('off');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, piCodemode: null })).not.toHaveProperty('KORTIX_PI_CODEMODE');
   });
 });
 

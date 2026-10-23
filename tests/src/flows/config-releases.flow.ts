@@ -127,12 +127,12 @@ interface Fixture {
   /** `GET .../sessions/:sessionId/config` as the project owner. */
   configState(sessionId: string): Promise<{ status: number; body: any }>;
   /**
-   * The project's own switch for `pi_harness` or `meta_agent`, through the
-   * published write path. `true` opts in, `false` opts out, `null` clears the
-   * override and returns the project to the platform default — which is OFF
-   * for both (`apps/api/src/feature-flags/registry.ts`).
+   * The project's own switch for `meta_agent`, through the published write
+   * path. `true` opts in, `false` opts out, `null` clears the override and
+   * returns the project to the platform default, OFF
+   * (`apps/api/src/feature-flags/registry.ts`).
    */
-  setFeature(enabled: boolean | null, feature: 'pi_harness' | 'meta_agent'): Promise<void>;
+  setFeature(enabled: boolean | null, feature: 'meta_agent'): Promise<void>;
   /**
    * Write a `config_releases` value straight into the project's stored flag
    * overrides, as a project that chose one before config releases graduated
@@ -1695,16 +1695,6 @@ async function boxSession(ctx: FlowContext, fixture: Fixture) {
   };
 }
 
-/**
- * Run the flow on `harness`: the project's `pi_harness` flag (on by default) is
- * set before the session boots, and every run proves which harness the box runs.
- */
-async function optIntoHarness(ctx: FlowContext, fixture: Fixture, harness: Harness): Promise<void> {
-  await ctx.step(`the project runs ${harness}: \`pi_harness\` is ${harness === 'pi' ? 'on' : 'off'}`, async () => {
-    await fixture.setFeature(harness === 'pi', 'pi_harness');
-  });
-}
-
 async function proveHarness(ctx: FlowContext, sandboxId: string, harness: Harness): Promise<void> {
   await ctx.step(`the box runs ${harness}`, async () => {
     await assertRuntimeHarness(ctx, sandboxId, harness);
@@ -1837,7 +1827,6 @@ harnessFlow(
         await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), fixture.team.id);
       });
 
-      await optIntoHarness(ctx, fixture, harness);
 
       let box!: Awaited<ReturnType<typeof boxSession>>;
       await ctx.step('a session boots on the project and opens a runtime conversation', async () => {
@@ -1919,11 +1908,11 @@ harnessFlow(
         const before = String((await releaseOf())?.running_release_id ?? '');
         const skill = (name: string) => `---\nname: ${name}\ndescription: merged while the session ran\n---\nUse it when asked.\n`;
         // pi also reads its own config dir (`.kortix/pi` here), at the same path inside the release.
-        const expected = harness === 'pi' ? ['cfg-merged-skill', 'cfg-pi-native-skill'] : ['cfg-merged-skill'];
+        const expected = ['cfg-merged-skill', 'cfg-pi-native-skill'];
         await fixture.commit(
           {
             '.kortix/opencode/skills/cfg-merged-skill/SKILL.md': skill('cfg-merged-skill'),
-            ...(harness === 'pi' ? { '.kortix/pi/skills/cfg-pi-native-skill/SKILL.md': skill('cfg-pi-native-skill') } : {}),
+            '.kortix/pi/skills/cfg-pi-native-skill/SKILL.md': skill('cfg-pi-native-skill'),
           },
           'merge a skill',
         );
@@ -1991,38 +1980,23 @@ harnessFlow(
       }
 
       const brokenJson ={ '.kortix/opencode/opencode.json': '{ "$schema": "https://opencode.ai/config.json",, }\n' };
-      if (harness === 'opencode') {
-        await ctx.step('DEF-FLAGON-2 — a broken base branch makes the session report a fallback', async () => {
-          await fixture.commit(brokenJson, 'break the config');
-          const broken = await waitFor(releaseOf, {
-            until: (rel) => Boolean(rel?.fallback_reason) && Boolean(rel?.failed_release_id),
-            timeoutMs: 300_000,
-            intervalMs: 5_000,
-            description: 'the session reports the broken release',
-          });
-          if (broken.running_release_id === broken.failed_release_id) {
-            throw new Error('the box is running the release it reported as failed');
-          }
+      // `opencode.json` is OpenCode's file. pi reads the agents and the skills
+      // of a release and nothing else, so the same commit is a working config.
+      await ctx.step('pi does not read OpenCode files: a broken opencode.json is applied with no fallback', async () => {
+        const before = String((await releaseOf())?.running_release_id ?? '');
+        await fixture.commit(brokenJson, 'break the config');
+        await waitFor(releaseOf, {
+          until: (rel) =>
+            Boolean(rel) &&
+            rel.running_release_id === rel.desired_release_id &&
+            rel.running_release_id !== before &&
+            rel.proven === true &&
+            rel.fallback_reason === null,
+          timeoutMs: 300_000,
+          intervalMs: 5_000,
+          description: 'pi applies the release that only breaks OpenCode',
         });
-      } else {
-        // `opencode.json` is OpenCode's file. pi reads the agents and the skills
-        // of a release and nothing else, so the same commit is a working config.
-        await ctx.step('pi does not read OpenCode files: a broken opencode.json is applied with no fallback', async () => {
-          const before = String((await releaseOf())?.running_release_id ?? '');
-          await fixture.commit(brokenJson, 'break the config');
-          await waitFor(releaseOf, {
-            until: (rel) =>
-              Boolean(rel) &&
-              rel.running_release_id === rel.desired_release_id &&
-              rel.running_release_id !== before &&
-              rel.proven === true &&
-              rel.fallback_reason === null,
-            timeoutMs: 300_000,
-            intervalMs: 5_000,
-            description: 'pi applies the release that only breaks OpenCode',
-          });
-        });
-      }
+      });
 
       await ctx.step('DEF-FLAGON-2 — the fix clears the fallback with no further push', async () => {
         // The fix restores the config tree exactly, so the release the box is
@@ -2112,7 +2086,6 @@ harnessFlow(
         await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), fixture.team.id);
       });
 
-      await optIntoHarness(ctx, fixture, harness);
 
       let box!: Awaited<ReturnType<typeof boxSession>>;
       await ctx.step('a session boots on a proven release and opens a runtime conversation', async () => {
@@ -2588,7 +2561,6 @@ harnessFlow(
       await ctx.step('the account is entitled to the managed lineup', async () => {
         await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), fixture.team.id);
       });
-      await optIntoHarness(ctx, fixture, harness);
       await ctx.step('the base branch holds 33 MiB that gzip cannot shrink, beside the agent config', async () => {
         await fixture.commit(
           { 'data/large.bin': large, '.kortix/opencode/agents/kortix.md': OVER_CAP_AGENT(markerA) },

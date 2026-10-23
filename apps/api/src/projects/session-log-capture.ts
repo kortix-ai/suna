@@ -231,15 +231,18 @@ const idOf = (row: V1Row) => String((row.info as { id?: unknown } | null)?.id ??
  * - Merge, never trim, as the mirror did: `fromV1` runs over the stored log (`before`, from
  *   `readCapturedSessionLog`) with each message the box answered replacing its stored copy, so seqs
  *   and threads stay those of the whole history. Only a message the box answered is put.
- * - Rewind: an OpenCode rewind removes messages from the box and keeps the root. A `complete` read
- *   of the root that lacks a stored message of that root AND lists a newer one is that shape: the
- *   lacking message is tombstoned and leaves the merge, so the seqs after it close up. Nothing else
- *   is tombstoned: an empty, partial or tail read, a read that lacks only the newest messages, a
- *   sub-agent's rows, and a pi box (pi has no rewind) keep every stored row.
+ * - Rewind: an OpenCode rewind removes the newest messages from the box and keeps the root. A
+ *   `complete` read of the root that lacks a suffix of the stored root messages AND lists a newer
+ *   one is that shape: the lacking messages are tombstoned (soft: the row and record stay, a later
+ *   put of the same id revives it) and leave the merge, so the seqs after them close up. Nothing
+ *   else is tombstoned: an empty, partial or tail read, a read that lacks only the newest
+ *   messages, a hole (an older message gone, a newer one kept), a sub-agent's rows, and a pi box
+ *   (pi has no rewind) keep every stored row. Residual: a box that lost exactly its newest
+ *   messages, kept its root, then took a prompt looks the same as a rewind.
  * - Root guard: a read of a root the session no longer runs (re-pinned since the read began)
  *   writes nothing (`current`); merged under the new root it would re-sequence the old root's rows.
- * - No size cap. `fromV1`, `SessionLogSchema` and `toV1` of 100 MB of rows take ~170 ms together
- *   (local, 2026-10-23); a cap on the first write only left an over-cap session with no history.
+ * - No size cap: every read is written. A capture over `SESSION_LOG_RESTORE_MAX_BYTES` runs in a
+ *   Worker (`captureInThread`, `lib/session-transcript-capture.ts`), off the API's event loop.
  * - Stale: another capture that wrote since `before` was read skips this write (`current`).
  */
 export async function writeSessionLogFromRead(
@@ -285,14 +288,22 @@ const createdOf = (row: V1Row) => {
   return typeof at === 'number' && Number.isFinite(at) ? at : -Infinity;
 };
 
-/** The stored root messages an OpenCode rewind removed: see `writeSessionLogFromRead`. */
+/**
+ * The stored root messages an OpenCode rewind removed: see `writeSessionLogFromRead`. A revert drops
+ * the newest messages after a point, so the lacking messages must be a suffix of the stored root
+ * history (every stored root message after the oldest lacking one lacks too) that a newer read
+ * message follows. A hole (an older message gone, a newer one kept) is lost box state: nothing.
+ */
 function rewoundIds(input: { root: string; rows: V1Row[]; complete: boolean; before: { rows: V1Row[] } }, pi: boolean): Set<string> {
   if (!input.complete || pi) return new Set();
   const read = new Set(input.rows.map(idOf));
   const newest = Math.max(...input.rows.filter((row) => row.runtime_session_id === input.root).map(createdOf));
-  return new Set(
-    input.before.rows.filter((row) => row.runtime_session_id === input.root && !read.has(idOf(row)) && createdOf(row) < newest).map(idOf),
-  );
+  const stored = input.before.rows.filter((row) => row.runtime_session_id === input.root);
+  const lacking = stored.filter((row) => !read.has(idOf(row)));
+  if (lacking.length === 0) return new Set();
+  const from = Math.min(...lacking.map(createdOf));
+  const suffix = stored.every((row) => createdOf(row) < from || !read.has(idOf(row)));
+  return suffix && lacking.every((row) => createdOf(row) < newest) ? new Set(lacking.map(idOf)) : new Set();
 }
 
 /**
@@ -327,6 +338,7 @@ async function writeConverted(
   const { threads, ...session } = log;
   const byId = new Map(stored.map((r) => [r.id, r]));
   let rev = maxCaptureRev(stored);
+  // Generation 0: a restore claims generation + 1 (`session-log-restore.ts`), so a restored session's capture answers 409 and is skipped.
   const batch: SessionLogJournalRequest = { generation: 0, session, threads: threads.map(({ messages: _m, ...t }) => t), puts: [], tombstones: [] };
   const live = new Set<string>();
   for (const m of threads.flatMap((t) => t.messages)) {

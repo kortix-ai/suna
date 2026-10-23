@@ -11,15 +11,16 @@ describe('SessionTerminalConnectBar', () => {
     const html = renderToStaticMarkup(<SessionTerminalConnectBar projectSessionId="ps-123" />);
     expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain(KORTIX_CLI_INSTALL_COMMAND);
-    expect(html).not.toContain('kortix sessions connect ps-123');
+    expect(html).not.toContain('kortix sessions shell ps-123');
   });
 
-  test('expanded steps give the install command, then the session connect command', () => {
+  test('expanded steps give the install command, then the session shell command (works on pi; `connect` is OpenCode-only)', () => {
     const html = renderToStaticMarkup(
       <SessionTerminalConnectSteps id="steps" projectSessionId="ps-123" />,
     );
     const install = html.indexOf(KORTIX_CLI_INSTALL_COMMAND);
-    const connect = html.indexOf('kortix sessions connect ps-123');
+    const connect = html.indexOf('kortix sessions shell ps-123');
+    expect(html).not.toContain('kortix sessions connect');
     expect(install).toBeGreaterThan(-1);
     expect(connect).toBeGreaterThan(install);
     expect(html.match(/<li/g)?.length).toBe(2);

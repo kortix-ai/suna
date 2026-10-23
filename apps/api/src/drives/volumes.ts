@@ -25,7 +25,7 @@ const FILE_TIMEOUT_MS = 5 * 60_000;
 
 export const FILE_CHANGED_MESSAGE = 'This file changed since you opened it. Reload it to see the latest version, then save again.';
 
-async function call(path: string, init: RequestInit = {}): Promise<Response> {
+async function call(path: string, init: RequestInit = {}, allowRangeRefusal = false): Promise<Response> {
   if (!driveStorageAvailable()) throw new DriveStorageError(503, 'Drive storage is not available', 'drive_storage_unavailable');
   let res: Response;
   try {
@@ -34,7 +34,7 @@ async function call(path: string, init: RequestInit = {}): Promise<Response> {
     logger.warn(`[drives] ${init.method ?? 'GET'} ${path} failed:`, { error: err instanceof Error ? err.message : String(err) });
     throw new DriveStorageError(503, 'Drive storage is unavailable, try again shortly', 'drive_storage_unavailable');
   }
-  if (res.ok) return res;
+  if (res.ok || (allowRangeRefusal && res.status === 416)) return res;
   const text = await res.text().catch(() => '');
   let code: string | undefined;
   try {
@@ -137,7 +137,7 @@ export async function readVolumeFile(volume: string, path: string, range?: strin
   return call(`${v(volume)}/files/content?${q}`, {
     signal: AbortSignal.timeout(FILE_TIMEOUT_MS),
     headers: range ? { Range: range } : {},
-  });
+  }, true);
 }
 
 export async function writeVolumeFile(

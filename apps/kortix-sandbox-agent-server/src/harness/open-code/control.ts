@@ -99,6 +99,7 @@ function persistOpencodeRuntimeEnvSnapshot(): void {
  * gap for a name whose sole source of truth is a live push, so the next
  * `/kortix/env` push of an UNCHANGED value reads as unchanged, not as a
  * config-affecting delta that forces an avoidable respawn.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function restoreOpencodeRuntimeEnvSnapshotIfUnset(): void {
   const snapshot = readOpencodeRuntimeEnvSnapshot()
@@ -147,12 +148,18 @@ function opencodeEnvRestartMayPromote(
  */
 let opencodeEnvRestartPending = false
 
-/** Test seam: clear the pending flag between rows. */
+/**
+ * Test seam: clear the pending flag between rows.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function resetOpencodeEnvRestartPendingForTests(): void {
   opencodeEnvRestartPending = false
 }
 
-/** Test seam: is a deferred restart currently pending? */
+/**
+ * Test seam: is a deferred restart currently pending?
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function opencodeEnvRestartIsPendingForTests(): boolean {
   return opencodeEnvRestartPending
 }
@@ -163,6 +170,7 @@ export function opencodeEnvRestartIsPendingForTests(): boolean {
  * A no-op when nothing is pending. Never throws: a failed retry leaves the
  * flag set so the NEXT idle boundary tries again, and the box otherwise runs
  * on unchanged.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function retryDeferredOpencodeEnvRestart(
   opencode: Pick<Opencode, 'reloadConfig' | 'getInternalUrl'>,
@@ -302,7 +310,10 @@ async function unchangedRepo(projectTarget: string) {
   return { before: info, after: info }
 }
 
-/** Native control operations. HTTP parsing, authorization and status mapping stay in routes. */
+/**
+ * Native control operations. HTTP parsing, authorization and status mapping stay in routes.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function createOpenCodeControlService(
   opencode: Opencode,
   quickQueue: Pick<QuickQueueInterrupt, 'arm' | 'disarm'>,

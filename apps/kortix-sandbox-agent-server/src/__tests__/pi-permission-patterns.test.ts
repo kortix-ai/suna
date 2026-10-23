@@ -11,7 +11,7 @@ import { PermissionBroker, compilePermissionPolicy, skillGranted } from '@/harne
  * The runtime wiring (the tool call's args reach `rule()`) is proven in
  * pi-harness.test.ts.
  */
-const broker = (policy: unknown) => new PermissionBroker('ses_test', () => {}, compilePermissionPolicy(policy))
+const broker = (policy: unknown) => new PermissionBroker('ses_test', '/workspace', () => {}, compilePermissionPolicy(policy))
 
 describe('pi per-pattern permissions', () => {
   test.each([
@@ -56,6 +56,55 @@ describe('pi per-pattern permissions', () => {
     ['an edit rule does not touch read', { edit: 'deny' }, 'read', { path: 'a.txt' }, 'allow'],
   ] as const)('%s', (_name, policy, tool, args, expected) => {
     expect(broker(policy).rule(tool, args)).toBe(expected)
+  })
+
+  // A path rule matches the file the tool opens, not the string the model wrote:
+  // pi resolves `./`, `..`, `@`, `~`, `file://` and absolute paths before it reads.
+  const secrets = { read: { 'secrets/*': 'deny', '*': 'allow' }, edit: { 'secrets/*': 'deny', '*': 'allow' } }
+  test.each([
+    ['the plain path', 'read', 'secrets/a', 'deny'],
+    ['a leading ./', 'read', './secrets/a', 'deny'],
+    ['a .. detour', 'read', 'x/../secrets/a', 'deny'],
+    ['a leading @, which pi strips', 'read', '@secrets/a', 'deny'],
+    ['the absolute path', 'read', '/workspace/secrets/a', 'deny'],
+    ['a file:// URL', 'read', 'file:///workspace/secrets/a', 'deny'],
+    ['a write through ./', 'write', './secrets/a', 'deny'],
+    ['an edit through ..', 'edit', 'x/../secrets/a', 'deny'],
+    ['a sibling path stays allowed', 'read', './secrets-public/a', 'allow'],
+  ] as const)('%s', (_name, tool, path, expected) => {
+    expect(broker(secrets).rule(tool, { path })).toBe(expected)
+  })
+
+  test('a glob or grep path is matched the same way', () => {
+    expect(broker({ grep: { 'secrets': 'deny', '*': 'allow' } }).rule('grep', { pattern: 'x', path: ' ./secrets ' })).toBe('deny')
+  })
+
+  test('a file:// URL that does not parse asks under a restriction', () => {
+    expect(broker(secrets).rule('read', { path: 'file://host/secrets/a' })).toBe('ask')
+  })
+
+  // OpenCode asks `external_directory` with `<dir>/*` before a file tool leaves the workspace.
+  test.each([
+    ['a write outside the workspace', { external_directory: 'deny' }, 'write', '/etc/cron.d/x', 'deny'],
+    ['a .. out of the workspace', { external_directory: 'ask' }, 'read', '../other/a', 'ask'],
+    ['~ is the home directory', { external_directory: 'deny' }, 'read', '~/.ssh/id_rsa', 'deny'],
+    ['the directory glob is the subject', { external_directory: { '/tmp/*': 'allow', '*': 'deny' } }, 'write', '/tmp/a/b.txt', 'allow'],
+    ['…other directories fall to its default', { external_directory: { '/tmp/*': 'allow', '*': 'deny' } }, 'write', '/etc/x', 'deny'],
+    ['a grep searches the directory it names', { external_directory: { '/srv/data/*': 'allow', '*': 'deny' } }, 'grep', '/srv/data', 'allow'],
+    ['the "*" key covers it too', { '*': 'ask', read: 'allow' }, 'read', '/etc/hosts', 'ask'],
+    ['the strictest rule wins', { external_directory: 'allow', read: 'deny' }, 'read', '/etc/hosts', 'deny'],
+    ['inside the workspace it does not apply', { external_directory: 'deny' }, 'read', '/workspace/a', 'allow'],
+    ['a path that only starts with ..', { external_directory: 'deny' }, 'read', '..a', 'allow'],
+    ['no rule: pi does not ask, as before', { read: 'allow' }, 'read', '/etc/hosts', 'allow'],
+    ['tools OpenCode does not check are not covered', { external_directory: 'deny' }, 'show', '/tmp/a.png', 'allow'],
+  ] as const)('%s', (_name, policy, tool, path, expected) => {
+    expect(broker(policy).rule(tool, { path })).toBe(expected)
+  })
+
+  test('a request names the resolved path', () => {
+    const permissions = broker({ read: 'ask' })
+    void permissions.ask({ tool: 'read', args: { path: 'x/../secrets/a' } })
+    expect(permissions.list()[0]!.patterns).toEqual(['secrets/a'])
   })
 
   test('a deny outranks an earlier "always" on the same tool', () => {

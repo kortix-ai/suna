@@ -24,6 +24,7 @@
  * Kept as a plain exported constant (not inlined at the call site) so it's
  * independently testable and diffable — this is the load-bearing artifact of
  * the feature, not the wiring around it.
+ * @deprecated Moves a v1 project to the OpenCode-era v2 layout (harnesses/opencode). OpenCode is sunset (2026-10-23); migrate with `kortix migrate` to kortix_version 3.
  */
 export const MIGRATE_TO_V2_PROMPT = `Migrate this project's manifest from kortix_version 1 (kortix.toml) to kortix_version 2 (kortix.yaml), and move its files to the root layout. Read everything first, then make the change, then land it as a change request — do not merge it yourself.
 

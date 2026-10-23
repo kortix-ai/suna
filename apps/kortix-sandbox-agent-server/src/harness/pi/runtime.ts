@@ -452,7 +452,7 @@ export class PiRuntime {
 
   /** The brokers publish under the root id. */
   private bindRoot(): void {
-    this.permissions = new PermissionBroker(this.rootId, (frame) => this.publish(frame), {}, (request) => this.hooks.onPermissionAsked?.(request))
+    this.permissions = new PermissionBroker(this.rootId, this.workspace, (frame) => this.publish(frame), {}, (request) => this.hooks.onPermissionAsked?.(request))
     this.questions = new QuestionBroker(this.rootId, (frame) => this.publish(frame), (request) => {
       this.hooks.onQuestionAsked?.(request, (answers) => void this.questions.reply(request.id, answers))
     })
@@ -1526,7 +1526,7 @@ export class PiRuntime {
     // The subagent's own rules first, the session's rules otherwise. A deny from
     // either wins: delegating must never unlock a call the session denies.
     agent.beforeToolCall = this.toolGate((tool, args) => {
-      const own = resolvePolicyRule(policy, tool, args)
+      const own = resolvePolicyRule(policy, tool, args, this.workspace)
       const session = this.permissions.rule(tool, args)
       if (own === 'deny' || session === 'deny' || !allowed(tool)) return 'deny'
       return own ?? session

@@ -49,8 +49,8 @@
  *   of such a log still answers 413 above `SESSION_LOG_RESTORE_MAX_BYTES`.
  * - Thread guards. The leader also serves requests, and ECS kills a task over its memory limit
  *   with every request in flight. Before the thread starts:
- *   - Memory: the thread starts only while RSS plus `THREAD_BYTES_PER_JSON_BYTE` times the
- *     mirror's JSON bytes stays under `THREAD_MEMORY_SHARE` of the limit (cgroup `memory.max`,
+ *   - Memory: the thread starts only while RSS plus `THREAD_BYTES_PER_JSON_BYTE` (`lib/thread-memory.ts`) times the
+ *     mirror's JSON bytes stays under 75 % of the limit (cgroup `memory.max`,
  *     capped by `SESSION_LOG_BACKFILL_MEMORY_MB`). Else the session is `deferred` (and
  *     `too_large`), not converted, not failed: a later pass tries again.
  *   - Poison pill: the tick saves the state with the cursor on this session and
@@ -78,7 +78,6 @@
  *   per pass. No session id or content above debug. A `write` pass while
  *   `SESSION_LOG_INGEST_ENABLED` is off skips every session: one warning per pass.
  */
-import { readFileSync } from 'node:fs';
 import { toV1, type SessionLog, type V1Row } from '@kortix/api-contract/session-log';
 import { sessionLogBackfillState } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
@@ -87,6 +86,7 @@ import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { largeTextCount } from './session-log-blobs';
 import { breathe, writeSessionLogFromMirror } from './session-log-capture';
+import { threadRoom } from './lib/thread-memory';
 
 export const BACKFILL_BATCH_SIZE = 50;
 export const BACKFILL_BUDGET_MS = 20_000;
@@ -175,34 +175,13 @@ const restart = (state: BackfillState, mode: BackfillMode, extra: Partial<Backfi
 
 /** Thread attempts per session: a thread that kills its process twice never starts again. */
 export const THREAD_ATTEMPTS = 2;
-/**
- * The thread's peak memory per byte of the mirror's JSON, rounded up: 11.3 measured with `smol`
- * (1-vCPU Linux container, 131 MB of JSON, ~1.48 GB peak above the process).
- */
-const THREAD_BYTES_PER_JSON_BYTE = 12;
-/** The share of the memory limit RSS plus the thread's estimate must stay under. */
-const THREAD_MEMORY_SHARE = 0.75;
-
-/** The process's memory limit in bytes: cgroup v2 `memory.max` when set, capped by `SESSION_LOG_BACKFILL_MEMORY_MB`. */
-function memoryLimit(): number {
-  const configured = config.SESSION_LOG_BACKFILL_MEMORY_MB * 1024 * 1024;
-  try {
-    const max = readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim();
-    if (/^\d+$/.test(max)) return Math.min(Number(max), configured);
-  } catch {
-    // No cgroup v2 file (macOS, cgroup v1): the configured limit.
-  }
-  return configured;
-}
-
-/** Room for `sessionId`'s conversion thread: RSS plus its estimate under `THREAD_MEMORY_SHARE` of the limit. */
+/** Room for `sessionId`'s conversion thread (`threadRoom`, `lib/thread-memory.ts`). */
 async function threadFits(sessionId: string): Promise<boolean> {
   // Postgres detoasts the mirror for the length (~200 ms on 180 MB), off this event loop.
   const [row] = await db.execute<{ bytes: string }>(sql`
     SELECT coalesce(sum(octet_length(info::text) + coalesce(octet_length(parts::text), 0)), 0)::bigint AS bytes
       FROM kortix.session_transcript_messages WHERE session_id = ${sessionId}`);
-  const need = Number(row?.bytes ?? 0) * THREAD_BYTES_PER_JSON_BYTE;
-  return process.memoryUsage().rss + need <= THREAD_MEMORY_SHARE * memoryLimit();
+  return threadRoom(Number(row?.bytes ?? 0)).fits;
 }
 
 const STATE_ID = 'pass';

@@ -2,6 +2,8 @@
 
 # Rules
 
+> **Deprecated: OpenCode is sunset.** Every new Kortix session runs pi (`../pi/overview.md`). This page applies only to a session that still runs OpenCode. Do not add OpenCode config to a project.
+
 Set custom instructions for opencode.
 
 You can provide custom instructions to opencode by creating an `AGENTS.md` file. This is similar to Cursor's rules. It contains instructions that will be included in the LLM's context to customize its behavior for your specific project.

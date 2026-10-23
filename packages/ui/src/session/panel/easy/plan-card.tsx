@@ -81,6 +81,7 @@ function PlanProgress({ done, total, running }: { done: number; total: number; r
  * single row.
  *
  * Pure, so both branches are testable without mounting anything.
+ * @deprecated Renders an OpenCode-only tool or todo list in an OpenCode session (pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode.
  */
 export function planPanelRows(
   todos: ReadonlyArray<TodoItem>,
@@ -92,6 +93,7 @@ export function planPanelRows(
   return listed.length > 0 ? listed : keyed;
 }
 
+/** @deprecated Renders an OpenCode-only tool or todo list in an OpenCode session (pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode. */
 export function PlanPanelCard({ sessionId }: { sessionId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data } = useRuntimeSessionTodo(sessionId);

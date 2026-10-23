@@ -2,7 +2,8 @@
 
 `harness.ts` is the only module that imports a concrete adapter. It resolves
 the implementation and exposes a definition for configuration, boot, and service
-creation. The import rules are in [ARCHITECTURE.md](../../ARCHITECTURE.md). Two adapters are registered: `opencode` (the default) and `pi`. An
+creation. The import rules are in [ARCHITECTURE.md](../../ARCHITECTURE.md). Two adapters are registered: `pi`, which every new
+session runs, and `opencode`, deprecated (see "OpenCode sunset" below). An
 unknown id fails the boot.
 
 ```ts
@@ -12,17 +13,32 @@ const runtime = selected.createService(cfg, projectEnv)
 await runtime.lifecycle.start()
 ```
 
+## OpenCode sunset
+
+Since 2026-10-23 every new box runs pi. There is no `pi_harness` flag, and the
+manifest's `runtime:` selects nothing (`runtime: opencode` validates with a
+deprecation warning). OpenCode serves only boxes that booted it before, and it
+will be deleted. Until then:
+
+- Everything only OpenCode uses is `@deprecated`: `open-code/` and the
+  OpenCode-only names outside it. Never call it from new code and never add a
+  feature to it. Change it only to fix a bug that breaks a running OpenCode
+  session.
+- Build new behavior in `pi/` or `shared/`, behind a capability
+  (`RUNTIME_CAPABILITIES`), never behind a harness check.
+- Names that say `opencode` but serve pi too (`opencode_session_id`,
+  `/kortix/opencode/*`, the OpenCode-shaped event wire pi emits) are wire
+  names, not OpenCode code. They stay until a separate rename.
+
 ## Selection
 
 `KORTIX_HARNESS` (`opencode` | `pi`; unset means `opencode`) is set by apps/api
-at provisioning (`buildSessionSandboxEnvVars` → `selectSessionHarness`): pi when
-the project's `pi_harness` feature flag is on, or when the manifest says
-`runtime: pi`; OpenCode otherwise. `loadConfig` reads it BEFORE the adapter
-loads its own environment, so only the selected adapter's variables are parsed.
-There is no per-request switching: one box, one harness, for the life of the
-box. A new box of the session re-reads the selection, so a change of the flag or
-of `runtime:` switches an existing session's harness at its next new box. With
-`session_log_restore` on, that box restores the log into the new harness and
+at provisioning (`buildSessionRuntimeEnv`): always `pi`. Unset still means
+`opencode`, so a box that booted OpenCode before the sunset keeps it.
+`loadConfig` reads it BEFORE the adapter loads its own environment, so only the
+selected adapter's variables are parsed. There is no per-request switching: one
+box, one harness, for the life of the box. A new box of an OpenCode session
+boots pi. With `session_log_restore` on, that box restores the log into pi and
 records the switch in `harness.history` ("Harness history, a switch" below).
 `POST /v1/projects/:p/sessions/:s/log/switch-preflight` (apps/api) answers
 before that happens: whether the switch can happen (`available`, `reason`:
@@ -731,10 +747,9 @@ model call read it (its turn runs or ran), and it stays.
 
 ## The pi harness
 
-> **Direction: pi replaces OpenCode.** OpenCode support is temporary and will
-> be dropped. Kortix moves every session to pi once pi is verified to work for
-> everything OpenCode does today — the gaps are listed at the end of this
-> section. Until then OpenCode stays the default. When the move is complete,
+> **pi replaces OpenCode.** Every new session runs pi since 2026-10-23, and
+> OpenCode is deprecated ("OpenCode sunset" above). The gaps pi still has are
+> listed at the end of this section. When the last OpenCode session is gone,
 > `open-code/` and the `opencode` harness id are removed.
 
 pi (`@earendil-works/pi-agent-core` and `pi-coding-agent`, 1.2.0) is bundled
@@ -887,6 +902,17 @@ and `webfetch` (`open-code/lifecycle.ts` `capabilityToolRules`). The OpenCode
 tools cannot ask, so they run only when the capability is `allow`. A rule is an
 action, or a glob-pattern -> action map matched against a `bash` command or a
 workspace tool's path. A pattern map is never collapsed to its `*` entry.
+
+**A path rule matches the file, both harnesses.** OpenCode resolves the path
+and matches it relative to the worktree. pi resolves it as its file tools do
+(`pi/interactions.ts` `toolPath`: `@`, `~`, `file://`, `.`, `..`, absolute)
+and matches it relative to the workspace. So `./secrets/a`, `x/../secrets/a`,
+`@secrets/a` and `/workspace/secrets/a` all match `secrets/*`. A `read`,
+`write`, `edit`, `glob` or `grep` path outside the workspace also answers to
+`external_directory`, with the subject `<dir>/*`, and the strictest rule wins.
+pi applies `external_directory` only when a rule covers it. Neither harness
+resolves symlinks. A path rule does not govern `bash`: `cat secrets/a` is a
+`bash` command.
 
 **A bash line is decided command by command, both harnesses.** OpenCode asks
 for each command its tree-sitter parse finds. pi splits the line

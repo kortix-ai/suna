@@ -19,12 +19,18 @@ const STAGE_LABEL: Record<AttachStatus['stage'], string> = {
   attached: 'Attached',
 };
 
-/** One line, for a banner in the session view while an attach is being set up. */
+/**
+ * One line, for a banner in the session view while an attach is being set up.
+ * @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`.
+ */
 export function attachStatusLine(status: AttachStatus): string {
   return `${STAGE_LABEL[status.stage]} — ${status.detail}`;
 }
 
-/** The toast text for a finished attach. */
+/**
+ * The toast text for a finished attach.
+ * @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`.
+ */
 export function attachResultToast(result: RunAttachResult): { message: string; kind: ToastKind } {
   if ('error' in result) {
     return {
@@ -46,7 +52,10 @@ export interface AttachResultToastProps {
   onDismiss: () => void;
 }
 
-/** The toast the app shows once the TUI has repainted. */
+/**
+ * The toast the app shows once the TUI has repainted.
+ * @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`.
+ */
 export function AttachResultToast({ result, onDismiss }: AttachResultToastProps) {
   if (!result) return null;
   const { message, kind } = attachResultToast(result);

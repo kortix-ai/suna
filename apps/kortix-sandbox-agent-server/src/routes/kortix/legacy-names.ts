@@ -13,25 +13,40 @@ import type { HarnessHealth } from '@kortix/api-contract/runtime-relay'
 import type { HarnessEnvironmentResult, HarnessRefreshResult } from '@/harness/contract/control'
 import type { RunningRuntimeAssets } from '@/services/runtime-assets/runtime-assets'
 
-/** The Runtime API's pre-W3 mount: `/kortix/opencode/*`. */
+/**
+ * The Runtime API's pre-W3 mount: `/kortix/opencode/*`.
+ * @deprecated Pre-W3 OpenCode name, for an API built before W3; use the runtime_* / harness fields.
+ */
 export const LEGACY_RUNTIME_MOUNT = '/opencode'
 
-/** `POST /kortix/env` request: `opencodeEnv` is the pre-W3 `runtimeEnv`. */
+/**
+ * `POST /kortix/env` request: `opencodeEnv` is the pre-W3 `runtimeEnv`.
+ * @deprecated Pre-W3 OpenCode name, for an API built before W3; use the runtime_* / harness fields.
+ */
 export function legacyRuntimeEnv(body: object): unknown {
   return (body as { opencodeEnv?: unknown }).opencodeEnv
 }
 
-/** `POST /kortix/abort/after-tool` request: `opencode_session_id` is the pre-W3 `runtime_session_id`. */
+/**
+ * `POST /kortix/abort/after-tool` request: `opencode_session_id` is the pre-W3 `runtime_session_id`.
+ * @deprecated Pre-W3 OpenCode name, for an API built before W3; use the runtime_* / harness fields.
+ */
 export function legacyRuntimeSessionId(body: Record<string, unknown> | null): unknown {
   return body?.opencode_session_id
 }
 
-/** `POST /kortix/abort` response. */
+/**
+ * `POST /kortix/abort` response.
+ * @deprecated Pre-W3 OpenCode name, for an API built before W3; use the runtime_* / harness fields.
+ */
 export function legacyAbortFields(runtimeSessionId: string): Record<string, string> {
   return { opencode_session_id: runtimeSessionId }
 }
 
-/** `POST /kortix/env` response. */
+/**
+ * `POST /kortix/env` response.
+ * @deprecated Pre-W3 OpenCode name, for an API built before W3; use the runtime_* / harness fields.
+ */
 export function legacyEnvFields(result: HarnessEnvironmentResult): Record<string, unknown> {
   return {
     opencode_env_changed: result.runtime_env_changed,
@@ -43,12 +58,18 @@ export function legacyEnvFields(result: HarnessEnvironmentResult): Record<string
   }
 }
 
-/** `POST /kortix/refresh` response. */
+/**
+ * `POST /kortix/refresh` response.
+ * @deprecated Pre-W3 OpenCode name, for an API built before W3; use the runtime_* / harness fields.
+ */
 export function legacyRefreshFields(result: HarnessRefreshResult): Record<string, unknown> {
   return { opencode: result.runtime, opencode_pid: result.runtime_pid }
 }
 
-/** `GET /kortix/health`: the flat fields the `harness` block replaced. */
+/**
+ * `GET /kortix/health`: the flat fields the `harness` block replaced.
+ * @deprecated Pre-W3 OpenCode name, for an API built before W3; use the runtime_* / harness fields.
+ */
 export function legacyHealthFields(harness: HarnessHealth): Record<string, unknown> {
   const { pid, port } = harness.details
   return {
@@ -61,7 +82,10 @@ export function legacyHealthFields(harness: HarnessHealth): Record<string, unkno
   }
 }
 
-/** `GET /kortix/health` `runtime.running`: `opencode_version` was OpenCode's release on disk. */
+/**
+ * `GET /kortix/health` `runtime.running`: `opencode_version` was OpenCode's release on disk.
+ * @deprecated Pre-W3 OpenCode name, for an API built before W3; use the runtime_* / harness fields.
+ */
 export function legacyRunningFields(running: Pick<RunningRuntimeAssets, 'harness' | 'harness_version'>): Record<string, unknown> {
   return { opencode_version: running.harness === 'opencode' ? running.harness_version : null }
 }

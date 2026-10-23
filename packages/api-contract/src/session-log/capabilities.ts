@@ -63,6 +63,7 @@ const OPENCODE_NATIVE: CapabilityFeatures = {
   reasoning_replay: 'lowers_to_text', // another model's reasoning is replayed as text
   freeform_tool_input: false,
 };
+/** @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
 export const OPENCODE_CAPABILITIES: AdapterCapabilities = {
   harness: 'opencode',
   harness_versions: '1.18.23',
