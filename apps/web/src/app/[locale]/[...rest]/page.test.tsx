@@ -12,3 +12,11 @@ describe('the catch-all 404 route sets the document title', () => {
     expect(metadata.title).toBe('404 Page not found');
   });
 });
+
+// KRTX-3253: this route renders its own metadata before notFound(), so its
+// head carried the root layout's `index, follow` beside the `noindex` that
+// notFound() adds.
+test('the catch-all 404 is not indexed', async () => {
+  const metadata = await generateMetadata();
+  expect(metadata.robots).toEqual({ index: false, follow: true });
+});
