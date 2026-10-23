@@ -7,6 +7,7 @@ import { EmptyState } from '@kortix/ui/empty-state';
 import { ErrorState } from '@kortix/ui/error-state';
 import {
   DriveExplorer,
+  type FileExplorerSource,
   FileExplorerSourceProvider,
   FilesStoreProvider,
   useDriveAvailability,
@@ -80,6 +81,8 @@ export function SpaceFolderView({
       tab={tab}
       place={place}
       note={note}
+      // The Memory tab shows the channel's Memory folder; Files does not list it again.
+      hidden={tab === 'files' ? folders.memory : null}
     />
   );
 }
@@ -97,6 +100,7 @@ function SpaceDriveFolder({
   tab,
   place,
   note,
+  hidden,
 }: {
   projectId: string;
   drive: Drive;
@@ -105,6 +109,7 @@ function SpaceDriveFolder({
   tab: SpaceFolder['tab'];
   place: string;
   note: string | null;
+  hidden: string | null;
 }) {
   const t = useTranslations('spaces');
   const { user } = useAuth();
@@ -158,6 +163,7 @@ function SpaceDriveFolder({
           label={label}
           icon={<Glyph />}
           note={note}
+          hidden={hidden}
         />
       </FilesStoreProvider>
     </DriveFilesProvider>
@@ -171,6 +177,7 @@ function SpaceExplorer({
   label,
   icon,
   note,
+  hidden,
 }: {
   projectId: string;
   drive: Drive;
@@ -178,6 +185,8 @@ function SpaceExplorer({
   label: string;
   icon: ReactNode;
   note: string | null;
+  /** A drive path left out of every listing (the channel's Memory folder in Files). */
+  hidden: string | null;
 }) {
   const router = useRouter();
   const currentPath = toDrivePath(useFilesStore((s) => s.currentPath));
@@ -185,12 +194,17 @@ function SpaceExplorer({
   // folder in view (a subfolder can be narrower than the tab's folder).
   const access = useDriveFolder(drive.driveId, currentPath).data?.access ?? 'none';
   const canWrite = access === 'write' || access === 'manage';
-  const source = useMemo(
+  const source = useMemo<FileExplorerSource>(
     () => ({
       ...driveExplorerSource,
       capabilities: { ...driveExplorerSource.capabilities, write: canWrite },
+      useFileList: (dirPath) => {
+        const list = driveExplorerSource.useFileList(dirPath);
+        const data = useMemo(() => list.data?.filter((n) => n.absolute !== hidden), [list.data]);
+        return { ...list, data };
+      },
     }),
-    [canWrite],
+    [canWrite, hidden],
   );
   // Where a new file or folder lands: the tab's folder, then the folders below it.
   const location = {
