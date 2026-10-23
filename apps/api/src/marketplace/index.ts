@@ -81,8 +81,13 @@ marketplaceApp.openapi(
         query: z.string().optional(),
         type: z.string().optional(),
         source: z.string().optional(),
-        limit: z.string().optional(),
-        offset: z.string().optional(),
+        limit: z.string().optional().openapi({
+          description:
+            'Page size, a decimal integer. Opt-in: omit it, or send a value that is not a number, for the whole filtered catalog. 0 and negative values read as 1, values above 200 as 200. Items come bundles first, then by name, then by id, so an offset always lands on the same item.',
+        }),
+        offset: z.string().optional().openapi({
+          description: 'Items to skip before the page. Read only with `limit`. A negative or non-numeric value reads as 0.',
+        }),
       }),
     },
     responses: {
