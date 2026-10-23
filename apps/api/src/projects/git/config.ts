@@ -465,6 +465,33 @@ export function disconnectedProjectConfig(): ProjectConfigSummary {
   };
 }
 
+function manifestMap(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+function manifestText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+/** The top-level `domains:` map as a sorted array. Version-agnostic display
+ *  metadata (v2 and v3 read it the same way); empty when none are declared. */
+function domainsFromManifest(manifest: Record<string, unknown>): ProjectConfigSummary['domains'] {
+  return Object.entries(manifestMap(manifest.domains))
+    .map(([name, meta]) => {
+      const m = manifestMap(meta);
+      return {
+        name,
+        label: manifestText(m.label) ?? undefined,
+        description: manifestText(m.description) ?? undefined,
+        order: typeof m.order === 'number' ? m.order : undefined,
+      };
+    })
+    .sort(
+      (a, b) =>
+        (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER) ||
+        a.name.localeCompare(b.name),
+    );
+}
+
 export async function loadProjectConfig(
   project: GitBackedProject,
   files?: ProjectFileEntry[],
@@ -511,11 +538,21 @@ export async function loadProjectConfig(
   );
 
   const nativeAgents = await scanAgents(project, repoFiles, agentRe, declaredAgentPaths);
-  const { agent_discovery, agents } = resolveConfigAgents(
+  const { agent_discovery, agents: baseAgents } = resolveConfigAgents(
     nativeAgents,
     loadedAgents,
     declaredAgentFile,
   );
+  // `domain` is declared on the manifest's `agents.<name>` block (kortix.yaml),
+  // but the v2 listing builds agents from the scanned `.md` files, which carry
+  // no domain. Merge it from the manifest block here so a v2 project groups the
+  // same way a v3 one does. The `domains:` map is read version-agnostically.
+  const manifestAgentBlocks = manifestMap(manifest.agents);
+  const agents = baseAgents.map((agent) => ({
+    ...agent,
+    domain: agent.domain ?? manifestText(manifestMap(manifestAgentBlocks[agent.name]).domain),
+  }));
+  const domains = domainsFromManifest(manifest);
   const skills = await scanSkills(project, repoFiles, skillDirs(manifest));
   const commands = await scanCommands(project, repoFiles, commandRe);
   // v2 makes the manifest's declared default authoritative. Legacy projects
@@ -551,6 +588,7 @@ export async function loadProjectConfig(
     agents,
     skills,
     commands,
+    domains,
   };
 }
 
@@ -607,15 +645,7 @@ async function loadProjectConfigV3(
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  const domains = Object.entries(map(manifest.domains))
-    .map(([name, meta]) => {
-      const m = map(meta);
-      const order = typeof m.order === 'number' ? m.order : undefined;
-      return { name, label: text(m.label) ?? undefined, description: text(m.description) ?? undefined, order };
-    })
-    .sort((a, b) => (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER) || a.name.localeCompare(b.name));
-
-  return { agent_discovery: 'declarative', agents, skills, commands, domains };
+  return { agent_discovery: 'declarative', agents, skills, commands, domains: domainsFromManifest(manifest) };
 }
 
 function escapeRegExp(input: string): string {

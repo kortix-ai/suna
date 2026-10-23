@@ -130,6 +130,23 @@ export function BasicsSection({
         </Select>
       </SettingRow>
 
+      {/* Dashboard domain: which group this agent shows under on the Agents
+          page. A slug (`engineering`), or empty for the default "General"
+          group. Display-only — no behavior, no grants. i18n keys TODO before
+          merge. */}
+      <SettingRow
+        label="Domain"
+        help="Group this agent on the dashboard — a slug like engineering or marketing. Empty = General."
+      >
+        <Input
+          aria-label="Domain"
+          className="h-9 w-full sm:max-w-56"
+          value={draft.domain ?? ''}
+          placeholder="e.g. engineering"
+          onChange={(e) => set('domain', e.target.value.toLowerCase() || undefined)}
+        />
+      </SettingRow>
+
       {/* Stored as `hidden`, shown as "Show in pickers". A switch you turn ON
           to make something disappear is a double negative, and it sat two rows
           under "Enabled" — two toggles whose ON states meant opposite things. */}

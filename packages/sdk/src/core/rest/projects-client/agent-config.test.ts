@@ -51,6 +51,13 @@ describe('AgentConfigBlock', () => {
     };
     expect(block.connectors_required).toEqual(['gmail']);
   });
+
+  test('accepts a dashboard domain slug (and empty string to clear)', () => {
+    const grouped: AgentConfigBlock = { domain: 'engineering' };
+    const cleared: AgentConfigBlock = { domain: '' };
+    expect(grouped.domain).toBe('engineering');
+    expect(cleared.domain).toBe('');
+  });
 });
 
 describe('updateAgentConfig', () => {
@@ -64,6 +71,11 @@ describe('updateAgentConfig', () => {
       connectors_required: ['gmail'],
     });
     expect(calls[0]?.body).not.toHaveProperty('connectors_personal');
+  });
+
+  test('sends the agent domain through to the PUT body', async () => {
+    await updateAgentConfig('project-1', 'support', { skills: 'all', domain: 'engineering' });
+    expect(calls[0]?.body).toMatchObject({ domain: 'engineering' });
   });
 
   test('a GET -> PUT round trip sends the block `file` back unchanged', async () => {

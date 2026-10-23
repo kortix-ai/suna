@@ -109,6 +109,9 @@ const AgentBlockSchema = z
     enabled: z.boolean().optional(),
     tools: AgentToolsSchema.optional(),
     sandbox: z.string().min(1).max(128).regex(SLUG_RE).optional(),
+    // Dashboard classification group (`agents.<name>.domain`). Display-only,
+    // version-agnostic. Empty string clears it (the handler drops empties).
+    domain: z.union([z.literal(''), z.string().min(1).max(64).regex(SLUG_RE)]).optional(),
     connectors: GrantSetSchema.optional(),
     connectors_required: z.array(z.string().trim().min(1).max(200)).max(500).optional(),
     // Deprecated request alias. The handler normalizes it before serialization.
@@ -492,7 +495,11 @@ export function registerAgentConfigRoutes(): void {
       }
       const governanceBlock: AgentBlockV2 = {};
       for (const [key, value] of Object.entries(normalizedGovernance.block)) {
-        if (value !== undefined) (governanceBlock as Record<string, unknown>)[key] = value;
+        if (value === undefined) continue;
+        // `domain: ''` clears it: the block is a whole-block replace, so leaving
+        // the key out removes it instead of writing an empty string.
+        if (key === 'domain' && value === '') continue;
+        (governanceBlock as Record<string, unknown>)[key] = value;
       }
 
       let manifest;
