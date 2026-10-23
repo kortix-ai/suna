@@ -16,3 +16,7 @@ test('crawlers may fetch the static assets and images a page needs to render', (
 test('a non-canonical host still disallows everything', () => {
   expect(renderRobotsTxt('dev.kortix.com')).not.toContain('Allow: /_next/static/');
 });
+
+test('crawler directives do not enumerate private routes', () => {
+  expect(renderRobotsTxt('kortix.com')).not.toContain('/admin');
+});

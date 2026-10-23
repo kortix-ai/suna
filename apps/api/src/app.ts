@@ -1,3 +1,4 @@
+import { wellKnownResponse } from '@kortix/shared/well-known';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { config } from './config';
 import { auth, errors, json } from './openapi';
@@ -71,6 +72,9 @@ export { app };
 
 installHttpMiddleware(app);
 
+for (const path of ['/.well-known/security.txt', '/robots.txt', '/sitemap.xml']) {
+  app.get(path, (c) => wellKnownResponse(c.req.path) ?? c.notFound());
+}
 registerSystemRoutes(app);
 registerClientRoutes(app);
 

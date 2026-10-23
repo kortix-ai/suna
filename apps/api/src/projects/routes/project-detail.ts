@@ -65,7 +65,11 @@ export function registerProjectDetailRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const requestedProjectId = c.req.param('projectId');
+      const projectId = requestedProjectId === 'current'
+        ? c.get('tokenProjectId')
+        : requestedProjectId;
+      if (!projectId) return c.json({ error: 'Not found' }, 404);
 
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);

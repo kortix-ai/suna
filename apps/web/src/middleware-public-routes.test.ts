@@ -46,6 +46,8 @@ test('every supported public surface accepts an explicit locale prefix', async (
     '/careers',
     '/channels',
     '/changelog',
+    '/changelog/releases',
+    '/changelog/releases/page/2',
     '/company-as-code',
     '/connectors',
     '/contact',

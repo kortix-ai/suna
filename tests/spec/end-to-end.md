@@ -932,7 +932,7 @@ Run these against representative endpoints from each domain.
 `SEC-A` `ANON` (no header) on any protected route → 401.
 `SEC-B` malformed/expired JWT → 401; revoked PAT/api-key → 401.
 `SEC-C` `NONMEMBER` on `GET/PATCH/DELETE /accounts/:id`, `/projects/:id` → 403/404.
-`SEC-D` project-scoped PAT: allowed only on its bound project + `/accounts/me`; **every other surface → 403** (cross-project, `/accounts/*`, project-list, router/billing/channels/etc.).
+`SEC-D` project-scoped PAT: GET /v1/projects/current returns its bound project; allowed only on its bound project + `/accounts/me`; **every other surface → 403** (cross-project, `/accounts/*`, project-list, router/billing/channels/etc.).
 `SEC-E` 404 shape — `GET /v1/nonexistent` → `{error:true,message:"Not found",status:404}`.
 `SEC-F` webhook sig bypass — Stripe/RevenueCat/Slack/Telegram/project-webhook with missing/wrong sig never process the forged payload. An unconfigured webhook can return its exact service-unavailable response.
 `SEC-G` preview proxy without token/cookie → 401 (share routes and the `/v1/p/:sandboxId/:port/*` data path); cross-sandbox token reuse → 403.
