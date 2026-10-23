@@ -32,8 +32,11 @@ import type {
   ProjectMemoryPage,
   ProjectMemoryPageSummary,
   ProjectMemoryRememberResult,
+  ProjectMemorySearchInput,
+  ProjectMemorySearchResult,
   ProjectMemoryUndoResult,
   ProjectMemoryVersionList,
+  SessionMemoryUsage,
   UpdateProjectMemoryPageInput,
 } from './core/rest/projects-client/memory';
 import type { ProjectSpace, ProjectSpaceLink, ProjectSpaceSummary } from './core/rest/projects-client/spaces';
@@ -113,6 +116,13 @@ export function contractDrift(): void {
   fits<C.MemoryPageCreateInput>(wire<CreateProjectMemoryPageInput>());
   fits<C.MemoryPageUpdateInput>(wire<UpdateProjectMemoryPageInput>());
   fits<C.MemoryNoteInput>(wire<AddProjectMemoryNoteInput>());
+  fits<ProjectMemorySearchResult>(wire<C.MemorySearchResult>());
+  noPhantom<NoPhantom<ProjectMemorySearchResult['hits'][number], C.MemorySearchHit>>();
+  fits<C.MemorySearchHit['type']>(wire<NonNullable<ProjectMemorySearchInput['type']>>());
+  fits<SessionMemoryUsage>(wire<C.MemoryUsage>());
+  noPhantom<NoPhantom<SessionMemoryUsage, C.MemoryUsage>>();
+  noPhantom<NoPhantom<SessionMemoryUsage['layers'][number], C.MemoryUsage['layers'][number]>>();
+  noPhantom<NoPhantom<SessionMemoryUsage['layers'][number]['pages'][number], C.MemoryUsage['layers'][number]['pages'][number]>>();
 
   fits<SessionStartResult>(wire<C.SessionStartResult>());
   noPhantom<NoPhantom<SessionStartResult, C.SessionStartResult>>();

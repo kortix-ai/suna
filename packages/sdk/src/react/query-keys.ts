@@ -52,6 +52,7 @@
  * can ever prefix-match the other. Do not "tidy" this back to `'kortix'`.
  */
 import type { ReviewItemsQuery } from '../core/rest/projects-client/review';
+import type { ProjectMemorySearchInput } from '../core/rest/projects-client/memory';
 import type { ListProjectSessionsOptions } from '../core/rest/projects-client/sessions';
 
 type SessionListFilters = Pick<
@@ -575,6 +576,13 @@ export const qk = {
     memoryPage: (id: string, pageId: string) => [...qk.project.memory(id), 'page', pageId] as const,
     /** `listProjectMemoryHistory` — one page's versions (an infinite query). */
     memoryHistory: (id: string, pageId: string) => [...qk.project.memoryPage(id, pageId), 'history'] as const,
+    /** `searchProjectMemory` — one query (`q` trimmed). Under `memory`, so a write refreshes the hits. */
+    memorySearch: (id: string, input: ProjectMemorySearchInput) => [...qk.project.memory(id), 'search', input] as const,
+    /**
+     * `getSessionMemoryUsage` — one thread's "Used memory". Outside `memory` on
+     * purpose: the record is fixed at the thread's first turn, so no write refreshes it.
+     */
+    sessionMemoryUsage: (id: string, sessionId: string) => [...qk.project.scope(id), 'memory-usage', sessionId] as const,
     /** `listProjectGoals` — the goal folders in Files with their heartbeats. */
     goals: (id: string) => [...qk.project.scope(id), 'goals'] as const,
     /** `getProjectGoalFiles` — one goal folder's log, notes and verification. */

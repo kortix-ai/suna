@@ -162,6 +162,16 @@ test('project(id).memory reaches layers, pages, history and undo', async () => {
   expect(calls[9]!.body).toEqual({ version_id: 'V1' });
 });
 
+test('project(id).memory searches pages and reads a thread’s Used memory', async () => {
+  const memory = kortix.project('P1').memory;
+  await memory.search({ q: 'Priya', layer: 'company' });
+  await memory.usage('T1');
+  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+    'GET http://test.local/projects/P1/memory/search?q=Priya&layer=company',
+    'GET http://test.local/projects/P1/sessions/T1/memory-usage',
+  ]);
+});
+
 test('project(id).spaces reaches a channel’s apps, links and summary', async () => {
   const spaces = kortix.project('P1').spaces;
   await spaces.apps('S1');

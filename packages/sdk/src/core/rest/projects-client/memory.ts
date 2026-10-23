@@ -6,7 +6,8 @@
 // is off. Every call passes `showErrors: false`: the caller shows the error,
 // and a rejection is an `ApiError` whose `code` names it (`version_conflict`,
 // `title_taken`, `page_limit`, `layer_read_only`, `page_too_large`,
-// `secret_detected`, `superseded`, `already_undone`, `memory_not_found`).
+// `secret_detected`, `superseded`, `already_undone`, `memory_not_found`,
+// `invalid_input`, `session_not_found`).
 // The types carry the same fields as `@kortix/api-contract/memory`
 // (held equal by `src/contract-drift.test.ts`).
 
@@ -238,17 +239,63 @@ export interface ProjectMemoryRememberResult {
   copy_path: string | null;
 }
 
+/** One hit of `searchProjectMemory`. */
+export interface ProjectMemorySearchHit {
+  page_id: string;
+  layer_key: ProjectMemoryLayerKey;
+  /** "Company", "#marketing", or the DM's agent name. */
+  layer_name: string;
+  scope: ProjectMemoryLayerScope;
+  type: ProjectMemoryPageType;
+  title: string;
+  summary: string;
+  /** Up to ~160 characters of the body around the first match, source tokens removed. */
+  snippet: string;
+  status: ProjectMemoryPageStatus;
+}
+
+export interface ProjectMemorySearchResult {
+  /** Best first. */
+  hits: ProjectMemorySearchHit[];
+}
+
+export interface ProjectMemorySearchInput {
+  /** 2–200 characters after trimming; shorter rejects with 400 `invalid_input`. */
+  q: string;
+  /** Search this one layer (`company` or a space id) only. */
+  layer?: ProjectMemoryLayerKey;
+  type?: ProjectMemoryPageType;
+  /** 1–20; the API's default is 20. */
+  limit?: number;
+}
+
+/** One layer of a thread's "Used memory": the pages listed to its agent. */
+export interface SessionMemoryUsageLayer {
+  layer_key: ProjectMemoryLayerKey;
+  scope: ProjectMemoryLayerScope;
+  name: string;
+  pages: { page_id: string; type: ProjectMemoryPageType; title: string }[];
+}
+
+/** What `getSessionMemoryUsage` resolves. */
+export interface SessionMemoryUsage {
+  /** When the thread's first turn listed the pages; null before the first turn. */
+  loaded_at: string | null;
+  layers: SessionMemoryUsageLayer[];
+}
+
 const memory = (projectId: string) => `/projects/${projectId}/memory`;
 const layer = (projectId: string, layerKey: ProjectMemoryLayerKey) => `${memory(projectId)}/layers/${layerKey}`;
 const page = (projectId: string, pageId: string) => `${memory(projectId)}/pages/${pageId}`;
 const quiet = { showErrors: false } as const;
 
-function paged(path: string, options?: ProjectMemoryPageOptions): string {
+/** The `?limit=&before=` suffix, or ''. A suffix, not a wrapper, so the route-contract test resolves the path. */
+function pageQuery(options?: ProjectMemoryPageOptions): string {
   const query = new URLSearchParams();
   if (options?.limit !== undefined) query.set('limit', String(options.limit));
   if (options?.before) query.set('before', options.before);
   const text = query.toString();
-  return text ? `${path}?${text}` : path;
+  return text ? `?${text}` : '';
 }
 
 /** One layer with its page counts; the first read creates it. Another member's DM rejects with 404 `memory_not_found`. A background read. */
@@ -294,7 +341,7 @@ export async function listProjectMemoryChanges(
   options?: ProjectMemoryPageOptions,
 ): Promise<ProjectMemoryChangeList> {
   return unwrap(
-    await backendApi.get<ProjectMemoryChangeList>(paged(`${layer(projectId, layerKey)}/changes`, options), quiet),
+    await backendApi.get<ProjectMemoryChangeList>(`${layer(projectId, layerKey)}/changes${pageQuery(options)}`, quiet),
   );
 }
 
@@ -328,7 +375,7 @@ export async function listProjectMemoryHistory(
   options?: ProjectMemoryPageOptions,
 ): Promise<ProjectMemoryVersionList> {
   return unwrap(
-    await backendApi.get<ProjectMemoryVersionList>(paged(`${page(projectId, pageId)}/history`, options), quiet),
+    await backendApi.get<ProjectMemoryVersionList>(`${page(projectId, pageId)}/history${pageQuery(options)}`, quiet),
   );
 }
 
@@ -352,4 +399,27 @@ export async function undoProjectMemoryVersion(projectId: string, versionId: str
   return unwrap(
     await backendApi.post<ProjectMemoryUndoResult>(`${memory(projectId)}/versions/${versionId}/undo`, undefined, quiet),
   );
+}
+
+/**
+ * Search the pages a person can read: Company, every live channel and their
+ * own DMs, or the one `layer`. Full text over title, summary and body, then
+ * titles containing `q`. `q` under 2 characters rejects with 400
+ * `invalid_input`. A background read.
+ */
+export async function searchProjectMemory(projectId: string, input: ProjectMemorySearchInput): Promise<ProjectMemorySearchResult> {
+  const query = new URLSearchParams({ q: input.q });
+  if (input.layer) query.set('layer', input.layer);
+  if (input.type) query.set('type', input.type);
+  if (input.limit !== undefined) query.set('limit', String(input.limit));
+  return unwrap(await backendApi.get<ProjectMemorySearchResult>(`${memory(projectId)}/search?${query}`, quiet));
+}
+
+/**
+ * A thread's "Used memory": the pages listed to its agent at the first turn,
+ * by layer. Pages deleted since are left out. A thread the caller cannot open
+ * rejects with 404 `session_not_found`. A background read.
+ */
+export async function getSessionMemoryUsage(projectId: string, sessionId: string): Promise<SessionMemoryUsage> {
+  return unwrap(await backendApi.get<SessionMemoryUsage>(`/projects/${projectId}/sessions/${sessionId}/memory-usage`, quiet));
 }

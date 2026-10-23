@@ -7,14 +7,18 @@ import {
   deleteProjectMemoryPage,
   getProjectMemoryLayer,
   getProjectMemoryPage,
+  getSessionMemoryUsage,
   listProjectMemoryChanges,
   listProjectMemoryHistory,
   listProjectMemoryPages,
   restoreProjectMemoryPage,
+  searchProjectMemory,
   undoProjectMemoryVersion,
   updateProjectMemoryPage,
   type ProjectMemoryLayer,
   type ProjectMemoryPage,
+  type ProjectMemorySearchHit,
+  type SessionMemoryUsage,
 } from './memory';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -162,7 +166,43 @@ test('undoProjectMemoryVersion POSTs to the version undo and returns every page 
   expect(calls).toEqual([{ url: `${base}/versions/${VERSION}/undo`, method: 'POST', body: undefined }]);
 });
 
+const hit: ProjectMemorySearchHit = {
+  page_id: PAGE,
+  layer_key: SPACE,
+  layer_name: '#launch',
+  scope: 'channel',
+  type: 'people',
+  title: 'Priya',
+  summary: 'Runs the Northwind launch',
+  snippet: 'Owns the launch',
+  status: 'confirmed',
+};
+
+test('searchProjectMemory GETs memory/search with q and returns the hits', async () => {
+  nextResponse = { status: 200, body: { hits: [hit] } };
+  expect(await searchProjectMemory('P1', { q: 'Priya' })).toEqual({ hits: [hit] });
+  expect(calls).toEqual([{ url: `${base}/search?q=Priya`, method: 'GET', body: undefined }]);
+});
+
+test('searchProjectMemory passes layer, type and limit, and encodes q', async () => {
+  nextResponse = { status: 200, body: { hits: [] } };
+  await searchProjectMemory('P1', { q: 'launch & QA', layer: 'company', type: 'decisions', limit: 5 });
+  expect(calls[0]!.url).toBe(`${base}/search?q=launch+%26+QA&layer=company&type=decisions&limit=5`);
+});
+
+test('getSessionMemoryUsage GETs the thread memory-usage route', async () => {
+  const usage: SessionMemoryUsage = {
+    loaded_at: '2026-10-23T00:00:00.000Z',
+    layers: [{ layer_key: 'company', scope: 'company', name: 'Company', pages: [{ page_id: PAGE, type: 'people', title: 'Priya' }] }],
+  };
+  nextResponse = { status: 200, body: usage };
+  expect(await getSessionMemoryUsage('P1', 'T1')).toEqual(usage);
+  expect(calls).toEqual([{ url: 'http://test.local/v1/projects/P1/sessions/T1/memory-usage', method: 'GET', body: undefined }]);
+});
+
 test.each([
+  ['searchProjectMemory', 400, 'invalid_input', () => searchProjectMemory('P1', { q: 'x' })],
+  ['getSessionMemoryUsage', 404, 'session_not_found', () => getSessionMemoryUsage('P1', 'T1')],
   ['updateProjectMemoryPage', 409, 'version_conflict', () => updateProjectMemoryPage('P1', PAGE, { base_version: 2 })],
   ['createProjectMemoryPage', 409, 'title_taken', () => createProjectMemoryPage('P1', SPACE, { type: 'people', title: 'Priya' })],
   ['createProjectMemoryPage', 413, 'page_too_large', () => createProjectMemoryPage('P1', SPACE, { type: 'playbooks', title: 'Big', body: 'x' })],

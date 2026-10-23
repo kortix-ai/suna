@@ -4,7 +4,9 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 // return their config so the wiring is asserted without a render tree.
 let invalidated: unknown[][] = [];
 let cached: { key: unknown[]; data: unknown }[] = [];
+const keepPreviousData = (previous: unknown) => previous;
 mock.module('@tanstack/react-query', () => ({
+  keepPreviousData,
   useQuery: (config: Record<string, unknown>) => config,
   useInfiniteQuery: (config: Record<string, unknown>) => config,
   useMutation: (config: Record<string, unknown>) => config,
@@ -27,7 +29,9 @@ const {
   useProjectMemoryLayer,
   useProjectMemoryPage,
   useProjectMemoryPages,
+  useProjectMemorySearch,
   useRestoreProjectMemoryPage,
+  useSessionMemoryUsage,
   useUndoProjectMemoryVersion,
   useUpdateProjectMemoryPage,
 } = await import('./use-project-memory');
@@ -111,6 +115,76 @@ describe('memory reads', () => {
     expect((useProjectMemoryPage('P1', null) as any).enabled).toBe(false);
     expect((useProjectMemoryHistory('P1', null) as any).enabled).toBe(false);
     expect((useProjectMemoryPages('P1', 'S1', { enabled: false }) as any).enabled).toBe(false);
+  });
+});
+
+describe('memory search', () => {
+  test('searches the trimmed q under the memory prefix, keeping the previous hits while the next q loads', async () => {
+    response = { hits: [] };
+    const search = useProjectMemorySearch('P1', { q: '  Priya ', layer: 'company', type: 'people', limit: 5 }) as any;
+    expect(search.queryKey).toEqual(qk.project.memorySearch('P1', { q: 'Priya', layer: 'company', type: 'people', limit: 5 }));
+    const prefix = qk.project.memory('P1');
+    expect(search.queryKey.slice(0, prefix.length)).toEqual([...prefix]);
+    expect(search.enabled).toBe(true);
+    expect(search.placeholderData).toBe(keepPreviousData);
+    expect(await search.queryFn()).toEqual({ hits: [] });
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      `GET ${base}/search?q=Priya&layer=company&type=people&limit=5`,
+    ]);
+  });
+
+  test('two queries get their own cache slots; trailing spaces share one', () => {
+    expect(qk.project.memorySearch('P1', { q: 'Priya' })).not.toEqual(qk.project.memorySearch('P1', { q: 'Pri' }) as never);
+    expect((useProjectMemorySearch('P1', { q: 'Priya ' }) as any).queryKey).toEqual(
+      (useProjectMemorySearch('P1', { q: 'Priya' }) as any).queryKey,
+    );
+  });
+
+  test('is disabled below 2 characters after trimming, without a project, or when the caller disables it', () => {
+    expect((useProjectMemorySearch('P1', { q: '' }) as any).enabled).toBe(false);
+    expect((useProjectMemorySearch('P1', { q: ' P ' }) as any).enabled).toBe(false);
+    expect((useProjectMemorySearch('P1', { q: 'Pr' }) as any).enabled).toBe(true);
+    expect((useProjectMemorySearch(null, { q: 'Priya' }) as any).enabled).toBe(false);
+    expect((useProjectMemorySearch('P1', { q: 'Priya' }, { enabled: false }) as any).enabled).toBe(false);
+  });
+
+  test('a memory write refreshes search results: the search key sits under the invalidated prefix', async () => {
+    const create = useCreateProjectMemoryPage('P1', 'S1') as any;
+    await create.onSuccess();
+    const prefix = qk.project.memory('P1');
+    expect(invalidated).toContainEqual([...prefix]);
+    expect(qk.project.memorySearch('P1', { q: 'Priya' }).slice(0, prefix.length)).toEqual([...prefix]);
+  });
+});
+
+describe('Used memory', () => {
+  test('reads the thread memory-usage route', async () => {
+    response = { loaded_at: null, layers: [] };
+    const usage = useSessionMemoryUsage('P1', 'T1') as any;
+    expect(usage.queryKey).toEqual(qk.project.sessionMemoryUsage('P1', 'T1'));
+    expect(usage.enabled).toBe(true);
+    expect(await usage.queryFn()).toEqual({ loaded_at: null, layers: [] });
+    expect(calls).toEqual([{ method: 'GET', url: 'http://test.local/projects/P1/sessions/T1/memory-usage', body: undefined }]);
+  });
+
+  test('never goes stale once the first turn loaded it; before that, the next mount reads it again', () => {
+    const usage = useSessionMemoryUsage('P1', 'T1') as any;
+    expect(usage.staleTime({ state: { data: { loaded_at: '2026-10-23T00:00:00.000Z', layers: [] } } })).toBe(Infinity);
+    expect(usage.staleTime({ state: { data: { loaded_at: null, layers: [] } } })).toBe(0);
+    expect(usage.staleTime({ state: { data: undefined } })).toBe(0);
+  });
+
+  test('no memory write invalidates it: its key is outside the memory prefix', async () => {
+    const remove = useDeleteProjectMemoryPage('P1') as any;
+    await remove.onSuccess();
+    const key = qk.project.sessionMemoryUsage('P1', 'T1');
+    for (const prefix of invalidated) expect(key.slice(0, prefix.length)).not.toEqual(prefix as never);
+  });
+
+  test('is disabled without both ids or when the caller disables it', () => {
+    expect((useSessionMemoryUsage(null, 'T1') as any).enabled).toBe(false);
+    expect((useSessionMemoryUsage('P1', undefined) as any).enabled).toBe(false);
+    expect((useSessionMemoryUsage('P1', 'T1', { enabled: false }) as any).enabled).toBe(false);
   });
 });
 

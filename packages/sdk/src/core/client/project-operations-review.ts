@@ -63,6 +63,10 @@ export function bindProjectOperationsReview(projectId: string) {
       },
       /** Undo one change by any of its versions. */
       undo: (versionId: string) => P.undoProjectMemoryVersion(projectId, versionId),
+      /** Search the pages the caller can read: `{ q, layer?, type?, limit? }`, `q` at least 2 characters. */
+      search: (...a: DropFirst<Parameters<typeof P.searchProjectMemory>>) => P.searchProjectMemory(projectId, ...a),
+      /** A thread's "Used memory": the pages listed to its agent at the first turn. */
+      usage: (sessionId: string) => P.getSessionMemoryUsage(projectId, sessionId),
     },
 
     /** Review Center — the per-project human-in-the-loop inbox (change requests, tool approvals, agent outputs/decisions). */

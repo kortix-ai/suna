@@ -505,6 +505,8 @@ const { changes, next } = await m.changes(ch.space_id); // Recent changes, newes
 await m.changes(ch.space_id, { before: next ?? undefined, limit: 20 }); // the next older page
 const { versions } = await m.pages.history(page.page_id); // each version's snapshot; same paging
 await m.pages.restore(page.page_id, versions[1].version_id); // a new version with that content
+const { hits } = await m.search({ q: "launch date", type: "decisions" }); // best first; `layer` limits it to one layer
+const used = await m.usage(sessionId); // a thread's "Used memory": { loaded_at, layers: [{ layer_key, scope, name, pages }] }
 ```
 
 - Errors are `ApiError` with `code`: `409` `title_taken` (`data.page_id`),
@@ -513,6 +515,16 @@ await m.pages.restore(page.page_id, versions[1].version_id); // a new version wi
   `page_too_large` (body over 8,192 UTF-8 bytes); `422` `secret_detected`;
   `404` `memory_not_found` (another member's DM, an unknown id). None reaches
   the host error handler.
+- `search({ q, layer?, type?, limit? })` searches Company, every live channel
+  and the caller's own DMs (or the one `layer`): full text over title, summary
+  and body, then titles that contain `q`. `q` is 2–200 characters (shorter →
+  `400` `invalid_input`), `limit` 1–20 (default 20). Each hit carries
+  `layer_key`, `layer_name`, `scope`, `type`, `title`, `summary`, `snippet`
+  (~160 characters around the first match) and `status`.
+- `usage(sessionId)` lists the pages the thread's agent was given at its first
+  turn, by layer. `loaded_at` is `null` before the first turn; pages deleted
+  since are left out; a thread the caller cannot open → `404`
+  `session_not_found`.
 - A thread's "Saved to memory" line carries `ProjectMemoryRememberResult`
   (the agent's tool result); pass its `version_id` to `undo`.
 - React: `useProjectMemoryLayer(pid, layerKey)`, `useProjectMemoryPages(pid, layerKey)`,
@@ -523,6 +535,11 @@ await m.pages.restore(page.page_id, versions[1].version_id); // a new version wi
   `useDeleteProjectMemoryPage(pid)`, `useRestoreProjectMemoryPage(pid)`,
   `useUndoProjectMemoryVersion(pid)`. Each write refreshes every memory read of
   the project (`qk.project.memory(pid)`) and the channel tab counts.
+  `useProjectMemorySearch(pid, { q, layer?, type?, limit? })` runs once `q` has
+  2 characters after trimming and keeps the previous hits while the next query
+  loads; debounce the input in the host. A write refreshes its hits.
+  `useSessionMemoryUsage(pid, sessionId)` reads "Used memory"; once `loaded_at`
+  is set it never refetches, and no write invalidates it.
 
 ### Apps
 
@@ -720,7 +737,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.mobileClientPolicy()` | the operator's mobile release policy, `GET /v1/clients/mobile`, **no token needed** (read before login): resolves `{ minimum_version, store_url_ios, store_url_android }`, each a string or `null`; a non-200 answer throws `ApiError`. A mobile host compares its app version to `minimum_version` with `compareSemver(a, b)` (`-1 \| 0 \| 1`, or `null` when either side does not parse; ignores a leading `v` and `-pre`/`+build` suffixes) and fails open on `null`. Also exported standalone as `getMobileClientPolicy` and the `MobileClientPolicy` type. The operator sets `MOBILE_MIN_VERSION`, `MOBILE_STORE_URL_IOS`, `MOBILE_STORE_URL_ANDROID` on the API |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
-| `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events; `.fire(slug, { payload, dryRun })`; run history `.runs(slug)` / `.projectRuns({ status })`; `.replay(slug, runId)`) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.spaces.{list,create,update,dm,apps,links,summary}` (channels and DMs; experimental, `project_channels` flag) · `.memory.{layer,changes,pages,notes,undo}` (memory pages; experimental, `project_channels` flag) · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
+| `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events; `.fire(slug, { payload, dryRun })`; run history `.runs(slug)` / `.projectRuns({ status })`; `.replay(slug, runId)`) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.spaces.{list,create,update,dm,apps,links,summary}` (channels and DMs; experimental, `project_channels` flag) · `.memory.{layer,changes,pages,notes,undo,search,usage}` (memory pages; experimental, `project_channels` flag) · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`restore`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`watch`/`setWatch`/`presence`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · runtime REST escape hatches: `stream()` and the deprecated `.runtime` |
 | `kortix.runtime()` | the runtime REST client for the active sandbox (the SDK's own `RuntimeClient`, frozen at the `@opencode-ai/sdk` 1.18.23 route shapes); use a session-scoped handle in multi-tenant code |
 

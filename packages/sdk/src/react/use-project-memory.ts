@@ -1,21 +1,25 @@
 'use client';
 
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   addProjectMemoryNote,
   createProjectMemoryPage,
   deleteProjectMemoryPage,
   getProjectMemoryLayer,
   getProjectMemoryPage,
+  getSessionMemoryUsage,
   listProjectMemoryChanges,
   listProjectMemoryHistory,
   listProjectMemoryPages,
   restoreProjectMemoryPage,
+  searchProjectMemory,
   undoProjectMemoryVersion,
   updateProjectMemoryPage,
   type AddProjectMemoryNoteInput,
   type CreateProjectMemoryPageInput,
   type ProjectMemoryPage,
+  type ProjectMemorySearchInput,
+  type SessionMemoryUsage,
   type UpdateProjectMemoryPageInput,
 } from '../core/rest/projects-client/memory';
 import { contract } from './query-contracts';
@@ -83,6 +87,37 @@ export function useProjectMemoryHistory(projectId: Id, pageId: Id, options?: Rea
     getNextPageParam: (last: { next: string | null }) => last.next ?? undefined,
     enabled: on(options, projectId, pageId),
     ...contract('inventory'),
+  });
+}
+
+/**
+ * Search the pages the caller can read. Disabled until `q` has 2 characters
+ * after trimming; the previous hits stay while the next query loads. Debounce
+ * the input in the host: every distinct `q` is one request.
+ */
+export function useProjectMemorySearch(projectId: Id, input: ProjectMemorySearchInput, options?: ReadOptions) {
+  const query = { ...input, q: input.q.trim() };
+  return useQuery({
+    queryKey: qk.project.memorySearch(projectId ?? '', query),
+    queryFn: () => searchProjectMemory(projectId as string, query),
+    enabled: on(options, projectId) && query.q.length >= 2,
+    placeholderData: keepPreviousData,
+    ...contract('inventory'),
+  });
+}
+
+/**
+ * A thread's "Used memory": the pages its agent was given at the first turn.
+ * Fixed once `loaded_at` is set, so it never refetches after that; while
+ * `loaded_at` is null (no turn yet) the next mount or focus reads it again.
+ */
+export function useSessionMemoryUsage(projectId: Id, sessionId: Id, options?: ReadOptions) {
+  return useQuery({
+    queryKey: qk.project.sessionMemoryUsage(projectId ?? '', sessionId ?? ''),
+    queryFn: () => getSessionMemoryUsage(projectId as string, sessionId as string),
+    enabled: on(options, projectId, sessionId),
+    ...contract('inventory'),
+    staleTime: (query: { state: { data?: SessionMemoryUsage } }) => (query.state.data?.loaded_at ? Infinity : 0),
   });
 }
 
