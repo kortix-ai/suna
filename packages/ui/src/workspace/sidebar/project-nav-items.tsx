@@ -51,10 +51,10 @@ export function ProjectNavItems({ projectId }: { projectId: string }) {
   const items = hydrated ? saved : SIDEBAR_NAV_DEFAULTS;
   return (
     <>
-      <ProjectSpacesNav projectId={projectId} />
       {items.map((entry) => (
         <NavItem key={entry.id} entry={entry} projectId={projectId} />
       ))}
+      <ProjectSpacesNav projectId={projectId} />
       <MoreNavItem projectId={projectId} items={items} />
     </>
   );

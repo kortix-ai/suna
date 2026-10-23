@@ -145,7 +145,11 @@ const GOVERNANCE_TABS: readonly CapabilityTab['key'][] = ['files', 'review'];
 const FLAG_GATED_TABS: readonly CapabilityTab['key'][] = ['files', 'reminders'];
 
 function GroupSeam() {
-  return <span aria-hidden className="bg-border mx-1 h-4 w-px shrink-0 self-center" />;
+  // The row sets `gap-5` between every item, so a seam with its own margin
+  // double-counts and the grouped gap balloons. Pull the seam in with a
+  // negative margin so the group boundary reads as one slightly-wider gap with
+  // a hairline, not a chasm.
+  return <span aria-hidden className="bg-border -mx-1.5 h-4 w-px shrink-0 self-center" />;
 }
 
 export function CapabilityTabs({ projectId }: { projectId: string }) {
