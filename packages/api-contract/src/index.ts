@@ -69,6 +69,7 @@ export const FeatureFlagMapSchema = z.object({
   connectors_v2: z.boolean(),
   agent_rooms: z.boolean(),
   goals: z.boolean(),
+  workspace_volume: z.boolean(),
   artifacts: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;

@@ -23,6 +23,7 @@ import { reconcileForwardedPrompts } from './session-lifecycle/consumption';
 import { reconcileUndeliveredPrompts } from './session-lifecycle/undelivered-prompts';
 import { verifyParkedRuntimes } from './reaping/parked-runtime-verification';
 import { removeArchivedProviderBoxes } from './reaping/archived-box-removal';
+import { retireIdleVolumeBoxes } from './reaping/idle-volume-retire';
 import { convergeStuckProvisioningRuntimes } from './reaping/stuck-provisioning';
 import { reconcileRuntimeWakeFences } from './session-lifecycle/runtime-wake-maintenance';
 import {
@@ -571,6 +572,12 @@ function runMaintenanceSweeps() {
       logger.warn('[project-maintenance] trigger-run settle failed', { error: err instanceof Error ? err.message : String(err) });
       return 0;
     }),
+    // A /workspace-volume session's box stopped past the idle-delete window is
+    // removed; its next open boots a fresh box on the volume.
+    () => retireIdleVolumeBoxes().catch((err) => {
+      logger.warn('[project-maintenance] idle volume box retire failed', { error: err instanceof Error ? err.message : String(err) });
+      return { retired: 0, removed: 0, failed: 1 };
+    }),
   ]);
 }
 
@@ -601,6 +608,7 @@ function logMaintenanceCycle(
     stuckProvisioning,
     triggerRunsPurged,
     triggerRunsSettled,
+    idleVolumeRetires,
   ] = sweeps;
   const hadAction = Boolean(
     idle.stopped ||
@@ -650,7 +658,10 @@ function logMaintenanceCycle(
       stuckProvisioning.examined ||
       stuckProvisioning.errors ||
       triggerRunsPurged ||
-      triggerRunsSettled,
+      triggerRunsSettled ||
+      idleVolumeRetires.retired ||
+      idleVolumeRetires.removed ||
+      idleVolumeRetires.failed,
   );
   if (hadAction) {
     console.log('[project-maintenance] completed', {
@@ -674,6 +685,7 @@ function logMaintenanceCycle(
       stuckProvisioning,
       triggerRunsPurged,
       triggerRunsSettled,
+      idleVolumeRetires,
     });
   }
   // Unconditional heartbeat — proof-of-life independent of whether any
