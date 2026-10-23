@@ -88,6 +88,7 @@ export type FeatureFlagKey =
   | 'connectors_v2'
   | 'agent_rooms'
   | 'goals'
+  | 'workspace_volume'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
@@ -135,6 +136,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'connectors_v2',
   'agent_rooms',
   'goals',
+  'workspace_volume',
 ] as const;
 
 /**
@@ -157,7 +159,8 @@ export interface FeatureFlagView {
   /** True when this project set an explicit choice (vs inheriting the default). */
   overridden: boolean;
   /**
-   * True for an internal-only flag (`session_log`, `session_log_restore`). The
+   * True for an internal-only flag (`session_log`, `session_log_restore`,
+   * `workspace_volume`). The
    * catalog lists one only while it is on, so agents and people can see it.
    * Only a Kortix platform operator can change it: `PATCH /features` answers
    * `403` with `feature_operator_only`. Absent on servers older than this field.

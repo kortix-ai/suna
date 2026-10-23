@@ -84,16 +84,17 @@ export async function fetchPickerCatalog(env: NodeJS.ProcessEnv): Promise<Record
  * never needs more than that. A model whose real output limit is larger runs out of room while pi
  * still sees headroom, so the provider cuts the answer (`stopReason: length`) — the session then
  * shows `output_length` at a context the meter calls nearly full. Reserve the model's own output
- * limit instead, floored at pi's default and capped at half the window, so a model that claims most
- * of its window as output still compacts.
+ * limit instead, floored at pi's default and at the reserve a project configures, and capped at
+ * half the window, so a model that claims most of its window as output still compacts.
  */
-export function compactionSettings(catalog: Record<string, CatalogModel>) {
+export function compactionSettings(catalog: Record<string, CatalogModel>, configuredReserve = 0) {
   const modelOverrides: Record<string, { reserveTokens: number }> = {}
+  const floor = Math.max(Math.floor(configuredReserve), DEFAULT_COMPACTION_SETTINGS.reserveTokens)
   for (const [id, entry] of Object.entries(catalog)) {
     // The window and output pi will use (gatewayModel's fallbacks), so the reserve matches the request's cap.
     const window = entry?.limit?.context ?? 128_000
     const output = entry?.limit?.output ?? entry?.limit?.context ?? 32_768
-    const reserveTokens = Math.min(Math.max(Math.floor(output), DEFAULT_COMPACTION_SETTINGS.reserveTokens), Math.floor(window / 2))
+    const reserveTokens = Math.min(Math.max(Math.floor(output), floor), Math.floor(window / 2))
     if (reserveTokens > DEFAULT_COMPACTION_SETTINGS.reserveTokens) modelOverrides[`${KORTIX_PROVIDER_ID}/${id}`] = { reserveTokens }
   }
   return { modelOverrides }
