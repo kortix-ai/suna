@@ -1,5 +1,6 @@
 'use client';
 
+import { Hint } from './hint';
 import { Avatar, AvatarFallback, AvatarImage } from './avatar';
 import { cn } from '../lib/utils';
 import { AVATAR_INK, avatarFill } from '@kortix/shared';
@@ -46,9 +47,12 @@ export interface UserAvatarProps {
   className?: string;
   ring?: boolean;
   variant?: 'default' | 'primary';
+  /** Shows on hover, through `Hint`: usually the person's name or email. */
+  hint?: React.ReactNode;
 }
 
 export function UserAvatar({
+  hint,
   email,
   name,
   avatarUrl,
@@ -65,7 +69,7 @@ export function UserAvatar({
   // Avatar v2: a solid fill keyed on the email, so a rename keeps the colour.
   const fill = avatarFill(email || name || '');
 
-  return (
+  const avatar = (
     <Avatar
       className={cn(
         sizes.box,
@@ -86,5 +90,12 @@ export function UserAvatar({
         {initials || '?'}
       </AvatarFallback>
     </Avatar>
+  );
+  return hint ? (
+    <Hint side="top" sideOffset={6} alignOffset={0} label={hint}>
+      {avatar}
+    </Hint>
+  ) : (
+    avatar
   );
 }

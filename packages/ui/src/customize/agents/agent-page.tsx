@@ -1,4 +1,5 @@
 'use client';
+import { AgentMark } from '../../internal/components/agent-mark';
 import { EntityFilePane } from '../shared/entity/entity-modal';
 import { agentStatus } from './agent-status';
 import { useDefaultAgent } from './use-default-agent';
@@ -635,6 +636,7 @@ function AgentHeader({
             {tI18nComplete.raw('text279b44d2ab4b')}
           </Link>
           <CaretRightIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
+          <AgentMark slug={agent.name} />
           <h1 className="text-foreground truncate text-sm font-semibold">
             {isMetaAgentName(agent.name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(agent.name)}
           </h1>

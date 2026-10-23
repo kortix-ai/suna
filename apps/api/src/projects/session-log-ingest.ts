@@ -399,7 +399,8 @@ async function hideConvertedPiThreads(tx: Tx, sessionId: string, puts: readonly 
 // ponytail: one INSERT per put, so a seq collision names its own pair without
 // parsing the error detail. A batch is at most 1 MB gzipped; batch the inserts
 // if a large boot reconcile (P6) makes the round trips show up.
-async function applyPut(tx: Tx, sessionId: string, generation: number, put: SessionLogPut, record: SessionLogPut['message']): Promise<void> {
+/** One put inside the caller's transaction. Also the mirror merge's write (`mergeMirrorIntoLog`, `session-log-capture.ts`). */
+export async function applyPut(tx: Tx, sessionId: string, generation: number, put: SessionLogPut, record: SessionLogPut['message']): Promise<void> {
   const m = put.message;
   const createdAt = Date.parse(m.created_at);
   try {
