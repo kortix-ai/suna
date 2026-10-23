@@ -80,6 +80,19 @@ export function isShopDomain(value: unknown): value is string {
   return typeof value === 'string' && SHOPIFY_SHOP_RE.test(value);
 }
 
+/** The store a Shopify app's token URL belongs to (`https://<shop>/admin/oauth/access_token`), or null. */
+export function shopifyTokenUrlShop(tokenUrl: unknown): string | null {
+  if (typeof tokenUrl !== 'string') return null;
+  try {
+    const url = new URL(tokenUrl);
+    return url.protocol === 'https:' && url.pathname === '/admin/oauth/access_token' && isShopDomain(url.hostname)
+      ? url.hostname
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The origin requests for this store go to. A local stack may point every
  * store at a fake Shopify (`KORTIX_SHOPIFY_STORE_ORIGIN`, honoured only with
@@ -632,17 +645,13 @@ export function mapShopifyResponse(result: ExecResult, actionPath: string): Exec
   }
   const verdicts = errors.map(accessVerdict).filter((v): v is AccessVerdict => v !== null);
   const protectedVerdict = verdicts.find((v) => v.kind === 'protected');
+  // A text reason that starts with its code: the gateway answers it as a 403.
   if (protectedVerdict && protectedVerdict.kind === 'protected') {
     return {
       ...result,
       ok: false,
       status: 403,
-      data: {
-        error: 'protected_data_blocked',
-        object: protectedVerdict.object,
-        message: PROTECTED_DATA_REMEDIATION,
-        shopify: protectedVerdict.message,
-      },
+      data: `protected_data_blocked: ${protectedVerdict.object ? `the ${protectedVerdict.object} object. ` : ''}${PROTECTED_DATA_REMEDIATION} Shopify: ${protectedVerdict.message}`,
     };
   }
   const scopeVerdict = verdicts.find((v) => v.kind === 'missing_scope');
@@ -651,13 +660,10 @@ export function mapShopifyResponse(result: ExecResult, actionPath: string): Exec
       ...result,
       ok: false,
       status: 403,
-      data: {
-        error: 'scope_missing',
-        required: scopeVerdict.required,
-        message:
-          'The Shopify app does not have the access scope this call needs. Add it to the app version in the Shopify Dev Dashboard, release it, approve it on the store, and connect the account again.',
-        shopify: scopeVerdict.message,
-      },
+      data:
+        `scope_missing: ${scopeVerdict.required.length ? `${scopeVerdict.required.join(', ')}. ` : ''}` +
+        'Add the scope to the app version in the Shopify Dev Dashboard, release it, approve it on the store, and connect the account again. ' +
+        `Shopify: ${scopeVerdict.message}`,
     };
   }
   if (errors.length && (body.data === null || body.data === undefined)) {

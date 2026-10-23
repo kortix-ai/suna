@@ -27,6 +27,7 @@ import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '../config';
 import { logger } from '../lib/logger';
+import { encryptProjectSecret } from '../projects/surface';
 import { db } from '../shared/db';
 import { appFormConnectUrl, newAppFormNonce, type AppFormPayload } from './composio-own-app';
 import { CONNECTED_AS_KEY, relabelToIdentity } from './connection-identity';
@@ -42,13 +43,16 @@ import {
   shopifyAuthorizeUrl,
   shopifyShopDomain,
   shopifyStoreOrigin,
+  shopifyTokenUrlShop,
   verifyShopifyHmac,
   type ShopifyAccess,
 } from './shopify';
 import type { FetchImpl } from './call';
 
 export const SHOPIFY_CALLBACK_PATH = '/v1/connectors/shopify/callback';
-const SESSION_FLOW = 'shopify';
+// A Shopify session is an `authorization_code` row whose application is a
+// Shopify app; each callback refuses the other kind (see `shopifyTokenUrlShop`).
+const SESSION_FLOW = 'authorization_code';
 const SESSION_TTL_MS = 10 * 60_000;
 /** A permanent offline token never expires; the credential store wants a number. */
 const NEVER_EXPIRES = Number.MAX_SAFE_INTEGER;
@@ -78,13 +82,7 @@ function refuse(status: 400 | 404 | 409 | 410 | 501, message: string, code: stri
 
 /** The store of an application saved for Shopify: the host of its token URL. */
 function applicationShop(application: OAuth2ApplicationInput | null | undefined): string | null {
-  if (!application?.token_url) return null;
-  try {
-    const url = new URL(application.token_url);
-    return url.pathname === '/admin/oauth/access_token' && isShopDomain(url.hostname) ? url.hostname : null;
-  } catch {
-    return null;
-  }
+  return shopifyTokenUrlShop(application?.token_url);
 }
 
 async function connectorShopifyConfig(connectorId: string): Promise<{ shop: string | null; scopes: string[] }> {
@@ -260,6 +258,8 @@ export async function submitShopifyForm(input: {
     initiatedBy: payload.u,
     flow: SESSION_FLOW,
     stateHash: createHash('sha256').update(state).digest('hex'),
+    // Shopify takes no PKCE; the column is required for every authorization-code row.
+    pkceVerifierEnc: encryptProjectSecret(loaded.projectId, randomBytes(32).toString('base64url')),
     successRedirectUri: successRedirect,
     errorRedirectUri: formPage,
     scopes: settings.scopes,

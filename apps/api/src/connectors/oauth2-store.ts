@@ -40,6 +40,7 @@ import { oauthCompletionRematerializeInput } from './oauth2-rematerialize';
 import { kortixClientApplication } from './mcp-apps';
 import { registerOAuth2Client } from './oauth2-registration';
 import { allowedReturnUri } from './return-uri';
+import { shopifyTokenUrlShop } from './shopify';
 import {
   type ProtectedResourceProvider,
   discoverProtectedResourceOAuth2,
@@ -524,6 +525,10 @@ export async function completeAuthorizationCodeSession(input: {
   try {
     const loaded = await loadOAuth2Application(claimed.connectionId);
     if (!loaded || !claimed.pkceVerifierEnc) throw new Error('OAuth2 session is incomplete');
+    // A Shopify grant completes only at its own callback (HMAC, store, permanent token).
+    if (shopifyTokenUrlShop(loaded.application.token_url)) {
+      return { redirectUri: claimed.errorRedirectUri, ok: false, errorCode: 'invalid_state' };
+    }
     // RFC 9207 / SEP-2468: reject a code minted by a different authorization
     // server BEFORE redeeming it. This is the authorization-code-injection
     // defence and it has to happen ahead of the token request.
