@@ -1,7 +1,8 @@
 'use client';
 
 import type { Artifact, ArtifactListScope } from '@kortix/sdk';
-import { useArtifactMutations, useArtifacts } from '@kortix/sdk/react';
+import { prefetchArtifact, useArtifactMutations, useArtifacts } from '@kortix/sdk/react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@kortix/ui/button';
 import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
 import {
@@ -133,10 +134,19 @@ function ArtifactCard({ projectId, artifact }: { projectId: string; artifact: Ar
   const TypeIcon = ARTIFACT_TYPE_ICON[artifact.type];
   const VisIcon = VISIBILITY_ICON[artifact.visibility];
   const href = artifactHref(projectId, artifact.artifact_id);
+  const queryClient = useQueryClient();
+  const warm = () => void prefetchArtifact(queryClient, projectId, artifact.artifact_id).catch(() => {});
 
   return (
     <div className="group bg-card hover:border-foreground/20 relative flex flex-col overflow-hidden rounded-lg border transition-colors">
-      <Link href={href} className="focus-visible:ring-ring flex flex-col outline-none focus-visible:ring-2" aria-label={artifact.title}>
+      <Link
+        href={href}
+        className="focus-visible:ring-ring flex flex-col outline-none focus-visible:ring-2"
+        aria-label={artifact.title}
+        // Warm the viewer's reads before the click lands.
+        onPointerEnter={warm}
+        onFocus={warm}
+      >
         <div className="bg-muted relative aspect-[16/10] overflow-hidden border-b">
           {artifact.view_url ? (
             <ArtifactFrame
