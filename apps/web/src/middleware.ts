@@ -6,7 +6,7 @@ import {
   ENVIRONMENT_ACCESS_COOKIE,
 } from '@/lib/environment-protection';
 import { legalShortPathRedirectUrl, legalTermsRedirectUrl } from '@/lib/legal-terms-redirect';
-import { lowercasePublicPath } from '@/lib/path-case-redirect';
+import { canonicalPublicPath } from '@/lib/canonical-public-path';
 import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import {
@@ -427,11 +427,14 @@ export async function middleware(request: NextRequest) {
     return finalizeEnvironmentAccess(NextResponse.redirect(legalDestination, 308));
   }
   // /Pricing, /DOCS, /DE/Pricing: a public page in another letter case was a
-  // 200 "Page not found" page (KRTX-3312).
-  const lowercasePath = lowercasePublicPath(pathname, [...MARKETING_ROUTES, '/docs'], locales);
-  if (lowercasePath) {
-    const destination = request.nextUrl.clone();
-    destination.pathname = lowercasePath;
+  // 200 "Page not found" page (KRTX-3312). /pricing/ was a 200 duplicate of
+  // /pricing (KRTX-3234).
+  const canonicalPath = canonicalPublicPath(pathname, [...MARKETING_ROUTES, '/docs'], locales);
+  if (canonicalPath) {
+    // A plain URL: a NextURL clone re-adds the request's trailing slash, and
+    // /pricing/ would redirect to itself.
+    const destination = new URL(request.url);
+    destination.pathname = canonicalPath;
     return finalizeEnvironmentAccess(NextResponse.redirect(destination, 308));
   }
 
