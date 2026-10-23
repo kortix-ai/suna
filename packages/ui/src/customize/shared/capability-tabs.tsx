@@ -133,6 +133,14 @@ function MembersLaunchLink({ projectId }: { projectId: string }) {
  */
 const TRAILING_TABS: readonly CapabilityTab['key'][] = ['config'];
 
+/**
+ * Governance (Marko, 2026-10-24): Repo and Review read as a different register
+ * from the build-the-agent library to their left — what the project IS versus
+ * what an agent draws on — so a seam sets them apart, the same hairline that
+ * already follows Agents.
+ */
+const GOVERNANCE_TABS: readonly CapabilityTab['key'][] = ['files', 'review'];
+
 /** Tabs that need a project flag: left out of the bar until access settles. */
 const FLAG_GATED_TABS: readonly CapabilityTab['key'][] = ['files', 'reminders'];
 
@@ -160,7 +168,10 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
 
   const leading = tabs.filter((tab) => !TRAILING_TABS.includes(tab.key));
   const primary = leading.filter((tab) => PRIMARY_TABS.includes(tab.key));
-  const library = leading.filter((tab) => !PRIMARY_TABS.includes(tab.key));
+  const library = leading.filter(
+    (tab) => !PRIMARY_TABS.includes(tab.key) && !GOVERNANCE_TABS.includes(tab.key),
+  );
+  const governance = leading.filter((tab) => GOVERNANCE_TABS.includes(tab.key));
   const trailing = tabs.filter((tab) => TRAILING_TABS.includes(tab.key));
   const renderTab = (tab: CapabilityTab) => (
     <TabsTrigger key={tab.key} value={tab.key} asChild className="w-fit flex-none px-1 py-3">
@@ -195,7 +206,12 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
             {primary.map(renderTab)}
             {primary.length > 0 && library.length > 0 ? <GroupSeam /> : null}
             {library.map(renderTab)}
+            {governance.length > 0 && (primary.length > 0 || library.length > 0) ? (
+              <GroupSeam />
+            ) : null}
+            {governance.map(renderTab)}
             <MembersLaunchLink projectId={projectId} />
+            {trailing.length > 0 ? <GroupSeam /> : null}
             {trailing.map(renderTab)}
           </TabsList>
         </Tabs>

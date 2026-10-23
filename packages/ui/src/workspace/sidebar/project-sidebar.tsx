@@ -23,7 +23,6 @@ import { ProjectComputerNavItem } from './footer/project-computer-nav';
 import { ProjectManifestUpgradeAlert } from './footer/project-manifest-upgrade-alert';
 import { ProjectSandboxAlert } from './footer/project-sandbox-alert';
 import { ProjectRepositoryDisconnectedAlert } from '../repository-disconnected';
-import { CustomizeSidebarModal } from './customize-sidebar-modal';
 import { ProjectNavItems } from './project-nav-items';
 import { DomainSpaceRail } from './domain-space-rail';
 import { ProjectSessionList } from './project-session-list';
@@ -354,7 +353,6 @@ export function ProjectSidebar({
       onOpenChange={setComputerConnectOpen}
     />
     <ConnectMcpModal open={connectMcpOpen} onOpenChange={setConnectMcpOpen} />
-    <CustomizeSidebarModal projectId={projectId} />
     </>
   );
 }
