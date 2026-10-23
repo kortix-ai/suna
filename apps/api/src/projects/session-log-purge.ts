@@ -13,7 +13,8 @@
  * and dates: usage, billing and audit rows still name it.
  * "Objects" are everything under `<project_id>/<session_id>/` in the
  * `session-attachments` bucket: uploads, offloaded log texts (P2.3) and the
- * orphans a skipped capture batch leaves (P2.7b). They go right after their rows;
+ * orphans a skipped capture batch leaves (P2.7b), and the session's /workspace
+ * volume when it has one (platform/services/workspace-volume.ts). They go right after their rows;
  * a failed removal is retried every tick. The session branch goes with them, in
  * the branch sweep (`selectExpiredSessionBranches` in maintenance.ts).
  *
@@ -92,6 +93,7 @@ import {
 import { and, eq, isNull, lte, sql } from 'drizzle-orm';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 import { logger } from '../lib/logger';
+import { deleteSessionWorkspaceVolume, WORKSPACE_VOLUME_SESSION_KEY } from '../platform/services/workspace-volume';
 import { db } from '../shared/db';
 import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { sessionAttachmentStore } from './lib/session-attachments';
@@ -106,8 +108,11 @@ export const SESSION_DELETE_ROWS_DAYS = 30;
 /** Days from an account closure to its purge: all gone by day 80 < 90. */
 const ACCOUNT_CLOSED_ROWS_DAYS = 80;
 export const PURGE_BATCH_SIZE = 200;
-/** The `project_sessions.metadata` keys a purged deleted session keeps: no content. */
-const SHELL_METADATA_KEYS = ['deletedAt', 'deletedBy', 'branch_gc', 'copiesPurgedAt'];
+/**
+ * The `project_sessions.metadata` keys a purged deleted session keeps: no content.
+ * `workspace_volume` names the session's /workspace volume, which the objects phase deletes.
+ */
+const SHELL_METADATA_KEYS = ['deletedAt', 'deletedBy', 'branch_gc', 'copiesPurgedAt', WORKSPACE_VOLUME_SESSION_KEY];
 
 const DAY_MS = 86_400_000;
 
@@ -314,6 +319,13 @@ export async function purgeSessionContent(
   for (const { sessionId, projectId } of dueObjects) {
     try {
       await store.removeSession(projectId, sessionId);
+      // The session's /workspace files, when they live on a Platinum volume.
+      const [session] = await db
+        .select({ metadata: projectSessions.metadata })
+        .from(projectSessions)
+        .where(eq(projectSessions.sessionId, sessionId))
+        .limit(1);
+      await deleteSessionWorkspaceVolume(sessionId, session?.metadata);
       await db.update(sessionContentPurges).set({ objectsPurgedAt: now }).where(eq(sessionContentPurges.sessionId, sessionId));
       result.objects += 1;
     } catch (error) {
