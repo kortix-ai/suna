@@ -66,19 +66,6 @@ function errorStatus(error: unknown): number | undefined {
   return typeof status === 'number' ? status : undefined;
 }
 
-const SOCIAL_INTENTS: ReadonlyArray<{ network: string; href: (url: string, title: string) => string }> = [
-  { network: 'X', href: (url) => `https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}` },
-  {
-    network: 'LinkedIn',
-    href: (url) => `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`,
-  },
-  {
-    network: 'Reddit',
-    href: (url, title) =>
-      `https://www.reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}`,
-  },
-];
-
 /**
  * The Share icon button of a settled turn's action bar, and the dialog it
  * opens. Renders nothing where a share cannot exist: a host without public
@@ -363,23 +350,7 @@ function TurnShareDialogContent({
                   {copied ? <CheckIcon className="size-4 shrink-0" /> : <Copy className="size-4 shrink-0" />}
                   {copied ? t('copied') : t('copyLink')}
                 </Button>
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
-                    {SOCIAL_INTENTS.map(({ network, href }, index) => (
-                      <span key={network} className="flex items-center gap-1.5">
-                        {index > 0 ? <span aria-hidden="true">·</span> : null}
-                        <a
-                          href={href(share.url, title)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          aria-label={t('shareOn', { network })}
-                          className="hover:text-foreground transition-colors"
-                        >
-                          {network}
-                        </a>
-                      </span>
-                    ))}
-                  </p>
+                <div className="flex justify-end">
                   <Button
                     ref={stopButton}
                     variant="destructive"
