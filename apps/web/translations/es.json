@@ -1290,6 +1290,10 @@
         "goals": {
           "name": "Objetivos",
           "description": "Asigna a un agente un objetivo del que se encarga hasta que una comprobación independiente confirme el resultado. Planifica, trabaja, espera, hace seguimiento con las personas y guarda su estado en una carpeta Goals en Archivos. Requiere Volúmenes y Recordatorios activados."
+        },
+        "workspace_volume": {
+          "name": "Volumen de workspace",
+          "description": "Guarda el /workspace de cada nueva sesión en su propio volumen, para que un sandbox detenido pueda eliminarse y el siguiente arranque con los mismos archivos y la misma conversación. Kortix lo activa por proyecto."
         }
       }
     },
