@@ -70,6 +70,7 @@ for (const it of items) {
     stage.innerHTML = s;
     stage.firstChild.style.width = `${w}px`; stage.firstChild.style.height = `${h}px`;
   }, [it.svg, pw, ph]);
+  await ip.evaluate(() => document.fonts.ready);
   await ip.screenshot({ path: `${upload}/${it.id}.png`, clip: { x: 0, y: 0, width: pw, height: ph }, omitBackground: it.transparent });
   await ip.close();
 }
