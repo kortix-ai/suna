@@ -1923,8 +1923,8 @@
     }
   },
   "sessionDelete": {
-    "description": "Elimina <name>{label}</name> e rimuove la sua sandbox. Puoi ripristinarla da Eliminate di recente per {days} giorni. Dopo, i suoi messaggi e file vengono eliminati. Il suo branch viene mantenuto.",
-    "bulkDescription": "Elimina ogni sessione selezionata e rimuove la sua sandbox. Puoi ripristinarle da Eliminate di recente per {days} giorni. Dopo, i suoi messaggi e file vengono eliminati. Il suo branch viene mantenuto.",
+    "description": "Elimina <name>{label}</name> e rimuove la sua sandbox. Puoi ripristinarla da Eliminate di recente per {days} giorni. Dopo, i suoi messaggi, file e branch vengono eliminati.",
+    "bulkDescription": "Elimina ogni sessione selezionata e rimuove la sua sandbox. Puoi ripristinarle da Eliminate di recente per {days} giorni. Dopo, i suoi messaggi, file e branch vengono eliminati.",
     "restoring": "Ripristino della sessione…",
     "undo": "Annulla",
     "restored": "Sessione ripristinata",
