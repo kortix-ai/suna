@@ -1047,8 +1047,11 @@ flow(
     });
 
     await ctx.step(
-      'connection OAuth routes reject a non-Pipedream connector → 404/501',
+      'MCP connection sign-in on an unreachable server → 400 naming the server; finalize → not connected',
       async () => {
+        // #10266 gave MCP connections a sign-in on this route. The server URL
+        // does not resolve, so discovery fails: a 400 about the configured
+        // server, never a 500.
         const connect = await ctx.client
           .as(ctx.P.OWNER)
           .post(
@@ -1056,7 +1059,10 @@ flow(
             {},
             { params: { projectId: p.id, connectionId: memberConnectionId } },
           );
-        connect.status([404, 501]);
+        connect
+          .status(400)
+          .body()
+          .matches('$.message', /Could not discover sign-in for this MCP server: .*ke2e\.kortix\.test/);
 
         const finalize = await ctx.client
           .as(ctx.P.OWNER)
@@ -1065,7 +1071,7 @@ flow(
             {},
             { params: { projectId: p.id, connectionId: memberConnectionId } },
           );
-        finalize.status([404, 501]);
+        finalize.status(200).body().has('$.connected', false);
       },
     );
 
@@ -2093,14 +2099,21 @@ flow(
     ],
   },
   async (ctx) => {
+    let providers: string[] = [];
+    await ctx.step('read the connect providers this deployment offers', async () => {
+      const status = await ctx.client.as(ctx.P.OWNER).get('/v1/connectors/connect-status');
+      status.status(200);
+      const statusBody = status.json<{ provider: string | null; providers?: string[] }>();
+      providers = statusBody.providers ?? (statusBody.provider ? [statusBody.provider] : []);
+    });
+    // A bare return recorded a pass with zero steps, so a Gmail OAuth
+    // regression went unnoticed on every non-Composio run (KRTX-2852).
+    if (!providers.includes('composio')) {
+      await ctx.step('this deployment offers no Composio connect: skipped', async () => {});
+      return;
+    }
     const p = await ctx.fixtures.project({ managedGit: true });
     const slug = `ke2e-gmail-oauth-${Date.now().toString(36)}`;
-
-    const status = await ctx.client.as(ctx.P.OWNER).get('/v1/connectors/connect-status');
-    status.status(200);
-    const statusBody = status.json<{ provider: string | null; providers?: string[] }>();
-    const providers = statusBody.providers ?? (statusBody.provider ? [statusBody.provider] : []);
-    if (!providers.includes('composio')) return;
 
     await ctx.step('declare Gmail as a Composio-managed OAuth connector', async () => {
       const created = await ctx.client.as(ctx.P.OWNER).post(

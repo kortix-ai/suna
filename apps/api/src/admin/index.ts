@@ -476,8 +476,8 @@ adminApp.openapi(
 );
 
 // ── Set a project's feature flag (operator) ─────────────────────────────────
-// The operator lever for internal-only flags (`session_log`,
-// `session_log_restore`): Kortix turns them on per project on request.
+// The operator lever for internal-only flags (`session_log_restore`): Kortix
+// turns them on per project on request.
 // `PATCH /v1/projects/:id/features` refuses those flags for everyone but a
 // platform operator, and this route needs no project membership. Any flag key
 // works here. Audited on the project.
@@ -494,7 +494,7 @@ adminApp.openapi(
         content: {
           'application/json': {
             schema: z.object({
-              feature: z.string().openapi({ description: 'Flag key, for example `session_log`.' }),
+              feature: z.string().openapi({ description: 'Flag key, for example `session_log_restore`.' }),
               enabled: z.boolean().nullable().openapi({ description: '`true`/`false` sets the override; `null` clears it.' }),
             }),
           },
@@ -1267,6 +1267,16 @@ adminApp.openapi(
       } = await import('../billing/services/entitlement-overrides');
       const validated = validateOverridePatch(raw);
       if (!validated.ok) return c.json({ error: validated.error }, 400);
+      if (validated.patch.managedModels?.value === true) {
+        // The resolver ignores this grant on Free and No Plan; refuse it here
+        // so the operator sees why instead of a switch that does nothing.
+        const { resolveAccountBilling } = await import('../billing/services/billing-cache');
+        const { paysForManagedModels } = await import('../billing/services/resolve-billing');
+        const billing = await resolveAccountBilling(accountId, { fresh: true });
+        if (!paysForManagedModels(billing.plan, billing.enterprise)) {
+          return c.json({ error: 'Managed models need a paid plan or a licensed Enterprise contract; Free and No Plan never get them.' }, 400);
+        }
+      }
 
       const { getCreditAccount } = await import('../billing/repositories/credit-accounts');
       const { applyAdminOverride } = await import('../billing/services/account-write-owner');

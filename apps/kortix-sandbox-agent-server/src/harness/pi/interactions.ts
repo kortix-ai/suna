@@ -14,6 +14,9 @@ import type {
   RuntimeQuestionRequest,
   RuntimeToolRef,
 } from '@kortix/api-contract/transcript'
+import { homedir } from 'node:os'
+import { dirname, join, relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { comparePatterns } from '@kortix/api-contract/permission-rules'
 import type { RuntimeFrame } from './transcript'
 
@@ -85,22 +88,124 @@ function matchPatterns(subject: string, patterns: Record<string, PermissionRule>
   return matched
 }
 
+const RESERVED_PREFIX = /^(?:(?:if|then|elif|else|do|while|until|time|!|\{)\s+)+/
+const RESERVED_ALONE = new Set(['fi', 'done', 'esac', '}'])
+
+/**
+ * The commands of a bash line, as OpenCode's tree-sitter walk asks about them:
+ * the line splits on unquoted `;`, `&`, `|` and newlines (so `&&`, `||` and
+ * `|&` too), and every `$(…)`, `` `…` ``, `<(…)`, `>(…)` and `( … )` body is
+ * read as commands of its own. A command keeps its substitutions' text, as
+ * OpenCode's does. `null` when the quotes or brackets do not balance.
+ * ponytail: not a bash grammar — `case` arms and heredoc bodies read as
+ * unbalanced or as extra commands, so they fail closed. Use tree-sitter-bash
+ * when a manifest needs them exact.
+ */
+export function bashCommands(line: string): string[] | null {
+  const commands: string[] = []
+  // Reads from `start` up to `close` ('' = the end) and returns the index after it, or -1.
+  const read = (start: number, close: string): number => {
+    let piece = ''
+    let quote = ''
+    const flush = () => {
+      const command = piece.trim().replace(RESERVED_PREFIX, '')
+      // A `( … )` group is not a command: its body was read on its own.
+      if (command && !RESERVED_ALONE.has(command) && !command.startsWith('(')) commands.push(command)
+      piece = ''
+    }
+    let i = start
+    while (i < line.length) {
+      const ch = line[i]!
+      if (quote === "'") {
+        piece += ch
+        if (ch === "'") quote = ''
+        i++
+        continue
+      }
+      if (ch === '\\') {
+        piece += line.slice(i, i + 2)
+        i += 2
+        continue
+      }
+      if (ch === '"' || (ch === "'" && !quote)) {
+        quote = quote ? '' : ch
+        piece += ch
+        i++
+        continue
+      }
+      if (!quote && close && ch === close) {
+        flush()
+        return i + 1
+      }
+      if (ch === '`' || (ch === '(' && (!quote || line[i - 1] === '$'))) {
+        const end = read(i + 1, ch === '`' ? '`' : ')')
+        if (end < 0) return -1
+        piece += line.slice(i, end)
+        i = end
+        continue
+      }
+      if (!quote && ch === ')') return -1
+      // `2>&1`, `&>file` and `>|file` are redirections, not separators.
+      const redirect = line[i - 1] === '>' || line[i - 1] === '<' || (ch === '&' && line[i + 1] === '>')
+      if (!quote && (ch === ';' || ch === '\n' || ((ch === '&' || ch === '|') && !redirect))) {
+        flush()
+        i++
+        continue
+      }
+      piece += ch
+      i++
+    }
+    if (quote || close) return -1
+    flush()
+    return i
+  }
+  return read(0, '') < 0 ? null : commands
+}
+
+const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g
+
+/**
+ * The file a `path` argument names, resolved as pi's file tools resolve it
+ * (pi-coding-agent `utils/paths.ts` `resolvePath`, not exported): unicode
+ * spaces, a leading `@`, `~`, `file://`, then `.` and `..` against the
+ * workspace. Trimmed, as the glob and grep tools trim. `undefined` when the
+ * path does not parse.
+ */
+export function toolPath(raw: string, workspace: string): string | undefined {
+  let path = raw.trim().replace(UNICODE_SPACES, ' ')
+  if (path.startsWith('@')) path = path.slice(1)
+  if (path === '~' || path.startsWith('~/')) path = join(homedir(), path.slice(2))
+  if (path.startsWith('file://')) {
+    try {
+      path = fileURLToPath(path)
+    } catch {
+      return undefined
+    }
+  }
+  return resolve(workspace, path)
+}
+
 /**
  * The string a pattern is tested against, per tool — the subject OpenCode sends
  * as the permission request's pattern: the command line for `bash`, the skill
- * name for `skill`, the subagent name for `task`, the target path for the workspace tools.
+ * name for `skill`, the subagent name for `task`, and for the workspace tools
+ * the file the path names, relative to the workspace (`tool/read.ts`,
+ * `edit.ts`, `write.ts`). So `./secrets/a`, `x/../secrets/a` and
+ * `/workspace/secrets/a` are all `secrets/a`.
  */
-export function permissionSubject(tool: string, args: unknown): string | undefined {
+export function permissionSubject(tool: string, args: unknown, workspace: string): string | undefined {
   if (!args || typeof args !== 'object') return undefined
   const key = tool === 'bash' ? 'command' : tool === 'skill' ? 'name' : tool === 'task' ? 'subagent_type' : 'path'
   const value = (args as Record<string, unknown>)[key]
-  return typeof value === 'string' ? value : undefined
+  if (typeof value !== 'string') return undefined
+  if (key !== 'path') return value
+  const file = toolPath(value, workspace)
+  return file === undefined ? undefined : relative(workspace, file) || '.'
 }
 
 /** Resolve one tool's rule for this call. `undefined` means "no rule applies". */
-function resolveRule(config: PermissionRuleConfig | undefined, tool: string, args: unknown): PermissionRule | undefined {
+function resolveRule(config: PermissionRuleConfig | undefined, subject: string | undefined): PermissionRule | undefined {
   if (config === undefined || typeof config === 'string') return config
-  const subject = permissionSubject(tool, args)
   if (subject !== undefined) return matchPatterns(subject, config)
   // No subject to test the specific patterns against. A restriction we cannot
   // evaluate must never silently degrade to `allow`.
@@ -130,17 +235,57 @@ export function toolCapability(tool: string, args?: unknown): string {
  * capability (`*` and `pty_*` are patterns too) is tried most specific first;
  * the first that has a rule for this call decides, as OpenCode's last match
  * does over an ordered block. `undefined` means the policy says nothing.
+ *
+ * A bash line is decided command by command (`bashCommands`), as OpenCode
+ * does, and the strictest answer wins: `allowed x; env` is the rule for `env`,
+ * never the allowed prefix's. A line that does not parse is decided as a call
+ * with no subject, so a restriction asks.
+ *
+ * A file tool whose path leaves the workspace also answers to
+ * `external_directory`, and the strictest of the two rules wins.
  */
-export function resolvePolicyRule(policy: PermissionPolicy, tool: string, args: unknown): PermissionRule | undefined {
-  const names = [tool, toolCapability(tool, args)]
+export function resolvePolicyRule(policy: PermissionPolicy, tool: string, args: unknown, workspace: string): PermissionRule | undefined {
+  const line = tool === 'bash' ? permissionSubject(tool, args, workspace) : undefined
+  if (line === undefined) return strictest([resolveCall(policy, tool, args, workspace), externalRule(policy, tool, args, workspace)])
+  const commands = bashCommands(line)
+  if (commands === null) return resolveCall(policy, tool, {}, workspace)
+  if (commands.length === 0) return resolveCall(policy, tool, args, workspace)
+  return strictest(commands.map((command) => resolveCall(policy, tool, { ...(args as object), command }, workspace)))
+}
+
+const strictest = (rules: (PermissionRule | undefined)[]) => (['deny', 'ask', 'allow'] as const).find((rule) => rules.includes(rule))
+
+function resolveCall(policy: PermissionPolicy, tool: string, args: unknown, workspace: string): PermissionRule | undefined {
+  return resolveKeys(policy, [tool, toolCapability(tool, args)], permissionSubject(tool, args, workspace))
+}
+
+function resolveKeys(policy: PermissionPolicy, names: string[], subject: string | undefined): PermissionRule | undefined {
   const keys = Object.keys(policy)
     .filter((key) => names.some((name) => wildcardMatch(name, key)))
     .sort((a, b) => comparePatterns(b, a))
   for (const key of keys) {
-    const rule = resolveRule(policy[key], tool, args)
+    const rule = resolveRule(policy[key], subject)
     if (rule !== undefined) return rule
   }
   return undefined
+}
+
+/** pi's tools that OpenCode's `external_directory` check covers; glob and grep take a directory. */
+const FILE_TOOLS = new Set(['read', 'write', 'edit', 'glob', 'grep'])
+
+/**
+ * The `external_directory` rule for a file tool whose path leaves the
+ * workspace. The subject is the directory glob `<dir>/*`, as OpenCode asks it
+ * (`tool/external-directory.ts`). `undefined` inside the workspace, and when
+ * the policy has no rule for it: unlike OpenCode, pi does not ask by default.
+ */
+function externalRule(policy: PermissionPolicy, tool: string, args: unknown, workspace: string): PermissionRule | undefined {
+  const raw = (args as { path?: unknown } | null | undefined)?.path
+  const file = FILE_TOOLS.has(tool) && typeof raw === 'string' ? toolPath(raw, workspace) : undefined
+  if (file === undefined) return undefined
+  const inside = relative(workspace, file)
+  if (inside !== '..' && !inside.startsWith('../')) return undefined
+  return resolveKeys(policy, ['external_directory'], join(tool === 'glob' || tool === 'grep' ? file : dirname(file), '*'))
 }
 
 /**
@@ -149,7 +294,8 @@ export function resolvePolicyRule(policy: PermissionPolicy, tool: string, args: 
  * skill tool to gate on load, so an `ask` skill stays listed.
  */
 export function skillGranted(policy: PermissionPolicy, name: string): boolean {
-  return resolvePolicyRule(policy, 'skill', { name }) !== 'deny'
+  // A skill subject is its name, never a path, so no workspace is read.
+  return resolvePolicyRule(policy, 'skill', { name }, '/') !== 'deny'
 }
 
 export class PermissionBroker {
@@ -158,6 +304,8 @@ export class PermissionBroker {
 
   constructor(
     private readonly sessionID: string,
+    /** The directory the file tools resolve paths against. */
+    private readonly workspace: string,
     private readonly publish: (frame: RuntimeFrame) => void,
     private policy: PermissionPolicy = {},
     private readonly onAsked?: (request: RuntimePermissionRequest) => void,
@@ -168,7 +316,7 @@ export class PermissionBroker {
   }
 
   rule(tool: string, args?: unknown): PermissionRule {
-    const resolved = resolvePolicyRule(this.policy, tool, args)
+    const resolved = resolvePolicyRule(this.policy, tool, args, this.workspace)
     // A deny outranks an earlier "always": approving `ls` must not unlock the
     // `rm -rf *` the same pattern map denies.
     if (resolved === 'deny') return 'deny'
@@ -183,7 +331,7 @@ export class PermissionBroker {
       sessionID: this.sessionID,
       // The capability, so "always" covers every tool that shares it (`write` and `edit`).
       permission: toolCapability(input.tool, input.args),
-      patterns: [permissionSubject(input.tool, input.args) ?? '*'],
+      patterns: [permissionSubject(input.tool, input.args, this.workspace) ?? '*'],
       metadata: input.args && typeof input.args === 'object' ? (input.args as Record<string, unknown>) : {},
       always: ['*'],
       ...(input.ref ? { tool: input.ref } : {}),

@@ -27,7 +27,7 @@ import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { logger } from '@/lib/log/logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/secret-capabilities'
-import { genuiEnabled, GENUI_SKILL_NAME } from '@/lib/config/genui'
+import { withheldManagedSkills } from '@/services/skills/managed-skills'
 import { loadTools } from '@/services/tools/host'
 import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
 import type { PiConfig, ProjectInstructions } from './config'
@@ -38,7 +38,7 @@ import { CODEMODE_TOOL, type CodemodeMode } from './codemode'
 import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
 import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule } from './interactions'
 import type { PiModels, SelectedModel } from './model'
-import { compactionSettings, nativeModelId } from './model'
+import { nativeModelId } from './model'
 import { TranscriptStore, type RuntimeFrame } from './transcript'
 import { PiTurnEvents, assistantInfoFields, assistantMessageError, type TurnEventEmission } from './turn-events'
 import { withAgentSampling } from './sampling'
@@ -105,6 +105,9 @@ export const DEFAULT_SYSTEM_PROMPT = [
   'You are a coding agent working inside a Kortix sandbox. The project repository is checked out at the working directory.',
   'Use the tools to read, search and change files and to run commands. Prefer small, verifiable steps. Report what you did and what remains.',
 ].join('\n')
+
+/** OpenCode's `Today's date` line (its prompt's env block), with the box's time zone. Without it an agent with no shell cannot resolve "yesterday". */
+export const todayLine = (now: number) => `Today's date: ${new Date(now).toDateString()} (${Intl.DateTimeFormat().resolvedOptions().timeZone})`
 
 export interface PromptInput {
   messageID?: string
@@ -449,7 +452,7 @@ export class PiRuntime {
 
   /** The brokers publish under the root id. */
   private bindRoot(): void {
-    this.permissions = new PermissionBroker(this.rootId, (frame) => this.publish(frame), {}, (request) => this.hooks.onPermissionAsked?.(request))
+    this.permissions = new PermissionBroker(this.rootId, this.workspace, (frame) => this.publish(frame), {}, (request) => this.hooks.onPermissionAsked?.(request))
     this.questions = new QuestionBroker(this.rootId, (frame) => this.publish(frame), (request) => {
       this.hooks.onQuestionAsked?.(request, (answers) => void this.questions.reply(request.id, answers))
     })
@@ -510,6 +513,11 @@ export class PiRuntime {
 
   get workspace(): string {
     return this.cfg.projectTarget || this.cfg.workspace || '/workspace'
+  }
+
+  /** The project's base branch (`KORTIX_DEFAULT_BRANCH`): the Changes diff compares against it. */
+  get defaultBranch(): string {
+    return this.cfg.defaultBranch
   }
 
   get sessionId(): string {
@@ -633,7 +641,6 @@ export class PiRuntime {
         systemPrompt: () => this.systemPrompt(),
         skillAllowed: (name) => skillGranted(this.policy, name),
         provider: this.models.models.getProvider(this.selected.providerID),
-        compaction: compactionSettings(this.models.catalog, this.cfg.piCompactAtTokens),
       })
       const extensionsMs = performance.now() - extensionsStartedAt
       this.rebuildSystemPrompt()
@@ -705,6 +712,18 @@ export class PiRuntime {
     this.agent.state.thinkingLevel = this.thinkingLevel(this.compiledAgent()?.variant)
     const after = `${this.selected.modelID}|${this.agentName}|${this.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG ?? ''}`
     return { changed: before !== after }
+  }
+
+  /** Re-read the served models and their limits (a custom endpoint saved), keeping the selected model. */
+  async refreshModels(): Promise<void> {
+    if (!this.agent || !this.models) return
+    const { createPiModels } = await import('./model')
+    this.models = await createPiModels({
+      env: this.env,
+      defaultModelRef: this.env.KORTIX_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
+    })
+    this.selected = this.models.select(this.selected?.modelID ?? null)
+    this.agent.state.model = this.selected.model
   }
 
   /** Reload skills and the root AGENTS.md from disk (after a repo refresh). */
@@ -931,8 +950,20 @@ export class PiRuntime {
   /**
    * The command list a client reads (`GET /command`). v3: every compiled
    * command, with the agents that enable it. Otherwise pi's prompt templates.
+   * Then the agent's granted skills (`source: 'skill'`), as OpenCode lists
+   * them: the composer's `/` menu has no other source for them in a session.
+   * A command shadows a skill of the same name.
    */
-  commandList(): Array<{ name: string; description: string; source: 'command'; template: string; hints: string[]; agents?: string[] }> {
+  commandList(): Array<{ name: string; description: string; source: 'command' | 'skill'; template: string; hints: string[]; agents?: string[] }> {
+    const commands = this.commandEntries()
+    const names = new Set(commands.map((command) => command.name))
+    const skills = this.skillList()
+      .filter((skill) => !names.has(skill.name))
+      .map((skill) => ({ name: skill.name, description: skill.description, source: 'skill' as const, template: '', hints: [] }))
+    return [...commands, ...skills]
+  }
+
+  private commandEntries(): Array<{ name: string; description: string; source: 'command'; template: string; hints: string[]; agents?: string[] }> {
     const hints = (template: string) => [...new Set(template.match(/\$(\d+|ARGUMENTS)/g) ?? [])]
     if (this.v3()) {
       return Object.entries(this.compiled?.commands ?? {}).map(([name, command]) => ({
@@ -957,9 +988,22 @@ export class PiRuntime {
   commandPrompt(raw: unknown): PromptInput {
     const body = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
     const name = typeof body.command === 'string' ? body.command : ''
-    if (!this.commandList().some((command) => command.name === name)) throw new PromptRejected(`unknown command "${name}"`)
+    const entry = this.commandList().find((command) => command.name === name)
+    if (!entry) throw new PromptRejected(`unknown command "${name}"`)
     const args = typeof body.arguments === 'string' ? body.arguments.trim() : ''
     const [providerID, ...model] = typeof body.model === 'string' ? body.model.split('/') : []
+    if (entry.source === 'skill') {
+      // pi's `/skill:` expansion reads only pi's own loader, never a Kortix skill: the same block, built here.
+      const skill = this.skillList().find((s) => s.name === name)!
+      const block = `<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${this.coding!.stripFrontmatter(readFileSync(skill.filePath, 'utf8')).trim()}\n</skill>`
+      return parsePromptBody({
+        parts: [{ type: 'text', text: args ? `${block}\n\n${args}` : block }],
+        ...(body.messageID !== undefined ? { messageID: body.messageID } : {}),
+        ...(body.agent !== undefined ? { agent: body.agent } : {}),
+        ...(body.variant !== undefined ? { variant: body.variant } : {}),
+        ...(providerID && model.length ? { model: { providerID, modelID: model.join('/') } } : {}),
+      })
+    }
     const compiled = this.v3() ? this.compiled?.commands?.[name] : undefined
     if (compiled) {
       // The agent the command runs on: the body's, else the session's.
@@ -1376,13 +1420,13 @@ export class PiRuntime {
     }
   }
 
-  /** Adds the running turn's `system` text on top of whatever the prompt is by then. */
+  /** Adds today's date and the running turn's `system` text on top of whatever the prompt is by then: per turn, so a session that crosses midnight is told the new day. */
   private turnExtension(): InlineExtension {
     return {
       name: 'kortix-turn',
       hidden: true,
       factory: (pi) => {
-        pi.on('before_agent_start', (event) => (this.turnSystem ? { systemPrompt: `${event.systemPrompt}\n\n${this.turnSystem}` } : undefined))
+        pi.on('before_agent_start', (event) => ({ systemPrompt: [event.systemPrompt, todayLine(this.now()), this.turnSystem].filter(Boolean).join('\n\n') }))
       },
     }
   }
@@ -1482,7 +1526,7 @@ export class PiRuntime {
     // The subagent's own rules first, the session's rules otherwise. A deny from
     // either wins: delegating must never unlock a call the session denies.
     agent.beforeToolCall = this.toolGate((tool, args) => {
-      const own = resolvePolicyRule(policy, tool, args)
+      const own = resolvePolicyRule(policy, tool, args, this.workspace)
       const session = this.permissions.rule(tool, args)
       if (own === 'deny' || session === 'deny' || !allowed(tool)) return 'deny'
       return own ?? session
@@ -1606,10 +1650,6 @@ export class PiRuntime {
     as: { agent: string; selected: SelectedModel } = { agent: this.agentName, selected: this.selected! },
   ): void {
     const created = this.now()
-    if (sessionID === this.rootId && this.title === 'New session') {
-      const line = input.text.trim().split('\n')[0] ?? ''
-      if (line) this.title = line.length > 80 ? `${line.slice(0, 77)}…` : line
-    }
     this.publish({
       type: 'message.updated',
       properties: {
@@ -1754,8 +1794,9 @@ export class PiRuntime {
       // overlay): the first directory wins, like OpenCode's search order. pi reports the loser.
       const { skills, diagnostics } = this.coding.loadSkills({ cwd: this.workspace, agentDir: this.cfg.piAgentDir, skillPaths: dirs, includeDefaults: false })
       for (const diagnostic of diagnostics) if (diagnostic.type !== 'collision') logger.warn('[pi] skill diagnostic', diagnostic)
-      // The kortix-genui system skill exists only while the project's `genui` flag is on.
-      return genuiEnabled(this.env) ? skills : skills.filter((skill) => skill.name !== GENUI_SKILL_NAME)
+      // A flagged managed skill exists only while the project's flag is on.
+      const withheld = await withheldManagedSkills(this.env)
+      return skills.filter((skill) => !withheld.includes(skill.name))
     } catch (err) {
       logger.warn('[pi] skill load failed', { err: (err as Error).message })
       return []
@@ -1774,7 +1815,8 @@ export class PiRuntime {
     // pi's own context-file format. pi's own loader stays off (`noContextFiles`): it reads `/workspace` and its ancestors, for the root only.
     if (this.instructions) parts.push(`<project_instructions path="${this.instructions.name}">\n${this.instructions.text}\n</project_instructions>`)
     // pi appends the working directory (and package skills) to the root's prompt.
-    if (child) parts.push(`Working directory: ${this.workspace}`)
+    // A subagent skips the root's `before_agent_start` (turnExtension): it is told today's date when it starts.
+    if (child) parts.push(`Working directory: ${this.workspace}`, todayLine(this.now()))
     const skills = this.skills.filter((skill) => skillGranted(child?.policy ?? this.policy, skill.name))
     if (skills.length > 0) parts.push(this.coding!.formatSkillsForPrompt(skills))
     const capabilities = this.readInstruction(SECRET_CAPABILITIES_INSTRUCTION_PATH)
@@ -1825,7 +1867,7 @@ export class PiRuntime {
   }
 
   /** The agent's granted skills: Kortix skills first, then skills pi loaded from packages; a name appears once. */
-  skillList(): Array<Pick<Skill, 'name' | 'description' | 'filePath'>> {
+  skillList(): Array<Pick<Skill, 'name' | 'description' | 'filePath' | 'baseDir'>> {
     const own = this.skills.filter((skill) => skillGranted(this.policy, skill.name))
     const seen = new Set(own.map((skill) => skill.name))
     return [...own, ...(this.pi?.skills() ?? []).filter((skill) => !seen.has(skill.name) && (seen.add(skill.name), true))]
@@ -2124,7 +2166,9 @@ export class PiRuntime {
         const nextSeq = Math.max(saved.nextSeq ?? 0, Math.max(0, ...saved.agentMessages.map((m) => this.nativeSeqs.get(m)!)) + 1)
         this.children.set(saved.id, { ...rest, transcript, status: 'idle', agent: null, nextSeq })
       }
-      this.title = dump.title
+      // The root title stays the placeholder: Kortix writes the session title
+      // (`metadata.name`). A dump an older daemon wrote carries the first prompt
+      // line here, which outranked that title in the API (KRTX-2567).
       return dump
     } catch (err) {
       logger.warn('[pi] transcript restore failed; starting empty', { err: (err as Error).message })

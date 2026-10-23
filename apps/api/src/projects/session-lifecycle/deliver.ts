@@ -6,7 +6,7 @@ import { db } from '../../shared/db';
 import { openSession } from '../session-open';
 import { type SandboxRecord, resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { serviceKeyForExternalId } from '../../platform/service-key';
-import type { ProviderName } from '../../platform/providers';
+import { isProviderName, type ProviderName } from '../../platform/providers';
 import { healSupersededSessionToken } from '../lib/heal-session-token';
 import { syncSandboxEnvForPrompt } from '../lib/sandbox-env-sync';
 import { recordSessionActivity } from '../session-activity';
@@ -258,7 +258,7 @@ export async function deliverAfterWake(ctx: WakeDeliveryContext): Promise<Sessio
       } | null;
       const externalId = sandbox?.external_id ?? null;
       const providerName = sandbox?.provider ?? null;
-      if (!externalId || !isProviderName(providerName)) {
+      if (!externalId || !isLiveProvider(providerName)) {
         console.warn('[session-lifecycle] runtime env sync target is incomplete', {
           sessionId,
           hasExternalId: !!externalId,
@@ -417,6 +417,6 @@ function sandboxExternalId(
   return (result.sandbox as { external_id?: string } | null)?.external_id ?? null;
 }
 
-function isProviderName(value: string | null): value is ProviderName {
-  return value === 'daytona' || value === 'platinum' || value === 'e2b';
+function isLiveProvider(value: string | null): value is ProviderName {
+  return value !== null && isProviderName(value);
 }

@@ -122,6 +122,62 @@ export async function clearTriggerAlert(input: TriggerAlertInput): Promise<boole
   }
 }
 
+// replica-local: the `throttled:<project>:<slug>:<UTC day>` alerts this
+// process already started. The inbox dedupe key makes the alert once-only
+// across replicas; this only spares a busy trigger the watcher read per fire.
+const throttleAlerted = new Set<string>();
+const THROTTLE_ALERTED_MAX = 10_000;
+
+/**
+ * A trigger past a run cap (KRTX-1721) tells its watchers once per UTC day.
+ * Not a failure streak: the trigger runs again when its window has room, so
+ * the edge is the day (the inbox dedupe key), not `alert_failing_since`, and
+ * no `automation_recovered` follows. Never throws; delivery runs in the
+ * background.
+ */
+export function alertTriggerThrottled(input: { projectId: string; accountId?: string | null; slug: string; reason: string; now: Date }): void {
+  const dedupeKey = `throttled:${input.projectId}:${input.slug}:${input.now.toISOString().slice(0, 10)}`;
+  if (throttleAlerted.has(dedupeKey)) return;
+  if (throttleAlerted.size >= THROTTLE_ALERTED_MAX) throttleAlerted.clear();
+  throttleAlerted.add(dedupeKey);
+  const alertInput: TriggerAlertInput = { projectId: input.projectId, slug: input.slug, source: 'fire', accountId: input.accountId };
+  const run = (async () => {
+    const [row] = await db
+      .select({ name: triggerName, reminder: isReminder })
+      .from(projectTriggerRuntime)
+      .where(runtimeRow(alertInput))
+      .limit(1);
+    announce('automation_failed', alertInput, alertTitle(input.slug, row ?? { name: null, reminder: false }), dedupeKey, input.reason, false);
+  })().catch((err) => {
+    logger.warn('[trigger-alerts] throttle alert failed', { projectId: input.projectId, slug: input.slug, error: reason(err) });
+  });
+  inFlight.add(run);
+  void run.finally(() => inFlight.delete(run));
+}
+
+/**
+ * A trigger that paused itself after a sustained run-limit breach (KRTX-1721)
+ * tells its watchers once per pause. The fire path calls this only from the
+ * update that set `auto_paused_at`, and the inbox dedupe key carries that
+ * time, so a later pause after a resume is a new alert. Never throws.
+ */
+export function alertTriggerAutoPaused(input: { projectId: string; accountId?: string | null; slug: string; reason: string; pausedAt: Date }): void {
+  const alertInput: TriggerAlertInput = { projectId: input.projectId, slug: input.slug, source: 'fire', accountId: input.accountId };
+  const dedupeKey = `auto_paused:${input.projectId}:${input.slug}:${input.pausedAt.getTime()}`;
+  const run = (async () => {
+    const [row] = await db
+      .select({ name: triggerName, reminder: isReminder })
+      .from(projectTriggerRuntime)
+      .where(runtimeRow(alertInput))
+      .limit(1);
+    announce('automation_failed', alertInput, alertTitle(input.slug, row ?? { name: null, reminder: false }), dedupeKey, input.reason, false);
+  })().catch((err) => {
+    logger.warn('[trigger-alerts] auto-pause alert failed', { projectId: input.projectId, slug: input.slug, error: reason(err) });
+  });
+  inFlight.add(run);
+  void run.finally(() => inFlight.delete(run));
+}
+
 /** `flagChecked`: the caller already read the flag as on (a raise). */
 function announce(
   kind: NotificationKindName,

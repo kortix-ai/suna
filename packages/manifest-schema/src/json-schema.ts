@@ -433,6 +433,39 @@ function sandboxSchema(): JsonSchemaFragment {
 }
 
 /** One `[[triggers]]` entry — cron, webhook, monitor, or event (`validateTriggers`). */
+/**
+ * A trigger `filter` (KRTX-1721): payload path → a value (equals) or an object
+ * with exactly one operator. Mirrors `parseTriggerFilter` in `./trigger-filter`.
+ */
+function triggerFilterSchema(): JsonSchemaFragment {
+  const scalar: JsonSchemaFragment = { type: ['string', 'number', 'boolean'] };
+  const list = (item: JsonSchemaFragment): JsonSchemaFragment => ({
+    oneOf: [item, { type: 'array', minItems: 1, items: item }],
+  });
+  const prefix: JsonSchemaFragment = { type: ['string', 'number', 'boolean'], minLength: 1 };
+  return {
+    type: 'object',
+    additionalProperties: {
+      oneOf: [
+        scalar,
+        {
+          type: 'object',
+          minProperties: 1,
+          maxProperties: 1,
+          additionalProperties: false,
+          properties: {
+            not: list(scalar),
+            in: list(scalar),
+            exists: { type: 'boolean' },
+            prefix: list(prefix),
+            not_prefix: list(prefix),
+          },
+        },
+      ],
+    },
+  };
+}
+
 function triggerSchema(version: 1 | 2): JsonSchemaFragment {
   const durationSchema: JsonSchemaFragment = { type: 'string', pattern: DURATION_RE.source };
   return {
@@ -450,7 +483,7 @@ function triggerSchema(version: 1 | 2): JsonSchemaFragment {
       session_mode: normalizedEnumSchema(['fresh', 'reuse', 'pinned', 'keyed']),
       session_key: { type: 'string' },
       sessionKey: { type: 'string' },
-      filter: { type: 'object', additionalProperties: { type: 'string' } },
+      filter: triggerFilterSchema(),
       sessionMode: normalizedEnumSchema(['fresh', 'reuse', 'pinned', 'keyed']),
       session_id: { type: 'string' },
       sessionId: { type: 'string' },
@@ -464,6 +497,12 @@ function triggerSchema(version: 1 | 2): JsonSchemaFragment {
       // `type: cron` only — the misfire bound. Its 60s floor is the imperative
       // validator's, like the monitor duration floors below.
       max_lateness: durationSchema,
+      // Any trigger type: runs started in any 60 minutes (60 when unset) and
+      // in a UTC day (KRTX-1721).
+      max_runs_per_hour: { type: 'integer', minimum: 1 },
+      max_runs_per_day: { type: 'integer', minimum: 1 },
+      // Fresh session mode only: skip holds a fire while the previous run is active (KRTX-1721).
+      overlap: { type: 'string', enum: ['skip', 'allow'] },
       secret_env: { type: 'string', pattern: ENV_NAME_PATTERN },
       secretEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
       // `type: monitor` only — the repo command the platform supervises 24/7,
@@ -1073,7 +1112,7 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
       // Cross-field: must resolve to a declared, enabled agent — dynamic,
       // left to the imperative validator.
       default_agent: NON_BLANK_STRING,
-      runtime: { type: 'string', enum: [...V2_RUNTIME_VALUES] },
+      runtime: { type: 'string', enum: [...V2_RUNTIME_VALUES], deprecated: true, description: 'Selects nothing: every new session runs pi.' },
       // Per-harness native settings. `pi.packages`: pi packages
       // (https://pi.dev/packages) in pi's own settings format, for every agent.
       harnesses: harnessesSchema('project'),
@@ -1199,7 +1238,7 @@ export function buildManifestV3Schema(): JsonSchemaFragment {
       kortix_version: { const: 3 },
       imports: { type: 'array', items: { type: 'string', pattern: IMPORT_PATH_PATTERN } },
       default_agent: NON_BLANK_STRING,
-      runtime: { type: 'string', enum: [...V2_RUNTIME_VALUES] },
+      runtime: { type: 'string', enum: [...V2_RUNTIME_VALUES], deprecated: true, description: 'Selects nothing: every new session runs pi.' },
       ...shared,
       skills: {
         type: ['object', 'null'],
@@ -1244,6 +1283,17 @@ export function buildManifestV3Schema(): JsonSchemaFragment {
       },
       policy: { type: 'object' },
       policies: { type: 'array' },
+      approvals: {
+        type: 'object',
+        properties: {
+          ttl: {
+            type: 'string',
+            pattern: '^[0-9]+[mhd]$',
+            description: 'How long a held connector call waits for a decision: `30m`, `4h`, `7d`. Clamped to 5m..30d. Default 24h.',
+          },
+        },
+        additionalProperties: false,
+      },
       agents: {
         type: 'object',
         minProperties: 1,

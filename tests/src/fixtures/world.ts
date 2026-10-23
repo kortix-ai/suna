@@ -273,26 +273,10 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
   const sharedProject = memoizeUntilRejected(() =>
     createProject(sharedStack, { name: `e2e-${runId}-shared`, managedGit: true }),
   );
-  const sharedSeededOpenCode = memoizeUntilRejected(() =>
+  // The seeded starter. Every new session runs pi (OpenCode is sunset).
+  const sharedSeededProject = memoizeUntilRejected(() =>
     createProject(sharedStack, { name: `e2e-${runId}-shared-seeded`, seed: true }),
   );
-  // The pi twin: the same starter, with the project's `pi_harness` flag on, so
-  // every session in it boots pi (apps/api selectSessionHarness).
-  const sharedSeededPi = memoizeUntilRejected(async () => {
-    const project = await createProject(sharedStack, { name: `e2e-${runId}-shared-seeded-pi`, seed: true });
-    const res = await adminClient.patch(
-      '/v1/projects/:projectId/features',
-      { feature: 'pi_harness', enabled: true },
-      { params: { projectId: project.id } },
-    );
-    expectApi(res, 'pi_harness flag', 200);
-    if (res.json<any>()?.experimental?.pi_harness !== true) {
-      throw new Error(`pi_harness flag did not turn on for ${project.id}: ${res.text()}`);
-    }
-    return project;
-  });
-  const sharedSeededProject = (harness: Harness = 'opencode') =>
-    harness === 'pi' ? sharedSeededPi() : sharedSeededOpenCode();
 
   const fixturesFor = (stack: ResourceStack, attempt = 1, signal?: AbortSignal): Fixtures => {
     const suffix = attemptSuffix(attempt);

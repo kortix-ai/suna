@@ -6,11 +6,10 @@ import { EnvelopeOpenIcon as MailCheck } from '@phosphor-icons/react';
 import { FormEvent, Suspense, useRef, useState } from 'react';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { errorToast } from '@/components/ui/toast';
-import { AuthCardShell, BackToSignIn } from '@/features/auth/auth-card-shell';
+import { Button } from '@kortix/ui/button';
+import { Input } from '@kortix/ui/input';
+import { FieldError } from '@kortix/ui/internal/auth/auth-primitives';
+import { AuthCardShell, BackToSignIn } from '@kortix/ui/internal/auth/auth-card-shell';
 import { submitAuthForm } from '@/lib/auth/submit-auth';
 
 function ForgotPasswordContent() {
@@ -40,11 +39,9 @@ function ForgotPasswordContent() {
       const message = outcome.ok ? outcome.result.message : outcome.message;
       const msg = typeof message === 'string' ? message : t('errors.sendFailed');
       setErrorMessage(msg);
-      errorToast(msg);
     } catch (err) {
       const msg = err instanceof Error ? err.message : t('errors.unexpected');
       setErrorMessage(msg);
-      errorToast(msg);
     } finally {
       inFlight.current = false;
       setPending(false);
@@ -77,7 +74,6 @@ function ForgotPasswordContent() {
       description={t('request.description')}
       footer={<BackToSignIn />}
     >
-      {errorMessage && <InfoBanner tone="destructive">{errorMessage}</InfoBanner>}
       <form onSubmit={handleSubmit} className="space-y-5">
         <div className="space-y-3">
           <label htmlFor="email" className="text-muted-foreground text-sm font-medium">
@@ -93,7 +89,9 @@ function ForgotPasswordContent() {
             required
             autoComplete="email"
             autoFocus
+            aria-describedby={errorMessage ? 'email-error' : undefined}
           />
+          {errorMessage && <FieldError id="email-error" message={errorMessage} />}
         </div>
         <Button type="submit" size="lg" disabled={pending} className="w-full">
           {pending ? t('request.sending') : t('request.submit')}

@@ -7,6 +7,7 @@ import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-d
 // OpenCode pin paths below are native. Re-exported for the existing importers.
 export { DEFAULT_KORTIX_RUNTIME_STATE_DIRECTORY, resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function resolveOpenCodeAuditSpoolPath(
   env: Record<string, string | undefined> = process.env,
 ): string {
@@ -20,11 +21,13 @@ export function resolveOpenCodeAuditSpoolPath(
  * The pin paths resolve on every call, never at import. `KORTIX_RUNTIME_STATE_DIR`
  * has no production writer, so the answer is stable in a box; resolving per call
  * keeps a module import from freezing whichever directory was current first.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function openCodeSessionPinPath(): string {
   return join(resolveKortixRuntimeStateDirectory(), 'opencode-session-id')
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function openCodeSeedBakedPinPath(): string {
   return join(resolveKortixRuntimeStateDirectory(), 'opencode-seed-baked-id')
 }
@@ -67,6 +70,7 @@ function writePrivatePin(path: string, sessionId: string): void {
   chmodSync(path, 0o600)
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function writeOpenCodeSessionPin(sessionId: string): void {
   writePrivatePin(openCodeSessionPinPath(), sessionId)
 }
@@ -76,6 +80,7 @@ export function writeOpenCodeSessionPin(sessionId: string): void {
  * `isValidOpenCodeSessionId` reads as absent — see that function for why the
  * read side validates too. Callers treat null as "no session pinned", so a
  * rejected pin degrades to creating a fresh session, never to a bad request.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function readOpenCodeSessionPin(): string | null {
   try {
@@ -90,6 +95,7 @@ export function readOpenCodeSessionPin(): string | null {
   }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function writeOpenCodeSeedBakedPin(sessionId: string): void {
   writePrivatePin(openCodeSeedBakedPinPath(), sessionId)
 }
@@ -100,6 +106,7 @@ export function writeOpenCodeSeedBakedPin(sessionId: string): void {
  * and refuses a spool with any other field, which would mark the runtime
  * unhealthy after a daemon update. Rename the field in place, before the relay
  * loads the spool. Remove once every box has run a W3 daemon.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function migratePreW3AuditSpool(path: string): void {
   let text: string
@@ -150,6 +157,7 @@ function opencodeRuntimeEnvSnapshotPath(): string {
  *
  * Best-effort: a failed write leaves the box exactly as it was — the next
  * push still applies correctly, just without amnesia protection this once.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function writeOpencodeRuntimeEnvSnapshot(values: Readonly<Record<string, string>>): void {
   try {
@@ -167,6 +175,7 @@ export function writeOpencodeRuntimeEnvSnapshot(values: Readonly<Record<string, 
  * Best-effort read of the snapshot `writeOpencodeRuntimeEnvSnapshot` wrote.
  * `{}` on any failure, unparseable content, or absence — never invents a
  * value nobody actually applied.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function readOpencodeRuntimeEnvSnapshot(): Record<string, string> {
   try {

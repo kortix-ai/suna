@@ -107,7 +107,7 @@ A v3 agent block also takes `variant`, `temperature`, `top_p`, `steps`, `color`,
 | `imports` | list | none | Other YAML files whose collections merge into this one. See [imports](#imports). |
 | `project` | map | none | `name`, `description`. For people who read the repository. The project name in Kortix does not come from here. |
 | `env` | map | none | `required`, `optional`: secret names. See [env](#env). |
-| `runtime` | string | `opencode` | `opencode` or `pi`. See [harnesses, opencode and pi](#harnesses-opencode-and-pi). |
+| `runtime` | string | — | Deprecated: selects nothing, every new session runs pi. `opencode` validates with a warning. See [harnesses, opencode and pi](#harnesses-opencode-and-pi). |
 | `harnesses` | map | none | `pi.packages`, `opencode.plugins`. |
 | `opencode.config_dir` | path | `harnesses/opencode`, then `.kortix/opencode` | OpenCode config directory. An error in v3. |
 | `pi.config_dir` | path | `harnesses/pi`, then `.kortix/pi` | pi config directory. |
@@ -119,6 +119,7 @@ A v3 agent block also takes `variant`, `temperature`, `top_p`, `steps`, `color`,
 | `apps` | map | none | App slug to App configuration. |
 | `policy.default_mode` | string | `allow_all` | `allow_all` or `risk`. See [policy and policies](#policy-and-policies). |
 | `policies` | list | none | Project-wide connector rules. |
+| `approvals.ttl` | string | `24h` | How long a held connector call waits for a decision. See [policy and policies](#policy-and-policies). |
 
 A v2 or v3 manifest rejects `channels`, `sandboxes`, and the image keys `image`, `dockerfile`, `slug`, `cpu`, `memory`, `disk`, `entrypoint`, `context`, `context_dir` and `gpu` set directly on `sandbox`.
 
@@ -308,17 +309,16 @@ A template change applies to the next session, not to a running one.
 
 ## harnesses, opencode and pi
 
-A session runs one of two harnesses. `runtime: pi` or the project's `pi_harness` feature flag selects pi. pi needs the `llm_gateway` flag: without it, the session boots OpenCode. See [Harnesses: OpenCode and pi](/docs/project/agents#harnesses-opencode-and-pi).
+Every new session runs pi. OpenCode is deprecated and serves only sessions that already run it; `runtime` selects nothing. See [Harnesses: OpenCode and pi](/docs/project/agents#harnesses-opencode-and-pi).
 
 | Key | Default | Holds |
 | --- | --- | --- |
-| `opencode.config_dir` | `harnesses/opencode`, then `.kortix/opencode` | Files only OpenCode reads: `opencode.jsonc`, `plugins/`, `tools/`. Without the key, Kortix uses the first directory that holds an `opencode.json` or `opencode.jsonc`. |
+| `opencode.config_dir` | `harnesses/opencode`, then `.kortix/opencode` | Deprecated with OpenCode. Files only OpenCode reads: `opencode.jsonc`, `plugins/`, `tools/`. Without the key, Kortix uses the first directory that holds an `opencode.json` or `opencode.jsonc`. |
 | `pi.config_dir` | `harnesses/pi`, then `.kortix/pi` | Files only pi reads: `settings.json`, `extensions/`, `skills/`, `prompts/`. |
 
 **`harnesses.pi.packages`** lists the pi packages every pi session loads:
 
 ```yaml
-runtime: pi
 harnesses:
   pi:
     packages:
@@ -431,6 +431,13 @@ policies:
         match: "*@example.com"     # a glob, or /regex/ in slashes
   - match: gmail.send_email
     action: block
+```
+
+`approvals.ttl` sets how long a held call waits for a decision: an integer and `m`, `h` or `d`, such as `30m`, `4h` or `7d`. Kortix clamps it to 5 minutes through 30 days. Without it, or with any other value, a held call waits 24 hours. A held call that nobody decides in time expires.
+
+```yaml
+approvals:
+  ttl: 4h
 ```
 
 All conditions of a rule must hold. `negate: true` inverts one condition. How approvals reach a person is on [Policies and approvals](/docs/connect/connectors#policies-and-approvals).

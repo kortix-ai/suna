@@ -13,6 +13,9 @@ export interface WebSearchQueryResult {
   query: string;
   answer?: string;
   sources: WebSearchSource[];
+  /** Why this query of a batch failed (`success: false`), e.g. a provider
+   *  quota. Absent on a query that ran. */
+  error?: string;
 }
 
 /** The JSON shapes the web tools return: an object, or an array of them. */
@@ -73,6 +76,11 @@ export function parseWebSearchOutput(output: unknown): WebSearchQueryResult[] {
           query: r.query,
           answer: (r.answer || undefined) as string | undefined,
           sources: Array.isArray(r.results) ? collectSources(r.results) : [],
+          // A failed query of a batch keeps its error: dropping it rendered
+          // an empty row per query (KRTX-3016).
+          ...(r.success === false
+            ? { error: (typeof r.error === 'string' && r.error.trim()) || 'Search failed' }
+            : {}),
         });
       }
       if (queries.length > 0) return queries;

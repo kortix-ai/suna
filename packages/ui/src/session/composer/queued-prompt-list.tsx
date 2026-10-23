@@ -1,0 +1,318 @@
+'use client';
+
+import { Button } from '../../primitives/button';
+import Loading from '../../primitives/loading';
+import { useTranslations } from '../../i18n';
+import { cn } from '../../lib/utils';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../../primitives/dropdown-menu';
+import {
+  ArrowClockwiseIcon,
+  ArrowUpIcon,
+  CaretUpIcon,
+  DotsThreeIcon,
+  PencilSimpleIcon,
+  StopIcon,
+  TrashIcon,
+  XIcon,
+} from '@phosphor-icons/react';
+import { Fragment, useId, useState, type ReactNode } from 'react';
+import type { QueueRow } from './queue-projection';
+
+const STEER_FALLBACK_KEY = {
+  unsupported: 'steerFallbackUnsupported',
+  not_prompter: 'steerFallbackNotPrompter',
+  turn_ended: 'steerFallbackTurnEnded',
+} as const;
+
+export type QueuedRowActionKey = 'edit' | 'retry' | 'sendNow' | 'stopAndSend' | 'remove';
+
+const ACTION_ICON: Record<QueuedRowActionKey, ReactNode> = {
+  edit: <PencilSimpleIcon className="size-4" />,
+  retry: <ArrowClockwiseIcon className="size-4" />,
+  sendNow: <ArrowUpIcon className="size-4" />,
+  stopAndSend: <StopIcon className="size-4" />,
+  remove: <TrashIcon className="size-4" />,
+};
+
+/** The actions a row's menu offers, in menu order, each bound to the row. */
+export function queuedRowActions(
+  row: QueueRow,
+  handlers: {
+    onEdit?: (promptId: string) => void;
+    onRetry?: (promptId: string) => void;
+    onStopAndSend?: (promptId: string) => void;
+    onRemove?: (promptId: string) => void;
+  },
+): { key: QueuedRowActionKey; run: () => void }[] {
+  const { onEdit, onRetry, onStopAndSend, onRemove } = handlers;
+  const actions: { key: QueuedRowActionKey; run: () => void }[] = [];
+  if (row.takeBackEligible && onEdit) actions.push({ key: 'edit', run: () => onEdit(row.id) });
+  // Send now / Retry: one primitive, two labels. The inbox's one retry
+  // primitive answers a failed row's "Retry" and a queued row's "Send now" —
+  // and the queued call doubles as the gentler twin of "Stop and send": the
+  // live turn keeps running, and this row is answered first at the next
+  // drain. Another member's row runs as them, so only they may hurry it (the
+  // projection already scopes `retryable` to the viewer's own row). A row
+  // already handed to the running turn (`steer` with no fallback) has nothing
+  // to hurry — the turn reads it at its next step — so it keeps only Remove.
+  if (
+    onRetry &&
+    !row.command &&
+    !row.fromAnotherMember &&
+    (row.retryable || (row.state === 'queued' && !(row.steer && !row.steerFallback)))
+  ) {
+    actions.push({ key: row.state === 'failed' ? 'retry' : 'sendNow', run: () => onRetry(row.id) });
+  }
+  if (row.interruptible && onStopAndSend) {
+    actions.push({ key: 'stopAndSend', run: () => onStopAndSend(row.id) });
+  }
+  if (row.removable && onRemove) actions.push({ key: 'remove', run: () => onRemove(row.id) });
+  return actions;
+}
+
+export interface QueuedPromptListProps {
+  rows: readonly QueueRow[];
+  heldCount: number;
+  resumePending?: boolean;
+  onResume?: () => void;
+  onEdit?: (promptId: string) => void;
+  onRemove?: (promptId: string) => void;
+  /** Run THIS prompt through the inbox's one retry primitive: a failed row's
+   *  "Retry", a queued row's "Send now" — the row is promoted past the
+   *  ordering gate and answered first, without touching the live turn. When
+   *  a Stop hold keeps other rows back, the same call is the hold's release:
+   *  the batch drains in queue order in one turn (KRTX-683). */
+  onRetry?: (promptId: string) => void;
+  /** "Stop and send": the turn ends after its running tool, then this row
+   *  runs. Pass it only while a turn runs. */
+  onStopAndSend?: (promptId: string) => void;
+  /** The row the composer is editing. It stays in its slot, drawn as the
+   *  editing row, until Submit saves the new text or Cancel drops the edit. */
+  editing?: { promptId: string } | null;
+  onCancelEdit?: () => void;
+}
+
+export function QueuedPromptList({
+  rows,
+  heldCount,
+  resumePending = false,
+  onResume,
+  onEdit,
+  onRemove,
+  onRetry,
+  onStopAndSend,
+  editing = null,
+  onCancelEdit,
+}: QueuedPromptListProps) {
+  const t = useTranslations('threads');
+  const common = useTranslations('common');
+  const copy = useTranslations('hardcodedUi.i18nComplete');
+  const listId = useId();
+  // Collapse only hides the rows. Nothing is removed, and the count stays.
+  const [collapsed, setCollapsed] = useState(false);
+  const listed = rows.length;
+  if (listed === 0 && heldCount === 0) return null;
+  // One edit at a time: the composer holds a single draft.
+  const editRow = editing ? undefined : onEdit;
+  const actionLabel: Record<QueuedRowActionKey, string> = {
+    edit: common('edit'),
+    retry: copy.raw('text942087cc2d41'),
+    sendNow: copy.raw('text588032878324'),
+    stopAndSend: t('stopAndSend'),
+    remove: copy.raw('textc0b9d9e9ac1d'),
+  };
+
+  const editingRow = (text: string) => (
+    <li
+      data-queued-editing
+      className="flex min-h-8 items-center gap-2 rounded-md border border-dashed px-2 py-0.5"
+    >
+      <PencilSimpleIcon className="text-muted-foreground size-3.5 shrink-0" aria-hidden="true" />
+      <p className="text-muted-foreground min-w-0 flex-1 truncate text-sm">{text}</p>
+      <span className="text-muted-foreground shrink-0 text-xs">{t('editingQueued')}</span>
+      {onCancelEdit && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className="text-muted-foreground shrink-0"
+          aria-label={common('cancel')}
+          onClick={onCancelEdit}
+        >
+          <XIcon className="size-3.5" />
+        </Button>
+      )}
+    </li>
+  );
+
+  const heldActions = onResume && (
+    <Button
+      type="button"
+      variant="ghost"
+      size="xs"
+      className="h-6 gap-1 px-2 text-xs"
+      disabled={resumePending}
+      onClick={onResume}
+    >
+      {resumePending && <Loading className="size-3.5 shrink-0" />}
+      {copy.raw('textd640c7421da0')}
+    </Button>
+  );
+
+  return (
+    <section
+      aria-label={t('queueList')}
+      className="bg-background border-border flex w-full flex-col rounded-lg border p-1"
+    >
+      {/* Paused with nothing listed: the pause is the whole card. With rows,
+          the header below carries it instead. */}
+      {heldCount > 0 && listed === 0 && (
+        <div
+          data-queue-held
+          className="text-muted-foreground flex items-center gap-2 px-3 py-1 text-xs"
+        >
+          <span className="min-w-0 flex-1">{copy.raw('text1eb132d9d4da')}</span>
+          {heldActions}
+        </div>
+      )}
+      {listed > 0 && (
+        <div
+          {...(heldCount > 0 ? { 'data-queue-held': true } : {})}
+          className="flex items-center gap-2 py-0.5 pr-1 pl-2"
+        >
+          <span className="text-muted-foreground flex min-w-0 flex-1 items-center self-stretch text-xs leading-none">
+            {heldCount > 0 ? copy.raw('text1eb132d9d4da') : t('queuedCount', { count: listed })}
+          </span>
+          <div className="flex items-center gap-0">
+            {heldCount > 0 && heldActions}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              className={cn(!collapsed ? 'rotate-180' : 'rotate-0')}
+              aria-label={collapsed ? t('expandQueue') : t('collapseQueue')}
+              aria-expanded={!collapsed}
+              aria-controls={listId}
+              onClick={() => setCollapsed((value) => !value)}
+            >
+              <CaretUpIcon className="size-3.5" />
+            </Button>
+          </div>
+        </div>
+      )}
+      {listed > 0 && !collapsed && (
+        <ul id={listId} className="max-h-40 overflow-y-auto">
+          {rows.map((row, index) => {
+            const failed = row.state === 'failed';
+            const long = row.text.length > 240 || row.text.split('\n').length > 4;
+            const actions = queuedRowActions(row, {
+              onEdit: editRow,
+              onRetry,
+              onStopAndSend,
+              onRemove,
+            });
+            return (
+              <Fragment key={row.id}>
+                {row.id === editing?.promptId ? (
+                  editingRow(row.text)
+                ) : (
+                  <li
+                    data-queued-prompt-id={row.id}
+                    data-queued-state={row.state}
+                    className="group/queued hover:bg-hover flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-transparent px-2 py-0.5"
+                  >
+                    <div className="text-foreground min-w-0 flex-1 text-sm break-words">
+                      {long ? (
+                        <details>
+                          <summary className="focus-visible:outline-ring cursor-pointer truncate rounded-sm focus-visible:outline-2">
+                            {row.text.split('\n').find((line) => line.trim()) || t('queued')}
+                          </summary>
+                          <pre className="mt-2 max-h-40 overflow-auto font-mono text-xs whitespace-pre">
+                            {row.text}
+                          </pre>
+                        </details>
+                      ) : (
+                        <p className="whitespace-pre-wrap">{row.text}</p>
+                      )}
+                      {row.attachmentCount > 0 && (
+                        <span className="text-muted-foreground text-xs">
+                          {t('queuedFiles', { count: row.attachmentCount })}
+                        </span>
+                      )}
+                      {row.fromAnotherMember && (
+                        <p className="text-muted-foreground text-xs" data-queued-author="other">
+                          {t('queuedByAnotherMember')}
+                        </p>
+                      )}
+                      {row.command && (
+                        <p className="text-muted-foreground text-xs" data-queued-command>
+                          {t('commandRunsWhenDone')}
+                        </p>
+                      )}
+                      {!failed && (row.steer || row.steerFallback) && (
+                        <p className="text-muted-foreground text-xs" data-queued-delivery>
+                          {row.steerFallback
+                            ? t(STEER_FALLBACK_KEY[row.steerFallback])
+                            : t('steerNextStep')}
+                        </p>
+                      )}
+                      {failed && (
+                        <p className="text-kortix-red text-xs" role="status" title={row.lastError}>
+                          {copy.raw('textcd5f943d5863')}
+                          {row.lastError ? ` — ${row.lastError}` : ''}
+                        </p>
+                      )}
+                    </div>
+                    {actions.length > 0 && (
+                      <DropdownMenu modal={false}>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-xs"
+                            data-queued-actions
+                            aria-label={t('queuedActions')}
+                            className={cn(
+                              'text-muted-foreground hover:text-foreground shrink-0',
+                              !failed &&
+                                'opacity-0 group-focus-within/queued:opacity-100 group-hover/queued:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100',
+                            )}
+                          >
+                            <DotsThreeIcon className="size-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-44">
+                          {actions.map((action) => (
+                            <Fragment key={action.key}>
+                              {action.key === 'remove' && actions.length > 1 && (
+                                <DropdownMenuSeparator />
+                              )}
+                              <DropdownMenuItem
+                                variant={action.key === 'remove' ? 'destructive' : 'default'}
+                                onSelect={action.run}
+                                className="gap-2"
+                              >
+                                {ACTION_ICON[action.key]}
+                                {actionLabel[action.key]}
+                              </DropdownMenuItem>
+                            </Fragment>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </li>
+                )}
+              </Fragment>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}

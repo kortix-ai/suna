@@ -1,5 +1,6 @@
 'use client';
 
+import { qk } from '../query-keys';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
 import { isRuntimeConfigInvalidError } from '../../core/http/runtime-errors';
@@ -210,7 +211,7 @@ export function useForkSession() {
       });
       return unwrap(result);
     },
-    onSuccess: (forkedSession) => {
+    onSuccess: async (forkedSession) => {
       // Surgically insert into cache — SSE session.created will also fire.
       const session = forkedSession as Session;
       queryClient.setQueryData<Session[]>(runtimeKeys.sessions(), (old) => {
@@ -224,6 +225,9 @@ export function useForkSession() {
         return [session, ...old].sort((a, b) => b.time.updated - a.time.updated);
       });
       queryClient.setQueryData(runtimeKeys.runtimeSession(session.id), session);
+      await queryClient.refetchQueries({
+        predicate: (query) => qk.project.scope('').slice(0, 2).every((part, index) => query.queryKey[index] === part),
+      });
     },
   });
 }
@@ -248,6 +252,7 @@ export function useRuntimeSessionDiff(sessionId: string) {
  * The runtime's todo list for a session. A runtime capability
  * (`session.todo`): a runtime without one (pi) is never asked, and `data`
  * stays undefined.
+ * @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support.
  */
 export function useRuntimeSessionTodo(sessionId: string) {
   const runtimeReady = useRuntimeReady();

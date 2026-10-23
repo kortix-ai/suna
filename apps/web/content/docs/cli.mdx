@@ -151,7 +151,7 @@ The agent works in its own sandbox, on its own branch.
 
 ```sh
 kortix chat <session_id>              # line chat, or -p "…" for one prompt
-kortix connect <session_id>           # the OpenCode TUI in your terminal
+kortix sessions shell <session_id>    # a shell in the session's sandbox
 kortix tui                            # the whole product as a terminal app
 kortix sessions wait-for <session_id> # block until the agent is done
 ```
@@ -205,7 +205,7 @@ The commands below are `kortix sessions <subcommand>`. `chat` and `connect` also
 | --- | --- |
 | `log [<session_id>]` | The recent messages, read-only. A stopped session is read from its saved transcript and is not woken. `--limit <n>` (default 10). |
 | `wait-for <session_id>` | Block until the agent is done. Exit `0` done, `3` blocked on a question or permission, `124` timed out. `--timeout <seconds>` (default 300). |
-| `connect [<session_id>]` | Attach the OpenCode TUI. With no ID it shows a picker. A pi session has no TUI to attach: the command exits `1`. Details are on [TUI](/docs/tui). |
+| `connect [<session_id>]` | Deprecated with OpenCode. Attach the OpenCode TUI to a session that still runs OpenCode. With no ID it shows a picker. Every new session runs pi, which has no TUI to attach: the command exits `1`. Use `chat` or `shell` instead. Details are on [TUI](/docs/tui). |
 | `digest` | A short review of recent sessions. `--since 7d`. |
 
 ### Unblock
@@ -362,7 +362,7 @@ Commands an agent uses:
 | `kortix secrets sync` | Pull this session's secrets and grants now. |
 | `kortix cr open --title "<text>"` | Open a change request from the session branch. Inside a session it fills `--head` itself. |
 | `kortix review submit --kind <kind> --title "<text>"` | Submit an output, a decision or a batch for review. |
-| `kortix remind "<prompt>" --in 24h` | Prompt this session again later. Reminders are a project flag, off by default: `kortix projects features enable reminders`. |
+| `kortix remind "<prompt>" --in 24h` | Prompt this session again later. Reminders are a project flag, on by default; `kortix projects features disable reminders` turns them off. |
 | `kortix sessions update --label <label>` | Label the session the agent runs in. |
 
 What an agent may do is set by its `kortix_permissions` in `kortix.yaml`. When the API refuses a command, the CLI prints the token kind, the agent and its grant. See [Agents & permissions](/docs/project/agents). These commands are refused for an agent session's token, whatever the grant:

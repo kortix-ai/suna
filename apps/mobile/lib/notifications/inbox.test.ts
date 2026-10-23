@@ -42,6 +42,7 @@ describe('KIND_LABEL', () => {
       automation_recovered: 'Recovery alert',
       capture_device_down: 'Capture computer stopped',
       capture_device_recovered: 'Capture computer recording again',
+      message: 'Message',
     });
   });
 

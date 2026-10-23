@@ -43,6 +43,7 @@ import {
   isPaperShaderImageUniformNoise,
   isPaperShaderNullContextNoise,
   isPaperShaderWebGLUnsupportedNoise,
+  isPlayNotSupportedRejectionNoise,
   isRedefineInjectedWalletNoise,
   isRedefineWebdriverNoise,
   isRuntimeNotReadyNoiseMessage,
@@ -64,7 +65,7 @@ import {
   shouldIgnoreBrowserRuntimeNoise,
   shouldIgnoreSentryBrowserNoise,
   shouldIgnoreSentryNoiseEvent,
-} from './browser-error-noise.ts';
+} from '@kortix/ui/internal/lib/browser-error-noise';
 
 test('matches the Safari runtime.sendMessage tab-not-found noise', () => {
   assert.equal(
@@ -1377,7 +1378,7 @@ test('does NOT suppress a storage SecurityError when only ONE of several frames 
         "SecurityError: Failed to read the 'localStorage' property from 'window': Access is denied for this document.",
       frames: [
         { filename: CHUNK_FRAME_STORAGE },
-        { filename: 'app:///apps/web/src/lib/desktop.ts' },
+        { filename: 'app:///packages/ui/src/internal/lib/desktop.ts' },
       ],
     }),
     false,
@@ -1588,7 +1589,7 @@ const INJECTED_SCRIPT_BUNDLE_FRAME_CHAIN = [
   { filename: 'app:///injectedScript.bundle.js', function: 'n', lineno: 84147 },
 ];
 const FIRST_PARTY_APPS_SRC_FRAME = {
-  filename: 'apps/web/src/lib/desktop.ts',
+  filename: 'packages/ui/src/internal/lib/desktop.ts',
   function: 'handleMessage',
 };
 
@@ -3112,11 +3113,11 @@ test('does NOT suppress the old-browser DOM null-deref when a first-party frame 
   // protection.
   const firstPartyFrames = [
     { filename: 'app:///apps/web/src/hooks/use-proximity-hover.ts' },
-    { filename: 'apps/web/src/features/workspace/project-sidebar/session-title.tsx' },
+    { filename: 'packages/ui/src/workspace/sidebar/session-title.tsx' },
     { filename: 'app:///apps/web/src/components/ui/portal.tsx' },
     // Both modules live in @kortix/ui now and de-minify to packages/ui/src.
     { filename: 'app:///packages/ui/src/hooks/use-proximity-hover.ts' },
-    { filename: 'packages/ui/src/components/ui/portal.tsx' },
+    { filename: 'packages/ui/src/primitives/portal.tsx' },
   ];
   for (const frames of [
     [firstPartyFrames[0]],
@@ -12131,7 +12132,7 @@ test('keeps reporting the u_noiseTexture message from a first-party frame', () =
   assert.equal(
     isPaperShaderImageUniformNoise({
       message: PAPER_SHADER_IMAGE_UNIFORM_MESSAGE,
-      frames: [{ filename: 'apps/web/src/components/ui/paper-wallpaper-shaders.tsx' }],
+      frames: [{ filename: 'packages/ui/src/primitives/paper-wallpaper-shaders.tsx' }],
     }),
     false,
   );
@@ -12529,6 +12530,81 @@ test('the runtime gate does not drop the play() NotAllowedError rejection (sentr
   // negative guards there; the frame-aware beforeSend hook is the safe gate.
   assert.equal(
     shouldIgnoreBrowserRuntimeNoise({ reason: { message: PLAY_NOT_ALLOWED, name: 'NotAllowedError' } }),
+    false,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// `NotSupportedError: The media resource indicated by the src attribute or
+// assigned media provider object was not suitable.` — Firefox's message for
+// an `HTMLMediaElement.play()` promise that rejects because the element has
+// no playable source. Better Stack pattern `1b3195a9…` (Kortix Frontend prod,
+// application_id 2346967, KRTX-2998): 1 occurrence, 0 identified users,
+// first=last 2026-10-21T09:54:06Z, call site unknown, release unknown. Every
+// first-party play() promise has a `.catch` (`film.tsx`, `sounds.ts`,
+// `video-renderer.tsx`), so a frameless uncaught one is not ours. Same guards
+// as the play() NotAllowedError rule: any first-party or resolvable frame
+// keeps the event reporting.
+// ---------------------------------------------------------------------------
+
+const PLAY_NOT_SUPPORTED = 'The media resource indicated by the src attribute or assigned media provider object was not suitable.';
+
+test('suppresses the frameless play() NotSupportedError rejection via the beforeSend gate', () => {
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            type: 'NotSupportedError',
+            value: PLAY_NOT_SUPPORTED,
+            mechanism: { type: 'auto.browser.global_handlers.onunhandledrejection', handled: false },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+  assert.equal(isPlayNotSupportedRejectionNoise({ message: PLAY_NOT_SUPPORTED, frames: [] }), true);
+});
+
+test('does NOT suppress the play() NotSupportedError rejection when a first-party or resolvable frame is present', () => {
+  for (const frames of [
+    [{ filename: 'app:///apps/web/src/lib/sounds.ts', function: 'playSound' }],
+    [{ filename: 'app:///_next/static/chunks/123-abc.js', function: 'x' }],
+    [{ filename: 'https://cdn.example.com/player.js', function: 'play' }],
+  ]) {
+    assert.equal(
+      isPlayNotSupportedRejectionNoise({ message: PLAY_NOT_SUPPORTED, frames }),
+      false,
+      `expected attributable play() NotSupportedError rejection from ${JSON.stringify(frames)} to keep reporting`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: PLAY_NOT_SUPPORTED, stacktrace: { frames } }] },
+      }),
+      false,
+    );
+  }
+});
+
+test('the play() NotSupportedError matcher anchors on the exact message', () => {
+  for (const message of [
+    'NotSupportedError',
+    'The element has no supported sources.',
+    'The operation is not supported.',
+    `${PLAY_NOT_SUPPORTED} (extra)`,
+  ]) {
+    assert.equal(
+      isPlayNotSupportedRejectionNoise({ message, frames: [] }),
+      false,
+      `expected "${message}" not to match the play() NotSupportedError noise class`,
+    );
+  }
+});
+
+test('the runtime gate does not drop the play() NotSupportedError rejection (sentry-only rule)', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({ reason: { message: PLAY_NOT_SUPPORTED, name: 'NotSupportedError' } }),
     false,
   );
 });
@@ -13284,7 +13360,7 @@ test('does NOT suppress an Illegal invocation whose stack resolves to a first-pa
       frames: [
         { filename: SPOOF_PROD_CHUNK_FRAME, function: '?' },
         { filename: '<anonymous>', function: 'WebGL2RenderingContext.spoof [as getParameter]' },
-        { filename: 'apps/web/src/lib/shaders-react.ts', function: 'initializeWallpaper' },
+        { filename: 'packages/ui/src/internal/lib/shaders-react.ts', function: 'initializeWallpaper' },
       ],
     }),
     false,

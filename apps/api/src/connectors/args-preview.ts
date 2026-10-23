@@ -153,7 +153,7 @@ function previewString(value: string, state: PreviewState): string {
   return `${value.slice(0, MAX_STRING)}… [+${value.length - MAX_STRING} chars]`;
 }
 
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
+export function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== 'object') return false;
   if (Array.isArray(value)) return false;
   const proto = Object.getPrototypeOf(value);
@@ -291,6 +291,10 @@ export function approvalPreviewReviewable(summary: unknown): boolean {
   if (!isPlainRecord(summary)) return false;
   const preview = summary.args_preview;
   if (isPlainRecord(preview) && Object.keys(preview).length > 0) return true;
+  // Content Kortix read from the provider (approval-enrichers.ts) is
+  // reviewable on its own.
+  const resolved = summary.resolved_preview;
+  if (isPlainRecord(resolved) && Object.keys(resolved).length > 0) return true;
   // No preview is still reviewable when the builder confirmed there was
   // nothing to show — an argument-less call withholds nothing.
   return summary.args_preview_complete === true;

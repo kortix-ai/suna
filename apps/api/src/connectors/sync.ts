@@ -1693,6 +1693,7 @@ export async function reconcileProjectPolicies(
   parsed: {
     policies: ProjectPolicySpec[];
     settings: { defaultMode: 'risk' | 'allow_all' };
+    approvalTtlSeconds?: number | null;
   },
   fence: ConnectorSyncFence | null = null,
 ): Promise<void> {
@@ -1721,7 +1722,11 @@ export async function reconcileProjectPolicies(
     const updateExisting = () =>
       tx
         .update(connectorProjectSettings)
-        .set({ defaultMode: parsed.settings.defaultMode, updatedAt: new Date() })
+        .set({
+          defaultMode: parsed.settings.defaultMode,
+          approvalTtlSeconds: parsed.approvalTtlSeconds ?? null,
+          updatedAt: new Date(),
+        })
         .where(eq(connectorProjectSettings.projectId, projectId))
         .returning({ projectId: connectorProjectSettings.projectId });
     if ((await updateExisting()).length > 0) return;
@@ -1730,7 +1735,11 @@ export async function reconcileProjectPolicies(
       await tx.transaction(async (savepoint) => {
         await savepoint
           .insert(connectorProjectSettings)
-          .values({ projectId, defaultMode: parsed.settings.defaultMode });
+          .values({
+            projectId,
+            defaultMode: parsed.settings.defaultMode,
+            approvalTtlSeconds: parsed.approvalTtlSeconds ?? null,
+          });
       });
     } catch (error) {
       if (!isUniqueViolation(error)) throw error;

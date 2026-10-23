@@ -47,15 +47,6 @@ export interface TranscriptPageWalk {
    * upstream" apart from "I did not read that far".
    */
   complete: boolean;
-  /**
-   * The walk stopped because it reached a page it already holds, unchanged.
-   *
-   * Everything older is therefore already captured too, so this is a
-   * SUCCESSFUL stop — unlike a failed page. The writer may still delete inside
-   * the range the walk covered (a rewind removes the newest messages, which is
-   * exactly what an incremental read sees) but never below it.
-   */
-  caughtUp: boolean;
 }
 
 /**
@@ -71,28 +62,22 @@ export interface TranscriptPageWalk {
  *
  * A first page that fails still throws: nothing was read, so there is nothing
  * to keep, and "the box is unreachable" is exactly what the capture retries.
+ *
+ * `limit` is the page size the reader asks for: a page that fills it with no
+ * `x-next-cursor` is not taken as the head (see `headComplete` below).
  */
 export async function readTranscriptPages(
   readPage: (cursor?: string) => Promise<Response>,
   fullHistory: boolean,
   prepareMessages?: (messages: unknown[]) => Promise<unknown[]>,
-  /**
-   * "Is this whole page already captured, unchanged?" Answering true stops the
-   * walk: pages run newest-first, so a page we already hold means everything
-   * below it is held too. Omitted, the walk always runs to the head.
-   *
-   * The CALLER owns the gate on whether stopping is sound at all — it is only
-   * sound when a previous capture proved it reached the session's first
-   * message. See `session-transcript-capture.ts`.
-   */
-  isAlreadyCaptured?: (rows: MirrorMessage[]) => boolean,
+  /** The page size asked for. A page that fills it and names no cursor does not prove the head. */
+  limit?: number,
 ): Promise<TranscriptPageWalk> {
   const messages = new Map<string, MirrorMessage>();
   const cursors = new Set<string>();
   let cursor: string | undefined;
   let headComplete = false;
   let complete = false;
-  let caughtUp = false;
   let pagesRead = 0;
 
   const finish = (): TranscriptPageWalk => {
@@ -104,7 +89,7 @@ export async function readTranscriptPages(
         String(a.info.id).localeCompare(String(b.info.id))
       );
     });
-    return { rows, headComplete, complete, caughtUp };
+    return { rows, headComplete, complete };
   };
 
   do {
@@ -133,15 +118,12 @@ export async function readTranscriptPages(
       if (!messages.has(id)) messages.set(id, row);
     }
     pagesRead += 1;
-    // `pageRows.length > 0` guards the vacuous truth: `every` over nothing is
-    // true, and an empty page says the walk ran past the end, never that the
-    // rows below it are already stored.
-    if (fullHistory && pageRows.length > 0 && isAlreadyCaptured?.(pageRows)) {
-      caughtUp = true;
-      return finish();
-    }
     cursor = response.headers.get("x-next-cursor") || undefined;
-    headComplete = !cursor;
+    // No cursor proves the head only on a short page. A build that ignores paging answers the
+    // newest `limit` rows and no cursor on every read; taken as the head, a complete walk would
+    // tombstone every older row. A session of exactly k * `limit` messages is then never
+    // complete: it only loses the rewind tombstone, never a row.
+    headComplete = !cursor && (limit === undefined || payload.length < limit);
     // A cursor the walk has already followed means the daemon is not
     // advancing. Stop and keep what landed. This used to throw; a repeat can
     // only ever be SEEN with at least one page already in hand (the set is

@@ -34,7 +34,7 @@ function stoppedRow(
     sessionId: 'sess-5a1e0c01',
     projectId: 'proj-5a1e0c02',
     accountId: 'acct-1',
-    provider: 'e2b',
+    provider: 'platinum',
     externalId: 'i000000synthetic0box1',
     baseUrl: null,
     status: 'stopped',

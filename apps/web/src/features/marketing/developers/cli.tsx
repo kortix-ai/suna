@@ -1,8 +1,8 @@
 'use client';
 
 import SiteLink from '@/components/site-link';
-import { useCopy } from '@/hooks/use-copy';
-import { cn } from '@/lib/utils';
+import { useCopy } from '@kortix/ui/internal/hooks/use-copy';
+import { cn } from '@kortix/ui';
 import {
   ArrowRightIcon,
   CheckIcon,
@@ -130,6 +130,7 @@ export function DevelopersCli() {
   );
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.nativeEvent.isComposing) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       const step = e.key === 'ArrowDown' ? 1 : -1;

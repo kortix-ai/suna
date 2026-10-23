@@ -1,8 +1,8 @@
 'use client';
 
-import { AppCredentialsForm } from '@/components/setup-links/app-credentials-form';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
-import { Rise, StepHeader } from '@/features/auth/auth-primitives';
+import { AppCredentialsForm } from '@kortix/ui/markdown/setup-links/app-credentials-form';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
+import { Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useTranslations } from '@/i18n/use-translations';
 import { useParams } from 'next/navigation';
 

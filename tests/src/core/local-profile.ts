@@ -3,7 +3,7 @@ import type { RegisteredFlow } from "./flow";
 import type { Capability } from "./types";
 
 export const EXTERNAL_CAPABILITIES = new Set<Capability>([
-  "daytona",
+  "sandbox",
   "managedGit",
   "managedGitPush",
   "stripe",
@@ -76,7 +76,7 @@ export function localEnvironmentOverrides(input: LocalProfileInput): Record<stri
     KE2E_PLATFORM_ADMIN_EMAIL: LOCAL_PLATFORM_ADMIN_EMAIL,
     KE2E_LIVE_CONFIRM: "local",
     KE2E_LOCAL_BILLING_ENABLED: "1",
-    KE2E_CAP_DAYTONA: "0",
+    KE2E_CAP_SANDBOX: "0",
     KE2E_CAP_MANAGED_GIT: "0",
     KE2E_CAP_MANAGED_GIT_PUSH: "0",
     KE2E_CAP_FUNDED: "0",

@@ -8,6 +8,9 @@
  * different surface). A hairline `border-border` separates it from the page in
  * both themes. No shadow (Jay, 2026-09-21): the floating tab bar's soft shadow
  * put a grey halo around the card, so the input read darker than the page.
+ * On iOS 26+ the card is Liquid Glass instead (KRTX-2928 follow-up, Jay
+ * 2026-10-20): the system glass draws the surface and its rim, so the hairline
+ * border, blur and tint go. Android and older iOS keep the frosted card.
  * No animation, a plain placeholder. Every control is a design-system
  * `Button`: secondary `rounded-full` for add, a `sm` chip with the agent name
  * (ghost; secondary for "Connect model", KRTX-247), and a round send button that fills with `primary` once
@@ -30,6 +33,7 @@ import {
 } from 'react-native';
 import { requireOptionalNativeModule } from 'expo';
 import { BlurView } from 'expo-blur';
+import { LIQUID_GLASS_AVAILABLE, LiquidGlassCapsule } from '@/components/kortix/liquid-glass-capsule';
 import { useColorScheme } from 'nativewind';
 import Animated, { Easing, FadeIn, FadeOut, LayoutAnimationConfig } from 'react-native-reanimated';
 import {
@@ -52,10 +56,8 @@ import { BUTTON_LABEL_MAX_FONT_SCALE } from '@/lib/ui/font-scale';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import { cn } from '@/lib/utils/utils';
 import { StopIcon } from './StopIcon';
-import {
-  ComposerAttachmentTiles,
-  type ComposerAttachmentUpload,
-} from '@/components/session/composer-attachment-tiles';
+import { ComposerAttachmentTiles } from '@/components/session/composer-attachment-tiles';
+import { type ComposerAttachmentUpload } from '@/lib/session/composer-uploads';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { DictationWaveform } from '@/components/kortix/dictation-waveform';
 import { useDictation } from '@/hooks/useDictation';
@@ -84,6 +86,10 @@ export const COMPOSER_CARD_CLASS = 'rounded-3xl border border-border bg-backgrou
 // expo-blur's Android blur needs a `blurTarget` view to sample, which the
 // composer does not have.
 const FROSTED_CARD_CLASS = 'overflow-hidden rounded-3xl border border-border p-2';
+// The Liquid Glass card: same corners and inset, no border (the glass has its
+// own rim). 24pt = `rounded-3xl` (1.5rem, NativeWind `inlineRem: 16`).
+const GLASS_CARD_CLASS = 'rounded-3xl p-2';
+const CARD_RADIUS = 24;
 // A binary built before `expo-blur` has no native blur view: it draws the tint
 // only. Rebuild the native app (`pod install`, then build) to get the blur.
 const BLUR_AVAILABLE = requireOptionalNativeModule('ExpoBlur') != null;
@@ -207,8 +213,9 @@ export function Composer({
   }, [disabled, dictating, finishDictation]);
 
   return (
-    <View className={FROSTED_CARD_CLASS}>
-      {BLUR_AVAILABLE ? (
+    <View className={LIQUID_GLASS_AVAILABLE ? GLASS_CARD_CLASS : FROSTED_CARD_CLASS}>
+      {LIQUID_GLASS_AVAILABLE ? <LiquidGlassCapsule cornerRadius={CARD_RADIUS} /> : null}
+      {!LIQUID_GLASS_AVAILABLE && BLUR_AVAILABLE ? (
         <BlurView
           intensity={FROSTED[isDark ? 'dark' : 'light'].intensity}
           tint={isDark ? 'dark' : 'light'}
@@ -217,10 +224,12 @@ export function Composer({
           style={StyleSheet.absoluteFill}
         />
       ) : null}
-      <View
-        pointerEvents="none"
-        style={[StyleSheet.absoluteFill, { backgroundColor: withAlpha(colors.background, FROSTED[isDark ? 'dark' : 'light'].tintAlpha) }]}
-      />
+      {LIQUID_GLASS_AVAILABLE ? null : (
+        <View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, { backgroundColor: withAlpha(colors.background, FROSTED[isDark ? 'dark' : 'light'].tintAlpha) }]}
+        />
+      )}
       {header ? <View className="px-2 pb-1 pt-1">{header}</View> : null}
 
       {attachments.length > 0 || pastes.length > 0 ? (

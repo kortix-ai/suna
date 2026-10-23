@@ -73,4 +73,22 @@ describe('promptModelOverride', () => {
       modelID: 'deepseek-v4.1-flash',
     });
   });
+
+  test('a FALLBACK pin rides a prompt that names no model: the gateway moved it off a model that cannot serve', () => {
+    expect(
+      promptModelOverride(null, { opencode_model: 'kortix/deepseek-v4.1-flash', opencode_model_source: 'fallback' }),
+    ).toEqual({ providerID: 'kortix', modelID: 'deepseek-v4.1-flash' });
+  });
+
+  test('a pin moved back off a fallback rides the next prompt, whatever its source: the box last ran the fallback', () => {
+    expect(
+      promptModelOverride(null, { opencode_model: 'kortix/codex/gpt-6.1-sol', opencode_model_source: 'project', opencode_model_restored: true }),
+    ).toEqual({ providerID: 'kortix', modelID: 'codex/gpt-6.1-sol' });
+  });
+});
+
+test('a browser turn carrying the project default overrides an older platform creation pin', () => {
+  expect(promptModelOverride({ providerID: 'kortix', modelID: 'glm-5.3-flash' }, {
+    opencode_model: 'kortix/deepseek-v4.1-flash', opencode_model_source: 'platform',
+  })).toEqual({ providerID: 'kortix', modelID: 'glm-5.3-flash' });
 });

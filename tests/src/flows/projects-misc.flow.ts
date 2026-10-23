@@ -832,17 +832,16 @@ flow(
 );
 
 // PROJ-37 — PUT and DELETE /model-defaults run one guard in one order:
-// project visible (404) → project.model.write (403) → project LLM gateway
-// enabled (404 llm_gateway_disabled). Same caller + same project state → same
-// status on both verbs. Every denial fires before model servability is
-// checked. PROJ-27 covers the funded set/read/clear lifecycle; this local
-// flow proves an authorized writer reaches model validation and deletion.
+// project visible (404) → project.model.write (403). Same caller + same
+// project state → same status on both verbs. Every denial fires before model
+// servability is checked. PROJ-27 covers the funded set/read/clear lifecycle;
+// this local flow proves an authorized writer reaches model validation and
+// deletion.
 flow(
   'PROJ-37',
   {
     domain: 'projects',
     routes: [
-      'PATCH /v1/projects/:projectId/experimental',
       'GET /v1/projects/:projectId/model-defaults',
       'PUT /v1/projects/:projectId/model-defaults',
       'DELETE /v1/projects/:projectId/model-defaults',
@@ -850,57 +849,32 @@ flow(
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
-    const gatewayOff = await team.project();
-    const gatewayOn = await team.project();
+    const project = await team.project();
     const user = await team.addMember('member');
     const manager = await team.addMember('member');
-    for (const project of [gatewayOff, gatewayOn]) {
-      await team.grantProjectRole(project.id, user.userId!, 'user');
-      await team.grantProjectRole(project.id, manager.userId!, 'manager');
-    }
+    await team.grantProjectRole(project.id, user.userId!, 'user');
+    await team.grantProjectRole(project.id, manager.userId!, 'manager');
     const path = '/v1/projects/:projectId/model-defaults';
     const put = (actor: typeof user, projectId: string, model = 'guard-probe-model') =>
       ctx.client.as(actor).put(path, { scope: 'project', model }, { params: { projectId } });
     const del = (actor: typeof user, projectId: string) =>
       ctx.client.as(actor).del(path, { params: { projectId }, query: { scope: 'project' } });
 
-    await ctx.step('OWNER turns the LLM gateway off on one project and on for the other', async () => {
-      for (const [project, enabled] of [[gatewayOff, false], [gatewayOn, true]] as const) {
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .patch(
-            '/v1/projects/:projectId/experimental',
-            { feature: 'llm_gateway', enabled },
-            { params: { projectId: project.id } },
-          );
-        r.status(200);
-      }
+    await ctx.step('project user without model.write → PUT and DELETE both 403', async () => {
+      (await put(user, project.id)).status(403);
+      (await del(user, project.id)).status(403);
     });
-    await ctx.step('project user without model.write → PUT and DELETE both 403 while the gateway is off', async () => {
-      (await put(user, gatewayOff.id)).status(403);
-      (await del(user, gatewayOff.id)).status(403);
+    await ctx.step('NONMEMBER → PUT and DELETE both 403', async () => {
+      (await put(ctx.P.NONMEMBER, project.id)).status(403);
+      (await del(ctx.P.NONMEMBER, project.id)).status(403);
     });
-    await ctx.step('project user without model.write → PUT and DELETE both 403 while the gateway is on', async () => {
-      (await put(user, gatewayOn.id)).status(403);
-      (await del(user, gatewayOn.id)).status(403);
-    });
-    await ctx.step('project manager → PUT and DELETE both 404 llm_gateway_disabled while the gateway is off', async () => {
-      (await put(manager, gatewayOff.id)).status(404).body().has('$.code', 'llm_gateway_disabled');
-      (await del(manager, gatewayOff.id)).status(404).body().has('$.code', 'llm_gateway_disabled');
-    });
-    await ctx.step('NONMEMBER → PUT and DELETE both 403 on either project', async () => {
-      for (const project of [gatewayOff, gatewayOn]) {
-        (await put(ctx.P.NONMEMBER, project.id)).status(403);
-        (await del(ctx.P.NONMEMBER, project.id)).status(403);
-      }
-    });
-    await ctx.step('project manager reaches model validation and deletion while the gateway is on', async () => {
-      (await put(manager, gatewayOn.id)).status(409)
+    await ctx.step('project manager reaches model validation and deletion', async () => {
+      (await put(manager, project.id)).status(409)
         .body().has('$.code', 'model_not_servable');
       const read = () =>
-        ctx.client.as(manager).get(path, { params: { projectId: gatewayOn.id } });
+        ctx.client.as(manager).get(path, { params: { projectId: project.id } });
       (await read()).status(200).body().has('$.projectDefault', null);
-      (await del(manager, gatewayOn.id)).status(200).body().has('$.ok', true).has('$.scope', 'project');
+      (await del(manager, project.id)).status(200).body().has('$.ok', true).has('$.scope', 'project');
       (await read()).status(200).body().has('$.projectDefault', null);
     });
   },
@@ -1102,8 +1076,8 @@ flow(
     });
     if (ctx.env.target !== 'local') {
       // The enabled set is deployment config (ALLOWED_SANDBOX_PROVIDERS with an
-      // API key): dev/staging/prod enable Daytona + Platinum, a PR preview
-      // enables Platinum only. Read it from the project instead of assuming a
+      // API key): dev/staging/prod enable Platinum and the legacy Daytona
+      // fallback, a PR preview enables Platinum only. Read it from the project instead of assuming a
       // provider, then prove a concrete pin works and a known-but-disabled
       // provider is refused.
       let enabled: string[] = [];
@@ -1136,7 +1110,7 @@ flow(
           throw new Error(`unexpected sandbox-provider PATCH response: ${r.text()}`);
         }
       });
-      const disabled = ['daytona', 'platinum', 'e2b'].find((name) => !enabled.includes(name));
+      const disabled = ['platinum', 'daytona'].find((name) => !enabled.includes(name));
       if (disabled) {
         await ctx.step('pin to a known but disabled provider → 400', async () => {
           const r = await ctx.client
@@ -1150,6 +1124,16 @@ flow(
         });
       }
     }
+    await ctx.step('pin to the discontinued e2b provider → 400', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          '/v1/projects/:projectId/sandbox-provider',
+          { provider: 'e2b' },
+          { params: { projectId: p.id } },
+        );
+      r.status(400);
+    });
     await ctx.step('clear the pin (null) → 200 (immediate, kind:project)', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -1165,7 +1149,7 @@ flow(
         .as(ctx.P.NONMEMBER)
         .patch(
           '/v1/projects/:projectId/sandbox-provider',
-          { provider: 'daytona' },
+          { provider: 'platinum' },
           { params: { projectId: p.id } },
         );
       r.status([403, 404]);
@@ -1175,7 +1159,7 @@ flow(
         .as(ctx.P.ANON)
         .patch(
           '/v1/projects/:projectId/sandbox-provider',
-          { provider: 'daytona' },
+          { provider: 'platinum' },
           { params: { projectId: p.id } },
         );
       r.status(401);
@@ -1183,12 +1167,68 @@ flow(
   },
 );
 
+// PROJ-44 — Daytona is deprecated: no customer may choose it. It runs on the
+// local profile (no managed Git, no sandbox): every refusal happens before a
+// repository or a sandbox is read. The local stack lists `daytona` among the
+// allowed providers, so the refusal is proven where Daytona is still configured.
+flow(
+  'PROJ-44',
+  {
+    domain: 'projects',
+    routes: [
+      'GET /v1/projects/:projectId',
+      'PATCH /v1/projects/:projectId/sandbox-provider',
+      'POST /v1/projects/:projectId/sessions',
+      'GET /v1/projects/:projectId/sessions',
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project({ metadata: { default_sandbox_provider: 'daytona' } });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { params: { projectId: p.id } };
+    const readProject = async () => {
+      const r = await owner.get('/v1/projects/:projectId', params);
+      r.status(200);
+      return r.json<{ default_sandbox_provider?: string | null; available_sandbox_providers?: string[] }>();
+    };
+    await ctx.step('a project with a stored daytona pin reads as unpinned and never offers daytona', async () => {
+      const project = await readProject();
+      if (project.default_sandbox_provider !== null) {
+        throw new Error(`expected default_sandbox_provider null, got ${project.default_sandbox_provider}`);
+      }
+      if ((project.available_sandbox_providers ?? []).includes('daytona')) {
+        throw new Error(`daytona is offered: ${JSON.stringify(project.available_sandbox_providers)}`);
+      }
+    });
+    await ctx.step('pin to daytona → 400 with the deprecation message; the project stays unpinned', async () => {
+      const r = await owner.patch('/v1/projects/:projectId/sandbox-provider', { provider: 'daytona' }, params);
+      r.status(400).body().has('$.error', 'Daytona is deprecated. New sandboxes run on Platinum.');
+      const project = await readProject();
+      if (project.default_sandbox_provider !== null) {
+        throw new Error(`a refused pin changed the project: ${project.default_sandbox_provider}`);
+      }
+    });
+    await ctx.step('a session that names daytona → 400 sandbox_provider_deprecated, and no session exists', async () => {
+      const r = await owner.post('/v1/projects/:projectId/sessions', { provider: 'daytona' }, params);
+      r.status(400).body().has('$.code', 'sandbox_provider_deprecated');
+      const list = await owner.get('/v1/projects/:projectId/sessions', params);
+      list.status(200);
+      const sessions = list.json<Array<{ session_id: string }>>();
+      if (sessions.length !== 0) throw new Error(`a refused create left ${sessions.length} session(s)`);
+    });
+    await ctx.step('NONMEMBER cannot reach the pin → 403/404', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .patch('/v1/projects/:projectId/sandbox-provider', { provider: 'daytona' }, params);
+      r.status([403, 404]);
+    });
+  },
+);
+
 // PROJ-32 — the BYOK-provider-connect-modal catalog. Serves the SAME live,
 // 24h-refreshed `runtimeModelCatalog.snapshot()` every other gateway/model
 // endpoint reads (apps/api/src/projects/routes/models.ts) — provider-level rows
-// (id, name, auth env vars, docs URL), NOT gated by projectLlmGatewayEnabled
-// since it's meaningful for every project including native (non-gateway)
-// ones. Project-read-scoped (403/404 boundary), not actually secret data.
+// (id, name, auth env vars, docs URL). Project-read-scoped (403/404 boundary), not actually secret data.
 flow(
   'PROJ-32',
   { domain: 'projects', routes: ['GET /v1/projects/:projectId/llm-catalog/providers'] },
@@ -1299,6 +1339,74 @@ flow(
           params: { projectId: p.id },
         });
       r.status(401);
+    });
+  },
+);
+
+// PROJ-45 — set the project default reasoning effort (Settings → General).
+// `null`/`''` clear it (automatic); a value must be an effort label the model
+// catalog publishes. The route returns the serialized project with the field
+// re-validated on read, so the success steps double as the read-back proof.
+flow(
+  'PROJ-45',
+  {
+    domain: 'projects',
+    routes: [
+      'PUT /v1/projects/:projectId/default-reasoning-effort',
+      'GET /v1/projects/:projectId',
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project({ seed: true });
+    await ctx.step("set the default effort to 'high' → 200, echoed top-level", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          '/v1/projects/:projectId/default-reasoning-effort',
+          { effort: 'high' },
+          { params: { projectId: p.id } },
+        );
+      r.status(200).body().has('$.default_reasoning_effort', 'high');
+    });
+    await ctx.step('an effort no catalog model publishes → 400 unknown_effort', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          '/v1/projects/:projectId/default-reasoning-effort',
+          { effort: 'ultra' },
+          { params: { projectId: p.id } },
+        );
+      r.status(400).body().has('$.code', 'unknown_effort');
+    });
+    await ctx.step("a value survives on the project's own read", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId', { params: { projectId: p.id } });
+      r.status(200).body().has('$.default_reasoning_effort', 'high');
+    });
+    await ctx.step("'' clears → 200 automatic (null), persisted", async () => {
+      const put = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          '/v1/projects/:projectId/default-reasoning-effort',
+          { effort: '' },
+          { params: { projectId: p.id } },
+        );
+      put.status(200).body().has('$.default_reasoning_effort', null);
+      const get = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId', { params: { projectId: p.id } });
+      get.status(200).body().has('$.default_reasoning_effort', null);
+    });
+    await ctx.step('NONMEMBER → 403/404', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .put(
+          '/v1/projects/:projectId/default-reasoning-effort',
+          { effort: 'high' },
+          { params: { projectId: p.id } },
+        );
+      r.status([403, 404]);
     });
   },
 );

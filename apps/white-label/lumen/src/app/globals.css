@@ -1,0 +1,152 @@
+@import "tailwindcss";
+/* @kortix/ui: the design tokens (:root light, .dark dark), the component layer
+   (dark variant, @theme keys, utilities, keyframes, @source over the package so
+   Tailwind emits the classes its components use) and the animation and
+   scrollbar plugins. */
+@import "@kortix/ui/tailwind.css";
+
+/* White-label theme. Lumen re-themes @kortix/ui ONLY through its typed theme,
+   src/config/theme.ts, which layout.tsx compiles with `themeToCss` from
+   @kortix/ui/theme. It never forks a component and never loads
+   @kortix/ui/fonts.css (Roobert is for Kortix-owned surfaces).
+
+   This file maps Lumen's own variables (set by the theme) to utilities:
+   `bg-brand`, `bg-paper`, `text-lamp`, `text-verified`, `text-risk`,
+   `border-hairline`, and `font-display` (Newsreader, loaded in layout.tsx). */
+/* The brand surface in both modes: bands, the hero, the security page. */
+@theme {
+  --color-navy: #10233a;
+  --color-navy-700: #183250;
+  --color-navy-900: #0a1828;
+  --color-lamp-fixed: #c89b4a;
+}
+
+@theme inline {
+  --font-display: var(--font-lumen-display), "Iowan Old Style", Georgia, serif;
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-brand-700: var(--brand-700);
+  --color-brand-900: var(--brand-900);
+  --color-paper: var(--paper);
+  --color-paper-deep: var(--paper-deep);
+  --color-lamp: var(--lamp);
+  --color-verified: var(--verified);
+  --color-risk: var(--flag);
+  --color-hairline: var(--hairline);
+  /* Flagged cells and medium-severity findings: amber, between the lamp and the risk red. */
+  --color-flag: var(--kortix-orange);
+}
+
+/* @kortix/ui/theme.css already paints body with --background / --foreground
+   and sets borders, color-scheme, the selection and the pointer cursor.
+   Lumen adds its font smoothing. */
+@layer base {
+  body {
+    @apply font-sans antialiased;
+    font-feature-settings: "ss01", "cv11";
+  }
+}
+
+/* Keyboard focus on every @kortix/ui Button: a 2 px ring in --ring, 2 px off the
+   control, so the page shows between the fill and the ring in both themes. The
+   shared 0.6 px ring is the fill's own color on a primary Button and cannot be
+   seen (WCAG 2.4.7). Unlayered, so it wins over the utility classes. */
+[data-slot="button"]:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* The serif scale. Rule: one light weight; hierarchy from size; tight tracking
+   that loosens as the size drops. Newsreader's optical size follows the size. */
+@utility display-xl {
+  font-family: var(--font-display);
+  font-weight: 360;
+  font-size: clamp(3.5rem, 11vw, 9rem);
+  line-height: 0.86;
+  letter-spacing: -0.055em;
+  font-variation-settings: "opsz" 72;
+}
+@utility display-lg {
+  font-family: var(--font-display);
+  font-weight: 370;
+  font-size: clamp(2.75rem, 6.4vw, 5.75rem);
+  line-height: 0.96;
+  letter-spacing: -0.05em;
+  font-variation-settings: "opsz" 72;
+}
+@utility display-md {
+  font-family: var(--font-display);
+  font-weight: 380;
+  font-size: clamp(2.25rem, 4.6vw, 4rem);
+  line-height: 1;
+  letter-spacing: -0.045em;
+  font-variation-settings: "opsz" 72;
+}
+@utility display-sm {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(1.875rem, 3.2vw, 3rem);
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+  font-variation-settings: "opsz" 60;
+}
+@utility display-xs {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(1.5rem, 2.2vw, 2rem);
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  font-variation-settings: "opsz" 36;
+}
+/* Small caps-like eyebrow: Geist Mono, uppercase, wide. */
+@utility eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Laid paper: fine horizontal laid lines and wider chain lines, tone on tone,
+   under a soft vignette. Lumen's frame behind product UI, on the brand surface. */
+@utility pattern-laid {
+  background-color: #10233a;
+  background-image:
+    radial-gradient(120% 90% at 30% 20%, rgb(255 255 255 / 0.06), transparent 60%),
+    radial-gradient(90% 80% at 100% 100%, rgb(0 0 0 / 0.35), transparent 70%),
+    repeating-linear-gradient(90deg, rgb(255 255 255 / 0.05) 0 1px, transparent 1px 22px),
+    repeating-linear-gradient(0deg, rgb(255 255 255 / 0.035) 0 1px, transparent 1px 3px);
+}
+/* The same weave on paper: media cards that need texture. */
+@utility pattern-laid-paper {
+  background-color: var(--paper);
+  background-image:
+    repeating-linear-gradient(90deg, rgb(20 20 20 / 0.03) 0 1px, transparent 1px 22px),
+    repeating-linear-gradient(0deg, rgb(20 20 20 / 0.022) 0 1px, transparent 1px 3px);
+}
+
+@keyframes lumen-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+/* Citation links in an Assistant answer, `[1](/cite?…)`, drawn as paper chips
+   with a mono numeral. CitationLayer sets data-cite-status once Lumen has
+   checked the quote. Unlayered on purpose: it must override the Markdown
+   link's utility classes. */
+.lumen-cites a[href*="/cite?"] {
+  @apply mx-0.5 inline-flex h-[1.1rem] min-w-[1.1rem] cursor-pointer items-center justify-center rounded-sm border border-border bg-paper px-1 align-[0.12em] font-mono text-[10.5px] font-medium text-foreground no-underline transition-colors hover:border-brand/50 hover:bg-brand hover:text-brand-foreground;
+}
+.lumen-cites a[href*="/cite?"][data-cite-status="verified"] {
+  @apply border-verified/30;
+}
+.lumen-cites a[href*="/cite?"][data-cite-status="unverified"] {
+  @apply border-dashed bg-transparent text-muted-foreground line-through decoration-muted-foreground/60;
+}

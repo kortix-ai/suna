@@ -385,6 +385,53 @@ channels:
       'kortix_version = 1\n[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\nsession_mode = "sometimes"\n',
   },
 
+  // ─── shared sections: trigger `overlap` (KRTX-1721) ─────────────────────
+  {
+    name: 'overlap: skip is valid',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: "0 0 9 * * *"\n    prompt: go\n    overlap: skip\n',
+  },
+  {
+    name: 'overlap: queue is invalid',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: "0 0 9 * * *"\n    prompt: go\n    overlap: queue\n',
+  },
+
+  // ─── shared sections: trigger `filter` operators (KRTX-1721) ───────────
+  {
+    name: 'filter: a value and every operator is valid',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: HOOK_SECRET\n    prompt: go\n    filter:\n      body.type: push\n      body.count: 3\n      body.sender.login: { not: kortix-bot }\n      body.action: { in: [opened, reopened] }\n      body.pull_request: { exists: true }\n      body.base: { prefix: release/ }\n      body.ref: { not_prefix: [refs/heads/kortix/, refs/heads/bot/] }\n',
+  },
+  {
+    name: 'filter: an unknown operator is invalid',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: HOOK_SECRET\n    prompt: go\n    filter:\n      body.ref: { nott: x }\n',
+  },
+  {
+    name: 'filter: two operators on one path are invalid',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: HOOK_SECRET\n    prompt: go\n    filter:\n      body.ref: { in: [a], not: b }\n',
+  },
+  {
+    name: 'filter: an empty in list is invalid',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: HOOK_SECRET\n    prompt: go\n    filter:\n      body.action: { in: [] }\n',
+  },
+  {
+    name: 'filter: a non-boolean exists is invalid',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: HOOK_SECRET\n    prompt: go\n    filter:\n      body.pr: { exists: yes please }\n',
+  },
+
   // ─── shared sections: triggers type = "event" ─────────────────────────
   {
     name: 'event: connector + event + config object is valid',

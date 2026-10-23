@@ -1203,8 +1203,12 @@
     "stopNotAllowed": "この実行を停止できるのは、開始したメンバー、セッションのオーナー、またはプロジェクトのマネージャーのみです。"
   },
   "genui": {
+    "call": "電話",
     "chartTapHint": "タップして値を表示",
     "checklistReady": "{{done}}/{{total}} 完了",
+    "directions": "経路",
+    "imageCount_one": "{{count}}枚の画像",
+    "imageCount_other": "{{count}}枚の画像",
     "map": "地図",
     "mapUnavailable": "地図を表示できません",
     "openImage": "画像を開く",
@@ -1212,7 +1216,9 @@
     "pick": "おすすめ",
     "pieFocus": "{{label}}は合計の{{percent}}%",
     "pieOfTotal": "{{total}}のうち{{value}}",
-    "showData": "データを表示"
+    "showData": "データを表示",
+    "unavailable": "このコンテンツを表示できませんでした。",
+    "website": "ウェブサイト"
   },
   "updateRequired": {
     "title": "アップデートが必要です",
@@ -1246,6 +1252,9 @@
     "expiredBody": "招待した人に新しい招待を送ってもらってください。",
     "wrongAccountTitle": "アカウントを切り替え",
     "wrongAccountBody": "この招待は別のアカウント宛てです。現在 {{email}} でログインしています。",
+    "directoryTitle": "シングルサインオンでサインイン",
+    "directoryBody": "組織のディレクトリによって、このアカウントに追加されました。この招待をブラウザで開いて組織のシングルサインオンでサインインするか、アカウント管理者に招待の再送を依頼してください。",
+    "ssoDomainUnverifiedBody": "シングルサインオンのプロバイダーがこのメールのドメインを検証していません。この招待を使うには、サインアウトしてメールアドレスでサインインし直してください。",
     "signOutAndContinue": "ログアウトして続行",
     "backToProjects": "プロジェクトに戻る"
   },

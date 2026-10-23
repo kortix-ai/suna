@@ -83,7 +83,6 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {
     // (no BASE_URL): the API reverse-proxies /v1/llm-gateway/* to 127.0.0.1:gateway.
     // Sandbox OpenAI clients use /v1/llm-gateway/v1 as their base URL because the
     // standalone gateway owns /v1/chat/completions. Overrides .env.
-    LLM_GATEWAY_ENABLED: 'true',
     LLM_GATEWAY_BASE_URL: '',
     LLM_GATEWAY_PROXY_PORT: String(ports.gateway),
     GATEWAY_INTERNAL_TOKEN: DEV_GATEWAY_INTERNAL_TOKEN,

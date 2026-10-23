@@ -27,8 +27,19 @@ foreach ($f in 'kortix-capture.exe', 'kortix-capture-engine.exe', 'kortix-backen
 }
 New-Item -ItemType Directory -Force (Split-Path -Parent $Out) | Out-Null
 
+# Microsoft's WebView2 bootstrapper (the MSI runs it when the runtime is missing).
+$webview2 = Join-Path ([System.IO.Path]::GetTempPath()) 'MicrosoftEdgeWebview2Setup.exe'
+if (-not (Test-Path $webview2)) {
+    Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $webview2 -MaximumRetryCount 3 -RetryIntervalSec 5
+}
+$sig = Get-AuthenticodeSignature $webview2
+if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
+    Remove-Item $webview2 -Force
+    throw "the WebView2 bootstrapper is not signed by Microsoft: $($sig.Status) $($sig.SignerCertificate.Subject)"
+}
+
 wix build -arch x64 -ext WixToolset.Util.wixext `
-    -d "StageDir=$stageDir" -d "Version=$msiVersion" -d "IconFile=$PSScriptRoot\..\..\assets\icons\app.ico" `
+    -d "StageDir=$stageDir" -d "Version=$msiVersion" -d "WebView2Setup=$webview2" -d "IconFile=$PSScriptRoot\..\..\assets\icons\windows\app.ico" `
     -o $Out "$PSScriptRoot\kortix-capture.wxs"
 if ($LASTEXITCODE -ne 0) { throw "wix build failed ($LASTEXITCODE)" }
 Get-Item $Out | Select-Object FullName, Length | Format-List

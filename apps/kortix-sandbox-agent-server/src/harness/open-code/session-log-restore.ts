@@ -103,6 +103,7 @@ import { OpencodeDb } from './opencode-db'
 import { writeOpenCodeSessionPin } from './runtime-state'
 import { openCodeSessionLog, openCodeSessionLogStatePath, renameRow, writeSeqState, type IdMap, type SeqState } from './session-log'
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface OpenCodeRestoreTarget {
   /** The OpenCode binary the box runs. */
   bin: string
@@ -523,6 +524,7 @@ function writeTodos(dbPath: string, sessionId: string, todos: SessionLog['todos'
 /**
  * `seqMax`: the highest seq the API holds per thread, tombstones included (P6.1 `seq_max`).
  * `write` puts the session files into the cleared store; a test passes one import per file to compare.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function restoreOpenCodeSessionLog(
   input: SessionLog,

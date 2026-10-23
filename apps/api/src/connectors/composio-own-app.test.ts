@@ -221,7 +221,7 @@ describe('Shopify connect', () => {
     ['S2S token exchange failed (HTTP 401): {"error":"invalid_client"}', undefined, /refused the Client ID or secret .*HTTP 401/],
   ])('Shopify refusing the exchange answers 422 with its reason, and keeps nothing (%s)', async (upstream, reason, message) => {
     const calls: Array<Record<string, unknown>> = [];
-    const error = await connectOwnApp({
+    const error = (await connectOwnApp({
       connectionId: CONNECTION,
       toolkit: 'shopify',
       store: 'acme',
@@ -229,7 +229,7 @@ describe('Shopify connect', () => {
       clientSecret: 'client-secret',
       runtime: runtime(null, calls),
       catalogClient: restClient({ calls, configs: [ownConfig('ac_old')], accountError: new Error(`400 {"error":{"message":"${upstream}"}}`) }),
-    }).catch((caught: unknown) => caught as HTTPException);
+    }).catch((caught: unknown) => caught)) as HTTPException;
     expect(error.status).toBe(422);
     const body = (await error.getResponse().json()) as Record<string, unknown>;
     expect(body.code).toBe('shopify_refused');

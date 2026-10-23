@@ -1,0 +1,10 @@
+# Hadolint settings for every Dockerfile in this repo (security-scan.yml runs
+# hadolint from the repository root, which loads this file).
+ignored:
+  # Apt packages stay unpinned on purpose: each build takes the distro's current
+  # security release (the API image also runs `apt-get upgrade`). A version pin
+  # freezes the CVEs that the Trivy image scan reports.
+  - DL3008
+  # USER by name is resolved inside the image. The images run on ECS Fargate and
+  # Platinum VMs; no Kubernetes runAsNonRoot check needs a numeric uid.
+  - DL3066

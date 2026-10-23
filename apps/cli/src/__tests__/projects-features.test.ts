@@ -38,7 +38,7 @@ function catalog(overrides: Record<string, boolean | null> = {}) {
   const defs = [
     { key: 'reminders', name: 'Reminders', stability: 'experimental', available: true, def: false },
     // Internal-only: listed only while on, written only by a Kortix operator.
-    { key: 'apps', name: 'Apps', stability: 'experimental', available: true, def: false, operatorOnly: true },
+    { key: 'session_log', name: 'Session log', stability: 'experimental', available: true, def: false, operatorOnly: true },
     { key: 'marketplace', name: 'Marketplace', stability: 'beta', available: true, def: true },
     { key: 'monitors', name: 'Monitors', stability: 'experimental', available: false, def: false },
   ];
@@ -88,9 +88,9 @@ function startServer(initial: Record<string, boolean | null> = {}): string {
       if (url.pathname === `/v1/projects/${PROJECT}/features` && req.method === 'PATCH') {
         const body = (await req.json()) as { feature: string; enabled: boolean | null };
         patches.push({ path: url.pathname, body });
-        if (body.feature === 'apps') {
+        if (body.feature === 'session_log') {
           return Response.json(
-            { error: 'Apps is managed by Kortix. Contact Kortix to change it.', code: 'feature_operator_only', feature: 'apps' },
+            { error: 'Session log is managed by Kortix. Contact Kortix to change it.', code: 'feature_operator_only', feature: 'session_log' },
             { status: 403 },
           );
         }
@@ -208,21 +208,21 @@ describe('kortix projects features', () => {
   });
 
   test('an operator-only flag that is on lists read-only with origin kortix; info names it; enable is refused', async () => {
-    const config = writeConfig(startServer({ apps: true }));
+    const config = writeConfig(startServer({ session_log: true }));
     const ls = await runCli(['projects', 'features', '--project', PROJECT], config);
     expect(ls.code).toBe(0);
-    expect(ls.stdout).toMatch(/apps\s+on\s+kortix/);
+    expect(ls.stdout).toMatch(/session_log\s+on\s+kortix/);
     expect(ls.stdout).toContain('Contact Kortix to change it.');
 
     const j = await runCli(['projects', 'features', '--project', PROJECT, '--json'], config);
     const rows = JSON.parse(j.stdout) as Array<{ key: string; enabled: boolean; operator_only?: boolean }>;
-    expect(rows.find((x) => x.key === 'apps')).toMatchObject({ enabled: true, operator_only: true });
+    expect(rows.find((x) => x.key === 'session_log')).toMatchObject({ enabled: true, operator_only: true });
 
     const info = await runCli(['projects', 'info', PROJECT], config);
     expect(info.code).toBe(0);
-    expect(info.stdout).toMatch(/by kortix\s+apps/);
+    expect(info.stdout).toMatch(/by kortix\s+session_log/);
 
-    const off = await runCli(['projects', 'features', 'disable', 'apps', '--project', PROJECT], config);
+    const off = await runCli(['projects', 'features', 'disable', 'session_log', '--project', PROJECT], config);
     expect(off.code).toBe(1);
     expect(off.stderr).toContain('managed by Kortix');
   });
@@ -230,7 +230,7 @@ describe('kortix projects features', () => {
   test('an operator-only flag that is off is not listed', async () => {
     const config = writeConfig(startServer());
     const j = await runCli(['projects', 'features', '--project', PROJECT, '--json'], config);
-    expect((JSON.parse(j.stdout) as Array<{ key: string }>).map((x) => x.key)).not.toContain('apps');
+    expect((JSON.parse(j.stdout) as Array<{ key: string }>).map((x) => x.key)).not.toContain('session_log');
   });
 
   test('enable without a flag exits 2 with usage', async () => {

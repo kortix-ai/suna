@@ -114,9 +114,11 @@ const COMPUTER_STATES = ['computer_offline', 'computer_unpaired', 'computer_desk
 export function connectorErrorHttpStatus(
   reason: string,
   upstreamStatus?: number | null,
-): 403 | 409 | 429 | 500 | 503 {
+): 403 | 409 | 424 | 429 | 500 | 503 {
   const kind = reason.split(':', 1)[0];
   if (COMPUTER_REFUSALS.includes(kind)) return 403;
+  // The upstream refused the stored credential: Kortix worked, the dependency did not.
+  if (kind === 'credential_rejected') return 424;
   if (COMPUTER_STATES.includes(kind)) return 409;
   if (upstreamStatus === 429 || upstreamStatus === 503) return upstreamStatus;
   return 500;
@@ -542,6 +544,7 @@ export function registerGatewayCallRoutes(app: OpenAPIHono, deps: ConnectorRoute
         401: json(CallResponseSchema, 'Unauthorized'),
         403: json(CallResponseSchema, 'Denied'),
         404: json(CallResponseSchema, 'Connector or action not found'),
+        424: json(CallResponseSchema, 'The upstream rejected the stored credential (credential_rejected)'),
         429: json(CallResponseSchema, 'Upstream rate limit (Retry-After when the upstream sent one)'),
         503: json(CallResponseSchema, 'Upstream unavailable (Retry-After when the upstream sent one)'),
         // 500, NOT 502: Cloudflare replaces origin 502/504 bodies with its own
@@ -622,6 +625,7 @@ export function registerGatewayCallRoutes(app: OpenAPIHono, deps: ConnectorRoute
         400: json(CallResponseSchema, 'Bad request (invalid_json / missing fields)'),
         403: json(CallResponseSchema, 'Denied'),
         404: json(CallResponseSchema, 'Connector or action not found'),
+        424: json(CallResponseSchema, 'The upstream rejected the stored credential (credential_rejected)'),
         429: json(CallResponseSchema, 'Upstream rate limit (Retry-After when the upstream sent one)'),
         503: json(CallResponseSchema, 'Upstream unavailable (Retry-After when the upstream sent one)'),
         500: json(CallResponseSchema, 'Execution error'),

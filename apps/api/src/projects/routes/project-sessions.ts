@@ -3,6 +3,7 @@
  * Invariant: session_id == sandbox_id == git branch name.
  */
 
+import { assertRepositoryConnected } from '../lib/git';
 import {
   SESSION_SHARING_OWNER_ONLY_ERROR,
   SHARING_SELF_LOCKOUT_ERROR,
@@ -44,13 +45,13 @@ import { notifySessionShared } from '../lib/notification-recipients';
 import { notificationsEnabled } from '../../notifications/enabled';
 import { createSession, deleteSession, restoreSession } from '../session-lifecycle';
 import { sessionRestoreUntil } from '../session-log-purge';
+import { readSessionConversationModels } from '../session-log-read';
 import { validateProviderSecretPool } from './provider-secret-pools';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { admitSessionSharingChange } from '../lib/session-model-keys';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { getImpersonationContext } from '../../shared/impersonation';
 import { peekSessionListPollEtag, storeSessionListPollEtag } from '../lib/session-list-poll-memo';
@@ -58,11 +59,16 @@ import type { ProjectSessionListScope } from '../lib/session-inventory';
 import { loadProjectSessionInventory, sessionRowMatchesSearch } from '../lib/session-list';
 import { SESSION_PAGE_MAX_LIMIT } from '../lib/session-inventory';
 import {
+  OWNER_MANAGED_SESSION_METADATA_KEYS,
   PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS,
   SERVER_MANAGED_SESSION_METADATA_KEYS,
 } from '../lib/session-metadata-keys';
 import { loadSessionUserStates } from '../lib/session-user-state';
 import { personUserId } from './session-watch';
+import { readRuntimeControlState } from '../lib/session-control-readers';
+import { sessionCreateSurface } from '../lib/session-surface';
+
+import { readSessionsWorking } from '../lib/session-working-read';
 
 const NO_USER_STATE = { pinnedAt: null, archivedAt: null };
 
@@ -100,15 +106,20 @@ async function sessionReadResponse(c: Context<AppEnv>, projectId: string, sessio
   // The same owner resolution the list uses: without it a read-by-id reported
   // owner_type 'unknown' and no owner name for the very session the list named.
   const personId = personUserId(c, loaded);
-  const [owners, userStates] = await Promise.all([
+  const [owners, userStates, conversationModels, working, runtime] = await Promise.all([
     visible.row.createdBy
       ? resolveSessionOwnerIdentities([visible.row.createdBy], loaded.row.accountId)
       : undefined,
     personId ? loadSessionUserStates([sessionId], personId) : undefined,
+    readSessionConversationModels([sessionId]),
+    readSessionsWorking([sessionId]),
+    readRuntimeControlState(sessionId),
   ]);
   const owner = visible.row.createdBy ? owners?.get(visible.row.createdBy) : undefined;
-  return c.json(serializeSession(visible.row, {
+  return c.json({ ...serializeSession(visible.row, {
+    runtimeStatus: runtime.sandbox_status,
     grants: visible.grants,
+    conversationModel: conversationModels.get(sessionId),
     viewerId: loaded.userId,
     canManageProject: visible.canManageProject,
     ownerIsMachine: visible.ownerIsMachine,
@@ -117,7 +128,7 @@ async function sessionReadResponse(c: Context<AppEnv>, projectId: string, sessio
     ownerAvatarUrl: owner?.avatarUrl ?? null,
     ownerType: owner?.type ?? (visible.row.createdBy ? 'unknown' : null),
     userState: personId ? (userStates?.get(sessionId) ?? NO_USER_STATE) : undefined,
-  }), 200);
+  }), working: working.get(sessionId) }, 200);
 }
 
 /**
@@ -198,6 +209,14 @@ export function registerProjectSessionsRoutes(): void {
     }
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (body.fork_from_session_id !== undefined) {
+      const forkInput = SessionCreateInputSchema.shape.fork_from_session_id.safeParse(body.fork_from_session_id);
+      if (!forkInput.success || !forkInput.data) return c.json({ error: 'Invalid fork source' }, 400);
+      await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
+      const source = await loadVisibleSession(loaded, forkInput.data, c.get('sessionId') ?? null, callerKortixSessionId(c));
+      if (!source || sessionIsTombstoned(source.row)) return c.json({ error: 'Not found' }, 404);
+    }
+
     // Per-agent gate: starting a session provisions compute. A scoped agent token
     // must hold project.session.start (no-op for human/PAT tokens).
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
@@ -227,6 +246,9 @@ export function registerProjectSessionsRoutes(): void {
     // Runs BEFORE the leaf assert below so its message wins. Both refuse the same
     // requests; only this one can say WHICH agents the caller could pick instead.
     const agentAccess = await resolveAndAuthorizeAgent(c, loaded, projectId, launchAgent);
+    // A disconnected repository: 409 `repository_disconnected` with the fix,
+    // before a session row or a sandbox exists.
+    await assertRepositoryConnected(loaded.row);
     if (launchAgent) {
       await assertProjectCapability(
         c,
@@ -248,9 +270,6 @@ export function registerProjectSessionsRoutes(): void {
     if (body.provider_secret_pools !== undefined) {
       const gate = requireFeatureFlag(c, loaded.row.metadata, 'pooled_provider_secrets');
       if (gate) return gate;
-      if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
-        return c.json({ error: 'Provider pools require the LLM gateway' }, 409);
-      }
       for (const [providerId, ids] of Object.entries(body.provider_secret_pools as Record<string, string[]>)) {
         const invalid = await validateProviderSecretPool({
           accountId: loaded.row.accountId, projectId, repoUrl: loaded.row.repoUrl,
@@ -275,7 +294,8 @@ export function registerProjectSessionsRoutes(): void {
       );
     }
     const result = await createSession({
-      source: 'ui',
+      // The surface it came through: ui, cli or mobile (KRTX-2914).
+      source: sessionCreateSurface(c.req.header('x-kortix-client-version')),
       project: loaded.row,
       userId: loaded.userId,
       requestingPrincipalType:
@@ -361,7 +381,7 @@ export function registerProjectSessionsRoutes(): void {
             parent: z.string().min(1).max(128).optional(),
             started_by: z.enum(['me', 'others', 'automated']).optional(),
             // Server-side search over every session the viewer may see.
-            q: z.string().trim().min(1).max(200).optional(),
+            q: z.string().trim().min(1).max(200).regex(/^[^\u0000]*$/, 'Search must not contain NUL characters').optional(),
             // Repeatable; a session must carry every given label. Exact match.
             label: z
               .union([z.string().min(1).max(64), z.array(z.string().min(1).max(64)).max(20)])
@@ -484,10 +504,14 @@ export function registerProjectSessionsRoutes(): void {
       return c.json({ error: 'Project manager access is required to list every session' }, 403);
     }
 
+    const conversationModels = await readSessionConversationModels(
+      inventory.items.filter((item) => item.canAccess).map((item) => item.row.sessionId),
+    );
+    const working = await readSessionsWorking(inventory.items.filter(item => item.canAccess).map(item => item.row.sessionId));
     const body = inventory.items.map((item) => {
       const row = item.row;
       const owner = row.createdBy ? inventory.ownerIdentities.get(row.createdBy) : null;
-      const serialized = serializeSession(row, {
+      const serialized = { ...serializeSession(row, {
         initiatorName: row.initiatorId ? (inventory.initiatorNames.get(row.initiatorId) ?? null) : null,
         grants: inventory.grantsBySession.get(row.sessionId) ?? [],
         viewerId: loaded.userId,
@@ -507,7 +531,8 @@ export function registerProjectSessionsRoutes(): void {
         // The inventory listing drops the write-only heavy metadata keys. The
         // single-session read below still returns metadata whole.
         trimListMetadata: true,
-      });
+        conversationModel: conversationModels.get(row.sessionId),
+      }), working: working.get(row.sessionId) };
       if (query.parent !== 'root') return serialized;
       return {
         ...serialized,
@@ -668,7 +693,7 @@ export function registerProjectSessionsRoutes(): void {
     // Sharing takes the owner's personal keys away from the session (spec
     // 2026-09-22 §2.3). A model that ran only on them switches to the keys shared
     // with the whole project, or the share is refused (lib/session-model-keys.ts).
-    if (intent.mode !== 'private' && projectLlmGatewayEnabled(loaded.row.metadata)) {
+    if (intent.mode !== 'private') {
       // The session model lives in metadata, not a column (routes/session-scope.ts).
       const metadata = (visible.row.metadata ?? {}) as Record<string, unknown>;
       const admitted = await admitSessionSharingChange({
@@ -776,7 +801,7 @@ export function registerProjectSessionsRoutes(): void {
         },
       responses: {
           200: json(SessionSchema, 'The updated session'),
-          ...errors(400, 404),
+          ...errors(400, 403, 404),
       },
     }),
     async (c) => {
@@ -850,6 +875,13 @@ export function registerProjectSessionsRoutes(): void {
 
     const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
+
+    // Seeing a session is not owning it: an owner-managed key changes what the
+    // server decides for this session, so only its creator or its own token may set it.
+    const ownerKey = metadata && OWNER_MANAGED_SESSION_METADATA_KEYS.find((key) => hasOwn(metadata, key));
+    if (ownerKey && loaded.userId !== visible.row.createdBy && callerKortixSessionId(c) !== sessionId) {
+      return c.json({ error: `metadata key ${ownerKey} can be set only by the session's owner or the session itself` }, 403);
+    }
 
     const updates: Partial<typeof projectSessions.$inferInsert> = { updatedAt: new Date() };
 

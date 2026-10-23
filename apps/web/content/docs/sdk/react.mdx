@@ -86,16 +86,16 @@ The sandbox is ready when `/start` answers `stage: 'ready'`. The hook runs no se
 
 Saved history is the transcript copy the API writes at each turn end. The first window holds the newest 40 messages, at most 1,000,000 characters. `loadOlder()` reads older windows, also while the sandbox is off. Live messages then reconcile into it by message id.
 
-An open reads the first window once. The session-open snapshot (`GET …/snapshot`) carries it, and `useSession` waits up to 2 s for a snapshot in flight. A slower or failed snapshot leaves the read to `GET …/transcript?shape=sync&history=true`. `useSession` passes that answer to its `useSessionSync` as `mirror`. If you mount a second `useSessionSync` for the root conversation next to `useSession`, pass `mirror: null` so it does not read the window a second time. Omit `mirror` in two cases, so that the hook makes the one read itself:
+On an API older than the session log (`GET …/log` answers `404` with no `code`), an open reads the first v1 window once: `GET …/transcript?shape=sync&history=true`. The session-open snapshot (`GET …/snapshot`) asks for no v1 window (`?transcript=0`). `useSession` passes that answer to its `useSessionSync` as `mirror`. If you mount a second `useSessionSync` for the root conversation next to `useSession`, pass `mirror: null` so it does not read the window a second time. Omit `mirror` in two cases, so that the hook makes the one read itself:
 
 - Next to `useSession({ chatEngine: false })`. That `useSession` makes no saved-history read.
 - On a `savedChild` hook. It reads the sub-agent's own window, which the open does not read.
 
-To show a session's saved copy before `useSession` binds it, for example on a connecting screen, call `readSavedSessionCopy({ projectId, sessionId, runtimeSessionId })` from `@kortix/sdk`. It makes the same read and returns `{ envelope, empty }`. Pass `envelope` to `useSessionSync` as `mirror`. `empty` is `true` when the copy proves the conversation empty and the turn record shows no ended or open turn. The function never throws.
+To show a session's saved copy before `useSession` binds it, for example on a connecting screen, call `readSavedSessionCopy({ projectId, sessionId, runtimeSessionId })` from `@kortix/sdk`. It reads the session log first and returns `{ envelope, empty, log }`. `log` is the session log's newest page (`GET …/log`): apply it to the session store (`applySessionLogPage`) and render `useSessionLogThread`. No `GET …/transcript` is read then. A new session with no stored log yet answers `404` with `code: 'session_log_missing'`: `log` is `null`, `envelope` is `null`, and nothing is read. Only when the log answers `404` with no `code` (an API older than the session log) does it read the v1 copy: `log` is absent, and you pass `envelope` to `useSessionSync` as `mirror`. `empty` is `true` when the copy proves the conversation empty and the turn record shows no ended or open turn. The function never throws. The `sessionLog` option is deprecated and ignored.
 
-The SDK holds that copy for the open that follows, for up to 5 minutes. When `useSession` binds the session, the snapshot asks for no window (`?transcript=0`), and the saved-history read answers from the held copy. The window is downloaded once per open. `resetIdentityState()` forgets the held copy.
+The SDK holds that copy for the open that follows, for up to 5 minutes. When `useSession` binds the session, the saved-history read answers from the held copy. The window is downloaded once per open. `resetIdentityState()` forgets the held copy.
 
-To show a sub-agent's saved history, call `useSessionSync(childRuntimeSessionId, { kortixSessionScope: sessionId, savedChild: true })`. It reads the child's saved window from the parent session. The device keeps no copy of it.
+To show a sub-agent's saved history, call `useSessionSync(childRuntimeSessionId, { kortixSessionScope: sessionId, savedChild: true })`. It reads the session log first: a page goes in the session store, and the thread comes from `useSessionLogThread(parentSession, childRuntimeSessionId)`. Only when the log answers `404` with no `code` (an API older than the session log) does it read the child's v1 saved window from the parent session. The device keeps no copy of it. While the session store holds the parent session's log, `useSessionSync` reads no saved copy, whatever `sessionLog` says.
 
 ### Returns
 
@@ -123,7 +123,7 @@ To show a sub-agent's saved history, call `useSessionSync(childRuntimeSessionId,
 | `hasPending` | `boolean` | At least one question or permission is open. |
 | `diffs`, `todos` | arrays | Live file diffs and the todo list. |
 | `rewindMessageId`, `rewindPending`, `rewindError` | `string \| null`, `boolean`, `KortixSendError \| null` | The staged rewind, a rewind or restore in flight, and its last failure. |
-| `models` | `FlatModel[]` | Selectable models. Empty when the project's `llm_gateway` flag is off. |
+| `models` | `FlatModel[]` | Selectable models. |
 | `agents`, `defaultAgent`, `commands` | arrays, `string \| null`, array | Selectable agents, the default agent and slash commands. Available before the sandbox starts. |
 | `agentName` | `string \| null` | The agent the session was created with, from the first `/start` answer. `null` when none was bound. |
 | `picks` | `SessionPicks` | This session's chosen `model`, `agent` and `variant`, with `setModel`, `setAgent` and `setVariant`. `send` uses them. |
@@ -156,7 +156,7 @@ The three reply actions remove the item only after the server accepts the reply.
 | `subscribeMessages` | `true` | `false` re-renders the caller only when the transcript changes shape, not on each streamed delta. Draw the rows in a child with `useSessionMessages`. |
 | `replayStartStash` | `true` | Sends a first prompt that a "new session" screen saved, once the session is ready and empty. |
 | `initialRuntimeSessionId` | `null` | A runtime session id your server already holds. The transcript renders from it while `/start` runs. The `/start` answer wins. |
-| `browserPresence` | `false` | Holds this tab's presence lease while a person uses the page (input in the last 10 minutes). The lease keeps the sandbox awake for a person who may start the session, at most 2 hours past its latest turn. |
+| `browserPresence` | `false` | Holds this tab's presence lease while a person uses the page (input in the last 10 minutes). The lease routes notifications and returns the awake window (`presenceAwake`) for a person who may start the session; the sandbox stops the idle window — 15 minutes by default — after its latest turn, with the page open or not. |
 | `presenceAlerts` | `false` | `true` tells the server this tab shows its own notifications, so the server skips phone and Web Push while the tab is in use. Pass `true` only when the project's `notification_center` flag is on and this tab's browser notifications are on and permitted. Needs `browserPresence`. |
 | `presencePageExit` | `false` | Ends the presence lease when the page closes. Off, the lease ends at its 90-second expiry. Needs `browserPresence`. Pass the project's `notification_center` flag. |
 
@@ -233,11 +233,11 @@ While the view is mounted, its event stream raises these. When the view unmounts
 
 ## Build a chat UI
 
-Start with `SessionThread` from [`@kortix/ui/chat`](/docs/sdk/ui#add-a-chat). It renders the whole chat from one `useSession` result: the transcript, tool calls, prompts, the send error and the composer.
+Start with `SessionThread` from [`@kortix/ui/session`](/docs/sdk/ui#the-thread-alone). It renders the whole chat from one `useSession` result: the transcript, tool calls, prompts, the send error and the composer.
 
 ```tsx
 import { useSession } from '@kortix/sdk/react';
-import { SessionThread } from '@kortix/ui/chat';
+import { SessionThread } from '@kortix/ui/session';
 
 function Chat({ projectId, sessionId }: { projectId: string; sessionId: string }) {
   const session = useSession(projectId, sessionId);
@@ -249,7 +249,7 @@ function Chat({ projectId, sessionId }: { projectId: string; sessionId: string }
 }
 ```
 
-Its `renderTool` and `renderers` props replace one tool card or one part kind, and its parts (`MessageList`, `MessageView`, `Composer`) compose into a layout of your own. Setup, styles and props: [Kortix UI](/docs/sdk/ui).
+It is the thread the Kortix web app renders. `ToolRegistry.register(name, Row)` replaces one tool row, and its building blocks (`UserMessage`, `ToolPartRenderer`, `SessionChatInput`) compose into a layout of your own. Setup, styles and props: [Kortix UI](/docs/sdk/ui).
 
 ### Render the parts yourself
 
@@ -314,15 +314,15 @@ function Thread({ projectId, sessionId }: { projectId: string; sessionId: string
 
 On v2, `useSessionLogThread` adds the v1 rows the log does not hold yet, converted with `fromV1` and placed by time as `useSessionMessages` places them (an older page `loadOlder` read goes before the thread's messages, an optimistic send after them), until the log's put of the same id replaces them; on v1 the conversion already holds them. Render a thread's turns with `sessionLogTurns` ([Block turns](/docs/sdk/reference#block-turns)).
 
-A session reads the log only when all of these are true. Otherwise it reads v1, and both hooks return the `fromV1` conversion of the v1 rows `useSessionMessages` renders (`source: 'v1'`): one root thread whose id is the runtime session id, with the turn that runs kept open (its calls stay `pending` or `running`). On v1 a `threadId` is a runtime session id. Without a `runtimeSessionId`, or before the store holds a row for it, both hooks return `null`. A message keeps its identity while its row is unchanged.
+On v2, `useSessionLogThread(session, threadId)` reads a sub-agent thread's newest page the first time a row asks for it. `useSessionLogOlder(session, threadId?)` pages one thread back: it returns `{ hasOlder, isLoadingOlder, loadOlder }`, and `loadOlder()` reads `GET …/log?thread=&before_seq=` before the thread's first `seq`. `threadId` omitted is the root thread, which `useSession().loadOlder` already pages. It returns `hasOlder: false` while the session reads v1. A sub-agent's chat (a view with no `useSession` of its own) reads its thread and its older pages with these two hooks, passing the parent session as `session`.
 
-1. The runtime's `/kortix/health` lists `session.log.v2`. An absent list does not count.
-2. The project flag `session_log` is `true`.
-3. The API has a stored log for the session (`GET /v1/projects/:projectId/sessions/:sessionId/log` answers a page).
+Every open reads the log first: `GET /v1/projects/:projectId/sessions/:sessionId/log`. No project flag is read, and the runtime is not asked: the stored log is the API's, so a stopped computer shows it too. While that read runs and after it answers a page, `useSession` reads no v1 saved copy: the open asks the snapshot for no transcript window, older pages come from `GET …/log?thread=&before_seq=` (`useSessionLogOlder` pages any thread), and a sub-agent thread loads its first page when it shows.
+
+A new session with no stored log yet (`404`, `code: 'session_log_missing'`) stays on the log with nothing in it: no v1 copy is read, `savedTranscript` is `none` until a message arrives, and the log is read again at the end of each turn. Only when the log answers `404` with no `code` or an invalid page (an API older than the session log) does the session read v1. Both hooks then return the `fromV1` conversion of the v1 rows `useSessionMessages` renders (`source: 'v1'`): one root thread whose id is the runtime session id, with the turn that runs kept open (its calls stay `pending` or `running`). On v1 a `threadId` is a runtime session id. Without a `runtimeSessionId`, or before the store holds a row for it, both hooks return `null`. A message keeps its identity while its row is unchanged.
 
 Both harnesses read v2: an OpenCode thread (converted from v1) and a pi thread (written natively).
 
-An SDK older than its API, or an API older than its SDK, reads v1. On v2, `useSession` paints the device's saved copy of the log first, then the API's page, and asks the session stream for `schema=v2`. What the stream carries depends on the server:
+An SDK older than the session log reads v1. An API older than the session log answers `404` with no `code` for `GET …/log`, and the session reads v1. On v2, `useSession` paints the device's saved copy of the log first, then the API's page, and asks the session stream for `schema=v2`. What the stream carries depends on the server:
 
 - The runtime side is complete: on `schema=v2` the runtime's stream carries `log.*` frames in place of the `message.*` transcript frames, plus every other frame (status, permissions, questions, todos). A message arrives as a streaming record when it starts, then grows with each streamed delta.
 - The API relays `schema=v2`: a runtime that lists `session.log.v2` streams its own `log.*` frames, and the API converts the v1 frames of an older runtime.
@@ -339,8 +339,8 @@ Most hooks below are React Query hooks. Unless the row names another return valu
 | `useProjects(accountId?, options?)` | The projects in one account. |
 | `useProjectSessions(projectId, { scope, parent, startedBy, q, labels, limit })` | One project's sessions, paged, newest activity first. Read `sessions` (flat) and `fetchNextPage`. `parent: 'root'` returns top-level sessions with `child_count`. `startedBy` is `'me'`, `'others'` or `'automated'`. `q` searches every session the caller can open. `scope: 'project'` is the manager inventory. |
 | `useSessionChildren(projectId, parentSessionId, { q, limit, enabled })` | The sessions one parent started, paged. Keep `enabled: false` until the parent row opens. |
-| `useProjectModels(projectId)` | Selectable models as `FlatModel[]`. Empty when the project's `llm_gateway` flag is off. |
-| `useProjectModelPickerCatalog(projectId)` | The full model-picker record per model (`reasoning_options`, `temperature`, `limit`). `undefined` unless the project's `llm_gateway` flag is on. |
+| `useProjectModels(projectId)` | Selectable models as `FlatModel[]`. Empty while the list loads. |
+| `useProjectModelPickerCatalog(projectId)` | The full model-picker record per model (`reasoning_options`, `temperature`, `limit`). `undefined` while it loads. |
 | `useModelAccess(projectId)` | The project's disabled providers and models, and `setEnabled({ target, id, enabled })` with `target` `'provider'` or `'model'`. |
 | `useProjectConfig(projectId)` | The project's config summary (default agent and slash commands) as `ProjectConfigSummary`, or `undefined` while it loads. |
 | `useVisibleAgents({ projectId })` | The agents a person can pick, as `Agent[]`. |
@@ -381,7 +381,7 @@ Rules that apply to several hooks:
 
 ### Start the open read early
 
-`prefetchSessionOpen(queryClient, projectId, sessionId)` starts the read that a session view needs before the view mounts. It sends one `GET …/snapshot` request: the session row, the current turn, the prompt queue and the first transcript window. `useSession` then uses that request instead of its own.
+`prefetchSessionOpen(queryClient, projectId, sessionId)` starts the read that a session view needs before the view mounts. It sends one `GET …/snapshot?transcript=0` request: the session row, the current turn and the prompt queue. It asks for no v1 transcript window: the open reads the session log. `useSession` then uses that request instead of its own.
 
 ```tsx
 import { prefetchSessionOpen } from '@kortix/sdk/react';

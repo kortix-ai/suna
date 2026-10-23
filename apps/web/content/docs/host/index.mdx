@@ -3,7 +3,7 @@ title: "Self-hosting"
 description: "Run Kortix on your own server with kortix self-host: install, configure, secure, connect clients, update, back up and operate."
 ---
 
-A self-hosted instance is the full Kortix platform on a server you control: one Docker Compose stack that the `kortix self-host` CLI installs, configures and updates. This page is for the operator who runs that server. Sessions run on a cloud sandbox provider, not on the server. The instance must be reachable from the internet so those sandboxes can call back.
+A self-hosted instance is the full Kortix platform on a server you control: one Docker Compose stack that the `kortix self-host` CLI installs, configures and updates. This page is for the operator who runs that server. Sessions run on Platinum sandboxes, not on the server. The instance must be reachable from the internet so those sandboxes can call back.
 
 <Steps>
 <Step title="Point DNS at the server">
@@ -18,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/kortix-ai/suna/dev/scripts/kortix-s
 ```
 </Step>
 <Step title="Answer the setup questions">
-If the bootstrap added you to the `docker` group, open a new shell first. Run `kortix self-host configure`. Give your admin email, your sandbox provider key and the preview domain `p.kortix.example.com`. Then run `kortix self-host start` to apply the answers.
+If the bootstrap added you to the `docker` group, open a new shell first. Run `kortix self-host configure`. Give your admin email, your Platinum API key (`PLATINUM_API_KEY`) and the preview domain `p.kortix.example.com`. Then run `kortix self-host start` to apply the answers.
 </Step>
 <Step title="Sign up as the admin">
 Open `https://kortix.example.com` and sign up with the admin email. Connect GitHub at `/admin/git`, create the team account and a project, then add a model key. See [First sign-in and setup](#first-sign-in-and-setup).
@@ -47,7 +47,7 @@ Run `kortix self-host doctor` and fix every failing check. See [Secure the insta
 
 Off the box:
 
-- **Sandboxes.** Every session runs on Daytona (the default), Platinum or E2B. `kortix-api` creates them with your provider key. The sandbox calls back to the instance's public API URL, `KORTIX_URL`.
+- **Sandboxes.** Every session runs on Platinum, the reference sandbox provider. `kortix-api` creates them with `PLATINUM_API_KEY`. The sandbox calls back to the instance's public API URL, `KORTIX_URL`.
 - **Images.** `kortix/kortix-frontend`, `kortix/kortix-api` and `kortix/kortix-gateway` on Docker Hub. Pulls need no credentials.
 - **Model providers.** The gateway calls the providers your projects connect.
 
@@ -69,7 +69,7 @@ Domain mode is the production setup. Tunnel mode is for evaluation on your own m
 - **Wildcard records** for the optional origins:
   - `*.p.<domain>` for sandbox previews. Use it on every public instance: without it, browser previews fall back to a path proxy that breaks root-absolute links, and `doctor` fails.
   - `*.<apps base domain>`, for example `*.apps.<domain>`, to host [Apps](/docs/apps).
-- **A sandbox provider key**: Daytona, Platinum or E2B. Without one, sessions do not start.
+- **A Platinum API key** (`PLATINUM_API_KEY`). Without it, sessions do not start.
 - **A model provider key.** You add it in the web app after the first sign-in.
 
 ## Install
@@ -86,9 +86,8 @@ The bootstrap script runs on Linux only. It installs Docker and the Compose plug
 | `--channel <stable\|latest>` | `stable` | The image channel |
 | `--auto-update <on\|off>` | `on` | The daily updater |
 | `--instance <name>` | `default` | The instance name |
-| `--daytona-key <key>` | none | `DAYTONA_API_KEY` |
 
-The bootstrap runs `init` non-interactively. It sets no admin email and no preview domain, so run `kortix self-host configure` and then `kortix self-host start` after it. When the script adds your user to the `docker` group, open a new shell before the next `kortix self-host` command.
+The bootstrap runs `init` non-interactively. It sets no admin email, no Platinum key and no preview domain, so run `kortix self-host configure` and then `kortix self-host start` after it. When the script adds your user to the `docker` group, open a new shell before the next `kortix self-host` command.
 
 ### Install by hand
 
@@ -128,7 +127,7 @@ kortix self-host start
 | Admin email | `KORTIX_PLATFORM_ADMIN_EMAILS`, comma-separated. These people are platform admins. Also `--admin-email <email>`. |
 | Enterprise license | `ENTERPRISE_LICENSE_AVAILABLE`. With a license, it unlocks SSO, SCIM, role-based access control and audit. Also `--enterprise-license`. |
 | Restrict account creation | On by default. Only a platform admin can create a new account. Others get `403` `account_creation_restricted`. Sign-ups, invites, SSO and each person's personal account still work. Also `--no-restrict-account-creation` and `--restrict-account-creation`. |
-| Sandbox provider | One of `daytona`, `platinum`, `e2b`, written to `ALLOWED_SANDBOX_PROVIDERS`, plus that provider's settings (below). |
+| Sandbox provider | `platinum` (the default) or the legacy `daytona`, written to `ALLOWED_SANDBOX_PROVIDERS`, plus that provider's settings (below). |
 | Apps hosting | Optional. `KORTIX_APPS_BASE_DOMAIN`, which needs a wildcard DNS record. |
 | Preview origins | `KORTIX_PREVIEW_BASE_DOMAIN`, suggested `p.<domain>`, which needs a `*.p.<domain>` record. In domain mode the default answer is configure. |
 | Composio | Optional. `COMPOSIO_API_KEY`, the app catalog for [connectors](/docs/connect/connectors). |
@@ -136,9 +135,12 @@ kortix self-host start
 
 | Provider | Key | Other settings and defaults |
 |---|---|---|
-| `daytona` | `DAYTONA_API_KEY` | `DAYTONA_SERVER_URL` (`https://app.daytona.io/api`), `DAYTONA_TARGET` (`us`) |
 | `platinum` | `PLATINUM_API_KEY` | `PLATINUM_API_URL` (`https://api.platinum.dev`), `PLATINUM_TEMPLATE` (optional) |
-| `e2b` | `E2B_API_KEY` | `E2B_DOMAIN` (`e2b.dev`; a self-hosted E2B cluster uses its own) |
+| `daytona` (legacy) | `DAYTONA_API_KEY` | `DAYTONA_SERVER_URL` (`https://app.daytona.io/api`), `DAYTONA_TARGET` (`us`) |
+
+<Callout type="warning">
+**Legacy: Daytona.** Daytona is a legacy fallback provider. Its removal is scheduled. Existing Daytona sessions keep working for now, but Daytona gets no new features and no support guarantee. Use Platinum. E2B support is discontinued.
+</Callout>
 
 SAML sign-in is on in every instance, and `init` generates `SAML_PRIVATE_KEY` once. Do not change that key after you register an identity provider: it is the instance's SAML identity. To set up SSO, see [Sign-in, SSO & API keys](/docs/accounts/identity).
 
@@ -203,9 +205,9 @@ Keep `.env` safe: it holds every secret, and `API_KEY_SECRET` in it encrypts eve
 | Path | With `ENABLE_EMAIL_AUTOCONFIRM=true` |
 |---|---|
 | Sign-in with a pending invite | Sign-in does not accept the invite. |
-| SCIM `POST /Users` for that address | Creates a pending invite (`201`). No membership. A password login does not see that invite, and accepting or declining it returns `403` `email_unconfirmed`. The person joins by signing in through the account's SAML provider. |
+| SCIM `POST /Users` for that address | Creates a pending invite (`201`). No membership. A password login does not see that invite, and accepting or declining it returns `403` `email_unconfirmed`. The invite page then shows **Continue with single sign-on**: it signs in through the account's SAML provider, also for an address outside the provider's domain, and the person joins. An admin can instead click **Resend** on the pending invite: it is then an invite a person sent. |
 | **Members** → **Invite** for that address | Creates a pending invite instead of adding the login. |
-| An invite a person sent (**Members** → **Invite**, a project invite) | The login that holds the address sees it in the project chooser and the **Switch Project** menu, and can accept it. That login is whoever signed up first with the address, so it may not be the person you invited. |
+| An invite a person sent or resent (**Members** → **Invite** or **Resend**, a project invite) | The login that holds the address sees it in the project chooser and the **Switch Project** menu, and can accept it. That login is whoever signed up first with the address, so it may not be the person you invited. |
 | `KORTIX_PLATFORM_ADMIN_EMAILS` | Matches a password login with the address. Whoever signs up first with an allowlisted address is platform admin. |
 
 A login that is already a member of the account, and a login through the account's own SAML provider, still match inside that account. `KORTIX_PLATFORM_ADMIN_EMAILS` never matches a SAML login. Setting `EMAIL_URL` turns `ENABLE_EMAIL_AUTOCONFIRM` off and restores the matching. A login created while it was on is not confirmed again: after you add email, its address matches invites and SCIM like a confirmed one. Set `EMAIL_URL` before you invite people. Without it, invite a person only after that person has signed up: an address has one password login, so nobody else can take it then. A cloud instance never sets the value.
@@ -310,6 +312,16 @@ kortix self-host version                         # running, latest and channel
 
 A manual `update` uses the same rollout as the daily run. When another update holds the lock, it exits `75` and skips the rollout. A pin holds through every daily run. `init` or `update` without `--tag` moves the instance back to its channel. To change auto-update, the time or the timezone, run `kortix self-host configure`, then `kortix self-host start`.
 
+### Saved conversations after an update
+
+Since the session log release, every session's saved conversation is its session log. An instance that ran an older version also holds conversations in the older v1 store. After the update, the API converts them by itself, so you do nothing:
+
+- A background pass (`SESSION_LOG_BACKFILL`, default `write`) converts every old session, oldest first, on the leader API container. It logs `[session-log] backfill tick` with counts, and `the v1 mirror holds no session without a log` when it is done.
+- Opening an old session before the pass reaches it converts that session first.
+- A conversation over the conversion size cap (about 24 MB, `SESSION_LOG_RESTORE_MAX_BYTES`) is converted only by the background pass. Until then, its log read answers `503` `session_log_converting` with `Retry-After: 60`.
+
+`SESSION_LOG_BACKFILL=off` stops the pass. Keep it on until that line appears: the v1 store is the only copy of a conversation the pass has not converted.
+
 ## Operate and tune
 
 ### Settings and secrets
@@ -336,15 +348,15 @@ Postgres has a fixed limit of `1280m`. `KORTIX_GATEWAY_MAX_REQUEST_BYTES` raises
 
 | Variable | Default | Effect |
 |---|---|---|
-| `KORTIX_SANDBOX_AUTOSTOP_MINUTES` | `15` | A sandbox stops this many idle minutes after its last turn ends. |
+| `KORTIX_SANDBOX_AUTOSTOP_MINUTES` | `15` | A sandbox stops this many idle minutes after its last turn ends. The same window bounds how long an open session page holds the sandbox (KRTX-2451): the page never keeps it past this. |
 | `KORTIX_SANDBOX_TURN_GRANT_MINUTES` | `240` | How long a running turn holds its sandbox. Model calls and an observed running turn renew it. |
 | `KORTIX_SANDBOX_TURN_WAITING_MINUTES` | `120` | How long a turn that waits on a person holds its sandbox. At most half the turn grant. Unattended runs get 30. |
 | `KORTIX_SANDBOX_PREVIEW_GRANT_MINUTES` | `30` | How long preview traffic keeps a sandbox running. |
 | `KORTIX_SANDBOX_WARM_GRANT_MINUTES` | `60` | The lifetime of an unclaimed warm sandbox. |
 | `KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES` | `720` | The provider's own idle stop, a backstop for sandboxes the API cannot reach. |
-| `KORTIX_SANDBOX_AUTOARCHIVE_MINUTES` | `720` | Daytona: a stopped sandbox moves to archive storage. |
-| `KORTIX_SANDBOX_AUTODELETE_MINUTES` | `-1` | Daytona: never delete automatically. |
-| `ALLOWED_SANDBOX_PROVIDERS` | `daytona` | The providers sessions may use, comma-separated. |
+| `KORTIX_SANDBOX_AUTOARCHIVE_MINUTES` | `720` | Legacy Daytona only: a stopped sandbox moves to archive storage. |
+| `KORTIX_SANDBOX_AUTODELETE_MINUTES` | `-1` | Legacy Daytona only: never delete automatically. |
+| `ALLOWED_SANDBOX_PROVIDERS` | `platinum` | The providers sessions may use, comma-separated. `daytona` is a legacy fallback. |
 | `KORTIX_DEFAULT_SANDBOX_CPU`, `_MEMORY_GB`, `_DISK_GB` | `2`, `4`, `20` | The sandbox size when a template sets none. |
 
 Users see the effect of these values on [Sessions](/docs/work/sessions) and [Sandboxes & previews](/docs/work/runtime).

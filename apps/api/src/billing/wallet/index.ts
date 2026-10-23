@@ -94,6 +94,7 @@ export interface SettleInput extends DebitInput {
 }
 
 export interface ResetInput extends WalletWrite {
+  expiresAt?: string | null;
   key: { readonly event: string };
 }
 
@@ -283,7 +284,8 @@ async function reset(input: ResetInput): Promise<void> {
       p_account_id => ${input.accountId}::uuid,
       p_new_credits => ${input.amount}::numeric,
       p_description => ${input.description}::text,
-      p_stripe_event_id => ${input.key.event}::text
+      p_stripe_event_id => ${input.key.event}::text,
+      p_expires_at => ${input.expiresAt ?? null}::timestamptz
     )`);
   } catch (error) {
     // The same reset arriving twice is the key doing its job. Not a fault: no

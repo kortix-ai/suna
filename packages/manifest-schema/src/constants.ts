@@ -110,6 +110,12 @@ export const MONITOR_MIN_INTERVAL_SECONDS = 30;
 export const MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS = 300;
 /** Floor for a cron trigger's `max_lateness` (the misfire bound, KRTX-1743). */
 export const TRIGGER_MIN_MAX_LATENESS_SECONDS = 60;
+/**
+ * A trigger starts at most this many runs in any 60 minutes when its
+ * `max_runs_per_hour` is unset (KRTX-1721). Twice the busiest production
+ * trigger's hour in October 2026; the 60 s cron floor allows exactly this.
+ */
+export const DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR = 60;
 /** Longest `run` command accepted. Bounds a hostile manifest out of the box config. */
 export const MONITOR_RUN_MAX_LENGTH = 1024;
 
@@ -278,6 +284,9 @@ export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
   'project.review.read',
   'project.review.submit',
   'project.review.act',
+  // Rooms: read = list rooms and read messages; write = post, join, leave.
+  'project.room.read',
+  'project.room.write',
   // Minting a project credential. Grantable so a manifest CAN hand it to an
   // agent explicitly, but note the two credential routes refuse an
   // agent-session token outright (projects/routes/secret-delivery.ts) — an agent that could
@@ -424,6 +433,12 @@ export const HARNESS_TOOL_NAMES = [
  * were re-added once (#9902) and removed again; a test pins them out.
  */
 export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show'] as const;
+/**
+ * Kortix tools that no longer exist. Manifests written while #9902 was live
+ * still name them (the v2 starter, v3 agent excludes). Naming one is
+ * a warning, not an error: no session can load it, so the name has no effect.
+ */
+export const RETIRED_KORTIX_TOOLS: readonly string[] = ['kortix-connectors_call', 'kortix-connectors_describe'];
 /** A `tools:` value that keeps a Kortix tool: `kortix:<name>`. */
 export const KORTIX_TOOL_PREFIX = 'kortix:';
 
@@ -461,14 +476,17 @@ export const KORTIX_SKILL_NAMES = [
   'kortix-connectors',
   'kortix-drives',
   'kortix-genui',
+  'kortix-goals',
   'kortix-harness-refinement',
   'kortix-marketplace',
   'kortix-memory',
   'kortix-onboarding',
+  'kortix-rooms',
   'kortix-slack',
   'kortix-system',
   'kortix-teams',
   'kortix-ui',
+  'kortix-user-memory',
 ] as const;
 /** The prefix only Kortix skills use. */
 export const KORTIX_SKILL_PREFIX = 'kortix-';
@@ -476,5 +494,8 @@ export const KORTIX_SKILL_PREFIX = 'kortix-';
 export const CODEMODE_VALUES = ['on', 'only', 'off'] as const;
 /** The harnesses an extension can implement. */
 export const EXTENSION_HARNESSES = ['opencode', 'pi'] as const;
-/** OpenCode's built-in agents that v3 disables unless the manifest declares the name. */
+/**
+ * OpenCode's built-in agents that v3 disables unless the manifest declares the name.
+ * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ */
 export const OPENCODE_BUILTIN_AGENTS_V3 = ['build', 'plan', 'general', 'explore'] as const;

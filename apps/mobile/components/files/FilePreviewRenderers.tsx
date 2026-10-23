@@ -112,7 +112,7 @@ function CodePreview({ content, fileName }: { content: string; fileName: string 
   );
 }
 /**
- * HTML Preview Component with Daytona iframe
+ * HTML Preview Component with a sandbox iframe
  */
 /**
  * JSON: pretty-printed below the pretty-print size limit, raw at or above it.
@@ -145,7 +145,7 @@ function HtmlPreview({
   const isDark = colorScheme === 'dark';
 
   const bottomInset = React.useContext(FilePreviewBottomInsetContext);
-  // If we have sandbox URL and file path, use Daytona iframe to preview
+  // If we have sandbox URL and file path, use the sandbox iframe to preview
   const htmlPreviewUrl = constructHtmlPreviewUrl(sandboxUrl, filePath);
   // Pages of the previewed site stay in the WebView. Another site opens outside
   // the app only for a user click, so a script redirect or an iframe in the

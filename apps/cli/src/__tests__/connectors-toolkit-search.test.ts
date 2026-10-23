@@ -48,6 +48,26 @@ function startServer(): string {
       calls.push(url.pathname + url.search);
       const ex = `/v1/connectors/projects/${PROJECT}`;
 
+      // A category listing answers a different shape: `toolkits` + `total` +
+      // `hasMore` (apps/api/src/connectors/composio.ts, the category branch).
+      if (url.pathname === `${ex}/connect/toolkits` && url.searchParams.get('category')) {
+        return Response.json({
+          provider: 'composio',
+          toolkits: [
+            {
+              slug: 'gmail',
+              name: 'Gmail',
+              logo: null,
+              description: "Google's email service",
+              categories: ['email'],
+              isNoAuth: false,
+              connected: false,
+            },
+          ],
+          total: 1,
+          hasMore: false,
+        });
+      }
       if (url.pathname === `${ex}/connect/toolkits`) {
         return Response.json({
           items: [
@@ -141,6 +161,17 @@ describe('connectors apps → Composio toolkits', () => {
     expect(call).toContain('category=email');
     expect(call).toContain('cursor=cur_1');
     expect(call).toContain('limit=5');
+  });
+
+  // KRTX-2991: the category branch answers `toolkits`, not `items`, so the
+  // listing printed "No Composio toolkits" for every category.
+  test('--category lists the toolkits of that category', async () => {
+    const config = writeConfig(startServer());
+    const res = await runCli(['connectors', 'apps', '--category', 'email', '--project', PROJECT], config);
+    expect(res.code).toBe(0);
+    expect(res.stdout).not.toContain('No Composio toolkits');
+    expect(res.stdout).toContain('gmail');
+    expect(res.stdout).toContain('1 toolkit');
   });
 
   test('toolkits is an alias for apps', async () => {

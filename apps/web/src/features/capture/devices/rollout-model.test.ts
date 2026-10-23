@@ -4,7 +4,6 @@ import {
   enrollmentUrl,
   expiryDate,
   installCommand,
-  msiCommand,
   parseDomains,
   parseLimit,
   personLabel,
@@ -33,6 +32,7 @@ describe('IT rollout model', () => {
     expect(cmd).toBe(
       'curl.exe -fsSL -o "%TEMP%\\KortixCapture-x64.msi" https://github.com/kortix-ai/suna/releases/latest/download/KortixCapture-x64.msi' +
         ' && start /wait msiexec /i "%TEMP%\\KortixCapture-x64.msi" /qn /l*v "%TEMP%\\KortixCapture-install.log" KORTIX_URL=https://api.kortix.com ENROLLMENT_TOKEN=kortix_enr_x' +
+        ' && sc query KortixCapture >nul 2>&1' +
         ' && echo Kortix Capture installed. It records from the next Windows sign-in.' +
         ' || echo Install failed. Log: "%TEMP%\\KortixCapture-install.log"',
     );
@@ -40,12 +40,6 @@ describe('IT rollout model', () => {
       'https://github.com/kortix-ai/suna/releases/download/capture-dev-latest/KortixCapture-x64.msi',
     );
     expect(installCommand('windows', 'https://api.kortix.com', 'kortix_enr_x')).toBe(cmd);
-  });
-
-  test('the silent install names the URL and the token', () => {
-    expect(msiCommand('https://api.kortix.com', 'kortix_enr_x')).toBe(
-      'msiexec /i KortixCapture-x64.msi /qn KORTIX_URL=https://api.kortix.com ENROLLMENT_TOKEN=kortix_enr_x',
-    );
   });
 
   test('a computer limit is a whole number from 1, else no limit', () => {

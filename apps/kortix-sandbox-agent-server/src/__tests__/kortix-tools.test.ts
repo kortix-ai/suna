@@ -199,7 +199,7 @@ describe('scrape_webpage', () => {
 })
 
 describe('the Kortix tools follow the capability of what they do', () => {
-  const rule = (policy: unknown, tool: string, args: unknown = {}) => new PermissionBroker('ses_test', () => {}, compilePermissionPolicy(policy)).rule(tool, args)
+  const rule = (policy: unknown, tool: string, args: unknown = {}) => new PermissionBroker('ses_test', '/workspace', () => {}, compilePermissionPolicy(policy)).rule(tool, args)
 
   test.each([
     ['web_search', { websearch: 'deny' }, 'deny'],
@@ -234,7 +234,7 @@ describe('the Kortix tools follow the capability of what they do', () => {
   })
 
   test('an "always" reply to a memory write allows the edit capability, not memory reads elsewhere', async () => {
-    const broker = new PermissionBroker('ses_test', () => {}, compilePermissionPolicy({ edit: 'ask', read: 'ask' }))
+    const broker = new PermissionBroker('ses_test', '/workspace', () => {}, compilePermissionPolicy({ edit: 'ask', read: 'ask' }))
     const asked = broker.ask({ tool: 'memory', args: { command: 'create', path: 'memory/a.md' } })
     const [request] = broker.list()
     expect(request!.permission).toBe('edit')
@@ -309,6 +309,15 @@ describe('show', () => {
     expect(result.message).toBe('1 item(s) presented to user as carousel.')
     await expect(show({ items: JSON.stringify([{ type: 'image' }]) })).rejects.toThrow('All items failed validation')
     await expect(show({ items: 'not json' })).rejects.toThrow("Invalid JSON in 'items' parameter.")
+  })
+
+  test('an empty items value ("null", "[]") beside a single item shows that item', async () => {
+    writeFileSync(join(dir, 'SKILL.md'), '# skill')
+    for (const items of ['null', '[]']) {
+      const result = JSON.parse(out(await show({ type: 'file', path: 'SKILL.md', theme: 'success', items })))
+      expect(result.entry).toMatchObject({ type: 'file', path: join(dir, 'SKILL.md'), theme: 'success' })
+    }
+    await expect(show({ items: 'null' })).rejects.toThrow("'type' is required.")
   })
 })
 

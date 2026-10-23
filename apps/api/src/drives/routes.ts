@@ -59,6 +59,7 @@ import {
   openConflictRows,
   readDriveVolume,
   removeFolderGrant,
+  sessionFilesRefusalFor,
   setFolderGrant,
   toDriveJson,
   userEmails,
@@ -72,6 +73,7 @@ import {
   readVolumeFile,
   removeVolumeFile,
   restoreVolume,
+  statVolumeFile,
   writeVolumeFile,
   FILE_CHANGED_MESSAGE,
   type VolumeCommit,
@@ -226,6 +228,9 @@ async function loadDrive(c: DriveContext): Promise<Caller> {
   const driveId = c.req.param('driveId') ?? '';
   const drive = isUuid(driveId) ? await getDrive(driveId) : null;
   if (!drive || drive.kind !== 'project' || !drive.projectId) fail(404, 'Files not found');
+  // A project-bound token (a session's) reaches only its own project's drive.
+  const tokenProjectId = c.get('tokenProjectId');
+  if (tokenProjectId && tokenProjectId !== drive.projectId) fail(404, 'Files not found');
   return callerOn(c, drive);
 }
 
@@ -353,11 +358,16 @@ async function projectAgentNames(projectId: string): Promise<string[]> {
 export const drivesApp = makeOpenApiApp<AppEnv>();
 
 drivesApp.use('*', combinedAuth);
-// A session's folders reach it as mounts; its sandbox token has no reason to
-// browse the project's Files over the API.
+// A sandbox token names no person, so it has no folder access to act with.
 drivesApp.use('*', rejectSandboxTokens);
+// A session token acts as the person who started the session, and only in
+// their own private session (`sessionFilesRefusal`).
 drivesApp.use('*', async (c, next) => {
-  if (c.get('authType') === 'pat' && c.get('sessionId')) fail(403, 'Session tokens cannot access Files');
+  const sessionId = c.get('sessionId');
+  if (c.get('authType') === 'pat' && sessionId) {
+    const refusal = await sessionFilesRefusalFor(sessionId, c.get('userId') ?? null);
+    if (refusal) fail(403, refusal);
+  }
   await next();
 });
 
@@ -376,6 +386,8 @@ drivesApp.openapi(
   async (c) => {
     const projectId = c.req.query('projectId');
     if (!projectId || !isUuid(projectId)) fail(400, 'projectId is required');
+    const tokenProjectId = c.get('tokenProjectId');
+    if (tokenProjectId && tokenProjectId !== projectId) fail(404, 'Project not found');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) fail(404, 'Project not found');
     const gate = requireFeatureFlag(c, loaded.row.metadata, 'drives');
@@ -479,6 +491,7 @@ drivesApp.openapi(
     responses: {
       200: { description: 'File bytes', content: { 'application/octet-stream': { schema: z.any() } } },
       206: { description: 'Partial file bytes', content: { 'application/octet-stream': { schema: z.any() } } },
+      416: { description: 'Requested range is not satisfiable; Content-Range names the file size' },
       ...errors(400, 401, 404, 503),
     },
   }),
@@ -502,7 +515,7 @@ drivesApp.openapi(
     if (download === '1' || download === 'true') {
       headers.set('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(baseName(path))}`);
     }
-    return new Response(upstream.body, { status: upstream.status === 206 ? 206 : 200, headers });
+    return new Response(upstream.body, { status: upstream.status, headers });
   },
 );
 
@@ -608,9 +621,14 @@ drivesApp.openapi(
     const to = drivePath(body.to, { allowRoot: false });
     if (to === from || to.startsWith(`${from}/`)) fail(400, 'A folder cannot be moved into itself');
     if (structural(from, caller)) fail(400, 'This folder cannot be moved or renamed');
-    if (parentOf(to) === '/' || parentOf(to) === USERS_DIR) fail(400, 'Put files in a folder');
+    if (parentOf(to) === USERS_DIR) fail(400, 'Put files in a folder');
     need(caller, from, 'write');
     need(caller, to, 'write');
+    // The top level holds only folders: renaming a team folder is fine, a file is not.
+    if (parentOf(to) === '/') {
+      const stat = await withStorage(() => readDriveVolume(caller.drive, (volume) => statVolumeFile(volume, from), notFound));
+      if (stat.type !== 'dir') fail(400, 'Put files in a folder');
+    }
     // Moving a shared folder changes who can reach it: only someone who may change its sharing.
     if (caller.grants.some((g) => g.source !== 'system' && pathWithinFolder(g.path, from))) need(caller, from, 'manage');
     await withStorage(() => readDriveVolume(caller.drive, (volume) => moveVolumeFile(volume, from, to), notFound));
@@ -644,7 +662,19 @@ drivesApp.openapi(
     const shared = caller.grants.filter((g) => g.grantId && pathWithinFolder(g.path, path));
     if (shared.some((g) => g.source !== 'system')) need(caller, path, 'manage');
     const recursive = c.req.query('recursive') === 'true' || c.req.query('recursive') === '1';
-    await withStorage(() => readDriveVolume(caller.drive, (volume) => removeVolumeFile(volume, path, recursive), notFound));
+    await withStorage(() =>
+      readDriveVolume(
+        caller.drive,
+        (volume) =>
+          removeVolumeFile(volume, path, recursive).catch((err) => {
+            if (!recursive && err instanceof DriveStorageError && err.status === 409 && err.code !== 'volume_busy') {
+              fail(409, 'This folder is not empty: delete it with everything in it');
+            }
+            throw err;
+          }),
+        notFound,
+      ),
+    );
     for (const g of shared) await removeFolderGrant(caller.drive, g.grantId!);
     const pendingSessions = shared.length ? await enforceProject(caller.drive) : 0;
     noteDriveWrite(caller.drive.driveId);

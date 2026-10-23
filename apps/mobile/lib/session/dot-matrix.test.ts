@@ -17,15 +17,17 @@ import {
   type DotMatrixVariant,
 } from './dot-matrix';
 
+// Web renders the catalog from @kortix/ui (`primitives/dot-matrix/` since #10480).
 const WEB_CATALOG = join(
   import.meta.dir,
   '..',
   '..',
   '..',
-  'web',
-  'src',
-  'components',
+  '..',
+  'packages',
   'ui',
+  'src',
+  'primitives',
   'dot-matrix',
   'session-dot-matrix.tsx',
 );

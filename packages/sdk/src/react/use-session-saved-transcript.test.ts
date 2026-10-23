@@ -95,7 +95,7 @@ function bundle(
     turn: legs.turn ?? { known: false, reason: 'test' },
     queue: legs.queue ?? { known: false, reason: 'test' },
     transcript: { known: true, requested: true, ...(legs.transcript ?? envelope(saved)) },
-    config: { known: true, base_ref: null, agent_name: null, llm_gateway_enabled: false },
+    config: { known: true, base_ref: null, agent_name: null, llm_gateway_enabled: true },
     models: { known: false, reason: 'test' },
   };
 }
@@ -109,7 +109,10 @@ let urls: string[] = [];
 const transcriptReads = () => urls.filter((url) => url.includes('/transcript?'));
 const snapshotReads = () => urls.filter((url) => url.includes('/snapshot'));
 
-/** Routes the session-open reads; `/start` and anything unlisted never answer. */
+/**
+ * Routes the session-open reads; `/start` and anything unlisted never answer. `GET …/log`
+ * answers 404: these tests pin the v1 saved copy, the fallback on a server older than the log.
+ */
 function serve(routes: {
   snapshot?: () => Promise<Response>;
   history?: () => Promise<Response>;
@@ -122,6 +125,7 @@ function serve(routes: {
   globalThis.fetch = mock(async (input: unknown) => {
     const url = String(input instanceof Request ? input.url : input);
     urls.push(url);
+    if (new URL(url).pathname.endsWith('/log')) return Response.json({ error: 'Not found' }, { status: 404 });
     if (url.includes('/snapshot')) return (routes.snapshot ?? never)();
     if (url.includes('/transcript?') && url.includes('history=true'))
       return (routes.history ?? never)();

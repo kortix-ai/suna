@@ -30,14 +30,14 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { type FormEvent, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
+import { Button } from '@kortix/ui/button';
+import { Checkbox } from '@kortix/ui/checkbox';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -46,23 +46,23 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
+} from '@kortix/ui/modal';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { useAccountHubSheet } from '@/features/accounts/hub/hub-sheet';
-import { ErrorState } from '@/features/layout/section/error-state';
-import { CopyRow, RowKebab, type KebabItem, copyValue } from '@/features/workspace/shared/access';
-import { cn } from '@/lib/utils';
+} from '@kortix/ui/select';
+import { SettingsSubsectionHeader } from '@kortix/ui/settings-subsection-header';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Switch } from '@kortix/ui/switch';
+import { Textarea } from '@kortix/ui/textarea';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { useAccountHubSheet } from '@kortix/ui/internal/account-hub/hub-sheet';
+import { ErrorState } from '@kortix/ui/error-state';
+import { CopyRow, RowKebab, type KebabItem, copyValue } from '@kortix/ui/access/access/index';
+import { cn } from '@kortix/ui';
 import {
   type CreateOAuthClientInput,
   type CreatedOAuthClient,
@@ -75,7 +75,7 @@ import {
   rotateOAuthClientSecret,
   updateOAuthClient,
 } from '@/lib/iam-client';
-import { relativeTime } from '@/lib/relative-time';
+import { relativeTime } from '@kortix/ui/internal/lib/relative-time';
 import {
   AppWindowIcon,
   ArrowsClockwiseIcon,

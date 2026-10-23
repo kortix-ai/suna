@@ -104,7 +104,9 @@ export function registerTunnelRelayPersistence(): void {
         machineInfo: mergeMachineInfo(
           {
             ...snapshot,
-            registeredCapabilities: capabilities,
+            registeredCapabilities: Array.isArray(metadata?.registeredCapabilities)
+              ? metadata.registeredCapabilities
+              : capabilities,
             ...(typeof metadata?.agentVersion === 'string'
               ? { agentVersion: metadata.agentVersion }
               : {}),
@@ -173,7 +175,7 @@ export function registerTunnelRelayPersistence(): void {
       await db
         .update(tunnelConnections)
         .set({
-          machineInfo: mergeMachineInfo({ ...reported, registeredCapabilities: capabilities }),
+          machineInfo: mergeMachineInfo({ ...reported, registeredCapabilities: params?.capabilities ?? [] }),
           status: 'online',
           updatedAt: new Date(),
         })

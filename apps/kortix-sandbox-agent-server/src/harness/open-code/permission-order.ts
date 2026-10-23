@@ -15,6 +15,7 @@ import { dirname } from 'node:path'
  * order every block. The source below is the same ordering as
  * `orderPermissionRules`; permission-precedence.test.ts proves they agree.
  */
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export const PERMISSION_ORDER_PLUGIN_SOURCE = `// Written by kortixd (harness/open-code/permission-order.ts). Do not edit.
 const compare = (a, b) => a.length - b.length || (a < b ? -1 : a > b ? 1 : 0)
 const isMap = (value) => !!value && typeof value === 'object' && !Array.isArray(value)
@@ -26,6 +27,7 @@ const order = (permission) => {
   return out
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export const KortixPermissionOrder = async () => ({
   config: async (config) => {
     if (isMap(config.permission)) config.permission = order(config.permission)
@@ -36,7 +38,10 @@ export const KortixPermissionOrder = async () => ({
 })
 `
 
-/** Write the plugin beside the composed config, and return its `file://` spec. */
+/**
+ * Write the plugin beside the composed config, and return its `file://` spec.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function writePermissionOrderPlugin(path: string): string {
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, PERMISSION_ORDER_PLUGIN_SOURCE, { mode: 0o644 })

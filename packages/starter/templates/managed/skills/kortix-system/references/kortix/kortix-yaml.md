@@ -59,9 +59,6 @@ sandbox:
       name: ML
       dockerfile: Dockerfile.ml
 
-# The harness a session boots: "opencode" (the default) or "pi".
-runtime: opencode
-
 # The tools every session gets (references/kortix/tools.md). `kortix:<name>`
 # is a Kortix tool; a path is the project's own module. With this key, only
 # the listed Kortix tools load. Delete a line to remove that tool.
@@ -75,7 +72,8 @@ tools:
 
 # Files only OpenCode reads: opencode.jsonc, plugins/, tools/, commands/.
 # Defaults to "harnesses/opencode", then the legacy ".kortix/opencode",
-# when omitted. The agent daemon launches opencode with
+# when omitted. Deprecated with OpenCode: only a session that still runs
+# OpenCode reads it. The agent daemon launches opencode with
 # OPENCODE_CONFIG_DIR pointed here. Agents and skills sit at the root;
 # Kortix-side launchability and grants live in the `agents:` map below.
 opencode:
@@ -581,18 +579,10 @@ Kortix-side decision of which agents are launchable/authorized by the platform.
 
 ## `runtime:` in version 2
 
-The harness a session boots inside its sandbox. **Optional.** Root-only.
-
-| Value | Harness |
-| --- | --- |
-| `opencode` (default) | OpenCode, as a process the sandbox daemon starts. |
-| `pi` | pi, inside the sandbox daemon process. |
-
-Kortix reads the key when a session starts, restarts or resumes, in this
-order: the project's `llm_gateway` flag off → OpenCode; the project's
-`pi_harness` flag on → pi; `runtime: pi` → pi; anything else → OpenCode. pi
-calls models only through the LLM gateway. Any other value fails
-`kortix validate`. `../pi/overview.md` lists what pi supports.
+**Deprecated.** Root-only. It selects nothing: every new session runs pi,
+inside the sandbox daemon process. `runtime: opencode` validates with a
+deprecation warning; any value other than `opencode` or `pi` fails
+`kortix validate`. Remove the line. `../pi/overview.md` lists what pi supports.
 
 ## `pi:` in version 2
 

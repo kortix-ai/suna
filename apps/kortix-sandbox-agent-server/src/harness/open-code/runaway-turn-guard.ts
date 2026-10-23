@@ -37,6 +37,7 @@ import { logger } from '@/lib/log/logger'
 // repeat of the SAME standing prompt is not.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export const MAX_CONSECUTIVE_REPEATS = 3
 
 interface RunawayGuardState {
@@ -89,7 +90,10 @@ function stepRunawayGuard(
 // more legitimate-looking repeat, never false-abort a healthy session.
 const guardStates = new Map<string, RunawayGuardState>()
 
-/** Test-only: clear per-session guard state between cases. */
+/**
+ * Test-only: clear per-session guard state between cases.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function __resetRunawayGuardStates(): void {
   guardStates.clear()
 }
@@ -100,6 +104,7 @@ export function __resetRunawayGuardStates(): void {
  * {@link MAX_CONSECUTIVE_REPEATS}. `abort` is injected so the caller controls
  * the actual HTTP call (and its base URL / workspace) — this module owns only
  * the counting decision.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function observeIdleForRunaway(
   opencodeSessionId: string,

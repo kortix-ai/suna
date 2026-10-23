@@ -1203,8 +1203,12 @@
     "stopNotAllowed": "Somente o membro que iniciou esta execução, o proprietário da sessão ou um gerente do projeto pode interrompê-la."
   },
   "genui": {
+    "call": "Ligar",
     "chartTapHint": "Toque para ver um valor",
     "checklistReady": "{{done}}/{{total}} prontos",
+    "directions": "Rotas",
+    "imageCount_one": "{{count}} imagem",
+    "imageCount_other": "{{count}} imagens",
     "map": "Mapa",
     "mapUnavailable": "Mapa indisponível",
     "openImage": "Abrir imagem",
@@ -1212,7 +1216,9 @@
     "pick": "Recomendado",
     "pieFocus": "{{label}} é {{percent}}% do total",
     "pieOfTotal": "{{value}} de {{total}}",
-    "showData": "Mostrar dados"
+    "showData": "Mostrar dados",
+    "unavailable": "Não foi possível exibir este conteúdo.",
+    "website": "Site"
   },
   "updateRequired": {
     "title": "Atualização necessária",
@@ -1246,6 +1252,9 @@
     "expiredBody": "Peça a quem convidou você para enviar um novo.",
     "wrongAccountTitle": "Trocar de conta",
     "wrongAccountBody": "Este convite é para outra conta. Você entrou como {{email}}.",
+    "directoryTitle": "Entrar com logon único",
+    "directoryBody": "O diretório da sua organização adicionou você a esta conta. Abra este convite em um navegador e entre com o logon único da sua organização, ou peça a um administrador da conta para reenviar o convite.",
+    "ssoDomainUnverifiedBody": "Seu provedor de logon único não verificou o domínio deste e-mail. Saia e entre novamente com seu endereço de e-mail para usar este convite.",
     "signOutAndContinue": "Sair e continuar",
     "backToProjects": "Voltar aos projetos"
   },

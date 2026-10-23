@@ -15,7 +15,7 @@ A session is one unit of agent work. It runs in its own sandbox, on its own git 
     Kortix boots a sandbox from the session's sandbox template, or from the platform default image when the project has none. See [Sandboxes & previews](/docs/work/runtime#the-image-and-templates).
   </Step>
   <Step title="The agent starts">
-    The sandbox clones the repo to `/workspace` and starts the harness, OpenCode or pi. The session status becomes `running`.
+    The sandbox clones the repo to `/workspace` and starts the harness, pi. The session status becomes `running`.
   </Step>
   <Step title="The agent works and pushes">
     The agent commits and pushes to its session branch. By default a session may push only its own branch.
@@ -65,7 +65,7 @@ kortix sessions new -p "Fix the failing test in src/billing and open a change re
 | `--agent <name>` | Run this agent. Default: the project's default agent. |
 | `--model <id>` | Run this model. See [Models](/docs/project/models). |
 | `--wait` | Return when the sandbox is ready, after at most about 5 minutes. |
-| `--connect` | Attach the OpenCode TUI when the session is ready. Implies `--wait`. |
+| `--connect` | Deprecated with OpenCode. Attach the OpenCode TUI when the session is ready; a new session runs pi, so it exits `1`. Implies `--wait`. |
 | `--with-file <path>` | Upload a local file to `/workspace/incoming/<name>` before the prompt runs. Repeatable. Implies `--wait`. |
 | `--label <label>` | Add a label. Repeatable. |
 | `--meta <key>=<value>` | Set a metadata key. Repeatable. |
@@ -190,7 +190,7 @@ See [Connectors](/docs/connect/connectors#policies-and-approvals).
 | Stored files: uploads and what the agent showed | `kortix sessions attachments <id> [--download <id> \| --all]` | — |
 | Live events | — | `GET .../sessions/<session_id>/events` |
 
-The transcript, `log`, `info`, `attachments`, and the events stream never wake a stopped sandbox. `kortix sessions log` reads the session log the server stores at the end of every turn; a running session adds the turn it runs now. A session with no stored log yet is read from its v1 transcript. `--json` prints the session log (`"schema": "kortix.session/2"`): the session record, `source` (`log`, or `v1` for a converted transcript) and `threads`, the root thread and each sub-agent's, with their newest messages and `has_more`. A running turn's messages the log does not hold yet carry `ext.kortix.data.provisional: true`. Read that key: the top-level `"provisional": true` they also carry is deprecated and goes in the next release. Without `--json`, the header names the sandbox status (`sandbox running`) and, for a running session, whether the agent is `working` or `idle`. `--schema v1` prints the old message array for one more release. To build a live view, use the SDK: see [Sessions from code](/docs/sdk/sessions#stream-events) and [React](/docs/sdk/react).
+The transcript, `log`, `info`, `attachments`, and the events stream never wake a stopped sandbox. `kortix sessions log` reads the session log the server stores at the end of every turn; a running session adds the turn it runs now. A session with no stored log yet is read from its v1 transcript. `--json` prints the session log (`"schema": "kortix.session/2"`): the session record, `source` (`log`, or `v1` for a converted transcript) and `threads`, the root thread and each sub-agent's, with their newest messages and `has_more`. A running turn's messages the log does not hold yet carry `ext.kortix.data.provisional: true`. Without `--json`, the header names the sandbox status (`sandbox running`) and, for a running session, whether the agent is `working` or `idle`. `--schema v1` prints the old message array for one more release. To build a live view, use the SDK: see [Sessions from code](/docs/sdk/sessions#stream-events) and [React](/docs/sdk/react).
 
 ## Stop, resume and delete
 
@@ -289,12 +289,12 @@ Kortix stops a sandbox when nothing keeps it awake. Each event below keeps the s
 | The agent makes an LLM call through the gateway | 4 hours |
 | A person uses a preview port | 30 minutes after the last request |
 | A turn waits on a person | 2 hours. 30 minutes for `trigger`, `schedule`, and `system` sessions. |
-| A person has the session page open | 15 minutes, renewed while the tab is visible and the person clicked, typed, scrolled, or touched it in the last 10 minutes. At most 2 hours after the last turn. |
+| A person has the session page open | No extra time. The sandbox stops 15 minutes after the last turn whether a page is open or not. The page holds the sandbox to that window when a shorter deadline was set (after a failed turn, say), and its presence routes notifications. |
 
 - The stop check runs about every 5 minutes. An idle session stops about 15 to 20 minutes after its last turn.
-- An open page counts only for a person who may start sessions in the project. A read-only viewer's tab never keeps a sandbox awake.
-- Above the composer, a line shows how much longer the open page can keep the sandbox awake. Within 15 minutes of the 2-hour page limit, the line shows when the sandbox stops instead. The line is hidden while a turn runs. It is also hidden while another event in the table, such as preview port use, keeps the sandbox awake past the page limit.
-- A new message starts a turn and resets the 2-hour page limit.
+- Above the composer, a line shows when the sandbox stops: 15 minutes after the last turn, unless another event in the table keeps it awake longer. The line is hidden while a turn runs.
+- A new message starts a turn and moves that window to the new turn.
+- An open page counts only for a person who may start sessions in the project. A read-only viewer's tab never keeps a sandbox awake. An open page never keeps the sandbox past the window: the next interaction resumes it in place instead.
 - Other requests a sandbox makes itself, with its own token or its own `kortix` CLI, never keep it awake. Only its LLM calls through the gateway count.
 
 Self-hosted operators change these times. See [Self-hosting](/docs/host#operate-and-tune).
@@ -428,7 +428,7 @@ A warm session is a pre-booted session that waits for your first prompt, so the 
 
 - A warm session waits at most 60 minutes.
 - It uses compute while it waits.
-- The per-project `warm_sessions` flag controls it. Run `kortix projects features ls` to see its state, and change it in **Customize → Settings → Feature flags**.
+- The per-project `warm_sessions` flag is off by default. Turn it on only if you want to spend idle compute for faster starts. Run `kortix projects features ls` to see its state, and change it in **Customize → Settings → Feature flags**.
 
 ```bash
 kortix sessions warm                        # create or reuse your warm session

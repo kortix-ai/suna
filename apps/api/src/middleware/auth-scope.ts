@@ -131,6 +131,13 @@ export async function enforceTokenProjectScope(
   // (capture/account-routes.ts). Nothing here reads another person or account.
   if (c.req.method === 'GET' && path.startsWith('/v1/capture/me/')) return;
 
+  // `/v1/drives` — Files (`kortix drive`). Drive routes are keyed by drive id,
+  // not project id, so the project binding is checked in the handlers: a
+  // project-bound token reaches only its own project's drive (`loadDrive`),
+  // and a session token acts as the person who started the session
+  // (`sessionFilesRefusal`, drives/routes.ts).
+  if (path === '/v1/drives' || path.startsWith('/v1/drives/')) return;
+
   const deny = (check: string, reason: string): never => {
     // NAME the principal and the check in the message. The global `app.onError`
     // logs `${method} ${path} -> ${status} [HTTPException] ${message}`, so a
@@ -159,6 +166,8 @@ export async function enforceTokenProjectScope(
   // connector-management routes: the unified Connector MCP exposes add/remove
   // connector tools from inside the sandbox, while individual routes still gate
   // mutations via project.write in resolveAdmin.
+  if (c.req.method === 'GET' && path === '/v1/projects/current') return;
+
   const m =
     path.match(/^\/v1\/projects\/([^/]+)/) ?? path.match(/^\/v1\/connectors\/projects\/([^/]+)/);
   if (m) {

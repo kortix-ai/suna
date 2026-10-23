@@ -1,0 +1,5 @@
+# Windows: link the C runtime statically. A Windows computer without the Visual C++
+# Redistributable has no vcruntime140.dll, and an exe that needs it does not start
+# (the MSI's service start then failed with error 1920 and rolled the install back).
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

@@ -1,4 +1,4 @@
-import { LocalTime } from '@/components/ui/local-time';
+import { LocalTime } from '@kortix/ui/local-time';
 import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
 import { WrenchIcon as Wrench } from '@/lib/icons/ssr';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
@@ -27,9 +27,11 @@ export default async function MaintenancePage({
 }: {
   searchParams: Promise<{ from?: string }>;
 }) {
-  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
-  const tHardcodedUi = await getHardcodedUiServerText();
-  const config = await getMaintenanceConfig();
+  const [tI18nComplete, tHardcodedUi, config] = await Promise.all([
+    getTranslations('hardcodedUi.i18nComplete'),
+    getHardcodedUiServerText(),
+    getMaintenanceConfig(),
+  ]);
 
   // Maintenance is over (or was never blocking): send the user back to where
   // they came from — or home. The page auto-reloads every 30s, so an active

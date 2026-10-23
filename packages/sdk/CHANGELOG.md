@@ -5,6 +5,91 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed (pi runs every new session; OpenCode is sunset)
+- `FeatureFlagKey` `'pi_harness'` is deprecated and no longer a flag: absent from `FEATURE_FLAG_KEYS`
+  and from the feature-flag catalog. The API sends `experimental.pi_harness: true` for every
+  project, and `useFeatureFlag(id, 'pi_harness')` reports `true`.
+  `KortixProject.experimental.pi_harness` is optional in the type.
+
+### Deprecated (OpenCode-only; pi does not serve them)
+- `useRuntimeConfig`, `useUpdateRuntimeConfig`, `configKeys` (`/global/config`), `useRuntimeSessionTodo`,
+  `logRuntimeEvent`, `RuntimeConfigIssue`, `RuntimeConfigInvalidError`, `getRuntimeConfigInvalidError`,
+  `isRuntimeConfigInvalidError`, `isShellMode`, `getShellModePart`, `AddMcpServerParams`,
+  `ProjectConfigSummary.open_code_raw`, and the frozen runtime types `Config`, `McpStatus`,
+  `McpLocalConfig`, `McpRemoteConfig`, `Todo`, `EventTodoUpdated`, `EventPty*`, `EventMcpToolsChanged`.
+  They keep working for sessions that still run OpenCode and are removed with OpenCode support.
+
+### Changed (the session log is the only saved history, P8.2)
+- `FeatureFlagKey` `'session_log'` is no longer a flag: absent from `FEATURE_FLAG_KEYS` and from
+  the feature-flag catalog. The API sends `experimental.session_log: true` for every project, so
+  `useFeatureFlag(id, 'session_log')` reports `true` once the project detail loads, as before.
+  `KortixProject.experimental.session_log` is optional in the type.
+- `GET …/sessions/:id/log` answers `503` `{ code: 'session_log_converting' }` with `Retry-After: 60`
+  for an old session whose history is still only in the v1 mirror and over the conversion size cap;
+  retry after the delay.
+
+### Added (custom LLM providers)
+- `listCustomLlmProviders(projectId)`, `putCustomLlmProvider(projectId, providerId, input)` and
+  `deleteCustomLlmProvider(projectId, providerId)` (types `CustomLlmProvider`,
+  `CustomLlmProviderInput`): a project's OpenAI-compatible endpoints, served through the gateway
+  (`GET`/`PUT`/`DELETE /projects/:id/custom-providers[/:providerId]`). The delete also deletes the
+  `CUSTOM_<ID>_API_KEY` project secret. On the facade: `projects.customLlmProviders`,
+  `projects.setCustomLlmProvider`, `projects.deleteCustomLlmProvider` and the same three on
+  `project(id)` without the project id.
+- `useCustomLlmProviders(projectId)` (`@kortix/sdk/react`): `{ providers, isLoading, error, save,
+  remove, isSaving }`. Writes refresh the list and both model-picker caches.
+
+### Deprecated (managed models are served by Kortix Platinum inference)
+- `ProjectLlmCatalogResponse.managedPricingRoutes`: the API no longer sends it. Every managed
+  model has one price, its `cost` in `models`. `platformFeePercent` is unchanged.
+
+### Deprecated (the LLM gateway is the only model path)
+- `FeatureFlagKey` `'llm_gateway'` graduated: absent from `FEATURE_FLAG_KEYS`, and
+  `useFeatureFlag(id, 'llm_gateway')` reports `enabled: true`.
+- Ignored inputs, kept so callers compile: `modelRefToKey`'s second argument,
+  `sessionModelCandidates({ gatewayEnabled })`, `PickerProviderListInput.gatewayEnabled`,
+  `.runtimeProviders`, `.llmCatalogProviders`, `.secretNames`, and `flattenModels`'
+  `providerMode`. `modelProviderMode()` always returns `'gateway'`; `filterToNativeProviders`
+  is deprecated.
+- Constant `true` fields: `useModelDefaults().llmGatewayEnabled` and
+  `useGatewayRoutingPolicy().llmGatewayEnabled` (with a project id),
+  `SessionOpenBundleConfig.llm_gateway_enabled`, `ProjectModelAccess.enforced`.
+
+### Changed (the LLM gateway is the only model path)
+- `useRuntimeProviders()` on a project route always reads the gateway catalog
+  (`GET /projects/:id/model-picker`). It no longer reads `GET /projects/:id` for the flag, and the
+  native picker sources (the runtime `/provider` list with project secret names, the
+  `/llm-catalog/providers` synthesis) are gone.
+- `useProjectModels`, `useProjectModelPickerCatalog`, `useModelEnablement`, `useModelDefaults`
+  and `useGatewayRoutingPolicy` fetch for every project without a project-detail read first.
+- `pickerProviderList` returns the `/model-picker` catalog only. `resolveComposerModel` no longer
+  rewrites a bare Bedrock id to its inference profile: under the gateway every key is `kortix`.
+- The session-open snapshot's `models` leg is now the model-defaults query's own fetch, so
+  `useModelDefaults` mounts onto it and sends no `/model-defaults` request.
+
+### Added (session log: sub-agent chats and export)
+- `useSessionLogOlder(session, threadId?, options?)` (`@kortix/sdk/react`): older pages of one
+  thread of a v2 session (`GET …/log?thread=&before_seq=`), `{ hasOlder, isLoadingOlder, loadOlder }`.
+  A sub-agent's chat pages its own thread with it.
+- `loadSessionExportMessages(sessionId, kortixSessionScope)`: when the store holds the session log
+  of `kortixSessionScope` (v2), the export is the log's thread of `sessionId` (the root, or a
+  sub-agent), every page of it, as v1 rows (`toV1`). It reads no `GET …/transcript` and no
+  runtime history then. The signature is unchanged; v1 sessions export as before.
+
+### Changed (Capture app ids)
+- `normalizeCaptureAppId` accepts every identifier the Capture engine matches:
+  app names with spaces (`AutoCAD 2025`), paths, and a prefix ending in `*`
+  (`com.autodesk.autocad*`, at least 3 characters before the `*`). It still
+  refuses empty, over-long, flag-like (`-x`) and control-character values.
+
+### Added (session log: the connecting view's saved copy)
+- `readSavedSessionCopy({ …, sessionLog: true })`: with the project flag `session_log` on,
+  reads the session log's newest page (`GET …/log`) into `SavedSessionCopy.log` (new optional
+  field; `envelope: null`) and proves an empty root from it. It reads no `GET …/transcript`.
+  Without `sessionLog` it reads the v1 copy exactly as before.
+- `useSession({ chatEngine: false })`: with the flag known on at the open, the session-open
+  snapshot asks no transcript window (`transcript=0`), as the chat engine already did.
+
 ### Added (session-log restore notice)
 - `sessionLogRestoreNotice(session)` (`SessionLogRestoreNotice`): what a partial
   restore of a session log could not bring back, from the session record
@@ -12,6 +97,18 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `missing[].kind` includes `'message'`: the log was over the API's restore cap
   (`SESSION_LOG_RESTORE_MAX_BYTES`), so the agent got none of those earlier
   messages; the transcript keeps them.
+
+### Deprecated (public transcript shares removed)
+The API removed public transcript sharing (KRTX-2358): no `/v1/public/session-shares/**`
+route is served and `createSessionPublicShare` with `{ transcript: true }` answers 400.
+- `getPublicSessionShare`, `getPublicSessionShareMessages`, `findActiveTranscriptShare`,
+  `PublicSessionShareError`, `PublicSessionShareMeta`, `PublicSessionTranscript`,
+  `PublicSessionTranscriptMessage` and `PublicSessionTranscriptToolCall` are `@deprecated`
+  (every call answers 404). Removed in the next major.
+- `CreateSessionPublicShareInput.transcript` is `@deprecated`; the field is still sent until
+  the next major, and a current server answers 400.
+- File and preview shares are unaffected: mint/list/revoke and the `/share/session/:token`
+  viewer keep working.
 
 ### Changed (Enterprise is a feature layer; trials removed)
 - `AccountState.enterprise` (`AccountEnterprise`, additive): `{ state: 'off' | 'demo' | 'licensed' }`.

@@ -19,10 +19,11 @@
 // Same `mock.module` + `globalThis.fetch` interception pattern as the sibling
 // `sandbox-env-sync.durable-skip.test.ts` (isolated per file via
 // `bun test --isolate`).
-import { SQL } from 'drizzle-orm';
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 
+import { applyEnvSyncDurableWrite } from '../../__tests__/helpers/env-sync-durable-fake';
 import * as realSecrets from '../secrets';
+import { ENV_SYNC_RECORD_VERSION } from './env-sync-durable-state';
 import * as realSecretGrant from './secret-grant';
 
 const PROJECT_ROW = {
@@ -31,11 +32,6 @@ const PROJECT_ROW = {
   manifestPath: 'kortix.yaml',
   metadata: null as Record<string, unknown> | null,
 };
-
-let llmGatewayEnabled = false;
-mock.module('../../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: () => llmGatewayEnabled,
-}));
 
 const SESSION_ROW = {
   createdBy: 'user-1',
@@ -50,20 +46,6 @@ let snapshotCapabilitiesJson = '{"version":1,"capabilities":[]}';
 
 let durableConfig: Record<string, unknown> | null = null;
 let tokenPerson: string | null = 'creator';
-
-function extractEnvSyncWrite(fragment: unknown): { signature: unknown; appliedAtMs: unknown } | null {
-  if (!(fragment instanceof SQL)) return null;
-  const chunks = fragment.queryChunks;
-  let signature: unknown;
-  let appliedAtMs: unknown;
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i] as { value?: unknown[] } | undefined;
-    const text = Array.isArray(chunk?.value) ? chunk.value.join('') : null;
-    if (text?.includes('envSyncSignature')) signature = chunks[i + 1];
-    if (text?.includes('envSyncAppliedAtMs')) appliedAtMs = chunks[i + 1];
-  }
-  return signature === undefined ? null : { signature, appliedAtMs };
-}
 
 mock.module('../../shared/db', () => ({
   hasDatabase: true,
@@ -93,14 +75,7 @@ mock.module('../../shared/db', () => ({
     update: () => ({
       set: (patch: { config?: unknown }) => ({
         where: async () => {
-          const write = extractEnvSyncWrite(patch.config);
-          if (write) {
-            durableConfig = {
-              ...durableConfig,
-              envSyncSignature: write.signature,
-              envSyncAppliedAtMs: write.appliedAtMs,
-            };
-          }
+          durableConfig = applyEnvSyncDurableWrite(durableConfig, patch.config);
         },
       }),
     }),
@@ -184,6 +159,7 @@ function armStaleSkipBranch(signature: unknown): void {
   durableConfig = {
     envSyncSignature: signature,
     envSyncAppliedAtMs: Date.now() - ENV_SYNC_BACKGROUND_REFRESH_STALE_MS - 5_000,
+    envSyncRecordVersion: ENV_SYNC_RECORD_VERSION,
   };
   __resetPromptModelSignatureCacheForTests();
 }
@@ -204,7 +180,6 @@ beforeEach(() => {
   snapshotRevision = 'rev-1';
   snapshotCapabilitiesJson = '{"version":1,"capabilities":[]}';
   PROJECT_ROW.metadata = null;
-  llmGatewayEnabled = false;
 });
 
 afterEach(async () => {

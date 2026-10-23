@@ -33,7 +33,8 @@ Subcommands:
 
 Options:
   --scope <s>        account | project — only actions decided at that scope.
-  --area <a>         Only actions in one area (e.g. secrets, triggers).
+  --area <a>         Only actions in one area (e.g. customize, triggers).
+                     Secret actions are in customize.
   --account <id>     Operate on this account (default: the active account).
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output.
@@ -42,7 +43,7 @@ Options:
 Examples:
   kortix permissions ls
   kortix permissions ls --scope project
-  kortix permissions ls --area secrets
+  kortix permissions ls --area customize
   kortix permissions show project.secret.write
 `;
 
@@ -84,7 +85,12 @@ export async function runPermissions(argv: string[]): Promise<number> {
           return 0;
         }
         if (rows.length === 0) {
-          process.stdout.write(`  ${C.dim}No permissions match.${C.reset}\n`);
+          const areas = [...new Set(permissions.map((p) => p.area))].sort();
+          process.stdout.write(
+            f.area && areas.length > 0
+              ? `  ${C.dim}No permissions in area "${f.area}". Areas: ${areas.join(', ')}.${C.reset}\n`
+              : `  ${C.dim}No permissions match.${C.reset}\n`,
+          );
           return 0;
         }
         const aw = Math.max(...rows.map((p) => p.action.length), 6);

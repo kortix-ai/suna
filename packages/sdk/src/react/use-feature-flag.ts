@@ -20,6 +20,8 @@ const GRADUATED_FEATURE_FLAG_KEYS: ReadonlySet<FeatureFlagKey> = new Set([
   'teams',
   'config_releases',
   'apps',
+  'llm_gateway',
+  'pi_harness',
 ]);
 
 /** What {@link useFeatureFlag} tells a caller about one flag. */
@@ -44,9 +46,9 @@ export interface FeatureFlagState {
  * A disabled feature's surface must be invisible, not merely inert.
  *
  * The one exception is a graduated key (`review_center`, `agent_tunnel`,
- * `session_transcript_history`, `teams`, `config_releases`, `apps`): it
- * reports `enabled: true` for every project, because the feature no longer has
- * an off state.
+ * `session_transcript_history`, `teams`, `config_releases`, `apps`,
+ * `llm_gateway`, `pi_harness`): it reports `enabled: true` for every project, because the
+ * feature no longer has an off state.
  */
 export function useFeatureFlag(
   projectId: string | null | undefined,

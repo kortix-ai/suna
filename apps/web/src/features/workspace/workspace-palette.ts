@@ -4,7 +4,7 @@ import {
   type GroupWorkspacesInput,
   groupWorkspacesByAccount,
   workspaceAccountLabel,
-} from '@/features/workspace/project-sidebar/workspace-grouping';
+} from '@kortix/ui/workspace/sidebar/workspace-grouping';
 
 /**
  * ============================================================================

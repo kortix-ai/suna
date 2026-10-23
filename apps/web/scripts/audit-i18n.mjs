@@ -31,11 +31,19 @@ const maxHardcoded = args.has('max-hardcoded')
 
 const includeGenerated = args.get('include-generated') === 'true';
 
-function generatedTranslationText(relativeFile) {
-  const file = path.join(srcDir, relativeFile);
+// apps/web renders most product UI from @kortix/ui. The audit scans that source
+// too (packages/ui/src); a per-file rule below names a package file by its
+// packages/ui/src path (uiSrcDir).
+const uiSrcDir = path.join(root, '..', '..', 'packages', 'ui', 'src');
+
+const readSource = (file) => fs.readFileSync(file, 'utf8');
+const displayPath = (file) => path.relative(root, file);
+
+function generatedTranslationText(relativeFile, dir = srcDir) {
+  const file = path.join(dir, relativeFile);
   const values = new Set();
   if (!fs.existsSync(file)) return values;
-  const source = fs.readFileSync(file, 'utf8');
+  const source = readSource(file);
   const sourceFile = ts.createSourceFile(
     file,
     source,
@@ -75,9 +83,7 @@ const localizedPublicMetadataText = generatedTranslationText(
 const localizedDesignSystemText = generatedTranslationText(
   'i18n/design-system-translation-keys.generated.ts',
 );
-const localizedRemainingUiText = generatedTranslationText(
-  'i18n/remaining-ui-translation-keys.generated.ts',
-);
+const localizedRemainingUiText = generatedTranslationText('i18n/ui-catalog/remaining-ui-translation-keys.generated.ts', uiSrcDir);
 
 // Machine translation can alter sentinel spelling instead of preserving it.
 // Reject the Latin form and the Cyrillic transliteration observed in production catalogs.
@@ -134,14 +140,17 @@ function designSystemTokens(key, sourceValue) {
 const ignoredPathParts = [
   '/.next/',
   '/node_modules/',
-  // Re-export shims of @kortix/ui (packages/ui/src, outside this walk). Package
-  // copy is English defaults in UiStrings, translated through KortixUiProvider.
-  '/src/components/ui/',
+  // @kortix/ui primitives: package copy is English defaults in UiStrings,
+  // translated through KortixUiProvider. The bundled catalog and test helpers
+  // are not product copy.
+  '/packages/ui/src/primitives/',
+  '/packages/ui/src/i18n/',
+  '/packages/ui/src/test-utils/',
   '/src/app/fonts/',
   '/src/app/[locale]/(system)/debug/',
   // Tool-call fixtures (#9815): sample harness output rendered only by the tool
   // tests and /debug/session-fixture, never product copy.
-  '/src/features/session/tool/foreign-tool-calls.ts',
+  '/packages/ui/src/session/tool/foreign-tool-calls.ts',
   '/src/types/',
   '/__harness__/',
   // Unannounced, noindex launch film and /launch page (#8023, #8045): the copy
@@ -158,7 +167,7 @@ const ignoredPathParts = [
   // (itself exempt above) renders them. The strings are fixture content the
   // renderers parse, not UI copy; wrapping them in i18n keys would corrupt the
   // data and the tests that import the array verbatim.
-  '/src/features/session/tool/foreign-tool-calls.ts',
+  '/packages/ui/src/session/tool/foreign-tool-calls.ts',
 ];
 
 const ignoredFilePattern = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
@@ -224,6 +233,14 @@ const allowedLiteralValues = new Set([
   'Ruby on Rails',
   'Laravel',
   'Discover and read Kortix public API and documentation resources.',
+  // Technical tokens a user types verbatim: a host in a URL placeholder, the
+  // room-wide mention, and the S3 bucket, AWS region and IAM role ARN examples
+  // in the Capture storage settings.
+  'example.com',
+  '@here',
+  'my-recordings',
+  'us-east-1',
+  'arn:aws:iam::123456789012:role/kortix-capture',
 ]);
 
 const ignoredAttributes = new Set([
@@ -382,7 +399,9 @@ function messageSignature(message, locale) {
   }
 
   visit(ast);
-  return tokens.sort();
+  // A set, not a count: a locale with fewer plural categories (ja and zh have
+  // only `other`) repeats an argument fewer times than en does.
+  return [...new Set(tokens)].sort();
 }
 
 function messageIssues(english, messages, locale) {
@@ -501,7 +520,7 @@ function getLine(sourceFile, pos) {
 }
 
 function scanFile(file) {
-  const source = fs.readFileSync(file, 'utf8');
+  const source = readSource(file);
   const sourceFile = ts.createSourceFile(
     file,
     source,
@@ -571,7 +590,7 @@ function scanFile(file) {
     if (!isHumanText(normalized, kind)) return;
     recordedNodes.add(nodeKey);
     findings.push({
-      file: path.relative(root, file),
+      file: displayPath(file),
       line: getLine(sourceFile, node.getStart(sourceFile)),
       kind,
       text: normalized,
@@ -583,7 +602,7 @@ function scanFile(file) {
     if (recordedNodes.has(nodeKey)) return;
     recordedNodes.add(nodeKey);
     findings.push({
-      file: path.relative(root, file),
+      file: displayPath(file),
       line: getLine(sourceFile, node.getStart(sourceFile)),
       kind: `translated-technical:${attributeName}`,
       text: node.getText(sourceFile).replace(/\s+/g, ' ').trim(),
@@ -635,6 +654,17 @@ function scanFile(file) {
   }
 
   function containingUiMessageArgument(node) {
+    // A comparison operand (`decision === 'approve' ? … : …`) is never rendered.
+    if (
+      ts.isBinaryExpression(node.parent) &&
+      [
+        ts.SyntaxKind.EqualsEqualsEqualsToken,
+        ts.SyntaxKind.ExclamationEqualsEqualsToken,
+        ts.SyntaxKind.EqualsEqualsToken,
+        ts.SyntaxKind.ExclamationEqualsToken,
+      ].includes(node.parent.operatorToken.kind)
+    )
+      return undefined;
     let cursor = node.parent;
     while (cursor && !ts.isFunctionLike(cursor) && !ts.isSourceFile(cursor)) {
       if (ts.isJsxElement(cursor) || ts.isJsxSelfClosingElement(cursor)) return undefined;
@@ -849,7 +879,7 @@ function scanFile(file) {
           'NOTIFICATION_BEHAVIOR_TOGGLES',
         ].includes(catalogRoot);
       const coveredSettingsRail =
-        file === path.join(srcDir, 'features/workspace/settings/rail.ts') &&
+        file === path.join(uiSrcDir, 'customize/settings/rail.ts') &&
         ['STATIC_GROUPS', 'RETIRED_RAIL_ITEMS'].includes(catalogRoot);
       const coveredOnboardingProfileFixture =
         file === path.join(srcDir, 'components/projects/onboarding/onboarding-profile.ts') &&
@@ -859,7 +889,7 @@ function scanFile(file) {
       // content in tests and /debug/session-fixture, and translating what a
       // foreign harness sent would falsify the fixture.
       const coveredForeignToolFixture =
-        file === path.join(srcDir, 'features/session/tool/foreign-tool-calls.ts') &&
+        file === path.join(uiSrcDir, 'session/tool/foreign-tool-calls.ts') &&
         catalogRoot === 'FOREIGN_TOOL_CALLS';
       const coveredCompanyOsMessageKey =
         file === path.join(srcDir, 'features/marketing/company-os-sections.tsx') &&
@@ -868,7 +898,7 @@ function scanFile(file) {
         file === path.join(srcDir, 'components/iam/role-capability-model.ts') &&
         catalogRoot === 'AREA_COPY';
       const coveredSnapshotsFallbackCopy =
-        file === path.join(srcDir, 'features/workspace/settings/tabs/snapshots-tab.tsx') &&
+        file === path.join(uiSrcDir, 'customize/settings/tabs/snapshots-tab.tsx') &&
         catalogRoot === 'DEFAULT_SNAPSHOTS_COPY';
       const coveredPublicMetadata =
         file === path.join(srcDir, 'lib/seo/public-content.ts') &&
@@ -883,15 +913,15 @@ function scanFile(file) {
       const coveredLocalizedSourceCatalog =
         (file === path.join(srcDir, 'features/marketplace/marketplace-meta.tsx') &&
           ['TYPE_META', 'TYPE_FILTERS', 'TYPE_SECTIONS'].includes(catalogRoot)) ||
-        (file === path.join(srcDir, 'features/session/composer/menus/slash-actions.ts') &&
+        (file === path.join(uiSrcDir, 'session/composer/menus/slash-actions.ts') &&
           catalogRoot === 'SLASH_ACTIONS') ||
-        (file === path.join(srcDir, 'components/projects/session-label.ts') &&
+        (file === path.join(uiSrcDir, 'session/actions/session-label.ts') &&
           ['SESSION_SOURCE_FILTERS', 'SESSION_STATUS_FILTERS'].includes(catalogRoot)) ||
-        (file === path.join(srcDir, 'features/changes/change-vocabulary.ts') &&
+        (file === path.join(uiSrcDir, 'changes/change-vocabulary.ts') &&
           ['CHANGE_KIND', 'DIFF_LAYOUT_LABEL', 'PROPOSED_CHANGE_STATE'].includes(catalogRoot)) ||
-        (file === path.join(srcDir, 'components/projects/schedule/schedule-copy.ts') &&
+        (file === path.join(uiSrcDir, 'customize/triggers/schedule/schedule-copy.ts') &&
           ['KIND_COPY', 'TRIGGERS_COPY'].includes(catalogRoot)) ||
-        (file === path.join(srcDir, 'features/workspace/shared/sharing-intent.ts') &&
+        (file === path.join(uiSrcDir, 'access/sharing-intent.ts') &&
           catalogRoot === 'DEFAULT_COPY') ||
         (file === path.join(srcDir, 'lib/provisioning-stages.ts') &&
           ['STAGE_PROGRESS', 'STAGE_LABELS'].includes(catalogRoot)) ||
@@ -916,11 +946,11 @@ function scanFile(file) {
           ['ACCORDION', 'STAGE_DATA', 'CTA'].includes(catalogRoot)) ||
         (file === path.join(srcDir, 'features/layout/user-menu-shared.tsx') &&
           ['HELP_LINKS', 'LEGAL_LINKS', 'THEME_OPTIONS'].includes(catalogRoot)) ||
-        (file === path.join(srcDir, 'components/projects/policies-panel.tsx') &&
+        (file === path.join(uiSrcDir, 'workspace/projects/policies-panel.tsx') &&
           ['ACTION_META', 'DEFAULT_OPTIONS'].includes(catalogRoot)) ||
         (file === path.join(srcDir, 'components/projects/project-access-boundary.tsx') &&
           catalogRoot === 'GATE_COPY_KEYS') ||
-        (file === path.join(srcDir, 'features/workspace/shared/access/role-select.tsx') &&
+        (file === path.join(uiSrcDir, 'access/access/role-select.tsx') &&
           ['ACCOUNT_ROLE_DESCRIPTORS', 'PROJECT_ROLE_DESCRIPTORS'].includes(catalogRoot)) ||
         (file === path.join(srcDir, 'features/marketing/how-it-work/web-panel-wrapper.tsx') &&
           catalogRoot === 'DEMO_PANEL_TABS') ||
@@ -929,20 +959,17 @@ function scanFile(file) {
         (file === path.join(srcDir, 'features/marketing/component/capability-hero-artifacts.tsx') &&
           ['TREE_ROWS', 'PRESENCE_ROWS', 'POLICY_ROWS', 'PRINCIPALS'].includes(catalogRoot)) ||
         (file ===
-          path.join(srcDir, 'features/workspace/customize/sections/view/gateway/_metrics.tsx') &&
+          path.join(uiSrcDir, 'customize/sections/view/gateway/_metrics.tsx') &&
           ['RANGES', 'chartConfig'].includes(catalogRoot)) ||
         (file ===
-          path.join(
-            srcDir,
-            'features/workspace/capabilities/connectors/catalog/connector-categories.ts',
-          ) &&
+          path.join(uiSrcDir, 'customize/connectors/catalog/connector-categories.ts') &&
           catalogRoot === 'CURATED_SECTIONS') ||
         (file === path.join(srcDir, 'components/home/interactive-demo/data.ts') &&
           catalogRoot === 'AGENTS') ||
         (file === path.join(srcDir, 'features/marketing/capabilities/content.ts') &&
           ['agents', 'channels', 'automations', 'control'].includes(catalogRoot)) ||
         (file ===
-          path.join(srcDir, 'features/workspace/project-sidebar/modal/share-session-modal.tsx') &&
+          path.join(uiSrcDir, 'workspace/sidebar/modal/share-session-modal.tsx') &&
           catalogRoot === 'SESSION_SHARING_COPY') ||
         (file === path.join(srcDir, 'features/workspace/settings/tabs/appearance-tab.tsx') &&
           ['DENSITY_OPTIONS', 'DEFAULT_APPEARANCE_TAB_COPY'].includes(catalogRoot)) ||
@@ -954,13 +981,13 @@ function scanFile(file) {
           path.join(srcDir, 'features/workspace/capabilities/index/customize-index-page.tsx') &&
           catalogRoot === 'CARD_COPY') ||
         (file ===
-          path.join(srcDir, 'features/workspace/capabilities/shared/capability-tab-routes.ts') &&
+          path.join(uiSrcDir, 'internal/lib/capability-tab-routes.ts') &&
           ['CAPABILITY_TABS', 'FLAGGED_CAPABILITY_TABS'].includes(catalogRoot)) ||
-        (file === path.join(srcDir, 'features/workspace/customize/sections/connectors-view.tsx') &&
+        (file === path.join(uiSrcDir, 'customize/sections/connectors-view.tsx') &&
           ['POLICY_CHOICES', 'POLICY_LABEL'].includes(catalogRoot)) ||
-        (file === path.join(srcDir, 'features/workspace/customize/sections/gateway-view.tsx') &&
+        (file === path.join(uiSrcDir, 'customize/sections/gateway-view.tsx') &&
           catalogRoot === 'LLM_TABS') ||
-        (file === path.join(srcDir, 'features/workspace/settings/tabs/sandbox-tab.tsx') &&
+        (file === path.join(uiSrcDir, 'customize/settings/tabs/sandbox-tab.tsx') &&
           catalogRoot === 'TEMPLATE_STATE_LABEL') ||
         (file === path.join(srcDir, 'lib/themes.ts') && catalogRoot === 'THEMES') ||
         (file === path.join(srcDir, 'app/[locale]/(app)/projects/start/landing-terminal.tsx') &&
@@ -972,21 +999,18 @@ function scanFile(file) {
         (file === path.join(srcDir, 'features/marketing/hero-surfaces.tsx') &&
           catalogRoot === 'SURFACES') ||
         (file ===
-          path.join(
-            srcDir,
-            'features/workspace/customize/sections/view/gateway/gateway-budgets.tsx',
-          ) &&
+          path.join(uiSrcDir, 'customize/sections/view/gateway/gateway-budgets.tsx') &&
           ['PERIODS', 'ACTIONS'].includes(catalogRoot)) ||
-        (file === path.join(srcDir, 'hooks/projects/session-reload-progress.ts') &&
+        (file === path.join(uiSrcDir, 'internal/hooks/projects/session-reload-progress.ts') &&
           catalogRoot === 'RELOAD_PROGRESS_STEPS') ||
         (file === path.join(srcDir, 'lib/kortix/task-meta.ts') && catalogRoot === 'STATUS_META') ||
         (file === path.join(srcDir, 'lib/agent-discovery.ts') &&
           ['API_CATALOG', 'MCP_SERVER_CARD'].includes(catalogRoot)) ||
-        (file === path.join(srcDir, 'components/setup-links/setup-link-button.tsx') &&
+        (file === path.join(uiSrcDir, 'markdown/setup-links/setup-link-button.tsx') &&
           catalogRoot === 'COPY') ||
         (file === path.join(srcDir, 'features/billing/cost-explorer/cost-chart.tsx') &&
           catalogRoot === 'chartConfig') ||
-        (file === path.join(srcDir, 'features/file-renderers/show-content-renderer.tsx') &&
+        (file === path.join(uiSrcDir, 'files/renderers/show-content-renderer.tsx') &&
           catalogRoot === 'SHOW_TYPE_LABELS') ||
         (file === path.join(srcDir, 'features/marketing/faq/content.ts') &&
           catalogRoot === 'faq' &&
@@ -997,22 +1021,22 @@ function scanFile(file) {
         (file === path.join(srcDir, 'features/marketing/how-it-work/step/step-computer.tsx') &&
           catalogRoot === 'TOOL_CALLS' &&
           node.text === 'Run the billing suite') ||
-        (file === path.join(srcDir, 'features/project-files/components/drive-grid-view.tsx') &&
+        (file === path.join(uiSrcDir, 'files/project/components/drive-grid-view.tsx') &&
           catalogRoot === 'ELEVATED_DIR_META') ||
         (file === path.join(srcDir, 'features/sso-setup/setup-wizard.tsx') &&
           catalogRoot === 'FLOW_CONFIG') ||
-        (file === path.join(srcDir, 'features/workspace/capabilities/skills/skills-page.tsx') &&
+        (file === path.join(uiSrcDir, 'customize/skills/skills-page.tsx') &&
           catalogRoot === 'SCOPE_FILTERS') ||
         (file ===
-          path.join(srcDir, 'features/workspace/customize/sections/view/agent-editor-catalog.ts') &&
+          path.join(uiSrcDir, 'customize/sections/view/agent-editor-catalog.ts') &&
           ['PERMISSION_ACTION_LABEL', 'PERMISSION_RULE_GROUPS'].includes(catalogRoot)) ||
         (file ===
-          path.join(srcDir, 'features/workspace/customize/sections/view/grant-mode-field.tsx') &&
+          path.join(uiSrcDir, 'customize/sections/view/grant-mode-field.tsx') &&
           catalogRoot === 'GRANT_MODES') ||
-        (file === path.join(srcDir, 'features/workspace/customize/migrate-to-v2/upgrade-defs.ts') &&
+        (file === path.join(uiSrcDir, 'customize/migrate-to-v2/upgrade-defs.ts') &&
           catalogRoot === 'PROJECT_UPGRADES') ||
         (file ===
-          path.join(srcDir, 'features/workspace/customize/migrate-to-v2/upgrade-view.tsx') &&
+          path.join(uiSrcDir, 'customize/migrate-to-v2/upgrade-view.tsx') &&
           catalogRoot === 'DEFAULT_UPGRADES_COPY') ||
         (file === path.join(srcDir, 'features/workspace/settings/tabs/account-memberships.tsx') &&
           catalogRoot === 'DEFAULT_ACCOUNT_MEMBERSHIPS_COPY') ||
@@ -1020,7 +1044,7 @@ function scanFile(file) {
           catalogRoot === 'DEFAULT_BUCKET_COPY') ||
         (file === path.join(srcDir, 'features/workspace/settings/tabs/profile-tab.tsx') &&
           catalogRoot === 'DEFAULT_PROFILE_TAB_COPY') ||
-        (file === path.join(srcDir, 'lib/site-metadata.ts') && catalogRoot === 'siteMetadata');
+        (file === path.join(uiSrcDir, 'internal/lib/site-metadata.ts') && catalogRoot === 'siteMetadata');
       const coveredTechnicalCatalog =
         (file === path.join(srcDir, 'components/home/navbar.tsx') &&
           catalogRoot === 'DRAWER_SOCIALS') ||
@@ -1033,12 +1057,14 @@ function scanFile(file) {
         (file === path.join(srcDir, 'features/marketing/how-it-work/step/step-computer.tsx') &&
           catalogRoot === 'TOOL_CALLS' &&
           node.text === 'bun test apps/api/src/billing') ||
-        (file === path.join(srcDir, 'features/session/attachment-mime.ts') &&
+        (file === path.join(uiSrcDir, 'internal/lib/attachment-mime.ts') &&
           catalogRoot === 'MIME_BY_EXTENSION') ||
+        (file === path.join(uiSrcDir, 'internal/lib/web-notifications.ts') &&
+          ['TYPE_TO_KIND', 'TYPE_TO_SOUND', 'NOTIFICATION_TOAST_VARIANT'].includes(catalogRoot)) ||
         (file === path.join(srcDir, 'features/workspace/settings/tabs/preferences-tab.tsx') &&
           catalogRoot === 'MODIFIER_OPTIONS') ||
         (file.includes(`${path.sep}i18n${path.sep}`) && file.endsWith('.generated.ts')) ||
-        (file === path.join(srcDir, 'lib/codemirror-pierre-theme.ts') &&
+        (file === path.join(uiSrcDir, 'internal/lib/codemirror-pierre-theme.ts') &&
           ['dark', 'light'].includes(catalogRoot)) ||
         (file === path.join(srcDir, 'lib/utils/memory-search-output.ts') &&
           catalogRoot === 'EMPTY_RESULT');
@@ -1050,29 +1076,23 @@ function scanFile(file) {
       const coveredLocalizedLeafCatalog =
         (file === path.join(srcDir, 'features/billing/billing-return.tsx') &&
           catalogRoot === 'RETURNS') ||
-        (file === path.join(srcDir, 'features/session/header/session-config-indicator.tsx') &&
+        (file === path.join(uiSrcDir, 'session/header/session-config-indicator.tsx') &&
           catalogRoot === 'BUSY_COPY') ||
-        (file === path.join(srcDir, 'features/session/mobile-tool-drawer.tsx') &&
+        (file === path.join(uiSrcDir, 'session/panel/mobile-tool-drawer.tsx') &&
           catalogRoot === 'TOOL_META') ||
-        (file === path.join(srcDir, 'features/session/outcomes/change-request-outcomes.ts') &&
+        (file === path.join(uiSrcDir, 'session/outcomes/change-request-outcomes.ts') &&
           ['CR_STATUS_WORD', 'FALLBACK_STATUS'].includes(catalogRoot)) ||
-        (file === path.join(srcDir, 'features/session/session-starting-loader.tsx') &&
+        (file === path.join(uiSrcDir, 'session/status/session-starting-loader.tsx') &&
           catalogRoot === 'STEPS') ||
-        (file === path.join(srcDir, 'features/session/tool/shared/patch-helpers.tsx') &&
+        (file === path.join(uiSrcDir, 'session/tool/shared/patch-helpers.tsx') &&
           catalogRoot === 'PATCH_TYPE_STYLE') ||
         (file ===
-          path.join(
-            srcDir,
-            'features/workspace/capabilities/connectors/tools/tool-policy-labels.ts',
-          ) &&
+          path.join(uiSrcDir, 'customize/connectors/tools/tool-policy-labels.ts') &&
           catalogRoot === 'POLICY_SEGMENTS') ||
         (file === path.join(srcDir, 'features/workspace/command-palette.tsx') &&
           catalogRoot === 'DENSITY_PAGE_OPTIONS') ||
         (file ===
-          path.join(
-            srcDir,
-            'features/workspace/customize/sections/view/gateway/gateway-overview.tsx',
-          ) &&
+          path.join(uiSrcDir, 'customize/sections/view/gateway/gateway-overview.tsx') &&
           catalogRoot === 'METRICS') ||
         (file === path.join(srcDir, 'app/[locale]/admin/projects/page.tsx') &&
           catalogRoot === 'STATUS_OPTIONS') ||
@@ -1080,38 +1100,29 @@ function scanFile(file) {
           catalogRoot === 'STATUS_BADGE') ||
         (file === path.join(srcDir, 'components/iam/github-app-setup-card.tsx') &&
           catalogRoot === 'SETUP_METHODS') ||
-        (file === path.join(srcDir, 'features/file-renderers/image-renderer.tsx') &&
+        (file === path.join(uiSrcDir, 'files/renderers/image-renderer.tsx') &&
           catalogRoot === 'BACKDROPS') ||
         (file === path.join(srcDir, 'features/marketing/how-it-work/step/step-models.tsx') &&
           catalogRoot === 'BILLING') ||
-        (file === path.join(srcDir, 'features/session/header/session-site-header.tsx') &&
+        (file === path.join(uiSrcDir, 'session/header/session-site-header.tsx') &&
           catalogRoot === 'DEV_TOOLS') ||
-        (file === path.join(srcDir, 'features/session/session-changes-shared.tsx') &&
+        (file === path.join(uiSrcDir, 'session/panel/session-changes-shared.tsx') &&
           catalogRoot === 'CHANGE_STATUS_META') ||
-        (file === path.join(srcDir, 'features/session/session-files-panel.tsx') &&
+        (file === path.join(uiSrcDir, 'session/panel/session-files-panel.tsx') &&
           catalogRoot === 'STATUS_BADGE') ||
-        (file === path.join(srcDir, 'features/workspace/capabilities/agents/agents-page.tsx') &&
+        (file === path.join(uiSrcDir, 'customize/agents/agents-page.tsx') &&
           catalogRoot === 'MODE_FILTERS') ||
         (file ===
-          path.join(
-            srcDir,
-            'features/workspace/customize/sections/component/slack-byo-wizard.tsx',
-          ) &&
+          path.join(uiSrcDir, 'customize/sections/component/slack-byo-wizard.tsx') &&
           catalogRoot === 'STEPS') ||
         (file ===
-          path.join(srcDir, 'features/workspace/customize/sections/view/channels-view.tsx') &&
+          path.join(uiSrcDir, 'customize/sections/view/channels-view.tsx') &&
           catalogRoot === 'CONVERSATION_POLICIES') ||
         (file ===
-          path.join(
-            srcDir,
-            'features/workspace/customize/sections/view/gateway/gateway-api-reference.tsx',
-          ) &&
+          path.join(uiSrcDir, 'customize/sections/view/gateway/gateway-api-reference.tsx') &&
           catalogRoot === 'ENDPOINT_TABS') ||
         (file ===
-          path.join(
-            srcDir,
-            'features/workspace/customize/sections/view/gateway/gateway-logs.tsx',
-          ) &&
+          path.join(uiSrcDir, 'customize/sections/view/gateway/gateway-logs.tsx') &&
           catalogRoot === 'FILTERS');
       if (
         name &&
@@ -1199,7 +1210,7 @@ function scanFile(file) {
 }
 
 function scanHardcodedTranslationReferences(file, messages) {
-  const source = fs.readFileSync(file, 'utf8');
+  const source = readSource(file);
   const sourceFile = ts.createSourceFile(
     file,
     source,
@@ -1234,7 +1245,7 @@ function scanHardcodedTranslationReferences(file, messages) {
       const key = node.arguments[0].text;
       if (isHardcodedTranslator && !hasMessage(key)) {
         findings.push({
-          file: path.relative(root, file),
+          file: displayPath(file),
           line: getLine(sourceFile, node.arguments[0].getStart(sourceFile)),
           key,
         });
@@ -1306,15 +1317,15 @@ function auditTechnicalValues() {
 /** Rule 2 of i18n-technical-values.mjs: no machine-read value comes from a catalog. */
 function scanNonLinguisticBindings(file) {
   if (!/\.[cm]?[jt]sx?$/.test(file) || ignoredFilePattern.test(file)) return [];
-  return nonLinguisticBindings(fs.readFileSync(file, 'utf8'), file).map((finding) => ({
-    file: path.relative(root, file),
+  return nonLinguisticBindings(readSource(file), file).map((finding) => ({
+    file: displayPath(file),
     ...finding,
   }));
 }
 
 const translationAudit = auditTranslations();
 const technicalValueAudit = auditTechnicalValues();
-const sourceFiles = walkFiles(srcDir);
+const sourceFiles = [...walkFiles(srcDir), ...walkFiles(uiSrcDir)];
 const hardcodedFindings = sourceFiles.flatMap(scanFile);
 const defaultMessages = readJson(path.join(translationsDir, `${defaultLocale}.json`));
 const missingTranslationReferences = sourceFiles.flatMap((file) =>

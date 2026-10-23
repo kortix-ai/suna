@@ -106,6 +106,13 @@ function likePattern(q: string): string {
   return `%${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
 }
 
+/** An agent slug or display name with every run of spaces, hyphens and
+ *  underscores as one space: "Store Builder", `store-builder` and
+ *  `store_builder` are the same key (KRTX-3017). */
+function agentSearchKey(value: string): string {
+  return value.toLowerCase().replace(/[\s_-]+/g, ' ').trim();
+}
+
 /** Title, trigger slug / channel (initiator_id), agent, source, the owner's
  *  email or name, or a session-id prefix (the branch is the session id). The
  *  title is what `serializeSession` resolves: custom_name, the auto name, or a
@@ -113,11 +120,18 @@ function likePattern(q: string): string {
  *  already on every row the viewer may see (`owner_email`/`owner_name`). */
 function searchMatchSql(t: SessionTable, q: string): SQL {
   const pattern = likePattern(q);
+  const agentKey = agentSearchKey(q);
+  // The column holds the slug; a display name is the slug with spaces. A query
+  // of separators only has no key and must not match every row.
+  const agentByName = agentKey
+    ? sql`or regexp_replace(lower(${t.agentName}), '[-_[:space:]]+', ' ', 'g') like ${likePattern(agentKey)}`
+    : sql``;
   return sql`(
     ${t.metadata}->>'custom_name' ilike ${pattern}
     or ${t.metadata}->>'name' ilike ${pattern}
     or ${t.initiatorId} ilike ${pattern}
     or ${t.agentName} ilike ${pattern}
+    ${agentByName}
     or ${t.metadata}->>'source' ilike ${pattern}
     or exists (
       select 1 from auth.users as owner_users
@@ -282,6 +296,16 @@ export function sessionListViewerSql(viewer: SessionListViewer): SQL {
   const access = viewer.agentPrincipal
     ? (or(own, and(eq(t.visibility, 'project'), canAccess)) as SQL)
     : canAccess;
+  // A non-manager's project scope (`projectReadView`) reads every session of
+  // the project. The tombstone detoasts `metadata` (~6 KB a row) and the
+  // planner evaluates it first, so a 16k-session project spent ~600 ms there
+  // for the 11% of rows the viewer may open. The CASE checks the plain-column
+  // access rules first: the same rows, 670 -> 161 ms on prod. The manager
+  // inventory and the `visible` scope keep the AND, which the partial index
+  // `idx_project_sessions_project_live` and the keyset pages need.
+  if (access && viewer.scope === 'project' && !viewer.deleted && !viewer.canManageProject) {
+    return sql`(case when ${access} then ${tombstone} else false end)`;
+  }
   return and(tombstone, access) as SQL;
 }
 
@@ -292,6 +316,8 @@ export function sessionRowMatchesSearch(row: ProjectSessionRow, q: string, owner
   const hit = (value: unknown) => typeof value === 'string' && value.toLowerCase().includes(needle);
   const meta = (row.metadata ?? {}) as Record<string, unknown>;
   if (hit(meta.custom_name) || hit(meta.name) || hit(row.initiatorId) || hit(row.agentName) || hit(meta.source)) return true;
+  const agentKey = agentSearchKey(q);
+  if (agentKey && typeof row.agentName === 'string' && agentSearchKey(row.agentName).includes(agentKey)) return true;
   if (ownerText.some(hit)) return true;
   if (row.sessionId.toLowerCase().startsWith(needle)) return true;
   if ((row.labels ?? []).some(hit)) return true;

@@ -12,7 +12,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { logger } from '../../lib/logger';
-import { getProvider } from '../../platform/providers';
+import { getProvider, isProviderName } from '../../platform/providers';
 import { resolveSandboxIngress, resolveServiceKey } from '../../sandbox-proxy/backend';
 import { isDaytonaRateLimitError } from '../../shared/daytona-rate-limit';
 import { isDaytonaTransientProviderError } from '../../shared/daytona-transient';
@@ -276,7 +276,9 @@ export async function stopExpiredBox(
   await flushDriveSyncBeforeStop(row);
 
   try {
-    await getProvider(row.provider).stop(row.externalId);
+    // A legacy `e2b` row (E2B support is discontinued) skips the remote call
+    // and stops locally.
+    if (isProviderName(row.provider)) await getProvider(row.provider).stop(row.externalId);
   } catch (err) {
     if (isLifecycleTransitionInProgress(err)) {
       await releaseSandboxStopClaim(row.sandboxId, claimToken);

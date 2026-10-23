@@ -85,6 +85,7 @@ import { OPENCODE_HOME } from './paths'
 import { readOpenCodeSessionPin } from './runtime-state'
 import { restoreOpenCodeSessionLog, type OpenCodeRestoreTarget } from './session-log-restore'
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export const OPENCODE_ADAPTER_VERSION = '1.0.0'
 
 /** The manifest (C12, F9) lives in `@kortix/api-contract/session-log` (`capabilities.ts`): apps/api reads it for the switch preflight. */
@@ -103,14 +104,21 @@ const parse = (data: string): J | null => {
   }
 }
 
-/** Per thread: the next seq to issue and the seq of every message ever seen. */
+/**
+ * Per thread: the next seq to issue and the seq of every message ever seen.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export type SeqState = Record<string, { next: number; seqs: Record<string, number> }>
-/** Native id → log id, for the ids a restore re-keyed (session, message and part ids). */
+/**
+ * Native id → log id, for the ids a restore re-keyed (session, message and part ids).
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export type IdMap = Record<string, string>
 
 /**
  * Renames every id field of a v1 row: `ids` for session and message ids, `parts` for a part id
  * (and a tool attachment's), which is unique only within its message (the row's id before the rename).
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function renameRow(
   row: { runtime_session_id: string | null; info: J; parts: J[] },
@@ -157,7 +165,10 @@ function takeBytes(file: J, sidecar: (path: string) => Resolved | null): Resolve
   return { ref: `blob:${digest}`, bytes: bytes.length, sha256: digest, read: () => bytes }
 }
 
-/** The whole store as a session log, each message's native hash, the seqs it issued, and each attachment's bytes by sha256. */
+/**
+ * The whole store as a session log, each message's native hash, the seqs it issued, and each attachment's bytes by sha256.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function openCodeSessionLog(input: {
   sessionId: string
   rootId: string
@@ -254,6 +265,7 @@ export function openCodeSessionLog(input: {
   return { log, hashes, issued, blobs: new Map([...attachments.values()].map((r) => [r.sha256, r.read])) }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function openCodeSessionLogStatePath(): string {
   return join(resolveKortixRuntimeStateDirectory(), 'opencode-session-log.json')
 }
@@ -262,6 +274,7 @@ export function openCodeSessionLogStatePath(): string {
  * The persisted seq map and id map, or empty ones (a first boot, or a lost or
  * corrupt file: seqs are issued again from 1 until a restore seeds them from
  * the API's log).
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function readSeqState(path: string): { threads: SeqState; ids: IdMap } {
   if (!existsSync(path)) return { threads: {}, ids: {} }
@@ -275,6 +288,7 @@ export function readSeqState(path: string): { threads: SeqState; ids: IdMap } {
   return { threads: {}, ids: {} }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function writeSeqState(path: string, threads: SeqState, ids: IdMap): void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
   const tmp = `${path}.tmp-${process.pid}`
@@ -286,6 +300,7 @@ export function writeSeqState(path: string, threads: SeqState, ids: IdMap): void
  * The session-log port over OpenCode's store. `rootId` reads the pinned root
  * each time (a re-pin moves it); no root, no store or an unreadable store
  * answers no changes, never tombstones.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function createOpenCodeSessionLogPort(options: {
   db: OpencodeDb
@@ -396,6 +411,7 @@ function readFileOrNull(path: string): Buffer | null {
  * running OpenCode's URL (its version). True when it
  * restored. Throws when the reconcile fails: no journal starts. A box without a control
  * plane journals nothing.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function bootOpenCodeSessionLog(target: Pick<OpenCodeRestoreTarget, 'bin' | 'cwd' | 'url'>): Promise<boolean> {
   const sessionId = readControlPlaneEnv().sessionId

@@ -147,7 +147,9 @@ const TIERS: Record<string, TierConfig> = {
     displayName: 'Free',
     monthlyCredits: 5,
     canPurchaseCredits: true,
-    models: ['all'],
+    // Never the Kortix-managed models: the Free credits pay for compute and
+    // the user's own provider keys or ChatGPT subscription only.
+    models: [],
     appLimit: 50,
     entitlements: SELF_SERVE,
   },
