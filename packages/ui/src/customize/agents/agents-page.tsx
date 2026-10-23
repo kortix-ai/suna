@@ -52,6 +52,7 @@ import { prefetchAgentConfig } from '../../internal/hooks/projects/use-agent-con
 import { catalogEmptyKind } from '../shared/catalog/catalog-empty';
 import { CatalogNoMatch } from '../shared/catalog/catalog-empty-state';
 import { CatalogDomainSections } from '../shared/catalog/catalog-domain-sections';
+import { ALL_DOMAINS, DomainFilterTabs } from '../shared/catalog/domain-filter-tabs';
 import { CatalogGrid } from '../shared/catalog/catalog-grid';
 import { GRID_CLASSNAME } from '../shared/catalog/catalog-grid-tokens';
 
@@ -184,6 +185,12 @@ export function AgentsPage({ projectId }: { projectId: string }) {
   );
   const useDomainGrouping =
     (config?.domains?.length ?? 0) > 0 || primaryAgents.some((agent) => Boolean(agent.domain));
+  const [domainFilter, setDomainFilter] = useState(ALL_DOMAINS);
+  // The agents of the selected domain (when a specific one is picked), flat.
+  const filteredDomainAgents = useMemo(
+    () => (domainFilter === ALL_DOMAINS ? [] : (primaryDomainGroups.find((g) => g.name === domainFilter)?.items ?? [])),
+    [domainFilter, primaryDomainGroups],
+  );
   // `null` = render the grid. Otherwise which "nothing to show" copy applies:
   // genuinely zero agents vs. agents exist but this filter/search hid all of
   // them. Telling the user "No agents yet" in the second case is false and
@@ -254,9 +261,18 @@ export function AgentsPage({ projectId }: { projectId: string }) {
           <InputGroupSearchClear onClick={() => setQuery('')} />
         </InputGroupSearch>
       }
+      filters={
+        useDomainGrouping ? (
+          <DomainFilterTabs groups={primaryDomainGroups} value={domainFilter} onValueChange={setDomainFilter} />
+        ) : undefined
+      }
     >
       {useDomainGrouping && !detailQuery.isLoading && !detailQuery.isError && emptyKind === null ? (
-        <CatalogDomainSections groups={primaryDomainGroups} renderCard={renderPrimaryAgentCard} />
+        domainFilter === ALL_DOMAINS ? (
+          <CatalogDomainSections groups={primaryDomainGroups} renderCard={renderPrimaryAgentCard} />
+        ) : (
+          <div className={GRID_CLASSNAME}>{filteredDomainAgents.map(renderPrimaryAgentCard)}</div>
+        )
       ) : (
         <CatalogGrid
           isLoading={detailQuery.isLoading}
