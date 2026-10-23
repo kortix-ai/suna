@@ -39,7 +39,7 @@ Two ways, same result:
 
     kortix artifacts publish report.md --title "Q3 churn report"   # uploads to your Artifacts folder in Files
     kortix artifacts publish ./deck                                 # a folder with index.html
-    kortix artifacts add /Company/Plans/roadmap.md                  # shares a file already in Files
+    kortix artifacts add /Company/Plans/roadmap                     # shares a folder already in Files (index.md or index.html)
 
 A `.md` file is a doc; anything else is html. The command prints the artifact
 id, its path in Files and its app link. End your answer with the app link and
@@ -86,7 +86,7 @@ history; `restore <id> <version-id>` writes one back as a new save.
 |---|---|
 | `kortix artifacts types [<type>]` | types; one type's format and starter |
 | `kortix artifacts publish <file\|dir> [--title --description --visibility]` | upload and share |
-| `kortix artifacts add <path> [--title --visibility]` | share a path already in Files |
+| `kortix artifacts add <folder> [--title --visibility]` | share a folder already in Files; an artifact is always a folder, so a lone file is refused (publish it instead) |
 | `kortix artifacts publish <file\|dir> --id <id> [--base-version v]` | save new content |
 | `kortix artifacts ls [--mine\|--shared\|--pinned] [--type t] [--search q]` | list |
 | `kortix artifacts info <id>` / `open <id>` | details, path, links |
