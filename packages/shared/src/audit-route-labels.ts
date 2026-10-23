@@ -754,6 +754,8 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'DELETE /v1/projects/:projectId/spaces/:spaceId/links/:linkId': { action: 'project.space.link.delete', title: 'Removed channel link' },
   'PATCH /v1/projects/:projectId/spaces/:spaceId/links/:linkId': { action: 'project.space.link.pin', title: 'Pinned or unpinned channel link' },
   'GET /v1/projects/:projectId/spaces/:spaceId/summary': { action: 'project.space.summary.read', title: 'Read channel summary' },
+  'GET /v1/projects/:projectId/onboarding/channels': { action: 'project.space.onboarding.read', title: 'Read Channels onboarding state' },
+  'POST /v1/projects/:projectId/onboarding/channels/marks': { action: 'project.space.onboarding.mark', title: 'Marked a Channels onboarding step' },
   'GET /v1/projects/:projectId/memory/layers/:layerKey': { action: 'project.memory.layer.read', title: 'Viewed memory' },
   'GET /v1/projects/:projectId/memory/layers/:layerKey/pages': { action: 'project.memory.page.list', title: 'Listed memory pages' },
   'POST /v1/projects/:projectId/memory/layers/:layerKey/pages': { action: 'project.memory.page.create', title: 'Created memory page' },

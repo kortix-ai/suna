@@ -28,6 +28,8 @@ export async function writeProjectFeatureFlag(
     enabled === null
       ? metadataClearSubtreeKey('experimental', feature)
       : metadataMergeSubtree('experimental', { [feature]: enabled });
+  // The value before the write: a toggle effect tells "turned on again" from a repeated "on".
+  const [before] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId));
   const [row] = await db
     .update(projects)
     .set({ metadata: metadataExpr, updatedAt: new Date() })
@@ -42,6 +44,7 @@ export async function writeProjectFeatureFlag(
     projectId,
     accountId: row.accountId,
     metadata: row.metadata,
+    previousMetadata: before?.metadata,
   });
   return row;
 }

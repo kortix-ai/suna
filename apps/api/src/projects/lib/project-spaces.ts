@@ -101,6 +101,18 @@ export async function ensureDefaultSpace(projectId: string, accountId: string): 
 }
 
 /**
+ * The turn-on step of `project_channels`: `#general` (made if missing) and every
+ * session in no space filed into it. `reenabled`: `#general` existed before,
+ * so Channels was on once already.
+ */
+export async function turnOnChannels(projectId: string, accountId: string): Promise<{ reenabled: boolean; filed: number }> {
+  const general = await ensureDefaultSpaceCreated(projectId, accountId);
+  if (general.created) void makeChannelFolders(accountId, projectId, DEFAULT_SLUG);
+  const filed = await assignUnassignedSessions(projectId, general.space.spaceId);
+  return { reenabled: !general.created, filed };
+}
+
+/**
  * A warm session claimed while `project_channels` is on is a new `#general`
  * thread, as a create without `space_id` is (a warm session is created outside
  * any space). Returns the `#general` id (null while the flag is off), the

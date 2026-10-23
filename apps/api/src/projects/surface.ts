@@ -131,9 +131,10 @@ export { readRunningTurn, sessionLifecycleStandingFor, turnPrompterOf } from './
 
 export { registerRuntimeFork } from './lib/runtime-session-snapshot';
 
-// `project_channels` on: file every session into `#general` (consumed by
-// ../feature-flags/toggle-effects).
-export { assignUnassignedSessions, ensureDefaultSpace } from './lib/project-spaces';
+// `project_channels` on: file every session into `#general`, and the "turned on
+// again" record (consumed by ../feature-flags/toggle-effects).
+export { turnOnChannels } from './lib/project-spaces';
+export { recordChannelsReenabled } from './lib/channels-onboarding';
 
 // Author names of memory pages (consumed by ../memory/serialize.ts).
 export { resolveUserIdentities } from './lib/user-identity';

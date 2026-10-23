@@ -6,6 +6,8 @@
  */
 import { createRoute, z } from '@hono/zod-openapi';
 import {
+  ChannelsOnboardingMarkInputSchema,
+  ChannelsOnboardingSchema,
   SpaceCreateInputSchema,
   SpaceDmInputSchema,
   SpaceLinkCreateInputSchema,
@@ -41,6 +43,7 @@ import {
   SPACE_LINKS_MAX,
   type LinkViewer,
 } from '../lib/project-space-links';
+import { addChannelsMark, channelsOnboarding, generalNotice } from '../lib/channels-onboarding';
 import { countSpaceTriggers } from '../lib/trigger-space';
 import {
   SPACE_NOT_FOUND,
@@ -105,7 +108,7 @@ export function registerProjectSpacesRoutes(): void {
       const { row, userId } = loaded;
       const rows = await listSpacesForUser(row.projectId, row.accountId, userId);
       const viewer = await spaceViewer(c, loaded);
-      return c.json({ spaces: rows.map((space) => serializeSpace(space, viewer)) }, 200);
+      return c.json({ spaces: rows.map((space) => serializeSpace(space, viewer)), general_notice: generalNotice(row.metadata) }, 200);
     },
   );
 
@@ -402,6 +405,53 @@ export function registerProjectSpacesRoutes(): void {
       }
       const triggers = triggersAllowed ? await countSpaceTriggers(space.spaceId) : 0;
       return c.json({ apps, links, triggers }, 200);
+    },
+  );
+
+  // GET /v1/projects/:projectId/onboarding/channels — the caller's intro and "Get started" state.
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/onboarding/channels',
+      tags: ['spaces'],
+      summary: 'Read the caller’s Channels onboarding state',
+      description:
+        'A "Get started" row is done when its mark is present or its fact is true: the caller created a channel, ' +
+        'saved memory in `#general`, or owns a direct message. `visible` is false once dismissed or all three are done.',
+      ...auth,
+      request: { params: projectParams },
+      responses: { 200: json(ChannelsOnboardingSchema, 'The caller’s onboarding state'), ...errors(403, 404) },
+    }),
+    async (c) => {
+      const loaded = await loadProjectForUser(c, c.req.param('projectId'), 'session');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      const gate = requireFeatureFlag(c, loaded.row.metadata, 'project_channels');
+      if (gate) return gate;
+      return c.json(await channelsOnboarding(loaded.row.projectId, loaded.userId), 200);
+    },
+  );
+
+  // POST /v1/projects/:projectId/onboarding/channels/marks — record one mark for the caller. Idempotent.
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/onboarding/channels/marks',
+      tags: ['spaces'],
+      summary: 'Record a Channels onboarding mark for the caller',
+      ...auth,
+      request: {
+        params: projectParams,
+        body: { content: { 'application/json': { schema: ChannelsOnboardingMarkInputSchema } } },
+      },
+      responses: { 204: { description: 'Recorded (also when it was already there)' }, ...errors(400, 403, 404) },
+    }),
+    async (c) => {
+      const loaded = await loadProjectForUser(c, c.req.param('projectId'), 'session');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      const gate = requireFeatureFlag(c, loaded.row.metadata, 'project_channels');
+      if (gate) return gate;
+      await addChannelsMark(loaded.row.projectId, loaded.userId, c.req.valid('json').mark);
+      return c.body(null, 204);
     },
   );
 }

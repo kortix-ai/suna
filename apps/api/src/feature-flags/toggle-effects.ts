@@ -19,11 +19,11 @@ import type { FeatureFlagKey } from '@kortix/api-contract';
 import { reconcileChannelConnectors } from '../connectors/sync';
 import { refreshRunningThreadNotes } from '../drives/space-folders';
 import {
-  assignUnassignedSessions,
-  ensureDefaultSpace,
   reconcileEventSubscriptionsFromCatalog,
+  recordChannelsReenabled,
   releaseProjectEventSubscriptions,
   retireWarmProjectSessions,
+  turnOnChannels,
 } from '../projects/surface';
 import { resolveFeatureFlag } from './registry';
 
@@ -33,6 +33,8 @@ export interface FeatureFlagToggleContext {
   accountId: string;
   /** The project's metadata AFTER the write. */
   metadata: unknown;
+  /** The project's metadata BEFORE the write; absent = unknown (treated as off). */
+  previousMetadata?: unknown;
 }
 
 type ToggleEffect = (ctx: FeatureFlagToggleContext) => Promise<void>;
@@ -61,11 +63,15 @@ const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
     else await releaseProjectEventSubscriptions(projectId);
   },
   // On: create `#general` and file every session that has no space into it. Off: nothing is deleted.
+  // On again (off before the write, `#general` already there): record the `#general` line and the
+  // filed count, and mark the intro seen for every member (D8: no intro on turn-on again).
   // Both: running threads' /drives/README.md gains or drops its channel section (that never throws).
-  project_channels: async ({ projectId, accountId, metadata }) => {
+  project_channels: async ({ projectId, accountId, metadata, previousMetadata }) => {
     if (resolveFeatureFlag(metadata, 'project_channels')) {
-      const general = await ensureDefaultSpace(projectId, accountId);
-      await assignUnassignedSessions(projectId, general.spaceId);
+      const { reenabled, filed } = await turnOnChannels(projectId, accountId);
+      if (reenabled && !resolveFeatureFlag(previousMetadata, 'project_channels')) {
+        await recordChannelsReenabled(projectId, accountId, filed);
+      }
     }
     await refreshRunningThreadNotes(projectId);
   },

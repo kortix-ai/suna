@@ -1291,8 +1291,49 @@ export const SpaceSchema = z
   .strict();
 export type Space = z.infer<typeof SpaceSchema>;
 
-export const SpaceListSchema = z.object({ spaces: z.array(SpaceSchema) }).strict();
+/**
+ * `#general`'s "turned on again" line: `count` sessions started while Channels
+ * was off were filed into `#general` at `at`. Present for 7 days after the switch.
+ */
+export const SpaceGeneralNoticeSchema = z
+  .object({ kind: z.literal('reenabled'), at: z.string(), count: z.number().int().positive() })
+  .strict();
+export type SpaceGeneralNotice = z.infer<typeof SpaceGeneralNoticeSchema>;
+
+export const SpaceListSchema = z
+  .object({ spaces: z.array(SpaceSchema), general_notice: SpaceGeneralNoticeSchema.optional() })
+  .strict();
 export type SpaceList = z.infer<typeof SpaceListSchema>;
+
+/**
+ * Channels onboarding marks a member leaves once per project:
+ * `POST /projects/:id/onboarding/channels/marks`.
+ */
+export const CHANNELS_ONBOARDING_MARKS = [
+  'channels_intro',
+  'get_started.dismissed',
+  'get_started.channel',
+  'get_started.remember',
+  'get_started.dm',
+] as const;
+export type ChannelsOnboardingMark = (typeof CHANNELS_ONBOARDING_MARKS)[number];
+export const ChannelsOnboardingMarkInputSchema = z.object({ mark: z.enum(CHANNELS_ONBOARDING_MARKS) }).strict();
+export type ChannelsOnboardingMarkInput = z.infer<typeof ChannelsOnboardingMarkInputSchema>;
+
+/**
+ * The caller's Channels onboarding state. A "Get started" row is done when its
+ * mark is present or the fact is true (the caller created a channel, saved
+ * memory in `#general`, owns a DM). `visible`: not dismissed and not all done.
+ */
+export const ChannelsOnboardingSchema = z
+  .object({
+    intro_seen: z.boolean(),
+    get_started: z
+      .object({ visible: z.boolean(), create_channel: z.boolean(), remember: z.boolean(), open_dm: z.boolean() })
+      .strict(),
+  })
+  .strict();
+export type ChannelsOnboarding = z.infer<typeof ChannelsOnboardingSchema>;
 
 export const SpaceCreateInputSchema = z
   .object({
