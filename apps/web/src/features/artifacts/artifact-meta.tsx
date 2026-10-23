@@ -82,6 +82,8 @@ export const ArtifactFrame = forwardRef<HTMLIFrameElement, { src: string; title:
         allow="fullscreen; clipboard-write"
         referrerPolicy="no-referrer"
         loading={preview ? 'lazy' : 'eager'}
+        // The viewer hands the keyboard to the page, so a deck's arrow keys work at once.
+        onLoad={preview ? undefined : (e) => e.currentTarget.contentWindow?.focus()}
         tabIndex={preview ? -1 : undefined}
         aria-hidden={preview || undefined}
       />
