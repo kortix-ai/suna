@@ -1166,11 +1166,29 @@ export const projectSpaceLinks = kortixSchema.table(
     /** http(s) only, at most 2,048 characters (checked by the API). */
     url: text('url').notNull(),
     title: text('title'),
+    /** The first person who added it ("Add link") or shared it in a thread. */
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    /** Agents read pinned links (the thread notes file). "Add link" pins; a shared link is unpinned until a member pins it. */
+    pinned: boolean('pinned').default(true).notNull(),
+    /** Who pinned it and when; null on a link "Add link" made before these columns (then `created_by`, `created_at`). */
+    pinnedBy: uuid('pinned_by'),
+    pinnedAt: timestamp('pinned_at', { withTimezone: true }),
+    /** `manual`: "Add link". `message`: collected from a person's message in a thread of the channel. */
+    source: text('source').$type<'manual' | 'message'>().default('manual').notNull(),
+    /** The latest thread that shared it. */
+    sessionId: text('session_id').references(() => projectSessions.sessionId, { onDelete: 'set null' }),
+    /** How many messages shared it. */
+    shareCount: integer('share_count').default(1).notNull(),
+    lastSharedAt: timestamp('last_shared_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    check('project_space_links_source_check', sql`${table.source} in ('manual', 'message')`),
+    // One row per address per channel: a second share bumps `share_count`.
+    uniqueIndex('uniq_project_space_links_space_url').on(table.spaceId, table.url),
     index('idx_project_space_links_space').on(table.spaceId, table.createdAt.desc()),
+    // Serves the session_id FK: a session delete sets null without a scan.
+    index('idx_project_space_links_session').on(table.sessionId),
     // Serves the project_id FK: a project delete cascades without a scan.
     index('idx_project_space_links_project').on(table.projectId),
   ],
