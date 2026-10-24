@@ -20955,6 +20955,26 @@
     "emptyTitle": "Aún no hay Apps",
     "emptyDescription": "Las Apps desplegadas en este proyecto aparecen aquí para que el agente las elija."
   },
+  "agentScope": {
+    "modeAll": "Todos",
+    "modeSpecific": "Específicos",
+    "modeNone": "Ninguno",
+    "thisAgent": "Este agente",
+    "modelsDescription": "El modelo de este agente. Las demás pestañas se aplican a todo el proyecto.",
+    "connectorsDescription": "Elige qué conectores puede usar este agente.",
+    "connectorsAccess": "Acceso a conectores para este agente",
+    "skillsDescription": "Elige qué skills puede usar este agente.",
+    "skillsAccess": "Acceso a skills para este agente",
+    "secretsAccess": "Acceso a secretos para este agente",
+    "grantedColumn": "Concedido a este agente",
+    "appsAccess": "Acceso a Apps para este agente",
+    "missingApps": "Apps que faltan",
+    "triggersDescription": "Cuándo se inicia este agente por sí solo.",
+    "triggersEmpty": "Los triggers que inician este agente aparecerán aquí.",
+    "projectPaused": "Ahora mismo nada en este proyecto se ejecuta por sí solo, tampoco este agente. Los triggers se reanudan desde la página Triggers del proyecto.",
+    "requiredUnderAll": "Obligatorio antes de iniciar la sesión: {list}. Cambia a Específicos para modificarlo.",
+    "configError": "No se pudo cargar la configuración de este agente."
+  },
   "connectorsAppReturn": {
     "done": "Listo. Volver a la app de Kortix"
   },

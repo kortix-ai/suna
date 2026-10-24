@@ -18,6 +18,7 @@
 import type { AgentGrantSetV2 } from '@kortix/sdk';
 import { useState } from 'react';
 
+import { useTranslations } from '../../i18n';
 import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
 
 /** Which surface a resource catalog renders for. */
@@ -78,10 +79,22 @@ export function useAgentGrant(
   };
 }
 
-const GRANT_MODE_TABS: ReadonlyArray<{ value: GrantMode; label: string }> = [
-  { value: 'all', label: 'All' },
-  { value: 'specific', label: 'Specific' },
-  { value: 'none', label: 'None' },
+/**
+ * The ids a Specific grant names that the catalog no longer holds: a resource
+ * deleted or renamed after the grant was written. The agent page lists them
+ * beside the catalog with a Missing mark, so the editor can see each one and
+ * revoke it. All and None name no id, so they have none.
+ */
+export function grantOrphans(value: AgentGrantSetV2 | undefined, known: Iterable<string>): string[] {
+  if (!Array.isArray(value)) return [];
+  const have = new Set(known);
+  return value.filter((id) => !have.has(id));
+}
+
+const GRANT_MODE_TABS: ReadonlyArray<{ value: GrantMode; labelKey: string }> = [
+  { value: 'all', labelKey: 'modeAll' },
+  { value: 'specific', labelKey: 'modeSpecific' },
+  { value: 'none', labelKey: 'modeNone' },
 ];
 
 /**
@@ -90,12 +103,13 @@ const GRANT_MODE_TABS: ReadonlyArray<{ value: GrantMode; label: string }> = [
  * read as one header row.
  */
 export function GrantModeTabs({ grant, label }: { grant: AgentGrant; label: string }) {
+  const t = useTranslations('agentScope');
   return (
     <Tabs value={grant.mode} onValueChange={(next) => grant.setMode(next as GrantMode)}>
       <TabsList aria-label={label}>
         {GRANT_MODE_TABS.map((tab) => (
           <TabsTrigger key={tab.value} value={tab.value}>
-            {tab.label}
+            {t(tab.labelKey)}
           </TabsTrigger>
         ))}
       </TabsList>

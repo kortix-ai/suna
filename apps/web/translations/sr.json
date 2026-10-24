@@ -20955,6 +20955,26 @@
     "emptyTitle": "Још нема апликација",
     "emptyDescription": "Апликације постављене у овом пројекту појављују се овде да их агент изабере."
   },
+  "agentScope": {
+    "modeAll": "Sve",
+    "modeSpecific": "Određeno",
+    "modeNone": "Ništa",
+    "thisAgent": "Ovaj agent",
+    "modelsDescription": "Model ovog agenta. Ostale kartice važe za ceo projekat.",
+    "connectorsDescription": "Izaberi koje konektore ovaj agent može da koristi.",
+    "connectorsAccess": "Pristup konektorima za ovog agenta",
+    "skillsDescription": "Izaberi koje veštine ovaj agent može da koristi.",
+    "skillsAccess": "Pristup veštinama za ovog agenta",
+    "secretsAccess": "Pristup tajnama za ovog agenta",
+    "grantedColumn": "Dodeljeno ovom agentu",
+    "appsAccess": "Pristup aplikacijama za ovog agenta",
+    "missingApps": "Nedostajuće aplikacije",
+    "triggersDescription": "Kada se ovaj agent sam pokreće.",
+    "triggersEmpty": "Okidači koji pokreću ovog agenta pojaviće se ovde.",
+    "projectPaused": "Trenutno se ništa u ovom projektu ne pokreće samo, uključujući ovog agenta. Okidači se nastavljaju sa stranice Okidači projekta.",
+    "requiredUnderAll": "Obavezno pre početka sesije: {list}. Prebaci na Određeno da promeniš.",
+    "configError": "Nije moguće učitati podešavanja ovog agenta."
+  },
   "connectorsAppReturn": {
     "done": "Gotovo. Nazad u Kortix aplikaciju"
   },

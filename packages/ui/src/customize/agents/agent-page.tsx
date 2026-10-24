@@ -102,6 +102,7 @@ import { useProjectCan } from '../../internal/lib/use-project-can';
 import { cn } from '../../internal/lib/utils';
 import {
   type AgentConfigBlock,
+  type AgentGrantSetV2,
   getProjectDetail,
   type ProjectConfigSummary,
   readProjectFile,
@@ -123,7 +124,6 @@ import {
   PlayIcon,
   PlugsConnectedIcon,
   PuzzlePieceIcon,
-  RobotIcon,
   SlidersHorizontalIcon,
   StarIcon,
   TerminalWindowIcon,
@@ -149,18 +149,22 @@ import { AgentDrivesSection } from './agent-drives-section';
 
 import { AgentAuthorityCard } from './agent-authority-card';
 import { AgentModel, AgentScope } from './agent-detail-aside';
-import {
-  AppsGrantPage,
-  ConnectorsGrantPage,
-  SecretsGrantPage,
-  SkillsGrantPage,
-} from './agent-grant-pages';
+import { AppsGrantPage } from './agent-grant-pages';
 import { AgentPeopleSection } from './agent-people-section';
 import { AgentShareControl } from './agent-share-control';
-import { AgentTriggersSection } from './agent-triggers-section';
 import { ConnectorsPage } from '../connectors/connectors-page';
+import { ModelsPage } from '../models/models-page';
+import { SecretsPage } from '../secrets/secrets-page';
 import { SkillsPage } from '../skills/skills-page';
-import { useAgentGrant } from '../shared/agent-resource-scope';
+import { TriggersPage } from '../triggers/triggers-page';
+import { CountBadge } from '../../primitives/count-badge';
+import { ModelSection } from '../sections/view/agent-editor-basics-fields';
+import { type AgentGrant, useAgentGrant } from '../shared/agent-resource-scope';
+import { LeaveGuardProvider, useUnsavedChangesGuard } from '../shared/leave-guard';
+import { pruneRequiredConnectors, toggleRequiredConnector } from './connectors-required';
+
+/** A host's agent-scoped Apps screen: the full Apps page for one agent. */
+export type RenderAgentApps = (args: { agentName: string; grant: AgentGrant }) => ReactNode;
 
 type Agent = ProjectConfigSummary['agents'][number];
 
@@ -185,8 +189,19 @@ const SECTION_ICON: Record<AgentConfigSectionKey, Icon> = {
   workspace: CubeIcon,
 };
 
-export function AgentPage({ projectId, agentName }: { projectId: string; agentName: string }) {
+export function AgentPage({
+  projectId,
+  agentName,
+  renderApps,
+}: {
+  projectId: string;
+  agentName: string;
+  /** The host's full Apps screen in agent scope. Without it the Apps section
+   *  is the plain grant catalog (`agent-grant-pages.tsx`). */
+  renderApps?: RenderAgentApps;
+}) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tAgentScope = useI18nTranslations('agentScope');
   // `accountId` skips useProjectCan's own getProject and lets the IAM probe
   // run on the first render instead of waiting a round-trip for it.
   const accountId = useProjectAccountId(projectId);
@@ -242,7 +257,6 @@ export function AgentPage({ projectId, agentName }: { projectId: string; agentNa
     return (
       <CenteredState>
         <EmptyState
-          icon={RobotIcon}
           size="sm"
           title={tI18nComplete('text8136e0c475c7', { value0: agentName })}
           description={tI18nComplete.raw('text2ad30464c3ed')}
@@ -251,6 +265,24 @@ export function AgentPage({ projectId, agentName }: { projectId: string; agentNa
               <Link href={capabilityTabHref(projectId, 'agent')}>
                 {tI18nComplete.raw('text54c32d3e2cfa')}
               </Link>
+            </Button>
+          }
+        />
+      </CenteredState>
+    );
+  }
+
+  // A writer whose agent-config read failed would otherwise land on the
+  // read-only page with no word on why: say it failed, and offer the retry.
+  if (!isPlatform && canWrite && configQuery.isError) {
+    return (
+      <CenteredState>
+        <ErrorState
+          size="sm"
+          title={tAgentScope('configError')}
+          action={
+            <Button variant="outline" size="sm" onClick={() => configQuery.refetch()}>
+              {tI18nComplete.raw('text942087cc2d41')}
             </Button>
           }
         />
@@ -268,6 +300,7 @@ export function AgentPage({ projectId, agentName }: { projectId: string; agentNa
       config={config}
       initial={configQuery.data?.block ?? {}}
       schemaVersion={configQuery.data?.schema_version ?? 2}
+      renderApps={renderApps}
     />
   ) : (
     <ReadOnlyAgentPage
@@ -296,6 +329,7 @@ function AgentPageFrame({
   pane,
   footer,
   full = false,
+  summary,
 }: {
   header: ReactNode;
   section: AgentConfigSectionKey;
@@ -303,7 +337,10 @@ function AgentPageFrame({
   sectionHref: (key: AgentConfigSectionKey) => string;
   pane: ReactNode;
   footer?: ReactNode;
-  /** A catalog section (Connectors, Skills) renders the full resource page,
+  /** The rail's right edge per section: what the agent holds there, so the
+   *  rail reads as the agent's authority at a glance (`grantSummaryMark`). */
+  summary?: Partial<Record<AgentConfigSectionKey, ReactNode>>;
+  /** A resource section (`FULL_SECTIONS`, plus Apps) renders the full page,
    *  which brings its own `CapabilityPageShell` heading and scroll container.
    *  The frame then hands it the whole area — no centred column, no second
    *  scroller — the same context the standalone route gives that page. */
@@ -344,7 +381,8 @@ function AgentPageFrame({
       >
         <Link href={sectionHref(item.key)} prefetch>
           <SectionIcon className="size-4 shrink-0" />
-          <span className={cn(!horizontal && 'truncate')}>{item.label}</span>
+          <span className={cn(!horizontal && 'min-w-0 flex-1 truncate text-left')}>{item.label}</span>
+          {!horizontal && summary?.[item.key] ? summary[item.key] : null}
         </Link>
       </TabsTrigger>
     );
@@ -421,27 +459,65 @@ function CenteredState({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * The frame, drawn before its reads land: the identity row (tile, name, one
+ * line), the rail as two labelled groups, and the pane heading and body. The
+ * same boxes as the loaded page, so nothing moves when it resolves.
+ */
 function AgentPageSkeleton() {
+  const isMobile = useIsMobile();
+  const header = (
+    <div className="border-border/60 flex shrink-0 items-center gap-3 border-b px-5 py-3">
+      {/* `AgentMark size={21}` is a 28px tile (literal px, see agent-mark.tsx). */}
+      <Skeleton className="shrink-0 rounded-sm" style={{ width: 28, height: 28 }} />
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <Skeleton className="h-3.5 w-40 rounded-sm" />
+        <Skeleton className="h-3 w-64 max-w-full rounded-sm" />
+      </div>
+      <Skeleton className="h-8 w-28 shrink-0 rounded-md" />
+    </div>
+  );
+  const pane = (
+    <div className="mx-auto w-full max-w-2xl space-y-6 px-4 py-10 lg:py-14">
+      <Skeleton className="h-6 w-32 rounded-sm" />
+      <Skeleton className="h-11 w-full rounded-md" />
+      <Skeleton className="h-72 w-full rounded-md" />
+    </div>
+  );
+  if (isMobile) {
+    return (
+      <div className="flex h-full min-h-0 flex-1 flex-col">
+        {header}
+        {/* The loaded mobile frame's horizontal section strip. */}
+        <div className="border-border/60 flex shrink-0 items-center gap-2 overflow-hidden border-b py-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length placeholder
+            <Skeleton key={i} className="h-8 w-20 shrink-0 rounded-md" />
+          ))}
+        </div>
+        {pane}
+      </div>
+    );
+  }
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      <div className="border-border/60 shrink-0 space-y-4 border-b px-5 pt-5 pb-4">
-        <Skeleton className="h-4 w-32 rounded-sm" />
-        <Skeleton className="h-8 w-56 rounded-sm" />
-      </div>
+      {header}
       <div
         className="grid min-h-0 flex-1"
         style={{ gridTemplateColumns: `${SETTINGS_SIDEBAR_WIDTH_PX}px 1fr` }}
       >
-        <div className="space-y-1.5 border-r px-2 pt-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length placeholder
-            <Skeleton key={i} className="h-8 w-full rounded-sm" />
+        <div className="space-y-4 border-r px-2 pt-3">
+          {[4, 6].map((rows) => (
+            <div key={rows} className="space-y-1">
+              <Skeleton className="mx-2.5 my-2 h-3 w-16 rounded-sm" />
+              {Array.from({ length: rows }).map((_, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length placeholder
+                <Skeleton key={i} className="h-8 w-full rounded-sm" />
+              ))}
+            </div>
           ))}
         </div>
-        <div className="mx-auto w-full max-w-2xl space-y-6 px-6 py-8">
-          <Skeleton className="h-11 w-full rounded-md" />
-          <Skeleton className="h-72 w-full rounded-md" />
-        </div>
+        {pane}
       </div>
     </div>
   );
@@ -613,30 +689,35 @@ function AgentChips({
 }
 
 /**
- * Breadcrumb, avatar, name, chips, actions — the full header at the top of
- * the document. `children` is rendered under the title; the read-only body
- * passes the description there.
+ * The agent's identity, once, at the top of every section: its mark, the
+ * breadcrumb whose last crumb is the name (the h1), the status chips, and the
+ * one line that says what the agent is for. Every action sits on the right.
+ *
+ * One crumb row (Marko, 2026-09-03): a second row for the name alone said
+ * nothing new. The line under it is the description, which does — it is what
+ * other agents read when they pick a subagent, so the person editing one sees
+ * it from any section. The editable page passes the draft, so it updates
+ * while they type it on Overview.
  */
 function AgentHeader({
   projectId,
   agent,
   config,
   canWrite,
-  children,
+  description,
 }: {
   projectId: string;
   agent: Agent;
   config: ProjectConfigSummary;
   canWrite: boolean;
-  children?: ReactNode;
+  description?: string | null;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const line = description?.trim();
   return (
-    <header className="space-y-2">
-      {/* One row (Marko, 2026-09-03): the breadcrumb's last crumb IS the
-          title — an h1 — with the status chips beside it, and every action on
-          the right. A second row for the name alone said nothing new. */}
-      <div className="flex items-center justify-between gap-3">
+    <header className="flex items-center gap-3">
+      <AgentMark slug={agent.name} size={21} />
+      <div className="min-w-0 flex-1">
         <nav
           aria-label={tI18nComplete.raw('text2bd873d6c734')}
           className="flex min-w-0 items-center gap-1.5 text-sm"
@@ -649,17 +730,31 @@ function AgentHeader({
             {tI18nComplete.raw('text279b44d2ab4b')}
           </Link>
           <CaretRightIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
-          <AgentMark slug={agent.name} />
           <h1 className="text-foreground truncate text-sm font-semibold">
             {isMetaAgentName(agent.name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(agent.name)}
           </h1>
           <AgentChips agent={agent} config={config} size="xs" />
         </nav>
-        <AgentActions projectId={projectId} agent={agent} config={config} canWrite={canWrite} />
+        {/* One line here; the whole text on hover, and on a reader's Overview. */}
+        {line ? (
+          <p className="text-muted-foreground truncate text-xs" title={line}>
+            {line}
+          </p>
+        ) : null}
       </div>
-      {children}
+      <AgentActions projectId={projectId} agent={agent} config={config} canWrite={canWrite} />
     </header>
   );
+}
+
+/**
+ * The rail's right-edge mark for one grant: the pick count, or All. None and
+ * an unset grant show nothing — an empty edge is the quiet default.
+ */
+function grantSummaryMark(value: AgentGrantSetV2 | undefined, allLabel: string): ReactNode {
+  if (value === 'all') return <span className="text-muted-foreground shrink-0 text-xs">{allLabel}</span>;
+  if (Array.isArray(value) && value.length > 0) return <CountBadge count={value.length} />;
+  return null;
 }
 
 // ─── Editable body ─────────────────────────────────────────────────────────
@@ -677,12 +772,28 @@ const READ_ONLY_SECTIONS: readonly AgentConfigSectionKey[] = [
  *  settings to inspect here. */
 const PLATFORM_SECTIONS: readonly AgentConfigSectionKey[] = ['overview'];
 
+/**
+ * The sections that render a whole resource page in agent scope — its own
+ * heading, search, filters and scroller — the same screen the project-wide
+ * route shows, scoped to this agent (Marko, 2026-10-24: one component, two
+ * variants). The frame hands them the full area instead of the centred
+ * column. Apps joins them when the host supplies its Apps screen.
+ */
+const FULL_SECTIONS: readonly AgentConfigSectionKey[] = [
+  'connectors',
+  'skills',
+  'secrets',
+  'model',
+  'triggers',
+];
+
 function EditableAgentPage({
   projectId,
   agent,
   config,
   initial,
   schemaVersion,
+  renderApps,
 }: {
   projectId: string;
   agent: Agent;
@@ -690,8 +801,10 @@ function EditableAgentPage({
   initial: AgentConfigBlock;
   /** The manifest version: v3 adds the subagent, command and extension grants. */
   schemaVersion: number;
+  renderApps?: RenderAgentApps;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tAgentScope = useI18nTranslations('agentScope');
   const editor = useAgentDraft(initial);
   const options = useAgentEditorOptions(projectId);
   const update = useUpdateAgentConfig(projectId, agent.name);
@@ -713,28 +826,37 @@ function EditableAgentPage({
     [config.manifest_raw, config.agents, agent.name],
   );
   const section = useAgentSection(sections);
+  const surface = { kind: 'agent', agentName: agent.name } as const;
+  const defaultAgent = config.default_agent ?? config.open_code_default_agent;
 
-  // The agent's grants over the two resource catalogs that now render as the
-  // full `global`/`agent` resource page (Marko, 2026-10-24). One component per
-  // resource, two variants; the agent variant drives these grants.
-  const connectorsGrant = useAgentGrant(editor.draft.connectors, (v) => {
-    editor.set('connectors', v);
-    // A connector can be required only while it is granted — mirror the prune
-    // the old grant page did, so dropping a connector drops its Required flag.
-    const required = editor.draft.connectors_required ?? [];
-    const picked = new Set(Array.isArray(v) ? v : []);
-    const kept =
-      v === 'all' || v === 'none' || !Array.isArray(v)
-        ? []
-        : required.filter((slug) => picked.has(slug));
-    if (kept.length !== required.length) {
-      editor.set('connectors_required', kept.length ? kept : undefined);
-    }
+  // The agent's grant over each resource catalog the agent variant drives.
+  const { draft, set } = editor;
+  const connectorsGrant = useAgentGrant(draft.connectors, (v) => {
+    set('connectors', v);
+    const kept = pruneRequiredConnectors(draft.connectors_required, v);
+    if (kept !== draft.connectors_required) set('connectors_required', kept);
   });
-  const skillsGrant = useAgentGrant(editor.draft.skills, (v) => editor.set('skills', v));
-  // These sections render the whole resource page (its own heading, search and
-  // scroll); the frame hands them the full area instead of the centred column.
-  const full = section === 'connectors' || section === 'skills';
+  const requiredConnectors = {
+    list: draft.connectors_required ?? [],
+    isRequired: (slug: string) => draft.connectors_required?.includes(slug) === true,
+    toggle: (slug: string) =>
+      set('connectors_required', toggleRequiredConnector(draft.connectors_required, slug)),
+  };
+  const skillsGrant = useAgentGrant(draft.skills, (v) => set('skills', v));
+  const secretsGrant = useAgentGrant(draft.secrets, (v) => set('secrets', v));
+  const appsGrant = useAgentGrant(draft.apps, (v) => set('apps', v));
+  const full = FULL_SECTIONS.includes(section) || (section === 'apps' && renderApps !== undefined);
+
+  const allLabel = tAgentScope('modeAll');
+  const summary: Partial<Record<AgentConfigSectionKey, ReactNode>> = {
+    skills: grantSummaryMark(draft.skills, allLabel),
+    subagents: grantSummaryMark(draft.subagents, allLabel),
+    commands: grantSummaryMark(draft.commands, allLabel),
+    extensions: grantSummaryMark(draft.extensions, allLabel),
+    connectors: grantSummaryMark(draft.connectors, allLabel),
+    secrets: grantSummaryMark(draft.secrets, allLabel),
+    apps: grantSummaryMark(draft.apps, allLabel),
+  };
 
   const onSave = useCallback(async () => {
     if (!editor.isDirty || update.isPending) return;
@@ -753,28 +875,66 @@ function EditableAgentPage({
   const leaveGuard = useUnsavedChangesGuard(editor.isDirty, pathname);
   useSaveShortcut(onSave);
 
+  const fullPane = (() => {
+    switch (section) {
+      case 'connectors':
+        return (
+          <ConnectorsPage
+            projectId={projectId}
+            surface={surface}
+            grant={connectorsGrant}
+            required={requiredConnectors}
+          />
+        );
+      case 'skills':
+        return <SkillsPage projectId={projectId} surface={surface} grant={skillsGrant} />;
+      case 'secrets':
+        return <SecretsPage projectId={projectId} surface={surface} grant={secretsGrant} />;
+      case 'apps':
+        return renderApps?.({ agentName: agent.name, grant: appsGrant }) ?? null;
+      case 'triggers':
+        return <TriggersPage projectId={projectId} surface={surface} defaultAgent={defaultAgent} />;
+      case 'model':
+        return (
+          <ModelsPage
+            projectId={projectId}
+            surface={surface}
+            agentSettings={
+              <EditorSectionStyleProvider value="panel">
+                <div className="space-y-8">
+                  <ModelSection oc={editor.oc} setOc={editor.setOc} showPrompt={false} lead={false} />
+                </div>
+              </EditorSectionStyleProvider>
+            }
+          />
+        );
+      default:
+        return null;
+    }
+  })();
+
   return (
+    // Embedded screens leave through the router too (the settings nav, a
+    // configure session): they ask the same question as a link click.
+    <LeaveGuardProvider value={leaveGuard.confirmLeave}>
     <AgentPageFrame
-      header={<AgentHeader projectId={projectId} agent={agent} config={config} canWrite />}
+      header={
+        <AgentHeader
+          projectId={projectId}
+          agent={agent}
+          config={config}
+          canWrite
+          description={editor.oc.description}
+        />
+      }
       section={section}
       sections={sections}
       sectionHref={sectionHrefFor(pathname)}
       full={full}
+      summary={summary}
       pane={
         full ? (
-          section === 'connectors' ? (
-            <ConnectorsPage
-              projectId={projectId}
-              surface={{ kind: 'agent', agentName: agent.name }}
-              grant={connectorsGrant}
-            />
-          ) : (
-            <SkillsPage
-              projectId={projectId}
-              surface={{ kind: 'agent', agentName: agent.name }}
-              grant={skillsGrant}
-            />
-          )
+          fullPane
         ) : (
         <AgentConfigSections
           section={section}
@@ -782,9 +942,6 @@ function EditableAgentPage({
           options={options}
           skillsOptions={skillsOptions}
           registryOptions={registryOptions}
-          skills={<SkillsGrantPage projectId={projectId} config={config} editor={editor} />}
-          connectors={<ConnectorsGrantPage projectId={projectId} editor={editor} />}
-          secrets={<SecretsGrantPage projectId={projectId} editor={editor} />}
           apps={<AppsGrantPage projectId={projectId} editor={editor} />}
           drives={<AgentDrivesSection projectId={projectId} agentName={agent.name} />}
           overview={
@@ -798,13 +955,6 @@ function EditableAgentPage({
               }
               prompt={editor.oc.prompt ?? ''}
               onPromptChange={(next) => editor.setOc('prompt', next)}
-            />
-          }
-          triggers={
-            <AgentTriggersSection
-              projectId={projectId}
-              agentName={agent.name}
-              defaultAgent={config.default_agent ?? config.open_code_default_agent}
             />
           }
           people={<AgentPeopleSection projectId={projectId} agentName={agent.name} />}
@@ -845,7 +995,7 @@ function EditableAgentPage({
               sidebar, a tab, the breadcrumb. Confirming leaves; cancelling
               stays put. */}
           <ConfirmDialog
-            open={leaveGuard.pendingHref !== null}
+            open={leaveGuard.asking}
             onOpenChange={(open) => {
               if (!open) leaveGuard.stay();
             }}
@@ -859,6 +1009,7 @@ function EditableAgentPage({
         </>
       }
     />
+    </LeaveGuardProvider>
   );
 }
 
@@ -1043,61 +1194,6 @@ function useSaveShortcut(onSave: () => void) {
   }, [onSave]);
 }
 
-/**
- * Holds a dirty page on the page until the person decides.
- *
- * Two exits, two guards. A tab close or a reload reaches only `beforeunload`,
- * so that is armed while dirty. An in-app link — the sidebar, a tab, the
- * breadcrumb — never fires it, and the App Router has no navigation event to
- * cancel, so anchor clicks are intercepted in the capture phase instead: the
- * click is swallowed, the target href is parked, and the page asks. `leave`
- * pushes the parked href; `stay` drops it. Modified clicks (new tab) and
- * external links pass through — nothing is lost by opening a second tab.
- */
-function useUnsavedChangesGuard(isDirty: boolean, currentPath?: string) {
-  const router = useUiRouter();
-  const [pendingHref, setPendingHref] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!isDirty) return;
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-    };
-    const onClick = (event: MouseEvent) => {
-      if (event.defaultPrevented || event.button !== 0) return;
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      const anchor = (event.target as Element | null)?.closest?.('a[href]');
-      if (!(anchor instanceof HTMLAnchorElement)) return;
-      if (anchor.target && anchor.target !== '_self') return;
-      if (anchor.origin !== window.location.origin) return;
-      const href = anchor.pathname + anchor.search + anchor.hash;
-      if (href === window.location.pathname + window.location.search + window.location.hash) return;
-      // A link that only changes `?section=` on this page switches topic; the
-      // draft survives that, so it never needs the question.
-      if (currentPath && anchor.pathname === currentPath) return;
-      event.preventDefault();
-      event.stopPropagation();
-      setPendingHref(href);
-    };
-    window.addEventListener('beforeunload', onBeforeUnload);
-    document.addEventListener('click', onClick, true);
-    return () => {
-      window.removeEventListener('beforeunload', onBeforeUnload);
-      document.removeEventListener('click', onClick, true);
-    };
-  }, [isDirty, currentPath]);
-
-  return {
-    pendingHref,
-    stay: () => setPendingHref(null),
-    leave: () => {
-      const href = pendingHref;
-      setPendingHref(null);
-      if (href) router.push(href);
-    },
-  };
-}
-
 // ─── Read-only body ────────────────────────────────────────────────────────
 
 function ReadOnlyAgentPage({
@@ -1130,6 +1226,7 @@ function ReadOnlyAgentPage({
   });
   const pathname = useUiPathname();
   const section = useAgentSection(isPlatform ? PLATFORM_SECTIONS : READ_ONLY_SECTIONS);
+  const triggersFull = !isPlatform && section === 'triggers';
 
   const source = (
     <EditorSection
@@ -1163,18 +1260,23 @@ function ReadOnlyAgentPage({
           agent={agent}
           config={config}
           canWrite={canWrite && !isPlatform}
-        >
-          {agent.description ? (
-            <p className="text-muted-foreground max-w-2xl text-sm text-pretty">
-              {agent.description}
-            </p>
-          ) : null}
-        </AgentHeader>
+          description={agent.description}
+        />
       }
       section={section}
       sections={isPlatform ? PLATFORM_SECTIONS : READ_ONLY_SECTIONS}
       sectionHref={sectionHrefFor(pathname)}
+      full={triggersFull}
       pane={
+        triggersFull ? (
+          // The same Triggers screen as the editable page; its own controls
+          // (`useTriggerControls`) decide what this reader may change.
+          <TriggersPage
+            projectId={projectId}
+            surface={{ kind: 'agent', agentName: agent.name }}
+            defaultAgent={config.default_agent ?? config.open_code_default_agent}
+          />
+        ) : (
         <EditorSectionStyleProvider value="panel">
           <div className="space-y-8">
             {isPlatform ? (
@@ -1190,17 +1292,17 @@ function ReadOnlyAgentPage({
             ) : null}
             {isPlatform ? null : section === 'overview' ? (
               <>
+                {/* The header shows one line of it; a reader reads it whole here. */}
+                {agent.description ? (
+                  <p className="text-muted-foreground max-w-2xl text-sm text-pretty">
+                    {agent.description}
+                  </p>
+                ) : null}
                 {source}
                 <AgentScope projectId={projectId} agentName={agent.name} scope={agent.scope} />
               </>
             ) : section === 'people' ? (
               <AgentPeopleSection projectId={projectId} agentName={agent.name} />
-            ) : section === 'triggers' ? (
-              <AgentTriggersSection
-                projectId={projectId}
-                agentName={agent.name}
-                defaultAgent={config.default_agent ?? config.open_code_default_agent}
-              />
             ) : section === 'actions' ? (
               <AgentAuthorityCard
                 projectId={projectId}
@@ -1217,6 +1319,7 @@ function ReadOnlyAgentPage({
             )}
           </div>
         </EditorSectionStyleProvider>
+        )
       }
     />
   );

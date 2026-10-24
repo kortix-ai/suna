@@ -110,6 +110,7 @@ import {
   parseTriggerFilter,
   readTriggerSheet,
   triggerSheetHref,
+  triggersForAgent,
 } from './schedule/trigger-filter';
 import { TriggerList } from './schedule/trigger-list';
 import { runsInFlight } from './schedule/trigger-runs-logic';
@@ -124,6 +125,7 @@ import {
 } from './schedule/trigger-selection';
 import { type BulkVerb, TriggerSelectionBar } from './schedule/trigger-selection-bar';
 import { useEventTitles } from './schedule/use-event-titles';
+import type { ResourceScope } from '../shared/agent-resource-scope';
 
 /** Tab label per filter: the three kinds reuse the page's existing words. */
 const FILTER_LABEL_KEY: Record<TriggerFilter, string> = {
@@ -148,6 +150,7 @@ export function TriggerToolbarMenu({
   isPending,
   onToggle,
   onSelectMode,
+  projectSwitch = true,
 }: {
   canManage: boolean;
   /** The project-wide switch (`triggers_paused`). */
@@ -156,9 +159,14 @@ export function TriggerToolbarMenu({
   onToggle: (next: boolean) => void;
   /** Turns on multi-select; absent when there is nothing to select. */
   onSelectMode?: () => void;
+  /** `false` on one agent's page: Pause all and Resume all act on the whole
+   *  project, so they stay on the project's Triggers page. Select remains, and
+   *  its bulk Pause and Resume act on this agent's triggers only. */
+  projectSwitch?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (!canManage) return null;
+  if (!projectSwitch && !onSelectMode) return null;
 
   return (
     <DropdownMenu>
@@ -176,31 +184,35 @@ export function TriggerToolbarMenu({
       </DropdownMenuTrigger>
       {/* One project-wide switch: the rows say what it does, not a per-trigger count. */}
       <DropdownMenuContent align="end" className="w-76">
-        <DropdownMenuItem
-          className={RICH_ROW_CLASS}
-          disabled={paused}
-          onSelect={() => onToggle(true)}
-        >
-          <RichRowBody
-            icon={PauseIcon}
-            title={tI18nComplete.raw('text0b6258b50010')}
-            description={tI18nComplete.raw('textdae75dce541f')}
-          />
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          className={RICH_ROW_CLASS}
-          disabled={!paused}
-          onSelect={() => onToggle(false)}
-        >
-          <RichRowBody
-            icon={PlayIcon}
-            title={tI18nComplete.raw('text43e673c5503d')}
-            description={tI18nComplete.raw('textced57bebd466')}
-          />
-        </DropdownMenuItem>
+        {projectSwitch ? (
+          <>
+            <DropdownMenuItem
+              className={RICH_ROW_CLASS}
+              disabled={paused}
+              onSelect={() => onToggle(true)}
+            >
+              <RichRowBody
+                icon={PauseIcon}
+                title={tI18nComplete.raw('text0b6258b50010')}
+                description={tI18nComplete.raw('textdae75dce541f')}
+              />
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className={RICH_ROW_CLASS}
+              disabled={!paused}
+              onSelect={() => onToggle(false)}
+            >
+              <RichRowBody
+                icon={PlayIcon}
+                title={tI18nComplete.raw('text43e673c5503d')}
+                description={tI18nComplete.raw('textced57bebd466')}
+              />
+            </DropdownMenuItem>
+          </>
+        ) : null}
         {onSelectMode ? (
           <>
-            <DropdownMenuSeparator />
+            {projectSwitch ? <DropdownMenuSeparator /> : null}
             <DropdownMenuItem onSelect={onSelectMode}>
               <CheckSquareIcon />
               {tI18nComplete.raw('text2a78025de6aa')}
@@ -261,9 +273,12 @@ export function useTriggersActivation(projectId: string) {
 export function TriggerActivationMenu({
   projectId,
   onSelectMode,
+  projectSwitch,
 }: {
   projectId: string;
   onSelectMode?: () => void;
+  /** See {@link TriggerToolbarMenu}. */
+  projectSwitch?: boolean;
 }) {
   const queryKey = qk.project.triggers(projectId);
   const triggersQuery = useQuery({
@@ -287,11 +302,40 @@ export function TriggerActivationMenu({
       isPending={mutation.isPending || triggersQuery.isLoading}
       onToggle={(v) => mutation.mutate(v)}
       onSelectMode={onSelectMode}
+      projectSwitch={projectSwitch}
     />
   );
 }
 
-export function ScheduleView({ projectId }: { projectId: string }) {
+/**
+ * The seed prompt of New trigger → Chat. On one agent's page it names the
+ * agent, as the manual path preselects it (`initialAgent`).
+ */
+function triggerChatPrompt(agentName: string | null): string {
+  if (!agentName) return newConfigPrompt('trigger');
+  return (
+    `I want to set up a trigger that starts the "${agentName}" agent in this project. ` +
+    'Ask me what it should do and on what schedule or event, then create it with the ' +
+    'Kortix CLI and show me the result.'
+  );
+}
+
+export function ScheduleView({
+  projectId,
+  surface = { kind: 'global' },
+  defaultAgent,
+}: {
+  projectId: string;
+  /** `global` (default) lists every trigger in the project. `agent` is the same
+   *  screen on one agent's page (`agent-page.tsx`): only the triggers that
+   *  start that agent, and New trigger opens with the agent picked. */
+  surface?: ResourceScope;
+  /** The project's default agent, in `agent` scope: a trigger stored as
+   *  `default` starts it (`triggerStartsAgent`). */
+  defaultAgent?: string | null;
+}) {
+  const agentName = surface.kind === 'agent' ? surface.agentName : null;
+  const tAgentScope = useTranslations('agentScope');
   const router = useUiRouter();
   const pathname = useUiPathname();
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -417,13 +461,12 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   // every new project: hiding it keeps the empty state reachable on a fresh
   // project without making the customer delete a trigger they never created.
   // It still schedules and fires — this is display only.
-  const triggers = useMemo(
-    () =>
-      (triggersQuery.data?.triggers ?? []).filter(
-        (t) => isTriggerKind(t.type) && isCustomerTrigger(t),
-      ),
-    [triggersQuery.data],
-  );
+  const triggers = useMemo(() => {
+    const shown = (triggersQuery.data?.triggers ?? []).filter(
+      (t) => isTriggerKind(t.type) && isCustomerTrigger(t),
+    );
+    return agentName ? triggersForAgent(shown, agentName, defaultAgent) : shown;
+  }, [triggersQuery.data, agentName, defaultAgent]);
   // The search only renders over a non-empty list; focus it once it does.
   const searchRef = useRef<HTMLInputElement>(null);
   useSlashFocus(searchRef, showContent && triggers.length > 0);
@@ -585,7 +628,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
          Schedules/Webhooks were overlay panes; a capability page has no rail
          entry, and a rail lookup that misses renders no heading at all. */
           title={copy.title}
-          description={copy.description}
+          description={agentName ? tAgentScope('triggersDescription') : copy.description}
           // Beside an open trigger the list is a 40% column: stack the header so
           // search, Pause all and New trigger share one full-width row.
           stacked={!!selected}
@@ -644,17 +687,18 @@ export function ScheduleView({ projectId }: { projectId: string }) {
             showContent ? (
               // Search, then one group: ⋯ and New trigger, both `secondary` at `h-9`, the search input's height.
               <ButtonGroup>
-                {triggers.length > 0 || paused ? (
+                {triggers.length > 0 || (paused && !agentName) ? (
                   <TriggerActivationMenu
                     projectId={projectId}
                     onSelectMode={triggers.length > 0 ? enterSelectMode : undefined}
+                    projectSwitch={!agentName}
                   />
                 ) : null}
                 {canWrite ? (
                   <NewEntityMenu
                     label={copy.createLabel}
                     pending={configure.pending}
-                    onChat={() => configure.start(newConfigPrompt('trigger'))}
+                    onChat={() => configure.start(triggerChatPrompt(agentName))}
                     manual={{ onSelect: () => openCreate() }}
                     caret={false}
                   />
@@ -679,8 +723,12 @@ export function ScheduleView({ projectId }: { projectId: string }) {
             {paused && showContent && (
               <Alert variant="warning">
                 <AlertTitle>{tI18nComplete.raw('textb18b93a52cd2')}</AlertTitle>
-                <AlertDescription>{tI18nComplete.raw('textc9e9d972eda2')}</AlertDescription>
-                {controls.canUpdate ? (
+                <AlertDescription>
+                  {agentName ? tAgentScope('projectPaused') : tI18nComplete.raw('textc9e9d972eda2')}
+                </AlertDescription>
+                {/* Resume all is the project's switch: on one agent's page the
+                    alert says so and leaves the switch to the Triggers page. */}
+                {controls.canUpdate && !agentName ? (
                   <AlertActions>
                     <Button
                       variant="outline"
@@ -726,6 +774,10 @@ export function ScheduleView({ projectId }: { projectId: string }) {
               />
             ) : filter !== 'all' && ofKind.length === 0 ? (
               <EmptyState size="sm" title={kindCopy[filter as TriggerKind].emptyTitle} />
+            ) : triggers.length === 0 && agentName ? (
+              // One muted line (brand: no icon tile). New trigger is already
+              // in the header, preselected to this agent.
+              <EmptyState size="sm" title={tAgentScope('triggersEmpty')} />
             ) : triggers.length === 0 ? (
               <EmptyState
                 icon={LightningIcon}
@@ -809,6 +861,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
             onOpenChange={setCreateOpen}
             initialKind={createKind}
             initialApp={createApp}
+            initialAgent={agentName}
             onCreated={(slug) => {
               setCreateOpen(false);
               invalidate();

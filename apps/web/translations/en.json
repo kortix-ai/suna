@@ -3031,6 +3031,26 @@
     "emptyTitle": "No Apps yet",
     "emptyDescription": "Apps deployed to this project appear here for the agent to pick from."
   },
+  "agentScope": {
+    "modeAll": "All",
+    "modeSpecific": "Specific",
+    "modeNone": "None",
+    "thisAgent": "This agent",
+    "modelsDescription": "This agent's model. The other tabs apply to the whole project.",
+    "connectorsDescription": "Choose which connectors this agent can use.",
+    "connectorsAccess": "Connector access for this agent",
+    "skillsDescription": "Choose which skills this agent can use.",
+    "skillsAccess": "Skill access for this agent",
+    "secretsAccess": "Secret access for this agent",
+    "grantedColumn": "Granted to this agent",
+    "appsAccess": "App access for this agent",
+    "missingApps": "Missing Apps",
+    "triggersDescription": "When this agent starts on its own.",
+    "triggersEmpty": "Triggers that start this agent will show up here.",
+    "projectPaused": "Nothing in this project runs on its own right now, this agent included. Triggers resume from the project's Triggers page.",
+    "requiredUnderAll": "Required before session start: {list}. Switch to Specific to change it.",
+    "configError": "Could not load this agent's settings."
+  },
   "errors": {
     "generic": "An error occurred",
     "network": "Network error",

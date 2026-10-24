@@ -20955,6 +20955,26 @@
     "emptyTitle": "Pas encore d'Apps",
     "emptyDescription": "Les Apps déployées dans ce projet apparaissent ici pour que l'agent les choisisse."
   },
+  "agentScope": {
+    "modeAll": "Tous",
+    "modeSpecific": "Spécifiques",
+    "modeNone": "Aucun",
+    "thisAgent": "Cet agent",
+    "modelsDescription": "Le modèle de cet agent. Les autres onglets s'appliquent à tout le projet.",
+    "connectorsDescription": "Choisissez les connecteurs que cet agent peut utiliser.",
+    "connectorsAccess": "Accès aux connecteurs pour cet agent",
+    "skillsDescription": "Choisissez les skills que cet agent peut utiliser.",
+    "skillsAccess": "Accès aux skills pour cet agent",
+    "secretsAccess": "Accès aux secrets pour cet agent",
+    "grantedColumn": "Accordé à cet agent",
+    "appsAccess": "Accès aux Apps pour cet agent",
+    "missingApps": "Apps manquantes",
+    "triggersDescription": "Quand cet agent démarre de lui-même.",
+    "triggersEmpty": "Les déclencheurs qui démarrent cet agent apparaîtront ici.",
+    "projectPaused": "Rien ne s'exécute de soi-même dans ce projet pour le moment, cet agent compris. Les déclencheurs reprennent depuis la page Déclencheurs du projet.",
+    "requiredUnderAll": "Requis avant le démarrage de la session : {list}. Passez à Spécifiques pour le modifier.",
+    "configError": "Impossible de charger les paramètres de cet agent."
+  },
   "connectorsAppReturn": {
     "done": "Terminé. Retour à l’app Kortix"
   },

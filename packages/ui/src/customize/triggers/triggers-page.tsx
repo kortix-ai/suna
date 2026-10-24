@@ -1,5 +1,7 @@
 'use client';
 
+import type { ComponentProps } from 'react';
+
 import { ScheduleView } from './schedule-view';
 
 /**
@@ -20,6 +22,6 @@ import { ScheduleView } from './schedule-view';
  * `max-w-2xl` heading — which is exactly what made this tab read as a
  * different product from the three beside it.
  */
-export function TriggersPage({ projectId }: { projectId: string }) {
-  return <ScheduleView projectId={projectId} />;
+export function TriggersPage(props: ComponentProps<typeof ScheduleView>) {
+  return <ScheduleView {...props} />;
 }
