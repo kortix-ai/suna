@@ -3,6 +3,7 @@
  * resizable side panel), the project sidebar, sessions list, project home, and the
  * permission and route helpers they share.
  */
+export { ProjectAdminDashboard } from './admin/project-admin-dashboard';
 export { ProjectPageHeader } from '../internal/layout/project-page-header';
 export { useCapabilityAccess, useProjectNavRows } from '../internal/layout/project-settings-nav';
 export { SidebarToggle } from '../internal/layout/sidebar-toggle';
