@@ -1,25 +1,27 @@
-# yaml-language-server: $schema=https://kortix.com/schema/kortix.v2.schema.json
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.v3.schema.json
 #
-# Kortix project manifest. Source of truth for project-wide config that
-# lives in git alongside the code. `kortix_version` pins the schema so
-# the platform can evolve safely. v2 manifests are YAML-only, with one
-# `agents:` map per project — GOVERNANCE ONLY (connectors/secrets/
-# kortix_permissions/skills/workspace/enabled), plus `file`, the path of the
-# agent's `.md`. Agent BEHAVIOR (description, model, mode, temperature,
-# permission, the prompt itself, …) lives entirely in that `.md`'s
-# frontmatter + body — a stock OpenCode agent file works as-is.
+# Kortix project manifest (kortix_version 3). The single source of truth for
+# this project's config, committed to git beside the code. `kortix_version`
+# pins the schema so the platform can evolve safely.
+#
+# v3 is ONE YAML. The project REGISTERS what exists — `skills`, `tools`,
+# `commands`, `extensions`, plus `connectors`, `apps`, `env` names and
+# `sandbox` templates — and each AGENT is a single block that holds its own
+# behavior (prompt, model, mode, permission) AND enables the registered
+# things it may use, by name. There is no agent `.md` frontmatter and no
+# harness config folder: an agent's prompt is inline (`prompt`) or in a plain
+# Markdown file (`prompt_file`), and harness plugins live under `extensions`.
 #
 # Project layout — harness-neutral content at the root:
-#   agents/<name>.md          one file per agent (`agents.<name>.file`)
-#   skills/<name>/SKILL.md    skills, loaded by every harness
-#   memory/                   the project brain (the `kortix-memory` skill)
-#   tools/<name>.ts           project tools, loaded by every harness (`tools:` below)
-#   harnesses/opencode/       files only OpenCode reads (`opencode.config_dir`)
-#   harnesses/pi/             files only pi reads (`pi.config_dir`); create it when needed
-kortix_version: 2
+#   agents/<name>.md          one prompt file per agent (`prompt_file`); prompt body only, no frontmatter
+#   skills/<name>/SKILL.md     project skills, registered under `skills:`, loaded by every harness
+#   memory/                    the project brain (the `kortix-memory` skill)
+#   tools/<name>.ts            project tools, registered under `tools:`, loaded by every harness
+#   extensions/<name>.ts       harness plugins, registered under `extensions:`
+kortix_version: 3
 
 # The agent a session/trigger boots when it names no concrete agent (the
-# "default" sentinel). Must always resolve to a declared agent below.
+# "default" sentinel). Must resolve to a declared, enabled primary agent below.
 default_agent: kortix
 
 project:
@@ -68,76 +70,81 @@ env:
 # sandbox:
 #   default: python
 
-# Files only OpenCode reads: `opencode.jsonc` (plugins, MCP servers,
-# providers, runtime defaults), `plugins/`, `commands/`. The agent
-# daemon launches opencode with OPENCODE_CONFIG_DIR pointed here. Agents and
-# skills do NOT live here — they sit at the root and serve every harness.
-opencode:
-  config_dir: harnesses/opencode
-
 # ─── Tools ───────────────────────────────────────────────────────────────
-# The tools every agent of this project gets, on every harness (OpenCode, pi).
-# `kortix:<name>` is a tool Kortix maintains and updates. A path is your own
-# module, in any folder (https://kortix.com/docs/project/tools).
-#   - Delete a line to remove that tool from every agent.
-#   - Run `kortix tools eject <name>` to own and change a Kortix tool.
-#   - Use `agents.<name>.tools` to limit one agent.
-# `kortix tools ls` lists what a session gets.
-tools:
-  web_search: kortix:web_search      # maintained by Kortix, updated automatically
-  image_search: kortix:image_search
-  scrape_webpage: kortix:scrape_webpage
-  memory: kortix:memory
-  show: kortix:show
-  # lookup_order: tools/lookup_order.ts   # your own tool: a module in your repo
+# The Kortix tools (`web_search`, `image_search`, `scrape_webpage`, `memory`,
+# `show`) and the harness tools are hosted by the runtime on every harness —
+# every agent with `tools: all` (the default) gets them automatically, so they
+# are NOT listed here. Register ONLY your own project tools below: a `name`
+# maps to a `.ts`/`.js` module in the repo. Enable a tool on an agent with
+# `agents.<name>.tools`.
+# tools:
+#   lookup_order: tools/lookup_order.ts   # your own tool: a module in your repo
+
+# ─── Extensions ──────────────────────────────────────────────────────────
+# Harness plugins, registered by name and enabled per agent
+# (`agents.<name>.extensions`). Each entry names one implementation per
+# harness: `pi` (an exact npm pin or a repo module) and/or `opencode` (a repo
+# plugin module; OpenCode is deprecated).
+# extensions:
+#   web-access:
+#     pi: npm:pi-web-access@0.30.0
 
 # ─── Agents ──────────────────────────────────────────────────────────────
-# One map per project, GOVERNANCE ONLY — connectors/secrets/kortix_permissions/
-# skills grants the runtime itself can't express, plus workspace (the git
-# boundary) and enabled. `file` names the agent's `.md`; everything else
-# (description, mode, permission, temperature, the prompt itself, …) lives
-# in that file — open it to see/change what the agent actually does.
-# v2 is deny-by-default: an omitted connectors/secrets/kortix_permissions/
-# skills grant resolves to "none", so a scoped specialist starts locked down.
-# The starter's own `kortix` agent is deliberately
-# granted "all" across the board so a fresh project is capable out of the
-# box — narrow it once you know what this project actually needs.
+# One map per project. Each agent is ONE block: its behavior (description,
+# mode, model, temperature, permission, the prompt via `prompt` or
+# `prompt_file`) AND the grants the runtime enforces — connectors/secrets/
+# kortix_permissions/skills/subagents/apps. Grants are deny-by-default: an
+# omitted grant resolves to "none", so a scoped specialist starts locked down.
+# The starter's `kortix` agent is deliberately granted "all" across the board
+# so a fresh project is capable out of the box — narrow it once you know what
+# this project actually needs.
 agents:
   kortix:
-    file: agents/kortix.md
+    description: "Generic Kortix general knowledge worker. Hands-on: handles coding / research / content / ops / data tasks end-to-end in an isolated session sandbox. Its access is what kortix.yaml grants it. Edit this file to specialize for your project."
+    mode: primary
+    permission: allow
+    prompt_file: agents/kortix.md
     connectors: all
     secrets: all
     kortix_permissions: all
     skills: all
     # Tools this agent may use (harness, Kortix and project tools). Default: all.
     # tools: [read, grep, web_search, lookup_order]   # only these
-    # tools: { exclude: [bash] }                      # every tool but these
+    # tools: { exclude: [bash] }                       # every tool but these
     # sandbox: python # Must name an available project template, or "default".
-    # What new sessions get in /workspace. true: a checkout of the project
-    # repository on the session's own branch. false: no checkout and no
-    # repository access. Omitted means true in kortix_version 2, false in 3.
+    # What new sessions get in /workspace. In v3 `project_repository` defaults
+    # to false; set it true for a checkout of the project repository on the
+    # session's own branch, or false for no checkout and no repository access.
     workspace: { project_repository: true }
 
   harness-reflector:
-    file: agents/harness-reflector.md
-    # Continual-harness reflector: refines the shared harness (prompts,
-    # sub-agents, skills/tools, memory — memory curation is its fourth
-    # pass) from session evidence. Fans out session-reviewer sub-agents,
-    # one per recent session, then opens — never merges — a harness CR.
+    description: "Continual-harness reflector. Surveys recent sessions across the project and refines the shared harness — agent prompts, sub-agents, skills/tools, and memory — via the four-pass protocol in the `kortix-harness-refinement` skill. Runs on a cron (the `harness-reflector` trigger in kortix.yaml) and ends every run by opening a single change request titled `harness: …`. Memory curation (`memory/`, per the `kortix-memory` rubric) is its fourth pass."
+    mode: primary
+    hidden: true
+    # Kortix sessions are already sandboxed (isolated VM, ephemeral branch) and
+    # this agent runs unattended on a cron — an `ask` rule has nobody to answer
+    # it. Full access, same as the `kortix` agent.
+    permission: allow
+    prompt_file: agents/harness-reflector.md
     # Runs unattended on a cron: a scoped kortix_permissions grant 403s the CLI
-    # reads it needs (skills, agents, triggers) with nobody present to
-    # widen it, so it gets `all`. It reads untrusted transcripts, so it
-    # gets NO connectors and NO project secrets — nothing to exfiltrate.
+    # reads it needs (skills, agents, triggers) with nobody present to widen
+    # it, so it gets `all`. It reads untrusted transcripts, so it gets NO
+    # connectors and NO project secrets — nothing to exfiltrate.
     kortix_permissions: all
     skills: all
+    subagents: [session-reviewer]   # it fans out one session-reviewer per recent session
     workspace: { project_repository: true }   # it edits the harness and opens a CR
 
   session-reviewer:
-    file: agents/session-reviewer.md
-    # Sub-agent of the harness-reflector: deep-reviews ONE session's full
-    # history and reports failure-signature findings. "Read-only" (never
-    # edits, never opens CRs) is its prompt discipline; it runs inside the
-    # reflector's session with the same grant, so it mirrors it here.
+    description: "Read-only sub-agent of the harness-reflector. Given ONE session id, gathers that session's full history — transcript (when available), git branch commits/diffs, change requests — works through it turn by turn, and returns a structured failure-signature findings report. Never edits the harness, never opens CRs."
+    mode: subagent
+    # Runs inside the reflector's sandboxed session with no human present; a
+    # `deny`/`ask` rule only blocks the read commands (cat, grep, kortix …) it
+    # needs. Full access — "read-only" is this agent's discipline (see its
+    # prompt), not a permission gate.
+    permission: allow
+    prompt_file: agents/session-reviewer.md
+    # Sub-agent of the harness-reflector; it mirrors the reflector's grant.
     kortix_permissions: all
     skills: all
     workspace: { project_repository: true }
@@ -206,8 +213,7 @@ triggers:
   #     User said: {{ body.text }}
 
 # ─── Channels ────────────────────────────────────────────────────────────
-# v2 removes `channels` from the manifest — channel↔agent routing (Slack
-# today; Teams/Discord/etc. later) is managed live in the dashboard
-# (Customize → Channels), not committed to git. The channel connection
-# itself still shows up here as a `connectors` entry with
-# `provider: channel` once you connect one — that part is unchanged.
+# Channel↔agent routing (Slack today; Teams/Discord/etc. later) is managed
+# live in the dashboard (Customize → Channels), not committed to git. The
+# channel connection itself shows up here as a `connectors` entry with
+# `provider: channel` once you connect one.

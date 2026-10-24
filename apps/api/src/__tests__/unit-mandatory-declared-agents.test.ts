@@ -267,7 +267,7 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
 // `metadata.default_agent` mirror set (sessions.ts's `projectDefaultAgent` is
 // `undefined`/null the very first time). The starter it seeds
 // (@kortix/starter, packages/starter/templates/base) MUST therefore ship a
-// v2 manifest with a `default_agent` that resolves — otherwise
+// v3 manifest with a `default_agent` that resolves — otherwise
 // EVERY brand-new project's first session (agent 'default', the UI's
 // no-explicit-agent path) is rejected with AGENT_NOT_DECLARED before a sandbox
 // is ever provisioned. This exercises the REAL shipped starter (not a
@@ -279,14 +279,14 @@ describe('resolveGovernedAgentGrant — the actual shipped starter satisfies its
   });
   const manifestFile = starterFiles.find((f) => f.path === 'kortix.yaml');
 
-  test('the starter ships a v2 kortix.yaml, not a v1 kortix.toml', () => {
+  test('the starter ships a v3 kortix.yaml, not a v1 kortix.toml', () => {
     expect(manifestFile).toBeDefined();
     expect(starterFiles.some((f) => f.path === 'kortix.toml')).toBe(false);
   });
 
   test('a first session with no explicit agent ("default") RESOLVES — ok:true, not AGENT_NOT_DECLARED', () => {
     const manifest = parseManifestString(manifestFile!.content, 'yaml', 'kortix.yaml');
-    expect(manifest.schemaVersion).toBe(2);
+    expect(manifest.schemaVersion).toBe(3);
     const loaded = extractAgents(manifest);
     expect(loaded.errors).toEqual([]);
     // The manifest must name a default agent, and must declare it.
