@@ -22776,5 +22776,12 @@
     "auditSet": "conjunto de regras {set}",
     "bulkInheritTitle": "Voltar {count, plural, one {# ferramenta} other {# ferramentas}} às regras base?",
     "bulkInheritBody": "Exclui a regra deste conjunto para cada ferramenta listada em {group}, para que cada uma volte a seguir as regras base. Regras de padrão não mudam."
+  },
+  "sessionChangeRequests": {
+    "title": "Solicitações de alteração",
+    "open": "Aberta",
+    "jump": "Ir para a resposta de #{number}",
+    "unavailable": "Esta resposta não está disponível no histórico carregado.",
+    "loadError": "Não foi possível carregar a resposta. Tente novamente."
   }
 }

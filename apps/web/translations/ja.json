@@ -22776,5 +22776,12 @@
     "auditSet": "ルールセット {set}",
     "bulkInheritTitle": "{count, plural, other {# 個のツール}}を基本ルールに戻しますか?",
     "bulkInheritBody": "{group} にある各ツールについて、このルールセットのルールを削除し、基本ルールに従うようにします。パターンルールは変更されません。"
+  },
+  "sessionChangeRequests": {
+    "title": "変更リクエスト",
+    "open": "未適用",
+    "jump": "#{number} の応答に移動",
+    "unavailable": "この応答は読み込まれた履歴にはありません。",
+    "loadError": "応答を読み込めませんでした。もう一度お試しください。"
   }
 }

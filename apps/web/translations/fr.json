@@ -22776,5 +22776,12 @@
     "auditSet": "jeu de règles {set}",
     "bulkInheritTitle": "Remettre {count, plural, one {# outil} other {# outils}} sur les règles de base ?",
     "bulkInheritBody": "Supprime la règle de ce jeu pour chaque outil listé sous {group}, pour que chacun suive à nouveau les règles de base. Les règles de motif ne changent pas."
+  },
+  "sessionChangeRequests": {
+    "title": "Demandes de modification",
+    "open": "Ouverte",
+    "jump": "Aller à la réponse de #{number}",
+    "unavailable": "Cette réponse n'est pas disponible dans l'historique chargé.",
+    "loadError": "Impossible de charger la réponse. Réessayez."
   }
 }
