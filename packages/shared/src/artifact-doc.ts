@@ -34,8 +34,9 @@ export const ARTIFACT_DOC_CSS = `
 .kx-doc ul[data-type=taskList]{list-style:none;padding-left:0}
 .kx-doc ul[data-type=taskList] li{display:flex;gap:calc(var(--s)*2);align-items:flex-start;padding-left:0}
 .kx-doc ul[data-type=taskList] li>label{display:flex;padding-top:.3em}
+.kx-doc ul[data-type=taskList] li>input{margin-top:.3em}
 .kx-doc ul[data-type=taskList] li>div{flex:1;min-width:0}
-.kx-doc ul[data-type=taskList] li>div>p{margin:0}
+.kx-doc ul[data-type=taskList] li>div>p,.kx-doc ul[data-type=taskList] li>p{margin:0}
 .kx-doc ul[data-type=taskList] li>label>span{display:none}
 .kx-doc ul[data-type=taskList] li[data-checked=true]>div{color:var(--muted-foreground)}
 .kx-doc input[type=checkbox]{appearance:none;margin:0;flex:none;width:1rem;height:1rem;display:inline-grid;place-content:center;cursor:pointer;

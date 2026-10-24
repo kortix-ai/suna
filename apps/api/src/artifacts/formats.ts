@@ -90,7 +90,8 @@ export const ARTIFACT_TYPES = [
 /** A Markdown doc as the page Kortix serves: GFM, task lists, the doc stylesheet; `print` opens the print dialog. */
 export function renderDoc(markdown: string, opts: { print: boolean }): string {
   const body = (marked.parse(markdown, { gfm: true, async: false }) as string)
-    .replace(/<li><input (checked="" )?disabled="" type="checkbox">\s*/g, (_m, checked) => `<li data-type="taskItem" data-checked="${checked ? 'true' : 'false'}"><input type="checkbox" disabled${checked ? ' checked' : ''}> `)
+    // A loose list (blank lines between items) puts the box inside a <p>: keep the <p> as the item's text.
+    .replace(/<li>(<p>)?<input (checked="" )?disabled="" type="checkbox">\s*/g, (_m, p, checked) => `<li data-type="taskItem" data-checked="${checked ? 'true' : 'false'}"><input type="checkbox" disabled${checked ? ' checked' : ''}> ${p ?? ''}`)
     .replace(/<ul>(\s*<li data-type="taskItem")/g, '<ul data-type="taskList">$1');
   const title = docTitle(markdown) ?? 'Untitled doc';
   const escaped = title.replace(/[<>&"]/g, (c) => `&#${c.charCodeAt(0)};`);
