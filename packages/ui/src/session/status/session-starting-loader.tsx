@@ -8,7 +8,9 @@ import { cn } from '../../lib/utils';
 import { type SessionStartResult } from '@kortix/sdk';
 import { useProjectSession } from '@kortix/sdk/react';
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
-import { useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
+
+import { TranscriptRowsContext } from '../thread/transcript-rows';
 
 /**
  * What a session shows while its Kortix Computer comes up: nothing, unless the
@@ -128,6 +130,8 @@ export function RestartFallback({
   buttonClassName?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  // A channel's thread panel says "thread", not "session" (`TranscriptRows.labels`).
+  const labels = useContext(TranscriptRowsContext)?.labels;
   if (!show) return null;
 
   return (
@@ -148,7 +152,7 @@ export function RestartFallback({
         ) : (
           <RotateCcw className="size-3.5 shrink-0" />
         )}
-        {pending ? tI18nComplete.raw('text75d0f1469d16') : tI18nComplete.raw('textcb886371afc6')}
+        {pending ? tI18nComplete.raw('text75d0f1469d16') : (labels?.restart ?? tI18nComplete.raw('textcb886371afc6'))}
       </Button>
     </div>
   );

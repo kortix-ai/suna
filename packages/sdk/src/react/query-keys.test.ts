@@ -500,6 +500,25 @@ describe('qk.project.sessionsPaged label filter', () => {
   });
 });
 
+describe('qk.project.sessionsPaged space filter', () => {
+  test('each space gets its own cache slot; no space keeps the plain key', () => {
+    const plain = qk.project.sessionsPaged('P1');
+    const inSpace = qk.project.sessionsPaged('P1', 'visible', { spaceId: 'S1' });
+    expect(inSpace).not.toEqual(plain);
+    expect(qk.project.sessionsPaged('P1', 'visible', { spaceId: 'S2' })).not.toEqual(inSpace);
+    expect(qk.project.sessionsPaged('P1', 'visible', { spaceId: undefined })).toEqual(plain);
+    expect(inSpace.slice(0, plain.length)).toEqual([...plain]);
+  });
+});
+
+describe('qk.project.spaces', () => {
+  test('nests under the project scope, so a project invalidation reaches it', () => {
+    const scope = qk.project.scope('P1');
+    expect(qk.project.spaces('P1').slice(0, scope.length)).toEqual([...scope]);
+    expect(qk.project.spaces('P1')).not.toEqual([...qk.project.spaces('P2')] as never);
+  });
+});
+
 // KRTX-1742. The inbox, the preference record and a session's watch state all
 // answer for the CALLER, so — like `qk.accounts` — the user id is a key
 // segment. Without it, an in-tab identity swap would show user B user A's

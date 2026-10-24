@@ -1286,6 +1286,10 @@
         "email_channel": {
           "name": "Kanal e-pošte",
           "description": "Dajte agentu poštansko sanduče na Resend-u: dolazna pošta pokreće i nastavlja sesije, a agent čita, odgovara i šalje iz sandučeta. Koristite sopstveni Resend API ključ i domen."
+        },
+        "project_channels": {
+          "name": "Kanali",
+          "description": "Organizujte rad u kanalima. Svaka nova poruka u kanalu ili u direktnoj poruci sa agentom započinje nit. Zamenjuje listu sesija u bočnoj traci."
         }
       }
     },
@@ -1777,7 +1781,13 @@
     "underMore": "Više",
     "sidebarEmpty": "Prevuci stavku ovde da bi se prikazala u bočnoj traci.",
     "moreEmpty": "Prevuci stavku ovde da bi je premestio u Više.",
-    "moreCaption": "Stavke u Više otvaraju se iz menija Više, ispod navigacije."
+    "moreCaption": "Stavke u Više otvaraju se iz menija Više, ispod navigacije.",
+    "spaces": {
+      "channels": "Канали",
+      "directMessages": "Директне поруке",
+      "addChannel": "Додај канал",
+      "loadError": "Учитавање канала није успело."
+    }
   },
   "dashboard": {
     "title": "Контролна табла",
@@ -20402,7 +20412,9 @@
       "text000a82dd887b": "Направите управљано Resend пријемно сандуче за свог агента или повежите оно које већ имате.",
       "text1482de4dfc18": "Kortix ће креирати и управљати Resend пријемним сандучетом за ову везу.",
       "textd529a06f471c": "Resend ће направити овај префикс када буде доступан, на пример",
-      "text51cfb12fffdd": "Primljen dolazni imejl"
+      "text51cfb12fffdd": "Primljen dolazni imejl",
+      "openThreadAction": "Отвори тему",
+      "untitledThread": "Тема без наслова"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -20761,7 +20773,11 @@
     "overlapAllow": "Ипак покрени ново извршавање",
     "perHour": "Po satu",
     "perDay": "Po danu",
-    "noLimit": "Bez ograničenja"
+    "noLimit": "Bez ograničenja",
+    "postTo": "Објави у",
+    "postToHint": "Свако покретање тамо започиње нову тему. Без канала, покретања иду у #{channel}.",
+    "postToNone": "Без канала",
+    "postToUnavailable": "Недоступан канал"
   },
   "gatewayAccess": {
     "heroTitle": "Користите моделе овог пројекта било где",
@@ -22776,5 +22792,409 @@
     "auditSet": "скуп правила {set}",
     "bulkInheritTitle": "Вратити {count, plural, one {# алат} few {# алата} other {# алата}} на основна правила?",
     "bulkInheritBody": "Брише правило овог скупа за сваки алат под {group}, па сваки поново прати основна правила. Правила по обрасцу се не мењају."
+  },
+  "spaces": {
+    "memory": {
+      "search": "Претражи меморију",
+      "pagesLabel": "Странице меморије",
+      "allPages": "Све странице",
+      "type": {
+        "people": "Људи",
+        "decisions": "Одлуке",
+        "workstreams": "Токови рада",
+        "playbooks": "Приручници",
+        "note": "Белешке"
+      },
+      "needsConfirming": "Чека потврду",
+      "noMatches": "Ниједна страница не одговара упиту „{query}“.",
+      "loadError": "Ова меморија није учитана.",
+      "pageLoadError": "Ова страница није учитана.",
+      "retry": "Покушај поново",
+      "close": "Затвори",
+      "loadOlder": "Прикажи старије",
+      "updatedBy": "Ажурирао/ла {author}",
+      "fromThread": "из „{thread}“",
+      "author": {
+        "system": "Kortix",
+        "unknown": "Члан"
+      },
+      "edit": "Уреди",
+      "more": "Још радњи",
+      "copyLink": "Копирај линк",
+      "linkCopied": "Линк је копиран",
+      "copyFailed": "Линк није копиран.",
+      "delete": "Обриши",
+      "deleteTitle": "Обрисати ову страницу?",
+      "deleteDescription": "Агенти престају да виде „{title}“ од следећег потеза. Ово можеш да опозовеш у „Недавним изменама“.",
+      "deleted": "Страница је обрисана",
+      "deleteFailed": "Страница није обрисана. Покушај поново.",
+      "undo": "Опозови",
+      "undone": "Измена је опозвана",
+      "undoFailed": "Измена није опозвана. Покушај поново.",
+      "superseded": "Страница је после тога промењена. Отвори историју да вратиш ранију верзију.",
+      "alreadyUndone": "Ова измена је већ опозвана.",
+      "undoUnavailable": "Страница је после тога промењена, па ова измена не може да се опозове.",
+      "view": "Прикажи",
+      "relatedPages": "Повезане странице",
+      "pageLimit": "Ова меморија има 200 страница, колико највише може. Прво обриши једну страницу.",
+      "emptyPage": "На овој страници још нема ничега.",
+      "recent": {
+        "added": "{author} је ажурирао/ла ову страницу {time}: додато „{fact}“",
+        "updated": "{author} је ажурирао/ла ову страницу {time}",
+        "created": "{author} је направио/ла ову страницу {time}",
+        "viewChange": "Прикажи измену"
+      },
+      "changes": {
+        "title": "Недавне измене",
+        "empty": "Још нема измена.",
+        "loadError": "Недавне измене нису учитане.",
+        "viewPage": "Прикажи {title}",
+        "undoPage": "Опозови измену на {title}",
+        "op": {
+          "create": "{author} је направио/ла <page>{title}</page>",
+          "update": "{author} је уредио/ла <page>{title}</page>",
+          "append": "{author} је допунио/ла <page>{title}</page>",
+          "delete": "{author} је обрисао/ла <page>{title}</page>",
+          "restore": "{author} је вратио/ла <page>{title}</page>",
+          "undo": "{author} је опозвао/ла измену на <page>{title}</page>",
+          "confirm": "{author} је потврдио/ла <page>{title}</page>",
+          "file_note": "{author} је разврстао/ла белешку у <page>{title}</page>",
+          "import": "{author} је увезао/ла <page>{title}</page>"
+        }
+      },
+      "history": {
+        "title": "Историја",
+        "description": "Свака измена странице „{title}“, најновија прва.",
+        "loadError": "Историја није учитана.",
+        "current": "Тренутна",
+        "undone": "Опозвана",
+        "restore": "Врати ову верзију",
+        "restored": "Верзија је враћена",
+        "restoreFailed": "Ова верзија није враћена. Покушај поново.",
+        "op": {
+          "create": "{author} је направио/ла страницу",
+          "update": "{author} је уредио/ла страницу",
+          "append": "{author} је додао/ла чињеницу",
+          "delete": "{author} је обрисао/ла страницу",
+          "restore": "{author} је вратио/ла верзију",
+          "undo": "{author} је опозвао/ла измену",
+          "confirm": "{author} је потврдио/ла страницу",
+          "file_note": "{author} је разврстао/ла белешку",
+          "import": "{author} је увезао/ла страницу"
+        }
+      },
+      "editor": {
+        "title": "Наслов",
+        "type": "Врста",
+        "summary": "Сажетак",
+        "summaryPlaceholder": "Један ред који агенти виде на листи страница",
+        "body": "Страница",
+        "bodyHint": "Markdown. Ред који почиње са ## почиње одељак; ⟦1⟧ наводи извор 1.",
+        "save": "Сачувај",
+        "cancel": "Откажи",
+        "saved": "Страница је сачувана",
+        "conflict": "Неко је променио ову страницу. Поново учитај да је видиш.",
+        "reload": "Поново учитај",
+        "error": {
+          "tooLarge": "Ова страница има више од 8 KB. Скрати је.",
+          "titleTaken": "Друга страница већ има овај наслов.",
+          "secret": "Ово личи на тајну. Чувај тајне у одељку „Тајне“.",
+          "readOnly": "Ова меморија је само за читање.",
+          "failed": "Страница није сачувана. Покушај поново."
+        }
+      },
+      "remember": {
+        "label": "Нешто што {place} треба да запамти",
+        "placeholder": "Реци {place} нешто да запамти…",
+        "hint": "Чува се као белешка са твојим именом",
+        "send": "Сачувај у меморију",
+        "status": {
+          "saved": "Сачувано у белешкама",
+          "secret": "Ово личи на тајну. Чувај тајне у одељку „Тајне“.",
+          "limit": "Ова меморија има 200 страница, колико највише може. Прво обриши једну страницу.",
+          "readOnly": "Ова меморија је само за читање.",
+          "failed": "Није сачувано. Покушај поново."
+        }
+      },
+      "empty": {
+        "title": "{place} још нема меморију",
+        "titleDm": "Још нема меморије са {place}",
+        "description": "Агенти чувају оно око чега се овај канал договори, па свака нова тема почиње са тим. Свака чињеница води до теме из које потиче; уреди или опозови било коју измену.",
+        "descriptionDm": "{place} чува оно око чега се договорите у овом разговору, па свака нова тема почиње са тим. Свака чињеница води до теме из које потиче; уреди или опозови било коју измену.",
+        "example": {
+          "people": "Northwind — главни контакт је Sam, обнова у марту",
+          "decisions": "Цена остаје 49 $ по месту",
+          "workstreams": "Лансирање у Q4 — статус, носилац, следећи кораци",
+          "playbooks": "Како пишемо белешке о издању"
+        },
+        "tryOne": "Пробај",
+        "try": {
+          "one": "Лансирамо 12. новембра",
+          "two": "Priya одобрава све текстове за лансирање",
+          "three": "Пиши једноставно, без претеривања"
+        },
+        "titleCompany": "Меморија компаније је још празна",
+        "descriptionCompany": "Агенти чувају оно око чега се цео пројекат сложи, па свака нова тема у сваком каналу почиње са тим. Свака чињеница води до теме из које потиче; измени или поништи било коју промену."
+      },
+      "source": {
+        "thread": "Отвори тему „{label}“",
+        "threadGone": "Из теме „{label}“",
+        "outside": "Отвори {label} у новој картици",
+        "outsideText": "Из {label}",
+        "person": "Додао/ла {label}",
+        "import": "Увезено из {label}"
+      },
+      "saved": {
+        "running": "Чува се у меморију…",
+        "channel": "Сачувано у меморију канала {place}: <page>{title}</page>",
+        "dm": "Сачувано у твоју меморију са {place}: <page>{title}</page>",
+        "company": "Сачувано у меморију компаније: <page>{title}</page>",
+        "failed": "Није сачувано у меморију: {reason}",
+        "view": "Прикажи",
+        "undo": "Опозови",
+        "undone": "Опозвано",
+        "superseded": "Промењено у међувремену —",
+        "openHistory": "отвори историју",
+        "undoFailed": "Опозивање није успело.",
+        "failedGeneric": "Није сачувано у меморију."
+      },
+      "used": {
+        "label": "Коришћена меморија: {places} · {count, plural, one {# страница} few {# странице} other {# страница}}",
+        "title": "Странице са којима је ова тема почела",
+        "company": "Компанија",
+        "removed": "Уклоњена"
+      },
+      "searchError": "Претрага ове меморије није успела.",
+      "searchResults": "Резултати претраге",
+      "searchTool": {
+        "title": "Претражена меморија",
+        "count": "{count, plural, one {# страница} few {# странице} other {# страница}}",
+        "running": "Претрага меморије…",
+        "failed": "Претрага меморије није успела: {reason}",
+        "failedGeneric": "Претрага меморије није успела.",
+        "none": "Ниједна страница не одговара упиту „{query}“."
+      },
+      "palette": {
+        "heading": "Меморија"
+      },
+      "company": {
+        "subtitle": "Оно што зна сваки агент у овом пројекту.",
+        "gateDescription": "Меморија компаније долази уз канале: сваки агент у овом пројекту почиње сваку тему са оним што је тим овде сачувао.",
+        "title": "Меморија",
+        "place": "Компанија"
+      },
+      "rememberThis": {
+        "label": "Запамти ово",
+        "saved": "Сачувано у меморију",
+        "saveTo": "Сачувај у",
+        "dm": "Твоја меморија са агентом {agent}"
+      },
+      "archivedReadOnly": "{place} је архивиран. Његова меморија је само за читање.",
+      "pending": {
+        "note": "Агенти не користе ове странице док их неко не потврди.",
+        "from": "Са {host}",
+        "banner": "Са {host}. Агенти ово не користе док га неко не потврди.",
+        "bannerNoHost": "Изван нити. Агенти ово не користе док га неко не потврди.",
+        "confirm": "Потврди",
+        "confirmPage": "Потврди {title}",
+        "discard": "Одбаци",
+        "discardPage": "Одбаци {title}",
+        "cancel": "Откажи",
+        "confirmed": "Страница је потврђена. Агенти је сада могу користити.",
+        "alreadyConfirmed": "Неко је већ потврдио ову страницу.",
+        "confirmFailed": "Страница није потврђена. Покушајте поново.",
+        "discarded": "Страница је одбачена",
+        "discardFailed": "Страница није одбачена. Покушајте поново."
+      },
+      "trash": {
+        "title": "Отпад",
+        "note": "Обрисане странице остају овде 30 дана, а затим се трајно бришу.",
+        "loadError": "Отпад није учитан.",
+        "restore": "Врати",
+        "restorePage": "Врати {title}",
+        "restored": "Страница је враћена",
+        "titleTaken": "Страница са овим насловом постоји. Преименујте је, па вратите ову.",
+        "restoreFailed": "Страница није враћена. Покушајте поново.",
+        "allTrashed": "Све странице су у отпаду."
+      }
+    },
+    "create": {
+      "title": "Направи канал",
+      "description": "Сви у овом пројекту могу да виде и користе канал.",
+      "nameLabel": "Назив",
+      "namePlaceholder": "marketing",
+      "slugPlaceholder": "naziv-kanala",
+      "descriptionLabel": "Опис (опционо)",
+      "descriptionPlaceholder": "За шта служи овај канал",
+      "submit": "Направи канал",
+      "created": "Канал је направљен",
+      "nameRequired": "Додај назив.",
+      "invalidName": "Користи бар једно слово или цифру у називу.",
+      "slugTaken": "<link>#{slug}</link> већ постоји.",
+      "failed": "Прављење канала није успело. Покушај поново.",
+      "renameTitle": "Преименуј канал",
+      "renameDescription": "Линк канала се мења са његовим називом.",
+      "save": "Сачувај",
+      "renamed": "Канал је преименован",
+      "renameFailed": "Преименовање канала није успело. Покушај поново."
+    },
+    "view": {
+      "welcomeTitle": "Добро дошао у #{name}",
+      "welcomeEmpty": "Започни прву тему у #{name}. Свака порука започиње нову тему.",
+      "welcomeStart": "Овде почиње #{name}.",
+      "dmIntro": "Овај разговор је само између тебе и агента {agent}.",
+      "today": "Данас",
+      "yesterday": "Јуче",
+      "openThread": "Отвори тему",
+      "replyInThread": "Одговори у теми",
+      "lastReply": "Последњи одговор {time}",
+      "working": "{agent} ради…",
+      "agentFallback": "Агент",
+      "authorFallback": "Неко",
+      "loadEarlier": "Учитај раније теме",
+      "messageChannel": "Порука за #{name}",
+      "messageAgent": "Порука за {agent}",
+      "threadsEmpty": "Теме које започнеш појавиће се овде.",
+      "loadError": "Учитавање овог канала није успело.",
+      "threadsLoadError": "Учитавање тема није успело.",
+      "retry": "Покушај поново",
+      "notFound": "Овај канал не постоји.",
+      "notFoundHint": "Линк је можда погрешан, или је неко преименовао канал.",
+      "openDefault": "Отвори #{name}",
+      "archivedTitle": "#{name} је архивиран.",
+      "archivedHint": "Врати га из архиве да би овде поново читао и започињао теме.",
+      "archivedLocked": "Само његов творац или менаџер пројекта може да га врати из архиве.",
+      "unarchive": "Врати канал из архиве",
+      "unarchived": "Канал је враћен из архиве",
+      "unarchiveFailed": "Враћање канала из архиве није успело. Покушај поново.",
+      "dmFailed": "Отварање овог разговора није успело.",
+      "archive": "Архивирај канал",
+      "archiveTitle": "Архивирати #{name}?",
+      "archiveDescription": "Канал нестаје из бочне траке свих чланова. Његове теме остају, а његов творац или менаџер пројекта може да га врати из архиве.",
+      "archived": "Канал је архивиран",
+      "archiveFailed": "Архивирање канала није успело. Покушај поново.",
+      "threadTitle": "Тема",
+      "closeThread": "Затвори тему",
+      "sendFailed": "Покретање теме није успело. Покушај поново.",
+      "replies": "{count, plural, one {# одговор} few {# одговора} other {# одговора}}",
+      "replyPlaceholder": "Одговори…",
+      "tab": {
+        "chat": "Ћаскање",
+        "threads": "Теме",
+        "files": "Датотеке",
+        "memory": "Меморија",
+        "apps": "Апликације",
+        "links": "Линкови",
+        "triggers": "Окидачи"
+      },
+      "empty": {
+        "files": {
+          "title": "Још нема датотека",
+          "description": "Датотеке подељене у {place} појављују се овде.",
+          "action": "Отпреми датотеку"
+        },
+        "memory": {
+          "title": "Још нема меморије",
+          "description": "Оно што агенти памте за {place} појављује се овде.",
+          "action": "Додај меморију"
+        },
+        "apps": {
+          "title": "Још нема апликација",
+          "description": "Апликације направљене у {place} појављују се овде."
+        },
+        "links": {
+          "title": "Још нема линкова",
+          "description": "Линкови подељени у нитима канала {place} појављују се овде. Закачи један да би га добио сваки агент у каналу."
+        },
+        "triggers": {
+          "title": "Још нема окидача",
+          "description": "Окидачи започињу тему у {place} по распореду или на догађај.",
+          "action": "Нови окидач"
+        }
+      },
+      "channelDetails": "Детаљи канала #{name}",
+      "roster": "{people} · {agents}",
+      "rosterPeople": "{count, plural, one {# особа} few {# особе} other {# особа}}",
+      "rosterAgents": "{count, plural, one {# агент} few {# агента} other {# агената}}",
+      "rosterHint": "Људи и агенти у темама овог канала",
+      "copyLink": "Копирај линк до теме",
+      "linkCopied": "Линк је копиран",
+      "started": "Започета {time}",
+      "notice": {
+        "unreachable": "Изгубљена је веза са рачунаром ове теме. Поруке које пошаљеш чекају у реду док се поново не повеже.",
+        "unreachableMidTurn": "Изгубљена је веза са рачунаром ове теме док је ред још отворен. Поруке које пошаљеш чекају док не одговори.",
+        "stalled": "Буђење рачунара ове теме траје дуже него обично. Поруке које пошаљеш чекају у реду.",
+        "starting": "Покреће се рачунар ове теме. Твоја порука ће бити послата аутоматски.",
+        "idle": "Рачунар ове теме спава. Твоја следећа порука га буди и биће испоручена.",
+        "waking": "Буди се рачунар ове теме. Поруке које пошаљеш чекају у реду и шаљу се аутоматски."
+      },
+      "boot": {
+        "restart": "Поново покрени тему"
+      },
+      "links": {
+        "add": "Додај линк",
+        "addDescription": "Закачи линк у {place}. Сваки агент у каналу добија закачене линкове.",
+        "urlLabel": "URL",
+        "titleLabel": "Наслов (опционо)",
+        "titlePlaceholder": "О чему се ради",
+        "invalidUrl": "Унеси линк који почиње са http:// или https://.",
+        "addFailed": "Линк није додат. Покушај поново.",
+        "limit": "Овај канал већ има 200 закачених линкова. Прво откачи један.",
+        "added": "Линк је додат",
+        "remove": "Уклони линк",
+        "removeTitle": "Уклонити овај линк?",
+        "removeDescription": "{link} се уклања из {place} за све.",
+        "removed": "Линк је уклоњен",
+        "removeFailed": "Линк није уклоњен. Покушај поново.",
+        "loadError": "Линкови нису учитани.",
+        "intro": "Линкови подељени у нитима канала {place}. Закачи линк да би га добио сваки агент у каналу.",
+        "pinnedTitle": "Закачено · агенти ово читају",
+        "sharedTitle": "Подељено у нитима",
+        "sharedNote": "Аутоматски прикупљено из порука људи",
+        "pinnedBy": "Закачио/ла {name}",
+        "pinnedLabel": "Закачено",
+        "fromThread": "из „{thread}”",
+        "inThread": "у „{thread}”",
+        "sharedTimes": "подељено {count}×",
+        "pin": "Закачи",
+        "unpin": "Откачи",
+        "pinnedToast": "Линк је закачен",
+        "unpinnedToast": "Линк је откачен",
+        "pinFailed": "Линк није закачен. Покушај поново.",
+        "unpinFailed": "Линк није откачен. Покушај поново."
+      },
+      "appsLoadError": "Апликације нису учитане.",
+      "triggers": {
+        "loadError": "Окидачи нису могли да се учитају."
+      }
+    },
+    "details": {
+      "about": "О каналу",
+      "members": "Чланови",
+      "name": "Назив канала",
+      "description": "Опис",
+      "noDescription": "Додај опис",
+      "created": "Направљен",
+      "edit": "Измени",
+      "editField": "Измени: {field}",
+      "archiveTitle": "Архивирај овај канал",
+      "archiveHint": "Нестаје из бочне траке свих чланова. Његове теме остају.",
+      "archive": "Архивирај",
+      "people": "Људи",
+      "agents": "Агенти",
+      "membersHint": "Сви који су овде започели тему и сви агенти који су на неку одговорили, у до сада учитаним темама."
+    },
+    "folder": {
+      "memory": "Меморија",
+      "loadError": "Учитавање ове фасцикле није успело",
+      "memoryNoteChannel": "Шта агенти у {place} памте. Агенти ово читају на почетку сваке теме.",
+      "memoryNoteDm": "Шта {agent} памти из ове DM поруке. Ово чита на почетку сваке теме.",
+      "off": {
+        "title": "Укључи Drive",
+        "description": "Датотеке и меморија за {place} налазе се у Drive-у. Укључи Volumes у Feature flags да би их користио.",
+        "descriptionMember": "Датотеке и меморија за {place} налазе се у Drive-у. Замоли администратора пројекта да га укључи.",
+        "action": "Отвори Feature flags"
+      }
+    }
   }
 }

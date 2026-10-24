@@ -21,14 +21,14 @@ import { join } from 'node:path'
 import type { Agent, AgentEvent, AgentMessage, AgentOptions, AgentTool, BeforeToolCallContext, BeforeToolCallResult } from '@earendil-works/pi-agent-core'
 import type { ImageContent, ModelThinkingLevel } from '@earendil-works/pi-ai'
 import type { AgentSessionEvent, SessionEntry, SessionHeader, Skill } from '@earendil-works/pi-coding-agent'
-import { KORTIX_RUNTIME_SCHEMA, toolAllowed, type CompiledAgent, type CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
+import { KORTIX_RUNTIME_SCHEMA, type CompiledAgent, type CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
 import type { KortixAssistantMessageInfo, KortixMessage, KortixMessageError, RuntimePermissionRequest, RuntimeQuestionRequest, RuntimeToolRef, TurnErrorCode } from '@kortix/api-contract/transcript'
 import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { logger } from '@/lib/log/logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/secret-capabilities'
 import { withheldManagedSkills } from '@/services/skills/managed-skills'
-import { loadTools } from '@/services/tools/host'
+import { hostedTool, hostedToolAllowed, loadTools } from '@/services/tools/host'
 import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
 import type { PiConfig, ProjectInstructions } from './config'
 import { readProjectInstructions, resolvePiProjectConfigDir, resolvePiSkillDirectories, resolvePiV3SkillDirectories } from './config'
@@ -1343,7 +1343,7 @@ export class PiRuntime {
 
   /** The root agent's rule for a call: its tool access, then the permission policy. */
   private rootRule(tool: string, args: unknown): PermissionRule {
-    return toolAllowed(this.compiledAgent()?.tools, tool) ? this.permissions.rule(tool, args) : 'deny'
+    return hostedToolAllowed(this.compiledAgent()?.tools, tool) ? this.permissions.rule(tool, args) : 'deny'
   }
 
   /** Permission policy first, then extension `tool_call` handlers (`next`). Root and child agents share it. */
@@ -1453,13 +1453,15 @@ export class PiRuntime {
 
   /**
    * Re-read the base system prompt (compiled agent, skills) into pi's session,
-   * with the tools the agent's tool access allows (`toolAllowed`). Every tool
+   * with the tools the agent's tool access allows (`hostedToolAllowed`). Every tool
    * stays registered, so access granted again re-activates it in place.
    */
   private rebuildSystemPrompt(): void {
     const session = this.pi?.session
     if (!session) return
-    const allowed = (name: string) => toolAllowed(this.compiledAgent()?.tools, name)
+    // A platform tool its permission denies outright (`remember` under `edit: deny`) is hidden too, not only refused.
+    const allowed = (name: string) =>
+      hostedToolAllowed(this.compiledAgent()?.tools, name) && !(hostedTool(name)?.source === 'platform' && this.permissions.rule(name) === 'deny')
     // ponytail: a pi package that deactivates a built-in gets it back on the next rebuild; remember package choices if one ever does.
     // pi registers codemode inactive: it is a built-in here, switched like the rest.
     const builtIn = [...this.baseTools.map((tool) => tool.name), ...(this.codemodeMode === 'off' ? [] : [CODEMODE_TOOL])]
@@ -1510,7 +1512,7 @@ export class PiRuntime {
     }
     const selected = input.model ? this.models.select(nativeModelId(input.model)) : this.selected
     const model = { providerID: selected.providerID, modelID: selected.modelID }
-    const allowed = (tool: string) => toolAllowed(this.compiledAgent()?.tools, tool) && toolAllowed(this.compiled?.agent?.[input.agent]?.tools, tool)
+    const allowed = (tool: string) => hostedToolAllowed(this.compiledAgent()?.tools, tool) && hostedToolAllowed(this.compiled?.agent?.[input.agent]?.tools, tool)
     const tools = (input.tools ? this.workspaceTools.filter((tool) => input.tools!.includes(tool.name)) : this.workspaceTools).filter((tool) => allowed(tool.name))
     const policy = compilePermissionPolicy(input.permission)
     const messageId = this.clock.mint(this.now())

@@ -23,6 +23,11 @@ export interface UseProjectHomeSendOptions {
    * apps/web checks the account's billing state here.
    */
   beforeSend?: () => Promise<void>;
+  /**
+   * A channel or DM composer: file each send in this space as a new thread.
+   * The page stays: `onOpen(sessionId)` runs instead of the navigation.
+   */
+  space?: { spaceId: string; onOpen: (sessionId: string) => void };
 }
 
 /**
@@ -31,7 +36,7 @@ export interface UseProjectHomeSendOptions {
  * message on its first frame. `ProjectHome` uses it when the host passes no
  * `onSend`.
  */
-export function useProjectHomeSend(projectId: string, { beforeSend }: UseProjectHomeSendOptions = {}) {
+export function useProjectHomeSend(projectId: string, { beforeSend, space }: UseProjectHomeSendOptions = {}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tComposerAttachments = useTranslations('hardcodedUi.composerAttachments');
   const newSession = useNewProjectSession(projectId);
@@ -111,6 +116,7 @@ export function useProjectHomeSend(projectId: string, { beforeSend }: UseProject
         newSession({
           create: {
             ...buildNewSessionCreateInput(options),
+            ...(space ? { space_id: space.spaceId } : {}),
             ...(heldAttachments
               ? {}
               : {
@@ -153,17 +159,21 @@ export function useProjectHomeSend(projectId: string, { beforeSend }: UseProject
               heldAttachments.resubmit();
               startHeldPost(heldAttachments, sessionId);
             }
+            // A space opens the thread beside its timeline (a gate Retry too).
+            space?.onOpen(sessionId);
             resolve(sessionId);
           },
         });
       });
+      // A space composer stays on screen: it is ready for the next message.
+      if (space) setSending(false);
       if (!heldAttachments) {
         attachments?.release();
         return;
       }
       startHeldPost(heldAttachments, sessionId);
     },
-    [beforeSend, newSession, projectId, tI18nComplete, tComposerAttachments],
+    [beforeSend, space, newSession, projectId, tI18nComplete, tComposerAttachments],
   );
 
   return { send, sending };

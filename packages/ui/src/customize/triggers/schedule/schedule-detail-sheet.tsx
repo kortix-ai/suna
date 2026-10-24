@@ -91,6 +91,7 @@ import {
 } from './trigger-composer-logic';
 import type { TriggerControls } from './trigger-controls';
 import { draftFromTrigger, triggerPatch } from './trigger-edit-logic';
+import { PostToField } from './post-to-field';
 import { TriggerOptions } from './trigger-options';
 import { TriggerReadOnly } from './trigger-readonly';
 import { TriggerRunsPanel } from './trigger-runs-panel';
@@ -712,6 +713,7 @@ function SheetForm({
               aria-invalid={blockError('name') ? true : undefined}
             />
             <InlineError message={blockError('name')} />
+            <PostToField projectId={projectId} draft={draft} patch={patch} baseAccess={base.sessionAccess} />
           </section>
 
           <section data-sheet-block data-block="options">

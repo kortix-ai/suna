@@ -96,6 +96,8 @@ import { transitionSession } from '../session-lifecycle/status-transitions';
 import { mergeSessionSandboxEnv, parseSessionRuntimeContext } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { resolvePlatformMetaSandbox } from './platform-meta-agent';
+import { FIRST_PROMPT_MAX_CHARS, SPACE_NOT_FOUND, ensureDefaultSpace, findForkSourceSpace, findSessionSpace, spaceSessionVisibility } from './project-spaces';
+import { liveTriggerSpace, triggerRunSpace } from './trigger-space';
 
 import {
   resolveProjectSnapshotMode,
@@ -214,10 +216,12 @@ async function loadParentSession(
   visibility: SessionVisibility;
   origin: string;
   initiator: SessionInitiator | null;
+  spaceId: string | null;
 } | null> {
   const [parent] = await db
     .select({
       visibility: projectSessions.visibility,
+      spaceId: projectSessions.spaceId,
       projectId: projectSessions.projectId,
       origin: projectSessions.origin,
       initiatorType: projectSessions.initiatorType,
@@ -232,6 +236,7 @@ async function loadParentSession(
     visibility: parent.visibility as SessionVisibility,
     origin: parent.origin,
     initiator: parent.initiatorType ? { type: parent.initiatorType, id: parent.initiatorId } : null,
+    spaceId: parent.spaceId,
   };
 }
 
@@ -258,6 +263,51 @@ type ValidatedSessionConnectorBindings = Extract<
 >['bindings'];
 type PendingPromptConversion = ReturnType<typeof convertPendingPromptToInboxRow>;
 type SessionCreateMetadata = ReturnType<typeof buildSessionCreateMetadata>['metadata'];
+
+
+/**
+ * `project_channels` on: the space the body names, checked, and the sharing it
+ * implies (`spaceSessionVisibility`: a channel thread is project-visible
+ * unless the caller chose otherwise, a DM thread is private, a fork keeps its
+ * source's sharing). A warm draft gets no space until a real create. Flag off:
+ * `space_id` is ignored.
+ */
+async function resolveRequestedSessionSpace(input: CreateProjectSessionInput): Promise<
+  SessionCreateStep<{ filed: boolean; spaceId: string | null; visibility?: 'project' | 'private' | 'restricted' }>
+> {
+  const { project, body, userId } = input;
+  const warm =
+    (input.metadata?.[WARM_SESSION_METADATA_KEY] ?? normalizeJsonObject(body.metadata)[WARM_SESSION_METADATA_KEY]) === true;
+  if (!resolveFeatureFlag(project.metadata, 'project_channels') || warm) return { filed: false, spaceId: null };
+  // A run of a repo trigger lands in the trigger's live space, read when the
+  // create executes (a queued run sees the space as it is then). The space
+  // was checked when it was set on the trigger: a DM was the setter's own,
+  // while the run's actor is the automation stand-in. None or archived:
+  // `#general`, as is a DM whose agent the trigger no longer runs
+  // (`triggerRunSpace`). `source` and `trigger_*` are server-set (`createSession`).
+  const meta = input.metadata ?? {};
+  if (typeof meta.source === 'string' && meta.source.startsWith('trigger:') && meta.trigger_kind === 'git') {
+    const space = triggerRunSpace(
+      typeof meta.trigger_slug === 'string' ? await liveTriggerSpace(project.projectId, meta.trigger_slug) : null,
+      normalizeString(body.agent_name),
+    );
+    return space ? { filed: true, spaceId: space.spaceId, visibility: spaceSessionVisibility(space.kind) } : { filed: true, spaceId: null };
+  }
+  if (body.space_id === undefined) {
+    // A fork lands in its source's space while the caller may still post there,
+    // with its source's sharing (never wider); else in `#general`.
+    const fork = typeof body.fork_from_session_id === 'string'
+      ? await findForkSourceSpace(project.projectId, body.fork_from_session_id, userId)
+      : null;
+    if (!fork) return { filed: true, spaceId: null };
+    return { filed: true, spaceId: fork.space.spaceId, visibility: spaceSessionVisibility(fork.space.kind, fork.visibility) };
+  }
+  const space = typeof body.space_id === 'string' && isUuid(body.space_id)
+    ? await findSessionSpace(project.projectId, body.space_id, userId)
+    : null;
+  if (!space) return { error: { status: 404, body: SPACE_NOT_FOUND } };
+  return { filed: true, spaceId: space.spaceId, visibility: spaceSessionVisibility(space.kind) };
+}
 
 /** The session's sharing: explicit, or inherited from the spawning session. */
 async function resolveSessionSharing(
@@ -954,6 +1004,8 @@ function buildSessionCreateMetadata(params: {
   parentSession: ParentSession;
   repositoryAccess: boolean;
   sandboxSlug: string;
+  /** Filed into a space: the first prompt is stored for the channel timeline. */
+  filed: boolean;
   workspaceVolume: WorkspaceVolume | null;
 }) {
   const {
@@ -975,6 +1027,7 @@ function buildSessionCreateMetadata(params: {
     parentSession,
     repositoryAccess,
     sandboxSlug,
+    filed,
     workspaceVolume,
   } = params;
   const { project, userId, body } = input;
@@ -1038,9 +1091,16 @@ function buildSessionCreateMetadata(params: {
             : false,
     });
   const requestMetadata = normalizeJsonObject(body.metadata);
+  // The user's words: the clean title source of an envelope, else the prompt.
+  const firstPrompt = filed
+    ? (explicitTitleSource ??
+      normalizeString((body.pending_prompt as Record<string, unknown> | undefined)?.text) ??
+      initialPrompt)
+    : null;
   const metadata = {
     ...requestMetadata,
     ...(sessionName ? { custom_name: sessionName } : {}),
+    ...(firstPrompt ? { first_prompt: firstPrompt.slice(0, FIRST_PROMPT_MAX_CHARS) } : {}),
     ...(initialPrompt ? { initial_prompt: initialPrompt } : {}),
     // Harness context beside the prompt; server-read by the initial-turn claim.
     ...(initialContext ? { initial_context: initialContext } : {}),
@@ -1102,6 +1162,7 @@ async function insertSessionAndBindings(
     providerSecretPools: Record<string, string[]> | undefined;
     pendingPromptConversion: PendingPromptConversion | null;
     inheritedGrants: SecretGrant[];
+    spaceId: string | null;
   },
   runtimeContext: SessionRuntimeContextValue,
   connectorBindings: ValidatedSessionConnectorBindings,
@@ -1125,6 +1186,7 @@ async function insertSessionAndBindings(
     providerSecretPools,
     pendingPromptConversion,
     inheritedGrants,
+    spaceId,
   } = params;
   const { userId, body } = input;
   return db.transaction(async (tx) => {
@@ -1148,6 +1210,7 @@ async function insertSessionAndBindings(
       visibility,
       origin,
       parentSessionId: parentSession?.sessionId ?? null,
+      spaceId,
       initiatorType: initiator.type,
       initiatorId: initiator.id,
       secretsAllowlist,
@@ -1579,8 +1642,13 @@ export async function createProjectSession(input: {
     projectMetadata: project.metadata,
     location: resolveSessionSandboxRegion(project.metadata),
   });
+  const requestedSpace = await resolveRequestedSessionSpace(input);
+  if (requestedSpace.error) return { error: requestedSpace.error };
+  // A space decides the sharing unless the caller set it explicitly; a private one (a DM, a fork of a private session) always does.
   const { parentSession, visibility, inheritedGrants } = await resolveSessionSharing(
-    input,
+    requestedSpace.visibility && (input.visibility === undefined || requestedSpace.visibility === 'private')
+      ? { ...input, visibility: requestedSpace.visibility }
+      : input,
     accountId,
     projectId,
   );
@@ -1711,6 +1779,10 @@ export async function createProjectSession(input: {
   }
 
   const { sessionId, initialPrompt, initialContext, initialTurn, pendingPromptConversion } = identity;
+  // No space named: the spawning session's, else `#general`.
+  const spaceId = requestedSpace.filed
+    ? (requestedSpace.spaceId ?? parentSession?.spaceId ?? (await ensureDefaultSpace(projectId, accountId)).spaceId)
+    : null;
   const { initiator, metadata } = buildSessionCreateMetadata({
     input,
     projectId,
@@ -1730,6 +1802,7 @@ export async function createProjectSession(input: {
     parentSession,
     repositoryAccess,
     sandboxSlug,
+    filed: requestedSpace.filed,
     // Only a Platinum session box mounts it. An unrecorded open is deleted.
     workspaceVolume: providerName === 'platinum' && sandboxSlug !== META_SANDBOX_SLUG ? workspaceVolume : null,
   });
@@ -1756,6 +1829,7 @@ export async function createProjectSession(input: {
         providerSecretPools,
         pendingPromptConversion,
         inheritedGrants,
+        spaceId,
       },
       parsedRuntimeContext.context,
       validatedConnectorBindings.bindings,

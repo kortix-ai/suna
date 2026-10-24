@@ -116,3 +116,100 @@ test('project(id).triggers reaches run history, fire with a payload, and replay 
   ]);
   expect(calls[2]!.body).toEqual({ dry_run: true });
 });
+
+test('project(id).spaces lists, creates, updates and opens a DM', async () => {
+  const spaces = kortix.project('P1').spaces;
+  await spaces.list();
+  await spaces.create({ name: 'Design' });
+  await spaces.update('S1', { name: 'Design team' });
+  await spaces.dm('kortix');
+  expect(calls).toEqual([
+    { method: 'GET', url: 'http://test.local/projects/P1/spaces', body: undefined },
+    { method: 'POST', url: 'http://test.local/projects/P1/spaces', body: { name: 'Design' } },
+    { method: 'PATCH', url: 'http://test.local/projects/P1/spaces/S1', body: { name: 'Design team' } },
+    { method: 'POST', url: 'http://test.local/projects/P1/spaces/dm', body: { agent_name: 'kortix' } },
+  ]);
+});
+
+test('project(id).memory reaches layers, pages, history and undo', async () => {
+  const memory = kortix.project('P1').memory;
+  await memory.layer('company');
+  await memory.pages.list('S1');
+  await memory.pages.create('S1', { type: 'people', title: 'Priya' });
+  await memory.notes.add('S1', { text: 'Priya owns the Northwind launch' });
+  await memory.changes('S1', { before: 'C2' });
+  await memory.pages.get('PG1');
+  await memory.pages.update('PG1', { base_version: 3, summary: 'Owns QA' });
+  await memory.pages.delete('PG1');
+  await memory.pages.history('PG1');
+  await memory.pages.restore('PG1', 'V1');
+  await memory.undo('V2');
+  const base = 'http://test.local/projects/P1/memory';
+  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+    `GET ${base}/layers/company`,
+    `GET ${base}/layers/S1/pages`,
+    `POST ${base}/layers/S1/pages`,
+    `POST ${base}/layers/S1/notes`,
+    `GET ${base}/layers/S1/changes?before=C2`,
+    `GET ${base}/pages/PG1`,
+    `PATCH ${base}/pages/PG1`,
+    `DELETE ${base}/pages/PG1`,
+    `GET ${base}/pages/PG1/history`,
+    `POST ${base}/pages/PG1/restore`,
+    `POST ${base}/versions/V2/undo`,
+  ]);
+  expect(calls[6]!.body).toEqual({ base_version: 3, summary: 'Owns QA' });
+  expect(calls[9]!.body).toEqual({ version_id: 'V1' });
+});
+
+test('project(id).memory searches pages and reads a thread’s Used memory', async () => {
+  const memory = kortix.project('P1').memory;
+  await memory.search({ q: 'Priya', layer: 'company' });
+  await memory.usage('T1');
+  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+    'GET http://test.local/projects/P1/memory/search?q=Priya&layer=company',
+    'GET http://test.local/projects/P1/sessions/T1/memory-usage',
+  ]);
+});
+
+test('project(id).memory lists the trash and Needs confirming, and confirms a page', async () => {
+  const memory = kortix.project('P1').memory;
+  await memory.pages.list('S1', { deleted: true });
+  await memory.pages.list('S1', { status: 'unconfirmed' });
+  await memory.pages.confirm('PG1');
+  const base = 'http://test.local/projects/P1/memory';
+  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+    `GET ${base}/layers/S1/pages?deleted=1`,
+    `GET ${base}/layers/S1/pages?status=unconfirmed`,
+    `POST ${base}/pages/PG1/confirm`,
+  ]);
+});
+
+test('project(id).spaces reads #general\'s notice and the caller\'s onboarding, and records a mark', async () => {
+  const spaces = kortix.project('P1').spaces;
+  await spaces.generalNotice();
+  await spaces.onboarding.get();
+  await spaces.onboarding.mark('channels_intro');
+  expect(calls).toEqual([
+    { method: 'GET', url: 'http://test.local/projects/P1/spaces', body: undefined },
+    { method: 'GET', url: 'http://test.local/projects/P1/onboarding/channels', body: undefined },
+    { method: 'POST', url: 'http://test.local/projects/P1/onboarding/channels/marks', body: { mark: 'channels_intro' } },
+  ]);
+});
+
+test('project(id).spaces reaches a channel’s apps, links and summary', async () => {
+  const spaces = kortix.project('P1').spaces;
+  await spaces.apps('S1');
+  await spaces.links.list('S1');
+  await spaces.links.add('S1', { url: 'https://example.test' });
+  await spaces.links.remove('S1', 'L1');
+  await spaces.summary('S1');
+  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+    'GET http://test.local/projects/P1/spaces/S1/apps',
+    'GET http://test.local/projects/P1/spaces/S1/links',
+    'POST http://test.local/projects/P1/spaces/S1/links',
+    'DELETE http://test.local/projects/P1/spaces/S1/links/L1',
+    'GET http://test.local/projects/P1/spaces/S1/summary',
+  ]);
+  expect(calls[2]!.body).toEqual({ url: 'https://example.test' });
+});

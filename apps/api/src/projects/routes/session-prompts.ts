@@ -26,6 +26,7 @@ import { notificationsEnabled } from '../../notifications/enabled';
 import { autoWatchSession } from '../../notifications/watchers';
 import { logger } from '../../lib/logger';
 import { personUserId } from './session-watch';
+import { collectMessageLinksInBackground } from '../lib/project-space-links';
 import {
   deleteInboxPrompt,
   editInboxPrompt,
@@ -412,6 +413,19 @@ export function registerSessionPromptsRoutes(): void {
         void autoWatchSession(projectId, sessionId, prompter).catch((err) =>
           logger.warn('[notify] auto-watch failed', { sessionId, error: err instanceof Error ? err.message : String(err) }),
         );
+      }
+
+      // A person's links join the Links tab of the thread's channel (`project_channels`).
+      if (!enqueued.deduped) {
+        collectMessageLinksInBackground({
+          projectId,
+          sessionId,
+          spaceId: visible.row.spaceId,
+          visibility: visible.row.visibility,
+          userId: personUserId(c, loaded),
+          text,
+          projectMetadata: loaded.row.metadata,
+        });
       }
 
       const stored = (enqueued.row.payload ?? {}) as Record<string, unknown>;

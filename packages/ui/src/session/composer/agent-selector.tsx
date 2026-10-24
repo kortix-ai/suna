@@ -60,8 +60,11 @@ export function AgentSelector({
   unavailableHint,
   open: controlledOpen,
   onOpenChange,
+  compact = false,
   appearance = 'chip',
 }: {
+  /** The trigger shows the agent's tile alone, no caret; the name is its tooltip. */
+  compact?: boolean;
   agents: Agent[];
   selectedAgent: string | null;
   onSelect: (agentName: string | null) => void;
@@ -295,30 +298,48 @@ export function AgentSelector({
     );
   }
 
+  const trigger = (
+    <CommandPopoverTrigger>
+      {field ? (
+        fieldTrigger(true, { 'aria-label': t('selectAgent') })
+      ) : (
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        aria-label={compact ? `${t('selectAgent')}: ${displayName}` : t('selectAgent')}
+        className={cn('text-muted-foreground rounded-lg hit-area-y-3', compact && 'px-1.5')}
+      >
+        {compact ? (
+          // The mark alone: the name is the tooltip and the menu's checked row.
+          // A placeholder name has no mark, so it shows as text.
+          triggerMark ?? <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
+        ) : (
+          <>
+            {triggerMark}
+            <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
+            <CaretDownIcon
+              className={cn(
+                'size-3 transition-transform duration-moderate ease-out',
+                open && 'rotate-180',
+              )}
+            />
+          </>
+        )}
+      </Button>
+      )}
+    </CommandPopoverTrigger>
+  );
+
   return (
     <CommandPopover open={open} onOpenChange={setOpen}>
-      <CommandPopoverTrigger>
-        {field ? (
-          fieldTrigger(true, { 'aria-label': t('selectAgent') })
-        ) : (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          aria-label={t('selectAgent')}
-          className="text-foreground/70 rounded-lg hit-area-y-3"
-        >
-          {triggerMark}
-          <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
-          <CaretDownIcon
-            className={cn(
-              'size-3 transition-transform duration-200 ease-out',
-              open && 'rotate-180',
-            )}
-          />
-        </Button>
-        )}
-      </CommandPopoverTrigger>
+      {compact ? (
+        <Hint side="top" label={displayName}>
+          {trigger}
+        </Hint>
+      ) : (
+        trigger
+      )}
 
       {/* `min(...)`, not a hard `300px`: on a 320px viewport a fixed 300px
           popover plus the trigger's own inset pushed the panel off-screen.
@@ -388,7 +409,7 @@ export function AgentSelector({
 
           {/* No results */}
           {filteredPrimary.length === 0 && search.trim() && (
-            <div className="text-muted-foreground/50 py-8 text-center text-xs">
+            <div className="text-muted-foreground py-8 text-center text-xs">
               {tHardcodedUi.raw(
                 'componentsSessionSessionChatInput.line273JsxTextNoAgentsMatchLdquo',
               )}

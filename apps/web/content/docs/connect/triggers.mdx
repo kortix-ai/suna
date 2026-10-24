@@ -586,6 +586,17 @@ kortix triggers set on-push --filter body.ref:not_prefix=refs/heads/kortix/ --fi
 
 Pass it with `kortix triggers add --apply` or `kortix triggers set`, or set `session_access` in the web app, the API or the SDK. It is stored in the database, not in `kortix.yaml`, and changing it makes no commit. Saving it also updates the sessions the trigger created before. A pinned session keeps its own sharing. For the access model, see [Accounts & access](/docs/accounts).
 
+### Post to a channel
+
+With channels on (the experimental project flag `project_channels`), a trigger can post its runs to a channel or to your DM with an agent. Each run is a new thread there: its top message is the trigger's prompt, and the trigger's name shows as its author. Pick the channel in **Post to** on the trigger form, or open the channel's **Triggers** tab and choose **New trigger**. Through the API or the SDK, set `space_id`; `null` clears it.
+
+- A channel trigger without its own session access shares its threads with the whole project, like every channel thread.
+- A DM trigger shares its threads with the DM's member, whatever session access says. Like every trigger run, people whose project role holds `project.trigger.update` and account owners and admins can also open them. A thread you start in a DM yourself stays yours only.
+- Only the DM's member can point a trigger at the DM or edit a trigger that posts there; anyone else who manages triggers can only move it out or turn it on or off. While channels are off, the trigger shows no Post to and cannot be moved, so anyone else can only turn it on or off. A DM trigger runs the DM's agent; when a `kortix.yaml` edit gives it another agent, its runs post to the default channel instead.
+- Changing **Post to** applies to later runs. Earlier threads stay where they are and keep their sharing. A trigger that reuses, pins or keys a session keeps prompting that session where it is.
+- A run whose channel was archived or deleted lands in `#general`.
+- Like session access, `space_id` is stored in the database, not in `kortix.yaml`.
+
 ## Failures and alerts
 
 When a fire or a run fails, Kortix sets the trigger's `last_status` to `failed` and stores the reason in `last_error`. `kortix triggers ls` marks the row `last run failed`, and the web app shows **Last run didn’t finish**. The next fire or run that succeeds clears it.

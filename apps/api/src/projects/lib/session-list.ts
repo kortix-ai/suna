@@ -89,6 +89,8 @@ export interface SessionListFilter {
   q?: string | null;
   /** The session carries every one of these labels (exact match). */
   labels?: string[] | null;
+  /** Only sessions filed into this space (`project_channels`). */
+  spaceId?: string | null;
   /** The person whose pins and archive apply (`personUserId`). Null: an
    *  agent, API key or service account, which reads the raw list. */
   personId?: string | null;
@@ -173,6 +175,7 @@ function sessionListFilterSql(filter: SessionListFilter, viewerId: string): SQL 
   if (filter.parent === 'root') conditions.push(isNull(t.parentSessionId));
   else if (filter.parent) conditions.push(eq(t.parentSessionId, filter.parent));
   if (filter.startedBy) conditions.push(startedBySql(filter.startedBy, viewerId));
+  if (filter.spaceId) conditions.push(eq(t.spaceId, filter.spaceId));
   if (filter.labels?.length) {
     const has = (table: SessionTable) => sql`${table.labels} @> ${JSON.stringify(filter.labels)}::jsonb`;
     conditions.push(
@@ -361,7 +364,7 @@ function sessionCursorScope(input: SessionInventoryInput, filter: SessionListFil
     ordering: input.orderByActivity ? 'activity' : undefined,
     // A cursor is a scan position inside ONE filtered list.
     filter:
-      filter.parent || filter.startedBy || filter.q || filter.labels?.length || filter.view || filter.deleted
+      filter.parent || filter.startedBy || filter.q || filter.labels?.length || filter.view || filter.deleted || filter.spaceId
         ? JSON.stringify([
             filter.parent ?? null,
             filter.startedBy ?? null,
@@ -369,6 +372,7 @@ function sessionCursorScope(input: SessionInventoryInput, filter: SessionListFil
             ...(filter.labels?.length ? [[...filter.labels].sort()] : []),
             ...(filter.view ? [{ view: filter.view }] : []),
             ...(filter.deleted ? [{ deleted: true }] : []),
+            ...(filter.spaceId ? [{ space: filter.spaceId }] : []),
           ])
         : undefined,
   };
@@ -466,8 +470,8 @@ async function appendMissingAncestors(input: {
   // append, and children are read under the parent the client expanded. A
   // label filter promises only rows carrying every label, so it gets no
   // unlabeled ancestors either.
-  // A pinned, archived or deleted view promises only those rows.
-  const appendAncestors = !filter.parent && !filter.labels?.length && !filter.view && !filter.deleted;
+  // A pinned, archived, deleted or space view promises only those rows.
+  const appendAncestors = !filter.parent && !filter.labels?.length && !filter.view && !filter.deleted && !filter.spaceId;
   for (let depth = 0; appendAncestors && depth < MAX_ANCESTOR_DEPTH; depth += 1) {
     const missing = [
       ...new Set(

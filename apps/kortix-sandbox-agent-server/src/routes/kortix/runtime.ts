@@ -9,6 +9,8 @@ import { etagMatches, notModified, timedJson } from './kortix-http'
 import type { HarnessQueryService } from '@/harness/contract/queries'
 import type { HarnessReadiness } from '@/harness/contract/proxy'
 import type { HarnessTurnService, RuntimePromptInput } from '@/harness/contract/turns'
+import { MEMORY_COPY_DIRS, syncMemoryCopy, type MemoryLayerRef } from '@/services/tools/memory-copy'
+import { sessionEnv } from '@/services/tools/host'
 
 /** Existing transcript page-size contract. */
 export const DEFAULT_MESSAGE_PAGE = 20
@@ -55,20 +57,41 @@ function authorize(cfg: Config, c: Context): AuthOutcome {
 }
 
 const optionalString = (value: unknown): value is string | undefined => value === undefined || typeof value === 'string'
+/** `system`: the per-turn system prompt addition apps/api sends (the memory page list, about 8,000 characters). */
+export const MAX_TURN_SYSTEM_CHARS = 16_000
+
+/** `memory_layers`: `[{ layer_id, version, dir }]`, the version a number or its text, each folder at most once. */
+function parseMemoryLayers(value: unknown): MemoryLayerRef[] | string {
+  const error = 'memory_layers must be [{ layer_id, version, dir: company | channel | personal }], each dir once'
+  if (!Array.isArray(value) || value.length > MEMORY_COPY_DIRS.length) return error
+  const layers: MemoryLayerRef[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return error
+    const { layer_id, version, dir } = entry as Record<string, unknown>
+    if (typeof layer_id !== 'string' || !layer_id.trim()) return error
+    if (!(typeof version === 'number' && Number.isInteger(version)) && !(typeof version === 'string' && /^\d+$/.test(version))) return error
+    if (!(MEMORY_COPY_DIRS as readonly unknown[]).includes(dir) || layers.some((layer) => layer.dir === dir)) return error
+    layers.push({ layer_id: layer_id.trim(), version: String(version), dir: dir as MemoryLayerRef['dir'] })
+  }
+  return layers
+}
 
 /**
  * Validate a `POST /sessions/:id/prompt` body:
- * `{ message_id?, parts, agent?, model?: "provider/model", variant?, directory?, no_reply? }`.
+ * `{ message_id?, parts, agent?, model?: "provider/model", variant?, directory?, no_reply?, memory_layers?, system? }`.
  */
 export function parseRuntimePromptBody(raw: unknown): RuntimePromptInput | string {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return 'body must be a JSON object'
   const body = raw as Record<string, unknown>
   if (!Array.isArray(body.parts) || body.parts.length === 0) return 'parts must be a non-empty array'
   if (body.parts.some((part) => !part || typeof part !== 'object' || Array.isArray(part))) return 'parts must be objects'
-  for (const key of ['message_id', 'agent', 'model', 'variant', 'directory'] as const) {
+  for (const key of ['message_id', 'agent', 'model', 'variant', 'directory', 'system'] as const) {
     if (!optionalString(body[key])) return `${key} must be a string`
   }
   if (body.no_reply !== undefined && typeof body.no_reply !== 'boolean') return 'no_reply must be a boolean'
+  if (typeof body.system === 'string' && body.system.length > MAX_TURN_SYSTEM_CHARS) return `system must be at most ${MAX_TURN_SYSTEM_CHARS} characters`
+  const memoryLayers = body.memory_layers === undefined ? undefined : parseMemoryLayers(body.memory_layers)
+  if (typeof memoryLayers === 'string') return memoryLayers
   let model: RuntimePromptInput['model']
   if (typeof body.model === 'string') {
     const slash = body.model.indexOf('/')
@@ -84,6 +107,8 @@ export function parseRuntimePromptBody(raw: unknown): RuntimePromptInput | strin
     ...(text('variant') ? { variant: text('variant') } : {}),
     ...(text('directory') ? { directory: text('directory') } : {}),
     ...(body.no_reply === true ? { noReply: true } : {}),
+    ...(memoryLayers ? { memoryLayers } : {}),
+    ...(text('system') ? { system: text('system') } : {}),
   }
 }
 
@@ -101,11 +126,15 @@ export function createRuntimeRouter(
     turns?: HarnessTurnService
     /** The runtime gate the compatibility proxy runs before every request. */
     readiness?: () => Promise<HarnessReadiness>
+    /** Default `syncMemoryCopy`. */
+    syncMemory?: typeof syncMemoryCopy
   } = {},
 ): Hono {
   const app = new Hono()
   const now = options.now ?? (() => Date.now())
   const turns = options.turns
+  // replica-local: one daemon per box; the memory sync a session's latest prompt waits on.
+  const memorySyncs = new Map<string, Promise<void>>()
 
   if (turns) {
     // The same gate and upstream failure as the compatibility proxy these
@@ -134,7 +163,27 @@ export function createRuntimeRouter(
       const raw = await c.req.json().catch(() => undefined)
       const input = parseRuntimePromptBody(raw)
       if (typeof input === 'string') return c.json({ error: input }, 400)
-      return answer(c, () => turns.prompt(c.req.param('sessionId'), input))
+      const sessionId = c.req.param('sessionId')
+      return answer(c, async () => {
+        // The turn reads the memory copy at these versions; a layer that cannot sync in 3 s keeps its old copy.
+        // The list is the thread's whole set: a copy folder it does not name is removed (`prune`).
+        // A prompt that arrives while an earlier one of the session syncs waits for it, so prompts keep their order.
+        const earlier = memorySyncs.get(sessionId)
+        const sync = input.memoryLayers && !input.noReply
+        if (earlier || sync) {
+          const mine = (async () => {
+            await earlier
+            if (sync) await (options.syncMemory ?? syncMemoryCopy)(input.memoryLayers!, sessionEnv(), { prune: true })
+          })()
+          memorySyncs.set(sessionId, mine)
+          try {
+            await mine
+          } finally {
+            if (memorySyncs.get(sessionId) === mine) memorySyncs.delete(sessionId)
+          }
+        }
+        return turns.prompt(sessionId, input)
+      })
     })
 
     // The `/prompt` body; the running turn reads it at its next step boundary.
@@ -153,6 +202,8 @@ export function createRuntimeRouter(
       const input = parseRuntimePromptBody(raw)
       if (typeof input === 'string') return c.json({ error: input }, 400)
       if (!input.messageId) return c.json({ error: 'message_id is required' }, 400)
+      // A steer joins the running turn, which keeps its prompt's `system`: a steer's own is dropped.
+      delete input.system
       return answer(c, () => turns.steer(c.req.param('sessionId'), input))
     })
 

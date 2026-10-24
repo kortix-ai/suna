@@ -85,6 +85,22 @@ export {
   chatEventDedup,
   chatUserIdentities,
   projectSessions,
+  projectSpaces,
+  projectSpaceLinks,
+  projectSpaceKindEnum,
+  // Memory pages
+  memoryLayerScopeEnum,
+  memoryPageTypeEnum,
+  memoryPageStatusEnum,
+  memoryAuthorKindEnum,
+  memoryChangeOpEnum,
+  memorySourceKindEnum,
+  memoryLayers,
+  memoryPages,
+  memoryPageVersions,
+  memoryPageSources,
+  memoryThreadLoads,
+  projectUserMarks,
   sessionPresenceLeases,
   projectSessionRuntimeContexts,
   accountModelPreferences,
@@ -304,6 +320,7 @@ export {
 export type { AgentGrant, StoredAgentGrant } from './schema/kortix';
 export { readStoredAgentGrant } from './schema/kortix';
 export type { AccountBrandingRecord } from './schema/kortix';
+export type { MemoryThreadLoadLayer } from './schema/kortix';
 export type { SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot } from './schema/kortix';
 
 export type {
@@ -360,6 +377,16 @@ export type {
   NewGatewayApiKey,
   GatewayBudget,
   NewGatewayBudget,
+  MemoryLayer,
+  NewMemoryLayer,
+  MemoryPage,
+  NewMemoryPage,
+  MemoryPageVersion,
+  NewMemoryPageVersion,
+  MemoryPageSource,
+  NewMemoryPageSource,
+  MemoryThreadLoad,
+  NewMemoryThreadLoad,
 } from './types';
 
 export { userProviderConnections, projectUserProviderConnections, sessionUserProviderConnections } from './schema/kortix';

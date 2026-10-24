@@ -15,6 +15,13 @@ export const MANAGED_SKILLS_DIR = '/opt/kortix/managed-skills';
 export const RUNTIME_ASSETS_STATE_PATH = '/opt/kortix/runtime-assets-state.json';
 
 /**
+ * The read-only copy of a thread's memory pages (`project_channels`): one
+ * folder per layer, `company`, `channel` and `personal`. kortixd replaces a
+ * folder when the layer's version changes; agents write through `remember`.
+ */
+export const MEMORY_COPY_DIR = '/opt/kortix/memory';
+
+/**
  * The files outside `apps/kortix-sandbox-agent-server` that kortixd bundles
  * into its binary, repo-relative. apps/api fingerprints them with the daemon
  * source, so a change to one rebuilds sandbox images, and the Dockerfiles copy

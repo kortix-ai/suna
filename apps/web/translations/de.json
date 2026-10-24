@@ -1286,6 +1286,10 @@
         "email_channel": {
           "name": "E-Mail-Kanal",
           "description": "Gib dem Agenten ein E-Mail-Postfach bei Resend: eingehende Mails starten und setzen Sessions fort, und der Agent liest, antwortet und sendet aus dem Postfach. Bring deinen eigenen Resend-API-Schlüssel und deine Domain mit."
+        },
+        "project_channels": {
+          "name": "Kanäle",
+          "description": "Organisieren Sie die Arbeit in Kanälen. Jede neue Nachricht in einem Kanal oder in einer Direktnachricht mit einem Agenten startet einen Thread. Ersetzt die Sitzungsliste in der Seitenleiste."
         }
       }
     },
@@ -1777,7 +1781,13 @@
     "underMore": "Mehr",
     "sidebarEmpty": "Ziehe ein Element hierher, um es in der Seitenleiste anzuzeigen.",
     "moreEmpty": "Ziehe ein Element hierher, um es unter Mehr zu verschieben.",
-    "moreCaption": "Elemente unter Mehr öffnen sich über das Menü Mehr unter der Navigation."
+    "moreCaption": "Elemente unter Mehr öffnen sich über das Menü Mehr unter der Navigation.",
+    "spaces": {
+      "channels": "Kanäle",
+      "directMessages": "Direktnachrichten",
+      "addChannel": "Kanal hinzufügen",
+      "loadError": "Kanäle konnten nicht geladen werden."
+    }
   },
   "dashboard": {
     "title": "Dashboard",
@@ -20402,7 +20412,9 @@
       "text000a82dd887b": "Erstelle einen verwalteten Resend-Posteingang für deinen Agent oder verknüpfe einen bereits vorhandenen.",
       "text1482de4dfc18": "Kortix erstellt und verwaltet den Resend-Posteingang für diese Verbindung.",
       "textd529a06f471c": "Resend erstellt dieses Präfix, sofern verfügbar, zum Beispiel",
-      "text51cfb12fffdd": "Eingehende E-Mail empfangen"
+      "text51cfb12fffdd": "Eingehende E-Mail empfangen",
+      "openThreadAction": "Thread öffnen",
+      "untitledThread": "Thread ohne Titel"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -20761,7 +20773,11 @@
     "overlapAllow": "Trotzdem eine neue Ausführung starten",
     "perHour": "Pro Stunde",
     "perDay": "Pro Tag",
-    "noLimit": "Kein Limit"
+    "noLimit": "Kein Limit",
+    "postTo": "Posten in",
+    "postToHint": "Jeder Lauf startet dort einen neuen Thread. Ohne Kanal landen Läufe in #{channel}.",
+    "postToNone": "Kein Kanal",
+    "postToUnavailable": "Nicht verfügbarer Kanal"
   },
   "gatewayAccess": {
     "heroTitle": "Die Modelle dieses Projekts überall nutzen",
@@ -22776,5 +22792,409 @@
     "auditSet": "Regelset {set}",
     "bulkInheritTitle": "{count, plural, one {# Tool} other {# Tools}} auf die Basisregeln zurücksetzen?",
     "bulkInheritBody": "Löscht die Regel dieses Regelsets für jedes Tool unter {group}, damit jedes wieder den Basisregeln folgt. Musterregeln bleiben unverändert."
+  },
+  "spaces": {
+    "memory": {
+      "search": "Speicher durchsuchen",
+      "pagesLabel": "Speicherseiten",
+      "allPages": "Alle Seiten",
+      "type": {
+        "people": "Personen",
+        "decisions": "Entscheidungen",
+        "workstreams": "Arbeitsbereiche",
+        "playbooks": "Playbooks",
+        "note": "Notizen"
+      },
+      "needsConfirming": "Zu bestätigen",
+      "noMatches": "Keine Seite passt zu „{query}“.",
+      "loadError": "Dieser Speicher konnte nicht geladen werden.",
+      "pageLoadError": "Diese Seite konnte nicht geladen werden.",
+      "retry": "Erneut versuchen",
+      "close": "Schließen",
+      "loadOlder": "Ältere anzeigen",
+      "updatedBy": "Aktualisiert von {author}",
+      "fromThread": "aus „{thread}“",
+      "author": {
+        "system": "Kortix",
+        "unknown": "Ein Mitglied"
+      },
+      "edit": "Bearbeiten",
+      "more": "Weitere Aktionen",
+      "copyLink": "Link kopieren",
+      "linkCopied": "Link kopiert",
+      "copyFailed": "Der Link konnte nicht kopiert werden.",
+      "delete": "Löschen",
+      "deleteTitle": "Diese Seite löschen?",
+      "deleteDescription": "Agenten sehen „{title}“ ab ihrem nächsten Zug nicht mehr. Du kannst das unter „Letzte Änderungen“ rückgängig machen.",
+      "deleted": "Seite gelöscht",
+      "deleteFailed": "Die Seite konnte nicht gelöscht werden. Versuche es erneut.",
+      "undo": "Rückgängig",
+      "undone": "Änderung rückgängig gemacht",
+      "undoFailed": "Die Änderung konnte nicht rückgängig gemacht werden. Versuche es erneut.",
+      "superseded": "Die Seite wurde danach geändert. Öffne den Verlauf, um eine frühere Version wiederherzustellen.",
+      "alreadyUndone": "Diese Änderung ist bereits rückgängig gemacht.",
+      "undoUnavailable": "Die Seite wurde danach geändert, daher lässt sich diese Änderung nicht rückgängig machen.",
+      "view": "Ansehen",
+      "relatedPages": "Verwandte Seiten",
+      "pageLimit": "Dieser Speicher hat 200 Seiten, sein Limit. Lösche zuerst eine Seite.",
+      "emptyPage": "Auf dieser Seite steht noch nichts.",
+      "recent": {
+        "added": "{author} hat diese Seite {time} aktualisiert: „{fact}“ hinzugefügt",
+        "updated": "{author} hat diese Seite {time} aktualisiert",
+        "created": "{author} hat diese Seite {time} erstellt",
+        "viewChange": "Änderung ansehen"
+      },
+      "changes": {
+        "title": "Letzte Änderungen",
+        "empty": "Noch keine Änderungen.",
+        "loadError": "Die letzten Änderungen konnten nicht geladen werden.",
+        "viewPage": "{title} ansehen",
+        "undoPage": "Änderung an {title} rückgängig machen",
+        "op": {
+          "create": "{author} hat <page>{title}</page> erstellt",
+          "update": "{author} hat <page>{title}</page> bearbeitet",
+          "append": "{author} hat <page>{title}</page> ergänzt",
+          "delete": "{author} hat <page>{title}</page> gelöscht",
+          "restore": "{author} hat <page>{title}</page> wiederhergestellt",
+          "undo": "{author} hat eine Änderung an <page>{title}</page> rückgängig gemacht",
+          "confirm": "{author} hat <page>{title}</page> bestätigt",
+          "file_note": "{author} hat eine Notiz in <page>{title}</page> abgelegt",
+          "import": "{author} hat <page>{title}</page> importiert"
+        }
+      },
+      "history": {
+        "title": "Verlauf",
+        "description": "Jede Änderung an „{title}“, neueste zuerst.",
+        "loadError": "Der Verlauf konnte nicht geladen werden.",
+        "current": "Aktuell",
+        "undone": "Rückgängig gemacht",
+        "restore": "Diese Version wiederherstellen",
+        "restored": "Version wiederhergestellt",
+        "restoreFailed": "Diese Version konnte nicht wiederhergestellt werden. Versuche es erneut.",
+        "op": {
+          "create": "{author} hat die Seite erstellt",
+          "update": "{author} hat die Seite bearbeitet",
+          "append": "{author} hat einen Fakt hinzugefügt",
+          "delete": "{author} hat die Seite gelöscht",
+          "restore": "{author} hat eine Version wiederhergestellt",
+          "undo": "{author} hat eine Änderung rückgängig gemacht",
+          "confirm": "{author} hat die Seite bestätigt",
+          "file_note": "{author} hat eine Notiz abgelegt",
+          "import": "{author} hat die Seite importiert"
+        }
+      },
+      "editor": {
+        "title": "Titel",
+        "type": "Typ",
+        "summary": "Zusammenfassung",
+        "summaryPlaceholder": "Eine Zeile, die Agenten in der Seitenliste sehen",
+        "body": "Seite",
+        "bodyHint": "Markdown. Eine Zeile, die mit ## beginnt, startet einen Abschnitt; ⟦1⟧ verweist auf Quelle 1.",
+        "save": "Speichern",
+        "cancel": "Abbrechen",
+        "saved": "Seite gespeichert",
+        "conflict": "Jemand hat diese Seite geändert. Lade sie neu, um die Änderung zu sehen.",
+        "reload": "Neu laden",
+        "error": {
+          "tooLarge": "Diese Seite ist größer als 8 KB. Kürze sie.",
+          "titleTaken": "Eine andere Seite hat bereits diesen Titel.",
+          "secret": "Das sieht wie ein Geheimnis aus. Bewahre Geheimnisse unter „Secrets“ auf.",
+          "readOnly": "Dieser Speicher ist schreibgeschützt.",
+          "failed": "Die Seite konnte nicht gespeichert werden. Versuche es erneut."
+        }
+      },
+      "remember": {
+        "label": "Etwas, das sich {place} merken soll",
+        "placeholder": "Sag {place}, was es sich merken soll …",
+        "hint": "Als Notiz mit deinem Namen gespeichert",
+        "send": "Im Speicher sichern",
+        "status": {
+          "saved": "In Notizen gespeichert",
+          "secret": "Das sieht wie ein Geheimnis aus. Bewahre Geheimnisse unter „Secrets“ auf.",
+          "limit": "Dieser Speicher hat 200 Seiten, sein Limit. Lösche zuerst eine Seite.",
+          "readOnly": "Dieser Speicher ist schreibgeschützt.",
+          "failed": "Speichern fehlgeschlagen. Versuche es erneut."
+        }
+      },
+      "empty": {
+        "title": "{place} hat noch keinen Speicher",
+        "titleDm": "Noch kein Speicher mit {place}",
+        "description": "Agenten speichern, worauf sich dieser Kanal einigt, damit jeder neue Thread damit beginnt. Jeder Fakt verlinkt den Thread, aus dem er stammt; jede Änderung lässt sich bearbeiten oder rückgängig machen.",
+        "descriptionDm": "{place} speichert, worauf ihr euch in dieser Unterhaltung einigt, damit jeder neue Thread damit beginnt. Jeder Fakt verlinkt den Thread, aus dem er stammt; jede Änderung lässt sich bearbeiten oder rückgängig machen.",
+        "example": {
+          "people": "Northwind — Ansprechpartner ist Sam, Verlängerung im März",
+          "decisions": "Der Preis bleibt bei 49 $ pro Platz",
+          "workstreams": "Q4-Launch — Status, Verantwortliche, nächste Schritte",
+          "playbooks": "Wie wir Release Notes schreiben"
+        },
+        "tryOne": "Probier eins",
+        "try": {
+          "one": "Unser Launch ist am 12. Nov.",
+          "two": "Priya gibt alle Launch-Texte frei",
+          "three": "Schreib in einfachen Worten, ohne Hype"
+        },
+        "titleCompany": "Noch nichts im Unternehmensspeicher",
+        "descriptionCompany": "Agenten sichern, worauf sich das ganze Projekt einigt, damit jeder neue Thread in jedem Channel damit beginnt. Jede Angabe verweist auf den Thread, aus dem sie stammt; jede Änderung lässt sich bearbeiten oder rückgängig machen."
+      },
+      "source": {
+        "thread": "Thread „{label}“ öffnen",
+        "threadGone": "Aus dem Thread „{label}“",
+        "outside": "{label} in einem neuen Tab öffnen",
+        "outsideText": "Aus {label}",
+        "person": "Hinzugefügt von {label}",
+        "import": "Importiert aus {label}"
+      },
+      "saved": {
+        "running": "Wird im Speicher gesichert …",
+        "channel": "Im Speicher von {place} gesichert: <page>{title}</page>",
+        "dm": "In deinem Speicher mit {place} gesichert: <page>{title}</page>",
+        "company": "Im Unternehmensspeicher gesichert: <page>{title}</page>",
+        "failed": "Nicht im Speicher gesichert: {reason}",
+        "view": "Ansehen",
+        "undo": "Rückgängig",
+        "undone": "Rückgängig gemacht",
+        "superseded": "Seitdem geändert —",
+        "openHistory": "Verlauf öffnen",
+        "undoFailed": "Rückgängig machen fehlgeschlagen.",
+        "failedGeneric": "Nicht im Speicher gesichert."
+      },
+      "used": {
+        "label": "Speicher von {places} genutzt · {count, plural, one {# Seite} other {# Seiten}}",
+        "title": "Seiten, mit denen dieser Thread begann",
+        "company": "Unternehmen",
+        "removed": "Entfernt"
+      },
+      "searchError": "Dieser Speicher konnte nicht durchsucht werden.",
+      "searchResults": "Suchergebnisse",
+      "searchTool": {
+        "title": "Speicher durchsucht",
+        "count": "{count, plural, one {# Seite} other {# Seiten}}",
+        "running": "Speicher wird durchsucht…",
+        "failed": "Speichersuche fehlgeschlagen: {reason}",
+        "failedGeneric": "Speichersuche fehlgeschlagen.",
+        "none": "Keine Seite passt zu „{query}“."
+      },
+      "palette": {
+        "heading": "Speicher"
+      },
+      "company": {
+        "subtitle": "Was jeder Agent in diesem Projekt weiß.",
+        "gateDescription": "Der Unternehmensspeicher gehört zu Channels: Jeder Agent in diesem Projekt beginnt jeden Thread mit dem, was das Team hier gesichert hat.",
+        "title": "Speicher",
+        "place": "Unternehmen"
+      },
+      "rememberThis": {
+        "label": "Merken",
+        "saved": "Im Speicher gesichert",
+        "saveTo": "Sichern in",
+        "dm": "Dein Speicher mit {agent}"
+      },
+      "archivedReadOnly": "{place} ist archiviert. Sein Speicher ist schreibgeschützt.",
+      "pending": {
+        "note": "Agents nutzen diese Seiten erst, wenn jemand sie bestätigt.",
+        "from": "Von {host}",
+        "banner": "Von {host}. Agents nutzen dies erst, wenn jemand es bestätigt.",
+        "bannerNoHost": "Von außerhalb des Threads. Agents nutzen dies erst, wenn jemand es bestätigt.",
+        "confirm": "Bestätigen",
+        "confirmPage": "{title} bestätigen",
+        "discard": "Verwerfen",
+        "discardPage": "{title} verwerfen",
+        "cancel": "Abbrechen",
+        "confirmed": "Seite bestätigt. Agents können sie jetzt nutzen.",
+        "alreadyConfirmed": "Jemand hat diese Seite bereits bestätigt.",
+        "confirmFailed": "Die Seite konnte nicht bestätigt werden. Versuche es erneut.",
+        "discarded": "Seite verworfen",
+        "discardFailed": "Die Seite konnte nicht verworfen werden. Versuche es erneut."
+      },
+      "trash": {
+        "title": "Papierkorb",
+        "note": "Gelöschte Seiten bleiben 30 Tage hier und werden dann endgültig gelöscht.",
+        "loadError": "Der Papierkorb konnte nicht geladen werden.",
+        "restore": "Wiederherstellen",
+        "restorePage": "{title} wiederherstellen",
+        "restored": "Seite wiederhergestellt",
+        "titleTaken": "Eine Seite mit diesem Titel existiert. Benenne sie um und stelle dann diese wieder her.",
+        "restoreFailed": "Die Seite konnte nicht wiederhergestellt werden. Versuche es erneut.",
+        "allTrashed": "Alle Seiten sind im Papierkorb."
+      }
+    },
+    "create": {
+      "title": "Kanal erstellen",
+      "description": "Alle in diesem Projekt können den Kanal sehen und nutzen.",
+      "nameLabel": "Name",
+      "namePlaceholder": "marketing",
+      "slugPlaceholder": "kanalname",
+      "descriptionLabel": "Beschreibung (optional)",
+      "descriptionPlaceholder": "Wofür dieser Kanal da ist",
+      "submit": "Kanal erstellen",
+      "created": "Kanal erstellt",
+      "nameRequired": "Gib einen Namen ein.",
+      "invalidName": "Der Name braucht mindestens einen Buchstaben oder eine Ziffer.",
+      "slugTaken": "<link>#{slug}</link> gibt es schon.",
+      "failed": "Der Kanal konnte nicht erstellt werden. Versuche es erneut.",
+      "renameTitle": "Kanal umbenennen",
+      "renameDescription": "Der Link zum Kanal ändert sich mit seinem Namen.",
+      "save": "Speichern",
+      "renamed": "Kanal umbenannt",
+      "renameFailed": "Der Kanal konnte nicht umbenannt werden. Versuche es erneut."
+    },
+    "view": {
+      "welcomeTitle": "Willkommen in #{name}",
+      "welcomeEmpty": "Starte den ersten Thread in #{name}. Jede Nachricht startet einen neuen Thread.",
+      "welcomeStart": "Hier beginnt #{name}.",
+      "dmIntro": "Diese Unterhaltung führst nur du mit {agent}.",
+      "today": "Heute",
+      "yesterday": "Gestern",
+      "openThread": "Thread öffnen",
+      "replyInThread": "Im Thread antworten",
+      "lastReply": "Letzte Antwort {time}",
+      "working": "{agent} arbeitet…",
+      "agentFallback": "Agent",
+      "authorFallback": "Jemand",
+      "loadEarlier": "Frühere Threads laden",
+      "messageChannel": "Nachricht an #{name}",
+      "messageAgent": "Nachricht an {agent}",
+      "threadsEmpty": "Threads, die du startest, erscheinen hier.",
+      "loadError": "Der Kanal konnte nicht geladen werden.",
+      "threadsLoadError": "Die Threads konnten nicht geladen werden.",
+      "retry": "Erneut versuchen",
+      "notFound": "Diesen Kanal gibt es nicht.",
+      "notFoundHint": "Der Link ist vielleicht falsch, oder jemand hat den Kanal umbenannt.",
+      "openDefault": "#{name} öffnen",
+      "archivedTitle": "#{name} ist archiviert.",
+      "archivedHint": "Hole ihn aus dem Archiv, um hier wieder Threads zu lesen und zu starten.",
+      "archivedLocked": "Nur sein Ersteller oder ein Projektmanager kann ihn wiederherstellen.",
+      "unarchive": "Kanal wiederherstellen",
+      "unarchived": "Kanal wiederhergestellt",
+      "unarchiveFailed": "Der Kanal konnte nicht wiederhergestellt werden. Versuche es erneut.",
+      "dmFailed": "Die Unterhaltung konnte nicht geöffnet werden.",
+      "archive": "Kanal archivieren",
+      "archiveTitle": "#{name} archivieren?",
+      "archiveDescription": "Der Kanal verschwindet für alle Mitglieder aus der Seitenleiste. Seine Threads bleiben, und sein Ersteller oder ein Projektmanager kann ihn wiederherstellen.",
+      "archived": "Kanal archiviert",
+      "archiveFailed": "Der Kanal konnte nicht archiviert werden. Versuche es erneut.",
+      "threadTitle": "Thread",
+      "closeThread": "Thread schließen",
+      "sendFailed": "Der Thread konnte nicht gestartet werden. Versuche es erneut.",
+      "replies": "{count, plural, one {# Antwort} other {# Antworten}}",
+      "replyPlaceholder": "Antworten…",
+      "tab": {
+        "chat": "Chat",
+        "threads": "Threads",
+        "files": "Dateien",
+        "memory": "Speicher",
+        "apps": "Apps",
+        "links": "Links",
+        "triggers": "Trigger"
+      },
+      "empty": {
+        "files": {
+          "title": "Noch keine Dateien",
+          "description": "Dateien, die in {place} geteilt werden, erscheinen hier.",
+          "action": "Datei hochladen"
+        },
+        "memory": {
+          "title": "Noch kein Speicher",
+          "description": "Was sich die Agenten für {place} merken, erscheint hier.",
+          "action": "Eintrag hinzufügen"
+        },
+        "apps": {
+          "title": "Noch keine Apps",
+          "description": "Apps, die in {place} gebaut werden, erscheinen hier."
+        },
+        "links": {
+          "title": "Noch keine Links",
+          "description": "Links, die in Threads von {place} geteilt werden, erscheinen hier. Hefte einen an, damit jeder Agent im Kanal ihn erhält."
+        },
+        "triggers": {
+          "title": "Noch keine Trigger",
+          "description": "Trigger starten einen Thread in {place} nach Zeitplan oder bei einem Ereignis.",
+          "action": "Neuer Trigger"
+        }
+      },
+      "channelDetails": "Details zu #{name}",
+      "roster": "{people} · {agents}",
+      "rosterPeople": "{count, plural, one {# Person} other {# Personen}}",
+      "rosterAgents": "{count, plural, one {# Agent} other {# Agenten}}",
+      "rosterHint": "Personen und Agenten in den Threads dieses Kanals",
+      "copyLink": "Link zum Thread kopieren",
+      "linkCopied": "Link kopiert",
+      "started": "Gestartet {time}",
+      "notice": {
+        "unreachable": "Keine Verbindung zum Computer dieses Threads. Gesendete Nachrichten warten, bis er wieder verbunden ist.",
+        "unreachableMidTurn": "Keine Verbindung zum Computer dieses Threads, während eine Runde noch offen ist. Gesendete Nachrichten warten, bis er antwortet.",
+        "stalled": "Das Aufwecken des Computers dieses Threads dauert länger als üblich. Gesendete Nachrichten warten in der Warteschlange.",
+        "starting": "Der Computer dieses Threads startet. Deine Nachricht wird automatisch gesendet.",
+        "idle": "Der Computer dieses Threads schläft. Deine nächste Nachricht weckt ihn und wird zugestellt.",
+        "waking": "Der Computer dieses Threads wird geweckt. Gesendete Nachrichten warten und gehen automatisch raus."
+      },
+      "boot": {
+        "restart": "Thread neu starten"
+      },
+      "links": {
+        "add": "Link hinzufügen",
+        "addDescription": "Hefte einen Link an {place}. Jeder Agent im Kanal erhält die angehefteten Links.",
+        "urlLabel": "URL",
+        "titleLabel": "Titel (optional)",
+        "titlePlaceholder": "Worum es geht",
+        "invalidUrl": "Gib einen Link ein, der mit http:// oder https:// beginnt.",
+        "addFailed": "Der Link konnte nicht hinzugefügt werden. Versuche es erneut.",
+        "limit": "Dieser Kanal hat bereits 200 angeheftete Links. Löse zuerst einen.",
+        "added": "Link hinzugefügt",
+        "remove": "Link entfernen",
+        "removeTitle": "Diesen Link entfernen?",
+        "removeDescription": "{link} wird für alle aus {place} entfernt.",
+        "removed": "Link entfernt",
+        "removeFailed": "Der Link konnte nicht entfernt werden. Versuche es erneut.",
+        "loadError": "Die Links konnten nicht geladen werden.",
+        "intro": "Links, die in Threads von {place} geteilt wurden. Hefte einen Link an, damit jeder Agent im Kanal ihn erhält.",
+        "pinnedTitle": "Angeheftet · Agenten lesen diese",
+        "sharedTitle": "In Threads geteilt",
+        "sharedNote": "Automatisch aus Nachrichten von Personen gesammelt",
+        "pinnedBy": "Angeheftet von {name}",
+        "pinnedLabel": "Angeheftet",
+        "fromThread": "aus „{thread}“",
+        "inThread": "in „{thread}“",
+        "sharedTimes": "{count}× geteilt",
+        "pin": "Anheften",
+        "unpin": "Lösen",
+        "pinnedToast": "Link angeheftet",
+        "unpinnedToast": "Link gelöst",
+        "pinFailed": "Der Link konnte nicht angeheftet werden. Versuche es erneut.",
+        "unpinFailed": "Der Link konnte nicht gelöst werden. Versuche es erneut."
+      },
+      "appsLoadError": "Die Apps konnten nicht geladen werden.",
+      "triggers": {
+        "loadError": "Die Trigger konnten nicht geladen werden."
+      }
+    },
+    "details": {
+      "about": "Info",
+      "members": "Mitglieder",
+      "name": "Kanalname",
+      "description": "Beschreibung",
+      "noDescription": "Beschreibung hinzufügen",
+      "created": "Erstellt",
+      "edit": "Bearbeiten",
+      "editField": "{field} bearbeiten",
+      "archiveTitle": "Diesen Kanal archivieren",
+      "archiveHint": "Er verschwindet für alle Mitglieder aus der Seitenleiste. Seine Threads bleiben.",
+      "archive": "Archivieren",
+      "people": "Personen",
+      "agents": "Agenten",
+      "membersHint": "Alle, die hier einen Thread gestartet haben, und alle Agenten, die einen beantwortet haben, in den bisher geladenen Threads."
+    },
+    "folder": {
+      "memory": "Speicher",
+      "loadError": "Dieser Ordner konnte nicht geladen werden",
+      "memoryNoteChannel": "Was sich Agenten in {place} merken. Agenten lesen das zu Beginn jedes Threads.",
+      "memoryNoteDm": "Was sich {agent} aus dieser DM merkt. Der Agent liest das zu Beginn jedes Threads.",
+      "off": {
+        "title": "Drive aktivieren",
+        "description": "Dateien und Speicher für {place} liegen in Drive. Aktiviere Volumes unter Feature-Flags, um sie zu nutzen.",
+        "descriptionMember": "Dateien und Speicher für {place} liegen in Drive. Bitte einen Projekt-Admin, es zu aktivieren.",
+        "action": "Feature-Flags öffnen"
+      }
+    }
   }
 }

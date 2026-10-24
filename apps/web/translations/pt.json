@@ -1286,6 +1286,10 @@
         "email_channel": {
           "name": "Canal de e-mail",
           "description": "Dê ao agente uma caixa de entrada no Resend: e-mails recebidos iniciam e continuam sessões, e o agente lê, responde e envia a partir da caixa. Use sua própria chave de API e domínio do Resend."
+        },
+        "project_channels": {
+          "name": "Canais",
+          "description": "Organize o trabalho em canais. Cada nova mensagem em um canal ou em uma mensagem direta com um agente inicia uma thread. Substitui a lista de sessões na barra lateral."
         }
       }
     },
@@ -1777,7 +1781,13 @@
     "underMore": "Mais",
     "sidebarEmpty": "Arraste um item para cá para mostrá-lo na barra lateral.",
     "moreEmpty": "Arraste um item para cá para movê-lo para Mais.",
-    "moreCaption": "Os itens em Mais abrem pelo menu Mais, abaixo da navegação."
+    "moreCaption": "Os itens em Mais abrem pelo menu Mais, abaixo da navegação.",
+    "spaces": {
+      "channels": "Canais",
+      "directMessages": "Mensagens diretas",
+      "addChannel": "Adicionar canal",
+      "loadError": "Não foi possível carregar os canais."
+    }
   },
   "dashboard": {
     "title": "Painel",
@@ -20402,7 +20412,9 @@
       "text000a82dd887b": "Crie uma caixa de entrada Resend gerenciada para seu agente ou conecte uma que você já tenha.",
       "text1482de4dfc18": "O Kortix criará e gerenciará a caixa de entrada do Resend para esta conexão.",
       "textd529a06f471c": "O Resend criará este prefixo quando estiver disponível, por exemplo",
-      "text51cfb12fffdd": "E-mail recebido"
+      "text51cfb12fffdd": "E-mail recebido",
+      "openThreadAction": "Abrir thread",
+      "untitledThread": "Thread sem título"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -20761,7 +20773,11 @@
     "overlapAllow": "Iniciar uma nova execução mesmo assim",
     "perHour": "Por hora",
     "perDay": "Por dia",
-    "noLimit": "Sem limite"
+    "noLimit": "Sem limite",
+    "postTo": "Publicar em",
+    "postToHint": "Cada execução inicia uma nova thread ali. Sem canal, as execuções vão para #{channel}.",
+    "postToNone": "Nenhum canal",
+    "postToUnavailable": "Canal indisponível"
   },
   "gatewayAccess": {
     "heroTitle": "Use os modelos deste projeto em qualquer lugar",
@@ -22776,5 +22792,409 @@
     "auditSet": "conjunto de regras {set}",
     "bulkInheritTitle": "Voltar {count, plural, one {# ferramenta} other {# ferramentas}} às regras base?",
     "bulkInheritBody": "Exclui a regra deste conjunto para cada ferramenta listada em {group}, para que cada uma volte a seguir as regras base. Regras de padrão não mudam."
+  },
+  "spaces": {
+    "memory": {
+      "search": "Pesquisar na memória",
+      "pagesLabel": "Páginas de memória",
+      "allPages": "Todas as páginas",
+      "type": {
+        "people": "Pessoas",
+        "decisions": "Decisões",
+        "workstreams": "Frentes de trabalho",
+        "playbooks": "Guias",
+        "note": "Notas"
+      },
+      "needsConfirming": "Por confirmar",
+      "noMatches": "Nenhuma página corresponde a “{query}”.",
+      "loadError": "Não foi possível carregar esta memória.",
+      "pageLoadError": "Não foi possível carregar esta página.",
+      "retry": "Tentar novamente",
+      "close": "Fechar",
+      "loadOlder": "Mostrar anteriores",
+      "updatedBy": "Atualizada por {author}",
+      "fromThread": "de “{thread}”",
+      "author": {
+        "system": "Kortix",
+        "unknown": "Um membro"
+      },
+      "edit": "Editar",
+      "more": "Mais ações",
+      "copyLink": "Copiar link",
+      "linkCopied": "Link copiado",
+      "copyFailed": "Não foi possível copiar o link.",
+      "delete": "Excluir",
+      "deleteTitle": "Excluir esta página?",
+      "deleteDescription": "Os agentes deixam de ver “{title}” no próximo turno. Você pode desfazer em Alterações recentes.",
+      "deleted": "Página excluída",
+      "deleteFailed": "Não foi possível excluir a página. Tente novamente.",
+      "undo": "Desfazer",
+      "undone": "Alteração desfeita",
+      "undoFailed": "Não foi possível desfazer a alteração. Tente novamente.",
+      "superseded": "A página mudou depois disso. Abra o Histórico para restaurar uma versão anterior.",
+      "alreadyUndone": "Esta alteração já foi desfeita.",
+      "undoUnavailable": "A página mudou depois disso, então esta alteração não pode ser desfeita.",
+      "view": "Ver",
+      "relatedPages": "Páginas relacionadas",
+      "pageLimit": "Esta memória tem 200 páginas, o seu limite. Exclua uma página primeiro.",
+      "emptyPage": "Esta página ainda está vazia.",
+      "recent": {
+        "added": "{author} atualizou esta página {time}: adicionou “{fact}”",
+        "updated": "{author} atualizou esta página {time}",
+        "created": "{author} criou esta página {time}",
+        "viewChange": "Ver alteração"
+      },
+      "changes": {
+        "title": "Alterações recentes",
+        "empty": "Nenhuma alteração ainda.",
+        "loadError": "Não foi possível carregar as alterações recentes.",
+        "viewPage": "Ver {title}",
+        "undoPage": "Desfazer a alteração em {title}",
+        "op": {
+          "create": "{author} criou <page>{title}</page>",
+          "update": "{author} editou <page>{title}</page>",
+          "append": "{author} adicionou a <page>{title}</page>",
+          "delete": "{author} excluiu <page>{title}</page>",
+          "restore": "{author} restaurou <page>{title}</page>",
+          "undo": "{author} desfez uma alteração em <page>{title}</page>",
+          "confirm": "{author} confirmou <page>{title}</page>",
+          "file_note": "{author} arquivou uma nota em <page>{title}</page>",
+          "import": "{author} importou <page>{title}</page>"
+        }
+      },
+      "history": {
+        "title": "Histórico",
+        "description": "Cada alteração em “{title}”, da mais recente para a mais antiga.",
+        "loadError": "Não foi possível carregar o histórico.",
+        "current": "Atual",
+        "undone": "Desfeita",
+        "restore": "Restaurar esta versão",
+        "restored": "Versão restaurada",
+        "restoreFailed": "Não foi possível restaurar esta versão. Tente novamente.",
+        "op": {
+          "create": "{author} criou a página",
+          "update": "{author} editou a página",
+          "append": "{author} adicionou um fato",
+          "delete": "{author} excluiu a página",
+          "restore": "{author} restaurou uma versão",
+          "undo": "{author} desfez uma alteração",
+          "confirm": "{author} confirmou a página",
+          "file_note": "{author} arquivou uma nota",
+          "import": "{author} importou a página"
+        }
+      },
+      "editor": {
+        "title": "Título",
+        "type": "Tipo",
+        "summary": "Resumo",
+        "summaryPlaceholder": "Uma linha que os agentes veem na lista de páginas",
+        "body": "Página",
+        "bodyHint": "Markdown. Uma linha que começa com ## inicia uma seção; ⟦1⟧ cita a fonte 1.",
+        "save": "Salvar",
+        "cancel": "Cancelar",
+        "saved": "Página salva",
+        "conflict": "Alguém alterou esta página. Recarregue para ver.",
+        "reload": "Recarregar",
+        "error": {
+          "tooLarge": "Esta página passa de 8 KB. Encurte-a.",
+          "titleTaken": "Outra página já tem este título.",
+          "secret": "Isso parece um segredo. Guarde segredos em Segredos.",
+          "readOnly": "Esta memória é somente leitura.",
+          "failed": "Não foi possível salvar a página. Tente novamente."
+        }
+      },
+      "remember": {
+        "label": "Algo que {place} deve lembrar",
+        "placeholder": "Diga a {place} algo para lembrar…",
+        "hint": "Salvo como nota com o seu nome",
+        "send": "Salvar na memória",
+        "status": {
+          "saved": "Salvo em Notas",
+          "secret": "Isso parece um segredo. Guarde segredos em Segredos.",
+          "limit": "Esta memória tem 200 páginas, o seu limite. Exclua uma página primeiro.",
+          "readOnly": "Esta memória é somente leitura.",
+          "failed": "Não foi possível salvar. Tente novamente."
+        }
+      },
+      "empty": {
+        "title": "{place} ainda não tem memória",
+        "titleDm": "Ainda não há memória com {place}",
+        "description": "Os agentes salvam o que este canal combina, para que cada novo tópico comece com isso. Cada fato leva ao tópico de onde veio; edite ou desfaça qualquer alteração.",
+        "descriptionDm": "{place} salva o que vocês combinam nesta conversa, para que cada novo tópico comece com isso. Cada fato leva ao tópico de onde veio; edite ou desfaça qualquer alteração.",
+        "example": {
+          "people": "Northwind — o contato principal é Sam, renova em março",
+          "decisions": "O preço continua US$ 49 por usuário",
+          "workstreams": "Lançamento do T4 — status, responsável, próximos passos",
+          "playbooks": "Como escrevemos as notas de versão"
+        },
+        "tryOne": "Experimente",
+        "try": {
+          "one": "Nosso lançamento é em 12 de nov.",
+          "two": "Priya aprova todos os textos do lançamento",
+          "three": "Escreva com palavras simples, sem exagero"
+        },
+        "titleCompany": "Ainda não há nada na memória da empresa",
+        "descriptionCompany": "Os agentes salvam o que todo o projeto combina, para que cada nova thread de cada canal comece com isso. Cada fato leva à thread de origem; edite ou desfaça qualquer alteração."
+      },
+      "source": {
+        "thread": "Abrir o tópico “{label}”",
+        "threadGone": "Do tópico “{label}”",
+        "outside": "Abrir {label} em uma nova aba",
+        "outsideText": "De {label}",
+        "person": "Adicionado por {label}",
+        "import": "Importado de {label}"
+      },
+      "saved": {
+        "running": "Salvando na memória…",
+        "channel": "Salvo na memória de {place}: <page>{title}</page>",
+        "dm": "Salvo na sua memória com {place}: <page>{title}</page>",
+        "company": "Salvo na memória da empresa: <page>{title}</page>",
+        "failed": "Não salvo na memória: {reason}",
+        "view": "Ver",
+        "undo": "Desfazer",
+        "undone": "Desfeito",
+        "superseded": "Alterado desde então —",
+        "openHistory": "abrir o Histórico",
+        "undoFailed": "Não foi possível desfazer.",
+        "failedGeneric": "Não salvo na memória."
+      },
+      "used": {
+        "label": "Usou a memória de {places} · {count, plural, one {# página} other {# páginas}}",
+        "title": "Páginas com que esta thread começou",
+        "company": "Empresa",
+        "removed": "Removida"
+      },
+      "searchError": "Não foi possível pesquisar nesta memória.",
+      "searchResults": "Resultados da pesquisa",
+      "searchTool": {
+        "title": "Pesquisou na memória",
+        "count": "{count, plural, one {# página} other {# páginas}}",
+        "running": "Pesquisando na memória…",
+        "failed": "A pesquisa na memória falhou: {reason}",
+        "failedGeneric": "A pesquisa na memória falhou.",
+        "none": "Nenhuma página corresponde a “{query}”."
+      },
+      "palette": {
+        "heading": "Memória"
+      },
+      "company": {
+        "subtitle": "O que todo agente deste projeto sabe.",
+        "gateDescription": "A memória da empresa vem com os canais: todo agente deste projeto começa cada thread com o que a equipe salvou aqui.",
+        "title": "Memória",
+        "place": "Empresa"
+      },
+      "rememberThis": {
+        "label": "Lembrar isto",
+        "saved": "Salvo na memória",
+        "saveTo": "Salvar em",
+        "dm": "Sua memória com {agent}"
+      },
+      "archivedReadOnly": "{place} está arquivado. A memória dele é somente leitura.",
+      "pending": {
+        "note": "Os agentes não usam estas páginas até que alguém as confirme.",
+        "from": "De {host}",
+        "banner": "De {host}. Os agentes não usam isto até que alguém confirme.",
+        "bannerNoHost": "De fora do thread. Os agentes não usam isto até que alguém confirme.",
+        "confirm": "Confirmar",
+        "confirmPage": "Confirmar {title}",
+        "discard": "Descartar",
+        "discardPage": "Descartar {title}",
+        "cancel": "Cancelar",
+        "confirmed": "Página confirmada. Os agentes já podem usá-la.",
+        "alreadyConfirmed": "Alguém já confirmou esta página.",
+        "confirmFailed": "Não foi possível confirmar a página. Tente novamente.",
+        "discarded": "Página descartada",
+        "discardFailed": "Não foi possível descartar a página. Tente novamente."
+      },
+      "trash": {
+        "title": "Lixeira",
+        "note": "As páginas excluídas ficam aqui por 30 dias e depois são excluídas para sempre.",
+        "loadError": "Não foi possível carregar a lixeira.",
+        "restore": "Restaurar",
+        "restorePage": "Restaurar {title}",
+        "restored": "Página restaurada",
+        "titleTaken": "Já existe uma página com este título. Renomeie-a e depois restaure esta.",
+        "restoreFailed": "Não foi possível restaurar a página. Tente novamente.",
+        "allTrashed": "Todas as páginas estão na lixeira."
+      }
+    },
+    "create": {
+      "title": "Criar um canal",
+      "description": "Todos neste projeto podem ver e usar o canal.",
+      "nameLabel": "Nome",
+      "namePlaceholder": "marketing",
+      "slugPlaceholder": "nome-do-canal",
+      "descriptionLabel": "Descrição (opcional)",
+      "descriptionPlaceholder": "Para que serve este canal",
+      "submit": "Criar canal",
+      "created": "Canal criado",
+      "nameRequired": "Adicione um nome.",
+      "invalidName": "Use pelo menos uma letra ou um número no nome.",
+      "slugTaken": "<link>#{slug}</link> já existe.",
+      "failed": "Não foi possível criar o canal. Tente de novo.",
+      "renameTitle": "Renomear canal",
+      "renameDescription": "O link do canal muda com o nome.",
+      "save": "Salvar",
+      "renamed": "Canal renomeado",
+      "renameFailed": "Não foi possível renomear o canal. Tente de novo."
+    },
+    "view": {
+      "welcomeTitle": "Boas-vindas a #{name}",
+      "welcomeEmpty": "Comece o primeiro thread em #{name}. Cada mensagem começa um novo thread.",
+      "welcomeStart": "Este é o começo de #{name}.",
+      "dmIntro": "Esta conversa é só entre você e {agent}.",
+      "today": "Hoje",
+      "yesterday": "Ontem",
+      "openThread": "Abrir thread",
+      "replyInThread": "Responder no thread",
+      "lastReply": "Última resposta {time}",
+      "working": "{agent} está trabalhando…",
+      "agentFallback": "Agente",
+      "authorFallback": "Alguém",
+      "loadEarlier": "Carregar threads anteriores",
+      "messageChannel": "Mensagem para #{name}",
+      "messageAgent": "Mensagem para {agent}",
+      "threadsEmpty": "Os threads que você começar aparecerão aqui.",
+      "loadError": "Não foi possível carregar este canal.",
+      "threadsLoadError": "Não foi possível carregar os threads.",
+      "retry": "Tentar de novo",
+      "notFound": "Este canal não existe.",
+      "notFoundHint": "O link pode estar errado, ou alguém renomeou o canal.",
+      "openDefault": "Abrir #{name}",
+      "archivedTitle": "#{name} está arquivado.",
+      "archivedHint": "Desarquive para ler e começar threads aqui de novo.",
+      "archivedLocked": "Somente quem o criou ou um gerente do projeto pode desarquivá-lo.",
+      "unarchive": "Desarquivar canal",
+      "unarchived": "Canal desarquivado",
+      "unarchiveFailed": "Não foi possível desarquivar o canal. Tente de novo.",
+      "dmFailed": "Não foi possível abrir esta conversa.",
+      "archive": "Arquivar canal",
+      "archiveTitle": "Arquivar #{name}?",
+      "archiveDescription": "O canal sai da barra lateral de todos os membros. Os threads ficam, e quem o criou ou um gerente do projeto pode desarquivá-lo.",
+      "archived": "Canal arquivado",
+      "archiveFailed": "Não foi possível arquivar o canal. Tente de novo.",
+      "threadTitle": "Thread",
+      "closeThread": "Fechar thread",
+      "sendFailed": "Não foi possível começar o thread. Tente de novo.",
+      "replies": "{count, plural, one {# resposta} other {# respostas}}",
+      "replyPlaceholder": "Responder…",
+      "tab": {
+        "chat": "Chat",
+        "threads": "Threads",
+        "files": "Arquivos",
+        "memory": "Memória",
+        "apps": "Apps",
+        "links": "Links",
+        "triggers": "Gatilhos"
+      },
+      "empty": {
+        "files": {
+          "title": "Nenhum arquivo ainda",
+          "description": "Os arquivos compartilhados em {place} aparecem aqui.",
+          "action": "Enviar um arquivo"
+        },
+        "memory": {
+          "title": "Nenhuma memória ainda",
+          "description": "O que os agentes lembram sobre {place} aparece aqui.",
+          "action": "Adicionar memória"
+        },
+        "apps": {
+          "title": "Nenhum app ainda",
+          "description": "Os apps criados em {place} aparecem aqui."
+        },
+        "links": {
+          "title": "Nenhum link ainda",
+          "description": "Os links compartilhados nas threads de {place} aparecem aqui. Fixe um para entregá-lo a todos os agentes do canal."
+        },
+        "triggers": {
+          "title": "Nenhum gatilho ainda",
+          "description": "Os gatilhos iniciam uma thread em {place} por agendamento ou evento.",
+          "action": "Novo gatilho"
+        }
+      },
+      "channelDetails": "Detalhes de #{name}",
+      "roster": "{people} · {agents}",
+      "rosterPeople": "{count, plural, one {# pessoa} other {# pessoas}}",
+      "rosterAgents": "{count, plural, one {# agente} other {# agentes}}",
+      "rosterHint": "Pessoas e agentes nas threads deste canal",
+      "copyLink": "Copiar link da thread",
+      "linkCopied": "Link copiado",
+      "started": "Iniciada {time}",
+      "notice": {
+        "unreachable": "Perdemos o contato com o computador desta thread. As mensagens que você enviar ficam na fila até ele reconectar.",
+        "unreachableMidTurn": "Perdemos o contato com o computador desta thread com um turno ainda aberto. As mensagens que você enviar ficam na fila até ele responder.",
+        "stalled": "Acordar o computador desta thread está demorando mais que o normal. As mensagens que você enviar ficam na fila.",
+        "starting": "Iniciando o computador desta thread. Sua mensagem será enviada automaticamente.",
+        "idle": "O computador desta thread está dormindo. Sua próxima mensagem o acorda e é entregue.",
+        "waking": "Acordando o computador desta thread. As mensagens que você enviar ficam na fila e saem automaticamente."
+      },
+      "boot": {
+        "restart": "Reiniciar thread"
+      },
+      "links": {
+        "add": "Adicionar link",
+        "addDescription": "Fixe um link em {place}. Todos os agentes do canal recebem os links fixados.",
+        "urlLabel": "URL",
+        "titleLabel": "Título (opcional)",
+        "titlePlaceholder": "Do que se trata",
+        "invalidUrl": "Digite um link que comece com http:// ou https://.",
+        "addFailed": "Não foi possível adicionar o link. Tente de novo.",
+        "limit": "Este canal já tem 200 links fixados. Desafixe um primeiro.",
+        "added": "Link adicionado",
+        "remove": "Remover link",
+        "removeTitle": "Remover este link?",
+        "removeDescription": "{link} é removido de {place} para todos.",
+        "removed": "Link removido",
+        "removeFailed": "Não foi possível remover o link. Tente de novo.",
+        "loadError": "Não foi possível carregar os links.",
+        "intro": "Links compartilhados nas threads de {place}. Fixe um link para entregá-lo a todos os agentes do canal.",
+        "pinnedTitle": "Fixados · os agentes leem estes",
+        "sharedTitle": "Compartilhados em threads",
+        "sharedNote": "Coletados automaticamente das mensagens das pessoas",
+        "pinnedBy": "Fixado por {name}",
+        "pinnedLabel": "Fixado",
+        "fromThread": "de “{thread}”",
+        "inThread": "em “{thread}”",
+        "sharedTimes": "compartilhado {count}×",
+        "pin": "Fixar",
+        "unpin": "Desafixar",
+        "pinnedToast": "Link fixado",
+        "unpinnedToast": "Link desafixado",
+        "pinFailed": "Não foi possível fixar o link. Tente novamente.",
+        "unpinFailed": "Não foi possível desafixar o link. Tente novamente."
+      },
+      "appsLoadError": "Não foi possível carregar os apps.",
+      "triggers": {
+        "loadError": "Não foi possível carregar os gatilhos."
+      }
+    },
+    "details": {
+      "about": "Sobre",
+      "members": "Membros",
+      "name": "Nome do canal",
+      "description": "Descrição",
+      "noDescription": "Adicionar uma descrição",
+      "created": "Criado em",
+      "edit": "Editar",
+      "editField": "Editar {field}",
+      "archiveTitle": "Arquivar este canal",
+      "archiveHint": "Ele sai da barra lateral de todos os membros. As threads continuam.",
+      "archive": "Arquivar",
+      "people": "Pessoas",
+      "agents": "Agentes",
+      "membersHint": "Todos que iniciaram uma thread aqui e todos os agentes que responderam a uma, nas threads carregadas até agora."
+    },
+    "folder": {
+      "memory": "Memória",
+      "loadError": "Não foi possível carregar esta pasta",
+      "memoryNoteChannel": "O que os agentes em {place} lembram. Eles leem isto no início de cada thread.",
+      "memoryNoteDm": "O que {agent} lembra desta DM. Ele lê isto no início de cada thread.",
+      "off": {
+        "title": "Ative o Drive",
+        "description": "Os arquivos e a memória de {place} ficam no Drive. Ative Volumes em Feature flags para usá-los.",
+        "descriptionMember": "Os arquivos e a memória de {place} ficam no Drive. Peça a um administrador do projeto para ativá-lo.",
+        "action": "Abrir Feature flags"
+      }
+    }
   }
 }

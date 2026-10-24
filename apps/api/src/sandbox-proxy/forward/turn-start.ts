@@ -40,6 +40,10 @@ import {
   releasePromptDelivery,
 } from '../prompt-dedupe';
 import { recordSessionActivity } from '../../projects/session-activity';
+import { MEMORY_TURN_SYSTEM_MAX_CHARS } from '@kortix/api-contract';
+import { recordThreadLoad } from '../../memory/thread-loads';
+import { isMemoryTurnRoute, memoryTurnContext, withMemoryTurn, withoutClientSystem } from '../../memory/turn-context';
+import { logger } from '../../lib/logger';
 import type { ForwardRequest, ForwardState } from './context';
 
 // Turn-start preparation on the forward path: runtime convergence before the
@@ -340,7 +344,46 @@ export async function syncEnvBeforeTurnStart(
     }
     return refusal;
   }
+  await addMemoryTurnLayers(req, state);
   return null;
+}
+
+/**
+ * `memory_layers` and `system` on a Kortix prompt body (`project_channels`):
+ * the thread's memory layers and versions, so kortixd refreshes its read-only
+ * memory copy before the turn, and the page list for the turn's system
+ * prompt. The first turn records the list ("Used memory"). A `system` the
+ * client sent is always dropped: only the API sets it. Flag off, no space, or
+ * any failure: the body goes on without memory. `/steer` never passes here
+ * (the API posts it to the box directly and never sets `system`).
+ */
+async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Promise<void> {
+  // Once per request: a retry attempt keeps the body the first attempt built.
+  if (state.memoryLayersChecked || !isMemoryTurnRoute(req.method, req.remainingPath)) return;
+  state.memoryLayersChecked = true;
+  state.requestBody = withoutClientSystem(state.requestBody);
+  const sessionId = req.record.sessionId;
+  try {
+    // The prompter decides whether the thread's personal layer is listed (its owner only).
+    const turn = await memoryTurnContext(req.record.projectId, sessionId, req.userId);
+    if (!turn) return;
+    state.requestBody = withMemoryTurn(state.requestBody, turn);
+    // "Used memory" is the first turn's list, recorded only when the list went out.
+    // ponytail: recorded before delivery; a refused prompt or a daemon older than the `system` field still records it.
+    if (!turn.firstTurn || turn.system.length > MEMORY_TURN_SYSTEM_MAX_CHARS) return;
+    // Off the turn's path: a lost record only hides the "Used memory" chip.
+    void recordThreadLoad(sessionId, turn.loaded).catch((error: unknown) =>
+      logger.warn('[memory] the thread load was not recorded', {
+        session_id: sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+  } catch (error) {
+    logger.warn('[memory] turn start forwarded without memory', {
+      session_id: sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 /**

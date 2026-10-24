@@ -30,6 +30,7 @@ import { successToast } from '../../../primitives/toast';
 import { agentDisplayLabel } from '../../../session/composer/session-chat-input';
 import { useTranslations as useI18nTranslations } from '../../../i18n';
 import { useProjectFeatureFlags } from '../../../internal/lib/use-project-feature-flags';
+import { useUiViewerId } from '../../../providers/ui-provider';
 import { createProjectTrigger, upsertProjectSecret } from '@kortix/sdk';
 import { modelKeyToWire, useProjectTriggerEventApps, useVisibleAgents } from '@kortix/sdk/react';
 import { AppWindowIcon, LightningIcon, TimerIcon, WebhooksLogoIcon } from '@phosphor-icons/react';
@@ -59,12 +60,14 @@ import {
   normalizeSecretName,
   runCreate,
   slugify,
+  spaceTriggerAccess,
   summarize,
   triggerConnection,
   triggerName,
   validate,
   withKind,
 } from './trigger-composer-logic';
+import { PostToField } from './post-to-field';
 import { TriggerOptions } from './trigger-options';
 import { useEventAppConnect } from './use-event-app-connect';
 import { WhenEvent } from './when-event';
@@ -85,6 +88,8 @@ export interface TriggerComposerProps {
   initialApp?: { app: string; source?: string; provider?: string } | null;
   /** Opens on App event with this connector of the project chosen, e.g. from its own page. */
   initialConnector?: { slug: string; name: string } | null;
+  /** Posts to this channel or DM, e.g. from its Triggers tab. Still changeable. */
+  initialSpace?: { spaceId: string; kind: 'channel' | 'dm' } | null;
 }
 
 export function TriggerComposer(props: TriggerComposerProps) {
@@ -134,15 +139,17 @@ function ComposerForm({
   initialKind = null,
   initialApp = null,
   initialConnector = null,
+  initialSpace = null,
   onBusyChange,
 }: TriggerComposerProps & { onBusyChange: (busy: boolean) => void }) {
+  const viewerId = useUiViewerId();
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tComposer = useI18nTranslations('triggerComposer');
   // App events are a beta feature behind the project flag `event_triggers`. Off: no App event tab,
   // no catalog request, and an entry point that asks for an app event opens on Schedule.
   const eventsOn = useProjectFeatureFlags(projectId).flags.event_triggers === true;
-  const [draft, setDraft] = useState<ComposerDraft>(() =>
-    initialDraft({
+  const [draft, setDraft] = useState<ComposerDraft>(() => ({
+    ...initialDraft({
       kind: eventsOn
         ? (initialKind ?? (initialApp || initialConnector ? 'event' : null))
         : initialKind === 'event'
@@ -152,8 +159,10 @@ function ComposerForm({
       appSlug: initialApp?.app ?? null,
       appSource: initialApp?.source ?? initialApp?.provider ?? null,
       profile: initialConnector?.slug ?? null,
+      spaceId: initialSpace?.spaceId ?? null,
     }),
-  );
+    ...(initialSpace ? { sessionAccess: spaceTriggerAccess(initialSpace.kind, viewerId) } : {}),
+  }));
   const patch: PatchDraft = (next) => setDraft((d) => ({ ...d, ...next }));
   const [showProblems, setShowProblems] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
@@ -268,6 +277,7 @@ function ComposerForm({
             ...(draft.agent ? { agent: draft.agent } : {}),
             ...(draft.model ? { model: modelKeyToWire(draft.model) } : {}),
             session_access: draft.sessionAccess,
+            ...(draft.spaceId ? { space_id: draft.spaceId } : {}),
             ...(runCapFromInput(draft.maxRunsPerHour) ? { max_runs_per_hour: runCapFromInput(draft.maxRunsPerHour)! } : {}),
             ...(runCapFromInput(draft.maxRunsPerDay) ? { max_runs_per_day: runCapFromInput(draft.maxRunsPerDay)! } : {}),
             ...(draft.overlap !== 'default' ? { overlap: draft.overlap } : {}),
@@ -449,6 +459,12 @@ function ComposerForm({
               />
               <InlineError message={blockError('name') ?? nameError} />
             </div>
+            <PostToField
+              projectId={projectId}
+              draft={draft}
+              patch={patch}
+              baseAccess={initialDraft({}).sessionAccess}
+            />
             <div data-block="options">
               <TriggerOptions
                 projectId={projectId}

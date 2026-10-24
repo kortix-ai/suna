@@ -52,23 +52,29 @@
  * can ever prefix-match the other. Do not "tidy" this back to `'kortix'`.
  */
 import type { ReviewItemsQuery } from '../core/rest/projects-client/review';
+import type { ProjectMemoryPageListOptions, ProjectMemorySearchInput } from '../core/rest/projects-client/memory';
 import type { ListProjectSessionsOptions } from '../core/rest/projects-client/sessions';
 
-type SessionListFilters = Pick<ListProjectSessionsOptions, 'parent' | 'startedBy' | 'q' | 'labels' | 'view'>;
+type SessionListFilters = Pick<
+  ListProjectSessionsOptions,
+  'parent' | 'startedBy' | 'q' | 'labels' | 'view' | 'spaceId'
+>;
 
 /** The filter fields that change the server response, or undefined when none is set. */
 function normalizeSessionListFilters(filters?: SessionListFilters) {
   const q = filters?.q?.trim();
   const labels = filters?.labels?.length ? [...filters.labels].sort() : null;
   const view = filters?.view;
-  if (!filters?.parent && !filters?.startedBy && !q && !labels && !view) return undefined;
+  const spaceId = filters?.spaceId;
+  if (!filters?.parent && !filters?.startedBy && !q && !labels && !view && !spaceId) return undefined;
   return {
     parent: filters?.parent ?? null,
     startedBy: filters?.startedBy ?? null,
     q: q ?? null,
-    // Only present when set, so pre-label and pre-view keys stay byte-identical.
+    // Only present when set, so pre-label, pre-view and pre-space keys stay byte-identical.
     ...(labels ? { labels } : {}),
     ...(view ? { view } : {}),
+    ...(spaceId ? { spaceId } : {}),
   };
 }
 
@@ -548,6 +554,43 @@ export const qk = {
      *  of every `sessionReminders` key, so invalidating it refreshes the
      *  project page and every session's reminder chip together. */
     reminders: (id: string) => [...qk.project.scope(id), 'reminders'] as const,
+    /** `listProjectSpaces` — the project's channels and the caller's DMs. */
+    spaces: (id: string) => [...qk.project.scope(id), 'spaces'] as const,
+    /** `listProjectSpaceApps` — one channel's Apps. Under `apps`, so every App mutation's invalidation refetches it. */
+    spaceApps: (id: string, spaceId: string) => [...qk.project.apps(id), 'space', spaceId] as const,
+    /** `listProjectSpaceLinks` — one channel's links. */
+    spaceLinks: (id: string, spaceId: string) => [...qk.project.spaces(id), spaceId, 'links'] as const,
+    /** Every channel's tab counts: App mutations invalidate this prefix with the App list. */
+    spaceSummaries: (id: string) => [...qk.project.spaces(id), 'summary'] as const,
+    /** `getProjectSpaceSummary` — one channel's tab counts. */
+    spaceSummary: (id: string, spaceId: string) => [...qk.project.spaceSummaries(id), spaceId] as const,
+    /** `getProjectSpaceGeneralNotice` — `#general`'s turned-on-again line. Under `spaces`, so a spaces refresh refreshes it. */
+    spaceGeneralNotice: (id: string) => [...qk.project.spaces(id), 'general-notice'] as const,
+    /** `getChannelsOnboarding` — the caller's intro and "Get started" state. */
+    channelsOnboarding: (id: string) => [...qk.project.scope(id), 'onboarding', 'channels'] as const,
+    /** Every memory read of the project. Memory writes invalidate it: one change can touch two pages, even in two layers. */
+    memory: (id: string) => [...qk.project.scope(id), 'memory'] as const,
+    /** `getProjectMemoryLayer` — one layer (`company` or a space id) and its counts. */
+    memoryLayer: (id: string, layerKey: string) => [...qk.project.memory(id), 'layer', layerKey] as const,
+    /** `listProjectMemoryPages` — the layer's live pages; with a filter, its trash or Needs confirming list. */
+    memoryPages: (id: string, layerKey: string, filter?: ProjectMemoryPageListOptions) =>
+      // The filter only when set, so the live list's key stays byte-identical.
+      filter && (filter.type || filter.status || filter.deleted)
+        ? ([...qk.project.memoryLayer(id, layerKey), 'pages', filter] as const)
+        : ([...qk.project.memoryLayer(id, layerKey), 'pages'] as const),
+    /** `listProjectMemoryChanges` — the layer's Recent changes (an infinite query). */
+    memoryChanges: (id: string, layerKey: string) => [...qk.project.memoryLayer(id, layerKey), 'changes'] as const,
+    /** `getProjectMemoryPage` — one page, by id: its route has no layer. */
+    memoryPage: (id: string, pageId: string) => [...qk.project.memory(id), 'page', pageId] as const,
+    /** `listProjectMemoryHistory` — one page's versions (an infinite query). */
+    memoryHistory: (id: string, pageId: string) => [...qk.project.memoryPage(id, pageId), 'history'] as const,
+    /** `searchProjectMemory` — one query (`q` trimmed). Under `memory`, so a write refreshes the hits. */
+    memorySearch: (id: string, input: ProjectMemorySearchInput) => [...qk.project.memory(id), 'search', input] as const,
+    /**
+     * `getSessionMemoryUsage` — one thread's "Used memory". Outside `memory` on
+     * purpose: the record is fixed at the thread's first turn, so no write refreshes it.
+     */
+    sessionMemoryUsage: (id: string, sessionId: string) => [...qk.project.scope(id), 'memory-usage', sessionId] as const,
     /** Every artifact read of a project (flag `artifacts`): the prefix of the
      *  keys below, so a publish refreshes the gallery and the open artifact. */
     artifacts: (id: string) => [...qk.project.scope(id), 'artifacts'] as const,

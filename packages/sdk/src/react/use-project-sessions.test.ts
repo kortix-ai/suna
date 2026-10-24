@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, jest, mock, test } from 'bun:test';
 import React from 'react';
 import { act, create } from 'react-test-renderer';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -214,5 +214,106 @@ describe('useProjectSessions reads past empty pages (KRTX-1727)', () => {
     for (let i = 0; i < 15; i++) await settle();
     expect(cursors).toEqual([null, 'C1', null, 'C1']);
     expect(list.sessions.map((s) => s.session_id)).toEqual(['S-old']);
+  });
+});
+
+describe('useProjectSessions spaceId', () => {
+  test('lists one space: sends space_id and caches under the space key', async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'token' });
+    const urls: string[] = [];
+    globalThis.fetch = mock(async (url: unknown) => {
+      urls.push(String(url));
+      return Response.json([{ session_id: 'S1', space_id: 'SPACE-1' }]);
+    }) as unknown as typeof fetch;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let list: ReturnType<typeof useProjectSessions> | undefined;
+    function Probe() {
+      list = useProjectSessions('P1', { parent: 'root', spaceId: 'SPACE-1' });
+      return null;
+    }
+    let root: ReturnType<typeof create> | undefined;
+    await act(async () => {
+      root = create(React.createElement(QueryClientProvider, { client }, React.createElement(Probe)));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(new URL(urls[0]!).searchParams.get('space_id')).toBe('SPACE-1');
+    expect(list?.sessions.map((s) => s.session_id)).toEqual(['S1']);
+    const key = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', spaceId: 'SPACE-1' });
+    expect(client.getQueryData(key)).toBeDefined();
+    await act(async () => root!.unmount());
+  });
+});
+
+describe('useProjectSessions pollFirstPageOnly', () => {
+  // Page N answers cursor `C<N>` (page 0 the first read).
+  let pages: Array<{ ids: string[]; next: string | null }> = [];
+  const cursors: Array<string | null> = [];
+  let root: ReturnType<typeof create> | undefined;
+  let list: ReturnType<typeof useProjectSessions>;
+
+  beforeEach(() => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'token' });
+    cursors.length = 0;
+    globalThis.fetch = mock(async (url: unknown) => {
+      const cursor = new URL(String(url)).searchParams.get('cursor');
+      cursors.push(cursor);
+      const page = pages[cursor ? Number(cursor.slice(1)) : 0]!;
+      return Response.json(
+        page.ids.map((id) => ({ session_id: id })),
+        { headers: page.next ? { 'x-next-cursor': page.next } : {} },
+      );
+    }) as unknown as typeof fetch;
+  });
+  afterEach(async () => {
+    if (root) await act(async () => root!.unmount());
+    root = undefined;
+    jest.useRealTimers();
+  });
+
+  // The fake clock moves `ms` in 5 ms steps, letting the answered fetches and React settle between steps.
+  const advance = async (ms: number) => {
+    for (let t = 0; t < ms; t += 5) {
+      await act(async () => {
+        jest.advanceTimersByTime(5);
+        for (let i = 0; i < 5; i++) await Promise.resolve();
+      });
+    }
+  };
+
+  test('a poll re-reads page one only, and a loaded older page keeps its rows', async () => {
+    jest.useFakeTimers();
+    pages = [
+      { ids: ['B', 'A'], next: 'C1' },
+      { ids: ['Z'], next: null },
+    ];
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function Probe() {
+      list = useProjectSessions('P1', { spaceId: 'SPACE-1', parent: 'root', refetchInterval: 40, pollFirstPageOnly: true });
+      return null;
+    }
+    await act(async () => {
+      root = create(React.createElement(QueryClientProvider, { client }, React.createElement(Probe)));
+    });
+    await advance(20);
+    await act(async () => {
+      void list.fetchNextPage();
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    });
+    await advance(20);
+    expect(cursors).toEqual([null, 'C1']);
+
+    // A new thread arrives and pushes A off page one.
+    pages[0] = { ids: ['N', 'B'], next: 'C1' };
+    await advance(150);
+
+    expect(cursors.slice(2).length).toBeGreaterThan(0);
+    expect(cursors.slice(2).every((cursor) => cursor === null)).toBe(true);
+    // N is new; A stays (its page-two cursor starts after it); Z stays loaded.
+    expect(list.sessions.map((s) => s.session_id)).toEqual(['N', 'B', 'A', 'Z']);
+    expect(list.hasNextPage).toBe(false);
   });
 });

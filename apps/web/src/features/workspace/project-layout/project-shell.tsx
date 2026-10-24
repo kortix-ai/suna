@@ -36,7 +36,7 @@ import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-sho
 import { useWarmProjectSession } from '@kortix/ui/internal/hooks/projects/use-warm-project-session';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { writeLastProjectId } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
-import { cn } from '@kortix/ui';
+import { cn, uiRoutes } from '@kortix/ui';
 import { BillingAccountProvider } from '@kortix/ui/internal/stores/billing-account-context';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { getProject, getProjectDetail } from '@kortix/sdk';
@@ -45,6 +45,7 @@ import {
   qk,
   useFeatureFlag,
   useGatewayCatalogSync,
+  useProjectSpaces,
 } from '@kortix/sdk/react';
 import { SidebarGlyph as PanelLeft } from '@kortix/ui/icons';
 
@@ -113,6 +114,9 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   // the account being able to run at all. The server enforces the flag too —
   // this is the client short-circuit that avoids a 403 on every project visit.
   const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
+  // Channels on: every thread is created in its space and never claims a warm
+  // session, so holding one would bill an idle computer nobody uses.
+  const channels = useFeatureFlag(projectId, 'project_channels').enabled;
   const { canRun, isLoading: billingLoading } = useProjectCanRun(projectId);
   // `params.sessionId` (read again below for the tabs store) doubles as the
   // hook's adoption signal: navigating to a session — from ANY surface,
@@ -121,7 +125,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   const routeParams = useParams<{ sessionId?: string }>();
   useWarmProjectSession(
     projectId,
-    warmSessions.enabled && !billingLoading && canRun,
+    warmSessions.enabled && !channels && !billingLoading && canRun,
     routeParams?.sessionId ?? null,
   );
 
@@ -223,7 +227,17 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     newSession();
   }, [newSession]);
 
-  useProjectShellShortcuts({ projectId, onNewSession: handleNewSession });
+  // Channels on: "New session" (Mod+T, the desktop File menu) opens the
+  // default channel and focuses its composer, where a message starts a thread.
+  const spaces = useProjectSpaces(projectId, { enabled: channels });
+  const defaultChannelSlug = spaces.data?.find((space) => space.kind === 'channel' && space.is_default)?.slug;
+  const openDefaultChannel = useCallback(() => {
+    if (!defaultChannelSlug) return;
+    router.push(uiRoutes().channel(projectId, defaultChannelSlug));
+    // Already on that channel the composer does not remount; ask it for focus.
+    window.dispatchEvent(new CustomEvent('focus-session-textarea'));
+  }, [defaultChannelSlug, projectId, router]);
+  useProjectShellShortcuts({ projectId, onNewSession: channels ? openDefaultChannel : handleNewSession });
 
   const params = useParams<{ sessionId?: string }>();
   const activeSessionId = params?.sessionId ?? null;

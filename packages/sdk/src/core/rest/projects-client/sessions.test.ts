@@ -501,6 +501,25 @@ test('createProjectSession forwards initial_context beside initial_prompt', asyn
   });
 });
 
+test('createProjectSession files the session into a space and reads space_id and first_prompt back', async () => {
+  nextResponse = {
+    status: 201,
+    body: { session_id: 'NEW-SP', space_id: 'SPACE-1', first_prompt: 'Draft the launch post' },
+  };
+  const session = await createProjectSession('P1', { space_id: 'SPACE-1', initial_prompt: 'Draft the launch post' });
+  expect(last().body).toEqual({ space_id: 'SPACE-1', initial_prompt: 'Draft the launch post' });
+  expect(session.space_id).toBe('SPACE-1');
+  expect(session.first_prompt).toBe('Draft the launch post');
+});
+
+test('listProjectSessions sends spaceId as the space_id query parameter', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessions('P1', { spaceId: 'SPACE-1', parent: 'root' });
+  const url = new URL(last().url);
+  expect(url.searchParams.get('space_id')).toBe('SPACE-1');
+  expect(url.searchParams.get('parent')).toBe('root');
+});
+
 test('createProjectSession defaults the body to {} when no input is given', async () => {
   nextResponse = { status: 200, body: { session_id: 'NEW-3' } };
   await createProjectSession('P1');

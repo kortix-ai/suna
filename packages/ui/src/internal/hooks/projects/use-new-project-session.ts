@@ -88,6 +88,9 @@ import { randomUUID } from '../../lib/utils/random-uuid';
  */
 /**
  * Options for a new-session start.
+ * `create.space_id` files the session in a channel or DM (`project_channels`).
+ * It never claims a warm session, shows no toast, and does not navigate: the
+ * space view stays and `onNavigate(sessionId)` opens the thread beside it.
  * `agent_name` chooses the session's boot agent. Later prompts can name another
  * agent; the API re-scopes its grants before forwarding the prompt.
  * `connector_bindings` binds specific connections; `inherit_unbound`
@@ -105,6 +108,7 @@ export type NewProjectSessionOpts = {
   create?: {
     sandbox_slug?: string;
     agent_name?: string;
+    space_id?: string;
     pending_prompt?: PendingSessionPrompt;
     connector_bindings?: SessionConnectorBindingsInput;
     inherit_unbound?: boolean;
@@ -126,11 +130,14 @@ function makeTakeOrCreateSession(
       // null whenever there is nothing suitable, so the create path below stays
       // the authority on billing and connector requirements.
       async function takeOrCreateSession() {
-        const warm = takeWarmSessionEntry(projectId, {
-          create: opts?.create,
-          // Replenish after /start, not beside the claim and /start requests.
-          replenish: false,
-        });
+        // A space thread always creates: a warm session belongs to no space.
+        const warm = opts.create?.space_id
+          ? null
+          : takeWarmSessionEntry(projectId, {
+              create: opts?.create,
+              // Replenish after /start, not beside the claim and /start requests.
+              replenish: false,
+            });
         if (warm) {
           // The first prompt is a DURABLE inbox row, never a client-side
           // replay (the start stash carries picks only — see the producers).
@@ -163,7 +170,7 @@ function makeTakeOrCreateSession(
 
         const sessionId = randomUUID();
         markSessionFresh(sessionId);
-        router.prefetch(uiRoutes().session(projectId, sessionId));
+        if (!opts.create?.space_id) router.prefetch(uiRoutes().session(projectId, sessionId));
         let created: ProjectSession | undefined;
         try {
           created = await createProjectSession(projectId, {
@@ -197,6 +204,7 @@ function makeTakeOrCreateSession(
 
 export function useNewProjectSession(projectId: string | undefined) {
   const t = useTranslations('threads');
+  const tSpaces = useTranslations('spaces.view');
   const router = useUiRouter();
   const pathname = useUiPathname();
   const queryClient = useQueryClient();
@@ -301,17 +309,21 @@ export function useNewProjectSession(projectId: string | undefined) {
         adoptedWarmSession = session;
       });
 
+      // A space thread shows up in the timeline at once, so it gets no toast.
+      const inSpace = Boolean(opts.create?.space_id);
+      // `threads.*`, not `hardcodedUi.i18nComplete.*`. The two
+      // i18nComplete slots these used to read hold the literal strings
+      // "startingSession" and "sessionStarted" in en, fr, de, pt, sr and
+      // zh — the key id was written into the value slot — so the toast
+      // rendered its own key name. `threads.startingSession` /
+      // `threads.sessionStarted` are the canonical entries and are
+      // correctly translated in all nine catalogs.
       const createSession = () =>
-        // `threads.*`, not `hardcodedUi.i18nComplete.*`. The two
-        // i18nComplete slots these used to read hold the literal strings
-        // "startingSession" and "sessionStarted" in en, fr, de, pt, sr and
-        // zh — the key id was written into the value slot — so the toast
-        // rendered its own key name. `threads.startingSession` /
-        // `threads.sessionStarted` are the canonical entries and are
-        // correctly translated in all nine catalogs.
-        loadingToast(t('startingSession'), takeOrCreateSession(), {
-          success: t('sessionStarted'),
-        });
+        inSpace
+          ? takeOrCreateSession()
+          : loadingToast(t('startingSession'), takeOrCreateSession(), {
+              success: t('sessionStarted'),
+            });
 
       createScopedSession({
         create: createSession,
@@ -363,6 +375,11 @@ export function useNewProjectSession(projectId: string | undefined) {
               queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) }),
           });
           opts?.onNavigate?.(sessionId);
+          // The space view stays on screen, so no navigation lands to release the claim.
+          if (inSpace) {
+            release();
+            return;
+          }
           // nav-contract: prefetch-only — the session id is minted or returned
           // by the create POST, so no anchor can name it. `takeOrCreateSession`
           // prefetches the route the moment the id exists.
@@ -371,6 +388,7 @@ export function useNewProjectSession(projectId: string | undefined) {
       }).catch((err) => {
         const code = (err as { code?: string })?.code;
         const action = resolveCreateFailure(code, err instanceof ApiError);
+        const failed = inSpace ? tSpaces('sendFailed') : t('failedToStartSession');
         if (action === 'upgrade') {
           openUpgradeDialog({ reason: 'subscription_required', accountId });
         } else if (action === 'connect') {
@@ -382,12 +400,10 @@ export function useNewProjectSession(projectId: string | undefined) {
               retry: () => startRef.current(opts),
             });
           } else {
-            errorToast(
-              err instanceof Error ? err.message : t('failedToStartSession'),
-            );
+            errorToast(err instanceof Error ? err.message : failed);
           }
         } else if (action === 'toast') {
-          errorToast(err instanceof Error ? err.message : t('failedToStartSession'));
+          errorToast(err instanceof Error ? err.message : failed);
         }
         // No navigation happened, so release the claim now — the user stays
         // where they are and must be able to try again immediately.
@@ -406,6 +422,7 @@ export function useNewProjectSession(projectId: string | undefined) {
       openUpgradeDialog,
       accountId,
       t,
+      tSpaces,
       queryClient,
       openConnectorGate,
     ],

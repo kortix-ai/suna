@@ -467,6 +467,19 @@ const FLAGS: readonly FeatureFlagDef[] = [
   // account are the only connectors path. A stored override is inert; the
   // serializer keeps sending `true` for older clients.
   {
+    key: 'project_channels',
+    name: 'Channels',
+    description:
+      'Organize work in channels. Each new message in a channel or a direct message with an agent starts a thread. Replaces the session list in the sidebar.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'Every /projects/:id/spaces route returns 403 feature_disabled while off. Session create/list ignore space_id while off. ' +
+      'BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-channel-memory skill; a change reaches the next new box and retires warm sessions (feature-flags/toggle-effects.ts).',
+  },
+  {
     key: 'agent_rooms',
     name: 'Rooms',
     iamActions: ['project.room.read', 'project.room.write'],

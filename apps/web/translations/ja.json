@@ -1286,6 +1286,10 @@
         "email_channel": {
           "name": "メールチャネル",
           "description": "エージェントに Resend のメール受信箱を用意します。届いたメールでセッションを開始・継続し、エージェントはその受信箱で読み、返信し、送信します。自分の Resend API キーとドメインを使います。"
+        },
+        "project_channels": {
+          "name": "チャンネル",
+          "description": "作業をチャンネルで整理します。チャンネルでの新しいメッセージや、エージェントとのダイレクトメッセージはそれぞれスレッドを開始します。サイドバーのセッション一覧を置き換えます。"
         }
       }
     },
@@ -1777,7 +1781,13 @@
     "underMore": "その他",
     "sidebarEmpty": "ここに項目をドラッグするとサイドバーに表示されます。",
     "moreEmpty": "ここに項目をドラッグすると「その他」に移動します。",
-    "moreCaption": "「その他」の項目は、ナビゲーション下の「その他」メニューから開けます。"
+    "moreCaption": "「その他」の項目は、ナビゲーション下の「その他」メニューから開けます。",
+    "spaces": {
+      "channels": "チャンネル",
+      "directMessages": "ダイレクトメッセージ",
+      "addChannel": "チャンネルを追加",
+      "loadError": "チャンネルを読み込めませんでした。"
+    }
   },
   "dashboard": {
     "title": "ダッシュボード",
@@ -20402,7 +20412,9 @@
       "text000a82dd887b": "エージェント用の管理されたResend受信トレイを作成するか、既存のものを接続します。",
       "text1482de4dfc18": "Kortixがこの接続用のResend受信トレイを作成・管理します。",
       "textd529a06f471c": "利用可能な場合、Resend はこのプレフィックスを作成します。例：",
-      "text51cfb12fffdd": "受信メールを受け取りました"
+      "text51cfb12fffdd": "受信メールを受け取りました",
+      "openThreadAction": "スレッドを開く",
+      "untitledThread": "無題のスレッド"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -20761,7 +20773,11 @@
     "overlapAllow": "それでも新しい実行を開始",
     "perHour": "1時間あたり",
     "perDay": "1日あたり",
-    "noLimit": "上限なし"
+    "noLimit": "上限なし",
+    "postTo": "投稿先",
+    "postToHint": "実行ごとにそこで新しいスレッドが始まります。チャンネルがない場合、実行は #{channel} に入ります。",
+    "postToNone": "チャンネルなし",
+    "postToUnavailable": "利用できないチャンネル"
   },
   "gatewayAccess": {
     "heroTitle": "このプロジェクトのモデルをどこでも使う",
@@ -22776,5 +22792,409 @@
     "auditSet": "ルールセット {set}",
     "bulkInheritTitle": "{count, plural, other {# 個のツール}}を基本ルールに戻しますか?",
     "bulkInheritBody": "{group} にある各ツールについて、このルールセットのルールを削除し、基本ルールに従うようにします。パターンルールは変更されません。"
+  },
+  "spaces": {
+    "memory": {
+      "search": "メモリを検索",
+      "pagesLabel": "メモリのページ",
+      "allPages": "すべてのページ",
+      "type": {
+        "people": "人物",
+        "decisions": "決定事項",
+        "workstreams": "ワークストリーム",
+        "playbooks": "プレイブック",
+        "note": "メモ"
+      },
+      "needsConfirming": "確認が必要",
+      "noMatches": "「{query}」に一致するページはありません。",
+      "loadError": "このメモリを読み込めませんでした。",
+      "pageLoadError": "このページを読み込めませんでした。",
+      "retry": "再試行",
+      "close": "閉じる",
+      "loadOlder": "以前の項目を表示",
+      "updatedBy": "{author} が更新",
+      "fromThread": "「{thread}」から",
+      "author": {
+        "system": "Kortix",
+        "unknown": "メンバー"
+      },
+      "edit": "編集",
+      "more": "その他の操作",
+      "copyLink": "リンクをコピー",
+      "linkCopied": "リンクをコピーしました",
+      "copyFailed": "リンクをコピーできませんでした。",
+      "delete": "削除",
+      "deleteTitle": "このページを削除しますか？",
+      "deleteDescription": "エージェントは次のターンから「{title}」を参照しなくなります。「最近の変更」から元に戻せます。",
+      "deleted": "ページを削除しました",
+      "deleteFailed": "ページを削除できませんでした。もう一度お試しください。",
+      "undo": "元に戻す",
+      "undone": "変更を元に戻しました",
+      "undoFailed": "変更を元に戻せませんでした。もう一度お試しください。",
+      "superseded": "この後にページが変更されています。以前のバージョンに戻すには履歴を開いてください。",
+      "alreadyUndone": "この変更はすでに元に戻されています。",
+      "undoUnavailable": "この後にページが変更されたため、この変更は元に戻せません。",
+      "view": "表示",
+      "relatedPages": "関連ページ",
+      "pageLimit": "このメモリは上限の 200 ページに達しています。先にページを 1 つ削除してください。",
+      "emptyPage": "このページにはまだ内容がありません。",
+      "recent": {
+        "added": "{author} が {time}にこのページを更新：「{fact}」を追加",
+        "updated": "{author} が {time}にこのページを更新",
+        "created": "{author} が {time}にこのページを作成",
+        "viewChange": "変更を表示"
+      },
+      "changes": {
+        "title": "最近の変更",
+        "empty": "まだ変更はありません。",
+        "loadError": "最近の変更を読み込めませんでした。",
+        "viewPage": "{title} を表示",
+        "undoPage": "{title} への変更を元に戻す",
+        "op": {
+          "create": "{author} が <page>{title}</page> を作成",
+          "update": "{author} が <page>{title}</page> を編集",
+          "append": "{author} が <page>{title}</page> に追記",
+          "delete": "{author} が <page>{title}</page> を削除",
+          "restore": "{author} が <page>{title}</page> を復元",
+          "undo": "{author} が <page>{title}</page> への変更を取り消し",
+          "confirm": "{author} が <page>{title}</page> を確認",
+          "file_note": "{author} がメモを <page>{title}</page> に整理",
+          "import": "{author} が <page>{title}</page> をインポート"
+        }
+      },
+      "history": {
+        "title": "履歴",
+        "description": "「{title}」へのすべての変更（新しい順）。",
+        "loadError": "履歴を読み込めませんでした。",
+        "current": "現在",
+        "undone": "取り消し済み",
+        "restore": "このバージョンに戻す",
+        "restored": "バージョンを復元しました",
+        "restoreFailed": "このバージョンを復元できませんでした。もう一度お試しください。",
+        "op": {
+          "create": "{author} がページを作成",
+          "update": "{author} がページを編集",
+          "append": "{author} が事実を追加",
+          "delete": "{author} がページを削除",
+          "restore": "{author} がバージョンを復元",
+          "undo": "{author} が変更を取り消し",
+          "confirm": "{author} がページを確認",
+          "file_note": "{author} がメモを整理",
+          "import": "{author} がページをインポート"
+        }
+      },
+      "editor": {
+        "title": "タイトル",
+        "type": "種類",
+        "summary": "概要",
+        "summaryPlaceholder": "エージェントがページ一覧で見る 1 行",
+        "body": "ページ",
+        "bodyHint": "Markdown。## で始まる行がセクションになります。⟦1⟧ は出典 1 を示します。",
+        "save": "保存",
+        "cancel": "キャンセル",
+        "saved": "ページを保存しました",
+        "conflict": "誰かがこのページを変更しました。再読み込みして確認してください。",
+        "reload": "再読み込み",
+        "error": {
+          "tooLarge": "このページは 8 KB を超えています。短くしてください。",
+          "titleTaken": "同じタイトルのページがすでにあります。",
+          "secret": "シークレットのようです。シークレットは「シークレット」に保管してください。",
+          "readOnly": "このメモリは読み取り専用です。",
+          "failed": "ページを保存できませんでした。もう一度お試しください。"
+        }
+      },
+      "remember": {
+        "label": "{place} に覚えてほしいこと",
+        "placeholder": "{place} に覚えてほしいことを入力…",
+        "hint": "あなたの名前でメモとして保存されます",
+        "send": "メモリに保存",
+        "status": {
+          "saved": "メモに保存しました",
+          "secret": "シークレットのようです。シークレットは「シークレット」に保管してください。",
+          "limit": "このメモリは上限の 200 ページに達しています。先にページを 1 つ削除してください。",
+          "readOnly": "このメモリは読み取り専用です。",
+          "failed": "保存できませんでした。もう一度お試しください。"
+        }
+      },
+      "empty": {
+        "title": "{place} にはまだメモリがありません",
+        "titleDm": "{place} とのメモリはまだありません",
+        "description": "エージェントはこのチャンネルで合意したことを保存するので、新しいスレッドはそこから始まります。各事実は元のスレッドにリンクされ、どの変更も編集や取り消しができます。",
+        "descriptionDm": "{place} はこの会話で合意したことを保存するので、新しいスレッドはそこから始まります。各事実は元のスレッドにリンクされ、どの変更も編集や取り消しができます。",
+        "example": {
+          "people": "Northwind — 主な担当者は Sam、3 月に更新",
+          "decisions": "価格は 1 席あたり 49 ドルのまま",
+          "workstreams": "Q4 ローンチ — 状況、担当者、次のステップ",
+          "playbooks": "リリースノートの書き方"
+        },
+        "tryOne": "試してみる",
+        "try": {
+          "one": "ローンチ日は 11 月 12 日",
+          "two": "ローンチの文章はすべて Priya が承認する",
+          "three": "平易な言葉で、誇張しない"
+        },
+        "titleCompany": "会社のメモリはまだ空です",
+        "descriptionCompany": "エージェントはプロジェクト全体で合意したことを保存し、すべてのチャンネルの新しいスレッドはそれを持って始まります。各事実は元のスレッドにリンクし、どの変更も編集や取り消しができます。"
+      },
+      "source": {
+        "thread": "スレッド「{label}」を開く",
+        "threadGone": "スレッド「{label}」から",
+        "outside": "{label} を新しいタブで開く",
+        "outsideText": "{label} から",
+        "person": "{label} が追加",
+        "import": "{label} からインポート"
+      },
+      "saved": {
+        "running": "メモリに保存中…",
+        "channel": "{place} のメモリに保存：<page>{title}</page>",
+        "dm": "{place} とのあなたのメモリに保存：<page>{title}</page>",
+        "company": "会社のメモリに保存：<page>{title}</page>",
+        "failed": "メモリに保存されませんでした：{reason}",
+        "view": "表示",
+        "undo": "元に戻す",
+        "undone": "元に戻しました",
+        "superseded": "その後に変更されました —",
+        "openHistory": "履歴を開く",
+        "undoFailed": "元に戻せませんでした。",
+        "failedGeneric": "メモリに保存されませんでした。"
+      },
+      "used": {
+        "label": "{places} のメモリを使用 · {count, plural, other {# ページ}}",
+        "title": "このスレッドの開始時に読み込んだページ",
+        "company": "会社",
+        "removed": "削除済み"
+      },
+      "searchError": "このメモリを検索できませんでした。",
+      "searchResults": "検索結果",
+      "searchTool": {
+        "title": "メモリを検索しました",
+        "count": "{count, plural, other {# ページ}}",
+        "running": "メモリを検索中…",
+        "failed": "メモリの検索に失敗しました：{reason}",
+        "failedGeneric": "メモリの検索に失敗しました。",
+        "none": "「{query}」に一致するページはありません。"
+      },
+      "palette": {
+        "heading": "メモリ"
+      },
+      "company": {
+        "subtitle": "このプロジェクトのすべてのエージェントが知っていること。",
+        "gateDescription": "会社のメモリはチャンネルの機能です。このプロジェクトのすべてのエージェントは、チームがここに保存した内容を持ってスレッドを始めます。",
+        "title": "メモリ",
+        "place": "会社"
+      },
+      "rememberThis": {
+        "label": "これを覚える",
+        "saved": "メモリに保存しました",
+        "saveTo": "保存先",
+        "dm": "{agent} とのあなたのメモリ"
+      },
+      "archivedReadOnly": "{place} はアーカイブ済みです。メモリは読み取り専用です。",
+      "pending": {
+        "note": "誰かが確認するまで、エージェントはこれらのページを使いません。",
+        "from": "{host} から",
+        "banner": "{host} から。誰かが確認するまで、エージェントはこれを使いません。",
+        "bannerNoHost": "スレッドの外から。誰かが確認するまで、エージェントはこれを使いません。",
+        "confirm": "確認",
+        "confirmPage": "{title} を確認",
+        "discard": "破棄",
+        "discardPage": "{title} を破棄",
+        "cancel": "キャンセル",
+        "confirmed": "ページを確認しました。エージェントが使えるようになりました。",
+        "alreadyConfirmed": "このページはすでに確認されています。",
+        "confirmFailed": "ページを確認できませんでした。もう一度お試しください。",
+        "discarded": "ページを破棄しました",
+        "discardFailed": "ページを破棄できませんでした。もう一度お試しください。"
+      },
+      "trash": {
+        "title": "ゴミ箱",
+        "note": "削除したページは 30 日間ここに残り、その後完全に削除されます。",
+        "loadError": "ゴミ箱を読み込めませんでした。",
+        "restore": "復元",
+        "restorePage": "{title} を復元",
+        "restored": "ページを復元しました",
+        "titleTaken": "同じタイトルのページがあります。そのページの名前を変えてから、このページを復元してください。",
+        "restoreFailed": "ページを復元できませんでした。もう一度お試しください。",
+        "allTrashed": "すべてのページがゴミ箱にあります。"
+      }
+    },
+    "create": {
+      "title": "チャンネルを作成",
+      "description": "このプロジェクトの全員がチャンネルを表示して使用できます。",
+      "nameLabel": "名前",
+      "namePlaceholder": "marketing",
+      "slugPlaceholder": "channel-name",
+      "descriptionLabel": "説明（任意）",
+      "descriptionPlaceholder": "このチャンネルの用途",
+      "submit": "チャンネルを作成",
+      "created": "チャンネルを作成しました",
+      "nameRequired": "名前を入力してください。",
+      "invalidName": "名前には英字か数字を 1 文字以上含めてください。",
+      "slugTaken": "<link>#{slug}</link> はすでにあります。",
+      "failed": "チャンネルを作成できませんでした。もう一度お試しください。",
+      "renameTitle": "チャンネル名を変更",
+      "renameDescription": "チャンネルのリンクは名前と一緒に変わります。",
+      "save": "保存",
+      "renamed": "チャンネル名を変更しました",
+      "renameFailed": "チャンネル名を変更できませんでした。もう一度お試しください。"
+    },
+    "view": {
+      "welcomeTitle": "#{name} へようこそ",
+      "welcomeEmpty": "#{name} で最初のスレッドを始めましょう。メッセージごとに新しいスレッドが始まります。",
+      "welcomeStart": "ここが #{name} の始まりです。",
+      "dmIntro": "この会話はあなたと {agent} だけのものです。",
+      "today": "今日",
+      "yesterday": "昨日",
+      "openThread": "スレッドを開く",
+      "replyInThread": "スレッドで返信",
+      "lastReply": "最終返信 {time}",
+      "working": "{agent} が作業中…",
+      "agentFallback": "エージェント",
+      "authorFallback": "メンバー",
+      "loadEarlier": "以前のスレッドを読み込む",
+      "messageChannel": "#{name} へのメッセージ",
+      "messageAgent": "{agent} へのメッセージ",
+      "threadsEmpty": "始めたスレッドがここに表示されます。",
+      "loadError": "このチャンネルを読み込めませんでした。",
+      "threadsLoadError": "スレッドを読み込めませんでした。",
+      "retry": "もう一度試す",
+      "notFound": "このチャンネルは存在しません。",
+      "notFoundHint": "リンクが間違っているか、誰かがチャンネル名を変更した可能性があります。",
+      "openDefault": "#{name} を開く",
+      "archivedTitle": "#{name} はアーカイブされています。",
+      "archivedHint": "アーカイブを解除すると、ここでまたスレッドを読んだり始めたりできます。",
+      "archivedLocked": "アーカイブを解除できるのは、作成者またはプロジェクト管理者のみです。",
+      "unarchive": "チャンネルのアーカイブを解除",
+      "unarchived": "チャンネルのアーカイブを解除しました",
+      "unarchiveFailed": "チャンネルのアーカイブを解除できませんでした。もう一度お試しください。",
+      "dmFailed": "この会話を開けませんでした。",
+      "archive": "チャンネルをアーカイブ",
+      "archiveTitle": "#{name} をアーカイブしますか？",
+      "archiveDescription": "チャンネルはすべてのメンバーのサイドバーから消えます。スレッドは残り、作成者またはプロジェクト管理者がアーカイブを解除できます。",
+      "archived": "チャンネルをアーカイブしました",
+      "archiveFailed": "チャンネルをアーカイブできませんでした。もう一度お試しください。",
+      "threadTitle": "スレッド",
+      "closeThread": "スレッドを閉じる",
+      "sendFailed": "スレッドを開始できませんでした。もう一度お試しください。",
+      "replies": "{count, plural, other {#件の返信}}",
+      "replyPlaceholder": "返信…",
+      "tab": {
+        "chat": "チャット",
+        "threads": "スレッド",
+        "files": "ファイル",
+        "memory": "メモリ",
+        "apps": "アプリ",
+        "links": "リンク",
+        "triggers": "トリガー"
+      },
+      "empty": {
+        "files": {
+          "title": "まだファイルはありません",
+          "description": "{place} で共有されたファイルがここに表示されます。",
+          "action": "ファイルをアップロード"
+        },
+        "memory": {
+          "title": "まだメモリはありません",
+          "description": "エージェントが {place} について覚えていることがここに表示されます。",
+          "action": "メモリを追加"
+        },
+        "apps": {
+          "title": "まだアプリはありません",
+          "description": "{place} で作られたアプリがここに表示されます。"
+        },
+        "links": {
+          "title": "まだリンクはありません",
+          "description": "{place} のスレッドで共有されたリンクがここに表示されます。固定すると、チャンネルのすべてのエージェントに渡されます。"
+        },
+        "triggers": {
+          "title": "まだトリガーはありません",
+          "description": "トリガーはスケジュールやイベントに応じて {place} でスレッドを開始します。",
+          "action": "新しいトリガー"
+        }
+      },
+      "channelDetails": "#{name} の詳細",
+      "roster": "{people} · {agents}",
+      "rosterPeople": "{count, plural, other {#人}}",
+      "rosterAgents": "{count, plural, other {#件のエージェント}}",
+      "rosterHint": "このチャンネルのスレッドにいる人とエージェント",
+      "copyLink": "スレッドへのリンクをコピー",
+      "linkCopied": "リンクをコピーしました",
+      "started": "{time}に開始",
+      "notice": {
+        "unreachable": "このスレッドのコンピューターとの接続が切れました。送信したメッセージは再接続までキューに入ります。",
+        "unreachableMidTurn": "ターンが開いたまま、このスレッドのコンピューターとの接続が切れました。送信したメッセージは応答があるまでキューに残ります。",
+        "stalled": "このスレッドのコンピューターの起動にいつもより時間がかかっています。送信したメッセージはキューに入ります。",
+        "starting": "このスレッドのコンピューターを起動しています。メッセージは自動で送信されます。",
+        "idle": "このスレッドのコンピューターはスリープ中です。次のメッセージで起動し、配信されます。",
+        "waking": "このスレッドのコンピューターを起動しています。送信したメッセージはキューに入り、自動で送信されます。"
+      },
+      "boot": {
+        "restart": "スレッドを再起動"
+      },
+      "links": {
+        "add": "リンクを追加",
+        "addDescription": "{place} にリンクを固定します。チャンネルのすべてのエージェントが固定されたリンクを受け取ります。",
+        "urlLabel": "URL",
+        "titleLabel": "タイトル（任意）",
+        "titlePlaceholder": "内容",
+        "invalidUrl": "http:// または https:// で始まるリンクを入力してください。",
+        "addFailed": "リンクを追加できませんでした。もう一度お試しください。",
+        "limit": "このチャンネルにはすでに 200 件の固定リンクがあります。先に 1 件の固定を解除してください。",
+        "added": "リンクを追加しました",
+        "remove": "リンクを削除",
+        "removeTitle": "このリンクを削除しますか？",
+        "removeDescription": "{link} は全員の {place} から削除されます。",
+        "removed": "リンクを削除しました",
+        "removeFailed": "リンクを削除できませんでした。もう一度お試しください。",
+        "loadError": "リンクを読み込めませんでした。",
+        "intro": "{place} のスレッドで共有されたリンク。リンクを固定すると、チャンネルのすべてのエージェントに渡されます。",
+        "pinnedTitle": "固定済み · エージェントが読むリンク",
+        "sharedTitle": "スレッドで共有",
+        "sharedNote": "メンバーのメッセージから自動で収集",
+        "pinnedBy": "{name} が固定",
+        "pinnedLabel": "固定済み",
+        "fromThread": "「{thread}」から",
+        "inThread": "「{thread}」で",
+        "sharedTimes": "{count} 回共有",
+        "pin": "固定",
+        "unpin": "固定解除",
+        "pinnedToast": "リンクを固定しました",
+        "unpinnedToast": "リンクの固定を解除しました",
+        "pinFailed": "リンクを固定できませんでした。もう一度お試しください。",
+        "unpinFailed": "リンクの固定を解除できませんでした。もう一度お試しください。"
+      },
+      "appsLoadError": "アプリを読み込めませんでした。",
+      "triggers": {
+        "loadError": "トリガーを読み込めませんでした。"
+      }
+    },
+    "details": {
+      "about": "概要",
+      "members": "メンバー",
+      "name": "チャンネル名",
+      "description": "説明",
+      "noDescription": "説明を追加",
+      "created": "作成日",
+      "edit": "編集",
+      "editField": "{field}を編集",
+      "archiveTitle": "このチャンネルをアーカイブ",
+      "archiveHint": "すべてのメンバーのサイドバーから消えます。スレッドは残ります。",
+      "archive": "アーカイブ",
+      "people": "人",
+      "agents": "エージェント",
+      "membersHint": "これまでに読み込んだスレッドで、ここでスレッドを始めた人と、返信したエージェントです。"
+    },
+    "folder": {
+      "memory": "メモリ",
+      "loadError": "このフォルダを読み込めませんでした",
+      "memoryNoteChannel": "{place} のエージェントが覚えていること。エージェントはスレッドの開始時に毎回これを読みます。",
+      "memoryNoteDm": "{agent} がこの DM から覚えていること。スレッドの開始時に毎回これを読みます。",
+      "off": {
+        "title": "Drive をオンにする",
+        "description": "{place} のファイルとメモリは Drive にあります。使うには Feature flags で Volumes をオンにしてください。",
+        "descriptionMember": "{place} のファイルとメモリは Drive にあります。プロジェクト管理者にオンにするよう依頼してください。",
+        "action": "Feature flags を開く"
+      }
+    }
   }
 }

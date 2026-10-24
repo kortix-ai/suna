@@ -201,6 +201,15 @@ describe('triggerPatch: only what changed', () => {
     expect(patch.session_access).toEqual({ mode: 'project', memberIds: [], groupIds: [] });
     expect(triggerPatch({ ...base, model }, { ...base, model: null }).model).toBeNull();
   });
+
+  test('the channel it posts to: a move sends space_id, a clear sends null, none sends nothing', () => {
+    const inChannel = saved(trigger({ space_id: 'S1' }));
+    expect(inChannel.spaceId).toBe('S1');
+    expect(saved(trigger()).spaceId).toBeNull();
+    expect(triggerPatch(inChannel, { ...inChannel, spaceId: 'S2' })).toEqual({ space_id: 'S2' });
+    expect(triggerPatch(inChannel, { ...inChannel, spaceId: null })).toEqual({ space_id: null });
+    expect(triggerPatch(inChannel, { ...inChannel, instruction: 'x' })).toEqual({ prompt_template: 'x' });
+  });
 });
 
 describe('triggerPatch: an app event', () => {

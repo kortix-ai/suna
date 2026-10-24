@@ -1282,6 +1282,48 @@
       "when": 1792823946886,
       "tag": "20261024063906_connector_policy_sets",
       "breakpoints": true
+    },
+    {
+      "idx": 183,
+      "version": "7",
+      "when": 1792839000000,
+      "tag": "20261024105000_project_channels",
+      "breakpoints": true
+    },
+    {
+      "idx": 184,
+      "version": "7",
+      "when": 1792839001000,
+      "tag": "20261024105001_memory_pages",
+      "breakpoints": true
+    },
+    {
+      "idx": 185,
+      "version": "7",
+      "when": 1792839002000,
+      "tag": "20261024105002_memory_page_versions_change_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 186,
+      "version": "7",
+      "when": 1792839003000,
+      "tag": "20261024105003_project_space_links_collected",
+      "breakpoints": true
+    },
+    {
+      "idx": 187,
+      "version": "7",
+      "when": 1792839004000,
+      "tag": "20261024105004_project_space_links_unfurl",
+      "breakpoints": true
+    },
+    {
+      "idx": 188,
+      "version": "7",
+      "when": 1792839005000,
+      "tag": "20261024105005_project_user_marks",
+      "breakpoints": true
     }
   ]
 }

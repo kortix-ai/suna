@@ -21,6 +21,65 @@ export function bindProjectOperationsReview(projectId: string) {
         P.claimWarmProjectSession(projectId, input),
     },
 
+    /** Channels and the caller's DMs (`project_channels` flag). A session joins one with `sessions.create({ space_id })`. */
+    spaces: {
+      list: () => P.listProjectSpaces(projectId),
+      create: (input: Parameters<typeof P.createProjectSpace>[1]) => P.createProjectSpace(projectId, input),
+      update: (...a: DropFirst<Parameters<typeof P.updateProjectSpace>>) => P.updateProjectSpace(projectId, ...a),
+      /** The caller's DM with an agent, created on the first call. */
+      dm: (agentName: string) => P.getOrCreateProjectDm(projectId, agentName),
+      /** The channel's Apps: deployed from one of its threads, only those the caller may open. */
+      apps: (spaceId: string) => P.listProjectSpaceApps(projectId, spaceId),
+      /** A channel's links: added ("Add link", pinned) or shared in its threads. Agents read the pinned ones. Only the creator or a project manager may remove one. */
+      links: {
+        list: (spaceId: string) => P.listProjectSpaceLinks(projectId, spaceId),
+        add: (...a: DropFirst<Parameters<typeof P.addProjectSpaceLink>>) => P.addProjectSpaceLink(projectId, ...a),
+        /** `pin(spaceId, linkId, pinned)`: the link, or null when unpinning removed it. */
+        pin: (...a: DropFirst<Parameters<typeof P.pinProjectSpaceLink>>) => P.pinProjectSpaceLink(projectId, ...a),
+        remove: (...a: DropFirst<Parameters<typeof P.removeProjectSpaceLink>>) => P.removeProjectSpaceLink(projectId, ...a),
+      },
+      /** The counts beside the channel's tab labels. */
+      summary: (spaceId: string) => P.getProjectSpaceSummary(projectId, spaceId),
+      /** `#general`'s "turned on again" line, or null. */
+      generalNotice: () => P.getProjectSpaceGeneralNotice(projectId),
+      /** The caller's Channels onboarding: the intro dialog and the `#general` "Get started" rows. */
+      onboarding: {
+        get: () => P.getChannelsOnboarding(projectId),
+        /** Record one mark for the caller. Idempotent. */
+        mark: (mark: P.ChannelsOnboardingMark) => P.markChannelsOnboarding(projectId, mark),
+      },
+    },
+
+    /** Memory pages (`project_channels` flag). A layer key is `company` or a channel's or DM's space id. */
+    memory: {
+      /** One layer and its page counts; the first read creates it. */
+      layer: (layerKey: string) => P.getProjectMemoryLayer(projectId, layerKey),
+      /** One page of Recent changes; walk older ones with `next` → `before`. */
+      changes: (...a: DropFirst<Parameters<typeof P.listProjectMemoryChanges>>) => P.listProjectMemoryChanges(projectId, ...a),
+      pages: {
+        /** Live pages; `{ deleted: true }` the trash, `{ status: 'unconfirmed' }` Needs confirming. */
+        list: (...a: DropFirst<Parameters<typeof P.listProjectMemoryPages>>) => P.listProjectMemoryPages(projectId, ...a),
+        create: (...a: DropFirst<Parameters<typeof P.createProjectMemoryPage>>) => P.createProjectMemoryPage(projectId, ...a),
+        get: (pageId: string) => P.getProjectMemoryPage(projectId, pageId),
+        update: (...a: DropFirst<Parameters<typeof P.updateProjectMemoryPage>>) => P.updateProjectMemoryPage(projectId, ...a),
+        delete: (pageId: string) => P.deleteProjectMemoryPage(projectId, pageId),
+        history: (...a: DropFirst<Parameters<typeof P.listProjectMemoryHistory>>) => P.listProjectMemoryHistory(projectId, ...a),
+        restore: (...a: DropFirst<Parameters<typeof P.restoreProjectMemoryPage>>) => P.restoreProjectMemoryPage(projectId, ...a),
+        /** Confirm an unconfirmed page (Needs confirming). Discard is `delete`. */
+        confirm: (pageId: string) => P.confirmProjectMemoryPage(projectId, pageId),
+      },
+      /** Remember-box sentences, saved as `note` pages. */
+      notes: {
+        add: (...a: DropFirst<Parameters<typeof P.addProjectMemoryNote>>) => P.addProjectMemoryNote(projectId, ...a),
+      },
+      /** Undo one change by any of its versions. */
+      undo: (versionId: string) => P.undoProjectMemoryVersion(projectId, versionId),
+      /** Search the pages the caller can read: `{ q, layer?, type?, limit? }`, `q` at least 2 characters. */
+      search: (...a: DropFirst<Parameters<typeof P.searchProjectMemory>>) => P.searchProjectMemory(projectId, ...a),
+      /** A thread's "Used memory": the pages listed to its agent at the first turn. */
+      usage: (sessionId: string) => P.getSessionMemoryUsage(projectId, sessionId),
+    },
+
     /** Review Center — the per-project human-in-the-loop inbox (change requests, tool approvals, agent outputs/decisions). */
     review: {
       /** One page of the inbox. Walk the rest with `next_cursor` → `cursor`. */

@@ -32,6 +32,8 @@ export interface SessionThreadProps {
   hideHeader?: boolean;
   /** Hide the composer: a transcript to read, not to answer. */
   readOnly?: boolean;
+  /** The reply composer's placeholder. Default: the composer's own. */
+  composerPlaceholder?: string;
   /**
    * A quote the host adds to the composer's reply quotes (the card above the
    * input), as a transcript selection's "Reply" does. Each new `id` adds its
@@ -41,7 +43,14 @@ export interface SessionThreadProps {
   className?: string;
 }
 
-export function SessionThread({ session, hideHeader = false, readOnly = false, quote, className }: SessionThreadProps) {
+export function SessionThread({
+  session,
+  hideHeader = false,
+  readOnly = false,
+  composerPlaceholder,
+  quote,
+  className,
+}: SessionThreadProps) {
   const { projectId, sessionId, runtimeSessionId } = session;
   return (
     <ProjectScope projectId={projectId} sessionId={sessionId}>
@@ -56,6 +65,7 @@ export function SessionThread({ session, hideHeader = false, readOnly = false, q
               sessionState={session}
               hideHeader={hideHeader}
               readOnly={readOnly}
+              composerPlaceholder={composerPlaceholder}
               hostQuote={quote}
             />
           ) : (

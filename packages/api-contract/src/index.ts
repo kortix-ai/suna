@@ -18,6 +18,8 @@
 import { z } from 'zod';
 import { SessionLogPageSchema } from './session-log/wire';
 
+export * from './memory';
+
 /** Loose JSON object — jsonb metadata/config columns surfaced as-is. */
 export const JsonObjectSchema = z.record(z.string(), z.unknown());
 export type JsonObject = z.infer<typeof JsonObjectSchema>;
@@ -63,6 +65,7 @@ export const FeatureFlagMapSchema = z.object({
   volumes: z.boolean(),
   drives: z.boolean(),
   session_log_restore: z.boolean(),
+  project_channels: z.boolean(),
   agent_rooms: z.boolean(),
   goals: z.boolean(),
   workspace_volume: z.boolean(),
@@ -1027,6 +1030,12 @@ export const SessionCreateInputSchema = z
     opencode_model: z.string().min(1).optional(),
     name: z.string().optional(),
     labels: SessionLabelsSchema.optional(),
+    /**
+     * The space (channel or the caller's own DM) the session belongs to.
+     * Read only while the project's `project_channels` flag is on; ignored
+     * otherwise. Absent: the parent session's space, else `#general`.
+     */
+    space_id: z.string().uuid().optional(),
     session_id: z
       .string()
       .regex(
@@ -1168,6 +1177,10 @@ export const ProjectSessionSchema = z.object({
   origin: z.enum(['user', 'trigger', 'schedule', 'backend', 'system']),
   /** The session that spawned this one (a coordinator's worker); null for a top-level session. */
   parent_session_id: z.string().nullable().optional(),
+  /** The space (channel or DM) the session is filed in; null for a session in no space. */
+  space_id: z.string().uuid().nullable(),
+  /** The first 500 characters of the first prompt; stored for sessions created while `project_channels` is on, else null. */
+  first_prompt: z.string().nullable(),
   /** Who started the run this session belongs to (a child carries its parent's). Derived, never client-set. */
   initiator: z
     .object({
@@ -1177,6 +1190,12 @@ export const ProjectSessionSchema = z.object({
     })
     .nullable()
     .optional(),
+  /**
+   * A channel or DM thread list (`space_id`) only: the messages after the
+   * first prompt in the root conversation, from the stored transcript. Null on
+   * every other read.
+   */
+  reply_count: z.number().int().nullable(),
   /** List with `parent=root` only: the session's non-deleted children. */
   child_count: z.number().int().optional(),
   /** List with `parent=root&q=` only: the session matched itself, or only a child matched. */
@@ -1252,6 +1271,170 @@ export const ClaimWarmProjectSessionInputSchema = z
   })
   .strict();
 export type ClaimWarmProjectSessionInput = z.infer<typeof ClaimWarmProjectSessionInputSchema>;
+
+/**
+ * A project space: a channel (product word "Channel") or the caller's DM with
+ * one agent. `/projects/:id/spaces`, behind the `project_channels` flag.
+ */
+export const SPACE_KINDS = ['channel', 'dm'] as const;
+export const SpaceSchema = z
+  .object({
+    space_id: z.string(),
+    kind: z.enum(SPACE_KINDS),
+    /** Channels: lowercase `a-z0-9-`, 1–40 chars. Null for a DM. */
+    slug: z.string().nullable(),
+    name: z.string(),
+    description: z.string().nullable(),
+    is_default: z.boolean(),
+    dm_agent_name: z.string().nullable(),
+    archived_at: z.string().nullable(),
+    created_at: z.string(),
+    updated_at: z.string(),
+    /** The caller may rename, describe, archive and unarchive it: the channel's creator or a project manager. False for a DM. */
+    can_edit: z.boolean(),
+  })
+  .strict();
+export type Space = z.infer<typeof SpaceSchema>;
+
+/**
+ * `#general`'s "turned on again" line: `count` sessions started while Channels
+ * was off were filed into `#general` at `at`. Present for 7 days after the switch.
+ */
+export const SpaceGeneralNoticeSchema = z
+  .object({ kind: z.literal('reenabled'), at: z.string(), count: z.number().int().positive() })
+  .strict();
+export type SpaceGeneralNotice = z.infer<typeof SpaceGeneralNoticeSchema>;
+
+export const SpaceListSchema = z
+  .object({ spaces: z.array(SpaceSchema), general_notice: SpaceGeneralNoticeSchema.optional() })
+  .strict();
+export type SpaceList = z.infer<typeof SpaceListSchema>;
+
+/**
+ * Channels onboarding marks a member leaves once per project:
+ * `POST /projects/:id/onboarding/channels/marks`.
+ */
+export const CHANNELS_ONBOARDING_MARKS = [
+  'channels_intro',
+  'get_started.dismissed',
+  'get_started.channel',
+  'get_started.remember',
+  'get_started.dm',
+] as const;
+export type ChannelsOnboardingMark = (typeof CHANNELS_ONBOARDING_MARKS)[number];
+export const ChannelsOnboardingMarkInputSchema = z.object({ mark: z.enum(CHANNELS_ONBOARDING_MARKS) }).strict();
+export type ChannelsOnboardingMarkInput = z.infer<typeof ChannelsOnboardingMarkInputSchema>;
+
+/**
+ * The caller's Channels onboarding state. A "Get started" row is done when its
+ * mark is present or the fact is true (the caller created a channel, saved
+ * memory in `#general`, owns a DM). `visible`: not dismissed and not all done.
+ */
+export const ChannelsOnboardingSchema = z
+  .object({
+    intro_seen: z.boolean(),
+    get_started: z
+      .object({ visible: z.boolean(), create_channel: z.boolean(), remember: z.boolean(), open_dm: z.boolean() })
+      .strict(),
+  })
+  .strict();
+export type ChannelsOnboarding = z.infer<typeof ChannelsOnboardingSchema>;
+
+export const SpaceCreateInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(80),
+    description: z.string().trim().max(500).optional(),
+  })
+  .strict();
+export type SpaceCreateInput = z.infer<typeof SpaceCreateInputSchema>;
+
+export const SpaceUpdateInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(80).optional(),
+    /** `null` clears the description. */
+    description: z.string().trim().max(500).nullable().optional(),
+    /** `true` archives the channel; `false` unarchives it. */
+    archived: z.boolean().optional(),
+  })
+  .strict();
+export type SpaceUpdateInput = z.infer<typeof SpaceUpdateInputSchema>;
+
+export const SpaceDmInputSchema = z.object({ agent_name: z.string().trim().min(1).max(200) }).strict();
+export type SpaceDmInput = z.infer<typeof SpaceDmInputSchema>;
+
+/** A link pinned to a channel: `/projects/:id/spaces/:spaceId/links`. */
+export const SpaceLinkSchema = z
+  .object({
+    link_id: z.string(),
+    space_id: z.string(),
+    url: z.string(),
+    title: z.string().nullable(),
+    created_by: z.string().nullable(),
+    /** The creator's display name or email; null when unknown. */
+    created_by_name: z.string().nullable(),
+    created_at: z.string(),
+    /** The caller may delete it: they added it, or they manage the project. */
+    can_delete: z.boolean(),
+    /** Agents in the channel read pinned links. "Add link" pins; a link shared in a thread is unpinned until a member pins it. */
+    pinned: z.boolean(),
+    /** Who pinned it and when; null while unpinned (or, for `pinned_by_name`, when unknown). */
+    pinned_by_name: z.string().nullable(),
+    pinned_at: z.string().nullable(),
+    /** `manual`: added with "Add link". `message`: collected from a person's message in a thread of the channel. */
+    source: z.enum(['manual', 'message']),
+    /** The latest thread that shared it; null for a link never shared in a thread (or whose thread is gone). */
+    session_id: z.string().nullable(),
+    /** How many messages shared it. */
+    share_count: z.number().int(),
+    last_shared_at: z.string(),
+    /** The row's name: the title a member gave, else the page's fetched title, else the decoded path, else the host. */
+    display_title: z.string(),
+    /** The page's `og:site_name`, fetched by the server; null until fetched or when the page has none. */
+    site_name: z.string().nullable(),
+    /** The page's icon URL, fetched by the server; null until fetched or when none passed the address check. A remote URL: load it only through an image proxy. */
+    icon_url: z.string().nullable(),
+  })
+  .strict();
+export type SpaceLink = z.infer<typeof SpaceLinkSchema>;
+
+/** `PATCH /projects/:id/spaces/:spaceId/links/:linkId`. Unpinning a link never shared in a thread removes it. */
+export const SpaceLinkPinInputSchema = z.object({ pinned: z.boolean() }).strict();
+export type SpaceLinkPinInput = z.infer<typeof SpaceLinkPinInputSchema>;
+/** The link after the change; null when unpinning removed it. */
+export const SpaceLinkPinResultSchema = z.object({ link: SpaceLinkSchema.nullable() }).strict();
+export type SpaceLinkPinResult = z.infer<typeof SpaceLinkPinResultSchema>;
+
+export const SpaceLinkListSchema = z.object({ links: z.array(SpaceLinkSchema) }).strict();
+export type SpaceLinkList = z.infer<typeof SpaceLinkListSchema>;
+
+/** An http(s) URL whose normalized form, the one the API stores, is at most 2,048 characters. */
+function isStorableHttpUrl(value: string): boolean {
+  try {
+    const { protocol, href } = new URL(value);
+    return (protocol === 'http:' || protocol === 'https:') && href.length <= 2048;
+  } catch {
+    return false;
+  }
+}
+
+export const SpaceLinkCreateInputSchema = z
+  .object({
+    url: z.string().trim().min(1).max(2048).refine(isStorableHttpUrl, 'url must be an http(s) URL of at most 2,048 characters'),
+    title: z.string().trim().max(200).optional(),
+  })
+  .strict();
+export type SpaceLinkCreateInput = z.infer<typeof SpaceLinkCreateInputSchema>;
+
+/** The counts beside a channel's tab labels. Fields are added, never renamed. */
+export const SpaceSummarySchema = z
+  .object({
+    apps: z.number().int(),
+    links: z.number().int(),
+    /** Triggers that post to this channel or DM; 0 for a caller without the trigger read permission. */
+    triggers: z.number().int(),
+  })
+  .strict();
+export type SpaceSummary = z.infer<typeof SpaceSummarySchema>;
 
 export const SESSION_SANDBOX_STATUSES = [
   'provisioning',
@@ -1606,6 +1789,11 @@ export const TriggerSchema = z.object({
   overlap: z.enum(['skip', 'allow']).nullable().optional(),
   /** Account-local policy for sessions this trigger creates. */
   session_access: TriggerSessionAccessSchema,
+  /**
+   * The channel or DM its runs post to as threads; null = none (`#general`).
+   * Present only while the project's `project_channels` flag is on.
+   */
+  space_id: z.string().nullable().optional(),
   last_fired_at: z.string().nullable(),
   last_status: z.string().nullable(),
   last_error: z.string().nullable(),

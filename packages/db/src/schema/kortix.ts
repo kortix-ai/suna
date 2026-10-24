@@ -4,6 +4,7 @@ import {
   bigint,
   boolean,
   check,
+  customType,
   date,
   foreignKey,
   index,
@@ -1100,6 +1101,367 @@ export const projectSessionOriginEnum = kortixSchema.enum('project_session_origi
   'system',
 ]);
 
+export const projectSpaceKindEnum = kortixSchema.enum('project_space_kind', ['channel', 'dm']);
+
+/**
+ * A project space: a channel (product word "Channel") or a member's DM with one
+ * agent. A thread is a `project_sessions` row whose `space_id` points here.
+ * Named "space" in code because "channel" already means a chat integration
+ * (`chat_channel_bindings`, `initiator_type = 'channel'`).
+ */
+export const projectSpaces = kortixSchema.table(
+  'project_spaces',
+  {
+    spaceId: uuid('space_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    kind: projectSpaceKindEnum('kind').notNull(),
+    /** Channels: lowercase `a-z0-9-`, 1–40 chars. Null for DMs. */
+    slug: text('slug'),
+    /** Display name; for a DM, the agent name. */
+    name: text('name').notNull(),
+    description: text('description'),
+    /** True only for the project's `#general`. */
+    isDefault: boolean('is_default').default(false).notNull(),
+    /** DM owner; null for channels. */
+    dmUserId: uuid('dm_user_id'),
+    /** DM agent; null for channels. */
+    dmAgentName: text('dm_agent_name'),
+    createdBy: uuid('created_by'),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check(
+      'project_spaces_kind_shape_check',
+      sql`(${table.kind} = 'channel' and ${table.slug} is not null and ${table.dmUserId} is null and ${table.dmAgentName} is null) or (${table.kind} = 'dm' and ${table.slug} is null and ${table.dmUserId} is not null and ${table.dmAgentName} is not null)`,
+    ),
+    uniqueIndex('uniq_project_spaces_channel_slug')
+      .on(table.projectId, table.slug)
+      .where(sql`${table.kind} = 'channel'`),
+    uniqueIndex('uniq_project_spaces_dm')
+      .on(table.projectId, table.dmUserId, table.dmAgentName)
+      .where(sql`${table.kind} = 'dm'`),
+    uniqueIndex('uniq_project_spaces_default').on(table.projectId).where(sql`${table.isDefault}`),
+    index('idx_project_spaces_project').on(table.projectId),
+  ],
+);
+
+/** A link a member pinned to a channel (the channel's Links tab). */
+export const projectSpaceLinks = kortixSchema.table(
+  'project_space_links',
+  {
+    linkId: uuid('link_id').defaultRandom().primaryKey(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => projectSpaces.spaceId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    /** http(s) only, at most 2,048 characters (checked by the API). */
+    url: text('url').notNull(),
+    title: text('title'),
+    /** The first person who added it ("Add link") or shared it in a thread. */
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    /** Agents read pinned links (the thread notes file). "Add link" pins; a shared link is unpinned until a member pins it. */
+    pinned: boolean('pinned').default(true).notNull(),
+    /** Who pinned it and when; null on a link "Add link" made before these columns (then `created_by`, `created_at`). */
+    pinnedBy: uuid('pinned_by'),
+    pinnedAt: timestamp('pinned_at', { withTimezone: true }),
+    /** `manual`: "Add link". `message`: collected from a person's message in a thread of the channel. */
+    source: text('source').$type<'manual' | 'message'>().default('manual').notNull(),
+    /** The latest thread that shared it. */
+    sessionId: text('session_id').references(() => projectSessions.sessionId, { onDelete: 'set null' }),
+    /** How many messages shared it. */
+    shareCount: integer('share_count').default(1).notNull(),
+    lastSharedAt: timestamp('last_shared_at', { withTimezone: true }).defaultNow().notNull(),
+    /** The page's own title (`og:title`, else `<title>`), fetched by the server (job `link-unfurl`). */
+    fetchedTitle: text('fetched_title'),
+    /** `og:site_name` of the page. */
+    siteName: text('site_name'),
+    /** The page's icon URL; stored only when its host passes the egress address check. Never fetched by the API. */
+    iconUrl: text('icon_url'),
+    /** The last successful fetch; the link is fetched again after 7 days. */
+    fetchedAt: timestamp('fetched_at', { withTimezone: true }),
+    /** The last failed fetch; no new try for 24 hours. */
+    fetchFailedAt: timestamp('fetch_failed_at', { withTimezone: true }),
+  },
+  (table) => [
+    check('project_space_links_source_check', sql`${table.source} in ('manual', 'message')`),
+    // One row per address per channel: a second share bumps `share_count`.
+    uniqueIndex('uniq_project_space_links_space_url').on(table.spaceId, table.url),
+    index('idx_project_space_links_space').on(table.spaceId, table.createdAt.desc()),
+    // Serves the session_id FK: a session delete sets null without a scan.
+    index('idx_project_space_links_session').on(table.sessionId),
+    // Serves the project_id FK: a project delete cascades without a scan.
+    index('idx_project_space_links_project').on(table.projectId),
+  ],
+);
+
+// ─── Memory pages ────────────────────────────────────────────────────────────
+// Database-backed memory in three layers: the project's Company layer, one
+// layer per channel, one per DM (a member + an agent). Only the API reads these
+// tables (RLS on, no policy). No account_id: a project transfer moves memory
+// with project_id.
+
+/** Postgres full-text vector; only ever written by a generated column. */
+const tsvector = customType<{ data: string }>({
+  dataType() {
+    return 'tsvector';
+  },
+});
+
+export const memoryLayerScopeEnum = kortixSchema.enum('memory_layer_scope', [
+  'company',
+  'channel',
+  'dm',
+]);
+
+export const memoryPageTypeEnum = kortixSchema.enum('memory_page_type', [
+  'people',
+  'decisions',
+  'workstreams',
+  'playbooks',
+  'note',
+]);
+
+export const memoryPageStatusEnum = kortixSchema.enum('memory_page_status', [
+  'confirmed',
+  'unconfirmed',
+]);
+
+export const memoryAuthorKindEnum = kortixSchema.enum('memory_author_kind', [
+  'person',
+  'agent',
+  'system',
+]);
+
+export const memoryChangeOpEnum = kortixSchema.enum('memory_change_op', [
+  'create',
+  'update',
+  'append',
+  'delete',
+  'restore',
+  'undo',
+  'confirm',
+  'file_note',
+  'import',
+]);
+
+export const memorySourceKindEnum = kortixSchema.enum('memory_source_kind', [
+  'thread',
+  'person',
+  'outside',
+  'import',
+]);
+
+/**
+ * One memory layer: the project's Company layer (`space_id` null) or the layer
+ * of one channel or DM space. `version` is bumped in the same transaction as
+ * any page change in the layer; the read-only file copy compares it.
+ */
+export const memoryLayers = kortixSchema.table(
+  'memory_layers',
+  {
+    layerId: uuid('layer_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    scope: memoryLayerScopeEnum('scope').notNull(),
+    spaceId: uuid('space_id').references(() => projectSpaces.spaceId, { onDelete: 'cascade' }),
+    version: bigint('version', { mode: 'number' }).notNull().default(0),
+    /** Set when the Drive memory import finished or was not needed. */
+    importedAt: timestamp('imported_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check(
+      'memory_layers_scope_space_check',
+      sql`(${table.scope} = 'company') = (${table.spaceId} is null)`,
+    ),
+    uniqueIndex('uniq_memory_layers_company')
+      .on(table.projectId)
+      .where(sql`${table.scope} = 'company'`),
+    // Also serves the space_id FK: `space_id = $1` implies the predicate.
+    uniqueIndex('uniq_memory_layers_space')
+      .on(table.spaceId)
+      .where(sql`${table.spaceId} is not null`),
+    index('idx_memory_layers_project').on(table.projectId),
+  ],
+);
+
+/** One memory page. `deleted_at` set = in the trash. */
+export const memoryPages = kortixSchema.table(
+  'memory_pages',
+  {
+    pageId: uuid('page_id').defaultRandom().primaryKey(),
+    layerId: uuid('layer_id')
+      .notNull()
+      .references(() => memoryLayers.layerId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    type: memoryPageTypeEnum('type').notNull(),
+    /** 1–120 characters (checked by the API). */
+    title: text('title').notNull(),
+    /** The title lowercased, trimmed, inner whitespace collapsed, NFKC. */
+    titleKey: text('title_key').notNull(),
+    /** One line, at most 200 characters (checked by the API). */
+    summary: text('summary').notNull().default(''),
+    /** Markdown, at most 8,192 UTF-8 bytes (checked by the API). */
+    body: text('body').notNull().default(''),
+    status: memoryPageStatusEnum('status').notNull().default('confirmed'),
+    /** Related page ids, at most 10 (checked by the API). */
+    related: uuid('related').array().notNull().default(sql`'{}'::uuid[]`),
+    versionNo: integer('version_no').notNull().default(1),
+    updatedByKind: memoryAuthorKindEnum('updated_by_kind'),
+    updatedByUserId: uuid('updated_by_user_id'),
+    updatedByAgent: text('updated_by_agent'),
+    updatedSourceSessionId: text('updated_source_session_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    search: tsvector('search').generatedAlwaysAs(
+      sql`to_tsvector('simple'::regconfig, coalesce("title", '') || ' ' || coalesce("summary", '') || ' ' || coalesce("body", ''))`,
+    ),
+  },
+  (table) => [
+    uniqueIndex('uniq_memory_pages_layer_title')
+      .on(table.layerId, table.titleKey)
+      .where(sql`${table.deletedAt} is null`),
+    index('idx_memory_pages_layer_type')
+      .on(table.layerId, table.type, table.updatedAt.desc())
+      .where(sql`${table.deletedAt} is null`),
+    // Serves the layer_id FK: the two indexes above skip trashed pages.
+    index('idx_memory_pages_layer').on(table.layerId),
+    index('idx_memory_pages_search').using('gin', table.search),
+    index('idx_memory_pages_project').on(table.projectId),
+    index('idx_memory_pages_deleted')
+      .on(table.deletedAt)
+      .where(sql`${table.deletedAt} is not null`),
+  ],
+);
+
+/** A full snapshot of a page after each change: history, Undo and restore. */
+export const memoryPageVersions = kortixSchema.table(
+  'memory_page_versions',
+  {
+    versionId: uuid('version_id').defaultRandom().primaryKey(),
+    pageId: uuid('page_id')
+      .notNull()
+      .references(() => memoryPages.pageId, { onDelete: 'cascade' }),
+    layerId: uuid('layer_id')
+      .notNull()
+      .references(() => memoryLayers.layerId, { onDelete: 'cascade' }),
+    versionNo: integer('version_no').notNull(),
+    /** Shared by every version row one change writes (both pages of a `file_note`); Undo restores them all. */
+    changeId: uuid('change_id').notNull(),
+    type: memoryPageTypeEnum('type').notNull(),
+    title: text('title').notNull(),
+    summary: text('summary').notNull(),
+    body: text('body').notNull(),
+    status: memoryPageStatusEnum('status').notNull(),
+    related: uuid('related').array().notNull().default(sql`'{}'::uuid[]`),
+    deleted: boolean('deleted').notNull().default(false),
+    op: memoryChangeOpEnum('op').notNull(),
+    authorKind: memoryAuthorKindEnum('author_kind').notNull(),
+    authorUserId: uuid('author_user_id'),
+    authorAgent: text('author_agent'),
+    onBehalfUserId: uuid('on_behalf_user_id'),
+    sourceSessionId: text('source_session_id'),
+    sourceMessageId: text('source_message_id'),
+    undoneByVersionId: uuid('undone_by_version_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // Named by hand: the generated name exceeds Postgres's 63-byte limit.
+    foreignKey({
+      columns: [table.sourceSessionId],
+      foreignColumns: [projectSessions.sessionId],
+      name: 'memory_page_versions_source_session_fk',
+    }).onDelete('set null'),
+    uniqueIndex('uniq_memory_page_versions_page_no').on(table.pageId, table.versionNo),
+    index('idx_memory_page_versions_layer_created').on(table.layerId, table.createdAt.desc()),
+    index('idx_memory_page_versions_change').on(table.changeId),
+    // Serves the source_session_id FK: a session delete sets null without a scan.
+    index('idx_memory_page_versions_session')
+      .on(table.sourceSessionId)
+      .where(sql`${table.sourceSessionId} is not null`),
+  ],
+);
+
+/** A page's numbered sources; the body cites one as the token ⟦n⟧. */
+export const memoryPageSources = kortixSchema.table(
+  'memory_page_sources',
+  {
+    sourceId: uuid('source_id').defaultRandom().primaryKey(),
+    pageId: uuid('page_id')
+      .notNull()
+      .references(() => memoryPages.pageId, { onDelete: 'cascade' }),
+    /** Page-local, 1..n. */
+    number: integer('number').notNull(),
+    kind: memorySourceKindEnum('kind').notNull(),
+    sessionId: text('session_id').references(() => projectSessions.sessionId, {
+      onDelete: 'set null',
+    }),
+    messageId: text('message_id'),
+    /** At most 80 characters: thread title, person name, host or file name. */
+    label: text('label').notNull(),
+    /** `outside` sources only, at most 2,048 characters. */
+    url: text('url'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('uniq_memory_page_sources_page_number').on(table.pageId, table.number),
+    // Serves the session_id FK: a session delete sets null without a scan.
+    index('idx_memory_page_sources_session')
+      .on(table.sessionId)
+      .where(sql`${table.sessionId} is not null`),
+  ],
+);
+
+/** One entry of `memory_thread_loads.layers`. */
+export interface MemoryThreadLoadLayer {
+  layer_id: string;
+  scope: (typeof memoryLayerScopeEnum.enumValues)[number];
+  name: string;
+  version: number;
+  page_ids: string[];
+}
+
+/** The memory layers a thread loaded at its first turn. */
+export const memoryThreadLoads = kortixSchema.table('memory_thread_loads', {
+  sessionId: text('session_id')
+    .primaryKey()
+    .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
+  firstLoadedAt: timestamp('first_loaded_at', { withTimezone: true }).notNull(),
+  layers: jsonb('layers').$type<MemoryThreadLoadLayer[]>().notNull(),
+});
+
+/**
+ * One-time marks a member leaves in a project: the Channels intro seen, a
+ * "Get started" row done or the block dismissed. The API validates `mark`.
+ * Only the API reads it (RLS on, no policy).
+ */
+export const projectUserMarks = kortixSchema.table(
+  'project_user_marks',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    mark: text('mark').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.userId, table.mark] })],
+);
+
 // Who started a session's RUN (the whole spawn tree), for attribution and the
 // session list's "mine / shared / automated" split. Server-derived at create and
 // copied from the parent for a spawned session — see session-initiator.ts.
@@ -1149,6 +1511,9 @@ export const projectSessions = kortixSchema.table(
     // account id, or system source. null only on rows no backfill classified.
     initiatorType: projectSessionInitiatorEnum('initiator_type'),
     initiatorId: text('initiator_id'),
+    // The project space (channel or DM) this thread belongs to. null = no space
+    // (every session created before channels, or while the flag is off).
+    spaceId: uuid('space_id'),
     // Backend-only per-session secrets allowlist (KaaB): a list of project-secret
     // IDENTIFIERS this session may receive. Set ONLY by a backend-origin caller
     // at create; immutable afterward. Semantics are pure NARROWING — the injected
@@ -1192,6 +1557,16 @@ export const projectSessions = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    foreignKey({
+      name: 'project_sessions_space_fk',
+      columns: [table.spaceId],
+      foreignColumns: [projectSpaces.spaceId],
+    }).onDelete('set null'),
+    // One space's threads in the list order (updated_at desc). Partial:
+    // sessions outside a space are never listed by it.
+    index('idx_project_sessions_space')
+      .on(table.spaceId, table.updatedAt.desc(), table.sessionId.desc())
+      .where(sql`${table.spaceId} is not null`),
     index('idx_project_sessions_account').on(table.accountId),
     index('idx_project_sessions_project').on(table.projectId),
     index('idx_project_sessions_status').on(table.status),
@@ -1684,12 +2059,23 @@ export const projectTriggerRuntime = kortixSchema.table(
     autoPausedAt: timestamp('auto_paused_at', { withTimezone: true }),
     autoPausedReason: text('auto_paused_reason'),
     autoPauseResumedAt: timestamp('auto_pause_resumed_at', { withTimezone: true }),
+    // The channel or DM (`project_spaces`) this trigger's runs post to as
+    // threads (`project_channels` flag). Account-local like the access policy,
+    // so not in the manifest. null = no space: the run lands in `#general`.
+    spaceId: uuid('space_id'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.projectId, table.slug] }),
+    foreignKey({
+      name: 'project_trigger_runtime_space_fk',
+      columns: [table.spaceId],
+      foreignColumns: [projectSpaces.spaceId],
+    }).onDelete('set null'),
     index('idx_project_trigger_runtime_owner_user').on(table.ownerUserId),
     index('idx_project_trigger_runtime_due').on(table.enabled, table.nextFireAt),
+    // A space's triggers (its Triggers tab count) and the FK's ON DELETE SET NULL.
+    index('idx_project_trigger_runtime_space').on(table.spaceId).where(sql`${table.spaceId} is not null`),
   ],
 );
 

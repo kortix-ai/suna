@@ -5,6 +5,7 @@ import {
   ToolEmptyState,
   ToolOutputFallback,
   ToolRunningContext,
+  partError,
   partInput,
   partOutput,
   partStatus,
@@ -173,3 +174,107 @@ export function MemorySearchTool({ call, defaultOpen, forceOpen, locked }: ToolP
 ToolRegistry.register('ltm-search', MemorySearchTool);
 ToolRegistry.register('mem-search', MemorySearchTool);
 ToolRegistry.register('memory-search', MemorySearchTool);
+
+/** One hit of the `memory_search` platform tool: `- [<layer>] <title> — <summary> (<copy path>)`, its snippet under it. */
+export interface MemoryPageHit {
+  layer: string;
+  title: string;
+  summary: string;
+  /** The page's file in the thread's read-only copy; null when the copy does not hold it yet. */
+  path: string | null;
+  snippet: string;
+}
+
+export type MemoryPageSearch = { state: 'hits'; hits: MemoryPageHit[] } | { state: 'none' } | { state: 'error'; reason: string };
+
+const PAGE_HIT = /^- \[([^\]\n]+)\] (.+?)(?: — (.+?))? \(([^()]*)\)$/;
+
+/**
+ * The `memory_search` text (kortixd `services/tools/platform/memory_search.ts`):
+ * a count line and one line per page, `No memory page matches "…"`, or a
+ * refusal `Error: <code>: <message>`. Null for any other text: the legacy
+ * memory-search output, drawn by `MemorySearchTool`.
+ */
+export function parseMemoryPageSearch(output: string): MemoryPageSearch | null {
+  const text = output.replace(/\r\n?/g, '\n').trim();
+  const refusal = /^Error:\s*[a-z0-9_]+:\s*([\s\S]+)$/i.exec(text);
+  if (refusal) return { state: 'error', reason: refusal[1]!.trim() };
+  if (/^No memory page matches /.test(text)) return { state: 'none' };
+  const [head, ...rest] = text.split('\n');
+  if (!/^\d+ memory pages? match(es)? /.test(head ?? '')) return null;
+  const hits: MemoryPageHit[] = [];
+  for (const line of rest) {
+    const hit = PAGE_HIT.exec(line);
+    if (hit) {
+      const path = hit[4]!.trim();
+      hits.push({ layer: hit[1]!, title: hit[2]!, summary: hit[3] ?? '', path: path.startsWith('/') ? path : null, snippet: '' });
+    } else if (line.startsWith('  ') && hits.length > 0) {
+      hits[hits.length - 1]!.snippet = line.trim();
+    }
+  }
+  return hits.length > 0 ? { state: 'hits', hits } : null;
+}
+
+/**
+ * A `memory_search` call: the pages it found, each with its layer, title,
+ * summary and snippet. Output in the legacy format draws as `MemorySearchTool`.
+ */
+export function MemoryPageSearchTool(props: ToolProps) {
+  const { call, defaultOpen, forceOpen, locked } = props;
+  const t = useTranslations('spaces.memory.searchTool');
+  const status = partStatus(call);
+  const running = useContext(ToolRunningContext);
+  const output = partOutput(call);
+  const query = String(partInput(call).query ?? '').trim();
+  const result =
+    status === 'error' ? { state: 'error' as const, reason: partError(call) ?? '' } : parseMemoryPageSearch(output);
+  const working = (status === 'pending' && running) || status === 'running';
+  if (!result && !working && output.trim()) return <MemorySearchTool {...props} />;
+  const hits = result?.state === 'hits' ? result.hits : [];
+  return (
+    <BasicTool
+      icon={<Search className="size-3.5 shrink-0" />}
+      trigger={{
+        title: t('title'),
+        subtitle: query || undefined,
+        args: status === 'completed' && result?.state !== 'error' ? [t('count', { count: hits.length })] : undefined,
+      }}
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
+      locked={locked}
+    >
+      <ToolResultCard bodyClassName="space-y-0.5">
+        {hits.length > 0 ? (
+          <ul className="flex flex-col gap-0.5">
+            {hits.map((hit, index) => (
+              <li key={`${hit.layer}:${hit.title}:${index}`} className="flex flex-col gap-0.5 px-2 py-1.5 text-xs" title={hit.path ?? undefined}>
+                <p className="min-w-0 truncate">
+                  <span className="text-muted-foreground">{hit.layer}</span>
+                  <span aria-hidden className="text-muted-foreground"> · </span>
+                  <span className="text-foreground font-medium">{hit.title}</span>
+                </p>
+                {hit.summary ? <p className="text-muted-foreground min-w-0 truncate">{hit.summary}</p> : null}
+                {hit.snippet ? <p className="text-muted-foreground line-clamp-2 [overflow-wrap:anywhere]">{hit.snippet}</p> : null}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <ToolEmptyState
+            message={
+              result?.state === 'error'
+                ? result.reason
+                  ? t('failed', { reason: result.reason })
+                  : t('failedGeneric')
+                : result?.state === 'none'
+                  ? t('none', { query })
+                  : working
+                    ? t('running')
+                    : t('failedGeneric')
+            }
+          />
+        )}
+      </ToolResultCard>
+    </BasicTool>
+  );
+}
+ToolRegistry.register('memory_search', MemoryPageSearchTool);

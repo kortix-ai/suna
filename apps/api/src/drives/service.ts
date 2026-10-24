@@ -13,8 +13,8 @@
 // agent can become root).
 
 import { logger } from '../lib/logger';
-import { accountMembers, driveConflicts, driveMountRevocations, drives, iamRoles, projectSessions, roleAssignments, serviceAccounts, sessionSandboxes } from '@kortix/db';
-import { and, asc, count, eq, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { accountMembers, driveConflicts, driveMountRevocations, drives, iamRoles, projectSessions, projectSpaceLinks, projectSpaces, roleAssignments, serviceAccounts, sessionSandboxes } from '@kortix/db';
+import { and, asc, count, desc, eq, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { SYSTEM_ACTOR, assignRole, revokeAssignment } from '../iam/assignments';
 import { resolvePrincipal } from '../iam/authorize';
@@ -40,6 +40,9 @@ import {
   pathWithinFolder,
   personalFolderName,
   planFolderMounts,
+  SPACE_NOTES_LINKS,
+  type SpaceNotesLink,
+  spaceNotesLines,
 } from './folders';
 import {
   DriveStorageError,
@@ -49,6 +52,7 @@ import {
   execInSandbox,
   getDriveVolume,
   isMissingVolume,
+  moveVolumeFile,
   openDriveVolume,
   sandboxMountLimit,
   sandboxMountPaths,
@@ -58,6 +62,7 @@ import {
   type VolumeInfo,
 } from './volumes';
 import { isDriveSyncBox } from './sync';
+import { moveFolderGrants } from './queries';
 
 export type DriveRow = typeof drives.$inferSelect;
 
@@ -153,7 +158,7 @@ export async function getDrive(driveId: string): Promise<DriveRow | null> {
   return row ?? null;
 }
 
-async function findProjectDrive(projectId: string): Promise<DriveRow | null> {
+export async function findProjectDrive(projectId: string): Promise<DriveRow | null> {
   const [row] = await db
     .select()
     .from(drives)
@@ -960,6 +965,40 @@ export async function reconcileSessionDrives(sessionId: string): Promise<void> {
   }
 }
 
+/** How long a sharing change waits for running sessions before it answers. */
+const ENFORCE_ANSWER_BUDGET_MS = 10_000;
+
+/**
+ * Running sessions of the project pick up a sharing change at once, and
+ * stopped ones never come back with more. Answers with how many sessions are
+ * not in line yet: those are recorded, fenced at the API and retried by the
+ * drive worker, so a caller is never told a revocation landed when it did not.
+ */
+export async function enforceProjectMounts(drive: DriveRow): Promise<number> {
+  const progress: EnforceProgress = { total: 0, done: 0, failed: 0 };
+  const run = enforceDriveMounts({ projectId: drive.projectId! }, { progress }).catch((err) => {
+    logger.error('[drives] enforcing folder access failed:', { error: err instanceof Error ? err.message : String(err) });
+    return null;
+  });
+  const finished = await Promise.race([
+    run.then(() => true),
+    new Promise<false>((resolve) => setTimeout(() => resolve(false), ENFORCE_ANSWER_BUDGET_MS).unref?.()),
+  ]);
+  if (finished) return progress.failed;
+  return progress.failed + Math.max(0, progress.total - progress.done) || 1;
+}
+
+/**
+ * Move a folder or file and the sharing on it (the Drive move route and a
+ * channel rename). Running sessions pick up a moved share at once. `missing`
+ * answers a drive with no storage yet. Returns the sessions not in line yet
+ * (see {@link enforceProjectMounts}).
+ */
+export async function moveDriveFolder(drive: DriveRow, from: string, to: string, missing: () => void): Promise<number> {
+  await readDriveVolume(drive, (volume) => moveVolumeFile(volume, from, to), missing);
+  return (await moveFolderGrants(drive, from, to)) ? enforceProjectMounts(drive) : 0;
+}
+
 // ─── The notes file agents read ────────────────────────────────────────────
 
 /** Where a session's agent reads which folders it has and what needs attention. */
@@ -969,6 +1008,7 @@ export function renderDriveNotes(
   mounts: SessionDriveView[],
   conflicts: Array<{ mountPath: string; path: string }>,
   skippedMessage?: string | null,
+  spaceLines: readonly string[] = [],
 ): string {
   const lines = [
     '# Files in this session',
@@ -985,12 +1025,17 @@ export function renderDriveNotes(
   ];
   const me = mounts.find((m) => m.role === 'me');
   if (me) {
+    // Space lines exist only with `project_channels` on, in a channel or DM thread: the threads that load `remember`, unless the agent's tool access removes it.
+    const team = spaceLines.length
+      ? 'what the whole team should know: `remember` with `layer: company`.'
+      : `what the whole team should know goes in Company/${MEMORY_DIR_NAME}/ when that folder is mounted.`;
     lines.push(
       `${me.mountPath} is the user’s own folder (also at ~/Desktop). Save files you make for the user there.`,
-      `Keep what you learn about the user in ${me.mountPath}/${MEMORY_DIR_NAME}/ (load the kortix-user-memory skill); what the whole team should know goes in Company/${MEMORY_DIR_NAME}/ when that folder is mounted.`,
+      `Keep what you learn about the user in ${me.mountPath}/${MEMORY_DIR_NAME}/ (load the kortix-user-memory skill); ${team}`,
       '',
     );
   }
+  lines.push(...spaceLines);
   lines.push(
     'A folder that is not listed here is not available to this session. Ask the user to share it with you in Files.',
     '',
@@ -1030,7 +1075,39 @@ export async function sessionDriveNotes(sessionId: string): Promise<{ mounts: Se
     return [{ mountPath: m.mountPath, path: rel }];
   });
   const { message: skippedMessage } = await readSkippedSessionDrives(sessionId);
-  return { mounts, text: renderDriveNotes(mounts, conflicts, skippedMessage) };
+  const space = await sessionNotesSpace(sessionId);
+  return { mounts, text: renderDriveNotes(mounts, conflicts, skippedMessage, space ? spaceNotesLines(space, mounts) : []) };
+}
+
+/** The channel or DM a session is a thread of (a channel with its newest pinned links), with `project_channels` on; else null. */
+async function sessionNotesSpace(
+  sessionId: string,
+): Promise<{ kind: 'channel' | 'dm'; name: string; links: SpaceNotesLink[] } | null> {
+  const [row] = await db
+    .select({
+      projectId: projectSessions.projectId,
+      spaceId: projectSpaces.spaceId,
+      kind: projectSpaces.kind,
+      slug: projectSpaces.slug,
+      agent: projectSpaces.dmAgentName,
+    })
+    .from(projectSessions)
+    .innerJoin(projectSpaces, eq(projectSpaces.spaceId, projectSessions.spaceId))
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  const name = row?.kind === 'channel' ? row.slug : row?.agent;
+  if (!row || !name || !(await projectFeatureFlagEnabled(row.projectId, 'project_channels'))) return null;
+  const links =
+    row.kind === 'channel'
+      ? await db
+          .select({ url: projectSpaceLinks.url, title: projectSpaceLinks.title })
+          .from(projectSpaceLinks)
+          // Only pinned links reach the agents; a link shared in a thread waits for a member to pin it.
+          .where(and(eq(projectSpaceLinks.spaceId, row.spaceId), eq(projectSpaceLinks.pinned, true)))
+          .orderBy(desc(sql`coalesce(${projectSpaceLinks.pinnedAt}, ${projectSpaceLinks.createdAt})`))
+          .limit(SPACE_NOTES_LINKS)
+      : [];
+  return { kind: row.kind, name, links };
 }
 
 /**

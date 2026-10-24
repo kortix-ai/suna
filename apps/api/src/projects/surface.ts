@@ -135,4 +135,12 @@ export type { GitBackedProject } from './git/types';
 export { readRunningTurn, sessionLifecycleStandingFor, turnPrompterOf } from './session-lifecycle/turn-stop-authority';
 
 export { registerRuntimeFork } from './lib/runtime-session-snapshot';
+
+// `project_channels` on: file every session into `#general`, and the "turned on
+// again" record (consumed by ../feature-flags/toggle-effects).
+export { turnOnChannels } from './lib/project-spaces';
+export { recordChannelsReenabled } from './lib/channels-onboarding';
+
+// Author names of memory pages (consumed by ../memory/serialize.ts).
+export { resolveUserIdentities } from './lib/user-identity';
 export { readPublicResponse } from './lib/public-response';

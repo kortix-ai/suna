@@ -49,6 +49,7 @@ import { readSessionConversationModels } from '../session-log-read';
 import { validateProviderSecretPool } from './provider-secret-pools';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { findForkSourceSpace, findSessionSpace } from '../lib/project-spaces';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { admitSessionSharingChange } from '../lib/session-model-keys';
@@ -65,10 +66,12 @@ import {
 } from '../lib/session-metadata-keys';
 import { loadSessionUserStates } from '../lib/session-user-state';
 import { personUserId } from './session-watch';
+import { collectMessageLinksInBackground } from '../lib/project-space-links';
 import { readRuntimeControlState } from '../lib/session-control-readers';
 import { sessionCreateSurface } from '../lib/session-surface';
 
 import { readSessionsWorking } from '../lib/session-working-read';
+import { readSessionReplyCounts } from '../lib/session-reply-counts';
 import { turnPublishVerdict } from '../lib/http-session-access';
 
 const NO_USER_STATE = { pinnedAt: null, archivedAt: null };
@@ -238,6 +241,21 @@ export function registerProjectSessionsRoutes(): void {
     // Per-RESOURCE scoping: a member/department can only launch agents they're
     // scoped to. No-op when the agent isn't scoped (unscoped = project-wide) and
     // for owner/admins. Mirrors the agent the session core resolves (sessions.ts).
+    // A DM thread (named, or a fork of one) runs the DM's agent. It overrides
+    // any `agent_name` (a create with none already falls back to a default
+    // agent), so the gate below authorizes the agent that will actually run.
+    if (resolveFeatureFlag(loaded.row.metadata, 'project_channels')) {
+      const space =
+        typeof body.space_id === 'string' && isUuid(body.space_id)
+          ? await findSessionSpace(projectId, body.space_id, loaded.userId)
+          : body.space_id === undefined && typeof body.fork_from_session_id === 'string'
+            ? (await findForkSourceSpace(projectId, body.fork_from_session_id, loaded.userId))?.space ?? null
+            : null;
+      if (space?.kind === 'dm' && space.dmAgentName) {
+        body.agent_name = space.dmAgentName;
+        delete body.agentName;
+      }
+    }
     const launchAgent = normalizeString(body.agent_name ?? body.agentName);
     // Covers BOTH the named agent and — the case that was missing — the unnamed
     // one. No `agent_name` does not mean "no agent": the session core falls back
@@ -327,13 +345,24 @@ export function registerProjectSessionsRoutes(): void {
         202,
       );
     }
-    return c.json(
-        serializeSession(result.row, {
-        viewerId: loaded.userId,
-        canManageProject: await callerHasManagerStanding(loaded, callerKortixSessionId(c)),
-      }),
-      201,
-    );
+    const canManageProject = await callerHasManagerStanding(loaded, callerKortixSessionId(c));
+    // The thread's first message: a person's links join its channel's Links tab.
+    // Once: a retry with the same idempotency key (`deduped`, also while the first
+    // create still runs) collects nothing. Started after every await, right before
+    // the response.
+    const pendingText = (body.pending_prompt as { text?: unknown } | undefined)?.text;
+    if (!result.deduped) {
+      collectMessageLinksInBackground({
+        projectId,
+        sessionId: result.row.sessionId,
+        spaceId: result.row.spaceId,
+        visibility: result.row.visibility,
+        userId: personUserId(c, loaded),
+        text: typeof pendingText === 'string' ? pendingText : (normalizeString(body.initial_prompt ?? body.initialPrompt) ?? ''),
+        projectMetadata: loaded.row.metadata,
+      });
+    }
+    return c.json(serializeSession(result.row, { viewerId: loaded.userId, canManageProject }), 201);
   },
   // The KaaB contract (apps/web/content/docs/sdk/sessions.mdx) promises coded
   // 400s for the three structured create fields. Schema validation runs before
@@ -396,6 +425,10 @@ export function registerProjectSessionsRoutes(): void {
             // restore (its owner or a project manager), inside their window,
             // each with `restore_until`. Combines with no other view.
             deleted: z.literal('only').optional(),
+            // `project_channels` on: only the sessions filed into this space
+            // that the caller may see (400 unless a UUID). Ignored while the
+            // flag is off, whatever its value, as before the flag existed.
+            space_id: z.string().optional(),
           }),
         },
       responses: {
@@ -474,6 +507,8 @@ export function registerProjectSessionsRoutes(): void {
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
     const personId = personUserId(c, loaded);
 
+    const spaceId = resolveFeatureFlag(loaded.row.metadata, 'project_channels') ? (query.space_id ?? null) : null;
+    if (spaceId !== null && !isUuid(spaceId)) return c.json({ error: 'space_id must be a UUID' }, 400);
     const inventory = await loadProjectSessionInventory({
       projectId,
       accountId: loaded.row.accountId,
@@ -490,6 +525,7 @@ export function registerProjectSessionsRoutes(): void {
         personId,
         view: query.pinned ? 'pinned' : query.archived ? 'archived' : null,
         deleted: query.deleted === 'only',
+        spaceId,
       },
       boundCredentialSessionId: callerKortixSessionId(c),
       agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,
@@ -509,7 +545,12 @@ export function registerProjectSessionsRoutes(): void {
     const conversationModels = await readSessionConversationModels(
       inventory.items.filter((item) => item.canAccess).map((item) => item.row.sessionId),
     );
-    const working = await readSessionsWorking(inventory.items.filter(item => item.canAccess).map(item => item.row.sessionId));
+    const accessibleIds = inventory.items.filter((item) => item.canAccess).map((item) => item.row.sessionId);
+    // A space list draws "N replies" under each thread; no other list pays for the count.
+    const [working, replyCounts] = await Promise.all([
+      readSessionsWorking(accessibleIds),
+      spaceId ? readSessionReplyCounts(accessibleIds) : Promise.resolve(null),
+    ]);
     const body = inventory.items.map((item) => {
       const row = item.row;
       const owner = row.createdBy ? inventory.ownerIdentities.get(row.createdBy) : null;
@@ -534,6 +575,7 @@ export function registerProjectSessionsRoutes(): void {
         // single-session read below still returns metadata whole.
         trimListMetadata: true,
         conversationModel: conversationModels.get(row.sessionId),
+        replyCount: replyCounts?.get(row.sessionId) ?? null,
       }), working: working.get(row.sessionId) };
       if (query.parent !== 'root') return serialized;
       return {

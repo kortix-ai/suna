@@ -637,6 +637,8 @@ async function createGitTriggerSession(
         trigger_source: source,
         trigger_kind: 'git',
         trigger_slug: spec.slug,
+        // The trigger's name at fire time: a channel thread shows it as the author.
+        trigger_name: spec.name,
         trigger_type: spec.type,
         // Stamped so findKeyedTriggerSession can route the NEXT delivery for
         // this key back into this session.
@@ -647,6 +649,7 @@ async function createGitTriggerSession(
       trigger_source: source,
       trigger_kind: 'git',
       trigger_slug: spec.slug,
+      trigger_name: spec.name,
       trigger_type: spec.type,
       ...(sessionKey ? { trigger_session_key: sessionKey } : {}),
       payload_summary: summarizeTriggerPayload(payload),

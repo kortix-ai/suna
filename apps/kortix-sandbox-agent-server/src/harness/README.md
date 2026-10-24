@@ -29,6 +29,9 @@ will be deleted. Until then:
 - Names that say `opencode` but serve pi too (`opencode_session_id`,
   `/kortix/opencode/*`, the OpenCode-shaped event wire pi emits) are wire
   names, not OpenCode code. They stay until a separate rename.
+- Accepted gap: OpenCode stores a prompt's `system` (the memory page list,
+  `project_channels`) on the user message (`info.system`), and the transcript
+  and event stream hand it to every viewer of the thread. pi stores nothing.
 
 ## Selection
 
@@ -722,6 +725,18 @@ other adapter, no route and nothing in `src/app/`. The app hands a boot what it
 needs through `HarnessBootContext` (`serve` starts the HTTP server).
 `bun run lint` enforces all of it.
 
+## The prompt body
+
+`POST /kortix/runtime/sessions/:id/prompt` (`routes/kortix/runtime.ts`
+`parseRuntimePromptBody`) takes `{ message_id?, parts, agent?, model:
+"provider/model"?, variant?, directory?, no_reply?, memory_layers?, system? }`
+and answers `400 { error }` for a malformed one.
+
+| Field | What the turn does with it |
+| --- | --- |
+| `memory_layers` | `[{ layer_id, version, dir }]` (`project_channels`): the route brings the read-only memory copy to these versions before the turn ("Hosted tools", `memory-copy.ts`). |
+| `system` | A string of 16,000 characters at most (`MAX_TURN_SYSTEM_CHARS`), trimmed; blank is none. Added to this turn's system prompt only: pi sets it through the hidden `kortix-turn` extension (`before_agent_start`), OpenCode receives it as `prompt_async` `system`. apps/api sends the thread's memory page list here (`project_channels`). A prompt without it runs without it; a daemon that predates the field ignores it. `/steer` drops it ("Steering"). |
+
 ## Steering
 
 `POST /kortix/runtime/sessions/:id/steer` takes the `/prompt` body with
@@ -732,6 +747,9 @@ step boundary, after the running tool batch; the turn does not stop. Answers:
 already admitted, steered or on the transcript; `409 { code: 'no_active_turn' }`
 when no turn runs (nothing is stored, the caller sends a prompt);
 `501 { code: 'feature_not_supported' }` on OpenCode older than 1.18.15.
+The route drops a steer's `system`: the turn keeps its prompt's `system` to the
+end. OpenCode reads `system` from the latest user message, so its adapter sends
+the session's last prompt `system` again with each steer.
 
 - **Read.** pi: the loop emits the message as a user message
   (`steeringMode: 'all'`: every message steered before one boundary arrives
@@ -1190,7 +1208,9 @@ runs (`../services/tools/`):
 | --- | --- |
 | `services/tools/tool.ts` | The contract: a default export `{ description, parameters (JSON Schema), execute(args, context) }`, with `context` = `{ sessionId, agent, directory, env, signal }`. |
 | `services/tools/kortix/<name>.ts` | The Kortix tools, one self-contained module each: `web_search` (Tavily), `image_search` (Serper), `scrape_webpage` (Firecrawl), `memory`, `show`. Each follows the project tool contract and imports only `node:*`, so `kortix tools eject <name>` copies the file into a project unchanged (the CLI embeds the same bytes, `apps/cli/src/kortix-tools.generated.json`). The web tools read `KORTIX_API_URL` and `KORTIX_TOKEN` from `context.env` and call the API's billed router proxy (`/v1/router/{tavily,serper,firecrawl}`); a box with no control plane calls the upstream with the project's own key. |
-| `services/tools/host.ts` | `loadTools(root, compiled)`: the Kortix tools `CompiledAgentSet.kortix_tools` lists (all five when it is absent: no kortix.yaml `tools` key, or a config compiled before the key existed), then the project's (`project_tools`), imported from `root` (the working tree or the config release; on OpenCode, the release the boot link serves, recorded as `<boot config root>/boot-release`, so a release with no OpenCode config dir still loads its tools). A project tool replaces a Kortix tool of its name; a module that does not load is logged and skipped. `runTool` bounds the output (over 50 KB or 2000 lines: the whole text to a temp file, the head to the model). `sessionEnv` is `context.env`: the process env with the live agent env file over it. |
+| `services/tools/platform/<name>.ts` | The platform tools, `PLATFORM_TOOLS` in `host.ts`: `remember` and `memory_search` (memory pages, `project_channels`). They load in every channel or DM thread (`KORTIX_SPACE_ID` in the session env) whatever `kortix_tools` lists. kortix.yaml cannot list or eject them. A project tool of the same name replaces one in that project, with one warning in the log. An agent's tool access keeps them under an allowlist and removes one only by name (`remember: false`, `hostedToolAllowed`). On pi `remember` is an `edit`: `edit: deny` hides it and refuses a call. `remember` posts to `POST /v1/projects/:id/memory/remember` with `KORTIX_TOKEN`, returns the API's JSON, and answers a 4xx as `Error: <code>: <message>`. `memory_search` (`query` 2 to 200 characters, `type?`, `limit?` 1 to 20) only reads, so `edit: deny` keeps it: it calls `GET /v1/projects/:id/memory/search?q=&type=&limit=` with `KORTIX_TOKEN` (the API searches the thread's own layers, confirmed pages only) and returns one line per hit, `- [<layer>] <title> — <summary> (<copy path>)`, with the snippet under it. The path is the file in the read-only copy whose header names the hit's `page_id` (first 4 KiB of regular files only; links are not followed); a page the copy does not hold yet gets a note instead. |
+| `services/tools/memory-copy.ts` | `syncMemoryCopy(layers, env)`: the read-only memory copy at `MEMORY_COPY_DIR` (`/opt/kortix/memory/{company,channel,personal}/`). `.version` holds the layer version and a SHA-256 of every other file in the folder. A layer whose version differs, or whose files no longer match (the agent runs as the daemon's user and can unlock and edit them), is fetched from `GET /v1/projects/:id/memory/layers/:layerId/export` (3 s cap, the wait for an earlier sync of the folder included; 4 MiB, 250 pages at most). The folder is written whole beside it (files `0444`, folders `0555`) and renamed in; a link or a file in its place is removed, never followed. A page with an unsafe or repeated file name is skipped and logged; a failure keeps the old copy. `POST /kortix/runtime/sessions/:id/prompt` runs it for the body's `memory_layers` (each folder once) before the turn, both harnesses, and a later prompt of the session waits for it. That list is the thread's whole set: a copy folder it does not name is renamed away and deleted (`prune`; a private thread that became shared loses the owner's `personal` copy). `remember` runs it for the layer it wrote, without `prune`. |
+| `services/tools/host.ts` | `loadTools(root, compiled, env)`: the Kortix tools `CompiledAgentSet.kortix_tools` lists (all five when it is absent: no kortix.yaml `tools` key, or a config compiled before the key existed), then the project's (`project_tools`), imported from `root` (the working tree or the config release; on OpenCode, the release the boot link serves, recorded as `<boot config root>/boot-release`, so a release with no OpenCode config dir still loads its tools). A project tool replaces a Kortix tool of its name; a module that does not load is logged and skipped. `runTool` bounds the output (over 50 KB or 2000 lines: the whole text to a temp file, the head to the model). `sessionEnv` is `context.env`: the process env with the live agent env file over it. |
 | `routes/kortix/tools.ts` | `POST /kortix/tools/:name` for an out-of-process harness: the box's tool-bridge key (`toolBridgeKey`, kept in the runtime state dir) or the control credential; `403` when the agent's tool access refuses the tool. |
 
 - **pi** loads them at `start()` and registers each as an `AgentTool`
@@ -1207,14 +1227,17 @@ runs (`../services/tools/`):
 
 **Tool access.** `CompiledAgent.tools` (kortix.yaml `agents.<name>.tools`) maps
 a tool name to visible, with `*` for every tool not named; `toolAllowed`
-(`@kortix/api-contract/runtime-relay`) reads it. pi filters the active tools
+(`@kortix/api-contract/runtime-relay`) reads it; kortixd reads it through
+`hostedToolAllowed`, which keeps a loaded platform tool under an allowlist. pi filters the active tools
 and denies a call to a hidden one, for the root and for a subagent (both
 agents' maps must allow it). OpenCode reads the map as permission rules
 (`open-code/tool-access.ts`): a removed tool is a `deny` after every other
 rule, an allowlist is `*: deny` first, then the rules of the allowed tools at
 the action they had; the compiled `tools` key is dropped, because OpenCode's
 own reading turns `true` into `allow` and lets the agent's `permission`
-re-open a removed tool.
+re-open a removed tool. OpenCode is sunset, so its allowlist rules do not
+keep the platform tools: an allowlist agent on an OpenCode box has no
+`remember`.
 
 ## The workspace and config providers are host services, not harness logic
 

@@ -1030,9 +1030,9 @@ describe('compileAgentConfig — a denied bash/edit also denies the tools that d
       'agents/no-edit.md': supportMd(frontmatter, 'body'),
     })!.agent['no-edit']!.permission as Record<string, unknown>;
 
-  test('bash: deny and edit: deny deny pty_* and memory', () => {
+  test('bash: deny and edit: deny deny pty_*, memory and remember', () => {
     const permission = compileNoEdit('permission:\n  edit: deny\n  bash: deny\n  task: deny');
-    expect(permission).toMatchObject({ edit: 'deny', bash: 'deny', task: 'deny', memory: 'deny' });
+    expect(permission).toMatchObject({ edit: 'deny', bash: 'deny', task: 'deny', memory: 'deny', remember: 'deny' });
     for (const tool of ['pty_spawn', 'pty_write', 'pty_read', 'pty_kill', 'pty_list']) {
       expect(permission[tool]).toBe('deny');
     }
@@ -1133,7 +1133,7 @@ agents:
       skill: { ...allSkills, '*': 'deny' },
       task: { researcher: 'allow', quiet: 'allow', '*': 'deny' },
     });
-    expect(researcher!.permission).toEqual({ edit: 'deny', memory: 'deny', skill: { triage: 'allow', 'kortix-system': 'allow', '*': 'deny' }, task: 'deny' });
+    expect(researcher!.permission).toEqual({ edit: 'deny', memory: 'deny', remember: 'deny', skill: { triage: 'allow', 'kortix-system': 'allow', '*': 'deny' }, task: 'deny' });
     expect((quiet!.permission as Record<string, unknown>).bash).toBe('deny');
     expect((quiet!.permission as Record<string, unknown>).skill).toBe('deny');
   });

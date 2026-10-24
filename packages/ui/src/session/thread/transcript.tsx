@@ -16,7 +16,7 @@ import { UnifiedMarkdown } from '../../markdown/unified-markdown';
 import { detectCommandFromText } from './detect-command';
 import { GenuiTelemetryContext } from '../../markdown/genui/block-telemetry';
 import { copyGenuiText } from '../../markdown/genui/to-markdown';
-import { useTranslations } from '../../i18n';
+import { useLocale, useTranslations } from '../../i18n';
 import {
   type SessionLogBlock,
   type SessionLogCompaction,
@@ -46,10 +46,18 @@ import {
   CheckIcon,
   CaretDownIcon as ChevronDown,
   ArrowSquareOutIcon as ExternalLink,
+  RobotIcon,
   StopCircleIcon,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { AfterFirstPromptContext } from './after-first-prompt';
+import { TranscriptRowsContext } from './transcript-rows';
+import { MessageRow } from '../turn/message-row';
+import { agentDisplayLabel } from '../composer/agent-selector';
+import { participantLabel } from '../participants/session-participants';
+import { EntityAvatar } from '../../primitives/entity-avatar';
+import { UserAvatar } from '../../primitives/user-avatar';
 import {
   SystemNotificationCard,
   parseSystemNotifications,
@@ -206,7 +214,7 @@ function SystemMessageIndicator({ messages }: { messages: KortixSystemMessage[] 
   return (
     <div className="-my-1 flex items-center gap-2">
       <div className="bg-border/30 h-px flex-1" />
-      <span className="text-muted-foreground/30 text-xs whitespace-nowrap select-none">{text}</span>
+      <span className="text-muted-foreground text-xs whitespace-nowrap select-none">{text}</span>
       <div className="bg-border/30 h-px flex-1" />
     </div>
   );
@@ -564,7 +572,7 @@ export function SessionReportCard({
           <span className="text-muted-foreground block truncate text-xs">
             {report.project}
             {report.project && report.prompt && (
-              <span className="text-muted-foreground/40">
+              <span className="text-muted-foreground">
                 {' '}
                 {tI18nComplete.raw('text3b9453dad42b')}{' '}
               </span>
@@ -574,7 +582,7 @@ export function SessionReportCard({
         )}
       </span>
 
-      <ExternalLink className="text-muted-foreground/40 group-hover/report:text-muted-foreground size-3.5 shrink-0 transition-colors" />
+      <ExternalLink className="text-muted-foreground group-hover/report:text-foreground size-3.5 shrink-0 transition-colors" />
     </button>
   );
 }
@@ -1983,6 +1991,8 @@ function TurnAutoRetryNote({ count }: { count: number }) {
  *  action bar, the connect-provider dialog, and who stopped the turn. */
 function TurnFooter(
   props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'projectId' | 'projectSessionId' | 'suppressBusyIndicator' | 'awaitingUser' | 'providers' | 'servedModel' | 'stoppedBy' | 'modelOptions'> & {
+    /** The row's floating toolbar draws the action bar instead (`TranscriptRowsContext`). */
+    hideActionBar?: boolean;
     model: TurnModelState;
     errors: TurnErrorState;
     answered: TurnAnsweredState;
@@ -2053,7 +2063,7 @@ function TurnFooter(
           On touch there is no hover, so Copy and the turn's finished-at /
           duration / cost would be permanently invisible, and tap-emulated
           `:hover` would leave exactly one arbitrary turn's bar lit. */}
-      {!working && (
+      {!working && !props.hideActionBar && (
         <TurnActionBar
           response={response}
           inlineContentParts={answered.inlineContentParts}
@@ -2142,8 +2152,11 @@ function TurnActionBar({
   costInfo,
   servedModel,
   tHardcodedUi,
+  inToolbar = false,
   share,
 }: {
+  /** Inside a message row's toolbar, which owns the hover reveal. */
+  inToolbar?: boolean;
   response: string;
   inlineContentParts: TurnAnsweredState['inlineContentParts'];
   turnEndedAt: TurnSettledMeta['turnEndedAt'];
@@ -2176,11 +2189,17 @@ const handleCopy = async () => {
   }
 };
   return (
-    <div className="duration-normal flex items-center gap-0.5 opacity-0 transition-opacity group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100 max-md:opacity-100">
+    <div
+      className={cn(
+        'flex items-center gap-0.5',
+        !inToolbar &&
+          'duration-normal opacity-0 transition-opacity group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100 max-md:opacity-100',
+      )}
+    >
       {response ? (
           <Button
             variant="ghost"
-            size="icon-sm"
+            size={inToolbar ? 'icon-md' : 'icon-sm'}
             onClick={handleCopy}
             aria-label={copied ? 'Copied' : tHardcodedUi.raw('i18nComplete.textf0f755afea88')}
             className="hit-area-3"
@@ -2213,10 +2232,22 @@ const handleCopy = async () => {
           durationMs={turnDurationMs}
           cost={costInfo}
           served={servedModel}
-          className="flex items-center justify-center"
+          // A toolbar button is 33px (`icon-md`), the same as its neighbours.
+          className={cn('flex items-center justify-center', inToolbar && 'size-9')}
         />
     </div>
   );
+}
+
+/** A row's time: "1:44 AM" beside the name, the full date on hover. Null without a stamp. */
+function rowTime(at: number, locale: string): Parameters<typeof MessageRow>[0]['time'] {
+  if (!Number.isFinite(at) || at <= 0) return null;
+  const date = new Date(at);
+  return {
+    iso: date.toISOString(),
+    label: date.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' }),
+    title: date.toLocaleString(locale, { dateStyle: 'full', timeStyle: 'short' }),
+  };
 }
 
 function SessionTurnImpl(props: SessionTurnProps) {
@@ -2227,6 +2258,9 @@ function SessionTurnImpl(props: SessionTurnProps) {
     providers, commandMessages, commands,
   } = props;
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const locale = useLocale();
+  const afterFirstPrompt = useContext(AfterFirstPromptContext);
+  const rows = useContext(TranscriptRowsContext);
   const [connectProviderOpen, setConnectProviderOpen] = useState(false);
   // `?? 'normal'` — legacy persisted preferences predate this key (same rule
   // as every `panelMode` read site).
@@ -2290,9 +2324,90 @@ function SessionTurnImpl(props: SessionTurnProps) {
       />
     );
   }
+  if (rows) {
+    const userAt = Date.parse(turn.user.created_at);
+    const answerAt = Date.parse(turn.assistant[0]?.created_at ?? '');
+    const author = props.author;
+    // Another session's agent wrote this prompt (a spawned thread's first
+    // message, a coordinator): its agent's row, not the thread owner's.
+    const sender =
+      author?.kind === 'session'
+        ? (author.agent ? agentDisplayLabel([], author.agent) : author.name) || rows.unknownAuthor
+        : null;
+    const person = author?.kind === 'member'
+      ? { name: author.name, email: author.email, avatarUrl: author.avatar_url ?? null }
+      : rows.owner;
+    const personName = person ? participantLabel(person) : '';
+    const showAnswer = turn.assistant.length > 0 || model.working || !!errors.turnErrorRow.text;
+    return (
+      <div className="text-factor-[2]">
+        {userContent.hasVisibleUserContent || userContent.sessionReport || userContent.systemMessages.length > 0 ? (
+          <MessageRow
+            className="group/turn"
+            avatar={
+              sender ? (
+                <EntityAvatar icon={RobotIcon} label={sender} size="lg" />
+              ) : (
+                <UserAvatar email={person?.email ?? ''} name={personName} avatarUrl={person?.avatarUrl} size="lg" />
+              )
+            }
+            name={sender ?? (personName || rows.unknownAuthor)}
+            time={rowTime(userAt, locale)}
+          >
+            <TurnUserBlock {...props} model={model} queueTone={queueTone} userContent={userContent} />
+          </MessageRow>
+        ) : null}
+        {props.isFirstTurn ? afterFirstPrompt : null}
+        {showAnswer ? (
+          <MessageRow
+            className="group/turn"
+            avatar={<EntityAvatar icon={RobotIcon} label={rows.agent} size="lg" />}
+            name={rows.agent}
+            time={rowTime(answerAt, locale)}
+            toolbar={
+              model.working ? null : (
+                <TurnActionBar
+                  inToolbar
+                  response={model.response}
+                  inlineContentParts={answered.inlineContentParts}
+                  turnEndedAt={meta.turnEndedAt}
+                  turnDurationMs={meta.turnDurationMs}
+                  costInfo={meta.costInfo}
+                  servedModel={props.servedModel}
+                  tHardcodedUi={tHardcodedUi}
+                  share={
+                    turn.continues
+                      ? undefined
+                      : { projectId: props.projectId, sessionId: props.projectSessionId, turnId: turn.id }
+                  }
+                />
+              )
+            }
+          >
+            <div className="mt-0.5 space-y-2.5">
+              <TurnFallbackRows working={model.working} events={props.servedModel?.fallbacks} />
+              <GenuiTelemetryContext.Provider value={genuiTelemetry}>
+                <TurnToolBlocks
+                  {...props}
+                  model={model}
+                  segments={segments}
+                  conversationDensity={conversationDensity}
+                  fold={!answered.shouldUseInlineContent}
+                  durationMs={meta.turnDurationMs}
+                />
+                <TurnAssistantBlock {...props} model={model} answered={answered} userContent={userContent} tHardcodedUi={tHardcodedUi} />
+              </GenuiTelemetryContext.Provider>
+              <TurnFooter {...props} hideActionBar model={model} errors={errors} answered={answered} status={status} retry={retry} meta={meta} tHardcodedUi={tHardcodedUi} connectProviderOpen={connectProviderOpen} onConnectProviderOpenChange={setConnectProviderOpen} />
+            </div>
+          </MessageRow>
+        ) : null}
+      </div>
+    );
+  }
   return (
     <div className="group/turn text-factor-[2] space-y-2.5">
       <TurnUserBlock {...props} model={model} queueTone={queueTone} userContent={userContent} />
+      {props.isFirstTurn ? afterFirstPrompt : null}
       {/* Model switches happened while the turn worked, so they sit above
           its work and its answer, not under the answer. */}
       <TurnFallbackRows working={model.working} events={props.servedModel?.fallbacks} />

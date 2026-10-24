@@ -1575,6 +1575,30 @@ describe('project tools on pi', () => {
     expect(toolParts(await page(r), 'bash')[0]!.state.status).toBe('error')
     expect(existsSync(join(r.workspace, 'ran.txt'))).toBe(false)
   })
+
+  test('in a channel thread an allowlist keeps the platform tools; remember: false or edit: deny removes remember only, and a call is refused', async () => {
+    const saved = process.env.KORTIX_SPACE_ID
+    process.env.KORTIX_SPACE_ID = 'space-1' // the box env; loadTools reads the session env, not the rig's
+    try {
+      const agent = (build: Record<string, unknown>) => ({ KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build } }) })
+      const allowlist = await boot({ script: [{ text: 'ok' }], env: agent({ tools: { '*': false, read: true } }) })
+      expect(await ids(allowlist)).toEqual(['read', 'remember', 'memory_search'])
+      const named = await boot({ script: [{ text: 'ok' }], env: agent({ tools: { '*': false, read: true, remember: false } }) })
+      expect(await ids(named)).toEqual(['read', 'memory_search'])
+      const readOnly = await boot({
+        script: [{ tool: 'remember', args: { title: 'Priya', type: 'people', fact: 'Runs marketing' } }, { text: 'done' }],
+        env: agent({ permission: { edit: 'deny' } }),
+      })
+      expect(await ids(readOnly)).not.toContain('remember')
+      // memory_search only reads: a read-only agent keeps it.
+      expect(await ids(readOnly)).toContain('memory_search')
+      await promptAndSettle(readOnly, 'remember Priya')
+      expect(toolParts(await page(readOnly), 'remember')[0]!.state.status).toBe('error')
+    } finally {
+      if (saved === undefined) delete process.env.KORTIX_SPACE_ID
+      else process.env.KORTIX_SPACE_ID = saved
+    }
+  })
 })
 
 describe('pi extensions', () => {
@@ -1624,6 +1648,23 @@ describe('pi extensions', () => {
     expect(one).toContain('EXTENSION RULE')
     expect(two).not.toContain('TURN RULE')
     expect(two).toContain('EXTENSION RULE')
+  })
+
+  test('the Kortix prompt route carries system to the model for its turn only (memory P2)', async () => {
+    const r = await boot({ script: [{ text: 'a' }, { text: 'b' }] })
+    const root = r.service.runtime()!.rootId
+    const sentBefore = gateway.sent.length
+    const post = (body: unknown) =>
+      r.user(`/kortix/runtime/sessions/${root}/prompt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    expect((await post({ parts: [{ type: 'text', text: 'one' }], system: '## Memory\n- Q4 launch — dates and owners' })).status).toBe(202)
+    await waitFor(() => gateway.sent.length > sentBefore && !r.service.runtime()!.busy())
+    expect((await post({ parts: [{ type: 'text', text: 'two' }] })).status).toBe(202)
+    await waitFor(() => gateway.sent.length > sentBefore + 1 && !r.service.runtime()!.busy())
+    const [one, two] = gateway.sent.slice(sentBefore).map(systemSent)
+    expect(one).toContain('## Memory\n- Q4 launch — dates and owners')
+    expect(two).not.toContain('## Memory')
+    // pi keeps the text out of the stored transcript.
+    expect(JSON.stringify(await r.user(`/session/${root}/message`).then((res) => res.json()))).not.toContain('## Memory')
   })
 
   test("every turn tells the model today's date, a subagent included, and a session that crosses midnight gets the new day", async () => {

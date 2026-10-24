@@ -56,7 +56,9 @@ import {
   useUiSearchParams,
   useUiViewerId,
 } from '../../providers/ui-provider';
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { TranscriptRowsContext, type TranscriptRows } from './transcript-rows';
+import { useIsMobile } from '../../internal/hooks';
 import { createPortal } from 'react-dom';
 import {
   AUTHOR_RETRY_DELAYS_MS,
@@ -204,7 +206,7 @@ import { openTabAndNavigate, useTabStore } from '../../internal/stores/tab-store
 import { projectSessionHref } from '../../internal/lib/navigation/session-href';
 import { type Command, type QuestionRequest, getRetryInfo } from '../../internal/session-types';
 import { useModelPricingLookup } from '../../internal/lib/model-pricing';
-import { isAbortError, latestPromptModel, turnEndNotice } from '@kortix/sdk';
+import { isAbortError, latestPromptModel, SESSION_NOTICE, turnEndNotice } from '@kortix/sdk';
 import {
   failureShownByTurn,
   failureSupersededByTurn,
@@ -387,6 +389,8 @@ interface SessionChatProps {
   hideHeader?: boolean;
   /** Read-only mode — hides the chat input bar (used for sub-session modal viewer) */
   readOnly?: boolean;
+  /** The composer's placeholder (a channel thread says "Reply…"). Default: the composer's own. */
+  composerPlaceholder?: string;
   /**
    * Drawn in the composer's slot, in flow, when `readOnly`: a terminal
    * session state (stopped with no computer, lost computer, failed start)
@@ -445,6 +449,15 @@ const DETACHED_SESSION_MESSAGES = { projectId: '', sessionId: '', runtimeSession
 
 const NO_FULL_TEXTS: ReadonlyMap<string, string> = new Map();
 
+/** The composer notice in the host's words (`TranscriptRows.notices`), else the SDK's. */
+function hostNotice(notice: string | null, notices: TranscriptRows['notices']): string | null {
+  if (!notice || !notices) return notice;
+  const key = (Object.keys(SESSION_NOTICE) as (keyof typeof SESSION_NOTICE)[]).find(
+    (candidate) => SESSION_NOTICE[candidate] === notice,
+  );
+  return (key && notices[key]) || notice;
+}
+
 export function SessionChat({
   sessionId,
   projectSessionId,
@@ -454,6 +467,7 @@ export function SessionChat({
   headerLeadingAction,
   hideHeader,
   readOnly,
+  composerPlaceholder,
   inputReplacement,
   initialScrollTop,
   savedHistoryScope,
@@ -462,6 +476,10 @@ export function SessionChat({
   hostQuote,
 }: SessionChatProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  // A channel's thread panel: turns are message rows, full width, end-anchored.
+  const rowsContext = useContext(TranscriptRowsContext);
+  const transcriptRows = rowsContext !== null;
+  const isMobile = useIsMobile();
   const tQueue = useTranslations('threads');
   const tComposerAttachments = useTranslations('hardcodedUi.composerAttachments');
   const onboardingActive = useOnboardingModeStore((s) => s.active);
@@ -1477,7 +1495,7 @@ export function SessionChat({
       const undoToastId = `queue-undo-${sessionId}-${removed.prompt_id}`;
       undoToast(tHardcodedUi.raw('i18nComplete.text2c6041fda32c'), {
         id: undoToastId,
-        duration: 5000,
+        duration: 5000, // audit:allow a toast lifetime in ms, not motion/react seconds
         undoLabel: tHardcodedUi.raw('i18nComplete.texta737e54996f8'),
         // The SAME `clientMessageId`, so an undo re-creates ONE row and a
             // double-click cannot create two. A FRESH wire id, because
@@ -1566,6 +1584,7 @@ export function SessionChat({
     startAtTop,
   } = useAutoScroll({
     hasContent: messageCount > 0,
+    room: !transcriptRows,
   });
   // Cmd/Ctrl+P prints the WHOLE conversation. The shortcut is intercepted
   // because neither half of what printing needs can be done in CSS: the
@@ -4277,7 +4296,8 @@ export function SessionChat({
                   // message is the auto-scroll spacer's job alone. The `pb-32`
                   // that used to sit here stacked 128px of dead space on top of
                   // it — the "extra inset at the bottom of the session".
-                  className={SESSION_TRANSCRIPT_CLASS}
+                  // Rows run edge to edge: each row owns its gutters and its hover fill.
+                  className={transcriptRows ? 'w-full min-w-0 pt-4' : SESSION_TRANSCRIPT_CLASS}
                 >
                   <div className="flex min-w-0 flex-col">
                     {/* Print only — `print.css` keeps this hidden on screen.
@@ -4481,7 +4501,7 @@ export function SessionChat({
                               // (Failed compaction rows need no stacking rule any
                               // more — at most one is visible at a time.)
                               viewportClassName={
-                                turnIndex === 0
+                                turnIndex === 0 || transcriptRows
                                   ? ''
                                   : // A compaction and the work after it continue the turn above.
                                     turn.compaction || turn.continues
@@ -4699,12 +4719,14 @@ export function SessionChat({
                 </div>
               )}
 
-              {/* Chat Minimap */}
-              <ChatMinimap
-                turns={turns}
-                scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
-                contentRef={contentRef as React.RefObject<HTMLDivElement>}
-              />
+              {/* Chat Minimap. Not in a thread panel: its rail would sit on the rows' avatars. */}
+              {transcriptRows ? null : (
+                <ChatMinimap
+                  turns={turns}
+                  scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
+                  contentRef={contentRef as React.RefObject<HTMLDivElement>}
+                />
+              )}
 
               <div
                 className={cn(
@@ -4762,8 +4784,9 @@ export function SessionChat({
                 // Up from the first row takes the queue back; the placeholder
                 // says so while there is something to take.
                 onArrowUpAtStart={() => queueEdit.takeBack()}
+                // A host placeholder ("Reply…") is static: the rotating tips would replace it.
                 hint={
-                  canTakeBackQueue ? tHardcodedUi.raw('i18nComplete.text03a01dd53ffa') : undefined
+                  canTakeBackQueue ? tHardcodedUi.raw('i18nComplete.text03a01dd53ffa') : composerPlaceholder
                 }
                 // Editing a queued message: the send saves it back into the
                 // queue, so the control says Submit, never Stop.
@@ -4837,7 +4860,12 @@ export function SessionChat({
                 // The shell can now render on a cached transcript alone, i.e. before
                 // the sandbox answers — so sending has to be gated separately from
                 // reading. See sessionComposerReadiness.
-                notice={composerReadiness.notice}
+                notice={hostNotice(composerReadiness.notice, rowsContext?.notices)}
+                noticeAsleep={composerReadiness.notice === SESSION_NOTICE.idle}
+                // Inside the thread panel's bordered box, as the channel composer.
+                underbarPlacement={transcriptRows && !isMobile ? 'inline' : undefined}
+                // The panel's toolbar is narrow: the agent is its tile, the model keeps its name.
+                agentPickerCompact={transcriptRows && !isMobile}
                 onNoticeRetry={
                   composerReadiness.notice && composerReadiness.retryable
                     ? requestRuntimeReconnect
