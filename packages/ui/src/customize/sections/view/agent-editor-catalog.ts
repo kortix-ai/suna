@@ -243,4 +243,9 @@ export const KORTIX_PERMISSIONS_CATALOG: { group: string; actions: string[]; fea
     actions: ['project.room.read', 'project.room.write'],
     featureFlag: 'agent_rooms',
   },
+  {
+    group: 'Artifacts',
+    actions: ['project.artifact.read', 'project.artifact.write', 'project.artifact.manage', 'project.artifact.public'],
+    featureFlag: 'artifacts',
+  },
 ];
