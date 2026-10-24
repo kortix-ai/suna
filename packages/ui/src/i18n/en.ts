@@ -1913,16 +1913,36 @@ const catalog = {
     "greeting": "Welcome, {name}. I'm Kortix.",
     "greetingNoName": "Welcome. I'm Kortix.",
     "intro": "Bring me anything: a task, a workflow, or a half-formed idea. We'll figure it out together.",
-    "question": "Where do you want to start?",
-    "recommendTools": "Recommend tools",
-    "updateMemory": "Update memory",
+    "canTitle": "What you can do with Kortix",
+    "can": {
+      "work": {
+        "title": "Hand off real work",
+        "body": "Research, docs, decks, spreadsheets and sites. Each session has its own isolated machine."
+      },
+      "memory": {
+        "title": "It remembers",
+        "body": "What it learns about you, your team and your company carries into every session."
+      },
+      "tools": {
+        "title": "Works in your tools",
+        "body": "3,000+ apps in a click. Connector credentials never enter the machine."
+      },
+      "chat": {
+        "title": "Joins your team chat",
+        "body": "Mention it in Slack or Microsoft Teams with a task."
+      },
+      "schedule": {
+        "title": "Runs on its own",
+        "body": "Triggers start work on a schedule or from a webhook."
+      },
+      "apps": {
+        "title": "Builds apps",
+        "body": "Internal tools and dashboards, hosted with sign-in."
+      }
+    },
+    "startHint": "Tell Kortix what you’re working on below, or send “Onboard me” for a guided setup.",
     "placeholder": "Tell Kortix what you're working on",
-    "kickoff": "Onboard me",
-    "toolsPrompt": "Recommend tools and connectors that fit my workflow. Ask me what I work on first if you need to.",
-    "memoryPrompt": "Get to know how I work. Ask me one short question at a time about my role, what I work on, the tools I use, and how I like to work. Save my answers to project memory so future sessions start with them.",
-    "inviteTeammate": "Invite teammate",
-    "connectSlack": "Connect Slack",
-    "slackConnected": "Slack connected"
+    "kickoff": "Onboard me"
   },
   "hardcodedUi": {
     "appProjectsIdCustomizeSecretsPage": {

@@ -395,22 +395,7 @@ function ProjectHomeView({
           the first turn there (`useFirstPromptPreviewStore`). Painting the turn
           here left a slow or stuck create looking like a live session. */}
       {firstChat ? (
-        <FirstChat
-          projectId={projectId}
-          inviteTo={canManageMembers ? accessRequestsTo : null}
-          composer={composer}
-          busy={creating}
-          // Both starters send at once, each into a new session. Through the
-          // composer's own submit, not `sendOutsideComposer`: the send carries
-          // the agent and model the composer shows, and a missing model refuses
-          // it the same way a typed message is refused.
-          onRecommendTools={() =>
-            setPrefill({ text: tFirstChat('toolsPrompt'), id: Date.now(), submit: true })
-          }
-          onUpdateMemory={() =>
-            setPrefill({ text: tFirstChat('memoryPrompt'), id: Date.now(), submit: true })
-          }
-        />
+        <FirstChat composer={composer} />
       ) : (
         <ProjectHomeWelcomeBody
           projectId={projectId}

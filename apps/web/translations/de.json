@@ -3416,16 +3416,36 @@
     "greeting": "Willkommen, {name}. Ich bin Kortix.",
     "greetingNoName": "Willkommen. Ich bin Kortix.",
     "intro": "Bringen Sie mir alles: eine Aufgabe, einen Workflow oder eine halbfertige Idee. Wir finden es gemeinsam heraus.",
-    "question": "Wo möchten Sie anfangen?",
-    "recommendTools": "Tools empfehlen",
-    "updateMemory": "Projektspeicher aktualisieren",
+    "canTitle": "Was du mit Kortix tun kannst",
+    "can": {
+      "work": {
+        "title": "Echte Arbeit abgeben",
+        "body": "Recherche, Dokumente, Präsentationen, Tabellen und Websites. Jede Sitzung hat ihre eigene isolierte Maschine."
+      },
+      "memory": {
+        "title": "Es merkt sich Dinge",
+        "body": "Was es über dich, dein Team und dein Unternehmen lernt, nimmt es in jede Sitzung mit."
+      },
+      "tools": {
+        "title": "Arbeitet in deinen Tools",
+        "body": "3.000+ Apps mit einem Klick. Connector-Zugangsdaten gelangen nie auf die Maschine."
+      },
+      "chat": {
+        "title": "Arbeitet in eurem Team-Chat",
+        "body": "Erwähne es in Slack oder Microsoft Teams mit einer Aufgabe."
+      },
+      "schedule": {
+        "title": "Läuft von selbst",
+        "body": "Trigger starten Arbeit nach Zeitplan oder per Webhook."
+      },
+      "apps": {
+        "title": "Baut Apps",
+        "body": "Interne Tools und Dashboards, gehostet mit Anmeldung."
+      }
+    },
+    "startHint": "Sag Kortix unten, woran du arbeitest, oder sende „Führ mich durch Kortix“ für eine geführte Einrichtung.",
     "placeholder": "Sagen Sie Kortix, woran Sie arbeiten",
-    "kickoff": "Führ mich durch Kortix",
-    "toolsPrompt": "Empfehlen Sie mir Tools und Connectoren, die zu meinem Workflow passen. Fragen Sie mich bei Bedarf zuerst, woran ich arbeite.",
-    "memoryPrompt": "Lernen Sie, wie ich arbeite. Stellen Sie mir jeweils eine kurze Frage zu meiner Rolle, woran ich arbeite, welche Tools ich nutze und wie ich gerne arbeite. Speichern Sie meine Antworten im Projektspeicher, damit künftige Sitzungen direkt darauf aufbauen.",
-    "inviteTeammate": "Teammitglied einladen",
-    "connectSlack": "Slack verbinden",
-    "slackConnected": "Slack verbunden"
+    "kickoff": "Führ mich durch Kortix"
   },
   "announcements": {
     "memories": {

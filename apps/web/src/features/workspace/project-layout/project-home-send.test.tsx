@@ -209,21 +209,6 @@ test('a pending first chat does not open without the explicit link', () => {
   expect(composer.placeholder).toBe('Message');
 });
 
-// Neither starter may call `onSend` itself. Both submit through the composer
-// (`prefill.submit`), so each send carries the composer's agent and model and
-// meets its refusals.
-test('neither starter sends around the composer', async () => {
-  firstChatPending = true;
-  const onSend = mock(async () => {});
-  mount(onSend);
-
-  firstChat!.onRecommendTools();
-  firstChat!.onUpdateMemory();
-  await new Promise((resolve) => setTimeout(resolve, 0));
-
-  expect(onSend).not.toHaveBeenCalled();
-});
-
 test('a failed first-chat send still reaches the composer as a rejection', async () => {
   firstChatPending = true;
   const failure = new Error('Account cannot start a session');

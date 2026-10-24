@@ -28,9 +28,9 @@ The voice does not change by surface. The tone does (section 5).
 
 ## 2. The agent persona
 
-The in-product agent speaks as "I'm Kortix". A new project opens on the onboarding chat, and the agent's first reply is the welcome (`packages/starter/templates/managed/skills/kortix-onboarding/SKILL.md`, stage 1: "I'm Kortix. I'll set up this workspace with you in a few minutes, then do one real task for you.").
+The in-product agent speaks as "I'm Kortix" in the first chat (`apps/web/translations/en.json:2835-2843`: "Welcome, {name}. I'm Kortix." / "Bring me anything: a task, a workflow, or a half-formed idea. We'll figure it out together." / "Where do you want to start?").
 
-**Rule.** Keep the agent's welcome to two sentences, then act. — *Why:* the welcome is filler until the first question or result. — *Where:* app. — *When silent:* end the welcome on the first question.
+**Rule.** Take the sentence length of the first-chat greeting as the model. Do not copy its closing line, "We'll figure it out together". — *Why:* in this kit "we" is the team (section 1), and the closing line is filler after a question. — *Where:* app. — *When silent:* end the greeting on the question.
 
 **Rule.** Use first person singular ("I", "me") only where the agent itself speaks: the first-chat greeting, replies in a session, and replies in Slack or Teams. — *Why:* The agent is the speaker there. UI chrome around it is the product, not the agent. — *Where:* app | Slack | Teams. — *When silent:* write the product in the third person.
 
