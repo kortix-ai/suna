@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "weeks": {
+    "2026-W39": {
+      "week": "2026-W39",
+      "start": "2026-09-21T00:00:00.000Z",
+      "end": "2026-09-28T00:00:00.000Z",
+      "releases": [
+        "v0.13.39",
+        "v0.13.38",
+        "v0.13.37",
+        "v0.13.36",
+        "v0.13.35",
+        "v0.13.34",
+        "v0.13.33",
+        "v0.13.32",
+        "v0.13.31",
+        "v0.13.30",
+        "v0.13.29",
+        "v0.13.28",
+        "v0.13.27",
+        "v0.13.26",
+        "v0.13.25"
+      ],
+      "highlights": [
+        {
+          "text": "Run agents from channels, group chats or direct messages, with thread replies continuing the same session.",
+          "tags": [
+            "v0.13.25"
+          ]
+        },
+        {
+          "text": "Share connector accounts with specific groups, specific people or everyone in a project.",
+          "tags": [
+            "v0.13.34"
+          ]
+        },
+        {
+          "text": "Mobile push notifications alert you when a turn completes, fails, asks a question or needs permission, even while the app is closed.",
+          "tags": [
+            "v0.13.34"
+          ]
+        },
+        {
+          "text": "Saved transcripts and attachments load without waking the sandbox.",
+          "tags": [
+            "v0.13.30"
+          ]
+        },
+        {
+          "text": "Sessions retry transient model errors and continue through short provider outages instead of stopping.",
+          "tags": [
+            "v0.13.39"
+          ]
+        }
+      ],
+      "generated_at": "2026-10-24T10:20:43.055Z",
+      "slack": {
+        "status": "skipped"
+      }
+    }
+  }
+}
