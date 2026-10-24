@@ -6,7 +6,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
-import { accountMembers, accounts, projectMembers, projects } from '@kortix/db';
+import { accountMembers, accounts, projectMembers, projectSessions, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
@@ -128,10 +128,17 @@ describe('builtin_agents.my_kortix: false (off)', () => {
     expect(config.agents.map((agent) => agent.name)).toEqual(['kortix']);
   });
 
-  test('`meta` is then an ordinary undeclared agent name', async () => {
+  test('`meta` then has no config view', async () => {
     const res = await call(OFF, '/agents/meta/config');
     expect(res.status).toBe(404);
     expect(await res.json()).toMatchObject({ code: 'agent_not_found' });
+  });
+
+  test('POST /sessions naming `meta` is refused with 409 builtin_agent_disabled, and no session row is written', async () => {
+    const res = await call(OFF, '/sessions', { method: 'POST', body: JSON.stringify({ agent_name: 'meta' }) });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: 'builtin_agent_disabled' });
+    expect(await db.select().from(projectSessions).where(eq(projectSessions.projectId, OFF))).toEqual([]);
   });
 });
 
@@ -140,5 +147,11 @@ describe('no builtin_agents key, legacy meta_agent switch off', () => {
     const config = await detail(LEGACY_OFF);
     expect(config.builtin_agents).toEqual({ my_kortix: false });
     expect(config.agents.map((agent) => agent.name)).toEqual(['kortix']);
+  });
+
+  test('POST /sessions naming `meta` is refused there too', async () => {
+    const res = await call(LEGACY_OFF, '/sessions', { method: 'POST', body: JSON.stringify({ agent_name: 'meta' }) });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: 'builtin_agent_disabled' });
   });
 });

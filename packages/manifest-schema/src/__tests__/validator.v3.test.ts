@@ -170,11 +170,12 @@ describe('kortix_version 3: builtin_agents (My Kortix switch)', () => {
     expect(errorPaths(swap('agents:', 'builtin_agents: [my_kortix]\nagents:'))).toEqual(['builtin_agents']);
   });
 
-  test('a declared `meta` agent warns while My Kortix is on, and is silent when it is off', () => {
+  test('a declared `meta` agent is an error whether My Kortix is on, off or unset', () => {
     const declared = swap('agents:', 'agents:\n  meta:\n    prompt: hi');
-    expect(check(declared).warnings.map((issue) => issue.path)).toEqual(['agents.meta']);
-    const off = declared.replace('agents:', 'builtin_agents:\n  my_kortix: false\nagents:');
-    expect(check(off).warnings).toEqual([]);
+    expect(errorPaths(declared)).toEqual(['agents.meta']);
+    expect(check(declared).errors[0]?.message).toContain('reserved for My Kortix');
+    expect(errorPaths(declared.replace('agents:', 'builtin_agents:\n  my_kortix: false\nagents:'))).toEqual(['agents.meta']);
+    expect(errorPaths(declared.replace('agents:', 'builtin_agents:\n  my_kortix: true\nagents:'))).toEqual(['agents.meta']);
   });
 });
 

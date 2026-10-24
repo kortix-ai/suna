@@ -455,8 +455,9 @@ async function resolveSessionAgent(params: {
   const projectDefaultAgent = normalizeString(loadedAgents.defaultAgent) ?? mirroredDefaultAgent;
   // My Kortix (slug `meta`) is on unless kortix.yaml sets
   // `builtin_agents.my_kortix: false` (no key: the legacy `meta_agent` switch).
-  // Off: agent resolution below is byte-for-byte the pre-meta behavior, and an
-  // explicit "meta" request is an ordinary (unknown) agent name.
+  // Off: agent resolution below is the pre-meta behavior, and a session that
+  // would run `meta` is refused with 409 builtin_agent_disabled. Without the
+  // refusal it ran with My Kortix's grant, prompt and sandbox anyway.
   const metaAgentEnabled = resolveBuiltinAgents(
     loadedAgents.builtinAgents ?? {},
     resolveFeatureFlag(project.metadata, 'meta_agent'),
@@ -489,6 +490,18 @@ async function resolveSessionAgent(params: {
           manifestDefaultAgent: normalizeString(loadedAgents.defaultAgent),
           mirroredDefaultAgent,
         });
+  if (!metaAgentEnabled && isMetaAgentName(agentName)) {
+    return {
+      error: {
+        status: 409,
+        body: {
+          error:
+            'My Kortix is off in this project. Pick a project agent, or set `builtin_agents: { my_kortix: true }` in kortix.yaml.',
+          code: 'builtin_agent_disabled',
+        },
+      },
+    };
+  }
   const platformMetaAgent = metaAgentEnabled && isMetaAgentName(agentName);
   if (platformMetaAgent && callerIsMeta) {
     return {

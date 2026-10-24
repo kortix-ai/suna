@@ -56,7 +56,7 @@ import {
   validateTriggerAgentRefsV2,
 } from './index.v2';
 import { safeAgentFile, safeRepoPath, safeToolFile } from './layout';
-import { BUILTIN_AGENT_KEYS, BUILTIN_AGENTS, type BuiltinAgentKey } from '@kortix/shared';
+import { BUILTIN_AGENT_KEYS, BUILTIN_AGENTS, type BuiltinAgentKey } from '@kortix/shared/meta-agent';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -692,30 +692,29 @@ function validateNetworkEgressV3(value: unknown, where: string, issues: Manifest
 }
 
 /**
- * `builtin_agents`: built-in key → on/off. Absent or `true` = on. A declared
- * agent that reuses a built-in's slug is ignored while that built-in is on.
+ * `builtin_agents`: built-in key → on/off. Absent or `true` = on. A built-in's
+ * slug (`meta` for My Kortix) is reserved whatever the switch says: the
+ * platform keys that slug's grant, prompt and sandbox, so a declared block
+ * would never run as written.
  */
 function validateBuiltinAgentsV3(node: unknown, path: string, agents: AgentScanV3, issues: ManifestIssue[]): void {
-  const enabled = new Set<BuiltinAgentKey>(BUILTIN_AGENT_KEYS);
   if (node !== undefined && node !== null) {
     if (!isTable(node)) {
       issues.push({ path, message: `\`${path}\` must be a map of built-in agent to true or false (${BUILTIN_AGENT_KEYS.join(', ')}).`, severity: 'error' });
-      return;
-    }
-    for (const [key, value] of Object.entries(node)) {
-      if (!(BUILTIN_AGENT_KEYS as string[]).includes(key)) {
-        issues.push({ path: `${path}.${key}`, message: `unknown built-in agent "${key}". Built-in agents: ${BUILTIN_AGENT_KEYS.join(', ')}.`, severity: 'error' });
-      } else if (typeof value !== 'boolean') {
-        issues.push({ path: `${path}.${key}`, message: `\`${path}.${key}\` must be true or false.`, severity: 'error' });
-      } else if (!value) {
-        enabled.delete(key as BuiltinAgentKey);
+    } else {
+      for (const [key, value] of Object.entries(node)) {
+        if (!(BUILTIN_AGENT_KEYS as string[]).includes(key)) {
+          issues.push({ path: `${path}.${key}`, message: `unknown built-in agent "${key}". Built-in agents: ${BUILTIN_AGENT_KEYS.join(', ')}.`, severity: 'error' });
+        } else if (typeof value !== 'boolean') {
+          issues.push({ path: `${path}.${key}`, message: `\`${path}.${key}\` must be true or false.`, severity: 'error' });
+        }
       }
     }
   }
-  for (const key of enabled) {
+  for (const key of BUILTIN_AGENT_KEYS) {
     const { agent, displayName } = BUILTIN_AGENTS[key];
     if (agents.has(agent)) {
-      issues.push({ path: `agents.${agent}`, message: `"${agent}" is reserved for ${displayName}; this block is ignored while \`${path}.${key}\` is on.`, severity: 'warning' });
+      issues.push({ path: `agents.${agent}`, message: `"${agent}" is reserved for ${displayName}, the built-in agent. Rename this agent. To turn ${displayName} off, set \`${path}.${key}: false\`.`, severity: 'error' });
     }
   }
 }

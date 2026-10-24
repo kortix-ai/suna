@@ -35,7 +35,7 @@ function render(goals: boolean) {
 describe('PlatformAgentOverview (My Kortix)', () => {
   test('lists the agents it runs, never itself, and links each one', () => {
     const markup = render(true);
-    expect(markup).toContain('Agents it runs');
+    expect(markup).toContain('>Agents<');
     expect(markup).toContain(`/projects/${PROJECT}/customize/agents/kortix`);
     expect(markup).toContain(`/projects/${PROJECT}/customize/agents/researcher`);
     expect(markup).not.toContain(`/customize/agents/meta`);
@@ -44,20 +44,28 @@ describe('PlatformAgentOverview (My Kortix)', () => {
 
   test('states what it can never do and the project switch', () => {
     const markup = render(true);
-    for (const line of ['Acts as you', 'New tokens', 'Project secrets', 'Direct connector calls']) {
+    for (const line of ['Access', 'New tokens', 'Project secrets', 'Direct connector calls', 'Project setting']) {
       expect(markup).toContain(line);
     }
-    expect(markup).toContain('builtin_agents: { my_kortix: false }');
+    expect(markup).toContain('<span class="font-mono">builtin_agents.my_kortix: false</span>');
   });
 
   test('capability state follows the viewer and the project', () => {
     canWrite = false;
     const readOnly = render(false);
-    expect(readOnly).toContain('Needs agent write');
+    expect(readOnly).toContain('Not allowed');
+    expect(readOnly).not.toContain('>Allowed<');
+    // Each refused capability names its grant once, in mono.
+    for (const grant of ['project.agent.write', 'project.session.start', 'project.gitops.merge']) {
+      expect(readOnly).toContain(`<span class="font-mono">${grant}</span>`);
+    }
+    expect(readOnly).toContain('Anyone who manages this project can grant it.');
     expect(readOnly).toContain('Goals off');
     canWrite = true;
     const manager = render(true);
-    expect(manager).toContain('Allowed');
+    expect(manager).toContain('>Allowed<');
+    expect(manager).not.toContain('Not allowed');
     expect(manager).not.toContain('Goals off');
+    expect(manager).toContain('goal coordinator session');
   });
 });

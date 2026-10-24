@@ -64,8 +64,9 @@ export const OPENCODE_BUILTIN_AGENT_NAMES: ReadonlySet<string> = new Set([
  * DIFFERENT project, onto ~50 session tokens of unrelated projects, and every
  * one of those sessions lost its CLI and connector access.
  *
- *   - `default`, the platform meta agent and OpenCode's built-in agents are
- *     launchable: none of them is ever another project's agent. In a v3
+ *   - `default`, My Kortix (`meta`, unless `builtin_agents.my_kortix: false`)
+ *     and OpenCode's built-in agents are launchable: none of them is ever
+ *     another project's agent. In a v3
  *     project `build`/`plan`/`general`/`explore` are launchable only when
  *     declared.
  *   - A project with no per-agent governance (no specs, no parse errors) keeps
@@ -78,7 +79,9 @@ export const OPENCODE_BUILTIN_AGENT_NAMES: ReadonlySet<string> = new Set([
 export function isLaunchableAgentName(agentName: string, loaded: LoadedAgents): boolean {
   const name = agentName.trim();
   if (!name) return false;
-  if (name === DEFAULT_AGENT_SENTINEL || isMetaAgentName(name)) return true;
+  if (name === DEFAULT_AGENT_SENTINEL) return true;
+  // My Kortix is launchable unless kortix.yaml turned it off.
+  if (isMetaAgentName(name)) return loaded.builtinAgents?.my_kortix !== false;
   // OpenCode ships these in every runtime and a governed project's picker can
   // still send one. They are the runtime's own, not another project's, so they
   // keep running exactly as before: an undeclared built-in resolves to the

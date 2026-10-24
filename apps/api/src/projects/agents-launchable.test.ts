@@ -35,9 +35,11 @@ describe('isLaunchableAgentName', () => {
     expect(isLaunchableAgentName('retired', governed)).toBe(false);
   });
 
-  test('the default sentinel and the platform meta agent are always launchable', () => {
+  test('the default sentinel is always launchable; My Kortix unless kortix.yaml turned it off', () => {
     expect(isLaunchableAgentName('default', governed)).toBe(true);
     expect(isLaunchableAgentName('meta', governed)).toBe(true);
+    expect(isLaunchableAgentName('meta', { ...governed, builtinAgents: { my_kortix: true } })).toBe(true);
+    expect(isLaunchableAgentName('meta', { ...governed, builtinAgents: { my_kortix: false } })).toBe(false);
   });
 
   test("OpenCode's built-in agents stay launchable in a governed project — a plan/build pick keeps running", () => {

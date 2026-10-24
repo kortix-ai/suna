@@ -276,10 +276,10 @@ export function bodyWithoutPromptAgent(
  * that env must not reach OpenCode. See projects/lib/secret-grant.ts.
  */
 export function secretGrantErrorResponse(err: unknown, origin?: string): Response | null {
-  // NOTE: no branch here returns 409. A prompt naming a different agent is
-  // never refused — it is re-scoped. Every case below is "we could not APPLY
-  // the re-scope", which is a 503 the client should retry, not a permanent
-  // conflict the user must resolve by starting a new session.
+  // A prompt naming a different agent is never refused — it is re-scoped.
+  // The one 409: the prompt runs My Kortix in a project whose kortix.yaml
+  // turned it off. Every other case is "we could not APPLY the re-scope", a
+  // 503 the client should retry, not a conflict the user must resolve.
   //
   // We could not establish what this agent may read. 503 rather than 502: the
   // sandbox is fine, our ability to VERIFY entitlement is what failed, and
@@ -288,6 +288,10 @@ export function secretGrantErrorResponse(err: unknown, origin?: string): Respons
   // agent now running. 503 for the same reason as above — and refusing is the
   // point: forwarding would run the new agent against the OLD agent's connector
   // and CLI grants, which is exactly the escalation the re-mint closes.
+  if (err instanceof SessionGrantRemintError && err.code === 'builtin_agent_disabled') {
+    const error = err.cause instanceof Error ? err.cause.message : err.message;
+    return jsonProxyError({ error, code: 'builtin_agent_disabled' }, 409, origin);
+  }
   if (err instanceof SessionGrantRemintError) {
     return jsonProxyError(
       { error: err.message, code: 'AGENT_SWITCH_GRANT_UNAPPLIED' },

@@ -1229,7 +1229,7 @@
         },
         "meta_agent": {
           "name": "My Kortix",
-          "description": "添加一个协调智能体，用于管理项目中的专业会话和多步骤工作。"
+          "description": "My Kortix 是你唯一需要对话的智能体。它以你的权限替你运行智能体、目标和空间。项目设置是 kortix.yaml 中的 `builtin_agents.my_kortix`；只有该键未设置时，此开关才生效。"
         },
         "monitors": {
           "name": "监控器",
@@ -19813,7 +19813,6 @@
       "text32ad3abe4479": "分叉对话失败",
       "text95de71e25038": "对话已分叉",
       "text85b7a59cdbd5": "内置",
-      "textd9c0c74b514b": "Meta 是协调你工作的平台智能体。它的设置是固定的：你可以与它开始会话，但无法在这里配置它。",
       "text6c4af31cd4ab": "已在此设备上退出登录，但服务器未能确认退出操作。",
       "text228359b08506": "联系销售并预约演示",
       "text9d2ac301f9b3": "市场:Agent、技能和项目模板",
@@ -22468,7 +22467,67 @@
   },
   "agentEditor": {
     "manage": "管理",
-    "overviewTitle": "概览"
+    "overviewTitle": "概览",
+    "myKortix": {
+      "allowed": "已允许",
+      "notAllowed": "未允许",
+      "on": "开",
+      "goalsOff": "目标已关闭",
+      "asYou": "以你的身份",
+      "noAccess": "无访问权限",
+      "denied": "需要 <code>{grant}</code>。管理此项目的任何人都可以授予。",
+      "capabilities": {
+        "title": "功能",
+        "configure": {
+          "label": "配置你的智能体",
+          "help": "在 kortix.yaml 中创建并收窄智能体，只授予任务所需的工具、技能、连接器和权限。扩大权限前会先询问。"
+        },
+        "delegate": {
+          "label": "委派工作",
+          "help": "将每个任务作为范围最窄的智能体的持久云端会话启动，等待其完成，并报告经过验证的结果。"
+        },
+        "goals": {
+          "label": "执行目标",
+          "help": "启动一个目标协调会话，负责该目标直到验证者确认，并每天检查一次。"
+        },
+        "spaces": {
+          "label": "构建空间",
+          "help": "通过变更请求在 kortix.yaml 中添加并排列空间的区块。"
+        }
+      },
+      "access": {
+        "title": "访问权限",
+        "asYou": {
+          "label": "你在此项目中的权限",
+          "help": "每个操作都以启动会话的人的身份运行。它的权限永远不会超过你。"
+        },
+        "otherProjects": {
+          "label": "其他项目和账户设置",
+          "help": "它的访问权限仅限于此项目。"
+        },
+        "tokens": {
+          "label": "新令牌",
+          "help": "它无法为自己或任何人创建凭据。"
+        },
+        "secrets": {
+          "label": "项目密钥",
+          "help": "改由获授该密钥的智能体使用。"
+        },
+        "connectors": {
+          "label": "直接调用连接器",
+          "help": "它把连接器工作交给获授该连接器的智能体。"
+        }
+      },
+      "agents": {
+        "title": "智能体",
+        "empty": "你创建的智能体会显示在这里"
+      },
+      "project": {
+        "title": "项目设置",
+        "label": "My Kortix",
+        "help": "新会话以 My Kortix 开始。Kortix 维护它的提示词和工具。要关闭它，请在 kortix.yaml 中设置 <code>builtin_agents.my_kortix: false</code>。"
+      }
+    }
   },
   "connectAppForm": {
     "title": "连接 Shopify",

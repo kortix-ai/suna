@@ -38,6 +38,9 @@ describe('buildMetaSandboxDockerfile', () => {
     expect(dockerfile).toContain('`kortix agents config <name> --file -`');
     expect(dockerfile).toContain('show the user the before and after, and ask once.');
     expect(dockerfile).toContain('Load the `kortix-goals` skill.');
+    // The meta box has no /drives, where `kortix goals ls|status` refuse.
+    expect(dockerfile).toContain('Never run `kortix goals ls` or `kortix goals status` here');
+    expect(dockerfile).not.toContain('Then follow it with `kortix goals ls`');
     expect(dockerfile).toContain('Every App, Artifact or Goal you create names the agent or the space it belongs to.');
     expect(dockerfile).toContain('It cannot mint tokens. You never hold more than the user does in this project.');
     expect(dockerfile).toContain(

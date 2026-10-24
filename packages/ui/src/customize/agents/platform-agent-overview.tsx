@@ -9,15 +9,20 @@
  * here is configurable: Kortix maintains its prompt, tools and model, and the
  * one project switch lives in kortix.yaml (`builtin_agents.my_kortix`).
  *
+ * The page mounts only while My Kortix is on: with the switch off, /detail
+ * does not list `meta`. Every capability state reads the viewer's own grants.
+ *
  * It reads only what the agent page already loaded (project detail, the IAM
  * probe, the feature-flag map). No extra request.
  */
 
+import type { ReactNode } from 'react';
 import { CaretRightIcon } from '@phosphor-icons/react';
 import type { ProjectConfigSummary } from '@kortix/sdk';
 import { useFeatureFlag } from '@kortix/sdk/react';
 import { capitalizeWords, isMetaAgentName } from '@kortix/shared';
 
+import { useTranslations as useI18nTranslations } from '../../i18n';
 import { AgentMark } from '../../internal/components/agent-mark';
 import { agentHref } from '../../internal/lib/capability-tab-routes';
 import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
@@ -44,24 +49,10 @@ function State({ on, label }: { on: boolean; label: string }) {
   );
 }
 
-const NEVER = [
-  {
-    label: 'Other projects and account settings',
-    help: 'Its access ends at this project.',
-  },
-  {
-    label: 'New tokens',
-    help: 'It cannot mint a credential for itself or anyone else.',
-  },
-  {
-    label: 'Project secrets',
-    help: 'An agent granted the secret uses it instead.',
-  },
-  {
-    label: 'Direct connector calls',
-    help: 'It hands connector work to an agent granted that connector.',
-  },
-] as const;
+/** Literal text (a grant, a kortix.yaml key) inside a translated sentence. */
+const code = (chunks: ReactNode) => <span className="font-mono">{chunks}</span>;
+
+const NEVER = ['otherProjects', 'tokens', 'secrets', 'connectors'] as const;
 
 export function PlatformAgentOverview({
   projectId,
@@ -70,59 +61,57 @@ export function PlatformAgentOverview({
   projectId: string;
   config: ProjectConfigSummary;
 }) {
+  const t = useI18nTranslations('agentEditor.myKortix');
   const canConfigure =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_AGENT_WRITE).allowed === true;
+  const canDelegate =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SESSION_START).allowed === true;
+  const canBuildSpaces =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_GITOPS_MERGE).allowed === true;
   const goals = useFeatureFlag(projectId, 'goals').enabled;
-  const on = config.builtin_agents?.my_kortix ?? true;
   const agents = config.agents.filter((agent) => !agent.platform && !isMetaAgentName(agent.name));
+
+  const allowed = (on: boolean) => <State on={on} label={on ? t('allowed') : t('notAllowed')} />;
+  const denied = (grant: string) => t.rich('denied', { grant, code });
 
   return (
     <div className="space-y-8">
-      <EditorSection title="What it does" lead>
+      <EditorSection title={t('capabilities.title')} lead>
         <SettingRow
-          label="Configure your agents"
-          help="Creates and narrows agents in kortix.yaml with only the tools, skills, connectors and permissions a task needs. It asks before it widens a grant."
+          label={t('capabilities.configure.label')}
+          help={canConfigure ? t('capabilities.configure.help') : denied('project.agent.write')}
         >
-          <State
-            on={canConfigure}
-            label={canConfigure ? 'Allowed' : 'Needs agent write'}
-          />
+          {allowed(canConfigure)}
         </SettingRow>
         <SettingRow
-          label="Delegate work"
-          help="Starts each task as a durable cloud session of the narrowest agent, waits for it, and reports the verified result."
+          label={t('capabilities.delegate.label')}
+          help={canDelegate ? t('capabilities.delegate.help') : denied('project.session.start')}
         >
-          <State on label="On" />
+          {allowed(canDelegate)}
+        </SettingRow>
+        <SettingRow label={t('capabilities.goals.label')} help={t('capabilities.goals.help')}>
+          <State on={goals} label={goals ? t('on') : t('goalsOff')} />
         </SettingRow>
         <SettingRow
-          label="Run goals"
-          help="Owns an objective until it is done: plans it, starts worker and verifier sessions, and checks in every day."
+          label={t('capabilities.spaces.label')}
+          help={canBuildSpaces ? t('capabilities.spaces.help') : denied('project.gitops.merge')}
         >
-          <State on={goals} label={goals ? 'On' : 'Goals off'} />
-        </SettingRow>
-        <SettingRow
-          label="Build spaces"
-          help="Adds and arranges a space's blocks in kortix.yaml through a change request."
-        >
-          <State on label="On" />
+          {allowed(canBuildSpaces)}
         </SettingRow>
       </EditorSection>
 
-      <EditorSection title="Acts as you">
-        <SettingRow
-          label="Your permissions, in this project"
-          help="Every action runs as the person who started the session. It never holds more than you do."
-        >
-          <State on label="As you" />
+      <EditorSection title={t('access.title')}>
+        <SettingRow label={t('access.asYou.label')} help={t('access.asYou.help')}>
+          <State on label={t('asYou')} />
         </SettingRow>
         {NEVER.map((row) => (
-          <SettingRow key={row.label} label={row.label} help={row.help}>
-            <State on={false} label="No access" />
+          <SettingRow key={row} label={t(`access.${row}.label`)} help={t(`access.${row}.help`)}>
+            <State on={false} label={t('noAccess')} />
           </SettingRow>
         ))}
       </EditorSection>
 
-      <EditorSection title="Agents it runs" bare>
+      <EditorSection title={t('agents.title')} bare>
         {agents.length > 0 ? (
           <EditorList>
             {agents.map((agent) => (
@@ -130,22 +119,13 @@ export function PlatformAgentOverview({
             ))}
           </EditorList>
         ) : (
-          <EmptyState size="sm" title="Agents you create will show up here" />
+          <EmptyState size="sm" title={t('agents.empty')} />
         )}
       </EditorSection>
 
-      <EditorSection title="In this project">
-        <SettingRow
-          label="My Kortix"
-          help={
-            <>
-              New sessions start with My Kortix. Kortix maintains its prompt and tools. To turn it
-              off, set <span className="font-mono">builtin_agents: {'{ my_kortix: false }'}</span> in
-              kortix.yaml.
-            </>
-          }
-        >
-          <State on={on} label={on ? 'On' : 'Off'} />
+      <EditorSection title={t('project.title')}>
+        <SettingRow label={t('project.label')} help={t.rich('project.help', { code })}>
+          <State on label={t('on')} />
         </SettingRow>
       </EditorSection>
     </div>
@@ -157,7 +137,7 @@ function AgentRow({ projectId, agent }: { projectId: string; agent: Agent }) {
     <li>
       <Link
         href={agentHref(projectId, agent.name)}
-        className="hover:bg-hover flex items-center gap-3 px-4 py-3 transition-colors"
+        className="hover:bg-hover focus-visible:bg-hover flex items-center gap-3 px-4 py-3 transition-colors focus-visible:outline-none"
       >
         <AgentMark slug={agent.name} />
         <div className="min-w-0 flex-1">

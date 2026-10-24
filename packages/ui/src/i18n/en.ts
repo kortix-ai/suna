@@ -770,7 +770,7 @@ const catalog = {
         },
         "meta_agent": {
           "name": "My Kortix",
-          "description": "My Kortix, the one agent you talk to. It runs your agents, goals and spaces for you, with your permissions. kortix.yaml `builtin_agents.my_kortix` overrides this switch when it is set."
+          "description": "My Kortix, the one agent you talk to. It runs your agents, goals and spaces for you, with your permissions. The project setting is `builtin_agents.my_kortix` in kortix.yaml; this switch applies only when that key is not set."
         },
         "monitors": {
           "name": "Monitors",
@@ -2312,7 +2312,6 @@ const catalog = {
     "autoFeaturesWorkspaceProjectSidebarModalShareSessionModalDelegateDescription": "{owner} created this session. As a project manager you govern its access.",
     "autoFeaturesWorkspaceProjectSidebarModalShareSessionModalViewerDescription": "{owner} owns this session. Only the owner can change who opens it.",
     "autoFeaturesFileViewerFileContentRendererJsxTextCouldnT794ae800": "Couldn't preview this file",
-    "autoFeaturesFileViewerFilePreviewModalJsxAttrTooltipCopy42229181": "Copy a public view-only link for this file",
     "autoFeaturesFileViewerFilePreviewModalJsxAttrTitleClosea40d0510": "Close (Esc)",
     "autoFeaturesFileViewerFilePreviewModalJsxAttrTitlePreviousb7cda316": "Previous file",
     "autoFeaturesFileViewerFilePreviewModalJsxAttrAriaLabel03ab3a76": "Previous file",
@@ -5687,7 +5686,6 @@ const catalog = {
       "text32ad3abe4479": "Failed to fork conversation",
       "text95de71e25038": "Conversation forked",
       "text85b7a59cdbd5": "Built-in",
-      "textd9c0c74b514b": "Meta is a platform agent that orchestrates your work. Its setup is fixed: start a session with it, but it can't be configured here.",
       "textd919fde889e9": "Needs connection",
       "textd7b77185afd1": "Activating",
       "text2a78b60b1056": "Connect a shared {app} account to activate this trigger.",
@@ -5813,7 +5811,18 @@ const catalog = {
       "text57f57edb6f16": "Change request #{number} is ready to review.",
       "texta8597db6f24b": "Remove skill",
       "text5f6ba69d66d1": "Skill removed",
-      "textcb8d6b0c94c9": " and every file in it, edits included, and removes the skill from every agent that lists it. One commit on the default branch."
+      "textcb8d6b0c94c9": " and every file in it, edits included, and removes the skill from every agent that lists it. One commit on the default branch.",
+      "text0ba357fa63f8": "Connector events",
+      "textca395c4d19b2": "Connector event",
+      "text6064256ee716": "connector event",
+      "text85a6c98e5584": "New connector event",
+      "text165d9237c163": "Search connector events",
+      "texta9caf7909165": "No connector events yet",
+      "text451ef98453d2": "Have an agent run when one of your Kortix Apps emits an event.",
+      "text064694999e1f": "New App event",
+      "text1934aa0740bb": "Search App events",
+      "text25db7e5609e5": "No App events yet",
+      "text9f8f92588517": "An App starts agents by emitting events. Add a trigger with on: { event, app } in kortix.yaml."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -7247,7 +7256,67 @@ const catalog = {
   },
   "agentEditor": {
     "manage": "Manage",
-    "overviewTitle": "Overview"
+    "overviewTitle": "Overview",
+    "myKortix": {
+      "allowed": "Allowed",
+      "notAllowed": "Not allowed",
+      "on": "On",
+      "goalsOff": "Goals off",
+      "asYou": "As you",
+      "noAccess": "No access",
+      "denied": "Needs <code>{grant}</code>. Anyone who manages this project can grant it.",
+      "capabilities": {
+        "title": "Capabilities",
+        "configure": {
+          "label": "Configure your agents",
+          "help": "Creates and narrows agents in kortix.yaml with only the tools, skills, connectors and permissions a task needs. It asks before it widens a grant."
+        },
+        "delegate": {
+          "label": "Delegate work",
+          "help": "Starts each task as a durable cloud session of the narrowest agent, waits for it, and reports the verified result."
+        },
+        "goals": {
+          "label": "Run goals",
+          "help": "Starts a goal coordinator session that owns the objective until a verifier confirms it, with a daily check-in."
+        },
+        "spaces": {
+          "label": "Build spaces",
+          "help": "Adds and arranges a space's blocks in kortix.yaml through a change request."
+        }
+      },
+      "access": {
+        "title": "Access",
+        "asYou": {
+          "label": "Your permissions, in this project",
+          "help": "Every action runs as the person who started the session. It never holds more than you do."
+        },
+        "otherProjects": {
+          "label": "Other projects and account settings",
+          "help": "Its access ends at this project."
+        },
+        "tokens": {
+          "label": "New tokens",
+          "help": "It cannot mint a credential for itself or anyone else."
+        },
+        "secrets": {
+          "label": "Project secrets",
+          "help": "An agent granted the secret uses it instead."
+        },
+        "connectors": {
+          "label": "Direct connector calls",
+          "help": "It hands connector work to an agent granted that connector."
+        }
+      },
+      "agents": {
+        "title": "Agents",
+        "empty": "Agents you create will show up here"
+      },
+      "project": {
+        "title": "Project setting",
+        "label": "My Kortix",
+        "help": "New sessions start with My Kortix. Kortix maintains its prompt and tools. To turn it off, set <code>builtin_agents.my_kortix: false</code> in kortix.yaml."
+      }
+    }
   },
   "connectAppForm": {
     "title": "Connect Shopify",
