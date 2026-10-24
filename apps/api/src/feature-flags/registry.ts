@@ -443,9 +443,10 @@ const FLAGS: readonly FeatureFlagDef[] = [
     description:
       'Share docs (Markdown) and HTML pages from Files: a gallery per project, a doc editor, versions from the Files history, PDF export for docs, and share links that are private, for the project, for chosen people, or public.',
     stability: 'beta',
-    // Artifacts are paths in Files, a Platinum volume.
+    // Artifacts are paths in Files, a Platinum volume. Default-on wherever
+    // Platinum is configured (Marko, 2026-10-24) — matches the `available` gate.
     available: () => Boolean(config.PLATINUM_API_KEY),
-    platformDefault: () => false,
+    platformDefault: () => Boolean(config.PLATINUM_API_KEY),
     enforcement: 'routes',
     enforcementNote:
       'ROUTES: every /v1/projects/:id/artifacts* route answers 403 `feature_disabled` when off, and ' +

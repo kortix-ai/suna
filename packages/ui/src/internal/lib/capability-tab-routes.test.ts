@@ -68,12 +68,13 @@ describe('CAPABILITY_TABS', () => {
 
 describe('customizeNavTabs', () => {
   // Agent-centric Customize (Marko, 2026-10-24): the libraries moved to
-  // `/admin`, so the nav lists only Agents, Repo, Review and Settings. The
-  // pages still resolve by URL — the gate reads the full access set — so the
-  // keys stay in CAPABILITY_TABS and only the nav drops them.
-  test('drops the admin-managed libraries, keeps the rest in order', () => {
+  // `/admin` and Repo + Review moved into Settings, so the nav keeps only
+  // Agents and Settings. The pages still resolve by URL — the gate reads the
+  // full access set — so the keys stay in CAPABILITY_TABS and only the nav
+  // drops them.
+  test('drops the admin-managed libraries and the settings-managed tabs', () => {
     const all = CAPABILITY_TABS.map((t) => t.key);
-    expect(customizeNavTabs(all)).toEqual(['agent', 'files', 'review', 'config']);
+    expect(customizeNavTabs(all)).toEqual(['agent', 'config']);
   });
 
   test('the admin-managed set is exactly the six libraries', () => {

@@ -134,12 +134,21 @@ export const ADMIN_MANAGED_TABS: readonly CapabilityTab['key'][] = [
   'secrets',
 ];
 
+/** Tabs that moved INTO Settings (Marko, 2026-10-24): Repo and Review are
+ *  reachable from the Settings rail (Repositories, Review), so Customize no
+ *  longer lists them as top-level tabs. */
+export const SETTINGS_MANAGED_TABS: readonly CapabilityTab['key'][] = ['files', 'review'];
+
 /** The capability tabs Customize still lists, in bar order: the caller's
- *  allowed tabs minus the libraries that moved to `/admin`. */
+ *  allowed tabs minus the libraries that moved to `/admin` and the ones that
+ *  moved into Settings. Customize is agent-centric, so the bar leads with
+ *  Agents; the rest is configured per agent or under `/admin` / Settings. */
 export function customizeNavTabs(
   tabs: readonly CapabilityTab['key'][],
 ): CapabilityTab['key'][] {
-  return tabs.filter((key) => !ADMIN_MANAGED_TABS.includes(key));
+  return tabs.filter(
+    (key) => !ADMIN_MANAGED_TABS.includes(key) && !SETTINGS_MANAGED_TABS.includes(key),
+  );
 }
 
 /**
