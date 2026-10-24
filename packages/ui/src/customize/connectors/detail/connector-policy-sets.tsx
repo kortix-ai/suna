@@ -6,17 +6,25 @@ import {
   deleteConnectorPolicySet,
   getConnectorPolicies,
   listConnectorPolicySets,
+  listConnectors,
   renameConnectorPolicySet,
   upsertConnectorPolicySet,
 } from '@kortix/sdk';
-import { qk } from '@kortix/sdk/react';
-import { PlusIcon } from '@phosphor-icons/react';
+import { contract, qk } from '@kortix/sdk/react';
+import { CaretDownIcon, PlusIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Fragment, useEffect, useId, useState } from 'react';
 
 import { Button } from '../../../primitives/button';
-import { CountBadge } from '../../../primitives/count-badge';
 import { ConfirmDialog } from '../../../primitives/confirm-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '../../../primitives/dropdown-menu';
+import { RadioGroup, RadioGroupItem } from '../../../primitives/radio-group';
 import { ErrorState } from '../../../primitives/error-state';
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '../../../primitives/field';
 import Hint from '../../../primitives/hint';
@@ -41,8 +49,19 @@ import { UiLink as Link } from '../../../providers/ui-provider';
 import {
   connectorPoliciesKey,
   connectorPolicySetsKey,
+  POLICY_SET_TEMPLATES,
   policySetNameProblem,
+  TEMPLATE_NAME,
+  type PolicySetTemplate,
 } from '../tools/policy-sets';
+import { humanizeToolName } from '../tools/tool-groups';
+import { agentConnectorAccess } from '../agent-access';
+import { useAgentAccess } from '../use-agent-access';
+
+/** `read_only` reads "Read only" on screen; the name itself is in the tooltip and in kortix.yaml. */
+export function policySetLabel(name: string): string {
+  return humanizeToolName(name);
+}
 
 /** The tab value of the base rules. A set name starts with [a-z0-9]. */
 const BASE_VALUE = '__base';
@@ -80,6 +99,13 @@ export function ConnectorPolicySetBar({
   onChange: (next: string | null) => void;
 }) {
   const t = useTranslations('connectorPolicySets');
+  const access = useAgentAccess(projectId);
+  const connectorsQuery = useQuery({
+    queryKey: qk.project.connectors(projectId),
+    queryFn: () => listConnectors(projectId, { includeSchemas: false }),
+    ...contract('config'),
+  });
+  const allSlugs = (connectorsQuery.data?.connectors ?? []).map((item) => item.slug);
   const queryClient = useQueryClient();
   const queryKey = connectorPolicySetsKey(projectId, slug);
   const setsQuery = useQuery({
@@ -153,8 +179,9 @@ export function ConnectorPolicySetBar({
 
   const agents = selected?.agents ?? [];
   const agentList = agents.join(', ');
-  const ruleCount = (count: number) =>
-    count > 0 ? <CountBadge count={count} aria-label={t('ruleCount', { count })} /> : null;
+  const ruleTotal = selected ? selected.policies.length : (baseQuery.data?.policies.length ?? 0);
+  // Agents that can take this set: every agent not on it yet.
+  const giveTo = selected ? access.agents.filter((agent) => !agents.includes(agent)) : [];
 
   return (
     <div className="space-y-2">
@@ -162,14 +189,14 @@ export function ConnectorPolicySetBar({
         <div className="min-w-0 overflow-x-auto">
           <Tabs value={value ?? BASE_VALUE} onValueChange={(next) => onChange(next === BASE_VALUE ? null : next)}>
             <TabsListCompact aria-label={t('rulesFor')}>
-              <TabsTriggerCompact value={BASE_VALUE}>
-                {t('baseRules')}
-                {ruleCount(baseQuery.data?.policies.length ?? 0)}
-              </TabsTriggerCompact>
+              <TabsTriggerCompact value={BASE_VALUE}>{t('baseRules')}</TabsTriggerCompact>
               {sets.map((set) => (
-                <TabsTriggerCompact key={set.name} value={set.name}>
-                  <span className="font-mono">{set.name}</span>
-                  {ruleCount(set.policies.length)}
+                <TabsTriggerCompact key={set.name} value={set.name} title={set.name}>
+                  {policySetLabel(set.name)}
+                  <span className="text-muted-foreground">
+                    {' · '}
+                    {t('agentCount', { count: set.agents.length })}
+                  </span>
                 </TabsTriggerCompact>
               ))}
             </TabsListCompact>
@@ -216,9 +243,47 @@ export function ConnectorPolicySetBar({
           ) : (
             t('baseContext')
           )}
+          {' · '}
+          {t('ruleCount', { count: ruleTotal })}
         </p>
         {selected ? (
           <div className="flex shrink-0 items-center gap-1">
+            {access.supported && access.canEdit && giveTo.length > 0 ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="xs" disabled={access.pending !== null}>
+                    {t('giveToAgent')}
+                    <CaretDownIcon className="size-3 shrink-0" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-48">
+                  <DropdownMenuLabel>{t('giveToAgentLabel', { name: policySetLabel(selected.name) })}</DropdownMenuLabel>
+                  {giveTo.map((agent) => {
+                    const current = agentConnectorAccess(access.grantsOf(agent), slug);
+                    return (
+                      <DropdownMenuItem
+                        key={agent}
+                        onSelect={() =>
+                          void access
+                            .setPolicySet(agent, slug, selected.name, allSlugs)
+                            .then(() => successToast(t('givenToAgent', { agent, name: policySetLabel(selected.name) })))
+                            .catch(() => undefined)
+                        }
+                      >
+                        <span className="min-w-0 flex-1 truncate">{agent}</span>
+                        {!current.granted || current.policySet ? (
+                          <span className="text-muted-foreground shrink-0 text-xs">
+                            {!current.granted
+                              ? t('giveToAgentGrants')
+                              : t('giveToAgentReplaces', { name: policySetLabel(current.policySet!) })}
+                          </span>
+                        ) : null}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
             <Button
               variant="ghost"
               size="xs"
@@ -253,7 +318,7 @@ export function ConnectorPolicySetBar({
         state={editor}
         existing={sets.map((set) => set.name)}
         onOpenChange={(open) => !open && setEditor(null)}
-        onSaved={(name) => {
+        onSaved={(name, rules = []) => {
           // Put the saved set in the cached list before selecting it, so the
           // stale-selection fallback above never sees it missing.
           const previous = editor?.mode === 'edit' ? editor.set : null;
@@ -261,7 +326,7 @@ export function ConnectorPolicySetBar({
             const list = (current?.sets ?? []).filter((set) => set.name !== name && set.name !== previous?.name);
             const saved: ConnectorPolicySet = previous
               ? { ...previous, name }
-              : { name, description: null, policies: [], agents: [] };
+              : { name, description: null, policies: rules, agents: [] };
             return { sets: [...list, saved] };
           });
           setEditor(null);
@@ -302,12 +367,19 @@ function PolicySetEditor({
   state: { mode: 'create' } | { mode: 'edit'; set: ConnectorPolicySet } | null;
   existing: readonly string[];
   onOpenChange: (open: boolean) => void;
-  onSaved: (name: string) => void;
+  onSaved: (name: string, rules?: ConnectorPolicySet['policies']) => void;
 }) {
   const t = useTranslations('connectorPolicySets');
   const id = useId();
   const current = state?.mode === 'edit' ? state.set : null;
-  const [name, setName] = useState(current?.name ?? '');
+  const [template, setTemplate] = useState<PolicySetTemplate>('read_only');
+  const [name, setName] = useState(current?.name ?? (existing.includes('read_only') ? '' : 'read_only'));
+  // The name follows the template until the user types one.
+  const [nameEdited, setNameEdited] = useState(false);
+  const pickTemplate = (next: PolicySetTemplate) => {
+    setTemplate(next);
+    if (!nameEdited) setName(existing.includes(TEMPLATE_NAME[next]) ? '' : TEMPLATE_NAME[next]);
+  };
   const [description, setDescription] = useState(current?.description ?? '');
   const trimmed = name.trim();
   const problem = trimmed ? policySetNameProblem(trimmed, existing, current?.name ?? null) : null;
@@ -316,8 +388,14 @@ function PolicySetEditor({
     mutationFn: async () => {
       const nextDescription = description.trim() || null;
       if (!current) {
-        await upsertConnectorPolicySet(projectId, slug, trimmed, { description: nextDescription });
-        return { name: trimmed, created: true };
+        // A template's set and its rules land in one kortix.yaml commit.
+        const description = nextDescription ?? (template === 'empty' ? null : t(`template_${template}_description`));
+        await upsertConnectorPolicySet(projectId, slug, trimmed, {
+          description,
+          ...(template === 'empty' ? {} : { template }),
+        });
+        // The answer counts the rules written; the set's list refetches them.
+        return { name: trimmed, created: true, rules: [] };
       }
       if (trimmed !== current.name) {
         await renameConnectorPolicySet(projectId, slug, current.name, trimmed);
@@ -325,11 +403,11 @@ function PolicySetEditor({
       if (nextDescription !== (current.description ?? null)) {
         await upsertConnectorPolicySet(projectId, slug, trimmed, { description: nextDescription });
       }
-      return { name: trimmed, created: false };
+      return { name: trimmed, created: false, rules: undefined };
     },
     onSuccess: (result) => {
-      successToast(result.created ? t('created', { name: result.name }) : t('saved'));
-      onSaved(result.name);
+      successToast(result.created ? t('created', { name: policySetLabel(result.name) }) : t('saved'));
+      onSaved(result.name, result.rules);
     },
     onError: (error: Error) => errorToast(error.message),
   });
@@ -352,19 +430,44 @@ function PolicySetEditor({
         >
           <ModalBody>
             <FieldGroup>
+              {current ? null : (
+                <Field>
+                  <FieldLabel>{t('templateLabel')}</FieldLabel>
+                  <RadioGroup
+                    value={template}
+                    onValueChange={(next) => pickTemplate(next as PolicySetTemplate)}
+                    disabled={pending}
+                    className="gap-2"
+                  >
+                    {POLICY_SET_TEMPLATES.map((option) => (
+                      <RadioGroupItem
+                        key={option}
+                        value={option}
+                        variant="outline"
+                        size="lg"
+                        label={t(`template_${option}`)}
+                        description={t(`template_${option}_description`)}
+                      />
+                    ))}
+                  </RadioGroup>
+                </Field>
+              )}
               <Field data-invalid={problem ? true : undefined}>
                 <FieldLabel htmlFor={`${id}-name`}>{t('nameLabel')}</FieldLabel>
                 <Input
                   id={`${id}-name`}
                   value={name}
-                  onChange={(event) => setName(event.target.value)}
+                  onChange={(event) => {
+                    setNameEdited(true);
+                    setName(event.target.value);
+                  }}
                   placeholder="read_only"
                   autoComplete="off"
                   spellCheck={false}
                   className="font-mono"
                   aria-invalid={problem ? true : undefined}
                   disabled={pending}
-                  autoFocus
+                  autoFocus={current !== null}
                 />
                 <FieldDescription className={problem ? 'text-destructive' : undefined}>
                   {problem === 'taken' ? t('nameTaken') : t('nameHelp')}

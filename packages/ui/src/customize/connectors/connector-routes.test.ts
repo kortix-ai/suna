@@ -10,6 +10,8 @@ import {
   legacyDetailRedirect,
   connectorSearchFromParams,
   withConnectorSearch,
+  browseForAnotherProfileHref,
+  waysFromParams,
 } from './connector-routes';
 
 const BASE = '/projects/p1/customize/connectors';
@@ -32,7 +34,8 @@ describe('connectorsHref', () => {
     expect(connectorsHref('p1')).toBe(BASE);
   });
   test('a scope rides as ?scope=', () => {
-    expect(connectorsHref('p1', 'connected')).toBe(`${BASE}?scope=connected`);
+    expect(connectorsHref('p1', 'connectors')).toBe(BASE);
+    expect(connectorsHref('p1', 'browse')).toBe(`${BASE}?scope=browse`);
   });
 });
 
@@ -118,5 +121,17 @@ describe('the catalogue search in the URL', () => {
     expect(params.toString()).toBe('scope=channels&q=Shopify');
     withConnectorSearch(params, '   ');
     expect(params.toString()).toBe('scope=channels');
+  });
+});
+
+describe('another profile', () => {
+  const app = { source: 'discover' as const, slug: 'gmail', id: 'composio:gmail' };
+  test('the app page keeps itself open with ways=1', () => {
+    expect(appHref('p1', app, { ways: true })).toBe(`${BASE}/gmail?id=composio%3Agmail&ways=1`);
+    expect(waysFromParams(new URLSearchParams('ways=1'))).toBe(true);
+    expect(waysFromParams(new URLSearchParams(''))).toBe(false);
+  });
+  test('Browse searches for the app and links its cards to the app page', () => {
+    expect(browseForAnotherProfileHref('p1', 'Gmail')).toBe(`${BASE}?scope=browse&ways=1&q=Gmail`);
   });
 });

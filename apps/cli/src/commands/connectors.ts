@@ -63,6 +63,11 @@ interface AdminConnector {
   accounts?: ConnectorAccountRow[];
   /** Label of the account an unnamed call resolves to, or null if none/unpinned. */
   default_account?: string | null;
+  /** False when the connector runs with no account (no sign-in). Absent on older servers. */
+  auth_needed?: boolean;
+  /** What a person sees: it needs an account, it works, or it failed (`state_reason`). */
+  state?: 'needs_account' | 'connected' | 'error' | 'disabled';
+  state_reason?: string | null;
 }
 
 interface SyncResult {
@@ -137,6 +142,8 @@ interface DiscoverConnector {
   url: string | null;
   categories: string[];
   oneClick?: boolean;
+  /** Slugs of the project's profiles installed from this app. */
+  installed?: string[];
 }
 
 /** One way to connect a catalogue app, best first. */
@@ -200,164 +207,127 @@ const PROVIDERS: readonly Provider[] = [
 
 const HELP = help`Usage: kortix connectors <subcommand> [options]
 
-Manage the project's connectors — the external systems agents call as tools
-(Composio/Pipedream apps, MCP servers, OpenAPI/Postman/GraphQL/HTTP endpoints). Mirrors the
-dashboard's Customize → Connectors. Connectors are project-wide visible; the
-only access gate is which AGENTS may call one (\`kortix agents scope\` /
-\`[[agents]].connectors\` in kortix.yaml) — see \`kortix grants\`.
+Connectors are the external apps agents call as tools. Mirrors Customize →
+Connectors. Three things, one per question:
+  profile   ONE way to reach an app (Linear over MCP). Its slug is what
+            \`call <slug> <action>\` takes. Install an app once.
+  account   WHO a call runs as: a sign-in on the profile, shared with the
+            project or private to one member. Several per profile.
+  rule set  WHAT an agent may do: named tool rules on the profile, given to an
+            agent with \`kortix agents scope <agent> --policy-set <slug>=<set>\`.
+A call is decided in this order: project rules → the agent's rule set →
+the profile's base rules → sensitive tools ask → the project default mode.
+Which agents may call a profile at all: \`kortix agents scope\`, \`kortix grants\`.
 
-Config lives in kortix.yaml: \`add\`/\`rm\` and \`policy set --default\` edit your
-LOCAL file — run \`kortix ship\` to apply (or pass --apply to apply at once),
-then \`sync\` to reconcile. Every other policy, credential, rename and mode
-change applies on the cloud project at once.
+Everything below applies on the cloud project at once (a commit to kortix.yaml
+on main), except \`add\`/\`rm\`/\`policy set --default\` without --apply, which
+edit your LOCAL kortix.yaml for \`kortix ship\`.
 
-Subcommands:
-  ls [--session <id>] [--json]      List project or session-bound connectors.
-  show <slug>[.<action>] [--json]   Show a connector or one action schema.
+Find and install:
+  catalog [<query>] [--kind <k,k>]  Browse every app: what Kortix built (kortix:
+          [--one-click]             channels, Computer), MCP servers, REST and
+          [--category <c>]          GraphQL APIs, Composio apps. One row per app;
+          [--limit <n>] [--cursor]  a row an existing profile covers says
+          [--json]                  \`installed as <slug>\`.
+  catalog show <id> [--way <id>]    Every way to connect the app, best first,
+          [--json]                  and the tools of one way.
+  catalog tools <id> [--way <id>]   Every tool one way offers.
+  catalog categories [--kind <k>]   The keys --category accepts, with counts.
+  catalog install <id>              Install the app as a profile (the best way
+          [--way <id>] [--name <n>] unless --way). Installing an app that is
+          [--slug <s>] [--json]     already installed changes nothing and exits
+          [--new-profile]           3; --new-profile makes a second profile
+                                    (only for another way or other base rules).
+  add <slug> --provider <p> [...]   Declare a profile by hand (an MCP URL, a
+                                    spec). Add --apply to apply it now.
+  rm <slug> [--apply]               Remove a profile.
+  rename <slug> <name…>             Set a profile's display name.
+  sync                              Reconcile from the shipped kortix.yaml.
+
+Accounts and sign-in:
+  connect <slug>                    Start a sign-in and print the URL to hand
+       [--owner me|project]         the human. \`me\` (default): the account is
+       [--label <name>]             yours alone; \`project\`: shared with every
+                                    member. --label names a NEW account (a
+                                    second Gmail). A connector that needs no
+                                    sign-in prints Ready.
+  accounts <slug> [--json]          The accounts a call may run as, default
+       [--default <label|id>]       first: the names \`call --account\` takes.
+                                    --default pins the one an unnamed call
+                                    uses. Each paired computer is an account
+                                    of \`computer\`: call computer <tool>
+                                    --account "<machine name>".
+  credential <slug> [value|-]       Set an API key (prompts if no value; \`-\`
+                                    reads stdin).
+  credential <slug>                 OAuth2 client credentials (an OpenAPI or
+       --oauth2-client-credentials  HTTP profile): the API trades the client
+       --token-url <url>            id and secret for tokens, refreshes them,
+       --client-id <id>             and stores nothing if the first token
+       [--client-secret-from -|<file>]   request fails. The secret comes from
+       [--scope "<a b>"]            stdin (-), a file, or a prompt; it is
+       [--audience <aud>]           never printed back.
+  secret <slug> <identifier>        Use a project secret as the credential.
+       [--clear]                    --clear removes the binding.
+
+Call:
+  ls [--session <id>] [--json]      List profiles (or one session's).
+  show <slug>[.<action>] [--json]   Show a profile or one action's schema.
   discover <intent> [--json]        Search session tools by intent.
-  call <slug> <action> [json]       Invoke one connector action. A successful
-                                    result's \`account\` field says which
-                                    account actually ran it.
-       [--account <n|id|me|project>] Which connected account to run as: a label,
-                                    a connection id, \`me\` (your own default) or
-                                    \`project\` (the shared default). Omit for the
-                                    connector's default. See \`accounts\`. With
-                                    several accounts and none named or pinned,
-                                    the call is denied (reason account_required)
-                                    instead of guessing.
-       [--reason <text>]            What the call does, shown to the human if a
-                                    policy holds it for approval. Pass it when
-                                    the args are only ids (send_draft: say who
-                                    it goes to and what it says).
+  call <slug> <action> [json]       Run one action. Prints JSON. Exit 1 when
+                                    the tool reports an error (status
+                                    tool_error) or the call is denied.
+       [--account <n|id|me|project>] Which account runs it (see \`accounts\`).
+                                    With several and none named or pinned the
+                                    call is denied (account_required).
+       [--reason <text>]            Shown to the human if a rule asks for
+                                    approval. Say what the call does.
        [--attach <file>]...         Attach a file from /workspace/{output,
-                                    artifacts,reports,deliverables}: stages the
-                                    bytes and appends a reference to the
-                                    action's attachments array (e.g. Graph
-                                    body.message.attachments). The gateway
-                                    builds the provider's attachment item.
-       [--attach-path <a.b.c>]      Name that array when auto-detection fails.
+       [--attach-path <a.b.c>]      artifacts,reports,deliverables}.
        [json] as @file.json or -    Read large JSON args from a file or stdin.
-       [--out <file>]               Write the full JSON result to <file>
-                                    (parent dirs created) and print only a
-                                    summary: saved_to, bytes, and the shape of
-                                    \`data\` (keys, array lengths, pageInfo).
-                                    Use it for results too large to read.
-  upload <file> --connector <slug>  Stage one file for a call. Prints \`ref\`,
-                                    {"$kortix_attachment":"<id>"}: as an
-                                    attachments[] element it becomes the
-                                    provider's item; in a string field
-                                    (contentBytes, content) it becomes base64.
-  accounts <slug> [--json]        The connected accounts a call may run as,
-                                    default first. Shared accounts belong to the
-                                    project, private ones to you. These are the
-                                    names \`call --account\` accepts.
-       [--default <label|id>]       Pin one account as the default an unnamed
-                                    call uses.
-                                    Each paired computer is an account of the
-                                    \`computer\` connector. List them with
-                                    \`accounts computer\`; pick one with
-                                    \`call computer <tool> --account "<machine name>"\`.
-  types [--connector <a,b>]         Print TypeScript types for every callable
-        [--out <file>]              action: \`declare module '@kortix/sdk'\`
-                                    filling ConnectorActionRegistry, so
-                                    \`connectors.callAction(slug, action, args)\`
-                                    type-checks args and \`output\`. Output is
-                                    \`unknown\` for managed Composio/Pipedream
-                                    connectors (they publish no output schema).
-                                    --out writes the file instead of stdout.
-  connections <subcommand>          Manage configured connector connections.
-  add <slug> --provider <p> [...]   Add a [[connectors]] block to kortix.yaml.
-                                    Add --apply to skip ship/CR and apply it
-                                    instantly on the cloud project (commit to
-                                    main + sync, like the dashboard).
-  rm <slug> [--apply]               Remove a [[connectors]] block from kortix.yaml
-                                    (or --apply to remove on the cloud now).
-  rename <slug> <name…>             Set a connector's display name (applies now).
-  mode <slug> shared                 Set the connection mode (applies now + re-syncs; shared is the only mode).
-  sync                              Reconcile the catalog from the shipped kortix.yaml.
-  credential <slug> [value]         Set a connector's credential (prompts if
-                                    no value; reads stdin with \`-\`).
-  secret <slug> <identifier>        Use a project secret as this connector's
-                                    server-side credential. Add --clear to
-                                    remove the binding.
-  connect <slug>                    Start the connector provider authorization.
-       [--owner me|project]         Who the new account belongs to: \`me\` (yours
-                                    alone, the default) or \`project\` (shared
-                                    with every member; needs
-                                    project.connector.write).
-       [--label <name>]             Name a NEW account (a second Gmail). The
-                                    human confirms the name and who can use
-                                    the account in the setup dialog.
-  connect-finalize <slug>           Confirm authorization completed. Accepts
-       [--owner me|project]         the IDs returned by \`connect\`. Pass the
-       [--connection-id <uuid>]     same --owner the link was started with.
-       [--request-id <id>]
-  apps [<query>] [--category <c>]   Search the Composio toolkit catalog — the
-       [--cursor <c>] [--limit <n>]  slugs that add --provider composio --app
-       [--pipedream] [--json]        accepts. Alias: toolkits. Use --pipedream
-                                     for the legacy Pipedream catalog.
-  catalog [<query>] [--kind <k,k>]  Browse the app catalogue: what Kortix built
-          [--one-click]             (channels, Computer), every MCP server, REST
-          [--category <c>]          and GraphQL API and Composio app, one row per
-          [--limit <n>] [--cursor]  app by its best way in. --kind kortix,mcp,composio,
-          [--json]                  openapi,graphql filters by how it connects;
-                                    --one-click keeps the apps the human
-                                    connects by signing in.
-  catalog show <id> [--way <id>]    Every way to connect the app (recommended
-          [--json]                  first) and the tools of one way.
-  catalog tools <id> [--way <id>]   Every tool one way to connect offers.
-  catalog categories [--kind <k>]   The category keys --category accepts, with
-          [--one-click] [--json]    how many apps each holds.
-  catalog install <id>              Install the app as a connector profile:
-          [--way <id>] [--name <n>] the recommended way unless --way. Its
-          [--slug <s>] [--json]     accounts, access and tool rules live on it.
-  sensitive <slug> on|off           Gate this connector's READS too — every
-                                    call needs approval (applies now).
-  owner <slug> project|user         Deprecated, does nothing. Ownership is per
-                                    account now: choose it per connection with
-                                    \`connect --owner me|project\`, read it back
-                                    with \`accounts\`.
-  policy ls|show [--json]           Show project-wide execution policies.
-  policy set --default <risk|allow_all>   Set the default execution mode in
-                                    kortix.yaml. Add --apply to set it live.
-  policy add <match> <action>       Add a PROJECT-wide rule (applies now).
-             [--condition <k=v>]    Narrow it to a matching argument. Repeat
-                                    for more; \`k!=v\` negates. <k> is a dot
-                                    path into the call's arguments.
-  policy rm <match>                 Remove a project-wide rule (applies now).
-  policy <slug> ls [--json]         Show one connector's tool-call rules.
-  policy <slug> set <match> <act>   Allow|ask|block a tool/glob/regex (applies now).
-        [--condition <k=v>]…        <match> = tool name, glob (send_*) or /regex/.
-  policy <slug> rm <match>          Remove a connector rule.
-  policy <slug> clear               Remove all of a connector's rules.
-  policy <slug> --policy-set <name> ls|set|rm|clear
-                                    The same verbs on one policy set's rules.
-  policy-sets <slug> ls|create|rename|rm
-                                    Named rule sets on one connector. Give an
-                                    agent one with \`kortix agents scope <agent>
-                                    --policy-set <slug>=<name>\`; one account,
-                                    different rules per agent.
-  authorize <slug> [--json]         OAuth 2.1 a connector end to end: discover
-                                    the server's authorization metadata,
-                                    register Kortix as a client (RFC 7591) when
-                                    the server supports it, and print the URL to
-                                    approve. --status reports the result.
-  authorize <slug> --device         Same, on a server that supports the OAuth
-                                    2.0 device flow: prints a code + URL and
-                                    polls until it is approved.
-  moves [--json]                    List the Pipedream and Composio connectors
-                                    and the Kortix app each one moves to.
-  move <slug>                       Move a Pipedream or Composio connector to
-       [--connection <id>]          its Kortix app: sign in once, and the
-       [--no-open] [--device]       connector uses provider mcp. It keeps its
-                                    slug and agent grants; Composio triggers
-                                    move to Kortix events. Other accounts on
-                                    it sign in again. --connection: the account
-                                    to sign in on (default: the project's).
-                                    --no-open: print the URL only.
+       [--out <file>]               Write the result to <file>, print a summary.
+  upload <file> --connector <slug>  Stage one file; prints \`ref\` for call args.
+  types [--connector <a,b>]         TypeScript types for every action, for
+        [--out <file>]              \`connectors.callAction\` in the SDK.
 
-\`policy ls|show|set|add|rm\` are the PROJECT-wide surface, so a connector
-named after one of those verbs must be addressed as \`policy <slug> ls\` etc.
+Rules:
+  policy-sets <slug> ls             The profile's rule sets and their agents.
+  policy-sets <slug> create <name>  A new rule set. --template read-only allows
+       [--template <t>]             reads and blocks the rest; ask-before-writes
+       [--description <text>]       allows reads and asks for the rest.
+  policy-sets <slug> rename <name> <new>   Agents that use it move with it.
+  policy-sets <slug> rm <name>      Refused while an agent uses the set.
+  policy <slug> ls|set|rm|clear     The profile's base rules. set <match>
+       [--policy-set <name>]        allow|ask|block; <match> = a tool, a glob
+       [--condition <k=v>]…         (send_*) or a /regex/. --policy-set edits
+                                    one rule set instead.
+  policy <slug> effective           What each tool does for a caller, after
+       [--policy-set <name>]        every layer, and which layer decided.
+  agents <slug> [--json]            Which agents may call the profile, and the
+                                    rule set each one gets.
+  rules [--json]                    Every agent × every profile: access and
+                                    rule set, one table.
+  policy ls [--json]                Project rules: they gate every profile.
+  policy add <match> <action>       Add a project rule; --condition <k=v>
+       [--condition <k=v>]…         narrows it to matching arguments.
+  policy rm <match>                 Remove a project rule.
+  policy set --default <risk|allow_all>   The project default mode.
+  sensitive <slug> on|off           Every call on the profile needs approval.
+
+Advanced:
+  connect-finalize <slug>           Confirm a sign-in started by \`connect\`
+       [--owner me|project]         completed. Pass the same --owner.
+       [--connection-id <uuid>] [--request-id <id>]
+  authorize <slug> [--device]       OAuth 2.1 a raw MCP server end to end:
+       [--status] [--json]          discover, register a client (RFC 7591),
+                                    print the URL. --device: the device flow.
+  connections <subcommand>          Accounts by connection id (see
+                                    \`connections --help\`).
+  moves [--json]                    Pipedream (retired) and Composio profiles
+  move <slug> [--connection <id>]   that have a Kortix MCP app, and the move:
+       [--no-open] [--device]       sign in once; slug and grants stay.
+
+\`policy ls|show|set|add|rm\` are the project surface: a profile named after one
+of those verbs is \`policy <slug> ls\`.
 
 Add options (provider-specific):
   --name <label>           Human label (default: slug).
@@ -372,7 +342,6 @@ Add options (provider-specific):
   --spec <url|path>        OpenAPI/Postman/GraphQL/HTTP spec or source ref.
   --auth-type <t>          Manual override: none|bearer|basic|custom|oauth1.
                            Omit to auto-detect from the source; none opts out.
-  --credential <mode>      shared (the only mode).
 
 Authorize options:
   --status                 Report the connection's OAuth status instead.
@@ -613,6 +582,12 @@ export async function runConnectors(argv: string[]): Promise<number> {
     f.out = takeFlagValue(rest, ['--out']);
     if (takeFlagBool(rest, ['--pipedream', '--legacy-pipedream'])) f.pipedream = 'true';
     if (takeFlagBool(rest, ['--one-click'])) f.oneClick = 'true';
+    if (takeFlagBool(rest, ['--new-profile'])) f.newProfile = 'true';
+    if (takeFlagBool(rest, ['--oauth2-client-credentials'])) f.clientCredentials = 'true';
+    f.tokenUrl = takeFlagValue(rest, ['--token-url']);
+    f.clientSecretFrom = takeFlagValue(rest, ['--client-secret-from']);
+    f.audience = takeFlagValue(rest, ['--audience']);
+    f.template = takeFlagValue(rest, ['--template']);
     f.kind = takeFlagValue(rest, ['--kind', '--type']);
     f.way = takeFlagValue(rest, ['--way']);
     f.slug = takeFlagValue(rest, ['--slug']);
@@ -707,14 +682,22 @@ export async function runConnectors(argv: string[]): Promise<number> {
         if (f.spec) draft.spec = f.spec;
         if (f.credential) draft.credential = f.credential;
         if (f.authType) draft.auth = { type: f.authType };
-        const resp = await ctx.client.post<{
-          ok: boolean;
-          sync?: unknown;
-          authDiscovery?: {
-            status: string;
-            recommended?: { type?: string } | null;
-          };
-        }>(`${ex}/connectors`, draft);
+        type AddResult = { ok: boolean; sync?: unknown; authDiscovery?: { status: string; recommended?: { type?: string } | null } };
+        let resp: AddResult;
+        try {
+          resp = await ctx.client.post<AddResult>(`${ex}/connectors`, draft);
+        } catch (err) {
+          // An agent session may not add a server the project does not have:
+          // a person confirms it on the page the API links to.
+          const body = (err as { details?: { code?: string; setup_url?: string } }).details;
+          if (body?.code !== 'custom_connector_needs_human') throw err;
+          if (json) emitJson({ ok: false, ...body });
+          else
+            process.stderr.write(
+              `${status.err('A person must confirm a connector the catalog does not list.')}\n  Hand them this link: ${C.cyan}${body.setup_url ?? ''}${C.reset}\n`,
+            );
+          return 1;
+        }
         if (json) {
           emitJson(resp);
           return 0;
@@ -763,11 +746,11 @@ export async function runConnectors(argv: string[]): Promise<number> {
         const accountsW = Math.max(...accountsCells.map((s) => s.length), 'ACCOUNTS'.length);
         process.stdout.write('\n');
         process.stdout.write(
-          `  ${C.dim}${pad('SLUG', slugW)}   STATUS       PROVIDER     CRED        TOOLS  ${pad('ACCOUNTS', accountsW)}${C.reset}\n`,
+          `  ${C.dim}${pad('SLUG', slugW)}   ${pad('STATE', 13)}  PROVIDER     TOOLS  ${pad('ACCOUNTS', accountsW)}${C.reset}\n`,
         );
         connectors.forEach((c, i) => {
           process.stdout.write(
-            `  ${pad(c.slug, slugW)}   ${statusCell(c.status)}  ${pad(c.provider, 11)}  ${pad(c.credentialMode, 9)}  ${pad(String(c.actions.length), 5)}  ${pad(accountsCells[i] ?? '—', accountsW)}\n`,
+            `  ${pad(c.slug, slugW)}   ${c.state ? pad(c.state.replace('_', ' '), 13) : statusCell(c.status)}  ${pad(c.provider, 11)}  ${pad(String(c.actions.length), 5)}  ${pad(accountsCells[i] ?? '—', accountsW)}\n`,
           );
         });
         const anyMultiAccount = connectors.some((c) => (c.accounts?.length ?? 0) > 1);
@@ -803,7 +786,8 @@ export async function runConnectors(argv: string[]): Promise<number> {
         }
         process.stdout.write(`\n  ${C.bold}${c.name}${C.reset} ${C.faded}(${c.slug})${C.reset}\n`);
         process.stdout.write(
-          `  ${C.dim}provider ${C.reset}${c.provider}   ${C.dim}status ${C.reset}${statusCell(c.status)}   ${C.dim}cred ${C.reset}${c.credentialMode}${c.secretSet ? ` ${C.green}(set)${C.reset}` : ''}\n`,
+          `  ${C.dim}provider ${C.reset}${c.provider}   ${C.dim}state ${C.reset}${c.state ? c.state.replace('_', ' ') : statusCell(c.status)}${c.auth_needed === false ? `   ${C.dim}no sign-in needed${C.reset}` : ''}\n` +
+            (c.state_reason ? `  ${status.warn(c.state_reason)}\n` : ''),
         );
         const accounts = c.accounts ?? [];
         // One connector can hold several accounts — the shared project one
@@ -826,7 +810,9 @@ export async function runConnectors(argv: string[]): Promise<number> {
           return 0;
         }
         for (const a of c.actions) {
-          process.stdout.write(`  ${C.cyan}${a.path}${C.reset} ${C.faded}[${a.risk}]${C.reset}\n`);
+          // `likely_risk` reads the tool's name; `risk` is the gate's own (unknown counts as write).
+          const risk = (a as typeof a & { likely_risk?: string }).likely_risk ?? a.risk;
+          process.stdout.write(`  ${C.cyan}${a.path}${C.reset} ${C.faded}[${risk}]${C.reset}\n`);
           if (a.description)
             process.stdout.write(`    ${C.dim}${trim(a.description, 80)}${C.reset}\n`);
         }
@@ -847,6 +833,51 @@ export async function runConnectors(argv: string[]): Promise<number> {
       case 'cred': {
         const slug = positional[0];
         if (!slug) return missing('a connector slug');
+        // OAuth2 client credentials: the API trades the client id + secret for
+        // access tokens and refreshes them. The secret stays a project secret.
+        if (f.clientCredentials === 'true') {
+          if (!f.tokenUrl) return missing('--token-url <url>');
+          if (!f.clientId) return missing('--client-id <id>');
+          // The secret never goes in argv history unless the user passes it there:
+          // `--client-secret-from -` reads stdin, `--client-secret-from <file>` a file.
+          const clientSecret =
+            f.clientSecret ??
+            (f.clientSecretFrom === '-'
+              ? (await readStdin()).trim()
+              : f.clientSecretFrom
+                ? (await Bun.file(f.clientSecretFrom).text()).trim()
+                : await promptSecret(`  client secret for ${C.bold}${f.clientId}${C.reset}`));
+          if (!clientSecret) return missing('the client secret');
+          type OAuth2Result = { ok: boolean; slug: string; account: string; expires_at: string | null };
+          let resp: OAuth2Result;
+          try {
+            resp = await ctx.client.put<OAuth2Result>(`${ex}/connectors/${encodeURIComponent(slug)}/oauth2/connection`, {
+              token_url: f.tokenUrl,
+              client_id: f.clientId,
+              client_secret: clientSecret,
+              ...(f.scope ? { scopes: f.scope.split(/[\s,]+/).filter(Boolean) } : {}),
+              ...(f.audience ? { audience: f.audience } : {}),
+            });
+          } catch (err) {
+            // Kortix asks for a first token before it stores anything: say what the token server said.
+            const body = (err as { details?: { code?: string; detail?: string } }).details;
+            if (body?.code !== 'oauth2_token_failed') throw err;
+            if (json) emitJson({ ok: false, ...body });
+            else
+              process.stderr.write(
+                `${status.err(`${f.tokenUrl} refused the client: ${body.detail ?? 'no reason given'}`)}\n  ${C.dim}Nothing was stored. Check --token-url, --client-id, the secret and --scope.${C.reset}\n`,
+              );
+            return 1;
+          }
+          if (json) {
+            emitJson(resp);
+            return 0;
+          }
+          process.stdout.write(
+            `${status.ok(`${C.bold}${slug}${C.reset} gets its tokens from ${f.tokenUrl}`)} ${C.dim}(account ${resp.account}; first token expires ${resp.expires_at ?? 'never'})${C.reset}\n`,
+          );
+          return 0;
+        }
         // A bare `-` reads the value from stdin. It starts with '-', so it's
         // not in `positional` — detect it on the raw arg list.
         const wantStdin = asStdin || rest.includes('-');
@@ -1056,7 +1087,9 @@ export async function runConnectors(argv: string[]): Promise<number> {
           `\n  ${C.bold}Connect ${slug}${C.reset}\n` +
             (output.url
               ? `  ${C.cyan}${output.url}${C.reset}\n\n  ${C.dim}Open the URL and approve the ${output.provider} connection. ${ownerNote}${C.reset}\n\n`
-              : `  ${C.green}${output.connected ? 'Connected' : 'No authorization URL returned'}${C.reset}\n\n`),
+              : output.is_no_auth
+                ? `  ${C.green}Ready${C.reset} ${C.dim}— this connector needs no sign-in.${C.reset} ${C.cyan}kortix connectors call ${slug} <action>${C.reset}\n\n`
+                : `  ${C.green}${output.connected ? 'Connected' : 'No authorization URL returned'}${C.reset}\n\n`),
         );
         return 0;
       }
@@ -1548,27 +1581,52 @@ export async function runConnectors(argv: string[]): Promise<number> {
             name: string;
             provider: string;
             way: { id: string; kind: string; name: string; oneClick: boolean };
-            next: 'connect' | 'credential' | 'ready';
+            next: 'connect' | 'credential' | 'ready' | 'fix';
+            /** The app is already installed this way: nothing new was made. */
+            existing?: boolean;
+            /** With `next: 'fix'`: why the install's sync failed. */
+            error?: string;
           }>(`${ex}/discover/install`, {
             id,
             ...(f.way ? { way: f.way } : {}),
             ...(f.name ? { name: f.name } : {}),
             ...(f.slug ? { slug: f.slug } : {}),
+            ...(f.newProfile === 'true' ? { as_new_profile: true } : {}),
           });
+          const nextStep =
+            done.next === 'connect'
+              ? `kortix connectors connect ${done.slug}`
+              : done.next === 'credential'
+                ? `kortix connectors credential ${done.slug}`
+                : done.next === 'fix'
+                  ? `kortix connectors show ${done.slug}`
+                  : `kortix connectors call ${done.slug} <action>`;
           if (json) {
             emitJson(done);
-            return 0;
+            return done.existing ? 3 : 0;
+          }
+          if (done.existing) {
+            // A second profile of the same way adds nothing an account or a rule set
+            // does not: say where those live instead of making one.
+            process.stdout.write(
+              `${status.warn(`${C.bold}${done.name}${C.reset} is already installed as ${C.bold}${done.slug}${C.reset}. Nothing was changed.`)}\n` +
+                `  ${C.dim}Another account:${C.reset}  ${C.cyan}kortix connectors connect ${done.slug} --label <name>${C.reset}\n` +
+                `  ${C.dim}Other rules:${C.reset}      ${C.cyan}kortix connectors policy-sets ${done.slug} create <name>${C.reset}\n` +
+                `  ${C.dim}A second profile:${C.reset} ${C.cyan}kortix connectors catalog install ${id} --new-profile${C.reset}\n`,
+            );
+            return 3;
           }
           process.stdout.write(
             `${status.ok(`Installed ${C.bold}${done.name}${C.reset} as connector profile ${C.bold}${done.slug}${C.reset}`)} ${C.dim}(via ${wayLabel(done.way.kind)}; kortix.yaml on main)${C.reset}\n`,
           );
           process.stdout.write(
-            `  ${C.dim}Accounts, who can use them and tool rules live on the profile: kortix connectors accounts ${done.slug} · kortix connectors policy ${done.slug}${C.reset}\n`,
+            done.next === 'fix'
+              ? `  ${status.warn(`It does not work yet: ${done.error ?? 'its sync failed'}`)}\n  ${C.dim}Check: ${C.reset}${C.cyan}${nextStep}${C.reset}\n`
+              : done.next === 'ready'
+                ? `  ${C.dim}Ready, no sign-in needed: ${C.reset}${C.cyan}${nextStep}${C.reset} ${C.dim}(actions: kortix connectors show ${done.slug})${C.reset}\n`
+                : `  ${C.dim}Next: ${C.reset}${C.cyan}${nextStep}${C.reset}\n`,
           );
-          process.stdout.write(
-            `  ${C.dim}Next: ${C.reset}${C.cyan}${done.next === 'connect' ? `kortix connectors connect ${done.slug}` : done.next === 'credential' ? `kortix connectors credential ${done.slug}` : `kortix connectors show ${done.slug}`}${C.reset}\n`,
-          );
-          return 0;
+          return done.next === 'fix' ? 1 : 0;
         }
 
         const q = action;
@@ -1588,12 +1646,18 @@ export async function runConnectors(argv: string[]): Promise<number> {
           total?: number;
           nextCursor?: string | null;
           hasMore?: boolean;
+          /** Catalog sources that failed this time. */
+          degraded?: string[];
         }>(`${ex}/discover/connectors${qs ? `?${qs}` : ''}`);
+        const degradedNote = page.degraded?.length
+          ? `  ${status.warn(`Partial results: ${page.degraded.join(', ')} did not answer. Try again.`)}\n`
+          : '';
         if (json) {
           emitJson(page);
           return 0;
         }
         const items = page.items ?? [];
+        process.stderr.write(degradedNote);
         if (items.length === 0) {
           process.stdout.write(
             `  ${C.dim}No catalogue app${q ? ` matches "${q}"` : ''}${f.kind || oneClick ? ' with these filters' : ''}. The catalogue is large, not complete: search the web for the vendor's MCP server or API, then kortix connectors add.${C.reset}\n`,
@@ -1604,8 +1668,9 @@ export async function runConnectors(argv: string[]): Promise<number> {
         process.stdout.write('\n');
         for (const item of items) {
           const via = `${wayLabel(item.kind)}${item.oneClick ? ' ·1-click' : ''}`;
+          const installed = item.installed?.length ? `${C.green}· installed as ${item.installed.join(', ')}${C.reset}` : '';
           process.stdout.write(
-            `  ${C.cyan}${pad(item.id, idW)}${C.reset}  ${pad(trim(item.name, 24), 24)}  ${pad(via, 18)}  ${C.dim}${trim(item.description ?? '', 40)}${C.reset}\n`,
+            `  ${C.cyan}${pad(item.id, idW)}${C.reset}  ${pad(trim(item.name, 24), 24)}  ${pad(via, 18)}  ${installed || `${C.dim}${trim(item.description ?? '', 40)}${C.reset}`}\n`,
           );
         }
         process.stdout.write(
@@ -1722,7 +1787,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
         const slug = a0;
         const cAction = positional[1] ?? 'ls';
         if (cAction === 'sets') {
-          return await runPolicySets(ctx, slug, positional.slice(2), f.description, json);
+          return await runPolicySets(ctx, slug, positional.slice(2), f.description, json, f.template);
         }
         // Absent or `base` = the connector's base rules (the route's rule too).
         const policySet = f.policySet && f.policySet !== 'base' ? f.policySet : null;
@@ -1738,6 +1803,44 @@ export async function runConnectors(argv: string[]): Promise<number> {
           }
         };
 
+        // What each tool does for a caller with this set, after every layer.
+        if (cAction === 'effective') {
+          let resp: {
+            sensitive?: boolean;
+            effective?: { path: string; action: string; source: string; risk?: string; rule?: { match: string; action: string } }[];
+          };
+          try {
+            resp = await ctx.client.get(path);
+          } catch (err) {
+            return surfacePolicySetError(err, { slug });
+          }
+          if (json) {
+            emitJson(resp);
+            return 0;
+          }
+          const shown: Record<string, string> = { always_run: 'runs', require_approval: 'asks', block: 'blocked' };
+          // The layer that decided, in the words of the decision order.
+          const layer = (source: string) =>
+            source === 'connector'
+              ? 'base rules'
+              : source === 'policy_set'
+                ? 'rule set'
+                : source === 'project'
+                  ? 'project rule'
+                  : source === 'risk_default' && resp.sensitive
+                    ? 'sensitive'
+                    : 'default mode';
+          const rows = resp.effective ?? [];
+          const w = Math.max(...rows.map((a) => a.path.length), 4);
+          process.stdout.write(`\n  ${C.bold}${label}${C.reset} ${C.dim}— what each tool does${C.reset}\n`);
+          for (const a of rows) {
+            process.stdout.write(
+              `  ${C.cyan}${pad(a.path, w)}${C.reset}  ${pad(a.risk ?? '', 7)}  ${pad(shown[a.action] ?? a.action, 7)}  ${C.dim}${layer(a.source)}${a.rule ? ` (${a.rule.match} → ${a.rule.action})` : ''}${C.reset}\n`,
+            );
+          }
+          process.stdout.write('\n');
+          return 0;
+        }
         if (cAction === 'ls' || cAction === 'list') {
           let resp: { policies: PolicyRule[] };
           try {
@@ -1831,8 +1934,52 @@ export async function runConnectors(argv: string[]): Promise<number> {
         process.stderr.write(`${status.err(`unknown policy action "${cAction}"`)}\n`);
         return 2;
       }
+      // Which agents may call one profile, and the rule set each one gets.
+      case 'agents': {
+        const slug = positional[0];
+        if (!slug) return missing('a connector slug');
+        const resp = await ctx.client.get<{ agents: { agent: string; granted: boolean; policy_set: string | null }[] }>(
+          `${ex}/connectors/${encodeURIComponent(slug)}/agents`,
+        );
+        if (json) {
+          emitJson(resp);
+          return 0;
+        }
+        const w = Math.max(...resp.agents.map((a) => a.agent.length), 5);
+        process.stdout.write('\n');
+        for (const a of resp.agents) {
+          process.stdout.write(
+            `  ${C.cyan}${pad(a.agent, w)}${C.reset}  ${a.granted ? (a.policy_set ? `rule set ${a.policy_set}` : 'base rules') : `${C.dim}no access${C.reset}`}\n`,
+          );
+        }
+        process.stdout.write(`\n  ${C.dim}Change: kortix agents scope <agent> --policy-set ${slug}=<set|base>${C.reset}\n\n`);
+        return 0;
+      }
+      // Every profile × every agent: access and rule set, one table.
+      case 'rules': {
+        const resp = await ctx.client.get<{
+          connectors: { slug: string; name: string; policy_sets: string[] }[];
+          agents: { agent: string; cells: Record<string, { granted: boolean; policy_set: string | null }> }[];
+        }>(`${ex}/rules-matrix`);
+        if (json) {
+          emitJson(resp);
+          return 0;
+        }
+        const aw = Math.max(...resp.agents.map((a) => a.agent.length), 5);
+        const cw = resp.connectors.map((c) => Math.max(c.slug.length, ...resp.agents.map((a) => (a.cells[c.slug]?.policy_set ?? 'base').length)));
+        process.stdout.write(`\n  ${C.dim}${pad('AGENT', aw)}  ${resp.connectors.map((c, i) => pad(c.slug, cw[i]!)).join('  ')}${C.reset}\n`);
+        for (const a of resp.agents) {
+          const cells = resp.connectors.map((c, i) => {
+            const cell = a.cells[c.slug];
+            return pad(!cell?.granted ? '—' : (cell.policy_set ?? 'base'), cw[i]!);
+          });
+          process.stdout.write(`  ${C.cyan}${pad(a.agent, aw)}${C.reset}  ${cells.join('  ')}\n`);
+        }
+        process.stdout.write(`\n  ${C.dim}— no access · base = the profile's base rules · else the rule set${C.reset}\n\n`);
+        return 0;
+      }
       case 'policy-sets':
-        return await runPolicySets(ctx, positional[0], positional.slice(1), f.description, json);
+        return await runPolicySets(ctx, positional[0], positional.slice(1), f.description, json, f.template);
       default:
         process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
         return 2;
@@ -1862,8 +2009,14 @@ async function runPolicySets(
   args: string[],
   descriptionFlag: string | undefined,
   json: boolean,
+  template?: string,
 ): Promise<number> {
   if (!slug) return missing('a connector <slug>');
+  // The API names templates with underscores; the CLI takes either spelling.
+  const templateKey = template?.replaceAll('-', '_');
+  if (templateKey !== undefined && templateKey !== 'read_only' && templateKey !== 'ask_before_writes') {
+    return fail('--template must be read-only or ask-before-writes');
+  }
   const base = `/connectors/projects/${ctx.projectId}/connectors/${encodeURIComponent(slug)}/policy-sets`;
   const setPath = (name: string) => `${base}/${encodeURIComponent(name)}`;
   const action = args[0] ?? 'ls';
@@ -1898,9 +2051,12 @@ async function runPolicySets(
       const name = args[1];
       if (!name) return missing('the set <name>');
       // `--description=` (empty) clears; no flag leaves it as it is.
-      const body =
-        descriptionFlag === undefined ? {} : { description: descriptionFlag === '' ? null : descriptionFlag };
-      const resp = await ctx.client.put<{ ok: boolean; created?: boolean }>(setPath(name), body);
+      // `--template` starts the set from the tools' risk: the server writes the rules.
+      const body = {
+        ...(descriptionFlag === undefined ? {} : { description: descriptionFlag === '' ? null : descriptionFlag }),
+        ...(templateKey ? { template: templateKey } : {}),
+      };
+      const resp = await ctx.client.put<{ ok: boolean; created?: boolean; policies?: PolicyRule[] }>(setPath(name), body);
       if (json) {
         emitJson({ ...resp, slug, name });
         return 0;
@@ -1908,6 +2064,16 @@ async function runPolicySets(
       process.stdout.write(
         `${status.ok(`${C.bold}${slug}${C.reset}: policy set ${name} ${resp.created ? 'created' : 'updated'}`)}\n`,
       );
+      const written = templateKey
+        ? (resp.policies ??
+          (await ctx.client
+            .get<{ policies: PolicyRule[] }>(`/connectors/projects/${ctx.projectId}/connectors/${encodeURIComponent(slug)}/policies?policy_set=${encodeURIComponent(name)}`)
+            .then((r) => r.policies)
+            .catch(() => [])))
+        : [];
+      for (const p of written) {
+        process.stdout.write(`    ${p.match} → ${p.action}${conditionsLabel(p.conditions)}\n`);
+      }
       if (resp.created) {
         process.stdout.write(
           `  ${C.dim}Add a rule:   kortix connectors policy ${slug} --policy-set ${name} set <match> allow|ask|block${C.reset}\n` +

@@ -392,6 +392,14 @@ export function v2AppKey(name: string): string {
   return appNameKey(name).replace(/(rest)?(api|graphql)$/, '');
 }
 
+/** The sources the last catalogue load could not reach (`integrations`,
+ *  `composio`). Per replica, last load wins: the list answers it as
+ *  `degraded` so a client can say "some apps are missing" instead of nothing. */
+let lastDegraded: string[] = [];
+export function catalogDegraded(): string[] {
+  return lastDegraded;
+}
+
 /**
  * Every way to connect, one record per surface: Kortix's apps, integrations.sh
  * (MCP, OpenAPI, GraphQL, CLI) and the managed toolkits. `list` shows each app
@@ -407,12 +415,18 @@ export async function connectorsV2Items(
   } = {},
 ): Promise<ConnectorCatalogItem[]> {
   const kortix = [...KORTIX_APPS.map(kortixCatalogItem), ...(load.apps ?? availableMcpApps)().map(mcpAppCatalogItem)];
+  const failed: string[] = [];
   const [index, toolkits] = await Promise.all([
-    (load.index ?? connectorCatalogItems)().catch(() => [] as ConnectorCatalogItem[]),
-    (load.toolkits ?? (async () => (await composioVisibleToolkits()).map(publicToolkit)))().catch(
-      () => [] as ComposioCatalogCard[],
-    ),
+    (load.index ?? connectorCatalogItems)().catch(() => {
+      failed.push('integrations');
+      return [] as ConnectorCatalogItem[];
+    }),
+    (load.toolkits ?? (async () => (await composioVisibleToolkits()).map(publicToolkit)))().catch(() => {
+      failed.push('composio');
+      return [] as ComposioCatalogCard[];
+    }),
   ]);
+  lastDegraded = failed.sort();
   // A Kortix app owns its app's records, by domain and by name (Notion is
   // notion.so here and notion.com in the registry): they file under its
   // domain, so the list shows one card and the app page every way in.

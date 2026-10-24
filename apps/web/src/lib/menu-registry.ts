@@ -648,15 +648,13 @@ export const menuRegistry: MenuItemDef[] = [
     id: 'proj-connectors-policies',
     // Was "Customize · Connectors · Policies" — no longer accurate: this no
     // longer lives under Customize.
-    label: 'Connectors · Policies',
+    label: 'Connectors · Rules',
     icon: Plug,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    // `?rules=1` opens the Global rules sheet on arrival — the Connectors page
-    // hosts `PoliciesPanel` and reads that param (`connectors-page.tsx`), so
-    // this entry now reaches the destination its label names.
-    href: '/projects/{projectId}/customize/connectors?rules=1',
+    // The Connectors page's Rules tab: project rules and who gets which rule set.
+    href: '/projects/{projectId}/customize/connectors?scope=rules',
     requiresProject: true,
     keywords: 'policies approval block require_approval rules tools connector guardrails',
   },

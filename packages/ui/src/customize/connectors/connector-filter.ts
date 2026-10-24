@@ -1,26 +1,29 @@
 import type { AdminConnector } from '@kortix/sdk';
 
 /**
- * The four tabs.
+ * The Connectors page tabs, held in `?scope=`:
+ * - `connectors`: the project's own connectors (the landing tab, no param);
+ * - `browse`: the catalogue, to add one;
+ * - `channels`: what Kortix built for people to reach the agent (Slack, Teams,
+ *   email, Telegram, the computer);
+ * - `rules`: the project's approval rules and who gets which rule set.
  *
- * Three of them narrow one list of connectors. Two more used to and are gone
- * for the same reason: a tab that hides part of the list makes the list you
- * are looking at never the whole list.
- *
- * `attention` became a sort key inside `connected` (`compareConnectors`) plus
- * a badge on the card — a connector that needs setting up is still one of your
- * connectors. `available` was the catalogue minus what the project already
- * has, which only ever removed cards the other tabs already mark `✓`; see
- * `SCOPES` in `connectors-page.tsx`.
- *
- * `channels` is the odd one and is deliberate: it does not filter the connector
- * list, it replaces it with the inbound side of the same job — Slack, Teams and
- * email reaching the agent. It was a top-level Customize tab until the two were
- * merged into one page; see `capability-tab-routes.ts`. It is a member of this
- * union rather than a second piece of page state so that ONE value drives the
- * strip, the `?scope=` param, and the body.
+ * `all` and `connected` are the old spellings of `browse` and `connectors`;
+ * `?rules=1` is the old spelling of `rules`. `parseConnectorScope` maps them.
  */
-export type ConnectorScope = 'all' | 'connected' | 'channels';
+export type ConnectorScope = 'connectors' | 'browse' | 'channels' | 'rules';
+
+export const CONNECTOR_SCOPES: readonly ConnectorScope[] = ['connectors', 'browse', 'channels', 'rules'];
+
+const LEGACY_SCOPE: Record<string, ConnectorScope> = { all: 'browse', connected: 'connectors' };
+
+/** `?scope=` (and the old `?rules=1`) as a tab. Anything unknown is Connectors. */
+export function parseConnectorScope(search: Pick<URLSearchParams, 'get'> | null | undefined): ConnectorScope {
+  // `tab=` is how an API `setup_url` spells it.
+  const value = search?.get('scope') ?? search?.get('tab') ?? '';
+  if (search?.get('rules') === '1') return 'rules';
+  return CONNECTOR_SCOPES.find((scope) => scope === value) ?? LEGACY_SCOPE[value] ?? 'connectors';
+}
 
 /**
  * A connector the user has to act on: the server flagged it, or it declares a

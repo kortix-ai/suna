@@ -1,5 +1,6 @@
 import { customizePath } from '../../lib/routes';
 import type { CatalogEntry } from './catalog/catalog-entry';
+import type { ConnectorScope } from './connector-filter';
 
 /**
  * The app segment of a connector reached without an app: the Connected tab, a
@@ -29,11 +30,9 @@ function appParams(app: AppRef): URLSearchParams {
   return new URLSearchParams({ id: app.id });
 }
 
-export function connectorsHref(
-  projectId: string,
-  scope?: 'all' | 'connected' | 'channels',
-): string {
-  return scope ? `${base(projectId)}?scope=${scope}` : base(projectId);
+/** The Connectors page on one tab. Connectors, the landing tab, writes no param. */
+export function connectorsHref(projectId: string, scope?: ConnectorScope): string {
+  return scope && scope !== 'connectors' ? `${base(projectId)}?scope=${scope}` : base(projectId);
 }
 
 /**
@@ -59,8 +58,27 @@ export function appRefFromEntry(entry: CatalogEntry): AppRef {
   return { source: 'discover', slug: entry.slug, id: entry.connector.id };
 }
 
-export function appHref(projectId: string, app: AppRef): string {
-  return withQuery(`${base(projectId)}/${encodeURIComponent(app.slug)}`, appParams(app));
+/**
+ * An app's page. Once the project has the app it redirects to the connector
+ * page; `ways` keeps it open, to install the app as another profile.
+ */
+export function appHref(projectId: string, app: AppRef, options: { ways?: boolean } = {}): string {
+  const params = appParams(app);
+  if (options.ways) params.set(WAYS_PARAM, '1');
+  return withQuery(`${base(projectId)}/${encodeURIComponent(app.slug)}`, params);
+}
+
+const WAYS_PARAM = 'ways';
+
+/** `?ways=1`: the app page stays open on an installed app, and Browse links there. */
+export function waysFromParams(search: Pick<URLSearchParams, 'get'> | null | undefined): boolean {
+  return search?.get(WAYS_PARAM) === '1';
+}
+
+/** Browse, searching for one app, with its cards opening the app page (`ways`). */
+export function browseForAnotherProfileHref(projectId: string, name: string): string {
+  const params = withConnectorSearch(new URLSearchParams({ scope: 'browse', [WAYS_PARAM]: '1' }), name);
+  return withQuery(base(projectId), params);
 }
 
 export function appRefFromLocation(

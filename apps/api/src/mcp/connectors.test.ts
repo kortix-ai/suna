@@ -96,6 +96,25 @@ describe('call_connector', () => {
   });
 });
 
+test('call_connector: a tool_error is a failed tool result with the tool\'s text and what to do', async () => {
+  const host = {
+    projectId: () => 'proj-1',
+    arg: (input: Record<string, unknown>, key: string) => String(input[key]),
+    optionalArg: () => undefined,
+    input: (message: string) => new Error(message),
+    text: (value: string, isError?: boolean) => ({ content: [{ type: 'text', text: value }], ...(isError ? { isError } : {}) }),
+    call: async () => ({
+      status: 200,
+      body: JSON.stringify({ ok: false, status: 'tool_error', error: 'no such issue', upstream_error: 'no such issue', data: { jsonrpc: '2.0' }, binding: 'mcp', upstream_status: 200 }),
+    }),
+  } as unknown as Host;
+  const result = (await runConnectorTool('call_connector', { tool: 'linear.get_issue', args: {} }, host)) as { content: Array<{ text: string }>; isError?: boolean };
+  expect(result.isError).toBe(true);
+  const reply = JSON.parse(result.content[0]!.text);
+  expect(reply).toMatchObject({ ok: false, status: 'tool_error', error: 'no such issue', data: { jsonrpc: '2.0' } });
+  expect(reply.next).toContain('Fix the args');
+});
+
 describe('connector apps come from the one catalogue', () => {
   /** A host that records every API call. */
   function v2Host(calls: Array<{ method: string; path: string; query?: unknown; body?: unknown }>) {
@@ -105,7 +124,7 @@ describe('connector apps come from the one catalogue', () => {
       optionalArg: (input: Record<string, unknown>, key: string) => (typeof input[key] === 'string' ? (input[key] as string) : undefined),
       input: (message: string) => new Error(message),
       apiResult: (reply: { status: number; body: string }) => ({ content: [{ type: 'text', text: reply.body }], isError: true }),
-      text: (value: string) => ({ content: [{ type: 'text', text: value }] }),
+      text: (value: string, isError?: boolean) => ({ content: [{ type: 'text', text: value }], ...(isError ? { isError } : {}) }),
       call: async (method: string, path: string, opts: { query?: unknown; body?: unknown } = {}) => {
         calls.push({ method, path, ...opts });
         if (path.endsWith('/discover/connectors')) {
@@ -128,14 +147,62 @@ describe('connector apps come from the one catalogue', () => {
         if (path.endsWith('/discover/install')) {
           const body = opts.body as { id: string; way?: string; name?: string };
           if (body.id === 'kortix:missing') return { status: 404, body: JSON.stringify({ error: 'Connector not found' }) };
+          if (body.id === 'kortix:wiki' && (body as { as_new_profile?: boolean }).as_new_profile !== true) {
+            return { status: 200, body: JSON.stringify({ ok: true, existing: true, slug: 'wiki', name: 'Wiki', way: { kind: 'mcp' }, next: 'ready' }) };
+          }
+          if (body.id === 'kortix:broken') {
+            return { status: 200, body: JSON.stringify({ ok: true, existing: false, slug: 'broken', way: { kind: 'mcp' }, next: 'fix', error: 'tools/list returned 500' }) };
+          }
           const managed = body.way === 'composio:linear' || body.id === 'composio:gmail';
           const slug = body.name ? body.name.toLowerCase() : body.id.split(':')[1];
           return { status: 200, body: JSON.stringify({ ok: true, slug, name: body.name ?? slug, provider: managed ? 'composio' : 'mcp', way: { kind: managed ? 'composio' : 'mcp' }, sync: { synced: 1 }, next: 'connect' }) };
+        }
+        if (method === 'POST' && path.endsWith('/connectors')) {
+          return { status: 403, body: JSON.stringify({ error: 'An agent cannot add the custom server', code: 'custom_connector_needs_human', setup_url: 'https://app.test/setup' }) };
+        }
+        if (path.endsWith('/connectors/linear/accounts')) {
+          return { status: 200, body: JSON.stringify({ accounts: [{ connection_id: 'c1', label: 'work', owner_type: 'project', is_default: true, connected_as: 'ops@example.test' }], default_account: 'work' }) };
         }
         return { status: 201, body: JSON.stringify({ sync: { synced: 1 } }) };
       },
     } as unknown as Host;
   }
+
+  test('add_connector answers the existing profile of a way; as_new_profile adds another', async () => {
+    const calls: Array<{ method: string; path: string; body?: unknown }> = [];
+    const again = JSON.parse(((await runConnectorTool('add_connector', { project_id: 'proj-1', app: 'wiki' }, v2Host(calls))) as { content: Array<{ text: string }> }).content[0]!.text);
+    expect(again).toMatchObject({ connector: 'wiki', existing: true });
+    expect(again.next).toContain('already');
+    await runConnectorTool('add_connector', { project_id: 'proj-1', app: 'wiki', as_new_profile: true }, v2Host(calls));
+    expect(calls.filter((c) => c.path.endsWith('/discover/install')).at(-1)?.body).toMatchObject({ id: 'kortix:wiki', as_new_profile: true });
+  });
+
+  test('add_connector reports an install whose tools did not load, and a custom server a person must add', async () => {
+    const calls: Array<{ method: string; path: string; body?: unknown }> = [];
+    const broken = (await runConnectorTool('add_connector', { project_id: 'proj-1', app: 'broken' }, v2Host(calls))) as { content: Array<{ text: string }>; isError?: boolean };
+    expect(JSON.parse(broken.content[0]!.text)).toMatchObject({ connector: 'broken', error: 'tools/list returned 500' });
+    const custom = (await runConnectorTool('add_connector', { project_id: 'proj-1', provider: 'mcp', slug: 'evil', url: 'https://mcp.example.com' }, v2Host(calls))) as { content: Array<{ text: string }>; isError?: boolean };
+    expect(custom.isError).toBe(true);
+    const body = JSON.parse(custom.content[0]!.text);
+    expect(body).toMatchObject({ code: 'custom_connector_needs_human', setup_url: 'https://app.test/setup' });
+    expect(body.next).toContain('setup_url');
+  });
+
+  test('list_connector_accounts lists the accounts a call may name', async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    const out = JSON.parse(((await runConnectorTool('list_connector_accounts', { project_id: 'proj-1', connector: 'linear' }, v2Host(calls))) as { content: Array<{ text: string }> }).content[0]!.text);
+    expect(out).toEqual({
+      connector: 'linear',
+      accounts: [{ label: 'work', owner: 'shared', default: true, connected_as: 'ops@example.test', connection_id: 'c1' }],
+      default_account: 'work',
+    });
+  });
+
+  test('no tool description sends the agent to a raw API route', () => {
+    for (const t of CONNECTOR_TOOLS) {
+      expect(JSON.stringify(t)).not.toMatch(/call_api|\/v1\//);
+    }
+  });
 
   test('search_connector_apps searches the whole catalogue; kind and one_click filter it', async () => {
     const calls: Array<{ method: string; path: string; query?: unknown }> = [];
@@ -152,7 +219,7 @@ describe('connector apps come from the one catalogue', () => {
   test('add_connector installs the recommended way through the catalogue, a bare slug being a Kortix app', async () => {
     const calls: Array<{ method: string; path: string; body?: unknown }> = [];
     const result = (await runConnectorTool('add_connector', { project_id: 'proj-1', app: 'linear' }, v2Host(calls))) as { content: Array<{ text: string }> };
-    expect(calls.find((c) => c.path.endsWith('/discover/install'))?.body).toEqual({ id: 'kortix:linear', way: undefined, name: undefined, slug: undefined });
+    expect(calls.find((c) => c.path.endsWith('/discover/install'))?.body).toEqual({ id: 'kortix:linear', way: undefined, name: undefined, slug: undefined, as_new_profile: undefined });
     expect(calls.some((c) => c.method === 'POST' && c.path.endsWith('/connectors'))).toBe(false);
     expect(JSON.parse(result.content[0]!.text)).toMatchObject({ connector: 'linear', via: 'mcp' });
   });
@@ -167,6 +234,7 @@ describe('connector apps come from the one catalogue', () => {
       { way: 'stripe-docs', name: 'Stripe docs', via: 'http', one_click: false, recommended: false, installable: false, url: 'https://docs.stripe.com' },
     ]);
     expect(reply.tools).toEqual({ way: 'kortix:stripe:mcp', via: 'mcp', total: 23, source: 'directory', list: [{ name: 'list_customers', description: 'List customers' }] });
+    expect(reply.installed).toEqual([]);
     const other = (await runConnectorTool('get_connector_app', { project_id: 'proj-1', app: 'kortix:stripe', way: 'composio:stripe' }, v2Host(calls))) as { content: Array<{ text: string }> };
     expect(JSON.parse(other.content[0]!.text).tools.via).toBe('composio');
     const bad = (await runConnectorTool('get_connector_app', { project_id: 'proj-1', app: 'kortix:stripe', way: 'nope' }, v2Host(calls))) as { content: Array<{ text: string }> };
@@ -219,8 +287,8 @@ describe('list_connectors with one connector', () => {
     const gmail = await row(200);
     expect(gmail.policy_set).toBe('read_only');
     expect(gmail.policy_sets).toEqual([
-      { name: 'read_only', description: 'Read and search, never send' },
-      { name: 'outreach', description: null },
+      { name: 'read_only', description: 'Read and search, never send', agents: ['support'] },
+      { name: 'outreach', description: null, agents: [] },
     ]);
   });
 

@@ -1,3 +1,4 @@
+import { composioConnectedAccountId, composioConnectionIsNoAuth } from './db-deps-rows';
 import type { AdminConnectorView } from './router-contract';
 
 export interface AdminConnectorCandidate {
@@ -59,6 +60,7 @@ export function buildAdminConnectorViews(
   connectedSlugs: ReadonlySet<string>,
 ): AdminConnectorView[] {
   return candidates.map((candidate) => ({
+    ...connectorState(candidate, connectedSlugs),
     slug: candidate.slug,
     name: candidate.name,
     provider: candidate.provider,
@@ -78,4 +80,45 @@ export function buildAdminConnectorViews(
     accounts: candidate.accounts ?? [],
     default_account: candidate.defaultAccount ?? null,
   }));
+}
+
+/**
+ * The one state every client shows, so the web, the CLI and an agent never
+ * derive it three ways. `status` and `secretSet` stay for older clients.
+ */
+export function connectorState(
+  candidate: Pick<AdminConnectorCandidate, 'slug' | 'status' | 'requiresAuth' | 'lastError'>,
+  connectedSlugs: ReadonlySet<string>,
+): Pick<AdminConnectorView, 'state' | 'state_reason' | 'auth_needed'> {
+  const auth_needed = candidate.requiresAuth;
+  if (candidate.status === 'disabled') return { state: 'disabled', state_reason: 'disabled in kortix.yaml', auth_needed };
+  if (candidate.status === 'error') {
+    return { state: 'error', state_reason: safeConnectorLastError(candidate.lastError) ?? 'its tools could not be loaded', auth_needed };
+  }
+  if (auth_needed && !connectedSlugs.has(candidate.slug)) {
+    return { state: 'needs_account', state_reason: 'no account connected', auth_needed };
+  }
+  return { state: 'connected', state_reason: null, auth_needed };
+}
+
+/**
+ * The Composio connectors with a signed-in account the caller may use: an
+ * account that holds a Composio connected account, or a no-auth toolkit. The
+ * gateway's own test (`connectorConnected`). The default row sync creates for
+ * every connector is not an account until it is authorized, so a connector
+ * with only that row needs an account.
+ */
+export function signedInComposioSlugs(
+  rows: ReadonlyArray<{ slug: string; connectorId: string }>,
+  entitled: ReadonlyMap<string, ReadonlyArray<{ metadata: Record<string, unknown> | null }>>,
+): Set<string> {
+  return new Set(
+    rows
+      .filter((row) =>
+        (entitled.get(row.connectorId) ?? []).some(
+          (c) => composioConnectionIsNoAuth(c.metadata) || composioConnectedAccountId(c.metadata) !== null,
+        ),
+      )
+      .map((row) => row.slug),
+  );
 }

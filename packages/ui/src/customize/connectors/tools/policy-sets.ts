@@ -46,3 +46,15 @@ export function connectorPolicySetsKey(projectId: string, slug: string) {
 export function connectorPoliciesKey(projectId: string, slug: string, policySet: string | null) {
   return ['connector-policies', projectId, slug, policySet] as const;
 }
+
+/** A starting point for a new set. `empty` inherits every tool from the base rules. */
+export type PolicySetTemplate = 'empty' | 'read_only' | 'ask_before_writes';
+
+export const POLICY_SET_TEMPLATES: readonly PolicySetTemplate[] = ['read_only', 'ask_before_writes', 'empty'];
+
+/** The name a template proposes. */
+export const TEMPLATE_NAME: Record<PolicySetTemplate, string> = {
+  empty: '',
+  read_only: 'read_only',
+  ask_before_writes: 'ask_before_writes',
+};

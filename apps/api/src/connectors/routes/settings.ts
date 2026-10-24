@@ -5,6 +5,7 @@ import { policySetNameError } from '@kortix/manifest-schema';
 import { auth, errors, json } from '../../openapi';
 import { areValidConditions, isValidMatcher, normalizeConditions } from '../policy';
 import type { ConnectorRouterDeps, ProjectPolicyView } from '../router';
+import { POLICY_SET_TEMPLATES, isPolicySetTemplate, templatePolicies } from '../policy-templates';
 import {
   CrudOkSchema,
   OpaqueSchema,
@@ -304,6 +305,58 @@ export function registerConnectorSettingsRoutes(app: OpenAPIHono, deps: Connecto
   );
 
   registerConnectorPolicySetRoutes(app, deps);
+  registerRulesReadModelRoutes(app, deps);
+}
+
+/** Who uses which connector under which rules (`agent-rules-matrix.ts`). */
+function registerRulesReadModelRoutes(app: OpenAPIHono, deps: ConnectorRouterDeps): void {
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/projects/{projectId}/connectors/{slug}/agents',
+      tags: ['connector'],
+      summary: 'Every agent: may it use this connector, and under which rule set',
+      ...auth,
+      request: { params: ProjectSlugParam },
+      responses: { 200: json(OpaqueSchema, 'Agents of a connector'), ...errors(403, 404, 501) },
+    }),
+    async (c: Context) => {
+      const projectId = c.req.param('projectId')!;
+      const slug = c.req.param('slug')!;
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.getRulesMatrix) return featureNotSupportedResponse(c, 'connector_rules_matrix');
+      const matrix = await deps.getRulesMatrix(projectId);
+      const connector = matrix?.connectors.find((row) => row.slug === slug);
+      if (!matrix || !connector) return c.json({ error: 'connector not found', code: 'connector_not_found' }, 404);
+      return c.json({
+        slug,
+        policy_sets: connector.policy_sets,
+        agents: matrix.agents.map(({ agent, cells }) => ({ agent, ...cells[slug]! })),
+      });
+    },
+  );
+
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/projects/{projectId}/rules-matrix',
+      tags: ['connector'],
+      summary: 'Every connector × every agent: granted, and the rule set it runs under',
+      ...auth,
+      request: { params: ProjectParam },
+      responses: { 200: json(OpaqueSchema, 'Rules matrix'), ...errors(403, 404, 501) },
+    }),
+    async (c: Context) => {
+      const projectId = c.req.param('projectId')!;
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.getRulesMatrix) return featureNotSupportedResponse(c, 'connector_rules_matrix');
+      const matrix = await deps.getRulesMatrix(projectId);
+      if (!matrix) return c.json({ error: 'project not found' }, 404);
+      return c.json(matrix);
+    },
+  );
 }
 
 /** `?policy_set=<name>`: absent/empty/`base` = the base rules. */
@@ -396,10 +449,32 @@ function registerConnectorPolicySetRoutes(app: OpenAPIHono, deps: ConnectorRoute
           400,
         );
       }
+      if (body?.template !== undefined && !isPolicySetTemplate(body.template)) {
+        return c.json(
+          { error: `\`template\` must be one of: ${POLICY_SET_TEMPLATES.join(', ')}`, code: 'invalid_template' },
+          400,
+        );
+      }
       const description =
         body?.description === undefined ? undefined : typeof body.description === 'string' ? body.description : null;
-      const result = await deps.upsertConnectorPolicySet(projectId, admin.accountId, slug, c.req.param('name')!, description);
-      return crudResponse(c, result, result.ok ? { created: result.created ?? false } : {});
+      const name = c.req.param('name')!;
+      // A template writes the set and its rules in one commit: one rule per
+      // tool that is not likely a read. Applying it replaces the set's rules.
+      let rules: ReturnType<typeof templatePolicies> | undefined;
+      if (isPolicySetTemplate(body?.template)) {
+        const connector = (await deps.listConnectors(projectId, admin.userId, { includeSchemas: false })).find(
+          (row) => row.slug === slug,
+        );
+        rules = templatePolicies(body.template, connector?.actions ?? [], connector?.provider);
+      }
+      const result = await deps.upsertConnectorPolicySet(projectId, admin.accountId, slug, name, description, rules);
+      return crudResponse(
+        c,
+        result,
+        result.ok
+          ? { created: result.created ?? false, ...(rules ? { template: body.template, rules: rules.length } : {}) }
+          : {},
+      );
     },
   );
 

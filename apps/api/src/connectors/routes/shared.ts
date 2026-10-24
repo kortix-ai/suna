@@ -17,6 +17,7 @@ export const CatalogActionSchema = z
     name: z.string(),
     description: z.string(),
     risk: z.string(),
+    likely_risk: z.enum(['read', 'write', 'unknown']).optional(),
     inputSchema: z.any().nullable(),
     outputSchema: z.any().nullable().optional(),
   })
@@ -75,6 +76,9 @@ export const AdminConnectorSchema = CatalogConnectorSchema.extend({
   credentialSource: z.enum(['none', 'stored', 'project_secret', 'platform']),
   secretSet: z.boolean(),
   lastError: z.string().nullable(),
+  state: z.enum(['disabled', 'error', 'needs_account', 'connected']),
+  state_reason: z.string().nullable(),
+  auth_needed: z.boolean(),
 }).openapi('ConnectorAdminConnector');
 export const AdminConnectorsResponseSchema = z
   .object({ connectors: z.array(AdminConnectorSchema) })
@@ -103,6 +107,8 @@ export const CallResponseSchema = z
     output: z.any().optional(),
     upstream_status: z.number().int().nullable().optional(),
     upstream_error: z.string().optional(),
+    // `status: 'tool_error'` (HTTP 200, `ok: false`): the tool's own error text.
+    error: z.string().optional(),
     retry_after_seconds: z.number().int().optional(),
   })
   .passthrough()

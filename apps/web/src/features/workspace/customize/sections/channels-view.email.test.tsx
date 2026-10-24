@@ -96,11 +96,12 @@ mock.module('@kortix/ui/session/composer/session-chat-input', () => ({
 
 const { ChannelsSection } = await import('@kortix/ui/customize/sections/view/channels-view');
 
-function renderEmail() {
+/** Email's own page: the Channels tab lists it as a row, its page draws the hero. */
+function renderEmail(platform: 'email' | null = 'email') {
   // A server render runs no query; the client only satisfies hooks this suite does not stub.
   return renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
-      <ChannelsSection projectId="email-test" />
+      <ChannelsSection projectId="email-test" platform={platform ?? undefined} />
     </QueryClientProvider>,
   );
 }
@@ -128,11 +129,19 @@ const inbox = (email: string) => ({
 // it is a hero like every other Kortix channel; off, it is on no surface.
 // Each inbox is an ACCOUNT on the `kortix_email` connector profile.
 describe('ChannelsSection — Email', () => {
-  test('flag off: no Email hero, and no inbox is read', () => {
+  test('flag off: the Channels list has no Email row, and no inbox is read', () => {
     emailChannel = false;
-    const markup = renderEmail();
+    const markup = renderEmail(null);
+    expect(markup).not.toContain('Open Email');
+    expect(emailInboxes).not.toHaveBeenCalledWith('email-test');
+  });
+
+  test('flag on: the Channels list has an Email row that opens its page', () => {
+    inboxes = [inbox('support@kortixmail.com')];
+    const markup = renderEmail(null);
+    expect(markup).toContain('aria-label="Open Email"');
+    expect(markup).toContain('/customize/connectors/email?id=native%3Aemail');
     expect(markup).not.toContain('Give your agent an inbox');
-    expect(emailInboxes).not.toHaveBeenCalled();
   });
 
   test("flag off: Email's own page is the standard flag-off screen", () => {

@@ -131,6 +131,7 @@ import {
   useDisconnectSlack,
   useSlackInstall,
   useSlackMode,
+  useTelegramInstall,
 } from '../../../internal/hooks/channels/use-channels-installations';
 import {
   type TeamsInstallation,
@@ -160,7 +161,9 @@ import {
 import { UiLink as Link, useUiPathname, useUiRouter, useUiSearchParams } from '../../../providers/ui-provider';
 import { useEffect, useMemo, useState } from 'react';
 import { useTunnelConnections } from '@kortix/sdk/react';
-import { ComputerHero } from '../../connectors/detail/computer-app-page';
+import { useProjectComputerAccounts } from '../../../internal/tunnel/computer-connect';
+import { useEmailInboxes } from '../../../internal/hooks/channels/use-email-inboxes';
+import { appHref } from '../../connectors/connector-routes';
 import { FeatureGateScreen } from '../../shared/feature-gate-screen';
 
 /** Reserved slug for the built-in Email channel (see api connectors.ts). */
@@ -198,15 +201,12 @@ export function ChannelsSection({ projectId, platform }: { projectId: string; pl
   const openChannels = (platform: string) =>
     setChannelsDialog((dialog) => ({ open: true, platform, session: dialog.session + 1 }));
 
-  // Every channel draws as a hero, connected or not: its own page shows one
-  // platform, the Channels tab every platform, one under the other.
-  const platforms: ChannelPlatform[] = platform
-    ? [platform]
-    : ['slack', 'teams', ...(emailEnabled ? (['email'] as const) : []), 'telegram'];
+  // A channel's own page draws it as a hero. The Channels tab lists every
+  // channel as one compact row that opens that page (`ChannelsList`).
+  const platforms: ChannelPlatform[] = platform ? [platform] : [];
   // The Kortix tab also holds the computer, where this deployment can pair one
   // (the machine list answers 503 where computers are off).
   const computersEnabled = useTunnelConnections({ refetchInterval: false }).isSuccess;
-  const showComputer = !platform && computersEnabled;
 
   const hero = (pf: ChannelPlatform) => {
     switch (pf) {
@@ -260,6 +260,21 @@ export function ChannelsSection({ projectId, platform }: { projectId: string; pl
     );
   }
 
+  if (!platform) {
+    return (
+      <ChannelsList
+        projectId={projectId}
+        loading={loading}
+        slack={Boolean(install)}
+        slackDetail={install ? (install.workspaceName ?? install.workspaceId) : null}
+        teams={Boolean(teamsInstall)}
+        teamsDetail={teamsInstall ? (teamsInstall.teamName ?? teamsInstall.tenantId ?? null) : null}
+        email={emailEnabled}
+        computer={computersEnabled}
+      />
+    );
+  }
+
   return (
     /* Full width of the Connectors shell: the heroes are split cards whose
        chat preview needs the room. No heading and no scroll container here;
@@ -273,7 +288,6 @@ export function ChannelsSection({ projectId, platform }: { projectId: string; pl
                 {hero(pf)}
               </div>
             ))}
-        {showComputer && !loading ? <ComputerHero projectId={projectId} /> : null}
         <ChannelBindingsDialog
           key={channelsDialog.session}
           projectId={projectId}
@@ -284,6 +298,113 @@ export function ChannelsSection({ projectId, platform }: { projectId: string; pl
         />
       </div>
     </ChannelHeroLayoutProvider>
+  );
+}
+
+/** A channel's page: the catalogue's native entry for it. */
+function channelPageHref(projectId: string, app: ChannelPlatform | 'computer'): string {
+  return appHref(projectId, { source: 'discover', slug: app, id: `native:${app}` });
+}
+
+/**
+ * The Channels tab: one compact row per channel, connected or not, each
+ * opening the channel's own page, where its hero sets it up. Five heroes one
+ * under the other read as five ads; a list reads as what you have.
+ */
+function ChannelsList({
+  projectId,
+  loading,
+  slack,
+  slackDetail,
+  teams,
+  teamsDetail,
+  email,
+  computer,
+}: {
+  projectId: string;
+  loading: boolean;
+  slack: boolean;
+  slackDetail: string | null;
+  teams: boolean;
+  teamsDetail: string | null;
+  email: boolean;
+  computer: boolean;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tPages = useTranslations('connectorPages');
+  const inboxes = useEmailInboxes(email ? projectId : null);
+  const telegram = useTelegramInstall(projectId);
+  const computers = useProjectComputerAccounts(projectId);
+  const inboxCount = inboxes.data?.length ?? 0;
+  const rows: Array<{
+    app: ChannelPlatform | 'computer';
+    name: string;
+    connected: boolean;
+    detail: string | null;
+    pitch: string;
+  }> = [
+    { app: 'slack', name: 'Slack', connected: slack, detail: slackDetail, pitch: tI18nComplete.raw('text9bd1c37ed121') },
+    { app: 'teams', name: 'Microsoft Teams', connected: teams, detail: teamsDetail, pitch: tI18nComplete.raw('text9225e456b795') },
+    ...(email
+      ? [
+          {
+            app: 'email' as const,
+            name: tPages('channelNameEmail'),
+            connected: inboxCount > 0,
+            detail: inboxCount > 0 ? tPages('channelInboxCount', { count: inboxCount }) : null,
+            pitch: tPages('channelPitchEmail'),
+          },
+        ]
+      : []),
+    {
+      app: 'telegram',
+      name: 'Telegram',
+      connected: Boolean(telegram.data),
+      detail: null,
+      pitch: tI18nComplete.raw('text51e6bc656528'),
+    },
+    ...(computer
+      ? [
+          {
+            app: 'computer' as const,
+            name: tPages('channelNameComputer'),
+            connected: computers.accounts.length > 0,
+            detail:
+              computers.accounts.map((account) => account.label?.trim()).filter(Boolean).join(', ') || null,
+            pitch: tPages('channelPitchComputer'),
+          },
+        ]
+      : []),
+  ];
+  if (loading) {
+    return (
+      <div className="w-full max-w-3xl space-y-2">
+        {rows.map((row) => (
+          <Skeleton key={row.app} className="h-14 rounded-md" />
+        ))}
+      </div>
+    );
+  }
+  return (
+    <ul className="w-full max-w-3xl space-y-2">
+      {rows.map((row) => (
+        <ChannelRow
+          key={row.app}
+          app={row.app}
+          name={row.name}
+          connected={row.connected}
+          detail={row.detail}
+          pitch={row.pitch}
+          actions={
+            <Button asChild size="sm" variant={row.connected ? 'outline' : 'secondary'}>
+              <Link href={channelPageHref(projectId, row.app)} aria-label={tPages('channelOpenNamed', { name: row.name })}>
+                {row.connected ? tPages('open') : tPages('waySetUp')}
+              </Link>
+            </Button>
+          }
+        />
+      ))}
+    </ul>
   );
 }
 

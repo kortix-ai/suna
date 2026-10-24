@@ -62,11 +62,7 @@ export function useConnectorDetail({
   // whose only shared account had just been disconnected).
   // The server's empty shared slot is a placeholder, not an account: it is
   // not listed or counted (see `emptyProjectSlot`).
-  const rows = connectorConnectionRows(connectionsQuery.data?.connections, connector.slug);
-  const slot = emptyProjectSlot(connector, rows);
-  const accounts = rows.filter(
-    (connection) => connection !== slot && connection.status !== 'revoked',
-  );
+  const accounts = connectorAccounts(connectionsQuery.data?.connections, connector);
   const soleAccount = accounts.length === 1 ? accounts[0]! : null;
   // Server-computed and account-aware: `needs_auth` means no reachable account
   // holds a usable credential, whatever the owner type.
@@ -158,4 +154,18 @@ export function useConnectorDetail({
     computerOpen,
     setComputerOpen,
   };
+}
+
+/**
+ * A connector's accounts in a project's connection list: its rows minus
+ * revoked ones and the server's empty shared slot. The Accounts tab, the
+ * header and the Connectors list all count these, so they agree.
+ */
+export function connectorAccounts(
+  connections: readonly Connection[] | undefined,
+  connector: AdminConnector,
+): Connection[] {
+  const rows = connectorConnectionRows(connections, connector.slug);
+  const slot = emptyProjectSlot(connector, rows);
+  return rows.filter((connection) => connection !== slot && connection.status !== 'revoked');
 }

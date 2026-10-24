@@ -44,16 +44,13 @@ function render(value: string | null) {
 }
 
 describe('ConnectorPolicySetBar', () => {
-  test('every list is a tab, with the count of its rules, then New rule set', () => {
+  test('every list is a tab named in words, with how many agents use it, then New rule set', () => {
     const markup = render(null);
     expect(markup).toContain('role="tablist"');
-    const tabs = [...markup.matchAll(/role="tab"[^>]*>(.*?)<\/button>/g)].map((m) => m[1]!.replace(/<[^>]+>/g, '|'));
-    expect(tabs).toHaveLength(3);
-    expect(tabs[0]).toContain('Base rules');
-    expect(markup).toContain('aria-label="1 rule"');
-    expect(markup).toContain('aria-label="2 rules"');
-    // `outreach` has no rules: no count.
-    expect(markup.match(/aria-label="\d+ rules?"/g)).toHaveLength(2);
+    const tabs = [...markup.matchAll(/role="tab"[^>]*>(.*?)<\/button>/g)].map((m) => m[1]!.replace(/<[^>]+>/g, ''));
+    expect(tabs).toEqual(['Base rules', 'Read only · 1 agent', 'Outreach · 0 agents']);
+    expect(markup).toContain('title="read_only"');
+    expect(markup).toContain('1 rule');
     expect(markup).toContain('New rule set');
   });
 
@@ -66,6 +63,7 @@ describe('ConnectorPolicySetBar', () => {
   test("a set in use links each agent to its Connectors page and refuses delete", () => {
     const markup = render('read_only');
     expect(markup).toContain('Read and search, never send · Used by');
+    expect(markup).toContain('2 rules');
     expect(markup).toContain('href="/projects/p1/customize/agents/support?section=connectors"');
     expect(markup).toMatch(/aria-label="Delete rule set"[^>]*disabled=""|disabled=""[^>]*aria-label="Delete rule set"/);
   });

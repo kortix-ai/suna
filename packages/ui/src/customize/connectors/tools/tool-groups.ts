@@ -2,16 +2,41 @@ import type { UiTranslator } from '../../../i18n';
 import type { ConnectorAction } from '@kortix/sdk';
 
 export interface ToolGroup {
-  key: 'read' | 'write';
+  key: 'read' | 'write' | 'unclassified';
   label: string;
   actions: ConnectorAction[];
 }
 
+const READ_NAME = /^(get|list|read|search|fetch|find|query|describe|lookup|view|show|count|check)(?:\s|$)/i;
+const WRITE_NAME = /^(create|update|delete|send|post|remove|archive|set|add|edit|patch|put|insert|upsert|move|reply|cancel|close|invite|upload|merge|assign)(?:\s|$)/i;
+
 /**
- * Two buckets, because that is the only distinction a non-technical reader
- * needs before granting access: can this look at my data, or change it.
- * `destructive` folds into writes — a delete is a write with worse consequences,
- * and a third bucket would just make the safe/unsafe line harder to see.
+ * Which bucket a tool sits in. The server's `likely_risk` wins, then the
+ * stored risk. A tool the server could not classify (`unknown`, sent once tool risk is
+ * inferred server side) goes by its name, without the app prefix:
+ * `LINEAR_GET_ISSUE` reads, `send_email` writes, and the rest are
+ * unclassified. It is never shown as a write it may not be.
+ */
+export function toolBucket(
+  action: Pick<ConnectorAction, 'path' | 'name'> & { risk: string; likely_risk?: string },
+  appNames: readonly string[] = [],
+): ToolGroup['key'] {
+  // `likely_risk` is the server's reading for display; `risk` stays what the
+  // gateway enforces (an un-annotated MCP tool is stored as `write`).
+  const risk = action.likely_risk ?? action.risk;
+  if (risk === 'read') return 'read';
+  if (risk === 'write' || risk === 'destructive') return 'write';
+  const words = humanizeToolName(action.name?.trim() || action.path, appNames);
+  if (READ_NAME.test(words)) return 'read';
+  if (WRITE_NAME.test(words)) return 'write';
+  return 'unclassified';
+}
+
+/**
+ * Three buckets: can this look at my data, can it change it, or does nobody
+ * know yet. `destructive` folds into writes: a delete is a write with worse
+ * consequences. Unclassified is its own bucket, so an unknown tool is never
+ * presented as safe or as a write.
  *
  * An empty bucket is omitted rather than rendered as a heading over nothing.
  * Input order is kept inside each bucket: that is the order the connector
@@ -20,15 +45,18 @@ export interface ToolGroup {
 export function groupToolsByRisk(
   actions: readonly ConnectorAction[],
   tI18nComplete: UiTranslator,
+  appNames: readonly string[] = [],
 ): ToolGroup[] {
-  const read = actions.filter((a) => a.risk === 'read');
-  const write = actions.filter((a) => a.risk !== 'read');
-  const groups: ToolGroup[] = [];
-  if (read.length)
-    groups.push({ key: 'read', label: tI18nComplete.raw('textdd28b5cb26fd'), actions: read });
-  if (write.length)
-    groups.push({ key: 'write', label: tI18nComplete.raw('texted26c1af81cf'), actions: write });
-  return groups;
+  const buckets: Record<ToolGroup['key'], ConnectorAction[]> = { read: [], write: [], unclassified: [] };
+  for (const action of actions) buckets[toolBucket(action, appNames)].push(action);
+  const labels: Record<ToolGroup['key'], string> = {
+    read: tI18nComplete.raw('textdd28b5cb26fd'),
+    write: tI18nComplete.raw('texted26c1af81cf'),
+    unclassified: tI18nComplete.raw('text7c0a91e5b3d2'),
+  };
+  return (['read', 'write', 'unclassified'] as const)
+    .filter((key) => buckets[key].length > 0)
+    .map((key) => ({ key, label: labels[key], actions: buckets[key] }));
 }
 
 export interface ToolRowText {

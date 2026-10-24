@@ -816,7 +816,7 @@ export async function upsertOAuth2Credential(
     createdBy?: string | null;
   },
   runtime: OAuth2CredentialRuntime = {},
-): Promise<void> {
+): Promise<{ expiresAt: number }> {
   const token = runtime.acquire
     ? await runtime.acquire(opts.oauth2)
     : await acquireOAuth2ClientCredentialsToken(opts.oauth2);
@@ -828,6 +828,7 @@ export async function upsertOAuth2Credential(
     kind: 'oauth2_client_credentials',
     createdBy: opts.createdBy,
   });
+  return { expiresAt: token.expires_at };
 }
 
 /**

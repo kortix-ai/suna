@@ -172,8 +172,29 @@ describe('runInstall', () => {
       target: mcp(false),
       connectors: [{ slug: 'resend-zzz999', provider: 'mcp', name: 'Resend' }],
     });
-    expect(result).toEqual({ status: 'installed', slug: 'resend-zzz999' });
+    expect(result).toEqual({ status: 'installed', slug: 'resend-zzz999', existing: true });
     expect(drafts).toHaveLength(0);
+  });
+
+  test('another profile of the same app is added only when asked for', async () => {
+    const { deps, drafts } = fakeDeps();
+    const result = await runInstall(deps, {
+      projectId: 'p1',
+      target: mcp(false),
+      connectors: [{ slug: 'resend-zzz999', provider: 'mcp', name: 'Resend' }],
+      asNewProfile: true,
+    });
+    expect(result).toEqual({ status: 'installed', slug: 'resend-abc123' });
+    expect(drafts).toHaveLength(1);
+  });
+
+  test('a server that finds the profile itself opens that one', async () => {
+    const { deps } = fakeDeps({ createConnector: async () => ({ existing: true, slug: 'resend-zzz999' }) });
+    expect(await runInstall(deps, { projectId: 'p1', target: managed, connectors: [] })).toEqual({
+      status: 'installed',
+      slug: 'resend-zzz999',
+      existing: true,
+    });
   });
 
   test('a renamed connector is left alone: Install adds a second profile', async () => {

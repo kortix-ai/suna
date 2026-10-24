@@ -74,6 +74,8 @@ import {
   POLICY_SEGMENTS,
 } from '../tools/tool-policy-labels';
 import { CatalogNoMatch } from '../../shared/catalog/catalog-empty-state';
+import { UiLink as Link } from '../../../providers/ui-provider';
+import { connectorsHref } from '../connector-routes';
 
 /** Below this many tools the search field is clutter; above it the list is
  *  unusable without one. */
@@ -81,8 +83,6 @@ const SEARCH_THRESHOLD = 6;
 
 const POLICY_QUERY_STALE_MS = 5_000;
 
-const LOCKED_REASON =
-  'A project rule already decides this tool. Change it under Global rules on the Connectors page.';
 
 type PoliciesData = Awaited<ReturnType<typeof getConnectorPolicies>>;
 
@@ -115,9 +115,9 @@ interface ConnectorToolsProps {
  * Three things make this readable to someone who is not going to study a
  * policy engine:
  *
- * 1. **Two groups, not three.** `groupToolsByRisk` folds `destructive` into
- *    writes. The only question a reader is equipped to answer before granting
- *    access is "can this look at my data, or change it".
+ * 1. **Read, write, unclassified.** `groupToolsByRisk` folds `destructive`
+ *    into writes, and a tool nobody classified gets its own group instead of
+ *    passing for a write.
  * 2. **Default is a state, not a value.** A tool the platform allows by
  *    default renders with NO segment lit and a `Hint` naming the default.
  *    Lighting Allow would claim a choice nobody made.
@@ -228,7 +228,10 @@ export function ConnectorTools({
         !isLockedByProject(action.path, effective),
     );
   }, [connector.actions, query, onlyChanged, policies, effective, scope]);
-  const groups = useMemo(() => groupToolsByRisk(matches, tI18nComplete), [matches, tI18nComplete]);
+  const groups = useMemo(
+    () => groupToolsByRisk(matches, tI18nComplete, appNames),
+    [matches, tI18nComplete, appNames],
+  );
 
   const projectLockedCount = useMemo(
     () => effective.filter((entry) => entry.source === 'project').length,
@@ -334,6 +337,17 @@ export function ConnectorTools({
       ? t('toolsInheritAs', { action: resolved })
       : t('toolsDefaultAs', { action: resolved });
   };
+  // What decides a tool left on Default/Inherit, named the way the page names
+  // it: the base rules, the sensitive flag, or the project's default mode.
+  const decidedBy = (path: string) => {
+    const entry = (scope === 'set' ? baseEffective : effective).find((e) => e.path === path);
+    if (scope === 'set' && entry?.source !== 'risk_default' && entry?.source !== 'allow_all') {
+      return t('toolsFromBase');
+    }
+    if (entry?.source === 'connector') return t('toolsFromBase');
+    if (sensitive) return t('toolsFromSensitive');
+    return t('toolsFromDefault');
+  };
   const summaryParts = [
     t('toolsSummaryTotal', { count: summary.total }),
     summary.block > 0 ? t('toolsSummaryBlocked', { count: summary.block }) : null,
@@ -395,7 +409,13 @@ export function ConnectorTools({
                 : tI18nComplete.raw('textd50ab26e1621'),
           })}
         >
-          {tI18nComplete.raw('textf7d6d7f585c5')}
+          {t('toolsProjectLockedBody')}{' '}
+          <Link
+            href={connectorsHref(projectId, 'rules')}
+            className="text-foreground underline underline-offset-4"
+          >
+            {t('toolsOpenRules')}
+          </Link>
         </InfoBanner>
       ) : null}
 
@@ -511,6 +531,11 @@ export function ConnectorTools({
                                 </code>
                               ) : null}
                             </div>
+                            {choice === 'default' && !locked ? (
+                              <p className="text-muted-foreground text-xs">
+                                {decidedBy(action.path)}
+                              </p>
+                            ) : null}
                             {row.description ? (
                               <Hint label={row.description} side="bottom">
                                 <p className="text-muted-foreground truncate text-xs">
@@ -527,7 +552,7 @@ export function ConnectorTools({
                           value={choice}
                           onChange={(next) => setToolPolicy(action.path, next)}
                           disabled={frozen || busy}
-                          lockedReason={locked ? LOCKED_REASON : undefined}
+                          lockedReason={locked ? t('toolsLockedByProject') : undefined}
                           defaultLabel={inheritLabel(action.path, choice, action)}
                         />
                       </li>

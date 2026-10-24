@@ -26,6 +26,8 @@ let moveAnswers: Array<{ status: number; body: unknown }> = [];
 /** Slugs the fake server switched to `mcp`: an active sign-in switches the marked connector. */
 let switched = new Set<string>();
 let switchOnSignIn = true;
+/** Extra fields POST .../discover/install answers with (e.g. `existing: true`). */
+let installExtra: Record<string, unknown> = {};
 
 function writeConfig(apiBase: string): string {
   const path = join(tmp, 'config.json');
@@ -151,13 +153,35 @@ function startServer(): string {
       if (url.pathname === `${ex}/discover/sections` && req.method === 'GET') {
         return Response.json({ popular: [], sections: [], categories: [{ key: 'finance', label: 'Finance', count: 71 }, { key: 'crm', label: 'CRM', count: 40 }] });
       }
+      if (url.pathname === `${ex}/connectors` && req.method === 'POST') {
+        return Response.json(
+          { error: 'a person must confirm this server', code: 'custom_connector_needs_human', setup_url: 'https://app.kortix.test/projects/p/customize/connectors?url=x' },
+          { status: 403 },
+        );
+      }
       if (url.pathname === `${ex}/discover/install` && req.method === 'POST') {
-        return Response.json({ ok: true, slug: 'billing', name: 'Billing', provider: 'composio', way: { id: 'composio:stripe', kind: 'composio', name: 'Stripe', oneClick: true }, next: 'connect' });
+        return Response.json({ ok: true, slug: 'billing', name: 'Billing', provider: 'composio', way: { id: 'composio:stripe', kind: 'composio', name: 'Stripe', oneClick: true }, next: 'connect', ...installExtra });
+      }
+      if (url.pathname === `${ex}/connectors/billing/policies` && req.method === 'GET') {
+        return Response.json({
+          policies: [],
+          sensitive: false,
+          effective: [
+            { path: 'create_charge', action: 'block', source: 'policy_set', risk: 'write', rule: { match: 'create_*', action: 'block' } },
+            { path: 'list_charges', action: 'always_run', source: 'risk_default', risk: 'read' },
+          ],
+        });
+      }
+      if (url.pathname === `${ex}/connectors/billing/oauth2/connection` && req.method === 'PUT') {
+        return Response.json({ ok: true, slug: 'billing', account: 'default', expires_at: '2026-10-24T21:00:00.000Z' });
+      }
+      if (url.pathname === `${ex}/connectors/billing/policy-sets/readonly` && req.method === 'PUT') {
+        return Response.json({ ok: true, created: true, policies: [{ match: 'create_charge', action: 'block' }] });
       }
       if (url.pathname === `${ex}/discover/connectors` && req.method === 'GET') {
         return Response.json({
           items: [
-            { id: 'stripe', kind: 'api', slug: 'stripe', name: 'Stripe', description: 'Payments', url: null, categories: ['finance'] },
+            { id: 'stripe', kind: 'api', slug: 'stripe', name: 'Stripe', description: 'Payments', url: null, categories: ['finance'], installed: ['billing'] },
             { id: 'linear', kind: 'api', slug: 'linear', name: 'Linear', description: 'Issues', url: null, categories: ['dev'] },
           ],
           total: 2,
@@ -277,6 +301,7 @@ describe('kortix connectors — capability-page parity', () => {
     tmp = mkdtempSync(join(tmpdir(), 'kortix-connectors-'));
     process.env = { ...ORIGINAL_ENV };
     calls = [];
+    installExtra = {};
     switched = new Set();
     switchOnSignIn = true;
     projectPolicies = [{ match: 'send_*', action: 'require_approval' }];
@@ -309,7 +334,7 @@ describe('kortix connectors — capability-page parity', () => {
   test('--help documents every new subcommand', async () => {
     const r = await runCli(['connectors', '--help']);
     expect(r.code).toBe(0);
-    for (const fragment of ['sensitive <slug> on|off', 'owner <slug> project|user', 'catalog show <id>', 'policy add <match> <action>', 'policy rm <match>', '--device']) {
+    for (const fragment of ['sensitive <slug> on|off', '--new-profile', '--oauth2-client-credentials', 'policy <slug> effective', 'agents <slug>', 'rules [--json]', 'catalog show <id>', 'policy add <match> <action>', 'policy rm <match>', '--device']) {
       expect(r.stdout).toContain(fragment);
     }
   });
@@ -319,6 +344,9 @@ describe('kortix connectors — capability-page parity', () => {
     expect(r.code).toBe(0);
     expect(r.stdout).not.toContain('machines <slug>');
     expect(r.stdout).toContain('--account "<machine name>"');
+    // Removed ideas stay out of the help: no connection mode, no owner strategy.
+    expect(r.stdout).not.toContain('mode <slug> shared');
+    expect(r.stdout).not.toContain('owner <slug> project|user');
   });
 
   test('ls and show opt out of action schemas; show --json still asks for them', async () => {
@@ -654,6 +682,88 @@ describe('kortix connectors — capability-page parity', () => {
     expect(calls.at(-1)).toMatchObject({ method: 'POST', path: `/v1/connectors/projects/${PROJECT}/discover/install`, body: { id: 'kortix:stripe', way: 'composio:stripe', name: 'Billing', slug: 'billing' } });
     expect(r.stdout).toContain('connector profile');
     expect(r.stdout).toContain('kortix connectors connect billing');
+  });
+
+  test('catalog install of an installed app changes nothing, names the slug and exits 3', async () => {
+    const config = writeConfig(startServer());
+    installExtra = { existing: true };
+    const r = await runCli(['connectors', 'catalog', 'install', 'kortix:stripe', '--project', PROJECT], config);
+    expect(r.code).toBe(3);
+    expect((calls.at(-1)!.body as Record<string, unknown>).as_new_profile).toBeUndefined();
+    expect(r.stdout).toContain('already installed as billing');
+    expect(r.stdout).toContain('kortix connectors connect billing --label <name>');
+    expect(r.stdout).toContain('kortix connectors policy-sets billing create <name>');
+    expect(r.stdout).toContain('--new-profile');
+  });
+
+  test('catalog install --new-profile asks for a second profile', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'catalog', 'install', 'kortix:stripe', '--new-profile', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)!.body).toMatchObject({ id: 'kortix:stripe', as_new_profile: true });
+  });
+
+  test('catalog install of a no-sign-in app prints Ready with the call to run', async () => {
+    const config = writeConfig(startServer());
+    installExtra = { next: 'ready' };
+    const r = await runCli(['connectors', 'catalog', 'install', 'kortix:stripe', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('Ready, no sign-in needed: kortix connectors call billing <action>');
+  });
+
+  test('catalog install whose first sync failed prints the reason and exits 1', async () => {
+    const config = writeConfig(startServer());
+    installExtra = { next: 'fix', error: 'spec has no operations' };
+    const r = await runCli(['connectors', 'catalog', 'install', 'kortix:stripe', '--project', PROJECT], config);
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain('spec has no operations');
+  });
+
+  test('catalog rows name the profile an app is installed as', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'catalog', 'pay', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toMatch(/stripe .*· installed as billing/);
+  });
+
+  test('credential --oauth2-client-credentials sends the client and the secret from a file', async () => {
+    const config = writeConfig(startServer());
+    const secretFile = join(tmp, 'secret.txt');
+    writeFileSync(secretFile, 's3cret\n');
+    const r = await runCli(['connectors', 'credential', 'billing', '--oauth2-client-credentials', '--token-url', 'https://auth.example.test/token', '--client-id', 'abc', '--client-secret-from', secretFile, '--scope', 'read write', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)).toMatchObject({
+      method: 'PUT',
+      path: `/v1/connectors/projects/${PROJECT}/connectors/billing/oauth2/connection`,
+      body: { token_url: 'https://auth.example.test/token', client_id: 'abc', client_secret: 's3cret', scopes: ['read', 'write'] },
+    });
+    expect(r.stdout).not.toContain('s3cret');
+  });
+
+  test('policy-sets create --template sends the API spelling and prints the rules it wrote', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'policy-sets', 'billing', 'create', 'readonly', '--template', 'read-only', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)!.body).toEqual({ template: 'read_only' });
+    expect(r.stdout).toContain('create_charge → block');
+    const bad = await runCli(['connectors', 'policy-sets', 'billing', 'create', 'x', '--template', 'loose', '--project', PROJECT], config);
+    expect(bad.code).not.toBe(0);
+  });
+
+  test('add of a server the catalog lacks, refused for an agent, hands back the setup link', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'add', 'acme', '--provider', 'mcp', '--url', 'https://mcp.acme.test/mcp', '--apply', '--project', PROJECT], config);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('https://app.kortix.test/projects/p/customize/connectors?url=x');
+  });
+
+  test('policy <slug> effective reads the policies route and names the deciding layer', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'policy', 'billing', 'effective', '--policy-set', 'readonly', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/connectors/billing/policies?policy_set=readonly`);
+    expect(r.stdout).toMatch(/create_charge +write +blocked +rule set \(create_\* → block\)/);
+    expect(r.stdout).toMatch(/list_charges +read +runs +default mode/);
   });
 
   test('catalog show reads the detail route by id', async () => {
