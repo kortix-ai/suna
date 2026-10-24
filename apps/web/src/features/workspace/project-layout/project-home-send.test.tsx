@@ -95,8 +95,10 @@ const handle: SessionPromptPart = {
   mime: 'application/pdf',
 };
 
-function mount(onSend: ComponentProps<typeof ProjectHome>['onSend']) {
-  renderToStaticMarkup(createElement(ProjectHome, { projectId: 'project-1', onSend, busy: false }));
+function mount(onSend: ComponentProps<typeof ProjectHome>['onSend'], onboarding = true) {
+  renderToStaticMarkup(
+    createElement(ProjectHome, { projectId: 'project-1', onSend, busy: false, onboarding }),
+  );
 }
 
 afterEach(() => {
@@ -166,6 +168,15 @@ test('a member who cannot set the project up never gets the onboarding chat', ()
   onboardedAt = null;
   canWrite = false;
   mount(mock(async () => {}));
+
+  expect(composer.placeholder).toBe('Message');
+});
+
+// A white-label or SDK host renders the same home without the prop: its
+// first run is its own, so an unstamped project shows the usual home.
+test('a host that does not opt in never gets the onboarding chat', () => {
+  onboardedAt = null;
+  mount(mock(async () => {}), false);
 
   expect(composer.placeholder).toBe('Message');
 });

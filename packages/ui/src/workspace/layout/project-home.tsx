@@ -74,6 +74,12 @@ export type ProjectHomeProps = {
   busy?: boolean;
   /** With the default send: runs first; throw to refuse the send (the draft stays). */
   beforeSend?: () => Promise<void>;
+  /**
+   * Open the onboarding chat while the project is not onboarded, and send
+   * "Onboard me" once a model is usable. Off by default: a white-label or SDK
+   * host decides its own first run. Kortix web turns it on.
+   */
+  onboarding?: boolean;
 };
 
 /**
@@ -93,6 +99,7 @@ function ProjectHomeView({
   onSend,
   busy,
   beforeSend,
+  onboarding: onboardingEnabled = false,
 }: ProjectHomeProps) {
   const defaultSend = useProjectHomeSend(projectId, { beforeSend });
   const { HomeAnnouncement } = useUiComponents();
@@ -173,7 +180,8 @@ function ProjectHomeView({
   // query never flashes the onboarding chat at someone it is not for.
   const canSetUpProject =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_WRITE).allowed === true;
-  const onboarding = projectDetailQuery.isSuccess && !onboarded && canSetUpProject;
+  const onboarding =
+    onboardingEnabled && projectDetailQuery.isSuccess && !onboarded && canSetUpProject;
 
   // Once per mount: a second prefill id would send a second kickoff.
   const kickoffQueuedRef = useRef(false);
