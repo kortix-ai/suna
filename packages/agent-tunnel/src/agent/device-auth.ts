@@ -291,7 +291,7 @@ export function openBrowser(url: string): void {
   const [command, args] = opener[platform()] ?? ['xdg-open', [safeUrl]];
 
   try {
-    spawn(command, args, { detached: true, stdio: 'ignore' }).unref();
+    spawn(command, args, { detached: true, stdio: 'ignore' }).on('error', () => {}).unref();
   } catch {
     // An unopenable browser is not fatal: the URL is printed too.
   }
