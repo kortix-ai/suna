@@ -22659,7 +22659,9 @@
     "diagramEdit": "编辑图表",
     "diagramDone": "完成",
     "codeLanguage": "代码语言",
-    "editedAgo": "编辑于 {time}"
+    "editedAgo": "编辑于 {time}",
+    "openFullPage": "全页打开",
+    "close": "关闭"
   },
   "emailConnect": {
     "homeTitle": "收件箱所在位置",
