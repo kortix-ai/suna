@@ -2001,7 +2001,7 @@
   },
   "src/projects/routes/channel-email.ts": {
     "no-restricted-syntax": {
-      "count": 5
+      "count": 1
     }
   },
   "src/projects/routes/channel-slack.ts": {

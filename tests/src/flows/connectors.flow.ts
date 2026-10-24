@@ -5708,3 +5708,413 @@ flow(
     });
   },
 );
+
+// ── CONN-40 — connector policy sets: one profile, a rule set per agent ──────
+// One MCP connector profile (one sign-in) carries named policy sets in
+// kortix.yaml; each agent is given one. The same tool call through the real
+// gateway runs for one agent and is blocked or held for the other. Project
+// rules still win over a set, editing a set changes the next call, the set
+// lives in kortix.yaml on main, and a set in use cannot be deleted.
+flow(
+  'CONN-40',
+  {
+    domain: 'connectors',
+    requires: ['database'],
+    timeoutMs: 300_000,
+    routes: [
+      'POST /v1/accounts/tokens',
+      'POST /v1/connectors/projects/:projectId/connectors',
+      'DELETE /v1/connectors/projects/:projectId/connectors/:slug',
+      'GET /v1/connectors/projects/:projectId/connectors/:slug/policies',
+      'PUT /v1/connectors/projects/:projectId/connectors/:slug/policies',
+      'GET /v1/connectors/projects/:projectId/connectors/:slug/policy-sets',
+      'PUT /v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name',
+      'PUT /v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name/name',
+      'DELETE /v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name',
+      'PUT /v1/connectors/projects/:projectId/policies',
+      'POST /v1/connectors/projects/:projectId/call',
+      'GET /v1/connectors/projects/:projectId/catalog',
+      'PUT /v1/projects/:projectId/agents/:agentName/config',
+      'PUT /v1/projects/:projectId/agents/:agentName/scope',
+      'GET /v1/projects/:projectId/files/content',
+    ],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') {
+      await ctx.step('deployed targets cannot reach a runner-local MCP server: skipped', async () => {});
+      return;
+    }
+    const team = await ctx.fixtures.team();
+    const p = await team.project({ managedGit: true });
+    const ownerUserId = ctx.P.OWNER.userId;
+    if (!ownerUserId) throw new Error('OWNER principal has no userId');
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: p.id };
+    const slug = `ke2e-sets-${Date.now().toString(36)}`;
+    const slugParams = { projectId: p.id, slug };
+    const { createServer } = await import('node:http');
+    const { randomUUID } = await import('node:crypto');
+
+    // A runner-local MCP server (streamable HTTP, JSON answers) with one read
+    // tool and one write tool. `ran` records every tools/call it served.
+    const ran: string[] = [];
+    const upstream = createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk: Buffer) => chunks.push(chunk));
+      req.on('end', () => {
+        const msg = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as {
+          id?: number | string;
+          method?: string;
+          params?: { name?: string };
+        };
+        if (msg.id === undefined) {
+          res.writeHead(202);
+          res.end();
+          return;
+        }
+        const reply = (result: unknown) => {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result }));
+        };
+        if (msg.method === 'initialize') {
+          return reply({
+            protocolVersion: '2025-03-26',
+            capabilities: { tools: {} },
+            serverInfo: { name: 'ke2e-notes', version: '1.0.0' },
+          });
+        }
+        if (msg.method === 'tools/list') {
+          const schema = { type: 'object', properties: { text: { type: 'string' } } };
+          return reply({
+            tools: [
+              { name: 'list_items', description: 'List the notes', inputSchema: schema, annotations: { readOnlyHint: true } },
+              { name: 'send_note', description: 'Send a note to the team', inputSchema: schema },
+            ],
+          });
+        }
+        if (msg.method === 'tools/call') {
+          ran.push(String(msg.params?.name));
+          return reply({ content: [{ type: 'text', text: `ran ${msg.params?.name}` }] });
+        }
+        reply({});
+      });
+    });
+    const port = await new Promise<number>((resolve) =>
+      upstream.listen(0, '127.0.0.1', () => resolve((upstream.address() as { port: number }).port)),
+    );
+
+    const db = await connectFlowDb(ctx);
+    const sessions: Record<'support' | 'sales', { sessionId: string; client: typeof ctx.client }> = {
+      support: { sessionId: randomUUID(), client: ctx.client },
+      sales: { sessionId: randomUUID(), client: ctx.client },
+    };
+    const call = (agent: 'support' | 'sales', action: string) =>
+      sessions[agent].client.post(
+        '/v1/connectors/projects/:projectId/call',
+        { connector: slug, action, args: { text: 'hello' } },
+        { params, timeoutMs: 60_000 },
+      );
+    const lastAudit = async (agent: 'support' | 'sales', action: string) => {
+      const r = await db.query<{ status: string; result_summary: Record<string, unknown> | null }>(
+        `SELECT status, result_summary FROM kortix.connector_calls
+          WHERE session_id = $1 AND action_path = $2 ORDER BY created_at DESC LIMIT 1`,
+        [sessions[agent].sessionId, `${slug}.${action}`],
+      );
+      const row = r.rows[0];
+      if (!row) throw new Error(`no audit row for ${agent} ${action}`);
+      return row;
+    };
+    const setRules = (name: string | null, policies: Array<Record<string, unknown>>) =>
+      owner.put(
+        '/v1/connectors/projects/:projectId/connectors/:slug/policies',
+        { policies },
+        { params: slugParams, ...(name ? { query: { policy_set: name } } : {}), timeoutMs: 60_000 },
+      );
+
+    try {
+      await ctx.step('add one MCP connector profile through the API: sync lists its two tools from the server', async () => {
+        const created = await owner.post(
+          '/v1/connectors/projects/:projectId/connectors',
+          { slug, name: 'KE2E Notes', provider: 'mcp', url: `http://127.0.0.1:${port}/mcp`, auth: { type: 'none' }, create_only: true },
+          { params, timeoutMs: 60_000 },
+        );
+        created.status(200);
+        const read = await owner.get('/v1/connectors/projects/:projectId/connectors/:slug/policies', { params: slugParams });
+        read.status(200);
+        const paths = read.json<{ effective: Array<{ path: string }> }>().effective.map((e) => e.path).sort();
+        if (paths.join(',') !== 'list_items,send_note') throw new Error(`synced tools: ${paths.join(',')}`);
+        // The one shared account of this profile: both agents use it.
+        await db.query(
+          `INSERT INTO kortix.connector_connections (account_id, project_id, connector_id, owner_type, label, status, is_default, metadata)
+           SELECT account_id, project_id, connector_id, 'project', 'Team notes', 'active', true, $3::jsonb
+             FROM kortix.connectors WHERE project_id = $1 AND slug = $2
+           ON CONFLICT DO NOTHING`,
+          [p.id, slug, JSON.stringify({ provider: 'mcp', connector_slug: slug })],
+        );
+      });
+
+      await ctx.step('declare agents support and sales, both granted the same profile', async () => {
+        for (const agentName of ['support', 'sales']) {
+          (await owner.put(
+            '/v1/projects/:projectId/agents/:agentName/config',
+            { connectors: [slug], secrets: 'all', kortix_permissions: 'all', skills: 'all' },
+            { params: { projectId: p.id, agentName }, timeoutMs: 60_000 },
+          )).status(200);
+        }
+      });
+
+      await ctx.step('create set read_only and write its rules (send_note blocked, list_items always runs)', async () => {
+        const created = await owner.put(
+          '/v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name',
+          { description: 'Read, never send' },
+          { params: { ...slugParams, name: 'read_only' }, timeoutMs: 60_000 },
+        );
+        created.status(200).body().has('$.ok', true).has('$.created', true);
+        (await setRules('read_only', [
+          { match: 'send_note', action: 'block' },
+          { match: 'list_items', action: 'always_run' },
+        ])).status(200).body().has('$.ok', true);
+        const read = await owner.get('/v1/connectors/projects/:projectId/connectors/:slug/policies', {
+          params: slugParams,
+          query: { policy_set: 'read_only' },
+        });
+        read.status(200).body().has('$.policy_set', 'read_only');
+        const rules = read.json<{ policies: Array<{ match: string; action: string }> }>().policies;
+        if (rules.map((r) => `${r.match}=${r.action}`).join(',') !== 'send_note=block,list_items=always_run') {
+          throw new Error(`set rules read back ${JSON.stringify(rules)}`);
+        }
+        // The base rules stay empty: the set did not leak into them.
+        (await owner.get('/v1/connectors/projects/:projectId/connectors/:slug/policies', { params: slugParams }))
+          .status(200).body().has('$.policies', []);
+        // Rules in the set body are refused: one writer of set rules.
+        (await owner.put(
+          '/v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name',
+          { policies: [] },
+          { params: { ...slugParams, name: 'read_only' } },
+        )).status(400).body().has('$.code', 'use_policies_route');
+      });
+
+      await ctx.step('the scope route refuses an unknown set, an ungranted connector, and a bad name', async () => {
+        const scope = (body: Record<string, unknown>) =>
+          owner.put('/v1/projects/:projectId/agents/:agentName/scope', body, {
+            params: { projectId: p.id, agentName: 'support' },
+            timeoutMs: 60_000,
+          });
+        (await scope({ policy_sets: { [slug]: 'no_such_set' } })).status(400).body().has('$.code', 'policy_set_not_found');
+        (await scope({ policy_sets: { 'other-connector': 'read_only' } })).status(400).body().has('$.code', 'connector_not_granted');
+        (await scope({ policy_sets: { [slug]: 'Bad Name' } })).status(400).body().has('$.code', 'invalid_policy_set_name');
+      });
+
+      await ctx.step('give support the read_only set; the set list names support as its user', async () => {
+        const r = await owner.put(
+          '/v1/projects/:projectId/agents/:agentName/scope',
+          { policy_sets: { [slug]: 'read_only' } },
+          { params: { projectId: p.id, agentName: 'support' }, timeoutMs: 60_000 },
+        );
+        r.status(200).body().has(`$.policy_sets.${slug}`, 'read_only');
+        const list = await owner.get('/v1/connectors/projects/:projectId/connectors/:slug/policy-sets', { params: slugParams });
+        list.status(200);
+        const sets = list.json<{ sets: Array<{ name: string; description: string | null; agents: string[] }> }>().sets;
+        const ro = sets.find((s) => s.name === 'read_only');
+        if (!ro || ro.description !== 'Read, never send' || JSON.stringify(ro.agents) !== '["support"]') {
+          throw new Error(`policy-sets list: ${JSON.stringify(sets)}`);
+        }
+      });
+
+      await ctx.step('kortix.yaml on main holds the set, its rules and the assignment', async () => {
+        const r = await owner.get('/v1/projects/:projectId/files/content', { params, query: { path: 'kortix.yaml' } });
+        r.status(200);
+        const yaml = r.json<{ content: string }>().content;
+        for (const needle of ['policy_sets:', 'read_only:', 'description: Read, never send', 'match: send_note', `${slug}: read_only`]) {
+          if (!yaml.includes(needle)) throw new Error(`kortix.yaml lacks "${needle}":\n${yaml}`);
+        }
+      });
+
+      await ctx.step('seed one running session per agent, each with a session-bound token', async () => {
+        for (const agent of ['support', 'sales'] as const) {
+          const { sessionId } = sessions[agent];
+          const minted = await owner.post('/v1/accounts/tokens', { name: `CONN-40 ${agent} ${sessionId.slice(0, 8)}` });
+          minted.status(201);
+          const credential = minted.json<{ token_id: string; secret_key: string }>();
+          sessions[agent].client = ctx.client.withBearer(credential.secret_key, 'SESSION_TOKEN');
+          await db.query(
+            `INSERT INTO kortix.project_sessions
+               (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility)
+             VALUES ($1, $2, $3, $4, $5, 'running', $6, 'project')`,
+            [sessionId, team.id, p.id, `ke2e/${sessionId}`, agent, ownerUserId],
+          );
+          await db.query(
+            `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status)
+             VALUES ($1::uuid, $1, $2, $3, 'active')`,
+            [sessionId, team.id, p.id],
+          );
+          // A grant without manifest provenance: the gateway re-derives it
+          // from kortix.yaml on the first call, policy sets included.
+          await db.query(
+            `UPDATE kortix.account_tokens
+                SET account_id = $2, user_id = $3, project_id = $4, session_id = $5, agent_grant = $6::jsonb
+              WHERE token_id = $1`,
+            [credential.token_id, team.id, ownerUserId, p.id, sessionId, JSON.stringify({ agent, connectors: [], permissions: [], env: [] })],
+          );
+        }
+      });
+
+      await ctx.step('the same send_note call: support is blocked by its set, sales runs on the base rules', async () => {
+        const before = ran.length;
+        const blocked = await call('support', 'send_note');
+        blocked.status(403)
+          .body()
+          .has('$.status', 'denied')
+          .has('$.reason', 'policy_block')
+          .has('$.policy_set', 'read_only')
+          .has('$.agent', 'support');
+        if (!String(blocked.json<{ message?: string }>().message).includes('read_only')) {
+          throw new Error(`denial message does not name the set: ${blocked.text()}`);
+        }
+        if (ran.length !== before) throw new Error('the blocked call reached the MCP server');
+        const audit = await lastAudit('support', 'send_note');
+        if (audit.status !== 'denied' || audit.result_summary?.policy_source !== 'policy_set'
+          || audit.result_summary?.policy_set !== 'read_only' || audit.result_summary?.agent !== 'support') {
+          throw new Error(`support audit row: ${JSON.stringify(audit)}`);
+        }
+        const allowed = await call('sales', 'send_note');
+        allowed.status(200).body().has('$.ok', true);
+        if (ran.at(-1) !== 'send_note') throw new Error(`sales call did not reach the server: ${JSON.stringify(ran)}`);
+        const salesAudit = await lastAudit('sales', 'send_note');
+        if (salesAudit.result_summary?.policy_set !== undefined) {
+          throw new Error(`a caller without a set got set audit keys: ${JSON.stringify(salesAudit)}`);
+        }
+      });
+
+      await ctx.step("the catalog hides the tool support's set blocks and names the set; sales sees both tools", async () => {
+        const entries = async (agent: 'support' | 'sales') => {
+          const r = await sessions[agent].client.get('/v1/connectors/projects/:projectId/catalog', { params });
+          r.status(200);
+          const entry = r.json<{ connectors: Array<{ slug: string; policy_set?: string; actions?: Array<{ path: string }> }> }>()
+            .connectors.find((c) => c.slug === slug);
+          if (!entry) throw new Error(`${agent} catalog lacks ${slug}: ${r.text().slice(0, 300)}`);
+          return entry;
+        };
+        const support = await entries('support');
+        const sales = await entries('sales');
+        if (support.policy_set !== 'read_only') throw new Error(`support catalog entry: ${JSON.stringify(support)}`);
+        const supportPaths = (support.actions ?? []).map((a) => a.path);
+        if (supportPaths.includes('send_note') || !supportPaths.includes('list_items')) {
+          throw new Error(`support catalog actions: ${supportPaths.join(',')}`);
+        }
+        const salesPaths = (sales.actions ?? []).map((a) => a.path).sort();
+        if (salesPaths.join(',') !== 'list_items,send_note') throw new Error(`sales catalog actions: ${salesPaths.join(',')}`);
+      });
+
+      await ctx.step('give sales the outreach set (send_note needs approval): its call is held, the card names the set', async () => {
+        (await owner.put(
+          '/v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name',
+          {},
+          { params: { ...slugParams, name: 'outreach' }, timeoutMs: 60_000 },
+        )).status(200).body().has('$.created', true);
+        (await setRules('outreach', [{ match: 'send_note', action: 'require_approval' }])).status(200);
+        (await owner.put(
+          '/v1/projects/:projectId/agents/:agentName/scope',
+          { policy_sets: { [slug]: 'outreach' } },
+          { params: { projectId: p.id, agentName: 'sales' }, timeoutMs: 60_000 },
+        )).status(200).body().has(`$.policy_sets.${slug}`, 'outreach');
+        const before = ran.length;
+        const held = await call('sales', 'send_note');
+        held.status(202).body().has('$.status', 'pending_approval').exists('$.execution_id');
+        if (ran.length !== before) throw new Error('the held call reached the MCP server');
+        const audit = await lastAudit('sales', 'send_note');
+        if (audit.status !== 'pending_approval' || audit.result_summary?.policy_set !== 'outreach' || audit.result_summary?.agent !== 'sales') {
+          throw new Error(`sales approval row: ${JSON.stringify(audit)}`);
+        }
+      });
+
+      await ctx.step("a project rule still wins over the set: list_items blocked for support despite its set's always_run", async () => {
+        (await owner.put(
+          '/v1/connectors/projects/:projectId/policies',
+          { policies: [{ match: `${slug}.list_items`, action: 'block' }], defaultMode: 'allow_all' },
+          { params, timeoutMs: 60_000 },
+        )).status(200);
+        const before = ran.length;
+        const r = await call('support', 'list_items');
+        r.status(403).body().has('$.reason', 'policy_block').has('$.policy_set', undefined);
+        if (ran.length !== before) throw new Error('the project-blocked call reached the MCP server');
+        const audit = await lastAudit('support', 'list_items');
+        // The project rule decided: the row must not credit the agent's set.
+        if (audit.result_summary?.policy_source !== 'project' || 'policy_set' in (audit.result_summary ?? {})) {
+          throw new Error(`project-rule audit row: ${JSON.stringify(audit)}`);
+        }
+        (await owner.put('/v1/connectors/projects/:projectId/policies', { policies: [], defaultMode: 'allow_all' }, { params, timeoutMs: 60_000 }))
+          .status(200);
+        (await call('support', 'list_items')).status(200).body().has('$.ok', true);
+      });
+
+      await ctx.step("editing support's set through the API changes its next call: send_note now runs", async () => {
+        (await setRules('read_only', [{ match: 'list_items', action: 'always_run' }])).status(200);
+        const r = await call('support', 'send_note');
+        r.status(200).body().has('$.ok', true);
+        if (ran.at(-1) !== 'send_note') throw new Error(`support call did not reach the server: ${JSON.stringify(ran)}`);
+      });
+
+      await ctx.step('a set in use cannot be deleted (409 naming the agent); an unused set is renamed, then deleted', async () => {
+        const inUse = await owner.del('/v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name', {
+          params: { ...slugParams, name: 'read_only' },
+          timeoutMs: 60_000,
+        });
+        inUse.status(409).body().has('$.code', 'policy_set_in_use').has('$.agents', ['support']);
+        (await owner.put(
+          '/v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name',
+          { description: 'scratch' },
+          { params: { ...slugParams, name: 'scratch' }, timeoutMs: 60_000 },
+        )).status(200);
+        (await owner.put(
+          '/v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name/name',
+          { name: 'read_only' },
+          { params: { ...slugParams, name: 'scratch' }, timeoutMs: 60_000 },
+        )).status(409).body().has('$.code', 'policy_set_exists');
+        (await owner.put(
+          '/v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name/name',
+          { name: 'scratch2' },
+          { params: { ...slugParams, name: 'scratch' }, timeoutMs: 60_000 },
+        )).status(200).body().has('$.ok', true);
+        (await owner.del('/v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name', {
+          params: { ...slugParams, name: 'scratch2' },
+          timeoutMs: 60_000,
+        })).status(200).body().has('$.ok', true);
+        (await owner.del('/v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name', {
+          params: { ...slugParams, name: 'scratch2' },
+        })).status(404).body().has('$.code', 'policy_set_not_found');
+        const sets = (await owner.get('/v1/connectors/projects/:projectId/connectors/:slug/policy-sets', { params: slugParams }))
+          .json<{ sets: Array<{ name: string }> }>().sets.map((s) => s.name).sort();
+        if (sets.join(',') !== 'outreach,read_only') throw new Error(`sets after delete: ${sets.join(',')}`);
+      });
+
+      await ctx.step('a non-member cannot list or create sets → 403', async () => {
+        (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/connectors/projects/:projectId/connectors/:slug/policy-sets', { params: slugParams })).status(403);
+        (await ctx.client.as(ctx.P.NONMEMBER).put(
+          '/v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name',
+          {},
+          { params: { ...slugParams, name: 'intruder' } },
+        )).status(403);
+      });
+
+      await ctx.step("deleting the connector removes every agent's policy_sets entry for it from kortix.yaml", async () => {
+        (await owner.del('/v1/connectors/projects/:projectId/connectors/:slug', { params: slugParams, timeoutMs: 60_000 })).status(200);
+        const yaml = (await owner.get('/v1/projects/:projectId/files/content', { params, query: { path: 'kortix.yaml' } }))
+          .json<{ content: string }>().content;
+        for (const set of ['read_only', 'outreach']) {
+          if (yaml.includes(`${slug}: ${set}`)) throw new Error(`kortix.yaml still assigns ${slug}: ${set}:\n${yaml}`);
+        }
+        if (yaml.includes(`slug: ${slug}`)) throw new Error(`kortix.yaml still declares ${slug}:\n${yaml}`);
+      });
+    } finally {
+      upstream.close();
+      for (const { sessionId } of Object.values(sessions)) {
+        await db.query(`DELETE FROM kortix.account_tokens WHERE session_id = $1`, [sessionId]).catch(() => {});
+        await db.query(`DELETE FROM kortix.session_sandboxes WHERE session_id = $1`, [sessionId]).catch(() => {});
+        await db.query(`DELETE FROM kortix.project_sessions WHERE session_id = $1`, [sessionId]).catch(() => {});
+      }
+      await db.query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = $2`, [p.id, slug]).catch(() => {});
+      await db.end().catch(() => {});
+    }
+  },
+);

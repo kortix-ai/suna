@@ -23,6 +23,7 @@ import {
   connectionCredentials,
   connectorConnections,
   connectorPolicies,
+  connectorPolicySets,
   connectorProjectPolicies,
   connectors,
   projectTriggerRuntime,
@@ -300,13 +301,22 @@ export async function moveTargetUrlForConnection(connectionId: string): Promise<
  * differently, so after a move a `block` rule would match nothing.
  */
 async function oldToolRules(projectId: string, connectorId: string, slug: string): Promise<string[]> {
-  const [own, project] = await Promise.all([
+  const [own, sets, project] = await Promise.all([
     db.select({ match: connectorPolicies.match }).from(connectorPolicies).where(eq(connectorPolicies.connectorId, connectorId)),
+    // A set's rule on an old tool name would stop matching too.
+    db.select({ name: connectorPolicySets.name, policies: connectorPolicySets.policies }).from(connectorPolicySets).where(eq(connectorPolicySets.connectorId, connectorId)),
     db.select({ match: connectorProjectPolicies.match }).from(connectorProjectPolicies).where(eq(connectorProjectPolicies.projectId, projectId)),
   ]);
   const prefix = `${slug.toLowerCase()}.`;
+  const setMatches = sets.flatMap((set) =>
+    (Array.isArray(set.policies) ? set.policies : [])
+      .map((rule) => (rule && typeof rule.match === 'string' ? rule.match : null))
+      .filter((match): match is string => match !== null && match !== '*')
+      .map((match) => `${match} (policy set ${set.name})`),
+  );
   return [
     ...own.map((row) => row.match).filter((match) => match !== '*'),
+    ...setMatches,
     ...project
       .map((row) => row.match)
       .filter((match) => match.toLowerCase().startsWith(prefix) && match.toLowerCase() !== `${prefix}*`),

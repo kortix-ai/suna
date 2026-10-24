@@ -1,5 +1,6 @@
 'use client';
 import { ConnectorAdvancedTools } from './connector-advanced-tools';
+import { ConnectorPolicySetBar } from './connector-policy-sets';
 
 import { useLocalizedUiCatalog } from '../../../i18n/ui-catalog/use-localized-ui-catalog';
 import { useTranslations } from '../../../i18n';
@@ -18,7 +19,7 @@ import {
   WrenchIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import { Button } from '../../../primitives/button';
 import { ConfirmDialog } from '../../../primitives/confirm-dialog';
@@ -50,13 +51,16 @@ import {
 } from '../tools/tool-groups';
 import {
   applyBulkPolicy,
+  inheritedBaseAction,
+  isAdvancedRule,
   isLockedByProject,
-  isPatternRule,
   orderPolicyRules,
   type PolicyChoice,
+  type PolicyScope,
   previewEffective,
   toolChoice,
 } from '../tools/tool-policy';
+import { supportsPolicySets } from '../tools/policy-sets';
 import { ToolPolicyControl } from '../tools/tool-policy-control';
 import {
   POLICY_CHOICE_LABEL,
@@ -131,11 +135,21 @@ export function ConnectorTools({
   onChanged,
 }: ConnectorToolsProps) {
   const t = useTranslations('connectorPages');
+  const tSets = useTranslations('connectorPolicySets');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const policySegments = useLocalizedUiCatalog(POLICY_SEGMENTS);
   const queryClient = useQueryClient();
   const slug = connector.slug;
-  const queryKey = useMemo(() => ['connector-policies', projectId, slug], [projectId, slug]);
+  // Null edits the base rules; a name edits that policy set's rules. The
+  // query key carries it, so each list caches on its own.
+  const [policySet, setPolicySet] = useState<string | null>(null);
+  const onPolicySet = useCallback((next: string | null) => setPolicySet(next), []);
+  const scope: PolicyScope = policySet ? 'set' : 'base';
+  const showSets = supportsPolicySets(connector.provider);
+  const queryKey = useMemo(
+    () => ['connector-policies', projectId, slug, policySet],
+    [projectId, slug, policySet],
+  );
 
   // Reading policies is admin-gated on the server (`resolveAdmin`,
   // connectors/router.ts:1193), so a reader would get a 403 and a permanent
@@ -143,7 +157,7 @@ export function ConnectorTools({
   // below keeps that true if it ever stops doing so.
   const policiesQuery = useQuery({
     queryKey,
-    queryFn: () => getConnectorPolicies(projectId, slug),
+    queryFn: () => getConnectorPolicies(projectId, slug, { policySet: policySet ?? undefined }),
     staleTime: POLICY_QUERY_STALE_MS,
     enabled: canWrite,
   });
@@ -161,11 +175,11 @@ export function ConnectorTools({
   // stays visible and editable instead of being silently dropped on the next
   // save.
   const toolRules = useMemo(
-    () => policies.filter((rule) => !isPatternRule(rule.match) && toolPaths.has(rule.match)),
+    () => policies.filter((rule) => !isAdvancedRule(rule) && toolPaths.has(rule.match)),
     [policies, toolPaths],
   );
   const advancedRules = useMemo(
-    () => policies.filter((rule) => isPatternRule(rule.match) || !toolPaths.has(rule.match)),
+    () => policies.filter((rule) => isAdvancedRule(rule) || !toolPaths.has(rule.match)),
     [policies, toolPaths],
   );
 
@@ -187,7 +201,10 @@ export function ConnectorTools({
     PolicyWrite,
     { previous: PoliciesData | undefined }
   >({
-    mutationFn: (write) => setConnectorPolicies(projectId, slug, orderPolicyRules(write.rules)),
+    mutationFn: (write) =>
+      setConnectorPolicies(projectId, slug, orderPolicyRules(write.rules), {
+        policySet: policySet ?? undefined,
+      }),
     onMutate: async (write) => {
       await queryClient.cancelQueries({ queryKey });
       const previous = queryClient.getQueryData<PoliciesData>(queryKey);
@@ -198,7 +215,7 @@ export function ConnectorTools({
               policies: orderPolicyRules(write.rules),
               effective:
                 write.paths && write.choice
-                  ? previewEffective(old.effective ?? [], write.paths, write.choice)
+                  ? previewEffective(old.effective ?? [], write.paths, write.choice, scope)
                   : old.effective,
             }
           : old,
@@ -261,9 +278,28 @@ export function ConnectorTools({
   }
 
   const hasTools = connector.actions.length > 0;
+  const choiceLabel = (choice: PolicyChoice) =>
+    choice === 'default' && scope === 'set' ? tSets('inherit') : POLICY_CHOICE_LABEL[choice];
+  const inheritHint = (path: string, risk: 'read' | 'write' | 'destructive') => {
+    const base = inheritedBaseAction(path, effective, scope);
+    if (base) return tSets('inheritBase', { action: POLICY_CHOICE_LABEL[base] });
+    return scope === 'set'
+      ? tSets('inheritDefault')
+      : describeToolDefault(connector.sensitive === true, policiesQuery.data?.default_mode, risk);
+  };
 
   return (
     <div className="space-y-5">
+      {showSets ? (
+        <ConnectorPolicySetBar
+          projectId={projectId}
+          slug={slug}
+          canWrite={canWrite}
+          value={policySet}
+          onChange={onPolicySet}
+        />
+      ) : null}
+
       {hasTools ? (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-muted-foreground min-w-0 text-sm text-pretty">
@@ -372,7 +408,7 @@ export function ConnectorTools({
                         key={segment.choice}
                         onSelect={() => setBulk({ group, choice: segment.choice })}
                       >
-                        {segment.label}
+                        {segment.choice === 'default' ? choiceLabel('default') : segment.label}
                       </DropdownMenuItem>
                     ))}
                   </DropdownMenuContent>
@@ -402,15 +438,12 @@ export function ConnectorTools({
                           label={tI18nComplete('textb34f1e3c1569', {
                             value0: row.path ?? row.title,
                           })}
-                          value={toolChoice(action.path, policies, effective)}
+                          value={toolChoice(action.path, policies, effective, scope)}
                           onChange={(next) => setToolPolicy(action.path, next)}
                           disabled={frozen || busy}
                           lockedReason={locked ? LOCKED_REASON : undefined}
-                          defaultHint={describeToolDefault(
-                            connector.sensitive === true,
-                            policiesQuery.data?.default_mode,
-                            action.risk,
-                          )}
+                          defaultLabel={scope === 'set' ? tSets('inherit') : undefined}
+                          defaultHint={inheritHint(action.path, action.risk)}
                         />
                       </li>
                     );
@@ -423,7 +456,9 @@ export function ConnectorTools({
       )}
 
       <ConnectorAdvancedTools
+        key={policySet ?? 'base'}
         connector={connector}
+        showSensitive={scope === 'base'}
         advancedRules={advancedRules}
         toolRules={toolRules}
         loaded={!!policiesQuery.data}
@@ -440,12 +475,26 @@ export function ConnectorTools({
         onOpenChange={(open) => {
           if (!open) setBulk(null);
         }}
-        title={bulk ? bulkConfirmTitle(bulkPaths.length, bulk.choice) : ''}
-        description={bulk ? bulkConfirmDescription(bulk.group.label, bulk.choice) : ''}
+        title={
+          bulk
+            ? bulk.choice === 'default' && scope === 'set'
+              ? tSets('bulkInheritTitle', { count: bulkPaths.length })
+              : bulkConfirmTitle(bulkPaths.length, bulk.choice)
+            : ''
+        }
+        description={
+          bulk
+            ? bulk.choice === 'default' && scope === 'set'
+              ? tSets('bulkInheritBody', { group: bulk.group.label })
+              : bulkConfirmDescription(bulk.group.label, bulk.choice)
+            : ''
+        }
         confirmLabel={
           bulk
             ? bulk.choice === 'default'
-              ? tI18nComplete.raw('text1707565fd3f0')
+              ? scope === 'set'
+                ? tSets('inherit')
+                : tI18nComplete.raw('text1707565fd3f0')
               : tI18nComplete('text41ffc5e14073', { value0: POLICY_CHOICE_LABEL[bulk.choice] })
             : 'Confirm'
         }

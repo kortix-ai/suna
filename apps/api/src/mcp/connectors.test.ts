@@ -184,3 +184,51 @@ describe('apps on a Connectors v2 project', () => {
     await expect(runConnectorTool('add_connector', { project_id: 'proj-1', app: 'missing' }, v2Host(calls))).rejects.toThrow('not in the app catalogue');
   });
 });
+
+describe('list_connectors with one connector', () => {
+  function host(setsStatus: number) {
+    return {
+      projectId: () => 'proj-1',
+      arg: (input: Record<string, unknown>, key: string) => String(input[key]),
+      optionalArg: (input: Record<string, unknown>, key: string) => (typeof input[key] === 'string' ? (input[key] as string) : undefined),
+      input: (message: string) => new Error(message),
+      apiResult: (reply: { status: number; body: string }) => ({ content: [{ type: 'text', text: reply.body }], isError: true }),
+      text: (value: string) => ({ content: [{ type: 'text', text: value }] }),
+      call: async (_method: string, path: string) => {
+        const gmail = { ...catalog[0], accounts: [], policy_set: 'read_only' };
+        if (path.endsWith('/catalog') || path.endsWith('/connectors')) return { status: 200, body: JSON.stringify({ connectors: [gmail] }) };
+        if (path.endsWith('/accounts')) return { status: 200, body: JSON.stringify({ accounts: [], default_account: null }) };
+        if (path.endsWith('/policy-sets')) {
+          return setsStatus < 400
+            ? { status: 200, body: JSON.stringify({ sets: [
+                { name: 'read_only', description: 'Read and search, never send', policies: [], agents: ['support'] },
+                { name: 'outreach', description: null, policies: [], agents: [] },
+              ] }) }
+            : { status: setsStatus, body: JSON.stringify({ error: 'forbidden' }) };
+        }
+        return { status: 404, body: '{}' };
+      },
+    } as unknown as Host;
+  }
+  const row = async (status: number) => {
+    const result = (await runConnectorTool('list_connectors', { project_id: 'proj-1', connector: 'gmail' }, host(status))) as {
+      content: Array<{ text: string }>;
+    };
+    return JSON.parse(result.content[0]!.text).connectors[0];
+  };
+
+  test("lists the profile's sets and the caller's own set", async () => {
+    const gmail = await row(200);
+    expect(gmail.policy_set).toBe('read_only');
+    expect(gmail.policy_sets).toEqual([
+      { name: 'read_only', description: 'Read and search, never send' },
+      { name: 'outreach', description: null },
+    ]);
+  });
+
+  test('a caller that may not read the sets still gets its own set', async () => {
+    const gmail = await row(403);
+    expect(gmail.policy_set).toBe('read_only');
+    expect(gmail.policy_sets).toBeUndefined();
+  });
+});

@@ -4,6 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   applyBulkPolicy,
   effectiveChoice,
+  inheritedBaseAction,
   isLockedByProject,
   isPatternRule,
   orderPolicyRules,
@@ -260,5 +261,62 @@ describe('previewEffective', () => {
     expect(previewEffective([eff('a', 'block', 'project')], ['a'], 'default')).toEqual([
       eff('a', 'block', 'project'),
     ]);
+  });
+});
+
+describe('policy set scope', () => {
+  test('in a set, a base rule is inherited, not a choice made in the set', () => {
+    expect(effectiveChoice('send_email', [eff('send_email', 'block', 'connector')], 'set')).toBe(
+      'default',
+    );
+  });
+  test('in a set, a rule the set decides shows as that action', () => {
+    expect(effectiveChoice('send_email', [eff('send_email', 'block', 'policy_set')], 'set')).toBe(
+      'block',
+    );
+  });
+  test('in a set, a project rule still shows its action', () => {
+    expect(effectiveChoice('send_email', [eff('send_email', 'always_run', 'project')], 'set')).toBe(
+      'always_run',
+    );
+  });
+  test('the base view never reads a set decision as its own', () => {
+    expect(effectiveChoice('send_email', [eff('send_email', 'block', 'policy_set')])).toBe(
+      'default',
+    );
+  });
+  test('inheritedBaseAction names the base action only for an inherited tool in a set', () => {
+    const entries = [eff('a', 'block', 'connector'), eff('b', 'block', 'policy_set')];
+    expect(inheritedBaseAction('a', entries, 'set')).toBe('block');
+    expect(inheritedBaseAction('b', entries, 'set')).toBeNull();
+    expect(inheritedBaseAction('a', entries, 'base')).toBeNull();
+  });
+  test('previewEffective in a set moves the entry to the set scope', () => {
+    expect(previewEffective([eff('a', 'block', 'connector')], ['a'], 'always_run', 'set')).toEqual([
+      eff('a', 'always_run', 'policy_set'),
+    ]);
+  });
+  test('toolChoice in a set falls back to the set rules when effective is empty', () => {
+    expect(toolChoice('a', [{ match: 'a', action: 'block' }], [], 'set')).toBe('block');
+  });
+});
+
+describe('conditional rules', () => {
+  const conditional = {
+    match: 'send_email',
+    action: 'require_approval' as const,
+    conditions: [{ arg: 'to', match: '*@example.com' }],
+  };
+  test('a per-tool click keeps a conditional rule on the same tool', () => {
+    expect(applyBulkPolicy([conditional], ['send_email'], 'block')).toEqual([
+      conditional,
+      { match: 'send_email', action: 'block' },
+    ]);
+  });
+  test("'default' keeps the conditional rule too", () => {
+    expect(applyBulkPolicy([conditional], ['send_email'], 'default')).toEqual([conditional]);
+  });
+  test('a conditional rule is not read as the tool decision', () => {
+    expect(toolChoice('send_email', [conditional], [])).toBe('default');
   });
 });

@@ -6,6 +6,7 @@ import { backendApi } from '../../http/api-client';
 import { ApiError } from '../../http/api/errors';
 import { authenticatedFetch } from '../../http/auth';
 import { platformConfig } from '../../http/config';
+import type { PolicyArgCondition } from './policies';
 import { unwrap } from './shared';
 
 // ─── Connectors ────────────────────────────────────────────────────────────
@@ -68,6 +69,9 @@ export interface ConnectorCatalogEntry {
   accounts?: ConnectorAccount[];
   /** Label of the account an unnamed call resolves to, or null if none. */
   default_account?: string | null;
+  /** The calling agent's policy set on this connector; `actions` omits what it
+   *  blocks. Absent when the caller has none (base rules) or on older servers. */
+  policy_set?: string;
 }
 
 /** One callable connector action, identified by `<connector>.<action>`. */
@@ -106,6 +110,11 @@ export interface ConnectorCallResult<T = unknown, O = unknown> {
   risk?: ConnectorAction['risk'];
   status?: string;
   reason?: string;
+  /** On a denial the caller's policy set decided (`reason` `policy_block` or
+   *  `policy_set_missing`): the set name. */
+  policy_set?: string;
+  /** With `policy_set`: the agent whose set decided. */
+  agent?: string | null;
   execution_id?: string | null;
   retryable?: boolean;
   approval_url?: string | null;
@@ -1289,10 +1298,23 @@ export type ConnectorPolicyAction = 'always_run' | 'require_approval' | 'block';
 export interface ConnectorPolicyRule {
   match: string;
   action: ConnectorPolicyAction;
+  /** ALL must hold for the rule to apply. Absent/empty = a plain tool-name rule.
+   *  Servers that predate connector-rule conditions drop them on write. */
+  conditions?: PolicyArgCondition[];
 }
 
-/** Which policy scope decided an action. Project rules win and cannot be overridden here. */
-export type ConnectorPolicySource = 'project' | 'connector' | 'risk_default' | 'allow_all';
+/**
+ * Which policy scope decided an action. Project rules win and cannot be overridden here.
+ * `policy_set` = the calling agent's policy set on this connector
+ * (`agents.<a>.policy_sets.<slug>`), evaluated after project rules and before
+ * the connector's base rules.
+ */
+export type ConnectorPolicySource =
+  | 'project'
+  | 'policy_set'
+  | 'connector'
+  | 'risk_default'
+  | 'allow_all';
 
 export interface ConnectorEffectivePolicy {
   /** Connector-relative tool path, e.g. `send_email`. */
@@ -1301,33 +1323,128 @@ export interface ConnectorEffectivePolicy {
   source: ConnectorPolicySource;
 }
 
-export async function getConnectorPolicies(projectId: string, slug: string) {
+/** Selects one policy set on a connector. Absent, empty or `base` = the base rules. */
+export interface ConnectorPolicySetOptions {
+  policySet?: string;
+}
+
+function connectorPoliciesPath(projectId: string, slug: string, options?: ConnectorPolicySetOptions) {
+  const base = `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/policies`;
+  return options?.policySet ? `${base}?policy_set=${encodeURIComponent(options.policySet)}` : base;
+}
+
+/**
+ * Read a connector's rules: the base rules, or one policy set's rules with
+ * `{ policySet }`. A set that does not exist answers 404 `policy_set_not_found`.
+ */
+export async function getConnectorPolicies(
+  projectId: string,
+  slug: string,
+  options?: ConnectorPolicySetOptions,
+) {
   return unwrap(
     await backendApi.get<{
       policies: ConnectorPolicyRule[];
+      /** The policy set these rules belong to; absent for the base rules. */
+      policy_set?: string;
       /**
        * Resolved per tool through the same function the call gate uses. Present
        * so an editor can show WHICH scope decided — without it a connector rule
        * that a project-scope rule silently overrules still renders as if it applied.
+       * For a policy set, it is what an agent with that set gets.
        * Older servers omit this; treat as empty.
        */
       effective?: ConnectorEffectivePolicy[];
       /** Project-scope rules, which are evaluated first and win. */
       project_policies?: ConnectorPolicyRule[];
       default_mode?: 'risk' | 'allow_all';
-    }>(`/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/policies`),
+    }>(connectorPoliciesPath(projectId, slug, options)),
   );
 }
 
+/**
+ * Replace a connector's rules: the base rules, or one policy set's rules with
+ * `{ policySet }`. This is the only writer of a set's rules; the set itself is
+ * created with {@link upsertConnectorPolicySet}.
+ */
 export async function setConnectorPolicies(
   projectId: string,
   slug: string,
   policies: ConnectorPolicyRule[],
+  options?: ConnectorPolicySetOptions,
 ) {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
-      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/policies`,
+      connectorPoliciesPath(projectId, slug, options),
       { policies },
+    ),
+  );
+}
+
+/**
+ * A named rule set on one connector (`connectors[].policy_sets.<name>` in
+ * kortix.yaml). An agent gets it with `agents.<a>.policy_sets.<slug>: <name>`,
+ * so one connected account serves agents with different rules.
+ */
+export interface ConnectorPolicySet {
+  name: string;
+  description: string | null;
+  policies: ConnectorPolicyRule[];
+  /** The agents whose `policy_sets` name this set. */
+  agents: string[];
+}
+
+function connectorPolicySetPath(projectId: string, slug: string, name?: string) {
+  const base = `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/policy-sets`;
+  return name === undefined ? base : `${base}/${encodeURIComponent(name)}`;
+}
+
+/** List a connector's policy sets, sets with zero rules included. */
+export async function listConnectorPolicySets(projectId: string, slug: string) {
+  return unwrap(
+    await backendApi.get<{ sets: ConnectorPolicySet[] }>(connectorPolicySetPath(projectId, slug)),
+  );
+}
+
+/**
+ * Create a policy set, or set (`string`) or clear (`null`) its description.
+ * Omitting `description` on an existing set keeps it. Rules are written with
+ * `setConnectorPolicies(projectId, slug, policies, { policySet: name })`.
+ */
+export async function upsertConnectorPolicySet(
+  projectId: string,
+  slug: string,
+  name: string,
+  input: { description?: string | null } = {},
+) {
+  return unwrap(
+    await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult; created: boolean }>(
+      connectorPolicySetPath(projectId, slug, name),
+      input.description === undefined ? {} : { description: input.description },
+    ),
+  );
+}
+
+/** Rename a policy set and every agent assignment of it, in one commit. */
+export async function renameConnectorPolicySet(
+  projectId: string,
+  slug: string,
+  name: string,
+  newName: string,
+) {
+  return unwrap(
+    await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
+      `${connectorPolicySetPath(projectId, slug, name)}/name`,
+      { name: newName },
+    ),
+  );
+}
+
+/** Delete a policy set. Answers 409 `policy_set_in_use` (with `agents`) while an agent uses it. */
+export async function deleteConnectorPolicySet(projectId: string, slug: string, name: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean; sync?: ConnectorSyncResult }>(
+      connectorPolicySetPath(projectId, slug, name),
     ),
   );
 }

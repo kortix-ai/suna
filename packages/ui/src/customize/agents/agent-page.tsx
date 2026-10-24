@@ -155,6 +155,7 @@ import {
   SecretsGrantPage,
   SkillsGrantPage,
 } from './agent-grant-pages';
+import { connectorPolicySetOptions } from './agent-policy-sets';
 import { AgentPeopleSection } from './agent-people-section';
 import { AgentShareControl } from './agent-share-control';
 import { AgentTriggersSection } from './agent-triggers-section';
@@ -699,6 +700,10 @@ function EditableAgentPage({
     () => registryGrantOptions({ manifest_raw: config.manifest_raw, agents: toArray(config.agents) }, agent.name),
     [config.manifest_raw, config.agents, agent.name],
   );
+  const policySetOptions = useMemo(
+    () => connectorPolicySetOptions(config.manifest_raw),
+    [config.manifest_raw],
+  );
   const section = useAgentSection(sections);
 
   const onSave = useCallback(async () => {
@@ -732,7 +737,13 @@ function EditableAgentPage({
           skillsOptions={skillsOptions}
           registryOptions={registryOptions}
           skills={<SkillsGrantPage projectId={projectId} config={config} editor={editor} />}
-          connectors={<ConnectorsGrantPage projectId={projectId} editor={editor} />}
+          connectors={
+            <ConnectorsGrantPage
+              projectId={projectId}
+              editor={editor}
+              policySetOptions={policySetOptions}
+            />
+          }
           secrets={<SecretsGrantPage projectId={projectId} editor={editor} />}
           apps={<AppsGrantPage projectId={projectId} editor={editor} />}
           drives={<AgentDrivesSection projectId={projectId} agentName={agent.name} />}

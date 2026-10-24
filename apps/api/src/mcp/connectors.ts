@@ -42,10 +42,10 @@ export const CONNECTOR_TOOLS = [
     name: 'list_connectors',
     title: 'List connectors',
     description:
-      'List the connectors of a project (Gmail, Slack, GitHub, MCP servers, OpenAPI/HTTP APIs, …): slug, name, provider, status, whether it is `connected` (usable by you now), its action count and its accounts. A connector that is not connected cannot run actions: call connect_connector, give the human the url, then list again. Pass `connector` to get one connector\'s accounts in full (label, owner shared|private, default, connected_as, connection_id): a connector can hold several accounts and a call with several and no default needs `account`. Flow: list_connectors → search_connector_actions → describe_connector_action → call_connector.',
+      'List the connectors of a project (Gmail, Slack, GitHub, MCP servers, OpenAPI/HTTP APIs, …): slug, name, provider, status, whether it is `connected` (usable by you now), its action count and its accounts. A connector that is not connected cannot run actions: call connect_connector, give the human the url, then list again. Pass `connector` to get one connector\'s accounts in full (label, owner shared|private, default, connected_as, connection_id): a connector can hold several accounts and a call with several and no default needs `account`. `policy_set` is the rule set you run under on that connector (null = its base rules); with `connector`, `policy_sets` lists the sets it defines when you may read them. Flow: list_connectors → search_connector_actions → describe_connector_action → call_connector.',
     inputSchema: {
       type: 'object',
-      properties: { project_id: PROJECT_ID, connector: { ...CONNECTOR, description: 'Optional: one connector slug, to get its accounts in full.' } },
+      properties: { project_id: PROJECT_ID, connector: { ...CONNECTOR, description: 'Optional: one connector slug, to get its accounts and policy sets in full.' } },
       required: ['project_id'],
       additionalProperties: false,
     },
@@ -233,7 +233,7 @@ export const isConnectorTool = (name: string) => NAMES.has(name);
 
 interface CatalogAction { path: string; name?: string; description?: string; risk: string; inputSchema?: unknown }
 interface CatalogAccount { connection_id: string; label: string; owner_type: string; is_default: boolean; connected_as?: string | null }
-interface CatalogEntry { slug: string; name: string; provider: string; status: string; actions: CatalogAction[]; accounts?: CatalogAccount[]; default_account?: string | null }
+interface CatalogEntry { slug: string; name: string; provider: string; status: string; actions: CatalogAction[]; accounts?: CatalogAccount[]; default_account?: string | null; policy_set?: string }
 
 /** `<connector>.<action>`: the slug has no dot, the action may. */
 export function splitTool(tool: string): { connector: string; action: string } | null {
@@ -296,7 +296,11 @@ export function fitData(head: Record<string, unknown>, key: string, value: unkno
 export function denialNext(reason: string, body: any): string | undefined {
   switch (reason) {
     case 'policy_block':
-      return 'The project blocks this action by policy. Do not retry; tell the human, who can change the policy in the project\'s connector settings.';
+      return body?.policy_set
+        ? `Your agent's policy set "${body.policy_set}" on this connector blocks this action. Do not retry; tell the human, who can change the set or your agent's policy_sets in kortix.yaml.`
+        : 'The project blocks this action by policy. Do not retry; tell the human, who can change the policy in the project\'s connector settings.';
+    case 'policy_set_missing':
+      return 'Your agent is assigned a policy set this connector does not define, so every call on it is blocked. Do not retry; tell the human to fix agents.<name>.policy_sets or add the set in kortix.yaml.';
     case 'connector_not_connected':
       return body?.available_accounts?.length
         ? 'Retry with `account` set to one of available_accounts, or omit it for the default.'
@@ -343,10 +347,11 @@ export async function runConnectorTool(name: string, input: Record<string, unkno
   switch (name) {
     case 'list_connectors': {
       const only = h.optionalArg(input, 'connector');
-      const [cat, admin, accounts] = await Promise.all([
+      const [cat, admin, accounts, sets] = await Promise.all([
         catalog({ include_schemas: false, slug: only }),
         h.call('GET', `${base}/connectors`, { query: { include_schemas: false } }),
         only ? h.call('GET', `${base}/connectors/${encodeURIComponent(only)}/accounts`) : Promise.resolve(null),
+        only ? h.call('GET', `${base}/connectors/${encodeURIComponent(only)}/policy-sets`) : Promise.resolve(null),
       ]);
       if (cat.status >= 400) return h.apiResult(cat);
       const usable = new Map<string, CatalogEntry>((parse(cat.body)?.connectors ?? []).map((c: CatalogEntry) => [c.slug, c]));
@@ -367,6 +372,8 @@ export async function runConnectorTool(name: string, input: Record<string, unkno
             actions: (live ?? c).actions.length,
             accounts: (live?.accounts ?? c.accounts ?? []).map(accountRow),
             default_account: live?.default_account ?? c.default_account ?? null,
+            // The rule set YOUR agent runs under on this connector; null = its base rules.
+            policy_set: live?.policy_set ?? null,
           };
           if (!connected) {
             row.next = c.status === 'disabled'
@@ -381,6 +388,14 @@ export async function runConnectorTool(name: string, input: Record<string, unkno
         const listed = parse(accounts.body);
         rows[0].accounts = (listed?.accounts ?? []).map(accountRow);
         rows[0].default_account = listed?.default_account ?? null;
+      }
+      // The sets this connector defines. The route needs connector admin read:
+      // a caller without it still sees its own `policy_set`, not the list.
+      if (only && sets && sets.status < 400 && rows[0]) {
+        const listed = (parse(sets.body)?.sets ?? []) as Array<{ name?: unknown; description?: unknown }>;
+        rows[0].policy_sets = listed
+          .filter((set) => typeof set.name === 'string')
+          .map((set) => ({ name: set.name, description: typeof set.description === 'string' ? set.description : null }));
       }
       return h.text(JSON.stringify({ connectors: rows }, null, 2));
     }

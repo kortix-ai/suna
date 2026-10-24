@@ -198,3 +198,67 @@ different policies" with policy sets; document the decision order.
 New canonical branch `connector-policy-sets` from `dev` after #10866 is merged,
 worktree with `--db` (migration). One PR; demo video; self-merge per the
 contributing skill when verified, then deploy dev and re-run the flow on dev.
+
+## Implementation decisions (engine + API, 2026-10-24)
+
+These replace the matching parts above where they differ.
+
+- Storage: a new table `kortix.connector_policy_sets` (`connector_id` FK
+  cascade, `name`, `description`, `policies jsonb`, PK `(connector_id, name)`),
+  not a column on `connector_policies`. One row per set, so the row is the
+  registry: a set with zero rules is a row with `[]`. API code that predates
+  sets never reads the table, so a set never applies as a base rule during a
+  rollout or after a rollback. Migration `20261024063907045_connector_policy_sets.sql`.
+- Missing set: `block`, reason `policy_set_missing` (not `require_approval`).
+  The same holds when the set's rules fail to load, or the deps have no loader.
+- A bad `agents.<a>.policy_sets` entry never invalidates the agent and is
+  never dropped. An unknown set, `base`, or a non-string value stays in the
+  grant and blocks that connector for the agent. A malformed map becomes
+  `{"*": ""}`: every connector is blocked. `kortix validate` and the CR gate
+  report an unknown set or `base` as an error, an ungranted or undeclared
+  connector as a warning.
+- Decision order: missing set → block; project rules; the agent's set; the
+  connector's base rules; `sensitive`; `default_mode`. A set can loosen a
+  base rule for its agent. A guardrail for every caller belongs in project
+  `policies:`.
+- Audit: `policy_source` is `policy_set`; the audit summary adds
+  `policy_set`, `agent` and `manifest_commit`. The `/call` denial body adds
+  `policy_set`, `agent` and a `message` when the set decided.
+- Who gets which set: the grant on the principal decides. A session token
+  (sandbox CLI, SDK, agent tools, MCP `call_connector` with a session) uses the
+  session agent's set. A pi subagent child shares the root session's token,
+  so the ROOT agent's set applies. A user token with `X-Kortix-Session-Id`
+  uses that session's agent. A PAT or dashboard call without a session, a
+  trigger poll (`mcp-poll.ts`, `agentGrant: null`) and the platform meta agent
+  get the base rules. The request body never selects a set.
+- Trust boundary: assigning or changing any `policy_sets` entry needs
+  `project.agent.write` and `project.connector.write` (scope route and config
+  route). For a governed agent writer, `policy_sets` is a grant-ceiling
+  dimension: any add, change or remove needs `project.connector.write`
+  (route, CR merge). `holdsEveryGrant` is false for a writer bound by a set or
+  without `project.connector.write` (direct push).
+- Launching another agent (decision a): an agent that holds
+  `project.session.start` can start a session as another declared agent, and
+  that session runs under that agent's set, exactly as it gets that agent's
+  connector grant today. Sets bound an agent only as far as its launch rights
+  bound it.
+- One rule writer: set rules are written only by
+  `PUT .../connectors/{slug}/policies?policy_set=<name>`. The
+  `.../policy-sets` routes own create, description, rename, delete and list.
+- Manifest versions: `kortix_version` 2 and 3. v1 is refused
+  (`unsupported_in_v1`). Channel and computer connectors cannot carry sets
+  (`policy_sets_unsupported`).
+- Un-grant keeps the entry: removing a connector from an agent keeps its
+  `policy_sets` entry (inert until re-granted, then it applies again). Pruning
+  it let a writer without `project.connector.write` move the agent onto the
+  base rules in two writes (un-grant, re-grant). `changedPolicySet` counts
+  every entry change, also on an un-granted connector (else: un-grant, drop
+  the entry, re-grant). Removing an agent that has a set is a `policy_sets`
+  change too (delete-then-declare). An
+  emptied map (`policy_sets: {}`) is written as no key: the agent editor sends
+  `{}` to clear the last set, because an omitted key keeps the declared value.
+- Audit keys `policy_set`, `agent`, `manifest_commit` are written only when
+  `policy_source` is `policy_set`; the UI reads them only then.
+- MCP: there is no `get_connector`. `list_connectors` with `connector` returns
+  the caller's `policy_set` and, when the caller may read the
+  `.../policy-sets` route, `policy_sets: [{ name, description }]`.

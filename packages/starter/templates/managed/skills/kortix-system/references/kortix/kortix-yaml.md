@@ -230,6 +230,7 @@ must name a declared, enabled agent.
 | `skills`     | Skill names the agent may load. Same shape (default: `none`).                                   |
 | `kortix_permissions` | Kortix permissions: what it may do to the project (project-scoped iam actions), through the CLI, the API, or git. Same shape (default: `none`). `kortix_cli` is the deprecated spelling — still accepted with a validation warning. |
 | `workspace`  | `{ project_repository: true \| false }`. `true`: new sessions check out the project repository on their own branch. `false`: no checkout, no git variables, no repository access. Omitted: `true` in v2, `false` in v3. Write it explicitly on every agent. The strings `branch` / `runtime` are deprecated aliases of `true` / `false`. |
+| `policy_sets` | `{ <connector slug>: <set name> }`. The agent's calls on that connector use the set before the base rules. No entry = base rules. A change needs `project.agent.write` + `project.connector.write` (`kortix agents scope <agent> --policy-set <slug>=<name>`). An unknown set blocks that connector for the agent (`policy_set_missing`). |
 | `apps`       | Restricted or private Apps this agent may open, by slug. `["slug", …]` \| `"all"` \| `"none"` (default: `none`). The App gate also requires `project.app.read` in the agent's effective permissions. Editable from Customize → Agents → the agent → Apps, or `kortix agents scope <agent> --apps <slug,slug>`. |
 
 ```yaml
@@ -319,7 +320,8 @@ connectors:
 | `platform`              | channel  | `slack` \| `teams` \| `email`.                                                                       |
 | `credential`            | no       | `shared` — one server-side credential for the connector. Set the value via `kortix connectors credential` or bind a project secret (`kortix connectors secret`). Never inline in the manifest. |
 | `auth`                  | no       | How the credential is applied: `type` plus placement (`in: header\|query` + `name`).                  |
-| `policies`              | no       | Per-action risk policy: `{ match, action }`. `match` is an action path or wildcard.                  |
+| `policies`              | no       | Base rules: `{ match, action, conditions? }`. `match` is an action path or wildcard. They apply to callers without a policy set, and after a set's rules. |
+| `policy_sets`           | no       | v2/v3. Named rule sets: `{ <name>: { description?, policies? } }`. Name `[a-z0-9][a-z0-9_-]{0,63}`, `base` reserved, ≤ 32 sets, ≤ 200 rules each. Not on `channel` or `computer`. An agent gets one with `agents.<name>.policy_sets`. One profile per way of connecting an app (MCP vs REST); different rules per agent = a set, never a duplicate profile. |
 | `authorization_strategy`| no       | **Deprecated — do not use.** Kept on the wire and in the parser, but nothing reads it server-side. Ownership is a per-CONNECTION property (see below), not a connector setting. |
 
 Adding/removing entries: `kortix connectors add <slug> --provider <p> …` /

@@ -95,4 +95,11 @@ describe('ToolPolicyControl', () => {
     // above must win the tailwind-merge, not sit beside it.
     expect(markup).not.toContain('transition-all');
   });
+  test('a policy set relabels Default as Inherit', () => {
+    const markup = render(
+      <ToolPolicyControl value="default" onChange={() => {}} label="a" defaultLabel="Inherit" />,
+    );
+    expect(markup).toContain('>Inherit<');
+    expect(markup).not.toContain('>Default<');
+  });
 });
