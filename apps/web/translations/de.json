@@ -20394,7 +20394,15 @@
       "text064694999e1f": "Neues App-Ereignis",
       "text1934aa0740bb": "App-Ereignisse suchen",
       "text25db7e5609e5": "Noch keine App-Ereignisse",
-      "text9f8f92588517": "Eine App startet Agenten, indem sie Ereignisse sendet. Füge in kortix.yaml einen Trigger mit on: { event, app } hinzu."
+      "text9f8f92588517": "Eine App startet Agenten, indem sie Ereignisse sendet. Füge in kortix.yaml einen Trigger mit on: { event, app } hinzu.",
+      "text73738b374f4b": "Projektverwaltung",
+      "text2b8a7a0458b5": "Die Bibliotheken, aus denen jeder Agent schöpft, und wie dieses Projekt läuft.",
+      "text4da7c2d25273": "Projektressourcen",
+      "textc08f99e3947d": "Erinnerungen",
+      "text37737d817d12": "Zurück zum Projekt",
+      "text9eebeabf6094": "Dein Zugriff konnte nicht geprüft werden",
+      "text078931e34187": "Die Projektverwaltung braucht die Einstellungsberechtigung",
+      "textb24d48611918": "Sie braucht {grant}. Jeder, der dieses Projekt verwaltet, kann sie erteilen."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

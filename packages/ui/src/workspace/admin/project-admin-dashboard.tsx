@@ -8,33 +8,39 @@
  * groups:
  *
  *  - **Project resources**: the GLOBAL variant of every library page
- *    (Connectors, Skills, Triggers, Loops, Models, Secrets, Apps), each the
- *    complete screen its Customize route renders, mounted with no props beyond
- *    `projectId`.
+ *    (Connectors, Skills, Triggers, Loops, Models, Secrets, Apps, and Repo
+ *    with `drives` on), each the complete screen its Customize route renders,
+ *    mounted with no props beyond `projectId`.
  *  - **Settings**: every section of the project Settings page
- *    (`project-settings-sections.ts`), plus the Members launcher.
+ *    (`project-settings-sections.ts`), plus the Members link.
  *
  * The section lives in `?section=<key>` (`projectAdminHref`); no query opens
  * the first resource the caller may open. Only the active section mounts, and
  * each one is a lazy chunk: opening Project admin loads one catalog, not all
- * twelve.
+ * of them. A `?section=` this caller cannot open is rewritten to the section
+ * that opened, so the URL always names the visible pane.
  *
  * Gated on `project.settings.write`, the Settings page's own leaf. Each row
  * then follows the rule its own surface already applies: a resource row
  * follows `capabilityAccess` (the Customize rule), a settings row follows
  * `isCustomizeSectionVisible` (the Settings page rule). Nothing renders until
- * those probes answer, so a row never appears and then leaves.
+ * those probes, the `drives` flag and the project detail (Members needs its
+ * account) answer, so a row never appears and then leaves.
+ *
+ * The page's `SettingsNav` catches `navigate(tab)` calls from a pane. A pane
+ * that pushes its own route (ConnectorsPage opening a connector) still leaves
+ * for that route: the resource pages take no base-path prop yet.
  *
  * Loops and Apps are pages of the host app, not of this package. The host
  * passes them in `hostSections`; a row without a page is not listed.
  */
 
-import { lazy, Suspense, useCallback, useMemo, type ComponentType } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { lazy, Suspense, useCallback, useEffect, useMemo, type ComponentType, type ReactNode } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowUpRightIcon, UsersIcon, type Icon } from '@phosphor-icons/react';
 
 import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { contract, invalidatePermissionProbes, qk, useFeatureFlag } from '@kortix/sdk/react';
 
 import { useTranslations as useI18nTranslations } from '../../i18n';
 import { Button } from '../../primitives/button';
@@ -46,16 +52,12 @@ import { Skeleton } from '../../primitives/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
 import { UiLink as Link, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
 import { CapabilitiesSkeleton } from '../../customize/shared/capability-skeleton';
-import { buildStandaloneCapabilityNav } from '../../customize/shared/standalone-settings-nav';
-import {
-  projectSettingsSections,
-  type ProjectSettingsSectionKey,
-} from '../../customize/project-settings/project-settings-sections';
+import { projectSettingsSections } from '../../customize/project-settings/project-settings-sections';
 import { HubLink } from '../../internal/account-hub/account-hub-location';
 import { SETTINGS_SIDEBAR_WIDTH_PX } from '../../internal/account-hub/account-settings-shell';
 import { useIsMobile } from '../../internal/hooks';
 import { capabilityAccess } from '../../internal/layout/project-settings-nav';
-import { SettingsNavProvider, type SettingsNav } from '../../internal/layout/settings-nav-context';
+import { SettingsNavProvider } from '../../internal/layout/settings-nav-context';
 import { withStaleChunkRecovery } from '../../internal/lib/chunk-reload';
 import { detectManifestVersion } from '../../internal/lib/manifest-version';
 import {
@@ -66,19 +68,21 @@ import {
 import { useProjectCans, useProjectPageCans, type CanResult } from '../../internal/lib/use-project-can';
 import { cn } from '../../internal/lib/utils';
 import { hubTarget } from '../../internal/stores/account-panel-store';
-import { useSettingsPanelStore, type MembersTab } from '../../internal/stores/settings-panel-store';
+import { useSettingsPanelStore } from '../../internal/stores/settings-panel-store';
 
+import { buildProjectAdminNav } from './project-admin-nav';
 import {
   DEFAULT_PROJECT_ADMIN_SECTION,
   isProjectAdminResource,
   parseProjectAdminSection,
   PROJECT_ADMIN_RESOURCES,
   projectAdminHref,
-  projectAdminNavTarget,
   type ProjectAdminResourceKey,
   type ProjectAdminSectionKey,
+  type ProjectAdminSettingsKey,
 } from './project-admin-sections';
 
+export { buildProjectAdminNav } from './project-admin-nav';
 export {
   DEFAULT_PROJECT_ADMIN_SECTION,
   parseProjectAdminSection,
@@ -103,11 +107,30 @@ const RESOURCE_PAGES: Partial<Record<ProjectAdminResourceKey, SectionPage>> = {
   triggers: lazyPage(() => import('../../customize/triggers/triggers-page'), (m) => m.TriggersPage),
   models: lazyPage(() => import('../../customize/models/models-page'), (m) => m.ModelsPage),
   secrets: lazyPage(() => import('../../customize/secrets/secrets-page'), (m) => m.SecretsPage),
+  repo: lazyPage(() => import('../layout/project-files-view'), (m) => m.ProjectFilesView),
 };
+
+/* Rail labels, keyed by section: the `hardcodedUi.i18nComplete` strings the
+   Customize bar and the sidebar already show for these libraries. */
+const RESOURCE_LABEL_KEYS = {
+  connectors: 'textc3d2e79ebdd0',
+  skills: 'text66d0f523a379',
+  triggers: 'texte62f2148a64d',
+  loops: 'textc08f99e3947d',
+  models: 'textd17d2d78d76e',
+  secrets: 'textd8707d411d99',
+  apps: 'text89dd748442c1',
+  repo: 'text91dba14806eb',
+} as const satisfies Record<ProjectAdminResourceKey, string>;
+
+/* A host page owns a full-viewport root (`AppsView` is `h-svh`). Inside this
+   pane that box would overflow by the header's height and clip its last row,
+   so the pane bounds its direct child to the pane's own height. */
+const HOST_PANE_CLASS = '*:h-full';
 
 /* The Settings page's panes, mounted with the same props and in the same
    order `ProjectSettingsSectionPane` mounts them. */
-const SETTINGS_PAGES: Record<ProjectSettingsSectionKey, SectionPage> = {
+const SETTINGS_PAGES: Record<ProjectAdminSettingsKey, SectionPage> = {
   general: lazyPage(() => import('../../customize/settings/tabs/general-tab'), (m) => m.GeneralTab),
   git: lazyPage(() => import('../../customize/sections/view/git-view'), (m) => {
     const { GitView } = m;
@@ -144,7 +167,6 @@ const SETTINGS_PAGES: Record<ProjectSettingsSectionKey, SectionPage> = {
       };
     },
   ),
-  review: lazyPage(() => import('../../customize/sections/view/review-view'), (m) => m.ReviewView),
   'feature-flags': lazyPage(
     () => import('../../customize/settings/tabs/experimental-tab'),
     (m) => m.ExperimentalTab,
@@ -182,6 +204,7 @@ export function ProjectAdminDashboard({
   const isMobile = useIsMobile();
   const searchParams = useUiSearchParams();
   const router = useUiRouter();
+  const queryClient = useQueryClient();
 
   const detail = useQuery({
     queryKey: qk.project.detail(projectId),
@@ -196,14 +219,22 @@ export function ProjectAdminDashboard({
   const pageCans = useProjectPageCans(projectId);
   const settingsCans = useProjectCans(projectId, CUSTOMIZE_SECTION_GATE_ACTIONS, { accountId });
   const canAdmin = pageCans[PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE];
+  const drives = useFeatureFlag(projectId, 'drives');
 
   // The Customize rule for each library, without its flag clauses: a flag-off
   // Loops page explains its own gate (`FeatureGateScreen`) instead of
-  // disappearing from the rail.
+  // disappearing from the rail. Repo applies `drives` itself, below.
   const resources = capabilityAccess(pageCans, { drives: true, reminders: true });
   const settingsAnswered = answered(settingsCans, CUSTOMIZE_SECTION_GATE_ACTIONS);
   const settingsProbeFailed = CUSTOMIZE_SECTION_GATE_ACTIONS.some((action) => settingsCans[action]?.isError);
-  const settled = !!canAdmin && !canAdmin.isLoading && resources.settled && settingsAnswered;
+  const settled =
+    !!canAdmin &&
+    !canAdmin.isLoading &&
+    resources.settled &&
+    settingsAnswered &&
+    !drives.isLoading &&
+    // Members needs the account id: wait for the detail so it never pops in.
+    detail.isFetched;
 
   const upgradeAttention = detail.data
     ? detectManifestVersion(detail.data.config.manifest_raw) === 1
@@ -211,16 +242,19 @@ export function ProjectAdminDashboard({
 
   // `resources.tabs` is a fresh array each render; its contents are the key.
   const allowedTabs = resources.tabs.join(',');
+  const drivesOn = drives.enabled;
   const resourceRows = useMemo<RailRow[]>(() => {
     const allowed = new Set(allowedTabs.split(','));
     return PROJECT_ADMIN_RESOURCES.filter((r) => (r.host ? !!hostSections[r.key as 'loops' | 'apps'] : true))
       .filter((r) => !r.capability || allowed.has(r.capability))
-      .map((r) => ({ key: r.key, label: r.label, icon: r.icon }));
-  }, [hostSections, allowedTabs]);
+      .filter((r) => r.flag !== 'drives' || drivesOn)
+      .map((r) => ({ key: r.key, label: tI18nComplete.raw(RESOURCE_LABEL_KEYS[r.key]), icon: r.icon }));
+  }, [hostSections, allowedTabs, drivesOn, tI18nComplete]);
 
   const settingsRows = useMemo<RailRow[]>(
     () =>
       projectSettingsSections(tI18nComplete)
+        .filter((s): s is typeof s & { key: ProjectAdminSettingsKey } => s.key !== 'review')
         // The Settings page's rule: a failed probe hides nothing. The pane
         // itself reports a 403 if the server refuses it.
         .filter(
@@ -247,6 +281,14 @@ export function ProjectAdminDashboard({
     (requested && rows.some((r) => r.key === requested) ? requested : undefined) ??
     (rows.some((r) => r.key === DEFAULT_PROJECT_ADMIN_SECTION) ? DEFAULT_PROJECT_ADMIN_SECTION : rows[0]?.key);
 
+  // The rail is final once `settled`: rewrite a fallen-back `?section=` so a
+  // copied link names the pane on screen.
+  const rawSection = searchParams.get('section');
+  useEffect(() => {
+    if (!settled || !active || rawSection === null || rawSection === active) return;
+    router.replace(projectAdminHref(projectId, active));
+  }, [settled, active, rawSection, projectId, router]);
+
   const membersTab = useSettingsPanelStore((s) => s.membersTab);
   const navigateTo = useCallback((href: string) => router.push(href), [router]);
   const settingsNav = useMemo(
@@ -263,7 +305,14 @@ export function ProjectAdminDashboard({
 
   // The gate probe failed: say so once, instead of guessing either way.
   if (canAdmin?.isError) {
-    return <AdminAccessCheckFailed />;
+    return (
+      <AdminAccessCheckFailed
+        onRetry={() => {
+          void invalidatePermissionProbes(queryClient, { accountId });
+          void queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
+        }}
+      />
+    );
   }
 
   if (settled && (receivedDenial(canAdmin) || rows.length === 0)) {
@@ -276,9 +325,11 @@ export function ProjectAdminDashboard({
       ? (RESOURCE_PAGES[active] ?? hostSections[active as 'loops' | 'apps'] ?? null)
       : SETTINGS_PAGES[active];
 
-  const members = showMembers ? (
-    <MembersRow projectId={projectId} accountId={accountId} horizontal={isMobile} />
-  ) : null;
+  const members =
+    showMembers && accountId ? (
+      <MembersLink projectId={projectId} accountId={accountId} horizontal={isMobile} />
+    ) : null;
+  const title = tI18nComplete.raw('text73738b374f4b');
 
   return (
     <SettingsNavProvider value={settingsNav}>
@@ -288,18 +339,20 @@ export function ProjectAdminDashboard({
         style={isMobile ? undefined : { gridTemplateColumns: `${SETTINGS_SIDEBAR_WIDTH_PX}px 1fr` }}
       >
         {isMobile ? (
-          <nav aria-label="Project admin" className="border-border/60 bg-background flex shrink-0 flex-col border-b">
-            <h1 className="text-foreground px-4 pt-3 text-sm font-medium">Project admin</h1>
+          <nav aria-label={title} className="border-border/60 bg-background flex shrink-0 flex-col border-b">
+            <h1 className="text-foreground px-4 pt-3 text-sm font-medium">{title}</h1>
             <FadedScrollArea orientation="horizontal" fadeColor="from-background" className="min-w-0 flex-1 py-2">
               {settled ? (
-                <Tabs value={active} className="w-fit">
-                  <TabsList orientation="horizontal" className="w-fit">
-                    {rows.map((row) => (
-                      <RailTrigger key={row.key} projectId={projectId} row={row} horizontal />
-                    ))}
-                    {members}
-                  </TabsList>
-                </Tabs>
+                <div className="flex w-fit items-center gap-2">
+                  <Tabs value={active} className="w-fit">
+                    <TabsList orientation="horizontal" className="w-fit">
+                      {rows.map((row) => (
+                        <RailTrigger key={row.key} projectId={projectId} row={row} horizontal />
+                      ))}
+                    </TabsList>
+                  </Tabs>
+                  {members}
+                </div>
               ) : (
                 <Skeleton className="mx-3 h-7 w-64 rounded-md" />
               )}
@@ -308,30 +361,29 @@ export function ProjectAdminDashboard({
         ) : (
           <aside className="flex min-h-0 flex-col border-r bg-inherit">
             <nav
-              aria-label="Project admin"
+              aria-label={title}
               className="flex min-h-0 flex-1 [scrollbar-width:none] flex-col gap-4 overflow-y-auto px-2 pt-4 pb-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             >
               <header className="space-y-1 px-2.5">
-                <h1 className="text-foreground text-base font-medium">Project admin</h1>
+                <h1 className="text-foreground text-base font-medium">{title}</h1>
                 <p className="text-muted-foreground text-xs text-balance">
-                  The libraries every agent draws from, and how this project runs.
+                  {tI18nComplete.raw('text2b8a7a0458b5')}
                 </p>
               </header>
               {settled ? (
                 <Tabs value={active} orientation="vertical" className="gap-4">
                   {resourceRows.length > 0 ? (
-                    <RailGroup label="Project resources">
+                    <RailGroup label={tI18nComplete.raw('text4da7c2d25273')}>
                       {resourceRows.map((row) => (
                         <RailTrigger key={row.key} projectId={projectId} row={row} />
                       ))}
                     </RailGroup>
                   ) : null}
                   {settingsRows.length > 0 || members ? (
-                    <RailGroup label="Settings">
+                    <RailGroup label={tI18nComplete.raw('text74a883a037bc')} after={members}>
                       {settingsRows.map((row) => (
                         <RailTrigger key={row.key} projectId={projectId} row={row} />
                       ))}
-                      {members}
                     </RailGroup>
                   ) : null}
                 </Tabs>
@@ -346,7 +398,12 @@ export function ProjectAdminDashboard({
           {settled && ActivePage && active ? (
             <Suspense key={active} fallback={<CapabilitiesSkeleton />}>
               {isProjectAdminResource(active) ? (
-                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div
+                  className={cn(
+                    'flex min-h-0 flex-1 flex-col overflow-hidden',
+                    (active === 'loops' || active === 'apps') && HOST_PANE_CLASS,
+                  )}
+                >
                   <ActivePage projectId={projectId} />
                 </div>
               ) : (
@@ -366,14 +423,20 @@ export function ProjectAdminDashboard({
 
 /* ------------------------------------------------------------------ rail */
 
-/** The account hub's group label dialect (`account-settings-sidebar.tsx`). */
-function RailGroup({ label, children }: { label: string; children: React.ReactNode }) {
+/**
+ * The account hub's group label dialect (`account-settings-sidebar.tsx`).
+ * Each group is its own labelled tablist: arrow keys move inside a group, Tab
+ * moves to the next one. `after` sits below the list, outside it: a link that
+ * is not a tab (Members).
+ */
+function RailGroup({ label, children, after }: { label: string; children: ReactNode; after?: ReactNode }) {
   return (
     <div>
       <p className="text-muted-foreground flex h-8 items-center px-2.5 text-xs font-medium">{label}</p>
       <TabsList orientation="vertical" aria-label={label} className="w-full">
         {children}
       </TabsList>
+      {after}
     </div>
   );
 }
@@ -420,34 +483,35 @@ function RailTrigger({
 }
 
 /**
- * Members is the account hub's project panel, not a pane of this page. It is
- * a trigger with a value no section uses, so it never lights up, and it opens
- * the hub the way the Customize bar's Members link does.
+ * Members is the account hub's project panel, not a pane of this page, so it
+ * is a plain link, not a tab. It opens the hub the way the Customize bar's
+ * Members link does. Its classes copy a rail row's resting state.
  */
-function MembersRow({
+const MEMBERS_LINK_CLASS = cn(
+  'text-foreground hover:bg-hover flex items-center gap-2 rounded-md px-2.5 text-sm',
+  'focus-visible:ring-kortix-blue focus-visible:ring-1 focus-visible:outline-none',
+  '[&_svg]:text-muted-foreground',
+);
+
+function MembersLink({
   projectId,
   accountId,
   horizontal,
 }: {
   projectId: string;
-  accountId: string | undefined;
+  accountId: string;
   horizontal: boolean;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  if (!accountId) return null;
   return (
-    <TabsTrigger
-      value="members"
-      asChild
-      size={horizontal ? undefined : 'md'}
-      className={horizontal ? HORIZONTAL_ROW_CLASS : ROW_CLASS}
+    <HubLink
+      to={hubTarget(accountId, { tab: 'access-projects', project: projectId })}
+      className={cn(MEMBERS_LINK_CLASS, horizontal ? 'h-8 shrink-0 whitespace-nowrap' : 'h-10 w-full')}
     >
-      <HubLink to={hubTarget(accountId, { tab: 'access-projects', project: projectId })}>
-        <UsersIcon className="size-4 shrink-0" />
-        <span className={cn(!horizontal && 'truncate')}>{tI18nComplete.raw('text1044a4c056d0')}</span>
-        <ArrowUpRightIcon aria-hidden className={cn('size-3 shrink-0', !horizontal && 'ml-auto')} />
-      </HubLink>
-    </TabsTrigger>
+      <UsersIcon aria-hidden className="size-4 shrink-0" />
+      <span className={cn(!horizontal && 'truncate')}>{tI18nComplete.raw('text1044a4c056d0')}</span>
+      <ArrowUpRightIcon aria-hidden className={cn('size-3 shrink-0', !horizontal && 'ml-auto')} />
+    </HubLink>
   );
 }
 
@@ -478,20 +542,25 @@ function RailSkeleton() {
 /* ----------------------------------------------------------------- states */
 
 function AdminAccessDenied({ projectId }: { projectId: string }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  // The voice rule for a refused action (voice-and-tone.md section 4): name
+  // the grant in mono once, then say who can grant it.
+  const [beforeGrant, afterGrant] = tI18nComplete.raw('textb24d48611918').split('{grant}');
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center px-4 py-8">
       <EmptyState
         size="sm"
-        title="Project admin needs the settings grant"
+        title={tI18nComplete.raw('text078931e34187')}
         description={
           <>
-            It needs <code className="font-mono">project.settings.write</code>. Anyone who manages
-            this project can grant it.
+            {beforeGrant}
+            <code className="font-mono">{PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE}</code>
+            {afterGrant}
           </>
         }
         action={
           <Button asChild variant="outline" size="sm">
-            <Link href={`/projects/${projectId}`}>Back to project</Link>
+            <Link href={`/projects/${projectId}`}>{tI18nComplete.raw('text37737d817d12')}</Link>
           </Button>
         }
       />
@@ -499,61 +568,20 @@ function AdminAccessDenied({ projectId }: { projectId: string }) {
   );
 }
 
-function AdminAccessCheckFailed() {
+function AdminAccessCheckFailed({ onRetry }: { onRetry: () => void }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center px-4 py-8">
       <ErrorState
         size="sm"
-        title="Project admin could not check your access"
+        title={tI18nComplete.raw('text9eebeabf6094')}
+        description={tI18nComplete.raw('texta0c2cc1374d9')}
         action={
-          <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
-            Try again
+          <Button variant="outline" size="sm" onClick={onRetry}>
+            {tI18nComplete.raw('textd8b8392e2c54')}
           </Button>
         }
       />
     </div>
   );
-}
-
-/* ------------------------------------------------------------- settings nav */
-
-/**
- * The `SettingsNav` for panes mounted here. Panes still speak the overlay's
- * vocabulary (`navigate('llm-providers')`, `navigate('experimental')`): an id
- * that names a section of this page stays on this page. Everything else
- * (`members`, `review`, account sections, personal overlay tabs) resolves the
- * way it does on every standalone capability page.
- */
-export function buildProjectAdminNav(state: {
-  projectId: string;
-  section: ProjectAdminSectionKey;
-  membersTab: MembersTab;
-  accountId?: string;
-  navigateTo: (href: string) => void;
-}): SettingsNav {
-  const fallback = buildStandaloneCapabilityNav({
-    projectId: state.projectId,
-    activeTab: state.section,
-    membersTab: state.membersTab,
-    accountId: state.accountId,
-    navigateTo: state.navigateTo,
-  });
-  return {
-    ...fallback,
-    navigate: (tab, opts) => {
-      const target = projectAdminNavTarget(tab);
-      if (!target) {
-        fallback.navigate(tab, opts);
-        return;
-      }
-      if (opts?.membersTab) {
-        useSettingsPanelStore.setState({ membersTab: opts.membersTab as MembersTab });
-      }
-      if (tab === 'channels') {
-        state.navigateTo(projectAdminHref(state.projectId, 'connectors', { scope: 'channels' }));
-      } else if (target !== state.section) {
-        state.navigateTo(projectAdminHref(state.projectId, target));
-      }
-    },
-  };
 }

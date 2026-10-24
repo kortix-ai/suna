@@ -20394,7 +20394,15 @@
       "text064694999e1f": "Nuovo evento App",
       "text1934aa0740bb": "Cerca eventi App",
       "text25db7e5609e5": "Nessun evento App",
-      "text9f8f92588517": "Un’App avvia agenti emettendo eventi. Aggiungi un trigger con on: { event, app } in kortix.yaml."
+      "text9f8f92588517": "Un’App avvia agenti emettendo eventi. Aggiungi un trigger con on: { event, app } in kortix.yaml.",
+      "text73738b374f4b": "Amministrazione del progetto",
+      "text2b8a7a0458b5": "Le librerie da cui attinge ogni agente e come funziona questo progetto.",
+      "text4da7c2d25273": "Risorse del progetto",
+      "textc08f99e3947d": "Promemoria",
+      "text37737d817d12": "Torna al progetto",
+      "text9eebeabf6094": "Impossibile verificare il tuo accesso",
+      "text078931e34187": "L’amministrazione del progetto richiede il permesso delle impostazioni",
+      "textb24d48611918": "Richiede {grant}. Chiunque gestisca questo progetto può concederlo."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

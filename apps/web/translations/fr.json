@@ -20394,7 +20394,15 @@
       "text064694999e1f": "Nouvel événement d’App",
       "text1934aa0740bb": "Rechercher des événements d’App",
       "text25db7e5609e5": "Aucun événement d’App pour l’instant",
-      "text9f8f92588517": "Une App lance des agents en émettant des événements. Ajoutez un déclencheur avec on: { event, app } dans kortix.yaml."
+      "text9f8f92588517": "Une App lance des agents en émettant des événements. Ajoutez un déclencheur avec on: { event, app } dans kortix.yaml.",
+      "text73738b374f4b": "Administration du projet",
+      "text2b8a7a0458b5": "Les bibliothèques dont chaque agent se sert, et le fonctionnement de ce projet.",
+      "text4da7c2d25273": "Ressources du projet",
+      "textc08f99e3947d": "Rappels",
+      "text37737d817d12": "Retour au projet",
+      "text9eebeabf6094": "Impossible de vérifier votre accès",
+      "text078931e34187": "L’administration du projet nécessite l’autorisation des paramètres",
+      "textb24d48611918": "Elle nécessite {grant}. Toute personne qui gère ce projet peut l’accorder."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

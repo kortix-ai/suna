@@ -3,6 +3,7 @@ import {
   AppWindowIcon,
   BookOpenTextIcon,
   CpuIcon,
+  FoldersIcon,
   KeyIcon,
   PlugsConnectedIcon,
   TimerIcon,
@@ -36,13 +37,19 @@ export type ProjectAdminResourceKey =
   | 'loops'
   | 'models'
   | 'secrets'
-  | 'apps';
+  | 'apps'
+  | 'repo';
 
-export type ProjectAdminSectionKey = ProjectAdminResourceKey | ProjectSettingsSectionKey;
+/**
+ * The Settings sections this page lists. Review is not one: it is its own
+ * standalone surface, and `projectSettingsSections` never lists it.
+ */
+export type ProjectAdminSettingsKey = Exclude<ProjectSettingsSectionKey, 'review'>;
+
+export type ProjectAdminSectionKey = ProjectAdminResourceKey | ProjectAdminSettingsKey;
 
 export interface ProjectAdminResource {
   key: ProjectAdminResourceKey;
-  label: string;
   icon: Icon;
   /**
    * The Customize tab whose access rule (`capabilityAccess`) decides whether
@@ -54,17 +61,23 @@ export interface ProjectAdminResource {
    * through `hostSections`, and the row hides when it does not.
    */
   host: boolean;
+  /**
+   * The flag the row needs. Repo is a library only with `drives` on; with it
+   * off, the sidebar's Files row is the repo browser (`projectNavRows`).
+   */
+  flag?: 'drives';
 }
 
 /** Rail order. Icons match the agent editor's tabs (`agent-page.tsx`). */
 export const PROJECT_ADMIN_RESOURCES: readonly ProjectAdminResource[] = [
-  { key: 'connectors', label: 'Connectors', icon: PlugsConnectedIcon, capability: 'connectors', host: false },
-  { key: 'skills', label: 'Skills', icon: BookOpenTextIcon, capability: 'skills', host: false },
-  { key: 'triggers', label: 'Triggers', icon: TimerIcon, capability: 'triggers', host: false },
-  { key: 'loops', label: 'Loops', icon: AlarmIcon, capability: 'reminders', host: true },
-  { key: 'models', label: 'Models', icon: CpuIcon, capability: 'models', host: false },
-  { key: 'secrets', label: 'Secrets', icon: KeyIcon, capability: 'secrets', host: false },
-  { key: 'apps', label: 'Apps', icon: AppWindowIcon, capability: null, host: true },
+  { key: 'connectors', icon: PlugsConnectedIcon, capability: 'connectors', host: false },
+  { key: 'skills', icon: BookOpenTextIcon, capability: 'skills', host: false },
+  { key: 'triggers', icon: TimerIcon, capability: 'triggers', host: false },
+  { key: 'loops', icon: AlarmIcon, capability: 'reminders', host: true },
+  { key: 'models', icon: CpuIcon, capability: 'models', host: false },
+  { key: 'secrets', icon: KeyIcon, capability: 'secrets', host: false },
+  { key: 'apps', icon: AppWindowIcon, capability: null, host: true },
+  { key: 'repo', icon: FoldersIcon, capability: 'files', host: false, flag: 'drives' },
 ];
 
 /** No `?section=` opens the first resource. */
@@ -79,7 +92,9 @@ export function parseProjectAdminSection(
 ): ProjectAdminSectionKey | null {
   if (!raw) return null;
   const resource = PROJECT_ADMIN_RESOURCES.find((r) => r.key === raw);
-  return resource ? resource.key : parseProjectSettingsSection(raw);
+  if (resource) return resource.key;
+  const setting = parseProjectSettingsSection(raw);
+  return setting === 'review' ? null : setting;
 }
 
 /**

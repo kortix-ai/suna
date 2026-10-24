@@ -20394,7 +20394,15 @@
       "text064694999e1f": "Novi događaj aplikacije",
       "text1934aa0740bb": "Pretraži događaje aplikacija",
       "text25db7e5609e5": "Još nema događaja aplikacija",
-      "text9f8f92588517": "Aplikacija pokreće agente emitovanjem događaja. Dodaj okidač sa on: { event, app } u kortix.yaml."
+      "text9f8f92588517": "Aplikacija pokreće agente emitovanjem događaja. Dodaj okidač sa on: { event, app } u kortix.yaml.",
+      "text73738b374f4b": "Администрација пројекта",
+      "text2b8a7a0458b5": "Библиотеке из којих сваки агент црпи и начин на који овај пројекат ради.",
+      "text4da7c2d25273": "Ресурси пројекта",
+      "textc08f99e3947d": "Подсетници",
+      "text37737d817d12": "Назад на пројекат",
+      "text9eebeabf6094": "Није могуће проверити ваш приступ",
+      "text078931e34187": "Администрацији пројекта је потребна дозвола за подешавања",
+      "textb24d48611918": "Потребна је {grant}. Свако ко управља овим пројектом може да је додели."
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
