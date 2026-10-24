@@ -30,6 +30,8 @@
 import { usePlanInChat } from '../../thread/plan-surface';
 import { useSessionComposerPrefillStore } from '../../composer/stores/session-composer-prefill-store';
 import { useOptionalSessionPanel } from '../session-panel-provider';
+import { useSessionChangeRequestsPanel } from '../../outcomes/session-outcomes-bridge';
+import { ChangeRequestsCard } from './change-requests-card';
 import { AppsCard } from './apps-card';
 import { ContextCard } from './context-card';
 import { pathOutput } from './easy-panel-logic';
@@ -38,6 +40,7 @@ import { PlanPanelCard } from './plan-card';
 
 export function EasyPanel() {
   const panel = useOptionalSessionPanel();
+  const changeRequests = useSessionChangeRequestsPanel();
   // Exactly one plan surface is mounted, ever. This card stands down only on
   // mobile, where this same component is the detail drawer's home view and the
   // drawer is shut by default, so the transcript keeps the plan. On desktop it
@@ -62,12 +65,13 @@ export function EasyPanel() {
     // through everything above them.
     //
     // Now the column owns the height (`h-full`) and hands the leftover to
-    // exactly one card. Outputs is the one that yields (`fill`); Context and
+    // exactly one card: Change requests when present, otherwise Outputs. Context and
     // Preview keep `shrink-0` and stay on screen at their full height, always.
     // `min-h-0` is what lets this shrink at all — a flex container defaults to
     // its content's minimum height and would otherwise refuse.
     <div className="flex h-full min-h-0 flex-col gap-2">
       <OutputsCard
+        fill={!changeRequests?.requests.length}
         outputs={files}
         defaultExpanded={outputsDefaultOpen}
         onOpenOutput={(o) => handleOpenOutput(o, files)}
@@ -87,6 +91,7 @@ export function EasyPanel() {
       {/* Last, under Preview, and conditional like it — the card draws itself
           away when the session has no plan (see `plan-card.tsx`). */}
       {!planInChat && <PlanPanelCard sessionId={sessionId} />}
+      {changeRequests && <ChangeRequestsCard {...changeRequests} />}
     </div>
   );
 }

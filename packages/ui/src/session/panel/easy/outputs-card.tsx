@@ -356,8 +356,10 @@ export function OutputsCard({
   outputs,
   defaultExpanded,
   onOpenOutput,
+  fill = true,
 }: {
   outputs: OutputItem[];
+  fill?: boolean;
   /** Auto-expands when a run finishes with something to show — the payoff moment. */
   defaultExpanded: boolean;
   onOpenOutput: (output: OutputItem) => void;
@@ -371,8 +373,8 @@ export function OutputsCard({
       defaultExpanded={defaultExpanded}
       emptyArt={<OutputsArt />}
       emptyText={tI18nComplete.raw('textd5f2ad00f99b')}
-      contentClassName="flex min-h-0 flex-col px-2 py-2"
-      fill
+      contentClassName={cn('flex min-h-0 flex-col px-2 py-2', !fill && 'max-h-40 overflow-y-auto')}
+      fill={fill}
       headerAction={<DownloadAllAction outputs={outputs} />}
     >
       <OutputRows outputs={outputs} onOpenOutput={onOpenOutput} />
