@@ -22686,7 +22686,9 @@
     "diagramEdit": "Editar diagrama",
     "diagramDone": "Listo",
     "codeLanguage": "Lenguaje del código",
-    "editedAgo": "Editado {time}"
+    "editedAgo": "Editado {time}",
+    "openFullPage": "Abrir a página completa",
+    "close": "Cerrar"
   },
   "emailConnect": {
     "homeTitle": "Dónde vive el buzón",

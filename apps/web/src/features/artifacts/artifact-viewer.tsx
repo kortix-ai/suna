@@ -26,6 +26,8 @@ import {
   ArrowCounterClockwiseIcon,
   CaretRightIcon,
   ArrowSquareOutIcon,
+  ArrowsOutSimpleIcon,
+  XIcon,
   ClockCounterClockwiseIcon,
   CornersOutIcon,
   DotsThreeIcon,
@@ -81,7 +83,17 @@ function editArtifactPrompt(a: ArtifactDetail, change: string): string {
  * Files); an HTML page runs in a sandboxed frame. The history is the Files
  * commit log of its path.
  */
-export function ArtifactViewer({ projectId, artifactId }: { projectId: string; artifactId: string }) {
+export function ArtifactViewer({
+  projectId,
+  artifactId,
+  onClose,
+}: {
+  projectId: string;
+  artifactId: string;
+  /** Embedded (the session panel): fill the panel, close instead of the sidebar toggle, and a way to the full page. */
+  onClose?: () => void;
+}) {
+  const embedded = !!onClose;
   const t = useTranslations('artifacts');
   const locale = useLocale();
   const router = useRouter();
@@ -134,18 +146,27 @@ export function ArtifactViewer({ projectId, artifactId }: { projectId: string; a
   const rows = historyRows(versions.data ?? []);
 
   return (
-    <div className="flex h-svh flex-col overflow-hidden">
-      {/* The project page header (ProjectPageHeader's title-bar classes): a breadcrumb, then quiet actions. */}
+    <div className={embedded ? 'flex h-full min-h-0 flex-col overflow-hidden' : 'flex h-svh flex-col overflow-hidden'}>
+      {/* The project page header (ProjectPageHeader's title-bar classes): a breadcrumb, then quiet actions.
+          Embedded in the session panel: the panel's own plain header row. */}
       <header
-        className="kx-titlebar-row kx-capability-titlebar relative flex shrink-0 items-center gap-1 border-b px-2"
-        data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
+        className={
+          embedded
+            ? 'flex h-10 shrink-0 items-center gap-1 border-b px-1'
+            : 'kx-titlebar-row kx-capability-titlebar relative flex shrink-0 items-center gap-1 border-b px-2'
+        }
+        data-sidebar-collapsed={embedded ? undefined : sidebar?.state === 'collapsed' || undefined}
       >
-        <SidebarToggle />
-        <div className="kx-titlebar-tabs flex h-10 min-w-0 flex-1 items-center gap-1.5 px-3 text-sm">
-          <Link href={`/projects/${projectId}/artifacts`} className="text-muted-foreground hover:text-foreground shrink-0 transition-colors">
-            {t('title')}
-          </Link>
-          <CaretRightIcon className="text-muted-foreground size-3 shrink-0" aria-hidden />
+        {embedded ? null : <SidebarToggle />}
+        <div className={`${embedded ? '' : 'kx-titlebar-tabs '}flex h-10 min-w-0 flex-1 items-center gap-1.5 px-3 text-sm`}>
+          {embedded ? null : (
+            <>
+              <Link href={`/projects/${projectId}/artifacts`} className="text-muted-foreground hover:text-foreground shrink-0 transition-colors">
+                {t('title')}
+              </Link>
+              <CaretRightIcon className="text-muted-foreground size-3 shrink-0" aria-hidden />
+            </>
+          )}
           {artifact ? (
             renaming ? (
               <input
@@ -292,6 +313,26 @@ export function ArtifactViewer({ projectId, artifactId }: { projectId: string; a
             </DropdownMenu>
           </div>
         ) : null}
+        {embedded ? (
+          <div className="flex shrink-0 items-center">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button size="icon-sm" variant="ghost" aria-label={t('openFullPage')} onClick={() => router.push(`/projects/${projectId}/artifacts/${artifactId}`)}>
+                  <ArrowsOutSimpleIcon className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('openFullPage')}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button size="icon-sm" variant="ghost" aria-label={t('close')} onClick={onClose}>
+                  <XIcon className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('close')}</TooltipContent>
+            </Tooltip>
+          </div>
+        ) : null}
       </header>
 
       {artifact && viewingOld ? (
@@ -354,7 +395,8 @@ export function ArtifactViewer({ projectId, artifactId }: { projectId: string; a
         onConfirm={async () => {
           await mutations.remove.mutateAsync(artifactId);
           successToast(t('removed'));
-          router.push(`/projects/${projectId}/artifacts`);
+          if (onClose) onClose();
+          else router.push(`/projects/${projectId}/artifacts`);
         }}
       />
     </div>

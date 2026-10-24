@@ -22686,7 +22686,9 @@
     "diagramEdit": "Modifier le diagramme",
     "diagramDone": "Terminé",
     "codeLanguage": "Langage du code",
-    "editedAgo": "Modifié {time}"
+    "editedAgo": "Modifié {time}",
+    "openFullPage": "Ouvrir en pleine page",
+    "close": "Fermer"
   },
   "emailConnect": {
     "homeTitle": "Où se trouve la boîte",

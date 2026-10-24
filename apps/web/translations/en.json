@@ -22686,7 +22686,9 @@
     "diagramEdit": "Edit diagram",
     "diagramDone": "Done",
     "codeLanguage": "Code language",
-    "editedAgo": "Edited {time}"
+    "editedAgo": "Edited {time}",
+    "openFullPage": "Open full page",
+    "close": "Close"
   },
   "emailConnect": {
     "homeTitle": "Where the inbox lives",

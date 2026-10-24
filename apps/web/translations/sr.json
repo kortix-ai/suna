@@ -22686,7 +22686,9 @@
     "diagramEdit": "Уреди дијаграм",
     "diagramDone": "Готово",
     "codeLanguage": "Језик кода",
-    "editedAgo": "Измењено {time}"
+    "editedAgo": "Измењено {time}",
+    "openFullPage": "Отвори целу страницу",
+    "close": "Затвори"
   },
   "emailConnect": {
     "homeTitle": "Gde je sanduče",
