@@ -429,10 +429,12 @@ const FLAGS: readonly FeatureFlagDef[] = [
     available: () => Boolean(config.PLATINUM_API_KEY),
     platformDefault: () => false,
     enforcement: 'routes',
+    iamActions: ['project.artifact.read', 'project.artifact.write', 'project.artifact.manage', 'project.artifact.public'],
     enforcementNote:
       'ROUTES: every /v1/projects/:id/artifacts* route answers 403 `feature_disabled` when off, and ' +
       '/v1/artifacts/* (the content server) answers 404 for an artifact of a flag-off project. BOX: off, ' +
-      'a session box has no kortix-artifacts skill and its CLI hides and refuses `kortix artifacts`.',
+      'a session box has no kortix-artifacts skill and its CLI hides and refuses `kortix artifacts`. ' +
+      'IAM: project.artifact.* leave the account permission catalog until a project of the account has it on.',
   },
   // `session_log` graduated (2026-10-22, P8.2): the session log is every session's
   // saved history and the v1 transcript mirror is no longer read. No flag and no

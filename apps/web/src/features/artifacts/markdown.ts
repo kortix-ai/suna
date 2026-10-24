@@ -11,7 +11,9 @@ export function markdownToHtml(markdown: string): string {
   return (marked.parse(markdown, { gfm: true, async: false }) as string)
     // marked's task items → the editor's (`li[data-type=taskItem]`).
     .replace(/<li><input (checked="" )?disabled="" type="checkbox">\s*/g, (_m, checked) => `<li data-type="taskItem" data-checked="${checked ? 'true' : 'false'}">`)
-    .replace(/<ul>(\s*<li data-type="taskItem")/g, '<ul data-type="taskList">$1');
+    .replace(/<ul>(\s*<li data-type="taskItem")/g, '<ul data-type="taskList">$1')
+    // marked keeps a fence's last newline; the editor would show it as an empty line.
+    .replace(/\n<\/code><\/pre>/g, '</code></pre>');
 }
 
 let service: TurndownService | null = null;

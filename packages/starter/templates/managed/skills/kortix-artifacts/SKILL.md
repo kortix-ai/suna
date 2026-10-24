@@ -197,10 +197,19 @@ artifact you saved: `kortix artifacts share <id> --visibility project`.
 | `kortix artifacts share <id> --visibility … [--with …]` | share |
 | `kortix artifacts versions` / `restore` / `rename` / `pin` / `unpin` / `rm` | manage |
 
-Add `--json` for machine-readable output. Reading needs `project.read`;
-publishing needs `project.session.start`; saving needs write access to the
-path in Files; sharing settings need the artifact's creator or a project
-manager.
+Add `--json` for machine-readable output. Permissions (a role's, and for an
+agent its `kortix_permissions` in kortix.yaml):
+
+| Permission | Lets you |
+|---|---|
+| `project.artifact.read` | list, open, read versions and files |
+| `project.artifact.write` | publish, add, save, restore; rename and share your own |
+| `project.artifact.manage` | rename, share or stop sharing anyone's |
+| `project.artifact.public` | give an artifact a public link |
+
+Saving also needs write access to the folder in Files. A refused public link
+answers 403 `public_link_forbidden`: share with the project instead and tell
+the user.
 </commands>
 
 </skill>

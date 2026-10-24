@@ -22637,6 +22637,8 @@
     "mediaTooLarge": "此文件超过 16 MB。",
     "refresh": "刷新",
     "diagramEdit": "编辑图表",
-    "diagramDone": "完成"
+    "diagramDone": "完成",
+    "codeLanguage": "代码语言",
+    "editedAgo": "编辑于 {time}"
   }
 }
