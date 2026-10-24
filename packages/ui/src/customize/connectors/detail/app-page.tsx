@@ -538,7 +538,7 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
                   <li key={tool.name} className="space-y-0.5 px-4 py-2.5">
                     <span className="text-foreground block font-mono text-xs break-all">{tool.name}</span>
                     {tool.description ? (
-                      <span className="text-muted-foreground line-clamp-2 block text-xs text-pretty" title={tool.description}>
+                      <span className="text-muted-foreground line-clamp-2 text-xs text-pretty" title={tool.description}>
                         {tool.description}
                       </span>
                     ) : null}
