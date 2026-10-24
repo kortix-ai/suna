@@ -38,7 +38,7 @@ triggers:
 
 To react to something outside Kortix, pick the first that fits:
 
-1. **A connector event.** The service already emits it: a new email, a new pull request. No code, no secret.
+1. **A connector event.** The service already emits it: a new email, a new pull request. No code, no secret. Needs the project flag `event_triggers`, off by default.
 2. **A webhook.** The service can call a URL. One secret, no code to run.
 3. **A schedule.** Checking on a fixed cadence is enough.
 4. **An App that posts App events.** Only when none of the above works: the source has no events and no webhook, code must decide what deserves an agent, or the watch needs a connection that stays open.
@@ -188,7 +188,7 @@ Kortix runs a delivery once per event. It reads the event id from the first of t
 
 An `event` trigger runs an agent when something happens in a connected app: a pull request opens, an email arrives. You do not sign anything. Kortix subscribes to the event, or checks the app, for you.
 
-Connector event triggers use the project flag `event_triggers`, on by default. A project owner can turn it off, and back on, in **Customize → Settings → Feature flags → Connector event triggers**, or with `kortix projects features disable|enable event_triggers`. While it is off, the event routes answer `403` with `code: feature_disabled`. The CLI prints the command that turns it on. An `event` trigger in `kortix.yaml` reads status `error`. Turning it on subscribes those triggers without another save.
+Connector event triggers need the project flag `event_triggers`, off by default. Turn it on in **Customize → Settings → Feature flags → Connector event triggers**, or run `kortix projects features enable event_triggers`. While it is off, the event routes answer `403` with `code: feature_disabled`. The CLI prints the command that turns it on. An `event` trigger in `kortix.yaml` reads status `error`. Turning it on subscribes those triggers without another save.
 
 ### Event sources
 

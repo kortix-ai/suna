@@ -1725,7 +1725,7 @@ flow(
   },
 );
 
-/** Connector event triggers sit behind the per-project `event_triggers` flag (on by default; a project can turn it off): make sure it is on. */
+/** Connector event triggers sit behind the per-project `event_triggers` flag (off by default): turn it on. */
 async function enableEventTriggers(
   ctx: { step: (name: string, fn: () => Promise<void>) => Promise<void> },
   owner: { patch: (path: string, body: unknown, opts: { params: Record<string, string> }) => Promise<any> },
@@ -2059,8 +2059,7 @@ flow(
       (await owner.patch('/v1/projects/:projectId/features', { feature: 'event_triggers', enabled }, { params })).status(200);
     };
 
-    await ctx.step('flag turned off (the default is on): event-types by connector and by app, and event-apps → 403 feature_disabled', async () => {
-      await setFlag(false);
+    await ctx.step('flag off (the default): event-types by connector and by app, and event-apps → 403 feature_disabled', async () => {
       denied(await owner.get(types, { params, query: { connector: 'inbox' } }));
       denied(await owner.get(types, { params, query: { app: 'github' } }));
       const r = await owner.get(apps, { params });

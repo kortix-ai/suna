@@ -472,12 +472,12 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
       expect(calls).toEqual([]);
     });
 
-    test('flag unset (platform default on) subscribes like on', async () => {
+    test('flag unset (platform default off) behaves like off', async () => {
       await connect();
       await setFlag(null);
       await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
-      expect(await status('a')).toBe('active');
-      expect(calls).toHaveLength(1);
+      expect(await status('a')).toBe('error');
+      expect(calls).toEqual([]);
     });
 
     test('toggle off releases every subscription and no delivery fires; toggle on reconciles from the catalog', async () => {
