@@ -716,13 +716,15 @@ export function ConnectionsList({
     <ConnectionRow
       key={connection.connection_id}
       connection={connection}
+      // An array, not a fragment: InlineMeta separates its children, and a
+      // fragment is one child (address and home ran together).
       meta={
-        inbox ? (
-          <>
-            {inbox.email !== connection.label ? <span>{inbox.email}</span> : null}
-            <EmailInboxHome inbox={inbox} />
-          </>
-        ) : undefined
+        inbox
+          ? [
+              inbox.email !== connection.label ? <span key="address">{inbox.email}</span> : null,
+              <EmailInboxHome key="home" inbox={inbox} />,
+            ]
+          : undefined
       }
       menuItems={
         inbox ? (
