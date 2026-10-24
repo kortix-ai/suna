@@ -534,6 +534,80 @@ channels:
     input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    every: 1h\n    target: { app: w, payload: nope }\n',
   },
 
+  // ─── triggers: the on/run shape ───────────────────────────────────────
+  {
+    name: 'on/run: a cron schedule that runs an agent',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { cron: \"0 0 9 * * *\", timezone: Europe/Berlin }\n    run: { agent: default, prompt: go, session: reuse }\n',
+  },
+  {
+    name: 'on/run: every that calls an App',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { every: 5m }\n    run: { app: watcher, path: /tick, payload: { a: 1 } }\n',
+  },
+  {
+    name: 'on/run: a one-off at',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { at: \"2026-11-01T09:00:00Z\" }\n    run: { prompt: go }\n',
+  },
+  {
+    name: 'on/run: a webhook',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { webhook: { secret: HOOK_SECRET } }\n    run: { prompt: \"{{ body.x }}\" }\n',
+  },
+  {
+    name: 'on/run: a connector event',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { event: PR, connector: github }\n    run: { prompt: go }\n',
+  },
+  {
+    name: 'on/run: an App event',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { event: reply.received, app: watcher }\n    run: { prompt: go }\n',
+  },
+  {
+    name: 'on/run: an unknown on key is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { crn: x }\n    run: { prompt: go }\n',
+  },
+  {
+    name: 'on/run: an unknown run key is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { every: 5m }\n    run: { promt: go }\n',
+  },
+  {
+    name: 'on/run: run is required',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { every: 5m }\n',
+  },
+  {
+    name: 'on/run: type with on is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    on: { every: 5m }\n    run: { prompt: go }\n',
+  },
+  {
+    name: 'on/run: run needs a prompt or an app',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { every: 5m }\n    run: { agent: default }\n',
+  },
+  {
+    name: 'on/run: a webhook needs its secret',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { webhook: {} }\n    run: { prompt: go }\n',
+  },
+
   // ─── shared sections: triggers type = "event" ─────────────────────────
   {
     name: 'event: connector + event + config object is valid',

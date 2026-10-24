@@ -16,6 +16,7 @@
  */
 
 import { Cron } from 'croner';
+import { normalizeTriggerList } from './trigger-shape';
 import { TomlError } from 'smol-toml';
 import { type ManifestFormat, parseManifestText } from './format';
 import { parseConnectorHeaders } from './connector-headers';
@@ -120,6 +121,7 @@ export {
 } from './format';
 
 export { slugifySlug } from './slug';
+export { normalizeTriggerEntry, normalizeTriggerList } from './trigger-shape';
 export {
   TRIGGER_FILTER_OPERATORS,
   parseTriggerFilter,
@@ -1335,8 +1337,26 @@ function validateTriggerTarget(entry: Record<string, unknown>, where: string, ty
   if (target.method !== undefined && target.method !== 'POST' && target.method !== 'GET') push('.method', 'must be POST or GET.');
 }
 
-export function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
-  if (node == null) return;
+const ON_KEYS = ['cron', 'timezone', 'every', 'at', 'webhook', 'event', 'connector', 'account', 'source', 'config', 'app'];
+const RUN_KEYS = ['agent', 'prompt', 'session', 'session_key', 'session_id', 'model', 'app', 'path', 'method', 'payload'];
+
+/** The raw `on:` / `run:` objects carry only known keys, and a trigger carries both or neither (trigger-shape.ts). */
+function validateOnRunShape(entry: Record<string, unknown>, where: string, issues: ManifestIssue[]): void {
+  // A legacy monitor's `run:` is a command string, not this shape.
+  if (entry.on === undefined && !isTable(entry.run)) return;
+  const push = (at: string, message: string) => issues.push({ path: `${where}.${at}`, message, severity: 'error' });
+  if (!isTable(entry.on)) push('on', 'must be a table: what fires the trigger (cron, every, at, webhook, or event).');
+  else for (const key of Object.keys(entry.on)) if (!ON_KEYS.includes(key)) push(`on.${key}`, `is not an \`on\` field (${ON_KEYS.join(', ')}).`);
+  if (!isTable(entry.run)) push('run', 'must be a table: what a fire runs (agent + prompt, or app + path).');
+  else for (const key of Object.keys(entry.run)) if (!RUN_KEYS.includes(key)) push(`run.${key}`, `is not a \`run\` field (${RUN_KEYS.join(', ')}).`);
+  if (entry.type !== undefined) push('type', 'is implied by `on`; remove it.');
+}
+
+export function validateTriggers(rawNode: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
+  if (rawNode == null) return;
+  if (Array.isArray(rawNode)) rawNode.forEach((entry, i) => { if (isTable(entry)) validateOnRunShape(entry, `${path}[${i}]`, issues); });
+  // One set of rules for both shapes: an `on:` / `run:` entry is checked as the flat fields it means.
+  const node = normalizeTriggerList(rawNode);
   if (!Array.isArray(node)) {
     issues.push({
       path,

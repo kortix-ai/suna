@@ -586,7 +586,9 @@ describe('kortix triggers — events', () => {
     );
     expect(result.code).toBe(0);
     const text = manifestText();
-    expect(text).toContain('type: event');
+    // Written in the on/run shape: on carries the event, run the prompt.
+    expect(text).toContain('on:');
+    expect(text).not.toContain('type:');
     expect(text).toContain('connector: github');
     expect(text).toContain('event: GITHUB_PULL_REQUEST_EVENT');
     expect(text).toContain('owner: acme');
@@ -1435,8 +1437,9 @@ describe('kortix triggers — app triggers', () => {
     const result = await runCli(['triggers', 'add', 'bank-reply', '--type', 'app', '--app', 'bank-replies', '--prompt', 'Reply: {{ event.data.subject }}']);
     expect(result.code).toBe(0);
     const text = manifestText();
-    expect(text).toContain('type: app');
+    expect(text).toMatch(/event: ["']?\*["']?/);
     expect(text).toContain('app: bank-replies');
+    expect(text).toContain('prompt: "Reply: {{ event.data.subject }}"');
     expect(text).not.toContain('cron:');
     expect(text).not.toContain('timezone:');
   });

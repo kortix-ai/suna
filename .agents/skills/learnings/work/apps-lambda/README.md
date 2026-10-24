@@ -117,8 +117,8 @@ Decisions:
 | 3a | App target on the trigger engine | committed bcbae7e5a1 |
 | 3b | `every` schedules, `target.payload`, one-off App runs (`POST …/apps/:id/runs`) | committed 94fa9a534a |
 | 3c | MCP poll loop | Marko 2026-10-24: keep it as is (it works); maybe move onto the engine later |
-| 3d | remove the monitor box and `type: monitor` | committed (this commit); prod usage not checkable locally, so a maintenance step retires any live box; drop `project_monitor_boxes` + `monitor-retire.ts` in a later migration |
-| 3e | `schedules:` / `webhooks:` / `events:` manifest + CLI/API/SDK/UI rename | waits for Marko's go on the shape |
+| 3d | remove the monitor box and `type: monitor` | committed 2744a6097c; prod usage not checkable locally, so a maintenance step retires any live box; drop `project_monitor_boxes` + `monitor-retire.ts` in a later migration |
+| 3e | trigger = `on:` (what fires) + `run:` (what runs), one normalizer in @kortix/manifest-schema; new triggers written in it, edits keep their shape; flat `type:` entries stay valid | committed (this commit); flag relabel \"Connector events\" moves to item 5 |
 | 4 | Lambda-style Apps: `memory_mb` sizes, pause/resume, invoke | after 3 |
 | 5 | `/apps` shows only Apps with `display.listed: true` + rendering pass; **Triggers page renders `type: app` triggers and App targets (today `isTriggerKind` hides them)** | needs `next dev`; when the laptop has RAM |
 | 6 | docs (`apps.mdx`, `connect/triggers.mdx`, `project/manifest.mdx`), agent skill + templates | one pass after 3e, for the final shape; docs still describe monitors until then |

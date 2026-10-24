@@ -285,31 +285,33 @@ export async function triggersAddLocal(
       );
       return 1;
     }
-    const fields: Record<string, unknown> = { slug };
-    if (tf.name) fields.name = tf.name;
-    fields.type = type;
-    if (tf.agent) fields.agent = tf.agent;
-    fields.enabled = !disabled;
-    if (type === 'cron' && tf.every) {
-      // Re-emitted canonically ("60s" → "1m"), the normalization the API's write path applies.
-      fields.every = formatDurationSeconds(every!.seconds);
-    } else if (type === 'cron') {
-      fields.cron = tf.cron;
-      fields.timezone = tf.timezone ?? 'UTC';
-    } else if (type === 'app') {
-      fields.app = tf.app;
-    } else if (type === 'event' && event) {
-      fields.connector = event.connector;
-      if (event.account) fields.account = event.account;
-      if (event.source) fields.source = event.source;
-      fields.event = event.event;
-      if (Object.keys(event.config).length > 0) fields.config = event.config;
-    } else if (tf.secretEnv) {
-      fields.secret_env = tf.secretEnv;
-    }
-    Object.assign(fields, caps);
-    if (tf.targetApp) fields.target = { app: tf.targetApp, ...(tf.targetPath ? { path: tf.targetPath } : {}) };
-    if (tf.prompt) fields.prompt = tf.prompt;
+    // The on/run shape, the same the API writes for a new trigger: what fires it, what it runs.
+    const on: Record<string, unknown> =
+      type === 'cron'
+        ? tf.every
+          ? { every: formatDurationSeconds(every!.seconds) }
+          : { cron: tf.cron, ...(tf.timezone && tf.timezone !== 'UTC' ? { timezone: tf.timezone } : {}) }
+        : type === 'app'
+          ? { event: '*', app: tf.app }
+          : type === 'event' && event
+            ? {
+                event: event.event, connector: event.connector,
+                ...(event.account ? { account: event.account } : {}),
+                ...(event.source ? { source: event.source } : {}),
+                ...(Object.keys(event.config).length > 0 ? { config: event.config } : {}),
+              }
+            : { webhook: { secret: tf.secretEnv } };
+    const run: Record<string, unknown> = tf.targetApp
+      ? { app: tf.targetApp, ...(tf.targetPath ? { path: tf.targetPath } : {}) }
+      : { ...(tf.agent ? { agent: tf.agent } : {}), prompt: tf.prompt };
+    const fields: Record<string, unknown> = {
+      slug,
+      ...(tf.name ? { name: tf.name } : {}),
+      on,
+      run,
+      ...(disabled ? { enabled: false } : {}),
+      ...caps,
+    };
     appendArrayBlock('triggers', fields);
     process.stdout.write(
       `${status.ok(`Added [[triggers]] ${C.bold}${slug}${C.reset} (${type}) to kortix.yaml`)} ${C.dim}— \`kortix ship\` to apply.${C.reset}\n`,

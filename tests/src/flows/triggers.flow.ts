@@ -151,7 +151,8 @@ flow(
         },
         { until: (t) => t.includes('slug: nightly'), timeoutMs: 60_000, intervalMs: 2_000, description: 'kortix.yaml carries the trigger' },
       );
-      for (const needle of ['type: cron', 'model: anthropic/claude-sonnet-4-6', 'do nightly work']) {
+      // A new trigger is written in the on/run shape (on: cron, run: prompt + model).
+      for (const needle of ['on:', 'cron:', 'run:', 'model: anthropic/claude-sonnet-4-6', 'do nightly work']) {
         if (!text.includes(needle)) throw new Error(`kortix.yaml lacks "${needle}":\n${text}`);
       }
     });

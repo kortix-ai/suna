@@ -3,6 +3,7 @@ import {
   EVENT_FORBIDDEN_KEYS,
   TRIGGER_MIN_MAX_LATENESS_SECONDS,
   formatDurationSeconds,
+  normalizeTriggerList,
   parseDurationSeconds,
   parseTriggerFilter,
 } from '@kortix/manifest-schema';
@@ -210,7 +211,8 @@ function parseMonitorDuration(
  */
 export function extractTriggers(manifest: ParsedManifest): LoadedTriggers {
   const filename = manifest.path || MANIFEST_FILENAME;
-  const rawTriggers = manifest.raw.triggers;
+  // `on:` / `run:` entries read as the flat fields they mean (@kortix/manifest-schema).
+  const rawTriggers = normalizeTriggerList(manifest.raw.triggers);
   if (rawTriggers === undefined || rawTriggers === null) {
     return { specs: [], errors: [] };
   }
@@ -394,6 +396,62 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
   if (spec.target) entry.target = spec.target;
   if (spec.promptTemplate) entry.prompt = spec.promptTemplate;
   return entry;
+}
+
+/**
+ * The `on:` / `run:` entry of a spec (@kortix/manifest-schema `trigger-shape`):
+ * what a new trigger is written as. Defaults stay out of the file: agent
+ * `default`, timezone `UTC`, `enabled: true`, a name equal to the slug, the
+ * `fresh` session mode. An App event's `event.name` filter is its `on.event`.
+ */
+export function triggerSpecToOnRunEntry(spec: GitTriggerSpec): Record<string, unknown> {
+  const filter = { ...(spec.filter ?? {}) } as Record<string, unknown>;
+  let on: Record<string, unknown>;
+  if (spec.type === 'cron') {
+    const tz = spec.timezone && spec.timezone !== 'UTC' ? { timezone: spec.timezone } : {};
+    on = spec.runAt ? { at: spec.runAt, ...tz } : spec.everySeconds ? { every: formatDurationSeconds(spec.everySeconds) } : { cron: spec.cron ?? '', ...tz };
+  } else if (spec.type === 'webhook') {
+    on = { webhook: { secret: spec.secretEnv ?? '' } };
+  } else if (spec.type === 'event' && spec.event) {
+    on = {
+      event: spec.event.type, connector: spec.event.connector,
+      ...(spec.event.account ? { account: spec.event.account } : {}),
+      ...(spec.event.source ? { source: spec.event.source } : {}),
+      ...(Object.keys(spec.event.config).length > 0 ? { config: spec.event.config } : {}),
+    };
+  } else {
+    const name = typeof filter['event.name'] === 'string' ? (filter['event.name'] as string) : '*';
+    delete filter['event.name'];
+    on = { event: name, app: spec.app ?? '' };
+  }
+  const keyedByKey = spec.sessionMode === 'keyed' && !!spec.sessionKey;
+  const run: Record<string, unknown> = spec.target
+    ? {
+        app: spec.target.app,
+        ...(spec.target.path !== '/' ? { path: spec.target.path } : {}),
+        ...(spec.target.method !== 'POST' ? { method: spec.target.method } : {}),
+        ...(spec.target.payload ? { payload: spec.target.payload } : {}),
+      }
+    : {
+        ...(spec.agent !== 'default' ? { agent: spec.agent } : {}),
+        prompt: spec.promptTemplate,
+        ...(spec.sessionMode !== 'fresh' && !keyedByKey ? { session: spec.sessionMode } : {}),
+        ...(spec.sessionMode === 'pinned' && spec.pinnedSessionId ? { session_id: spec.pinnedSessionId } : {}),
+        ...(keyedByKey ? { session_key: spec.sessionKey } : {}),
+        ...(spec.model ? { model: spec.model } : {}),
+      };
+  return {
+    slug: spec.slug,
+    ...(spec.name !== spec.slug ? { name: spec.name } : {}),
+    on,
+    run,
+    ...(spec.enabled ? {} : { enabled: false }),
+    ...(Object.keys(filter).length > 0 ? { filter } : {}),
+    ...(spec.maxRunsPerHour ? { max_runs_per_hour: spec.maxRunsPerHour } : {}),
+    ...(spec.maxRunsPerDay ? { max_runs_per_day: spec.maxRunsPerDay } : {}),
+    ...(spec.overlap ? { overlap: spec.overlap } : {}),
+    ...(spec.maxLatenessSeconds ? { max_lateness: formatDurationSeconds(spec.maxLatenessSeconds) } : {}),
+  };
 }
 
 interface ParseOk {

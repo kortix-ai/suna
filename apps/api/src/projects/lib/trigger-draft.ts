@@ -1,6 +1,6 @@
 import type { TriggerList } from '@kortix/api-contract';
 import { apps, connectorConnections, connectors, projectTriggerRuntime } from '@kortix/db';
-import { type TriggerFilter, cronIntervalError, formatDurationSeconds, parseTriggerFilter } from '@kortix/manifest-schema';
+import { type TriggerFilter, cronIntervalError, formatDurationSeconds, normalizeTriggerEntry, parseTriggerFilter } from '@kortix/manifest-schema';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { config } from '../../config';
 import { db } from '../../shared/db';
@@ -268,9 +268,14 @@ export interface TriggerDraft {
 }
 
 export function parseTriggerDraft(
-  body: Record<string, unknown>,
+  rawBody: Record<string, unknown>,
   opts: { existingSlug: string | null },
 ): TriggerDraft | { error: string } {
+  // A body may use the `on:` / `run:` shape; `run.prompt` is the prompt template.
+  const normalized = normalizeTriggerEntry(rawBody) as Record<string, unknown>;
+  const body = normalized !== rawBody && normalized.prompt !== undefined && normalized.prompt_template === undefined
+    ? { ...normalized, prompt_template: normalized.prompt }
+    : normalized;
   const rawSlug = normalizeString(body.slug);
   const name = normalizeString(body.name);
   if (!name) return { error: 'name is required' };

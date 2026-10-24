@@ -464,6 +464,63 @@ function triggerFilterSchema(): JsonSchemaFragment {
   };
 }
 
+/**
+ * One trigger in the `on:` / `run:` shape (trigger-shape.ts): what fires it,
+ * and what a fire runs. `type` is implied by `on`, so it may not appear.
+ */
+function onRunTriggerSchema(): JsonSchemaFragment {
+  const durationSchema: JsonSchemaFragment = { type: 'string', pattern: DURATION_RE.source };
+  const appSlug: JsonSchemaFragment = { type: 'string', pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$' };
+  const source = (required: string[], properties: Record<string, JsonSchemaFragment>): JsonSchemaFragment => ({
+    type: 'object', required, additionalProperties: false, properties,
+  });
+  return {
+    type: 'object',
+    required: ['slug', 'on', 'run'],
+    properties: {
+      slug: SLUG_SCHEMA,
+      name: { type: 'string' },
+      type: false,
+      enabled: enabledValueSchema(),
+      filter: triggerFilterSchema(),
+      max_runs_per_hour: { type: 'integer', minimum: 1 },
+      max_runs_per_day: { type: 'integer', minimum: 1 },
+      max_lateness: durationSchema,
+      overlap: { type: 'string', enum: ['skip', 'allow'] },
+      on: {
+        oneOf: [
+          source(['cron'], { cron: NON_BLANK_STRING, timezone: { type: 'string' } }),
+          source(['every'], { every: durationSchema, timezone: { type: 'string' } }),
+          source(['at'], { at: NON_BLANK_STRING, timezone: { type: 'string' } }),
+          source(['webhook'], { webhook: source(['secret'], { secret: { type: 'string', pattern: ENV_NAME_PATTERN } }) }),
+          source(['event', 'connector'], {
+            event: NON_BLANK_STRING, connector: NON_BLANK_STRING, account: NON_BLANK_STRING, source: NON_BLANK_STRING, config: { type: 'object' },
+          }),
+          source(['event', 'app'], { event: NON_BLANK_STRING, app: appSlug }),
+        ],
+      },
+      run: {
+        type: 'object',
+        additionalProperties: false,
+        anyOf: [{ required: ['prompt'] }, { required: ['app'] }],
+        properties: {
+          agent: NON_BLANK_STRING,
+          prompt: NON_BLANK_STRING,
+          session: normalizedEnumSchema(['fresh', 'reuse', 'pinned', 'keyed']),
+          session_key: NON_BLANK_STRING,
+          session_id: NON_BLANK_STRING,
+          model: { type: 'string' },
+          app: appSlug,
+          path: { type: 'string', pattern: '^/' },
+          method: { type: 'string', enum: ['POST', 'GET'] },
+          payload: { type: 'object' },
+        },
+      },
+    },
+    additionalProperties: true,
+  };
+}
+
 function triggerSchema(version: 1 | 2): JsonSchemaFragment {
   const durationSchema: JsonSchemaFragment = { type: 'string', pattern: DURATION_RE.source };
   return {
@@ -1042,7 +1099,8 @@ function sharedSectionProperties(connectorVersion: 1 | 2): JsonSchemaFragment {
     sandbox: sandboxSchema(),
     // `[[sandboxes]]` was renamed — always a hard error, so forbid it.
     sandboxes: false,
-    triggers: { type: 'array', items: triggerSchema(connectorVersion) },
+    // The flat shape (`type: …`) or the `on:` / `run:` shape; `type` is required by one and forbidden by the other.
+    triggers: { type: 'array', items: { anyOf: [triggerSchema(connectorVersion), onRunTriggerSchema()] } },
     connectors: { type: 'array', items: connectorSchema(connectorVersion) },
     apps: connectorVersion === 2 ? appsV2Schema() : false,
   };
