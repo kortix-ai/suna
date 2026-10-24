@@ -3,14 +3,15 @@
 // the bytes are served by `artifacts/content-routes.ts`.
 //
 // Authorization, per route, for the caller's role AND an agent's
-// `kortix_permissions` grant:
-//   read  (types, list, get, versions, content)  project.read — every member
-//   write (publish, share a path, save, restore,  project.session.start — anyone
-//          metadata, unshare, pin)                 who runs agents may publish
+// `kortix_permissions` grant (the project.artifact.* leaves):
+//   read    types, list, get, versions, content, pin   project.artifact.read
+//   write   publish, share a folder, save, restore,    project.artifact.write
+//           rename / share / unshare your own
+//   manage  rename / share / unshare anyone's           project.artifact.manage
+//   public  any change that makes an artifact public    project.artifact.public
 // On top, per artifact: view needs `canView`; saving and restoring need write
-// access to its path in Files; sharing settings, renaming and unsharing need
-// `canManage` (the creator, or project.write). A private artifact the caller
-// may not view answers 404, never 403.
+// access to its folder in Files. A private artifact the caller may not view
+// answers 404, never 403.
 // Every route answers 403 `feature_disabled` while the project has the flag off.
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
@@ -18,7 +19,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { auth, errors, json } from '../../openapi';
 import { config } from '../../config';
 import { PROJECT_ACTIONS } from '../../iam';
-import { assertAgentScope } from '../../iam/agent-scope';
+import { agentMayPerform, assertAgentScope, getAgentGrant } from '../../iam/agent-scope';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed, resolveUserIdentities } from '../lib/access';
@@ -171,25 +172,32 @@ async function serialize(rows: ArtifactRow[], viewer: Viewer) {
 /** Load the project, require the flag, and assert the read or write leaf. */
 async function authorize(c: Context, projectId: string, mode: 'read' | 'write') {
   // Loaded for read: the leaves below are the gate ('session' would assert
-  // project.session.start for a read, too).
+  // project.session.start, which artifacts do not use).
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return { ok: false as const, response: c.json({ error: 'Not found' }, 404) };
   const disabled = requireFeatureFlag(c, loaded.row.metadata, ARTIFACTS_FLAG);
   if (disabled) return { ok: false as const, response: disabled };
-  const action = mode === 'read' ? PROJECT_ACTIONS.PROJECT_READ : PROJECT_ACTIONS.PROJECT_SESSION_START;
+  const action = mode === 'read' ? PROJECT_ACTIONS.PROJECT_ARTIFACT_READ : PROJECT_ACTIONS.PROJECT_ARTIFACT_WRITE;
   assertAgentScope(c, action);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, action);
-  const projectWrite = await projectCapabilityAllowed(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_WRITE);
-  const viewer: Viewer = { userId: loaded.userId as string, projectWrite };
-  return { ok: true as const, loaded, viewer };
+  const can = async (leaf: string) => agentMayPerform(getAgentGrant(c), leaf) && projectCapabilityAllowed(c, loaded.userId, loaded.row.accountId, projectId, leaf);
+  const [projectWrite, manageAny] = await Promise.all([can(PROJECT_ACTIONS.PROJECT_WRITE), can(PROJECT_ACTIONS.PROJECT_ARTIFACT_MANAGE)]);
+  const viewer: Viewer = { userId: loaded.userId as string, projectWrite, manageAny };
+  return { ok: true as const, loaded, viewer, can };
+}
+
+/** A public link needs project.artifact.public (the role and an agent's grant): 403 otherwise. */
+async function refusePublic(c: Context, access: { can: (leaf: string) => Promise<boolean> | boolean }, visibility: string | undefined) {
+  if (visibility !== 'public' || (await access.can(PROJECT_ACTIONS.PROJECT_ARTIFACT_PUBLIC))) return null;
+  return c.json({ error: 'You cannot give an artifact a public link (project.artifact.public)', code: 'public_link_forbidden' }, 403);
 }
 
 /**
  * The artifact the caller may view (404 otherwise). `write` also needs write
- * access to its path in Files; `manage` needs the creator or project.write.
+ * access to its path in Files; `manage` needs the creator or project.artifact.manage.
  */
 async function loadArtifact(c: Context, projectId: string, artifactId: string, mode: 'read' | 'pin' | 'write' | 'manage') {
-  const access = await authorize(c, projectId, mode === 'read' ? 'read' : 'write');
+  const access = await authorize(c, projectId, mode === 'read' || mode === 'pin' ? 'read' : 'write');
   if (!access.ok) return access;
   const row = await getArtifact(projectId, artifactId);
   if (!row || !canView(row, access.viewer.userId)) return { ok: false as const, response: c.json({ error: 'Artifact not found' }, 404) };
@@ -278,6 +286,8 @@ export function registerArtifactRoutes(): void {
     const { projectId } = c.req.valid('param');
     const access = await authorize(c, projectId, 'write');
     if (!access.ok) return access.response;
+    const refused = await refusePublic(c, access, c.req.valid('json').visibility);
+    if (refused) return refused;
     try {
       const row = await publishNew({ accountId: access.loaded.row.accountId, projectId }, author(c, access.viewer.userId), c.req.valid('json'));
       return c.json(await detail(row, access.viewer), 201);
@@ -297,6 +307,8 @@ export function registerArtifactRoutes(): void {
     const { projectId } = c.req.valid('param');
     const access = await authorize(c, projectId, 'write');
     if (!access.ok) return access.response;
+    const refused = await refusePublic(c, access, c.req.valid('json').visibility);
+    if (refused) return refused;
     try {
       const row = await share({ accountId: access.loaded.row.accountId, projectId }, author(c, access.viewer.userId), access.viewer, c.req.valid('json'));
       return c.json(await detail(row, access.viewer), 201);
@@ -353,6 +365,8 @@ export function registerArtifactRoutes(): void {
     const { projectId, artifactId } = c.req.valid('param');
     const loaded = await loadArtifact(c, projectId, artifactId, 'manage');
     if (!loaded.ok) return loaded.response;
+    const refused = await refusePublic(c, loaded, c.req.valid('json').visibility);
+    if (refused) return refused;
     const updated = await updateArtifactMeta(loaded.row, c.req.valid('json'));
     const [out] = await serialize([updated], loaded.viewer);
     return c.json(out!, 200);
