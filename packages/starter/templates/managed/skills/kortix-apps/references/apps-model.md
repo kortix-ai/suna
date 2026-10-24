@@ -134,7 +134,7 @@ App runs and who may open it do not change.
 
 ```yaml
 display:
-  listed: true          # a card in the Apps grid (default true)
+  listed: true          # a card in the Apps grid (default false: Background Apps)
   preview: none         # live (default): the card frames the App; none: an icon card
   parent: backend       # a tab in backend's App detail, not a card of its own
 ```
@@ -143,8 +143,10 @@ display:
   does not exist stays a card. The tab label is the App's name without the
   `<parent>-` prefix (`backend-dashboard` → Dashboard).
 - An App with `preview: none` opens on its first tab.
-- `kortix apps deploy` writes the block's `display` to the App (absent = the
-  defaults). `kortix apps show` prints it on the `shown` row.
+- `kortix apps deploy` writes the block's `display` to the App when the block
+  declares one; an absent `display` keeps what the App has. `--listed` /
+  `--unlisted` on `deploy` or `set` override it. `kortix apps show` prints it
+  on the `shown` row.
 
 ## Templates
 

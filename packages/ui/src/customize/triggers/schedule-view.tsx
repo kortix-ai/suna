@@ -129,7 +129,8 @@ import { useEventTitles } from './schedule/use-event-titles';
 const FILTER_LABEL_KEY: Record<TriggerFilter, string> = {
   all: 'texta52ace420f21',
   cron: 'text221ff19c904c',
-  event: 'text4b4847a6fb87',
+  event: 'text0ba357fa63f8',
+  app: 'text4b4847a6fb87',
   webhook: 'text45808d75bf89',
 };
 
@@ -334,9 +335,11 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   // closed: until the flag resolves on, nothing that lists, browses or requests events renders.
   const featureFlags = useProjectFeatureFlags(projectId);
   const eventsOn = featureFlags.flags.event_triggers === true;
+  // The App events tab shows once a project has one: most never will.
+  const hasAppTriggers = (triggersQuery.data?.triggers ?? []).some((t) => t.type === 'app');
   const filters = useMemo(
-    () => (eventsOn ? TRIGGER_FILTERS : TRIGGER_FILTERS.filter((f) => f !== 'event')),
-    [eventsOn],
+    () => TRIGGER_FILTERS.filter((f) => (f !== 'event' || eventsOn) && (f !== 'app' || hasAppTriggers)),
+    [eventsOn, hasAppTriggers],
   );
   // `?type=cron|event|webhook` is the kind filter; anything else, and `event` while events are off, is all.
   const filter = parseTriggerFilter(searchParams?.get('type'), filters);

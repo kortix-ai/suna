@@ -43,7 +43,6 @@ export const SERVICES = [
   'egress-shim',
   'event-bus',
   'llm-proxy',
-  'monitor',
   'resources',
   'runtime-assets',
   'sandbox-env',
