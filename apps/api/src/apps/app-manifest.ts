@@ -82,6 +82,10 @@ export async function commitAppFields(projectId: string, slug: string, fields: A
     const before = JSON.stringify(appsNode[slug] ?? null);
     appsNode[slug] = withAppFields(appsNode[slug], fields);
     if (JSON.stringify(appsNode[slug]) === before) return { ok: true, commitMessage: null };
+    // A parent must name an App of the same file: an existing App with no block
+    // gets an empty one (it declares nothing, so a sync leaves that App alone).
+    const parent = fields.display?.parent;
+    if (typeof parent === 'string' && !(parent in appsNode)) appsNode[parent] = {};
     const issues: ManifestIssue[] = [];
     validateAppsV2(appsNode, 'apps', issues);
     const error = issues.find((issue) => issue.severity === 'error' && issue.path.startsWith(`apps.${slug}`));

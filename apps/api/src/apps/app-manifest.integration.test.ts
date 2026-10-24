@@ -78,7 +78,10 @@ test('a write commits the fields into apps.<slug>, adding the block when needed;
   // The same value again: no commit.
   expect(await commitAppFields(project.project_id, 'web', { cpu: 2 })).toEqual({ ok: true });
   expect(commits).toHaveLength(2);
+  // A parent with no block gets an empty one, so the file stays valid.
+  expect(await commitAppFields(project.project_id, 'docs', { display: { parent: 'db' } })).toEqual({ ok: true });
+  expect((manifest.raw.apps as Record<string, unknown>).db).toEqual({});
   const refused = await commitAppFields(project.project_id, 'web', { cpu: 999 });
   expect(refused.ok).toBe(false);
-  expect(commits).toHaveLength(2);
+  expect(commits).toHaveLength(3);
 });
