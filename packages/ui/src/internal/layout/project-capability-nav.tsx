@@ -13,6 +13,7 @@ import {
   activeCapabilityTab,
   capabilityTabHref,
   CAPABILITY_TABS,
+  customizeNavTabs,
   type CapabilityTab,
 } from '../lib/capability-tab-routes';
 import { useReviewSessionSummary } from '../hooks/use-review-session-summary';
@@ -24,26 +25,29 @@ const CAPABILITY_LABEL: Record<CapabilityTab['key'], string> = Object.fromEntrie
 
 /**
  * The capability points nested under Customize — one text row per point the
- * caller may open (Agents, Skills, Connectors, Triggers, Reminders, Models,
- * Secrets, Repo, Review, Settings), in bar order, gated by the same
- * `capabilityAccess` rule the tab bar uses. Text only, no glyphs: a column of
- * mixed 16px icons reads as clutter, the same reason the tab bar is text only
- * (Marko, 2026-08-19). Each links to its capability page, which scopes to the
- * active domain on its own; the active row follows the pathname.
+ * caller may open (Agents, Repo, Review, Settings), in bar order, gated by the
+ * same `capabilityAccess` rule the tab bar uses. The capability libraries
+ * (Skills, Connectors, Triggers, Reminders, Models, Secrets) moved to `/admin`
+ * (`ADMIN_MANAGED_TABS`): Customize is agent-centric, so they are configured
+ * per agent on the agent's own page, not listed here. Text only, no glyphs: a
+ * column of mixed 16px icons reads as clutter, the same reason the tab bar is
+ * text only (Marko, 2026-08-19). Each links to its capability page, which
+ * scopes to the active domain on its own; the active row follows the pathname.
  */
 export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
   const pathname = useUiPathname();
   const access = useCapabilityAccess(projectId);
+  const navTabs = customizeNavTabs(access.tabs);
   const activeKey = pathname ? activeCapabilityTab(pathname) : null;
   const needsYou = useReviewSessionSummary(projectId, { enabled: true }).totalNeedsYou;
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
 
-  if (!access.settled || access.tabs.length === 0) return null;
+  if (!access.settled || navTabs.length === 0) return null;
 
   return (
     <SidebarMenuSub>
-      {access.tabs.map((key) => (
+      {navTabs.map((key) => (
         <SidebarMenuSubItem key={key}>
           <SidebarMenuSubButton asChild isActive={activeKey === key}>
             <Link

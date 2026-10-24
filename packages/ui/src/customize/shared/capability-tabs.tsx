@@ -21,6 +21,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { receivedDenial } from './capability-access-gate';
 import {
+  ADMIN_MANAGED_TABS,
   CAPABILITY_TABS,
   PRIMARY_TABS,
   activeCapabilityTab,
@@ -118,11 +119,11 @@ function MembersLaunchLink({ projectId }: { projectId: string }) {
  * opened onto "You don't have access" (KRTX-2144).
  */
 /**
- * The hairline between Agents and everything an agent draws on (Skills
- * through Secrets). One `TabsList` still —
- * this is a `span`, not a second list, so the underline indicator and the
- * keyboard roving stay unified. It is `aria-hidden` because the grouping is
- * visual: a screen reader walks seven tabs either way.
+ * The hairline between the Agents group and the governance group (Repo,
+ * Review). One `TabsList` still — this is a `span`, not a second list, so the
+ * underline indicator and the keyboard roving stay unified. It is
+ * `aria-hidden` because the grouping is visual: a screen reader walks the tabs
+ * either way.
  */
 /**
  * Settings trails the row, on the right, after the Members link — one
@@ -141,8 +142,10 @@ const TRAILING_TABS: readonly CapabilityTab['key'][] = ['config'];
  */
 const GOVERNANCE_TABS: readonly CapabilityTab['key'][] = ['files', 'review'];
 
-/** Tabs that need a project flag: left out of the bar until access settles. */
-const FLAG_GATED_TABS: readonly CapabilityTab['key'][] = ['files', 'reminders'];
+/** Tabs that need a project flag: left out of the bar until access settles.
+ *  Reminders was flag-gated too, but it moved to `/admin` (`ADMIN_MANAGED_TABS`)
+ *  and the bar filters it out before this stage, so only Repo remains. */
+const FLAG_GATED_TABS: readonly CapabilityTab['key'][] = ['files'];
 
 function GroupSeam() {
   // The row sets `gap-5` between every item, so a seam with its own margin
@@ -160,10 +163,16 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
   // shell it starts at y=0 and shares the band with the OS window controls.
   // Without the indent the first tab renders under the macOS traffic lights.
   const sidebar = useOptionalSidebar();
-  const allTabs = useLocalizedUiCatalog(CAPABILITY_TABS);
-  // Repo (key `files`) and Reminders are the flag-gated tabs: each exists only
-  // once the project turns its flag on. `capabilityAccess()` applies the flags
-  // and the leaves; before it settles the bar is invisible and both are left out.
+  // Agent-centric Customize: Skills/Connectors/Triggers/Reminders/Models/
+  // Secrets moved to `/admin` (`ADMIN_MANAGED_TABS`), so the bar never lists
+  // them — settled or not. Their pages still resolve by URL; the gate reads
+  // the full `capabilityAccess()` set, not this one.
+  const allTabs = useLocalizedUiCatalog(CAPABILITY_TABS).filter(
+    (tab) => !ADMIN_MANAGED_TABS.includes(tab.key),
+  );
+  // Repo (key `files`) is the flag-gated tab: it exists only once the project
+  // turns the `drives` flag on. `capabilityAccess()` applies the flag and the
+  // leaves; before it settles the bar is invisible and Repo is left out.
   const access = useCapabilityAccess(projectId);
   const allowedTabs = new Set(access.tabs);
   const tabs = allTabs.filter((tab) =>

@@ -112,6 +112,37 @@ export const CAPABILITY_TABS: readonly CapabilityTab[] = [
 export const PRIMARY_TABS: readonly CapabilityTab['key'][] = ['agent'];
 
 /**
+ * The capability libraries that moved to the account-level `/admin` dashboard
+ * (Marko, 2026-10-24: authorization is per-agent, so Customize is agent-
+ * centric — you add a connector, skill, trigger, reminder, model or secret TO
+ * an agent, never standalone). Customize no longer lists these as tabs or
+ * sidebar rows. It keeps Agents (the primary surface), Repo, Review and
+ * Settings; what an agent draws on is configured per agent, on the agent's own
+ * page.
+ *
+ * Their standalone pages still RESOLVE by URL — `capabilityAccess()` keeps the
+ * keys, so `CapabilityAccessGate` renders them and the `/customize` redirect
+ * still works. Only the two nav surfaces (`CapabilityTabs`,
+ * `ProjectCapabilityNav`) drop them, through `customizeNavTabs`.
+ */
+export const ADMIN_MANAGED_TABS: readonly CapabilityTab['key'][] = [
+  'skills',
+  'connectors',
+  'triggers',
+  'reminders',
+  'models',
+  'secrets',
+];
+
+/** The capability tabs Customize still lists, in bar order: the caller's
+ *  allowed tabs minus the libraries that moved to `/admin`. */
+export function customizeNavTabs(
+  tabs: readonly CapabilityTab['key'][],
+): CapabilityTab['key'][] {
+  return tabs.filter((key) => !ADMIN_MANAGED_TABS.includes(key));
+}
+
+/**
  * A tab's URL segment. Keys are stable identifiers used across the app
  * (`TAB_PREFERENCE`, the palette, tests); segments are what a person reads in
  * the address bar. The two differ where the key predates the URL: `agent`

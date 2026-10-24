@@ -23,8 +23,9 @@ import { useReviewSessionSummary } from '../hooks/use-review-session-summary';
 /**
  * The one project-configuration entry in the sidebar:
  * ProjectCustomizeNavItem, top of the panel under New session, navigating to
- * the capability pages (Models / Connectors / Agents / Skills / Triggers /
- * Reminders / Secrets / Settings). Gated, because those pages can 403.
+ * the capability pages (Agents, Repo, Review, Settings — the libraries Skills /
+ * Connectors / Triggers / Reminders / Models / Secrets moved to `/admin`,
+ * `ADMIN_MANAGED_TABS`). Gated, because those pages can 403.
  *
  * The bottom-of-footer "Settings" row that used to sit beside it is gone
  * (Jay, 2026-08-17): it opened the same User Settings overlay a click on the

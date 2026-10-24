@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  ADMIN_MANAGED_TABS,
   CAPABILITY_TABS,
   PRIMARY_TABS,
   activeCapabilityTab,
   agentHref,
   capabilityTabHref,
   channelsHref,
+  customizeNavTabs,
   reviewHref,
 } from './capability-tab-routes';
 
@@ -61,6 +63,32 @@ describe('CAPABILITY_TABS', () => {
     // would 404 the route while the tab still rendered.
     const agents = CAPABILITY_TABS.find((t) => t.label === 'Agents');
     expect(agents?.key).toBe('agent');
+  });
+});
+
+describe('customizeNavTabs', () => {
+  // Agent-centric Customize (Marko, 2026-10-24): the libraries moved to
+  // `/admin`, so the nav lists only Agents, Repo, Review and Settings. The
+  // pages still resolve by URL — the gate reads the full access set — so the
+  // keys stay in CAPABILITY_TABS and only the nav drops them.
+  test('drops the admin-managed libraries, keeps the rest in order', () => {
+    const all = CAPABILITY_TABS.map((t) => t.key);
+    expect(customizeNavTabs(all)).toEqual(['agent', 'files', 'review', 'config']);
+  });
+
+  test('the admin-managed set is exactly the six libraries', () => {
+    expect([...ADMIN_MANAGED_TABS]).toEqual([
+      'skills',
+      'connectors',
+      'triggers',
+      'reminders',
+      'models',
+      'secrets',
+    ]);
+  });
+
+  test('is a no-op when no admin-managed tab is present', () => {
+    expect(customizeNavTabs(['agent', 'config'])).toEqual(['agent', 'config']);
   });
 });
 
