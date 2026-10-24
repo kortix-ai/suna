@@ -95,6 +95,40 @@ export async function commitAppFields(projectId: string, slug: string, fields: A
   });
 }
 
+/** `appsNode` without `slug`, and without every reference to it (`uses`, `display.parent`). */
+export function withoutApp(appsNode: Row, slug: string): Row {
+  const out: Row = {};
+  for (const [name, block] of Object.entries(appsNode)) {
+    if (name === slug) continue;
+    if (!isRow(block)) { out[name] = block; continue; }
+    const next: Row = { ...block };
+    if (Array.isArray(next.uses)) next.uses = next.uses.filter((used) => used !== slug);
+    if (isRow(next.display) && next.display.parent === slug) {
+      const { parent: _parent, ...display } = next.display;
+      next.display = display;
+    }
+    out[name] = next;
+  }
+  return out;
+}
+
+/** Remove `apps.<slug>` (and references to it) from kortix.yaml. Nothing is committed when the file does not declare it. */
+export async function commitAppRemoval(projectId: string, slug: string): Promise<ManifestCommitResult> {
+  const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  if (!row) return { ok: false, error: 'project not found', status: 404 };
+  let project: Awaited<ReturnType<typeof withProjectGitAuth>>;
+  try {
+    project = await withProjectGitAuth(row);
+  } catch (error) {
+    return { ok: false, error: (error as Error).message || 'failed to read kortix.yaml', status: 400 };
+  }
+  return mutateManifestWithRetry(project, `the App ${slug} was being deleted`, (manifest) => {
+    if (!isRow(manifest.raw.apps) || !(slug in manifest.raw.apps)) return { ok: true, commitMessage: null };
+    manifest.raw.apps = withoutApp(manifest.raw.apps, slug);
+    return { ok: true, commitMessage: `chore: remove App ${slug}` };
+  });
+}
+
 /**
  * Apply what kortix.yaml declares to the project's App rows. An App the file
  * does not declare, and a field a block does not declare, stay as they are.

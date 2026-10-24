@@ -1980,6 +1980,12 @@ flow(
         (await owner.patch("/v1/projects/:projectId", { name: "Renamed through the API" }, { params })).status(200);
         await until("name: Renamed through the API", "project.name in kortix.yaml");
       });
+
+      await ctx.step("deleting the App removes its block from kortix.yaml", async () => {
+        (await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...params, appId } })).status(200);
+        appId = "";
+        await waitFor(manifest, { until: (m) => !m.content.includes(`${slug}:`), timeoutMs: 60_000, intervalMs: 2_000, description: "the App block is gone" });
+      });
     } finally {
       if (appId) await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...params, appId } });
     }

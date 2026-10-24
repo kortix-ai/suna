@@ -54,7 +54,7 @@ import {
 } from './access';
 import { authorizedProject, capabilityRefusal, visibleApp } from './route-access';
 import { AppObject, appJson, appsJson } from './serialize';
-import { commitAppFields, manifestFieldsOf } from './app-manifest';
+import { commitAppFields, commitAppRemoval, manifestFieldsOf } from './app-manifest';
 import { probeFrameable } from './external';
 import { UnknownLinkedAppError, resolveAppLinks, writeAppLinks } from './links';
 import { registerAppCapabilityRoutes } from './capability-routes';
@@ -749,6 +749,10 @@ export function registerAppsRoutes(): void {
         const admin = await authorizedProject(c, projectId, 'admin');
         if (admin instanceof Response) return admin;
       }
+      // kortix.yaml owns the App's block: remove it (and references to it) first,
+      // or the next `kortix apps deploy` would recreate the App from it.
+      const undeclared = await commitAppRemoval(projectId, row.slug);
+      if (!undeclared.ok) return c.json({ error: undeclared.error, code: undeclared.code ?? 'manifest_write_failed' }, undeclared.status);
       // Delete first, tear down second. A deleted App stops routing and leaves
       // the idle reaper at once; if this request dies mid-teardown, project
       // maintenance (`reclaimAppDeploymentImages`) removes what it left behind.

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { declaredAppFields, manifestFieldsOf, withAppFields } from './app-manifest';
+import { declaredAppFields, manifestFieldsOf, withAppFields, withoutApp } from './app-manifest';
 
 describe('kortix.yaml owns the App fields it can declare', () => {
   test('manifestFieldsOf keeps only the fields kortix.yaml can declare', () => {
@@ -25,5 +25,21 @@ describe('kortix.yaml owns the App fields it can declare', () => {
     expect(declaredAppFields({ path: 'x' })).toEqual({});
     const round = withAppFields({ path: 'x' }, { cpu: 1, memory_gb: 2, disk_gb: 10, labels: ['a'], uses: ['db'] });
     expect(declaredAppFields(round)).toEqual({ cpu: 1, memory_gb: 2, disk_gb: 10, labels: ['a'], uses: ['db'] });
+  });
+});
+
+describe('deleting an App removes it from kortix.yaml', () => {
+  test('withoutApp drops the block and every reference to it, so the file stays valid', () => {
+    expect(withoutApp({
+      db: { path: 'apps/db' },
+      web: { path: 'apps/web', uses: ['db', 'auth'] },
+      dash: { display: { parent: 'db', preview: 'none' } },
+      other: { labels: ['x'] },
+    }, 'db')).toEqual({
+      web: { path: 'apps/web', uses: ['auth'] },
+      dash: { display: { preview: 'none' } },
+      other: { labels: ['x'] },
+    });
+    expect(withoutApp({ web: { path: 'x' } }, 'missing')).toEqual({ web: { path: 'x' } });
   });
 });

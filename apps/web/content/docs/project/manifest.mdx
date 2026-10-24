@@ -463,6 +463,7 @@ Everything the manifest can declare is owned by the file. The dashboard, the API
 | --- | --- | --- |
 | A trigger, an agent's config, scope and grants, a skill, a connector, `default_agent` | Commits to kortix.yaml | Applied on the next sync |
 | An App's `resources`, `idle_timeout_seconds`, `always_on`, `labels`, `display`, `uses` | Commits to `apps.<slug>` (the block is added when the App has none), then changes the App | Applied to the App on the next sync, without a deploy |
+| Deleting an App | Removes `apps.<slug>` and every `uses` or `display.parent` that names it, then deletes the App | — |
 | A connector's `auth.secret` | Commits to `connectors[].auth.secret`, then binds it | Applied on the next sync |
 | `project.name` | Commits to `project.name`, then renames the project | A changed value renames the project on the next sync |
 | A sandbox template the file declares | Refused with `409 template_declared_in_manifest`: edit `sandbox.templates` | Applied on the next sync, `entrypoint` included |
