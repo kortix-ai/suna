@@ -22603,6 +22603,8 @@
     "mediaTooLarge": "This file is larger than 16 MB.",
     "refresh": "Refresh",
     "diagramEdit": "Edit diagram",
-    "diagramDone": "Done"
+    "diagramDone": "Done",
+    "codeLanguage": "Code language",
+    "editedAgo": "Edited {time}"
   }
 }

@@ -108,6 +108,25 @@ apps:
 `kortix validate` checks these rules before a deploy; the API refuses the same
 config with `400 app_config_invalid` and `issues: [{path, message}]`.
 
+## Start an agent from an App
+
+An App never starts an agent itself. It posts an event, and a trigger in
+`kortix.yaml` decides which agent runs (`on: { event, app }`). Every machine
+has `KORTIX_APP_TOKEN` and `KORTIX_APP_EVENTS_URL`:
+
+```bash
+curl -X POST "$KORTIX_APP_EVENTS_URL" -H "Authorization: Bearer $KORTIX_APP_TOKEN" \
+  -H "content-type: application/json" -d '{"name":"reply.received","data":{"subject":"Re: quote"},"id":"msg-1"}'
+```
+
+**Build an App for this last.** Before you write a watcher App, check in this
+order: a connector event (the service already emits it), a webhook (the
+service can call a URL), a schedule (a fixed cadence is enough). Build the
+App only when none fits: no events and no webhook, code must decide what
+deserves an agent, or the watch needs a connection that stays open. Emit
+only what deserves a session; each trigger takes at most 60 events an hour.
+Full recipe: `kortix-system` → `references/scheduling.md`, "App events".
+
 ## Machines, scale, exec
 
 ```bash

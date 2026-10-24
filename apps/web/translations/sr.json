@@ -22603,6 +22603,8 @@
     "mediaTooLarge": "Ова датотека је већа од 16 MB.",
     "refresh": "Освежи",
     "diagramEdit": "Уреди дијаграм",
-    "diagramDone": "Готово"
+    "diagramDone": "Готово",
+    "codeLanguage": "Језик кода",
+    "editedAgo": "Измењено {time}"
   }
 }

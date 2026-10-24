@@ -22603,6 +22603,8 @@
     "mediaTooLarge": "Este archivo supera los 16 MB.",
     "refresh": "Recargar",
     "diagramEdit": "Editar diagrama",
-    "diagramDone": "Listo"
+    "diagramDone": "Listo",
+    "codeLanguage": "Lenguaje del código",
+    "editedAgo": "Editado {time}"
   }
 }

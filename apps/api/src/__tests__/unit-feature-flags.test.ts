@@ -145,18 +145,18 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('llm_gateway');
   });
 
-  test('event_triggers is a beta, explicit opt-in flag offered everywhere', () => {
+  test('event_triggers is a beta flag, on by default everywhere, that a project can turn off', () => {
     expect(findCatalogFlag('event_triggers')).toMatchObject({
       name: 'Connector event triggers',
       stability: 'beta',
-      enabled: false,
+      enabled: true,
       operator_only: false,
     });
     const def = REGISTERED_FEATURE_FLAGS.find((f) => f.key === 'event_triggers')!;
     expect(def.enforcement).toBe('routes');
     expect(def.available()).toBe(true);
-    expect(def.platformDefault()).toBe(false);
-    expect(resolveFeatureFlag({}, 'event_triggers')).toBe(false);
+    expect(def.platformDefault()).toBe(true);
+    expect(resolveFeatureFlag({}, 'event_triggers')).toBe(true);
     expect(resolveFeatureFlag({ experimental: { event_triggers: true } }, 'event_triggers')).toBe(true);
     expect(resolveFeatureFlag({ experimental: { event_triggers: false } }, 'event_triggers')).toBe(false);
   });

@@ -1,51 +1,84 @@
 /**
  * The look of a Kortix doc artifact, in one stylesheet scoped to `.kx-doc`.
- * The API serves a doc with it (`<body class="kx-doc">`, also what prints to
- * PDF), and the web editor renders the same document with it, so what a person
- * edits is what a reader opens. Colors are `--kx-doc-*` variables: the served
- * page follows `prefers-color-scheme`, the app sets them from its own theme.
+ * The API serves a doc with it (also what prints to PDF), and the web editor
+ * renders the same document with it, so what a person edits is what a reader
+ * opens. Every value is a Kortix token (`--foreground`, `--font-sans`,
+ * `--spacing`, …): the app defines them, and the served page loads the kit
+ * tokens (`BRAND_TOKENS_CSS`). Each element mirrors `UnifiedMarkdown`
+ * (`@kortix/ui/markdown`), the Markdown look of chat and Files.
  */
 export const ARTIFACT_DOC_CSS = `
-.kx-doc{--kx-doc-bg:#fff;--kx-doc-fg:#1f1f1f;--kx-doc-muted:#6b6b6b;--kx-doc-border:#e4e4e2;--kx-doc-subtle:#f5f5f3;--kx-doc-accent:#0b7bd6;
-  background:var(--kx-doc-bg);color:var(--kx-doc-fg);font:16px/1.7 ui-sans-serif,-apple-system,'Segoe UI','Helvetica Neue','Noto Sans',sans-serif;
-  -webkit-font-smoothing:antialiased;max-width:760px;margin:0 auto;padding:72px 32px 128px;box-sizing:border-box;word-wrap:break-word}
-@media (prefers-color-scheme:dark){body.kx-doc{--kx-doc-bg:#171717;--kx-doc-fg:#ececec;--kx-doc-muted:#9c9c9c;--kx-doc-border:#2e2e2e;--kx-doc-subtle:#212121;--kx-doc-accent:#4aa8ff}}
-html:has(body.kx-doc){background:var(--kx-doc-bg)}
+.kx-doc{--s:var(--spacing,.23rem);color:var(--foreground);font-family:var(--font-sans);font-weight:500;font-size:var(--text-base,1rem);line-height:var(--leading-relaxed,1.625);
+  -webkit-font-smoothing:antialiased;overflow-wrap:anywhere;max-width:46rem;margin:0 auto;padding:calc(var(--s)*16) max(16px,calc(var(--s)*8)) calc(var(--s)*32);box-sizing:border-box}
 .kx-doc *{box-sizing:border-box}
-.kx-doc :where(h1,h2,h3){font-family:ui-serif,'New York','Iowan Old Style',Charter,Georgia,serif;font-weight:600;color:var(--kx-doc-fg)}
-.kx-doc h1{font-size:2.4rem;line-height:1.15;letter-spacing:-.02em;margin:0 0 .6em}
-.kx-doc h2{font-size:1.6rem;line-height:1.25;letter-spacing:-.01em;margin:2.2em 0 .6em}
-.kx-doc h3{font-size:1.2rem;line-height:1.35;margin:1.8em 0 .5em}
-.kx-doc h4{font-size:1rem;line-height:1.4;margin:1.5em 0 .4em;font-weight:600}
-.kx-doc :where(p,ul,ol,blockquote,pre,table,figure,hr){margin:0 0 1em}
-.kx-doc ul,.kx-doc ol{padding-left:1.5em}
-.kx-doc li{margin:.2em 0}.kx-doc li>p{margin:0}
-.kx-doc ul[data-type=taskList]{list-style:none;padding-left:.2em}
-.kx-doc ul[data-type=taskList] li{display:flex;gap:.55em;align-items:flex-start}
-.kx-doc ul[data-type=taskList] li>label{margin-top:.2em}
-.kx-doc ul[data-type=taskList] li>div{flex:1}.kx-doc ul[data-type=taskList] p{margin:0}
-.kx-doc input[type=checkbox]{accent-color:var(--kx-doc-accent)}
+.kx-doc :where(.ProseMirror,main)>:first-child,.kx-doc>:first-child{margin-top:0}
+.kx-doc :where(h1,h2,h3,h4,h5,h6){color:var(--foreground);font-weight:600;text-wrap:balance}
+.kx-doc h1{font-size:var(--text-2xl,1.5rem);line-height:var(--leading-tight,1.25);letter-spacing:var(--tracking-tight,-.025em);margin:calc(var(--s)*10) 0 calc(var(--s)*4)}
+.kx-doc h2{font-size:var(--text-xl,1.25rem);line-height:var(--leading-snug,1.375);margin:calc(var(--s)*8) 0 calc(var(--s)*3)}
+.kx-doc h3{font-size:var(--text-lg,1.125rem);line-height:var(--leading-snug,1.375);margin:calc(var(--s)*6) 0 calc(var(--s)*2)}
+.kx-doc :where(h4,h5,h6){font-size:var(--text-base,1rem);margin:calc(var(--s)*5) 0 var(--s)}
+.kx-doc p{margin:calc(var(--s)*4) 0}
 .kx-doc strong{font-weight:600}
-.kx-doc a{color:var(--kx-doc-accent);text-decoration:underline;text-underline-offset:2px}
-.kx-doc blockquote{border-left:3px solid var(--kx-doc-border);padding:.1em 0 .1em 1em;color:var(--kx-doc-muted)}
-.kx-doc code{font:.88em ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;background:var(--kx-doc-subtle);border-radius:5px;padding:.12em .35em}
-.kx-doc pre{background:var(--kx-doc-subtle);border-radius:10px;padding:1em 1.1em;overflow-x:auto;font-size:.85rem;line-height:1.55}
-.kx-doc pre code{background:none;padding:0;font-size:inherit}
-.kx-doc hr{border:0;border-top:1px solid var(--kx-doc-border);margin:2.4em 0}
-.kx-doc :where(img,video){display:block;max-width:100%;height:auto;border-radius:8px;margin:0 0 1em}
-.kx-doc video{width:100%;background:#000}
-.kx-doc pre.mermaid,.kx-doc .kx-diagram{background:none;text-align:center;padding:.5em 0;margin:0 0 1em}
-.kx-doc .kx-diagram svg{max-width:100%;height:auto}
-.kx-doc img.ProseMirror-selectednode,.kx-doc video.ProseMirror-selectednode{outline:2px solid var(--kx-doc-accent)}
-.kx-doc table{width:100%;border-collapse:collapse;font-size:.92rem;table-layout:auto}
-.kx-doc :where(th,td){border:1px solid var(--kx-doc-border);padding:.5em .75em;text-align:left;vertical-align:top;position:relative}
-.kx-doc th{background:var(--kx-doc-subtle);font-weight:500}
+.kx-doc :where(del,s){color:var(--muted-foreground)}
+.kx-doc a{color:var(--kortix-blue);font-weight:500;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px;
+  text-decoration-color:color-mix(in oklab,var(--kortix-blue) 40%,transparent)}
+.kx-doc a:hover{text-decoration-color:var(--kortix-blue)}
+.kx-doc :where(ul,ol){margin:calc(var(--s)*4) 0;padding-left:calc(var(--s)*6)}
+.kx-doc ul{list-style:disc outside}
+.kx-doc ul ul{list-style-type:circle}
+.kx-doc ol{list-style:decimal outside}
+.kx-doc li{margin:var(--s) 0;padding-left:var(--s)}
+.kx-doc li::marker{color:var(--muted-foreground)}
+.kx-doc li>p{margin:0}
+.kx-doc li>:where(ul,ol){margin:var(--s) 0}
+.kx-doc ul[data-type=taskList]{list-style:none;padding-left:0}
+.kx-doc ul[data-type=taskList] li{display:flex;gap:calc(var(--s)*2);align-items:flex-start;padding-left:0}
+.kx-doc ul[data-type=taskList] li>label{display:flex;padding-top:.3em}
+.kx-doc ul[data-type=taskList] li>div{flex:1;min-width:0}
+.kx-doc ul[data-type=taskList] li>div>p{margin:0}
+.kx-doc ul[data-type=taskList] li>label>span{display:none}
+.kx-doc ul[data-type=taskList] li[data-checked=true]>div{color:var(--muted-foreground)}
+.kx-doc input[type=checkbox]{appearance:none;margin:0;flex:none;width:1rem;height:1rem;display:inline-grid;place-content:center;cursor:pointer;
+  border:1px solid color-mix(in oklab,var(--muted-foreground) 60%,transparent);border-radius:var(--radius-sm,.25rem);background:var(--background)}
+.kx-doc input[type=checkbox]::before{content:"";width:.625rem;height:.625rem;opacity:0;background:var(--primary-foreground);
+  clip-path:polygon(14% 44%,0 65%,50% 100%,100% 16%,80% 0,43% 62%)}
+.kx-doc input[type=checkbox]:checked{background:var(--primary);border-color:var(--primary)}
+.kx-doc input[type=checkbox]:checked::before{opacity:1}
+.kx-doc input[type=checkbox]:disabled{cursor:default}
+.kx-doc blockquote{margin:calc(var(--s)*5) 0;padding-left:calc(var(--s)*6);border-left:2px solid var(--border);color:var(--muted-foreground);font-style:italic}
+.kx-doc blockquote p{margin:calc(var(--s)*2) 0}
+.kx-doc :not(pre)>code{font-family:var(--font-mono);font-size:.8rem;font-weight:500;letter-spacing:var(--tracking-tight,-.025em);color:var(--foreground);
+  background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm,.25rem);padding:.08rem calc(var(--s)*1.5)}
+.kx-doc :where(h1,h2,h3,h4,h5,h6) code{font-size:.9em}
+.kx-doc .kx-code{margin:calc(var(--s)*5) 0;border:1px solid var(--border);border-radius:var(--radius-md,.375rem);background:var(--card);overflow:hidden}
+.kx-doc .kx-code>figcaption{display:flex;align-items:center;justify-content:space-between;gap:calc(var(--s)*2);min-height:calc(var(--s)*8);
+  padding:0 calc(var(--s)*2);font:500 var(--text-xs,.8125rem)/1 var(--font-mono);color:var(--muted-foreground);text-transform:lowercase;user-select:none}
+.kx-doc pre{margin:calc(var(--s)*5) 0;overflow:auto;max-height:32rem;background:var(--popover);border:1px solid var(--border);border-radius:var(--radius-md,.375rem);
+  padding:calc(var(--s)*2.5) calc(var(--s)*4);font:var(--text-xs,.8125rem)/1.65 var(--font-mono);letter-spacing:var(--tracking-tight,-.025em);white-space:pre;color:var(--foreground)}
+.kx-doc .kx-code pre{margin:0;border:0;border-radius:0}
+.kx-doc .kx-code>figcaption input{all:unset;font:inherit;color:inherit;width:16ch}
+.kx-doc .kx-code[hidden]{display:none}
+.kx-doc pre code{font:inherit;background:none;border:0;padding:0}
+.kx-doc hr{border:0;border-top:1px solid var(--border);height:0;margin:calc(var(--s)*6) 0}
+.kx-doc :where(img,video){display:block;max-width:100%;height:auto;margin:calc(var(--s)*5) 0;border-radius:var(--radius-lg,.625rem);
+  outline:1px solid color-mix(in oklab,var(--foreground) 10%,transparent);outline-offset:-1px}
+.kx-doc video{width:100%;background:var(--foreground)}
+.kx-doc :where(.tableWrapper,.kx-table){margin:calc(var(--s)*5) 0;overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius-md,.375rem)}
+.kx-doc table{width:100%;margin:0;border-collapse:collapse;font-size:var(--text-sm,.875rem);line-height:1.5}
+.kx-doc :where(th,td){padding:calc(var(--s)*2) calc(var(--s)*4);text-align:left;vertical-align:top;border-bottom:1px solid var(--border);position:relative;min-width:6rem}
+.kx-doc tr:last-child>td{border-bottom:0}
+.kx-doc th{background:var(--muted);font-weight:500}
 .kx-doc :where(th,td)>p{margin:0}
-.kx-doc mark{background:#fff3a3;color:inherit;border-radius:2px}
+.kx-doc pre.mermaid,.kx-doc .kx-diagram{background:none;border:0;text-align:center;padding:calc(var(--s)*2) 0;margin:calc(var(--s)*5) 0;max-height:none;white-space:normal}
+.kx-doc .kx-diagram svg{max-width:100%;height:auto}
+.kx-doc ::selection{background:color-mix(in oklab,var(--kortix-blue) 22%,transparent)}
 .kx-doc .ProseMirror{outline:none}
-.kx-doc .ProseMirror p.is-editor-empty:first-child::before,.kx-doc .ProseMirror .is-empty::before{content:attr(data-placeholder);color:var(--kx-doc-muted);opacity:.6;float:left;height:0;pointer-events:none}
-.kx-doc .selectedCell::after{content:'';position:absolute;inset:0;background:var(--kx-doc-accent);opacity:.12;pointer-events:none}
-.kx-doc .tableWrapper{overflow-x:auto}
-@media (max-width:640px){.kx-doc{padding:40px 18px 96px}.kx-doc h1{font-size:1.9rem}}
-@media print{@page{margin:18mm 16mm}.kx-doc{max-width:none;padding:0;--kx-doc-bg:#fff;--kx-doc-fg:#111}.kx-doc a{color:inherit}.kx-doc :where(h1,h2,h3){break-after:avoid}.kx-doc :where(pre,table,img,blockquote){break-inside:avoid}}
+.kx-doc .ProseMirror :where(img,video).ProseMirror-selectednode{outline:2px solid var(--kortix-blue)}
+.kx-doc .ProseMirror p.is-editor-empty:first-child::before,.kx-doc .ProseMirror .is-empty::before{content:attr(data-placeholder);color:var(--muted-foreground);float:left;height:0;pointer-events:none}
+.kx-doc .selectedCell::after{content:"";position:absolute;inset:0;background:var(--kortix-blue);opacity:.12;pointer-events:none}
+@media (max-width:640px){.kx-doc{padding-top:calc(var(--s)*10)}}
+@media print{@page{margin:18mm 16mm}.kx-doc{max-width:none;padding:0}.kx-doc a{color:inherit}.kx-doc :where(h1,h2,h3){break-after:avoid}.kx-doc :where(pre,table,img,blockquote,.kx-code){break-inside:avoid}}
 `;
+
+/** The served page around `.kx-doc`: the page background follows the tokens. */
+export const ARTIFACT_PAGE_CSS = `html,body{margin:0;background:var(--background);color:var(--foreground)}`;

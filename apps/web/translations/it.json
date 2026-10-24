@@ -22603,6 +22603,8 @@
     "mediaTooLarge": "Questo file supera i 16 MB.",
     "refresh": "Ricarica",
     "diagramEdit": "Modifica diagramma",
-    "diagramDone": "Fatto"
+    "diagramDone": "Fatto",
+    "codeLanguage": "Linguaggio del codice",
+    "editedAgo": "Modificato {time}"
   }
 }
