@@ -7,7 +7,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { accountMembers, chatEventDedup, connectorConnections, connectors, projects } from '@kortix/db';
 import { eq, like } from 'drizzle-orm';
-import { deleteEmailInstall, saveEmailInstall } from '../channels/install-store';
+import { insertEmailInboxAccount, normalizeSenderPolicy, releaseEmailInbox, reserveEmailInbox } from '../channels/install-store';
 import { dispatchResendEmailEvent } from '../channels/email/session';
 import type { ResendInboxEmailReceivedEvent } from '../channels/email/types';
 import { db } from '../shared/db';
@@ -46,27 +46,30 @@ async function expireThreadCreateClaims() {
 beforeAll(async () => {
   project = await seedProject('archived-email-reply');
   await insertIntoView(db, accountMembers, { userId: OWNER, accountId: project.account_id, accountRole: 'owner' });
-  // What POST /channels/email/connect leaves behind, minus the Resend calls:
-  // the install, and the email connection the connector sync materializes.
-  await saveEmailInstall({
-    projectId: project.project_id,
-    connectionSlug: 'kortix_email',
-    inboxId: INBOX,
-    email: 'inbox@example.test',
-    displayName: 'Inbox',
-    apiKey: 're_project_key',
-  });
+  // What POST /channels/email/inboxes leaves behind, minus the Resend calls:
+  // the inbox claim and the inbox's account on `kortix_email`.
   const scope = { accountId: project.account_id, projectId: project.project_id };
   const [connector] = await db
     .insert(connectors)
     .values({ ...scope, slug: 'kortix_email', name: 'Email', providerType: 'channel', config: { platform: 'email' } })
     .returning({ connectorId: connectors.connectorId });
-  await db.insert(connectorConnections).values({
+  await reserveEmailInbox({ projectId: project.project_id, inboxId: INBOX, email: 'inbox@example.test', agentName: null });
+  await insertEmailInboxAccount({
     ...scope,
     connectorId: connector!.connectorId,
-    label: 'Inbox',
-    isDefault: true,
-    metadata: { inbox_id: INBOX },
+    ownerType: 'project',
+    ownerId: null,
+    inboxId: INBOX,
+    email: 'inbox@example.test',
+    displayName: 'Inbox',
+    senderPolicy: normalizeSenderPolicy(null),
+    agentName: null,
+    managed: false,
+    createdByKortix: true,
+    webhookId: null,
+    apiKey: 're_project_key',
+    webhookSecret: null,
+    createdBy: null,
   });
   // The workspace delete.
   await db.update(projects).set({ status: 'archived' }).where(eq(projects.projectId, project.project_id));
@@ -94,7 +97,7 @@ afterAll(async () => {
   globalThis.fetch = originalFetch;
   if (!project) return;
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `%${INBOX}%`));
-  await deleteEmailInstall(project.project_id, 'kortix_email');
+  await releaseEmailInbox(project.project_id, INBOX);
   await db.delete(connectorConnections).where(eq(connectorConnections.projectId, project.project_id));
   await db.delete(connectors).where(eq(connectors.projectId, project.project_id));
   await removeSeeded([project]);

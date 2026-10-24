@@ -527,6 +527,121 @@ export async function updateEmailPolicy(
   return normalizeEmailInstallation(installation);
 }
 
+// ── Email inboxes — the accounts of the project's email connector ──────────
+// Each Resend inbox is one account of `kortix_email`: owned by one member
+// (`owner_type: 'member'`, "only me") or shared with the project. Default,
+// sharing and listing also work through the connection functions.
+
+/** Who may email the agent, on the wire (snake_case). */
+export interface EmailInboxSenderPolicy {
+  mode: 'allow_all' | 'restricted';
+  allowed_emails: string[];
+  allowed_domains: string[];
+  allowed_regex: string | null;
+}
+
+/** One email inbox: an account of the email connector. */
+export interface EmailInbox {
+  /** The account: pass it in `connector_bindings.email`. */
+  connection_id: string;
+  inbox_id: string;
+  email: string;
+  display_name: string | null;
+  label: string;
+  owner_type: 'member' | 'project';
+  owner_id: string | null;
+  is_default: boolean;
+  /** On the deployment's managed Resend team (no own key). */
+  managed: boolean;
+  /** Kortix created the inbox: removing it deletes it on Resend. */
+  created_by_kortix: boolean;
+  sender_policy: EmailInboxSenderPolicy;
+  /** The agent its mail starts; null = the project default. */
+  agent_name: string | null;
+  created_at: string;
+}
+
+export interface AddEmailInboxInput {
+  /** `me`: only you ("only me"); `project` (default): shared with the project. */
+  share?: 'me' | 'project';
+  /** Your Resend API key; omit for a managed inbox when the deployment offers one. */
+  api_key?: string;
+  /** The part before the @. */
+  username?: string;
+  /** One of your Resend domains (own key), or the managed domain. */
+  domain?: string;
+  display_name?: string;
+  label?: string;
+  sender_policy?: Partial<EmailInboxSenderPolicy> | EmailSenderPolicy;
+  agent_name?: string | null;
+  /** Attach an existing Resend inbox by id instead of creating one. */
+  inbox_id?: string;
+}
+
+export interface UpdateEmailInboxInput {
+  sender_policy?: Partial<EmailInboxSenderPolicy> | EmailSenderPolicy;
+  agent_name?: string | null;
+  display_name?: string | null;
+  label?: string;
+}
+
+export interface RemoveEmailInboxResult {
+  status: 'deleted';
+  /** True when Resend deleted the inbox (Kortix created it); false: only unlinked. */
+  inbox_deleted: boolean;
+}
+
+/** The inboxes you can see: every shared one, and your own private ones. */
+export async function listEmailInboxes(projectId: string): Promise<EmailInbox[]> {
+  const data = unwrap(
+    await backendApi.get<{ inboxes: EmailInbox[] }>(
+      `/projects/${encodeURIComponent(projectId)}/channels/email/inboxes`,
+      { showErrors: false },
+    ),
+    'Failed to list email inboxes',
+  );
+  return data.inboxes ?? [];
+}
+
+/** Add an inbox (a new account of the email connector). The key travels in the body. */
+export async function addEmailInbox(projectId: string, input: AddEmailInboxInput): Promise<EmailInbox> {
+  return unwrap(
+    await backendApi.post<EmailInbox>(
+      `/projects/${encodeURIComponent(projectId)}/channels/email/inboxes`,
+      input,
+      { showErrors: false },
+    ),
+    'Failed to add the email inbox',
+  );
+}
+
+/** Change who may email an inbox, its agent, or its names. */
+export async function updateEmailInbox(
+  projectId: string,
+  connectionId: string,
+  input: UpdateEmailInboxInput,
+): Promise<EmailInbox> {
+  return unwrap(
+    await backendApi.patch<EmailInbox>(
+      `/projects/${encodeURIComponent(projectId)}/channels/email/inboxes/${encodeURIComponent(connectionId)}`,
+      input,
+      { showErrors: false },
+    ),
+    'Failed to update the email inbox',
+  );
+}
+
+/** Remove an inbox. Resend deletes it too when Kortix created it. */
+export async function removeEmailInbox(projectId: string, connectionId: string): Promise<RemoveEmailInboxResult> {
+  return unwrap(
+    await backendApi.delete<RemoveEmailInboxResult>(
+      `/projects/${encodeURIComponent(projectId)}/channels/email/inboxes/${encodeURIComponent(connectionId)}`,
+      { showErrors: false },
+    ),
+    'Failed to remove the email inbox',
+  );
+}
+
 // ── Channel bindings — which agent/model/join-policy a bound chat channel uses ──
 // The web management surface for `chat_channel_bindings`. Today the only other
 // way to change these is the in-Slack `/kortix agent|model|policy` commands —

@@ -8,10 +8,7 @@ import { and, eq } from 'drizzle-orm';
 import { config } from '../../config';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { logger } from '../../lib/logger';
-import {
-  ensureEmailSessionBinding,
-  loadEmailInstallConnectionId,
-} from '../../projects/lib/session-connector-bindings';
+import { ensureEmailSessionBinding } from '../../projects/lib/session-connector-bindings';
 import {
   deliverThroughQueue,
   createSession as createLifecycleSession,
@@ -27,8 +24,9 @@ import {
 import { dropChatThread, findChatThread, touchChatThread } from '../core/threads';
 import {
   type EmailSenderPolicy,
-  loadEmailApiKeyForInbox,
-  loadEmailSenderPolicyForInbox,
+  emailOwnKeyForInbox,
+  emailSenderPolicyForInbox,
+  loadEmailInboxAccountForInbox,
 } from '../install-store';
 import { EMAIL_EVENT_DEDUPE_TTL_MS } from './app';
 import { recordClaim } from '../webhook-work';
@@ -42,7 +40,7 @@ const defaultEmailSessionLifecycle = {
 };
 
 let emailSessionLifecycle = defaultEmailSessionLifecycle;
-let emailSenderPolicyLoader = loadEmailSenderPolicyForInbox;
+let emailSenderPolicyLoader = emailSenderPolicyForInbox;
 
 export function setEmailSessionLifecycleForTest(
   overrides: Partial<typeof defaultEmailSessionLifecycle>,
@@ -52,11 +50,11 @@ export function setEmailSessionLifecycleForTest(
 
 export function resetEmailSessionLifecycleForTest() {
   emailSessionLifecycle = defaultEmailSessionLifecycle;
-  emailSenderPolicyLoader = loadEmailSenderPolicyForInbox;
+  emailSenderPolicyLoader = emailSenderPolicyForInbox;
 }
 
 export function setEmailSenderPolicyLoaderForTest(
-  loader: typeof loadEmailSenderPolicyForInbox,
+  loader: typeof emailSenderPolicyForInbox,
 ) {
   emailSenderPolicyLoader = loader;
 }
@@ -106,7 +104,7 @@ export async function dispatchResendEmailEvent(event: ResendInboxEmailReceivedEv
     return;
   }
   if (!(await claimInboundMessage(inboxId, emailId))) return;
-  const apiKey = resolveEmailApiKey(await loadEmailApiKeyForInbox(projectId, inboxId));
+  const apiKey = resolveEmailApiKey(await emailOwnKeyForInbox(projectId, inboxId));
   if (!apiKey) {
     console.error('[email-webhook] no Resend key for inbox', { projectId, inboxId });
     return;
@@ -225,7 +223,18 @@ async function createThreadSession(
     )
     .limit(1);
 
-  const userId = await emailSessionLifecycle.resolveProjectAutomationActor(project.accountId);
+  // A private inbox ("only me") is its owner's account: its mail starts a
+  // private session as that person, the only session that may use it. A
+  // shared inbox runs as the project's automation actor, visible to the project.
+  const account = await loadEmailInboxAccountForInbox(projectId, inboxId);
+  if (!account) {
+    console.error('[email-webhook] no active inbox account', { projectId, inboxId });
+    return;
+  }
+  const privateInbox = account.ownerType === 'member' && Boolean(account.ownerId);
+  const userId = privateInbox
+    ? account.ownerId!
+    : await emailSessionLifecycle.resolveProjectAutomationActor(project.accountId);
   if (!userId) {
     console.warn('[email-webhook] no actor for project', projectId);
     return;
@@ -254,14 +263,7 @@ async function createThreadSession(
   }
 
   const initialPrompt = renderAgentPrompt(email, revived);
-  const emailConnectionId = await loadEmailInstallConnectionId(projectId, inboxId);
-  if (!emailConnectionId) {
-    console.error('[email-webhook] no active connection for inbox', {
-      projectId,
-      inboxId,
-    });
-    return;
-  }
+  const emailConnectionId = account.connectionId;
   const result = await emailSessionLifecycle.createSession({
     source: 'email',
     project,
@@ -302,7 +304,7 @@ async function createThreadSession(
         userId,
       },
     ],
-    visibility: 'project',
+    visibility: privateInbox ? 'private' : 'project',
     metadata: {
       source: 'email',
       email: {
@@ -353,7 +355,7 @@ async function replyNotAccepting(projectId: string, email: InboundEmail): Promis
       .onConflictDoNothing({ target: chatEventDedup.eventId })
       .returning({ eventId: chatEventDedup.eventId });
     if (claimed.length === 0) return;
-    const apiKey = resolveEmailApiKey(await loadEmailApiKeyForInbox(projectId, inboxId));
+    const apiKey = resolveEmailApiKey(await emailOwnKeyForInbox(projectId, inboxId));
     if (!apiKey) return;
     await replyToResendThreadEmail({ apiKey, inboxId, threadId, emailId, text: NOT_ACCEPTING_REPLY });
   } catch (err) {

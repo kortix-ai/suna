@@ -12,7 +12,6 @@ import { useTranslations } from '../../../i18n';
  */
 
 import { Kortix } from '../../../internal/icons/kortix';
-import { MicrosoftTeams } from '../../../internal/icons/microsoft-teams';
 import { ChannelConnectHero } from './channel-connect-hero';
 import { TeamsByoWizard } from './teams-byo-wizard';
 import type { TeamsMode } from '@kortix/sdk/react';
@@ -50,7 +49,7 @@ export function TeamsConnectCard({
   return (
     <>
       <ChannelConnectHero
-        logo={<MicrosoftTeams className="size-5 shrink-0" />}
+        app="teams"
         title={tI18nComplete.raw('textc1bd5ca19f5f')}
         lede={
           oneClickUrl

@@ -22,11 +22,11 @@ import {
   type EmailDomainResult,
   type EmailSenderPolicy,
   useAddEmailDomain,
-  useConnectEmail,
   useEmailMode,
   useListEmailDomains,
   useVerifyEmailDomain,
 } from '../../../internal/hooks/channels/use-channels-installations';
+import { type EmailInbox, useAddEmailInbox } from '../../../internal/hooks/channels/use-email-inboxes';
 import { useCopy } from '../../../internal/hooks/use-copy';
 import { Badge } from '../../../primitives/badge';
 import { Button } from '../../../primitives/button';
@@ -94,22 +94,25 @@ export function senderPolicyFor(
   };
 }
 
-function defaultUsername(connectorSlug: string): string {
-  return connectorSlug.replace(/^email_/, '').replace(/_[a-z0-9]{4}$/i, '').replace(/_/g, '-').replace(/^kortix-email$/, 'agent');
-}
-
+/**
+ * The email half of "Add inbox": where the inbox lives, its address and who may
+ * email it. The account half (its name, who can use it) is `AddAccountFields`
+ * above it in the same dialog, passed in as `account`. Each inbox is one
+ * account on the `kortix_email` connector profile.
+ */
 export function EmailConnectForm({
   projectId,
-  connectorSlug,
+  account,
   onConnected,
 }: {
   projectId: string;
-  connectorSlug: string;
-  onConnected: () => void;
+  /** The new account's name and owner: you only, or the project (shared). */
+  account: { label?: string; share: 'me' | 'project' };
+  onConnected: (inbox: EmailInbox) => void;
 }) {
   const t = useTranslations('emailConnect');
   const mode = useEmailMode(projectId);
-  const connect = useConnectEmail();
+  const connect = useAddEmailInbox();
   const listDomains = useListEmailDomains();
   const viewerEmail = useUiViewer()?.email?.trim().toLowerCase() || null;
   const teamDomain = teamDomainOf(viewerEmail);
@@ -127,7 +130,7 @@ export function EmailConnectForm({
   // '' until the user picks: then the first verified domain of the key's account.
   const [domainChoice, setDomain] = useState('');
   const [added, setAdded] = useState<EmailDomain[]>([]);
-  const [username, setUsername] = useState(() => defaultUsername(connectorSlug));
+  const [username, setUsername] = useState('agent');
   const [displayName, setDisplayName] = useState('Kortix Agent');
   const [senders, setSenders] = useState<Senders>(() => defaultSenders(viewerEmail));
   const [customList, setCustomList] = useState('');
@@ -164,7 +167,7 @@ export function EmailConnectForm({
   const submit = () => {
     setError(null);
     if (home === 'own' && !key) return setError(t('errorKeyRequired'));
-    if (attachOpen && (!inboxId.trim() || !inboxEmail.trim())) return setError(t('errorAttachBoth'));
+    if (attachOpen && !inboxId.trim()) return setError(t('errorAttachBoth'));
     const policy = senderPolicyFor(senders, { email: viewerEmail, customList });
     if (senders === 'custom' && policy.allowedEmails.length + policy.allowedDomains.length === 0) {
       return setError(t('errorCustomEmpty'));
@@ -172,11 +175,12 @@ export function EmailConnectForm({
     connect.mutate(
       {
         projectId,
-        connector_slug: connectorSlug,
+        share: account.share,
+        ...(account.label?.trim() ? { label: account.label.trim() } : {}),
         ...(home === 'own' ? { api_key: key } : {}),
         display_name: displayName.trim() || undefined,
         ...(attachOpen
-          ? { inbox_id: inboxId.trim(), email: inboxEmail.trim() }
+          ? { inbox_id: inboxId.trim(), ...(inboxEmail.trim() ? { email: inboxEmail.trim() } : {}) }
           : {
               username: username.trim() || undefined,
               ...(home === 'own' ? { domain } : {}),

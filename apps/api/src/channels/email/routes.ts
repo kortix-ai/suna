@@ -1,6 +1,13 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors } from '../../openapi';
-import { loadEmailWebhookSecretForInbox } from '../install-store';
+import { config } from '../../config';
+import {
+  emailOwnKeyForAccount,
+  emailWebhookSecretForInbox,
+  loadEmailInboxAccountForInbox,
+  updateEmailAccountWebhook,
+} from '../install-store';
+import { ensureResendInboxWebhook, resolveEmailApiKey } from '../resend-email-api';
 import { emailWebhookApp } from './app';
 import { dispatchResendEmailEvent, emailChannelOnForProject, resolveProjectForEmailInbox } from './session';
 import { verifyEmailWebhookSignature } from './verify';
@@ -43,16 +50,22 @@ export function registerEmailWebhookRoutes(): void {
       // A project with the email channel off (`email_channel`) is ignored too.
       const projectId = await resolveProjectForEmailInbox(event.data.inbox_id);
       if (!projectId || !(await emailChannelOnForProject(projectId))) return c.json({ ok: true, ignored: true });
-      const secret = await loadEmailWebhookSecretForInbox(projectId, event.data.inbox_id);
+      const secret = await emailWebhookSecretForInbox(projectId, event.data.inbox_id);
       if (!secret) return c.json({ ok: true, ignored: true });
 
-      const ok = verifyEmailWebhookSignature({
+      const signature = {
         rawBody,
-        secret,
         svixId: c.req.header('svix-id') ?? c.req.header('webhook-id') ?? '',
         svixTimestamp: c.req.header('svix-timestamp') ?? c.req.header('webhook-timestamp') ?? '',
         svixSignature: c.req.header('svix-signature') ?? c.req.header('webhook-signature') ?? '',
-      });
+      };
+      let ok = verifyEmailWebhookSignature({ ...signature, secret });
+      if (!ok) {
+        // The account may hold the secret of a webhook that was replaced. Ask
+        // Resend once for the team's current one, then verify again.
+        const fresh = await refreshedWebhookSecret(projectId, event.data.inbox_id, c.req.url);
+        if (fresh && fresh !== secret) ok = verifyEmailWebhookSignature({ ...signature, secret: fresh });
+      }
       if (!ok) {
         console.warn('[email-webhook] signature verification failed', {
           inboxId: event.data.inbox_id,
@@ -70,4 +83,32 @@ export function registerEmailWebhookRoutes(): void {
       return c.json({ ok: true });
     },
   );
+}
+
+/** Per inbox: when its secret was last refreshed, so junk POSTs cannot make Resend calls in a loop. */
+// replica-local: a per-process rate limit; each replica refreshes at most once a minute per inbox.
+const lastWebhookRefresh = new Map<string, number>();
+const WEBHOOK_REFRESH_INTERVAL_MS = 60_000;
+
+/**
+ * The current signing secret of the webhook that delivers `inboxId`'s mail to
+ * this API, stored on its account. Null when it was refreshed within the last
+ * minute or Resend cannot say.
+ */
+async function refreshedWebhookSecret(projectId: string, inboxId: string, requestUrl: string): Promise<string | null> {
+  const last = lastWebhookRefresh.get(inboxId) ?? 0;
+  if (Date.now() - last < WEBHOOK_REFRESH_INTERVAL_MS) return null;
+  lastWebhookRefresh.set(inboxId, Date.now());
+  try {
+    const account = await loadEmailInboxAccountForInbox(projectId, inboxId);
+    if (!account) return null;
+    const apiKey = resolveEmailApiKey(await emailOwnKeyForAccount(account));
+    if (!apiKey) return null;
+    const endpoint = `${(config.KORTIX_URL || new URL(requestUrl).origin).replace(/\/+$/, '')}/v1/webhooks/email/resend`;
+    const webhook = await ensureResendInboxWebhook(apiKey, endpoint);
+    await updateEmailAccountWebhook(account, webhook);
+    return webhook.signing_secret;
+  } catch {
+    return null;
+  }
 }

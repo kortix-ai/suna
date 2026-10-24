@@ -321,9 +321,9 @@ export const KORTIX_APPS: ReadonlyArray<{
   categories: string[];
 }> = [
   { app: 'slack', name: 'Slack', domain: 'slack.com', description: 'Message the agent in Slack: mentions, DMs and channels, through the Kortix Slack app.', icon: '/connector-icons/slack.svg', categories: ['communication'] },
-  { app: 'teams', name: 'Microsoft Teams', domain: 'teams.microsoft.com', description: 'Message the agent in Microsoft Teams chats and channels, through the Kortix Teams app.', icon: null, categories: ['communication'] },
+  { app: 'teams', name: 'Microsoft Teams', domain: 'teams.microsoft.com', description: 'Message the agent in Microsoft Teams chats and channels, through the Kortix Teams app.', icon: '/connector-icons/teams.svg', categories: ['communication'] },
   { app: 'email', name: 'Email', domain: 'email.kortix', description: 'Give the project an inbox: people email the agent and it replies.', icon: '/connector-icons/email.svg', categories: ['communication'] },
-  { app: 'telegram', name: 'Telegram', domain: 'telegram.org', description: 'Message the agent from Telegram through a bot you own.', icon: null, categories: ['communication'] },
+  { app: 'telegram', name: 'Telegram', domain: 'telegram.org', description: 'Message the agent from Telegram through a bot you own.', icon: '/connector-icons/telegram.svg', categories: ['communication'] },
   { app: 'computer', name: 'Computer', domain: 'computer.kortix', description: 'Let agents work with the files, terminal and apps on your own computer, with the access you allow.', icon: '/connector-icons/computer.svg', categories: ['developer-tools'] },
 ];
 

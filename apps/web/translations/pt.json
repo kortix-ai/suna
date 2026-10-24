@@ -22697,7 +22697,7 @@
     "attachId": "ID da caixa Resend",
     "attachHint": "Use quando a caixa já existe ou a conta atingiu o limite de caixas. O Kortix ainda cria o webhook.",
     "errorKeyRequired": "Informe sua chave da API Resend.",
-    "errorAttachBoth": "Uma caixa existente precisa do endereço e do ID.",
+    "errorAttachBoth": "Uma caixa existente precisa do ID da caixa.",
     "errorCustomEmpty": "Adicione pelo menos um endereço ou domínio.",
     "submitAttach": "Conectar caixa",
     "submitCreate": "Criar {address}",
@@ -22716,5 +22716,27 @@
     "linkApiKeys": "Criar uma chave de API",
     "linkReceiving": "Ativar recebimento",
     "linkInboxes": "Sobre o Resend Inboxes"
+  },
+  "emailInboxes": {
+    "homeManaged": "Gerenciada pelo Kortix",
+    "homeOwn": "Sua conta Resend",
+    "defaultLabel": "Caixa",
+    "addTitle": "Adicionar uma caixa",
+    "addDescription": "Dê um nome à caixa e escolha quem pode usá-la, depois onde ela fica e seu endereço.",
+    "labelHint": "O nome da conta da caixa no Kortix.",
+    "nameFirst": "Dê um nome à caixa primeiro.",
+    "added": "{address} está pronta",
+    "regexInvalid": "O padrão não é uma expressão regular válida.",
+    "policySaved": "Salvo",
+    "policyTitle": "Quem pode enviar e-mail para {address}",
+    "policyDescription": "Cada e-mail inicia ou continua uma sessão com os créditos deste projeto.",
+    "policyMenu": "Quem pode enviar e-mail",
+    "heroCount": "{count, plural, one {# caixa} other {# caixas}}",
+    "heroManage": "Gerenciar caixas",
+    "heroAddAnother": "Adicionar outra caixa",
+    "heroAdd": "Adicionar uma caixa",
+    "removeDeletes": "Remove a conta e exclui {address} no Resend. Depois disso, e-mails para esse endereço voltam.",
+    "removeKeeps": "Remove a conta do Kortix. {address} continua na sua conta Resend.",
+    "removed": "Caixa removida"
   }
 }

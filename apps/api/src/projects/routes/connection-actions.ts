@@ -328,7 +328,7 @@ export function registerConnectionActionsRoutes(): void {
         },
         responses: {
           200: json(z.object({ ok: z.literal(true) }), 'Updated'),
-          ...errors(400, 403, 404),
+          ...errors(400, 403, 404, 409),
         },
       }),
       async (c: any) => {
@@ -337,6 +337,22 @@ export function registerConnectionActionsRoutes(): void {
         const mutable = await loadMutableConnection(c, projectId, connectionId);
         if (!mutable) return c.json({ error: 'Not found' }, 404);
         const { loaded, connection } = mutable;
+        // An email account is a Resend inbox: its credential is the inbox's
+        // key and webhook secret, and removing it must delete the inbox.
+        // Only the default switch applies here; the rest is the inbox routes'.
+        if (
+          operation !== 'default' &&
+          connection.providerType === 'channel' &&
+          (connection.connectorConfig as Record<string, unknown> | null)?.platform === 'email'
+        ) {
+          return c.json(
+            {
+              error: 'This account is an email inbox. Manage it with /channels/email/inboxes.',
+              code: 'email_inbox_account',
+            },
+            409,
+          );
+        }
         if (operation === 'credential') {
           const body = await readJsonObject(c);
           const parsed = UpdateConnectionCredentialInputSchema.safeParse(body);

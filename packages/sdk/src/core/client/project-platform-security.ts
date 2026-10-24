@@ -39,6 +39,13 @@ export function bindProjectPlatformSecurity(projectId: string) {
         addDomain: (input: Parameters<typeof P.addEmailDomain>[1]) => P.addEmailDomain(projectId, input),
         /** Check a custom domain's DNS records again. */
         verifyDomain: (input: Parameters<typeof P.verifyEmailDomain>[1]) => P.verifyEmailDomain(projectId, input),
+        /** The inboxes: accounts of the email connector. */
+        inboxes: {
+          list: () => P.listEmailInboxes(projectId),
+          add: (input: Parameters<typeof P.addEmailInbox>[1]) => P.addEmailInbox(projectId, input),
+          update: (...a: DropFirst<Parameters<typeof P.updateEmailInbox>>) => P.updateEmailInbox(projectId, ...a),
+          remove: (connectionId: string) => P.removeEmailInbox(projectId, connectionId),
+        },
       },
     },
 

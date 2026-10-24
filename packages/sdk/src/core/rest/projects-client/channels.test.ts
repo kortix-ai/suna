@@ -2,6 +2,10 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   addEmailDomain,
+  addEmailInbox,
+  listEmailInboxes,
+  removeEmailInbox,
+  updateEmailInbox,
   connectEmail,
   listEmailDomains,
   verifyEmailDomain,
@@ -29,6 +33,7 @@ import {
   updateEmailPolicy,
   uploadSlackChannelFile,
   type ChannelBinding,
+  type EmailInbox,
 } from './channels';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -512,4 +517,59 @@ test('addEmailDomain throws the server refusal', async () => {
   await expect(addEmailDomain('P1', { apiKey: 'bad', domain: 'mail.example.com' })).rejects.toThrow(
     'Resend rejected this API key.',
   );
+});
+
+const INBOX: EmailInbox = {
+  connection_id: 'c1',
+  inbox_id: 'inb-1',
+  email: 'support@kortixmail.com',
+  display_name: 'Support',
+  label: 'support@kortixmail.com',
+  owner_type: 'project',
+  owner_id: null,
+  is_default: true,
+  managed: true,
+  created_by_kortix: true,
+  sender_policy: { mode: 'allow_all', allowed_emails: [], allowed_domains: [], allowed_regex: null },
+  agent_name: null,
+  created_at: '2026-10-24T00:00:00.000Z',
+};
+
+test('listEmailInboxes reads the accounts of the email connector', async () => {
+  nextResponse = { status: 200, body: { inboxes: [INBOX] } };
+  const inboxes = await listEmailInboxes('P1');
+  expect(last()).toMatchObject({ method: 'GET' });
+  expect(last().url).toMatch(/\/projects\/P1\/channels\/email\/inboxes$/);
+  expect(inboxes).toEqual([INBOX]);
+});
+
+test('addEmailInbox posts the inbox with who may use it; the key travels in the body', async () => {
+  nextResponse = { status: 201, body: { ...INBOX, owner_type: 'member', owner_id: 'u1' } };
+  const inbox = await addEmailInbox('P1', { username: 'support', share: 'me', api_key: 're_secret', domain: 'mail.example.com' });
+  expect(last()).toMatchObject({ method: 'POST' });
+  expect(last().url).toMatch(/\/projects\/P1\/channels\/email\/inboxes$/);
+  expect(last().url).not.toContain('re_secret');
+  expect(last().body).toEqual({ username: 'support', share: 'me', api_key: 're_secret', domain: 'mail.example.com' });
+  expect(inbox.owner_type).toBe('member');
+});
+
+test('updateEmailInbox patches one inbox by its connection id', async () => {
+  nextResponse = { status: 200, body: { ...INBOX, agent_name: 'support' } };
+  const inbox = await updateEmailInbox('P1', 'c1', { agent_name: 'support' });
+  expect(last()).toMatchObject({ method: 'PATCH', body: { agent_name: 'support' } });
+  expect(last().url).toMatch(/\/projects\/P1\/channels\/email\/inboxes\/c1$/);
+  expect(inbox.agent_name).toBe('support');
+});
+
+test('removeEmailInbox deletes one inbox and says whether Resend deleted it too', async () => {
+  nextResponse = { status: 200, body: { status: 'deleted', inbox_deleted: true } };
+  const result = await removeEmailInbox('P1', 'c1');
+  expect(last()).toMatchObject({ method: 'DELETE' });
+  expect(last().url).toMatch(/\/projects\/P1\/channels\/email\/inboxes\/c1$/);
+  expect(result).toEqual({ status: 'deleted', inbox_deleted: true });
+});
+
+test('a refused add surfaces the server error', async () => {
+  nextResponse = { status: 400, body: { error: 'Connect your own Resend API key.', code: 'email_key_required' } };
+  await expect(addEmailInbox('P1', { username: 'support' })).rejects.toThrow();
 });

@@ -1,7 +1,7 @@
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import {
-  listEmailInstalls,
+  hasEmailInboxes,
   loadSlackInstall,
   loadTeamsInstall,
   loadTelegramInstall,
@@ -116,23 +116,15 @@ export async function synthesizeChannelConnectors(
     specs.push(channelSpec('telegram', telegramSlug));
   }
 
-  if (!resolveFeatureFlag(project.metadata, 'email_channel')) {
-    return specs;
-  }
-
-  const emailInstalls = await listEmailInstalls(projectId).catch(() => []);
+  // One `kortix_email` connector; every inbox is one of its accounts. Not
+  // gated on `email_channel`: the connector carries the accounts, and
+  // dropping it would delete them (the flag gates routes and inbound mail).
   const canonicalEmailSlug = channelDefaultSlug('email');
-  if (emailInstalls.length > 0 && !channelAlreadyDeclared(declared, 'email', canonicalEmailSlug)) {
+  if (
+    !channelAlreadyDeclared(declared, 'email', canonicalEmailSlug) &&
+    (await hasEmailInboxes(projectId).catch(() => false))
+  ) {
     specs.push(channelSpec('email', canonicalEmailSlug, channelLabel('email')));
-  }
-  for (const install of emailInstalls) {
-    const slug = install.connectionSlug || channelDefaultSlug('email');
-    if (slug === canonicalEmailSlug) continue;
-    if (!channelAlreadyDeclared(declared, 'email', slug)) {
-      specs.push(
-        channelSpec('email', slug, install.displayName || install.email || channelLabel('email')),
-      );
-    }
   }
 
   return specs;

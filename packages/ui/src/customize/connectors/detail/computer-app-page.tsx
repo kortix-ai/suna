@@ -1,6 +1,6 @@
 'use client';
 
-import { CaretLeftIcon, CaretRightIcon, MonitorIcon } from '@phosphor-icons/react';
+import { CaretLeftIcon, CaretRightIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
 import { useTranslations } from '../../../i18n';
@@ -33,7 +33,7 @@ export function ComputerHero({ projectId }: { projectId: string }) {
   return (
     <>
       <ChannelHeroFrame
-        logo={<MonitorIcon className="size-5 shrink-0" />}
+        app="computer"
         title={connected ? t('computerConnectedTitle', { count: accounts.length }) : t('computerHeroTitle')}
         lede={t('computerHeroLede')}
         status={connected ? <ChannelHeroStatus label={tI18nComplete.raw('text22965568d22a')} detail={names || null} /> : undefined}

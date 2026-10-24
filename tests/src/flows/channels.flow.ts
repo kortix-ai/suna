@@ -2009,3 +2009,70 @@ flow(
     });
   },
 );
+
+// CHN-EM2 — Email inboxes are accounts of the kortix_email connector: list,
+// add, update, remove. Only the paths that call no Resend run here (the local
+// profile has no external email); the live add/route/remove proof is manual.
+flow(
+  "CHN-EM2",
+  {
+    domain: "channels",
+    routes: [
+      "GET /v1/projects/:projectId/channels/email/inboxes",
+      "POST /v1/projects/:projectId/channels/email/inboxes",
+      "PATCH /v1/projects/:projectId/channels/email/inboxes/:connectionId",
+      "DELETE /v1/projects/:projectId/channels/email/inboxes/:connectionId",
+    ],
+  },
+  async (ctx) => {
+    const off = await ctx.fixtures.sharedProject();
+    const p = await emailProject(ctx);
+    const params = { params: { projectId: p.id } };
+    const missing = { params: { projectId: p.id, connectionId: "00000000-0000-4000-8000-000000000000" } };
+
+    await ctx.step("flag off → the list is empty and an add is 403 feature_disabled email_channel", async () => {
+      const list = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/channels/email/inboxes", { params: { projectId: off.id } });
+      list.status(200).body().has("$.inboxes", []);
+      const add = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/email/inboxes", { username: "help" }, { params: { projectId: off.id } });
+      add.status(403).body().has("$.feature", "email_channel");
+    });
+    await ctx.step("flag on, no inbox yet → GET answers an empty list", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/channels/email/inboxes", params);
+      r.status(200).body().has("$.inboxes", []);
+    });
+    await ctx.step("share must be me or project → 400 invalid_share before any Resend call", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/email/inboxes", { username: "help", share: "team", api_key: "re_bogus" }, params);
+      r.status(400).body().has("$.code", "invalid_share");
+    });
+    await ctx.step("own key without a domain → 400 invalid_domain; blank agent → 400 invalid_agent", async () => {
+      const noDomain = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/email/inboxes", { username: "help", api_key: "re_bogus" }, params);
+      noDomain.status(400).body().has("$.code", "invalid_domain");
+      const blank = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/email/inboxes", { username: "help", api_key: "re_bogus", agent_name: "  " }, params);
+      blank.status(400).body().has("$.code", "invalid_agent");
+    });
+    await ctx.step("PATCH and DELETE of an unknown inbox → 404 email_inbox_not_found", async () => {
+      const patch = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch("/v1/projects/:projectId/channels/email/inboxes/:connectionId", { label: "x" }, missing);
+      patch.status(404).body().has("$.code", "email_inbox_not_found");
+      const del = await ctx.client.as(ctx.P.OWNER).del("/v1/projects/:projectId/channels/email/inboxes/:connectionId", missing);
+      del.status(404).body().has("$.code", "email_inbox_not_found");
+    });
+    await ctx.step("NONMEMBER → 403/404; ANON → 401", async () => {
+      const r = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects/:projectId/channels/email/inboxes", params);
+      r.status([403, 404]);
+      const anon = await ctx.client.as(ctx.P.ANON).get("/v1/projects/:projectId/channels/email/inboxes", params);
+      anon.status(401);
+    });
+  },
+);

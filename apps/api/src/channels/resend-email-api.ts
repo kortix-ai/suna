@@ -195,7 +195,7 @@ export interface ResendWebhook {
   signing_secret: string;
 }
 
-interface ResendWebhookRow {
+export interface ResendWebhookRow {
   id: string;
   endpoint: string;
   events?: string[];
@@ -208,8 +208,61 @@ interface ResendWebhookRow {
  * once. A team-wide webhook carries every inbox's mail: dev, staging and prod
  * each register their own endpoint and ignore inboxes they do not know.
  */
+const EMAIL_WEBHOOK_PATH = '/v1/webhooks/email/resend';
+const TUNNEL_HOST_SUFFIX = '.trycloudflare.com';
+const TUNNEL_PROBE_TIMEOUT_MS = 5_000;
+
+/** Does the API behind this webhook still answer? (`GET <origin>/v1/health` → 200 within 5 s) */
+async function tunnelAnswers(origin: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${origin}/v1/health`, { signal: AbortSignal.timeout(TUNNEL_PROBE_TIMEOUT_MS) });
+    return res.status === 200;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Webhooks of local dev stacks that no longer run. A local stack reaches
+ * Resend through a quick tunnel (`*.trycloudflare.com`) whose URL changes on
+ * every start, and each start adds its own team-wide webhook; the old ones
+ * point at nothing. Only such tunnel hooks on the email path, other than
+ * `ownEndpoint`, whose API does not answer are dead. Any other host is never
+ * touched: dev, staging and prod share Kortix's Resend team.
+ */
+export function deadTunnelWebhookCandidates(hooks: ResendWebhookRow[], ownEndpoint: string): ResendWebhookRow[] {
+  return hooks.filter((hook) => {
+    if (!hook.endpoint || hook.endpoint === ownEndpoint) return false;
+    let url: URL;
+    try {
+      url = new URL(hook.endpoint);
+    } catch {
+      return false;
+    }
+    return url.hostname.endsWith(TUNNEL_HOST_SUFFIX) && url.pathname === EMAIL_WEBHOOK_PATH;
+  });
+}
+
+async function pruneDeadTunnelWebhooks(
+  apiKey: string,
+  hooks: ResendWebhookRow[],
+  ownEndpoint: string,
+  answers: (origin: string) => Promise<boolean> = tunnelAnswers,
+): Promise<void> {
+  for (const hook of deadTunnelWebhookCandidates(hooks, ownEndpoint)) {
+    if (await answers(new URL(hook.endpoint).origin)) continue;
+    await deleteResendWebhook(apiKey, hook.id).catch(() => {});
+  }
+}
+
+let tunnelProbe: (origin: string) => Promise<boolean> = tunnelAnswers;
+export function setTunnelProbeForTest(probe: ((origin: string) => Promise<boolean>) | null): void {
+  tunnelProbe = probe ?? tunnelAnswers;
+}
+
 export async function ensureResendInboxWebhook(apiKey: string, endpoint: string): Promise<ResendWebhook> {
   const list = await resendRequest<{ data?: ResendWebhookRow[] }>(apiKey, '/webhooks');
+  await pruneDeadTunnelWebhooks(apiKey, list.data ?? [], endpoint, tunnelProbe);
   const existing = (list.data ?? []).find(
     (hook) => hook.endpoint === endpoint && (hook.events ?? []).includes(RESEND_INBOX_EMAIL_RECEIVED),
   );

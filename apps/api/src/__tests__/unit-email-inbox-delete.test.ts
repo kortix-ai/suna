@@ -9,12 +9,12 @@ import { config } from '../config';
  */
 
 let ownKey: string | null = null;
-let installs: Array<{ connectionSlug: string; webhookId: string | null }> = [];
+let accounts: Array<{ connectionId: string; webhookId: string | null }> = [];
 const realInstallStore = await import('../channels/install-store');
 mock.module('../channels/install-store', () => ({
   ...realInstallStore,
-  loadEmailApiKeyForProject: async () => ownKey,
-  listEmailInstalls: async () => installs,
+  emailOwnKeyForAccount: async () => ownKey,
+  listEmailInboxAccounts: async () => accounts,
 }));
 const { deleteEmailInbox } = await import('../channels/email/inbox-delete');
 
@@ -27,7 +27,7 @@ afterAll(() => {
 });
 beforeEach(() => {
   ownKey = null;
-  installs = [];
+  accounts = [];
   calls = [];
   status = 200;
   (config as { RESEND_API_KEY: string | undefined }).RESEND_API_KEY = 're_managed';
@@ -41,30 +41,38 @@ beforeEach(() => {
   }) as any;
 });
 
-function install(over: Partial<{ createdByKortix: boolean; webhookId: string | null; connectionSlug: string }> = {}) {
+function install(over: Partial<{ createdByKortix: boolean; webhookId: string | null }> = {}) {
   return {
-    connectionSlug: 'kortix_email',
+    connectionId: 'conn-1',
+    connectorId: 'conn-email',
+    projectId: 'proj-1',
     inboxId: 'inb-1',
     email: 'agent@kortixmail.com',
     displayName: null,
+    label: 'agent@kortixmail.com',
+    ownerType: 'project' as const,
+    ownerId: null,
+    isDefault: true,
+    managed: true,
     webhookId: 'wh-1',
     senderPolicy: { mode: 'allow_all' as const, allowedEmails: [], allowedDomains: [], allowedRegex: null },
+    agentName: null,
     createdByKortix: true,
-    installedAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
     ...over,
   };
 }
 
 describe('deleteEmailInbox', () => {
   test('a managed inbox Kortix created is deleted with the managed key; the shared managed webhook stays', async () => {
-    await deleteEmailInbox('proj-1', install());
+    await deleteEmailInbox(install());
     expect(calls).toEqual([{ method: 'DELETE', path: '/inboxes/inb-1', auth: 'Bearer re_managed' }]);
   });
 
   test('an own-key inbox Kortix created is deleted with that key, and its webhook when no other inbox uses it', async () => {
     ownKey = 're_own';
-    installs = [{ connectionSlug: 'kortix_email', webhookId: 'wh-1' }];
-    await deleteEmailInbox('proj-1', install());
+    accounts = [{ connectionId: 'conn-1', webhookId: 'wh-1' }];
+    await deleteEmailInbox(install());
     expect(calls).toEqual([
       { method: 'DELETE', path: '/inboxes/inb-1', auth: 'Bearer re_own' },
       { method: 'DELETE', path: '/webhooks/wh-1', auth: 'Bearer re_own' },
@@ -73,27 +81,27 @@ describe('deleteEmailInbox', () => {
 
   test('the own-key webhook stays while another inbox of the project still uses it', async () => {
     ownKey = 're_own';
-    installs = [
-      { connectionSlug: 'kortix_email', webhookId: 'wh-1' },
-      { connectionSlug: 'email_support', webhookId: 'wh-1' },
+    accounts = [
+      { connectionId: 'conn-1', webhookId: 'wh-1' },
+      { connectionId: 'conn-2', webhookId: 'wh-1' },
     ];
-    await deleteEmailInbox('proj-1', install());
+    await deleteEmailInbox(install());
     expect(calls.map((c) => c.path)).toEqual(['/inboxes/inb-1']);
   });
 
   test('an inbox the person attached by id is only unlinked: nothing is deleted on Resend', async () => {
-    await deleteEmailInbox('proj-1', install({ createdByKortix: false, webhookId: null }));
+    await deleteEmailInbox(install({ createdByKortix: false, webhookId: null }));
     expect(calls).toEqual([]);
   });
 
   test('Resend 404 (already gone) counts as done', async () => {
     status = 404;
-    await deleteEmailInbox('proj-1', install());
+    await deleteEmailInbox(install());
     expect(calls).toHaveLength(1);
   });
 
   test('any other Resend failure throws, so the install is kept', async () => {
     status = 500;
-    await expect(deleteEmailInbox('proj-1', install())).rejects.toMatchObject({ status: 500 });
+    await expect(deleteEmailInbox(install())).rejects.toMatchObject({ status: 500 });
   });
 });

@@ -102,8 +102,6 @@ import { Skeleton } from '../../../primitives/skeleton';
 import { Tabs, TabsListCompact, TabsTriggerCompact } from '../../../primitives/tabs';
 import Loading from '../../../primitives/loading';
 import { errorToast, infoToast, successToast, warningToast } from '../../../primitives/toast';
-import { MicrosoftTeams } from '../../../internal/icons/microsoft-teams';
-import { Slack } from '../../../internal/icons/slack';
 import { ModelSelector } from '../../../session/models/model-selector';
 import { AgentSelector } from '../../../session/composer/session-chat-input';
 import {
@@ -113,9 +111,8 @@ import {
 import { TeamsChannelMock, TeamsConnectCard } from '../component/teams-connect-card';
 import { TelegramChannelRow } from '../component/telegram-channel-row';
 import { SlackChannelMock, SlackConnectCard } from '../component/slack-connect-card';
-import { EmailThreadMock } from '../component/channel-mocks';
 import { ChannelHeroLayoutProvider } from '../component/channel-hero-frame';
-import { EmailConnectForm } from '../connectors-view';
+import { EmailHero } from '../../connectors/detail/email-inboxes';
 import { ChannelBrandMark } from '../../../session/turn/channel-brand';
 import {
   type ChannelModelKey,
@@ -130,11 +127,8 @@ import {
   useUpdateChannelBinding,
 } from '../../../internal/hooks/use-channel-bindings';
 import {
-  type EmailInstallation,
   type SlackInstallation,
-  useDisconnectEmail,
   useDisconnectSlack,
-  useEmailInstall,
   useSlackInstall,
   useSlackMode,
 } from '../../../internal/hooks/channels/use-channels-installations';
@@ -160,7 +154,6 @@ import {
   AtIcon,
   CaretLeftIcon,
   CaretRightIcon,
-  EnvelopeIcon,
   MagnifyingGlassIcon,
   WarningCircleIcon,
 } from '@phosphor-icons/react';
@@ -171,7 +164,6 @@ import { ComputerHero } from '../../connectors/detail/computer-app-page';
 import { FeatureGateScreen } from '../../shared/feature-gate-screen';
 
 /** Reserved slug for the built-in Email channel (see api connectors.ts). */
-const EMAIL_CONNECTOR_SLUG = 'kortix_email';
 
 /** A Kortix channel's own page (`platform`), or every channel (the Channels page). */
 export type ChannelPlatform = 'slack' | 'teams' | 'email' | 'telegram';
@@ -189,14 +181,10 @@ export function ChannelsSection({ projectId, platform }: { projectId: string; pl
   // Not connected, Teams gets the same hero as Slack; connected, it is a row.
   const teamsHero = !teamsInstall && Boolean(teamsMode?.enabled);
   // Email (Resend Inboxes) is experimental behind `email_channel`. Off, it is on
-  // no surface, and its install is never read.
+  // no surface, and its inboxes are never read (EmailHero is not mounted).
   const emailFlag = useFeatureFlag(projectId, 'email_channel');
   const emailEnabled = emailFlag.enabled;
-  const { data: emailInstall, isLoading: loadingEmail } = useEmailInstall(
-    emailEnabled ? projectId : null,
-    EMAIL_CONNECTOR_SLUG,
-  );
-  const loading = loadingInstall || loadingMode || emailFlag.isLoading || (emailEnabled && loadingEmail);
+  const loading = loadingInstall || loadingMode || emailFlag.isLoading;
   const tPages = useTranslations('connectorPages');
   const oauthInstallUrl = mode?.oauth_available ? mode.install_url : null;
   const canWrite =
@@ -261,7 +249,8 @@ export function ChannelsSection({ projectId, platform }: { projectId: string; pl
           </>
         );
       case 'email':
-        return <EmailChannelRow projectId={projectId} installation={emailInstall ?? null} canWrite={canWrite} />;
+        // Each inbox is an account on `kortix_email`: the hero counts them, Manage lists them.
+        return <EmailHero projectId={projectId} canWrite={canWrite} />;
       case 'telegram':
         return <TelegramChannelRow projectId={projectId} canWrite={canWrite} />;
     }
@@ -325,7 +314,7 @@ function SlackChannelRow({
 
   return (
     <ChannelRow
-      icon={<Slack className="size-5 shrink-0" />}
+      app="slack"
       name="Slack"
       connected
       detail={installation.workspaceName ?? installation.workspaceId}
@@ -1071,7 +1060,7 @@ function TeamsChannelRow({
 
   return (
     <ChannelRow
-      icon={<MicrosoftTeams className="size-5 shrink-0" />}
+      app="teams"
       name="Microsoft Teams"
       connected={connected}
       detail={detail}
@@ -1128,78 +1117,3 @@ function TeamsChannelRow({
   );
 }
 
-function EmailChannelRow({
-  projectId,
-  installation,
-  canWrite,
-}: {
-  projectId: string;
-  installation: EmailInstallation | null;
-  canWrite: boolean;
-}) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const tPages = useTranslations('connectorPages');
-  const disconnect = useDisconnectEmail();
-  const [connectOpen, setConnectOpen] = useState(false);
-
-  const connected = Boolean(installation);
-
-  return (
-    <>
-      <ChannelRow
-        icon={<EnvelopeIcon className="text-muted-foreground size-5 shrink-0" />}
-        name="Email"
-        connected={connected}
-        detail={installation?.email ?? null}
-        hero={{
-          title: tPages('emailHeroTitle'),
-          connectedTitle: tPages('emailConnectedTitle'),
-          ...(connected ? {} : { lede: tPages('emailHeroLede') }),
-          preview: <EmailThreadMock />,
-        }}
-        pitch={tI18nComplete.raw('text27ba4ec98716')}
-        actions={
-          !canWrite ? null : connected ? (
-            <ChannelDisconnectButton
-              pending={disconnect.isPending}
-              onConfirm={(done) =>
-                disconnect.mutate(
-                  { projectId, connectorSlug: EMAIL_CONNECTOR_SLUG },
-                  {
-                    onSuccess: () => {
-                      done();
-                      successToast(tI18nComplete.raw('text958c8e06d3e7'));
-                    },
-                  },
-                )
-              }
-            />
-          ) : (
-            <Button className="transition-transform active:scale-96" onClick={() => setConnectOpen(true)}>
-              {tI18nComplete.raw('text1a2303ede074')}
-            </Button>
-          )
-        }
-      />
-
-      <Modal open={connectOpen} onOpenChange={setConnectOpen}>
-        <ModalContent className="lg:max-w-2xl">
-          <ModalHeader>
-            <ModalTitle>{tI18nComplete.raw('text3de5e2a29bbc')}</ModalTitle>
-            <ModalDescription>{tI18nComplete.raw('text000a82dd887b')}</ModalDescription>
-          </ModalHeader>
-          <ModalBody className="max-h-[75vh] overflow-y-auto">
-            <EmailConnectForm
-              projectId={projectId}
-              connectorSlug={EMAIL_CONNECTOR_SLUG}
-              onConnected={() => {
-                setConnectOpen(false);
-                successToast(tI18nComplete.raw('text62c381e56f37'));
-              }}
-            />
-          </ModalBody>
-        </ModalContent>
-      </Modal>
-    </>
-  );
-}

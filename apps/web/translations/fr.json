@@ -22697,7 +22697,7 @@
     "attachId": "ID de boîte Resend",
     "attachHint": "À utiliser si la boîte existe déjà ou si le compte a atteint sa limite. Kortix crée quand même le webhook.",
     "errorKeyRequired": "Saisissez votre clé API Resend.",
-    "errorAttachBoth": "Une boîte existante demande son adresse et son ID.",
+    "errorAttachBoth": "Une boîte existante nécessite son identifiant.",
     "errorCustomEmpty": "Ajoutez au moins une adresse ou un domaine.",
     "submitAttach": "Relier la boîte",
     "submitCreate": "Créer {address}",
@@ -22716,5 +22716,27 @@
     "linkApiKeys": "Créer une clé API",
     "linkReceiving": "Activer la réception",
     "linkInboxes": "À propos de Resend Inboxes"
+  },
+  "emailInboxes": {
+    "homeManaged": "Gérée par Kortix",
+    "homeOwn": "Votre compte Resend",
+    "defaultLabel": "Boîte",
+    "addTitle": "Ajouter une boîte",
+    "addDescription": "Nommez la boîte et choisissez qui peut l'utiliser, puis où elle se trouve et son adresse.",
+    "labelHint": "Le nom du compte de la boîte dans Kortix.",
+    "nameFirst": "Donnez d'abord un nom à la boîte.",
+    "added": "{address} est prête",
+    "regexInvalid": "Le motif n'est pas une expression régulière valide.",
+    "policySaved": "Enregistré",
+    "policyTitle": "Qui peut écrire à {address}",
+    "policyDescription": "Chaque e-mail démarre ou poursuit une session sur les crédits de ce projet.",
+    "policyMenu": "Qui peut écrire",
+    "heroCount": "{count, plural, one {# boîte} other {# boîtes}}",
+    "heroManage": "Gérer les boîtes",
+    "heroAddAnother": "Ajouter une autre boîte",
+    "heroAdd": "Ajouter une boîte",
+    "removeDeletes": "Supprime le compte et la boîte {address} dans Resend. Les e-mails envoyés à cette adresse seront ensuite rejetés.",
+    "removeKeeps": "Retire le compte de Kortix. {address} reste dans votre compte Resend.",
+    "removed": "Boîte supprimée"
   }
 }

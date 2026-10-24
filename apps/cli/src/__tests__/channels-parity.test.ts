@@ -65,6 +65,23 @@ const BINDING = {
   effectiveModel: { model: null, source: 'platform' },
 };
 
+const INBOX = {
+  connection_id: 'conn_1',
+  inbox_id: 'inb_1',
+  email: 'support@kortixmail.com',
+  display_name: 'Support',
+  label: 'support@kortixmail.com',
+  owner_type: 'project',
+  owner_id: null,
+  is_default: true,
+  managed: true,
+  created_by_kortix: true,
+  sender_policy: { mode: 'allow_all', allowed_emails: [], allowed_domains: [], allowed_regex: null },
+  agent_name: null,
+  created_at: '2026-10-24T00:00:00.000Z',
+};
+const PRIVATE_INBOX = { ...INBOX, connection_id: 'conn_2', inbox_id: 'inb_2', email: 'me@kortixmail.com', label: 'me@kortixmail.com', owner_type: 'member', owner_id: 'u1', is_default: true };
+
 function startServer(
   opts: { emailEnabled?: boolean; failTeams?: boolean; connected?: boolean; managedEmail?: boolean } = {},
 ): string {
@@ -108,6 +125,26 @@ function startServer(
           );
         }
         return Response.json(EMAIL_INSTALL);
+      }
+      if (p === '/channels/email/inboxes' && req.method === 'GET') {
+        return Response.json({ inboxes: [INBOX, PRIVATE_INBOX] });
+      }
+      if (p === '/channels/email/inboxes' && req.method === 'POST') {
+        const b = body as { share?: string; username?: string };
+        return Response.json(b.share === 'me' ? { ...PRIVATE_INBOX, email: `${b.username}@kortixmail.com` } : INBOX, { status: 201 });
+      }
+      if (p === '/channels/email/inboxes/conn_2' && req.method === 'DELETE') {
+        return Response.json({ status: 'deleted', inbox_deleted: true });
+      }
+      if (p === '/channels/email/inboxes/conn_1' && req.method === 'PATCH') {
+        const b = body as { sender_policy: { allowedDomains: string[] } };
+        return Response.json({
+          ...INBOX,
+          sender_policy: { mode: 'restricted', allowed_emails: [], allowed_domains: b.sender_policy.allowedDomains, allowed_regex: null },
+        });
+      }
+      if (p === '/connections/conn_2/default' && req.method === 'PUT') {
+        return Response.json({ ok: true });
       }
       if (p === '/channels/email/domains/add' && req.method === 'POST') {
         const b = body as { domain: string };
@@ -385,6 +422,61 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
     expect(r.code).toBe(2);
     expect(r.stderr).toContain('needs BOTH --inbox-id and --email');
     expect(calls).toEqual([]);
+  });
+
+  test('email inboxes lists every inbox with its owner, kind and default', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['channels', 'email', 'inboxes', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('support@kortixmail.com');
+    expect(r.stdout).toContain('project · Kortix managed');
+    expect(r.stdout).toContain('me@kortixmail.com');
+    expect(r.stdout).toContain('only you');
+    expect(calls.at(-1)).toMatchObject({ method: 'GET', path: `/v1/projects/${PROJECT}/channels/email/inboxes` });
+  });
+
+  test('email inboxes add posts share, the name and the sender policy; the key stays in the body', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['channels', 'email', 'inboxes', 'add', '--username', 'help', '--share', 'me', '--allow', '@acme.com', '--json', '--project', PROJECT],
+      config,
+    );
+    expect(r.code).toBe(0);
+    const post = calls.find((c) => c.method === 'POST')!;
+    expect(post.path).toBe(`/v1/projects/${PROJECT}/channels/email/inboxes`);
+    expect(post.body).toEqual({
+      share: 'me',
+      username: 'help',
+      sender_policy: { mode: 'restricted', allowedEmails: [], allowedDomains: ['acme.com'], allowedRegex: null },
+    });
+    expect(JSON.parse(r.stdout).email).toBe('help@kortixmail.com');
+  });
+
+  test('email inboxes add refuses an unknown --share before any request', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['channels', 'email', 'inboxes', 'add', '--share', 'team', '--project', PROJECT], config);
+    expect(r.code).not.toBe(0);
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
+  });
+
+  test('email inboxes rm, default and policy name an inbox by its address', async () => {
+    const config = writeConfig(startServer());
+    const rm = await runCli(['channels', 'email', 'inboxes', 'rm', 'me@kortixmail.com', '--project', PROJECT], config);
+    expect(rm.code).toBe(0);
+    expect(rm.stdout).toContain('deleted on Resend');
+    expect(calls.at(-1)).toMatchObject({ method: 'DELETE', path: `/v1/projects/${PROJECT}/channels/email/inboxes/conn_2` });
+
+    const def = await runCli(['channels', 'email', 'inboxes', 'default', 'me@kortixmail.com', '--project', PROJECT], config);
+    expect(def.code).toBe(0);
+    expect(calls.at(-1)).toMatchObject({ method: 'PUT', path: `/v1/projects/${PROJECT}/connections/conn_2/default` });
+
+    const pol = await runCli(['channels', 'email', 'inboxes', 'policy', 'support@kortixmail.com', '--allow', '@acme.com', '--project', PROJECT], config);
+    expect(pol.code).toBe(0);
+    expect(pol.stdout).toContain('@acme.com');
+    expect(calls.at(-1)).toMatchObject({ method: 'PATCH', path: `/v1/projects/${PROJECT}/channels/email/inboxes/conn_1` });
+
+    const missing = await runCli(['channels', 'email', 'inboxes', 'rm', 'nobody@kortixmail.com', '--project', PROJECT], config);
+    expect(missing.code).not.toBe(0);
   });
 
   test('email disconnect passes connector_slug on the query string', async () => {

@@ -2,6 +2,7 @@ import type { UiTranslator } from '../../../i18n';
 import type { AdminConnector, ConnectToolkit, DiscoverConnector, PipedreamApp } from '@kortix/sdk';
 
 import { faviconUrlForHostname } from '../../../lib/favicon';
+import { discoverLogoSource, type ConnectorLogoSource } from '../../../internal/connector-logo/connector-logo-source';
 
 import { POPULAR_SECTION } from './connector-categories';
 
@@ -281,3 +282,10 @@ export function catalogEntryConnectors(
  *  `browseSections` in `browse-sections.ts`. Defined in `connector-categories.ts`
  *  and re-exported here for the modules that already import this one. */
 export { POPULAR_SECTION };
+
+/** The logo source of a catalogue card (`ConnectorLogo`): same rule as every other surface. */
+export function catalogEntryLogoSource(entry: CatalogEntry): ConnectorLogoSource {
+  if (entry.source === 'computer') return { nativeApp: 'computer' };
+  if (entry.source === 'discover') return discoverLogoSource(entry.connector);
+  return { slug: entry.slug, icon: entry.icon };
+}

@@ -32,7 +32,6 @@ import {
   useTelegramInstall,
 } from '../../../internal/hooks/channels/use-channels-installations';
 import { useTranslations } from '../../../i18n';
-import { TelegramLogoIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
 /** "1, 2 3" → ["1","2","3"]; null when any entry is not a number. */
@@ -51,7 +50,7 @@ export function TelegramChannelRow({ projectId, canWrite }: { projectId: string;
   return (
     <>
       <ChannelRow
-        icon={<TelegramLogoIcon className="text-muted-foreground size-5 shrink-0" />}
+        app="telegram"
         name="Telegram"
         connected={Boolean(install)}
         detail={install?.username ? `@${install.username}` : null}

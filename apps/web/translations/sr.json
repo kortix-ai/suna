@@ -22697,7 +22697,7 @@
     "attachId": "ID Resend sandučeta",
     "attachHint": "Koristi kada sanduče već postoji ili je nalog dostigao limit. Kortix i dalje pravi webhook.",
     "errorKeyRequired": "Unesi Resend API ključ.",
-    "errorAttachBoth": "Postojeće sanduče traži adresu i ID.",
+    "errorAttachBoth": "Postojeće sanduče traži svoj ID.",
     "errorCustomEmpty": "Dodaj bar jednu adresu ili domen.",
     "submitAttach": "Poveži sanduče",
     "submitCreate": "Napravi {address}",
@@ -22716,5 +22716,27 @@
     "linkApiKeys": "Napravi API ključ",
     "linkReceiving": "Uključi prijem",
     "linkInboxes": "O Resend Inboxes"
+  },
+  "emailInboxes": {
+    "homeManaged": "Kortix upravlja",
+    "homeOwn": "Tvoj Resend nalog",
+    "defaultLabel": "Sanduče",
+    "addTitle": "Dodaj sanduče",
+    "addDescription": "Imenuj sanduče i izaberi ko može da ga koristi, zatim gde je i njegovu adresu.",
+    "labelHint": "Ime naloga sandučeta u Kortixu.",
+    "nameFirst": "Prvo daj ime sandučetu.",
+    "added": "{address} je spremno",
+    "regexInvalid": "Šablon nije ispravan regularni izraz.",
+    "policySaved": "Sačuvano",
+    "policyTitle": "Ko može da piše na {address}",
+    "policyDescription": "Svaki imejl pokreće ili nastavlja sesiju na kreditima ovog projekta.",
+    "policyMenu": "Ko može da piše",
+    "heroCount": "{count, plural, one {# sanduče} few {# sandučeta} other {# sandučića}}",
+    "heroManage": "Upravljaj sandučićima",
+    "heroAddAnother": "Dodaj još jedno sanduče",
+    "heroAdd": "Dodaj sanduče",
+    "removeDeletes": "Uklanja nalog i briše {address} u Resendu. Posle toga se imejlovi na tu adresu vraćaju.",
+    "removeKeeps": "Uklanja nalog iz Kortixa. {address} ostaje u tvom Resend nalogu.",
+    "removed": "Sanduče uklonjeno"
   }
 }

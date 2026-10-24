@@ -1,5 +1,6 @@
 'use client';
 
+import { ConnectorLogo } from '../../internal/connector-logo/connector-logo';
 import { Slack } from '../../internal/icons/slack';
 import { useTranslations } from '../../i18n';
 import {
@@ -133,6 +134,17 @@ import { contract, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/r
 import { AddAccountFields } from './add-account-fields';
 import { EmailConnectForm } from './component/email-connect-form';
 import {
+  type EmailInbox,
+  useEmailInboxes,
+  useRemoveEmailInbox,
+} from '../../internal/hooks/channels/use-email-inboxes';
+import {
+  AddEmailInboxDialog,
+  EMAIL_CONNECTOR_SLUG,
+  EmailInboxHome,
+  EmailSenderPolicyDialog,
+} from '../connectors/detail/email-inboxes';
+import {
   buildEasyConnectConnectorDraft,
   buildEmailConnectorConnectionSlug,
   connectorSyncErrorForSlug,
@@ -255,8 +267,14 @@ function ConnectionRow({
   needsSignIn,
   pending,
   disabled = false,
+  meta,
+  menuItems,
 }: {
   connection: Connection;
+  /** A provider's own facts about the account, on its meta line (an inbox's address and home). */
+  meta?: ReactNode;
+  /** A provider's own row actions, above Disconnect (an inbox's "Who can email"). */
+  menuItems?: ReactNode;
   /** The signed-in user, so an account narrowed to them alone reads "Only you". */
   viewerId: string | null;
   isMine: boolean;
@@ -322,6 +340,7 @@ function ConnectionRow({
           {/* Who may use this account. Plain text: the row's one meta line,
               not a chip beside the name. The hint lists every name. */}
           <AudienceText visibility={visibility} labels={everyoneWithAccess} />
+          {meta}
           {/* Listed only because the caller manages the project's connections. */}
           {connection.usable === false ? tSharing('notSharedWithYou') : null}
           {/* An account nobody has signed in yet, such as the shared one a new
@@ -440,6 +459,7 @@ function ConnectionRow({
                 {isProjectAuthorization ? ` ${tI18nComplete.raw('text801a345cd406')}` : ''}
               </DropdownMenuItem>
             )}
+            {mayMutate ? menuItems : null}
             {mayMutate && (
               <DropdownMenuItem onClick={onDisconnect}>
                 {tI18nComplete.raw('textacfc5be785a9')}
@@ -520,8 +540,17 @@ export function ConnectionsList({
   // A computer account is a paired machine: "Add" pairs one (desktop one-click,
   // or download + npx) instead of asking for a credential.
   const isComputer = connector.provider === 'computer';
-  const isDirectProvider = !isManagedConnectorProvider(connector.provider) && !isComputer;
+  // An email account is an inbox: "Add" creates one (own Resend key or Kortix
+  // managed), and removing it deletes the inbox Kortix made.
+  const isEmail = connector.provider === 'channel' && connector.platform === 'email';
+  const isDirectProvider = !isManagedConnectorProvider(connector.provider) && !isComputer && !isEmail;
   const [computerOpen, setComputerOpen] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [policyInbox, setPolicyInbox] = useState<EmailInbox | null>(null);
+  const tInboxes = useTranslations('emailInboxes');
+  const inboxesQuery = useEmailInboxes(isEmail ? projectId : null);
+  const inboxByConnection = new Map((inboxesQuery.data ?? []).map((inbox) => [inbox.connection_id, inbox]));
+  const removeInbox = useRemoveEmailInbox();
   const user = useUiViewer();
   const viewerId = user?.id ?? null;
   const [confirmDisconnect, setConfirmDisconnect] = useState<Connection | null>(null);
@@ -554,6 +583,7 @@ export function ConnectionsList({
   });
   const refresh = () => {
     void connectionsQuery.refetch();
+    if (isEmail) void inboxesQuery.refetch();
     onChanged();
   };
 
@@ -561,7 +591,8 @@ export function ConnectionsList({
   // The server's empty shared slot is a placeholder, not an account anyone
   // added: listing it reads as "everyone already shares this". Add account
   // still reuses it when the person picks Everyone.
-  const slot = emptyProjectSlot(connector, allRows);
+  // An inbox account always has an inbox behind it: there is no empty slot.
+  const slot = isEmail ? null : emptyProjectSlot(connector, allRows);
   const rows = slot ? allRows.filter((row) => row !== slot) : allRows;
 
   const openCredential = onSetCredential ?? setCredentialTarget;
@@ -589,6 +620,10 @@ export function ConnectionsList({
   const openAdd = () => {
     if (isComputer) {
       setComputerOpen(true);
+      return;
+    }
+    if (isEmail) {
+      setEmailOpen(true);
       return;
     }
     setDraft({ ...EMPTY_NEW_ACCOUNT, label: addAccount.proposedLabel() });
@@ -654,6 +689,8 @@ export function ConnectionsList({
   const pendingConnectionId =
     setDefault.isPending && typeof setDefault.variables === 'string'
       ? setDefault.variables
+      : removeInbox.isPending && removeInbox.variables
+        ? removeInbox.variables.connectionId
       : disconnect.isPending && typeof disconnect.variables === 'string'
         ? disconnect.variables
         : rename.isPending && rename.variables
@@ -673,10 +710,25 @@ export function ConnectionsList({
   // A member's computer account follows them into every project, so it is
   // never removed from one project: Disconnect unpairs the machine.
   const ownComputer = (connection: Connection) => isComputer && connection.owner_type === 'member';
-  const renderRow = (connection: Connection) => (
+  const renderRow = (connection: Connection) => {
+    const inbox = isEmail ? inboxByConnection.get(connection.connection_id) : undefined;
+    return (
     <ConnectionRow
       key={connection.connection_id}
       connection={connection}
+      meta={
+        inbox ? (
+          <>
+            {inbox.email !== connection.label ? <span>{inbox.email}</span> : null}
+            <EmailInboxHome inbox={inbox} />
+          </>
+        ) : undefined
+      }
+      menuItems={
+        inbox ? (
+          <DropdownMenuItem onClick={() => setPolicyInbox(inbox)}>{tInboxes('policyMenu')}</DropdownMenuItem>
+        ) : undefined
+      }
       viewerId={viewerId}
       isMine={connection.owner_type === 'member'}
       canManage={canManageConnections}
@@ -688,7 +740,7 @@ export function ConnectionsList({
       onStartSession={onStartSession ? () => onStartSession(connection) : undefined}
       onSetCredential={setCredential ? () => setCredential(connection) : undefined}
       onConnect={onConnect ? () => onConnect(connection) : undefined}
-      needsSignIn={accountNeedsSignIn(connection, connector)}
+      needsSignIn={!isEmail && accountNeedsSignIn(connection, connector)}
       onShare={
         accountId
           ? () => {
@@ -698,7 +750,9 @@ export function ConnectionsList({
           : undefined
       }
     />
-  );
+    );
+  };
+  const confirmInbox = confirmDisconnect && isEmail ? inboxByConnection.get(confirmDisconnect.connection_id) : undefined;
 
   return (
     <div className="space-y-6">
@@ -884,7 +938,11 @@ export function ConnectionsList({
         onOpenChange={(open) => !open && setConfirmDisconnect(null)}
         title={tI18nComplete('text13716a578591', { value0: confirmDisconnect?.label ?? '' })}
         description={
-          confirmDisconnect && ownComputer(confirmDisconnect)
+          confirmInbox
+            ? confirmInbox.created_by_kortix
+              ? tInboxes('removeDeletes', { address: confirmInbox.email })
+              : tInboxes('removeKeeps', { address: confirmInbox.email })
+            : confirmDisconnect && ownComputer(confirmDisconnect)
             ? tComputers('unpairDescription')
             : confirmDisconnect?.owner_type === 'project'
               ? tI18nComplete.raw('texte2cbafcec553')
@@ -892,9 +950,23 @@ export function ConnectionsList({
         }
         confirmLabel={tI18nComplete.raw('textacfc5be785a9')}
         confirmVariant="destructive"
-        isPending={disconnect.isPending || unpairComputer.isPending}
+        isPending={disconnect.isPending || unpairComputer.isPending || removeInbox.isPending}
         onConfirm={() => {
           if (!confirmDisconnect) return;
+          if (isEmail) {
+            removeInbox.mutate(
+              { projectId, connectionId: confirmDisconnect.connection_id },
+              {
+                onSuccess: () => {
+                  successToast(tInboxes('removed'));
+                  setConfirmDisconnect(null);
+                  refresh();
+                },
+                onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('textb7668a581f59')),
+              },
+            );
+            return;
+          }
           if (ownComputer(confirmDisconnect) && confirmDisconnect.tunnel_id) {
             unpairComputer.mutate(confirmDisconnect.tunnel_id, {
               onSuccess: () => {
@@ -909,6 +981,24 @@ export function ConnectionsList({
           disconnect.mutate(confirmDisconnect.connection_id);
         }}
       />
+
+      {isEmail ? (
+        <>
+          <AddEmailInboxDialog
+            projectId={projectId}
+            open={emailOpen}
+            onOpenChange={setEmailOpen}
+            existing={rows}
+            onAdded={refresh}
+          />
+          <EmailSenderPolicyDialog
+            projectId={projectId}
+            inbox={policyInbox}
+            open={policyInbox !== null}
+            onOpenChange={(open) => !open && setPolicyInbox(null)}
+          />
+        </>
+      ) : null}
 
       {isComputer ? (
         <ComputerConnectModal
@@ -1039,8 +1129,7 @@ function connectorPlatform(connector: AdminConnector): ChannelConnectionPlatform
     return connector.platform;
   }
   if (connector.slug === 'kortix_slack') return 'slack';
-  if (connector.slug === 'kortix_email') return 'email';
-  if (connector.slug.startsWith('email_')) return 'email';
+  if (connector.slug === EMAIL_CONNECTOR_SLUG) return 'email';
   return null;
 }
 
@@ -1059,17 +1148,6 @@ export function ChannelConnectionSection({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const platform = connectorPlatform(connector);
-  if (platform === 'email') {
-    return (
-      <EmailChannelConnection
-        projectId={projectId}
-        connector={connector}
-        onChanged={onChanged}
-        onRemoved={onRemoved}
-        canWrite={canWrite}
-      />
-    );
-  }
   if (platform === 'slack') {
     return (
       <SlackChannelConnection
@@ -1089,287 +1167,6 @@ export function ChannelConnectionSection({
     </section>
   );
 }
-
-function EmailChannelConnection({
-  projectId,
-  connector,
-  onChanged,
-  onRemoved,
-  canWrite = false,
-}: {
-  projectId: string;
-  connector: AdminConnector;
-  onChanged: () => void;
-  onRemoved: () => void;
-  canWrite?: boolean;
-}) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const install = useEmailInstall(projectId, connector.slug);
-
-  return (
-    <section className="space-y-4">
-      <Label>{tI18nComplete.raw('text7033ce3d1e7a')}</Label>
-      <p className="text-muted-foreground -mt-2 text-xs">{tI18nComplete.raw('textb270bf37ec1c')}</p>
-      <div className="bg-popover rounded-md border px-4 py-3">
-        {install.isLoading ? (
-          <Skeleton className="h-24 w-full rounded-md" />
-        ) : install.data ? (
-          <ConnectedEmailConnection
-            projectId={projectId}
-            connectorSlug={connector.slug}
-            installation={install.data}
-            onRemoved={onRemoved}
-            canWrite={canWrite}
-          />
-        ) : canWrite ? (
-          <EmailConnectForm
-            projectId={projectId}
-            connectorSlug={connector.slug}
-            onConnected={onChanged}
-          />
-        ) : (
-          <InfoBanner tone="neutral" icon={Mail} title={tI18nComplete.raw('textf0aea4d97b8e')}>
-            {tI18nComplete.raw('text21a606ab61a7')}
-          </InfoBanner>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function ConnectedEmailConnection({
-  projectId,
-  connectorSlug,
-  installation,
-  onRemoved,
-  canWrite = false,
-}: {
-  projectId: string;
-  connectorSlug: string;
-  installation: EmailInstallation;
-  onRemoved: () => void;
-  canWrite?: boolean;
-}) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const disconnect = useDisconnectEmail();
-  const [confirming, setConfirming] = useState(false);
-
-  return (
-    <div className="space-y-4">
-      <InfoBanner tone="success" icon={Check} title={tI18nComplete.raw('textc23cc1f72afe')}>
-        {tI18nComplete.raw('text56ef8f20955f')}{' '}
-        <code className="font-mono">{installation.email}</code>
-        {' · '}
-        {tI18nComplete.raw('text94835ea2fcf7')}{' '}
-        <code className="font-mono">{installation.inboxId}</code>
-        {installation.webhookId ? (
-          <>
-            {' · '}
-            {tI18nComplete.raw('text4814f62c108d')}{' '}
-            <code className="font-mono">{installation.webhookId}</code>
-          </>
-        ) : null}
-      </InfoBanner>
-      <EmailSenderPolicyEditor
-        projectId={projectId}
-        connectorSlug={connectorSlug}
-        policy={installation.senderPolicy}
-        canWrite={canWrite}
-      />
-      {canWrite && (
-        <div className="flex items-center justify-end gap-2">
-          {confirming ? (
-            <>
-              <span className="text-muted-foreground mr-auto text-xs">
-                {tI18nComplete.raw('text2a528ae2d4ae')}
-              </span>
-              <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
-                {tI18nComplete.raw('text19766ed6ccb2')}
-              </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                disabled={disconnect.isPending}
-                onClick={() =>
-                  disconnect.mutate(
-                    { projectId, connectorSlug },
-                    {
-                      onSuccess: () => {
-                        setConfirming(false);
-                        onRemoved();
-                      },
-                    },
-                  )
-                }
-              >
-                {disconnect.isPending ? <Loading className="mr-2 size-3.5 shrink-0" /> : null}
-                {tI18nComplete.raw('textacfc5be785a9')}
-              </Button>
-            </>
-          ) : (
-            <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>
-              {tI18nComplete.raw('textacfc5be785a9')}
-            </Button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function splitPolicyList(value: string): string[] {
-  return Array.from(
-    new Set(
-      value
-        .split(/[\n,]+/)
-        .map((item) => item.trim().toLowerCase())
-        .filter(Boolean),
-    ),
-  );
-}
-
-function normalizeEmailSenderPolicy(
-  policy: EmailSenderPolicy | null | undefined,
-): EmailSenderPolicy {
-  return {
-    mode: policy?.mode === 'restricted' ? 'restricted' : 'allow_all',
-    allowedEmails: policy?.allowedEmails ?? [],
-    allowedDomains: policy?.allowedDomains ?? [],
-    allowedRegex: policy?.allowedRegex ?? null,
-  };
-}
-
-function EmailSenderPolicyEditor({
-  projectId,
-  connectorSlug,
-  policy,
-  canWrite = false,
-}: {
-  projectId: string;
-  connectorSlug: string;
-  policy: EmailSenderPolicy | null | undefined;
-  canWrite?: boolean;
-}) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const update = useUpdateEmailPolicy();
-  const initial = normalizeEmailSenderPolicy(policy);
-  const [restricted, setRestricted] = useState(initial.mode === 'restricted');
-  const [emails, setEmails] = useState(() => initial.allowedEmails.join('\n'));
-  const [domains, setDomains] = useState(() => initial.allowedDomains.join('\n'));
-  const [regex, setRegex] = useState(initial.allowedRegex ?? '');
-  const [error, setError] = useState<string | null>(null);
-
-  const [syncedPolicy, setSyncedPolicy] = useState(policy);
-  if (policy !== syncedPolicy) {
-    setSyncedPolicy(policy);
-    const next = normalizeEmailSenderPolicy(policy);
-    setRestricted(next.mode === 'restricted');
-    setEmails(next.allowedEmails.join('\n'));
-    setDomains(next.allowedDomains.join('\n'));
-    setRegex(next.allowedRegex ?? '');
-    setError(null);
-  }
-
-  const nextPolicy = (): EmailSenderPolicy => ({
-    mode: restricted ? 'restricted' : 'allow_all',
-    allowedEmails: splitPolicyList(emails),
-    allowedDomains: splitPolicyList(domains).map((domain) => domain.replace(/^@+/, '')),
-    allowedRegex: regex.trim() || null,
-  });
-
-  const save = () => {
-    setError(null);
-    const sender_policy = nextPolicy();
-    if (sender_policy.allowedRegex) {
-      try {
-        new RegExp(sender_policy.allowedRegex);
-      } catch {
-        setError('Regex is invalid');
-        return;
-      }
-    }
-    update.mutate(
-      { projectId, connectorSlug, sender_policy },
-      { onError: (e) => setError((e as Error).message) },
-    );
-  };
-
-  const dirty =
-    restricted !== (initial.mode === 'restricted') ||
-    emails !== initial.allowedEmails.join('\n') ||
-    domains !== initial.allowedDomains.join('\n') ||
-    regex !== (initial.allowedRegex ?? '');
-
-  return (
-    <div className="border-border/60 bg-card rounded-md border p-4">
-      <div className="flex items-start gap-3">
-        <Checkbox
-          id="email-sender-restricted"
-          checked={restricted}
-          onCheckedChange={(checked) => setRestricted(Boolean(checked))}
-          className="mt-0.5"
-          disabled={!canWrite}
-        />
-        <div className="min-w-0 flex-1 space-y-3">
-          <div>
-            <Label htmlFor="email-sender-restricted">{tI18nComplete.raw('texta48c89f63885')}</Label>
-            <p className="text-muted-foreground mt-1 text-xs">
-              {tI18nComplete.raw('text8c67b476d59b')}
-            </p>
-          </div>
-          {restricted ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field>
-                <Input
-                  value={emails}
-                  onChange={(e) => setEmails(e.target.value)}
-                  placeholder={tI18nComplete.raw('text542d24012988')}
-                  disabled={!canWrite}
-                />
-              </Field>
-              <Field>
-                <Input
-                  value={domains}
-                  onChange={(e) => setDomains(e.target.value)}
-                  placeholder={tI18nComplete.raw('texta379a6f6eeaf')}
-                  disabled={!canWrite}
-                />
-              </Field>
-              <div className="sm:col-span-2">
-                <Field>
-                  <Input
-                    value={regex}
-                    onChange={(e) => setRegex(e.target.value)}
-                    placeholder={tI18nComplete.raw('text8b21058f3253')}
-                    spellCheck={false}
-                    disabled={!canWrite}
-                  />
-                </Field>
-              </div>
-            </div>
-          ) : null}
-          {error ? <InfoBanner tone="destructive">{error}</InfoBanner> : null}
-          {canWrite && (
-            <SaveBar
-              dirty={dirty}
-              saving={update.isPending}
-              onSave={save}
-              onReset={() => {
-                setRestricted(initial.mode === 'restricted');
-                setEmails(initial.allowedEmails.join('\n'));
-                setDomains(initial.allowedDomains.join('\n'));
-                setRegex(initial.allowedRegex ?? '');
-              }}
-              label={tI18nComplete.raw('text57ee14ce1425')}
-            />
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export { EmailConnectForm };
 
 function SlackChannelConnection({
   projectId,
@@ -2012,11 +1809,7 @@ export function SlackLogo({ className }: { className?: string }) {
 }
 
 function SlackIconTile() {
-  return (
-    <span className="border-border/60 bg-card relative flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-sm border">
-      <SlackLogo className="size-3.5" />
-    </span>
-  );
+  return <ConnectorLogo source={{ nativeApp: 'slack' }} size="sm" />;
 }
 
 const CHANNEL_CATALOGUE_CARD_CLASS =
@@ -2031,39 +1824,8 @@ function AddEmailConnectionCard({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState('Email inbox');
-  const [username, setUsername] = useState('');
-  const add = useMutation({
-    mutationFn: async () => {
-      const slug = buildEmailConnectorConnectionSlug(
-        username || name,
-        randomUUID(),
-      );
-      const result = await createConnector(
-        projectId,
-        createOnlyConnectorDraft({
-          slug,
-          name: name.trim() || 'Email inbox',
-          provider: 'channel',
-          platform: 'email',
-          credential: 'shared',
-        }),
-      );
-      return { slug, syncError: connectorSyncErrorForSlug(result, slug) };
-    },
-    onSuccess: ({ slug, syncError }) => {
-      setOpen(false);
-      if (syncError) {
-        warningToast(tI18nComplete('text4e12058e58c1', { value0: syncError }));
-        onAdded();
-        return;
-      }
-      successToast(tI18nComplete.raw('textd1dcd7a7bbec'));
-      onAdded(slug);
-    },
-    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text3df88e8f7ea6')),
-  });
-
+  // Every inbox is an account on the one `kortix_email` profile: the card adds one.
+  const inboxes = useEmailInboxes(projectId);
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} className={CHANNEL_CATALOGUE_CARD_CLASS}>
@@ -2082,56 +1844,13 @@ function AddEmailConnectionCard({
           {tI18nComplete.raw('text6ae82b1545c9')}
         </p>
       </button>
-      <Modal open={open} onOpenChange={(next) => !add.isPending && setOpen(next)}>
-        <ModalContent className="lg:max-w-md">
-          <ModalHeader>
-            <ModalTitle>{tI18nComplete.raw('text2b47dcc33a2a')}</ModalTitle>
-            <ModalDescription>{tI18nComplete.raw('text8d6a5c4c17be')}</ModalDescription>
-          </ModalHeader>
-          <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
-            <Field>
-              <FieldLabel htmlFor="email-connection-name">
-                {tI18nComplete.raw('text2b7f6a84de91')}
-              </FieldLabel>
-              <Input
-                id="email-connection-name"
-                name="email-connection-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={tI18nComplete.raw('text945ce03ec79f')}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="email-connection-prefix">
-                {tI18nComplete.raw('text4e6946711ca8')}
-              </FieldLabel>
-              <Input
-                id="email-connection-prefix"
-                name="email-connection-prefix"
-                value={username}
-                onChange={(e) =>
-                  setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ''))
-                }
-                placeholder={tI18nComplete.raw('texta18603086e5b')}
-                autoComplete="off"
-                spellCheck={false}
-              />
-              <p className="text-muted-foreground text-xs">
-                {tI18nComplete.raw('textfd1317630c49')}
-              </p>
-            </Field>
-          </ModalBody>
-          <ModalFooter className="sm:justify-between">
-            <Button variant="outline-ghost" onClick={() => setOpen(false)} disabled={add.isPending}>
-              {tI18nComplete.raw('text19766ed6ccb2')}
-            </Button>
-            <Button onClick={() => add.mutate()} disabled={add.isPending} className="gap-1.5">
-              {add.isPending ? <Loading className="size-4 shrink-0" /> : null}
-              {tI18nComplete.raw('text8dff8c0800fd')}
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      <AddEmailInboxDialog
+        projectId={projectId}
+        open={open}
+        onOpenChange={setOpen}
+        existing={(inboxes.data ?? []).map((inbox) => ({ label: inbox.label, owner_type: inbox.owner_type }))}
+        onAdded={() => onAdded(EMAIL_CONNECTOR_SLUG)}
+      />
     </>
   );
 }

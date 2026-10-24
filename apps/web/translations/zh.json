@@ -22697,7 +22697,7 @@
     "attachId": "Resend 收件箱 ID",
     "attachHint": "当收件箱已存在或账户已达收件箱上限时使用。Kortix 仍会创建 webhook。",
     "errorKeyRequired": "请输入 Resend API 密钥。",
-    "errorAttachBoth": "已有收件箱需要地址和收件箱 ID。",
+    "errorAttachBoth": "现有收件箱需要提供其收件箱 ID。",
     "errorCustomEmpty": "请至少添加一个地址或域名。",
     "submitAttach": "连接收件箱",
     "submitCreate": "创建 {address}",
@@ -22716,5 +22716,27 @@
     "linkApiKeys": "创建 API 密钥",
     "linkReceiving": "开启接收",
     "linkInboxes": "关于 Resend Inboxes"
+  },
+  "emailInboxes": {
+    "homeManaged": "Kortix 托管",
+    "homeOwn": "你的 Resend 账户",
+    "defaultLabel": "收件箱",
+    "addTitle": "添加收件箱",
+    "addDescription": "先为收件箱命名并选择谁可以使用，然后选择存放位置和地址。",
+    "labelHint": "该收件箱账户在 Kortix 中的名称。",
+    "nameFirst": "请先为收件箱命名。",
+    "added": "{address} 已就绪",
+    "regexInvalid": "该模式不是有效的正则表达式。",
+    "policySaved": "已保存",
+    "policyTitle": "谁可以给 {address} 发邮件",
+    "policyDescription": "每封邮件都会使用本项目的额度开始或继续一个会话。",
+    "policyMenu": "谁可以发邮件",
+    "heroCount": "{count, plural, other {# 个收件箱}}",
+    "heroManage": "管理收件箱",
+    "heroAddAnother": "再添加一个收件箱",
+    "heroAdd": "添加收件箱",
+    "removeDeletes": "移除该账户并在 Resend 中删除 {address}。此后发往该地址的邮件会被退回。",
+    "removeKeeps": "从 Kortix 中移除该账户。{address} 仍保留在你的 Resend 账户中。",
+    "removed": "收件箱已移除"
   }
 }

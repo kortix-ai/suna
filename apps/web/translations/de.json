@@ -22697,7 +22697,7 @@
     "attachId": "Resend-Postfach-ID",
     "attachHint": "Nutze das, wenn das Postfach schon existiert oder das Konto sein Postfachlimit erreicht hat. Kortix legt den Webhook trotzdem an.",
     "errorKeyRequired": "Gib deinen Resend-API-Schlüssel ein.",
-    "errorAttachBoth": "Ein bestehendes Postfach braucht Adresse und Postfach-ID.",
+    "errorAttachBoth": "Ein bestehendes Postfach braucht seine Postfach-ID.",
     "errorCustomEmpty": "Füge mindestens eine Adresse oder Domain hinzu.",
     "submitAttach": "Postfach verbinden",
     "submitCreate": "{address} anlegen",
@@ -22716,5 +22716,27 @@
     "linkApiKeys": "API-Schlüssel erstellen",
     "linkReceiving": "Empfang aktivieren",
     "linkInboxes": "Über Resend Inboxes"
+  },
+  "emailInboxes": {
+    "homeManaged": "Von Kortix verwaltet",
+    "homeOwn": "Dein Resend-Konto",
+    "defaultLabel": "Postfach",
+    "addTitle": "Postfach hinzufügen",
+    "addDescription": "Gib dem Postfach einen Namen und wähle, wer es nutzen darf, dann wo es liegt und seine Adresse.",
+    "labelHint": "Der Name des Postfach-Kontos in Kortix.",
+    "nameFirst": "Gib dem Postfach zuerst einen Namen.",
+    "added": "{address} ist bereit",
+    "regexInvalid": "Das Muster ist kein gültiger regulärer Ausdruck.",
+    "policySaved": "Gespeichert",
+    "policyTitle": "Wer {address} schreiben darf",
+    "policyDescription": "Jede E-Mail startet oder setzt eine Session mit den Credits dieses Projekts fort.",
+    "policyMenu": "Wer schreiben darf",
+    "heroCount": "{count, plural, one {# Postfach} other {# Postfächer}}",
+    "heroManage": "Postfächer verwalten",
+    "heroAddAnother": "Weiteres Postfach hinzufügen",
+    "heroAdd": "Postfach hinzufügen",
+    "removeDeletes": "Entfernt das Konto und löscht {address} in Resend. Mails an diese Adresse kommen danach zurück.",
+    "removeKeeps": "Entfernt das Konto aus Kortix. {address} bleibt in deinem Resend-Konto.",
+    "removed": "Postfach entfernt"
   }
 }

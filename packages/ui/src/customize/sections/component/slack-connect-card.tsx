@@ -54,7 +54,7 @@ export function SlackConnectCard({
   return (
     <>
       <ChannelConnectHero
-        logo={<Slack className="size-5 shrink-0" />}
+        app="slack"
         title={tI18nComplete.raw('text89e9e20668f3')}
         lede={
           oauthInstallUrl

@@ -22697,7 +22697,7 @@
     "attachId": "ID casella Resend",
     "attachHint": "Usalo se la casella esiste già o l’account ha raggiunto il limite di caselle. Kortix crea comunque il webhook.",
     "errorKeyRequired": "Inserisci la chiave API Resend.",
-    "errorAttachBoth": "Una casella esistente richiede indirizzo e ID.",
+    "errorAttachBoth": "Una casella esistente richiede il suo ID.",
     "errorCustomEmpty": "Aggiungi almeno un indirizzo o dominio.",
     "submitAttach": "Collega casella",
     "submitCreate": "Crea {address}",
@@ -22716,5 +22716,27 @@
     "linkApiKeys": "Crea una chiave API",
     "linkReceiving": "Attiva la ricezione",
     "linkInboxes": "Informazioni su Resend Inboxes"
+  },
+  "emailInboxes": {
+    "homeManaged": "Gestita da Kortix",
+    "homeOwn": "Il tuo account Resend",
+    "defaultLabel": "Casella",
+    "addTitle": "Aggiungi una casella",
+    "addDescription": "Dai un nome alla casella e scegli chi può usarla, poi dove si trova e il suo indirizzo.",
+    "labelHint": "Il nome dell'account casella in Kortix.",
+    "nameFirst": "Prima dai un nome alla casella.",
+    "added": "{address} è pronta",
+    "regexInvalid": "Il pattern non è un'espressione regolare valida.",
+    "policySaved": "Salvato",
+    "policyTitle": "Chi può scrivere a {address}",
+    "policyDescription": "Ogni email avvia o continua una sessione con i crediti di questo progetto.",
+    "policyMenu": "Chi può scrivere",
+    "heroCount": "{count, plural, one {# casella} other {# caselle}}",
+    "heroManage": "Gestisci caselle",
+    "heroAddAnother": "Aggiungi un'altra casella",
+    "heroAdd": "Aggiungi una casella",
+    "removeDeletes": "Rimuove l'account ed elimina {address} in Resend. Da quel momento le email a quell'indirizzo tornano indietro.",
+    "removeKeeps": "Rimuove l'account da Kortix. {address} resta nel tuo account Resend.",
+    "removed": "Casella rimossa"
   }
 }

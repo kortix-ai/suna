@@ -4,19 +4,16 @@ import { useTranslations } from '../../i18n';
 import type { AdminConnector } from '@kortix/sdk';
 import {
   CheckIcon,
-  ChatIcon as MessageSquare,
-  MonitorIcon as Monitor,
 } from '@phosphor-icons/react';
-import { UiImage as Image } from '../../providers/ui-provider';
-import { useState } from 'react';
 
 import { Badge } from '../../primitives/badge';
-import { EntityAvatar } from '../../primitives/entity-avatar';
 import { connectorSetupStatus } from '../sections/connector-connection-form';
 import { cn } from '../../internal/lib/utils';
 
 /**
- * How a connector presents itself — its icon tile and its status pill.
+ * How a connector presents its status — the connected mark and the status
+ * pill. Its logo is `ConnectorLogo` (`connector-logo.tsx`), shared by every
+ * connector surface.
  *
  * These two render once per card in the connectors grid, so they sit on the
  * hottest path of `/projects/[id]/connectors`. They used to live in
@@ -28,50 +25,6 @@ import { cn } from '../../internal/lib/utils';
  *
  * The tile-size helper came along because nothing else in the old file used it.
  */
-
-export function ConnectorAppIcon({
-  connector,
-  size = 'lg',
-}: {
-  connector: AdminConnector;
-  size?: 'sm' | 'lg';
-}) {
-  const [broken, setBroken] = useState(false);
-  const imgSrc = connector.iconUrl ?? null;
-
-  if (imgSrc && !broken) {
-    return (
-      <span
-        // The catalogue grid card's logo (`connector-browse.tsx`): the bare
-        // image, no tile, so an app looks the same on every connector surface.
-        className={cn(
-          'relative flex shrink-0 items-center justify-center overflow-hidden rounded-sm',
-          size === 'lg' ? 'size-9' : 'size-6',
-        )}
-      >
-        <Image
-          src={imgSrc}
-          alt=""
-          referrerPolicy="no-referrer"
-          fill
-          sizes={size === 'lg' ? '36px' : '24px'}
-          className="object-contain"
-          unoptimized
-          onError={() => setBroken(true)}
-        />
-      </span>
-    );
-  }
-  // No logo: a channel or a computer keeps its own glyph, because that glyph
-  // says what it is. An app shows its first letter. A plug says only "some app".
-  const glyph =
-    connector.provider === 'channel'
-      ? MessageSquare
-      : connector.provider === 'computer'
-        ? Monitor
-        : undefined;
-  return <EntityAvatar icon={glyph} size={size} label={connector.name} />;
-}
 
 /**
  * Green `✓` for a healthy project connector — same glyph Discovery/All use in

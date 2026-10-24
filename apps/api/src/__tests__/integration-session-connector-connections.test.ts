@@ -18,7 +18,14 @@ import {
   serviceAccounts,
 } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { deleteEmailInstall, saveEmailInstall } from '../channels/install-store';
+import {
+  insertEmailInboxAccount,
+  normalizeSenderPolicy,
+  purgeLegacyEmailState,
+  releaseEmailInbox,
+  reserveEmailInbox,
+  revokeEmailInboxAccount,
+} from '../channels/install-store';
 import {
   connectionIsEffectiveProjectDefault,
   connectorIdsWithSharedCredentials,
@@ -35,7 +42,6 @@ import {
 } from '../connectors/credentials';
 import { makeDbGatewayDeps } from '../connectors/db-deps';
 import { finalizePipedreamConnectionAuthorization } from '../connectors/pipedream';
-import { reconcileEmailConnections } from '../connectors/sync';
 import {
   listEntitledConnectorConnections,
   resolveEffectiveSessionConnectorBindings,
@@ -223,6 +229,8 @@ beforeAll(async () => {
       connectorId: EMAIL_CONNECTOR,
       label: 'Default email',
       isDefault: true,
+      // An inbox account: the row carries its inbox (channels/email/installs.ts).
+      metadata: { inbox_id: 'connection-test-default-inbox', email: 'default@example.test', managed: false },
     },
     {
       connectionId: SECRET_CONNECTION_DEFAULT,
@@ -411,18 +419,22 @@ beforeAll(async () => {
     createdBy: USER,
     rotatedAt: new Date(),
   });
-  await saveEmailInstall({
+  // The default email row is an inbox account: its claim and its credential.
+  await reserveEmailInbox({
     projectId: PROJECT_A,
-    connectionSlug: 'kortix_email',
     inboxId: 'connection-test-default-inbox',
     email: 'default@example.test',
-    displayName: 'Default inbox',
-    apiKey: 're_project_key',
+    agentName: null,
+  });
+  await db.insert(connectionCredentials).values({
+    connectorId: EMAIL_CONNECTOR,
+    connectionId: EMAIL_CONNECTION_DEFAULT,
+    valueEnc: encryptProjectSecret(PROJECT_A, JSON.stringify({ api_key: 're_project_key', webhook_secret: null })),
   });
 });
 
 afterAll(async () => {
-  await deleteEmailInstall(PROJECT_A, 'kortix_email');
+  await releaseEmailInbox(PROJECT_A, 'connection-test-default-inbox');
   await db.delete(connectionCredentials).where(eq(connectionCredentials.connectorId, CONNECTOR_A));
   await db.delete(projectSessions).where(eq(projectSessions.projectId, PROJECT_A));
   await db
@@ -1149,153 +1161,191 @@ describe('session connector isolation', () => {
     }
   });
 
-  test('Email connections stay immutable per inbox and revoke on partial or final disconnect', async () => {
-    await saveEmailInstall({
+  const inboxAccount = (inboxId: string, email: string, agentName: string | null = null) =>
+    insertEmailInboxAccount({
+      accountId: ACCOUNT_A,
       projectId: PROJECT_A,
-      connectionSlug: 'workspace_a',
-      inboxId: 'inbox-workspace-a',
-      email: 'a@example.test',
-      displayName: 'Workspace A',
+      connectorId: EMAIL_CONNECTOR,
+      ownerType: 'project',
+      ownerId: null,
+      inboxId,
+      email,
+      displayName: null,
+      senderPolicy: normalizeSenderPolicy(null),
+      agentName,
+      managed: false,
+      createdByKortix: true,
+      webhookId: null,
       apiKey: 're_project_key',
+      webhookSecret: 'whsec_test',
+      createdBy: USER,
     });
-    await saveEmailInstall({
-      projectId: PROJECT_A,
-      connectionSlug: 'workspace_b',
-      inboxId: 'inbox-workspace-b',
-      email: 'b@example.test',
-      displayName: 'Workspace B',
-      apiKey: 're_project_key',
-    });
-    await reconcileEmailConnections(PROJECT_A, ACCOUNT_A);
 
-    const connections = await db
-      .select({
-        connectionId: connectorConnections.connectionId,
-        ownerId: connectorConnections.ownerId,
-        status: connectorConnections.status,
-        metadata: connectorConnections.metadata,
-      })
+  test('each inbox is its own account of kortix_email; removing one revokes only it and frees its address', async () => {
+    await reserveEmailInbox({ projectId: PROJECT_A, inboxId: 'inbox-workspace-a', email: 'a@example.test', agentName: null });
+    await reserveEmailInbox({ projectId: PROJECT_A, inboxId: 'inbox-workspace-b', email: 'b@example.test', agentName: null });
+    const a = await inboxAccount('inbox-workspace-a', 'a@example.test');
+    const b = await inboxAccount('inbox-workspace-b', 'b@example.test');
+    expect(a).toMatchObject({ ownerType: 'project', label: 'a@example.test', inboxId: 'inbox-workspace-a', isDefault: false });
+    expect(b).toMatchObject({ ownerType: 'project', label: 'b@example.test', inboxId: 'inbox-workspace-b', isDefault: false });
+
+    await revokeEmailInboxAccount(a);
+    const statuses = await db
+      .select({ connectionId: connectorConnections.connectionId, status: connectorConnections.status, label: connectorConnections.label })
       .from(connectorConnections)
       .where(eq(connectorConnections.connectorId, EMAIL_CONNECTOR));
-    const connectionA = connections.find((connection) => connection.ownerId === 'email:inbox-workspace-a');
-    const connectionB = connections.find((connection) => connection.ownerId === 'email:inbox-workspace-b');
-    expect(connectionA?.status).toBe('active');
-    expect(connectionB?.status).toBe('active');
-    expect(connectionA?.metadata).toMatchObject({
-      connector_slug: 'workspace_a',
-      inbox_id: 'inbox-workspace-a',
-    });
-    expect(connectionB?.metadata).toMatchObject({
-      connector_slug: 'workspace_b',
-      inbox_id: 'inbox-workspace-b',
-    });
-    if (!connectionA || !connectionB) throw new Error('Expected both email connections');
-
-    await deleteEmailInstall(PROJECT_A, 'workspace_a');
-    await reconcileEmailConnections(PROJECT_A, ACCOUNT_A);
-    const [afterPartial] = await db
-      .select({ status: connectorConnections.status })
-      .from(connectorConnections)
-      .where(eq(connectorConnections.connectionId, connectionA.connectionId));
-    expect(afterPartial?.status).toBe('revoked');
-
-    await deleteEmailInstall(PROJECT_A, 'workspace_b');
-    await reconcileEmailConnections(PROJECT_A, ACCOUNT_A);
-    const [afterFinal] = await db
-      .select({ status: connectorConnections.status })
-      .from(connectorConnections)
-      .where(eq(connectorConnections.connectionId, connectionB.connectionId));
-    expect(afterFinal?.status).toBe('revoked');
+    expect(statuses.find((r) => r.connectionId === a.connectionId)?.status).toBe('revoked');
+    expect(statuses.find((r) => r.connectionId === b.connectionId)?.status).toBe('active');
+    // The address is free again: the same inbox can come back as a new account.
+    await reserveEmailInbox({ projectId: PROJECT_A, inboxId: 'inbox-workspace-a', email: 'a@example.test', agentName: null });
+    const again = await inboxAccount('inbox-workspace-a', 'a@example.test');
+    expect(again.label).toBe('a@example.test');
+    await revokeEmailInboxAccount(again);
+    await revokeEmailInboxAccount(b);
+    const claims = await db
+      .select({ workspaceId: chatInstalls.workspaceId })
+      .from(chatInstalls)
+      .where(and(eq(chatInstalls.platform, 'email'), eq(chatInstalls.projectId, PROJECT_A)));
+    expect(claims.map((r) => r.workspaceId)).toEqual(['connection-test-default-inbox']);
   });
 
-  test('Email installation persists and removes its explicit channel-agent binding', async () => {
-    const connectionSlug = 'veyris_bound';
-    const inboxId = 'inbox-veyris-bound';
-    await saveEmailInstall({
+  test("a private inbox: only its owner's private session bound to it may use it", async () => {
+    // Mail to a private ("only me") inbox starts a private session as the
+    // inbox owner, with no on_behalf_of. The bound inbox is the one account of
+    // that person the session may use; another person's session, or a session
+    // the whole project can see, gets nothing from it.
+    await reserveEmailInbox({ projectId: PROJECT_A, inboxId: 'inbox-private-user', email: 'mine@example.test', agentName: null });
+    const inbox = await insertEmailInboxAccount({
+      accountId: ACCOUNT_A,
       projectId: PROJECT_A,
-      connectionSlug,
-      inboxId,
-      email: 'veyris-bound@example.test',
-      displayName: 'Veyris bound inbox',
-      apiKey: 're_project_key',
-      agentName: 'veyris',
+      connectorId: EMAIL_CONNECTOR,
+      ownerType: 'member',
+      ownerId: USER,
+      inboxId: 'inbox-private-user',
+      email: 'mine@example.test',
+      displayName: null,
+      senderPolicy: normalizeSenderPolicy(null),
+      agentName: null,
+      managed: true,
+      createdByKortix: true,
+      webhookId: null,
+      apiKey: null,
+      webhookSecret: 'whsec_test',
+      createdBy: USER,
     });
+    const owners = crypto.randomUUID();
+    const others = crypto.randomUUID();
+    const shared = crypto.randomUUID();
+    await db.insert(projectSessions).values([
+      { sessionId: owners, accountId: ACCOUNT_A, projectId: PROJECT_A, branchName: owners, createdBy: USER, visibility: 'private' },
+      { sessionId: others, accountId: ACCOUNT_A, projectId: PROJECT_A, branchName: others, createdBy: OTHER_USER, visibility: 'private' },
+      { sessionId: shared, accountId: ACCOUNT_A, projectId: PROJECT_A, branchName: shared, createdBy: USER, visibility: 'project' },
+    ]);
+    await db.insert(projectSessionConnectorBindings).values(
+      [owners, others, shared].map((sessionId) => ({
+        sessionId,
+        accountId: ACCOUNT_A,
+        projectId: PROJECT_A,
+        connectorAlias: 'kortix_email',
+        connectorId: EMAIL_CONNECTOR,
+        connectionId: inbox.connectionId,
+        source: 'default' as const,
+        createdBy: null,
+      })),
+    );
+    // The agent's own call, as the gateway makes it: a governed agent acting
+    // for nobody (an email sender is no Kortix identity).
+    const resolve = (sessionId: string) =>
+      resolveSessionConnectorConnection({
+        accountId: ACCOUNT_A,
+        projectId: PROJECT_A,
+        sessionId,
+        alias: 'kortix_email',
+        agentPrincipal: { onBehalfOfUserId: null, agentId: null },
+      });
 
+    expect(await resolve(owners)).toMatchObject({ connectionId: inbox.connectionId });
+    expect(await resolve(others)).toBeNull();
+    expect(await resolve(shared)).toBeNull();
+
+    await db.delete(projectSessionConnectorBindings).where(eq(projectSessionConnectorBindings.connectionId, inbox.connectionId));
+    for (const sessionId of [owners, others, shared]) {
+      await db.delete(projectSessions).where(eq(projectSessions.sessionId, sessionId));
+    }
+    await revokeEmailInboxAccount(inbox);
+  });
+
+  test('pre-account email rows (external owners, no inbox) are revoked by the legacy purge', async () => {
+    const [legacy] = await db
+      .insert(connectorConnections)
+      .values({
+        accountId: ACCOUNT_A,
+        projectId: PROJECT_A,
+        connectorId: EMAIL_CONNECTOR,
+        ownerType: 'external',
+        ownerId: 'email:legacy-inbox',
+        label: 'Legacy inbox',
+        metadata: { inbox_id: 'legacy-inbox', channel_connection: true },
+      })
+      .returning({ connectionId: connectorConnections.connectionId });
+    await purgeLegacyEmailState(PROJECT_A);
+    const [after] = await db
+      .select({ status: connectorConnections.status })
+      .from(connectorConnections)
+      .where(eq(connectorConnections.connectionId, legacy!.connectionId));
+    expect(after?.status).toBe('revoked');
+    // The live inbox account is untouched.
+    const [live] = await db
+      .select({ status: connectorConnections.status })
+      .from(connectorConnections)
+      .where(eq(connectorConnections.connectionId, EMAIL_CONNECTION_DEFAULT));
+    expect(live?.status).toBe('active');
+  });
+
+  test('an inbox carries its channel-agent binding and loses it when removed', async () => {
+    const inboxId = 'inbox-veyris-bound';
+    await reserveEmailInbox({ projectId: PROJECT_A, inboxId, email: 'veyris-bound@example.test', agentName: 'veyris' });
+    const account = await inboxAccount(inboxId, 'veyris-bound@example.test', 'veyris');
     const [binding] = await db
       .select({
         projectId: chatChannelBindings.projectId,
-        channelId: chatChannelBindings.channelId,
         channelName: chatChannelBindings.channelName,
         channelType: chatChannelBindings.channelType,
         agentName: chatChannelBindings.agentName,
       })
       .from(chatChannelBindings)
-      .where(
-        and(
-          eq(chatChannelBindings.platform, 'email'),
-          eq(chatChannelBindings.workspaceId, inboxId),
-          eq(chatChannelBindings.channelId, connectionSlug),
-        ),
-      );
+      .where(and(eq(chatChannelBindings.platform, 'email'), eq(chatChannelBindings.workspaceId, inboxId)));
     expect(binding).toEqual({
       projectId: PROJECT_A,
-      channelId: connectionSlug,
       channelName: 'veyris-bound@example.test',
       channelType: 'inbox',
       agentName: 'veyris',
     });
+    expect(account.agentName).toBe('veyris');
 
-    await deleteEmailInstall(PROJECT_A, connectionSlug);
+    await revokeEmailInboxAccount(account);
     const rows = await db
       .select({ bindingId: chatChannelBindings.bindingId })
       .from(chatChannelBindings)
-      .where(
-        and(
-          eq(chatChannelBindings.platform, 'email'),
-          eq(chatChannelBindings.workspaceId, inboxId),
-          eq(chatChannelBindings.channelId, connectionSlug),
-        ),
-      );
+      .where(and(eq(chatChannelBindings.platform, 'email'), eq(chatChannelBindings.workspaceId, inboxId)));
     expect(rows).toEqual([]);
   });
 
-  test('saveEmailInstall does not delete another project chat_installs row for the same inbox (pentest 2026-07-27)', async () => {
-    // Regression for the inbox hijack. PROJECT_A claims inbox
-    // "shared-inbox". PROJECT_B then claims the SAME inbox. Before the fix,
-    // saveEmailInstall ran an unscoped DELETE (platform + workspaceId only)
-    // that wiped PROJECT_A's chat_installs row. With the fix, the DELETE is
-    // scoped to the calling project, so both rows coexist (unique index allows
-    // multiple projects per inbox) and resolveProjectForEmailInbox keeps
-    // returning PROJECT_A for PROJECT_A's install.
+  test('claiming an inbox never deletes another project claim on it (pentest 2026-07-27)', async () => {
+    // Regression for the inbox hijack: a claim is an insert, never a delete
+    // keyed on the inbox alone, so PROJECT_B's claim leaves PROJECT_A's in place.
+    // (The connect route refuses an inbox another project holds; this is the
+    // defense in depth.)
     const sharedInbox = 'shared-inbox-hijack-test';
-    await saveEmailInstall({
-      projectId: PROJECT_A,
-      connectionSlug: 'kortix_email',
-      inboxId: sharedInbox,
-      email: 'shared-a@example.test',
-      displayName: 'A',
-      apiKey: 're_project_key',
-    });
-    // PROJECT_B claims the same inbox. This must NOT remove PROJECT_A's row.
-    await saveEmailInstall({
-      projectId: PROJECT_B,
-      connectionSlug: 'kortix_email',
-      inboxId: sharedInbox,
-      email: 'shared-b@example.test',
-      displayName: 'B',
-      apiKey: 're_project_key',
-    });
-
+    await reserveEmailInbox({ projectId: PROJECT_A, inboxId: sharedInbox, email: 'shared-a@example.test', agentName: null });
+    await reserveEmailInbox({ projectId: PROJECT_B, inboxId: sharedInbox, email: 'shared-b@example.test', agentName: null });
     const owners = await db
       .select({ projectId: chatInstalls.projectId })
       .from(chatInstalls)
       .where(and(eq(chatInstalls.platform, 'email'), eq(chatInstalls.workspaceId, sharedInbox)));
-    const ownerIds = owners.map((r) => r.projectId).sort();
-    expect(ownerIds).toEqual([PROJECT_A, PROJECT_B].sort());
-
-    // Cleanup so the row does not leak into other tests.
-    await deleteEmailInstall(PROJECT_A, 'kortix_email');
-    await deleteEmailInstall(PROJECT_B, 'kortix_email');
+    expect(owners.map((r) => r.projectId).sort()).toEqual([PROJECT_A, PROJECT_B].sort());
+    await releaseEmailInbox(PROJECT_A, sharedInbox);
+    await releaseEmailInbox(PROJECT_B, sharedInbox);
   });
 });
 

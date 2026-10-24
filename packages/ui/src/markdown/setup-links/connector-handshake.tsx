@@ -1,11 +1,11 @@
 'use client';
 
-import { EntityAvatar } from '../../primitives/entity-avatar';
+import { ConnectorLogo } from '../../internal/connector-logo/connector-logo';
 import { KortixLogo } from '../../primitives/kortix-logo';
 import { Skeleton } from '../../primitives/skeleton';
 import { cn } from '../../lib/utils';
 import { CheckIcon } from '@phosphor-icons/react';
-import React, { useState } from 'react';
+import React from 'react';
 
 /**
  * The logo tile is white in both themes. Catalogue logos are third-party art
@@ -64,34 +64,23 @@ function HandshakeTile({
  * (the card animates in), and the logo's square corners painted past the edge.
  */
 export function ConnectorAppMark({
-  name,
+  name: _name,
+  slug,
   iconUrl,
   size = 'md',
 }: {
   name: string;
+  /** The connector's slug, so a Kortix-built connector shows its own mark. */
+  slug?: string | null;
   iconUrl: string | null | undefined;
   size?: keyof typeof TILE_SIZE;
 }) {
-  const [broken, setBroken] = useState(false);
-  if (iconUrl === undefined) {
+  if (iconUrl === undefined && !slug) {
     return <Skeleton aria-hidden className={cn('shrink-0 py-0', TILE_SIZE[size])} />;
   }
-  if (!iconUrl || broken) {
-    return <EntityAvatar label={name} size={size} className={size === 'xl' ? 'rounded-xl' : undefined} />;
-  }
-  return (
-    <HandshakeTile size={size} className={LOGO_TILE_BACKGROUND}>
-      {/* eslint-disable-next-line @next/next/no-img-element -- third-party catalog logo on an arbitrary host */}
-      <img
-        src={iconUrl}
-        alt=""
-        referrerPolicy="no-referrer"
-        draggable={false}
-        onError={() => setBroken(true)}
-        className={cn('size-full object-contain select-none', TILE_SIZE[size])}
-      />
-    </HandshakeTile>
-  );
+  // The one connector logo (`ConnectorLogo`), so a connect card, an approval and the
+  // connector's own page show the same mark.
+  return <ConnectorLogo source={{ slug, icon: iconUrl ?? null }} size={size} />;
 }
 
 /** The Kortix glyph inside its tile, per tile size. */

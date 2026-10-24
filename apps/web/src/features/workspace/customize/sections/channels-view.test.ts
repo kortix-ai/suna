@@ -242,7 +242,6 @@ describe('Channels view — Email and Teams are entity rows', () => {
 
   test('a disconnected row says what the channel does instead of an em dash', () => {
     expect(channelRowSource).toContain('pitch');
-    expect(channelsSource).toContain('Give your agent an inbox it can read and reply from.');
     expect(channelsSource).toContain('Mention your agent in a Teams channel or chat.');
   });
 
@@ -251,13 +250,12 @@ describe('Channels view — Email and Teams are entity rows', () => {
     expect(channelRowSource).toContain('setConfirming(true)');
     expect(channelRowSource).toContain('variant="destructive"');
     expect(channelsSource).toContain('<ChannelDisconnectButton');
-    expect((channelsSource.match(/<ChannelDisconnectButton/g) ?? []).length).toBe(3);
+    expect((channelsSource.match(/<ChannelDisconnectButton/g) ?? []).length).toBe(2);
   });
 
 
   test('reuses the shared installation hooks as the single source of truth', () => {
     expect(channelsSource).toContain('useDisconnectSlack');
-    expect(channelsSource).toContain('useDisconnectEmail');
     expect(channelsSource).toContain('useTeamsInstall');
     expect(channelsSource).toContain('useTeamsMode');
     expect(channelsSource).toContain('useDisconnectTeams');

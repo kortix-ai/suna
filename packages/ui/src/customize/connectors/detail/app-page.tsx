@@ -1,5 +1,8 @@
 'use client';
 import { DetailPageShell } from './detail-page-shell';
+import { ConnectorLogo } from '../../../internal/connector-logo/connector-logo';
+import { ChannelHeroLogoInHeader } from '../../sections/component/channel-hero-frame';
+import { discoverLogoSource, type ConnectorLogoSource } from '../../../internal/connector-logo/connector-logo-source';
 import { ComputerAppPage } from './computer-app-page';
 
 import { getDiscoverConnector, getDiscoverConnectorTools, getProjectDetail, listConnectors } from '@kortix/sdk';
@@ -18,7 +21,6 @@ import { useState, type ReactNode } from 'react';
 
 import { Badge } from '../../../primitives/badge';
 import { Button } from '../../../primitives/button';
-import { EntityAvatar } from '../../../primitives/entity-avatar';
 import { Skeleton } from '../../../primitives/skeleton';
 import { EmptyState } from '../../../primitives/empty-state';
 import { ErrorState } from '../../../primitives/error-state';
@@ -27,7 +29,6 @@ import {
   appNameKey,
   catalogEntryConnectors,
   connectToolkitApp,
-  discoverEntryIcon,
 } from '../catalog/catalog-entry';
 import {
   listConnectCatalogPage,
@@ -81,41 +82,12 @@ const surfaceLabel = (kind: string) => wayKindLabel(kind as WayKind);
 /** Tools shown before "Show all". */
 const TOOLS_PREVIEW = 40;
 
-/**
- * The app page's icon tile (`ConnectorAppIcon`, size `lg`): the resolved
- * favicon, or the glyph tile when the record has none — and the same glyph
- * tile when the URL fails to load, which used to render the browser's
- * broken-image glyph beside the title. Mirrors the catalogue card's
- * `ConnectorIcon`. The latch is per URL (`failedUrl`), so the late-arriving
- * managed logo — which swaps the URL — gets a fresh try without a call-site
- * key.
- */
-function AppIcon({ icon, name }: { icon: string | null; name: string }) {
-  const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  if (!icon || failedUrl === icon) {
-    return <EntityAvatar icon={GlobeIcon} size="lg" label={name} />;
-  }
-  return (
-    <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-sm">
-      {/* eslint-disable-next-line @next/next/no-img-element -- a third-party favicon; the Next loader is bypassed anyway. */}
-      <img
-        src={icon}
-        alt=""
-        width={36}
-        height={36}
-        referrerPolicy="no-referrer"
-        className="size-9 object-contain"
-        onError={() => setFailedUrl(icon)}
-      />
-    </span>
-  );
-}
-
 /** What the page needs from either catalogue. */
 interface ResolvedApp {
   name: string;
   description: string | null;
-  icon: string | null;
+  /** The logo source: the same as the app's catalogue card. */
+  logo: ConnectorLogoSource;
   /** The install target of each way to connect, recommended first. `kind`
    *  is the badge beside the name. `variantId` reads its tools. */
   surfaces: Array<{
@@ -388,7 +360,7 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
 
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
-          <AppIcon icon={resolved.icon} name={resolved.name} />
+          <ConnectorLogo source={resolved.logo} size="lg" />
           <h1 className="text-foreground min-w-0 text-xl font-medium text-balance wrap-break-word">
             {resolved.name}
           </h1>
@@ -408,7 +380,12 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
       </header>
 
       {/* A Kortix channel's page: its hero, connected or not, says it all. */}
-      {channelPlatform ? <ChannelsSection projectId={projectId} platform={channelPlatform} /> : null}
+      {channelPlatform ? (
+        // The header above shows the app's logo: the hero below does not repeat it.
+        <ChannelHeroLogoInHeader>
+          <ChannelsSection projectId={projectId} platform={channelPlatform} />
+        </ChannelHeroLogoInHeader>
+      ) : null}
 
       {!channelPlatform && (infoCells.length > 0 || resolved.description) ? (
         <div className="bg-popover divide-border divide-y overflow-hidden rounded-md border">
@@ -717,8 +694,8 @@ function useAppData(projectId: string, app: ReturnType<typeof appRefFromLocation
     ? {
         name: managed?.name ?? detail.item.name,
         description: detail.item.description ?? managed?.description ?? null,
-        // The managed logo is sharp where the catalogue's favicon is not.
-        icon: managed?.imgSrc ?? discoverEntryIcon(detail.item),
+        // The catalogue card's source, so the page and the card show one logo.
+        logo: discoverLogoSource(detail.item),
         // Server order: best way first, the recommended one marked.
         surfaces: [
           ...detail.variants.flatMap((variant): ResolvedApp['surfaces'] => {
@@ -784,7 +761,7 @@ function useAppData(projectId: string, app: ReturnType<typeof appRefFromLocation
       ? {
           name: managed.name,
           description: managed.description,
-          icon: managed.imgSrc,
+          logo: { slug: managed.slug, icon: managed.imgSrc },
           surfaces: managedSurface ? [managedSurface] : [],
           references: [],
         }

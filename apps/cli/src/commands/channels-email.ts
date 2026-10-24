@@ -33,6 +33,43 @@ export interface EmailMode {
   managed_domain?: string;
 }
 
+/** One inbox: an account of the email connector (GET/POST …/channels/email/inboxes). */
+export interface EmailInbox {
+  connection_id: string;
+  inbox_id: string;
+  email: string;
+  display_name: string | null;
+  label: string;
+  owner_type: 'member' | 'project';
+  owner_id: string | null;
+  is_default: boolean;
+  managed: boolean;
+  created_by_kortix: boolean;
+  sender_policy: { mode: 'allow_all' | 'restricted'; allowed_emails: string[]; allowed_domains: string[]; allowed_regex: string | null };
+  agent_name: string | null;
+  created_at: string;
+}
+
+function inboxPolicy(i: EmailInbox): EmailSenderPolicy {
+  return {
+    mode: i.sender_policy.mode,
+    allowedEmails: i.sender_policy.allowed_emails,
+    allowedDomains: i.sender_policy.allowed_domains,
+    allowedRegex: i.sender_policy.allowed_regex,
+  };
+}
+
+function printInbox(i: EmailInbox): void {
+  const who = i.owner_type === 'member' ? 'only you' : 'project';
+  process.stdout.write(
+    `  ${C.bold}${i.email}${C.reset}${i.is_default ? `  ${C.green}default${C.reset}` : ''}
+` +
+      `      ${C.dim}${who} · ${i.managed ? 'Kortix managed' : 'your Resend account'} · senders: ${describePolicy(inboxPolicy(i))}` +
+      `${i.agent_name ? ` · agent ${i.agent_name}` : ''} · ${i.connection_id}${C.reset}
+`,
+  );
+}
+
 interface EmailDomain {
   domain_id: string | null;
   domain: string;
@@ -170,6 +207,110 @@ export async function emailCommand(
         printEmailInstall(install);
         return 0;
       }
+      case 'inboxes':
+      case 'inbox': {
+        const [sub, arg] = rest.filter((a) => !a.startsWith('-')).slice(1);
+        const list = async () => (await ctx.client.get<{ inboxes: EmailInbox[] }>(`${base}/inboxes`)).inboxes;
+        const pick = async (ref: string | undefined): Promise<EmailInbox | null> => {
+          if (!ref) return null;
+          const wanted = ref.trim().toLowerCase();
+          return (
+            (await list()).find(
+              (i) => i.connection_id === ref || i.email.toLowerCase() === wanted || i.label.toLowerCase() === wanted,
+            ) ?? null
+          );
+        };
+        if (!sub || sub === 'ls' || sub === 'list') {
+          const inboxes = await list();
+          if (json) {
+            emitJson({ inboxes });
+            return 0;
+          }
+          if (inboxes.length === 0) {
+            process.stdout.write(`${C.dim}No inboxes yet.${C.reset} Add one: ${C.cyan}kortix channels email inboxes add --username <name>${C.reset}\n`);
+            return 0;
+          }
+          for (const i of inboxes) printInbox(i);
+          return 0;
+        }
+        if (sub === 'add') {
+          if (extra.share && extra.share !== 'me' && extra.share !== 'project') {
+            return fail('--share must be "me" or "project".');
+          }
+          const apiKey = extra.apiKey === '-' ? readFileSync(0, 'utf-8').trim() : extra.apiKey;
+          if (!apiKey) {
+            const mode = await ctx.client.get<EmailMode>(`${base}/mode`).catch(() => null);
+            if (!mode?.managed_available) return fail(OWN_KEY_NEEDED);
+          }
+          const body: Record<string, unknown> = { share: extra.share ?? 'project', sender_policy: buildSenderPolicy(extra) };
+          if (apiKey) body.api_key = apiKey;
+          if (extra.username) body.username = extra.username;
+          if (extra.domain) body.domain = extra.domain;
+          if (extra.displayName) body.display_name = extra.displayName;
+          if (extra.label) body.label = extra.label;
+          if (extra.inboxId) body.inbox_id = extra.inboxId;
+          if (extra.agent) body.agent_name = extra.agent;
+          let inbox: EmailInbox;
+          try {
+            inbox = await ctx.client.post<EmailInbox>(`${base}/inboxes`, body);
+          } catch (err) {
+            if ((err as { body?: { code?: unknown } }).body?.code === 'email_key_required') {
+              return fail(`Kortix-managed email is not offered on this deployment. ${OWN_KEY_NEEDED}`);
+            }
+            throw err;
+          }
+          if (json) {
+            emitJson(inbox);
+            return 0;
+          }
+          process.stdout.write(`${status.ok('Inbox added')}\n`);
+          printInbox(inbox);
+          return 0;
+        }
+        if (sub === 'rm' || sub === 'remove' || sub === 'policy' || sub === 'default') {
+          if (!arg) return fail(`Usage: kortix channels email inboxes ${sub} <address|connection_id>`);
+          const inbox = await pick(arg);
+          if (!inbox) return fail(`No inbox "${arg}" — see kortix channels email inboxes`);
+          if (sub === 'rm' || sub === 'remove') {
+            const result = await ctx.client.delete<{ status: string; inbox_deleted: boolean }>(
+              `${base}/inboxes/${encodeURIComponent(inbox.connection_id)}`,
+            );
+            if (json) {
+              emitJson({ ...result, connection_id: inbox.connection_id, email: inbox.email });
+              return 0;
+            }
+            process.stdout.write(
+              `${status.ok(`Removed ${inbox.email}`)} ${C.dim}— ${result?.inbox_deleted ? 'deleted on Resend' : 'unlinked; the Resend inbox stays'}${C.reset}\n`,
+            );
+            return 0;
+          }
+          if (sub === 'default') {
+            await ctx.client.put(`/projects/${ctx.projectId}/connections/${encodeURIComponent(inbox.connection_id)}/default`, {});
+            if (json) {
+              emitJson({ ok: true, connection_id: inbox.connection_id });
+              return 0;
+            }
+            process.stdout.write(`${status.ok(`${inbox.email} is the default inbox`)}\n`);
+            return 0;
+          }
+          if (!extra.allowAll && extra.allow.length === 0 && !extra.allowRegex) {
+            return fail('Pass at least one --allow <email|@domain>, --allow-regex <re>, or --allow-all.');
+          }
+          const policy = extra.allowAll
+            ? { mode: 'allow_all' as const, allowedEmails: [], allowedDomains: [], allowedRegex: null }
+            : buildSenderPolicy(extra);
+          const updated = await ctx.client.patch<EmailInbox>(`${base}/inboxes/${encodeURIComponent(inbox.connection_id)}`, {
+            sender_policy: policy,
+          });
+          if (json) {
+            emitJson(updated);
+            return 0;
+          }
+          process.stdout.write(`${status.ok(`Sender policy updated — ${describePolicy(inboxPolicy(updated))}`)}\n`);
+          return 0;
+        }
+        return fail(`unknown inboxes action "${sub}" — ls|add|rm|policy|default`);
+      }
       case 'connect': {
         if (Boolean(extra.inboxId) !== Boolean(extra.email)) {
           return fail('Attaching an existing inbox needs BOTH --inbox-id and --email.');
@@ -296,7 +437,7 @@ export async function emailCommand(
         return 0;
       }
       default:
-        return fail(`unknown email action "${action}" — status|connect|domains|disconnect|policy`);
+        return fail(`unknown email action "${action}" — inboxes|status|connect|domains|disconnect|policy`);
     }
   } catch (err) {
     // The project's `email_channel` flag is off: name the one command that turns it on.

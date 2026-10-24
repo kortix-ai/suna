@@ -23,7 +23,7 @@ function render(node: React.ReactNode, hero: boolean): string {
 
 const row = (connected: boolean) => (
   <ChannelRow
-    icon={<span />}
+    app="telegram"
     name="Telegram"
     connected={connected}
     detail={connected ? '@acme_bot' : null}

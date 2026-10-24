@@ -9,7 +9,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 let canWrite = true;
 let emailChannel = true;
-const emailInstall = mock(() => ({ data: null, isLoading: false }));
+let inboxes: Array<Record<string, unknown>> = [];
+const emailInboxes = mock((projectId: string | null) => ({ data: projectId ? inboxes : [], isLoading: false, refetch: mock() }));
 const disconnected = () => ({ data: null, isLoading: false });
 const disconnect = () => ({ isPending: false, mutate: mock() });
 
@@ -36,11 +37,22 @@ mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
 mock.module('@kortix/ui/internal/hooks/channels/use-channels-installations', () => ({
   useSlackInstall: disconnected,
   useSlackMode: disconnected,
-  useEmailInstall: emailInstall,
   useDisconnectSlack: disconnect,
   useDisconnectEmail: disconnect,
   useConnectSlack: () => ({ isPending: false, mutate: mock(), mutateAsync: mock() }),
   useSlackManifest: () => ({ data: null }),
+  // The rest of the module, for the connector pages this view's imports reach.
+  useEmailInstall: disconnected,
+  useEmailMode: disconnected,
+  useConnectEmail: disconnect,
+  useListEmailDomains: disconnect,
+  useAddEmailDomain: disconnect,
+  useVerifyEmailDomain: disconnect,
+  useUpdateEmailPolicy: disconnect,
+  useTelegramInstall: disconnected,
+  useConnectTelegram: disconnect,
+  useSetTelegramAllowedUsers: disconnect,
+  useDisconnectTelegram: disconnect,
 }));
 mock.module('@kortix/ui/internal/hooks/use-channel-bindings', () => ({
   useChannelBindings: () => ({ data: { bindings: [] }, isLoading: false }),
@@ -66,12 +78,16 @@ mock.module('@kortix/ui/customize/sections/component/teams-connect-card', () => 
   TeamsConnectCard: () => null,
   TeamsChannelMock: () => null,
 }));
-mock.module('@kortix/ui/customize/sections/connectors-view', () => ({
-  EmailConnectForm: () => null,
+// Each inbox is an account on `kortix_email`; the hero reads them through these hooks.
+mock.module('@kortix/ui/internal/hooks/channels/use-email-inboxes', () => ({
+  useEmailInboxes: emailInboxes,
+  useAddEmailInbox: disconnect,
+  useUpdateEmailInbox: disconnect,
+  useRemoveEmailInbox: disconnect,
 }));
-// The Computer hero reads paired machines through a QueryClient this suite does not mount.
-mock.module('@kortix/ui/customize/connectors/detail/computer-app-page', () => ({
-  ComputerHero: () => null,
+// The inbox form reads the server's email mode and domains: not this suite's subject.
+mock.module('@kortix/ui/customize/sections/component/email-connect-form', () => ({
+  EmailConnectForm: () => null,
 }));
 mock.module('@kortix/ui/session/models/model-selector', () => ({ ModelSelector: () => null }));
 mock.module('@kortix/ui/session/composer/session-chat-input', () => ({
@@ -92,17 +108,31 @@ function renderEmail() {
 beforeEach(() => {
   canWrite = true;
   emailChannel = true;
-  emailInstall.mockClear();
+  inboxes = [];
+  emailInboxes.mockClear();
+});
+
+const inbox = (email: string) => ({
+  connection_id: `conn-${email}`,
+  inbox_id: `inbox-${email}`,
+  email,
+  label: email,
+  owner_type: 'project',
+  managed: true,
+  created_by_kortix: true,
+  is_default: false,
+  sender_policy: { mode: 'allow_all', allowed_emails: [], allowed_domains: [], allowed_regex: null },
 });
 
 // Email (Resend Inboxes) is experimental behind the `email_channel` flag: on,
 // it is a hero like every other Kortix channel; off, it is on no surface.
+// Each inbox is an ACCOUNT on the `kortix_email` connector profile.
 describe('ChannelsSection — Email', () => {
-  test('flag off: no Email hero, and its install is never read', () => {
+  test('flag off: no Email hero, and no inbox is read', () => {
     emailChannel = false;
     const markup = renderEmail();
     expect(markup).not.toContain('Give your agent an inbox');
-    expect(emailInstall).toHaveBeenCalledWith(null, 'kortix_email');
+    expect(emailInboxes).not.toHaveBeenCalled();
   });
 
   test("flag off: Email's own page is the standard flag-off screen", () => {
@@ -116,18 +146,28 @@ describe('ChannelsSection — Email', () => {
     expect(markup).not.toContain('Give your agent an inbox');
   });
 
-  test('flag on: the Email hero with Connect, and no Feature flags detour', () => {
+  test('flag on, no inbox yet: the hero offers Add an inbox, no Feature flags detour', () => {
     const markup = renderEmail();
     expect(markup).toContain('Give your agent an inbox');
-    expect(markup).toContain('>Connect</button>');
+    expect(markup).toContain('>Add an inbox</button>');
     expect(markup).not.toContain('Feature flags');
-    expect(emailInstall).toHaveBeenCalledWith('email-test', 'kortix_email');
+    expect(emailInboxes).toHaveBeenCalledWith('email-test');
   });
 
-  test('read-only members still see Email, without a Connect they cannot use', () => {
+  test('two inboxes: the hero counts them, lists both, Manage opens the profile, Add another', () => {
+    inboxes = [inbox('support@kortixmail.com'), inbox('sales@kortixmail.com')];
+    const markup = renderEmail();
+    expect(markup).toContain('2 inboxes');
+    expect(markup).toContain('support@kortixmail.com, sales@kortixmail.com');
+    expect(markup).toContain('/connectors/connected/kortix_email');
+    expect(markup).toContain('Manage inboxes');
+    expect(markup).toContain('>Add another inbox</button>');
+  });
+
+  test('read-only members still see Email, without an Add they cannot use', () => {
     canWrite = false;
     const markup = renderEmail();
     expect(markup).toContain('Give your agent an inbox');
-    expect(markup).not.toContain('>Connect</button>');
+    expect(markup).not.toContain('>Add an inbox</button>');
   });
 });

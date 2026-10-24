@@ -68,11 +68,9 @@ describe('mayMutateConnection', () => {
     expect(mayMutateConnection(row({ ownerId: '' }), serviceAccount(true))).toBe(false);
   });
 
-  test('a trusted managed-channel row is reachable and still needs the manage capability', () => {
-    expect(mayMutateConnection(managedChannelRow, human(OWNER, true))).toBe(true);
+  test('a pre-account managed email row is mutable by nobody (inboxes are ordinary accounts now)', () => {
+    expect(mayMutateConnection(managedChannelRow, human(OWNER, true))).toBe(false);
     expect(mayMutateConnection(managedChannelRow, human(OWNER, false))).toBe(false);
-    const untrusted = { ...managedChannelRow, ownerId: 'email:another-inbox' };
-    expect(mayMutateConnection(untrusted, human(OWNER, true))).toBe(false);
   });
 
   test('an agent principal reaches only the private row of the human it acts for, in a private session', () => {

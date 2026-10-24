@@ -2,6 +2,9 @@
 
 import { createContext, useContext, type ReactNode } from 'react';
 
+import { ConnectorLogo } from '../../../internal/connector-logo/connector-logo';
+import type { NativeConnectorApp } from '../../../internal/connector-logo/connector-logo-source';
+
 /**
  * The one hero every Kortix-native connection page draws: Slack, Teams,
  * Email, Telegram and Computer. The logo tile, title, lede, a status line when
@@ -10,14 +13,15 @@ import { createContext, useContext, type ReactNode } from 'react';
  * pitch, so the copy column stays short. Below `md` the mock hides.
  */
 export function ChannelHeroFrame({
-  logo,
+  app,
   title,
   lede,
   status,
   actions,
   preview,
 }: {
-  logo: ReactNode;
+  /** Which Kortix connector this is: its logo is the one every surface shows. */
+  app: NativeConnectorApp;
   title: string;
   lede: string;
   /** The connected line: a green dot and what it is connected to. */
@@ -25,12 +29,11 @@ export function ChannelHeroFrame({
   actions?: ReactNode;
   preview: ReactNode;
 }) {
+  const showLogo = useContext(ChannelHeroLogoShown);
   return (
     <div className="bg-popover flex overflow-hidden rounded-lg border">
       <div className="flex w-full shrink-0 flex-col justify-center gap-5 px-7 py-8 md:w-80">
-        <span className="bg-background flex size-9 shrink-0 items-center justify-center rounded-md border">
-          {logo}
-        </span>
+        {showLogo ? <ConnectorLogo source={{ nativeApp: app }} size="lg" /> : null}
         <div className="flex flex-col gap-1.5">
           <h3 className="text-foreground text-xl font-medium tracking-tight text-balance">{title}</h3>
           {/* text-pretty so a three-line lede never leaves one orphan word */}
@@ -74,6 +77,17 @@ const ChannelHeroLayout = createContext(false);
 
 export function ChannelHeroLayoutProvider({ children }: { children: ReactNode }) {
   return <ChannelHeroLayout.Provider value>{children}</ChannelHeroLayout.Provider>;
+}
+
+/**
+ * A page whose header already shows the app's logo beside its title (the app
+ * page) wraps its hero in this, so the logo is never drawn twice on one page.
+ * The Channels tab has no per-app header, so its heroes keep theirs.
+ */
+const ChannelHeroLogoShown = createContext(true);
+
+export function ChannelHeroLogoInHeader({ children }: { children: ReactNode }) {
+  return <ChannelHeroLogoShown.Provider value={false}>{children}</ChannelHeroLogoShown.Provider>;
 }
 
 export function useChannelHeroLayout(): boolean {

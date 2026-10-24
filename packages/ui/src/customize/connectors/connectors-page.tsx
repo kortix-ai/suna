@@ -64,11 +64,9 @@ import {
 
 import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
 import { useProjectCan } from '../../internal/lib/use-project-can';
-import {
-  ConnectorAppIcon,
-  ConnectorConnectedMark,
-  ConnectorStatusBadge,
-} from './connector-identity';
+import { ConnectorConnectedMark, ConnectorStatusBadge } from './connector-identity';
+import { ConnectorLogo } from '../../internal/connector-logo/connector-logo';
+import { installedConnectorLogoSource } from '../../internal/connector-logo/connector-logo-source';
 import { providerLabel } from './provider-label';
 
 import { ComputerConnectModal } from '../../internal/tunnel/computer-connect';
@@ -472,7 +470,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
     <CatalogCard
       key={connector.slug}
       variant="plain"
-      leading={<ConnectorAppIcon connector={connector} size="lg" />}
+      leading={<ConnectorLogo source={installedConnectorLogoSource(connector)} size="lg" />}
       title={connectorDisplayName(connector)}
       subtitle={
         <span className="text-muted-foreground text-xs">{describeConnector(connector)}</span>

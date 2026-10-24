@@ -3,6 +3,7 @@ import { CaretRightIcon } from '@phosphor-icons/react';
 import { UiLink as Link } from '../../../providers/ui-provider';
 import type { ReactNode } from 'react';
 import { ChannelHeroFrame } from './channel-hero-frame';
+import type { NativeConnectorApp } from '../../../internal/connector-logo/connector-logo-source';
 
 /**
  * The connect hero both chat platforms share (`slack-connect-card.tsx`,
@@ -17,7 +18,7 @@ import { ChannelHeroFrame } from './channel-hero-frame';
  * self-hosted route reads as a deliberate choice, not a missing feature.
  */
 export function ChannelConnectHero({
-  logo,
+  app,
   title,
   lede,
   preview,
@@ -29,7 +30,7 @@ export function ChannelConnectHero({
   readOnlyNote,
   onOwnApp,
 }: {
-  logo: ReactNode;
+  app: NativeConnectorApp;
   title: string;
   lede: string;
   preview: ReactNode;
@@ -44,7 +45,7 @@ export function ChannelConnectHero({
 }) {
   return (
     <ChannelHeroFrame
-      logo={logo}
+      app={app}
       title={title}
       lede={lede}
       preview={preview}

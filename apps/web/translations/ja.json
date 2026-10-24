@@ -22697,7 +22697,7 @@
     "attachId": "Resend 受信箱 ID",
     "attachHint": "受信箱が既にある場合や、アカウントが受信箱の上限に達した場合に使います。Kortix は Webhook を作成します。",
     "errorKeyRequired": "Resend API キーを入力してください。",
-    "errorAttachBoth": "既存の受信箱にはアドレスと受信箱 ID の両方が必要です。",
+    "errorAttachBoth": "既存の受信箱には受信箱 ID が必要です。",
     "errorCustomEmpty": "アドレスまたはドメインを 1 つ以上追加してください。",
     "submitAttach": "受信箱を接続",
     "submitCreate": "{address} を作成",
@@ -22716,5 +22716,27 @@
     "linkApiKeys": "API キーを作成",
     "linkReceiving": "受信を有効にする",
     "linkInboxes": "Resend Inboxes について"
+  },
+  "emailInboxes": {
+    "homeManaged": "Kortix 管理",
+    "homeOwn": "あなたの Resend アカウント",
+    "defaultLabel": "受信箱",
+    "addTitle": "受信箱を追加",
+    "addDescription": "受信箱に名前を付けて使える人を選び、置き場所とアドレスを決めます。",
+    "labelHint": "Kortix での受信箱アカウント名。",
+    "nameFirst": "先に受信箱に名前を付けてください。",
+    "added": "{address} の準備ができました",
+    "regexInvalid": "このパターンは正しい正規表現ではありません。",
+    "policySaved": "保存しました",
+    "policyTitle": "{address} にメールできる人",
+    "policyDescription": "メール 1 通ごとに、このプロジェクトのクレジットでセッションを開始または継続します。",
+    "policyMenu": "メールできる人",
+    "heroCount": "{count, plural, other {受信箱 # 件}}",
+    "heroManage": "受信箱を管理",
+    "heroAddAnother": "受信箱をもう 1 つ追加",
+    "heroAdd": "受信箱を追加",
+    "removeDeletes": "アカウントを削除し、Resend の {address} も削除します。以後このアドレス宛てのメールは返送されます。",
+    "removeKeeps": "Kortix からアカウントを削除します。{address} は Resend アカウントに残ります。",
+    "removed": "受信箱を削除しました"
   }
 }

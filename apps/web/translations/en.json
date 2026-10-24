@@ -22697,7 +22697,7 @@
     "attachId": "Resend inbox ID",
     "attachHint": "Use this when the inbox already exists or the account reached its inbox limit. Kortix still creates the webhook.",
     "errorKeyRequired": "Enter your Resend API key.",
-    "errorAttachBoth": "An existing inbox needs both its address and its inbox ID.",
+    "errorAttachBoth": "An existing inbox needs its inbox ID.",
     "errorCustomEmpty": "Add at least one address or domain.",
     "submitAttach": "Attach inbox",
     "submitCreate": "Create {address}",
@@ -22716,5 +22716,27 @@
     "linkApiKeys": "Create an API key",
     "linkReceiving": "Turn on receiving",
     "linkInboxes": "About Resend Inboxes"
+  },
+  "emailInboxes": {
+    "homeManaged": "Kortix managed",
+    "homeOwn": "Your Resend account",
+    "defaultLabel": "Inbox",
+    "addTitle": "Add an inbox",
+    "addDescription": "Name the inbox and choose who can use it, then where it lives and its address.",
+    "labelHint": "The inbox account's name in Kortix.",
+    "nameFirst": "Give the inbox a name first.",
+    "added": "{address} is ready",
+    "regexInvalid": "The pattern is not a valid regular expression.",
+    "policySaved": "Saved",
+    "policyTitle": "Who can email {address}",
+    "policyDescription": "Each email starts or continues a session on this project's credits.",
+    "policyMenu": "Who can email",
+    "heroCount": "{count, plural, one {# inbox} other {# inboxes}}",
+    "heroManage": "Manage inboxes",
+    "heroAddAnother": "Add another inbox",
+    "heroAdd": "Add an inbox",
+    "removeDeletes": "Removes the account and deletes {address} in Resend. Mail to that address bounces after this.",
+    "removeKeeps": "Removes the account from Kortix. {address} stays in your Resend account.",
+    "removed": "Inbox removed"
   }
 }
