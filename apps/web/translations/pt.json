@@ -22659,7 +22659,9 @@
     "diagramEdit": "Editar diagrama",
     "diagramDone": "Concluído",
     "codeLanguage": "Linguagem do código",
-    "editedAgo": "Editado {time}"
+    "editedAgo": "Editado {time}",
+    "openFullPage": "Abrir em página inteira",
+    "close": "Fechar"
   },
   "emailConnect": {
     "homeTitle": "Onde a caixa fica",

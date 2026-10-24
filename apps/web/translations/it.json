@@ -22659,7 +22659,9 @@
     "diagramEdit": "Modifica diagramma",
     "diagramDone": "Fatto",
     "codeLanguage": "Linguaggio del codice",
-    "editedAgo": "Modificato {time}"
+    "editedAgo": "Modificato {time}",
+    "openFullPage": "Apri a pagina intera",
+    "close": "Chiudi"
   },
   "emailConnect": {
     "homeTitle": "Dove si trova la casella",

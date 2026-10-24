@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react';
 import { useLocalizedUiCatalog } from '../i18n/ui-catalog/use-localized-ui-catalog';
 import { Button } from '../primitives/button';
 import Hint from '../primitives/hint';
-import { useUiRouter } from '../providers/ui-provider';
+import { useUiComponents, useUiRouter } from '../providers/ui-provider';
 import { ArtifactFrame } from './artifact-frame';
 import { artifactFrameKey, parseArtifactUrl } from './frame-policy';
 
@@ -124,6 +124,15 @@ export function ShowArtifactCard({ url, fallback }: { url: string; fallback: Rea
  * with its title, a way to the full viewer (where a doc is edited) and close.
  */
 export function ArtifactPanelPreview({ url, onClose }: { url: string; onClose: () => void }) {
+  // The host's full viewer (apps/web: the Artifacts viewer) for a project artifact.
+  const { ArtifactViewer } = useUiComponents();
+  const ref = parseArtifactUrl(url);
+  if (ArtifactViewer && ref?.projectId) return <ArtifactViewer projectId={ref.projectId} artifactId={ref.artifactId} onClose={onClose} />;
+  return <ArtifactPagePreview url={url} onClose={onClose} />;
+}
+
+/** A public artifact, or a host without the viewer: the page itself, read-only. */
+function ArtifactPagePreview({ url, onClose }: { url: string; onClose: () => void }) {
   const copy = useLocalizedUiCatalog(COPY);
   const router = useUiRouter();
   const { artifact, failed } = useShownArtifact(url);

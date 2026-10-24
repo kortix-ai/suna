@@ -22659,7 +22659,9 @@
     "diagramEdit": "Diagramm bearbeiten",
     "diagramDone": "Fertig",
     "codeLanguage": "Sprache des Codes",
-    "editedAgo": "Bearbeitet {time}"
+    "editedAgo": "Bearbeitet {time}",
+    "openFullPage": "Ganze Seite öffnen",
+    "close": "Schließen"
   },
   "emailConnect": {
     "homeTitle": "Wo das Postfach liegt",
