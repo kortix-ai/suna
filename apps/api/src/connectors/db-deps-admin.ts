@@ -12,6 +12,7 @@ import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { ChannelPlatform } from '../projects/connectors';
 import { db } from '../shared/db';
 import { validateConnectorSecretBinding } from './connector-secret-binding';
+import { commitConnectorAuthSecret } from './manifest-auth-secret';
 import { credentialExists } from './credentials';
 import {
   getConnectorConfigFromManifest,
@@ -63,6 +64,8 @@ export async function setConnectorSecretBinding(
   if (!connector) return { ok: false as const, error: 'connector not found', status: 404 };
 
   if (secretIdentifier === null) {
+    const declared = await commitConnectorAuthSecret(projectId, slug, null);
+    if (!declared.ok) return { ok: false as const, error: declared.error, status: declared.status as 404 | 409 };
     await db
       .update(connectors)
       .set({ authSecret: null, updatedAt: new Date() })
@@ -93,6 +96,10 @@ export async function setConnectorSecretBinding(
   });
   if (validation) return { ok: false as const, ...validation };
 
+  // kortix.yaml owns connectors[].auth.secret: commit it first, so a later
+  // sync applies the same value and the file never disagrees with the row.
+  const declared = await commitConnectorAuthSecret(projectId, slug, secretIdentifier);
+  if (!declared.ok) return { ok: false as const, error: declared.error, status: declared.status as 404 | 409 };
   await db
     .update(connectors)
     .set({ authSecret: secretIdentifier, updatedAt: new Date() })

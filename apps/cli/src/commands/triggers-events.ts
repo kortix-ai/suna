@@ -385,11 +385,10 @@ async function printApps(
       `\n  ${C.dim}No connector yet, source ${source} (${apps.length}): ${apps.map((a) => `${a.app} (${a.event_count}${a.new_connector_slug && a.new_connector_slug !== a.app ? `, add as ${a.new_connector_slug}` : ''})`).join(', ')}${C.reset}\n`,
     );
   }
-  // Each source adds a connector its own way. connectors_v2 lists Composio apps
-  // only where a connector exists, so its add line shows only when one is missing.
-  const hasMcp = resp.apps.some((a) => sourceOf(a) === 'mcp');
+  // Each source adds a connector its own way. Composio apps are listed only
+  // where a connector exists, so its add line shows only when one is missing.
   const addLines = [
-    ...(restSources.includes('composio') || !hasMcp
+    ...(restSources.includes('composio')
       ? ['Add a connector: kortix connectors add <slug> --provider composio --app <app> --apply']
       : []),
     ...(restSources.includes('mcp')

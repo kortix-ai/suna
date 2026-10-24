@@ -6,8 +6,8 @@ const ADMIN = { 'x-test-admin': 'user-1' };
 
 function deps(overrides: Partial<ConnectorRouterDeps>): ConnectorRouterDeps {
   return {
-    // Discover on, Connectors v2 off: the integrations.sh catalogue.
-    featureFlagEnabled: async (_projectId, key) => key === 'connectors_api_discover',
+    // Email on: no Kortix app hidden. Discover itself has no flag.
+    featureFlagEnabled: async (_projectId, key) => key === 'email_channel',
     resolvePrincipal: async () => null,
     resolveProjectPrincipal: async () => null,
     makeGatewayDeps: (() => ({}) as unknown) as ConnectorRouterDeps['makeGatewayDeps'],
@@ -41,21 +41,20 @@ describe('Discover catalogue routes', () => {
       { headers: ADMIN },
     );
     expect(res.status).toBe(200);
-    expect(seen).toEqual([{ catalogue: 'integrations', q: 'pay', category: 'finance', cursor: '48', limit: 24 }]);
+    expect(seen).toEqual([{ q: 'pay', category: 'finance', cursor: '48', limit: 24, exclude: new Set() }]);
   });
 
-  test('a Connectors v2 project browses Kortix\'s own MCP apps; with neither flag the routes are gated', async () => {
+  test('every project browses the one catalogue; there is no flag gate', async () => {
     const seen: unknown[] = [];
-    let flags = new Set(['connectors_v2']);
     const app = createConnectorRouter(
       deps({
-        featureFlagEnabled: async (_projectId, key) => flags.has(key),
+        featureFlagEnabled: async () => false,
         listDiscoverConnectors: async (input) => {
           seen.push(input);
           return { items: [], total: 0, hasMore: false };
         },
-        getDiscoverConnector: async (id, catalogue) => {
-          seen.push({ id, catalogue });
+        getDiscoverConnector: async (id) => {
+          seen.push({ id });
           return { item: null, variants: [] };
         },
       }),
@@ -64,15 +63,17 @@ describe('Discover catalogue routes', () => {
     expect((await request(app, `/projects/${PROJECT}/discover/connectors?oneClick=1`, { headers: ADMIN })).status).toBe(200);
     expect((await request(app, `/projects/${PROJECT}/discover/connectors?oneClick=nope`, { headers: ADMIN })).status).toBe(400);
     expect((await request(app, `/projects/${PROJECT}/discover/connectors/detail?id=kortix:gmail`, { headers: ADMIN })).status).toBe(200);
-    expect(seen).toEqual([{ catalogue: 'kortix', q: 'mail' }, { catalogue: 'kortix', oneClick: true }, { id: 'kortix:gmail', catalogue: 'kortix' }]);
-    flags = new Set();
-    const gated = await request(app, `/projects/${PROJECT}/discover/connectors`, { headers: ADMIN });
-    expect(gated.status).toBe(403);
-    expect(seen).toHaveLength(3);
+    expect(seen).toEqual([
+      { q: 'mail', exclude: new Set(['native:email']) },
+      { oneClick: true, exclude: new Set(['native:email']) },
+      { id: 'kortix:gmail' },
+    ]);
+    // Admin still required.
+    expect((await request(app, `/projects/${PROJECT}/discover/connectors`)).status).toBe(403);
   });
 
   test('Email is hidden from the catalogue until the project turns email_channel on', async () => {
-    let flags = new Set(['connectors_v2']);
+    let flags = new Set<string>();
     const items = [
       { id: 'native:slack', name: 'Slack' },
       { id: 'native:email', name: 'Email' },
@@ -80,8 +81,15 @@ describe('Discover catalogue routes', () => {
     const app = createConnectorRouter(
       deps({
         featureFlagEnabled: async (_projectId, key) => flags.has(key),
-        listDiscoverConnectors: async () => ({ items, total: 2, hasMore: false }),
-        listDiscoverSections: async () => ({ sections: [{ key: 'kortix', total: 2, items }] }),
+        // A fake catalogue that, like the real one, leaves `exclude`d ids out before counting.
+        listDiscoverConnectors: async ({ exclude }) => {
+          const kept = items.filter((item) => !exclude?.has(item.id));
+          return { items: kept, total: kept.length, hasMore: false };
+        },
+        listDiscoverSections: async ({ exclude }) => {
+          const kept = items.filter((item) => !exclude?.has(item.id));
+          return { sections: [{ key: 'kortix', total: kept.length, items: kept }] };
+        },
         getDiscoverConnector: async (id) => ({ item: { id }, variants: [] }),
       }),
     );
@@ -95,18 +103,16 @@ describe('Discover catalogue routes', () => {
       expect(detail.status).toBe(404);
     }
 
-    flags = new Set(['connectors_v2', 'email_channel']);
+    flags = new Set(['email_channel']);
     const on = await request(app, `/projects/${PROJECT}/discover/connectors`, { headers: ADMIN });
     expect(await on.json()).toEqual({ items, total: 2, hasMore: false });
     expect((await request(app, `/projects/${PROJECT}/discover/connectors/detail?id=native:email`, { headers: ADMIN })).status).toBe(200);
   });
 
-  test('sections forward their limits behind admin and the Discover flag', async () => {
+  test('sections forward their limits behind admin', async () => {
     const seen: unknown[] = [];
-    let flag = true;
     const app = createConnectorRouter(
       deps({
-        featureFlagEnabled: async (_projectId, key) => flag && key === 'connectors_api_discover',
         listDiscoverSections: async (input) => {
           seen.push(input);
           return { popular: [], sections: [], categories: [] };
@@ -118,11 +124,9 @@ describe('Discover catalogue routes', () => {
     const res = await request(app, path, { headers: ADMIN });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ popular: [], sections: [], categories: [] });
-    expect(seen).toEqual([{ catalogue: 'integrations', perCategory: 6, maxCategories: 12 }]);
+    expect(seen).toEqual([{ perCategory: 6, maxCategories: 12, exclude: new Set() }]);
 
     expect((await request(app, path)).status).toBe(403);
-    flag = false;
-    expect((await request(app, path, { headers: ADMIN })).status).toBe(403);
     expect(seen).toHaveLength(1);
   });
 
@@ -140,7 +144,7 @@ describe('Discover catalogue routes', () => {
   });
 });
 
-describe('Connectors v2 catalogue: type filter, tools and install', () => {
+describe('the catalogue: type filter, tools and install', () => {
   const stripe = {
     item: { id: 'kortix:stripe', kind: 'mcp', slug: 'stripe', name: 'Stripe', domain: 'stripe.com' },
     variants: [
@@ -151,7 +155,7 @@ describe('Connectors v2 catalogue: type filter, tools and install', () => {
   function v2App(seen: unknown[], createStatus: Array<{ ok: boolean; status?: number }> = [{ ok: true }]) {
     return createConnectorRouter(
       deps({
-        featureFlagEnabled: async (_projectId, key) => key === 'connectors_v2',
+        featureFlagEnabled: async (_projectId, key) => key === 'email_channel',
         listDiscoverConnectors: async (input) => {
           seen.push(input);
           return { items: [], total: 0, hasMore: false };
@@ -175,7 +179,7 @@ describe('Connectors v2 catalogue: type filter, tools and install', () => {
     const app = v2App(seen);
     expect((await request(app, `/projects/${PROJECT}/discover/connectors?kind=mcp,composio`, { headers: ADMIN })).status).toBe(200);
     expect((await request(app, `/projects/${PROJECT}/discover/connectors?kind=soap`, { headers: ADMIN })).status).toBe(400);
-    expect(seen).toEqual([{ catalogue: 'kortix', kinds: ['mcp', 'composio'] }]);
+    expect(seen).toEqual([{ kinds: ['mcp', 'composio'], exclude: new Set() }]);
   });
 
   test('tools read the recommended way, or the way asked for', async () => {

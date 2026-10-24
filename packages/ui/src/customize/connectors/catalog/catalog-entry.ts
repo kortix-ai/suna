@@ -1,4 +1,3 @@
-import type { UiTranslator } from '../../../i18n';
 import type { AdminConnector, ConnectToolkit, DiscoverConnector, PipedreamApp } from '@kortix/sdk';
 
 import { faviconUrlForHostname } from '../../../lib/favicon';
@@ -6,64 +5,27 @@ import { discoverLogoSource, type ConnectorLogoSource } from '../../../internal/
 
 import { POPULAR_SECTION } from './connector-categories';
 
-/**
- * Which catalogue an entry came from. This is not cosmetic — it decides which
- * install the app page's Install runs. A `discover` entry installs from its
- * template (`discoverInstallTarget`); an `easy-connect` entry installs as a
- * managed OAuth app via Pipedream (`easyConnectInstallTarget`). The two build
- * different connectors and cannot be swapped.
- */
-export type CatalogSource = 'discover' | 'easy-connect';
-
 interface CatalogEntryFields {
-  /** Stable React key. Prefixed by source, because the two catalogues are
-   *  independent namespaces and both publish a `slack`. */
+  /** Stable React key: `discover:<record id>`. */
   key: string;
   slug: string;
   name: string;
   description: string | null;
   icon: string | null;
   categories: string[];
-  /** Only Discover ranks its catalogue. Easy Connect entries are always
-   *  `null`, which keeps them out of the Popular section rather than sorting
-   *  them to the bottom of it. */
+  /** The catalogue's rank; `null` keeps a record out of the Popular section. */
   popularity: number | null;
 }
 
 /**
- * One card in the catalogue, normalised across the two sources so the grid,
- * the search, the category grouping and the connected-state join are written
- * once instead of twice.
- *
- * The raw item rides along on the union arm so the page can hand it straight
- * back to the matching add flow without a lookup.
+ * One card in the catalogue: a Discover record (Kortix apps, integrations.sh
+ * servers and APIs, Composio apps). The raw record rides along so the page can
+ * hand it straight to the install flow without a lookup.
  */
-export type CatalogEntry =
-  | (CatalogEntryFields & {
-      source: 'discover';
-      connector: DiscoverConnector;
-      /** The managed catalogue lists the same app too (`mergeSearchEntries`). */
-      alsoApp?: boolean;
-    })
-  | (CatalogEntryFields & {
-      source: 'easy-connect';
-      app: PipedreamApp & { provider?: 'composio' | 'pipedream' };
-    })
-  | (CatalogEntryFields & { source: 'computer' });
-
-/** Native platform provider. Each member's paired machine is one of its accounts. */
-export function computersCatalogEntry(tI18nComplete: UiTranslator): CatalogEntry {
-  return {
-    source: 'computer',
-    key: 'computer:computers',
-    slug: 'computers',
-    name: 'Computer',
-    description: tI18nComplete.raw('text070855f4fe8d'),
-    icon: null,
-    categories: ['developer-tools'],
-    popularity: null,
-  };
-}
+export type CatalogEntry = CatalogEntryFields & {
+  source: 'discover';
+  connector: DiscoverConnector;
+};
 
 /**
  * The icon URL a Discover record's card loads.
@@ -120,22 +82,6 @@ export function catalogEntryFromDiscover(connector: DiscoverConnector): CatalogE
   };
 }
 
-export function catalogEntryFromEasyConnect(
-  app: PipedreamApp & { provider?: 'composio' | 'pipedream' },
-): CatalogEntry {
-  return {
-    source: 'easy-connect',
-    app,
-    key: `easy-connect:${app.slug}`,
-    slug: app.slug,
-    name: app.name,
-    description: app.description,
-    icon: app.imgSrc,
-    categories: app.categories,
-    popularity: null,
-  };
-}
-
 /**
  * The one fact that varies between cards: HOW this entry connects. Short
  * nouns, shown as the card's quiet line under the title — every card gets
@@ -155,13 +101,6 @@ export function appNameKey(name: string): string {
 }
 
 export function catalogEntryKindLabel(entry: CatalogEntry): string {
-  if (entry.source === 'computer') return 'Kortix';
-  // A managed app names its partner; an app with both ways to connect names both.
-  if (entry.source === 'easy-connect') {
-    const partner = entry.app?.provider === 'pipedream' ? 'Pipedream' : 'Composio';
-    return entry.app?.directId ? `${partner} · MCP` : partner;
-  }
-  if (entry.alsoApp && entry.connector.kind === 'mcp') return 'MCP · Composio';
   switch (entry.connector.kind) {
     case 'composio':
       return 'Composio';
@@ -237,7 +176,6 @@ export function isCatalogEntryConnected(
   entry: CatalogEntry,
   connectedKeys: ReadonlySet<string>,
 ): boolean {
-  if (entry.source === 'computer') return connectedKeys.has('provider:computer');
   return connectedKeys.has(foldKey(entry.slug)) || connectedKeys.has(foldKey(entry.name));
 }
 
@@ -267,9 +205,6 @@ export function catalogEntryConnectors(
   connectors: readonly AdminConnector[],
   entry: CatalogEntry,
 ): AdminConnector[] {
-  if (entry.source === 'computer') {
-    return connectors.filter((connector) => connector.provider === 'computer');
-  }
   const tokens = [foldKey(entry.slug), foldKey(entry.name)].filter(Boolean);
   return connectors.filter((connector) =>
     [foldKey(connector.slug), foldKey(connector.name ?? '')].some((connectorToken) =>
@@ -285,7 +220,5 @@ export { POPULAR_SECTION };
 
 /** The logo source of a catalogue card (`ConnectorLogo`): same rule as every other surface. */
 export function catalogEntryLogoSource(entry: CatalogEntry): ConnectorLogoSource {
-  if (entry.source === 'computer') return { nativeApp: 'computer' };
-  if (entry.source === 'discover') return discoverLogoSource(entry.connector);
-  return { slug: entry.slug, icon: entry.icon };
+  return discoverLogoSource(entry.connector);
 }

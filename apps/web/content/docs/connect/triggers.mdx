@@ -13,7 +13,7 @@ A trigger has two parts: `on:`, what fires it, and `run:`, what runs. By default
 | --- | --- | --- | --- |
 | `cron` | `cron`, `every` or `at` | A schedule slot arrives, a fixed period passes, or once at a time. | Nothing else. |
 | `webhook` | `webhook: { secret }` | A signed `POST` reaches the trigger's URL. | A project secret that signs requests. |
-| `event` | `event` + `connector` | Something happens in a connected app, such as a new pull request or a new email. | The project flag `event_triggers` and a connector with a shared account. Source `mcp` also needs the flag `connectors_v2`. |
+| `event` | `event` + `connector` | Something happens in a connected app, such as a new pull request or a new email. | The project flag `event_triggers` and a connector with a shared account. |
 | `app` | `event` + `app` | One of your [Apps](/docs/apps) posts an event. | Nothing else: every App machine has its credentials. |
 
 | `run:` | What a fire does |
@@ -196,13 +196,11 @@ The source of an `event` trigger is the provider of its connector. The source de
 
 | Source | How events reach Kortix | Needs |
 | --- | --- | --- |
-| `mcp` | Kortix checks the app's MCP server every `interval` minutes. Each new item fires the trigger once. See [How checks work](#how-checks-work). | The project flags `event_triggers` and `connectors_v2`. Nothing on the deployment. |
+| `mcp` | Kortix checks the app's MCP server every `interval` minutes. Each new item fires the trigger once. See [How checks work](#how-checks-work). | The project flag `event_triggers`. Nothing on the deployment. |
 | `composio` | Composio sends each event to Kortix. | The project flag `event_triggers`, `COMPOSIO_API_KEY` on the deployment, and a `composio` connector for the app. |
 
-- With `connectors_v2` on, the app list shows each app of the [MCP app catalog](/docs/connect/connectors#the-mcp-app-catalog-experimental) that has a sign-in, with source `mcp`. DeepWiki and Context7 have no sign-in, so they have no events. Each project MCP server outside the catalog is an app too, under its connector slug. A connected app whose tools include none that lists items, and that has no Kortix event, shows 0 events. A Composio app shows only when the project already has a Composio connector for it.
-- Without `connectors_v2`, `composio` is the only source.
+- The app list shows each app of the [app catalog](/docs/connect/connectors#the-app-catalog) that has a sign-in, with source `mcp`. DeepWiki and Context7 have no sign-in, so they have no events. Each project MCP server outside the catalog is an app too, under its connector slug. A connected app whose tools include none that lists items, and that has no Kortix event, shows 0 events. A Composio app shows only when the project already has a Composio connector for it.
 - [Moving a Composio connector to Kortix](/docs/connect/connectors#move-a-pipedream-or-composio-connector-to-kortix) rewrites its Gmail, Google Calendar and Google Drive event triggers to the Kortix events that replace them and deletes their Composio subscriptions. A connector with another Composio event trigger does not move until that trigger is deleted or changed.
-- Turning `connectors_v2` off moves every `mcp` trigger to `error` and stops its checks. Turning it on again resumes them without another save.
 
 ### Set up in the web app
 
@@ -232,7 +230,6 @@ kortix triggers info pr-review                                  # repeat until i
 For an app that Kortix checks (source `mcp`):
 
 ```sh
-kortix projects features enable connectors_v2                   # once per project, beside event_triggers
 kortix triggers events --app gmail --source mcp                 # the app's events, before any connector exists
 kortix connectors add gmail --provider mcp \
   --url https://gmailmcp.googleapis.com/mcp/v1 --apply          # skip when the app has a connector
@@ -363,7 +360,7 @@ When a check that stopped for one of the first five causes works again, it recor
 
 ### Move a Composio trigger
 
-A trigger keeps the source of its connector. To move a Composio trigger to a Kortix event, create a new trigger, then remove the old one. Turn on `connectors_v2` first.
+A trigger keeps the source of its connector. To move a Composio trigger to a Kortix event, create a new trigger, then remove the old one.
 
 1. **Install the app from the catalog.** In **Customize → Connectors**, install the app and connect it for **Everyone in** *project*. Kortix adds a new connector with its own slug. The Composio connector stays.
 2. **Create the trigger on the Kortix event.** Create a new trigger on the new connector, with a Kortix event, for example **New email** (`gmail.message.received`). Composio settings do not carry over: set `query`, `interval` and the other settings again.
@@ -509,7 +506,7 @@ await reminders.remove(reminder.id);
 | `event` | `event` | yes | — | The event type, from `kortix triggers events`. |
 | `config` | `event` | no | — | The event's settings. On source `mcp`, `interval` is the minutes between checks. See [Kortix events](#kortix-events). |
 | `account` | `event` | no | the connector's default shared account | Label of one shared account. |
-| `source` | `event` | no | the connector's provider | The event source: `composio` or `mcp`. `mcp` needs the project flag `connectors_v2`. See [Event sources](#event-sources). |
+| `source` | `event` | no | the connector's provider | The event source: `composio` or `mcp`. See [Event sources](#event-sources). |
 | `app` | `app` | yes | — | The slug of the App whose events fire the trigger. |
 | `target` | all | no | — | `{ app, path, method, payload }` (`run: { app, … }`): calls the App instead of an agent. See [Call an App](#call-an-app). |
 

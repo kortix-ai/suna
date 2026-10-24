@@ -24,7 +24,6 @@ import { and, eq, inArray, isNotNull, notExists, or, sql } from 'drizzle-orm';
 import { getImpersonationContext } from '../shared/impersonation';
 import { parse as parseToml } from 'smol-toml';
 import { hasEmailInboxes, loadSlackInstall, purgeLegacyEmailState } from '../channels/install-store';
-import { resolveFeatureFlag } from '../feature-flags/registry';
 import { assertAllowedEndpointUrl, assertAllowedSourceAddress } from '../marketplace/catalog';
 import { safeEgressFetch, UnsafeEgressError } from '../shared/ssrf-guard';
 import { configuredTimeoutMs, withTimeout } from '../shared/with-timeout';
@@ -35,7 +34,7 @@ import {
   manifestHashForConnector,
 } from '../projects/connectors';
 import { type GitBackedProject, isRepoFileNotFoundError, readRepoFile } from '../projects/git';
-import { withProjectGitAuth } from '../projects/surface';
+import { MANIFEST_PROJECT_NAME_KEY, metadataMerge, projectNameAction, withProjectGitAuth } from '../projects/surface';
 import { extractProjectPolicies } from '../projects/policies';
 import { hideSupersededSlack } from './channel-rules';
 import {
@@ -44,6 +43,7 @@ import {
 } from '../projects/secrets';
 import { SecretUndecryptableError } from '../secrets/undecryptable';
 import { type GitTriggerSpec, extractTriggers, readManifest } from '../projects/triggers';
+import { syncDeclaredApps } from '../apps/app-manifest';
 import { reconcileProjectTriggerRuntime } from '../projects/trigger-runtime-catalog';
 import { reconcileEventSubscriptions } from '../projects/surface';
 import { db } from '../shared/db';
@@ -738,6 +738,35 @@ async function syncProjectConnectorsFenced(
   // The periodic sweep also retries `error` / `needs_connection` subscriptions here.
   if (triggerSpecs) await reconcileEventSubscriptions(projectId, accountId, triggerSpecs);
 
+  // kortix.yaml owns default_agent. The metadata copy (read by channel bindings
+  // and the marketplace gate) follows every push, not only PUT /default-agent.
+  const declaredDefaultAgent = typeof manifest?.raw.default_agent === 'string' ? manifest.raw.default_agent.trim() : '';
+  if (declaredDefaultAgent) {
+    await db.update(projects)
+      .set({ metadata: metadataMerge({ default_agent: declaredDefaultAgent }) })
+      .where(and(eq(projects.projectId, projectId), sql`coalesce(${projects.metadata}->>'default_agent', '') <> ${declaredDefaultAgent}`));
+  }
+
+  // kortix.yaml owns project.name: a push that changes it renames the project.
+  if (manifest) {
+    const [current] = await db.select({ name: projects.name, metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
+    const project = manifest.raw.project as { name?: unknown } | undefined;
+    const marker = (current?.metadata as Record<string, unknown> | null)?.[MANIFEST_PROJECT_NAME_KEY];
+    const action = current ? projectNameAction(project?.name, marker, current.name) : 'none';
+    if (action !== 'none') {
+      const declaredName = String(project!.name).trim();
+      await db.update(projects)
+        .set({ ...(action === 'apply' ? { name: declaredName } : {}), metadata: metadataMerge({ [MANIFEST_PROJECT_NAME_KEY]: declaredName }) })
+        .where(eq(projects.projectId, projectId));
+    }
+  }
+
+  // kortix.yaml owns the App fields it declares: a push applies them without a deploy.
+  if (manifest) {
+    const appSync = await syncDeclaredApps(projectId, manifest.raw.apps);
+    for (const failure of appSync.errors) errors.push({ slug: failure.slug, error: failure.error });
+  }
+
   return { synced, errors };
 }
 
@@ -860,6 +889,9 @@ async function upsertConnector(
   // Cheap fields reconciled on every sync. `config` (which folds in the
   // discovered server) only changes when we actually re-resolved the catalog.
   const common = {
+    // kortix.yaml owns a declared auth.secret. An omitted one keeps the stored
+    // binding: bindings made before they were committed to the file live only here.
+    ...(spec.auth.secret ? { authSecret: spec.auth.secret } : {}),
     name: spec.name,
     providerType: spec.provider,
     enabled: spec.enabled,
@@ -1031,27 +1063,21 @@ async function upsertConnector(
     spec.authorizationStrategy === 'project' &&
     spec.provider !== 'computer' &&
     !(spec.provider === 'channel' && spec.platform === 'email') &&
-    !(await skipsEmptyProjectAccount(projectId, spec))
+    !skipsEmptyProjectAccount(spec)
   ) {
     await ensureDefaultConnection({ projectId, connectorId });
   }
 }
 
 /**
- * connectors_v2: an account is personal unless someone shares it, so sync seeds
- * no empty "Everyone in project" account (KRTX-2317). Two kinds keep the
- * project account, because it is not empty: a channel connector (the install
- * token is the project's own identity) and a server with no auth (a public
- * MCP server such as DeepWiki: the account is the whole connection).
+ * An account is personal unless someone shares it, so sync seeds no empty
+ * "Everyone in project" account (KRTX-2317). Two kinds keep the project
+ * account, because it is not empty: a channel connector (the install token is
+ * the project's own identity) and a server with no auth (a public MCP server
+ * such as DeepWiki: the account is the whole connection).
  */
-export async function skipsEmptyProjectAccount(projectId: string, spec: ConnectorSpec): Promise<boolean> {
-  if (spec.provider === 'channel' || spec.auth?.type === 'none') return false;
-  const [row] = await db
-    .select({ metadata: projects.metadata })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
-    .limit(1);
-  return resolveFeatureFlag(row?.metadata, 'connectors_v2');
+export function skipsEmptyProjectAccount(spec: ConnectorSpec): boolean {
+  return !(spec.provider === 'channel' || spec.auth?.type === 'none');
 }
 
 /**

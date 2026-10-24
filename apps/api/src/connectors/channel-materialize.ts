@@ -6,7 +6,6 @@ import {
   loadTeamsInstall,
   loadTelegramInstall,
 } from '../channels/install-store';
-import { resolveFeatureFlag } from '../feature-flags/registry';
 /**
  * Auto-materialize channel connectors from platform installs.
  *
@@ -106,10 +105,9 @@ export async function synthesizeChannelConnectors(
 
   if (!project) return specs;
 
-  // Telegram (connectors_v2): the bot install is the registration, like Slack.
+  // Telegram: the bot install is the registration, like Slack.
   const telegramSlug = channelDefaultSlug('telegram');
   if (
-    resolveFeatureFlag(project.metadata, 'connectors_v2') &&
     !channelAlreadyDeclared(declared, 'telegram', telegramSlug) &&
     (await loadTelegramInstall(projectId).catch(() => null))
   ) {

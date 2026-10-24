@@ -1,7 +1,6 @@
 'use client';
 
 import { listConnectorMoves, moveConnector, type AdminConnector } from '@kortix/sdk';
-import { useFeatureFlag } from '@kortix/sdk/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
@@ -17,11 +16,9 @@ import { ConnectorNoticeRow } from './connector-notice-view';
 export const connectorMovesQueryKey = (projectId: string) =>
   ['connector-moves', projectId] as const;
 
-/** The move of a Pipedream or Composio connector in a `connectors_v2` project, or undefined. */
+/** The move of a Pipedream or Composio connector, or undefined. */
 export function useConnectorMove(projectId: string, connector: AdminConnector) {
-  const enabled =
-    useFeatureFlag(projectId, 'connectors_v2').enabled &&
-    (connector.provider === 'pipedream' || connector.provider === 'composio');
+  const enabled = connector.provider === 'pipedream' || connector.provider === 'composio';
   const moves = useQuery({
     queryKey: connectorMovesQueryKey(projectId),
     queryFn: () => listConnectorMoves(projectId),
@@ -31,7 +28,7 @@ export function useConnectorMove(projectId: string, connector: AdminConnector) {
 }
 
 /**
- * A Pipedream connector in a `connectors_v2` project: Kortix retires Pipedream.
+ * A Pipedream connector: Kortix retires Pipedream.
  * With a Kortix app for it, the row moves the connector there: the person signs
  * in once, and the connector switches when the sign-in completes (it keeps its
  * slug). Without one, it says the connector stays on Pipedream.

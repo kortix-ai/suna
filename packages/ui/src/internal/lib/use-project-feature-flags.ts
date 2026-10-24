@@ -28,8 +28,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   isLoading: boolean;
 } {
   const marketplace = useFeatureFlag(projectId, 'marketplace');
-  const connectorsApiDiscover = useFeatureFlag(projectId, 'connectors_api_discover');
-  const agentmailEmail = useFeatureFlag(projectId, 'agentmail_email');
   const metaAgent = useFeatureFlag(projectId, 'meta_agent');
   const reminders = useFeatureFlag(projectId, 'reminders');
   const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
@@ -43,7 +41,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const drives = useFeatureFlag(projectId, 'drives');
   const sessionLog = useFeatureFlag(projectId, 'session_log');
   const sessionLogRestore = useFeatureFlag(projectId, 'session_log_restore');
-  const connectorsV2 = useFeatureFlag(projectId, 'connectors_v2');
   const agentRooms = useFeatureFlag(projectId, 'agent_rooms');
   const goals = useFeatureFlag(projectId, 'goals');
   const artifacts = useFeatureFlag(projectId, 'artifacts');
@@ -53,8 +50,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   return {
     flags: {
       marketplace: marketplace.enabled,
-      connectors_api_discover: connectorsApiDiscover.enabled,
-      agentmail_email: agentmailEmail.enabled,
       meta_agent: metaAgent.enabled,
       reminders: reminders.enabled,
       warm_sessions: warmSessions.enabled,
@@ -68,7 +63,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       drives: drives.enabled,
       session_log: sessionLog.enabled,
       session_log_restore: sessionLogRestore.enabled,
-      connectors_v2: connectorsV2.enabled,
       agent_rooms: agentRooms.enabled,
       goals: goals.enabled,
       artifacts: artifacts.enabled,

@@ -380,7 +380,7 @@ flow(
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
-    await ctx.step('project admin enables direct catalogue discovery', async () => {
+    await ctx.step('discovery has no flag: connectors_api_discover graduated, so setting it → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
@@ -388,9 +388,9 @@ flow(
           { feature: 'connectors_api_discover', enabled: true },
           { params: { projectId: p.id } },
         );
-      r.status(200);
+      r.status(400);
     });
-    await ctx.step('project admin browses the direct catalogue', async () => {
+    await ctx.step('project admin browses the catalogue of a fresh project', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/connectors/projects/:projectId/discover/connectors', {
@@ -723,10 +723,10 @@ flow(
   },
 );
 
-// connectors_v2 retires Pipedream: a Pipedream connector moves in place to the
+// Kortix retires Pipedream: a Pipedream connector moves in place to the
 // Kortix app for the same service. The sign-in itself needs the vendor's OAuth
-// server, so this flow covers the listing, the start (the marked account), the
-// refusals and the flag gate; the switch after a sign-in was proven on a local
+// server, so this flow covers the listing, the start (the marked account) and
+// the refusals; the switch after a sign-in was proven on a local
 // stack and `apps/api/src/connectors/connector-move.test.ts` pins the target URL rule.
 flow(
   'CONN-37',
@@ -743,8 +743,7 @@ flow(
   },
   async (ctx) => {
     const owner = ctx.client.as(ctx.P.OWNER);
-    const on = await ctx.fixtures.project({ managedGit: true, metadata: { experimental: { connectors_v2: true } } });
-    const off = await ctx.fixtures.project();
+    const on = await ctx.fixtures.project({ managedGit: true });
     type Move = { slug: string; app: string | null; to: { slug: string } | null; connection_id: string | null; signed_in: boolean; accounts: number };
     const moves = async () =>
       (await owner.get('/v1/projects/:projectId/connector-moves', { params: { projectId: on.id } })).status(200).json<{ moves: Move[] }>().moves;
@@ -842,11 +841,7 @@ flow(
       (await move('no-such-connector')).status(404);
     });
 
-    await ctx.step('without connectors_v2 both routes answer 403 feature_disabled; a non-member gets 403', async () => {
-      (await owner.get('/v1/projects/:projectId/connector-moves', { params: { projectId: off.id } }))
-        .status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'connectors_v2');
-      (await owner.post('/v1/projects/:projectId/connectors/:slug/move', {}, { params: { projectId: off.id, slug: 'issues' } }))
-        .status(403).body().has('$.code', 'feature_disabled');
+    await ctx.step('a non-member gets 403', async () => {
       (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/projects/:projectId/connector-moves', { params: { projectId: on.id } })).status(403);
     });
   },
@@ -5577,7 +5572,7 @@ flow(
   },
 );
 
-// CONN-39 — the Connectors v2 app catalogue is fully programmatic: filters,
+// CONN-39 — the connectors app catalogue is fully programmatic: filters,
 // every way to connect one app (best first), one way's tools before install,
 // and install as a named connector profile. Kortix's own MCP apps and the tool
 // snapshot are in-process, so this runs with no network on the local profile.
@@ -5597,8 +5592,7 @@ flow(
   },
   async (ctx) => {
     const owner = ctx.client.as(ctx.P.OWNER);
-    const on = await ctx.fixtures.project({ managedGit: true, metadata: { experimental: { connectors_v2: true } } });
-    const off = await ctx.fixtures.project();
+    const on = await ctx.fixtures.project({ managedGit: true });
     const params = { projectId: on.id };
 
     await ctx.step('the list filters by type and one-click: Linear is a one-click MCP app', async () => {
@@ -5700,11 +5694,9 @@ flow(
       if (added.connector !== 'agent-tracker' || added.via !== 'mcp') throw new Error(`add: ${JSON.stringify(added)}`);
     });
 
-    await ctx.step('a non-member is refused, and a project without connectors_v2 or the API catalogue is 403', async () => {
+    await ctx.step('a non-member is refused', async () => {
       (await ctx.client.as(ctx.P.NONMEMBER).post('/v1/connectors/projects/:projectId/discover/install', { id: 'kortix:linear' }, { params })).status(403);
       (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/connectors/projects/:projectId/discover/connectors/tools', { params, query: { id: 'kortix:linear' } })).status(403);
-      (await owner.get('/v1/connectors/projects/:projectId/discover/connectors/tools', { params: { projectId: off.id }, query: { id: 'kortix:linear' } })).status(403);
-      (await owner.post('/v1/connectors/projects/:projectId/discover/install', { id: 'kortix:linear' }, { params: { projectId: off.id } })).status(403);
     });
   },
 );

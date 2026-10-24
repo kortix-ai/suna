@@ -51,6 +51,8 @@ export const DENY_SUBCOMMANDS: { path: [string, string]; denial: Denial }[] = [
   { path: ['rooms', 'watch'], denial: { reason: 'it streams a room until interrupted', use: '`rooms read <room>`, or `rooms next <room> --timeout <s>`' } },
   { path: ['rooms', 'chat'], denial: { reason: 'it is an interactive terminal chat', use: '`rooms send <room> "<text>"` and `rooms read <room>`' } },
   { path: ['drive', 'put'], denial: { reason: 'it uploads a local file, and this server has none', use: 'run_command in a session sandbox, where the file lives: `kortix drive put <file> <path>` there' } },
+  { path: ['artifacts', 'publish'], denial: { reason: 'it uploads a local file or folder, and this server has none', use: 'run_command in a session sandbox, where the file lives: `kortix artifacts publish <file|dir>` there' } },
+  { path: ['artifacts', 'pull'], denial: { reason: 'it writes files to a local folder, and this server has none', use: '`kortix artifacts cat <artifact> [<path>]` prints one file here; pull in a session sandbox' } },
   { path: ['apps', 'deploy'], denial: { reason: 'it deploys a local directory, and this server has none', use: 'run_command in a session sandbox, where the source lives: `kortix apps deploy <path>` there' } },
   { path: ['apps', 'token'], denial: { reason: 'it prints a sign-in token for an App into this conversation', use: 'run_command in a session sandbox: `kortix apps token <app>` there' } },
   { path: ['apps', 'exec'], denial: { reason: 'it prints a machine\'s output, which can hold its secrets (an admin key), into this conversation', use: 'run_command in a session sandbox: `kortix apps exec <app> -- <command>` there' } },
@@ -64,7 +66,7 @@ export const CLI_ALLOWED = [
   'whoami', 'doctor', 'validate', 'schema', 'accounts', 'members', 'groups', 'tokens', 'billing', 'projects',
   'sessions', 'session', 'chat', 'files', 'cr', 'review', 'triggers', 'reminders', 'remind', 'connectors',
   'secrets', 'providers', 'env', 'gateway', 'apps', 'channels', 'sandboxes', 'marketplace', 'system-skills',
-  'skills', 'registry', 'agents', 'models', 'access', 'roles', 'permissions', 'perms', 'audit', 'grants', 'feedback', 'drive', 'rooms', 'peers', 'help', 'version',
+  'skills', 'registry', 'agents', 'models', 'access', 'roles', 'permissions', 'perms', 'audit', 'grants', 'feedback', 'drive', 'rooms', 'peers', 'artifacts', 'help', 'version',
 ];
 
 export function denial(args: string[]): Denial | null {

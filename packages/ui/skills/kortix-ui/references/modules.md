@@ -344,7 +344,7 @@ Mount: `SessionWorkspace` takes `session` (the `useSession` result): the thread 
 Props:
 - `SessionWorkspace`: `session` (the `useSession` result, required), `children` (replaces the thread), `hideHeader`, `readOnly`, `className`.
 - `SessionLayout`: `sessionId` (runtime id), `projectId`, `projectSessionId`, `children` (the thread), `bootStage`, `transient`.
-- `ProjectHome`: `projectId`; `beforeSend` (runs first, throw to refuse); `onSend` + `busy` (replace the send).
+- `ProjectHome`: `projectId`; `beforeSend` (runs first, throw to refuse); `onSend` + `busy` (replace the send); `onboarding` (opt in: a project not yet onboarded opens on the onboarding chat and sends "Onboard me" once a model is usable).
 - `useProjectHomeSend(projectId, { beforeSend })` returns `{ send, sending }`.
 - `ProjectSessionList`, `ProjectSessionsView`, `ProjectFilesView`: `projectId`. `ProjectSidebar`: `projectId`, `menu`, `onOpenSearch` (the header shows Search only with it); its Files, Apps and Customize rows read `projectId`, not the route.
 

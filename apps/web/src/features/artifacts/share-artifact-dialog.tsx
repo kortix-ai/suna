@@ -9,6 +9,7 @@ import { Label } from '@kortix/ui/label';
 import { Modal, ModalBody, ModalContent, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '@kortix/ui/modal';
 import { RadioGroup } from '@kortix/ui/radio-group';
 import { successToast } from '@kortix/ui/toast';
+import { PROJECT_ACTIONS, useProjectCan } from '@kortix/ui/workspace';
 import { CopyIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
@@ -30,6 +31,9 @@ export function ShareArtifactDialog({
 }) {
   const t = useTranslations('artifacts');
   const { update } = useArtifactMutations(projectId);
+  // A public link needs project.artifact.public; one already public stays listed so it can be turned off.
+  const canPublic = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_ARTIFACT_PUBLIC).allowed === true;
+  const modes = MODES.filter((value) => value !== 'public' || canPublic || artifact.visibility === 'public');
   const [mode, setMode] = useState<ArtifactVisibility>(artifact.visibility);
   const [people, setPeople] = useState<string[]>(artifact.shared_with_user_ids);
   const changed = mode !== artifact.visibility || people.join() !== artifact.shared_with_user_ids.join();
@@ -62,7 +66,7 @@ export function ShareArtifactDialog({
           <div className="space-y-2">
             <Label>{t('generalAccess')}</Label>
             <RadioGroup value={mode} onValueChange={(v) => setMode(v as ArtifactVisibility)} className="space-y-2">
-              {MODES.map((value) => (
+              {modes.map((value) => (
                 <ShareOption key={value} value={value} label={t(`visibility.${value}`)} desc={t(`visibilityHint.${value}`)} />
               ))}
             </RadioGroup>

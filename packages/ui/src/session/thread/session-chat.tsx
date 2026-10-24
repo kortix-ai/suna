@@ -1762,6 +1762,17 @@ export function SessionChat({
   const awaitingUserInput = pendingQuestions.length > 0 || pendingPermissions.length > 0;
   const QUESTION_PROMPT_ANIMATION_MS = 320;
   const activePendingQuestion = pendingQuestions[0] ?? null;
+  // A new question docks over the bottom of the transcript, and answering it
+  // needs what the agent just wrote (a long tool run can leave the reader
+  // short of the end). Bring the end into view once per question; a reader
+  // who scrolls up afterwards stays where they are.
+  const shownQuestionIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const id = activePendingQuestion?.id ?? null;
+    if (!id || id === shownQuestionIdRef.current) return;
+    shownQuestionIdRef.current = id;
+    smoothScrollToAbsoluteBottom();
+  }, [activePendingQuestion?.id, smoothScrollToAbsoluteBottom]);
   const [renderedQuestion, setRenderedQuestion] = useState<QuestionRequest | null>(null);
   const [questionPromptVisible, setQuestionPromptVisible] = useState(false);
   // A connector call waiting on a decision docks onto the composer the way a

@@ -29,7 +29,7 @@ import {
   type InstallTarget,
 } from './install';
 import type { InstallWay } from './install-dialog';
-import { mcpServerFor, type McpServerApp } from './mcp-first';
+import type { McpServerApp } from './mcp-first';
 import { pickSurface } from './pick-surface';
 
 /** An Install waiting for the user to name the profile (`InstallDialog`). */
@@ -137,37 +137,13 @@ export function useInstall(
   const installEntry = useCallback(
     (entry: CatalogEntry, connectors: readonly AdminConnector[]) => {
       const app = appRefFromEntry(entry);
-      if (entry.source === 'easy-connect') {
-        const managedRequest = () =>
-          ask({
-            target: easyConnectInstallTarget(entry.app),
-            way: { kind: entry.app.provider === 'pipedream' ? 'pipedream' : 'composio', oneClick: true },
-            connectors,
-            app,
-          });
-        if (!onMcpServer || !entry.app.directMcpUrl) {
-          managedRequest();
-          return;
-        }
-        setPendingKey(app?.slug ?? entry.app.name);
-        void mcpServerFor(projectId, entry.app).then((server) => {
-          if (server) {
-            setPendingKey(null);
-            onMcpServer(server);
-          } else {
-            managedRequest();
-          }
-        });
-        return;
-      }
-      if (entry.source !== 'discover' || !app) return;
       // What Kortix built is set up on its own page, not installed.
       if (entry.connector.kind === 'kortix') {
         router.push(appHref(projectId, app));
         return;
       }
       // A Discover card does not carry its ways to connect; the detail does,
-      // best first, with the recommended one marked (Connectors v2).
+      // best first, with the recommended one marked.
       setPendingKey(app.slug);
       void queryClient
         .fetchQuery({

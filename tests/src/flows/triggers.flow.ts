@@ -2521,10 +2521,11 @@ flow(
   },
 );
 
-// TRG-34 — Kortix's own app-event source `mcp` (connectors_v2): the catalog apps
-// list as event apps with their MCP server, a project MCP server is an event app
-// of its own, an event the connector does not offer is refused, and a project
-// without connectors_v2 sees no `mcp` source at all.
+// TRG-34 — Kortix's own app-event source `mcp`: the catalog apps list as event
+// apps with their MCP server, a project MCP server is an event app of its own,
+// and an event the connector does not offer is refused. Every project with
+// event triggers has the source, including one that stored the retired
+// `connectors_v2: false`.
 flow(
   'TRG-34',
   {
@@ -2538,13 +2539,13 @@ flow(
   },
   async (ctx) => {
     const owner = ctx.client.as(ctx.P.OWNER);
-    const on = await ctx.fixtures.project({ managedGit: true, metadata: { experimental: { event_triggers: true, connectors_v2: true } } });
-    const off = await ctx.fixtures.project({ metadata: { experimental: { event_triggers: true } } });
+    const on = await ctx.fixtures.project({ managedGit: true, metadata: { experimental: { event_triggers: true } } });
+    const stored = await ctx.fixtures.project({ metadata: { experimental: { event_triggers: true, connectors_v2: false } } });
     type App = { source: string; app: string; event_count: number; connector: string | null; connected: boolean; mcp_url: string | null };
     const apps = async (projectId: string) =>
       (await owner.get('/v1/projects/:projectId/triggers/event-apps', { params: { projectId } })).status(200).json<{ apps: App[] }>().apps;
 
-    await ctx.step('connectors_v2 on: catalog apps with sign-in are event apps of source mcp, with the MCP server to install', async () => {
+    await ctx.step('catalog apps with sign-in are event apps of source mcp, with the MCP server to install', async () => {
       const list = await apps(on.id);
       const linear = list.find((a) => a.app === 'linear');
       if (!linear || linear.source !== 'mcp' || linear.mcp_url !== 'https://mcp.linear.app/mcp' || linear.connector !== null || linear.connected) {
@@ -2587,10 +2588,12 @@ flow(
       }
     });
 
-    await ctx.step('connectors_v2 off: no mcp source in the listing, and source=mcp → 400 that lists the sources', async () => {
-      if ((await apps(off.id)).some((a) => a.source === 'mcp')) throw new Error('mcp apps listed without connectors_v2');
-      const r = await owner.get('/v1/projects/:projectId/triggers/event-types', { params: { projectId: off.id }, query: { app: 'linear', source: 'mcp' } });
-      r.status(400).body().has('$.error', 'Unknown event source "mcp". Sources: composio.');
+    await ctx.step('a stored connectors_v2: false is inert: the mcp source is listed, and an unknown source → 400 that lists the sources', async () => {
+      if (!(await apps(stored.id)).some((a) => a.source === 'mcp' && a.app === 'linear')) throw new Error('mcp apps missing for a project with a stale stored flag');
+      const r = await owner.get('/v1/projects/:projectId/triggers/event-types', { params: { projectId: stored.id }, query: { app: 'linear', source: 'nope' } });
+      r.status(400);
+      const error = r.json<{ error?: string }>().error ?? '';
+      if (!error.startsWith('Unknown event source "nope". Sources: ') || !error.includes('mcp')) throw new Error(`unexpected refusal: ${r.text()}`);
     });
   },
 );

@@ -1,11 +1,10 @@
-/** Catalogue browse routes: Discover (integrations.sh, or everything under connectors_v2), easy-connect toolkits, Pipedream apps. */
+/** Catalogue browse routes: Discover (the Kortix catalog: Kortix apps, integrations.sh, Composio), easy-connect toolkits, Pipedream apps. */
 import { withDirectIds, withDirectMcpUrls } from '../connect-direct-twins';
 import { CatalogInstallError, catalogInstallDraft } from '../catalog-install';
 import { type ConnectorCatalogDetail, canonicalCatalogId } from '../connector-catalog';
 import { allowedSourceValidationResponse } from './admin';
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
-import { featureDisabledBody } from '../../feature-flags/gate';
 import { auth, errors, json } from '../../openapi';
 import type { ConnectorRouterDeps } from '../router';
 import { OpaqueSchema, ProjectParam, featureNotSupportedResponse } from './shared';
@@ -32,7 +31,7 @@ export function registerDiscoverRoutes(app: OpenAPIHono, deps: ConnectorRouterDe
       method: 'get',
       path: '/projects/{projectId}/discover/connectors',
       tags: ['connector'],
-      summary: 'Browse the integrations.sh catalogue',
+      summary: 'Browse the connectors catalog',
       ...auth,
       request: {
         params: ProjectParam,
@@ -56,24 +55,21 @@ export function registerDiscoverRoutes(app: OpenAPIHono, deps: ConnectorRouterDe
       const projectId = c.req.param('projectId');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      // Flag gate AFTER authz: a non-admin still learns nothing.
-      const catalogue = await discoverCatalogue(deps, projectId);
-      if (!catalogue) return c.json(featureDisabledBody('connectors_api_discover'), 403);
       if (!deps.listDiscoverConnectors) return c.json({ error: 'catalogue unavailable' }, 502);
       const limit = Number(c.req.query('limit'));
       try {
         const hidden = await hiddenKortixApps(deps, projectId);
-        return c.json(withoutHidden(
+        return c.json(
           await deps.listDiscoverConnectors({
-            catalogue,
             q: c.req.query('q') || undefined,
             cursor: c.req.query('cursor') || undefined,
             category: c.req.query('category') || undefined,
             ...(Number.isFinite(limit) && limit > 0 ? { limit } : {}),
             ...(oneClickQuery(c) ? { oneClick: true } : {}),
             ...kindsQuery(c),
+            exclude: hidden,
           }),
-        hidden));
+        );
       } catch (error) {
         return c.json({ error: (error as Error).message || 'catalogue unavailable' }, 502);
       }
@@ -81,14 +77,14 @@ export function registerDiscoverRoutes(app: OpenAPIHono, deps: ConnectorRouterDe
   );
 
   // ── Admin: the Discover browse page, one request ─────────────────────────
-  // Sections grouped from the complete integrations.sh index, so each heading
+  // Sections grouped from the complete catalog, so each heading
   // states its section's real size instead of how many cards one page held.
   app.openapi(
     createRoute({
       method: 'get',
       path: '/projects/{projectId}/discover/sections',
       tags: ['connector'],
-      summary: 'Browse the integrations.sh catalogue by category',
+      summary: 'Browse the connectors catalog by category',
       ...auth,
       request: {
         params: ProjectParam,
@@ -108,23 +104,20 @@ export function registerDiscoverRoutes(app: OpenAPIHono, deps: ConnectorRouterDe
       const projectId = c.req.param('projectId');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      // Flag gate AFTER authz: a non-admin still learns nothing.
-      const catalogue = await discoverCatalogue(deps, projectId);
-      if (!catalogue) return c.json(featureDisabledBody('connectors_api_discover'), 403);
       if (!deps.listDiscoverSections) return c.json({ error: 'catalogue unavailable' }, 502);
       const perCategory = Number(c.req.query('perCategory'));
       const maxCategories = Number(c.req.query('maxCategories'));
       try {
         const hidden = await hiddenKortixApps(deps, projectId);
-        return c.json(withoutHidden(
+        return c.json(
           await deps.listDiscoverSections({
-            catalogue,
             ...(Number.isFinite(perCategory) && perCategory > 0 ? { perCategory } : {}),
             ...(Number.isFinite(maxCategories) && maxCategories > 0 ? { maxCategories } : {}),
             ...(oneClickQuery(c) ? { oneClick: true } : {}),
             ...kindsQuery(c),
+            exclude: hidden,
           }),
-        hidden));
+        );
       } catch (error) {
         return c.json({ error: (error as Error).message || 'catalogue unavailable' }, 502);
       }
@@ -139,7 +132,7 @@ export function registerDiscoverDetailRoutes(app: OpenAPIHono, deps: ConnectorRo
       method: 'get',
       path: '/projects/{projectId}/discover/connectors/detail',
       tags: ['connector'],
-      summary: 'Resolve the surfaces for an integrations.sh catalogue record',
+      summary: 'Resolve the ways to connect one catalog app',
       ...auth,
       request: {
         params: ProjectParam,
@@ -154,12 +147,9 @@ export function registerDiscoverDetailRoutes(app: OpenAPIHono, deps: ConnectorRo
       const projectId = c.req.param('projectId');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      // Flag gate AFTER authz: a non-admin still learns nothing.
-      const catalogue = await discoverCatalogue(deps, projectId);
-      if (!catalogue) return c.json(featureDisabledBody('connectors_api_discover'), 403);
       if (!deps.getDiscoverConnector) return c.json({ error: 'catalogue unavailable' }, 502);
       try {
-        return c.json(await visibleDetail(deps, projectId, c.req.query('id'), catalogue));
+        return c.json(await visibleDetail(deps, projectId, c.req.query('id')));
       } catch (error) {
         const message = (error as Error).message || 'catalogue unavailable';
         return c.json({ error: message }, message === 'Connector not found' ? 404 : 502);
@@ -198,12 +188,10 @@ function registerDiscoverToolsAndInstallRoutes(app: OpenAPIHono, deps: Connector
       const projectId = c.req.param('projectId') ?? '';
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      const catalogue = await discoverCatalogue(deps, projectId);
-      if (!catalogue) return c.json(featureDisabledBody('connectors_api_discover'), 403);
       if (!deps.getDiscoverConnector || !deps.discoverConnectorTools) return c.json({ error: 'catalogue unavailable' }, 502);
       let detail: ConnectorCatalogDetail;
       try {
-        detail = (await visibleDetail(deps, projectId, c.req.query('id') ?? '', catalogue)) as ConnectorCatalogDetail;
+        detail = (await visibleDetail(deps, projectId, c.req.query('id') ?? '')) as ConnectorCatalogDetail;
       } catch (error) {
         const message = (error as Error).message || 'catalogue unavailable';
         return c.json({ error: message }, message === 'Connector not found' ? 404 : 502);
@@ -248,15 +236,13 @@ function registerDiscoverToolsAndInstallRoutes(app: OpenAPIHono, deps: Connector
       const projectId = c.req.param('projectId') ?? '';
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      const catalogue = await discoverCatalogue(deps, projectId);
-      if (!catalogue) return c.json(featureDisabledBody('connectors_api_discover'), 403);
       if (!deps.getDiscoverConnector || !deps.createConnector) return featureNotSupportedResponse(c, 'connector_create');
       const parsed = InstallBody.safeParse(await c.req.json().catch(() => null));
       if (!parsed.success) return c.json({ error: 'pass `id`, and optionally `way`, `name` and `slug`' }, 400);
       const body = parsed.data;
       let detail: ConnectorCatalogDetail;
       try {
-        detail = (await visibleDetail(deps, projectId, body.id, catalogue)) as ConnectorCatalogDetail;
+        detail = (await visibleDetail(deps, projectId, body.id)) as ConnectorCatalogDetail;
       } catch (error) {
         const message = (error as Error).message || 'catalogue unavailable';
         return c.json({ error: message }, message === 'Connector not found' ? 404 : 502);
@@ -314,53 +300,23 @@ async function hiddenKortixApps(deps: ConnectorRouterDeps, projectId: string): P
   return (await deps.featureFlagEnabled(projectId, 'email_channel')) ? new Set() : new Set(['native:email']);
 }
 
-/** `result` without the hidden app records, each list's `total` lowered to match. */
-function withoutHidden(result: unknown, hidden: Set<string>): unknown {
-  if (hidden.size === 0 || !result || typeof result !== 'object') return result;
-  if (Array.isArray(result)) return result.map((item) => withoutHidden(item, hidden));
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(result)) out[key] = withoutHidden(value, hidden);
-  if (Array.isArray(out.items)) {
-    const kept = (out.items as Array<{ id?: unknown }>).filter((item) => !hidden.has(String(item?.id ?? '')));
-    if (typeof out.total === 'number') out.total = Math.max(0, out.total - (out.items.length - kept.length));
-    out.items = kept;
-  }
-  return out;
-}
-
 /** The detail lookup, refusing a hidden app as unknown. */
 async function visibleDetail(
   deps: ConnectorRouterDeps,
   projectId: string,
   id: string,
-  catalogue: 'kortix' | 'integrations',
 ): Promise<unknown> {
   if ((await hiddenKortixApps(deps, projectId)).has(canonicalCatalogId(id))) throw new Error('Connector not found');
-  return deps.getDiscoverConnector!(id, catalogue);
-}
-
-/**
- * Which catalogue Discover serves: for a `connectors_v2` project, Kortix's MCP
- * apps, integrations.sh and the managed toolkits as one (`connectors/mcp-apps.ts`);
- * integrations.sh alone behind
- * `connectors_api_discover`, else none.
- */
-async function discoverCatalogue(
-  deps: ConnectorRouterDeps,
-  projectId: string,
-): Promise<'kortix' | 'integrations' | null> {
-  if (await deps.featureFlagEnabled(projectId, 'connectors_v2')) return 'kortix';
-  return (await deps.featureFlagEnabled(projectId, 'connectors_api_discover')) ? 'integrations' : null;
+  return deps.getDiscoverConnector!(id);
 }
 
 /**
  * Each managed app with `directMcpUrl` (its hosted MCP server, which Install
- * offers first) and, for a project with the API/MCP catalogue on, `directId`
- * (the same app's catalogue id). A lookup failure leaves the listing as it was.
+ * offers first) and `directId` (the same app's catalogue id). A lookup failure
+ * leaves the listing as it was.
  */
 async function withCatalogTwins(
   deps: ConnectorRouterDeps,
-  projectId: string,
   result: unknown,
 ): Promise<unknown> {
   let out = result;
@@ -371,7 +327,6 @@ async function withCatalogTwins(
   }
   if (!deps.catalogDirectIds) return out;
   try {
-    if (!(await deps.featureFlagEnabled(projectId, 'connectors_api_discover'))) return out;
     return withDirectIds(out, await deps.catalogDirectIds());
   } catch {
     return out;
@@ -411,7 +366,7 @@ export function registerConnectCatalogueRoutes(app: OpenAPIHono, deps: Connector
         ...(Number.isFinite(limit) && limit > 0 ? { limit } : {}),
       });
       return result
-        ? c.json(await withCatalogTwins(deps, projectId, result))
+        ? c.json(await withCatalogTwins(deps, result))
         : featureNotSupportedResponse(c, 'connect_toolkits');
     },
   );
@@ -451,7 +406,7 @@ export function registerConnectCatalogueRoutes(app: OpenAPIHono, deps: Connector
         ...(Number.isFinite(maxCategories) && maxCategories > 0 ? { maxCategories } : {}),
       });
       return result
-        ? c.json(await withCatalogTwins(deps, projectId, result))
+        ? c.json(await withCatalogTwins(deps, result))
         : featureNotSupportedResponse(c, 'connect_toolkits');
     },
   );

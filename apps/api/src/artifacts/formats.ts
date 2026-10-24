@@ -6,7 +6,8 @@
 //         assets) — a deck, a dashboard, a mockup, a tool — served as written
 // `format` is the contract agents follow (the kortix-artifacts skill and
 // `kortix artifacts types`); `starter` is a complete example.
-import { ARTIFACT_DOC_CSS } from '@kortix/shared/artifact-doc';
+import { ARTIFACT_DOC_CSS, ARTIFACT_PAGE_CSS } from '@kortix/shared/artifact-doc';
+import { BRAND_FONTS_CSS, BRAND_TOKENS_CSS } from '@kortix/shared/brand-css';
 import { marked } from 'marked';
 
 export const ARTIFACT_TYPE_KEYS = ['doc', 'html'] as const;
@@ -89,20 +90,26 @@ export const ARTIFACT_TYPES = [
 /** A Markdown doc as the page Kortix serves: GFM, task lists, the doc stylesheet; `print` opens the print dialog. */
 export function renderDoc(markdown: string, opts: { print: boolean }): string {
   const body = (marked.parse(markdown, { gfm: true, async: false }) as string)
-    .replace(/<li><input (checked="" )?disabled="" type="checkbox">\s*/g, (_m, checked) => `<li data-type="taskItem" data-checked="${checked ? 'true' : 'false'}"><input type="checkbox" disabled${checked ? ' checked' : ''}> `)
+    // A loose list (blank lines between items) puts the box inside a <p>: keep the <p> as the item's text.
+    .replace(/<li>(<p>)?<input (checked="" )?disabled="" type="checkbox">\s*/g, (_m, p, checked) => `<li data-type="taskItem" data-checked="${checked ? 'true' : 'false'}"><input type="checkbox" disabled${checked ? ' checked' : ''}> ${p ?? ''}`)
     .replace(/<ul>(\s*<li data-type="taskItem")/g, '<ul data-type="taskList">$1');
   const title = docTitle(markdown) ?? 'Untitled doc';
   const escaped = title.replace(/[<>&"]/g, (c) => `&#${c.charCodeAt(0)};`);
   // ```mermaid blocks render as diagrams (the CDN build, pinned); print waits for them.
   const diagrams = body.includes('class="language-mermaid"');
-  const html = diagrams ? body.replace(/<pre><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/g, '<pre class="mermaid">$1</pre>') : body;
+  const html = (diagrams ? body.replace(/<pre><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/g, '<pre class="mermaid">$1</pre>') : body)
+    // The chrome UnifiedMarkdown gives code and tables: a captioned code figure, a bordered table box.
+    .replace(/<pre><code(?: class="language-([\w+#-]+)")?>/g, (_m, lang?: string) => `<figure class="kx-code"><figcaption>${lang ?? 'text'}</figcaption><pre><code>`)
+    .replace(/<\/code><\/pre>/g, '</code></pre></figure>')
+    .replace(/<table>/g, '<div class="kx-table"><table>')
+    .replace(/<\/table>/g, '</table></div>');
   const mermaid = diagrams
-    ? `<script type="module">import m from "${MERMAID_CDN}";m.initialize({startOnLoad:false,securityLevel:"strict",theme:matchMedia("(prefers-color-scheme: dark)").matches?"dark":"neutral"});await m.run();window.__kxDiagrams=true;</script>`
+    ? `<script type="module">import m from "${MERMAID_CDN}";m.initialize({startOnLoad:false,securityLevel:"strict",theme:matchMedia("(prefers-color-scheme: dark)").matches?"dark":"neutral",fontFamily:getComputedStyle(document.body).fontFamily});await m.run();window.__kxDiagrams=true;</script>`
     : '';
   const print = opts.print
     ? `<script>addEventListener("load",function(){var t=Date.now();(function go(){if(${diagrams ? '!window.__kxDiagrams&&' : ''}Date.now()-t<8000)return setTimeout(go,150);setTimeout(function(){print()},300)})()})</script>`
     : '';
-  return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escaped}</title><style>${ARTIFACT_DOC_CSS}</style>${mermaid}${print}</head>\n<body class="kx-doc">\n${html}</body></html>\n`;
+  return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escaped}</title><style>${BRAND_FONTS_CSS}${BRAND_TOKENS_CSS}${ARTIFACT_PAGE_CSS}${ARTIFACT_DOC_CSS}</style>${mermaid}${print}</head>\n<body><main class="kx-doc">\n${html}</main></body></html>\n`;
 }
 
 /** A doc's title: its first `# ` heading. */

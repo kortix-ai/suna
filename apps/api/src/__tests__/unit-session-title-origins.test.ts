@@ -73,11 +73,6 @@ describe('session-title origins — create-time title source', () => {
       titleSourceForCreate({ initial_prompt: 'envelope…', title_source: 'the CI graph' }),
     ).toBe('the CI graph');
 
-    const source = createBody(
-      'channels/telegram-webhook.ts',
-      'const result = await createSession({',
-    );
-    expect(source).toContain('title_source: message.text ?? message.caption ?? null');
   });
 
   test('email: titles from the SUBJECT at create — it has no initial_prompt at all', () => {

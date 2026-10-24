@@ -96,8 +96,8 @@ describe('call_connector', () => {
   });
 });
 
-describe('apps on a Connectors v2 project', () => {
-  /** A host whose project has `connectors_v2` on; records every API call. */
+describe('connector apps come from the one catalogue', () => {
+  /** A host that records every API call. */
   function v2Host(calls: Array<{ method: string; path: string; query?: unknown; body?: unknown }>) {
     return {
       projectId: () => 'proj-1',
@@ -108,8 +108,6 @@ describe('apps on a Connectors v2 project', () => {
       text: (value: string) => ({ content: [{ type: 'text', text: value }] }),
       call: async (method: string, path: string, opts: { query?: unknown; body?: unknown } = {}) => {
         calls.push({ method, path, ...opts });
-        // The real shape: the project itself, its resolved flags in `experimental`.
-        if (path === '/v1/projects/proj-1') return { status: 200, body: JSON.stringify({ project_id: 'proj-1', experimental: { connectors_v2: true } }) };
         if (path.endsWith('/discover/connectors')) {
           return { status: 200, body: JSON.stringify({ items: [{ id: 'kortix:linear', kind: 'mcp', slug: 'linear', name: 'Linear', description: 'Issues.', categories: ['productivity'], mcpUrl: 'https://mcp.linear.app/mcp', oneClick: true }], nextCursor: undefined }) };
         }
@@ -146,7 +144,7 @@ describe('apps on a Connectors v2 project', () => {
       { app: 'kortix:linear', name: 'Linear', description: 'Issues.', categories: ['productivity'], via: 'mcp', one_click: true, mcp_url: 'https://mcp.linear.app/mcp' },
     ]);
     expect(calls.find((c) => c.path.endsWith('/discover/connectors'))?.query).toMatchObject({ oneClick: undefined, kind: undefined });
-    expect(calls.some((c) => c.path.includes('/connect/toolkits'))).toBe(false);
+    expect(calls.some((c) => c.path.includes('/connect/toolkits') || c.path === '/v1/projects/proj-1')).toBe(false);
     await runConnectorTool('search_connector_apps', { project_id: 'proj-1', query: 'linear', one_click: true, kind: 'mcp,composio', category: 'productivity' }, v2Host(calls));
     expect(calls.filter((c) => c.path.endsWith('/discover/connectors')).at(-1)?.query).toMatchObject({ oneClick: '1', kind: 'mcp,composio', category: 'productivity' });
   });

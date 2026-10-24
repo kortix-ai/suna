@@ -3,7 +3,7 @@
 import { TelegramChatMock } from './channel-mocks';
 
 /**
- * Telegram as a channel row (the `connectors_v2` feature flag): connect a bot
+ * Telegram as a channel row: connect a bot
  * by its BotFather token, pick who may talk to it, disconnect. The token goes
  * to the API once and never comes back to the browser.
  */

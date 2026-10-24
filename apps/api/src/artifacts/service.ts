@@ -10,7 +10,7 @@
 //          when visibility is `project` or `public`, anyone with the link
 //          when `public` (the content server)
 //   edit   who may write the path in Files (the folder rules of the drive)
-//   share  the creator, or project.write
+//   share  the creator, or project.artifact.manage (public: project.artifact.public)
 import { artifacts } from '@kortix/db';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { config } from '../config';
@@ -125,7 +125,10 @@ export interface Author {
 /** Who asks, as the Files folder rules see them. ponytail: group grants are not resolved here; add groupIds if teams share artifact folders. */
 export interface Viewer {
   userId: string;
+  /** project.write: admin of every folder in Files (the Files rule for saving). */
   projectWrite: boolean;
+  /** project.artifact.manage: may change how any artifact they can view is shared. */
+  manageAny: boolean;
 }
 
 async function accessAt(drive: DriveRow, path: string, viewer: Viewer, level: FolderLevel): Promise<boolean> {
@@ -422,7 +425,7 @@ export function canView(row: ArtifactRow, userId: string): boolean {
 
 /** May change how the artifact is shared, rename it or remove it from Artifacts. */
 export function canManage(row: ArtifactRow, viewer: Viewer): boolean {
-  return row.createdByUserId === viewer.userId || (viewer.projectWrite && canView(row, viewer.userId));
+  return row.createdByUserId === viewer.userId || (viewer.manageAny && canView(row, viewer.userId));
 }
 
 export async function updateArtifactMeta(

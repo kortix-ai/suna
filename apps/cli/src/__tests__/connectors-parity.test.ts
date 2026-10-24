@@ -19,11 +19,8 @@ let server: ReturnType<typeof Bun.serve> | null = null;
 let calls: Call[] = [];
 let projectPolicies: Array<Record<string, unknown>> = [];
 let defaultMode = 'risk';
-let discoverEnabled = true;
 /** The accounts GET .../connectors/:slug/accounts returns, default first. */
 let connectorAccounts: Array<Record<string, unknown>> = [];
-/** `connectors_v2` on the project: the move routes answer, else 403 feature_disabled. */
-let connectorsV2 = true;
 /** What POST .../connectors/:slug/move answers, in order (the last one repeats). */
 let moveAnswers: Array<{ status: number; body: unknown }> = [];
 /** Slugs the fake server switched to `mcp`: an active sign-in switches the marked connector. */
@@ -61,14 +58,8 @@ function startServer(): string {
       calls.push({ method: req.method, path: url.pathname + url.search, body });
       const ex = `/v1/connectors/projects/${PROJECT}`;
 
-      // ── Pipedream → Kortix moves (connectors_v2) ─────────────────────────
-      const moveGate = () =>
-        Response.json(
-          { error: 'Connectors v2 is not enabled for this project. Enable it in Settings → Feature flags.', code: 'feature_disabled', feature: 'connectors_v2' },
-          { status: 403 },
-        );
+      // ── Pipedream → Kortix moves ──────────────────────────────────────────
       if (url.pathname === `/v1/projects/${PROJECT}/connector-moves` && req.method === 'GET') {
-        if (!connectorsV2) return moveGate();
         return Response.json({
           moves: [
             { slug: 'crm', name: 'CRM', provider: 'pipedream', app: 'hubspot', to: null, connection_id: null, signed_in: false, accounts: 1 },
@@ -79,7 +70,6 @@ function startServer(): string {
         });
       }
       if (/^\/v1\/projects\/proj_connectors\/connectors\/[^/]+\/move$/.test(url.pathname) && req.method === 'POST') {
-        if (!connectorsV2) return moveGate();
         const answer = moveAnswers.length > 1 ? moveAnswers.shift()! : moveAnswers[0]!;
         return Response.json(answer.body, { status: answer.status });
       }
@@ -165,16 +155,6 @@ function startServer(): string {
         return Response.json({ ok: true, slug: 'billing', name: 'Billing', provider: 'composio', way: { id: 'composio:stripe', kind: 'composio', name: 'Stripe', oneClick: true }, next: 'connect' });
       }
       if (url.pathname === `${ex}/discover/connectors` && req.method === 'GET') {
-        if (!discoverEnabled) {
-          return Response.json(
-            {
-              error: 'Connector discovery is not enabled for this project. Enable it in Settings → Feature flags.',
-              code: 'feature_disabled',
-              feature: 'connectors_api_discover',
-            },
-            { status: 403 },
-          );
-        }
         return Response.json({
           items: [
             { id: 'stripe', kind: 'api', slug: 'stripe', name: 'Stripe', description: 'Payments', url: null, categories: ['finance'] },
@@ -301,8 +281,6 @@ describe('kortix connectors — capability-page parity', () => {
     switchOnSignIn = true;
     projectPolicies = [{ match: 'send_*', action: 'require_approval' }];
     defaultMode = 'risk';
-    discoverEnabled = true;
-    connectorsV2 = true;
     moveAnswers = [{ status: 200, body: { status: 'moved' } }];
     connectorAccounts = [
       {
@@ -692,14 +670,6 @@ describe('kortix connectors — capability-page parity', () => {
     expect(r.stdout).toContain('list_customers');
   });
 
-  test('catalog surfaces the connectors_api_discover gate verbatim', async () => {
-    const config = writeConfig(startServer());
-    discoverEnabled = false;
-    const r = await runCli(['connectors', 'catalog', '--project', PROJECT], config);
-    expect(r.code).toBe(1);
-    expect(r.stderr).toContain('Connector discovery is not enabled for this project');
-  });
-
   for (const sub of ['machines', 'computers']) {
     test(`${sub} is removed: it points at computer accounts and sends no request`, async () => {
       const config = writeConfig(startServer());
@@ -884,15 +854,6 @@ describe('kortix connectors — capability-page parity', () => {
     expect(parsed.moves.map((m) => m.slug)).toEqual(['crm', 'linear', 'mail', 'notes']);
     expect(parsed.moves[2]!.provider).toBe('composio');
     expect(parsed.moves[1]!.to).toEqual({ slug: 'linear', name: 'Linear', icon: null });
-  });
-
-  test('moves without connectors_v2 prints the gate and the command that turns it on', async () => {
-    const config = writeConfig(startServer());
-    connectorsV2 = false;
-    const r = await runCli(['connectors', 'moves', '--project', PROJECT], config);
-    expect(r.code).toBe(1);
-    expect(r.stderr).toContain('Connectors v2 is not enabled for this project');
-    expect(r.stderr).toContain('kortix projects features enable connectors_v2');
   });
 
   test('move on a connector already on its Kortix app says there is nothing to move', async () => {

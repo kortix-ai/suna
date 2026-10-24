@@ -1,6 +1,6 @@
 /**
  * Move a Pipedream or Composio connector to the Kortix MCP app for the same
- * service (`connectors_v2`).
+ * service.
  *
  * Kortix retires Pipedream and Composio. Their OAuth grants belong to their own
  * clients, so each owner signs in once more. A move keeps the connector's slug
@@ -27,10 +27,8 @@ import {
   connectorProjectPolicies,
   connectors,
   projectTriggerRuntime,
-  projects,
 } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { resolveFeatureFlag } from '../feature-flags/registry';
 import { logger } from '../lib/logger';
 import { decryptProjectSecret, encryptProjectSecret } from '../projects/surface';
 import { db } from '../shared/db';
@@ -255,12 +253,10 @@ interface MoveConnectionRow {
   providerType: string;
   config: Record<string, unknown> | null;
   connectionMetadata: Record<string, unknown> | null;
-  projectMetadata: unknown;
 }
 
-/** The app a connection moves its connector to: a sealed mark, in a `connectors_v2` project. */
+/** The app a connection moves its connector to: a sealed mark. */
 function markedMoveApp(row: MoveConnectionRow): McpApp | null {
-  if (!resolveFeatureFlag(row.projectMetadata, 'connectors_v2')) return null;
   const app = moveTargetApp(row.providerType, row.config);
   return app && isMoveMark(row.projectId, row.connectionId, app.slug, row.connectionMetadata?.move_to) ? app : null;
 }
@@ -278,11 +274,9 @@ async function loadMoveConnection(connectionId: string) {
       config: connectors.config,
       connectionMetadata: connectorConnections.metadata,
       kind: connectionCredentials.kind,
-      projectMetadata: projects.metadata,
     })
     .from(connectorConnections)
     .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
-    .innerJoin(projects, eq(projects.projectId, connectors.projectId))
     .leftJoin(connectionCredentials, eq(connectionCredentials.connectionId, connectorConnections.connectionId))
     .where(eq(connectorConnections.connectionId, connectionId))
     .limit(1);

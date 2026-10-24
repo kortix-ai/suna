@@ -17,12 +17,14 @@ import { Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, ModalTitle } 
 import { Skeleton } from '@kortix/ui/skeleton';
 import { Textarea } from '@kortix/ui/textarea';
 import { successToast } from '@kortix/ui/toast';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@kortix/ui/tooltip';
 import { SidebarToggle } from '@kortix/ui/workspace';
+import { useOptionalSidebar } from '@kortix/ui/sidebar';
 import { reloadFrame } from '@kortix/ui/apps';
 import {
   ArrowClockwiseIcon,
   ArrowCounterClockwiseIcon,
-  ArrowLeftIcon,
+  CaretRightIcon,
   ArrowSquareOutIcon,
   ClockCounterClockwiseIcon,
   CornersOutIcon,
@@ -43,7 +45,7 @@ import { useRef, useState } from 'react';
 import { drivePathToParam } from '@/features/drives/drive-path-param';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
-import { ARTIFACT_TYPE_ICON, ArtifactFrame, VISIBILITY_ICON, relativeTime } from './artifact-meta';
+import { ArtifactFrame, VISIBILITY_ICON, relativeTime } from './artifact-meta';
 import { artifactFrameKey } from './frame-sandbox';
 import { DocEditor, type DocSaveStatus } from './doc-editor';
 import { ShareArtifactDialog } from './share-artifact-dialog';
@@ -117,7 +119,7 @@ export function ArtifactViewer({ projectId, artifactId }: { projectId: string; a
     );
   }
 
-  const TypeIcon = artifact ? ARTIFACT_TYPE_ICON[artifact.type] : null;
+  const sidebar = useOptionalSidebar();
   const VisIcon = artifact ? VISIBILITY_ICON[artifact.visibility] : null;
   const statusText = isDoc && canEdit && docStatus !== 'saved' ? t(`docStatus.${docStatus}`) : null;
   const folder = artifact ? (artifact.path.endsWith(`/${artifact.entry}`) ? artifact.path.slice(0, -artifact.entry.length - 1) : artifact.path) : '';
@@ -125,22 +127,24 @@ export function ArtifactViewer({ projectId, artifactId }: { projectId: string; a
 
   return (
     <div className="flex h-svh flex-col overflow-hidden">
-      <header className="kx-titlebar-row kx-capability-titlebar flex h-11 shrink-0 items-center gap-1 border-b px-2">
+      {/* The project page header (ProjectPageHeader's title-bar classes): a breadcrumb, then quiet actions. */}
+      <header
+        className="kx-titlebar-row kx-capability-titlebar relative flex shrink-0 items-center gap-1 border-b px-2"
+        data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
+      >
         <SidebarToggle />
-        <Button size="icon-sm" variant="ghost" asChild aria-label={t('back')}>
-          <Link href={`/projects/${projectId}/artifacts`}>
-            <ArrowLeftIcon className="size-4" />
+        <div className="kx-titlebar-tabs flex h-10 min-w-0 flex-1 items-center gap-1.5 px-3 text-sm">
+          <Link href={`/projects/${projectId}/artifacts`} className="text-muted-foreground hover:text-foreground shrink-0 transition-colors">
+            {t('title')}
           </Link>
-        </Button>
-        <div className="flex min-w-0 flex-1 items-center gap-2 px-1">
-          {TypeIcon ? <TypeIcon className="text-muted-foreground size-4 shrink-0" /> : null}
+          <CaretRightIcon className="text-muted-foreground size-3 shrink-0" aria-hidden />
           {artifact ? (
             renaming ? (
               <input
                 autoFocus
                 defaultValue={artifact.title}
                 aria-label={t('rename')}
-                className="bg-transparent text-sm font-medium outline-none"
+                className="text-foreground min-w-0 flex-1 bg-transparent font-medium outline-none"
                 onBlur={() => setRenaming(false)}
                 onKeyDown={async (e) => {
                   if (e.key === 'Escape') setRenaming(false);
@@ -152,23 +156,30 @@ export function ArtifactViewer({ projectId, artifactId }: { projectId: string; a
                 }}
               />
             ) : (
-              <button
-                type="button"
-                className="hover:bg-accent truncate rounded-sm px-1 text-sm font-medium disabled:hover:bg-transparent"
-                disabled={!artifact.can_manage}
-                onClick={() => setRenaming(true)}
-              >
-                {artifact.title}
-              </button>
+              <h1 className="min-w-0 truncate">
+                <button
+                  type="button"
+                  className="text-foreground max-w-full truncate font-medium disabled:cursor-default"
+                  disabled={!artifact.can_manage}
+                  title={artifact.can_manage ? t('rename') : undefined}
+                  onClick={() => setRenaming(true)}
+                >
+                  {artifact.title}
+                </button>
+              </h1>
             )
           ) : (
             <Skeleton className="h-4 w-40" />
           )}
           {artifact && VisIcon ? (
-            <span className="text-muted-foreground hidden shrink-0 items-center gap-1 text-xs sm:flex">
-              <VisIcon className="size-3.5" />
-              {t(`visibility.${artifact.visibility}`)}
-            </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="text-muted-foreground flex shrink-0" aria-label={t(`visibility.${artifact.visibility}`)}>
+                  <VisIcon className="size-3.5" aria-hidden />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>{t(`visibility.${artifact.visibility}`)}</TooltipContent>
+            </Tooltip>
           ) : null}
         </div>
 
@@ -176,12 +187,16 @@ export function ArtifactViewer({ projectId, artifactId }: { projectId: string; a
           <div className="flex shrink-0 items-center gap-1">
             {statusText ? <span className="text-muted-foreground px-2 text-xs">{statusText}</span> : null}
             <DropdownMenu open={historyOpen} onOpenChange={setHistoryOpen}>
-              <DropdownMenuTrigger asChild>
-                <Button size="sm" variant="ghost" className="text-muted-foreground font-normal">
-                  <ClockCounterClockwiseIcon />
-                  <span className="hidden md:inline">{relativeTime(artifact.updated_at, locale)}</span>
-                </Button>
-              </DropdownMenuTrigger>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="icon-sm" variant="ghost" aria-label={t('history')}>
+                      <ClockCounterClockwiseIcon className="size-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent>{t('editedAgo', { time: relativeTime(artifact.updated_at, locale) })}</TooltipContent>
+              </Tooltip>
               <DropdownMenuContent align="end" className="max-h-96 w-72 overflow-y-auto">
                 <DropdownMenuLabel>{t('history')}</DropdownMenuLabel>
                 {versions.isLoading ? (
@@ -213,13 +228,13 @@ export function ArtifactViewer({ projectId, artifactId }: { projectId: string; a
               </DropdownMenuContent>
             </DropdownMenu>
             {canEdit ? (
-              <Button size="sm" variant="ghost" onClick={() => setAsking(true)} className="hidden sm:inline-flex">
-                <SparkleIcon /> {t('askAgent')}
+              <Button size="sm" variant="ghost" onClick={() => setAsking(true)} className="hidden gap-1.5 sm:inline-flex">
+                <SparkleIcon className="size-3.5" aria-hidden /> {t('askAgent')}
               </Button>
             ) : null}
             {artifact.can_manage ? (
-              <Button size="sm" variant="secondary" onClick={() => setSharing(true)}>
-                <ShareNetworkIcon /> {t('share')}
+              <Button size="sm" variant="secondary" onClick={() => setSharing(true)} className="gap-1.5">
+                <ShareNetworkIcon className="size-3.5" aria-hidden /> {t('share')}
               </Button>
             ) : null}
             <DropdownMenu>

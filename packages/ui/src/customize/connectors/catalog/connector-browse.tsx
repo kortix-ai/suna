@@ -43,10 +43,9 @@ export interface CatalogInstall {
   onInstall: (entry: CatalogEntry) => void;
 }
 
-/** The Install control is offered only where the caller may add the app, and
- *  never on the computer card: a computer is paired, not installed. */
-function canInstallEntry(entry: CatalogEntry, install: CatalogInstall): boolean {
-  return install.canWrite && entry.source !== 'computer';
+/** The Install control is offered only where the caller may add the app. */
+function canInstallEntry(install: CatalogInstall): boolean {
+  return install.canWrite;
 }
 
 /**
@@ -75,7 +74,7 @@ function CatalogAffordance({
       </Badge>
     );
   }
-  if (!canInstallEntry(entry, install)) return null;
+  if (!canInstallEntry(install)) return null;
   // What Kortix built is set up on its own page, not installed.
   const channel = entry.source === 'discover' && entry.connector.kind === 'kortix';
   return (
@@ -103,20 +102,18 @@ function CatalogAffordance({
  * `memo`'d because the grid renders several hundred of these. `entry` and `connectedKeys` are referentially stable
  * across a page landing (the arrays they come from are rebuilt, but the entry
  * objects inside them are not), so the comparison actually pays off.
- * `hrefFor`, `onOpen` and `install` must be stable for the same reason;
+ * `hrefFor` and `install` must be stable for the same reason;
  * `install` changes identity only when an install starts or ends.
  */
 const CatalogEntryCard = memo(function CatalogEntryCard({
   entry,
   connectedKeys,
   hrefFor,
-  onOpen,
   install,
 }: {
   entry: CatalogEntry;
   connectedKeys: ReadonlySet<string>;
-  hrefFor: (entry: CatalogEntry) => string | null;
-  onOpen: (entry: CatalogEntry) => void;
+  hrefFor: (entry: CatalogEntry) => string;
   install: CatalogInstall;
 }) {
   const href = hrefFor(entry);
@@ -128,17 +125,14 @@ const CatalogEntryCard = memo(function CatalogEntryCard({
     subtitle: <span className="text-muted-foreground text-xs">{catalogEntryKindLabel(entry)}</span>,
     trailing: <CatalogAffordance entry={entry} connected={connected} install={install} />,
   };
-  // An entry with no page of its own (the computer card) opens in place.
-  return href ? (
-    // Only the Install control needs to sit beside the link. The "Added" badge
-    // stays inside it, so a click on the badge still opens the page.
+  // Only the Install control needs to sit beside the link. The "Added" badge
+  // stays inside it, so a click on the badge still opens the page.
+  return (
     <CatalogCard
       {...shared}
       href={href}
-      trailingInteractive={!connected && canInstallEntry(entry, install)}
+      trailingInteractive={!connected && canInstallEntry(install)}
     />
-  ) : (
-    <CatalogCard {...shared} onClick={() => onOpen(entry)} />
   );
 });
 
@@ -218,7 +212,6 @@ export function ConnectorBrowse({
   state,
   connectedKeys,
   hrefFor,
-  onOpen,
   install,
   emptyTitle,
   emptyDescription,
@@ -226,9 +219,8 @@ export function ConnectorBrowse({
 }: {
   state: CatalogState;
   connectedKeys: ReadonlySet<string>;
-  /** The card's page, or `null` for an entry that opens in place. */
-  hrefFor: (entry: CatalogEntry) => string | null;
-  onOpen: (entry: CatalogEntry) => void;
+  /** The card's app page. */
+  hrefFor: (entry: CatalogEntry) => string;
   install: CatalogInstall;
   emptyTitle: string;
   emptyDescription: string;
@@ -269,7 +261,7 @@ export function ConnectorBrowse({
         empty={
           searching ? (
             suppressNoMatch ? null : (
-              <CatalogNoMatch query={activeQuery} excludedNoActions={state.excludedNoActions} />
+              <CatalogNoMatch query={activeQuery} />
             )
           ) : (
             <EmptyState icon={GlobeIcon} size="sm" title={emptyTitle} description={emptyDescription} />
@@ -310,7 +302,6 @@ export function ConnectorBrowse({
               entry={entry}
               connectedKeys={connectedKeys}
               hrefFor={hrefFor}
-              onOpen={onOpen}
               install={install}
             />
           ))}

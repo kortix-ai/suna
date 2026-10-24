@@ -1878,8 +1878,8 @@ flow(
   },
 );
 
-// CHN-TG1 — Telegram channel connector (connectors_v2): every route is gated by
-// the flag, a malformed token is refused before any call to Telegram, and the
+// CHN-TG1 — Telegram channel connector: every project can connect a bot (no
+// flag), a malformed token is refused before any call to Telegram, and the
 // allowed-user list needs an install.
 flow(
   "CHN-TG1",
@@ -1893,17 +1893,9 @@ flow(
     ],
   },
   async (ctx) => {
-    const off = await ctx.fixtures.sharedProject();
-    const on = await ctx.fixtures.project({ metadata: { experimental: { connectors_v2: true } } });
+    const on = await ctx.fixtures.project({ metadata: { experimental: { connectors_v2: false } } });
 
-    await ctx.step("with connectors_v2 off the installation read answers 403 feature_disabled", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/channels/telegram/installation", { params: { projectId: off.id } });
-      r.status(403).body().has("$.code", "feature_disabled").has("$.feature", "connectors_v2");
-    });
-
-    await ctx.step("with the flag on and no bot connected the installation is null", async () => {
+    await ctx.step("a project that once stored connectors_v2 off (now graduated) reads a null installation with no bot", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/channels/telegram/installation", { params: { projectId: on.id } });

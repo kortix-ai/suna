@@ -328,7 +328,7 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
     await connect();
     await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
     expect((await store.get(PROJECT_ID, 'a'))?.externalId).toBe('ti_EXAMPLE_NEW_MESSAGE_{}');
-    // The connector moves to Kortix: provider mcp, in a connectors_v2 project.
+    // The connector moves to Kortix: provider mcp.
     setEventSourceForTest('mcp', {
       ...fake,
       id: 'mcp',
@@ -343,7 +343,7 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
     try {
       await testDb()
         .update(projects)
-        .set({ metadata: { experimental: { event_triggers: true, notification_center: true, connectors_v2: true } } })
+        .set({ metadata: { experimental: { event_triggers: true, notification_center: true } } })
         .where(eq(projects.projectId, PROJECT_ID));
       await testDb()
         .update(connectors)
@@ -543,9 +543,9 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
       await connect();
       await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [withSource('nope')]);
       expect(await status('a')).toBe('error');
-      expect((await store.get(PROJECT_ID, 'a'))?.lastError).toBe('Unknown event source "nope". Sources: composio.');
+      expect((await store.get(PROJECT_ID, 'a'))?.lastError).toBe('Unknown event source "nope". Sources: composio, mcp.');
       expect(await validateEventTrigger(PROJECT_ID, { connector: 'inbox', source: 'nope', type: 'X', config: {} })).toBe(
-        'Unknown event source "nope". Sources: composio.',
+        'Unknown event source "nope". Sources: composio, mcp.',
       );
     });
   });
@@ -748,10 +748,13 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
           { app: 'other', name: 'Other', logo: 'o.png', eventCount: 1 },
         ],
       });
-      const entry = async () => (await listEventApps(PROJECT_ID, ACCOUNT_ID)).map((a) => [a.app, a.connector, a.connected]);
-      expect(await entry()).toEqual([['example', 'inbox', false], ['other', null, false]]);
+      // Composio apps list only where the project has a connector ("other" has none);
+      // Kortix's own `mcp` source lists its catalog apps too.
+      const entry = async () =>
+        (await listEventApps(PROJECT_ID, ACCOUNT_ID)).filter((a) => a.provider === 'composio').map((a) => [a.app, a.connector, a.connected]);
+      expect(await entry()).toEqual([['example', 'inbox', false]]);
       await connect();
-      expect(await entry()).toEqual([['example', 'inbox', true], ['other', null, false]]);
+      expect(await entry()).toEqual([['example', 'inbox', true]]);
     });
 
     test('event apps list the shared accounts of each connector with identity and default', async () => {

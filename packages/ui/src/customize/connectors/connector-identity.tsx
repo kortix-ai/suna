@@ -18,8 +18,7 @@ import { cn } from '../../internal/lib/utils';
  * These two render once per card in the connectors grid, so they sit on the
  * hottest path of `/projects/[id]/connectors`. They used to live in
  * `customize/sections/connectors-view.tsx`, which is ~5,100 lines across 50
- * components and pulls `HighlightedCode`,
- * `PoliciesPanel`, `DiscoverCatalogue` and `ConnectorConnectionModal`. Importing
+ * components and pulls `HighlightedCode` and `PoliciesPanel`. Importing
  * two small components from there put that entire graph in this route's client
  * chunk — an ES module is all-or-nothing to the bundler.
  *

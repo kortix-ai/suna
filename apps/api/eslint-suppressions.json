@@ -751,15 +751,6 @@
     }
   },
   "src/channels/telegram-webhook.ts": {
-    "kortix-api/projects-surface": {
-      "count": 1
-    },
-    "no-console": {
-      "count": 4
-    },
-    "no-restricted-properties": {
-      "count": 1
-    },
     "no-restricted-syntax": {
       "count": 1
     }

@@ -225,7 +225,7 @@ export function useUpdateEmailPolicy() {
 const telegramKey = (projectId: string | null) =>
   ['channels', 'telegram-install', projectId ?? 'none'] as const;
 
-/** The project's Telegram bot (connectors_v2). Pass null to keep the query off. */
+/** The project's Telegram bot. Pass null to keep the query off. */
 export function useTelegramInstall(projectId: string | null) {
   return useQuery({
     queryKey: telegramKey(projectId),

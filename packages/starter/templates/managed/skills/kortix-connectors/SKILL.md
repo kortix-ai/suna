@@ -5,6 +5,58 @@ description: Use Kortix connectors to reach external systems from a session, an 
 
 <skill name="kortix-connectors">
 
+<fast-path>
+Run connector work in this order. Each step is one command; there is nothing
+to discover with `--help`.
+
+1. **See what exists.** `kortix connectors ls`: slugs, status, and an
+   `ACCOUNTS` column. A connector with 2 or more accounts needs
+   `--account "<label>"` on every call: `kortix connectors accounts <slug>`
+   lists the labels.
+2. **Add an app** the project lacks, then hand the human the link:
+   ```sh
+   kortix connectors catalog <name>          # find it; the first way to connect is recommended
+   kortix connectors catalog install <id>    # e.g. kortix:linear, composio:gmail; live at once
+   kortix connectors connect <slug>          # prints the sign-in link for the human
+   ```
+   An app the catalog lacks: see `<adding-connectors>` (MCP or OpenAPI with
+   `add … --apply`). Without `--apply`, `add` only edits this session branch's
+   `kortix.yaml` and nothing goes live. When the human finishes, Kortix tells
+   you the connector is connected; do not mint a second link.
+3. **Read the action before calling it.** `kortix connectors show <slug>.<action>`
+   prints its input schema and description. The description says which
+   filters run on the server.
+4. **Call it, list-shaped results to a file.**
+   ```sh
+   kortix connectors call <slug> <action> '<json>' --account "<label>" --out /tmp/<name>.json
+   ```
+   The file holds the whole envelope: `{ ok, account, data: { result: … } }`.
+   The payload is always under `.data.result` (for example
+   `.data.result.issues` and `.data.result.page_info`). `--out` prints the
+   shape; read it before writing a query.
+5. **Filter on the server, never by downloading everything.** Use the action's
+   own filters. When its description says a filter is client-side only, call
+   the provider's query or search action instead (`run_query_or_mutation`,
+   `search_*`) with the filter, for example a GraphQL query with
+   `createdAt: { gte: "<date>" }`. Page through everything only when the
+   human needs every record.
+6. **When you must page**, write one file per page and merge once at the end
+   (the cursor field names come from the shape `--out` printed):
+   ```sh
+   i=1; cursor=""
+   while :; do
+     args=$([ -z "$cursor" ] && echo '{"first":250}' || echo "{\"first\":250,\"after\":\"$cursor\"}")
+     kortix connectors call <slug> <list_action> "$args" --account "<label>" --out /tmp/page$i.json >/dev/null || break
+     [ "$(jq -r '.data.result.page_info.hasNextPage' /tmp/page$i.json)" = true ] || break
+     cursor=$(jq -r '.data.result.page_info.endCursor' /tmp/page$i.json); i=$((i+1))
+   done
+   jq -s '[.[].data.result.issues[]]' /tmp/page*.json > /tmp/all.json
+   ```
+7. **Analyze in a script.** One `jq` expression for a lookup; for grouping,
+   date windows or several metrics, write one `bun -e` or `python3` script
+   over `/tmp/all.json` instead of chaining `jq` attempts.
+</fast-path>
+
 <overview>
 A **connector** defines tools against an external system. A connector is
 **not** an account: one connector (e.g. Gmail) can hold several **accounts** —
@@ -252,7 +304,7 @@ To add an app, search the app catalogue first:
 
 ```sh
 kortix connectors catalog gmail                     # every way in, one row per app
-kortix connectors catalog crm --kind mcp,composio   # filter: mcp, composio, openapi, graphql, cli
+kortix connectors catalog crm --kind mcp,composio   # filter: kortix, mcp, composio, openapi, graphql
 kortix connectors catalog notes --one-click         # only apps the human connects by signing in
 kortix connectors catalog show composio:gmail       # every way to connect it + its tools
 ```
@@ -260,10 +312,13 @@ kortix connectors catalog show composio:gmail       # every way to connect it + 
 Each app lists its ways to connect, best first, the first marked
 `recommended`:
 
-0. a Kortix channel (`kind: channel`: Slack, Microsoft Teams, Email,
-   Telegram) — people message the agent there. It is never installed: the
-   human sets it up (`kortix channels connect`, `--platform teams`,
-   `kortix channels email connect`, or the web Channels page);
+0. built by Kortix (`kind: kortix`): the channels Slack, Microsoft Teams,
+   Email and Telegram, where people message the agent, and Computer, the
+   human's own machine. They are never installed: the human sets them up
+   (`kortix channels connect`, `--platform teams`,
+   `kortix channels email inboxes add`, Telegram on its page in the web app,
+   Computer with `npx --yes @kortix/agent-tunnel@latest connect` on that
+   machine or the desktop app);
 1. a one-click MCP server — the vendor's own server; the human only signs in;
 2. Composio — a third-party partner that runs the sign-in (one click), for an
    app with no one-click MCP server (Gmail, Outlook, …);
@@ -299,10 +354,6 @@ OpenAPI spec, then add it directly:
 kortix connectors add acme --provider mcp --url https://mcp.acme.com/mcp --transport http --apply
 kortix connectors add acme --provider openapi --spec https://acme.com/openapi.json --apply
 ```
-
-If `catalog` answers that the catalogue is off for this project, use Composio:
-`kortix connectors apps <query>`, then
-`kortix connectors add <slug> --provider composio --app <slug> --apply`.
 
 Pipedream exists only for rollback compatibility with already-declared
 connectors. Never add a new Pipedream connector automatically. If Composio

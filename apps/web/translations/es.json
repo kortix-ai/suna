@@ -1219,21 +1219,9 @@
           "name": "Marketplace",
           "description": "Explora e instala habilidades de registros de la comunidad y proveedores. Las fuentes, actualizaciones y ámbitos de equipo aún cambian."
         },
-        "connectors_api_discover": {
-          "name": "Descubrimiento de API de conectores",
-          "description": "Explora integraciones directas de API, MCP, GraphQL, CLI y Postman junto con aplicaciones OAuth opcionales."
-        },
-        "agentmail_email": {
-          "name": "Correo de AgentMail",
-          "description": "Asigna buzones de AgentMail para que los correos entrantes puedan iniciar y continuar sesiones de Kortix."
-        },
         "meta_agent": {
           "name": "Metaagente",
           "description": "Añade un coordinador que gestione sesiones especializadas y trabajos de varios pasos dentro del proyecto."
-        },
-        "monitors": {
-          "name": "Monitores",
-          "description": "Ejecuta observadores persistentes de registros, fuentes o API que inician sesiones de agente ante eventos."
         },
         "warm_sessions": {
           "name": "Sesiones preparadas",
@@ -1265,7 +1253,7 @@
         },
         "event_triggers": {
           "name": "Disparadores de eventos de conectores",
-          "description": "Inicia un agente cuando ocurre algo en una app conectada: un correo nuevo, un pull request, un evento del calendario. Los eventos vienen de Composio. Con Connectors v2 activado, Kortix también revisa por sí mismo tus apps conectadas."
+          "description": "Inicia un agente cuando ocurre algo en una app conectada: un correo nuevo, un pull request, un evento del calendario. Los eventos vienen de Composio. Kortix también revisa por sí mismo tus apps conectadas."
         },
         "volumes": {
           "name": "Volúmenes",
@@ -1278,10 +1266,6 @@
         "session_log_restore": {
           "name": "Restauración del registro de sesión",
           "description": "Reconstruye una sesión a partir de su registro de sesión guardado cuando su ordenador perdió la conversación. Kortix lo activa por proyecto."
-        },
-        "connectors_v2": {
-          "name": "Conectores v2",
-          "description": "El catálogo de apps MCP en Personalizar → Conectores, con inicio de sesión gestionado por Kortix. Con «Disparadores de eventos de app» activado, Kortix revisa estas apps en busca de correos, archivos y elementos nuevos e inicia un agente. También añade Telegram como canal. Las nuevas cuentas de conectores ya no se comparten con todo el proyecto por defecto."
         },
         "agent_rooms": {
           "name": "Salas",
@@ -1298,6 +1282,10 @@
         "artifacts": {
           "name": "Artefactos",
           "description": "Comparte documentos (Markdown) y páginas HTML (presentaciones, paneles, maquetas, herramientas) desde Archivos con el proyecto, personas elegidas o cualquiera con un enlace. Los documentos se editan en su sitio, cada guardado es una versión del historial de Archivos y los documentos se exportan a PDF. Añade la página Artefactos y `kortix artifacts`."
+        },
+        "email_channel": {
+          "name": "Canal de correo",
+          "description": "Da al agente una bandeja de correo en Resend: el correo entrante inicia y continúa sesiones, y el agente lee, responde y envía desde la bandeja. Usa tu propia clave de API y dominio de Resend."
         }
       }
     },
@@ -3416,15 +3404,36 @@
     "greeting": "Te damos la bienvenida, {name}. Soy Kortix.",
     "greetingNoName": "Te damos la bienvenida. Soy Kortix.",
     "intro": "Tráeme lo que sea: una tarea, un workflow o una idea a medio formar. Lo resolveremos juntos.",
-    "question": "¿Por dónde quieres empezar?",
-    "recommendTools": "Recomendar herramientas",
-    "updateMemory": "Actualizar memoria del proyecto",
+    "canTitle": "Qué puedes hacer con Kortix",
+    "can": {
+      "work": {
+        "title": "Delega trabajo real",
+        "body": "Investigación, documentos, presentaciones, hojas de cálculo y sitios. Cada sesión tiene su propia máquina aislada."
+      },
+      "memory": {
+        "title": "Recuerda",
+        "body": "Lo que aprende sobre ti, tu equipo y tu empresa lo lleva a cada sesión."
+      },
+      "tools": {
+        "title": "Trabaja en tus herramientas",
+        "body": "Más de 3.000 apps con un clic. Las credenciales de los conectores nunca entran en la máquina."
+      },
+      "chat": {
+        "title": "Se une al chat de tu equipo",
+        "body": "Menciónalo en Slack o Microsoft Teams con una tarea."
+      },
+      "schedule": {
+        "title": "Trabaja por su cuenta",
+        "body": "Los disparadores inician trabajo según un horario o desde un webhook."
+      },
+      "apps": {
+        "title": "Crea apps",
+        "body": "Herramientas internas y paneles, alojados con inicio de sesión."
+      }
+    },
+    "startHint": "Cuéntale a Kortix abajo en qué estás trabajando, o envía «Guíame para empezar con Kortix» para una configuración guiada.",
     "placeholder": "Cuéntale a Kortix en qué estás trabajando",
-    "toolsPrompt": "Recomiéndame herramientas y conectores que se ajusten a mi workflow. Pregúntame primero en qué trabajo si lo necesitas.",
-    "memoryPrompt": "Conoce cómo trabajo. Hazme una pregunta breve a la vez sobre mi rol, en qué trabajo, las herramientas que uso y cómo me gusta trabajar. Guarda mis respuestas en la memoria del proyecto para que las próximas sesiones empiecen con ellas.",
-    "inviteTeammate": "Invitar compañero",
-    "connectSlack": "Conectar Slack",
-    "slackConnected": "Slack conectado"
+    "kickoff": "Guíame para empezar con Kortix"
   },
   "announcements": {
     "memories": {
@@ -20175,7 +20184,6 @@
       "text94ddcfbb2f30": "Una llamada denegada también es una pelea. Lo que no sucedió forma parte del expediente tanto como lo que sucedió.",
       "text89faa819e995": "Lo que nunca consigue es el alcance de quien lo creó. Aquí no hay ninguna ventaja de herencia que subir.",
       "text6a51a65a11f4": "Al iniciar una sesión, se corta una rama y se inicia una máquina para ello. La base de datos no permitirá que una segunda sesión tenga esa máquina.",
-      "catalogExcludedNoActions": "{count, plural, one {1 aplicación coincide pero no publica acciones que un agente pueda llamar.} other {{count} aplicaciones coinciden pero no publican acciones que un agente pueda llamar.}}",
       "text08cadd4156a5": "Un sandbox es una máquina Linux real en la que el modelo puede ejecutar cualquier cosa. Entonces, la única credencial que contiene es un token de Kortix, vinculado al proyecto.",
       "textc7d878b8738e": "Las acciones de la cuenta aterrizan en el mismo lugar: membresía, roles, políticas, tokens, grupos.",
       "text5b70d52b009e": "La API de terceros ve una solicitud autenticada ordinaria. La respuesta vuelve al agente. La credencial se queda atrás.",
@@ -20552,61 +20560,6 @@
       "aboutDescription": "Acerca de esta descripción",
       "senderUnavailable": "No se pudo cargar la cuenta de envío. Revisa la fila De.",
       "quoted": "«{text}»"
-    }
-  },
-  "projectOnboarding": {
-    "resetSuccess": "Reinicio de incorporación",
-    "back": "Atrás",
-    "skip": "Saltar",
-    "skipForNow": "Saltar por ahora",
-    "progress": "Progreso de la configuración",
-    "work": {
-      "title": "¿En qué trabajas principalmente?",
-      "description": "Kortix lo usa para sugerirte tus primeras tareas.",
-      "ariaLabel": "En qué trabajas",
-      "noteLabel": "Cuéntanos en pocas palabras",
-      "notePlaceholder": "Por ejemplo, investigación o selección de personal",
-      "continue": "Continuar",
-      "options": {
-        "founder": "Dirigir una empresa",
-        "engineering": "Ingeniería",
-        "product_design": "Producto y diseño",
-        "sales": "Ventas",
-        "marketing": "Marketing",
-        "finance_ops": "Operaciones",
-        "support": "Soporte y éxito del cliente",
-        "other": "Otra cosa"
-      }
-    },
-    "apps": {
-      "title": "¿Qué apps usas?",
-      "description": "Haz clic en una app para conectarla. Puedes añadir más cuando quieras.",
-      "ariaLabel": "Apps",
-      "searchPlaceholder": "Buscar apps o categorías",
-      "clearSearch": "Borrar búsqueda",
-      "connectApp": "Conectar {app}",
-      "appConnected": "{app} está conectada",
-      "connectedCount": "{count} conectadas",
-      "noMatches": "Ninguna app coincide con «{query}»",
-      "notConfiguredTitle": "Las apps no están configuradas aquí",
-      "notConfiguredDescription": "Esta instalación no tiene catálogo de apps. Puedes añadir conectores más tarde desde Ajustes.",
-      "continue": "Continuar"
-    },
-    "plan": {
-      "title": "¿Qué modelos debe usar Kortix?",
-      "description": "Puedes cambiarlo en cualquier momento en Ajustes.",
-      "seePlans": "Ver planes",
-      "open": "Abrir workspace",
-      "addKey": "Añadir una clave",
-      "modelAccess": "Acceso a modelos",
-      "useKortix": "Modelos de Kortix",
-      "recommended": "Recomendado",
-      "useKortixDescription": "Listo ya. Usa los créditos de tu plan.",
-      "useKortixNeedsPlan": "Necesita un plan de Kortix o créditos.",
-      "bringKey": "Mi propia clave de API",
-      "providerDescription": "Anthropic, OpenAI u otro proveedor.",
-      "keyConnected": "Hay una clave conectada.",
-      "decideLater": "Decidir más tarde"
     }
   },
   "commandPalette": {
@@ -22704,7 +22657,9 @@
     "mediaTooLarge": "Este archivo supera los 16 MB.",
     "refresh": "Recargar",
     "diagramEdit": "Editar diagrama",
-    "diagramDone": "Listo"
+    "diagramDone": "Listo",
+    "codeLanguage": "Lenguaje del código",
+    "editedAgo": "Editado {time}"
   },
   "emailConnect": {
     "homeTitle": "Dónde vive el buzón",

@@ -185,17 +185,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
     platformDefault: () => true,
     enforcement: 'routes',
   },
-  {
-    key: 'connectors_api_discover',
-    name: 'Connectors API Discover',
-    description:
-      'Browse direct API, MCP, GraphQL, CLI, and Postman surfaces without requiring a managed provider.',
-    stability: 'beta',
-    available: () => true,
-    // Direct discovery is an explicit opt-in, not the reliable managed default.
-    platformDefault: () => false,
-    enforcement: 'routes',
-  },
+  // `connectors_api_discover` graduated (2026-10-24) with `connectors_v2`:
+  // integrations.sh is part of the one Kortix catalog every project browses.
+  // A stored override is inert.
   // `agentmail_email` graduated (2026-10-24): every project can connect an
   // email inbox. Turning it on never provisioned an inbox (only an explicit
   // connect does), so graduating creates nothing. A stored override is inert.
@@ -319,7 +311,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     name: 'Connector event triggers',
     description:
       'Start an agent when something happens in a connected app: a new email, a pull request, a calendar event. ' +
-      'Events come from Composio. With Connectors v2 on, Kortix also checks your connected apps itself.',
+      'Events come from Composio, and Kortix also checks your connected apps itself.',
     stability: 'beta',
     // Always offered: on a deployment with no event source configured, the
     // triggers themselves say so (status `error` naming COMPOSIO_API_KEY).
@@ -365,8 +357,10 @@ const FLAGS: readonly FeatureFlagDef[] = [
     stability: 'experimental',
     // Every volume is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
-    // Explicit opt-in. A project with `goals` needs it on.
-    platformDefault: () => false,
+    // On by default (founder, 2026-10-24): every project gets Files — a private
+    // folder per person (`/drives/me`, where the agent keeps user memory) and
+    // the shared `/Company` folder (`Company/Memory`). Onboarding writes both.
+    platformDefault: () => true,
     enforcement: 'behavioral',
     enforcementNote:
       'BEHAVIORAL only, through the flag derived from it: drives (Files routes and ' +
@@ -421,10 +415,12 @@ const FLAGS: readonly FeatureFlagDef[] = [
     available: () => Boolean(config.PLATINUM_API_KEY),
     platformDefault: () => false,
     enforcement: 'routes',
+    iamActions: ['project.artifact.read', 'project.artifact.write', 'project.artifact.manage', 'project.artifact.public'],
     enforcementNote:
       'ROUTES: every /v1/projects/:id/artifacts* route answers 403 `feature_disabled` when off, and ' +
       '/v1/artifacts/* (the content server) answers 404 for an artifact of a flag-off project. BOX: off, ' +
-      'a session box has no kortix-artifacts skill and its CLI hides and refuses `kortix artifacts`.',
+      'a session box has no kortix-artifacts skill and its CLI hides and refuses `kortix artifacts`. ' +
+      'IAM: project.artifact.* leave the account permission catalog until a project of the account has it on.',
   },
   {
     key: 'email_channel',
@@ -465,25 +461,11 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED (dev). A log over SESSION_LOG_RESTORE_MAX_BYTES ' +
       '(24 MiB) answers 413 and the box boots with the D3 note alone (harness/README.md).',
   },
-  {
-    key: 'connectors_v2',
-    name: 'Connectors v2',
-    description:
-      'Connectors on Kortix: the MCP app catalog in Customize → Connectors (vendor MCP servers, signed in with OAuth that Kortix runs), app events that Kortix checks on those apps (with Connector event triggers on), and Telegram as a channel connector. New connector accounts are no longer created for the whole project by default.',
-    stability: 'experimental',
-    available: () => true,
-    platformDefault: () => false,
-    enforcement: 'routes',
-    enforcementNote:
-      'ROUTES: /projects/:id/channels/telegram/* answer 403 `feature_disabled` when off ' +
-      '(projects/routes/channel-telegram.ts). BEHAVIORAL: the Telegram webhook keeps its legacy ' +
-      'one-session-per-message path when off (channels/telegram-webhook.ts); the kortix_telegram ' +
-      'connector is materialized only while on (connectors/channel-materialize.ts); sync seeds no ' +
-      'empty project-owned account while on (connectors/sync.ts). Discover serves the Kortix MCP ' +
-      'catalog while on (connectors/routes/catalogues.ts). The `mcp` app-event source exists only ' +
-      'while on (projects/trigger-events/registry.ts); turning it off moves those triggers to error ' +
-      'and drops their poll streams (feature-flags/toggle-effects.ts).',
-  },
+  // `connectors_v2` graduated (2026-10-24): the Kortix catalog (MCP apps,
+  // integrations.sh, Composio), Telegram as a channel connector, the Kortix
+  // app-event source (under `event_triggers`) and no seeded empty project
+  // account are the only connectors path. A stored override is inert; the
+  // serializer keeps sending `true` for older clients.
   {
     key: 'agent_rooms',
     name: 'Rooms',

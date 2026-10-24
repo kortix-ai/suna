@@ -1,7 +1,10 @@
 'use client';
 
 import { Button } from '@kortix/ui/button';
+import { CopyButton } from '@kortix/ui/markdown/copy-button';
+import { Hint } from '@kortix/ui/hint';
 import { MermaidRenderer } from '@kortix/ui/mermaid-renderer';
+import { CheckIcon, PencilSimpleIcon } from '@phosphor-icons/react';
 import CodeBlock from '@tiptap/extension-code-block';
 import { Node, mergeAttributes } from '@tiptap/core';
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from '@tiptap/react';
@@ -26,26 +29,57 @@ export const Video = Node.create({
   },
 });
 
-function CodeBlockView({ node, editor }: ReactNodeViewProps) {
+function CodeBlockView({ node, editor, updateAttributes }: ReactNodeViewProps) {
   const t = useTranslations('artifacts');
   const [editing, setEditing] = useState(false);
   const source = node.textContent.trim();
-  const diagram = node.attrs.language === 'mermaid' && source;
+  const language = (node.attrs.language as string | null) ?? '';
+  const diagram = language === 'mermaid' && source;
   // A diagram shows as a picture; its source opens only for someone editing it.
   const showSource = !diagram || editing;
   return (
     <NodeViewWrapper as="div">
-      <pre hidden={!showSource}>
-        <NodeViewContent<'code'> as="code" />
-      </pre>
+      {/* The UnifiedMarkdown code figure: a language caption with copy, then the code. */}
+      <figure className="kx-code" hidden={!showSource}>
+        <figcaption contentEditable={false}>
+          {editor.isEditable ? (
+            <input
+              aria-label={t('codeLanguage')}
+              placeholder="text"
+              value={language}
+              onChange={(e) => updateAttributes({ language: e.target.value.trim().toLowerCase() || null })}
+            />
+          ) : (
+            <span>{language || 'text'}</span>
+          )}
+          {source ? <CopyButton code={node.textContent} /> : null}
+        </figcaption>
+        <pre>
+          <NodeViewContent<'code'> as="code" />
+        </pre>
+      </figure>
       {diagram ? (
         <div contentEditable={false} className="kx-diagram">
-          <MermaidRenderer chart={source} enableFullscreen={false} />
-          {editor.isEditable ? (
-            <Button size="sm" variant="ghost" onClick={() => setEditing((v) => !v)}>
-              {editing ? t('diagramDone') : t('diagramEdit')}
-            </Button>
-          ) : null}
+          <MermaidRenderer
+            chart={source}
+            enableFullscreen={false}
+            actions={
+              editor.isEditable ? (
+                <Hint label={editing ? t('diagramDone') : t('diagramEdit')} side="top">
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    className="bg-background/90 backdrop-blur-sm"
+                    aria-label={editing ? t('diagramDone') : t('diagramEdit')}
+                    aria-pressed={editing}
+                    onClick={() => setEditing((v) => !v)}
+                  >
+                    {editing ? <CheckIcon className="size-3.5" /> : <PencilSimpleIcon className="size-3.5" />}
+                  </Button>
+                </Hint>
+              ) : null
+            }
+          />
         </div>
       ) : null}
     </NodeViewWrapper>

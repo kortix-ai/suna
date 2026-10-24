@@ -179,7 +179,7 @@ export async function disconnectSlack(projectId: string): Promise<void> {
   if (!res.success) throw new Error(res.error?.message ?? 'Failed to disconnect');
 }
 
-/** A project's Telegram bot (the `connectors_v2` feature flag). */
+/** A project's Telegram bot. */
 export interface TelegramInstallation {
   bot_id: string;
   username: string | null;

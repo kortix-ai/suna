@@ -51,7 +51,6 @@ export type OkResponse = z.infer<typeof OkResponseSchema>;
  */
 export const FeatureFlagMapSchema = z.object({
   marketplace: z.boolean(),
-  connectors_api_discover: z.boolean(),
   meta_agent: z.boolean(),
   reminders: z.boolean(),
   warm_sessions: z.boolean(),
@@ -64,7 +63,6 @@ export const FeatureFlagMapSchema = z.object({
   volumes: z.boolean(),
   drives: z.boolean(),
   session_log_restore: z.boolean(),
-  connectors_v2: z.boolean(),
   agent_rooms: z.boolean(),
   goals: z.boolean(),
   workspace_volume: z.boolean(),
@@ -190,6 +188,10 @@ export const ProjectSchema = z.object({
     session_log: z.literal(true).optional(),
     /** Not a flag (every new session runs pi; OpenCode is sunset); always `true` for older SDK, CLI and mobile clients. */
     pi_harness: z.literal(true).optional(),
+    /** Not a flag (the Kortix connectors catalog is the only connectors path); always `true` for older SDK and hosts. */
+    connectors_v2: z.literal(true).optional(),
+    /** Not a flag (integrations.sh is part of the one catalog); always `true` for older SDK and hosts. */
+    connectors_api_discover: z.literal(true).optional(),
   }),
   experimental_features: z.array(FeatureFlagViewSchema),
   /** Per-project provider pin, surfaced only while still usable. */

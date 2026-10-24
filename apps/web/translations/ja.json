@@ -1219,21 +1219,9 @@
           "name": "マーケットプレイス",
           "description": "コミュニティやベンダーのレジストリからスキルを参照してインストールします。ソース、更新、チーム範囲は調整中です。"
         },
-        "connectors_api_discover": {
-          "name": "コネクター API 検索",
-          "description": "直接 API、MCP、GraphQL、CLI、Postman の統合と、任意の OAuth アプリを参照します。"
-        },
-        "agentmail_email": {
-          "name": "AgentMail メール",
-          "description": "AgentMail の受信箱を割り当て、受信メールから Kortix セッションを開始・継続できるようにします。"
-        },
         "meta_agent": {
           "name": "メタエージェント",
           "description": "専門セッションとプロジェクト内の複数手順の作業を管理するコーディネーターを追加します。"
-        },
-        "monitors": {
-          "name": "モニター",
-          "description": "ログ、フィード、API を監視し、イベントからエージェントセッションを開始する常駐ウォッチャーを実行します。"
         },
         "warm_sessions": {
           "name": "ウォームセッション",
@@ -1265,7 +1253,7 @@
         },
         "event_triggers": {
           "name": "コネクタイベントトリガー",
-          "description": "連携したアプリで何かが起きたときにエージェントを起動します。新しいメール、プルリクエスト、カレンダーの予定など。イベントは Composio から届きます。Connectors v2 をオンにすると、Kortix が連携済みアプリを自分でも確認します。"
+          "description": "連携したアプリで何かが起きたときにエージェントを起動します。新しいメール、プルリクエスト、カレンダーの予定など。イベントは Composio から届きます。Kortix が連携済みアプリを自分でも確認します。"
         },
         "volumes": {
           "name": "ボリューム",
@@ -1278,10 +1266,6 @@
         "session_log_restore": {
           "name": "セッションログからの復元",
           "description": "セッションのコンピューターが会話を失ったとき、保存されたセッションログからセッションを再構築します。Kortix がプロジェクトごとに有効にします。"
-        },
-        "connectors_v2": {
-          "name": "コネクター v2",
-          "description": "カスタマイズ → コネクターの MCP アプリカタログ（サインインは Kortix が管理）。「アプリイベントのトリガー」をオンにすると、Kortix がこれらのアプリで新しいメール、ファイル、アイテムを確認してエージェントを起動します。Telegram もチャネルとして追加されます。新しいコネクターのアカウントはデフォルトでプロジェクト全体に共有されなくなります。"
         },
         "agent_rooms": {
           "name": "ルーム",
@@ -1298,6 +1282,10 @@
         "artifacts": {
           "name": "アーティファクト",
           "description": "ファイルにあるドキュメント（Markdown）とHTMLページ（スライド、ダッシュボード、モックアップ、ツール）を、プロジェクト、指定したメンバー、リンクを知っている全員と共有します。ドキュメントはその場で編集でき、保存するたびにファイルの履歴にバージョンが残り、ドキュメントはPDFにエクスポートできます。アーティファクトページと `kortix artifacts` が追加されます。"
+        },
+        "email_channel": {
+          "name": "メールチャネル",
+          "description": "エージェントに Resend のメール受信箱を用意します。届いたメールでセッションを開始・継続し、エージェントはその受信箱で読み、返信し、送信します。自分の Resend API キーとドメインを使います。"
         }
       }
     },
@@ -3416,15 +3404,36 @@
     "greeting": "ようこそ、{name}さん。Kortix です。",
     "greetingNoName": "ようこそ。Kortix です。",
     "intro": "タスクでも、ワークフローでも、まだ形になっていないアイデアでも、何でも聞かせてください。一緒に整理していきましょう。",
-    "question": "どこから始めますか？",
-    "recommendTools": "ツールを提案",
-    "updateMemory": "プロジェクトメモリを更新",
+    "canTitle": "Kortixでできること",
+    "can": {
+      "work": {
+        "title": "実際の仕事を任せる",
+        "body": "リサーチ、ドキュメント、スライド、スプレッドシート、サイト。セッションごとに専用の隔離されたマシンがあります。"
+      },
+      "memory": {
+        "title": "覚えている",
+        "body": "あなた、チーム、会社について学んだことを、すべてのセッションに引き継ぎます。"
+      },
+      "tools": {
+        "title": "いつものツールで動く",
+        "body": "3,000以上のアプリにワンクリックで接続。コネクタの認証情報がマシンに入ることはありません。"
+      },
+      "chat": {
+        "title": "チームのチャットに参加",
+        "body": "SlackやMicrosoft Teamsでメンションしてタスクを頼めます。"
+      },
+      "schedule": {
+        "title": "自動で動く",
+        "body": "トリガーがスケジュールやWebhookで作業を開始します。"
+      },
+      "apps": {
+        "title": "アプリを作る",
+        "body": "社内ツールやダッシュボードを、サインイン付きでホストします。"
+      }
+    },
+    "startHint": "下で取り組んでいることをKortixに伝えるか、「Kortixの使い方を案内して」と送るとガイド付きでセットアップできます。",
     "placeholder": "取り組んでいることを Kortix に伝えてください",
-    "toolsPrompt": "私のワークフローに合うツールとコネクターを提案してください。必要であれば、まず私が何に取り組んでいるか聞いてください。",
-    "memoryPrompt": "私の働き方を知ってください。役割、取り組んでいること、使っているツール、好みの働き方について、一度に一つずつ短い質問をしてください。次のセッションがそこから始められるように、回答をプロジェクトメモリに保存してください。",
-    "inviteTeammate": "メンバーを招待",
-    "connectSlack": "Slack を接続",
-    "slackConnected": "Slack 接続済み"
+    "kickoff": "Kortixの使い方を案内して"
   },
   "announcements": {
     "memories": {
@@ -20175,7 +20184,6 @@
       "text94ddcfbb2f30": "拒否された通話も混乱です。何が起こらなかったかは、何が起こったかと同じくらい記録の一部である。",
       "text89faa819e995": "それが決して手に入らないのは、それを作成した人の手に届くことです。ここには、上に進むための継承のエッジはありません。",
       "text6a51a65a11f4": "セッションを開始するとブランチが切断され、そのために 1 台のマシンが起動されます。データベースでは、2 番目のセッションにそのマシンを使用させることはできません。",
-      "catalogExcludedNoActions": "{count, plural, other {{count} 個のアプリが一致しますが、エージェントが呼び出すことができるアクションは公開されていません。}}",
       "text08cadd4156a5": "サンドボックスは、モデルが何でも実行できる実際の Linux マシンです。したがって、その中の唯一の資格情報は、プロジェクトにスコープされた 1 つの Kortix トークンです。",
       "textc7d878b8738e": "アカウントのアクションは、メンバーシップ、ロール、ポリシー、トークン、グループなど、同じ場所に配置されます。",
       "text5b70d52b009e": "サードパーティ API は、通常の認証されたリクエストを認識します。答えはエージェントに返されます。資格情報は残ります。",
@@ -20552,61 +20560,6 @@
       "aboutDescription": "この説明について",
       "senderUnavailable": "送信アカウントを読み込めませんでした。差出人の行を確認してください。",
       "quoted": "「{text}」"
-    }
-  },
-  "projectOnboarding": {
-    "resetSuccess": "オンボーディングのリセット",
-    "back": "戻る",
-    "skip": "スキップ",
-    "skipForNow": "今のところスキップしてください",
-    "progress": "セットアップの進行状況",
-    "work": {
-      "title": "主にどんな仕事をしていますか？",
-      "description": "Kortix はこれをもとに最初のタスクを提案します。",
-      "ariaLabel": "仕事の分野",
-      "noteLabel": "ひとことで教えてください",
-      "notePlaceholder": "例：リサーチ、採用",
-      "continue": "続ける",
-      "options": {
-        "founder": "会社の経営",
-        "engineering": "エンジニアリング",
-        "product_design": "プロダクトとデザイン",
-        "sales": "営業",
-        "marketing": "マーケティング",
-        "finance_ops": "オペレーション",
-        "support": "サポートとカスタマーサクセス",
-        "other": "その他"
-      }
-    },
-    "apps": {
-      "title": "どのアプリを使っていますか？",
-      "description": "アプリをクリックすると接続できます。あとからいつでも追加できます。",
-      "ariaLabel": "アプリ",
-      "searchPlaceholder": "アプリまたはカテゴリを検索",
-      "clearSearch": "検索をクリア",
-      "connectApp": "{app} を接続",
-      "appConnected": "{app} は接続済みです",
-      "connectedCount": "{count} 件接続済み",
-      "noMatches": "「{query}」に一致するアプリはありません",
-      "notConfiguredTitle": "ここではアプリが設定されていません",
-      "notConfiguredDescription": "このデプロイにはアプリカタログがありません。コネクタは後で設定から追加できます。",
-      "continue": "続ける"
-    },
-    "plan": {
-      "title": "Kortix が使うモデルを選んでください",
-      "description": "設定からいつでも変更できます。",
-      "seePlans": "プランを見る",
-      "open": "ワークスペースを開く",
-      "addKey": "キーを追加",
-      "modelAccess": "モデルへのアクセス",
-      "useKortix": "Kortix のモデル",
-      "recommended": "おすすめ",
-      "useKortixDescription": "すぐに使えます。プランのクレジットを使います。",
-      "useKortixNeedsPlan": "Kortix のプランまたはクレジットが必要です。",
-      "bringKey": "自分の API キー",
-      "providerDescription": "Anthropic、OpenAI、その他のプロバイダー。",
-      "keyConnected": "キーが接続されています。",
-      "decideLater": "あとで決める"
     }
   },
   "commandPalette": {
@@ -22704,7 +22657,9 @@
     "mediaTooLarge": "このファイルは 16 MB を超えています。",
     "refresh": "再読み込み",
     "diagramEdit": "図を編集",
-    "diagramDone": "完了"
+    "diagramDone": "完了",
+    "codeLanguage": "コードの言語",
+    "editedAgo": "{time}に編集"
   },
   "emailConnect": {
     "homeTitle": "受信箱の場所",

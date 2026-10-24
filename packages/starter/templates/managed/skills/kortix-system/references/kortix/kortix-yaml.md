@@ -661,6 +661,18 @@ has the module contract and one checklist per task.
   unknown name, and warns when the key lists no Kortix tool or an agent's
   `tools` names a Kortix tool the project does not load.
 
+## kortix.yaml owns what it declares
+
+Every setting this file can declare is owned by it. The dashboard, the API,
+the SDK and the CLI commit their edits here (triggers, agents, skills,
+connectors including `auth.secret`, `default_agent`, `project.name`, and an
+App's `resources`, `idle_timeout_seconds`, `always_on`, `labels`, `display`,
+`uses`); a push that edits the file applies on the next sync, without a
+deploy. A sandbox template declared here can only be changed here (the API
+answers `409 template_declared_in_manifest`). So: to change a declared
+setting, edit kortix.yaml (or use the CLI/API, which commit to it) — never
+expect a database-only change to stick.
+
 ## `triggers:`
 
 A list. Each entry is a trigger: `on:` says what fires it, `run:` says what

@@ -1,6 +1,5 @@
 'use client';
 
-import { ConnectorLogo } from '../../internal/connector-logo/connector-logo';
 import { Slack } from '../../internal/icons/slack';
 import { useTranslations } from '../../i18n';
 import {
@@ -11,25 +10,21 @@ import {
   DotsThreeIcon,
   ArrowSquareOutIcon as ExternalLink,
   LockIcon as Lock,
-  EnvelopeIcon as Mail,
   PlugIcon as Plug,
   PlusIcon as Plus,
-  MagnifyingGlassIcon as Search,
   ShareNetworkIcon,
   UsersIcon as Users,
   UsersThreeIcon as UsersThree,
   XIcon as X,
-  LightningIcon as Zap,
 } from '@phosphor-icons/react';
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { UiImage as Image, useUiViewer, useUiHostConfig } from '../../providers/ui-provider';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useUiViewer } from '../../providers/ui-provider';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 import { HighlightedCode } from '../../markdown/code';
 import { Badge } from '../../primitives/badge';
 import { Button } from '../../primitives/button';
 import { ButtonGroup, ButtonGroupSeparator } from '../../primitives/button-group';
-import { Checkbox } from '../../primitives/checkbox';
 import { ConfirmDialog } from '../../primitives/confirm-dialog';
 import {
   DropdownMenu,
@@ -37,7 +32,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '../../primitives/dropdown-menu';
-import { EntityAvatar } from '../../primitives/entity-avatar';
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '../../primitives/field';
 import Hint from '../../primitives/hint';
 import { InfoBanner } from '../../primitives/info-banner';
@@ -72,7 +66,7 @@ import {
 } from '../../primitives/split-sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../primitives/tabs';
 import { Textarea } from '../../primitives/textarea';
-import { errorToast, successToast, warningToast } from '../../primitives/toast';
+import { errorToast, successToast } from '../../primitives/toast';
 import { EmptyState } from '../../primitives/empty-state';
 import { ComputerConnectModal, ComputerStateDot } from '../../internal/tunnel/computer-connect';
 import { mcpServerIdentity } from '../connectors/add-mcp/add-mcp-server';
@@ -80,19 +74,12 @@ import { connectorDisplayName } from '../connectors/connector-filter';
 import { isManagedConnectorProvider } from '../connectors/provider-label';
 import { AccessDialog } from '../../access/access/access-dialog';
 import {
-  type EmailInstallation,
-  type EmailSenderPolicy,
   type SlackInstallation,
-  useConnectEmail,
   useConnectSlack,
-  useDisconnectEmail,
   useDisconnectSlack,
-  useEmailInstall,
-  useEmailMode,
   useSlackInstall,
   useSlackManifest,
   useSlackMode,
-  useUpdateEmailPolicy,
 } from '../../internal/hooks/channels/use-channels-installations';
 import { emptyProjectSlot, useAddAccount } from '../../internal/hooks/connectors/use-add-account';
 import { useDeleteTunnelConnection } from '@kortix/sdk/react';
@@ -112,11 +99,9 @@ import {
   discoverConnectorAuth,
   ensureProjectConnectorConnection,
   getConnectorConfig,
-  getConnectStatus,
   getProjectDetail,
   listAllConnections,
   listConnections,
-  listPipedreamApps,
   listProjectAccess,
   type OAuth2DeviceAuthorizationStartResult,
   pollConnectionOAuth2DeviceAuthorization,
@@ -132,7 +117,6 @@ import {
 } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
 import { AddAccountFields } from './add-account-fields';
-import { EmailConnectForm } from './component/email-connect-form';
 import {
   type EmailInbox,
   useEmailInboxes,
@@ -144,16 +128,6 @@ import {
   EmailInboxHome,
   EmailSenderPolicyDialog,
 } from '../connectors/detail/email-inboxes';
-import {
-  buildEasyConnectConnectorDraft,
-  buildEmailConnectorConnectionSlug,
-  connectorSyncErrorForSlug,
-  createOnlyConnectorDraft,
-  type EasyConnectApp,
-  type EasyConnectConnectionInput,
-  proposeConnectorConnectionSlug,
-} from './connector-connection-form';
-import { ConnectorConnectionModal } from './connector-connection-modal';
 import { credentialWriteTarget, oauth2DiscoveryConnectionKey } from './connector-credential-target';
 import {
   buildOAuth2ApplicationInput,
@@ -170,7 +144,6 @@ import { OAuth2ApplicationFields } from './connector-oauth2-application-fields';
 import { autoConnectPlan, mergeResourceDiscoveryIntoForm } from './connector-oauth2-auto';
 import { OAuth2CredentialFields } from './connector-oauth2-fields';
 import { startOAuth2SignIn } from './connector-oauth2-start';
-import { DiscoverCatalogue } from './discover-catalogue';
 import { useAddRequest } from './use-add-request';
 import { useCreateCustomConnector } from './use-create-custom-connector';
 import { AudienceText } from './view/audience-badge';
@@ -182,9 +155,6 @@ import {
   newAccountLabelTaken,
   newAccountReady,
 } from './view/connector-connections';
-import { randomUUID } from '../../internal/lib/utils/random-uuid';
-
-const BUILT_IN_CHANNEL_APP_SLUGS = new Set(['slack', 'slack_v2']);
 
 function SaveBar({
   dirty,
@@ -1676,128 +1646,6 @@ export function ConnectionSection({
   );
 }
 
-export function AddAppPanel({
-  projectId,
-  discoverEnabled,
-  existingSlugs,
-  onAdded,
-  canWrite = false,
-}: {
-  projectId: string;
-  discoverEnabled: boolean;
-  existingSlugs: readonly string[];
-  onAdded: (slug?: string) => void;
-  canWrite?: boolean;
-}) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  // Self-host without Pipedream configured (KORTIX_PUBLIC_CONNECTORS_ENABLED
-  // false) — hide Easy Connect while leaving Discover/direct sources available.
-  const { connectorsEnabled } = useUiHostConfig();
-  const connectStatus = useQuery({
-    queryKey: ['connect-status'],
-    queryFn: getConnectStatus,
-    staleTime: 5 * 60_000,
-    enabled: connectorsEnabled,
-  });
-  if (!canWrite) {
-    return (
-      <div className="mx-auto w-full max-w-2xl space-y-8">
-        <EmptyState
-          icon={Plug}
-          title={tI18nHardcoded.raw('i18nComplete.text51ae0a7e3783')}
-          description={tI18nHardcoded.raw('i18nComplete.text0bf59aef2b27')}
-        />
-      </div>
-    );
-  }
-  const easyConnectHidden = !connectorsEnabled;
-  const easyConnectDisabled = easyConnectHidden || connectStatus.data?.configured === false;
-  const easyConnectLabel = tI18nHardcoded.raw(
-    'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnect19ca1c01',
-  );
-  const defaultTab = !easyConnectDisabled ? 'apps' : discoverEnabled ? 'discover' : 'channels';
-  return (
-    <div className="mx-auto w-full max-w-4xl space-y-6 p-4">
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-foreground text-xl font-medium">
-          {tI18nHardcoded.raw('i18nComplete.text3a06bf051e48')}
-        </h2>
-      </header>
-      <Tabs defaultValue={defaultTab}>
-        <TabsList type="underline">
-          {easyConnectHidden ? null : easyConnectDisabled ? (
-            <Hint
-              label={tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnectc07266e0',
-              )}
-            >
-              <TabsTrigger value="apps" disabled>
-                {easyConnectLabel}
-              </TabsTrigger>
-            </Hint>
-          ) : (
-            <TabsTrigger value="apps">{easyConnectLabel}</TabsTrigger>
-          )}
-          {discoverEnabled && (
-            <TabsTrigger value="discover">
-              {tI18nHardcoded.raw('i18nComplete.textd4a33d5b78bc')}
-            </TabsTrigger>
-          )}
-          <TabsTrigger value="channels">
-            {tI18nHardcoded.raw('i18nComplete.text4c8906cf76f5')}
-          </TabsTrigger>
-          <TabsTrigger value="custom">
-            {tI18nHardcoded.raw('i18nComplete.text494ca78f7374')}
-          </TabsTrigger>
-        </TabsList>
-        {!easyConnectDisabled && (
-          <TabsContent value="apps" className="mt-4">
-            <AppCatalogue projectId={projectId} existingSlugs={existingSlugs} onAdded={onAdded} />
-          </TabsContent>
-        )}
-        {discoverEnabled && (
-          <TabsContent value="discover" className="mt-4">
-            <DiscoverCatalogue
-              projectId={projectId}
-              existingSlugs={existingSlugs}
-              onAdded={onAdded}
-            />
-          </TabsContent>
-        )}
-        <TabsContent value="channels" className="mt-4">
-          <ChannelCatalogue
-            projectId={projectId}
-            onAdded={onAdded}
-          />
-        </TabsContent>
-        <TabsContent value="custom" className="mt-4">
-          <CustomConnectorForm
-            projectId={projectId}
-            onAdded={onAdded}
-          />
-        </TabsContent>
-      </Tabs>
-    </div>
-  );
-}
-
-function ChannelCatalogue({
-  projectId,
-  onAdded,
-}: {
-  projectId: string;
-  onAdded: (slug?: string) => void;
-}) {
-  // Email is experimental behind `email_channel`: off, it is not offered.
-  const emailChannelEnabled = useFeatureFlag(projectId, 'email_channel').enabled;
-  return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {emailChannelEnabled ? <AddEmailConnectionCard projectId={projectId} onAdded={onAdded} /> : null}
-      <AddSlackConnectionCard projectId={projectId} onAdded={onAdded} />
-    </div>
-  );
-}
-
 /**
  * The real Slack logo — the single Slack mark used everywhere across the
  * connectors + channels surface (catalogue cards, channel cards, connect flow),
@@ -1808,284 +1656,6 @@ function ChannelCatalogue({
  */
 export function SlackLogo({ className }: { className?: string }) {
   return <Slack className={cn('size-4 shrink-0', className)} />;
-}
-
-function SlackIconTile() {
-  return <ConnectorLogo source={{ nativeApp: 'slack' }} size="sm" />;
-}
-
-const CHANNEL_CATALOGUE_CARD_CLASS =
-  'group bg-popover hover:bg-muted/80 focus-visible:ring-primary/50 flex flex-col rounded-md border p-3.5 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none';
-
-function AddEmailConnectionCard({
-  projectId,
-  onAdded,
-}: {
-  projectId: string;
-  onAdded: (slug?: string) => void;
-}) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const [open, setOpen] = useState(false);
-  // Every inbox is an account on the one `kortix_email` profile: the card adds one.
-  const inboxes = useEmailInboxes(projectId);
-  return (
-    <>
-      <button type="button" onClick={() => setOpen(true)} className={CHANNEL_CATALOGUE_CARD_CLASS}>
-        <div className="flex items-center gap-3">
-          <EntityAvatar icon={Mail} size="sm" />
-          <div className="min-w-0 flex-1">
-            <div className="text-foreground truncate text-sm font-medium">
-              {tI18nComplete.raw('textf00606184e4d')}
-            </div>
-            <div className="text-muted-foreground truncate text-xs">
-              {tI18nComplete.raw('text2283269ca150')}
-            </div>
-          </div>
-        </div>
-        <p className="text-muted-foreground mt-2 line-clamp-2 min-h-[2rem] text-xs leading-relaxed">
-          {tI18nComplete.raw('text6ae82b1545c9')}
-        </p>
-      </button>
-      <AddEmailInboxDialog
-        projectId={projectId}
-        open={open}
-        onOpenChange={setOpen}
-        existing={(inboxes.data ?? []).map((inbox) => ({ label: inbox.label, owner_type: inbox.owner_type }))}
-        onAdded={() => onAdded(EMAIL_CONNECTOR_SLUG)}
-      />
-    </>
-  );
-}
-
-function AddSlackConnectionCard({
-  projectId,
-  onAdded,
-}: {
-  projectId: string;
-  onAdded: (slug?: string) => void;
-}) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const [open, setOpen] = useState(false);
-  const handleConnected = () => {
-    successToast(tI18nComplete.raw('text1bfa15228ca8'));
-    setOpen(false);
-    onAdded('kortix_slack');
-  };
-
-  return (
-    <>
-      <button type="button" onClick={() => setOpen(true)} className={CHANNEL_CATALOGUE_CARD_CLASS}>
-        <div className="flex items-center gap-3">
-          <SlackIconTile />
-          <div className="min-w-0 flex-1">
-            <div className="text-foreground truncate text-sm font-medium">
-              {tI18nComplete.raw('textb27fb38ba323')}
-            </div>
-            <div className="text-muted-foreground truncate text-xs">
-              {tI18nComplete.raw('textbbbf43b8819c')}
-            </div>
-          </div>
-        </div>
-        <p className="text-muted-foreground mt-2 line-clamp-2 min-h-[2rem] text-xs leading-relaxed">
-          {tI18nComplete.raw('text43b4b568012f')}
-        </p>
-      </button>
-      <Modal open={open} onOpenChange={setOpen}>
-        <ModalContent className="lg:max-w-2xl">
-          <ModalHeader>
-            <ModalTitle>{tI18nComplete.raw('text62da6a2b1758')}</ModalTitle>
-            <ModalDescription>{tI18nComplete.raw('text8b5b9b72f2ec')}</ModalDescription>
-          </ModalHeader>
-          <ModalBody className="max-h-[60vh] overflow-y-auto">
-            <SlackConnectForm projectId={projectId} onConnected={handleConnected} />
-          </ModalBody>
-        </ModalContent>
-      </Modal>
-    </>
-  );
-}
-
-/** Easy-connect app catalogue — searchable card grid with "Load more". */
-function AppCatalogue({
-  projectId,
-  existingSlugs,
-  onAdded,
-}: {
-  projectId: string;
-  existingSlugs: readonly string[];
-  onAdded: (slug?: string) => void;
-}) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const [q, setQ] = useState('');
-  const [selectedApp, setSelectedApp] = useState<EasyConnectApp | null>(null);
-  const appsQuery = useInfiniteQuery({
-    queryKey: ['easy-connect-apps', projectId, q],
-    queryFn: ({ pageParam }) =>
-      listPipedreamApps(projectId, q || undefined, pageParam as string | undefined),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last) => (last.hasMore ? last.nextCursor : undefined),
-    staleTime: 60_000,
-  });
-  const apps = (appsQuery.data?.pages ?? []).flatMap((p) => p.apps);
-  const visibleApps = apps.filter((app) => !BUILT_IN_CHANNEL_APP_SLUGS.has(app.slug));
-  const notConfigured =
-    appsQuery.isError && /501|not configured/i.test((appsQuery.error as Error)?.message ?? '');
-  const addApp = useMutation({
-    mutationFn: async (connector: EasyConnectConnectionInput) => {
-      if (!selectedApp) throw new Error('Select an app');
-      const draft = buildEasyConnectConnectorDraft(selectedApp, connector);
-      const result = await createConnector(projectId, draft);
-      return {
-        name: draft.name ?? selectedApp.name,
-        slug: draft.slug,
-        syncError: connectorSyncErrorForSlug(result, draft.slug),
-      };
-    },
-    onSuccess: (connector) => {
-      setSelectedApp(null);
-      if (connector.syncError) {
-        warningToast(
-          tI18nHardcoded('i18nComplete.textd6a135de3872', {
-            value0: connector.name,
-            value1: connector.syncError,
-          }),
-        );
-        onAdded();
-        return;
-      }
-      successToast(tI18nHardcoded('i18nComplete.text590d36262e11', { value0: connector.name }));
-      onAdded(connector.slug);
-    },
-    onError: (err: Error) =>
-      errorToast(err.message || tI18nHardcoded.raw('i18nComplete.texta34a2714da91')),
-  });
-
-  return (
-    <div>
-      <div className="relative">
-        <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
-        <Input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder={tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrPlaceholderSearch9d26aaaa',
-          )}
-          variant="popover"
-          className="pl-9"
-        />
-      </div>
-      <div className="overflow-y-auto py-4">
-        {notConfigured ? (
-          <InfoBanner
-            tone="neutral"
-            title={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleEasy58e9c7b1',
-            )}
-          >
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnectc07266e0',
-            )}
-          </InfoBanner>
-        ) : appsQuery.isLoading ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {Array.from({ length: 12 }).map((_, i) => (
-              <Skeleton key={i} className="h-[104px] w-full rounded-md" />
-            ))}
-          </div>
-        ) : visibleApps.length === 0 ? (
-          <EmptyState
-            icon={Search}
-            title={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleNof8067eda',
-            )}
-            description={
-              q
-                ? tI18nHardcoded('i18nComplete.text3e71adfa7d54', { value0: q })
-                : tI18nHardcoded.raw('i18nComplete.textecbd276ebec2')
-            }
-          />
-        ) : (
-          <>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-              {visibleApps.map((app) => (
-                <button
-                  key={app.slug}
-                  type="button"
-                  disabled={addApp.isPending}
-                  onClick={() => setSelectedApp(app)}
-                  className="group bg-popover hover:bg-muted/80 focus-visible:ring-primary/50 flex flex-col rounded-md border p-3.5 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:opacity-60"
-                >
-                  <div className="flex items-center gap-3">
-                    {app.imgSrc ? (
-                      <Image
-                        src={app.imgSrc}
-                        alt=""
-                        width={36}
-                        height={36}
-                        className="size-8 shrink-0 rounded-md object-contain"
-                        referrerPolicy="no-referrer"
-                        unoptimized
-                      />
-                    ) : (
-                      <EntityAvatar icon={Zap} size="sm" />
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <div className="text-foreground truncate text-sm font-medium">{app.name}</div>
-                      {app.categories?.[0] && (
-                        <div className="text-muted-foreground truncate text-xs">
-                          {app.categories[0]}
-                        </div>
-                      )}
-                    </div>
-                    <Plus className="text-muted-foreground group-hover:text-primary size-4 shrink-0 transition-colors" />
-                  </div>
-                  <p className="text-muted-foreground mt-2 line-clamp-2 min-h-[2rem] text-xs leading-relaxed">
-                    {app.description ?? ' '}
-                  </p>
-                </button>
-              ))}
-            </div>
-            {appsQuery.hasNextPage && (
-              <div className="flex justify-center pt-5">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => appsQuery.fetchNextPage()}
-                  disabled={appsQuery.isFetchingNextPage}
-                  className="h-9 px-8"
-                >
-                  {appsQuery.isFetchingNextPage ? (
-                    <>
-                      <Loading className="size-4 shrink-0" />
-                      {tI18nHardcoded.raw(
-                        'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextLoading7131cc18',
-                      )}
-                    </>
-                  ) : (
-                    tI18nHardcoded.raw('i18nComplete.textac8991ef0101')
-                  )}
-                </Button>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-      <ConnectorConnectionModal
-        open={selectedApp !== null}
-        idPrefix="easy-connect-connector"
-        title={`Add ${selectedApp?.name ?? 'app'}`}
-        description={tI18nHardcoded.raw('i18nComplete.text6acbef3d00c7')}
-        initialName={selectedApp?.name ?? ''}
-        initialSlug={
-          selectedApp ? proposeConnectorConnectionSlug(selectedApp.name, existingSlugs) : ''
-        }
-        existingSlugs={existingSlugs}
-        pending={addApp.isPending}
-        onOpenChange={(open) => !open && setSelectedApp(null)}
-        onSubmit={(connector) => addApp.mutate(connector)}
-      />
-    </div>
-  );
 }
 
 /**
