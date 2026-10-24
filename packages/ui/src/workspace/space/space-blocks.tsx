@@ -1,6 +1,9 @@
 'use client';
 
+import type { ReactNode } from 'react';
+
 import type { SpaceBlock } from '@kortix/sdk';
+import { useAppAccess, useProjectApps } from '@kortix/sdk/react';
 import {
   AppWindowIcon,
   ChatCircleIcon,
@@ -9,7 +12,10 @@ import {
   TextAaIcon,
 } from '@phosphor-icons/react';
 
+import { AppPreview } from '../../apps/app-preview';
+import { appCan } from '../../apps/app-shared';
 import { UnifiedMarkdown } from '../../markdown';
+import Loading from '../../primitives/loading';
 import { useFilePreviewStore } from '../../internal/stores/file-preview-store';
 import { cn } from '../../lib/utils';
 
@@ -24,9 +30,14 @@ import { cn } from '../../lib/utils';
  * overwhelming").
  *
  * Every embed degrades gracefully: a block with its payload missing (an iframe
- * with no `url`, an artifact with no `path`) renders a muted "nothing here yet"
- * line rather than an empty frame or a crash, because the config is authored by
- * an agent mid-edit as often as a finished one.
+ * with no `url`, an artifact with no `path`, an `app` slug that resolves to no
+ * App) renders a muted "nothing here yet" line rather than an empty frame or a
+ * crash, because the config is authored by an agent mid-edit as often as a
+ * finished one.
+ *
+ * Block renderers: `text` is markdown, `iframe` a sandboxed frame, `artifact`
+ * opens the Files viewer, `app` the live pooled `AppPreview` for the resolved
+ * slug. `chat` is an intentional placeholder — see `ChatPlaceholder`.
  */
 export function SpaceBlocks({
   projectId,
@@ -63,7 +74,7 @@ const TYPE_FALLBACK_LABEL = {
 
 const PANEL = 'bg-popover flex min-w-0 flex-col overflow-hidden rounded-md border';
 
-function SpaceBlockCard({ block }: { projectId: string; block: SpaceBlock }) {
+function SpaceBlockCard({ projectId, block }: { projectId: string; block: SpaceBlock }) {
   const openPreview = useFilePreviewStore((state) => state.openPreview);
   const Icon = TYPE_ICON[block.type];
   const label = block.label?.trim() || TYPE_FALLBACK_LABEL[block.type];
@@ -94,7 +105,7 @@ function SpaceBlockCard({ block }: { projectId: string; block: SpaceBlock }) {
       <div className="flex items-center gap-2 px-4 py-2.5">
         <BlockTitle icon={Icon} label={label} />
       </div>
-      <BlockBody block={block} />
+      <BlockBody projectId={projectId} block={block} />
     </div>
   );
 }
@@ -114,7 +125,7 @@ function BlockTitle({
   );
 }
 
-function BlockBody({ block }: { block: SpaceBlock }) {
+function BlockBody({ projectId, block }: { projectId: string; block: SpaceBlock }) {
   switch (block.type) {
     case 'text':
       return block.text?.trim() ? (
@@ -137,37 +148,84 @@ function BlockBody({ block }: { block: SpaceBlock }) {
         <EmptyLine>No URL yet.</EmptyLine>
       );
 
-    // `app` and `chat` are v1 placeholders. The App frame (signed URL + frame
-    // pool) and the shared-session chat are later increments; here they name
-    // what the Space points at so the layout is legible before they are wired.
     case 'app':
       return block.app ? (
-        <Identifier>{block.app}</Identifier>
+        <SpaceAppBlock projectId={projectId} slug={block.app} />
       ) : (
         <EmptyLine>No app selected yet.</EmptyLine>
       );
 
+    // `chat` is an intentional v1 placeholder: a Space's `room` is a logical
+    // channel key, and the backend has no resolver that turns one into a
+    // durable shared `session_id` (and no SessionThread without one). Rather
+    // than fake a chat or provision a sandbox on render, name the channel and
+    // say what it will hold. Wire the real thread when the resolver lands.
     case 'chat':
-      return block.room ? (
-        <Identifier>{block.room}</Identifier>
-      ) : (
-        <EmptyLine>A shared chat for this space.</EmptyLine>
-      );
+      return <ChatPlaceholder room={block.room} />;
 
     default:
       return null;
   }
 }
 
-function Identifier({ children }: { children: string }) {
+/**
+ * The live App preview for an `app` block. Resolves the block's slug against
+ * the project's App inventory, mints a short-lived access session for an App
+ * the viewer may open, and renders the same pooled `AppPreview` thumbnail the
+ * Apps page and the session browser use. Every not-ready state degrades to a
+ * muted line or `AppPreview`'s own notice — it never crashes a Space.
+ */
+function SpaceAppBlock({ projectId, slug }: { projectId: string; slug: string }) {
+  const apps = useProjectApps(projectId);
+  const app = apps.data?.find((a) => a.slug === slug);
+  // A card thumbnail only needs the SESSION, and only for an App that is live
+  // and the viewer may open — matching the Apps grid, which fires neither the
+  // policy read nor the access-session mint for an App it only lists.
+  const live =
+    !!app && !!app.active_deployment_id && appCan(app, 'preview') && app.viewer_can_access !== false;
+  const access = useAppAccess(projectId, live && app ? app.app_id : null, {
+    policy: false,
+    session: live,
+  });
+
+  if (apps.isLoading) {
+    return (
+      <EmptyLine>
+        <span className="flex items-center gap-2">
+          <Loading className="size-4 shrink-0" />
+          Loading app…
+        </span>
+      </EmptyLine>
+    );
+  }
+  if (!app) return <EmptyLine>App &ldquo;{slug}&rdquo; is not in this project.</EmptyLine>;
+
   return (
-    <div className="border-border border-t px-4 py-3">
-      <span className="text-muted-foreground font-mono text-xs break-all">{children}</span>
+    <div className="border-border border-t">
+      <AppPreview
+        app={app}
+        url={access.session.data?.url ?? null}
+        accessError={access.session.isError}
+        interactive={false}
+      />
     </div>
   );
 }
 
-function EmptyLine({ children }: { children: string }) {
+/** The labelled placeholder a `chat` block renders until the shared-session
+ *  resolver exists. Names the channel; never looks broken or empty. */
+function ChatPlaceholder({ room }: { room?: string }) {
+  return (
+    <div className="border-border flex flex-col gap-1.5 border-t px-4 py-3">
+      {room ? (
+        <span className="text-muted-foreground font-mono text-xs break-all">#{room}</span>
+      ) : null}
+      <span className="text-muted-foreground text-xs">A shared chat for this space.</span>
+    </div>
+  );
+}
+
+function EmptyLine({ children }: { children: ReactNode }) {
   return (
     <div className="border-border border-t px-4 py-3">
       <span className="text-muted-foreground text-xs">{children}</span>
