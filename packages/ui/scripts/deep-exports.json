@@ -219,6 +219,7 @@
     "./internal/stores/session-browser-store",
     "./internal/stores/session-switch-store",
     "./internal/stores/settings-panel-store",
+    "./internal/stores/sidebar-nav-store",
     "./internal/stores/sound-store",
     "./internal/stores/subscription-store",
     "./internal/stores/tab-store",

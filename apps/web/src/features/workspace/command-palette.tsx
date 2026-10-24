@@ -114,6 +114,7 @@ import { track } from '@/lib/track';
 import { useProjectFeatureFlags } from '@kortix/ui/internal/lib/use-project-feature-flags';
 import { cn } from '@kortix/ui';
 import { DEFAULT_WALLPAPER_ID } from '@kortix/ui/theme';
+import { openCustomizeSidebar } from '@kortix/ui/internal/stores/sidebar-nav-store';
 import { hubTarget, openAccountPanel } from '@kortix/ui/internal/stores/account-panel-store';
 import { useChatSendStore } from '@kortix/ui/internal/stores/chat-send-store';
 import { firstChatHref, useFirstChatPending } from '@kortix/ui/internal/stores/first-chat-store';
@@ -1847,6 +1848,11 @@ export function CommandPalette() {
     close();
   }, [sidebarCtx, close]);
 
+  const handleCustomizeSidebar = useCallback(() => {
+    close();
+    openCustomizeSidebar();
+  }, [close]);
+
   const handleTogglePanelMode = useCallback(() => {
     close();
     const nextMode = panelMode === 'easy' ? 'advanced' : 'easy';
@@ -2177,6 +2183,7 @@ export function CommandPalette() {
       // the action branch runs — same arrangement as `conversationDensity`.
       reviewChanges: handleReviewChanges,
       toggleSidebar: handleToggleSidebar,
+      customizeSidebar: handleCustomizeSidebar,
       togglePanelMode: handleTogglePanelMode,
       // Fallback only: SUBMENU_PAGE_BY_ID intercepts `activity-density`
       // before the action branch runs. If that map entry is ever removed, the
@@ -2201,6 +2208,7 @@ export function CommandPalette() {
       handleOpenProjectMembers,
       handleReviewChanges,
       handleToggleSidebar,
+      handleCustomizeSidebar,
       handleTogglePanelMode,
       goToPage,
       handleOpenSessionTerminal,

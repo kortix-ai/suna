@@ -363,6 +363,7 @@
     "./internal/stores/session-browser-store": "./src/internal/stores/session-browser-store.ts",
     "./internal/stores/session-switch-store": "./src/internal/stores/session-switch-store.ts",
     "./internal/stores/settings-panel-store": "./src/internal/stores/settings-panel-store.ts",
+    "./internal/stores/sidebar-nav-store": "./src/internal/stores/sidebar-nav-store.ts",
     "./internal/stores/sound-store": "./src/internal/stores/sound-store.ts",
     "./internal/stores/subscription-store": "./src/internal/stores/subscription-store.tsx",
     "./internal/stores/tab-store": "./src/internal/stores/tab-store.ts",
@@ -1914,6 +1915,10 @@
       "./internal/stores/settings-panel-store": {
         "types": "./dist/internal/stores/settings-panel-store.d.ts",
         "import": "./dist/internal/stores/settings-panel-store.js"
+      },
+      "./internal/stores/sidebar-nav-store": {
+        "types": "./dist/internal/stores/sidebar-nav-store.d.ts",
+        "import": "./dist/internal/stores/sidebar-nav-store.js"
       },
       "./internal/stores/sound-store": {
         "types": "./dist/internal/stores/sound-store.d.ts",
