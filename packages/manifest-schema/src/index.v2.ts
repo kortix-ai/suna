@@ -218,10 +218,9 @@ export interface AgentBlockV2 {
    *  Writers always set it; readers fall back to the conventional paths when
    *  it is omitted. */
   file?: string;
-  /** Dashboard classification group (a slug matching a top-level `domains`
-   *  key, or a bare name). Display-only: no behavior, no grants. Agents with
-   *  no domain fall into a default group in the consumer. */
-  domain?: string;
+  /** The space the agent works in (a `spaces` key, or a bare slug).
+   *  Grouping only: no behavior, no grants. */
+  space?: string;
   /** Kortix governance: can this agent start a session at all? Default true
    *  when omitted. Compiles to the runtime's `disable` field (inverted,
    *  and only ever forces it ON — a hand-authored `disable: true` in the

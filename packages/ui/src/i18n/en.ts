@@ -7440,18 +7440,123 @@ const catalog = {
     "stopNote": "The link will stop working."
   },
   "spaces": {
-    "inThisSpace": "In this space",
-    "goals": "Goals",
-    "apps": "Apps",
-    "artifacts": "Artifacts",
+    "tabs": {
+      "room": "Room",
+      "goals": "Goals",
+      "apps": "Apps",
+      "artifacts": "Artifacts",
+      "files": "Files",
+      "board": "Board",
+      "app": "App",
+      "artifact": "Artifact",
+      "link": "Link"
+    },
+    "addTab": "Add a tab",
+    "gone": {
+      "title": "This space is gone",
+      "hint": "Someone removed it from kortix.yaml, or the link is wrong.",
+      "back": "Back to the project"
+    },
     "viewAll": "View all",
+    "loadError": "Could not load this tab",
+    "retry": "Try again",
+    "empty": {
+      "goals": "Goals bound to this space will show up here",
+      "apps": "Apps bound to this space will show up here",
+      "artifacts": "Artifacts bound to this space will show up here",
+      "folder": "This folder is empty",
+      "board": "Blocks on this board will show up here",
+      "boardHint": "Ask My Kortix to add a block: a note, an App, a file, an embedded page or another room."
+    },
     "doc": "Doc",
     "page": "Page",
+    "missing": {
+      "app": "The App “{slug}” is not in this project",
+      "artifact": "This artifact is gone, or it is not shared with you"
+    },
+    "openArtifact": "Open artifact",
+    "openLink": "Open {host}",
+    "tabAdded": "Tab added",
+    "tabsSaved": "Tabs saved",
+    "saveError": "Could not save the tabs",
+    "menu": {
+      "view": "View",
+      "folder": "Folder…",
+      "app": "App",
+      "noApps": "No Apps in this project",
+      "artifact": "Artifact",
+      "noArtifacts": "No artifacts yet",
+      "link": "Link…",
+      "board": "Board",
+      "editTabs": "Edit tabs…"
+    },
+    "add": {
+      "linkTitle": "Add a link",
+      "linkHint": "A page people in this space open often.",
+      "folderTitle": "Add a folder",
+      "folderHint": "A folder of the project files, by its path.",
+      "url": "URL",
+      "path": "Folder path",
+      "label": "Tab name",
+      "embed": "Show the page inside the tab",
+      "submit": "Add tab"
+    },
+    "cancel": "Cancel",
+    "edit": {
+      "title": "Edit tabs",
+      "description": "The room stays first. Saving commits the tabs to kortix.yaml on the default branch.",
+      "empty": "Only the room. Add a tab with +.",
+      "save": "Save tabs",
+      "rename": "Rename {name}",
+      "moveUp": "Move {name} up",
+      "moveDown": "Move {name} down",
+      "remove": "Remove {name}"
+    },
+    "nav": {
+      "title": "Spaces",
+      "new": "New space",
+      "unread": "{count, plural, one {# unread message} other {# unread messages}}"
+    },
+    "create": {
+      "title": "New space",
+      "description": "A space is a room for one area of work, with the tabs you pick. It is saved in kortix.yaml.",
+      "name": "Name",
+      "namePlaceholder": "e.g. Sales",
+      "taken": "A space #{slug} exists already.",
+      "about": "Description",
+      "aboutPlaceholder": "What this space is for",
+      "template": "Starting tabs",
+      "submit": "Create space",
+      "created": "Space created",
+      "error": "Could not create the space"
+    },
+    "templates": {
+      "standard": {
+        "label": "Room, Goals, Apps and Artifacts",
+        "description": "The room, then what is bound to the space."
+      },
+      "room": {
+        "label": "Room only",
+        "description": "One conversation. Add tabs later."
+      },
+      "board": {
+        "label": "Room and a board",
+        "description": "A board for the brief and the links, then Goals."
+      }
+    },
+    "leave": "Leave {name}",
     "openRooms": "Open rooms",
     "roomHint": "Agents and people post updates here.",
     "noRoom": "No room yet.",
     "agents": "Agents in this space",
     "openAgent": "Open {name}",
+    "members": "{count, plural, one {# person} other {# people}}",
+    "needsYou": "need you",
+    "newSession": "New session",
+    "askMyKortix": "Ask My Kortix",
+    "askPrompt": "I want to change the {name} space (`spaces.{slug}` in kortix.yaml): its tabs, its header or the agents in it. Ask me what to change.",
+    "roomsOff": "Rooms are off for this project",
+    "roomsOffHint": "Turn on Rooms in the project settings to talk with people and agents here.",
     "filter": "Filter by space",
     "all": "All",
     "projectWide": "Project-wide"

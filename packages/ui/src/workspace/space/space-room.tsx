@@ -5,31 +5,33 @@ import { HashIcon } from '@phosphor-icons/react';
 
 import { useTranslations } from '../../i18n';
 import { uiRoutes } from '../../lib/routes';
-import { useUiComponents, useUiLink } from '../../providers/ui-provider';
+import { UiLink as Link, useUiComponents } from '../../providers/ui-provider';
 
 /**
  * A room inside a space: the space's own room (the project room named like
- * the space's slug) or the room a `chat` block names. The host renders the
- * conversation through `UiHostComponents.RoomPanel`; a host without it links
- * to its rooms page. Nothing here creates a room: the first post does. With
- * the `agent_rooms` flag off the space home leads with its content, so this
- * renders nothing.
+ * the space's slug, the space page's first tab) or the room a board `chat`
+ * block names. The host renders the conversation through
+ * `UiHostComponents.RoomPanel`; a host without it links to its rooms page.
+ * Nothing here creates a room: the first post does. With the `agent_rooms`
+ * flag off it renders nothing.
  */
 export function SpaceRoom({
   projectId,
   roomName,
   topic,
+  fill = false,
   className,
 }: {
   projectId: string;
   roomName: string;
   /** The topic a room gets when the first post creates it. */
   topic?: string | null;
+  /** Fill the container with no frame and no header: the space page's room tab. */
+  fill?: boolean;
   className?: string;
 }) {
   const { RoomPanel } = useUiComponents();
   const rooms = useFeatureFlag(projectId, 'agent_rooms');
-  const Link = useUiLink();
   const t = useTranslations('spaces');
   const roomsHref = uiRoutes().rooms(projectId);
 
@@ -37,7 +39,7 @@ export function SpaceRoom({
   if (RoomPanel) {
     return (
       <div className={className}>
-        <RoomPanel projectId={projectId} roomName={roomName} emptyTopic={topic ?? undefined} />
+        <RoomPanel projectId={projectId} roomName={roomName} emptyTopic={topic ?? undefined} fill={fill} />
       </div>
     );
   }

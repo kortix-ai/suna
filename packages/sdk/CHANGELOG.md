@@ -5,6 +5,14 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (spaces)
+- Spaces are channels: `kortix.yaml` `spaces.<slug>` (label, description, order, `header`, `tabs`) and
+  `agents.<name>.space`. `ProjectConfigSummary.spaces`, each agent's `space`, and `AgentConfigBlock.space`.
+- Types `ProjectSpace`, `SpaceTab`, `SpaceTabType`, `SpaceBlock`, `SpaceHeaderItem`, `SpaceGroup` and
+  `ResourceBinding`; helpers `listSpaces`, `groupBySpace`, `bindingSpace`, `agentsInSpace`, `spaceTabs`,
+  `spaceTabKey`, `spaceHeader`, and the constants `PROJECT_WIDE_SPACE`, `DEFAULT_SPACE_TABS`,
+  `DEFAULT_SPACE_HEADER`.
+
 ### Added (cloud subagents flag)
 - `FeatureFlagKey` `'cloud_subagents'`, listed in `FEATURE_FLAG_KEYS`: on, the pi `agent` tool runs each
   subagent as a real child session on its own sandbox. Off by default.

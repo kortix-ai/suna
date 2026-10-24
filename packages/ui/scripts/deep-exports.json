@@ -333,6 +333,7 @@
     "./workspace/sidebar/session-section-labels",
     "./workspace/sidebar/session-source-icons",
     "./workspace/sidebar/workspace-grouping",
-    "./workspace/sidebar/workspace-menu-section"
+    "./workspace/sidebar/workspace-menu-section",
+    "./workspace/space/space-page"
   ]
 }

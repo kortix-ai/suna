@@ -120,6 +120,7 @@ A v3 agent block also takes `variant`, `temperature`, `top_p`, `steps`, `color`,
 | `policy.default_mode` | string | `allow_all` | `allow_all` or `risk`. See [policy and policies](#policy-and-policies). |
 | `policies` | list | none | Project-wide connector rules. |
 | `approvals.ttl` | string | `24h` | How long a held connector call waits for a decision. See [policy and policies](#policy-and-policies). |
+| `spaces` | map | none | v3 only. Space slug to its label, description, header and tabs. See [spaces (v3)](#spaces-v3). |
 
 A v2 or v3 manifest rejects `channels`, `sandboxes`, and the image keys `image`, `dockerfile`, `slug`, `cpu`, `memory`, `disk`, `entrypoint`, `context`, `context_dir` and `gpu` set directly on `sandbox`.
 
@@ -180,6 +181,7 @@ An agent name matches `[a-z0-9][a-z0-9_-]{0,127}`.
 | `kortix_permissions` | none | Grant set of project permissions. Capped by the agent's ceiling role, never by the role of the person who starts the session. See [What an agent may do](/docs/project/agents#what-an-agent-may-do). |
 | `tools` | all | `all`, `none`, a list of tool names, or `{ exclude: [names] }`. The map form `{ bash: false }` also works. |
 | `sandbox` | project default | A sandbox template slug, or `default`. |
+| `space` | none | v3 only. The space the agent works in: a key of `spaces`, or a bare slug. Grouping only, never a grant. |
 | `workspace.project_repository` | v2 `true`, v3 `false` | Boolean. `true`: new sessions of this agent check out the project repository. `false`: no project repository in `/workspace` and no repository access. See [Workspace](#agent-workspace). |
 | `harnesses` | none | Per-agent `pi.packages`, `pi.exclude`, `opencode.plugins`, `opencode.exclude`. |
 | `network_egress` | none | Declaration only. Accepts `{ version: 1, default: deny, rules: [] }` and warns that egress is not enforced. |
@@ -411,6 +413,55 @@ A trigger or connector entry is identified by its `slug`, and an App by its key 
 **`apps`.** Full reference: [Configure in kortix.yaml](/docs/apps#configure-in-kortixyaml).
 
 `apps` maps an App slug to its configuration. The keys are `path`, `type` (`static`, `bundle`, `dockerfile`, `oci_image`), `image`, `dockerfile`, `command`, `port`, `root`, `output_dir`, `install_command`, `build_command`, `spa`, `readiness_path`, `idle_timeout_seconds`, `always_on`, `uses`, `resources`, `env`, `secrets`, `processes`, `http_service`, `services`, `mounts`, `vm`, `deploy` and `labels`. Any other key is an error.
+
+## spaces (v3)
+
+A space is a channel for one area of work. Its page, `/projects/<id>/spaces/<slug>`, shows a header and a tab strip. The first tab is always the space's room, where people and agents post. `tabs` lists the tabs after it. A space grants nothing: agent grants stay the only permission source.
+
+```yaml
+spaces:
+  sales:
+    label: Sales
+    description: Pipeline, deals and forecasts
+    order: 1
+    header: [agents, members, needs_you, new_session, ask_my_kortix]
+    tabs:
+      - type: goals
+      - type: files
+        path: sales
+      - type: app
+        app: crm
+      - type: link
+        label: Forecast
+        url: https://example.com/forecast
+        embed: true
+      - type: board
+        blocks:
+          - { type: text, label: Brief, text: "Weekly target: 12 qualified deals." }
+agents:
+  closer:
+    space: sales
+```
+
+| Key | Default | Rule |
+| --- | --- | --- |
+| slug | required | Matches `[a-z0-9][a-z0-9_-]{0,62}`. It is also the name of the space's room. |
+| `label` | the slug | The name the sidebar and the page show. |
+| `description` | none | One line under the name. |
+| `order` | after the ordered spaces | Number. Lower comes first in the sidebar. |
+| `header` | every item | List of `agents`, `members`, `needs_you`, `new_session`, `ask_my_kortix`, in display order. |
+| `tabs` | `goals`, `apps`, `artifacts` | List of tabs after the room. `[]` shows the room only. |
+
+| Tab `type` | Needs | Shows |
+| --- | --- | --- |
+| `goals`, `apps`, `artifacts` | nothing | What is bound to the space: its own `space`, else its agent's `space`. |
+| `files` | `path` | A folder of the project files. |
+| `board` | `blocks` (optional) | A grid of blocks: `text`, `app`, `artifact` (a file path), `iframe`, `chat` (another room). |
+| `app` | `app` | One App, live. |
+| `artifact` | `artifact` | One artifact, by `artifact_id`. |
+| `link` | `url` (`http` or `https`) | A link card. `embed: true` shows the page inside the tab. |
+
+Every tab takes `label`. A tab of a feature the project has off is hidden. The **+** menu and **Edit tabs** on the space page commit the same `spaces.<slug>.tabs` list to the default branch. A declared space with no agents still shows in the sidebar.
 
 ## policy and policies
 

@@ -435,14 +435,16 @@ export interface UiHostComponents {
   /**
    * One room's conversation (flag `agent_rooms`): its messages and a composer,
    * by room NAME. A room that does not exist yet shows an empty state, and the
-   * first post creates it with `emptyTopic`. A space home renders its own room
-   * (the room named like the space's slug) through it. Without it, a link to
-   * the rooms page.
+   * first post creates it with `emptyTopic`. A space page renders its own room
+   * (the room named like the space's slug) through it, `fill` in its room
+   * tab: no frame, no header, the container's full height. Without it, a link
+   * to the rooms page.
    */
   RoomPanel?: React.ComponentType<{
     projectId: string;
     roomName: string;
     emptyTopic?: string;
+    fill?: boolean;
   }>;
   /** Who can open a session, and its public link. Without it, the header has no Share button. */
   ShareSessionModal?: React.ComponentType<{

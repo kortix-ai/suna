@@ -14,11 +14,14 @@ export const RESERVED_SANDBOX_SLUG = 'default';
 /** Regex matching every user-defined slug (triggers, sandboxes, apps, connectors). */
 export const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
-/** Regex matching a space slug (a `domains.<slug>` key, an agent's `domain`, a binding's `space`). Tighter than SLUG_RE so every space slug is also a valid room name: the space's room is the project room with that name. */
+/** Regex matching a space slug (a `spaces.<slug>` key, an agent's `space`, a binding's `space`). Tighter than SLUG_RE so every space slug is also a valid room name: the space's room is the project room with that name. */
 export const SPACE_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,62}$/;
 
-/** The group an agent falls into when it declares no `domain`. Consumer-side only — never written into a manifest. */
-export const DEFAULT_DOMAIN = 'general';
+/** The tab types of a space. The room tab is implicit: always first, never listed. */
+export const SPACE_TAB_TYPES = ['goals', 'apps', 'artifacts', 'files', 'board', 'app', 'artifact', 'link'] as const;
+
+/** What a space header shows, in order. Absent = every item. */
+export const SPACE_HEADER_ITEMS = ['agents', 'members', 'needs_you', 'new_session', 'ask_my_kortix'] as const;
 
 /** Regex matching every legal env-var name. */
 export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;

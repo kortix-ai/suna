@@ -2,12 +2,12 @@
 
 import {
   bindingSpace,
-  DEFAULT_PROJECT_DOMAIN,
+  PROJECT_WIDE_SPACE,
   groupBySpace,
   listSpaces,
   type Artifact,
   type ArtifactListScope,
-  type ProjectDomain,
+  type ProjectSpace,
 } from '@kortix/sdk';
 import { prefetchArtifact, useArtifactMutations, useArtifacts, useProjectConfig } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -31,7 +31,7 @@ import { Input } from '@kortix/ui/input';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@kortix/ui/tabs';
 import { errorToast, successToast } from '@kortix/ui/toast';
-import { ALL_DOMAINS, ProjectPageHeader, SpaceFilterTabs, spaceFilterLabel, useSpaceFilter } from '@kortix/ui/workspace';
+import { ALL_SPACES, ProjectPageHeader, SpaceFilterTabs, spaceFilterLabel, useSpaceFilter } from '@kortix/ui/workspace';
 import {
   ArrowSquareOutIcon,
   DotsThreeIcon,
@@ -80,12 +80,12 @@ export function ArtifactsGallery({ projectId }: { projectId: string }) {
   // An artifact sits in its bound space, else its agent's space, else Project-wide.
   const config = useProjectConfig(projectId);
   const agents = config?.agents ?? [];
-  const spaceOf = (artifact: Artifact) => bindingSpace(artifact, agents) ?? DEFAULT_PROJECT_DOMAIN;
-  const groups = groupBySpace(list.data ?? [], config?.domains, spaceOf);
+  const spaceOf = (artifact: Artifact) => bindingSpace(artifact, agents) ?? PROJECT_WIDE_SPACE;
+  const groups = groupBySpace(list.data ?? [], config?.spaces, spaceOf);
   const labels = new Map(groups.map((group) => [group.name, group.label]));
   const [space, setSpace] = useSpaceFilter(projectId);
   const spaces = listSpaces(config);
-  const items = (list.data ?? []).filter((artifact) => space === ALL_DOMAINS || spaceOf(artifact) === space);
+  const items = (list.data ?? []).filter((artifact) => space === ALL_SPACES || spaceOf(artifact) === space);
 
   return (
     <div className="flex h-svh flex-col overflow-hidden">
@@ -136,14 +136,14 @@ export function ArtifactsGallery({ projectId }: { projectId: string }) {
                 title={
                   q || scope !== 'all'
                     ? t('emptyFiltered')
-                    : space !== ALL_DOMAINS
+                    : space !== ALL_SPACES
                       ? t('spaceEmpty', { space: spaceFilterLabel(space, spaces, t('projectWide')) })
                       : t('empty')
                 }
-                description={q || scope !== 'all' || space !== ALL_DOMAINS ? undefined : t('emptyHint')}
+                description={q || scope !== 'all' || space !== ALL_SPACES ? undefined : t('emptyHint')}
                 action={
-                  space !== ALL_DOMAINS ? (
-                    <Button size="sm" variant="outline" onClick={() => setSpace(ALL_DOMAINS)}>
+                  space !== ALL_SPACES ? (
+                    <Button size="sm" variant="outline" onClick={() => setSpace(ALL_SPACES)}>
                       {t('showAll')}
                     </Button>
                   ) : undefined
@@ -156,7 +156,7 @@ export function ArtifactsGallery({ projectId }: { projectId: string }) {
                     key={artifact.artifact_id}
                     projectId={projectId}
                     artifact={artifact}
-                    space={space === ALL_DOMAINS ? labels.get(spaceOf(artifact)) : undefined}
+                    space={space === ALL_SPACES ? labels.get(spaceOf(artifact)) : undefined}
                     current={spaceOf(artifact)}
                     spaces={spaces}
                   />
@@ -181,10 +181,10 @@ function ArtifactCard({
   artifact: Artifact;
   /** The space chip: only while every space is shown. */
   space?: string;
-  /** The space the artifact resolves to now (`DEFAULT_PROJECT_DOMAIN`: project-wide). */
+  /** The space the artifact resolves to now (`PROJECT_WIDE_SPACE`: project-wide). */
   current: string;
   /** Where "Move to space" can bind it. */
-  spaces: ProjectDomain[];
+  spaces: ProjectSpace[];
 }) {
   const t = useTranslations('artifacts');
   const locale = useLocale();
@@ -268,7 +268,7 @@ function ArtifactCard({
                       <DropdownMenuRadioGroup
                         value={current}
                         onValueChange={(next) => {
-                          if (next !== current) moveTo(next === DEFAULT_PROJECT_DOMAIN ? null : next);
+                          if (next !== current) moveTo(next === PROJECT_WIDE_SPACE ? null : next);
                         }}
                       >
                         {spaces.map((target) => (
@@ -277,7 +277,7 @@ function ArtifactCard({
                           </DropdownMenuRadioItem>
                         ))}
                         <DropdownMenuSeparator />
-                        <DropdownMenuRadioItem value={DEFAULT_PROJECT_DOMAIN}>{t('projectWide')}</DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value={PROJECT_WIDE_SPACE}>{t('projectWide')}</DropdownMenuRadioItem>
                       </DropdownMenuRadioGroup>
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>

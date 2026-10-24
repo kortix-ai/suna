@@ -63,10 +63,9 @@ export interface AgentConfigBlock {
   file?: string;
   enabled?: boolean;
   sandbox?: string;
-  /** Dashboard classification group (a slug matching a top-level `domains`
-   *  key, or a bare name). Display-only: no behavior, no grants. Empty string
-   *  clears it. Agents with no domain fold into a default group in the UI. */
-  domain?: string;
+  /** The space the agent works in (a `spaces:` key, or a bare slug).
+   *  Grouping only. Empty string clears it. */
+  space?: string;
   connectors?: AgentGrantSetV2;
   /** Connectors that must resolve before the session starts. */
   connectors_required?: string[];

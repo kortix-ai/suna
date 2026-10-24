@@ -1,7 +1,7 @@
 // Projects — project CRUD, detail, feature flags, warm pool, onboarding.
 
 import type { CatalogModel } from '@kortix/llm-catalog';
-import type { ProjectDomain } from './domains';
+import type { ProjectSpace } from './spaces';
 import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
 import { retiredEndpointError } from '../../http/api/errors';
 import type { SandboxProviderName } from '../platform-client/types';
@@ -281,9 +281,9 @@ export interface ProjectConfigSummary {
     platform?: boolean;
     /** Agent-specific sandbox template. null or absent inherits the project default. */
     sandbox?: string | null;
-    /** Classification group from `kortix.yaml` `agents.<name>.domain`. Display-only.
-     *  null/absent folds into the default group in the consumer (see `groupByDomain`). */
-    domain?: string | null;
+    /** The space from `kortix.yaml` `agents.<name>.space`. Grouping only.
+     *  null/absent is Project-wide (see `groupBySpace`). */
+    space?: string | null;
     /** Per-agent governance from `kortix.yaml` `agents:` (read-only mirror).
      *  `'all'` = unscoped; a list = the allowlist; `[]` = none. Absent for
      *  OpenCode-discovered agents (not governed by `agents:`). */
@@ -303,9 +303,9 @@ export interface ProjectConfigSummary {
   skills: Array<{ name: string; path: string; description: string | null }>;
   commands: Array<{ name: string; path: string; description: string | null }>;
   env: { required: string[]; optional: string[] };
-  /** Declared display groups from `kortix.yaml` top-level `domains:`. Absent on
-   *  older servers. Pair with each agent's `domain` via `groupByDomain`. */
-  domains?: ProjectDomain[];
+  /** The spaces from `kortix.yaml` top-level `spaces:`. Absent on older
+   *  servers. `listSpaces(config)` adds the ones agents name. */
+  spaces?: ProjectSpace[];
 }
 
 export interface ProjectDetail {

@@ -206,9 +206,13 @@ continuation server-side; Goal heartbeats vs the 200/project reminder cap.
 
 ## Pillar 3 — Spaces = configurable MS-Teams channels
 
-**Today:** a space = one display group of agents (`groupByDomain`), chosen
-per-viewer (`active-domain-store`, localStorage, never `kortix.yaml`), scoping
-the composer + Customize + the space-aware home. No tabs, no per-space layout.
+**Today (2026-10-24, branch `project-admin`):** a space is a channel:
+`spaces.<slug>` in `kortix.yaml` with `header` and ordered typed `tabs`
+(goals, apps, artifacts, files, board, app, artifact, link) after the room
+tab, at `/projects/<id>/spaces/<slug>`. The tab layout lives in the manifest,
+not in a DB table (Marko: tabs are git-backed, the same edit My Kortix makes).
+The per-viewer active space (`active-space-store`) still scopes the composer
+and Customize. The design below is the earlier proposal.
 
 **Design:** a space gains an ordered **tab list**, each tab one of:
 `chat` (a durable room session), `artifact` (a Files/Drive path — doc or HTML

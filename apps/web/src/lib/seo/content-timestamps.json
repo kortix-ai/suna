@@ -48,8 +48,8 @@
   "docs:git": "2026-10-21T12:20:41.000Z",
   "docs:host": "2026-10-24T04:59:59.000Z",
   "docs:index": "2026-10-20T11:00:49.000Z",
-  "docs:project/agents": "2026-10-22T23:16:56.000Z",
-  "docs:project": "2026-10-24T06:41:26.000Z",
+  "docs:project/agents": "2026-10-24T07:27:46.000Z",
+  "docs:project": "2026-10-24T07:30:00.000Z",
   "docs:project/manifest": "2026-10-24T05:30:55.000Z",
   "docs:project/models": "2026-10-22T23:10:00.000Z",
   "docs:project/secrets": "2026-10-20T16:32:13.000Z",
@@ -64,5 +64,5 @@
   "docs:sdk/ui": "2026-10-21T18:53:43.000Z",
   "docs:tui": "2026-10-22T23:10:00.000Z",
   "docs:work/runtime": "2026-10-20T16:32:13.000Z",
-  "docs:work/sessions": "2026-10-24T04:59:59.000Z"
+  "docs:work/sessions": "2026-10-24T06:46:15.000Z"
 }

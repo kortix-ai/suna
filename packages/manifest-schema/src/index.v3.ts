@@ -27,9 +27,13 @@ import {
   REGISTRY_NAME_RE,
   RETIRED_KORTIX_TOOLS,
   SLUG_RE,
+  SPACE_HEADER_ITEMS,
   SPACE_SLUG_RE,
+  SPACE_TAB_TYPES,
   TOOL_NAME_RE,
 } from './constants';
+
+export { SPACE_HEADER_ITEMS, SPACE_TAB_TYPES };
 import {
   isTable,
   type ManifestFormat,
@@ -116,23 +120,19 @@ export interface AgentBlockV3 {
   kortix_permissions?: GrantSetV2;
   workspace?: AgentWorkspaceV2;
   sandbox?: string;
-  /** Classification group for the dashboard (Engineering, Marketing…). Display-only, optional; a slug matching a key in the top-level `domains` map, or a bare name. Agents with no domain fall into a default group in the consumer. */
-  domain?: string;
+  /** The space the agent works in: a key of the top-level `spaces` map, or a bare slug. Grouping only, never a grant. */
+  space?: string;
   network_egress?: { version: 1; default: 'deny'; rules: [] };
 }
 
-/** One block of a Space's agent-configurable surface. The inside of a Space is
- *  not rigid UI — an agent lays it out as a set of blocks (v1 renders them as a
- *  simple responsive grid; richer layouts come later). A block surfaces one
- *  thing: a chat room (a shared durable session), an artifact (a Files/Drive
- *  path), an app (a Kortix App slug), an arbitrary iframe (a url), or text
- *  (markdown). Display/config only; the running instance is resolved at render. */
+/** One block of a board tab: a grid card that shows a room, a file, an App,
+ *  an embedded page or markdown text. Display only. */
 export interface SpaceBlockV3 {
   type: 'chat' | 'artifact' | 'app' | 'iframe' | 'text';
   label?: string;
-  /** chat: a stable room/channel key → a shared durable session. */
+  /** chat: the name of a project room. */
   room?: string;
-  /** artifact: a Files/Drive path (doc or html page). */
+  /** artifact: a project file path. */
   path?: string;
   /** app: a Kortix App slug. */
   app?: string;
@@ -142,15 +142,39 @@ export interface SpaceBlockV3 {
   text?: string;
 }
 
-/** A domain is a Space: it groups agents and, optionally, carries an
- *  agent-configurable surface (`blocks`). Display + config metadata only — no
+export type SpaceTabType = (typeof SPACE_TAB_TYPES)[number];
+
+/** One configured tab of a space. `files` needs `path`, `app` needs `app`,
+ *  `artifact` needs `artifact`, `link` needs `url`, `board` carries `blocks`. */
+export interface SpaceTabV3 {
+  type: SpaceTabType;
+  label?: string;
+  /** files: a project folder path. */
+  path?: string;
+  /** app: a Kortix App slug. */
+  app?: string;
+  /** artifact: an `artifact_id`. */
+  artifact?: string;
+  /** link: an http(s) url. */
+  url?: string;
+  /** link: true embeds the page in a sandboxed frame; absent or false shows a link. */
+  embed?: boolean;
+  /** board: the grid's blocks, in order. */
+  blocks?: SpaceBlockV3[];
+}
+
+export type SpaceHeaderItem = (typeof SPACE_HEADER_ITEMS)[number];
+
+/** A space is a channel: a room (always the first tab) plus configured tabs.
+ *  Agents join it with `agents.<name>.space`. Display and config only: no
  *  behavior, no grants. */
-export interface DomainV3 {
+export interface SpaceV3 {
   label?: string;
   description?: string;
   order?: number;
-  /** The Space's agent-configurable blocks, in order. Agent-writable. */
-  blocks?: SpaceBlockV3[];
+  header?: SpaceHeaderItem[];
+  /** The tabs after the room, in order. Absent = the host's default set. */
+  tabs?: SpaceTabV3[];
 }
 
 /** The v3 manifest after `imports:` are merged. */
@@ -174,8 +198,8 @@ export interface ManifestV3 {
   policies?: Array<Record<string, unknown>>;
   /** `ttl`: how long a held connector call waits for a decision (`30m`, `4h`, `7d`). */
   approvals?: { ttl?: string };
-  /** Optional display groups for the dashboard: slug → label/description/order. Data-only. */
-  domains?: Record<string, DomainV3>;
+  /** Spaces (channels): slug → label, description, header and tabs. */
+  spaces?: Record<string, SpaceV3>;
   /** Built-in agents the platform injects, keyed by built-in (`my_kortix`). Absent = on; `false` removes it from the project. */
   builtin_agents?: Partial<Record<BuiltinAgentKey, boolean>>;
   agents: Record<string, AgentBlockV3>;
@@ -201,7 +225,7 @@ const TOP_LEVEL_KEYS_V3 = [
   'policy',
   'policies',
   'approvals',
-  'domains',
+  'spaces',
   'builtin_agents',
   'agents',
 ] as const;
@@ -248,7 +272,7 @@ const AGENT_KEYS_V3 = new Set<string>([
   'kortix_permissions',
   'workspace',
   'sandbox',
-  'domain',
+  'space',
   'network_egress',
 ]);
 
@@ -303,7 +327,7 @@ export function validateManifestBodyV3(
   validateTriggers(parsed.triggers, 'triggers', issues, format);
   validateConnectors(parsed.connectors, 'connectors', issues, 2, format);
   validateAppsV2(parsed.apps, 'apps', issues);
-  validateDomainsV3(parsed.domains, 'domains', issues);
+  validateSpacesV3(parsed.spaces, 'spaces', issues);
 
   const registry: RegistryV3 = {
     skills: validateSkillsV3(parsed.skills, 'skills', issues),
@@ -318,64 +342,88 @@ export function validateManifestBodyV3(
 }
 
 /**
- * `domains`: slug → display metadata (label, description, order). Optional,
- * data-only — it groups agents in the dashboard and carries no behavior. A
- * domain an agent references but does not declare here is allowed (the consumer
- * uses the name as its own label); this only validates the declared map.
+ * `spaces`: slug → { label, description, order, header, tabs }. Every pinned
+ * tab names its target (`files.path`, `app.app`, `artifact.artifact`,
+ * `link.url`); a board carries `blocks`. An agent may name a space that is not
+ * declared here: the consumer lists it under its own slug.
  */
-function validateDomainsV3(node: unknown, path: string, issues: ManifestIssue[]): void {
+function validateSpacesV3(node: unknown, path: string, issues: ManifestIssue[]): void {
   if (node === undefined || node === null) return;
-  if (!isTable(node)) {
-    issues.push({ path, message: `\`${path}\` must be a map of domain slug to display metadata.`, severity: 'error' });
-    return;
-  }
-  const DOMAIN_KEYS = new Set(['label', 'description', 'order', 'blocks']);
-  const BLOCK_TYPES = new Set(['chat', 'artifact', 'app', 'iframe', 'text']);
-  const BLOCK_KEYS = new Set(['type', 'label', 'room', 'path', 'app', 'url', 'text']);
-  for (const [slug, value] of Object.entries(node)) {
+  const error = (at: string, message: string) => {
+    issues.push({ path: at, message, severity: 'error' });
+  };
+  if (!isTable(node)) return error(path, `\`${path}\` must be a map of space slug to its settings.`);
+  const SPACE_KEYS = ['label', 'description', 'order', 'header', 'tabs'];
+  const TAB_KEYS = ['type', 'label', 'path', 'app', 'artifact', 'url', 'embed', 'blocks'];
+  const BLOCK_TYPES = ['chat', 'artifact', 'app', 'iframe', 'text'];
+  const BLOCK_KEYS = ['type', 'label', 'room', 'path', 'app', 'url', 'text'];
+  const TARGET: Partial<Record<SpaceTabType, 'path' | 'app' | 'artifact' | 'url'>> = {
+    files: 'path',
+    app: 'app',
+    artifact: 'artifact',
+    link: 'url',
+  };
+  const unknownKeys = (value: Record<string, unknown>, allowed: string[], at: string) => {
+    for (const key of Object.keys(value)) {
+      if (!allowed.includes(key)) error(`${at}.${key}`, `unknown key "${key}". Allowed: ${allowed.join(', ')}.`);
+    }
+  };
+  const string = (value: unknown, at: string) => {
+    if (value !== undefined && typeof value !== 'string') error(at, 'must be a string.');
+  };
+  for (const [slug, space] of Object.entries(node)) {
     const where = `${path}.${slug}`;
     if (!SPACE_SLUG_RE.test(slug)) {
-      issues.push({ path: where, message: 'domain name must be a space slug (lowercase letters, digits, "-" or "_", at most 63 characters).', severity: 'error' });
+      error(where, 'space name must be a slug (lowercase letters, digits, "-" or "_", at most 63 characters).');
     }
-    if (!isTable(value)) {
-      issues.push({ path: where, message: 'must be a map with optional `label`, `description`, `order` and `blocks`.', severity: 'error' });
+    if (!isTable(space)) {
+      error(where, `must be a map with optional ${SPACE_KEYS.join(', ')}.`);
       continue;
     }
-    for (const key of Object.keys(value)) {
-      if (!DOMAIN_KEYS.has(key)) {
-        issues.push({ path: `${where}.${key}`, message: `unknown domain key "${key}". Allowed: label, description, order, blocks.`, severity: 'error' });
-      }
-    }
-    if (value.blocks !== undefined) {
-      if (!Array.isArray(value.blocks)) {
-        issues.push({ path: `${where}.blocks`, message: '`blocks` must be a list.', severity: 'error' });
-      } else {
-        value.blocks.forEach((block, i) => {
-          const at = `${where}.blocks[${i}]`;
-          if (!isTable(block)) {
-            issues.push({ path: at, message: 'a block must be a map with a `type`.', severity: 'error' });
-            return;
-          }
-          if (typeof block.type !== 'string' || !BLOCK_TYPES.has(block.type)) {
-            issues.push({ path: `${at}.type`, message: 'block `type` must be one of: chat, artifact, app, iframe, text.', severity: 'error' });
-          }
-          for (const key of Object.keys(block)) {
-            if (!BLOCK_KEYS.has(key)) {
-              issues.push({ path: `${at}.${key}`, message: `unknown block key "${key}". Allowed: type, label, room, path, app, url, text.`, severity: 'error' });
-            }
+    unknownKeys(space, SPACE_KEYS, where);
+    string(space.label, `${where}.label`);
+    string(space.description, `${where}.description`);
+    if (space.order !== undefined && typeof space.order !== 'number') error(`${where}.order`, 'must be a number.');
+    if (space.header !== undefined) {
+      if (!Array.isArray(space.header)) error(`${where}.header`, '`header` must be a list.');
+      else
+        space.header.forEach((item, i) => {
+          if (!(SPACE_HEADER_ITEMS as readonly unknown[]).includes(item)) {
+            error(`${where}.header[${i}]`, `must be one of: ${SPACE_HEADER_ITEMS.join(', ')}.`);
           }
         });
+    }
+    if (space.tabs === undefined) continue;
+    if (!Array.isArray(space.tabs)) {
+      error(`${where}.tabs`, '`tabs` must be a list.');
+      continue;
+    }
+    space.tabs.forEach((tab, i) => {
+      const at = `${where}.tabs[${i}]`;
+      if (!isTable(tab)) return error(at, 'a tab must be a map with a `type`.');
+      unknownKeys(tab, TAB_KEYS, at);
+      if (!(SPACE_TAB_TYPES as readonly unknown[]).includes(tab.type)) {
+        return error(`${at}.type`, `tab \`type\` must be one of: ${SPACE_TAB_TYPES.join(', ')}.`);
       }
-    }
-    if (value.label !== undefined && typeof value.label !== 'string') {
-      issues.push({ path: `${where}.label`, message: 'must be a string.', severity: 'error' });
-    }
-    if (value.description !== undefined && typeof value.description !== 'string') {
-      issues.push({ path: `${where}.description`, message: 'must be a string.', severity: 'error' });
-    }
-    if (value.order !== undefined && typeof value.order !== 'number') {
-      issues.push({ path: `${where}.order`, message: 'must be a number.', severity: 'error' });
-    }
+      for (const key of ['label', 'path', 'app', 'artifact', 'url']) string(tab[key], `${at}.${key}`);
+      const target = TARGET[tab.type as SpaceTabType];
+      const value = target ? tab[target] : undefined;
+      if (target && !(typeof value === 'string' && value.trim())) error(`${at}.${target}`, `a ${String(tab.type)} tab needs \`${target}\`.`);
+      if (tab.type === 'link' && typeof tab.url === 'string' && !/^https?:\/\//i.test(tab.url)) {
+        error(`${at}.url`, 'must be an http or https url.');
+      }
+      if (tab.embed !== undefined && typeof tab.embed !== 'boolean') error(`${at}.embed`, 'must be true or false.');
+      if (tab.blocks === undefined) return;
+      if (!Array.isArray(tab.blocks)) return error(`${at}.blocks`, '`blocks` must be a list.');
+      tab.blocks.forEach((block, j) => {
+        const bat = `${at}.blocks[${j}]`;
+        if (!isTable(block)) return error(bat, 'a block must be a map with a `type`.');
+        if (!BLOCK_TYPES.includes(block.type as string)) {
+          error(`${bat}.type`, `block \`type\` must be one of: ${BLOCK_TYPES.join(', ')}.`);
+        }
+        unknownKeys(block, BLOCK_KEYS, bat);
+      });
+    });
   }
 }
 
@@ -615,8 +663,8 @@ function validateAgentBlockV3(
   if (entry.sandbox !== undefined && !(typeof entry.sandbox === 'string' && SLUG_RE.test(entry.sandbox.trim()))) {
     issues.push({ path: `${where}.sandbox`, message: 'must be a sandbox template slug.', severity: 'error' });
   }
-  if (entry.domain !== undefined && !(typeof entry.domain === 'string' && SPACE_SLUG_RE.test(entry.domain.trim()))) {
-    issues.push({ path: `${where}.domain`, message: 'must be a space slug (lowercase letters, digits, "-" or "_", at most 63 characters).', severity: 'error' });
+  if (entry.space !== undefined && !(typeof entry.space === 'string' && SPACE_SLUG_RE.test(entry.space.trim()))) {
+    issues.push({ path: `${where}.space`, message: 'must be a space slug (lowercase letters, digits, "-" or "_", at most 63 characters).', severity: 'error' });
   }
   validateNetworkEgressV3(entry.network_egress, `${where}.network_egress`, issues);
 

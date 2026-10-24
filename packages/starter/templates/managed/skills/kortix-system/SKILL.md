@@ -861,7 +861,7 @@ agents:
     connectors: []
     secrets: []
     kortix_permissions: [project.session.read]
-    domain: research           # the Space (`domains.research`) it belongs to
+    space: research            # the space (`spaces.research`) it works in
 ```
 
 Least privilege, in order: start from nothing, add each tool, skill,

@@ -87,9 +87,9 @@ test('iframe block with no url degrades to a notice', () => {
 });
 
 test('artifact block renders a button to its path', () => {
-  const html = render([{ type: 'artifact', label: 'Doc', path: 'docs/README.md' }]);
+  const html = render([{ type: 'artifact', label: 'Doc', path: 'notes/README.md' }]);
   expect(html).toContain('<button');
-  expect(html).toContain('docs/README.md');
+  expect(html).toContain('notes/README.md');
 });
 
 test('artifact block with no path degrades to a notice', () => {

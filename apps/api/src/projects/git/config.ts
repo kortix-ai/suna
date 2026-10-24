@@ -15,6 +15,11 @@ import {
   parseManifestText,
   SKILLS_DIR,
   skillDirs,
+  SPACE_HEADER_ITEMS,
+  SPACE_TAB_TYPES,
+  type SpaceBlockV3,
+  type SpaceHeaderItem,
+  type SpaceTabV3,
 } from '@kortix/manifest-schema';
 import { type LoadedAgents, extractAgents } from '../agents';
 import { listManagedSkills } from '../../skills/catalog';
@@ -217,7 +222,7 @@ export function resolveConfigAgents(
           mode: native?.mode ?? null,
           ...(native?.hidden === true ? { hidden: true } : {}),
           model: native?.model ?? null,
-          domain: native?.domain ?? null,
+          space: native?.space ?? null,
           source: 'kortix.yaml' as const,
           enabled: spec.enabled,
           sandbox: spec.sandbox ?? null,
@@ -472,35 +477,49 @@ function manifestText(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null;
 }
 
-/** The top-level `domains:` map as a sorted array. Version-agnostic display
- *  metadata (v2 and v3 read it the same way); empty when none are declared. */
-function domainsFromManifest(manifest: Record<string, unknown>): ProjectConfigSummary['domains'] {
-  return Object.entries(manifestMap(manifest.domains))
+/** The top-level `spaces:` map as a sorted array. Version-agnostic: v2 and v3
+ *  read it the same way. A tab or block of an unknown type is dropped, so a
+ *  manifest mid-edit never breaks the listing. Empty when none are declared. */
+function spacesFromManifest(manifest: Record<string, unknown>): NonNullable<ProjectConfigSummary['spaces']> {
+  const text = (value: unknown) => manifestText(value)?.trim() || undefined;
+  const BLOCK_TYPES: readonly string[] = ['chat', 'artifact', 'app', 'iframe', 'text'];
+  const block = (b: Record<string, unknown>): SpaceBlockV3 => ({
+    type: b.type as SpaceBlockV3['type'],
+    label: text(b.label),
+    room: text(b.room),
+    path: text(b.path),
+    app: text(b.app),
+    url: text(b.url),
+    text: manifestText(b.text) ?? undefined,
+  });
+  const tab = (t: Record<string, unknown>): SpaceTabV3 => ({
+    type: t.type as SpaceTabV3['type'],
+    label: text(t.label),
+    path: text(t.path),
+    app: text(t.app),
+    artifact: text(t.artifact),
+    url: text(t.url),
+    ...(typeof t.embed === 'boolean' ? { embed: t.embed } : {}),
+    ...(Array.isArray(t.blocks)
+      ? { blocks: t.blocks.map(manifestMap).filter((b) => BLOCK_TYPES.includes(b.type as string)).map(block) }
+      : {}),
+  });
+  return Object.entries(manifestMap(manifest.spaces))
     .map(([name, meta]) => {
       const m = manifestMap(meta);
-      const BLOCK_TYPES = ['chat', 'artifact', 'app', 'iframe', 'text'] as const;
-      const blocks = Array.isArray(m.blocks)
-        ? m.blocks
-            .map((b) => manifestMap(b))
-            .filter((b): b is Record<string, unknown> & { type: (typeof BLOCK_TYPES)[number] } =>
-              (BLOCK_TYPES as readonly string[]).includes(b.type as string),
-            )
-            .map((b) => ({
-              type: b.type,
-              label: manifestText(b.label) ?? undefined,
-              room: manifestText(b.room) ?? undefined,
-              path: manifestText(b.path) ?? undefined,
-              app: manifestText(b.app) ?? undefined,
-              url: manifestText(b.url) ?? undefined,
-              text: manifestText(b.text) ?? undefined,
-            }))
+      const header = Array.isArray(m.header)
+        ? m.header.filter((item): item is SpaceHeaderItem => (SPACE_HEADER_ITEMS as readonly unknown[]).includes(item))
+        : undefined;
+      const tabs = Array.isArray(m.tabs)
+        ? m.tabs.map(manifestMap).filter((t) => (SPACE_TAB_TYPES as readonly unknown[]).includes(t.type)).map(tab)
         : undefined;
       return {
         name,
-        label: manifestText(m.label) ?? undefined,
-        description: manifestText(m.description) ?? undefined,
+        label: text(m.label),
+        description: text(m.description),
         order: typeof m.order === 'number' ? m.order : undefined,
-        ...(blocks && blocks.length ? { blocks } : {}),
+        ...(header ? { header } : {}),
+        ...(tabs ? { tabs } : {}),
       };
     })
     .sort(
@@ -561,16 +580,16 @@ export async function loadProjectConfig(
     loadedAgents,
     declaredAgentFile,
   );
-  // `domain` is declared on the manifest's `agents.<name>` block (kortix.yaml),
+  // `space` is declared on the manifest's `agents.<name>` block (kortix.yaml),
   // but the v2 listing builds agents from the scanned `.md` files, which carry
-  // no domain. Merge it from the manifest block here so a v2 project groups the
-  // same way a v3 one does. The `domains:` map is read version-agnostically.
+  // no space. Merge it from the manifest block here so a v2 project groups the
+  // same way a v3 one does. The `spaces:` map is read version-agnostically.
   const manifestAgentBlocks = manifestMap(manifest.agents);
   const agents = baseAgents.map((agent) => ({
     ...agent,
-    domain: agent.domain ?? manifestText(manifestMap(manifestAgentBlocks[agent.name]).domain),
+    space: agent.space ?? manifestText(manifestMap(manifestAgentBlocks[agent.name]).space),
   }));
-  const domains = domainsFromManifest(manifest);
+  const spaces = spacesFromManifest(manifest);
   const skills = await scanSkills(project, repoFiles, skillDirs(manifest));
   const commands = await scanCommands(project, repoFiles, commandRe);
   // v2 makes the manifest's declared default authoritative. Legacy projects
@@ -606,7 +625,7 @@ export async function loadProjectConfig(
     agents,
     skills,
     commands,
-    domains,
+    spaces,
   };
 }
 
@@ -621,7 +640,7 @@ async function loadProjectConfigV3(
   manifest: Record<string, unknown>,
   loadedAgents: LoadedAgents,
   repoPaths: ReadonlySet<string>,
-): Promise<Pick<ProjectConfigSummary, 'agent_discovery' | 'agents' | 'skills' | 'commands' | 'domains'>> {
+): Promise<Pick<ProjectConfigSummary, 'agent_discovery' | 'agents' | 'skills' | 'commands' | 'spaces'>> {
   const map = (value: unknown) =>
     value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
   const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value : null);
@@ -635,7 +654,7 @@ async function loadProjectConfigV3(
       mode: text(block.mode),
       ...(block.hidden === true ? { hidden: true } : {}),
       model: text(block.model),
-      domain: text(block.domain),
+      space: text(block.space),
     };
   });
   const { agents } = resolveConfigAgents(natives, loadedAgents, (spec) => text(map(blocks[spec.name]).prompt_file) ?? undefined);
@@ -663,7 +682,7 @@ async function loadProjectConfigV3(
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  return { agent_discovery: 'declarative', agents, skills, commands, domains: domainsFromManifest(manifest) };
+  return { agent_discovery: 'declarative', agents, skills, commands, spaces: spacesFromManifest(manifest) };
 }
 
 function escapeRegExp(input: string): string {

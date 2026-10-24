@@ -112,7 +112,7 @@ export interface Goal {
   transitions?: Array<{ from: string | null; to: string; at: string; reason: string; by: string }>;
   verified_by?: string | null;
   next_wake_at?: string | null;
-  /** The space the goal is grouped in (a `domains.<slug>` key). Grouping only. */
+  /** The space the goal is grouped in (a `spaces.<slug>` key). Grouping only. */
   space?: string | null;
   /** The owning agent. Grouping only; with no `space`, the goal sits in this agent's space. */
   agent?: string | null;

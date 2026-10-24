@@ -35,7 +35,7 @@ import { useProjectCan } from '../../internal/lib/use-project-can';
 import { cn } from '../../internal/lib/utils';
 import {
   getProjectDetail,
-  groupByDomain,
+  groupBySpace,
   listProjectResourceGrants,
   listProjectTriggers,
   type ProjectConfigSummary,
@@ -50,9 +50,9 @@ import { agentHref } from '../../internal/lib/capability-tab-routes';
 import { prefetchAgentConfig } from '../../internal/hooks/projects/use-agent-config';
 import { catalogEmptyKind } from '../shared/catalog/catalog-empty';
 import { CatalogNoMatch } from '../shared/catalog/catalog-empty-state';
-import { CatalogDomainSections } from '../shared/catalog/catalog-domain-sections';
-import { ALL_DOMAINS, DomainFilterTabs } from '../shared/catalog/domain-filter-tabs';
-import { useActiveDomain } from '../../internal/stores/active-domain-store';
+import { CatalogSpaceSections } from '../shared/catalog/catalog-space-sections';
+import { ALL_SPACES, CatalogSpaceTabs } from '../shared/catalog/catalog-space-tabs';
+import { useActiveSpace } from '../../internal/stores/active-space-store';
 import { CatalogGrid } from '../shared/catalog/catalog-grid';
 import { GRID_CLASSNAME } from '../shared/catalog/catalog-grid-tokens';
 
@@ -179,25 +179,25 @@ export function AgentsPage({ projectId }: { projectId: string }) {
     () => filtered.filter((agent) => !agentInMode(agent, 'primary')),
     [filtered],
   );
-  // Domain grouping: when the project declares domains (top-level `domains:` or
-  // any agent's `domain`), the primary agents render in domain sections
-  // (`groupByDomain`, the default bucket last). With no domains it stays one
+  // Space grouping: when the project declares spaces (top-level `spaces:` or
+  // any agent's `space`), the primary agents render in space sections
+  // (`groupBySpace`, the default bucket last). With no domains it stays one
   // flat grid — an existing project sees no change.
   const primaryDomainGroups = useMemo(
-    () => groupByDomain(primaryAgents, config?.domains),
-    [primaryAgents, config?.domains],
+    () => groupBySpace(primaryAgents, config?.spaces),
+    [primaryAgents, config?.spaces],
   );
   const useDomainGrouping =
-    (config?.domains?.length ?? 0) > 0 || primaryAgents.some((agent) => Boolean(agent.domain));
+    (config?.spaces?.length ?? 0) > 0 || primaryAgents.some((agent) => Boolean(agent.space));
   // The active domain is the sidebar switcher's choice (shared source of
   // truth): null = All. The page's own filter tabs read and write the same
   // store, so switching in either place stays in sync.
-  const [activeDomain, setActiveDomain] = useActiveDomain(projectId);
-  const domainFilter = activeDomain ?? ALL_DOMAINS;
-  const setDomainFilter = (value: string) => setActiveDomain(value === ALL_DOMAINS ? null : value);
+  const [activeDomain, setActiveDomain] = useActiveSpace(projectId);
+  const domainFilter = activeDomain ?? ALL_SPACES;
+  const setDomainFilter = (value: string) => setActiveDomain(value === ALL_SPACES ? null : value);
   // The agents of the selected domain (when a specific one is picked), flat.
   const filteredDomainAgents = useMemo(
-    () => (domainFilter === ALL_DOMAINS ? [] : (primaryDomainGroups.find((g) => g.name === domainFilter)?.items ?? [])),
+    () => (domainFilter === ALL_SPACES ? [] : (primaryDomainGroups.find((g) => g.name === domainFilter)?.items ?? [])),
     [domainFilter, primaryDomainGroups],
   );
   // `null` = render the grid. Otherwise which "nothing to show" copy applies:
@@ -272,7 +272,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
       }
       filters={
         useDomainGrouping ? (
-          <DomainFilterTabs groups={primaryDomainGroups} value={domainFilter} onValueChange={setDomainFilter} />
+          <CatalogSpaceTabs groups={primaryDomainGroups} value={domainFilter} onValueChange={setDomainFilter} />
         ) : undefined
       }
     >
@@ -288,8 +288,8 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         </section>
       ) : null}
       {useDomainGrouping && !detailQuery.isLoading && !detailQuery.isError && emptyKind === null ? (
-        domainFilter === ALL_DOMAINS ? (
-          <CatalogDomainSections groups={primaryDomainGroups} renderCard={renderPrimaryAgentCard} />
+        domainFilter === ALL_SPACES ? (
+          <CatalogSpaceSections groups={primaryDomainGroups} renderCard={renderPrimaryAgentCard} />
         ) : (
           <div className={GRID_CLASSNAME}>{filteredDomainAgents.map(renderPrimaryAgentCard)}</div>
         )

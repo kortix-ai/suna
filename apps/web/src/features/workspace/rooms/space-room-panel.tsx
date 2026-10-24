@@ -20,8 +20,9 @@ const EMPTY_MEMBERS: RoomMember[] = [];
 const EMPTY_MESSAGES: RoomMessage[] = [];
 
 /**
- * `UiHostComponents.RoomPanel`: one room, by name, inside a space home. The
- * room of a space is the project room named like the space's slug. Before
+ * `UiHostComponents.RoomPanel`: one room, by name, inside a space page. The
+ * room of a space is the project room named like the space's slug. `fill` is
+ * the space page's room tab: no frame and no header, the full height. Before
  * anyone posts it does not exist: the panel shows the room's intro and the
  * composer, and the first message creates the room (its creator joins it).
  * Threads, members and the topic stay on the full room page ("Open").
@@ -30,10 +31,12 @@ export function SpaceRoomPanel({
   projectId,
   roomName,
   emptyTopic,
+  fill = false,
 }: {
   projectId: string;
   roomName: string;
   emptyTopic?: string;
+  fill?: boolean;
 }) {
   const t = useTranslations('rooms');
   const queryClient = useQueryClient();
@@ -58,16 +61,24 @@ export function SpaceRoomPanel({
   };
 
   return (
-    <section className="bg-popover flex h-96 min-h-0 flex-col overflow-hidden rounded-md border">
-      <header className="border-border flex shrink-0 items-center gap-2 border-b px-4 py-2.5">
-        <HashIcon className="text-foreground size-4 shrink-0" />
-        <h2 className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">{roomName}</h2>
-        {roomId ? (
-          <Button asChild variant="ghost" size="sm">
-            <Link href={`/projects/${projectId}/rooms/${roomId}`}>{t('openRoom')}</Link>
-          </Button>
-        ) : null}
-      </header>
+    <section
+      className={
+        fill
+          ? 'flex h-full min-h-0 flex-col overflow-hidden'
+          : 'bg-popover flex h-96 min-h-0 flex-col overflow-hidden rounded-md border'
+      }
+    >
+      {fill ? null : (
+        <header className="border-border flex shrink-0 items-center gap-2 border-b px-4 py-2.5">
+          <HashIcon className="text-foreground size-4 shrink-0" />
+          <h2 className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">{roomName}</h2>
+          {roomId ? (
+            <Button asChild variant="ghost" size="sm">
+              <Link href={`/projects/${projectId}/rooms/${roomId}`}>{t('openRoom')}</Link>
+            </Button>
+          ) : null}
+        </header>
+      )}
       {loading ? (
         <div className="flex min-h-0 flex-1 flex-col justify-end gap-3 px-5 py-4">
           <Skeleton className="h-4 w-2/3" />

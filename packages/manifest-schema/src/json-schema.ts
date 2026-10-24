@@ -68,7 +68,9 @@ import {
   SANDBOX_DISK_BOUNDS,
   SANDBOX_MEMORY_BOUNDS,
   SLUG_RE,
+  SPACE_HEADER_ITEMS,
   SPACE_SLUG_RE,
+  SPACE_TAB_TYPES,
   KORTIX_TOOL_NAMES,
   KORTIX_TOOL_PREFIX,
   TOOL_NAME_RE,
@@ -1262,10 +1264,10 @@ function agentBlockV3Schema(): JsonSchemaFragment {
         additionalProperties: false,
       },
       sandbox: v2.properties.sandbox,
-      domain: {
+      space: {
         type: 'string',
         pattern: SPACE_SLUG_RE.source,
-        description: 'Classification group for the dashboard (a key in the top-level `domains` map, or a bare name). Display-only.',
+        description: 'The space the agent works in (a key of the top-level `spaces` map, or a bare slug). Grouping only.',
       },
       network_egress: v2.properties.network_egress,
     },
@@ -1351,9 +1353,9 @@ export function buildManifestV3Schema(): JsonSchemaFragment {
         },
         additionalProperties: false,
       },
-      domains: {
+      spaces: {
         type: ['object', 'null'],
-        description: 'Optional display groups for the dashboard: slug → { label, description, order }. Data-only; groups agents by their `domain`.',
+        description: 'Spaces: channels with a room (always the first tab) and configured tabs. Agents join one with `agents.<name>.space`.',
         propertyNames: { pattern: SPACE_SLUG_RE.source },
         additionalProperties: {
           type: 'object',
@@ -1361,21 +1363,51 @@ export function buildManifestV3Schema(): JsonSchemaFragment {
             label: { type: 'string' },
             description: { type: 'string' },
             order: { type: 'number' },
-            blocks: {
+            header: {
               type: 'array',
+              description: 'What the space header shows, in order. Absent: every item.',
+              items: { type: 'string', enum: [...SPACE_HEADER_ITEMS] },
+            },
+            tabs: {
+              type: 'array',
+              description: 'The tabs after the room, in order. Absent: the default set.',
               items: {
                 type: 'object',
                 required: ['type'],
                 properties: {
-                  type: { type: 'string', enum: ['chat', 'artifact', 'app', 'iframe', 'text'] },
+                  type: { type: 'string', enum: [...SPACE_TAB_TYPES] },
                   label: { type: 'string' },
-                  room: { type: 'string' },
-                  path: { type: 'string' },
-                  app: { type: 'string' },
-                  url: { type: 'string' },
-                  text: { type: 'string' },
+                  path: { type: 'string', description: 'files: a project folder path.' },
+                  app: { type: 'string', description: 'app: a Kortix App slug.' },
+                  artifact: { type: 'string', description: 'artifact: an artifact_id.' },
+                  url: { type: 'string', pattern: '^https?://', description: 'link: an http(s) url.' },
+                  embed: { type: 'boolean', description: 'link: embed the page in a sandboxed frame.' },
+                  blocks: {
+                    type: 'array',
+                    description: 'board: the grid blocks, in order.',
+                    items: {
+                      type: 'object',
+                      required: ['type'],
+                      properties: {
+                        type: { type: 'string', enum: ['chat', 'artifact', 'app', 'iframe', 'text'] },
+                        label: { type: 'string' },
+                        room: { type: 'string' },
+                        path: { type: 'string' },
+                        app: { type: 'string' },
+                        url: { type: 'string' },
+                        text: { type: 'string' },
+                      },
+                      additionalProperties: false,
+                    },
+                  },
                 },
                 additionalProperties: false,
+                allOf: [
+                  { if: { properties: { type: { const: 'files' } } }, then: { required: ['path'] } },
+                  { if: { properties: { type: { const: 'app' } } }, then: { required: ['app'] } },
+                  { if: { properties: { type: { const: 'artifact' } } }, then: { required: ['artifact'] } },
+                  { if: { properties: { type: { const: 'link' } } }, then: { required: ['url'] } },
+                ],
               },
             },
           },

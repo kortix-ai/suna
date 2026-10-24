@@ -211,6 +211,7 @@ export {
   SANDBOX_DISK_BOUNDS,
   SANDBOX_MEMORY_BOUNDS,
   SLUG_RE,
+  SPACE_SLUG_RE,
   HARNESS_TOOL_NAMES,
   KORTIX_TOOL_NAMES,
   KORTIX_TOOL_PREFIX,
@@ -237,6 +238,13 @@ export {
   type CommandV3,
   type ExtensionV3,
   type ManifestV3,
+  SPACE_HEADER_ITEMS,
+  SPACE_TAB_TYPES,
+  type SpaceBlockV3,
+  type SpaceHeaderItem,
+  type SpaceTabType,
+  type SpaceTabV3,
+  type SpaceV3,
 } from './index.v3';
 
 // Re-exported for backward compatibility — the v2 types + validators lived
