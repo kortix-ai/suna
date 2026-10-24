@@ -1073,6 +1073,7 @@ const commandForTurn = useMemo(() => {
 // A skill run as `/name` answers like any chat turn; only a real command's output sits in the command card.
 const commandOutput = useMemo(() => {
   if (!commandForTurn) return undefined;
+  if ('source' in commandForTurn && commandForTurn.source === 'skill') return undefined;
   const source = Array.isArray(commands) ? commands.find((c) => c.name === commandForTurn.name)?.source : undefined;
   return source === 'skill' ? undefined : commandForTurn;
 }, [commandForTurn, commands]);
