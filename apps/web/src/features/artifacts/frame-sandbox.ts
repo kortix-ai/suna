@@ -15,3 +15,28 @@ export const ARTIFACT_FRAME_PREFIX = 'artifact:';
 export function artifactFrameKey(artifact: { artifact_id: string; updated_at: string }, version?: string | null): string {
   return `${ARTIFACT_FRAME_PREFIX}${artifact.artifact_id}:${version ?? artifact.updated_at}`;
 }
+
+/**
+ * Print a doc to PDF without leaving the page: its print view (`?print=1`)
+ * loads in a hidden frame and opens the print dialog for that frame alone. The
+ * page posts `artifact-printed` after the dialog closes; the frame then goes.
+ */
+export function printArtifact(viewUrl: string): void {
+  const frame = document.createElement('iframe');
+  frame.setAttribute('sandbox', ARTIFACT_IFRAME_SANDBOX);
+  frame.setAttribute('aria-hidden', 'true');
+  frame.tabIndex = -1;
+  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none';
+  const cleanup = () => {
+    window.removeEventListener('message', onMessage);
+    frame.remove();
+  };
+  const onMessage = (event: MessageEvent) => {
+    if (event.source === frame.contentWindow && (event.data as { kortix?: string } | null)?.kortix === 'artifact-printed') cleanup();
+  };
+  window.addEventListener('message', onMessage);
+  // A dialog left open past this still prints; the frame is only cleanup.
+  window.setTimeout(cleanup, 10 * 60_000);
+  frame.src = `${viewUrl}?print=1`;
+  document.body.appendChild(frame);
+}

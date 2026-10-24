@@ -40,13 +40,13 @@ import {
 } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { drivePathToParam } from '@/features/drives/drive-path-param';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 import { ArtifactFrame, VISIBILITY_ICON, relativeTime } from './artifact-meta';
-import { artifactFrameKey } from './frame-sandbox';
+import { artifactFrameKey, printArtifact } from './frame-sandbox';
 import { DocEditor, type DocSaveStatus } from './doc-editor';
 import { ShareArtifactDialog } from './share-artifact-dialog';
 
@@ -91,6 +91,14 @@ export function ArtifactViewer({ projectId, artifactId }: { projectId: string; a
   const mutations = useArtifactMutations(projectId);
   const frame = useRef<HTMLDivElement>(null);
   const [docStatus, setDocStatus] = useState<DocSaveStatus>('saved');
+  // Export as PDF prints the saved file: with edits pending, it waits for the autosave.
+  const [exporting, setExporting] = useState(false);
+  const exportUrl = artifact?.version.view_url;
+  useEffect(() => {
+    if (!exporting || !exportUrl || docStatus !== 'saved') return;
+    setExporting(false);
+    printArtifact(exportUrl);
+  }, [exporting, exportUrl, docStatus]);
   const [sharing, setSharing] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [asking, setAsking] = useState(false);
@@ -245,7 +253,7 @@ export function ArtifactViewer({ projectId, artifactId }: { projectId: string; a
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 {isDoc ? (
-                  <DropdownMenuItem onSelect={() => window.open(`${artifact.version.view_url}?print=1`, '_blank', 'noopener')}>
+                  <DropdownMenuItem onSelect={() => setExporting(true)}>
                     <FilePdfIcon /> {t('exportPdf')}
                   </DropdownMenuItem>
                 ) : (
