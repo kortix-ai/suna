@@ -24,7 +24,7 @@ set statement_timeout = '30s';
 -- links reach the agents (the thread notes file). Every column is additive and
 -- has a default (or is nullable), so the old code keeps inserting rows.
 --
--- kortix.project_space_links was created by 20261023090000003 on this same
+-- kortix.project_space_links was created by 20261024105000003 on this same
 -- unmerged branch, so it is empty in every shared environment. A local
 -- database may hold a few rows from "Add link"; that is the only data the
 -- dedupe below and the plain index builds touch.

@@ -1,7 +1,7 @@
 // Migration: project_sessions_space_index  (NON-TRANSACTIONAL -- CONCURRENTLY escape hatch)
 //
 // Builds idx_project_sessions_space (kortix.ts) for the space_id column added
-// by 20261023090000000_project_spaces.sql. It serves the channel/DM thread
+// by 20261024105000000_project_spaces.sql. It serves the channel/DM thread
 // list: one space's threads in the session list order (updated_at desc,
 // session_id desc), so the keyset cursor walks the index. space_id is unique
 // to one project, so project_id is not a key column. Partial on

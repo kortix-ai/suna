@@ -1,7 +1,7 @@
 // Migration: project_trigger_runtime_space_index  (NON-TRANSACTIONAL -- CONCURRENTLY escape hatch)
 //
 // Builds idx_project_trigger_runtime_space (kortix.ts) for the space_id column
-// added by 20261023090000004_project_trigger_runtime_space.sql. It serves a
+// added by 20261024105000004_project_trigger_runtime_space.sql. It serves a
 // space's trigger count (the Triggers tab badge) and the FK's ON DELETE SET
 // NULL when a space row is deleted. Partial on space_id IS NOT NULL: triggers
 // outside a space are never looked up by it.

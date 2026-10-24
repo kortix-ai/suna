@@ -1,6 +1,6 @@
 {
-  "id": "44622b3c-eece-4364-8555-09f2e6857cf7",
-  "prevId": "b4778676-bf04-4cf6-a143-826ccef61d11",
+  "id": "35f5af93-5b30-4eac-a869-8b87aa1b005e",
+  "prevId": "15b885d8-80eb-4c58-970d-470636dbd03c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4595,6 +4595,214 @@
         "apps_kind_check": {
           "name": "apps_kind_check",
           "value": "\"kortix\".\"apps\".\"kind\" IN ('web', 'convex')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "kortix.artifacts": {
+      "name": "artifacts",
+      "schema": "kortix",
+      "columns": {
+        "artifact_id": {
+          "name": "artifact_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "drive_id": {
+          "name": "drive_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "root": {
+          "name": "root",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entry": {
+          "name": "entry",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "folder": {
+          "name": "folder",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "type": {
+          "name": "type",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "visibility": {
+          "name": "visibility",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'private'"
+        },
+        "shared_with_user_ids": {
+          "name": "shared_with_user_ids",
+          "type": "uuid[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::uuid[]"
+        },
+        "pinned_by_user_ids": {
+          "name": "pinned_by_user_ids",
+          "type": "uuid[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::uuid[]"
+        },
+        "created_by_user_id": {
+          "name": "created_by_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by_session_id": {
+          "name": "created_by_session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_artifacts_project_updated": {
+          "name": "idx_artifacts_project_updated",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_artifacts_drive_path": {
+          "name": "idx_artifacts_drive_path",
+          "columns": [
+            {
+              "expression": "drive_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "root",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "entry",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "artifacts_project_fk": {
+          "name": "artifacts_project_fk",
+          "tableFrom": "artifacts",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "artifacts_drive_fk": {
+          "name": "artifacts_drive_fk",
+          "tableFrom": "artifacts",
+          "tableTo": "drives",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "drive_id"
+          ],
+          "columnsTo": [
+            "drive_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "artifacts_type_check": {
+          "name": "artifacts_type_check",
+          "value": "\"kortix\".\"artifacts\".\"type\" in ('doc', 'html')"
+        },
+        "artifacts_visibility_check": {
+          "name": "artifacts_visibility_check",
+          "value": "\"kortix\".\"artifacts\".\"visibility\" in ('private', 'project', 'public')"
         }
       },
       "isRLSEnabled": false
@@ -10017,6 +10225,74 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "kortix.connector_policy_sets": {
+      "name": "connector_policy_sets",
+      "schema": "kortix",
+      "columns": {
+        "connector_id": {
+          "name": "connector_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "policies": {
+          "name": "policies",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "connector_policy_sets_connector_id_connectors_connector_id_fk": {
+          "name": "connector_policy_sets_connector_id_connectors_connector_id_fk",
+          "tableFrom": "connector_policy_sets",
+          "tableTo": "connectors",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "connector_id"
+          ],
+          "columnsTo": [
+            "connector_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "connector_policy_sets_connector_id_name_pk": {
+          "name": "connector_policy_sets_connector_id_name_pk",
+          "columns": [
+            "connector_id",
+            "name"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "kortix.connector_project_policies": {
       "name": "connector_project_policies",
       "schema": "kortix",
@@ -14027,877 +14303,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "kortix.memory_layers": {
-      "name": "memory_layers",
-      "schema": "kortix",
-      "columns": {
-        "layer_id": {
-          "name": "layer_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "scope": {
-          "name": "scope",
-          "type": "memory_layer_scope",
-          "typeSchema": "kortix",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "space_id": {
-          "name": "space_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "version": {
-          "name": "version",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "imported_at": {
-          "name": "imported_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "uniq_memory_layers_company": {
-          "name": "uniq_memory_layers_company",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"kortix\".\"memory_layers\".\"scope\" = 'company'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "uniq_memory_layers_space": {
-          "name": "uniq_memory_layers_space",
-          "columns": [
-            {
-              "expression": "space_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"kortix\".\"memory_layers\".\"space_id\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_memory_layers_project": {
-          "name": "idx_memory_layers_project",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "memory_layers_project_id_projects_project_id_fk": {
-          "name": "memory_layers_project_id_projects_project_id_fk",
-          "tableFrom": "memory_layers",
-          "tableTo": "projects",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "project_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "memory_layers_space_id_project_spaces_space_id_fk": {
-          "name": "memory_layers_space_id_project_spaces_space_id_fk",
-          "tableFrom": "memory_layers",
-          "tableTo": "project_spaces",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "space_id"
-          ],
-          "columnsTo": [
-            "space_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "memory_layers_scope_space_check": {
-          "name": "memory_layers_scope_space_check",
-          "value": "(\"kortix\".\"memory_layers\".\"scope\" = 'company') = (\"kortix\".\"memory_layers\".\"space_id\" is null)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "kortix.memory_page_sources": {
-      "name": "memory_page_sources",
-      "schema": "kortix",
-      "columns": {
-        "source_id": {
-          "name": "source_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "page_id": {
-          "name": "page_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "number": {
-          "name": "number",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "memory_source_kind",
-          "typeSchema": "kortix",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "message_id": {
-          "name": "message_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "label": {
-          "name": "label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "url": {
-          "name": "url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "uniq_memory_page_sources_page_number": {
-          "name": "uniq_memory_page_sources_page_number",
-          "columns": [
-            {
-              "expression": "page_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "number",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_memory_page_sources_session": {
-          "name": "idx_memory_page_sources_session",
-          "columns": [
-            {
-              "expression": "session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"kortix\".\"memory_page_sources\".\"session_id\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "memory_page_sources_page_id_memory_pages_page_id_fk": {
-          "name": "memory_page_sources_page_id_memory_pages_page_id_fk",
-          "tableFrom": "memory_page_sources",
-          "tableTo": "memory_pages",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "page_id"
-          ],
-          "columnsTo": [
-            "page_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "memory_page_sources_session_id_project_sessions_session_id_fk": {
-          "name": "memory_page_sources_session_id_project_sessions_session_id_fk",
-          "tableFrom": "memory_page_sources",
-          "tableTo": "project_sessions",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "session_id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "kortix.memory_page_versions": {
-      "name": "memory_page_versions",
-      "schema": "kortix",
-      "columns": {
-        "version_id": {
-          "name": "version_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "page_id": {
-          "name": "page_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "layer_id": {
-          "name": "layer_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version_no": {
-          "name": "version_no",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "change_id": {
-          "name": "change_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "type": {
-          "name": "type",
-          "type": "memory_page_type",
-          "typeSchema": "kortix",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "summary": {
-          "name": "summary",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "body": {
-          "name": "body",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "memory_page_status",
-          "typeSchema": "kortix",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "related": {
-          "name": "related",
-          "type": "uuid[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::uuid[]"
-        },
-        "deleted": {
-          "name": "deleted",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "op": {
-          "name": "op",
-          "type": "memory_change_op",
-          "typeSchema": "kortix",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "author_kind": {
-          "name": "author_kind",
-          "type": "memory_author_kind",
-          "typeSchema": "kortix",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "author_user_id": {
-          "name": "author_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "author_agent": {
-          "name": "author_agent",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "on_behalf_user_id": {
-          "name": "on_behalf_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "source_session_id": {
-          "name": "source_session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "source_message_id": {
-          "name": "source_message_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "undone_by_version_id": {
-          "name": "undone_by_version_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "uniq_memory_page_versions_page_no": {
-          "name": "uniq_memory_page_versions_page_no",
-          "columns": [
-            {
-              "expression": "page_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "version_no",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_memory_page_versions_layer_created": {
-          "name": "idx_memory_page_versions_layer_created",
-          "columns": [
-            {
-              "expression": "layer_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_memory_page_versions_change": {
-          "name": "idx_memory_page_versions_change",
-          "columns": [
-            {
-              "expression": "change_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_memory_page_versions_session": {
-          "name": "idx_memory_page_versions_session",
-          "columns": [
-            {
-              "expression": "source_session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"kortix\".\"memory_page_versions\".\"source_session_id\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "memory_page_versions_page_id_memory_pages_page_id_fk": {
-          "name": "memory_page_versions_page_id_memory_pages_page_id_fk",
-          "tableFrom": "memory_page_versions",
-          "tableTo": "memory_pages",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "page_id"
-          ],
-          "columnsTo": [
-            "page_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "memory_page_versions_layer_id_memory_layers_layer_id_fk": {
-          "name": "memory_page_versions_layer_id_memory_layers_layer_id_fk",
-          "tableFrom": "memory_page_versions",
-          "tableTo": "memory_layers",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "layer_id"
-          ],
-          "columnsTo": [
-            "layer_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "memory_page_versions_source_session_fk": {
-          "name": "memory_page_versions_source_session_fk",
-          "tableFrom": "memory_page_versions",
-          "tableTo": "project_sessions",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "source_session_id"
-          ],
-          "columnsTo": [
-            "session_id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "kortix.memory_pages": {
-      "name": "memory_pages",
-      "schema": "kortix",
-      "columns": {
-        "page_id": {
-          "name": "page_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "layer_id": {
-          "name": "layer_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "type": {
-          "name": "type",
-          "type": "memory_page_type",
-          "typeSchema": "kortix",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "title_key": {
-          "name": "title_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "summary": {
-          "name": "summary",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "body": {
-          "name": "body",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "status": {
-          "name": "status",
-          "type": "memory_page_status",
-          "typeSchema": "kortix",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'confirmed'"
-        },
-        "related": {
-          "name": "related",
-          "type": "uuid[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::uuid[]"
-        },
-        "version_no": {
-          "name": "version_no",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "updated_by_kind": {
-          "name": "updated_by_kind",
-          "type": "memory_author_kind",
-          "typeSchema": "kortix",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_by_user_id": {
-          "name": "updated_by_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_by_agent": {
-          "name": "updated_by_agent",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_source_session_id": {
-          "name": "updated_source_session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "deleted_at": {
-          "name": "deleted_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "search": {
-          "name": "search",
-          "type": "tsvector",
-          "primaryKey": false,
-          "notNull": false,
-          "generated": {
-            "as": "to_tsvector('simple'::regconfig, coalesce(\"title\", '') || ' ' || coalesce(\"summary\", '') || ' ' || coalesce(\"body\", ''))",
-            "type": "stored"
-          }
-        }
-      },
-      "indexes": {
-        "uniq_memory_pages_layer_title": {
-          "name": "uniq_memory_pages_layer_title",
-          "columns": [
-            {
-              "expression": "layer_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "title_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"kortix\".\"memory_pages\".\"deleted_at\" is null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_memory_pages_layer_type": {
-          "name": "idx_memory_pages_layer_type",
-          "columns": [
-            {
-              "expression": "layer_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "type",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "updated_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"kortix\".\"memory_pages\".\"deleted_at\" is null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_memory_pages_layer": {
-          "name": "idx_memory_pages_layer",
-          "columns": [
-            {
-              "expression": "layer_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_memory_pages_search": {
-          "name": "idx_memory_pages_search",
-          "columns": [
-            {
-              "expression": "search",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "gin",
-          "with": {}
-        },
-        "idx_memory_pages_project": {
-          "name": "idx_memory_pages_project",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_memory_pages_deleted": {
-          "name": "idx_memory_pages_deleted",
-          "columns": [
-            {
-              "expression": "deleted_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"kortix\".\"memory_pages\".\"deleted_at\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "memory_pages_layer_id_memory_layers_layer_id_fk": {
-          "name": "memory_pages_layer_id_memory_layers_layer_id_fk",
-          "tableFrom": "memory_pages",
-          "tableTo": "memory_layers",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "layer_id"
-          ],
-          "columnsTo": [
-            "layer_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "memory_pages_project_id_projects_project_id_fk": {
-          "name": "memory_pages_project_id_projects_project_id_fk",
-          "tableFrom": "memory_pages",
-          "tableTo": "projects",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "project_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "kortix.memory_thread_loads": {
-      "name": "memory_thread_loads",
-      "schema": "kortix",
-      "columns": {
-        "session_id": {
-          "name": "session_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "first_loaded_at": {
-          "name": "first_loaded_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "layers": {
-          "name": "layers",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "memory_thread_loads_session_id_project_sessions_session_id_fk": {
-          "name": "memory_thread_loads_session_id_project_sessions_session_id_fk",
-          "tableFrom": "memory_thread_loads",
-          "tableTo": "project_sessions",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "session_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "kortix.notification_preferences": {
       "name": "notification_preferences",
       "schema": "kortix",
@@ -18301,6 +17706,24 @@
           "primaryKey": false,
           "notNull": false
         },
+        "message_id": {
+          "name": "message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "snapshot": {
+          "name": "snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "snapshot_at": {
+          "name": "snapshot_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -18358,6 +17781,28 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_project_session_public_shares_live_response": {
+          "name": "idx_project_session_public_shares_live_response",
+          "columns": [
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "message_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"kortix\".\"project_session_public_shares\".\"resource_type\" = 'response' and \"kortix\".\"project_session_public_shares\".\"revoked_at\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -19743,478 +19188,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "kortix.project_space_links": {
-      "name": "project_space_links",
-      "schema": "kortix",
-      "columns": {
-        "link_id": {
-          "name": "link_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "space_id": {
-          "name": "space_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "url": {
-          "name": "url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "pinned": {
-          "name": "pinned",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "pinned_by": {
-          "name": "pinned_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "pinned_at": {
-          "name": "pinned_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "source": {
-          "name": "source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'manual'"
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "share_count": {
-          "name": "share_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "last_shared_at": {
-          "name": "last_shared_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "fetched_title": {
-          "name": "fetched_title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "site_name": {
-          "name": "site_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "icon_url": {
-          "name": "icon_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "fetched_at": {
-          "name": "fetched_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "fetch_failed_at": {
-          "name": "fetch_failed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "uniq_project_space_links_space_url": {
-          "name": "uniq_project_space_links_space_url",
-          "columns": [
-            {
-              "expression": "space_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "url",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_project_space_links_space": {
-          "name": "idx_project_space_links_space",
-          "columns": [
-            {
-              "expression": "space_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_project_space_links_session": {
-          "name": "idx_project_space_links_session",
-          "columns": [
-            {
-              "expression": "session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_project_space_links_project": {
-          "name": "idx_project_space_links_project",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "project_space_links_space_id_project_spaces_space_id_fk": {
-          "name": "project_space_links_space_id_project_spaces_space_id_fk",
-          "tableFrom": "project_space_links",
-          "tableTo": "project_spaces",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "space_id"
-          ],
-          "columnsTo": [
-            "space_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "project_space_links_project_id_projects_project_id_fk": {
-          "name": "project_space_links_project_id_projects_project_id_fk",
-          "tableFrom": "project_space_links",
-          "tableTo": "projects",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "project_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "project_space_links_session_id_project_sessions_session_id_fk": {
-          "name": "project_space_links_session_id_project_sessions_session_id_fk",
-          "tableFrom": "project_space_links",
-          "tableTo": "project_sessions",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "session_id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "project_space_links_source_check": {
-          "name": "project_space_links_source_check",
-          "value": "\"kortix\".\"project_space_links\".\"source\" in ('manual', 'message')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "kortix.project_spaces": {
-      "name": "project_spaces",
-      "schema": "kortix",
-      "columns": {
-        "space_id": {
-          "name": "space_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "project_space_kind",
-          "typeSchema": "kortix",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "slug": {
-          "name": "slug",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "is_default": {
-          "name": "is_default",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "dm_user_id": {
-          "name": "dm_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "dm_agent_name": {
-          "name": "dm_agent_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "archived_at": {
-          "name": "archived_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "uniq_project_spaces_channel_slug": {
-          "name": "uniq_project_spaces_channel_slug",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "slug",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"kortix\".\"project_spaces\".\"kind\" = 'channel'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "uniq_project_spaces_dm": {
-          "name": "uniq_project_spaces_dm",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "dm_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "dm_agent_name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"kortix\".\"project_spaces\".\"kind\" = 'dm'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "uniq_project_spaces_default": {
-          "name": "uniq_project_spaces_default",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"kortix\".\"project_spaces\".\"is_default\"",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_project_spaces_project": {
-          "name": "idx_project_spaces_project",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "project_spaces_account_id_accounts_account_id_fk": {
-          "name": "project_spaces_account_id_accounts_account_id_fk",
-          "tableFrom": "project_spaces",
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "account_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "project_spaces_project_id_projects_project_id_fk": {
-          "name": "project_spaces_project_id_projects_project_id_fk",
-          "tableFrom": "project_spaces",
-          "tableTo": "projects",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "project_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "project_spaces_kind_shape_check": {
-          "name": "project_spaces_kind_shape_check",
-          "value": "(\"kortix\".\"project_spaces\".\"kind\" = 'channel' and \"kortix\".\"project_spaces\".\"slug\" is not null and \"kortix\".\"project_spaces\".\"dm_user_id\" is null and \"kortix\".\"project_spaces\".\"dm_agent_name\" is null) or (\"kortix\".\"project_spaces\".\"kind\" = 'dm' and \"kortix\".\"project_spaces\".\"slug\" is null and \"kortix\".\"project_spaces\".\"dm_user_id\" is not null and \"kortix\".\"project_spaces\".\"dm_agent_name\" is not null)"
-        }
-      },
       "isRLSEnabled": false
     },
     "kortix.project_trigger_event_polls": {
@@ -29941,6 +28914,1218 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.memory_layers": {
+      "name": "memory_layers",
+      "schema": "kortix",
+      "columns": {
+        "layer_id": {
+          "name": "layer_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scope": {
+          "name": "scope",
+          "type": "memory_layer_scope",
+          "typeSchema": "kortix",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "space_id": {
+          "name": "space_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "imported_at": {
+          "name": "imported_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uniq_memory_layers_company": {
+          "name": "uniq_memory_layers_company",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"kortix\".\"memory_layers\".\"scope\" = 'company'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uniq_memory_layers_space": {
+          "name": "uniq_memory_layers_space",
+          "columns": [
+            {
+              "expression": "space_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"kortix\".\"memory_layers\".\"space_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_memory_layers_project": {
+          "name": "idx_memory_layers_project",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "memory_layers_project_id_projects_project_id_fk": {
+          "name": "memory_layers_project_id_projects_project_id_fk",
+          "tableFrom": "memory_layers",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "memory_layers_space_id_project_spaces_space_id_fk": {
+          "name": "memory_layers_space_id_project_spaces_space_id_fk",
+          "tableFrom": "memory_layers",
+          "tableTo": "project_spaces",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "space_id"
+          ],
+          "columnsTo": [
+            "space_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "memory_layers_scope_space_check": {
+          "name": "memory_layers_scope_space_check",
+          "value": "(\"kortix\".\"memory_layers\".\"scope\" = 'company') = (\"kortix\".\"memory_layers\".\"space_id\" is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "kortix.memory_page_sources": {
+      "name": "memory_page_sources",
+      "schema": "kortix",
+      "columns": {
+        "source_id": {
+          "name": "source_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "page_id": {
+          "name": "page_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "number": {
+          "name": "number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "memory_source_kind",
+          "typeSchema": "kortix",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "message_id": {
+          "name": "message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "url": {
+          "name": "url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uniq_memory_page_sources_page_number": {
+          "name": "uniq_memory_page_sources_page_number",
+          "columns": [
+            {
+              "expression": "page_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_memory_page_sources_session": {
+          "name": "idx_memory_page_sources_session",
+          "columns": [
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"memory_page_sources\".\"session_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "memory_page_sources_page_id_memory_pages_page_id_fk": {
+          "name": "memory_page_sources_page_id_memory_pages_page_id_fk",
+          "tableFrom": "memory_page_sources",
+          "tableTo": "memory_pages",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "page_id"
+          ],
+          "columnsTo": [
+            "page_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "memory_page_sources_session_id_project_sessions_session_id_fk": {
+          "name": "memory_page_sources_session_id_project_sessions_session_id_fk",
+          "tableFrom": "memory_page_sources",
+          "tableTo": "project_sessions",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "session_id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.memory_page_versions": {
+      "name": "memory_page_versions",
+      "schema": "kortix",
+      "columns": {
+        "version_id": {
+          "name": "version_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "page_id": {
+          "name": "page_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "layer_id": {
+          "name": "layer_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version_no": {
+          "name": "version_no",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "change_id": {
+          "name": "change_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "memory_page_type",
+          "typeSchema": "kortix",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "summary": {
+          "name": "summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "memory_page_status",
+          "typeSchema": "kortix",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "related": {
+          "name": "related",
+          "type": "uuid[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::uuid[]"
+        },
+        "deleted": {
+          "name": "deleted",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "op": {
+          "name": "op",
+          "type": "memory_change_op",
+          "typeSchema": "kortix",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "author_kind": {
+          "name": "author_kind",
+          "type": "memory_author_kind",
+          "typeSchema": "kortix",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "author_user_id": {
+          "name": "author_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "author_agent": {
+          "name": "author_agent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "on_behalf_user_id": {
+          "name": "on_behalf_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_session_id": {
+          "name": "source_session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_message_id": {
+          "name": "source_message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "undone_by_version_id": {
+          "name": "undone_by_version_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uniq_memory_page_versions_page_no": {
+          "name": "uniq_memory_page_versions_page_no",
+          "columns": [
+            {
+              "expression": "page_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "version_no",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_memory_page_versions_layer_created": {
+          "name": "idx_memory_page_versions_layer_created",
+          "columns": [
+            {
+              "expression": "layer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_memory_page_versions_change": {
+          "name": "idx_memory_page_versions_change",
+          "columns": [
+            {
+              "expression": "change_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_memory_page_versions_session": {
+          "name": "idx_memory_page_versions_session",
+          "columns": [
+            {
+              "expression": "source_session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"memory_page_versions\".\"source_session_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "memory_page_versions_page_id_memory_pages_page_id_fk": {
+          "name": "memory_page_versions_page_id_memory_pages_page_id_fk",
+          "tableFrom": "memory_page_versions",
+          "tableTo": "memory_pages",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "page_id"
+          ],
+          "columnsTo": [
+            "page_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "memory_page_versions_layer_id_memory_layers_layer_id_fk": {
+          "name": "memory_page_versions_layer_id_memory_layers_layer_id_fk",
+          "tableFrom": "memory_page_versions",
+          "tableTo": "memory_layers",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "layer_id"
+          ],
+          "columnsTo": [
+            "layer_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "memory_page_versions_source_session_fk": {
+          "name": "memory_page_versions_source_session_fk",
+          "tableFrom": "memory_page_versions",
+          "tableTo": "project_sessions",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "source_session_id"
+          ],
+          "columnsTo": [
+            "session_id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.memory_pages": {
+      "name": "memory_pages",
+      "schema": "kortix",
+      "columns": {
+        "page_id": {
+          "name": "page_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "layer_id": {
+          "name": "layer_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "memory_page_type",
+          "typeSchema": "kortix",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title_key": {
+          "name": "title_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "summary": {
+          "name": "summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "status": {
+          "name": "status",
+          "type": "memory_page_status",
+          "typeSchema": "kortix",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'confirmed'"
+        },
+        "related": {
+          "name": "related",
+          "type": "uuid[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::uuid[]"
+        },
+        "version_no": {
+          "name": "version_no",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "updated_by_kind": {
+          "name": "updated_by_kind",
+          "type": "memory_author_kind",
+          "typeSchema": "kortix",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_by_user_id": {
+          "name": "updated_by_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_by_agent": {
+          "name": "updated_by_agent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_source_session_id": {
+          "name": "updated_source_session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "search": {
+          "name": "search",
+          "type": "tsvector",
+          "primaryKey": false,
+          "notNull": false,
+          "generated": {
+            "as": "to_tsvector('simple'::regconfig, coalesce(\"title\", '') || ' ' || coalesce(\"summary\", '') || ' ' || coalesce(\"body\", ''))",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "uniq_memory_pages_layer_title": {
+          "name": "uniq_memory_pages_layer_title",
+          "columns": [
+            {
+              "expression": "layer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "title_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"kortix\".\"memory_pages\".\"deleted_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_memory_pages_layer_type": {
+          "name": "idx_memory_pages_layer_type",
+          "columns": [
+            {
+              "expression": "layer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"memory_pages\".\"deleted_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_memory_pages_layer": {
+          "name": "idx_memory_pages_layer",
+          "columns": [
+            {
+              "expression": "layer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_memory_pages_search": {
+          "name": "idx_memory_pages_search",
+          "columns": [
+            {
+              "expression": "search",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        },
+        "idx_memory_pages_project": {
+          "name": "idx_memory_pages_project",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_memory_pages_deleted": {
+          "name": "idx_memory_pages_deleted",
+          "columns": [
+            {
+              "expression": "deleted_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"memory_pages\".\"deleted_at\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "memory_pages_layer_id_memory_layers_layer_id_fk": {
+          "name": "memory_pages_layer_id_memory_layers_layer_id_fk",
+          "tableFrom": "memory_pages",
+          "tableTo": "memory_layers",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "layer_id"
+          ],
+          "columnsTo": [
+            "layer_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "memory_pages_project_id_projects_project_id_fk": {
+          "name": "memory_pages_project_id_projects_project_id_fk",
+          "tableFrom": "memory_pages",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.memory_thread_loads": {
+      "name": "memory_thread_loads",
+      "schema": "kortix",
+      "columns": {
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "first_loaded_at": {
+          "name": "first_loaded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "layers": {
+          "name": "layers",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "memory_thread_loads_session_id_project_sessions_session_id_fk": {
+          "name": "memory_thread_loads_session_id_project_sessions_session_id_fk",
+          "tableFrom": "memory_thread_loads",
+          "tableTo": "project_sessions",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "session_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.project_space_links": {
+      "name": "project_space_links",
+      "schema": "kortix",
+      "columns": {
+        "link_id": {
+          "name": "link_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "space_id": {
+          "name": "space_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "url": {
+          "name": "url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_project_space_links_space": {
+          "name": "idx_project_space_links_space",
+          "columns": [
+            {
+              "expression": "space_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_project_space_links_project": {
+          "name": "idx_project_space_links_project",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "project_space_links_space_id_project_spaces_space_id_fk": {
+          "name": "project_space_links_space_id_project_spaces_space_id_fk",
+          "tableFrom": "project_space_links",
+          "tableTo": "project_spaces",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "space_id"
+          ],
+          "columnsTo": [
+            "space_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "project_space_links_project_id_projects_project_id_fk": {
+          "name": "project_space_links_project_id_projects_project_id_fk",
+          "tableFrom": "project_space_links",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.project_spaces": {
+      "name": "project_spaces",
+      "schema": "kortix",
+      "columns": {
+        "space_id": {
+          "name": "space_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "project_space_kind",
+          "typeSchema": "kortix",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_default": {
+          "name": "is_default",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "dm_user_id": {
+          "name": "dm_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dm_agent_name": {
+          "name": "dm_agent_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uniq_project_spaces_channel_slug": {
+          "name": "uniq_project_spaces_channel_slug",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"kortix\".\"project_spaces\".\"kind\" = 'channel'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uniq_project_spaces_dm": {
+          "name": "uniq_project_spaces_dm",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "dm_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "dm_agent_name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"kortix\".\"project_spaces\".\"kind\" = 'dm'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uniq_project_spaces_default": {
+          "name": "uniq_project_spaces_default",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"kortix\".\"project_spaces\".\"is_default\"",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_project_spaces_project": {
+          "name": "idx_project_spaces_project",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "project_spaces_account_id_accounts_account_id_fk": {
+          "name": "project_spaces_account_id_accounts_account_id_fk",
+          "tableFrom": "project_spaces",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "account_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "project_spaces_project_id_projects_project_id_fk": {
+          "name": "project_spaces_project_id_projects_project_id_fk",
+          "tableFrom": "project_spaces",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "project_spaces_kind_shape_check": {
+          "name": "project_spaces_kind_shape_check",
+          "value": "(\"kortix\".\"project_spaces\".\"kind\" = 'channel' and \"kortix\".\"project_spaces\".\"slug\" is not null and \"kortix\".\"project_spaces\".\"dm_user_id\" is null and \"kortix\".\"project_spaces\".\"dm_agent_name\" is null) or (\"kortix\".\"project_spaces\".\"kind\" = 'dm' and \"kortix\".\"project_spaces\".\"slug\" is null and \"kortix\".\"project_spaces\".\"dm_user_id\" is not null and \"kortix\".\"project_spaces\".\"dm_agent_name\" is not null)"
+        }
+      },
       "isRLSEnabled": false
     }
   },
