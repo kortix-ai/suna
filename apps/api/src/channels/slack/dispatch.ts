@@ -3,6 +3,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { chatChannelBindings, chatInstalls, projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import {
+  loadSlackBotIdForProject,
   loadSlackBotUserIdForProject,
   loadSlackTokenForProject,
 } from '../install-store';
@@ -549,27 +550,26 @@ export async function maybePostChannelIntro(teamId: string, event: SlackEvent): 
  * unit-slack-classify-event.test.ts assert that branch works and pass today,
  * because they call classifyEvent directly and never cross this gate.
  *
- * Only OUR messages can loop, and `event.user` identifies them: every Slack post
- * this codebase makes goes out with a plain bot token — there is no `username`,
- * `icon_emoji` or `icon_url` override anywhere under channels/slack — so Slack
- * always stamps our bot user id on the resulting event. (That absence is pinned
- * by a test; adding such an override strips `user` and would weaken this.)
+ * Only OUR messages can loop. A plain post comes back with our bot user id as
+ * `event.user`. A post under a Kortix agent's name (`username`, slack/persona.ts)
+ * comes back with NO `user`, so the third clause matches it by our bot id
+ * (`auth.test`, stored as SLACK_BOT_ID). persona.ts sends a name only once that
+ * id is stored, so every agent-named post is recognizable here.
  *
  * The second clause covers the one hole. `botUserId` comes from a secret read on
  * every event, and if that read fails we cannot tell our own message from another
  * app's — so we stay conservative with BOT traffic specifically. Humans are
  * unaffected in that window, which a blanket fail-closed would not manage.
  *
- * Deliberately NOT keyed on a stored bot_id: `oauth.v2.access` does not return
- * one, so that would mean an extra auth.test at install, a new secret, and a
- * backfill for every existing install — to defend against a code change a test
- * already catches. This works for every install that exists today with no
- * migration, because botUserId is a REQUIRED field on both install paths
- * (install-store.ts saveSlackInstall + saveSlackOauthInstall) and is written
- * unconditionally by both.
+ * The bot id is resolved on first agent-named post, not at install:
+ * `oauth.v2.access` does not return one, and this way existing installs need no
+ * backfill. botUserId stays the primary key: it is a REQUIRED field on both
+ * install paths (install-store.ts saveSlackInstall + saveSlackOauthInstall).
  */
-export function isOwnBotEvent(event: SlackEvent, botUserId: string | null): boolean {
+export function isOwnBotEvent(event: SlackEvent, botUserId: string | null, botId: string | null = null): boolean {
   if (botUserId && event.user === botUserId) return true;
+  // A post under an agent's name (`username`) arrives with no `user`: our bot id marks it.
+  if (botId && event.bot_id === botId) return true;
   if (event.bot_id && !botUserId) return true;
   return false;
 }
@@ -593,6 +593,7 @@ export async function dispatchSlackEvent(
     await ensureProjectChannelBinding(projectId, teamId, event.channel);
   }
   const botUserId = await loadSlackBotUserIdForProject(projectId);
+  const botId = await loadSlackBotIdForProject(projectId).catch(() => null);
 
   if (
     event.type === 'member_joined_channel' &&
@@ -604,7 +605,7 @@ export async function dispatchSlackEvent(
     return;
   }
 
-  if (isOwnBotEvent(event, botUserId)) return;
+  if (isOwnBotEvent(event, botUserId, botId)) return;
 
   const eventClass = await classifyEvent(teamId, event, botUserId);
   if (eventClass === 'ignore') return;

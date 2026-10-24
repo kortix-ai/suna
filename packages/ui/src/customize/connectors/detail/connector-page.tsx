@@ -27,7 +27,8 @@ import { errorToast } from '../../../primitives/toast';
 import { EmptyState } from '../../../primitives/empty-state';
 import { ErrorState } from '../../../primitives/error-state';
 import { ComputerConnectModal } from '../../../internal/tunnel/computer-connect';
-import { ConnectorAppIcon } from '../connector-identity';
+import { ConnectorLogo } from '../../../internal/connector-logo/connector-logo';
+import { installedConnectorLogoSource } from '../../../internal/connector-logo/connector-logo-source';
 import {
   appHref,
   appRefFromLocation,
@@ -318,7 +319,8 @@ export function ConnectorDetailView({
     settled: !connectionsQuery.isFetching && !manageProbeLoading,
     refetched: refetchedFor === connectId,
     canManageConnections,
-    direct: !isManagedProvider && !isComputer && !isChannel,
+    // An inbox account has no credential to open: it is made by Add inbox.
+    direct: !isManagedProvider && !isComputer && connector.provider !== 'channel',
   });
   const handoffAction = handoff.action;
   const handoffConnectionId = handoff.action === 'open' ? handoff.connectionId : null;
@@ -503,7 +505,7 @@ export function ConnectorDetailView({
 
           <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-3">
-              <ConnectorAppIcon connector={connector} size="lg" />
+              <ConnectorLogo source={installedConnectorLogoSource(connector)} size="lg" />
               {wrapTitle(
                 <h1
                   ref={headingRef}

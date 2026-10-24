@@ -44,6 +44,15 @@ const CHANNEL_INSTALL_KEYS = [
  * default one — so these match with an optional underscore-separated suffix.
  */
 const CHANNEL_INSTALL_KEY_PREFIXES = [
+  'EMAIL_CHANNEL_API_KEY',
+  'EMAIL_CHANNEL_INBOX_ID',
+  'EMAIL_CHANNEL_INBOX_EMAIL',
+  'EMAIL_CHANNEL_INBOX_DISPLAY_NAME',
+  'EMAIL_CHANNEL_WEBHOOK_ID',
+  'EMAIL_CHANNEL_WEBHOOK_SECRET',
+  'EMAIL_CHANNEL_SENDER_POLICY',
+  // Installs from before the Resend switch (2026-10-24) still hold these until
+  // they are reconnected; they stay channel credentials, never runtime env.
   'AGENTMAIL_API_KEY',
   'AGENTMAIL_INBOX_ID',
   'AGENTMAIL_INBOX_EMAIL',

@@ -751,15 +751,6 @@
     }
   },
   "src/channels/telegram-webhook.ts": {
-    "kortix-api/projects-surface": {
-      "count": 1
-    },
-    "no-console": {
-      "count": 4
-    },
-    "no-restricted-properties": {
-      "count": 1
-    },
     "no-restricted-syntax": {
       "count": 1
     }
@@ -2001,7 +1992,7 @@
   },
   "src/projects/routes/channel-email.ts": {
     "no-restricted-syntax": {
-      "count": 5
+      "count": 1
     }
   },
   "src/projects/routes/channel-slack.ts": {

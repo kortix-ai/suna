@@ -440,7 +440,7 @@ function buildPreviewTestEnvironment(
     KE2E_INTERNAL_SERVICE_KEY: internalServiceKey,
     KE2E_STRIPE_SECRET_KEY: rawSecrets.KE2E_STRIPE_SECRET_KEY ?? '',
     KE2E_STRIPE_WEBHOOK_SECRET: rawSecrets.KE2E_STRIPE_WEBHOOK_SECRET ?? '',
-    E2E_AGENTMAIL_API_KEY: '',
+    E2E_RESEND_API_KEY: '',
     KE2E_CAP_SANDBOX: rawSecrets.PLATINUM_API_KEY ? '1' : '0',
     KE2E_CAP_MANAGED_GIT: managedGitEnabled ? '1' : '0',
     KE2E_CAP_MANAGED_GIT_PUSH: managedGitEnabled ? '1' : '0',

@@ -158,6 +158,13 @@ describe('runInstall', () => {
     }
   });
 
+  test('the profile takes the name the user chose: slug and display name', async () => {
+    const { deps, drafts } = fakeDeps();
+    const result = await runInstall(deps, { projectId: 'p1', target: managed, connectors: [], name: ' Support mail ' });
+    expect(result).toEqual({ status: 'installed', slug: 'support-mail-abc123' });
+    expect(drafts[0]).toMatchObject({ slug: 'support-mail-abc123', name: 'Support mail', provider: 'composio', app: 'resend' });
+  });
+
   test('an app the project already has reuses its profile, never a second one', async () => {
     const { deps, drafts } = fakeDeps();
     const result = await runInstall(deps, {

@@ -34,7 +34,7 @@ import {
  * response when the error matches, otherwise `null` so the caller re-throws /
  * falls through to the generic handler for a genuine server failure.
  */
-function allowedSourceValidationResponse(c: Context, err: unknown): Response | null {
+export function allowedSourceValidationResponse(c: Context, err: unknown): Response | null {
   if (isAllowedSourceValidationError(err)) {
     return c.json(
       {

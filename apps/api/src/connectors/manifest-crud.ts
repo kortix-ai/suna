@@ -9,8 +9,6 @@ import { connectors, projects, projectSessionConnectorBindings } from '@kortix/d
  * the agent, not the connector). Credentials live in the split store.
  */
 import { and, eq } from 'drizzle-orm';
-import { featureDisabledBody } from '../feature-flags/gate';
-import { resolveFeatureFlag } from '../feature-flags/registry';
 import {
   type ConnectorAuthorizationStrategy,
   type ConnectorPolicyAction,
@@ -30,6 +28,8 @@ import {
   projectPolicySettingsToToml,
 } from '../projects/policies';
 import { db } from '../shared/db';
+import { featureDisabledBody } from '../feature-flags/gate';
+import { resolveFeatureFlag } from '../feature-flags/registry';
 import { upsertCredential, upsertOAuth2Credential } from './credentials';
 import { areValidConditions, isValidMatcher } from './policy';
 import {
@@ -217,9 +217,9 @@ export async function upsertConnectorInManifest(
   if (
     draft.provider === 'channel' &&
     draft.platform === 'email' &&
-    !resolveFeatureFlag(row.metadata, 'agentmail_email')
+    !resolveFeatureFlag(row.metadata, 'email_channel')
   ) {
-    const disabled = featureDisabledBody('agentmail_email');
+    const disabled = featureDisabledBody('email_channel');
     return { ok: false, error: disabled.error, status: 403, body: disabled };
   }
 

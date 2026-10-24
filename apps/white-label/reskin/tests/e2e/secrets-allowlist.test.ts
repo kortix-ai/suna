@@ -41,6 +41,8 @@ describe('selectAllowlistableSecrets', () => {
   test('an inbox-scoped channel key is recognised with its connection suffix', () => {
     expect(secretScope(secret('a', 'AGENTMAIL_API_KEY'))).toBe('channel_install');
     expect(secretScope(secret('a', 'AGENTMAIL_API_KEY_SUPPORT'))).toBe('channel_install');
+    expect(secretScope(secret('a', 'EMAIL_CHANNEL_API_KEY'))).toBe('channel_install');
+    expect(secretScope(secret('a', 'EMAIL_CHANNEL_WEBHOOK_SECRET_SUPPORT'))).toBe('channel_install');
   });
 
   test('a secret that merely starts like a channel key is still an ordinary secret', () => {

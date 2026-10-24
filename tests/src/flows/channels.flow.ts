@@ -1,5 +1,5 @@
 /**
- * Channels — Slack + AgentMail email integration + public, signature-gated webhooks. Maps to
+ * Channels — Slack + email (Resend inboxes) + public, signature-gated webhooks. Maps to
  * spec §CHN.
  *
  * Behavior confirmed against apps/api/src/channels + apps/api/src/projects/index.ts:
@@ -16,9 +16,9 @@
  * - BYO per-project webhook (/webhooks/slack/:projectId) returns 404 when the
  *   project has no install configured; a configured-but-bad-signature would be
  *   401.
- * - Email connect is AgentMail-native. The negative path uses an intentionally
- *   bogus API key so live suites do not create real inboxes unless a specific
- *   positive flow opts in.
+ * - Email is Resend Inboxes behind the `email_channel` project flag. The
+ *   negative paths stop before any Resend call (flag, validation), so suites
+ *   never create a real inbox.
  */
 import { randomUUID } from "node:crypto";
 import { flow } from "../core/flow";
@@ -28,6 +28,11 @@ import { CliSandbox } from "../fixtures/cli";
 import { createDatabaseSession } from "../fixtures/database-project";
 
 const UNKNOWN = "00000000-0000-4000-a000-000000000000";
+
+/** A project with the email channel on (`email_channel`). */
+async function emailProject(ctx: Parameters<Parameters<typeof flow>[2]>[0]) {
+  return ctx.fixtures.project({ metadata: { experimental: { email_channel: true } } });
+}
 
 // CHN-2 — Slack installation status (read ACL).
 flow(
@@ -69,12 +74,14 @@ flow(
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
-    await ctx.step("OWNER reads email install status → 200 (null when not connected)", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/channels/email/installation", { params: { projectId: p.id } });
-      // The run-scoped shared project is never connected, so the body is null.
-      r.status(200).body().has("$", null);
+    const on = await emailProject(ctx);
+    await ctx.step("OWNER reads email install status → 200 null, flag off or on with nothing connected", async () => {
+      for (const id of [p.id, on.id]) {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .get("/v1/projects/:projectId/channels/email/installation", { params: { projectId: id } });
+        r.status(200).body().has("$", null);
+      }
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
@@ -91,7 +98,7 @@ flow(
   },
 );
 
-// CHN-17 — Email mode/capabilities (managed AgentMail availability).
+// CHN-17 — Email mode: provider, whether the channel is on, managed inboxes.
 flow(
   "CHN-17",
   {
@@ -100,11 +107,21 @@ flow(
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
-    await ctx.step("OWNER reads email mode → 200 (disabled unless experimental flag is enabled)", async () => {
-      const r = await ctx.client
+    const on = await emailProject(ctx);
+    await ctx.step("OWNER reads mode → resend; enabled follows email_channel (off by default, on when set)", async () => {
+      const off = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/channels/email/mode", { params: { projectId: p.id } });
-      r.status(200).body().has("$.provider", "agentmail").has("$.enabled", false);
+      off.status(200).body().has("$.provider", "resend").has("$.enabled", false);
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/channels/email/mode", { params: { projectId: on.id } });
+      r.status(200).body().has("$.provider", "resend").has("$.enabled", true);
+      const mode = r.json<{ managed_available: boolean; managed_domain: string | null }>();
+      // Managed inboxes are the operator's switch: available ⇔ a managed domain.
+      if (mode.managed_available !== (mode.managed_domain !== null)) {
+        throw new Error(`managed_available ${mode.managed_available} disagrees with managed_domain ${mode.managed_domain}`);
+      }
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
@@ -121,7 +138,7 @@ flow(
   },
 );
 
-// CHN-13 — Email connect (manage ACL); creates AgentMail inbox + webhook.
+// CHN-13 — Email connect (manage ACL): flag gate, managed switch, validation.
 flow(
   "CHN-13",
   {
@@ -130,26 +147,37 @@ flow(
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
-    await ctx.step("disabled by default → 403 before AgentMail key validation", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(
-          "/v1/projects/:projectId/channels/email/connect",
-          { api_key: "am_us_bogus", display_name: "Kortix E2E" },
-          { params: { projectId: p.id } },
-        );
-      r.status(403);
-      r.body().has("$.code", "feature_disabled");
-      r.body().has("$.feature", "agentmail_email");
+    const on = await emailProject(ctx);
+    const connect = (projectId: string, body: Record<string, unknown>) =>
+      ctx.client.as(ctx.P.OWNER).post("/v1/projects/:projectId/channels/email/connect", body, { params: { projectId } });
+
+    await ctx.step("flag off → 403 feature_disabled email_channel, before anything else", async () => {
+      const r = await connect(p.id, { api_key: "re_bogus", username: "e2e", domain: "mail.example.com" });
+      r.status(403).body().has("$.code", "feature_disabled").has("$.feature", "email_channel");
+    });
+    await ctx.step("flag on: blank agent_name → 400 invalid_agent before any Resend call", async () => {
+      const r = await connect(on.id, { api_key: "re_bogus", display_name: "Kortix E2E", agent_name: "  " });
+      r.status(400).body().has("$.code", "invalid_agent");
+    });
+    await ctx.step("flag on: your own key needs a domain → 400 invalid_domain", async () => {
+      const r = await connect(on.id, { api_key: "re_bogus", username: "e2e" });
+      r.status(400).body().has("$.code", "invalid_domain");
+    });
+    await ctx.step("flag on, no key: managed off → 400 email_key_required (with the Resend links); managed on → another domain is 400 email_domain_not_managed", async () => {
+      const mode = (
+        await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/channels/email/mode", { params: { projectId: on.id } })
+      ).json<{ managed_available: boolean }>();
+      const r = await connect(on.id, { username: "e2e", domain: "mail.example.com" });
+      if (mode.managed_available) {
+        r.status(400).body().has("$.code", "email_domain_not_managed");
+      } else {
+        r.status(400).body().has("$.code", "email_key_required").has("$.api_keys_url", "https://resend.com/api-keys");
+      }
     });
     await ctx.step("NONMEMBER cannot connect → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post(
-          "/v1/projects/:projectId/channels/email/connect",
-          { api_key: "am_us_bogus", display_name: "Kortix E2E" },
-          { params: { projectId: p.id } },
-        );
+        .post("/v1/projects/:projectId/channels/email/connect", { api_key: "re_bogus" }, { params: { projectId: on.id } });
       r.status([403, 404]);
     });
   },
@@ -164,11 +192,14 @@ flow(
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
-    await ctx.step("OWNER disconnect → 200 (idempotent)", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .del("/v1/projects/:projectId/channels/email/installation", { params: { projectId: p.id } });
-      r.status(200).body().has("$.status", "disconnected");
+    const on = await emailProject(ctx);
+    await ctx.step("OWNER disconnect with nothing connected → 200, flag off or on (idempotent, no Resend call)", async () => {
+      for (const id of [p.id, on.id]) {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .del("/v1/projects/:projectId/channels/email/installation", { params: { projectId: id } });
+        r.status(200).body().has("$.status", "disconnected");
+      }
     });
     await ctx.step("NONMEMBER cannot disconnect → 403/404", async () => {
       const r = await ctx.client
@@ -553,48 +584,33 @@ flow(
   },
 );
 
-// CHN-16 — AgentMail inbound email webhook. Public, Svix signature-gated when configured.
+// CHN-16 — Resend inbound email webhook. Public; an inbox this API owns is
+// Svix-verified, any other inbox (another environment's) is ignored.
 flow(
   "CHN-16",
   {
     domain: "channels",
-    routes: ["POST /v1/webhooks/email/agentmail"],
+    routes: ["POST /v1/webhooks/email/resend"],
   },
   async (ctx) => {
-    await ctx.step("ANON unsigned AgentMail event → accepted locally or rejected by signing gate", async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .post("/v1/webhooks/email/agentmail", {
-          type: "event",
-          event_type: "message.received",
-          event_id: "evt_ke2e_unsigned",
-          message: {
-            inbox_id: "inb_ke2e_missing",
-            thread_id: "thr_ke2e",
-            message_id: "msg_ke2e",
-            from: "sender@example.com",
-            to: ["agent@example.com"],
-            labels: [],
-            timestamp: new Date().toISOString(),
-            size: 1,
-            updated_at: new Date().toISOString(),
-            created_at: new Date().toISOString(),
-          },
-          thread: {
-            inbox_id: "inb_ke2e_missing",
-            thread_id: "thr_ke2e",
-            labels: [],
-            timestamp: new Date().toISOString(),
-            senders: ["sender@example.com"],
-            recipients: ["agent@example.com"],
-            last_message_id: "msg_ke2e",
-            message_count: 1,
-            size: 1,
-            updated_at: new Date().toISOString(),
-            created_at: new Date().toISOString(),
-          },
-        });
-      r.status([200, 401, 503]);
+    await ctx.step("malformed body → 400, never acked", async () => {
+      const r = await ctx.client.as(ctx.P.ANON).post("/v1/webhooks/email/resend", {});
+      r.status(400);
+    });
+    await ctx.step("an inbox no project here owns → 200 ignored, unsigned", async () => {
+      const r = await ctx.client.as(ctx.P.ANON).post("/v1/webhooks/email/resend", {
+        type: "inbox.email.received",
+        created_at: new Date().toISOString(),
+        data: {
+          inbox_id: `inb_ke2e_${randomUUID()}`,
+          thread_id: "thr_ke2e",
+          email_id: "eml_ke2e",
+          from: "sender@example.com",
+          to: ["agent@example.com"],
+          subject: "ke2e",
+        },
+      });
+      r.status(200).body().has("$.ignored", true);
     });
   },
 );
@@ -1862,8 +1878,8 @@ flow(
   },
 );
 
-// CHN-TG1 — Telegram channel connector (connectors_v2): every route is gated by
-// the flag, a malformed token is refused before any call to Telegram, and the
+// CHN-TG1 — Telegram channel connector: every project can connect a bot (no
+// flag), a malformed token is refused before any call to Telegram, and the
 // allowed-user list needs an install.
 flow(
   "CHN-TG1",
@@ -1877,17 +1893,9 @@ flow(
     ],
   },
   async (ctx) => {
-    const off = await ctx.fixtures.sharedProject();
-    const on = await ctx.fixtures.project({ metadata: { experimental: { connectors_v2: true } } });
+    const on = await ctx.fixtures.project({ metadata: { experimental: { connectors_v2: false } } });
 
-    await ctx.step("with connectors_v2 off the installation read answers 403 feature_disabled", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/channels/telegram/installation", { params: { projectId: off.id } });
-      r.status(403).body().has("$.code", "feature_disabled").has("$.feature", "connectors_v2");
-    });
-
-    await ctx.step("with the flag on and no bot connected the installation is null", async () => {
+    await ctx.step("a project that once stored connectors_v2 off (now graduated) reads a null installation with no bot", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/channels/telegram/installation", { params: { projectId: on.id } });
@@ -1925,6 +1933,138 @@ flow(
         .as(ctx.P.NONMEMBER)
         .post("/v1/projects/:projectId/channels/telegram/connect", { bot_token: "not-a-token" }, { params: { projectId: on.id } });
       r.status([403, 404]);
+    });
+  },
+);
+
+// CHN-EM1 — Email domains: which addresses a Resend key can create inboxes
+// on. The managed team offers only its managed domain (operator switch);
+// custom domains need the project's own key; malformed input is refused
+// before any Resend call; the flag gates every route.
+flow(
+  "CHN-EM1",
+  {
+    domain: "channels",
+    routes: [
+      "POST /v1/projects/:projectId/channels/email/domains",
+      "POST /v1/projects/:projectId/channels/email/domains/add",
+      "POST /v1/projects/:projectId/channels/email/domains/verify",
+    ],
+  },
+  async (ctx) => {
+    const off = await ctx.fixtures.sharedProject();
+    const p = await emailProject(ctx);
+    const params = { params: { projectId: p.id } };
+    const mode = (
+      await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/channels/email/mode", params)
+    ).json<{ managed_available: boolean; managed_domain: string | null }>();
+
+    await ctx.step("flag off → 403 feature_disabled email_channel", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/email/domains", {}, { params: { projectId: off.id } });
+      r.status(403).body().has("$.feature", "email_channel");
+    });
+    await ctx.step("no key → the one managed domain, or 400 email_key_required when managed is off", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/:projectId/channels/email/domains", {}, params);
+      if (mode.managed_available) {
+        r.status(200).body().has("$.managed", true).has("$.domains[0].domain", mode.managed_domain ?? "");
+        const domains = r.json<{ domains: unknown[] }>().domains;
+        if (domains.length !== 1) throw new Error(`managed team must offer exactly one domain, got ${domains.length}`);
+      } else {
+        r.status(400).body().has("$.code", "email_key_required");
+      }
+    });
+    await ctx.step("adding a domain without your own key → 400 email_key_required", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/email/domains/add", { domain: "mail.example.com" }, params);
+      r.status(400).body().has("$.code", "email_key_required");
+    });
+    await ctx.step("a malformed domain → 400 invalid_domain before any Resend call", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/email/domains/add", { api_key: "re_bogus", domain: "nope" }, params);
+      r.status(400).body().has("$.code", "invalid_domain");
+    });
+    await ctx.step("verify without a domain_id → 400 invalid_domain", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/email/domains/verify", { api_key: "re_bogus" }, params);
+      r.status(400).body().has("$.code", "invalid_domain");
+    });
+    await ctx.step("NONMEMBER → 403/404; ANON → 401", async () => {
+      const r = await ctx.client.as(ctx.P.NONMEMBER).post("/v1/projects/:projectId/channels/email/domains", {}, params);
+      r.status([403, 404]);
+      const anon = await ctx.client.as(ctx.P.ANON).post("/v1/projects/:projectId/channels/email/domains", {}, params);
+      anon.status(401);
+    });
+  },
+);
+
+// CHN-EM2 — Email inboxes are accounts of the kortix_email connector: list,
+// add, update, remove. Only the paths that call no Resend run here (the local
+// profile has no external email); the live add/route/remove proof is manual.
+flow(
+  "CHN-EM2",
+  {
+    domain: "channels",
+    routes: [
+      "GET /v1/projects/:projectId/channels/email/inboxes",
+      "POST /v1/projects/:projectId/channels/email/inboxes",
+      "PATCH /v1/projects/:projectId/channels/email/inboxes/:connectionId",
+      "DELETE /v1/projects/:projectId/channels/email/inboxes/:connectionId",
+    ],
+  },
+  async (ctx) => {
+    const off = await ctx.fixtures.sharedProject();
+    const p = await emailProject(ctx);
+    const params = { params: { projectId: p.id } };
+    const missing = { params: { projectId: p.id, connectionId: "00000000-0000-4000-8000-000000000000" } };
+
+    await ctx.step("flag off → the list is empty and an add is 403 feature_disabled email_channel", async () => {
+      const list = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/channels/email/inboxes", { params: { projectId: off.id } });
+      list.status(200).body().has("$.inboxes", []);
+      const add = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/email/inboxes", { username: "help" }, { params: { projectId: off.id } });
+      add.status(403).body().has("$.feature", "email_channel");
+    });
+    await ctx.step("flag on, no inbox yet → GET answers an empty list", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/channels/email/inboxes", params);
+      r.status(200).body().has("$.inboxes", []);
+    });
+    await ctx.step("share must be me or project → 400 invalid_share before any Resend call", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/email/inboxes", { username: "help", share: "team", api_key: "re_bogus" }, params);
+      r.status(400).body().has("$.code", "invalid_share");
+    });
+    await ctx.step("own key without a domain → 400 invalid_domain; blank agent → 400 invalid_agent", async () => {
+      const noDomain = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/email/inboxes", { username: "help", api_key: "re_bogus" }, params);
+      noDomain.status(400).body().has("$.code", "invalid_domain");
+      const blank = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/email/inboxes", { username: "help", api_key: "re_bogus", agent_name: "  " }, params);
+      blank.status(400).body().has("$.code", "invalid_agent");
+    });
+    await ctx.step("PATCH and DELETE of an unknown inbox → 404 email_inbox_not_found", async () => {
+      const patch = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch("/v1/projects/:projectId/channels/email/inboxes/:connectionId", { label: "x" }, missing);
+      patch.status(404).body().has("$.code", "email_inbox_not_found");
+      const del = await ctx.client.as(ctx.P.OWNER).del("/v1/projects/:projectId/channels/email/inboxes/:connectionId", missing);
+      del.status(404).body().has("$.code", "email_inbox_not_found");
+    });
+    await ctx.step("NONMEMBER → 403/404; ANON → 401", async () => {
+      const r = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects/:projectId/channels/email/inboxes", params);
+      r.status([403, 404]);
+      const anon = await ctx.client.as(ctx.P.ANON).get("/v1/projects/:projectId/channels/email/inboxes", params);
+      anon.status(401);
     });
   },
 );

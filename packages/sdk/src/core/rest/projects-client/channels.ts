@@ -179,7 +179,7 @@ export async function disconnectSlack(projectId: string): Promise<void> {
   if (!res.success) throw new Error(res.error?.message ?? 'Failed to disconnect');
 }
 
-/** A project's Telegram bot (the `connectors_v2` feature flag). */
+/** A project's Telegram bot. */
 export interface TelegramInstallation {
   bot_id: string;
   username: string | null;
@@ -341,13 +341,24 @@ function normalizeEmailInstallation(value: EmailInstallationWire): EmailConnecti
   };
 }
 
+/**
+ * The email provider a server runs: `'resend'` (Resend Inboxes). `'agentmail'`
+ * is what servers before the Resend switch report.
+ */
+export type EmailProvider =
+  | 'resend'
+  /** @deprecated Older servers ran email on AgentMail. Removed in the next major. */
+  | 'agentmail';
+
 export interface EmailMode {
-  provider: 'agentmail';
+  provider: EmailProvider;
   enabled?: boolean;
   managed_available: boolean;
+  /** Where a managed inbox lives: `<username>@<managed_domain>`. Older servers omit it. */
+  managed_domain?: string;
 }
 
-const DEFAULT_EMAIL_MODE: EmailMode = { provider: 'agentmail', managed_available: false };
+const DEFAULT_EMAIL_MODE: EmailMode = { provider: 'resend', managed_available: false };
 
 export async function getEmailInstallation(
   projectId: string,
@@ -397,6 +408,97 @@ export async function connectEmail(
   return normalizeEmailInstallation(installation);
 }
 
+/** A DNS record the email provider needs before a custom domain can send and receive. */
+export interface EmailDomainRecord {
+  type: 'TXT' | 'CNAME' | 'MX';
+  name: string;
+  value: string;
+  status: 'MISSING' | 'INVALID' | 'VALID';
+  priority?: number;
+  reason?: string;
+}
+
+/** A domain an email account (Resend) can create inboxes on. `domain_id` is null for the managed domain. */
+export interface EmailDomain {
+  domain_id: string | null;
+  domain: string;
+  status: 'NOT_STARTED' | 'PENDING' | 'INVALID' | 'FAILED' | 'VERIFYING' | 'VERIFIED';
+  /** `status === 'VERIFIED'`: an inbox can be created on it. */
+  verified: boolean;
+  records: EmailDomainRecord[];
+  /** Why the domain is not verified yet, in the provider's words. */
+  reason?: string;
+}
+
+export interface EmailDomainList {
+  /** True when the list is the managed account's: one domain, no custom domains. */
+  managed: boolean;
+  default_domain: string;
+  domains: EmailDomain[];
+}
+
+/** One-click DNS setup at the domain's DNS provider (Domain Connect), when it supports it. */
+export interface EmailDomainSetup {
+  url: string;
+  provider_name: string | null;
+  /** Another email provider's MX records already on the domain; applying replaces them. */
+  conflicting_provider: string | null;
+}
+
+export interface EmailDomainResult {
+  domain: EmailDomain;
+  setup: EmailDomainSetup | null;
+}
+
+/**
+ * The domains a Resend API key can create inboxes on. No `apiKey`: the
+ * deployment's managed account, which offers its one managed domain. The key
+ * travels in the POST body, never in a URL.
+ */
+export async function listEmailDomains(
+  projectId: string,
+  input: { apiKey?: string } = {},
+): Promise<EmailDomainList> {
+  return unwrap(
+    await backendApi.post<EmailDomainList>(
+      `/projects/${encodeURIComponent(projectId)}/channels/email/domains`,
+      input.apiKey ? { api_key: input.apiKey } : {},
+      { showErrors: false },
+    ),
+    'Failed to list email domains',
+  );
+}
+
+/** Add a custom domain to the Resend account of `apiKey`; returns the DNS records to set. */
+export async function addEmailDomain(
+  projectId: string,
+  input: { apiKey: string; domain: string },
+): Promise<EmailDomainResult> {
+  return unwrap(
+    await backendApi.post<EmailDomainResult>(
+      `/projects/${encodeURIComponent(projectId)}/channels/email/domains/add`,
+      { api_key: input.apiKey, domain: input.domain },
+      { showErrors: false },
+    ),
+    'Failed to add the email domain',
+  );
+}
+
+/** Ask Resend to check a custom domain's DNS records again. */
+export async function verifyEmailDomain(
+  projectId: string,
+  input: { apiKey: string; domainId: string },
+): Promise<EmailDomainResult> {
+  return unwrap(
+    await backendApi.post<EmailDomainResult>(
+      `/projects/${encodeURIComponent(projectId)}/channels/email/domains/verify`,
+      { api_key: input.apiKey, domain_id: input.domainId },
+      { showErrors: false },
+    ),
+    'Failed to check the email domain',
+  );
+}
+
 export async function disconnectEmail(
   projectId: string,
   connectorSlug?: string | null,
@@ -423,6 +525,121 @@ export async function updateEmailPolicy(
     'Failed to update email policy',
   );
   return normalizeEmailInstallation(installation);
+}
+
+// ── Email inboxes — the accounts of the project's email connector ──────────
+// Each Resend inbox is one account of `kortix_email`: owned by one member
+// (`owner_type: 'member'`, "only me") or shared with the project. Default,
+// sharing and listing also work through the connection functions.
+
+/** Who may email the agent, on the wire (snake_case). */
+export interface EmailInboxSenderPolicy {
+  mode: 'allow_all' | 'restricted';
+  allowed_emails: string[];
+  allowed_domains: string[];
+  allowed_regex: string | null;
+}
+
+/** One email inbox: an account of the email connector. */
+export interface EmailInbox {
+  /** The account: pass it in `connector_bindings.email`. */
+  connection_id: string;
+  inbox_id: string;
+  email: string;
+  display_name: string | null;
+  label: string;
+  owner_type: 'member' | 'project';
+  owner_id: string | null;
+  is_default: boolean;
+  /** On the deployment's managed Resend team (no own key). */
+  managed: boolean;
+  /** Kortix created the inbox: removing it deletes it on Resend. */
+  created_by_kortix: boolean;
+  sender_policy: EmailInboxSenderPolicy;
+  /** The agent its mail starts; null = the project default. */
+  agent_name: string | null;
+  created_at: string;
+}
+
+export interface AddEmailInboxInput {
+  /** `me`: only you ("only me"); `project` (default): shared with the project. */
+  share?: 'me' | 'project';
+  /** Your Resend API key; omit for a managed inbox when the deployment offers one. */
+  api_key?: string;
+  /** The part before the @. */
+  username?: string;
+  /** One of your Resend domains (own key), or the managed domain. */
+  domain?: string;
+  display_name?: string;
+  label?: string;
+  sender_policy?: Partial<EmailInboxSenderPolicy> | EmailSenderPolicy;
+  agent_name?: string | null;
+  /** Attach an existing Resend inbox by id instead of creating one. */
+  inbox_id?: string;
+}
+
+export interface UpdateEmailInboxInput {
+  sender_policy?: Partial<EmailInboxSenderPolicy> | EmailSenderPolicy;
+  agent_name?: string | null;
+  display_name?: string | null;
+  label?: string;
+}
+
+export interface RemoveEmailInboxResult {
+  status: 'deleted';
+  /** True when Resend deleted the inbox (Kortix created it); false: only unlinked. */
+  inbox_deleted: boolean;
+}
+
+/** The inboxes you can see: every shared one, and your own private ones. */
+export async function listEmailInboxes(projectId: string): Promise<EmailInbox[]> {
+  const data = unwrap(
+    await backendApi.get<{ inboxes: EmailInbox[] }>(
+      `/projects/${encodeURIComponent(projectId)}/channels/email/inboxes`,
+      { showErrors: false },
+    ),
+    'Failed to list email inboxes',
+  );
+  return data.inboxes ?? [];
+}
+
+/** Add an inbox (a new account of the email connector). The key travels in the body. */
+export async function addEmailInbox(projectId: string, input: AddEmailInboxInput): Promise<EmailInbox> {
+  return unwrap(
+    await backendApi.post<EmailInbox>(
+      `/projects/${encodeURIComponent(projectId)}/channels/email/inboxes`,
+      input,
+      { showErrors: false },
+    ),
+    'Failed to add the email inbox',
+  );
+}
+
+/** Change who may email an inbox, its agent, or its names. */
+export async function updateEmailInbox(
+  projectId: string,
+  connectionId: string,
+  input: UpdateEmailInboxInput,
+): Promise<EmailInbox> {
+  return unwrap(
+    await backendApi.patch<EmailInbox>(
+      `/projects/${encodeURIComponent(projectId)}/channels/email/inboxes/${encodeURIComponent(connectionId)}`,
+      input,
+      { showErrors: false },
+    ),
+    'Failed to update the email inbox',
+  );
+}
+
+/** Remove an inbox. Resend deletes it too when Kortix created it. */
+export async function removeEmailInbox(projectId: string, connectionId: string): Promise<RemoveEmailInboxResult> {
+  return unwrap(
+    await backendApi.delete<RemoveEmailInboxResult>(
+      `/projects/${encodeURIComponent(projectId)}/channels/email/inboxes/${encodeURIComponent(connectionId)}`,
+      { showErrors: false },
+    ),
+    'Failed to remove the email inbox',
+  );
 }
 
 // ── Channel bindings — which agent/model/join-policy a bound chat channel uses ──

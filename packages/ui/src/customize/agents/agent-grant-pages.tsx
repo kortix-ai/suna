@@ -20,10 +20,9 @@ import { Skeleton } from '../../primitives/skeleton';
 import { EmptyState } from '../../primitives/empty-state';
 import { ErrorState } from '../../primitives/error-state';
 import { connectorDisplayName } from '../connectors/connector-filter';
-import {
-  ConnectorAppIcon,
-  ConnectorStatusBadge,
-} from '../connectors/connector-identity';
+import { ConnectorStatusBadge } from '../connectors/connector-identity';
+import { ConnectorLogo } from '../../internal/connector-logo/connector-logo';
+import { installedConnectorLogoSource } from '../../internal/connector-logo/connector-logo-source';
 import { ConnectorModal } from '../connectors/detail/connector-modal';
 import { providerLabel } from '../connectors/provider-label';
 import { detailSelection } from '../shared/detail-selection';
@@ -355,7 +354,7 @@ export function ConnectorsGrantPage({
             onRetry={() => void connectorsQuery.refetch()}
             items={connectors.map((connector) => ({
               id: connector.slug,
-              leading: <ConnectorAppIcon connector={connector} size="sm" />,
+              leading: <ConnectorLogo source={installedConnectorLogoSource(connector)} size="sm" />,
               title: connectorDisplayName(connector),
               description: `${providerLabel(connector.provider)} · ${connector.actions.length} ${
                 connector.actions.length === 1 ? 'action' : 'actions'

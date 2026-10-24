@@ -196,7 +196,7 @@ kortix connectors show email_email_inbox_bjgk.reply_message
 
 ```sh
 kortix connectors call email_email_inbox_bjgk reply_message \
-  '{"inbox_id":"email-inbox@agentmail.to","message_id":"<message-id>","text":"Reply text"}'
+  '{"inbox_id":"agent@kortixmail.com","thread_id":"<thread-id>","message_id":"<message-id>","text":"Reply text"}'
 ```
 
 **Attach files.** Write the file under `/workspace/artifacts` (or
@@ -250,7 +250,8 @@ const action = await connectors.describe(matches[0]!.tool);
 if (!action) throw new Error('Email action not found');
 
 const result = await connectors.call('email_email_inbox_bjgk.reply_message', {
-  inbox_id: 'email-inbox@agentmail.to',
+  inbox_id: 'agent@kortixmail.com',
+  thread_id: '<thread-id>',
   message_id: '<message-id>',
   text: 'Reply text',
 });
@@ -299,18 +300,58 @@ connectors:
       type: bearer
 ```
 
-Use `composio` for managed SaaS apps. Other supported direct providers are
-`mcp`, `openapi`, `postman`, `graphql`, and `http`. Add and connect a Composio
-toolkit with:
+To add an app, search the app catalogue first:
 
 ```sh
-kortix connectors add github --provider composio --app github --apply
-kortix connectors connect github
+kortix connectors catalog gmail                     # every way in, one row per app
+kortix connectors catalog crm --kind mcp,composio   # filter: kortix, mcp, composio, openapi, graphql
+kortix connectors catalog notes --one-click         # only apps the human connects by signing in
+kortix connectors catalog show composio:gmail       # every way to connect it + its tools
+```
+
+Each app lists its ways to connect, best first, the first marked
+`recommended`:
+
+0. built by Kortix (`kind: kortix`): the channels Slack, Microsoft Teams,
+   Email and Telegram, where people message the agent, and Computer, the
+   human's own machine. They are never installed: the human sets them up
+   (`kortix channels connect`, `--platform teams`,
+   `kortix channels email inboxes add`, Telegram on its page in the web app,
+   Computer with `npx --yes @kortix/agent-tunnel@latest connect` on that
+   machine or the desktop app);
+1. a one-click MCP server — the vendor's own server; the human only signs in;
+2. Composio — a third-party partner that runs the sign-in (one click), for an
+   app with no one-click MCP server (Gmail, Outlook, …);
+3. an MCP server that needs the human's own OAuth app or key, then the REST
+   (OpenAPI) and GraphQL APIs — they need a key or token after install.
+
+`catalog show` prints the tools of the recommended way; `catalog tools <id>
+--way <way-id>` prints another way's. Install the recommended way, or pick one,
+and name the profile:
+
+```sh
+kortix connectors catalog install kortix:linear
+kortix connectors catalog install composio:gmail --name "Support inbox"
+kortix connectors catalog install <id> --way <way-id>
+kortix connectors connect <slug>                    # the human signs in
+```
+
+Install adds a connector PROFILE (an entry in `kortix.yaml`): its accounts, who
+may use them and its tool rules (`kortix connectors policy`) live on it.
+
+The catalogue is large, not complete. When it has no entry for the app, search
+the web for the vendor's MCP server (`<vendor> MCP server`, the vendor's
+developer docs, the MCP registry at registry.modelcontextprotocol.io) or its
+OpenAPI spec, then add it directly:
+
+```sh
+kortix connectors add acme --provider mcp --url https://mcp.acme.com/mcp --transport http --apply
+kortix connectors add acme --provider openapi --spec https://acme.com/openapi.json --apply
 ```
 
 Pipedream exists only for rollback compatibility with already-declared
 connectors. Never add a new Pipedream connector automatically. If Composio
-cannot satisfy the request, stop, explain the gap, and ask the human before any
+and the MCP catalogue cannot satisfy the request, stop, explain the gap, and ask the human before any
 explicit `--allow-legacy-pipedream` retry.
 
 Surface the returned connection URL. For an API key you already have (the user
@@ -333,8 +374,10 @@ kortix channels connect
 - Use `kortix connectors` for one-off agent actions.
 - Use `@kortix/sdk` for durable or testable workflows, and for App, Convex
   backend, and external-program code (see **From apps and backends**).
-- Use Composio for every new managed SaaS connector. Never select Pipedream
-  unless the human explicitly approves the legacy rollback path.
+- Add an app through the catalogue's recommended way: a one-click MCP server,
+  else Composio, else its API. Search the web when the catalogue lacks it.
+  Never select Pipedream unless the human explicitly approves the legacy
+  rollback path.
 - Do not use raw provider tokens from the sandbox.
 - Treat `denied`, `not_shared`, `needs_auth`, `account_required`, and
   `ok: false` as real outcomes — `account_required` means several accounts

@@ -184,6 +184,25 @@ describe('useFeatureFlag', () => {
     expect(useFeatureFlag(null, 'pi_harness').enabled).toBe(true);
   });
 
+  test('connectors_v2 and connectors_api_discover graduated: one catalog for every project', () => {
+    // 2026-10-24. A stored `false` from the flag era is inert.
+    withDetail({ connectors_v2: false, connectors_api_discover: false });
+    expect(useFeatureFlag('p', 'connectors_v2').enabled).toBe(true);
+    expect(useFeatureFlag('p', 'connectors_api_discover').enabled).toBe(true);
+
+    withDetail(undefined);
+    expect(useFeatureFlag('p', 'connectors_v2').enabled).toBe(true);
+  });
+
+  test('agentmail_email graduated: every project can connect an email inbox', () => {
+    // 2026-10-24. A stored `agentmail_email: false` from the flag era is inert.
+    withDetail({ agentmail_email: false });
+    expect(useFeatureFlag('p', 'agentmail_email').enabled).toBe(true);
+
+    withDetail(undefined);
+    expect(useFeatureFlag('p', 'agentmail_email').enabled).toBe(true);
+  });
+
   test('config_releases graduated: every session runs the base branch config release', () => {
     // A `false` a project stored while config releases were a flag is inert.
     withDetail({ config_releases: false });

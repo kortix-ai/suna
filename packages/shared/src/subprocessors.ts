@@ -27,7 +27,7 @@ export const SUBPROCESSOR_NOTICE_DAYS = 30;
 /** The time a merged row has to reach prod before its notice gives fewer than 30 days. */
 export const SUBPROCESSOR_RELEASE_DAYS = 7;
 
-export const SUBPROCESSORS_UPDATED = "2026-10-18";
+export const SUBPROCESSORS_UPDATED = "2026-10-24";
 
 /** The first day `row` may process customer personal data (`YYYY-MM-DD`), or null for an established row. */
 export function subprocessorEffectiveDate(row: Subprocessor): string | null {
@@ -163,7 +163,8 @@ export const SUBPROCESSORS_CORE: readonly Subprocessor[] = [
   },
   {
     name: "Resend, Inc.; Mailtrap (Railsware)",
-    purpose: "Transactional email delivery (fallback providers)",
+    purpose:
+      "Transactional email delivery (fallback providers); agent email inboxes, when you connect one (Resend)",
     location: "United States",
   },
   {
@@ -225,11 +226,6 @@ export const SUBPROCESSORS_OPTIONAL: readonly Subprocessor[] = [
   {
     name: "Microsoft Corporation",
     purpose: "Microsoft Teams channel, when you connect a tenant",
-    location: "United States",
-  },
-  {
-    name: "AgentMail",
-    purpose: "Agent email inboxes, when you enable them",
     location: "United States",
   },
 ];

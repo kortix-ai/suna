@@ -38,7 +38,9 @@ export function useConnectorDetail({
   onChanged: () => void;
 }) {
   const isManagedProvider = isManagedConnectorProvider(connector.provider);
-  const isChannel = connector.provider === 'channel';
+  // Email is a channel whose accounts are inboxes: it lists and adds accounts
+  // like any connector, so only the single-install channels count here.
+  const isChannel = connector.provider === 'channel' && connector.platform !== 'email';
   const isComputer = connector.provider === 'computer';
   const displayName = connectorDisplayName(connector);
 

@@ -864,7 +864,7 @@ describe('kortix triggers — events', () => {
     const mcpApp = (over: Record<string, unknown>) => ({
       source: 'mcp', provider: 'mcp', logo: null, connector: null, connected: false, connectors: [], mcp_url: null, ...over,
     });
-    // A connectors_v2 project: Composio only where it has a connector; every MCP catalogue app.
+    // Composio only where the project has a connector; every MCP catalogue app.
     const MCP_APPS = {
       apps: [
         { ...EVENT_APPS.apps[0], source: 'composio', mcp_url: null },
@@ -913,7 +913,7 @@ describe('kortix triggers — events', () => {
       expect(r.stdout).toContain(
         'Add an MCP app (its read-only list tools become events too): kortix connectors add <slug> --provider mcp --url <mcp_url> --apply, then sign it in for the project: kortix connectors authorize <slug>.',
       );
-      // connectors_v2 adds apps from the MCP catalogue: no Composio add line.
+      // Apps come from the MCP catalogue: no Composio add line.
       expect(r.stdout).not.toContain('--provider composio');
       const raw = await runCli(['triggers', 'events', '--apps', '--json', '--project', PROJECT], cfg);
       expect(JSON.parse(raw.stdout).apps.map((a: { mcp_url: string | null }) => a.mcp_url)).toEqual([

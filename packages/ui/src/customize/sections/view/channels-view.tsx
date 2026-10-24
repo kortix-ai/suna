@@ -82,7 +82,6 @@ import {
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '../../../primitives/input-group';
-import { Label } from '../../../primitives/label';
 import {
   Modal,
   ModalBody,
@@ -103,18 +102,17 @@ import { Skeleton } from '../../../primitives/skeleton';
 import { Tabs, TabsListCompact, TabsTriggerCompact } from '../../../primitives/tabs';
 import Loading from '../../../primitives/loading';
 import { errorToast, infoToast, successToast, warningToast } from '../../../primitives/toast';
-import { MicrosoftTeams } from '../../../internal/icons/microsoft-teams';
-import { Slack } from '../../../internal/icons/slack';
 import { ModelSelector } from '../../../session/models/model-selector';
 import { AgentSelector } from '../../../session/composer/session-chat-input';
 import {
   ChannelDisconnectButton,
   ChannelRow,
 } from '../component/channel-row';
-import { TeamsConnectCard } from '../component/teams-connect-card';
+import { TeamsChannelMock, TeamsConnectCard } from '../component/teams-connect-card';
 import { TelegramChannelRow } from '../component/telegram-channel-row';
-import { SlackConnectCard } from '../component/slack-connect-card';
-import { EmailConnectForm } from '../connectors-view';
+import { SlackChannelMock, SlackConnectCard } from '../component/slack-connect-card';
+import { ChannelHeroLayoutProvider } from '../component/channel-hero-frame';
+import { EmailHero } from '../../connectors/detail/email-inboxes';
 import { ChannelBrandMark } from '../../../session/turn/channel-brand';
 import {
   type ChannelModelKey,
@@ -122,7 +120,6 @@ import {
 } from './channel-settings-patch';
 import { slackConversationName } from '../../../session/turn/channel-message';
 import { bindingTabs } from './channel-binding-tabs';
-import { projectSettingsSectionHref } from '../../project-settings/project-settings-sections';
 import { AccessRow } from '../../../access/access/access-row';
 import {
   type ChannelBinding,
@@ -130,11 +127,8 @@ import {
   useUpdateChannelBinding,
 } from '../../../internal/hooks/use-channel-bindings';
 import {
-  type EmailInstallation,
   type SlackInstallation,
-  useDisconnectEmail,
   useDisconnectSlack,
-  useEmailInstall,
   useSlackInstall,
   useSlackMode,
 } from '../../../internal/hooks/channels/use-channels-installations';
@@ -160,40 +154,23 @@ import {
   AtIcon,
   CaretLeftIcon,
   CaretRightIcon,
-  EnvelopeIcon,
   MagnifyingGlassIcon,
   WarningCircleIcon,
 } from '@phosphor-icons/react';
 import { UiLink as Link, useUiPathname, useUiRouter, useUiSearchParams } from '../../../providers/ui-provider';
 import { useEffect, useMemo, useState } from 'react';
+import { useTunnelConnections } from '@kortix/sdk/react';
+import { ComputerHero } from '../../connectors/detail/computer-app-page';
+import { FeatureGateScreen } from '../../shared/feature-gate-screen';
 
 /** Reserved slug for the built-in Email channel (see api connectors.ts). */
-const EMAIL_CONNECTOR_SLUG = 'kortix_email';
 
-/**
- * Skeleton shapes match what replaces them: one tall hero panel, then two
- * short rows. Matching the shape is the point — a placeholder that settles
- * into a different geometry reads as a layout jump, not as loading.
- */
-const CHANNEL_LOADING_ROWS = ['channel-loading-1', 'channel-loading-2'];
+/** A Kortix channel's own page (`platform`), or every channel (the Channels page). */
+export type ChannelPlatform = 'slack' | 'teams' | 'email' | 'telegram';
 
-export function ChannelsSection({ projectId }: { projectId: string }) {
+export function ChannelsSection({ projectId, platform }: { projectId: string; platform?: ChannelPlatform }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   useTeamsInstallReturnToast();
-  // This view used to read the flags off the project SUMMARY query
-  // (`qk.project.summary` / `getProject`, whose payload nests them one level
-  // shallower). It now reads the one gating primitive, which is backed by
-  // `qk.project.detail` — the entry the Customize panel that hosts this view
-  // already holds, so the switch removes a fetch rather than adding one.
-  //
-  // The LOADING semantics are preserved deliberately: unlike its siblings, this
-  // surface WAITS on the flag before painting (`emailFlag.isLoading` feeds
-  // `loading` below), so the header action cannot flash the wrong state, and
-  // `useEmailInstall` stays unfired until the flag resolves.
-  const emailFlag = useFeatureFlag(projectId, 'agentmail_email');
-  const emailChannelEnabled = emailFlag.enabled;
-  // Telegram is a channel connector behind connectors_v2; off, it is not listed.
-  const telegramEnabled = useFeatureFlag(projectId, 'connectors_v2').enabled;
   const { data: install, isLoading: loadingInstall } = useSlackInstall(projectId);
   const { data: mode, isLoading: loadingMode } = useSlackMode(projectId);
   // Teams is on for every project (its feature flag graduated on 2026-10-01).
@@ -201,15 +178,12 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
   const { data: teamsMode } = useTeamsMode(projectId);
   // Not connected, Teams gets the same hero as Slack; connected, it is a row.
   const teamsHero = !teamsInstall && Boolean(teamsMode?.enabled);
-  const { data: emailInstall, isLoading: loadingEmail } = useEmailInstall(
-    emailChannelEnabled ? projectId : null,
-    EMAIL_CONNECTOR_SLUG,
-  );
-  const loading =
-    loadingInstall ||
-    loadingMode ||
-    emailFlag.isLoading ||
-    (emailChannelEnabled && loadingEmail);
+  // Email (Resend Inboxes) is experimental behind `email_channel`. Off, it is on
+  // no surface, and its inboxes are never read (EmailHero is not mounted).
+  const emailFlag = useFeatureFlag(projectId, 'email_channel');
+  const emailEnabled = emailFlag.enabled;
+  const loading = loadingInstall || loadingMode || emailFlag.isLoading;
+  const tPages = useTranslations('connectorPages');
   const oauthInstallUrl = mode?.oauth_available ? mode.install_url : null;
   const canWrite =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE).allowed === true;
@@ -224,99 +198,92 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
   const openChannels = (platform: string) =>
     setChannelsDialog((dialog) => ({ open: true, platform, session: dialog.session + 1 }));
 
-  // Once Slack is connected it stops being the headline and becomes a peer of
-  // Email and Teams — same row, same list. So the "More channels" label only
-  // earns its place while the hero is above it; with Slack in the list, the
-  // rows ARE the channel list and the section header already says "Channels".
-  // The list always has the Teams row.
-  const slackRow = Boolean(install);
-  const showMoreLabel = !slackRow;
+  // Every channel draws as a hero, connected or not: its own page shows one
+  // platform, the Channels tab every platform, one under the other.
+  const platforms: ChannelPlatform[] = platform
+    ? [platform]
+    : ['slack', 'teams', ...(emailEnabled ? (['email'] as const) : []), 'telegram'];
+  // The Kortix tab also holds the computer, where this deployment can pair one
+  // (the machine list answers 503 where computers are off).
+  const computersEnabled = useTunnelConnections({ refetchInterval: false }).isSuccess;
+  const showComputer = !platform && computersEnabled;
 
-  return (
-    /* Full width of the Connectors shell, like the All and Connected scopes
-       beside it: the connect heroes are split cards whose chat preview needs
-       the room, and a capped column left a dead band to the right of the
-       scope tabs.
-
-       No heading and no scroll container here. Both belong to the
-       `CapabilityPageShell` in `connectors-page.tsx`; a second of either would
-       print a second `<h1>` and scroll the wrong box. */
-    <div className="w-full space-y-6">
-      {loading ? (
-        <>
-          <Skeleton className="h-64 rounded-md" />
-          <div className="space-y-2">
-            {CHANNEL_LOADING_ROWS.map((key) => (
-              <Skeleton key={key} className="h-14 rounded-md" />
-            ))}
-          </div>
-        </>
-      ) : (
-        <>
-          {/* Slack, not connected: the hero. Connected, it drops into the row
-              list below and this branch renders nothing. */}
-          {install ? null : (
-            <SlackConnectCard
+  const hero = (pf: ChannelPlatform) => {
+    switch (pf) {
+      case 'slack':
+        return install ? (
+          <>
+            <SlackChannelRow
               projectId={projectId}
-              oauthInstallUrl={oauthInstallUrl}
+              installation={install}
               canWrite={canWrite}
+              channelCount={channelCounts.get('slack') ?? 0}
+              onOpenChannels={() => openChannels('slack')}
             />
-          )}
-          {teamsHero && teamsMode ? (
-            <TeamsConnectCard projectId={projectId} mode={teamsMode} canWrite={canWrite} />
-          ) : null}
-
-          <section className="space-y-2">
-            {showMoreLabel ? <Label>{tI18nComplete.raw('text28647129955c')}</Label> : null}
-            <ul className="space-y-2">
-              {install ? (
-                <SlackChannelRow
-                  projectId={projectId}
-                  installation={install}
-                  canWrite={canWrite}
-                  channelCount={channelCounts.get('slack') ?? 0}
-                  onOpenChannels={() => openChannels('slack')}
-                />
-              ) : null}
-              {/* The Email row renders on every project — the CLI lists Email
-                  on every project (its help line carries the flag note), so the
-                  web list may not drop it when `agentmail_email` is off
-                  (dogfood:channels-page-readonly). The flag only decides the
-                  row's state; `useEmailInstall` stays unfired until it resolves. */}
-              <EmailChannelRow
-                projectId={projectId}
-                enabled={emailChannelEnabled}
-                installation={emailInstall ?? null}
-                canWrite={canWrite}
-              />
-              {telegramEnabled ? <TelegramChannelRow projectId={projectId} canWrite={canWrite} /> : null}
-              {teamsHero ? null : (
-                <TeamsChannelRow
-                  projectId={projectId}
-                  canWrite={canWrite}
-                  channelCount={channelCounts.get('teams') ?? 0}
-                  onOpenChannels={() => openChannels('teams')}
-                />
-              )}
-            </ul>
+            <SlackFollowUp projectId={projectId} />
+          </>
+        ) : (
+          <SlackConnectCard projectId={projectId} oauthInstallUrl={oauthInstallUrl} canWrite={canWrite} />
+        );
+      case 'teams':
+        return teamsHero && teamsMode ? (
+          <TeamsConnectCard projectId={projectId} mode={teamsMode} canWrite={canWrite} />
+        ) : (
+          <>
+            <TeamsChannelRow
+              projectId={projectId}
+              canWrite={canWrite}
+              channelCount={channelCounts.get('teams') ?? 0}
+              onOpenChannels={() => openChannels('teams')}
+            />
             {teamsInstall?.appUpdateAvailable ? (
               <TeamsAppUpdateNotice install={teamsInstall} tI18nComplete={tI18nComplete} />
             ) : null}
-          </section>
+          </>
+        );
+      case 'email':
+        // Each inbox is an account on `kortix_email`: the hero counts them, Manage lists them.
+        return <EmailHero projectId={projectId} canWrite={canWrite} />;
+      case 'telegram':
+        return <TelegramChannelRow projectId={projectId} canWrite={canWrite} />;
+    }
+  };
 
-          {install ? <SlackFollowUp projectId={projectId} /> : null}
-          <ChannelBindingsDialog
-            key={channelsDialog.session}
-            projectId={projectId}
-            canWrite={canWrite}
-            platform={channelsDialog.platform}
-            open={channelsDialog.open}
-            onOpenChange={(open) => setChannelsDialog((dialog) => ({ ...dialog, open }))}
-          />
+  // The Email page with the flag off: the standard flag-off screen, with its enable action.
+  if (platform === 'email' && !emailFlag.isLoading && !emailEnabled) {
+    return (
+      <FeatureGateScreen
+        featureKey="email_channel"
+        featureName={tPages('emailGateName')}
+        description={tPages('emailGateDescription')}
+      />
+    );
+  }
 
-        </>
-      )}
-    </div>
+  return (
+    /* Full width of the Connectors shell: the heroes are split cards whose
+       chat preview needs the room. No heading and no scroll container here;
+       both belong to the `CapabilityPageShell` in `connectors-page.tsx`. */
+    <ChannelHeroLayoutProvider>
+      <div className="w-full space-y-6">
+        {loading
+          ? platforms.map((pf) => <Skeleton key={pf} className="h-72 w-full rounded-lg" />)
+          : platforms.map((pf) => (
+              <div key={pf} className="space-y-4">
+                {hero(pf)}
+              </div>
+            ))}
+        {showComputer && !loading ? <ComputerHero projectId={projectId} /> : null}
+        <ChannelBindingsDialog
+          key={channelsDialog.session}
+          projectId={projectId}
+          canWrite={canWrite}
+          platform={channelsDialog.platform}
+          open={channelsDialog.open}
+          onOpenChange={(open) => setChannelsDialog((dialog) => ({ ...dialog, open }))}
+        />
+      </div>
+    </ChannelHeroLayoutProvider>
   );
 }
 
@@ -335,15 +302,21 @@ function SlackChannelRow({
   onOpenChannels: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tPages = useTranslations('connectorPages');
   const disconnect = useDisconnectSlack();
 
   return (
     <ChannelRow
-      icon={<Slack className="size-5 shrink-0" />}
+      app="slack"
       name="Slack"
       connected
       detail={installation.workspaceName ?? installation.workspaceId}
       pitch={tI18nComplete.raw('text9bd1c37ed121')}
+      hero={{
+        title: tI18nComplete.raw('text89e9e20668f3'),
+        connectedTitle: tPages('channelConnectedTitle', { name: 'Slack' }),
+        preview: <SlackChannelMock />,
+      }}
       actions={
         <>
           {channelCount > 0 ? <ChannelsButton count={channelCount} onOpen={onOpenChannels} /> : null}
@@ -1049,6 +1022,7 @@ function TeamsChannelRow({
   onOpenChannels: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tPages = useTranslations('connectorPages');
   const { data: install } = useTeamsInstall(projectId);
   const { data: mode } = useTeamsMode(projectId);
   const disconnect = useDisconnectTeams();
@@ -1079,11 +1053,16 @@ function TeamsChannelRow({
 
   return (
     <ChannelRow
-      icon={<MicrosoftTeams className="size-5 shrink-0" />}
+      app="teams"
       name="Microsoft Teams"
       connected={connected}
       detail={detail}
       pitch={tI18nComplete.raw('text9225e456b795')}
+      hero={{
+        title: tI18nComplete.raw('textc1bd5ca19f5f'),
+        connectedTitle: tPages('channelConnectedTitle', { name: 'Microsoft Teams' }),
+        preview: <TeamsChannelMock />,
+      }}
       badge={install ? <TeamsPublishBadge install={install} tI18nComplete={tI18nComplete} /> : null}
       actions={
         <>
@@ -1119,7 +1098,7 @@ function TeamsChannelRow({
             />
           </>
         ) : installUrl ? (
-          <Button size="sm" variant="secondary" asChild>
+          <Button className="transition-transform active:scale-96" asChild>
             <Link href={installUrl} target="_blank" rel="noopener noreferrer">
               {tI18nComplete.raw('text1a2303ede074')}
             </Link>
@@ -1131,88 +1110,3 @@ function TeamsChannelRow({
   );
 }
 
-function EmailChannelRow({
-  projectId,
-  enabled,
-  installation,
-  canWrite,
-}: {
-  projectId: string;
-  /** The project's `agentmail_email` flag. Off, the row still renders — the
-   *  CLI lists Email on every project — and points at the one place a flag
-   *  turns on instead of offering an install that would 403. */
-  enabled: boolean;
-  installation: EmailInstallation | null;
-  canWrite: boolean;
-}) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const disconnect = useDisconnectEmail();
-  const [connectOpen, setConnectOpen] = useState(false);
-
-  const connected = Boolean(installation);
-
-  return (
-    <>
-      <ChannelRow
-        icon={<EnvelopeIcon className="text-muted-foreground size-5 shrink-0" />}
-        name="Email"
-        connected={connected}
-        detail={installation?.email ?? null}
-        pitch={
-          enabled
-            ? tI18nComplete.raw('text27ba4ec98716')
-            : // `FeatureGateScreen`'s exact words for a flag that is off, with
-              // the name the Feature flags section lists the flag under.
-              `AgentMail Email ${tI18nComplete.raw('text26965989cce5')}`
-        }
-        actions={
-          !enabled ? (
-            <Button size="sm" variant="secondary" asChild>
-              <Link href={projectSettingsSectionHref(projectId, 'feature-flags')}>
-                {tI18nComplete.raw('text20a2e59ba129')}
-              </Link>
-            </Button>
-          ) : !canWrite ? null : connected ? (
-            <ChannelDisconnectButton
-              pending={disconnect.isPending}
-              onConfirm={(done) =>
-                disconnect.mutate(
-                  { projectId, connectorSlug: EMAIL_CONNECTOR_SLUG },
-                  {
-                    onSuccess: () => {
-                      done();
-                      successToast(tI18nComplete.raw('text958c8e06d3e7'));
-                    },
-                  },
-                )
-              }
-            />
-          ) : (
-            <Button size="sm" variant="secondary" onClick={() => setConnectOpen(true)}>
-              {tI18nComplete.raw('text1a2303ede074')}
-            </Button>
-          )
-        }
-      />
-
-      <Modal open={connectOpen} onOpenChange={setConnectOpen}>
-        <ModalContent className="lg:max-w-2xl">
-          <ModalHeader>
-            <ModalTitle>{tI18nComplete.raw('text3de5e2a29bbc')}</ModalTitle>
-            <ModalDescription>{tI18nComplete.raw('texte13e04973080')}</ModalDescription>
-          </ModalHeader>
-          <ModalBody className="max-h-[75vh] overflow-y-auto">
-            <EmailConnectForm
-              projectId={projectId}
-              connectorSlug={EMAIL_CONNECTOR_SLUG}
-              onConnected={() => {
-                setConnectOpen(false);
-                successToast(tI18nComplete.raw('text62c381e56f37'));
-              }}
-            />
-          </ModalBody>
-        </ModalContent>
-      </Modal>
-    </>
-  );
-}
