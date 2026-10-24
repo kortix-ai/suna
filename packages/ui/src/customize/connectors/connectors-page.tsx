@@ -96,6 +96,7 @@ import {
 } from './connector-filter';
 import { ConnectorMovesBanner } from './connector-moves-banner';
 import {
+  COMPUTER_APP_ID,
   appHref,
   appRefFromEntry,
   connectorHref,
@@ -105,6 +106,7 @@ import {
 } from './connector-routes';
 import type { McpServerApp } from './install/mcp-first';
 import { useInstall } from './install/use-install';
+
 import { InstallDialog } from './install/install-dialog';
 import { wayKindLabel } from './install/way-kind';
 import type { DiscoverConnectorKind } from '@kortix/sdk';
@@ -483,16 +485,14 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
     />
   );
 
-  // The Computer card opens the existing computer connector once there is
-  // one: adding a computer is adding an account to it.
-  const computerConnector = connectors.find((connector) => connector.provider === 'computer');
   const catalogHref = useCallback(
     (entry: CatalogEntry) => {
       const app = appRefFromEntry(entry);
       if (app) return appHref(projectId, app);
-      return computerConnector ? connectorHref(projectId, computerConnector.slug) : null;
+      // The Computer card opens its own page: what it is, how it works, your machines.
+      return appHref(projectId, { source: 'discover', slug: 'computer', id: COMPUTER_APP_ID });
     },
-    [computerConnector, projectId],
+    [projectId],
   );
   // Stable, like `catalogHref`: the browse cards are `memo`'d, and an inline
   // arrow here would re-render every one of them on each page render.

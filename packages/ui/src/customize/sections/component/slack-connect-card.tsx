@@ -81,7 +81,7 @@ export function SlackConnectCard({
  * name, a small timestamp, the blue mention pill, and the `APP` tag on the
  * agent's reply. The composer at the bottom is a skeleton too.
  */
-function SlackChannelMock() {
+export function SlackChannelMock() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="flex flex-1" style={SLACK_UI}>

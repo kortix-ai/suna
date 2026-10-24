@@ -230,7 +230,7 @@ describe('catalogEntryKindLabel', () => {
     expect(
       catalogEntryKindLabel({ source: 'easy-connect', app: { provider: 'pipedream' } } as unknown as CatalogEntry),
     ).toBe('Pipedream');
-    expect(catalogEntryKindLabel({ source: 'computer' } as unknown as CatalogEntry)).toBe('Native');
+    expect(catalogEntryKindLabel({ source: 'computer' } as unknown as CatalogEntry)).toBe('Kortix');
   });
 
   test('an app with both ways to connect names both', () => {

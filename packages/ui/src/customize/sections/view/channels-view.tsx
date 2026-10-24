@@ -111,9 +111,11 @@ import {
   ChannelDisconnectButton,
   ChannelRow,
 } from '../component/channel-row';
-import { TeamsConnectCard } from '../component/teams-connect-card';
+import { TeamsChannelMock, TeamsConnectCard } from '../component/teams-connect-card';
 import { TelegramChannelRow } from '../component/telegram-channel-row';
-import { SlackConnectCard } from '../component/slack-connect-card';
+import { SlackChannelMock, SlackConnectCard } from '../component/slack-connect-card';
+import { EmailThreadMock } from '../component/channel-mocks';
+import { ChannelHeroLayoutProvider } from '../component/channel-hero-frame';
 import { EmailConnectForm } from '../connectors-view';
 import { ChannelBrandMark } from '../../../session/turn/channel-brand';
 import {
@@ -177,7 +179,10 @@ const EMAIL_CONNECTOR_SLUG = 'kortix_email';
  */
 const CHANNEL_LOADING_ROWS = ['channel-loading-1', 'channel-loading-2'];
 
-export function ChannelsSection({ projectId }: { projectId: string }) {
+/** A Kortix channel's own page (`platform`), or every channel (the Channels page). */
+export type ChannelPlatform = 'slack' | 'teams' | 'email' | 'telegram';
+
+export function ChannelsSection({ projectId, platform }: { projectId: string; platform?: ChannelPlatform }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   useTeamsInstallReturnToast();
   // This view used to read the flags off the project SUMMARY query
@@ -231,6 +236,67 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
   // The list always has the Teams row.
   const slackRow = Boolean(install);
   const showMoreLabel = !slackRow;
+
+  // One channel's page: that channel alone, drawn as a hero, connected or not.
+  if (platform) {
+    if (loading) return <Skeleton className="h-72 w-full rounded-lg" />;
+    return (
+      <ChannelHeroLayoutProvider>
+        <div className="w-full space-y-4">
+          {platform === 'slack' ? (
+            install ? (
+              <>
+                <SlackChannelRow
+                  projectId={projectId}
+                  installation={install}
+                  canWrite={canWrite}
+                  channelCount={channelCounts.get('slack') ?? 0}
+                  onOpenChannels={() => openChannels('slack')}
+                />
+                <SlackFollowUp projectId={projectId} />
+              </>
+            ) : (
+              <SlackConnectCard projectId={projectId} oauthInstallUrl={oauthInstallUrl} canWrite={canWrite} />
+            )
+          ) : null}
+          {platform === 'teams' ? (
+            teamsHero && teamsMode ? (
+              <TeamsConnectCard projectId={projectId} mode={teamsMode} canWrite={canWrite} />
+            ) : (
+              <>
+                <TeamsChannelRow
+                  projectId={projectId}
+                  canWrite={canWrite}
+                  channelCount={channelCounts.get('teams') ?? 0}
+                  onOpenChannels={() => openChannels('teams')}
+                />
+                {teamsInstall?.appUpdateAvailable ? (
+                  <TeamsAppUpdateNotice install={teamsInstall} tI18nComplete={tI18nComplete} />
+                ) : null}
+              </>
+            )
+          ) : null}
+          {platform === 'email' ? (
+            <EmailChannelRow
+              projectId={projectId}
+              enabled={emailChannelEnabled}
+              installation={emailInstall ?? null}
+              canWrite={canWrite}
+            />
+          ) : null}
+          {platform === 'telegram' ? <TelegramChannelRow projectId={projectId} canWrite={canWrite} /> : null}
+          <ChannelBindingsDialog
+            key={channelsDialog.session}
+            projectId={projectId}
+            canWrite={canWrite}
+            platform={channelsDialog.platform}
+            open={channelsDialog.open}
+            onOpenChange={(open) => setChannelsDialog((dialog) => ({ ...dialog, open }))}
+          />
+        </div>
+      </ChannelHeroLayoutProvider>
+    );
+  }
 
   return (
     /* Full width of the Connectors shell, like the All and Connected scopes
@@ -335,6 +401,7 @@ function SlackChannelRow({
   onOpenChannels: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tPages = useTranslations('connectorPages');
   const disconnect = useDisconnectSlack();
 
   return (
@@ -344,6 +411,11 @@ function SlackChannelRow({
       connected
       detail={installation.workspaceName ?? installation.workspaceId}
       pitch={tI18nComplete.raw('text9bd1c37ed121')}
+      hero={{
+        title: tI18nComplete.raw('text89e9e20668f3'),
+        connectedTitle: tPages('channelConnectedTitle', { name: 'Slack' }),
+        preview: <SlackChannelMock />,
+      }}
       actions={
         <>
           {channelCount > 0 ? <ChannelsButton count={channelCount} onOpen={onOpenChannels} /> : null}
@@ -1049,6 +1121,7 @@ function TeamsChannelRow({
   onOpenChannels: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tPages = useTranslations('connectorPages');
   const { data: install } = useTeamsInstall(projectId);
   const { data: mode } = useTeamsMode(projectId);
   const disconnect = useDisconnectTeams();
@@ -1084,6 +1157,11 @@ function TeamsChannelRow({
       connected={connected}
       detail={detail}
       pitch={tI18nComplete.raw('text9225e456b795')}
+      hero={{
+        title: tI18nComplete.raw('textc1bd5ca19f5f'),
+        connectedTitle: tPages('channelConnectedTitle', { name: 'Microsoft Teams' }),
+        preview: <TeamsChannelMock />,
+      }}
       badge={install ? <TeamsPublishBadge install={install} tI18nComplete={tI18nComplete} /> : null}
       actions={
         <>
@@ -1146,6 +1224,7 @@ function EmailChannelRow({
   canWrite: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tPages = useTranslations('connectorPages');
   const disconnect = useDisconnectEmail();
   const [connectOpen, setConnectOpen] = useState(false);
 
@@ -1158,6 +1237,12 @@ function EmailChannelRow({
         name="Email"
         connected={connected}
         detail={installation?.email ?? null}
+        hero={{
+          title: tPages('emailHeroTitle'),
+          connectedTitle: tPages('emailConnectedTitle'),
+          ...(enabled && !connected ? { lede: tPages('emailHeroLede') } : {}),
+          preview: <EmailThreadMock />,
+        }}
         pitch={
           enabled
             ? tI18nComplete.raw('text27ba4ec98716')

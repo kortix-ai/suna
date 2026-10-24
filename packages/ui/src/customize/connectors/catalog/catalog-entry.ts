@@ -154,7 +154,7 @@ export function appNameKey(name: string): string {
 }
 
 export function catalogEntryKindLabel(entry: CatalogEntry): string {
-  if (entry.source === 'computer') return 'Native';
+  if (entry.source === 'computer') return 'Kortix';
   // A managed app names its partner; an app with both ways to connect names both.
   if (entry.source === 'easy-connect') {
     const partner = entry.app?.provider === 'pipedream' ? 'Pipedream' : 'Composio';

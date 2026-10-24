@@ -7,6 +7,9 @@ import type { CatalogEntry } from './catalog/catalog-entry';
  */
 export const CONNECTED_APP_SEGMENT = 'connected';
 
+/** The id of the native Computer entry: it has its own page (`ComputerAppPage`). */
+export const COMPUTER_APP_ID = 'native:computer';
+
 /**
  * Which catalogue app a page belongs to, as the URL carries it. A Discover app
  * is fetched by `id` (`getDiscoverConnector`), so the id rides in the query;

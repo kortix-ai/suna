@@ -5,6 +5,7 @@ import { config } from '../config';
 import { type ConnectorCatalogItem, type ConnectorSurfaceVariant, createConnectorCatalog } from './connector-catalog';
 import { fallbackIconSource } from './connector-icon';
 import {
+  KORTIX_CHANNELS,
   MCP_APPS,
   availableMcpApps,
   kortixClientApplication,
@@ -33,7 +34,10 @@ describe('the Kortix MCP app catalogue', () => {
         }
       }
     }
-    const listed = new Set(MCP_APPS.filter((app) => app.icon).map((app) => `${app.slug}.svg`));
+    const listed = new Set([
+      ...MCP_APPS.filter((app) => app.icon).map((app) => `${app.slug}.svg`),
+      ...KORTIX_CHANNELS.flatMap((channel) => (channel.icon ? [channel.icon.split('/').pop()!] : [])),
+    ]);
     expect(readdirSync(ICONS).filter((file) => !listed.has(file))).toEqual([]);
   });
 

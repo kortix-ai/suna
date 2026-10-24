@@ -82,7 +82,7 @@ export function TeamsConnectCard({
  * round initials avatar, a bold name and timestamp, the purple mention, and
  * the agent's answer in the card's reply section. The composer is a skeleton.
  */
-function TeamsChannelMock() {
+export function TeamsChannelMock() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="flex flex-1" style={TEAMS_UI}>

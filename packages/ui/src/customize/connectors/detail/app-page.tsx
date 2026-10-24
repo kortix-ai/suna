@@ -1,5 +1,6 @@
 'use client';
 import { DetailPageShell } from './detail-page-shell';
+import { ComputerAppPage } from './computer-app-page';
 
 import { getDiscoverConnector, getDiscoverConnectorTools, getProjectDetail, listConnectors } from '@kortix/sdk';
 import { contract, FRESHNESS, qk, useProjectAccountId } from '@kortix/sdk/react';
@@ -37,6 +38,8 @@ import {
   connectorSummary,
 } from '../connector-filter';
 import {
+  COMPUTER_APP_ID,
+  appHref,
   appRefFromLocation,
   connectorHref,
   connectorsHref,
@@ -140,12 +143,22 @@ interface ResolvedApp {
  * here, under "Ways to connect".
  */
 
+const ChannelsSection = lazyClient(() =>
+  import('../../sections/view/channels-view').then((m) => m.ChannelsSection),
+);
+
 const AddMcpServerDialog = lazyClient(() =>
   import('../add-mcp/add-mcp-server-dialog').then(
     (m) => m.AddMcpServerDialog,
   ),
 );
 export function AppPage({ projectId, appSegment }: { projectId: string; appSegment: string }) {
+  const search = useUiSearchParams();
+  if (search?.get('id') === COMPUTER_APP_ID) return <ComputerAppPage projectId={projectId} />;
+  return <CatalogAppPage projectId={projectId} appSegment={appSegment} />;
+}
+
+function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegment: string }) {
   const t = useTranslations('connectorPages');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tSharing = useTranslations('accessSharing');
@@ -313,6 +326,12 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
       />
     ) : null;
   const primary = resolved.surfaces[0] ?? null;
+  // A Kortix channel's own page draws the channel as its hero; the ways list
+  // keeps only the other ways (the vendor's MCP server, Composio, the API).
+  const channelPlatform = detail?.item.kind === 'channel' ? (detail.item.channel?.platform ?? null) : null;
+  const waySurfaces = channelPlatform
+    ? resolved.surfaces.filter((surface) => surface.kind !== 'channel')
+    : resolved.surfaces;
   const waysCount = resolved.surfaces.length + resolved.references.length;
   const infoCells: Array<{
     key: string;
@@ -372,7 +391,7 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
             {resolved.name}
           </h1>
         </div>
-        {primary ? (
+        {primary && !channelPlatform ? (
           <div className="flex shrink-0 items-center gap-2">
             {resolved.surfaces.length > 1 ? (
               <span className="text-muted-foreground text-xs">
@@ -386,7 +405,10 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
         ) : null}
       </header>
 
-      {infoCells.length > 0 || resolved.description ? (
+      {/* A Kortix channel's page: its hero, connected or not, says it all. */}
+      {channelPlatform ? <ChannelsSection projectId={projectId} platform={channelPlatform} /> : null}
+
+      {!channelPlatform && (infoCells.length > 0 || resolved.description) ? (
         <div className="bg-popover divide-border divide-y overflow-hidden rounded-md border">
           {infoCells.length > 0 ? (
             <dl className="flex flex-wrap gap-x-8 gap-y-3 px-4 py-3">
@@ -461,11 +483,13 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
 
       {/* One installable surface and nothing else is no choice: the header's
             Install covers it. */}
-      {resolved.surfaces.length > 1 || resolved.references.length > 0 ? (
+      {waySurfaces.length > (channelPlatform ? 0 : 1) || resolved.references.length > 0 ? (
         <section className="space-y-3">
-          <h2 className="text-foreground text-sm font-medium">{t('waysToConnect')}</h2>
+          <h2 className="text-foreground text-sm font-medium">
+            {channelPlatform ? t('otherWaysToConnect') : t('waysToConnect')}
+          </h2>
           <ul className={ROW_GROUP}>
-            {resolved.surfaces.map((surface) => (
+            {waySurfaces.map((surface) => (
               <li key={surface.key} className={SURFACE_ROW}>
                 <span className="min-w-0 flex-1 space-y-0.5">
                   <span className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -703,7 +727,7 @@ function useAppData(projectId: string, app: ReturnType<typeof appRefFromLocation
                   label: variant.name,
                   kind: 'channel' as WayKind,
                   target: null,
-                  setupHref: connectorsHref(projectId, 'channels'),
+                  setupHref: appHref(projectId, { source: 'discover', slug: variant.channel?.platform ?? 'channel', id: variant.id }),
                   oneClick: true,
                   recommended: variant.recommended === true,
                   variantId: null,

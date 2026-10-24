@@ -1,5 +1,7 @@
 'use client';
 
+import { TelegramChatMock } from './channel-mocks';
+
 /**
  * Telegram as a channel row (the `connectors_v2` feature flag): connect a bot
  * by its BotFather token, pick who may talk to it, disconnect. The token goes
@@ -41,6 +43,7 @@ export function parseTelegramUserIds(raw: string): string[] | null {
 
 export function TelegramChannelRow({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
+  const tPages = useTranslations('connectorPages');
   const { data: install } = useTelegramInstall(projectId);
   const disconnect = useDisconnectTelegram();
   const [dialog, setDialog] = useState<'connect' | 'users' | null>(null);
@@ -52,6 +55,12 @@ export function TelegramChannelRow({ projectId, canWrite }: { projectId: string;
         name="Telegram"
         connected={Boolean(install)}
         detail={install?.username ? `@${install.username}` : null}
+        hero={{
+          title: tPages('telegramHeroTitle'),
+          connectedTitle: tPages('channelConnectedTitle', { name: 'Telegram' }),
+          ...(install ? {} : { lede: tPages('telegramHeroLede') }),
+          preview: <TelegramChatMock />,
+        }}
         pitch={t.raw('text51e6bc656528')}
         actions={
           !canWrite ? null : install ? (
