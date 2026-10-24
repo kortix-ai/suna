@@ -44,6 +44,18 @@ export function bindProjectOperations(
         set: (...a: DropFirst<Parameters<typeof P.setConnectorPolicies>>) =>
           P.setConnectorPolicies(projectId, ...a),
       },
+      /** Named rule sets on one connector that agents select with
+       *  `agents.<a>.policy_sets`. Rules: `policies.set(slug, rules, { policySet })`. */
+      policySets: {
+        list: (...a: DropFirst<Parameters<typeof P.listConnectorPolicySets>>) =>
+          P.listConnectorPolicySets(projectId, ...a),
+        upsert: (...a: DropFirst<Parameters<typeof P.upsertConnectorPolicySet>>) =>
+          P.upsertConnectorPolicySet(projectId, ...a),
+        rename: (...a: DropFirst<Parameters<typeof P.renameConnectorPolicySet>>) =>
+          P.renameConnectorPolicySet(projectId, ...a),
+        remove: (...a: DropFirst<Parameters<typeof P.deleteConnectorPolicySet>>) =>
+          P.deleteConnectorPolicySet(projectId, ...a),
+      },
       /** Pipedream and Composio connectors and the Kortix app each moves to. */
       listMoves: () => P.listConnectorMoves(projectId),
       /** Move a Pipedream or Composio connector to its Kortix app; it keeps its slug. */

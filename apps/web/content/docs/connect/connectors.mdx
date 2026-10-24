@@ -15,7 +15,7 @@ A connector has:
 - a display name;
 - a provider, which decides how Kortix reaches the service;
 - its actions, the tools an agent calls (`<slug>.<action>`);
-- its policies, which decide which actions run, need approval, or are blocked.
+- its policies, which decide which actions run, need approval, or are blocked: base rules for every caller, plus named [policy sets](#policy-sets) that you give to single agents.
 
 A connector holds one or more [accounts](#connectors-connections-and-accounts). An account is the authorized identity a call runs as.
 
@@ -91,6 +91,7 @@ Each app shows once, by its best way in:
 - An app's page lists every way to connect it, best first. The first is marked **Recommended**; **One click** marks the ways where you only sign in. **Install** at the top installs the recommended way; each row installs its own way.
 - **Tools** on each way lists what it can do before you install it: a public MCP server's own tools, the tool names a public MCP directory lists for an OAuth server, Composio's tools, or the operations in an OpenAPI document.
 - Install asks for a **name**. It is the name of the connector profile Kortix adds: the project's entry in `kortix.yaml`. The profile's accounts, who can use them and its tool rules live on it.
+- Install one profile for each way you connect an app, for example Stripe's MCP server and Stripe's REST API: each way has its own tools and its own sign-in. Do not install a second profile of the same way to give an agent different rules. Give the agent a [policy set](#policy-sets) on the one profile, so each account is connected once.
 
 Kortix probes every MCP server in the registry for its sign-in and its tools; `apps/api/scripts/probe-one-click-mcp.ts` refreshes both lists.
 
@@ -121,7 +122,7 @@ Kortix retires Pipedream. A Pipedream or Composio connector moves to the catalog
 What stays:
 
 - The slug. Agent grants (`agents.<name>.connectors`), session bindings and every other reference to the slug keep working.
-- The display name, the entry's `sensitive` flag, and a `*` rule in its `policies`. A rule that names a tool (for example `send_email` on the connector, or `gmail.send_email` in the project's rules) names the old provider's tool, and the Kortix app names its tools differently: a connector with such a rule does not move until you remove it. Add rules for the new tool names after the move.
+- The display name, the entry's `sensitive` flag, its [policy sets](#policy-sets), and a `*` rule in its `policies` or in a set. A rule that names a tool (for example `send_email` on the connector or in one of its sets, or `gmail.send_email` in the project's rules) names the old provider's tool, and the Kortix app names its tools differently: a connector with such a rule does not move until you remove it. Add rules for the new tool names after the move.
 - Every account row, with its name, owner and audience.
 - The old provider serves the connector until the sign-in completes.
 
@@ -330,6 +331,8 @@ A change to `connectors:` applies when it reaches the default branch, through a 
 | `auth` on `composio` or `channel` | Not allowed. The provider authorizes the account. |
 | `headers` | Static headers sent on every call: at most 32, names up to 128 characters, values up to 2,048 characters, no line breaks. Transport headers such as `Host` and `Content-Length` are refused. The auth header always wins over a static header of the same name. Not allowed on `composio`, `pipedream` or `channel`. Values are plaintext in git: never put a credential in a header. |
 | `sensitive: true` | Every action that no rule matches needs approval, reads included. See [Policies and approvals](#policies-and-approvals). |
+| `policies` | The base rules: `{ match, action, conditions? }`. See [Policies and approvals](#policies-and-approvals). |
+| `policy_sets` | Named rule sets that an agent is given with `agents.<name>.policy_sets`. See [Policy sets](#policy-sets). |
 | `enabled: false` | Kortix keeps the connector but refuses its calls with `connector_disabled`. |
 | Reserved slugs | `kortix_slack`, `kortix_teams` and `kortix_email` belong to channel connectors. `computer` belongs to the built-in computer connector. A new connector added from the web app, `--apply` or MCP also cannot take `slack` or `email` (`400`): connect Slack with `kortix channels connect`. |
 
@@ -337,7 +340,7 @@ The full schema is in the [`kortix.yaml` reference](/docs/project/manifest#trigg
 
 ## Connectors, connections and accounts
 
-A connection is one **account**: one authorized identity for a connector, such as an OAuth grant or an API key. A connector can hold several accounts, for example a team inbox and your own inbox. Every account uses the connector's policies.
+A connection is one **account**: one authorized identity for a connector, such as an OAuth grant or an API key. A connector can hold several accounts, for example a team inbox and your own inbox. The connector's rules apply to every account. Which rules apply depends on the calling agent: see [Policy sets](#policy-sets).
 
 Each account has an owner type that decides who may run a call as it:
 
@@ -457,7 +460,7 @@ agents:
 kortix agents scope release-bot --connectors github,linear
 ```
 
-A change applies to a running session on its next call. The channel connector that started a session (Slack, Teams or email) is always callable from that session, so the agent can always answer where it was asked. See [Agents & permissions](/docs/project/agents#give-an-agent-access).
+A change applies to a running session on its next call. To give one agent other rules on a connector than the rest, give it a [policy set](#policy-sets). The channel connector that started a session (Slack, Teams or email) is always callable from that session, so the agent can always answer where it was asked. See [Agents & permissions](/docs/project/agents#give-an-agent-access).
 
 ### Narrow a shared account
 
@@ -521,12 +524,15 @@ kortix connectors call gmail <action> '{}' --account "Support inbox"
 
 ## Policies and approvals
 
-A policy decides what happens when an action is called: **Allow** (`always_run`), **Ask** (`require_approval`) or **Block** (`block`). Kortix evaluates each call in this order, and the first match wins:
+A policy decides what happens when an action is called: **Allow** (`always_run`), **Ask** (`require_approval`) or **Block** (`block`). Kortix evaluates each call in this order. Inside a layer the first matching rule wins, and the first layer with a match decides:
 
-1. Project-wide `policies:` in `kortix.yaml`. Patterns are fully qualified (`gmail.send_email`, `*.delete*`). A connector rule cannot override them.
-2. The connector's own `policies:`. Patterns are relative to the connector (`send_*`).
-3. `sensitive: true` on the connector: every remaining action needs approval, reads included.
-4. `policy.default_mode`: `allow_all` (the default) runs every remaining action. `risk` runs reads and holds writes and destructive actions for approval.
+1. Project-wide `policies:` in `kortix.yaml`. Patterns are fully qualified (`gmail.send_email`, `*.delete*`). A connector rule or a policy set cannot override them.
+2. The calling agent's [policy set](#policy-sets) on this connector, when `agents.<name>.policy_sets` gives it one. Patterns are relative to the connector (`send_*`).
+3. The connector's base `policies:`. Patterns are relative to the connector.
+4. `sensitive: true` on the connector: every remaining action needs approval, reads included.
+5. `policy.default_mode`: `allow_all` (the default) runs every remaining action. `risk` runs reads and holds writes and destructive actions for approval.
+
+A caller without a policy set skips layer 2. When an agent's set does not exist on the connector, every call that agent makes on the connector is blocked before layer 1: see [When a set is missing](#when-a-set-is-missing).
 
 Patterns are globs, case-insensitive, or `/regex/` in slashes. A rule can also test the call's arguments:
 
@@ -559,6 +565,106 @@ kortix connectors sensitive gmail on                          # or off
 ```
 
 `policy add`, `policy rm`, `policy <slug> …` and `sensitive` apply at once. The **Tools** tab on a connector page edits the same connector rules.
+
+### Policy sets
+
+A policy set is a named list of rules on one connector profile. You give an agent a set, and that agent's calls on the connector use the set's rules before the base rules. Two agents can then share one profile and its accounts with different rules: each account is connected once.
+
+```yaml
+connectors:
+  - slug: gmail
+    provider: composio
+    app: gmail
+    policies:               # rules for callers without a set, and the fallback after a set's rules
+      - match: delete_*
+        action: block
+    policy_sets:
+      read_only:
+        description: Read and search, never send
+        policies:
+          - match: send_*
+            action: block
+      outreach:
+        description: Send to customers, with approval
+        policies:
+          - match: send_email
+            action: require_approval
+            conditions:
+              - arg: to
+                match: "*@example.com"
+
+agents:
+  support:
+    connectors: [gmail, stripe]
+    policy_sets:            # connector slug -> set name; no entry = the base rules
+      gmail: read_only
+  sales:
+    connectors: [gmail]
+    policy_sets:
+      gmail: outreach
+```
+
+Here `support` cannot send mail, `sales` sends to `example.com` addresses after an approval, and both are blocked on `delete_*` by the base rules. Both use the same Gmail accounts.
+
+Rules:
+
+- A set name matches `[a-z0-9][a-z0-9_-]{0,63}`. `base` is reserved: it names the base rules in the API, the CLI and the web app.
+- A set's `policies` take the same `{ match, action, conditions? }` rules as the base `policies`. A set may hold no rules: it then behaves like the base rules.
+- A connector holds at most 32 sets, and a set at most 200 rules.
+- Policy sets need `kortix_version: 2` or `3`. A v1 manifest (`kortix.toml`) cannot declare them (`400`, `unsupported_in_v1`).
+- Channel connectors (`kortix_slack`, `kortix_teams`, `kortix_email`) and the `computer` connector cannot hold sets (`400`, `policy_sets_unsupported`).
+- A set can loosen a base rule for its agent: an `always_run` rule in the set decides before a base `block`. A rule that must hold for every caller belongs in the project-wide `policies:`.
+
+**Which calls use a set.** The credential of the call decides, never its arguments. A request cannot pick a set.
+
+| Caller | Rules |
+| --- | --- |
+| A session: the `kortix` CLI in its sandbox, the SDK with its `KORTIX_TOKEN`, the agent's MCP tools | The session agent's set. |
+| A pi subagent | The set of the agent that started the root session. The subagent shares that session's token. |
+| A person's token with `X-Kortix-Session-Id` | That session agent's set. |
+| A person's token or API key without a session, the web app, a script, an App | The base rules. |
+| A trigger's poll for new items | The base rules. The session the trigger starts uses its agent's set. |
+
+An agent that holds `project.session.start` can start a session as another agent. That session runs under the other agent's set, in the same way it gets the other agent's `connectors` grant. A set bounds an agent only as far as its launch rights do.
+
+**Give an agent a set.**
+
+```bash
+kortix connectors policy gmail sets                                       # sets on gmail, with the agents that use each
+kortix connectors policy gmail sets create read_only --description "Read and search, never send"
+kortix connectors policy gmail --policy-set read_only set "send_*" block   # the set's rules: ls, set, rm, clear
+kortix connectors policy gmail sets rename read_only readonly             # also rewrites every agent that uses it
+kortix connectors policy gmail sets rm readonly                           # refused while an agent uses it
+kortix agents scope support --policy-set gmail=read_only                  # repeat the flag per connector; gmail=base removes the entry
+```
+
+- Every command commits `kortix.yaml` on the default branch and syncs the connector at once.
+- Changing an agent's `policy_sets` needs `project.agent.write` and `project.connector.write`. An agent session needs `project.connector.write` in its own grant to add, change or remove any `policy_sets` entry, its own included (`403`, `agent_grant_escalation`). See [Changes to agents are governed](/docs/project/agents#changes-to-agents-are-governed).
+- Removing a connector from an agent keeps the agent's entry for it. The entry has no effect until the connector is granted again, and then the set applies again. Remove the entry with `--policy-set <slug>=base`.
+- Deleting a connector removes every agent's entry for it, in the same commit. An agent session that removes an agent which has a set needs `project.connector.write` too.
+- A change reaches a running session on its next call.
+
+In the web app, the **Tools** tab on a connector page switches between the base rules and each set, and shows the agents that use a set. The agent editor picks the set for each granted connector that defines sets.
+
+**API.** The routes are under `/v1/connectors/projects/<project_id>/connectors/<slug>` and need `project.connector.write`.
+
+| Route | What it does |
+| --- | --- |
+| `GET …/policy-sets` | `{ sets: [{ name, description, policies, agents }] }`, sets with no rules included. |
+| `PUT …/policy-sets/<name>` `{ description? }` | Creates the set, or sets or clears its description. Answers `created`. A body with `policies` answers `400`, `use_policies_route`. |
+| `PUT …/policy-sets/<name>/name` `{ name }` | Renames the set and every agent reference in one commit. `409`, `policy_set_exists` when the new name is taken. |
+| `DELETE …/policy-sets/<name>` | Deletes the set. `409`, `policy_set_in_use` with `agents` while an agent uses it. |
+| `GET`/`PUT …/policies?policy_set=<name>` | Reads or replaces the set's rules. Without `policy_set`, or with `base`, the base rules. `404`, `policy_set_not_found` for an unknown set. |
+
+`PUT /v1/projects/<project_id>/agents/<agent>/scope` takes `policy_sets: { <slug>: <name> | null }`. It merges per connector, and `null` or `base` removes the entry. In the SDK, use `p.connectors.policySets` and the `policySet` option of `p.connectors.policies`: see the [SDK reference](/docs/sdk/reference#connectors-and-policies).
+
+#### When a set is missing
+
+`kortix validate` and the change request merge check report an agent entry that names an unknown set, or `base`, as an error. A `policy_sets` key for a connector the agent is not granted is a warning.
+
+A bad entry never disables the agent, and Kortix never drops it. When the manifest on the default branch still names a set the connector does not define, Kortix blocks every call the agent makes on that connector, with reason `policy_set_missing`. The agent's other connectors keep working, the channel it answers on included. A `policy_sets` value that is not a map is different: it blocks every connector for that agent, channels included. Fix the entry or add the set. Kortix never falls back to the base rules, because they can be looser than the set.
+
+**Audit.** When a set decides a call, the audit event records `policy_source: "policy_set"`, `policy_set`, `agent` and `manifest_commit`. The approval card's summary and the approval link view (`GET /v1/approval-links/<token>`) carry `policy_set` and `agent` when the set decided.
 
 ### Approve a held call
 
@@ -734,7 +840,8 @@ An `error` reason starts with the code in the table. Text after the first `:` is
 | `credential_not_shared` | 403 | The connector's project secret is not shared with the person this call acts for. | Ask the secret's owner to share it. |
 | `credential_undecryptable` | 403 | Kortix cannot decrypt the connector's stored credential, or the project secret it uses: the server's encryption key changed, or the stored value is damaged. `message` names the connector or the secret. | Reconnect the account, or enter the credential or the secret again. For an OAuth 2.0 account, save its OAuth application again first: the same key encrypts it, and until then its routes answer `409 SECRET_UNDECRYPTABLE`. |
 | `connector_disabled` | 403 | The connector is declared with `enabled: false`. | Enable it. |
-| `policy_block` | 403 | A **Block** rule matched. Final. | Do not retry. Change the policy. |
+| `policy_block` | 403 | A **Block** rule matched. Final. When the agent's policy set decided, the body names `policy_set` and `agent`. | Do not retry. Change the policy, or the agent's set. |
+| `policy_set_missing` | 403 | The agent's `policy_sets` names a set that this connector does not define. Every call on the connector is blocked for this agent. The body names `policy_set` and `agent`. | Fix `agents.<name>.policy_sets`, or add the set. See [When a set is missing](#when-a-set-is-missing). |
 | `connector_not_found` | 404 | No connector with this slug. | Run `kortix connectors ls`. |
 | `action_not_found` | 404 | The connector has no such action. | Run `kortix connectors show <slug>`. |
 | `computer_*` | 403 or 409 | The computer refused, is offline, or is not paired. | See [Computers](/docs/connect/computers#errors). |

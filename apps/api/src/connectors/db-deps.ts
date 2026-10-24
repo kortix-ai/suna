@@ -43,8 +43,11 @@ import {
   setConnectorAuthorizationStrategyInManifest,
   setConnectorCredentialShared,
   setConnectorNameInManifest,
+  deleteConnectorPolicySetInManifest,
+  renameConnectorPolicySetInManifest,
   setConnectorPoliciesInManifest,
   setConnectorSensitiveInManifest,
+  upsertConnectorPolicySetInManifest,
   setProjectPoliciesInManifest,
   upsertConnectorInManifest,
 } from './manifest-crud';
@@ -71,6 +74,8 @@ import {
   deleteComputerConnectorProfile,
   getConnectorConfig,
   getConnectorPolicies,
+  listConnectorPolicySets,
+  policySetsUnsupportedFor,
   setComputerConnectorName,
   setComputerConnectorPolicies,
   setComputerConnectorSensitive,
@@ -172,14 +177,33 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     setConnectorNameInManifest(projectId, accountId, slug, name),
   getConnectorPolicies,
   getConnectorConfig,
-  setConnectorPolicies: async (projectId, accountId, slug, policies) =>
-    (await setComputerConnectorPolicies(projectId, accountId, slug, policies)) ??
-    setConnectorPoliciesInManifest(
-      projectId,
-      accountId,
-      slug,
-      policies as Parameters<typeof setConnectorPoliciesInManifest>[3],
-    ),
+  setConnectorPolicies: async (projectId, accountId, slug, policies, policySet) =>
+    policySet
+      ? ((await policySetsUnsupportedFor(projectId, slug)) ??
+        setConnectorPoliciesInManifest(
+          projectId,
+          accountId,
+          slug,
+          policies as Parameters<typeof setConnectorPoliciesInManifest>[3],
+          policySet,
+        ))
+      : ((await setComputerConnectorPolicies(projectId, accountId, slug, policies)) ??
+        setConnectorPoliciesInManifest(
+          projectId,
+          accountId,
+          slug,
+          policies as Parameters<typeof setConnectorPoliciesInManifest>[3],
+        )),
+  listConnectorPolicySets,
+  upsertConnectorPolicySet: async (projectId, accountId, slug, name, description) =>
+    (await policySetsUnsupportedFor(projectId, slug)) ??
+    upsertConnectorPolicySetInManifest(projectId, accountId, slug, name, description),
+  renameConnectorPolicySet: async (projectId, accountId, slug, from, to) =>
+    (await policySetsUnsupportedFor(projectId, slug)) ??
+    renameConnectorPolicySetInManifest(projectId, accountId, slug, from, to),
+  deleteConnectorPolicySet: async (projectId, accountId, slug, name) =>
+    (await policySetsUnsupportedFor(projectId, slug)) ??
+    deleteConnectorPolicySetInManifest(projectId, accountId, slug, name),
   pipedreamConnect: pipedreamConfigured()
     ? async (projectId, slug, _userId, redirects) => {
         const conn = await loadPipedreamConnector(projectId, slug);

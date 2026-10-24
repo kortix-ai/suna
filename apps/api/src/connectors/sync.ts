@@ -2,6 +2,7 @@ import {
   connectorConnections,
   connectorActions,
   connectorPolicies,
+  connectorPolicySets,
   connectors,
   connectorProjectPolicies,
   connectorProjectSettings,
@@ -64,7 +65,7 @@ import {
 import { listMcpTools, type FetchImpl } from './call';
 import { assertConnectorEndpointUrl, connectorEgressFetch } from './egress';
 import type { ProjectPolicySpec } from '../projects/policies';
-import { connectorConfig, toPolicyRows, toProjectPolicyRows } from './materialize';
+import { connectorConfig, toPolicyRows, toPolicySetRows, toProjectPolicyRows } from './materialize';
 import {
   normalizeComposio,
   normalizeGraphql,
@@ -1028,6 +1029,14 @@ async function upsertConnector(
             conditions: p.conditions ?? null,
           })),
         );
+      }
+      // Each set is one row (the row is the registry; zero rules = `[]`), in
+      // the same transaction as the base rules, so a reader never sees base
+      // rules of one manifest and sets of another.
+      await tx.delete(connectorPolicySets).where(eq(connectorPolicySets.connectorId, rowId));
+      const setRows = toPolicySetRows(spec);
+      if (setRows.length > 0) {
+        await tx.insert(connectorPolicySets).values(setRows.map((set) => ({ connectorId: rowId, ...set })));
       }
     }
     return rowId;

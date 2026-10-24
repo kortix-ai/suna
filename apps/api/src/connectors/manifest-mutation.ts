@@ -8,6 +8,8 @@ export type ManifestMutationResult =
       status: number;
       code?: string;
       remediation?: string;
+      /** Replaces the default `{ error }` response envelope. */
+      body?: Record<string, unknown>;
     };
 
 export type ManifestCommitResult =
@@ -18,6 +20,8 @@ export type ManifestCommitResult =
       status: number;
       code?: string;
       remediation?: string;
+      /** Replaces the default `{ error }` response envelope. */
+      body?: Record<string, unknown>;
     };
 
 type EditableManifest = Awaited<ReturnType<typeof loadManifestForEdit>>;

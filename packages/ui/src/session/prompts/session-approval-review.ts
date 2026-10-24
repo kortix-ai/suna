@@ -130,6 +130,22 @@ export function approvalReviewable(
   return reviewComplete !== false;
 }
 
+/**
+ * The agent's policy set that decided a call, from the audit row
+ * (`result_summary.policy_set` / `.agent`, written by the gateway when the
+ * set decided). Null when the base or project rules decided.
+ */
+export function auditPolicySet(
+  summary: Record<string, unknown> | null | undefined,
+): { name: string; agent: string | null } | null {
+  // The set is named only when it decided, never for a project or base rule.
+  if (summary?.policy_source !== 'policy_set') return null;
+  const name = summary?.policy_set;
+  if (typeof name !== 'string' || !name) return null;
+  const agent = summary?.agent;
+  return { name, agent: typeof agent === 'string' && agent ? agent : null };
+}
+
 /** Row → the shape every approval surface renders. */
 export function approvalRequestFromAction(
   action: SessionAuditAction,
@@ -137,6 +153,7 @@ export function approvalRequestFromAction(
 ): ApprovalRequestData {
   const summary = action.result_summary;
   const decision = summary?.decision;
+  const policySet = auditPolicySet(summary);
   return {
     action: action.action,
     risk: action.risk,
@@ -151,6 +168,8 @@ export function approvalRequestFromAction(
         ? (summary.resolved_preview as Record<string, unknown>)
         : null,
     resolvedError: typeof summary?.resolved_error === 'string' ? summary.resolved_error : null,
+    // Present only when the agent's set decided, so a base-rule row is unchanged.
+    ...(policySet ? { policySet } : {}),
     // `!summary` used to count as complete, so a pending row that recorded
     // NOTHING offered an Approve button the server answers with 409
     // (`APPROVAL_PREVIEW_UNAVAILABLE`) — the client and the gate disagreed. A

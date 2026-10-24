@@ -16,6 +16,14 @@ import { useTranslations as useI18nTranslations } from '../../i18n';
 import { Badge } from '../../primitives/badge';
 import { Button } from '../../primitives/button';
 import { Checkbox } from '../../primitives/checkbox';
+import Hint from '../../primitives/hint';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../primitives/select';
 import { Skeleton } from '../../primitives/skeleton';
 import { EmptyState } from '../../primitives/empty-state';
 import { ErrorState } from '../../primitives/error-state';
@@ -44,6 +52,7 @@ import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
 import { cn } from '../../internal/lib/utils';
 import { useProjectCan } from '../../internal/lib/use-project-can';
 import {
+  type AdminConnector,
   type AgentGrantSetV2,
   listConnectors,
   listProjectSecrets,
@@ -59,6 +68,11 @@ import { PlusIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useState } from 'react';
 import { appGrantRows } from './agent-apps-grant';
+import {
+  type PolicySetOption,
+  policySetRows,
+  withPolicySet,
+} from './agent-policy-sets';
 
 // ─── The shared catalog ──────────────────────────────────────────────────
 
@@ -295,12 +309,109 @@ export function SkillsGrantPage({
 
 // ─── Connectors ──────────────────────────────────────────────────────────
 
+const BASE_SET_VALUE = '__base';
+
+/**
+ * Which rule set the agent gets on each granted connector that defines sets
+ * (`agents.<a>.policy_sets`). One list for Pick and All alike: under All the
+ * catalog has no per-row controls, and a second rendering for that mode would
+ * be two places to set one value. Choosing a set needs connector write as well
+ * as agent write (the API checks both), so a viewer without it sees the
+ * values but cannot change them.
+ */
+function AgentPolicySetsSection({
+  editor,
+  catalog,
+  connectors,
+  canWrite,
+}: {
+  editor: AgentDraft;
+  catalog: Record<string, PolicySetOption[]>;
+  connectors: AdminConnector[];
+  canWrite: boolean;
+}) {
+  const t = useI18nTranslations('connectorPolicySets');
+  const { draft, set } = editor;
+  const rows = policySetRows(
+    draft.connectors,
+    catalog,
+    draft.policy_sets,
+    connectors.map((connector) => connector.slug),
+  );
+  if (rows.length === 0) return null;
+  return (
+    <EditorSection title={t('agentSection')} bare>
+      <EditorList>
+        {rows.map((row) => {
+          const connector = connectors.find((candidate) => candidate.slug === row.slug);
+          const name = connector ? connectorDisplayName(connector) : row.slug;
+          return (
+            <li key={row.slug} className="flex min-h-13 items-center gap-3 px-4 py-2">
+              {connector ? (
+                <ConnectorLogo source={installedConnectorLogoSource(connector)} size="sm" />
+              ) : null}
+              <span className="min-w-0 flex-1">
+                <span className="text-foreground block truncate text-sm font-medium">{name}</span>
+                <span className="text-muted-foreground block truncate font-mono text-xs">
+                  {row.slug}
+                </span>
+              </span>
+              {row.missing && row.value ? (
+                <Hint label={t('agentMissingHint', { name: row.value })}>
+                  <Badge variant="destructive" size="xs">
+                    {t('agentMissing')}
+                  </Badge>
+                </Hint>
+              ) : null}
+              <Select
+                value={row.value ?? BASE_SET_VALUE}
+                disabled={!canWrite}
+                onValueChange={(next) =>
+                  set(
+                    'policy_sets',
+                    withPolicySet(draft.policy_sets, row.slug, next === BASE_SET_VALUE ? null : next),
+                  )
+                }
+              >
+                <SelectTrigger
+                  size="sm"
+                  className="w-40 shrink-0"
+                  aria-label={t('agentSelectLabel', { name })}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  <SelectItem value={BASE_SET_VALUE}>{t('baseRules')}</SelectItem>
+                  {row.options.map((option) => (
+                    <SelectItem key={option.name} value={option.name} description={option.description}>
+                      <span className="font-mono">{option.name}</span>
+                    </SelectItem>
+                  ))}
+                  {row.missing && row.value ? (
+                    <SelectItem value={row.value}>
+                      <span className="font-mono">{row.value}</span>
+                    </SelectItem>
+                  ) : null}
+                </SelectContent>
+              </Select>
+            </li>
+          );
+        })}
+      </EditorList>
+    </EditorSection>
+  );
+}
+
 export function ConnectorsGrantPage({
   projectId,
   editor,
+  policySetOptions,
 }: {
   projectId: string;
   editor: AgentDraft;
+  /** Each connector's policy sets (`connectorPolicySetOptions`), read from the
+   *  manifest the page already holds. */
+  policySetOptions?: Record<string, PolicySetOption[]>;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
@@ -391,6 +502,12 @@ export function ConnectorsGrantPage({
           ) : null}
         </div>
       </EditorSection>
+      <AgentPolicySetsSection
+        editor={editor}
+        catalog={policySetOptions ?? {}}
+        connectors={connectors}
+        canWrite={canWrite}
+      />
       <ConnectorModal
         projectId={projectId}
         connector={detail.record}

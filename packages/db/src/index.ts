@@ -276,6 +276,7 @@ export {
   connectorActions,
   connectionPolicies,
   connectorPolicies,
+  connectorPolicySets,
   connectorProjectPolicies,
   connectorProjectSettings,
   connectorSyncFences,

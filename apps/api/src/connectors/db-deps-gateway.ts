@@ -60,6 +60,7 @@ import {
   headersOf,
   isUuid,
   loadConnectorPoliciesFor,
+  loadConnectorPolicySetFor,
   loadDefaultModeFor,
   loadProjectPoliciesFor,
   resolveActiveConnectorConnection,
@@ -476,6 +477,7 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     resolveEmailCredentialForInbox: async (projectId, inboxId) =>
       resolveEmailApiKey(await emailOwnKeyForInbox(projectId, inboxId)),
     loadPolicies: loadConnectorPoliciesFor,
+    loadPolicySet: loadConnectorPolicySetFor,
     loadProjectPolicies: loadProjectPoliciesFor,
     loadDefaultMode: loadDefaultModeFor,
     // The link expires with the approval it points at (`expires_at`). A failed

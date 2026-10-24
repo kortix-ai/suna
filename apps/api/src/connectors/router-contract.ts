@@ -94,6 +94,10 @@ export interface CatalogConnector {
   accounts?: CatalogAccount[];
   /** Label of the account an unnamed call resolves to, or null if none. */
   default_account?: string | null;
+  /** The policy set the caller's agent runs under on this connector
+   *  (`agents.<a>.policy_sets`). Absent = the base rules. `actions` already
+   *  omits what the set blocks. */
+  policy_set?: string;
 }
 
 export interface AdminConnectorView extends CatalogConnector {
@@ -266,7 +270,42 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
   getConnectorPolicies?(
     projectId: string,
     slug: string,
-  ): Promise<{ policies: Array<{ match: string; action: string }> } | null>;
+    policySet?: string | null,
+  ): Promise<
+    | { policies: Array<{ match: string; action: string }>; policy_set?: string }
+    | { error: string; code: 'policy_set_not_found' }
+    | null
+  >;
+  /** List a connector's policy sets (`connectors[].policy_sets`) with the agents using each. */
+  listConnectorPolicySets?(
+    projectId: string,
+    slug: string,
+  ): Promise<{
+    sets: Array<{ name: string; description: string | null; policies: Array<{ match: string; action: string }>; agents: string[] }>;
+  } | null>;
+  /** Create a policy set, or change its description, in kortix.yaml + re-sync. */
+  upsertConnectorPolicySet?(
+    projectId: string,
+    accountId: string,
+    slug: string,
+    name: string,
+    description: string | null | undefined,
+  ): Promise<CrudOutcome & { created?: boolean }>;
+  /** Rename a policy set and every agent reference to it, in one commit. */
+  renameConnectorPolicySet?(
+    projectId: string,
+    accountId: string,
+    slug: string,
+    from: string,
+    to: string,
+  ): Promise<CrudOutcome>;
+  /** Delete a policy set; 409 `policy_set_in_use` while an agent uses it. */
+  deleteConnectorPolicySet?(
+    projectId: string,
+    accountId: string,
+    slug: string,
+    name: string,
+  ): Promise<CrudOutcome>;
   /** Read a connector's definition (provider + connection fields) from kortix.yaml for editing. */
   getConnectorConfig?(
     projectId: string,
@@ -307,6 +346,7 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
     accountId: string,
     slug: string,
     policies: Array<{ match: string; action: string }>,
+    policySet?: string | null,
   ): Promise<CrudOutcome>;
   /** Pipedream 1-click: mint a connect token (for the frontend SDK overlay) + link.
    *  null = not pipedream. `userId` is accepted for back-compat but unused —
