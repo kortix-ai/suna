@@ -1265,7 +1265,7 @@
         },
         "event_triggers": {
           "name": "App-Ereignis-Trigger",
-          "description": "Starte einen Agenten, wenn in einer verbundenen App etwas passiert: eine neue E-Mail, ein Pull Request, ein Kalendertermin."
+          "description": "Starte einen Agenten, wenn in einer verbundenen App etwas passiert: eine neue E-Mail, ein Pull Request, ein Kalendertermin. Die Ereignisse kommen von Composio. Ist Connectors v2 aktiv, prüft Kortix deine verbundenen Apps zusätzlich selbst."
         },
         "volumes": {
           "name": "Volumes",

@@ -1265,7 +1265,7 @@
         },
         "event_triggers": {
           "name": "Trigger di eventi dell'app",
-          "description": "Avvia un agente quando succede qualcosa in un'app collegata: una nuova email, una pull request, un evento del calendario."
+          "description": "Avvia un agente quando succede qualcosa in un'app collegata: una nuova email, una pull request, un evento del calendario. Gli eventi arrivano da Composio. Con Connectors v2 attivo, Kortix controlla anche da solo le tue app collegate."
         },
         "volumes": {
           "name": "Volumi",
