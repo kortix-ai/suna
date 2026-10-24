@@ -139,8 +139,8 @@ sites), **code & data** (full Linux sandbox, any language, Docker-in-Docker),
 transcription), **websites & apps** (build + deploy from the repo),
 **connectors** (3,000+ apps + MCP/OpenAPI/GraphQL/HTTP, brokered
 server-side), **secrets** (encrypted, scoped to this agent's grant), **memory**
-(a compounding file-based company brain), **scheduling** (cron/webhook
-triggers — see `<scheduling>` below), **channels** (Slack and chat
+(a compounding file-based company brain), **scheduling** (schedules,
+webhooks, connector events and App events — see `<scheduling>` below), **channels** (Slack and chat
 surfaces), and **subagents** (parallel isolated sessions).
 
 What makes it different: it's code you own (versioned, diffable,
@@ -172,6 +172,8 @@ Load this skill when the user asks any of:
   an email arrives" (connector event trigger)
 - "Check back on this later / follow up tomorrow / keep checking until X
   happens" — a session reminder (`kortix remind`)
+- "My App should wake an agent" / "call my App every N minutes" / "what are
+  App events?" — App events and App targets (`references/scheduling.md`)
 - "What does `kortix.yaml` do?" / "What is `kortix_version`?"
 - "How do I add a cron trigger / webhook?" / "Why isn't my webhook firing?"
 - "Where do secrets come from?" / "Why does my session fail to start?"
@@ -237,7 +239,10 @@ Kortix cloud state — not just files in the repo. Examples:
 | "edit files in another session's sandbox" | `kortix sessions files <id> ls|write|mv|rm|find` |
 | "what needs review? approve / reject / request changes" | `kortix review ls` · `kortix review act <id> approve` · `kortix cr request-changes <cr> --message` |
 | "show me every connector event trigger" / "what listens to <app>?" | `kortix triggers ls --type event` (grouped by app) · `kortix triggers ls --connector <slug>` · web: Triggers → **Connector events** |
-| "when X happens in <app>, do Y" (new email, PR, issue, calendar event, Slack message). Beta: needs the project flag `event_triggers`, off by default (`kortix projects features enable event_triggers`; a `403 feature_disabled` means it is off) | `kortix triggers events --apps` → `triggers events --app <app> [--event <TYPE>]` (browse events before any connector) → `triggers events --connector <slug> --event <TYPE>` → `triggers add … --type event … --apply` · playbook: `references/scheduling.md` → App event triggers |
+| "when X happens in <app>, do Y" (new email, PR, issue, calendar event, Slack message). Beta: needs the project flag `event_triggers`, off by default (`kortix projects features enable event_triggers`; a `403 feature_disabled` means it is off) | `kortix triggers events --apps` → `triggers events --app <app> [--event <TYPE>]` (browse events before any connector) → `triggers events --connector <slug> --event <TYPE>` → `triggers add … --type event … --apply` · playbook: `references/scheduling.md` → Composio event triggers |
+| "when my App sees X, start an agent" | `kortix triggers add <slug> --type app --app <app-slug> --prompt "…" --apply` (the App posts `$KORTIX_APP_EVENTS_URL`) · playbook: `references/scheduling.md` → App events |
+| "call my App every 5 minutes" (no agent) | `kortix triggers add <slug> --every 5m --target-app <app-slug> --target-path /tick --apply` · `references/scheduling.md` → Call an App |
+| "list triggers of one kind" | `kortix triggers ls --type cron\|webhook\|event\|app` |
 | "edit a trigger live (schedule, conditions, agent, model)" | `kortix triggers set <slug> --cron … --filter k=v` · `triggers add … --apply` |
 | "which tools does this project have? remove / change a Kortix tool" | `kortix tools ls` · delete the `<name>: kortix:<name>` line in `kortix.yaml` · `kortix tools eject <name>` *(`references/kortix/tools.md` has the checklists)* |
 | "who is in the account / invite someone / manage groups" | `kortix members ls|invite` · `kortix groups …` · `kortix access requests ls` |
@@ -379,7 +384,8 @@ type. `labels` (for example `backend`) only group and filter Apps.
   React, or exported Next.js App here and deploy its output directory.
 - A **server App** (`--type dockerfile`, or `--image`) runs machines. It runs
   **always on** (the default, 24/7) or **on demand** (`--on-demand`: stops
-  when idle, wakes on the next request). An always-on App bills its machines
+  after `idle_timeout_seconds`, 120–86400, without requests and wakes on the
+  next request or trigger; a stop keeps the disk and loses memory). An always-on App bills its machines
   24/7; an on-demand App bills only while awake. Apps have no monthly budget:
   account credits pay. `--budget` is retired.
 - A **backend** (database, server functions, realtime, file storage) is a
@@ -391,6 +397,17 @@ type. `labels` (for example `backend`) only group and filter Apps.
 Apps are generally available in every project. Use Apps directly; no feature
 flag or enablement request is required.
 
+New Apps are private and **unlisted**: an App is a card on the Apps page
+only with `display.listed: true` (`--listed`); every other App sits in the
+**Background** list and opens to an overview. Deploy an App people open (a
+site, a UI, a dashboard) with `--listed`; leave backends, workers and pollers
+unlisted.
+
+An App reports what it sees by posting **App events** (`$KORTIX_APP_EVENTS_URL`
+with `$KORTIX_APP_TOKEN`); a trigger decides which agent runs. An App never
+starts an agent itself. A trigger with `run: { app, path }` calls an App on a
+schedule or an event. See `references/scheduling.md`.
+
 New Apps are private. Use `kortix apps access <app>` to select creator-only,
 whole-project, restricted member/group, public, or password access. Never store
 an App password in `kortix.yaml`.
@@ -399,7 +416,7 @@ Each App's code lives in its own folder, `apps/<slug>/` by default (`path` is
 free-form; group by team or topic when that fits better). Deploy that folder:
 
 ```sh
-kortix apps deploy apps/storefront/dist --type static --spa
+kortix apps deploy apps/storefront/dist --type static --spa --listed
 kortix apps deploy apps/api --type dockerfile --on-demand --command '["bun","run","start"]' --port 3000
 kortix apps deploy --image ghcr.io/acme/api:1.4.2 --command '["/app/server"]' --port 8081
 kortix apps launch --template convex
@@ -413,7 +430,11 @@ kortix apps access storefront --mode restricted --members <member-id> --groups <
 For a repeatable deployment, declare an `apps:` map in a v2 `kortix.yaml`
 (the App's release config: `processes`, `http_service`, `services`, `mounts`, `vm`,
 `deploy`, `labels`), then run `kortix apps deploy --manifest-app <name>`, or a
-bare `kortix apps deploy` for every block. The manifest stores non-secret
+bare `kortix apps deploy` for every block that has a `path` or `image`.
+kortix.yaml is the source of truth for App settings (`resources`,
+`idle_timeout_seconds`, `always_on`, `labels`, `display`, `uses`): every write
+(web, CLI, SDK, API) commits to `apps.<slug>` first, and a push applies them on
+sync without a deploy. The manifest stores non-secret
 environment values and maps runtime environment keys to **project secret
 identifiers**. It never stores secret values.
 
@@ -430,6 +451,7 @@ networking between Apps, private registries, or custom domains yet.
 | A backend (data, functions, realtime) or an API only | The `convex` template, or a server App with a volume |
 | A call to an external system from an App | The connector gateway (`kortix-connectors`) |
 | Agent work on a schedule or an event | `<scheduling>` here, `references/scheduling.md` |
+| Code that watches a source with no events and no webhook | An App that posts App events: the last resort (`references/scheduling.md` → App events) |
 
 Load the `kortix-apps` system skill before you deploy or operate an App, and
 before you write Convex code.
@@ -507,9 +529,10 @@ validating a skill.
 ## Scheduling — running work later, on a schedule, or on an event
 
 Kortix runs work on a schedule through **triggers** — a durable entry in
-the project's `kortix.yaml` (`triggers:`). When one fires, the platform
-spins up a session and hands the agent a prompt, exactly as if a teammate
-had typed it — there's no separate "scheduler tool" to call at runtime, you
+the project's `kortix.yaml` (`triggers:`): `on:` (what fires it) plus `run:`
+(what runs). When one fires, the platform spins up a session and hands the
+agent a prompt, exactly as if a teammate had typed it — or, with
+`run: { app, path }`, calls one of the project's Apps (no session, no model) — there's no separate "scheduler tool" to call at runtime, you
 *declare* a trigger and the platform's sweep fires it. A trigger may live in
 `kortix.yaml` or in any file the root's `imports:` brings in (for example
 `triggers/reports/weekly.yaml`); before adding one, check where the
@@ -533,28 +556,41 @@ Decide the mechanism first:
   reminders`, or Settings → Feature flags); turning it on is their call, not
   yours. Until then, use a one-off `run_at` trigger instead.
 - **Recurring project work** anyone should see (daily digest) →
-  `type: cron` + `cron` (6-field croner) + `timezone` in `kortix.yaml`.
-- **One-off project job** not tied to this session → `type: cron` + `run_at`.
+  `on: { cron: "<6-field>", timezone }`, or a fixed period
+  `on: { every: 5m }` (≥60s).
+- **One-off project job** not tied to this session → `on: { at: <ISO-8601> }`
+  (flat `run_at`).
+- **Run project code on a cadence, no agent** (a poller, a sync) →
+  `run: { app: <slug>, path: /tick }` with any `on:`.
 - **Reacts to an event in a connected app** ("when a PR opens", "when an
   email arrives", "when an issue changes") → `type: event` + `connector` +
   `event`. `connector` is the profile; add `account: <label>` only to pick
   one of several shared accounts on it. `source` names the event source
   adapter and defaults to the connector's provider; Composio is one adapter.
   The event id belongs to the adapter. Kortix subscribes for you: no
-  webhook, no secret, no signature.
+  webhook, no secret, no signature. Needs the project flag `event_triggers`
+  (**Composio event triggers**), off by default: ask the user to run
+  `kortix projects features enable event_triggers`.
   Use `type: webhook` + `secret_env` only for a system that has no app
   connector.
 
-For triggers, `session_mode` governs every fire: `"fresh"` (default, clean session, no chat
-history — right for monitoring/digests) vs `"reuse"` (re-prompts the same
-long-lived session). Say "recurring task" / "scheduled run" / "reminder" to
+**React to something outside Kortix in this order:** (1) a connector event
+(flag on — ask the user), (2) a webhook, (3) a schedule, (4) an App that
+posts App events — only when none fits (no events, no webhook, code must
+decide what deserves an agent, or a connection that stays open). An App
+never starts an agent itself; it posts events (`on: { event, app }`) and a
+trigger decides.
+
+For triggers, `session` (flat `session_mode`) governs every fire:
+`"fresh"` (default, clean session, no chat history — right for digests),
+`"reuse"` (re-prompts the same long-lived session), `"pinned"` or `"keyed"`. Say "recurring task" / "scheduled run" / "reminder" to
 non-technical users, not "cron job".
 
 Two practices matter for any recurring run: it must **push** a notification
 out itself when something's actionable (a headless run has no one
 watching — usually via `slack send`, silent otherwise), and it must be
 **idempotent** — the platform dedups *fires*, not your *work*, so scope by
-`{{ cron.last_fired_at }}` and track what's already been handled.
+`{{ cron.last_scheduled_for }}` and track what's already been handled.
 
 **Full references:**
 - `references/kortix/kortix-yaml.md`
@@ -693,7 +729,7 @@ When you, as an agent, have changes you believe should persist:
 | CLI           | `kortix cr ls / show / diff / open / merge / close / reopen` — full life-cycle locally.   |
 | `kortix.yaml` | Edits to triggers / env land via CR like any other file.                                  |
 | Skills        | New skill files reach future sessions **only** after a CR merges. Managed Kortix system skills also receive the deployed host overlay. |
-| Triggers      | Cron / webhook trigger edits reach the scheduler **only** after the CR merges to `main`.  |
+| Triggers      | Trigger edits reach the scheduler **only** after the CR merges to `main`.                 |
 
 Full reference: `references/kortix/change-requests.md`.
 </change-requests>
@@ -917,9 +953,10 @@ to see the full enum.
   In-depth `kortix.yaml` reference. Covers versions 1 and 2; logical agents;
   `imports:` (splitting the manifest across YAML files and directories);
   every shared top-level key (`project:`,
-  `env:`, `sandbox:`); every `triggers:` field (cron +
-  webhook, incl. `session_mode` and the project-wide `triggers_paused`
-  kill-switch), the prompt template variables, the secrets contract, the
+  `env:`, `sandbox:`); every trigger form (`on:`/`run:` and flat): cron,
+  every, at, webhook, connector event, App event, App target, incl.
+  `session_mode` and the project-wide `triggers_paused` kill-switch); the
+  rule that kortix.yaml owns what it declares, the prompt template variables, the secrets contract, the
   schema versioning, common gotchas, and a
   legacy note on the v1 `kortix.toml` TOML format. Load this when
   editing or debugging the manifest.
@@ -927,7 +964,9 @@ to see the full enum.
 
 <reference path="references/scheduling.md">
   The triggers **operational playbook** — deciding which mechanism to use
-  (one-off `run_at` vs recurring `cron` vs `webhook`), the full croner
+  (one-off `at` vs recurring `cron` / `every` vs connector event vs
+  `webhook` vs App events, in that order of preference), App events, calling
+  an App, App-scheduled runs, the full croner
   cheat-sheet and gotchas (DOM+DOW OR-not-AND trap, no exact-minute
   gates), fresh-vs-reuse `session_mode` decision guidance, notifying the
   user (Slack push, when to stay silent), idempotency/dedup patterns for

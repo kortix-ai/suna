@@ -108,7 +108,7 @@ A v3 agent block also takes `variant`, `temperature`, `top_p`, `steps`, `color`,
 | `default_agent` | string | required (v2, v3) | Names a declared agent that is not `enabled: false`. Sessions and triggers that name no agent use it. |
 | `agents` | map | required (v2, v3) | Agent name to agent block. At least one agent. See [agents](#agents). |
 | `imports` | list | none | Other YAML files whose collections merge into this one. See [imports](#imports). |
-| `project` | map | none | `name`, `description`. For people who read the repository. The project name in Kortix does not come from here. |
+| `project` | map | none | `name`, `description`. `project.name` is the project's name: a push that changes it renames the project, and a rename in Kortix commits it here. `description` is for people who read the repository. |
 | `env` | map | none | `required`, `optional`: secret names. See [env](#env). |
 | `runtime` | string | — | Deprecated: selects nothing, every new session runs pi. `opencode` validates with a warning. See [harnesses, opencode and pi](#harnesses-opencode-and-pi). |
 | `harnesses` | map | none | `pi.packages`, `opencode.plugins`. |
@@ -390,11 +390,11 @@ A trigger or connector entry is identified by its `slug`, and an App by its key 
 | `filter` | Optional. Map of dotted path to expected string. A fire runs only when every path matches. See [Triggers & reminders](/docs/connect/triggers). |
 | `cron` type | `cron` (6 fields, seconds first), `every` (a duration, at least `60s`) or `run_at` (ISO-8601), and `timezone` (IANA, default `UTC`). Fires at most once every 60 seconds. |
 | `webhook` type | `secret_env`: the name of the signing secret. |
-| `app` type | `app`: the slug of the App whose posted events fire it. |
+| `app` type | `app`: the slug of the App whose posted events fire it. `on: { event: <name> \| "*", app }`; in the flat form a name is `filter: { event.name: <name> }`. No feature flag. |
 | `target` | Optional, any type. `{ app, path, method, payload }`: the fire calls the App instead of an agent. |
 | `event` type | `connector` and `event`. Optional `account`, `source`, `config`. Needs the `event_triggers` feature flag (Composio event triggers), off by default. |
 
-`type: monitor` is refused with `MONITOR_REMOVED`: an App that posts events replaces it. An event trigger rejects every cron and webhook field. `connector`, `event`, `account`, `source` and `config` are errors on any type except `event`.
+`type: monitor` is refused with `MONITOR_REMOVED`: an App that posts events replaces it. An event trigger rejects every cron and webhook field. `connector`, `account`, `source` and `config` are errors on any type except `event`.
 
 **`connectors`.** Full reference: [Connectors](/docs/connect/connectors). Credentials live in the platform, never in the manifest.
 
@@ -415,7 +415,7 @@ A trigger or connector entry is identified by its `slug`, and an App by its key 
 
 **`apps`.** Full reference: [Configure in kortix.yaml](/docs/apps#configure-in-kortixyaml).
 
-`apps` maps an App slug to its configuration. The keys are `path`, `type` (`static`, `bundle`, `dockerfile`, `oci_image`), `image`, `dockerfile`, `command`, `port`, `root`, `output_dir`, `install_command`, `build_command`, `spa`, `readiness_path`, `idle_timeout_seconds`, `always_on`, `uses`, `resources`, `env`, `secrets`, `processes`, `http_service`, `services`, `mounts`, `vm`, `deploy` and `labels`. Any other key is an error.
+`apps` maps an App slug to its configuration. The keys are `path`, `type` (`static`, `bundle`, `dockerfile`, `oci_image`), `image`, `dockerfile`, `command`, `port`, `root`, `output_dir`, `install_command`, `build_command`, `spa`, `readiness_path`, `idle_timeout_seconds`, `always_on`, `uses`, `resources`, `env`, `secrets`, `processes`, `http_service`, `services`, `mounts`, `vm`, `deploy`, `labels` and `display`. Any other key is an error.
 
 ## policy and policies
 
@@ -456,7 +456,7 @@ The dashboard and the API edit the manifest in the project repository. `kortix t
 
 - An edit to an entry rewrites only the file that declares it, the root or an imported file. A new entry goes to the root file.
 - Keep `kortix_version` as the first key.
-- Write trigger fields in the order the editor writes them: `slug`, `name`, `type`, `agent`, `model`, `enabled`, the session fields, `filter`, the type fields, then `prompt`.
+- A new trigger is written as `slug`, `name`, `on:`, `run:`, then its options. An edit keeps the form the entry has. In the flat form, keep the order the editor writes: `slug`, `name`, `type`, `agent`, `model`, `enabled`, the session fields, `filter`, the type fields, then `prompt`.
 
 A manifest edit takes effect when it reaches the default branch. A dashboard, API, SDK or `--apply` edit commits there at once. Any other edit takes effect when `kortix ship`, a direct push or a change request merge brings it there. See [How a change takes effect](/docs/project#how-a-change-takes-effect).
 

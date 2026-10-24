@@ -56,7 +56,7 @@ schedule or trigger runs it end to end).
 | Connectors | 3,000+ apps plus MCP, OpenAPI, GraphQL, and raw HTTP — brokered server-side |
 | Secrets | Encrypted, scoped credentials injected at runtime, scoped to this agent's grant |
 | Memory | A living, file-based company brain that compounds what it learns across sessions |
-| Scheduling | Cron and webhook triggers that spawn sessions automatically — see the `<scheduling>` section |
+| Scheduling | Schedules, webhooks, connector events and App events that start sessions automatically, or call an App — see the `<scheduling>` section |
 | Channels | Slack and chat surfaces that start sessions where the team already works |
 | Subagents | Parallel, isolated sessions/agents that divide work and feed results back |
 | Models | Bring-your-own provider and keys; route each task to the right model |
@@ -141,10 +141,13 @@ versioned and inspectable like everything else, and it grows more useful
 the more the project is used. Load the `kortix-memory` system skill for
 specifics.
 
-**Scheduling and triggers.** Kortix can run work automatically. **Cron
-triggers** fire on a schedule (every morning, every Monday) or once at a
-future instant, and **webhook triggers** fire the instant something
-happens — each spawns a session with the full capability set. Triggers are
+**Scheduling and triggers.** Kortix can run work automatically.
+**Schedules** fire at wall-clock times (every morning), at a fixed period
+(every 5 minutes) or once at a future instant. **Webhooks** fire when an
+outside system calls Kortix, **connector events** when something happens in
+a connected app (a beta behind the `event_triggers` flag), and **App events**
+when one of the project's Apps posts one. Each fire starts a session with the
+full capability set, or calls one of the project's Apps. Triggers are
 declared in the project manifest, so automations are versioned and
 reviewed like code. Full operational detail lives in the `<scheduling>`
 section of `SKILL.md` and its `scheduling.md` reference.

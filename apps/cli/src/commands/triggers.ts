@@ -213,11 +213,11 @@ Schedules and App targets (add, add --apply):
 App options (--type app). The App decides when to fire: it POSTs events to
 $KORTIX_APP_EVENTS_URL with $KORTIX_APP_TOKEN (every App machine has both).
   --app <slug>             The App whose events fire the trigger (required).
+  --event <name>           Only this event name (default: every name).
                            The prompt reads {{ event.name }} and
-                           {{ event.data.<field> }}; narrow with
-                           --filter event.name=<name> (live add).
-App triggers take none of --cron, --run-at, --timezone, --secret-env, or the
-event options.
+                           {{ event.data.<field> }}.
+App triggers take none of --cron, --run-at, --timezone, --secret-env,
+--connector, --account or --config.
 
 Global options:
   --project <id>     Operate on this project id (default: linked).
