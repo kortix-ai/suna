@@ -35,6 +35,63 @@ AppPreview) already exist.
 
 ---
 
+## Foundations (apply to every pillar)
+
+### F1 — Persisted vs ephemeral: two lifecycles of EVERY config shape
+
+Every yaml config entity (agent, trigger, and the rest) has **two forms**:
+- **Persisted** = declared in the main-branch `kortix.yaml`. Durable, versioned,
+  reviewed. The source of truth.
+- **Ephemeral** = created at runtime with overrides, living in session/DB state,
+  **not committed to main**. Created on the fly (by the Meta Agent / the `agent`
+  tool / a running session). **Promotable** to persisted (write to yaml + a CR).
+
+This is not new — **Kortix already does it for triggers:** a Trigger is
+persisted (yaml), a Reminder/Loop is its ephemeral runtime form (DB row,
+overrides, uncommitted). The RFC **generalizes that one pattern to agents and
+everything else.** An ephemeral agent = an inline spec (prompt + tools + model +
+overrides) that spawns a real session but isn't in yaml. So "ephemeral vs
+persisted" stops being two systems and becomes **two lifecycles of the same
+shape** — an overlay on the persisted base.
+
+Implication: the `agent` tool (Pillar 1) **chooses an existing (persisted)
+definition OR spawns a new ephemeral agent** (inline + overrides), and good
+ephemeral ones promote to persisted. Same for Loop/Goal/Trigger: ephemeral at
+runtime, promotable to yaml.
+
+### F2 — The Meta Agent (the default cloud agent)
+
+**Already seeded in Kortix:** `apps/api/src/projects/lib/platform-meta-agent.ts`
+(a `platform: true` agent the API injects), flag `meta_agent`,
+`isMetaAgentName`, with routing hooks already in `session-create.ts`
+(caller-session aware). This RFC **elevates it to the default experience.**
+
+The Meta Agent is the one "giga" cloud agent optimal at using this harness,
+acting **on behalf of the user with the user's own rights** (not a scoped grant
+— inherits the launching user's permissions, the act-as model). **By default a
+user only ever talks to the Meta Agent.** Under the hood it:
+- **routes** to the perfect specialized agent via the `agent` tool (existing
+  persisted agent or a new ephemeral one),
+- **binds outcomes** (creates Goals), sets Loops/Triggers,
+- uses the whole harness (Drive, Channels, all builtin tools),
+- is the embodiment of the two-primitive system (Agent + Goal/Loop/Trigger).
+
+Specialized agents become things the Meta Agent routes to, not things the user
+picks first. (Pairs with the Spaces work: a space scopes which agents the Meta
+Agent can route to.)
+
+### F3 — Builtin tools, enable/disable
+
+The model tools (`read/write/edit/bash/glob/grep/agent/question/web_search/
+scrape_webpage/image_search/memory/show/skill/codemode`) are **builtins with a
+per-agent enable/disable toggle.** The grant model already exists:
+`AgentToolsV2 = 'all' | 'none' | string[] | { exclude } | Record<string,boolean>`
+(`manifest-schema/index.v2.ts:184`). Net-new is a clean UI toggle + treating the
+model tools (not only registered `kortix:` tools) as first-class toggleable
+builtins. The Meta Agent has all enabled by default.
+
+---
+
 ## Pillar 1 — Subagent = real cloud session (the keystone)
 
 **Today:** pi's `task` tool mints an in-process `ChildSession` inside the same
