@@ -1301,7 +1301,7 @@
         },
         "cloud_subagents": {
           "name": "Subagentes na nuvem",
-          "description": "Executa cada subagente como uma sessão própria em seu próprio computador na nuvem, não dentro da sessão principal. O subagente abre como sessão filha e devolve seu relatório final à sessão principal. Cada subagente usa sua própria capacidade de computação."
+          "description": "Executa cada subagente como uma sessão própria em seu próprio computador na nuvem, não dentro da sessão principal. O subagente abre como sessão filha e devolve seu relatório final à sessão principal. Cada subagente usa sua própria capacidade de computação. Novas sessões usam isso. Uma sessão em execução mantém seus subagentes internos até reiniciar."
         }
       }
     },

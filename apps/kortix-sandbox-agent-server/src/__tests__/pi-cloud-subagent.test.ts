@@ -105,7 +105,8 @@ describe('cloudSpawnSession — create', () => {
   })
 
   test('the platform coordinator sends no agent_name (the API picks the project default)', async () => {
-    const coordinator = cloudSubagentApiFrom({ apiUrl: 'https://a/v1', projectId: 'p', sandboxToken: 't', agentName: 'meta', platformCoordinator: true })!
+    // runtime.ts `cloudParent` leaves `parentAgent` out for the coordinator.
+    const coordinator = cloudSubagentApiFrom({ apiUrl: 'https://a/v1', projectId: 'p', sandboxToken: 't' })!
     const { impl, calls } = fakeApi({ rows: [IDLE], transcript: report('done') })
     await cloudSpawnSession({ ...coordinator, fetchImpl: impl }, { title: 'x', agent: 'inline', systemPrompt: 'Be brief.', prompt: 'go' }, fast)
     expect(calls.find((c) => c.method === 'POST')!.body).not.toHaveProperty('agent_name')
@@ -134,15 +135,23 @@ describe('cloudSpawnSession — create', () => {
     expect(result).toMatchObject({ status: 'completed', text: 'quick' })
   })
 
-  test('idle with no ended turn yet does not settle; the ceiling ends the wait', async () => {
+  test('idle with no ended turn yet does not settle; the ceiling ends the wait and stops the child', async () => {
     let t = 0
-    const { impl } = fakeApi({ rows: [{ status: 'running', working: { state: 'idle', since: null } }] })
-    const result = await cloudSpawnSession(api(impl), { title: 'x', agent: 'general', systemPrompt: '', prompt: 'go' }, {
+    const { impl, calls } = fakeApi({ rows: [{ status: 'running', working: { state: 'idle', since: null } }] })
+    const parent = api(impl)
+    const result = await cloudSpawnSession(parent, { title: 'x', agent: 'general', systemPrompt: '', prompt: 'go' }, {
       pollIntervalMs: 0,
       waitCeilingMs: 60_000,
       now: () => (t += 10_000),
     })
-    expect(result).toMatchObject({ sessionId: 'child-1', status: 'error', error: 'child session did not settle within 1 min' })
+    expect(result).toMatchObject({
+      sessionId: 'child-1',
+      status: 'error',
+      error: 'child session did not settle within 1 min; the child session was stopped',
+    })
+    // The slot is freed only because the child no longer runs.
+    expect(calls.some((c) => c.method === 'POST' && c.url === 'https://api.example.com/v1/projects/proj-1/sessions/child-1/stop')).toBe(true)
+    expect(parent.live.count).toBe(0)
   })
 
   test('a failed child session returns error', async () => {
@@ -169,6 +178,28 @@ describe('cloudSpawnSession — create', () => {
     expect(result.status).toBe('completed')
     expect(result.text).toContain('child session child-1')
     expect(result.text).toContain('503')
+  })
+
+  test('read-back: text earlier in the turn, then a failed last message, is an error, not a report', async () => {
+    const { impl } = fakeApi({
+      rows: [IDLE],
+      transcript: { status: 200, body: { messages: [{ role: 'user', text: 'go' }, { role: 'assistant', text: "I'll start with the logs." }, { role: 'assistant', text: '', error: 'model exploded' }] } },
+    })
+    expect(await cloudSpawnSession(api(impl), { title: 'x', agent: 'general', systemPrompt: '', prompt: 'go' }, fast)).toMatchObject({
+      status: 'error',
+      error: "the subagent's last turn failed: model exploded",
+    })
+  })
+
+  test('a named agent is narrowed to the parent agent tools too (the create body carries the parent list)', async () => {
+    const { impl, calls } = fakeApi({ rows: [IDLE], transcript: report('done') })
+    await cloudSpawnSession(api(impl, { toolAllowlist: ['read', 'grep'] }), { title: 'x', agent: 'builder', systemPrompt: 'build', prompt: 'go' }, fast)
+    expect(calls.find((c) => c.method === 'POST')!.body).toEqual({
+      initial_prompt: 'go',
+      name: 'x',
+      agent_name: 'builder',
+      runtime_context: { 'kortix.subagent.depth': 1, 'kortix.subagent.tools': 'read,grep' },
+    })
   })
 
   test('inline instructions over the API cap are refused before any session exists', async () => {
@@ -227,6 +258,30 @@ describe('cloudSpawnSession — task_id resume', () => {
     expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/sessions'))).toBe(false)
   })
 
+  test('a follow-up turn that fails returns error, never the previous turn report', async () => {
+    const { impl } = fakeApi({
+      rows: [OWN_IDLE, OWN_IDLE, IDLE],
+      transcript: {
+        status: 200,
+        body: { messages: [{ role: 'user', text: 'first' }, { role: 'assistant', text: 'OLD-REPORT' }, { role: 'user', text: 'again' }, { role: 'assistant', text: '', error: 'model exploded' }] },
+      },
+    })
+    const result = await cloudSpawnSession(api(impl), { sessionId: 'child-7', title: 'x', agent: 'general', systemPrompt: '', prompt: 'again' }, fast)
+    expect(result).toMatchObject({ sessionId: 'child-7', status: 'error', error: "the subagent's last turn failed: model exploded" })
+    expect(result.text).toBe('')
+  })
+
+  test('a follow-up turn with no text returns the pointer, never the previous turn report', async () => {
+    const { impl } = fakeApi({
+      rows: [OWN_IDLE, OWN_IDLE, IDLE],
+      transcript: { status: 200, body: { messages: [{ role: 'user', text: 'first' }, { role: 'assistant', text: 'OLD-REPORT' }, { role: 'user', text: 'again' }, { role: 'assistant', text: '' }] } },
+    })
+    const result = await cloudSpawnSession(api(impl), { sessionId: 'child-7', title: 'x', agent: 'general', systemPrompt: '', prompt: 'again' }, fast)
+    expect(result.status).toBe('completed')
+    expect(result.text).not.toContain('OLD-REPORT')
+    expect(result.text).toContain('finished without a text report')
+  })
+
   test('a task_id that is not a child of this session is refused', async () => {
     const other = fakeApi({ rows: [{ ...OWN_IDLE, parent_session_id: 'someone-else' }] })
     await expect(
@@ -263,11 +318,11 @@ describe('subagent context and target', () => {
     expect(childToolAllowlist(['read'], ['read', 'bash'])).toEqual(['read'])
   })
 
-  test('cloudSubagentApiFrom is null without a control plane, and carries the parent agent and limits', () => {
+  test('cloudSubagentApiFrom is null without a control plane, and carries the session, depth and limits', () => {
     expect(cloudSubagentApiFrom({ apiUrl: 'https://a', projectId: 'p' })).toBeNull()
     expect(
-      cloudSubagentApiFrom({ apiUrl: 'https://a', projectId: 'p', sandboxToken: 't', sessionId: PARENT, agentName: 'builder', context: { depth: 1, tools: ['read'] }, maxLive: 2, maxDepth: 3 }),
-    ).toEqual({ apiUrl: 'https://a', projectId: 'p', token: 't', sessionId: PARENT, parentAgent: 'builder', depth: 1, maxDepth: 3, maxLive: 2, toolAllowlist: ['read'], live: { count: 0 } })
+      cloudSubagentApiFrom({ apiUrl: 'https://a', projectId: 'p', sandboxToken: 't', sessionId: PARENT, context: { depth: 1, tools: ['read'] }, maxLive: 2, maxDepth: 3 }),
+    ).toEqual({ apiUrl: 'https://a', projectId: 'p', token: 't', sessionId: PARENT, depth: 1, maxDepth: 3, maxLive: 2, toolAllowlist: ['read'], live: { count: 0 } })
     expect(cloudSubagentApiFrom({ apiUrl: 'https://a', projectId: 'p', sandboxToken: 't' })).toMatchObject({ depth: 0, maxDepth: 2, maxLive: 4 })
   })
 })

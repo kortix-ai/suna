@@ -22,15 +22,19 @@
  *  - A named project agent (`subagent_type: reviewer`) runs as that agent. The
  *    API authorizes the agent exactly as for any session the caller starts.
  *  - A built-in (`general`, `explore`) or an inline spec runs as the PARENT's
- *    own agent (`agent_name` = `KORTIX_AGENT_NAME`), so its tools, connectors,
- *    secrets and permissions are the parent's. The platform coordinator omits
+ *    own resolved agent (runtime.ts `cloudParent`), so its connectors, secrets
+ *    and permissions are the parent's. The platform coordinator omits
  *    `agent_name`: the API then picks the project default (session-create.ts,
  *    the coordinator recursion stop).
  *  - The spec's instructions ride in `initial_context` (a model-only part).
- *  - The spec's tool list rides in `runtime_context` (`kortix.subagent.tools`)
- *    and the child's runtime narrows its tools to it (runtime.ts
- *    `rootToolAllowed`). It is intersected with this box's own list first, so
- *    a grandchild never regains a tool its parent lost.
+ *  - The parent's effective tool list, intersected with the spec's list, rides
+ *    in `runtime_context` (`kortix.subagent.tools`) for EVERY child, named
+ *    agents included. The child's runtime narrows its own tools to it
+ *    (runtime.ts `rootToolAllowed`), so a child never has a tool its parent
+ *    lacks, the same rule as the in-process path.
+ *  - Not forwarded: `variant` (a named child applies its own agent's variant;
+ *    a built-in or inline spec has none) and the spec `permission` (the child
+ *    runs under its agent's permission policy, never a wider one).
  *
  * Guardrails: at most `maxLive` children wait at once per parent box, and a
  * child at depth `maxDepth` cannot start another cloud child (depth rides in
@@ -63,13 +67,13 @@ export interface CloudSubagentApi {
   token: string
   /** This box's own session id (`KORTIX_SESSION_ID`): a resumed `task_id` must name one of its children. */
   sessionId?: string
-  /** The parent session's agent. Built-in and inline children run as it. Absent: the API picks. */
+  /** The parent's resolved agent, set per call. Built-in and inline children run as it. Absent: the API picks. */
   parentAgent?: string
   /** This session's own subagent depth (0 for a root session). */
   depth: number
   maxDepth: number
   maxLive: number
-  /** Tools this session itself is narrowed to; a child inherits the narrowing. */
+  /** Every tool the parent agent may use, set per call. A child gets at most these. Absent: the parent is not narrowed. */
   toolAllowlist?: string[]
   /** Children this parent is waiting on right now. One counter per box, shared by every call. */
   live: { count: number }
@@ -107,10 +111,6 @@ export function cloudSubagentApiFrom(input: {
   projectId?: string
   sandboxToken?: string
   sessionId?: string
-  /** `KORTIX_AGENT_NAME`. */
-  agentName?: string
-  /** `KORTIX_META_AGENT=1`: this box runs the platform coordinator. */
-  platformCoordinator?: boolean
   context?: SubagentContext
   maxLive?: number
   maxDepth?: number
@@ -119,13 +119,11 @@ export function cloudSubagentApiFrom(input: {
   const projectId = input.projectId?.trim()
   const token = input.sandboxToken?.trim()
   if (!apiUrl || !projectId || !token) return null
-  const agentName = input.agentName?.trim()
   return {
     apiUrl,
     projectId,
     token,
     ...(input.sessionId?.trim() ? { sessionId: input.sessionId.trim() } : {}),
-    ...(agentName && agentName !== 'default' && !input.platformCoordinator ? { parentAgent: agentName } : {}),
     depth: input.context?.depth ?? 0,
     maxDepth: input.maxDepth ?? DEFAULT_MAX_CLOUD_SUBAGENT_DEPTH,
     maxLive: input.maxLive ?? DEFAULT_MAX_LIVE_CLOUD_SUBAGENTS,
@@ -258,6 +256,7 @@ function buildCreateBody(api: CloudSubagentApi, input: SpawnSessionInput): Recor
   if (instructions.length > INITIAL_CONTEXT_MAX_CHARS) {
     throw new Error(`Inline agent instructions are ${instructions.length} characters; a cloud subagent takes at most ${INITIAL_CONTEXT_MAX_CHARS}.`)
   }
+  // Every child, named or not, is narrowed to the parent's tools (the in-process path's `rootToolAllowed`).
   const tools = childToolAllowlist(api.toolAllowlist, input.tools)
   const invalid = (tools ?? []).filter((name) => !TOOL_NAME.test(name))
   if (invalid.length > 0) throw new Error(`Invalid tool names for a cloud subagent: ${invalid.join(', ')}.`)
@@ -347,13 +346,18 @@ async function settleAndRead(
     if (signal?.aborted) await stopChild(http, childId)
     return { sessionId: childId, status: 'aborted', text: '', model }
   }
+  if (settled.status === 'timeout') {
+    // Stop it: a child nobody waits on would keep using compute, and its freed slot would let the cap be exceeded.
+    await stopChild(http, childId)
+    return { sessionId: childId, status: 'error', text: '', error: `${settled.error}; the child session was stopped`, model }
+  }
   if (settled.status === 'error') return { sessionId: childId, status: 'error', text: '', error: settled.error, model }
   const report = await readFinalText(http, childId)
-  if (report.error && !report.text) return { sessionId: childId, status: 'error', text: '', error: report.error, model }
+  if (report.error) return { sessionId: childId, status: 'error', text: '', error: report.error, model }
   return { sessionId: childId, status: 'completed', text: report.text, model }
 }
 
-type Settled = { status: 'completed' | 'error' | 'aborted'; error?: string }
+type Settled = { status: 'completed' | 'error' | 'aborted' | 'timeout'; error?: string }
 
 /**
  * Poll `GET /v1/projects/:projectId/sessions/:childId` until the child's turn
@@ -375,7 +379,7 @@ async function waitForIdle(
   let everWorked = false
   for (;;) {
     if (signal?.aborted) return { status: 'aborted' }
-    if (now() > deadline) return { status: 'error', error: `child session did not settle within ${Math.round(ceiling / 60_000)} min` }
+    if (now() > deadline) return { status: 'timeout', error: `child session did not settle within ${Math.round(ceiling / 60_000)} min` }
     let res: Response
     try {
       res = await http.fetchImpl(sessionUrl(http, childId), { headers: http.headers })
@@ -404,8 +408,10 @@ async function waitForIdle(
 
 function delay(ms: number, signal: AbortSignal | undefined): Promise<void> {
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms)
-    signal?.addEventListener('abort', () => { clearTimeout(timer); resolve() }, { once: true })
+    const onAbort = () => { clearTimeout(timer); resolve() }
+    // The listener goes when the timer fires: one wait polls up to ~900 times on the same signal.
+    const timer = setTimeout(() => { signal?.removeEventListener('abort', onAbort); resolve() }, ms)
+    signal?.addEventListener('abort', onAbort, { once: true })
   })
 }
 
@@ -429,7 +435,11 @@ interface CompactMessage {
  * transcript route (`GET …/sessions/:childId/transcript?detail=full`): the
  * route project automation reads, live from the child's box or from its saved
  * mirror. `detail=full` keeps the answer whole up to 16,000 characters.
- * The newest assistant message with text is the report.
+ *
+ * Only the turn this call started counts: the messages after the last user
+ * message (the prompt just sent). An earlier turn's report is never returned
+ * as this turn's result. If the newest assistant message of the turn failed,
+ * the result is an error, even when an earlier message of the turn has text.
  */
 async function readFinalText(http: Http, childId: string): Promise<{ text: string; error?: string }> {
   const pointer = `The subagent ran as the Kortix child session ${childId}; its transcript is that session.`
@@ -442,11 +452,14 @@ async function readFinalText(http: Http, childId: string): Promise<{ text: strin
   }
   if (res.status !== 200) return { text: `${pointer} Its final report could not be read back: the API answered ${res.status}.` }
   const body = (await res.json().catch(() => null)) as { messages?: CompactMessage[] } | null
-  const assistants = (body?.messages ?? []).filter((m) => m.role === 'assistant')
-  const report = [...assistants].reverse().find((m) => typeof m.text === 'string' && m.text.trim())
-  if (report) return { text: report.text!.trim() }
+  const messages = body?.messages ?? []
+  // No user message in the window: the turn is longer than the window, so the whole window is this turn.
+  const turn = messages.slice(messages.findLastIndex((m) => m.role === 'user') + 1)
+  const assistants = turn.filter((m) => m.role === 'assistant')
   const last = assistants.at(-1)
   if (last?.error) return { text: '', error: `the subagent's last turn failed: ${errorText(last.error)}` }
+  const report = [...assistants].reverse().find((m) => typeof m.text === 'string' && m.text.trim())
+  if (report) return { text: report.text!.trim() }
   return { text: `${pointer} It finished without a text report.` }
 }
 

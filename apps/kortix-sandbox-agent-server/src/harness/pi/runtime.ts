@@ -1498,16 +1498,42 @@ export class PiRuntime {
         projectId: this.cfg.projectId,
         sandboxToken: this.cfg.sandboxToken,
         sessionId: this.env.KORTIX_SESSION_ID,
-        agentName: this.env.KORTIX_AGENT_NAME,
-        platformCoordinator: this.env.KORTIX_META_AGENT === '1',
         context: this.subagentContext,
         maxLive: this.cfg.piCloudSubagentsMax,
         maxDepth: this.cfg.piCloudSubagentsMaxDepth,
       })
-      if (this.cloudSubagents) return cloudSpawnSession(this.cloudSubagents, input)
+      // The agent and its tools are read per call: a prompt may switch the agent (applyAgent).
+      // The spread keeps the shared `live` counter.
+      if (this.cloudSubagents) return cloudSpawnSession({ ...this.cloudSubagents, ...this.cloudParent() }, input)
       logger.warn('[pi] KORTIX_PI_CLOUD_SUBAGENTS is on but the box has no control plane; using the in-process child')
     }
     return this.spawnSession(input)
+  }
+
+  /**
+   * What a cloud child inherits from the agent running now. `parentAgent` is
+   * the RESOLVED agent (never the `default` sentinel, which the API could
+   * resolve to the platform coordinator), left out for the coordinator itself
+   * so the API picks the project default. `toolAllowlist` is every tool this
+   * agent may use (`rootToolAllowed`), sent for every child, named ones
+   * included, so the child runs with intersection(its own tools, these).
+   * Undefined = this agent is not narrowed at all.
+   */
+  private cloudParent(): Pick<CloudSubagentApi, 'parentAgent' | 'toolAllowlist'> {
+    const coordinator = this.env.KORTIX_META_AGENT === '1'
+    const declared = Object.prototype.hasOwnProperty.call(this.compiled?.agent ?? {}, this.agentName)
+    const narrowed = this.compiledAgent()?.tools !== undefined || this.subagentContext.tools !== undefined
+    const session = this.pi?.session
+    const names = [
+      ...this.baseTools.map((tool) => tool.name),
+      ...(this.codemodeMode === 'off' ? [] : [CODEMODE_TOOL]),
+      ...(session?.getActiveToolNames() ?? []),
+      ...this.hiddenTools,
+    ]
+    return {
+      parentAgent: !coordinator && declared ? this.agentName : undefined,
+      toolAllowlist: narrowed ? [...new Set(names)].filter((name) => this.rootToolAllowed(name)) : undefined,
+    }
   }
 
   /**

@@ -1931,6 +1931,57 @@ describe('pi packages', () => {
 describe('pi subagents extension', () => {
   const TASK = (args: Record<string, unknown>) => ({ tool: 'task', args: { description: 'Write the note', prompt: 'write sub.txt', subagent_type: 'general', ...args } })
 
+  test('cloud subagents: every child carries the narrowed parent tools and the resolved parent agent, never `default`', async () => {
+    // A fake Kortix API: it records each create and answers an already-settled child with a report.
+    const creates: Array<Record<string, any>> = []
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        const path = new URL(req.url).pathname
+        if (req.method === 'POST' && path === '/v1/projects/proj-pi-test/sessions') {
+          creates.push((await req.json()) as Record<string, any>)
+          return Response.json({ session_id: `cloud-child-${creates.length}` }, { status: 201 })
+        }
+        if (path.endsWith('/transcript')) return Response.json({ messages: [{ role: 'user', text: 'go' }, { role: 'assistant', text: 'cloud report' }] })
+        if (req.method === 'GET' && path.startsWith('/v1/projects/proj-pi-test/sessions/cloud-child-')) {
+          return Response.json({ status: 'running', working: { state: 'idle', since: '2026-10-24T10:00:00.000Z', pending_delivery: false } })
+        }
+        return new Response('not found', { status: 404 })
+      },
+    })
+    try {
+      const compiled = {
+        default_agent: 'build',
+        agent: {
+          build: { mode: 'primary', tools: { '*': false, read: true, grep: true, task: true } },
+          reviewer: { mode: 'subagent', description: 'Reviews one change', prompt: 'You review.' },
+        },
+      }
+      const r = await boot({
+        script: [TASK({ subagent_type: 'reviewer', prompt: 'review it' }), TASK({ subagent_type: 'general', prompt: 'look' }), { text: 'parent done' }],
+        env: {
+          KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify(compiled),
+          KORTIX_PI_CLOUD_SUBAGENTS: '1',
+          KORTIX_API_URL: `http://127.0.0.1:${server.port}/v1`,
+          KORTIX_AGENT_NAME: 'default',
+        },
+      })
+      await promptAndSettle(r, 'delegate both')
+      expect(creates.map((c) => c.agent_name)).toEqual(['reviewer', 'build'])
+      for (const create of creates) {
+        expect(create.runtime_context['kortix.subagent.depth']).toBe(1)
+        expect(String(create.runtime_context['kortix.subagent.tools']).split(',').sort()).toEqual(['grep', 'read', 'task'])
+      }
+      const root = r.service.runtime()!.rootId
+      const wire = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+      const parts = toolParts(wire, 'task')
+      expect(parts.map((part) => part.state.metadata.sessionId)).toEqual(['cloud-child-1', 'cloud-child-2'])
+      expect(parts[0]!.state.output).toContain('cloud report')
+    } finally {
+      server.stop(true)
+    }
+  })
+
   test('task runs a child session whose transcript the product can read', async () => {
     const r = await boot({
       script: [TASK({}), { tool: 'bash', args: { command: 'printf from-subagent > sub.txt && cat sub.txt' } }, { text: 'child wrote sub.txt' }, { text: 'parent done' }],

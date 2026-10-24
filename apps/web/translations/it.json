@@ -1301,7 +1301,7 @@
         },
         "cloud_subagents": {
           "name": "Subagenti cloud",
-          "description": "Esegue ogni subagente come sessione propria su un proprio computer cloud, non dentro la sessione principale. Il subagente si apre come sessione figlia e restituisce il report finale alla sessione principale. Ogni subagente usa la propria capacità di calcolo."
+          "description": "Esegue ogni subagente come sessione propria su un proprio computer cloud, non dentro la sessione principale. Il subagente si apre come sessione figlia e restituisce il report finale alla sessione principale. Ogni subagente usa la propria capacità di calcolo. Le nuove sessioni lo usano. Una sessione in corso mantiene i suoi subagenti interni finché non si riavvia."
         }
       }
     },

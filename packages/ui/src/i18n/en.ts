@@ -842,7 +842,7 @@ const catalog = {
         },
         "cloud_subagents": {
           "name": "Cloud subagents",
-          "description": "Runs each subagent as its own session on its own cloud computer, not inside the parent session. The subagent opens as a child session and returns its final report to the parent. Each subagent uses its own compute."
+          "description": "Runs each subagent as its own session on its own cloud computer, not inside the parent session. The subagent opens as a child session and returns its final report to the parent. Each subagent uses its own compute. New sessions use it. A running session keeps its in-process subagents until it restarts."
         }
       }
     },
