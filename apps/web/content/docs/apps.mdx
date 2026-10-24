@@ -231,7 +231,12 @@ Rules:
 `display` decides where an App appears in the **Apps** tab. It never changes how
 the App runs or who may open it. The tab shows a card only for an App
 registered with `listed: true`. Every other App (a poller, a bot, a backend)
-sits under **Background Apps**, closed by default.
+sits in the **Background** list under the grid: one row per App with its
+status, how it runs, the trigger that calls it and its last activity. Opening
+a background App shows what it does: how it runs, the triggers that call it
+and the agents its [events](/docs/connect/triggers#app-events) start. In the
+web app, **Settings → Show on Apps page** moves an App between the grid and
+the list.
 
 | Key | Default | Effect |
 |---|---|---|
