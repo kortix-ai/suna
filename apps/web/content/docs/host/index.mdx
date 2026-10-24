@@ -239,12 +239,14 @@ Set these with `kortix self-host env set`. Each row says what the variable turns
 | `COMPOSIO_API_KEY` | The connector app catalog. Without it, Easy connect, the `/connections` page and the onboarding apps step are hidden. Custom connectors work without it. |
 | `COMPOSIO_WEBHOOK_SECRET` | Composio app-event [triggers](/docs/connect/triggers). Without it, `POST /v1/webhooks/events/composio` answers `503` `event_ingress_not_configured`. |
 | `KORTIX_EVENT_POLLS_ENABLED` | Default `true`. `false` pauses every check of the app events that Kortix checks itself ([source `mcp`](/docs/connect/triggers#how-checks-work)). The triggers stay, and fires already queued still run. Checks resume when it is `true` again. |
-| `KORTIX_OAUTH_CLIENTS` | Your own OAuth clients for the [MCP app catalog](/docs/connect/connectors#the-mcp-app-catalog-experimental) apps whose servers have no dynamic client registration. JSON, one entry per vendor: `google`, `github`, `slack`, `hubspot`, `asana`, `box`. Without an entry, those apps are not listed. See [Kortix OAuth clients](#kortix-oauth-clients). |
+| `KORTIX_OAUTH_CLIENTS` | Your own OAuth clients for the [app catalog](/docs/connect/connectors#the-app-catalog) apps whose servers have no dynamic client registration. JSON, one entry per vendor: `google`, `github`, `slack`, `hubspot`, `asana`, `box`. Without an entry, those apps are not listed. See [Kortix OAuth clients](#kortix-oauth-clients). |
 | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_SIGNING_SECRET` | One-click **Add to Slack** with your own Slack app. Without all three, each project connects its own Slack app. See [Slack, Teams & email](/docs/connect/channels). |
 | `MICROSOFT_APP_ID`, `MICROSOFT_APP_PASSWORD`, `MICROSOFT_APP_TENANT` (default `botframework.com`) | One shared Microsoft Teams bot. Without them, each project brings its own bot app. |
-| `AGENTMAIL_API_KEY` | Managed inboxes for the email channel. |
+| `RESEND_API_KEY` | Transactional email, and the Resend team that holds managed inboxes for the email channel. |
+| `RESEND_MANAGED_EMAIL_ENABLED` | `true` offers Kortix-managed inboxes on `RESEND_MANAGED_DOMAIN`. Unset: projects connect email only with their own Resend key. Each managed inbox is billed to the deployment's Resend team. |
+| `RESEND_MANAGED_DOMAIN` | Domain for managed inboxes, verified with receiving on in that Resend team. |
 | `TUNNEL_ENABLED` | Default `true`. `false` turns off [computers](/docs/connect/computers): `/v1/tunnel/*` answers `503` `tunnel_disabled`. |
-| `PLATINUM_API_KEY` | Monitors (also need `platinum` in `ALLOWED_SANDBOX_PROVIDERS`), project Files (`volumes`). |
+| `PLATINUM_API_KEY` | Project Files (`volumes`). |
 
 OAuth callbacks, such as `<KORTIX_URL>/v1/connectors/oauth2/callback` and the Slack and Teams redirects, use `KORTIX_URL`. Domain mode and a named tunnel keep it stable. A quick tunnel changes it at every restart and breaks every callback you registered.
 
@@ -353,6 +355,8 @@ Postgres has a fixed limit of `1280m`. `KORTIX_GATEWAY_MAX_REQUEST_BYTES` raises
 | `KORTIX_SANDBOX_TURN_WAITING_MINUTES` | `120` | How long a turn that waits on a person holds its sandbox. At most half the turn grant. Unattended runs get 30. |
 | `KORTIX_SANDBOX_PREVIEW_GRANT_MINUTES` | `30` | How long preview traffic keeps a sandbox running. |
 | `KORTIX_SANDBOX_WARM_GRANT_MINUTES` | `60` | The lifetime of an unclaimed warm sandbox. |
+| `KORTIX_SANDBOX_IDLE_DELETE_MINUTES` | `60` | A sandbox of a session whose `/workspace` is a Platinum volume (`workspace_volume`) is deleted after it has been stopped this many minutes. The next open boots a new sandbox on the same volume and restores the conversation from the session log. `-1` keeps every stopped sandbox. |
+| `KORTIX_WORKSPACE_VOLUMES` | on | `off` gives no new session a `/workspace` volume, whatever the project's `workspace_volume` flag says. A session that has a volume keeps it. |
 | `KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES` | `720` | The provider's own idle stop, a backstop for sandboxes the API cannot reach. |
 | `KORTIX_SANDBOX_AUTOARCHIVE_MINUTES` | `720` | Legacy Daytona only: a stopped sandbox moves to archive storage. |
 | `KORTIX_SANDBOX_AUTODELETE_MINUTES` | `-1` | Legacy Daytona only: never delete automatically. |

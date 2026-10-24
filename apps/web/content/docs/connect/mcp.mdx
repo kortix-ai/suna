@@ -143,7 +143,8 @@ The same flow as [`kortix connectors`](/docs/connect/connectors):
 - `call_connector`: runs an action as you. Pass `account` when a connector has several accounts and no default. Pass `reason` on a write whose arguments are only ids. A `pending_approval` result carries an `approval_url`: a person approves, then the client calls again with the same tool, arguments and account within 15 minutes. See [Policies and approvals](/docs/connect/connectors#policies-and-approvals).
 - `upload_connector_attachment`: stages a file for a call and returns the ref to put in `args`.
 - `connect_connector`: returns the URL a person opens to connect an account. `owner` is `me` (default) or `project`.
-- `search_connector_apps`: finds an app to add.
+- `search_connector_apps`: finds an app to add: every MCP server, REST and GraphQL API and Composio app, with `kind`, `one_click` and `category` filters.
+- `get_connector_app`: every way to connect one app, best first, and what one way can do (its tools).
 - `add_connector`, `remove_connector`: change the project's connectors. Each change commits to `kortix.yaml` on the project's default branch.
 
 ### API

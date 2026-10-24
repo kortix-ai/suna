@@ -491,20 +491,35 @@ const nextConfig = (): NextConfig => ({
         protocol: 'https',
         hostname: 'ke4pydspzeg0nm0o.public.blob.vercel-storage.com',
       },
-      // The desktop shell historically launched at /dashboard, which never
-      // existed and fell through to the marketing 404. The authed home is
-      // /projects (see middleware). Redirect so already-shipped desktop builds
-      // (URL baked in at compile time) recover instead of 404ing on launch.
-      // {
-      //   source: '/dashboard',
-      //   destination: '/projects',
-      //   permanent: false,
-      // },
     ],
   },
 
   async redirects() {
     return [
+      // The desktop shell historically launched at /dashboard, which never
+      // existed. The signed-in home is /projects (see middleware). Desktop
+      // builds that baked the old URL in, and old links, land there instead
+      // of on the 404 page (KRTX-3232).
+      {
+        source: '/dashboard',
+        destination: '/projects',
+        permanent: false,
+      },
+      // The paths people type to sign in or up (KRTX-3154). /auth asks for the
+      // email first and picks sign-in or sign-up itself.
+      {
+        source: '/:path(login|signin|sign-in|signup|sign-up|register)',
+        destination: '/auth',
+        permanent: false,
+      },
+      // The per-release changelog moved to /changelog/releases (2026-10-19);
+      // /changelog is the weekly summary now. Page 1 of the old list is
+      // /changelog itself, which stays valid.
+      {
+        source: '/changelog/page/:page',
+        destination: '/changelog/releases/page/:page',
+        permanent: true,
+      },
       // Capability tabs moved under /customize/ (2026-09-03). The old
       // top-level segments were shared in Slack, saved as bookmarks and baked
       // into agent transcripts, so every one keeps resolving. `agent` became
@@ -822,6 +837,14 @@ const nextConfig = (): NextConfig => ({
       {
         source: '/docs',
         destination: '/docs/index.html',
+      },
+      // Blume links /docs/apple-touch-icon.png (it detects the app's
+      // public/apple-touch-icon.png) but never copies it into the docs build,
+      // so the directory rule below turned it into a 404 (KRTX-3226). Serve the
+      // app's one icon file.
+      {
+        source: '/docs/apple-touch-icon.png',
+        destination: '/apple-touch-icon.png',
       },
       {
         source: '/docs/:path*',

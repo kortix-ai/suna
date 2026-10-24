@@ -1,5 +1,6 @@
 'use client';
 
+import { AgentMark } from '../../internal/components/agent-mark';
 import { useTranslations } from '../../i18n';
 // PrincipalPicker — THE "who is this for?" control.
 //
@@ -34,7 +35,6 @@ import { contract, qk } from '@kortix/sdk/react';
 import {
   CheckCircleIcon,
   MagnifyingGlassIcon,
-  RobotIcon,
   UserPlusIcon,
   UsersIcon,
   UsersThreeIcon,
@@ -367,11 +367,11 @@ export function PrincipalPicker({
         )}
       >
         {selected.kind === 'group' ? (
-          <EntityAvatar icon={UsersIcon} label={label} size="sm" />
+          <EntityAvatar icon={UsersIcon} label={label} hint={label} size="sm" />
         ) : selected.kind === 'agent' ? (
-          <EntityAvatar icon={RobotIcon} label={label} size="sm" />
+          <AgentMark slug={label} />
         ) : (
-          <UserAvatar email={label} size="sm" />
+          <UserAvatar email={label} hint={label} size="sm" />
         )}
         <span className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">{label}</span>
         <Badge variant="outline" size="sm">
@@ -494,7 +494,7 @@ export function PrincipalPicker({
                 onSelect={() =>
                   pick({ kind: 'everyone', id: scope.kind === 'project' ? scope.projectId : '' })
                 }
-                leading={<EntityAvatar icon={UsersThreeIcon} label={everyone.label} size="sm" />}
+                leading={<EntityAvatar icon={UsersThreeIcon} label={everyone.label} hint={everyone.label} size="sm" />}
                 label={everyone.label}
               />
             ) : null}
@@ -525,7 +525,7 @@ export function PrincipalPicker({
                     selection={selection}
                     disabled={disabled}
                     onSelect={() => pick({ kind: 'group', id: group.group_id })}
-                    leading={<EntityAvatar icon={UsersIcon} label={group.name} size="sm" />}
+                    leading={<EntityAvatar icon={UsersIcon} label={group.name} hint={group.name} size="sm" />}
                     label={group.name}
                     suffix={tI18nComplete.raw('text24f15c9196e8')}
                   />
@@ -547,7 +547,7 @@ export function PrincipalPicker({
                       selection={selection}
                       disabled={disabled}
                       onSelect={() => pick({ kind: 'member', id: member.user_id })}
-                      leading={<UserAvatar email={label} size="sm" variant="primary" />}
+                      leading={<UserAvatar email={label} hint={label} size="sm" variant="primary" />}
                       label={label}
                       suffix={member.user_id === viewerId ? '(you)' : undefined}
                     />
@@ -567,7 +567,7 @@ export function PrincipalPicker({
                     disabled={disabled}
                     onSelect={() => pick({ kind: 'agent', id: agent.service_account_id })}
                     leading={
-                      <EntityAvatar icon={RobotIcon} label={agent.agent_name ?? ''} size="sm" />
+                      <AgentMark slug={agent.agent_name ?? agent.name} />
                     }
                     label={agent.agent_name ?? agent.name}
                     suffix={tAgents('agentBadge')}

@@ -240,7 +240,7 @@ The commands below are `kortix sessions <subcommand>`. `chat` and `connect` also
 | `compact <session_id>` | Summarize the conversation and continue from the summary. |
 | `rename <session_id> <name>` | Set the name. `""` restores the automatic title. |
 | `update [<session_id>]` | Add or remove labels and metadata. |
-| `rm <session_id>…` | Stop and delete sessions. Each one is restorable for 30 days, and its branch is kept. Prints the `restore` command for each session. `--json` adds `restore_until` and `project_id`. |
+| `rm <session_id>…` | Stop and delete sessions. Each one is restorable for 30 days; after that its messages, files and branch are deleted. Prints the `restore` command for each session. `--json` adds `restore_until` and `project_id`. |
 | `restore <session_id>` | Restore a deleted session within 30 days. Pass the full session ID (`ls --deleted` lists it), and `--project` when the session is not in the linked project. |
 
 ### Access

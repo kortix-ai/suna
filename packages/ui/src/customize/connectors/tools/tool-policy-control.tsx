@@ -24,6 +24,8 @@ export interface ToolPolicyControlProps {
   lockedReason?: string;
   /** Shown while `value` is `'default'` — what following the default DOES. */
   defaultHint?: string;
+  /** Replaces the Default segment's label: a policy set says "Inherit". */
+  defaultLabel?: string;
 }
 
 /**
@@ -48,6 +50,7 @@ export function ToolPolicyControl({
   disabled = false,
   lockedReason,
   defaultHint,
+  defaultLabel,
 }: ToolPolicyControlProps) {
   const policySegments = useLocalizedUiCatalog(POLICY_SEGMENTS);
   const locked = Boolean(lockedReason);
@@ -71,11 +74,11 @@ export function ToolPolicyControl({
             }}
             className={cn(
               'px-2.5 text-xs font-medium',
-              'transition-[color,background-color,scale] duration-150 active:scale-[0.96]',
+              'transition-[color,background-color,scale] duration-normal active:scale-[0.96]',
               selected ? segment.tint : cn('text-muted-foreground', segment.hoverTint),
             )}
           >
-            {segment.label}
+            {segment.choice === 'default' && defaultLabel ? defaultLabel : segment.label}
           </Button>
         );
       })}

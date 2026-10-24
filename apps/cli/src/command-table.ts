@@ -271,6 +271,12 @@ export const TIERS: readonly CommandTier[] = [
             featureFlag: 'goals',
           },
           {
+            name: 'artifacts',
+            args: '<subcommand>',
+            blurb: 'Share Files paths as docs and pages: publish, add, share, versions',
+            featureFlag: 'artifacts',
+          },
+          {
             name: 'capture',
             args: '<subcommand>',
             blurb: 'Search the Capture timeline of the person you act for (search, timeline, frame)',

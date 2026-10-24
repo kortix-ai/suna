@@ -1,10 +1,11 @@
-import { projectSessions, projects } from '@kortix/db';
-import { and, asc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
+import { changeRequests, projectSessions, projects } from '@kortix/db';
+import { and, asc, eq, inArray, lt, ne, or, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger';
 import { tickRunningComputeCharges } from '../billing/services/compute-metering';
 import { cleanupExpiredConnectorAttachments } from '../connectors/attachments';
 import { db } from '../shared/db';
 import { recordAuditEvent } from '../shared/audit';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { reconcileStaleBuilds } from '../snapshots/builder';
 import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
 import { EMPTY_APP_IMAGE_RECLAIM_RESULT, reclaimAppDeploymentImages } from '../apps/images';
@@ -12,15 +13,18 @@ import { sweepAppRetention } from '../apps/retention';
 import { sweepAppVolumes } from '../apps/volumes';
 import { reclaimAppSiteBlobs } from '../apps/static-site';
 import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
-import { purgeExpiredMonitorEvents, reconcileMonitorBoxes } from './lib/monitor-box';
+import { purgeExpiredMonitorEvents } from './lib/monitor-ingest';
+import { retireMonitorBoxes } from './lib/monitor-retire';
+import { purgeFiredAppRuns } from './lib/app-runs';
+import { SESSION_DELETE_ROWS_DAYS } from './session-log-purge';
 import { purgeExpiredTriggerRuns } from './trigger-execution-store';
 import { settleTriggerRunsFromTurns } from './lib/trigger-run-outcome';
 import { mapWithConcurrency } from './lib/trigger-scheduler-state';
-import { emptyMonitorReconcileResult } from './lib/monitor-box-core';
 import { reconcileForwardedPrompts } from './session-lifecycle/consumption';
 import { reconcileUndeliveredPrompts } from './session-lifecycle/undelivered-prompts';
 import { verifyParkedRuntimes } from './reaping/parked-runtime-verification';
 import { removeArchivedProviderBoxes } from './reaping/archived-box-removal';
+import { retireIdleVolumeBoxes } from './reaping/idle-volume-retire';
 import { convergeStuckProvisioningRuntimes } from './reaping/stuck-provisioning';
 import { reconcileRuntimeWakeFences } from './session-lifecycle/runtime-wake-maintenance';
 import {
@@ -128,6 +132,7 @@ async function auditBranchDeleted(row: {
   projectId: string;
   sessionId: string;
   branchName: string;
+  deleted: boolean;
 }): Promise<void> {
   try {
     await recordAuditEvent({
@@ -140,8 +145,8 @@ async function auditBranchDeleted(row: {
       outcome: 'success',
       metadata: {
         branch_name: row.branchName,
-        reason: 'retention_expired',
-        retention_days: branchRetentionDays(),
+        reason: row.deleted ? 'session_deleted' : 'retention_expired',
+        retention_days: row.deleted ? SESSION_DELETE_ROWS_DAYS : branchRetentionDays(),
       },
     });
   } catch (err) {
@@ -151,9 +156,11 @@ async function auditBranchDeleted(row: {
 
 /**
  * The session branches the GC may delete at `now`: a terminal session idle for
- * the retention period. A deleted session keeps `updated_at` (the delete does
- * not move it in the list), so its branch is also kept for the retention
- * period after the delete: a restore inside the window gets the branch back.
+ * the retention period, or a deleted session past its restore window
+ * (`SESSION_DELETE_ROWS_DAYS`, the day its content purge is due). A restore
+ * inside the window gets the branch back. A deleted session loses only a
+ * branch it owns (the name contains its session id), never a branch it was
+ * started on.
  */
 export async function selectExpiredSessionBranches(now: Date) {
   const cutoff = new Date(now.getTime() - branchRetentionDays() * 24 * 60 * 60 * 1000);
@@ -173,18 +180,28 @@ export async function selectExpiredSessionBranches(now: Date) {
     .innerJoin(projects, eq(projectSessions.projectId, projects.projectId))
     .where(
       and(
-        inArray(projectSessions.status, [...TERMINAL_SESSION_STATUSES]),
-        lt(projectSessions.updatedAt, cutoff),
-        sql`(coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''
-          OR (${projectSessions.metadata}->>'deletedAt')::timestamptz < ${cutoff.toISOString()}::timestamptz)`,
+        or(
+          and(
+            sql`coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`,
+            inArray(projectSessions.status, [...TERMINAL_SESSION_STATUSES]),
+            lt(projectSessions.updatedAt, cutoff),
+          ),
+          and(
+            sql`kortix.session_delete_due_at(${projectSessions.metadata}) <= ${now.toISOString()}::timestamptz`,
+            sql`strpos(${projectSessions.branchName}, ${projectSessions.sessionId}) > 0`,
+          ),
+        ),
         ne(projectSessions.branchName, projects.defaultBranch),
-        // Exclude the two NEVER-deletable classes at the query so they can't
+        // Exclude the NEVER-deletable classes at the query so they can't
         // occupy batch slots forever and starve deletable rows: a skipped row
         // never gets a db.update, so its updatedAt stays < cutoff and it
         // re-matches every sweep. (1) already-GC'd. (2) open-PR — mirrors
         // hasOpenPullRequestMarker. The in-loop guards below stay as
         // defense-in-depth for a marker written AFTER selection.
         sql`(${projectSessions.metadata}->'branch_gc'->>'deleted_at') IS NULL`,
+        // A failed delete waits a day, so it cannot hold the batch every sweep.
+        sql`coalesce((${projectSessions.metadata}->'branch_gc'->>'failed_at')::timestamptz, '-infinity')
+          < ${new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString()}::timestamptz`,
         sql`NOT (
           COALESCE(${projectSessions.metadata}->>'open_pr', 'false') = 'true'
           OR COALESCE(${projectSessions.metadata}->>'has_open_pr', 'false') = 'true'
@@ -192,6 +209,9 @@ export async function selectExpiredSessionBranches(now: Date) {
           OR lower(COALESCE(${projectSessions.metadata}->'github_pull_request'->>'state', '')) = 'open'
           OR lower(COALESCE(${projectSessions.metadata}->'pr'->>'state', '')) = 'open'
         )`,
+        // (3) the head of an open change request: deleting it would end the request.
+        sql`NOT EXISTS (select 1 from ${changeRequests} where ${changeRequests.projectId} = ${qualifiedColumn(projectSessions.projectId)}
+          and ${changeRequests.headRef} = ${qualifiedColumn(projectSessions.branchName)} and ${changeRequests.status} = 'open')`,
       ),
     )
     // Oldest deletable rows first — deterministic drain so the planner's scan
@@ -235,23 +255,29 @@ export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
       await db
         .update(projectSessions)
         .set({
-          metadata: {
-            ...metadata,
-            branch_gc: {
-              deleted_at: now.toISOString(),
-              branch_name: row.branchName,
-              remote_deleted: remoteDeleted,
-            },
-          },
+          // Merged in SQL: the content purge may have emptied the metadata since the read.
+          metadata: sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || ${JSON.stringify({
+            branch_gc: { deleted_at: now.toISOString(), branch_name: row.branchName, remote_deleted: remoteDeleted },
+          })}::jsonb`,
           updatedAt: new Date(),
         })
         .where(eq(projectSessions.sessionId, row.sessionId));
-      if (remoteDeleted) await auditBranchDeleted(row);
+      if (remoteDeleted) await auditBranchDeleted({ ...row, deleted: typeof metadata.deletedAt === 'string' });
       deleted += remoteDeleted ? 1 : 0;
       if (!remoteDeleted) skipped += 1;
     } catch (err) {
       errors += 1;
       console.error(`[project-maintenance] Failed to GC branch ${row.branchName}:`, err);
+      // Without a mark, a row that always fails heads every batch and starves the rest.
+      await db
+        .update(projectSessions)
+        .set({
+          metadata: sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || ${JSON.stringify({
+            branch_gc: { failed_at: now.toISOString() },
+          })}::jsonb`,
+        })
+        .where(eq(projectSessions.sessionId, row.sessionId))
+        .catch(() => undefined);
     }
   }
 
@@ -498,20 +524,15 @@ function runMaintenanceSweeps() {
       );
       return { examined: 0, lost: 0, healed: 0, errors: 1 };
     }),
-    // Monitors. Converges the
-    // per-project monitor box: flag on + >=1 enabled monitor => a box exists
-    // running the current manifest revision; flag off, zero monitors, or an
-    // exceeded budget => no box. Also the ONLY place a persistent monitor box
-    // is observed alive, which is what keeps its billing window earning.
-    () => reconcileMonitorBoxes().catch((err) => {
-      console.warn(
-        '[project-maintenance] monitor-box reconcile failed:',
-        err instanceof Error ? err.message : err,
-      );
-      return { ...emptyMonitorReconcileResult(), errors: 1 };
+    // Monitor boxes left live when the box was removed: stop them and close
+    // their compute windows (lib/monitor-retire.ts). Goes with the table.
+    () => retireMonitorBoxes().catch((err) => {
+      console.warn('[project-maintenance] monitor-box retirement failed:', err instanceof Error ? err.message : err);
+      return { retired: 0, errors: 1 };
     }),
-    // 30-day retention on the append-only monitor event log.
-    () => purgeExpiredMonitorEvents().catch((err) => {
+    // 30-day retention on the append-only App event log, and on fired
+    // one-off App runs (lib/app-runs.ts). The step reports the event count.
+    () => purgeFiredAppRuns().catch(() => 0).then(() => purgeExpiredMonitorEvents()).catch((err) => {
       console.warn(
         '[project-maintenance] monitor-event retention failed:',
         err instanceof Error ? err.message : err,
@@ -547,6 +568,12 @@ function runMaintenanceSweeps() {
       logger.warn('[project-maintenance] trigger-run settle failed', { error: err instanceof Error ? err.message : String(err) });
       return 0;
     }),
+    // A /workspace-volume session's box stopped past the idle-delete window is
+    // removed; its next open boots a fresh box on the volume.
+    () => retireIdleVolumeBoxes().catch((err) => {
+      logger.warn('[project-maintenance] idle volume box retire failed', { error: err instanceof Error ? err.message : String(err) });
+      return { retired: 0, removed: 0, failed: 1 };
+    }),
   ]);
 }
 
@@ -571,12 +598,13 @@ function logMaintenanceCycle(
     promptAttachments,
     runtimeWakes,
     parkedRuntimes,
-    monitorBoxes,
+    monitorBoxesRetired,
     monitorEventsPurged,
     archivedRemovals,
     stuckProvisioning,
     triggerRunsPurged,
     triggerRunsSettled,
+    idleVolumeRetires,
   ] = sweeps;
   const hadAction = Boolean(
     idle.stopped ||
@@ -614,19 +642,18 @@ function logMaintenanceCycle(
       parkedRuntimes.lost ||
       parkedRuntimes.healed ||
       parkedRuntimes.errors ||
-      monitorBoxes.created ||
-      monitorBoxes.restarted ||
-      monitorBoxes.stopped ||
-      monitorBoxes.disabledOverCap ||
-      monitorBoxes.deferred ||
-      monitorBoxes.errors ||
+      monitorBoxesRetired.retired ||
+      monitorBoxesRetired.errors ||
       monitorEventsPurged ||
       archivedRemovals.removed ||
       archivedRemovals.failed ||
       stuckProvisioning.examined ||
       stuckProvisioning.errors ||
       triggerRunsPurged ||
-      triggerRunsSettled,
+      triggerRunsSettled ||
+      idleVolumeRetires.retired ||
+      idleVolumeRetires.removed ||
+      idleVolumeRetires.failed,
   );
   if (hadAction) {
     console.log('[project-maintenance] completed', {
@@ -644,12 +671,13 @@ function logMaintenanceCycle(
       connectorAttachments,
       promptAttachments,
       runtimeWakes,
-      monitorBoxes,
+      monitorBoxesRetired,
       monitorEventsPurged,
       archivedRemovals,
       stuckProvisioning,
       triggerRunsPurged,
       triggerRunsSettled,
+      idleVolumeRetires,
     });
   }
   // Unconditional heartbeat — proof-of-life independent of whether any
@@ -693,13 +721,6 @@ function logMaintenanceCycle(
     `app_deployments_retired=${appImages.deploymentsRetired}`,
     `app_artifacts_reclaimed=${appImages.artifactsReclaimed}`,
     `app_site_blobs_reclaimed=${appImages.siteBlobsReclaimed}`,
-    // A monitor box only stays billable while this sweep observes it, so
-    // `monitor_observed` going flat while boxes exist is the signal that
-    // monitor billing has silently stopped earning.
-    `monitor_projects=${monitorBoxes.projects}`,
-    `monitor_observed=${monitorBoxes.observed}`,
-    `monitor_created=${monitorBoxes.created}`,
-    `monitor_stopped=${monitorBoxes.stopped}`,
     // The sweeps run SWEEP_CONCURRENCY at a time. A cycle that takes longer
     // than the interval makes the next tick skip, which halves every sweep's
     // rate: alert on this value approaching the interval.

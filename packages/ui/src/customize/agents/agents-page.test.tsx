@@ -13,37 +13,9 @@ mock.module('../use-configure-thread', () => ({
 
 const { AgentsPage } = await import('./agents-page');
 
-describe('AgentsPage CLI identifiers', () => {
-  test('shows exact ids beneath display names for primary agents and subagents', () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    client.setQueryData(qk.project.detail('synthetic-project'), {
-      account_id: 'synthetic-account',
-      config: {
-        default_agent: 'release-helper',
-        agents: [
-          { name: 'release-helper', path: 'agents/release-helper.md', mode: 'primary' },
-          { name: 'syntax-checker', path: 'agents/syntax-checker.md', mode: 'subagent' },
-        ],
-      },
-    });
-    const markup = renderToStaticMarkup(
-      <QueryClientProvider client={client}>
-        <AgentsPage projectId="synthetic-project" />
-      </QueryClientProvider>,
-    );
-    for (const [name, id] of [
-      ['Release-Helper', 'release-helper'],
-      ['Syntax-Checker', 'syntax-checker'],
-    ]) {
-      expect(markup).toContain(name);
-      expect(markup).toContain(`>${id}</code>`);
-    }
-  });
-});
-
 // KRTX-3025: the card shows what the configuration grants, not the agent's prose.
 describe('AgentsPage access line', () => {
-  test('a fully granted agent reads "Full access"; a scoped one lists its grants', () => {
+  test('"Full access" or the connector count; nothing an agent lacks', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     client.setQueryData(qk.project.detail('synthetic-project'), {
       account_id: 'synthetic-account',
@@ -63,6 +35,12 @@ describe('AgentsPage access line', () => {
             mode: 'primary',
             scope: { env: [], connectors: ['shopify', 'gmail'], kortix_permissions: 'all', kortix_cli: 'all' },
           },
+          {
+            name: 'reflector',
+            path: 'agents/reflector.md',
+            mode: 'primary',
+            scope: { env: [], connectors: [], kortix_permissions: 'all', kortix_cli: 'all' },
+          },
         ],
       },
     });
@@ -73,7 +51,8 @@ describe('AgentsPage access line', () => {
     );
     expect(markup).toContain('Full access');
     expect(markup).toContain('2 connectors');
-    expect(markup).toContain('No secrets');
-    expect(markup).toContain('All Kortix actions');
+    for (const absent of ['No connectors', 'No secrets', 'All Kortix actions', 'trigger', 'Default model']) {
+      expect(markup).not.toContain(absent);
+    }
   });
 });

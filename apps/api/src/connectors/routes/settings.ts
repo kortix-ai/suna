@@ -1,5 +1,7 @@
 /** Admin routes: sync, per-connector settings and policies, and project policies. */
 import { type OpenAPIHono, createRoute } from '@hono/zod-openapi';
+import type { Context } from 'hono';
+import { policySetNameError } from '@kortix/manifest-schema';
 import { auth, errors, json } from '../../openapi';
 import { areValidConditions, isValidMatcher, normalizeConditions } from '../policy';
 import type { ConnectorRouterDeps, ProjectPolicyView } from '../router';
@@ -7,7 +9,9 @@ import {
   CrudOkSchema,
   OpaqueSchema,
   ProjectParam,
+  PolicySetQuery,
   ProjectSlugParam,
+  ProjectSlugPolicySetParam,
   SyncResultSchema,
   featureNotSupportedResponse,
 } from './shared';
@@ -209,12 +213,12 @@ export function registerConnectorSettingsRoutes(app: OpenAPIHono, deps: Connecto
       method: 'get',
       path: '/projects/{projectId}/connectors/{slug}/policies',
       tags: ['connector'],
-      summary: "Read a connector's tool-call policies",
+      summary: "Read a connector's tool-call policies (base rules, or one policy set's)",
       ...auth,
-      request: { params: ProjectSlugParam },
+      request: { params: ProjectSlugParam, query: PolicySetQuery },
       responses: {
         200: json(OpaqueSchema, 'Connector policies'),
-        ...errors(403, 404),
+        ...errors(400, 403, 404),
       },
     }),
     async (c: any) => {
@@ -224,8 +228,11 @@ export function registerConnectorSettingsRoutes(app: OpenAPIHono, deps: Connecto
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.getConnectorPolicies)
         return featureNotSupportedResponse(c, 'connector_policies_read');
-      const result = await deps.getConnectorPolicies(projectId, slug);
+      const policySet = policySetQueryOf(c);
+      if (policySet && 'error' in policySet) return c.json(policySet, 400);
+      const result = await deps.getConnectorPolicies(projectId, slug, policySet?.name ?? null);
       if (!result) return c.json({ error: 'connector not found' }, 404);
+      if ('error' in result) return c.json(result, 404);
       return c.json(result);
     },
   );
@@ -262,10 +269,11 @@ export function registerConnectorSettingsRoutes(app: OpenAPIHono, deps: Connecto
       method: 'put',
       path: '/projects/{projectId}/connectors/{slug}/policies',
       tags: ['connector'],
-      summary: "Replace a connector's tool-call policies",
+      summary: "Replace a connector's tool-call policies (base rules, or one policy set's)",
       ...auth,
       request: {
         params: ProjectSlugParam,
+        query: PolicySetQuery,
         body: { content: { 'application/json': { schema: OpaqueSchema } } },
       },
       responses: {
@@ -288,10 +296,169 @@ export function registerConnectorSettingsRoutes(app: OpenAPIHono, deps: Connecto
       }
       const policies = Array.isArray(body?.policies) ? body.policies : null;
       if (!policies) return c.json({ error: '`policies` must be an array' }, 400);
-      const result = await deps.setConnectorPolicies(projectId, admin.accountId, slug, policies);
-      return result.ok
-        ? c.json({ ok: true, sync: result.sync })
-        : c.json({ error: result.error }, result.status as 400 | 409 | 502);
+      const policySet = policySetQueryOf(c);
+      if (policySet && 'error' in policySet) return c.json(policySet, 400);
+      const result = await deps.setConnectorPolicies(projectId, admin.accountId, slug, policies, policySet?.name ?? null);
+      return crudResponse(c, result);
+    },
+  );
+
+  registerConnectorPolicySetRoutes(app, deps);
+}
+
+/** `?policy_set=<name>`: absent/empty/`base` = the base rules. */
+function policySetQueryOf(c: Context): { name: string } | { error: string; code: string } | null {
+  const raw = c.req.query('policy_set');
+  if (typeof raw !== 'string' || !raw.trim() || raw.trim() === 'base') return null;
+  const name = raw.trim();
+  const problem = policySetNameError(name);
+  return problem ? { error: problem, code: 'invalid_policy_set_name' } : { name };
+}
+
+function crudResponse(
+  c: Context,
+  result: { ok: true; sync?: unknown } | { ok: false; error: string; status: number; body?: Record<string, unknown> },
+  extra: Record<string, unknown> = {},
+) {
+  if (!result.ok) {
+    return c.json(result.body ?? { error: result.error }, result.status as 400 | 404 | 409 | 502);
+  }
+  return c.json({ ok: true, sync: result.sync, ...extra }, 200);
+}
+
+/**
+ * Policy sets: named rule sets on one connector (`connectors[].policy_sets`)
+ * that an agent is given with `agents.<a>.policy_sets`. These routes own the
+ * set itself (create, description, rename, delete, list). Its RULES are
+ * written only through `PUT .../policies?policy_set=<name>`. Every write
+ * commits kortix.yaml on the default branch, then syncs.
+ */
+function registerConnectorPolicySetRoutes(app: OpenAPIHono, deps: ConnectorRouterDeps): void {
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/projects/{projectId}/connectors/{slug}/policy-sets',
+      tags: ['connector'],
+      summary: "List a connector's policy sets, with their rules and the agents using each",
+      ...auth,
+      request: { params: ProjectSlugParam },
+      responses: {
+        200: json(OpaqueSchema, 'Policy sets'),
+        ...errors(403, 404, 501),
+      },
+    }),
+    async (c: Context) => {
+      const projectId = c.req.param('projectId')!;
+      const slug = c.req.param('slug')!;
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.listConnectorPolicySets) return featureNotSupportedResponse(c, 'connector_policy_sets');
+      const result = await deps.listConnectorPolicySets(projectId, slug);
+      if (!result) return c.json({ error: 'connector not found', code: 'connector_not_found' }, 404);
+      return c.json(result);
+    },
+  );
+
+  app.openapi(
+    createRoute({
+      method: 'put',
+      path: '/projects/{projectId}/connectors/{slug}/policy-sets/{name}',
+      tags: ['connector'],
+      summary: 'Create a policy set, or change its description',
+      ...auth,
+      request: {
+        params: ProjectSlugPolicySetParam,
+        body: { content: { 'application/json': { schema: OpaqueSchema } } },
+      },
+      responses: {
+        200: json(OpaqueSchema, 'Policy set saved'),
+        ...errors(400, 403, 404, 409, 501, 502),
+      },
+    }),
+    async (c: Context) => {
+      const projectId = c.req.param('projectId')!;
+      const slug = c.req.param('slug')!;
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.upsertConnectorPolicySet) return featureNotSupportedResponse(c, 'connector_policy_sets');
+      let body: any = {};
+      try {
+        body = await c.req.json();
+      } catch {
+        body = {};
+      }
+      if (body?.policies !== undefined || body?.rules !== undefined) {
+        return c.json(
+          {
+            error: 'set rules through PUT .../policies?policy_set=<name>',
+            code: 'use_policies_route',
+          },
+          400,
+        );
+      }
+      const description =
+        body?.description === undefined ? undefined : typeof body.description === 'string' ? body.description : null;
+      const result = await deps.upsertConnectorPolicySet(projectId, admin.accountId, slug, c.req.param('name')!, description);
+      return crudResponse(c, result, result.ok ? { created: result.created ?? false } : {});
+    },
+  );
+
+  app.openapi(
+    createRoute({
+      method: 'put',
+      path: '/projects/{projectId}/connectors/{slug}/policy-sets/{name}/name',
+      tags: ['connector'],
+      summary: 'Rename a policy set and every agent assignment of it, in one commit',
+      ...auth,
+      request: {
+        params: ProjectSlugPolicySetParam,
+        body: { content: { 'application/json': { schema: OpaqueSchema } } },
+      },
+      responses: {
+        200: json(OpaqueSchema, 'Policy set renamed'),
+        ...errors(400, 403, 404, 409, 501, 502),
+      },
+    }),
+    async (c: Context) => {
+      const projectId = c.req.param('projectId')!;
+      const slug = c.req.param('slug')!;
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.renameConnectorPolicySet) return featureNotSupportedResponse(c, 'connector_policy_sets');
+      let body: any;
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: 'invalid_json' }, 400);
+      }
+      const to = typeof body?.name === 'string' ? body.name.trim() : '';
+      if (!to) return c.json({ error: '`name` is required', code: 'invalid_policy_set_name' }, 400);
+      const result = await deps.renameConnectorPolicySet(projectId, admin.accountId, slug, c.req.param('name')!, to);
+      return crudResponse(c, result);
+    },
+  );
+
+  app.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/projects/{projectId}/connectors/{slug}/policy-sets/{name}',
+      tags: ['connector'],
+      summary: 'Delete a policy set (409 policy_set_in_use while an agent uses it)',
+      ...auth,
+      request: { params: ProjectSlugPolicySetParam },
+      responses: {
+        200: json(OpaqueSchema, 'Policy set deleted'),
+        ...errors(400, 403, 404, 409, 501, 502),
+      },
+    }),
+    async (c: Context) => {
+      const projectId = c.req.param('projectId')!;
+      const slug = c.req.param('slug')!;
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.deleteConnectorPolicySet) return featureNotSupportedResponse(c, 'connector_policy_sets');
+      const result = await deps.deleteConnectorPolicySet(projectId, admin.accountId, slug, c.req.param('name')!);
+      return crudResponse(c, result);
     },
   );
 }

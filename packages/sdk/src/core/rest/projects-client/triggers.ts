@@ -1,4 +1,4 @@
-// Triggers — cron/webhook/monitor triggers defined in the project manifest.
+// Triggers — cron/webhook/monitor/event/app triggers defined in the project manifest.
 
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
@@ -11,10 +11,17 @@ import { unwrap } from './shared';
 // in `project_trigger_runtime` so a fire doesn't amplify into a git commit.
 // ---------------------------------------------------------------------------
 
-export type ProjectTriggerType = 'cron' | 'webhook' | 'monitor' | 'event';
+/**
+ * `'monitor'` is deprecated: the monitor box was removed, and the API answers
+ * 400 to a new monitor trigger. An App with a schedule or a `type: app`
+ * trigger replaces it. The member stays until the next major.
+ */
+export type ProjectTriggerType = 'cron' | 'webhook' | 'monitor' | 'event' | 'app';
 
 /**
- * How the platform runs a `type: monitor` trigger's `run` command:
+ * @deprecated The monitor box was removed; the API sends `null`. Removed in the next major.
+ *
+ * How the platform ran a `type: monitor` trigger's `run` command:
  * - `poll` — run it every `interval`, print, exit.
  * - `stream` — run it once and keep it alive.
  *
@@ -41,6 +48,15 @@ export interface TriggerSessionAccess {
   mode: 'private' | 'project' | 'members';
   memberIds: string[];
   groupIds: string[];
+}
+
+/** What a fire calls when a trigger targets an App: `method path` on the App, with the fire's payload. */
+export interface ProjectTriggerTarget {
+  app: string;
+  path: string;
+  method: 'POST' | 'GET';
+  /** Fixed JSON body the call sends instead of the fire's payload. */
+  payload?: Record<string, unknown>;
 }
 
 /** Subscription state of a `type: event` trigger. */
@@ -108,24 +124,22 @@ export interface ProjectTrigger {
   timezone: string;
   /** project_secrets key holding the webhook HMAC secret. */
   secret_env: string | null;
-  /**
-   * For type='monitor' only — the repo-relative command the platform
-   * supervises 24/7 in the project's monitor box. Its stdout lines are the
-   * events; nothing else is. Null on cron/webhook.
-   */
+  /** @deprecated The monitor box was removed; always `null`. Removed in the next major. */
   run: string | null;
-  /** For type='monitor' only — see {@link ProjectMonitorMode}. Null otherwise. */
+  /** @deprecated The monitor box was removed; always `null`. Removed in the next major. */
   mode: ProjectMonitorMode | null;
-  /** For mode='poll' only — the poll period in whole seconds. Null otherwise. */
+  /** @deprecated The monitor box was removed; always `null`. Removed in the next major. */
   interval_seconds: number | null;
-  /**
-   * For type='monitor' only — the silence watchdog in whole seconds. No event
-   * inside this window synthesizes a `silent` lifecycle event, so a wedged
-   * monitor can never fail silently. Null when the monitor declares none.
-   */
+  /** @deprecated The monitor box was removed; always `null`. Removed in the next major. */
   expect_event_within_seconds: number | null;
   /** For type='event' only — see {@link ProjectTriggerEvent}. Null otherwise. */
   event: ProjectTriggerEvent | null;
+  /** For type='app' only — the slug of the App whose emitted events fire this trigger. Null or absent otherwise. */
+  app?: string | null;
+  /** A fire calls this App instead of running an agent. Null or absent: an agent run. */
+  target?: ProjectTriggerTarget | null;
+  /** For type='cron' with `every` — the fixed period in whole seconds. Null or absent otherwise. */
+  every_seconds?: number | null;
   prompt_template: string;
   /** Session strategy — see {@link ProjectTriggerSessionMode}. */
   session_mode: ProjectTriggerSessionMode;
@@ -235,7 +249,7 @@ export interface CreateProjectTriggerInput {
    */
   slug?: string;
   type: ProjectTriggerType;
-  prompt_template: string;
+  prompt_template?: string;
   /** Defaults to 'default'. */
   agent?: string;
   /** Wire-form model (`provider/model`). Omit or pass null to resolve the
@@ -250,17 +264,20 @@ export interface CreateProjectTriggerInput {
   timezone?: string;
   /** For type='webhook'. Name of a project_secrets entry. */
   secret_env?: string;
-  /** Required for type='monitor'. Repo-relative command whose stdout lines fire. */
+  /** @deprecated The monitor box was removed; the API refuses monitor triggers. Removed in the next major. */
   run?: string;
-  /** Required for type='monitor'. See {@link ProjectMonitorMode}. */
+  /** @deprecated The monitor box was removed; the API refuses monitor triggers. Removed in the next major. */
   mode?: ProjectMonitorMode;
-  /**
-   * Required for mode='poll', rejected on mode='stream'. Duration literal
-   * (`30s`, `5m`, `24h`, `7d`), floor 30s. Never a bare number.
-   */
+  /** @deprecated The monitor box was removed; the API refuses monitor triggers. Removed in the next major. */
   interval?: string;
-  /** For type='monitor'. Silence watchdog as a duration literal; floor 5m. */
+  /** @deprecated The monitor box was removed; the API refuses monitor triggers. Removed in the next major. */
   expect_event_within?: string;
+  /** Required for type='app'. Slug of the App whose events fire the trigger; the App must exist. */
+  app?: string;
+  /** Call an App instead of running an agent; `prompt_template` is then optional. */
+  target?: { app: string; path?: string; method?: 'POST' | 'GET'; payload?: Record<string, unknown> };
+  /** For type='cron'. A fixed period such as `5m`, `1h`, `1d` (at least 1m) instead of `cron` or `run_at`. */
+  every?: string;
   /** Required for type='event'. Connector slug the event happens on. */
   connector?: string;
   /** For type='event'. Label of one shared account of the connector; omit or null for the connector default. */
@@ -319,17 +336,20 @@ export interface UpdateProjectTriggerInput {
   run_at?: string | null;
   timezone?: string;
   secret_env?: string;
-  /** For type='monitor'. Repo-relative command whose stdout lines fire. */
+  /** @deprecated The monitor box was removed; the API refuses monitor triggers. Removed in the next major. */
   run?: string;
-  /** For type='monitor'. See {@link ProjectMonitorMode}. */
+  /** @deprecated The monitor box was removed; the API refuses monitor triggers. Removed in the next major. */
   mode?: ProjectMonitorMode;
-  /**
-   * For mode='poll'. Duration literal (`30s`, `5m`, `24h`, `7d`), floor 30s.
-   * null clears it — required when switching a poll monitor to 'stream'.
-   */
+  /** @deprecated The monitor box was removed; the API refuses monitor triggers. Removed in the next major. */
   interval?: string | null;
-  /** For type='monitor'. Duration literal, floor 5m. null clears the watchdog. */
+  /** @deprecated The monitor box was removed; the API refuses monitor triggers. Removed in the next major. */
   expect_event_within?: string | null;
+  /** For type='app'. Slug of the App whose events fire the trigger. */
+  app?: string;
+  /** Call an App instead of running an agent; null clears it. */
+  target?: { app: string; path?: string; method?: 'POST' | 'GET'; payload?: Record<string, unknown> } | null;
+  /** For type='cron'. A fixed period such as `5m`; null clears it. */
+  every?: string | null;
   /** For type='event'. Connector slug. Changing it clears the account unless `event_account` is sent. */
   connector?: string;
   /** For type='event'. Label of one shared account of the connector; null clears it to the connector default. */
@@ -476,7 +496,7 @@ export interface ProjectTriggerDryRunResult {
 }
 
 /** What fired a run. */
-export type ProjectTriggerRunSource = 'cron' | 'webhook' | 'manual' | 'monitor' | 'reminder' | 'event';
+export type ProjectTriggerRunSource = 'cron' | 'webhook' | 'manual' | 'monitor' | 'reminder' | 'event' | 'app';
 
 /**
  * A run's fire outcome. `fired` = a session was started or prompted;

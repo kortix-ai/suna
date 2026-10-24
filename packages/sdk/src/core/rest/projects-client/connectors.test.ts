@@ -26,6 +26,8 @@ import {
   listConnectors,
   listDiscoverConnectors,
   listDiscoverSections,
+  getDiscoverConnectorTools,
+  installDiscoverConnector,
   listPipedreamApps,
   listPipedreamSections,
   listSessionConnectRequests,
@@ -50,6 +52,12 @@ import {
   setConnectorSecretBinding,
   setConnectorName,
   setConnectorPolicies,
+  listConnectorPolicySets,
+  upsertConnectorPolicySet,
+  renameConnectorPolicySet,
+  deleteConnectorPolicySet,
+  type ConnectorPolicySet,
+  type ConnectorPolicySource,
   setConnectorSensitive,
   setDefaultConnection,
   startConnectionOAuth2Authorization,
@@ -70,6 +78,7 @@ import {
   type Connection,
   type ConnectionShare,
   type ConnectionSharePrincipal,
+  type DiscoverKortixApp,
 } from './connectors';
 
 const canonicalConnectionType: import('./connectors').Connection = {
@@ -611,6 +620,102 @@ test('setConnectorPolicies PUTs { policies }', async () => {
   expect(last().body).toEqual({ policies });
 });
 
+test('getConnectorPolicies reads one policy set with { policySet }', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      policies: [{ match: 'send_*', action: 'block' }],
+      policy_set: 'read_only',
+      effective: [{ path: 'send_email', action: 'block', source: 'policy_set' }],
+    },
+  };
+  const result = await getConnectorPolicies('P1', 'gmail', { policySet: 'read only' });
+  expect(last().url).toContain(
+    '/connectors/projects/P1/connectors/gmail/policies?policy_set=read%20only',
+  );
+  expect(last().method).toBe('GET');
+  expect(result.policy_set).toBe('read_only');
+  const source: ConnectorPolicySource | undefined = result.effective?.[0]?.source;
+  expect(source).toBe('policy_set');
+});
+
+test('getConnectorPolicies without a set sends no policy_set query', async () => {
+  nextResponse = { status: 200, body: { policies: [] } };
+  await getConnectorPolicies('P1', 'gmail', {});
+  expect(last().url).not.toContain('policy_set');
+});
+
+test('setConnectorPolicies writes one policy set and keeps rule conditions', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  const policies = [
+    {
+      match: 'send_email',
+      action: 'always_run' as const,
+      conditions: [{ arg: 'to', match: '*@example.com' }],
+    },
+  ];
+  await setConnectorPolicies('P1', 'gmail', policies, { policySet: 'outreach' });
+  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/policies?policy_set=outreach');
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({ policies });
+});
+
+test('listConnectorPolicySets GETs every set with its rules and agents', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      sets: [
+        { name: 'read_only', description: null, policies: [{ match: 'send_*', action: 'block' }], agents: ['support'] },
+      ],
+    },
+  };
+  const result = await listConnectorPolicySets('P1', 'gmail');
+  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/policy-sets');
+  expect(last().method).toBe('GET');
+  const set: ConnectorPolicySet | undefined = result.sets[0];
+  expect(set?.agents).toEqual(['support']);
+});
+
+test('upsertConnectorPolicySet PUTs only the description', async () => {
+  nextResponse = { status: 200, body: { ok: true, created: true } };
+  const result = await upsertConnectorPolicySet('P1', 'gmail', 'read_only', {
+    description: 'No sends',
+  });
+  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/policy-sets/read_only');
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({ description: 'No sends' });
+  expect(result.created).toBe(true);
+});
+
+test('upsertConnectorPolicySet with no input sends an empty body', async () => {
+  nextResponse = { status: 200, body: { ok: true, created: false } };
+  await upsertConnectorPolicySet('P1', 'gmail', 'read_only');
+  expect(last().body).toEqual({});
+});
+
+test('renameConnectorPolicySet PUTs { name } to the name route', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  await renameConnectorPolicySet('P1', 'gmail', 'read_only', 'readers');
+  expect(last().url).toContain(
+    '/connectors/projects/P1/connectors/gmail/policy-sets/read_only/name',
+  );
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({ name: 'readers' });
+});
+
+test('deleteConnectorPolicySet DELETEs the set and surfaces policy_set_in_use', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  await deleteConnectorPolicySet('P1', 'gmail', 'read_only');
+  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/policy-sets/read_only');
+  expect(last().method).toBe('DELETE');
+
+  nextResponse = {
+    status: 409,
+    body: { error: 'in use', code: 'policy_set_in_use', agents: ['support'] },
+  };
+  await expect(deleteConnectorPolicySet('P1', 'gmail', 'read_only')).rejects.toThrow();
+});
+
 test('getConnectorConfig GETs the config, url-encoding a slug with special characters', async () => {
   nextResponse = {
     status: 200,
@@ -992,6 +1097,48 @@ test('listDiscoverConnectors accepts a query object with a category filter and p
   expect(last().url).toContain('cursor=48');
   expect(last().url).toContain('limit=24');
   expect(result.total).toBe(70);
+});
+
+test('listDiscoverConnectors and listDiscoverSections send the one-click filter', async () => {
+  const gmail = { id: 'composio:gmail', kind: 'composio', slug: 'gmail', name: 'Gmail', oneClick: true, composio: { slug: 'gmail', name: 'Gmail', logo: null, description: null, categories: [], isNoAuth: false, connected: false } };
+  nextResponse = { status: 200, body: { items: [gmail], total: 1, hasMore: false } };
+  const page = await listDiscoverConnectors('P1', { q: 'mail', oneClick: true });
+  expect(last().url).toContain('oneClick=1');
+  expect(page.items[0]?.composio?.slug).toBe('gmail');
+  expect(page.items[0]?.oneClick).toBe(true);
+  await listDiscoverConnectors('P1', { q: 'mail' });
+  expect(last().url).not.toContain('oneClick');
+  nextResponse = { status: 200, body: { popular: [], sections: [], categories: [] } };
+  await listDiscoverSections('P1', { perCategory: 6, oneClick: true });
+  expect(last().url).toContain('oneClick=1');
+});
+
+test('the Discover catalogue filters by kind, lists a way\'s tools and installs a way as a profile', async () => {
+  nextResponse = { status: 200, body: { items: [], total: 0, hasMore: false } };
+  await listDiscoverConnectors('P1', { kinds: ['mcp', 'composio'] });
+  expect(last().url).toContain('kind=mcp%2Ccomposio');
+  nextResponse = { status: 200, body: { popular: [], sections: [], categories: [] } };
+  await listDiscoverSections('P1', { kinds: ['openapi'] });
+  expect(last().url).toContain('kind=openapi');
+  await listDiscoverConnectors('P1', { kinds: ['kortix'] });
+  expect(last().url).toContain('kind=kortix');
+  // What Kortix built (a channel or the computer) names itself.
+  nextResponse = { status: 200, body: { items: [{ id: 'native:computer', kind: 'kortix', kortix: { app: 'computer' } }], total: 1, hasMore: false } };
+  const kortix = await listDiscoverConnectors('P1', { kinds: ['kortix'] });
+  const app: DiscoverKortixApp['app'] | undefined = kortix.items[0]?.kortix?.app;
+  expect(app).toBe('computer');
+
+  nextResponse = { status: 200, body: { way: { id: 'composio:stripe', kind: 'composio', name: 'Stripe' }, tools: [{ name: 'STRIPE_LIST', description: 'List' }], total: 1, source: 'composio' } };
+  const tools = await getDiscoverConnectorTools('P1', 'kortix:stripe', 'composio:stripe');
+  expect(last().url).toContain('/connectors/projects/P1/discover/connectors/tools?id=kortix%3Astripe&way=composio%3Astripe');
+  expect(tools.tools[0]?.name).toBe('STRIPE_LIST');
+
+  nextResponse = { status: 200, body: { ok: true, slug: 'billing', name: 'Billing', provider: 'composio', way: { id: 'composio:stripe', kind: 'composio', name: 'Stripe', oneClick: true }, next: 'connect' } };
+  const installed = await installDiscoverConnector('P1', { id: 'kortix:stripe', way: 'composio:stripe', name: 'Billing' });
+  expect(last().method).toBe('POST');
+  expect(last().url).toContain('/connectors/projects/P1/discover/install');
+  expect(last().body).toEqual({ id: 'kortix:stripe', way: 'composio:stripe', name: 'Billing' });
+  expect(installed.next).toBe('connect');
 });
 
 test('listDiscoverSections GETs the Discover browse page with true category totals', async () => {

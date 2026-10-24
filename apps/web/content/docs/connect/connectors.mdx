@@ -15,7 +15,7 @@ A connector has:
 - a display name;
 - a provider, which decides how Kortix reaches the service;
 - its actions, the tools an agent calls (`<slug>.<action>`);
-- its policies, which decide which actions run, need approval, or are blocked.
+- its policies, which decide which actions run, need approval, or are blocked: base rules for every caller, plus named [policy sets](#policy-sets) that you give to single agents.
 
 A connector holds one or more [accounts](#connectors-connections-and-accounts). An account is the authorized identity a call runs as.
 
@@ -32,7 +32,7 @@ Connectors live in `kortix.yaml` under `connectors:`, or in a file it lists unde
 | `channel` | Slack, Microsoft Teams or email. Kortix writes it when you connect a [channel](/docs/connect/channels). | `platform` |
 | `computer` | Built in. Each connected [computer](/docs/connect/computers) is one account. It is never written to `kortix.yaml`. | — |
 
-`pipedream` is a legacy provider: existing connectors run, and new managed apps use `composio`. With `connectors_v2` on, [move a Pipedream or Composio connector to Kortix](#move-a-pipedream-or-composio-connector-to-kortix).
+`pipedream` is a legacy provider: existing connectors run, and new managed apps use `composio`. To leave Pipedream, [move a Pipedream or Composio connector to Kortix](#move-a-pipedream-or-composio-connector-to-kortix).
 
 A `provider: mcp` connector is Kortix calling someone else's MCP server. The [Kortix MCP server](/docs/connect/mcp) is the other direction: your MCP client calls Kortix.
 
@@ -52,7 +52,6 @@ A `provider: mcp` connector is Kortix calling someone else's MCP server. The [Ko
 - For an MCP server, [add it from its URL](#add-an-mcp-server-from-its-url). For another API that is not in the catalog, select **New → Add a custom connector** and choose OpenAPI, Postman, GraphQL, MCP or HTTP. Paste the source URL and Kortix proposes the slug: the document's title, or else the URL's domain. Kortix then opens the connector's page. An MCP server that asks for sign-in (HTTP `401` or `403`) opens **Add account** there, as **Install** does. This needs an auth scheme: one you pick under **Auth**, or one **Auto-detect** finds in the server's `WWW-Authenticate` challenge. Without one, the `401` or `403` is shown as the failure. **New → Create in chat** has an agent scaffold the connector and open a change request.
 - When Kortix cannot load a new connector's tools, the connector's page shows the reason and **Retry**. The connector stays in the project. OAuth 2.0 client credentials entered in the form are saved as well, so **Retry** uses them.
 - With OAuth 2.0 client credentials, **Added and connected** means the tools loaded with them. When the server still refuses them, the page shows the refusal and **Retry**.
-- A search on **All** also covers published OpenAPI, MCP, GraphQL and Postman surfaces when the project flag **Connectors API Discover** (`connectors_api_discover`, off by default) is on. Turn it on under **Customize → Settings → [Feature flags](/docs/project#feature-flags)**.
 
 A connector page has up to four tabs:
 
@@ -60,7 +59,7 @@ A connector page has up to four tabs:
 | --- | --- | --- |
 | **Accounts** | The accounts the connector can run as. | Everyone with access to the project. |
 | **Tools** | Each action, and whether it runs, needs approval, or is blocked. | Members who can change connectors. |
-| **Triggers** | [App event triggers](/docs/connect/triggers#app-events) on this connector. | Everyone, when the app has events. |
+| **Triggers** | [Connector event triggers](/docs/connect/triggers#connector-events) on this connector. | Everyone, when the app has events. |
 | **Settings** | Connection details and **Remove connector**. | Members who can change connectors. Absent on the computer connector. |
 
 ### Add an MCP server from its URL
@@ -76,9 +75,27 @@ A connector page has up to four tabs:
 - A server that asks for a credential but has no one-click OAuth opens credential entry on the connector page.
 - A sign-in that cannot start shows the server's reason. The connector and the account stay; select **Sign in** on the connector page to try again.
 
-### The MCP app catalog (experimental)
+### The app catalog
 
-With the project flag **Connectors v2** (`connectors_v2`, off by default) on, the **All** tab lists the Kortix MCP app catalog instead of the managed apps. Every app in it is a remote MCP server that its vendor runs, and Kortix connects to it directly. Turn the flag on under **Customize → Settings → [Feature flags](/docs/project#feature-flags)**.
+The **All** tab lists one catalog of every way to connect: the Kortix MCP apps below, every MCP server and every REST (OpenAPI) and GraphQL API in the [integrations.sh](https://integrations.sh) registry, and the Composio apps.
+
+Each app shows once, by its best way in:
+
+0. **Kortix.** What Kortix built itself, with no third party: the [channels](/docs/connect/channels) Slack, Microsoft Teams, Email and Telegram, where people message the agent, and **Computer**, the machine the agent works on. Each leads its app and is set up on its own page with **Set up**, never through Install.
+1. **A one-click MCP server.** The vendor's server is public, or its OAuth server registers Kortix on the fly. You only sign in.
+2. **Composio.** A third-party partner that runs the sign-in for you, for an app with no one-click MCP server, for example Gmail or Outlook. You only sign in.
+3. **Everything else.** An MCP server that needs your own OAuth app or an API key, then the REST (OpenAPI) and GraphQL APIs.
+
+- **One-click only** is on by default and lists ways 1 and 2. Turn it off to see every app.
+- The type filter (**MCP**, **Composio**, **REST API**, **GraphQL**, **Kortix**) lists the apps that connect that way. The **Kortix** tab shows all five on one page, each with its setup or, once connected, what it is connected to. In the API, the CLI (`--kind kortix`) and the agent's tools the type is `kortix`, with ids `native:slack`, `native:teams`, `native:email`, `native:telegram` and `native:computer`.
+- An app's page lists every way to connect it, best first. The first is marked **Recommended**; **One click** marks the ways where you only sign in. **Install** at the top installs the recommended way; each row installs its own way.
+- **Tools** on each way lists what it can do before you install it: a public MCP server's own tools, the tool names a public MCP directory lists for an OAuth server, Composio's tools, or the operations in an OpenAPI document.
+- Install asks for a **name**. It is the name of the connector profile Kortix adds: the project's entry in `kortix.yaml`. The profile's accounts, who can use them and its tool rules live on it.
+- Install one profile for each way you connect an app, for example Stripe's MCP server and Stripe's REST API: each way has its own tools and its own sign-in. Do not install a second profile of the same way to give an agent different rules. Give the agent a [policy set](#policy-sets) on the one profile, so each account is connected once.
+
+Kortix probes every MCP server in the registry for its sign-in and its tools; `apps/api/scripts/probe-one-click-mcp.ts` refreshes both lists.
+
+To install a catalog MCP app:
 
 1. Find the app and select **Install**.
 2. **Connect** *app* opens. Choose **Who can use it** and select **Connect**.
@@ -93,19 +110,19 @@ Apps sign in one of three ways:
 | None | DeepWiki, Context7 | None. The app is ready when it is installed. |
 
 - Kortix's own OAuth client is used only for the exact MCP server URL in the catalog, with the catalog's endpoints and scopes. Its client secret stays on the server.
-- Connectors you added from the managed catalog keep working with the flag on.
-- Agents see the same catalog: the `search_connector_apps` tool of the [Kortix MCP server](/docs/connect/mcp) lists the MCP apps, and `add_connector` with `app` adds the app's MCP server.
+- Connectors you added from the managed catalog keep working.
+- Agents see the same catalog: the `search_connector_apps` tool of the [Kortix MCP server](/docs/connect/mcp) lists every app, with `kind` and `one_click` filters, and `add_connector` with `app` installs its recommended way, or `way`. The catalog is large, not complete: for an app it lacks, agents search the web for the vendor's MCP server or API and add it directly.
 
-Catalog apps can start [triggers](/docs/connect/triggers#app-events). With the project flag `event_triggers` also on, Kortix checks an installed app's MCP server for new items, such as a new email in Gmail, and fires the trigger once for each one. Every tool that lists items and only reads can be an event, on catalog apps and on your own MCP servers. The trigger runs on an account shared with the whole project.
+Catalog apps can start [triggers](/docs/connect/triggers#connector-events). With the project flag `event_triggers` on, Kortix checks an installed app's MCP server for new items, such as a new email in Gmail, and fires the trigger once for each one. Every tool that lists items and only reads can be an event, on catalog apps and on your own MCP servers. The trigger runs on an account shared with the whole project.
 
 #### Move a Pipedream or Composio connector to Kortix
 
-Kortix retires Pipedream and Composio. With `connectors_v2` on, a Pipedream or Composio connector moves to the catalog app for the same service and keeps its slug. Their sign-ins belong to their own OAuth clients, so they do not carry over: one person signs in to the app once, and the connector switches.
+Kortix retires Pipedream. A Pipedream or Composio connector moves to the catalog app for the same service and keeps its slug. Their sign-ins belong to their own OAuth clients, so they do not carry over: one person signs in to the app once, and the connector switches.
 
 What stays:
 
 - The slug. Agent grants (`agents.<name>.connectors`), session bindings and every other reference to the slug keep working.
-- The display name, the entry's `sensitive` flag, and a `*` rule in its `policies`. A rule that names a tool (for example `send_email` on the connector, or `gmail.send_email` in the project's rules) names the old provider's tool, and the Kortix app names its tools differently: a connector with such a rule does not move until you remove it. Add rules for the new tool names after the move.
+- The display name, the entry's `sensitive` flag, its [policy sets](#policy-sets), and a `*` rule in its `policies` or in a set. A rule that names a tool (for example `send_email` on the connector or in one of its sets, or `gmail.send_email` in the project's rules) names the old provider's tool, and the Kortix app names its tools differently: a connector with such a rule does not move until you remove it. Add rules for the new tool names after the move.
 - Every account row, with its name, owner and audience.
 - The old provider serves the connector until the sign-in completes.
 
@@ -114,7 +131,7 @@ What changes:
 - Kortix rewrites the `kortix.yaml` entry to `provider: mcp` with the app's `url`, commits it to the default branch and syncs the connector.
 - The tools now come from the vendor's own MCP server, so the tool names differ. Check the agent prompts that name an old tool.
 - The account that signed in holds the new sign-in. Every other account on the connector loses its old sign-in. It reads not signed in until its owner signs in again.
-- A Composio [event trigger](/docs/connect/triggers#app-events) on the connector moves to the Kortix event that replaces it, in the same `kortix.yaml` commit, and its Composio subscription is deleted. Kortix then checks the app itself.
+- A Composio [event trigger](/docs/connect/triggers#connector-events) on the connector moves to the Kortix event that replaces it, in the same `kortix.yaml` commit, and its Composio subscription is deleted. Kortix then checks the app itself.
 
 ```yaml
 # Before
@@ -202,7 +219,6 @@ kortix connectors move issues --connection <connection-id> --no-open
 - `moves` prints `SLUG`, `PROVIDER`, `APP` (the app on that provider), `MOVES TO`, `STATE` and `ACCOUNTS`. `STATE` is `ready`, `signing in`, `signed in`, or `no Kortix app yet`. `--json` prints the API response.
 - `move` opens the app's sign-in in your browser and waits up to 10 minutes for it. `--no-open` prints the URL only. `--device` uses the device flow on a server that offers it.
 - `--connection` signs in on that account. Without it, `move` uses the connector's shared project account.
-- Without `connectors_v2`, both commands exit `1` and print `kortix projects features enable connectors_v2`.
 
 **Through the API:**
 
@@ -253,7 +269,7 @@ Content-Type: application/json
 | Status | Meaning |
 | --- | --- |
 | `400` | `connection_id` is an account of another connector. |
-| `403` | `feature_disabled` without `connectors_v2`, no permission to change the project's connectors, or no `connection_id` and no permission to manage the project's accounts. |
+| `403` | No permission to change the project's connectors, or no `connection_id` and no permission to manage the project's accounts. |
 | `404` | No connector with this slug, or `connection_id` is an account you cannot change. |
 | `409` | The connector is not a Pipedream connector, its app has no Kortix equivalent on this deployment, or it has tool rules other than `*`. The message names the rules. |
 | `502` | The `kortix.yaml` write failed. Call `move` again. |
@@ -271,7 +287,10 @@ kortix connectors connect gmail                                # authorize your 
 - Without `--apply`, `add` and `rm` edit your local `kortix.yaml`. Run `kortix ship` to apply the change, then `kortix connectors sync` to reconcile the connector.
 - With `--apply`, Kortix commits the change to the default branch and syncs the connector at once, like the web app.
 - `kortix connectors rm <slug> [--apply]` removes a connector. `kortix connectors rename <slug> <name>` sets its display name and applies at once.
-- `kortix connectors catalog [<query>]` and `catalog show <id>` browse the direct API catalog. They need the `connectors_api_discover` flag.
+- `kortix connectors catalog [<query>]` lists every app you can install as a connector, one row per app by its best way in. `--kind mcp,composio,openapi,graphql` filters by how it connects, `--one-click` keeps the apps you connect by signing in, and `--category` and `--limit` narrow the page.
+- `kortix connectors catalog show <id>` lists every way to connect the app, recommended first, and the tools of one way (`--way <id>`). `catalog tools <id> --way <id>` lists every tool of one way.
+- `kortix connectors catalog categories [--kind …] [--one-click]` lists the category keys `--category` takes, with how many apps each holds. Every catalog command takes `--json`.
+- `kortix connectors catalog install <id> [--way <id>] [--name <name>] [--slug <slug>]` adds the connector profile, the recommended way unless `--way`. Then `kortix connectors connect <slug>`.
 - `--auth-type none|bearer|basic|custom|oauth1` overrides the authentication Kortix detects from the source.
 
 ### In kortix.yaml
@@ -312,6 +331,8 @@ A change to `connectors:` applies when it reaches the default branch, through a 
 | `auth` on `composio` or `channel` | Not allowed. The provider authorizes the account. |
 | `headers` | Static headers sent on every call: at most 32, names up to 128 characters, values up to 2,048 characters, no line breaks. Transport headers such as `Host` and `Content-Length` are refused. The auth header always wins over a static header of the same name. Not allowed on `composio`, `pipedream` or `channel`. Values are plaintext in git: never put a credential in a header. |
 | `sensitive: true` | Every action that no rule matches needs approval, reads included. See [Policies and approvals](#policies-and-approvals). |
+| `policies` | The base rules: `{ match, action, conditions? }`. See [Policies and approvals](#policies-and-approvals). |
+| `policy_sets` | Named rule sets that an agent is given with `agents.<name>.policy_sets`. See [Policy sets](#policy-sets). |
 | `enabled: false` | Kortix keeps the connector but refuses its calls with `connector_disabled`. |
 | Reserved slugs | `kortix_slack`, `kortix_teams` and `kortix_email` belong to channel connectors. `computer` belongs to the built-in computer connector. A new connector added from the web app, `--apply` or MCP also cannot take `slack` or `email` (`400`): connect Slack with `kortix channels connect`. |
 
@@ -319,7 +340,7 @@ The full schema is in the [`kortix.yaml` reference](/docs/project/manifest#trigg
 
 ## Connectors, connections and accounts
 
-A connection is one **account**: one authorized identity for a connector, such as an OAuth grant or an API key. A connector can hold several accounts, for example a team inbox and your own inbox. Every account uses the connector's policies.
+A connection is one **account**: one authorized identity for a connector, such as an OAuth grant or an API key. A connector can hold several accounts, for example a team inbox and your own inbox. The connector's rules apply to every account. Which rules apply depends on the calling agent: see [Policy sets](#policy-sets).
 
 Each account has an owner type that decides who may run a call as it:
 
@@ -373,6 +394,22 @@ kortix connectors connect-finalize gmail                 # confirm; pass the sam
 - A project secret works as the credential when it is an active project secret, not a personal one, stored with `--scope connector`: `kortix secrets set BILLING_KEY=- --scope connector`. A binding answers `409` when the connector needs no credential, is a channel, or already has a stored credential, or when the secret is missing, inactive or not connector-scoped. A secret narrowed to some people works only in their private sessions (`credential_not_shared`). See [Secrets](/docs/project/secrets).
 - A connect link for an account that is already authorized shows **Already connected**. To change the login, add a new account, [make it the default](#which-account-a-call-uses), then disconnect the old one.
 
+### Connect Shopify
+
+Composio holds no Shopify app, and Shopify stopped issuing admin-created app tokens (`shpat_…`) on January 1, 2026. A Shopify account therefore runs on a Shopify app that you own. **Connect** on a `composio` Shopify connector opens a Kortix form, not a sign-in page:
+
+1. In the [Shopify Dev Dashboard](https://dev.shopify.com/dashboard), create an app in the organization that owns the store.
+2. On the app's version, select the Admin API scopes that your agents need, then release the version.
+3. Install the app on the store.
+4. In Kortix, select **Connect** on the Shopify connector. Enter the store's myshopify.com name (`acme` for `acme.myshopify.com`), and the **Client ID** and **Client secret** from the app's **Settings**.
+
+- Composio runs Shopify's client-credentials grant with the app's credentials. Kortix passes the secret to Composio and keeps no copy. Each account gets its own Composio auth config.
+- The app and the store must be in the same Shopify organization. A store in another organization, such as a client's store, cannot connect this way.
+- When Shopify refuses the exchange, the form shows the reason: no store at that name, no app with that Client ID, an app in another organization, or a wrong secret. The API answers `422` `shopify_refused`.
+- The form link works for 1 hour. A newer **Connect** on the same account replaces it (`409`).
+- `kortix connectors connect <slug>` prints the same form link.
+- To change the app or the store, add a new account. An account connected earlier with an admin token keeps working.
+
 ### Connect links inside a session
 
 A session starts even when a granted connector has no account. The first call is denied with `connector_not_connected` and a `connect_url`. The web transcript shows it as a **Connect** button. This works on `composio` connectors and on `mcp` connectors with one-click sign-in. The button opens the **Add account** dialog with the name and audience the agent suggests. By default the account is private. Kortix tells the agent the new account's name. For a shared account from a terminal, run `kortix connectors connect <slug> --owner project`.
@@ -423,7 +460,7 @@ agents:
 kortix agents scope release-bot --connectors github,linear
 ```
 
-A change applies to a running session on its next call. The channel connector that started a session (Slack, Teams or email) is always callable from that session, so the agent can always answer where it was asked. See [Agents & permissions](/docs/project/agents#give-an-agent-access).
+A change applies to a running session on its next call. To give one agent other rules on a connector than the rest, give it a [policy set](#policy-sets). The channel connector that started a session (Slack, Teams or email) is always callable from that session, so the agent can always answer where it was asked. See [Agents & permissions](/docs/project/agents#give-an-agent-access).
 
 ### Narrow a shared account
 
@@ -487,12 +524,15 @@ kortix connectors call gmail <action> '{}' --account "Support inbox"
 
 ## Policies and approvals
 
-A policy decides what happens when an action is called: **Allow** (`always_run`), **Ask** (`require_approval`) or **Block** (`block`). Kortix evaluates each call in this order, and the first match wins:
+A policy decides what happens when an action is called: **Allow** (`always_run`), **Ask** (`require_approval`) or **Block** (`block`). Kortix evaluates each call in this order. Inside a layer the first matching rule wins, and the first layer with a match decides:
 
-1. Project-wide `policies:` in `kortix.yaml`. Patterns are fully qualified (`gmail.send_email`, `*.delete*`). A connector rule cannot override them.
-2. The connector's own `policies:`. Patterns are relative to the connector (`send_*`).
-3. `sensitive: true` on the connector: every remaining action needs approval, reads included.
-4. `policy.default_mode`: `allow_all` (the default) runs every remaining action. `risk` runs reads and holds writes and destructive actions for approval.
+1. Project-wide `policies:` in `kortix.yaml`. Patterns are fully qualified (`gmail.send_email`, `*.delete*`). A connector rule or a policy set cannot override them.
+2. The calling agent's [policy set](#policy-sets) on this connector, when `agents.<name>.policy_sets` gives it one. Patterns are relative to the connector (`send_*`).
+3. The connector's base `policies:`. Patterns are relative to the connector.
+4. `sensitive: true` on the connector: every remaining action needs approval, reads included.
+5. `policy.default_mode`: `allow_all` (the default) runs every remaining action. `risk` runs reads and holds writes and destructive actions for approval.
+
+A caller without a policy set skips layer 2. When an agent's set does not exist on the connector, every call that agent makes on the connector is blocked before layer 1: see [When a set is missing](#when-a-set-is-missing).
 
 Patterns are globs, case-insensitive, or `/regex/` in slashes. A rule can also test the call's arguments:
 
@@ -525,6 +565,106 @@ kortix connectors sensitive gmail on                          # or off
 ```
 
 `policy add`, `policy rm`, `policy <slug> …` and `sensitive` apply at once. The **Tools** tab on a connector page edits the same connector rules.
+
+### Policy sets
+
+A policy set is a named list of rules on one connector profile. You give an agent a set, and that agent's calls on the connector use the set's rules before the base rules. Two agents can then share one profile and its accounts with different rules: each account is connected once.
+
+```yaml
+connectors:
+  - slug: gmail
+    provider: composio
+    app: gmail
+    policies:               # rules for callers without a set, and the fallback after a set's rules
+      - match: delete_*
+        action: block
+    policy_sets:
+      read_only:
+        description: Read and search, never send
+        policies:
+          - match: send_*
+            action: block
+      outreach:
+        description: Send to customers, with approval
+        policies:
+          - match: send_email
+            action: require_approval
+            conditions:
+              - arg: to
+                match: "*@example.com"
+
+agents:
+  support:
+    connectors: [gmail, stripe]
+    policy_sets:            # connector slug -> set name; no entry = the base rules
+      gmail: read_only
+  sales:
+    connectors: [gmail]
+    policy_sets:
+      gmail: outreach
+```
+
+Here `support` cannot send mail, `sales` sends to `example.com` addresses after an approval, and both are blocked on `delete_*` by the base rules. Both use the same Gmail accounts.
+
+Rules:
+
+- A set name matches `[a-z0-9][a-z0-9_-]{0,63}`. `base` is reserved: it names the base rules in the API, the CLI and the web app.
+- A set's `policies` take the same `{ match, action, conditions? }` rules as the base `policies`. A set may hold no rules: it then behaves like the base rules.
+- A connector holds at most 32 sets, and a set at most 200 rules.
+- Policy sets need `kortix_version: 2` or `3`. A v1 manifest (`kortix.toml`) cannot declare them (`400`, `unsupported_in_v1`).
+- Channel connectors (`kortix_slack`, `kortix_teams`, `kortix_email`) and the `computer` connector cannot hold sets (`400`, `policy_sets_unsupported`).
+- A set can loosen a base rule for its agent: an `always_run` rule in the set decides before a base `block`. A rule that must hold for every caller belongs in the project-wide `policies:`.
+
+**Which calls use a set.** The credential of the call decides, never its arguments. A request cannot pick a set.
+
+| Caller | Rules |
+| --- | --- |
+| A session: the `kortix` CLI in its sandbox, the SDK with its `KORTIX_TOKEN`, the agent's MCP tools | The session agent's set. |
+| A pi subagent | The set of the agent that started the root session. The subagent shares that session's token. |
+| A person's token with `X-Kortix-Session-Id` | Refused (`403`). Only a session's own token carries a session, so a person cannot act as a session's agent. |
+| A person's token or API key without a session, the web app, a script, an App | The base rules. |
+| A trigger's poll for new items | The base rules. The session the trigger starts uses its agent's set. |
+
+An agent that holds `project.session.start` can start a session as another agent. That session runs under the other agent's set, in the same way it gets the other agent's `connectors` grant. A set bounds an agent only as far as its launch rights do.
+
+**Give an agent a set.**
+
+```bash
+kortix connectors policy gmail sets                                       # sets on gmail, with the agents that use each
+kortix connectors policy gmail sets create read_only --description "Read and search, never send"
+kortix connectors policy gmail --policy-set read_only set "send_*" block   # the set's rules: ls, set, rm, clear
+kortix connectors policy gmail sets rename read_only readonly             # also rewrites every agent that uses it
+kortix connectors policy gmail sets rm readonly                           # refused while an agent uses it
+kortix agents scope support --policy-set gmail=read_only                  # repeat the flag per connector; gmail=base removes the entry
+```
+
+- Every command commits `kortix.yaml` on the default branch and syncs the connector at once.
+- Changing an agent's `policy_sets` needs `project.agent.write` and `project.connector.write`. An agent session needs `project.connector.write` in its own grant to add, change or remove any `policy_sets` entry, its own included (`403`, `agent_grant_escalation`). See [Changes to agents are governed](/docs/project/agents#changes-to-agents-are-governed).
+- Removing a connector from an agent keeps the agent's entry for it. The entry has no effect until the connector is granted again, and then the set applies again. Remove the entry with `--policy-set <slug>=base`.
+- Deleting a connector removes every agent's entry for it, in the same commit. An agent session that removes an agent which has a set needs `project.connector.write` too.
+- A change reaches a running session on its next call.
+
+In the web app, the **Tools** tab on a connector page switches between the base rules and each set, and shows the agents that use a set. The agent editor picks the set for each granted connector that defines sets.
+
+**API.** The routes are under `/v1/connectors/projects/<project_id>/connectors/<slug>` and need `project.connector.write`.
+
+| Route | What it does |
+| --- | --- |
+| `GET …/policy-sets` | `{ sets: [{ name, description, policies, agents }] }`, sets with no rules included. |
+| `PUT …/policy-sets/<name>` `{ description? }` | Creates the set, or sets or clears its description. Answers `created`. A body with `policies` answers `400`, `use_policies_route`. |
+| `PUT …/policy-sets/<name>/name` `{ name }` | Renames the set and every agent reference in one commit. `409`, `policy_set_exists` when the new name is taken. |
+| `DELETE …/policy-sets/<name>` | Deletes the set. `409`, `policy_set_in_use` with `agents` while an agent uses it. |
+| `GET`/`PUT …/policies?policy_set=<name>` | Reads or replaces the set's rules. Without `policy_set`, or with `base`, the base rules. `404`, `policy_set_not_found` for an unknown set. |
+
+`PUT /v1/projects/<project_id>/agents/<agent>/scope` takes `policy_sets: { <slug>: <name> | null }`. It merges per connector, and `null` or `base` removes the entry. In the SDK, use `p.connectors.policySets` and the `policySet` option of `p.connectors.policies`: see the [SDK reference](/docs/sdk/reference#connectors-and-policies).
+
+#### When a set is missing
+
+`kortix validate` and the change request merge check report an agent entry that names an unknown set, or `base`, as an error. A `policy_sets` key for a connector the agent is not granted is a warning.
+
+A bad entry never disables the agent, and Kortix never drops it. When the manifest on the default branch still names a set the connector does not define, Kortix blocks every call the agent makes on that connector, with reason `policy_set_missing`. The agent's other connectors keep working, the channel it answers on included. A `policy_sets` value that is not a map is different: it blocks every connector for that agent, channels included. Fix the entry or add the set. Kortix never falls back to the base rules, because they can be looser than the set.
+
+**Audit.** When a set decides a call, the audit event records `policy_source: "policy_set"`, `policy_set`, `agent` and `manifest_commit`. The approval card's summary and the approval link view (`GET /v1/approval-links/<token>`) carry `policy_set` and `agent` when the set decided.
 
 ### Approve a held call
 
@@ -700,7 +840,8 @@ An `error` reason starts with the code in the table. Text after the first `:` is
 | `credential_not_shared` | 403 | The connector's project secret is not shared with the person this call acts for. | Ask the secret's owner to share it. |
 | `credential_undecryptable` | 403 | Kortix cannot decrypt the connector's stored credential, or the project secret it uses: the server's encryption key changed, or the stored value is damaged. `message` names the connector or the secret. | Reconnect the account, or enter the credential or the secret again. For an OAuth 2.0 account, save its OAuth application again first: the same key encrypts it, and until then its routes answer `409 SECRET_UNDECRYPTABLE`. |
 | `connector_disabled` | 403 | The connector is declared with `enabled: false`. | Enable it. |
-| `policy_block` | 403 | A **Block** rule matched. Final. | Do not retry. Change the policy. |
+| `policy_block` | 403 | A **Block** rule matched. Final. When the agent's policy set decided, the body names `policy_set` and `agent`. | Do not retry. Change the policy, or the agent's set. |
+| `policy_set_missing` | 403 | The agent's `policy_sets` names a set that this connector does not define. Every call on the connector is blocked for this agent. The body names `policy_set` and `agent`. | Fix `agents.<name>.policy_sets`, or add the set. See [When a set is missing](#when-a-set-is-missing). |
 | `connector_not_found` | 404 | No connector with this slug. | Run `kortix connectors ls`. |
 | `action_not_found` | 404 | The connector has no such action. | Run `kortix connectors show <slug>`. |
 | `computer_*` | 403 or 409 | The computer refused, is offline, or is not paired. | See [Computers](/docs/connect/computers#errors). |

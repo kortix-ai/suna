@@ -151,7 +151,8 @@ flow(
         },
         { until: (t) => t.includes('slug: nightly'), timeoutMs: 60_000, intervalMs: 2_000, description: 'kortix.yaml carries the trigger' },
       );
-      for (const needle of ['type: cron', 'model: anthropic/claude-sonnet-4-6', 'do nightly work']) {
+      // A new trigger is written in the on/run shape (on: cron, run: prompt + model).
+      for (const needle of ['on:', 'cron:', 'run:', 'model: anthropic/claude-sonnet-4-6', 'do nightly work']) {
         if (!text.includes(needle)) throw new Error(`kortix.yaml lacks "${needle}":\n${text}`);
       }
     });
@@ -1724,7 +1725,7 @@ flow(
   },
 );
 
-/** App event triggers sit behind the per-project `event_triggers` flag (off by default): turn it on. */
+/** Connector event triggers sit behind the per-project `event_triggers` flag (on by default; a project can turn it off): make sure it is on. */
 async function enableEventTriggers(
   ctx: { step: (name: string, fn: () => Promise<void>) => Promise<void> },
   owner: { patch: (path: string, body: unknown, opts: { params: Record<string, string> }) => Promise<any> },
@@ -2058,7 +2059,8 @@ flow(
       (await owner.patch('/v1/projects/:projectId/features', { feature: 'event_triggers', enabled }, { params })).status(200);
     };
 
-    await ctx.step('flag off (the default): event-types by connector and by app, and event-apps → 403 feature_disabled', async () => {
+    await ctx.step('flag turned off (the default is on): event-types by connector and by app, and event-apps → 403 feature_disabled', async () => {
+      await setFlag(false);
       denied(await owner.get(types, { params, query: { connector: 'inbox' } }));
       denied(await owner.get(types, { params, query: { app: 'github' } }));
       const r = await owner.get(apps, { params });
@@ -2082,7 +2084,7 @@ flow(
       await setFlag(false);
       const listed = (await owner.get('/v1/projects/:projectId/triggers', { params })).json<{ triggers: EventTriggerRow[] }>();
       const row = listed.triggers.find((t) => t.slug === 'gated-mail');
-      if (row?.event?.status !== 'error' || !/App event triggers are off for this project/.test(row.event.error ?? '')) {
+      if (row?.event?.status !== 'error' || !/Connector event triggers are off for this project/.test(row.event.error ?? '')) {
         throw new Error(`expected status error with the off text — got ${JSON.stringify(row?.event)}`);
       }
       denied(await owner.patch('/v1/projects/:projectId/triggers/:slug', { name: 'Renamed' }, { params: { ...params, slug: 'gated-mail' } }));
@@ -2519,10 +2521,11 @@ flow(
   },
 );
 
-// TRG-34 — Kortix's own app-event source `mcp` (connectors_v2): the catalog apps
-// list as event apps with their MCP server, a project MCP server is an event app
-// of its own, an event the connector does not offer is refused, and a project
-// without connectors_v2 sees no `mcp` source at all.
+// TRG-34 — Kortix's own app-event source `mcp`: the catalog apps list as event
+// apps with their MCP server, a project MCP server is an event app of its own,
+// and an event the connector does not offer is refused. Every project with
+// event triggers has the source, including one that stored the retired
+// `connectors_v2: false`.
 flow(
   'TRG-34',
   {
@@ -2536,13 +2539,13 @@ flow(
   },
   async (ctx) => {
     const owner = ctx.client.as(ctx.P.OWNER);
-    const on = await ctx.fixtures.project({ managedGit: true, metadata: { experimental: { event_triggers: true, connectors_v2: true } } });
-    const off = await ctx.fixtures.project({ metadata: { experimental: { event_triggers: true } } });
+    const on = await ctx.fixtures.project({ managedGit: true, metadata: { experimental: { event_triggers: true } } });
+    const stored = await ctx.fixtures.project({ metadata: { experimental: { event_triggers: true, connectors_v2: false } } });
     type App = { source: string; app: string; event_count: number; connector: string | null; connected: boolean; mcp_url: string | null };
     const apps = async (projectId: string) =>
       (await owner.get('/v1/projects/:projectId/triggers/event-apps', { params: { projectId } })).status(200).json<{ apps: App[] }>().apps;
 
-    await ctx.step('connectors_v2 on: catalog apps with sign-in are event apps of source mcp, with the MCP server to install', async () => {
+    await ctx.step('catalog apps with sign-in are event apps of source mcp, with the MCP server to install', async () => {
       const list = await apps(on.id);
       const linear = list.find((a) => a.app === 'linear');
       if (!linear || linear.source !== 'mcp' || linear.mcp_url !== 'https://mcp.linear.app/mcp' || linear.connector !== null || linear.connected) {
@@ -2585,10 +2588,12 @@ flow(
       }
     });
 
-    await ctx.step('connectors_v2 off: no mcp source in the listing, and source=mcp → 400 that lists the sources', async () => {
-      if ((await apps(off.id)).some((a) => a.source === 'mcp')) throw new Error('mcp apps listed without connectors_v2');
-      const r = await owner.get('/v1/projects/:projectId/triggers/event-types', { params: { projectId: off.id }, query: { app: 'linear', source: 'mcp' } });
-      r.status(400).body().has('$.error', 'Unknown event source "mcp". Sources: composio.');
+    await ctx.step('a stored connectors_v2: false is inert: the mcp source is listed, and an unknown source → 400 that lists the sources', async () => {
+      if (!(await apps(stored.id)).some((a) => a.source === 'mcp' && a.app === 'linear')) throw new Error('mcp apps missing for a project with a stale stored flag');
+      const r = await owner.get('/v1/projects/:projectId/triggers/event-types', { params: { projectId: stored.id }, query: { app: 'linear', source: 'nope' } });
+      r.status(400);
+      const error = r.json<{ error?: string }>().error ?? '';
+      if (!error.startsWith('Unknown event source "nope". Sources: ') || !error.includes('mcp')) throw new Error(`unexpected refusal: ${r.text()}`);
     });
   },
 );

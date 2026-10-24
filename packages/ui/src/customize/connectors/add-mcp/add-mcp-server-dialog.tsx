@@ -95,6 +95,9 @@ export function AddMcpServerDialog({
       ? mcpAppIdentity(app.name, takenSlugs)
       : mcpServerIdentity(url, takenSlugs);
   const urlInvalid = url.trim() !== '' && identity === null;
+  // The profile's name: proposed from the app or the URL until the user edits it.
+  const [nameEdit, setNameEdit] = useState<string | null>(null);
+  const name = (nameEdit ?? identity?.name ?? '').trim();
 
   const add = useMutation({
     mutationFn: () =>
@@ -102,7 +105,8 @@ export function AddMcpServerDialog({
         projectId,
         {
           url,
-          ...(appServer ? { appName: app.name, signIn: true } : {}),
+          ...(name ? { appName: name } : {}),
+          ...(appServer ? { signIn: true } : {}),
           audience: audience.audience,
           grantees: newAccountGrantees(audience.picked),
           takenSlugs,
@@ -145,6 +149,7 @@ export function AddMcpServerDialog({
     (audience.picked.agentIds?.length ?? 0);
   const canSubmit =
     identity !== null &&
+    /[a-z0-9]/i.test(name) &&
     !add.isPending &&
     (audience.audience === 'private' ||
       (canManageConnections && (audience.audience === 'project' || (Boolean(accountId) && picks > 0))));
@@ -154,6 +159,7 @@ export function AddMcpServerDialog({
     onOpenChange(next);
     if (!next) {
       setUrl(app?.url ?? '');
+      setNameEdit(null);
       setAudience({ audience: 'private', picked: NO_PICKS });
     }
   };
@@ -196,10 +202,19 @@ export function AddMcpServerDialog({
                   {t('addMcpUrlInvalid')}
                 </FieldDescription>
               ) : (
-                <FieldDescription>
-                  {identity ? t('addMcpUrlNamed', { name: identity.name }) : t('addMcpUrlHint')}
-                </FieldDescription>
+                <FieldDescription>{t('addMcpUrlHint')}</FieldDescription>
               )}
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={`${id}-name`}>{t('installNameLabel')}</FieldLabel>
+              <Input
+                id={`${id}-name`}
+                value={nameEdit ?? identity?.name ?? ''}
+                onChange={(event) => setNameEdit(event.target.value)}
+                autoComplete="off"
+                disabled={add.isPending || identity === null}
+              />
+              <FieldDescription>{t('installProfileHint')}</FieldDescription>
             </Field>
             <AudienceFields
               projectId={projectId}

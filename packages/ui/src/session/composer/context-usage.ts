@@ -23,6 +23,11 @@ const EMPTY_BREAKDOWN: ContextBreakdown = {
  * compaction, whose usage is its summary reply's) with a positive token total.
  * `sessionLogThreadMetrics(...).context` picks the same message, but prices the
  * whole thread to do it.
+ *
+ * `reasoning` is a SUBSET of `output` (pi-ai `Usage`, and the same convention in
+ * OpenCode and the Kortix transcript): adding it again reads a session at 107%
+ * of a window the model has not filled, and hides the compaction that should
+ * have run. It stays in the breakdown for display, outside `total`.
  */
 export function getLastAssistantTokenBreakdown(
   messages: SessionLogMessage[] | undefined,
@@ -37,7 +42,7 @@ export function getLastAssistantTokenBreakdown(
     const output = t.output;
     const reasoning = t.reasoning ?? 0;
     const cache = t.cache_read + t.cache_write;
-    const total = input + output + reasoning + cache;
+    const total = input + output + cache;
     if (total > 0) return { input, output, reasoning, cache, total };
   }
   return EMPTY_BREAKDOWN;

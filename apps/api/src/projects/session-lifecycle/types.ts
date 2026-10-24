@@ -16,6 +16,7 @@ export type SessionInvocationSource =
   | 'trigger:manual'
   | 'trigger:monitor'
   | 'trigger:event'
+  | 'trigger:app'
   | 'trigger:reminder'
   | 'system:sandbox-build-fix'
   | 'system:approval-resume'

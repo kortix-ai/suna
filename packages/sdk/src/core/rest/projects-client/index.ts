@@ -45,6 +45,7 @@ export * from './sandbox-shares';
 export * from './public-session-shares';
 export * from './session-reminders';
 export * from './rooms';
+export * from './artifacts';
 export * from './tokens';
 export * from './audit';
 export * from './setup-links';

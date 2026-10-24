@@ -126,9 +126,12 @@ export async function runInstall(
     projectId: string;
     target: InstallTarget;
     connectors: readonly Pick<AdminConnector, 'slug' | 'provider' | 'name'>[];
+    /** The profile's name, as the user chose it. Default: the app's name. */
+    name?: string;
   },
 ): Promise<InstallResult> {
-  const { projectId, target, connectors } = input;
+  const { projectId, connectors } = input;
+  const target = input.name?.trim() ? { ...input.target, appName: input.name.trim() } : input.target;
   const existing = connectors.find((connector) =>
     connectorInstalledFrom(connector, target.appName, target.provider),
   );

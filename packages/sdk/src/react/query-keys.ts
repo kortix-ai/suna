@@ -591,6 +591,20 @@ export const qk = {
      * purpose: the record is fixed at the thread's first turn, so no write refreshes it.
      */
     sessionMemoryUsage: (id: string, sessionId: string) => [...qk.project.scope(id), 'memory-usage', sessionId] as const,
+    /** Every artifact read of a project (flag `artifacts`): the prefix of the
+     *  keys below, so a publish refreshes the gallery and the open artifact. */
+    artifacts: (id: string) => [...qk.project.scope(id), 'artifacts'] as const,
+    /** `listArtifacts` — the gallery, per scope/type/search. */
+    artifactList: (id: string, filter: string) => [...qk.project.artifacts(id), 'list', filter] as const,
+    /** `getArtifact` — one artifact now (`current`) or at a Files commit. */
+    artifact: (id: string, artifactId: string, version: string = 'current') => [...qk.project.artifacts(id), 'one', artifactId, version] as const,
+    /** `listArtifactVersions`. */
+    artifactVersions: (id: string, artifactId: string) => [...qk.project.artifacts(id), 'versions', artifactId] as const,
+    /** `readArtifactFile` of a doc's Markdown at one entry version. Immutable,
+     *  so outside the `artifacts` prefix: a write never refetches it. */
+    artifactText: (id: string, artifactId: string, entryVersion: string) => [...qk.project.scope(id), 'artifact-text', artifactId, entryVersion] as const,
+    /** `listArtifactTypes`. */
+    artifactTypes: (id: string) => [...qk.project.artifacts(id), 'types'] as const,
     /** `listProjectGoals` — the goal folders in Files with their heartbeats. */
     goals: (id: string) => [...qk.project.scope(id), 'goals'] as const,
     /** `getProjectGoalFiles` — one goal folder's log, notes and verification. */

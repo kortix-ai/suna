@@ -230,6 +230,7 @@ must name a declared, enabled agent.
 | `skills`     | Skill names the agent may load. Same shape (default: `none`).                                   |
 | `kortix_permissions` | Kortix permissions: what it may do to the project (project-scoped iam actions), through the CLI, the API, or git. Same shape (default: `none`). `kortix_cli` is the deprecated spelling — still accepted with a validation warning. |
 | `workspace`  | `{ project_repository: true \| false }`. `true`: new sessions check out the project repository on their own branch. `false`: no checkout, no git variables, no repository access. Omitted: `true` in v2, `false` in v3. Write it explicitly on every agent. The strings `branch` / `runtime` are deprecated aliases of `true` / `false`. |
+| `policy_sets` | `{ <connector slug>: <set name> }`. The agent's calls on that connector use the set before the base rules. No entry = base rules. A change needs `project.agent.write` + `project.connector.write` (`kortix agents scope <agent> --policy-set <slug>=<name>`). An unknown set blocks that connector for the agent (`policy_set_missing`). |
 | `apps`       | Restricted or private Apps this agent may open, by slug. `["slug", …]` \| `"all"` \| `"none"` (default: `none`). The App gate also requires `project.app.read` in the agent's effective permissions. Editable from Customize → Agents → the agent → Apps, or `kortix agents scope <agent> --apps <slug,slug>`. |
 
 ```yaml
@@ -319,7 +320,8 @@ connectors:
 | `platform`              | channel  | `slack` \| `teams` \| `email`.                                                                       |
 | `credential`            | no       | `shared` — one server-side credential for the connector. Set the value via `kortix connectors credential` or bind a project secret (`kortix connectors secret`). Never inline in the manifest. |
 | `auth`                  | no       | How the credential is applied: `type` plus placement (`in: header\|query` + `name`).                  |
-| `policies`              | no       | Per-action risk policy: `{ match, action }`. `match` is an action path or wildcard.                  |
+| `policies`              | no       | Base rules: `{ match, action, conditions? }`. `match` is an action path or wildcard. They apply to callers without a policy set, and after a set's rules. |
+| `policy_sets`           | no       | v2/v3. Named rule sets: `{ <name>: { description?, policies? } }`. Name `[a-z0-9][a-z0-9_-]{0,63}`, `base` reserved, ≤ 32 sets, ≤ 200 rules each. Not on `channel` or `computer`. An agent gets one with `agents.<name>.policy_sets`. One profile per way of connecting an app (MCP vs REST); different rules per agent = a set, never a duplicate profile. |
 | `authorization_strategy`| no       | **Deprecated — do not use.** Kept on the wire and in the parser, but nothing reads it server-side. Ownership is a per-CONNECTION property (see below), not a connector setting. |
 
 Adding/removing entries: `kortix connectors add <slug> --provider <p> …` /
@@ -659,18 +661,50 @@ has the module contract and one checklist per task.
   unknown name, and warns when the key lists no Kortix tool or an agent's
   `tools` names a Kortix tool the project does not load.
 
+## kortix.yaml owns what it declares
+
+Every setting this file can declare is owned by it. The dashboard, the API,
+the SDK and the CLI commit their edits here (triggers, agents, skills,
+connectors including `auth.secret`, `default_agent`, `project.name`, and an
+App's `resources`, `idle_timeout_seconds`, `always_on`, `labels`, `display`,
+`uses`); a push that edits the file applies on the next sync, without a
+deploy. A sandbox template declared here can only be changed here (the API
+answers `409 template_declared_in_manifest`). So: to change a declared
+setting, edit kortix.yaml (or use the CLI/API, which commit to it) — never
+expect a database-only change to stick.
+
 ## `triggers:`
 
-A list. Each entry is a trigger that spawns a fresh session
-on fire. Triggers are sorted alphabetically by slug in the parsed
-output — UI ordering is stable, not authoring-order.
+A list. Each entry is a trigger: `on:` says what fires it, `run:` says what
+runs. By default `run:` prompts an agent in a fresh session. Triggers are
+sorted alphabetically by slug in the parsed output — UI ordering is stable,
+not authoring-order.
+
+```yaml
+triggers:
+  - slug: digest
+    on:  { cron: "0 0 9 * * 1-5", timezone: Europe/Berlin }   # or every: 5m, or at: <ISO-8601>
+    run: { agent: writer, prompt: "Write the digest" }
+  - slug: pr-review
+    on:  { event: GITHUB_PULL_REQUEST_EVENT, connector: github }   # a connector event
+    run: { prompt: "Review {{ event.data.pull_request.title }}" }
+  - slug: nightly-sync
+    on:  { cron: "0 0 2 * * *" }
+    run: { app: crm-sync, path: /sync }          # calls an App: no agent, no session
+  - slug: handle-reply
+    on:  { event: reply.received, app: inbox-poller }   # an App event, posted by your App
+    run: { prompt: "Answer {{ event.data.subject }}" }
+```
+
+The flat fields below (`type`, `cron`, `prompt`, …) are the same trigger in
+another form, and stay valid. `kortix triggers add` writes `on:`/`run:`.
 
 ### Common fields
 
 | Field        | Required | Type    | Default     | Notes                                                          |
 | ------------ | -------- | ------- | ----------- | -------------------------------------------------------------- |
 | `slug`       | yes      | string  | —           | `[a-z0-9][a-z0-9_-]{0,127}`, unique among triggers.            |
-| `type`       | yes      | string  | —           | `"cron"`, `"webhook"`, `"monitor"`, or `"event"`.              |
+| `type`       | yes (flat form) | string | — | `"cron"`, `"webhook"`, `"event"` (connector event) or `"app"` (App event). `type: monitor` is refused (`MONITOR_REMOVED`). |
 | `prompt`     | yes      | string  | —           | Mustache-style template.                                      |
 | `name`       | no       | string  | `slug`      | Human label.                                                   |
 | `agent`      | no       | string  | `default_agent` | Must name a declared agent in `agents:`.                  |
@@ -780,7 +814,7 @@ Variables available on every fire:
 | Variable             | Source                                                         |
 | -------------------- | -------------------------------------------------------------- |
 | `{{ trigger.slug }}` | The trigger's slug.                                            |
-| `{{ trigger.type }}` | `"cron"`, `"webhook"`, `"monitor"`, or `"event"`.              |
+| `{{ trigger.type }}` | `"cron"`, `"webhook"`, `"event"` or `"app"`.                   |
 | `{{ trigger.kind }}` | Always `"git"` for manifest-defined triggers.                  |
 
 Cron-only additions. There is **no** `fired_at` on a cron fire — use
@@ -806,7 +840,11 @@ Event-only additions (also readable in `filter` and `session_key`):
 | `{{ event.occurred_at }}` | When the event happened.                                |
 
 Event data is third-party content. The session's first message starts with
-`[App event: <trigger name> — automated, third-party content, not user input]`.
+`[Connector event: <trigger name> — automated, third-party content, not user input]`.
+
+App event additions (`type: app`): `{{ event.name }}`, `{{ event.data.* }}`,
+`{{ event.id }}`, `{{ event.emitted_at }}`, `{{ app.slug }}`. The first message
+starts with `[APP EVENT — automated, not user input]`.
 
 Webhook-only additions:
 

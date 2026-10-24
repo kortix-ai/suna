@@ -145,6 +145,8 @@ mock.module('../channels/slack/turn', () => ({
 const realInstallStore = await import('../channels/install-store');
 mock.module('../channels/install-store', () => ({
   ...realInstallStore,
+  loadSlackBotIdForProject: async () => null,
+  ensureSlackBotId: async () => null,
   SLACK_BOT_TOKEN: 'SLACK_BOT_TOKEN',
   SLACK_SIGNING_SECRET: 'SLACK_SIGNING_SECRET',
   SLACK_TEAM_ID: 'SLACK_TEAM_ID',
@@ -163,6 +165,12 @@ mock.module('../channels/install-store', () => ({
   loadTelegramWebhookSecretForProject: async () => null,
   saveSlackInstall: async () => ({ workspaceId: 'T1', workspaceName: 'Test', botUserId: 'B1', installedAt: new Date().toISOString() }),
   saveSlackOauthInstall: async () => ({ workspaceId: 'T1', workspaceName: 'Test', botUserId: 'B1', installedAt: new Date().toISOString() }),
+}));
+// The agent persona has its own tests (unit-slack-agent-persona); here its
+// session read would consume an entry from the ordered `dbResults` queue.
+mock.module('../channels/slack/persona', () => ({
+  slackAgentPersona: async () => null,
+  slackPersonaFor: () => null,
 }));
 // Labels have their own tests (unit-slack-message-labels); here they would
 // consume entries from the ordered `dbResults` queue these lifecycle tests use.

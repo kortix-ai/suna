@@ -49,6 +49,7 @@ import {
 } from '@kortix/api-contract/session-log';
 import type { Context } from 'hono';
 import { config } from '../../config';
+import { logger } from '../../lib/logger';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
@@ -113,6 +114,14 @@ async function readBlobBody(request: Request, ms: number): Promise<Buffer | 'lat
     clearTimeout(timer);
   }
   return late ? 'late' : Buffer.concat(chunks);
+}
+
+/**
+ * One WARN per journal request the API refuses (400, 403, 409, 413, 422). kortixd's own log stays in the box and
+ * never reaches CloudWatch, so this line is how a refused batch shows up.
+ */
+function journalRejected(scope: Pick<SessionLogScope, 'projectId' | 'sessionId'>, status: number, code: string, detail: Record<string, unknown> = {}): void {
+  logger.warn('[session-log] journal rejected', { status, code, projectId: scope.projectId, sessionId: scope.sessionId, ...detail });
 }
 
 /** The calling box's scope, or null when the credential is not this session's sandbox credential. */
@@ -252,19 +261,35 @@ export function registerSessionLogRoutes(): void {
     }),
     async (c) => {
       const scope = sandboxScope(c);
-      if (!scope) return c.json({ error: 'The session log takes the session sandbox credential' }, 403);
+      if (!scope) {
+        // kortixd keeps the batch and backs off: a credential that regains access sends it.
+        journalRejected({ projectId: c.req.param('projectId') ?? '', sessionId: c.req.param('sessionId') ?? '' }, 403, 'not_session_credential');
+        return c.json({ error: 'The session log takes the session sandbox credential' }, 403);
+      }
       if (!config.SESSION_LOG_INGEST_ENABLED) return c.json({ error: 'Session log ingest is off' }, 503);
       const read = await readJournalBody(c);
-      if (!read.ok) return c.json({ error: read.error }, read.status);
+      if (!read.ok) {
+        journalRejected(scope, read.status, read.status === 413 ? 'too_large' : 'unreadable_body', { error: read.error });
+        return c.json({ error: read.error }, read.status);
+      }
       const parsed = SessionLogJournalRequestSchema.safeParse(read.body);
       if (!parsed.success) {
-        return c.json({ error: 'Invalid journal body', issues: parsed.error.issues.slice(0, 5) }, 400);
+        const issues = parsed.error.issues.slice(0, 5);
+        journalRejected(scope, 400, 'invalid_body', { issues: issues.map((i) => `${i.path.join('.')}: ${i.message}`) });
+        return c.json({ error: 'Invalid journal body', issues }, 400);
       }
       // The body as sent: the parse would drop fields this API does not know.
       const outcome = await ingestSessionLogJournal(scope, read.body as SessionLogJournalRequest);
       if (outcome.status === 200) return c.json(outcome.body, 200);
-      if (outcome.status === 409) return c.json(outcome.body, 409);
-      if (outcome.status === 422) return c.json(outcome.body, 422);
+      if (outcome.status === 409) {
+        journalRejected(scope, 409, 'generation_conflict', { generation: outcome.body.generation, batchGeneration: parsed.data.generation });
+        return c.json(outcome.body, 409);
+      }
+      if (outcome.status === 422) {
+        const { thread_id, seq, seq_max, message_id } = outcome.body;
+        journalRejected(scope, 422, 'seq_conflict', { threadId: thread_id, seq, seqMax: seq_max, messageId: message_id });
+        return c.json(outcome.body, 422);
+      }
       if (outcome.status === 429) {
         // Header inline, never `c.header(...)` first: the request deadline may
         // have answered this request already, and Context#header on the

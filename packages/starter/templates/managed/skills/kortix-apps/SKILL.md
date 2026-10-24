@@ -35,6 +35,10 @@ another host. Volumes need Platinum (the default on Kortix Cloud).
 5. Never run `kortix apps deploy` from an uninspected workspace root. It can
    publish unrelated files as a static App.
 6. New Apps are private. Choose another access mode only when the user asks.
+7. New Apps have no card on the Apps page: they sit under Background Apps.
+   Register every App a person opens (a site, a UI, a dashboard) with
+   `display: { listed: true }` in its `kortix.yaml` block, or `--listed` on
+   `kortix apps deploy`. Leave a backend, a worker or a poller unlisted.
 
 ## Choose what to build
 
@@ -64,7 +68,7 @@ or topic when that fits the project better (`apps/sales/crm`,
 
 ```bash
 kortix apps launch --template convex           # a ready-made backend App, deployed
-kortix apps deploy apps/storefront/dist --slug storefront --name Storefront --type static --spa
+kortix apps deploy apps/storefront/dist --slug storefront --name Storefront --type static --spa --listed
 kortix apps deploy apps/api --slug api --type dockerfile --on-demand \
   --command '["node","server.js"]' --port 3000 --readiness-path /health
 ```
@@ -103,6 +107,25 @@ apps:
 
 `kortix validate` checks these rules before a deploy; the API refuses the same
 config with `400 app_config_invalid` and `issues: [{path, message}]`.
+
+## Start an agent from an App
+
+An App never starts an agent itself. It posts an event, and a trigger in
+`kortix.yaml` decides which agent runs (`on: { event, app }`). Every machine
+has `KORTIX_APP_TOKEN` and `KORTIX_APP_EVENTS_URL`:
+
+```bash
+curl -X POST "$KORTIX_APP_EVENTS_URL" -H "Authorization: Bearer $KORTIX_APP_TOKEN" \
+  -H "content-type: application/json" -d '{"name":"reply.received","data":{"subject":"Re: quote"},"id":"msg-1"}'
+```
+
+**Build an App for this last.** Before you write a watcher App, check in this
+order: a connector event (the service already emits it), a webhook (the
+service can call a URL), a schedule (a fixed cadence is enough). Build the
+App only when none fits: no events and no webhook, code must decide what
+deserves an agent, or the watch needs a connection that stays open. Emit
+only what deserves a session; each trigger takes at most 60 events an hour.
+Full recipe: `kortix-system` → `references/scheduling.md`, "App events".
 
 ## Machines, scale, exec
 

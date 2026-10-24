@@ -77,6 +77,7 @@
     "./customize/project-settings/project-settings-page": "./src/customize/project-settings/project-settings-page.tsx",
     "./customize/secrets/secrets-page": "./src/customize/secrets/secrets-page.tsx",
     "./customize/sections/add-account-fields": "./src/customize/sections/add-account-fields.tsx",
+    "./customize/sections/component/email-connect-form": "./src/customize/sections/component/email-connect-form.tsx",
     "./customize/sections/component/manifest-copy-block": "./src/customize/sections/component/manifest-copy-block.tsx",
     "./customize/sections/component/slack-byo-wizard": "./src/customize/sections/component/slack-byo-wizard.tsx",
     "./customize/sections/component/slack-connect-card": "./src/customize/sections/component/slack-connect-card.tsx",
@@ -87,7 +88,6 @@
     "./customize/sections/connector-oauth2": "./src/customize/sections/connector-oauth2.ts",
     "./customize/sections/connector-oauth2-application-fields": "./src/customize/sections/connector-oauth2-application-fields.tsx",
     "./customize/sections/connector-oauth2-fields": "./src/customize/sections/connector-oauth2-fields.tsx",
-    "./customize/sections/connectors-view": "./src/customize/sections/connectors-view.tsx",
     "./customize/sections/gateway-view": "./src/customize/sections/gateway-view.tsx",
     "./customize/sections/llm-provider/llm-provider-modal": "./src/customize/sections/llm-provider/llm-provider-modal.tsx",
     "./customize/sections/llm-provider/model-capability-icons": "./src/customize/sections/llm-provider/model-capability-icons.tsx",
@@ -248,6 +248,7 @@
     "./internal/billing/use-transactions": "./src/internal/billing/use-transactions.ts",
     "./internal/branding/branding-provider": "./src/internal/branding/branding-provider.tsx",
     "./internal/capture/use-capture-area": "./src/internal/capture/use-capture-area.ts",
+    "./internal/components/agent-mark": "./src/internal/components/agent-mark.tsx",
     "./internal/components/hover-prefetch-link": "./src/internal/components/hover-prefetch-link.tsx",
     "./internal/components/mobile-store-qr": "./src/internal/components/mobile-store-qr.tsx",
     "./internal/desktop/desktop-back-button": "./src/internal/desktop/desktop-back-button.tsx",
@@ -258,6 +259,7 @@
     "./internal/hooks/account/use-my-invites": "./src/internal/hooks/account/use-my-invites.ts",
     "./internal/hooks/admin/use-admin-role": "./src/internal/hooks/admin/use-admin-role.ts",
     "./internal/hooks/channels/use-channels-installations": "./src/internal/hooks/channels/use-channels-installations.ts",
+    "./internal/hooks/channels/use-email-inboxes": "./src/internal/hooks/channels/use-email-inboxes.ts",
     "./internal/hooks/connectors/use-add-managed-account": "./src/internal/hooks/connectors/use-add-managed-account.ts",
     "./internal/hooks/connectors/use-pipedream-connect-member": "./src/internal/hooks/connectors/use-pipedream-connect-member.ts",
     "./internal/hooks/connectors/use-pipedream-connect-project": "./src/internal/hooks/connectors/use-pipedream-connect-project.ts",
@@ -386,6 +388,7 @@
     "./markdown": "./src/markdown/index.tsx",
     "./markdown/copy-button": "./src/markdown/copy-button.tsx",
     "./markdown/setup-links/api-base": "./src/markdown/setup-links/api-base.ts",
+    "./markdown/setup-links/app-credentials-form": "./src/markdown/setup-links/app-credentials-form.tsx",
     "./markdown/setup-links/approval-decision": "./src/markdown/setup-links/approval-decision.tsx",
     "./markdown/setup-links/connector-handshake": "./src/markdown/setup-links/connector-handshake.tsx",
     "./markdown/setup-links/connector-link-info": "./src/markdown/setup-links/connector-link-info.ts",
@@ -771,6 +774,10 @@
         "types": "./dist/customize/sections/add-account-fields.d.ts",
         "import": "./dist/customize/sections/add-account-fields.js"
       },
+      "./customize/sections/component/email-connect-form": {
+        "types": "./dist/customize/sections/component/email-connect-form.d.ts",
+        "import": "./dist/customize/sections/component/email-connect-form.js"
+      },
       "./customize/sections/component/manifest-copy-block": {
         "types": "./dist/customize/sections/component/manifest-copy-block.d.ts",
         "import": "./dist/customize/sections/component/manifest-copy-block.js"
@@ -810,10 +817,6 @@
       "./customize/sections/connector-oauth2-fields": {
         "types": "./dist/customize/sections/connector-oauth2-fields.d.ts",
         "import": "./dist/customize/sections/connector-oauth2-fields.js"
-      },
-      "./customize/sections/connectors-view": {
-        "types": "./dist/customize/sections/connectors-view.d.ts",
-        "import": "./dist/customize/sections/connectors-view.js"
       },
       "./customize/sections/gateway-view": {
         "types": "./dist/customize/sections/gateway-view.d.ts",
@@ -1449,6 +1452,10 @@
         "types": "./dist/internal/capture/use-capture-area.d.ts",
         "import": "./dist/internal/capture/use-capture-area.js"
       },
+      "./internal/components/agent-mark": {
+        "types": "./dist/internal/components/agent-mark.d.ts",
+        "import": "./dist/internal/components/agent-mark.js"
+      },
       "./internal/components/hover-prefetch-link": {
         "types": "./dist/internal/components/hover-prefetch-link.d.ts",
         "import": "./dist/internal/components/hover-prefetch-link.js"
@@ -1488,6 +1495,10 @@
       "./internal/hooks/channels/use-channels-installations": {
         "types": "./dist/internal/hooks/channels/use-channels-installations.d.ts",
         "import": "./dist/internal/hooks/channels/use-channels-installations.js"
+      },
+      "./internal/hooks/channels/use-email-inboxes": {
+        "types": "./dist/internal/hooks/channels/use-email-inboxes.d.ts",
+        "import": "./dist/internal/hooks/channels/use-email-inboxes.js"
       },
       "./internal/hooks/connectors/use-add-managed-account": {
         "types": "./dist/internal/hooks/connectors/use-add-managed-account.d.ts",
@@ -2000,6 +2011,10 @@
       "./markdown/setup-links/api-base": {
         "types": "./dist/markdown/setup-links/api-base.d.ts",
         "import": "./dist/markdown/setup-links/api-base.js"
+      },
+      "./markdown/setup-links/app-credentials-form": {
+        "types": "./dist/markdown/setup-links/app-credentials-form.d.ts",
+        "import": "./dist/markdown/setup-links/app-credentials-form.js"
       },
       "./markdown/setup-links/approval-decision": {
         "types": "./dist/markdown/setup-links/approval-decision.d.ts",

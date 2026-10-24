@@ -33,7 +33,7 @@ import { useProjectFeatureFlags } from '../../../internal/lib/use-project-featur
 import { useUiViewerId } from '../../../providers/ui-provider';
 import { createProjectTrigger, upsertProjectSecret } from '@kortix/sdk';
 import { modelKeyToWire, useProjectTriggerEventApps, useVisibleAgents } from '@kortix/sdk/react';
-import { LightningIcon, TimerIcon, WebhooksLogoIcon } from '@phosphor-icons/react';
+import { AppWindowIcon, LightningIcon, TimerIcon, WebhooksLogoIcon } from '@phosphor-icons/react';
 import { useMutation } from '@tanstack/react-query';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -128,6 +128,7 @@ const BLOCK_LABELS = {
   cron: TimerIcon,
   event: LightningIcon,
   webhook: WebhooksLogoIcon,
+  app: AppWindowIcon,
 } as const;
 
 function ComposerForm({
@@ -399,7 +400,7 @@ function ComposerForm({
                 {eventsOn ? (
                   <TabsTrigger value="event" className="flex-1 gap-1.5">
                     {tabIcon('event')}
-                    {tI18nComplete.raw('text5441e7146193')}
+                    {tI18nComplete.raw('textca395c4d19b2')}
                   </TabsTrigger>
                 ) : null}
                 <TabsTrigger value="webhook" className="flex-1 gap-1.5">

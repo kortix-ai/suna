@@ -646,6 +646,28 @@ most 16,384 characters of JSON. Example: `examples/12-session-labels.ts`.
 `stops` maps the user message that started a turn to the member who stopped that turn.
 In React, `useSessionMessageAuthors(projectId, sessionId, messageCount)` reads the same data.
 
+### Share one response
+
+The web session's **Share response** button publishes one finished response.
+The prompt stays private unless the person selects **Prompt and response**.
+The SDK exposes the same operations as named exports:
+
+```ts
+import { getTurnShare, shareTurn, unshareTurn, getPublicResponse } from '@kortix/sdk';
+
+const { share } = await shareTurn(projectId, sessionId, turnId, { include_prompt: false });
+const response = await getPublicResponse(share.token, { backendUrl });
+await getTurnShare(projectId, sessionId, turnId);
+await unshareTurn(projectId, sessionId, turnId);
+```
+
+`turnId` is the user message id that starts the turn. Publishing requires a human
+owner or project manager who can read the session. Service accounts and agent
+credentials cannot publish. Sessions with personal connections or person-only
+secrets cannot publish. Repeating `shareTurn` updates the snapshot under the same
+URL. `unshareTurn` revokes it; anonymous reads then return `410`. Snapshots exclude
+reasoning, tool calls, and attachments. The public page disables search indexing.
+
 ### Who may stop a turn
 
 In a shared session only the member who started the running turn, the session owner or a

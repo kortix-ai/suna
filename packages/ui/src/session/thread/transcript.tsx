@@ -95,6 +95,7 @@ import type {
 import type { TurnServedModel } from '../turn/served-model';
 import { SessionBusyIndicator } from '../status/session-busy-indicator';
 import { SessionTurnMeta } from './session-turn-meta';
+import { TurnShareButton } from './turn-share';
 import {
   sessionTurnDurationMs,
   sessionTurnEndedAt,
@@ -406,6 +407,10 @@ interface SessionTurnProps {
   isLast: boolean;
   ownsPlan: boolean;
   sessionId: string;
+  /** The Kortix project and project-session ids. With both, a settled turn
+   *  offers Share (`TurnShareButton`). Absent (a child session): no Share. */
+  projectId?: string;
+  projectSessionId?: string;
   sessionStatus: import('../../internal/session-types').SessionStatus | undefined;
   permissions: PermissionRequest[];
   questions: QuestionRequest[];
@@ -1076,6 +1081,7 @@ const commandForTurn = useMemo(() => {
 // A skill run as `/name` answers like any chat turn; only a real command's output sits in the command card.
 const commandOutput = useMemo(() => {
   if (!commandForTurn) return undefined;
+  if ('source' in commandForTurn && commandForTurn.source === 'skill') return undefined;
   const source = Array.isArray(commands) ? commands.find((c) => c.name === commandForTurn.name)?.source : undefined;
   return source === 'skill' ? undefined : commandForTurn;
 }, [commandForTurn, commands]);
@@ -1984,7 +1990,7 @@ function TurnAutoRetryNote({ count }: { count: number }) {
 /** The turn's footer: the working row, the error banner, the outcomes, the
  *  action bar, the connect-provider dialog, and who stopped the turn. */
 function TurnFooter(
-  props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'suppressBusyIndicator' | 'awaitingUser' | 'providers' | 'servedModel' | 'stoppedBy' | 'modelOptions'> & {
+  props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'projectId' | 'projectSessionId' | 'suppressBusyIndicator' | 'awaitingUser' | 'providers' | 'servedModel' | 'stoppedBy' | 'modelOptions'> & {
     /** The row's floating toolbar draws the action bar instead (`TranscriptRowsContext`). */
     hideActionBar?: boolean;
     model: TurnModelState;
@@ -2001,6 +2007,7 @@ function TurnFooter(
   const {
     turn, providers, model, errors, answered, status, retry, meta, tHardcodedUi,
     connectProviderOpen, onConnectProviderOpenChange, servedModel, stoppedBy, modelOptions,
+    projectId, projectSessionId,
   } = props;
   const { working, response } = model;
   const { turnError, turnErrorRow, turnErrorRowDetails, turnErrorRaw } = errors;
@@ -2065,6 +2072,17 @@ function TurnFooter(
           costInfo={costInfo}
           servedModel={servedModel}
           tHardcodedUi={tHardcodedUi}
+          // A continuation turn's id names a compaction marker, not a user
+          // message, so it has no response of its own to share.
+          share={
+            turn.continues
+              ? undefined
+              : {
+                  projectId,
+                  sessionId: projectSessionId,
+                  turnId: turn.id,
+                }
+          }
         />
       )}
     <ConnectProviderDialog
@@ -2135,6 +2153,7 @@ function TurnActionBar({
   servedModel,
   tHardcodedUi,
   inToolbar = false,
+  share,
 }: {
   /** Inside a message row's toolbar, which owns the hover reveal. */
   inToolbar?: boolean;
@@ -2145,6 +2164,7 @@ function TurnActionBar({
   costInfo: TurnSettledMeta['costInfo'];
   servedModel?: TurnServedModel;
   tHardcodedUi: ReturnType<typeof useTranslations>;
+  share?: { projectId?: string; sessionId?: string; turnId: string };
 }) {
   const [copied, setCopied] = useState(false);
 // ---- Copy response ----
@@ -2203,6 +2223,9 @@ const handleCopy = async () => {
               </AnimatePresence>
             </span>
           </Button>
+      ) : null}
+      {response && share ? (
+        <TurnShareButton projectId={share.projectId} sessionId={share.sessionId} turnId={share.turnId} />
       ) : null}
         <SessionTurnMeta
           endedAt={turnEndedAt}
@@ -2352,6 +2375,11 @@ function SessionTurnImpl(props: SessionTurnProps) {
                   costInfo={meta.costInfo}
                   servedModel={props.servedModel}
                   tHardcodedUi={tHardcodedUi}
+                  share={
+                    turn.continues
+                      ? undefined
+                      : { projectId: props.projectId, sessionId: props.projectSessionId, turnId: turn.id }
+                  }
                 />
               )
             }

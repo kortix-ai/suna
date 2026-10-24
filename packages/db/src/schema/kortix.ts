@@ -1956,6 +1956,12 @@ export const projectSessionPublicShares = kortixSchema.table(
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    // `resource_type = 'response'`: one assistant response (one turn), keyed by
+    // the turn's user message id, published as an immutable text snapshot
+    // built server-side from the session log.
+    messageId: text('message_id'),
+    snapshot: jsonb('snapshot').$type<Record<string, unknown>>(),
+    snapshotAt: timestamp('snapshot_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -1963,6 +1969,10 @@ export const projectSessionPublicShares = kortixSchema.table(
     uniqueIndex('idx_project_session_public_shares_token_hash').on(table.tokenHash),
     index('idx_project_session_public_shares_session').on(table.sessionId),
     index('idx_project_session_public_shares_project').on(table.projectId),
+    // One live share per response: a re-share re-snapshots the same row (same URL).
+    uniqueIndex('idx_project_session_public_shares_live_response')
+      .on(table.sessionId, table.messageId)
+      .where(sql`${table.resourceType} = 'response' and ${table.revokedAt} is null`),
   ],
 );
 
@@ -3834,6 +3844,12 @@ export interface AgentGrant {
    *  declares no Apps, and grants minted before this field existed carry none
    *  — read it through `agentMayOpenApp` (apps/api iam/agent-scope.ts). */
   apps?: string[] | 'all';
+  /** Connector slug (canonical) → the policy set this agent gets on it
+   *  (`agents.<a>.policy_sets`). ABSENT key = the connector's base rules.
+   *  Key `*` = every connector (a malformed map). A name the connector does
+   *  not define blocks that connector (`policy_set_missing`). Read through
+   *  `agentPolicySet` (apps/api iam/agent-scope.ts). JSON only, no column. */
+  policySets?: Record<string, string>;
   /**
    * PROVENANCE — which manifest this grant was derived from. Stamped by the
    * resolver (`projects/lib/secret-grant.ts`) and read by the re-mint policy
@@ -7518,6 +7534,36 @@ export const connectorPolicies = kortixSchema.table(
 );
 
 /**
+ * Named rule sets on one connector (`connectors[].policy_sets` in kortix.yaml),
+ * which an agent is given through `agents.<name>.policy_sets`. One row per set:
+ * the row is the registry (a set with zero rules is a row with `[]`), so "this
+ * set exists" and "these are its rules" never disagree.
+ *
+ * Separate from `connector_policies` on purpose: every base-rule reader loads
+ * that table by `connector_id` alone, so set rows there would apply to every
+ * caller under API code that predates sets (rollout, rollback).
+ *
+ * Single writer: the manifest materializer (connectors/sync.ts).
+ */
+export const connectorPolicySets = kortixSchema.table(
+  'connector_policy_sets',
+  {
+    connectorId: uuid('connector_id')
+      .notNull()
+      .references(() => connectors.connectorId, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description'),
+    /** Ordered rules: `{ match, action, conditions? }[]`, first match wins. */
+    policies: jsonb('policies')
+      .$type<Array<{ match: string; action: string; conditions?: ConnectorPolicyCondition[] | null }>>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.connectorId, table.name] })],
+);
+
+/**
  * Legacy authorization-policy storage.
  *
  * The runtime does not read or write this table. Connector policies
@@ -8680,3 +8726,42 @@ export const cliDeviceGrants = kortixSchema.table('cli_device_grants', {
   accountId: uuid('account_id'),
   status: text('status').notNull().default('pending'),
 });
+
+/**
+ * An artifact (flag `artifacts`): a path in the project's Files volume shared
+ * as a doc or a page. The files are plain files in Files (`root`, with `entry`
+ * the page a reader opens); their history is the volume's commit log. This
+ * row only says that the path is shared, how, and with whom.
+ *   entry       `index.md` / `index.html` in a folder `root`; a single file's
+ *               name otherwise (then only that file is served)
+ *   type        doc: the entry is Markdown; html: the entry is an HTML page
+ *   visibility  private: the creator and `shared_with_user_ids`
+ *               project: every member who may read the project
+ *               public:  anyone with the link
+ */
+export const artifacts = kortixSchema.table('artifacts', {
+  artifactId: uuid('artifact_id').defaultRandom().primaryKey(),
+  projectId: uuid('project_id').notNull(),
+  accountId: uuid('account_id').notNull(),
+  driveId: uuid('drive_id').notNull(),
+  root: text('root').notNull(),
+  entry: text('entry').notNull(),
+  folder: boolean('folder').notNull(),
+  title: text('title').notNull(),
+  description: text('description'),
+  type: varchar('type', { length: 16 }).notNull(),
+  visibility: varchar('visibility', { length: 16 }).default('private').notNull(),
+  sharedWithUserIds: uuid('shared_with_user_ids').array().default(sql`'{}'::uuid[]`).notNull(),
+  pinnedByUserIds: uuid('pinned_by_user_ids').array().default(sql`'{}'::uuid[]`).notNull(),
+  createdByUserId: uuid('created_by_user_id').notNull(),
+  createdBySessionId: text('created_by_session_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'artifacts_project_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.driveId], foreignColumns: [drives.driveId], name: 'artifacts_drive_fk' }).onDelete('cascade'),
+  index('idx_artifacts_project_updated').on(table.projectId, table.updatedAt),
+  uniqueIndex('idx_artifacts_drive_path').on(table.driveId, table.root, table.entry),
+  check('artifacts_type_check', sql`${table.type} in ('doc', 'html')`),
+  check('artifacts_visibility_check', sql`${table.visibility} in ('private', 'project', 'public')`),
+]);

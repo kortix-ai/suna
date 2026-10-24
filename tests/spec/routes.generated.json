@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 913,
+  "count": 956,
   "routes": [
     {
       "method": "GET",
@@ -17,6 +17,10 @@
     {
       "method": "GET",
       "path": "/.well-known/openid-configuration"
+    },
+    {
+      "method": "GET",
+      "path": "/.well-known/security.txt"
     },
     {
       "method": "GET",
@@ -81,6 +85,10 @@
     {
       "method": "GET",
       "path": "/metrics"
+    },
+    {
+      "method": "GET",
+      "path": "/robots.txt"
     },
     {
       "method": "GET",
@@ -149,6 +157,10 @@
     {
       "method": "PUT",
       "path": "/scim/v2/accounts/:accountId/Users/:userId"
+    },
+    {
+      "method": "GET",
+      "path": "/sitemap.xml"
     },
     {
       "method": "POST",
@@ -884,6 +896,26 @@
     },
     {
       "method": "GET",
+      "path": "/v1/artifacts/meta/:artifactId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/artifacts/p/:artifactId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/artifacts/p/:artifactId/*"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/artifacts/s/:token"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/artifacts/s/:token/*"
+    },
+    {
+      "method": "GET",
       "path": "/v1/auth/client-config"
     },
     {
@@ -1215,6 +1247,14 @@
       "path": "/v1/clients/mobile"
     },
     {
+      "method": "GET",
+      "path": "/v1/connectors/app-form/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/connectors/app-form/:token"
+    },
+    {
       "method": "POST",
       "path": "/v1/connectors/attachments"
     },
@@ -1315,6 +1355,22 @@
       "path": "/v1/connectors/projects/:projectId/connectors/:slug/policies"
     },
     {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/policy-sets"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name/name"
+    },
+    {
       "method": "PUT",
       "path": "/v1/connectors/projects/:projectId/connectors/:slug/secret-binding"
     },
@@ -1341,6 +1397,14 @@
     {
       "method": "GET",
       "path": "/v1/connectors/projects/:projectId/discover/connectors/detail"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/discover/connectors/tools"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/connectors/projects/:projectId/discover/install"
     },
     {
       "method": "GET",
@@ -1892,6 +1956,14 @@
     },
     {
       "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/events"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/events/credentials"
+    },
+    {
+      "method": "POST",
       "path": "/v1/projects/:projectId/apps/:appId/exec"
     },
     {
@@ -1917,6 +1989,14 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/apps/:appId/rollback"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/runs"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/apps/:appId/runs/:runId"
     },
     {
       "method": "PUT",
@@ -1973,6 +2053,58 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/apps/artifacts/:artifactId/finalize"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/content"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/pin"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/pin"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/restore"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/versions"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/share"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/types"
     },
     {
       "method": "POST",
@@ -2049,6 +2181,34 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/channels/email/connect"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/email/domains"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/email/domains/add"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/email/domains/verify"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/email/inboxes"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/email/inboxes"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/channels/email/inboxes/:connectionId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/channels/email/inboxes/:connectionId"
     },
     {
       "method": "DELETE",
@@ -2583,10 +2743,6 @@
       "path": "/v1/projects/:projectId/model-picker"
     },
     {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/monitors/ingest"
-    },
-    {
       "method": "GET",
       "path": "/v1/projects/:projectId/oauth"
     },
@@ -3103,6 +3259,18 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/turn"
     },
     {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/turns/:turnId/share"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/turns/:turnId/share"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/turns/:turnId/share"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/watch"
     },
@@ -3325,6 +3493,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/suna-migration/status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/public/responses/:token"
     },
     {
       "method": "POST",
@@ -3588,7 +3760,7 @@
     },
     {
       "method": "POST",
-      "path": "/v1/webhooks/email/agentmail"
+      "path": "/v1/webhooks/email/resend"
     },
     {
       "method": "POST",

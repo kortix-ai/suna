@@ -31,6 +31,7 @@ import {
   EyeIcon,
   MinusCircleIcon,
   PencilSimpleIcon,
+  ShieldCheckIcon,
   UserIcon,
   WarningIcon,
   XCircleIcon,
@@ -72,6 +73,7 @@ export function approvalIdentity(details: ApprovalLinkDetails) {
       details.connector_name ??
       (details.connector ? details.connector.charAt(0).toUpperCase() + details.connector.slice(1) : null),
     action: actionLabel(details.action),
+    slug: details.connector ?? null,
     iconUrl: connectorLogoUrl(details),
   };
 }
@@ -388,6 +390,7 @@ export function ApprovalDecisionPanel({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const t = useTranslations('hardcodedUi.approvalPage');
+  const tSets = useTranslations('connectorPolicySets');
   const priorityWord = useIssuePriorityWord();
   const now = useClock();
   const expiresAt = Date.parse(details.expires_at);
@@ -583,6 +586,7 @@ export function ApprovalDecisionPanel({
           <div className="flex min-w-0 items-center gap-3" title={details.action}>
             <ConnectorAppMark
               name={connectorName ?? details.action}
+              slug={details.connector}
               iconUrl={connectorLogoUrl(details)}
               size="md"
             />
@@ -624,6 +628,17 @@ export function ApprovalDecisionPanel({
 
       <div className={cn('flex flex-col gap-2 px-5 pb-4', showsPreview && 'pt-4')}>
         {risk}
+        {/* The agent's rule set decided this call (`policy_source: policy_set`). */}
+        {details.policy_set ? (
+          <FactRow
+            muted
+            icon={<ShieldCheckIcon aria-hidden className="text-muted-foreground size-4" />}
+          >
+            {details.agent
+              ? tSets('approvalSetAgent', { agent: details.agent, set: details.policy_set })
+              : tSets('approvalSet', { set: details.policy_set })}
+          </FactRow>
+        ) : null}
         <FactRow muted icon={<UserIcon aria-hidden className="text-muted-foreground size-4" />}>
           {asked}
           {expiresWhen ? ` · ${t('expiresAt', { when: expiresWhen })}` : null}

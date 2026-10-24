@@ -92,6 +92,23 @@ export function toPolicyRows(spec: ConnectorSpec): DesiredPolicy[] {
   }));
 }
 
+/** Map `policy_sets:` → one row per set; rules keep their authoring order. */
+export function toPolicySetRows(spec: ConnectorSpec): Array<{
+  name: string;
+  description: string | null;
+  policies: Array<{ match: string; action: string; conditions?: PolicyArgCondition[] }>;
+}> {
+  return (spec.policySets ?? []).map((set) => ({
+    name: set.name,
+    description: set.description,
+    policies: set.policies.map((p) => ({
+      match: p.match,
+      action: p.action,
+      ...(p.conditions && p.conditions.length > 0 ? { conditions: p.conditions } : {}),
+    })),
+  }));
+}
+
 /** Map project-level [[policies]] → ordered policy rows (same shape as connector). */
 export function toProjectPolicyRows(policies: ProjectPolicySpec[]): DesiredPolicy[] {
   // `conditions` is OMITTED (not set to null) for an unconditional rule, so the

@@ -6,6 +6,7 @@ import {
   ENVIRONMENT_ACCESS_COOKIE,
 } from '@/lib/environment-protection';
 import { legalShortPathRedirectUrl, legalTermsRedirectUrl } from '@/lib/legal-terms-redirect';
+import { canonicalPublicPath } from '@/lib/canonical-public-path';
 import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import {
@@ -248,12 +249,27 @@ const DESKTOP_ALLOWED_ROUTES = [
   '/debug',
 ];
 
+function isDecodablePath(pathname: string): boolean {
+  try {
+    decodeURIComponent(pathname);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function middleware(request: NextRequest) {
   let { pathname } = request.nextUrl;
   // These are probes for server files, not product routes. A plain response also
   // avoids rendering the translated application shell for sensitive-file probes.
   if (/^\/(?:\.env(?:[./]|$)|\.git(?:\/|$)|package\.json$|etc\/passwd$)/i.test(pathname)) {
     return new NextResponse('Not found', { status: 404 });
+  }
+  // A path whose percent-encoding does not decode (`/%ff`, an overlong
+  // `/%c0%af`) matches no route. The router answered it with a bare 500 or a
+  // 200 "Page not found" page (KRTX-3239).
+  if (!isDecodablePath(pathname)) {
+    return new NextResponse('Bad request', { status: 400 });
   }
 
   // Dev and staging run behind one shared HTTP Basic credential. Read through
@@ -424,6 +440,17 @@ export async function middleware(request: NextRequest) {
   const legalDestination = legalShortPathRedirectUrl(pathname, request.nextUrl.searchParams, request.nextUrl);
   if (legalDestination) {
     return finalizeEnvironmentAccess(NextResponse.redirect(legalDestination, 308));
+  }
+  // /Pricing, /DOCS, /DE/Pricing: a public page in another letter case was a
+  // 200 "Page not found" page (KRTX-3312). /pricing/ was a 200 duplicate of
+  // /pricing (KRTX-3234).
+  const canonicalPath = canonicalPublicPath(pathname, [...MARKETING_ROUTES, '/docs'], locales);
+  if (canonicalPath) {
+    // A plain URL: a NextURL clone re-adds the request's trailing slash, and
+    // /pricing/ would redirect to itself.
+    const destination = new URL(request.url);
+    destination.pathname = canonicalPath;
+    return finalizeEnvironmentAccess(NextResponse.redirect(destination, 308));
   }
 
   // Normalize app paths before maintenance, desktop and authentication gates.

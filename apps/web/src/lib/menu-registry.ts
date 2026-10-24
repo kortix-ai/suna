@@ -49,6 +49,7 @@ import {
   GitDiffIcon as GitCompareArrows,
   GlobeIcon as Globe,
   HardDrivesIcon as HardDrives,
+  CardsThreeIcon as GalleryVerticalEnd,
   KeyIcon as KeyRound,
   StackIcon as Layers,
   SquaresFourIcon as LayoutDashboard,
@@ -611,11 +612,8 @@ export const menuRegistry: MenuItemDef[] = [
   },
   // Agents and Skills are declared BEFORE Connectors here, unlike the tab bar
   // order in `CAPABILITY_TABS`. Declaration order is the palette's tie-break
-  // (`filteredNavItems` maps in registry order), and the Channels row carries
-  // the keyword `agentmail` — a product name it genuinely owns, but one that
-  // contains the substring "agent". With Channels declared first, the query
-  // "agent" listed it above the row that IS the Agents page. Ordering is free;
-  // dropping a real synonym is not.
+  // (`filteredNavItems` maps in registry order): the query "agent" must list
+  // the row that IS the Agents page first.
   {
     id: 'proj-connectors',
     label: 'Connectors',
@@ -644,7 +642,7 @@ export const menuRegistry: MenuItemDef[] = [
     // 'connections' stays off this bag — it names `proj-connectors`.
     href: '/projects/{projectId}/customize/connectors?scope=channels',
     requiresProject: true,
-    keywords: 'channels channel slack teams discord email agentmail inbox inbound messaging',
+    keywords: 'channels channel slack teams discord email telegram inbox inbound messaging',
   },
   {
     id: 'proj-connectors-policies',
@@ -750,6 +748,20 @@ export const menuRegistry: MenuItemDef[] = [
     requiresProject: true,
     requiresFlag: 'drives',
     keywords: 'files folders drive shared company my folder access share',
+  },
+  {
+    // The project's artifacts (flag `artifacts`): docs, slides, boards and
+    // dashboards published as pages. Only where the sidebar row shows.
+    id: 'proj-artifacts',
+    label: 'Artifacts',
+    icon: GalleryVerticalEnd,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/artifacts',
+    requiresProject: true,
+    requiresFlag: 'artifacts',
+    keywords: 'artifacts docs doc slides deck presentation board design dashboard page published share',
   },
   {
     // The repo browser under Customize → Repo, where it moves when the

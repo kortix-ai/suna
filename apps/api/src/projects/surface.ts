@@ -64,6 +64,10 @@ export { approvalTargetSession, expireDueApprovals } from './lib/connector-appro
 export { projectsApp } from './lib/app';
 export { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
 export { listResolvedProjectSecrets } from './secrets';
+// App events (`type: app` triggers): apps/event-routes.ts appends through these.
+export { ingestAppEvents, parseAppEventsBody, type AppEventInput } from './lib/app-events';
+// One-off App runs (runAfter / runAt) on the trigger engine.
+export { cancelAppRun, insertAppRun } from './lib/app-runs';
 export { currentInstanceId } from './instance-scope';
 
 // What account erasure deletes outside the database (consumed by
@@ -83,7 +87,8 @@ export { markKortixRemovalIntent } from './runtime-identity';
 export { disableRemindersAuthoredBy } from './lib/session-reminders';
 
 // Nested `projects.metadata` writes (consumed by ../feature-flags/write).
-export { metadataClearSubtreeKey, metadataMergeSubtree } from './lib/metadata-merge';
+export { metadataClearSubtreeKey, metadataMerge, metadataMergeSubtree } from './lib/metadata-merge';
+export { MANIFEST_PROJECT_NAME_KEY, projectNameAction } from './lib/manifest-project-name';
 
 // Whether any app-event adapter is configured (consumed by ../feature-flags/registry).
 
@@ -138,3 +143,4 @@ export { recordChannelsReenabled } from './lib/channels-onboarding';
 
 // Author names of memory pages (consumed by ../memory/serialize.ts).
 export { resolveUserIdentities } from './lib/user-identity';
+export { readPublicResponse } from './lib/public-response';

@@ -69,6 +69,10 @@ export interface AgentConfigBlock {
   /** @deprecated Input alias for `connectors_required`. Responses use only
    *  `connectors_required`. */
   connectors_personal?: string[];
+  /** Connector slug → policy set name (`connectors[].policy_sets`). A slug
+   *  without an entry uses the connector's base rules. Omitted on a write keeps
+   *  the declared value; a change needs `project.connector.write`. */
+  policy_sets?: Record<string, string>;
   secrets?: AgentGrantSetV2;
   skills?: AgentGrantSetV2;
   /** v3: the declared subagents this agent may start (`mode` `subagent` or `all`). */

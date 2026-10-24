@@ -163,7 +163,7 @@ export function surfaceEventTriggerError(err: unknown): number {
   const body = (err as { body?: { code?: unknown; feature?: unknown } } | null)?.body;
   if (body?.code === 'feature_disabled' && body.feature === 'event_triggers') {
     process.stderr.write(
-      `${status.err('App event triggers are off for this project. Turn them on: kortix projects features enable event_triggers')}\n`,
+      `${status.err('Connector event triggers are off for this project. Turn them on: kortix projects features enable event_triggers')}\n`,
     );
     return 1;
   }
@@ -207,7 +207,7 @@ export function eventNextStep(
       };
     case 'error': {
       // The project flag is off: the fix is the flag, not the trigger's settings.
-      if (e.error?.startsWith('App event triggers are off')) {
+      if (e.error?.startsWith('Connector event triggers are off') || e.error?.startsWith('App event triggers are off')) {
         return {
           word: 'error',
           lines: [`Error: ${e.error}`, 'Turn them on: kortix projects features enable event_triggers'],
@@ -385,11 +385,10 @@ async function printApps(
       `\n  ${C.dim}No connector yet, source ${source} (${apps.length}): ${apps.map((a) => `${a.app} (${a.event_count}${a.new_connector_slug && a.new_connector_slug !== a.app ? `, add as ${a.new_connector_slug}` : ''})`).join(', ')}${C.reset}\n`,
     );
   }
-  // Each source adds a connector its own way. connectors_v2 lists Composio apps
-  // only where a connector exists, so its add line shows only when one is missing.
-  const hasMcp = resp.apps.some((a) => sourceOf(a) === 'mcp');
+  // Each source adds a connector its own way. Composio apps are listed only
+  // where a connector exists, so its add line shows only when one is missing.
   const addLines = [
-    ...(restSources.includes('composio') || !hasMcp
+    ...(restSources.includes('composio')
       ? ['Add a connector: kortix connectors add <slug> --provider composio --app <app> --apply']
       : []),
     ...(restSources.includes('mcp')

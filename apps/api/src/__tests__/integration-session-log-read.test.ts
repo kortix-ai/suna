@@ -241,8 +241,9 @@ describe('the v1 reads answer from the log; a mirror-only session is converted b
   test('a drained mirror is never read: a session without a log answers nothing saved and the mirror stays unread', async () => {
     const late = await seedSession(project, OWNER);
     await storeMirrorOnly(late, 2);
-    await db.insert(sessionLogBackfillState).values({ id: 'pass', state: { drainedWithDeleted: true }, rev: 1 })
-      .onConflictDoUpdate({ target: sessionLogBackfillState.id, set: { state: sql`jsonb_set(${sessionLogBackfillState.state}, '{drainedWithDeleted}', 'true')` } });
+    // Drained and merged (`mirrorDrained`).
+    await db.insert(sessionLogBackfillState).values({ id: 'pass', state: { drainedWithDeleted: true, mergedMissing: true }, rev: 1 })
+      .onConflictDoUpdate({ target: sessionLogBackfillState.id, set: { state: sql`${sessionLogBackfillState.state} || '{"drainedWithDeleted": true, "mergedMissing": true}'::jsonb` } });
     try {
       expect((await get(`${base(late)}/log`)).status).toBe(404);
       const sync = (await (await get(`${base(late)}/transcript?shape=sync`)).json()) as Record<string, unknown>;

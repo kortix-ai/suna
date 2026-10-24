@@ -7,6 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./audit-labels": "./src/audit-labels.ts",
+    "./artifact-doc": "./src/artifact-doc.ts",
+    "./brand-css": "./src/brand-css.generated.ts",
     "./tools": "./src/tools/index.ts",
     "./utils": "./src/utils/index.ts",
     "./guards": "./src/utils/guards.ts",
@@ -33,7 +35,8 @@
     "./sandbox-env": "./src/host-config/sandbox-env.ts",
     "./test-sandbox-env": "./src/host-config/test-sandbox-env.ts",
     "./subprocessors": "./src/subprocessors.ts",
-    "./ssrf-guard": "./src/ssrf-guard.ts"
+    "./ssrf-guard": "./src/ssrf-guard.ts",
+    "./well-known": "./src/well-known.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",

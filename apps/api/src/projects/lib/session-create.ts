@@ -36,6 +36,7 @@ import { selectProvider } from '../../platform/services/provider-balancer';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
 import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-region';
+import { startWorkspaceVolume, WORKSPACE_VOLUME_SESSION_KEY, type WorkspaceVolume } from '../../platform/services/workspace-volume';
 import { WARM_SESSION_LOCATION_KEY, WARM_SESSION_METADATA_KEY } from './warm-sessions';
 
 
@@ -1005,6 +1006,7 @@ function buildSessionCreateMetadata(params: {
   sandboxSlug: string;
   /** Filed into a space: the first prompt is stored for the channel timeline. */
   filed: boolean;
+  workspaceVolume: WorkspaceVolume | null;
 }) {
   const {
     input,
@@ -1026,6 +1028,7 @@ function buildSessionCreateMetadata(params: {
     repositoryAccess,
     sandboxSlug,
     filed,
+    workspaceVolume,
   } = params;
   const { project, userId, body } = input;
   // A name supplied at create is an EXPLICIT, user-chosen name — the same thing
@@ -1125,6 +1128,8 @@ function buildSessionCreateMetadata(params: {
     // Rollback compatibility: older API replicas must also enforce this restriction.
     workspace_mode: repositoryAccess ? 'branch' : 'runtime',
     sandbox_slug: sandboxSlug,
+    // The session's /workspace volume: every box of the session mounts it (platform/services/workspace-volume.ts).
+    ...(workspaceVolume ? { [WORKSPACE_VOLUME_SESSION_KEY]: workspaceVolume } : {}),
     audit_v2: {
       actor_type: auditAttribution.actorType,
       authoritative_source: auditAttribution.authoritativeSource,
@@ -1628,6 +1633,15 @@ export async function createProjectSession(input: {
   const { project, userId, body } = input;
   const projectId = project.projectId;
   const accountId = project.accountId;
+  // The id first: a /workspace-volume session starts opening its volume now,
+  // so the open runs alongside the checks below instead of before the box create.
+  const identity = resolveSessionIdentity({ input, projectId, accountId });
+  if (identity.error) return { error: identity.error };
+  const workspaceVolume = startWorkspaceVolume({
+    sessionId: identity.sessionId,
+    projectMetadata: project.metadata,
+    location: resolveSessionSandboxRegion(project.metadata),
+  });
   const requestedSpace = await resolveRequestedSessionSpace(input);
   if (requestedSpace.error) return { error: requestedSpace.error };
   // A space decides the sharing unless the caller set it explicitly; a private one (a DM, a fork of a private session) always does.
@@ -1764,8 +1778,6 @@ export async function createProjectSession(input: {
     }
   }
 
-  const identity = resolveSessionIdentity({ input, projectId, accountId });
-  if (identity.error) return { error: identity.error };
   const { sessionId, initialPrompt, initialContext, initialTurn, pendingPromptConversion } = identity;
   // No space named: the spawning session's, else `#general`.
   const spaceId = requestedSpace.filed
@@ -1791,6 +1803,8 @@ export async function createProjectSession(input: {
     repositoryAccess,
     sandboxSlug,
     filed: requestedSpace.filed,
+    // Only a Platinum session box mounts it. An unrecorded open is deleted.
+    workspaceVolume: providerName === 'platinum' && sandboxSlug !== META_SANDBOX_SLUG ? workspaceVolume : null,
   });
 
   let sessionRow: ProjectSessionRow | null = null;

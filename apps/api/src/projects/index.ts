@@ -80,6 +80,7 @@ import { registerSessionListStateRoutes } from './routes/session-list-state';
 import { registerSessionParticipantsRoutes } from './routes/session-participants';
 import { registerSessionPromptsRoutes } from './routes/session-prompts';
 import { registerRoomsRoutes } from './routes/rooms';
+import { registerArtifactRoutes } from './routes/artifacts';
 import { registerSessionRemindersRoutes } from './routes/session-reminders';
 import { registerProjectSpacesRoutes } from './routes/project-spaces';
 import { registerProjectMemoryRoutes } from './routes/project-memory';
@@ -93,7 +94,6 @@ import { registerAgentConfigRoutes } from './routes/agent-config';
 import { registerProjectSkillsRoutes } from './routes/project-skills';
 import { registerGatewayRoutes } from './routes/gateway';
 import { registerChannelBindingsRoutes } from './routes/channel-bindings';
-import { registerMonitorsRoutes } from './routes/monitors';
 import { registerAppsRoutes } from '../apps/routes';
 
 /**
@@ -171,6 +171,7 @@ export function registerAllProjectRoutes(): void {
   registerSessionParticipantsRoutes();
   registerSessionPromptsRoutes();
   registerRoomsRoutes();
+  registerArtifactRoutes();
   registerSessionRemindersRoutes();
   registerProjectSpacesRoutes();
   registerProjectMemoryRoutes();
@@ -184,7 +185,6 @@ export function registerAllProjectRoutes(): void {
   registerProjectSkillsRoutes();
   registerGatewayRoutes();
   registerChannelBindingsRoutes();
-  registerMonitorsRoutes();
   registerAppsRoutes();
 }
 

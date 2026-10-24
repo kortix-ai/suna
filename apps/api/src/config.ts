@@ -450,15 +450,21 @@ const envSchema = z.object({
   // Slack messages should run as the bound project owner.
   SLACK_REQUIRE_USER_IDENTITY: optBoolTrue,
 
-  // ── Channels — AgentMail email adapter (optional) ────────────────────────
-  AGENTMAIL_API_URL: optUrl('https://api.agentmail.to/v0'),
-  AGENTMAIL_API_KEY: optStr,
-  AGENTMAIL_WEBHOOK_SECRET: optStr,
+  // ── Channels — email (Resend Inboxes) ─────────────────────────────────────
+  // The managed team key is RESEND_API_KEY (also the transactional sender).
+  RESEND_API_URL: optUrl('https://api.resend.com'),
+  // Domain for inboxes made with the managed key (verified and receiving on
+  // Kortix's Resend team). Unset: no managed inbox can be created.
+  RESEND_MANAGED_DOMAIN: optStr,
+  // Operator switch for managed inboxes on RESEND_MANAGED_DOMAIN. Each one
+  // costs Kortix a paid Resend inbox, so a project cannot turn this on: off,
+  // every connect needs the project's own Resend key.
+  RESEND_MANAGED_EMAIL_ENABLED: optBoolFalse,
 
-  // ── Channels — Telegram Bot API (connectors_v2). Overridable for tests. ──
+  // ── Channels — Telegram Bot API. Overridable for tests. ──
   TELEGRAM_API_URL: optUrl('https://api.telegram.org'),
 
-  // ── MCP apps (connectors_v2) — Kortix-owned OAuth clients ───────────────
+  // ── MCP apps — Kortix-owned OAuth clients ───────────────
   // JSON: {"google":{"client_id":"…","client_secret":"…"},"github":{…}}. One
   // client per vendor whose MCP server has no dynamic client registration
   // (connectors/mcp-apps.ts). An app whose client is absent is not listed.
@@ -563,6 +569,10 @@ const envSchema = z.object({
   // mounts, with the folders synced in by the box's daemon.
   KORTIX_DRIVES_SESSION_MOUNT: optStr,
   KORTIX_DRIVES_SYNC: optStr,
+  // `off` (or 0/false/no): no new session gets a /workspace volume, whatever its
+  // project's `workspace_volume` flag says. A session that already has one keeps
+  // it (platform/services/workspace-volume.ts).
+  KORTIX_WORKSPACE_VOLUMES: optStr,
   // The fresh-session Git fast path: KORTIX_SESSION_FRESH, the base-tip +
   // scaffold-delta hint (inline or remote bundle), and the OpenCode config-dir
   // hint that lets the daemon spawn OpenCode before the checkout. Default ON;
@@ -720,6 +730,10 @@ const envSchema = z.object({
   // ── Sandbox Platform ──────────────────────────────────────────────────────
   // Public API base URL, without a route suffix. Auto-derived from PORT in local mode.
   KORTIX_URL: optStr,
+  // Optional origin that serves artifact pages (another site than the app, e.g.
+  // https://kortixusercontent.com). Pages on it get their own origin, so embedded
+  // players (YouTube, Vimeo) work. Unset: pages are served from KORTIX_URL, opaque.
+  ARTIFACT_CONTENT_URL: optStr,
   // Comma-separated. The first entry is the default for new sessions.
   // Platinum is the reference; `daytona` is a legacy opt-in fallback.
   ALLOWED_SANDBOX_PROVIDERS: optStrDefault('platinum'),
@@ -754,6 +768,10 @@ const envSchema = z.object({
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: optInt(15),
   KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: optInt(720), // 12 hours
   KORTIX_SANDBOX_AUTODELETE_MINUTES: optInt(-1), // never auto-delete
+  // Stateless sandboxes: a session whose /workspace is a Platinum volume loses
+  // its stopped box after this many minutes (projects/reaping/idle-volume-retire.ts);
+  // the next open boots a fresh box on the volume. -1 keeps every stopped box.
+  KORTIX_SANDBOX_IDLE_DELETE_MINUTES: optInt(60),
   // The PROVIDER-NATIVE idle timer (Daytona autoStopInterval / Platinum
   // auto_stop_minutes) — a LAST-RESORT backstop for boxes this API can no
   // longer reach, NOT the primary stop. It used to be derived from
@@ -800,6 +818,7 @@ const envSchema = z.object({
 
   // ── Abuse controls (optional, all have sane defaults) ────────────────────
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN: optInt(20),
+  KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN: optInt(3000),
   KORTIX_DEMO_REQUEST_REQS_PER_MIN: optInt(10),
   KORTIX_FEEDBACK_REQS_PER_MIN: optInt(10),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: optInt(60),
@@ -1341,10 +1360,10 @@ export const config = {
   SLACK_HOME_HERO_URL: env.SLACK_HOME_HERO_URL,
   SLACK_REQUIRE_USER_IDENTITY: env.SLACK_REQUIRE_USER_IDENTITY,
 
-  // ─── Channels (AgentMail email) ──────────────────────────────────────────
-  AGENTMAIL_API_URL: env.AGENTMAIL_API_URL,
-  AGENTMAIL_API_KEY: env.AGENTMAIL_API_KEY,
-  AGENTMAIL_WEBHOOK_SECRET: env.AGENTMAIL_WEBHOOK_SECRET,
+  // ─── Channels (email, Resend Inboxes) ────────────────────────────────────
+  RESEND_API_URL: env.RESEND_API_URL,
+  RESEND_MANAGED_DOMAIN: env.RESEND_MANAGED_DOMAIN,
+  RESEND_MANAGED_EMAIL_ENABLED: env.RESEND_MANAGED_EMAIL_ENABLED,
   TELEGRAM_API_URL: env.TELEGRAM_API_URL,
   KORTIX_OAUTH_CLIENTS: env.KORTIX_OAUTH_CLIENTS,
 
@@ -1389,6 +1408,7 @@ export const config = {
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
   KORTIX_DRIVES_SESSION_MOUNT: env.KORTIX_DRIVES_SESSION_MOUNT,
   KORTIX_DRIVES_SYNC: env.KORTIX_DRIVES_SYNC,
+  KORTIX_WORKSPACE_VOLUMES: env.KORTIX_WORKSPACE_VOLUMES,
   KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,
   KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: env.KORTIX_PROJECT_SNAPSHOT_S3_BUCKET,
   KORTIX_PROJECT_SNAPSHOT_S3_REGION: env.KORTIX_PROJECT_SNAPSHOT_S3_REGION,
@@ -1436,6 +1456,7 @@ export const config = {
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,
+  KORTIX_SANDBOX_IDLE_DELETE_MINUTES: env.KORTIX_SANDBOX_IDLE_DELETE_MINUTES,
   KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: env.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
   KORTIX_SANDBOX_AUTODELETE_MINUTES: env.KORTIX_SANDBOX_AUTODELETE_MINUTES,
   KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES,
@@ -1448,6 +1469,7 @@ export const config = {
   PLATINUM_WEBHOOK_SECRET: env.PLATINUM_WEBHOOK_SECRET,
   // ─── Sandbox Provisioning (Platform) ──────────────────────────────────────
   KORTIX_URL: env.KORTIX_URL,
+  ARTIFACT_CONTENT_URL: env.ARTIFACT_CONTENT_URL.replace(/\/+$/, ''),
   ALLOWED_SANDBOX_PROVIDERS: allowedProviders,
 
   /**
@@ -1521,6 +1543,7 @@ export const config = {
 
   // ─── Abuse Controls ───────────────────────────────────────────────────────
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN: env.KORTIX_INVITE_ACCEPT_REQS_PER_MIN,
+  KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN: env.KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN,
   KORTIX_DEMO_REQUEST_REQS_PER_MIN: env.KORTIX_DEMO_REQUEST_REQS_PER_MIN,
   KORTIX_FEEDBACK_REQS_PER_MIN: env.KORTIX_FEEDBACK_REQS_PER_MIN,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE,

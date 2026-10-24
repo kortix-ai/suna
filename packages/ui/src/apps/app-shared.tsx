@@ -8,7 +8,7 @@ import type { UiTranslator } from '../i18n';
 
 import { appAdminsOnly } from '@kortix/shared/app-config';
 import { cn } from '../lib/utils';
-import { stripTrailingSlashes, type App, type AppAccessMode, type AppCapability, type AppDeployment, type AppViewerTokenScope } from '@kortix/sdk';
+import { stripTrailingSlashes, type App, type AppAccessMode, type AppCapability, type AppDeployment, type AppViewerTokenScope, type ProjectTrigger } from '@kortix/sdk';
 
 
 type DeploymentTone = 'success' | 'destructive' | 'warning' | 'muted';
@@ -65,7 +65,7 @@ export function deployNotice(
 }
 
 export function appCommand(app: App): string {
-  return `kortix apps deploy . --app ${app.app_id}`;
+  return `kortix apps deploy . --app ${app.slug}`;
 }
 
 
@@ -121,6 +121,38 @@ export function appStatus(
 
 // The grid rule is shared with the API's channel Apps count (`@kortix/shared/app-config`).
 export { appAdminsOnly, gridApps } from '@kortix/shared/app-config';
+
+/** The Apps of the project that are neither a card nor a tab: the ones the page counts as hidden. */
+export function hiddenApps(apps: App[], canAdmin = true): App[] {
+  const slugs = new Set(apps.map((app) => app.slug));
+  return apps.filter((app) =>
+    app.display?.listed !== true
+    && !(app.display?.parent && slugs.has(app.display.parent))
+    && (canAdmin || !appAdminsOnly(app)));
+}
+
+/**
+ * How an App is wired into the project's triggers: the ones that call it
+ * (`run: { app }`) and the ones its own events start (`on: { event, app }`).
+ */
+export function appTriggers(app: App, triggers: ProjectTrigger[]): { calledBy: ProjectTrigger[]; startsOn: ProjectTrigger[] } {
+  return {
+    calledBy: triggers.filter((row) => row.target?.app === app.slug),
+    startsOn: triggers.filter((row) => row.type === 'app' && row.app === app.slug),
+  };
+}
+
+/** The one-line state of the Background list: how many Apps are up, asleep, not deployed, external. */
+export function backgroundSummary(apps: App[]): { running: number; asleep: number; undeployed: number; external: number } {
+  const out = { running: 0, asleep: 0, undeployed: 0, external: 0 };
+  for (const row of apps) {
+    if (row.external_url) out.external += 1;
+    else if (!row.active_deployment_id) out.undeployed += 1;
+    else if (row.desired_state === 'running' || row.hosting_type === 'static') out.running += 1;
+    else out.asleep += 1;
+  }
+  return out;
+}
 
 /** The Apps `app`'s detail shows as tabs (their `display.parent` is its slug). */
 export function childApps(apps: App[], app: App, canAdmin = true): App[] {

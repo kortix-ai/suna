@@ -63,6 +63,7 @@ import { sessionChannelEnvFromMetadata, sessionSpaceEnv } from './session-channe
 import { buildSessionRuntimeContextEnv } from './session-runtime-context';
 import { buildFeatureFlagSandboxEnv } from './feature-flag-env';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { recordedWorkspaceVolume } from '../../platform/services/workspace-volume';
 import { buildSessionRuntimeEnv } from './session-runtime-env';
 import { buildPlatformMetaOpenCodeConfig } from './platform-meta-agent';
 
@@ -245,7 +246,10 @@ async function resolveSessionLogRestore(input: SessionSandboxEnvInput): Promise<
     resolveFeatureFlag(projectRow?.metadata, 'session_log_restore') ||
     typeof sessionMetadata?.lostRecoveredAt === 'string' ||
     typeof sessionMetadata?.restoredAt === 'string' ||
-    typeof sessionMetadata?.forkedFromSessionId === 'string'
+    typeof sessionMetadata?.forkedFromSessionId === 'string' ||
+    // A /workspace-volume session's box is removed when idle
+    // (reaping/idle-volume-retire.ts): its next box gets the conversation from the log.
+    recordedWorkspaceVolume(input.sessionId, sessionMetadata) !== null
   );
 }
 

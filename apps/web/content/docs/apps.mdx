@@ -229,16 +229,26 @@ Rules:
 ### Where an App shows
 
 `display` decides where an App appears in the **Apps** tab. It never changes how
-the App runs or who may open it.
+the App runs or who may open it. The tab shows a card only for an App
+registered with `listed: true`. Every other App (a poller, a bot, a backend)
+sits in the **Background** list under the grid: one row per App with its
+status, how it runs, the trigger that calls it and its last activity. Opening
+a background App shows what it does: how it runs, the triggers that call it
+and the agents its [events](/docs/connect/triggers#app-events) start. In the
+web app, **Settings → Show on Apps page** moves an App between the grid and
+the list. Like every App setting kortix.yaml can declare, the switch commits
+`display.listed` to `apps.<slug>` in kortix.yaml; a push that edits it applies
+it without a deploy.
 
 | Key | Default | Effect |
 |---|---|---|
-| `listed` | `true` | `false` takes the App out of the grid. |
+| `listed` | `false` | `true` gives the App a card in the grid. `kortix apps deploy --listed` and `kortix apps set <app> --listed` set it; `--unlisted` clears it. An external App (`--url`) is listed from the start. |
 | `preview` | `live` | `live` frames the App on its card. `none` shows an icon. Use `none` for an App whose root page is not for people, such as an API or a backend. |
 | `parent` | none | `parent: <slug>` makes the App a tab in that App's detail, with no card of its own. The tab label is the App's name without the `<parent>-` prefix: `backend-dashboard` becomes **Dashboard**. A tab whose parent does not exist stays a card. |
 
-An App with `preview: none` opens on its first tab. Every deploy writes the
-block's `display`; an absent `display` means the defaults. `kortix apps show`
+An App with `preview: none` opens on its first tab. A deploy writes the
+block's `display` when the block declares one; an absent `display` keeps what
+the App has. `kortix apps show`
 prints it on the `shown` row. `PATCH /v1/projects/<project_id>/apps/<app_id>`
 with `display` replaces it whole, and `{}` restores the defaults. An unknown
 key, a `preview` other than `live` or `none`, or a malformed `parent` answers

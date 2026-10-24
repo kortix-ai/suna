@@ -58,8 +58,8 @@ const RESTORE_HELP = help`Usage: kortix sessions restore <session-id> [options]
 
 Restore a deleted session. A deleted session stays restorable for 30 days:
 its messages, stored files and branch come back, and its next start boots a
-fresh sandbox from the branch. After 30 days its messages and files are
-deleted, and only the branch remains. Public links stay revoked.
+fresh sandbox from the branch. After 30 days its messages, files and branch
+are deleted. Public links stay revoked.
 
 Pass the full session id: a deleted session is not in \`sessions ls\`, so a
 short id cannot be expanded, and no other project is searched for it.

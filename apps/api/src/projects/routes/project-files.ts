@@ -86,7 +86,7 @@ export function registerProjectFilesRoutes(): void {
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: z.object({
+        body: { required: true, content: { 'application/json': { schema: z.object({
           path: z.string().min(1), ref: z.string().regex(/^[A-Za-z0-9._\-/]+$/).refine((ref) => !ref.startsWith('-') && !ref.includes('..')),
           content: z.string().max(2_000_000),
           expected_revision: z.string().regex(/^[0-9a-f]{40}$/),
@@ -393,10 +393,10 @@ export function registerProjectFilesRoutes(): void {
     const projectId = c.req.param('projectId');
     const path = normalizeString(c.req.query('path'));
     if (!path) return c.json({ error: 'path query param is required' }, 400);
-    // Absolute and traversal paths can never resolve inside the repo tree —
+    // Absolute, traversal and NUL-containing paths cannot resolve inside the repo tree —
     // e.g. the platform meta agent's /workspace/AGENTS.md lives in the sandbox
     // image, not the project repo. Answer like any other missing file.
-    if (path.startsWith('/') || path.includes('..')) {
+    if (path.startsWith('/') || path.includes('..') || path.includes('\0')) {
       return c.json({ error: 'File not found' }, 404);
     }
     const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -464,9 +464,9 @@ export function registerProjectFilesRoutes(): void {
     const projectId = c.req.param('projectId');
     const path = normalizeString(c.req.query('path'));
     if (!path) return c.json({ error: 'path query param is required' }, 400);
-    // Absolute and traversal paths can never resolve inside the repo tree —
+    // Absolute, traversal and NUL-containing paths cannot resolve inside the repo tree —
     // same answer as files/content.
-    if (path.startsWith('/') || path.includes('..')) {
+    if (path.startsWith('/') || path.includes('..') || path.includes('\0')) {
       return c.json({ error: 'File not found' }, 404);
     }
     const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -527,10 +527,10 @@ export function registerProjectFilesRoutes(): void {
     const projectId = c.req.param('projectId');
     const path = normalizeString(c.req.query('path'));
     if (!path) return c.json({ error: 'path query param is required' }, 400);
-    // Absolute and traversal paths can never resolve inside the repo tree —
+    // Absolute, traversal and NUL-containing paths cannot resolve inside the repo tree —
     // e.g. the platform meta agent's /workspace/AGENTS.md lives in the sandbox
     // image, not the project repo. Answer like any other missing file.
-    if (path.startsWith('/') || path.includes('..')) {
+    if (path.startsWith('/') || path.includes('..') || path.includes('\0')) {
       return c.json({ error: 'File not found' }, 404);
     }
     const loaded = await loadProjectForUser(c, projectId, 'read');

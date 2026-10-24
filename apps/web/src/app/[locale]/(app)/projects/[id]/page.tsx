@@ -105,5 +105,5 @@ export default function ProjectIndexPage() {
   // flash and consume the `?q=` prefill before the redirect. Accepted cost:
   // one blank frame for a flag-off project on a cold detail load.
   if (landing.kind !== 'home') return null;
-  return <ProjectHome projectId={projectId} beforeSend={beforeSend} />;
+  return <ProjectHome projectId={projectId} beforeSend={beforeSend} onboarding />;
 }

@@ -72,6 +72,7 @@ import { sessionCreateSurface } from '../lib/session-surface';
 
 import { readSessionsWorking } from '../lib/session-working-read';
 import { readSessionReplyCounts } from '../lib/session-reply-counts';
+import { turnPublishVerdict } from '../lib/http-session-access';
 
 const NO_USER_STATE = { pinnedAt: null, archivedAt: null };
 
@@ -126,6 +127,7 @@ async function sessionReadResponse(c: Context<AppEnv>, projectId: string, sessio
     viewerId: loaded.userId,
     canManageProject: visible.canManageProject,
     ownerIsMachine: visible.ownerIsMachine,
+    canPublishResponse: (await turnPublishVerdict(c, loaded, visible)) === 'allow',
     ownerEmail: owner?.email ?? null,
     ownerName: owner?.name ?? null,
     ownerAvatarUrl: owner?.avatarUrl ?? null,
@@ -980,16 +982,15 @@ export function registerProjectSessionsRoutes(): void {
   );
 
   // DELETE /v1/projects/:projectId/sessions/:sessionId
-  // Soft delete: the session goes to the trash until `restore_until`. The
-  // remote branch is kept for good, so the user can still merge or recover
-  // work after the window.
+  // Soft delete: the session goes to the trash until `restore_until`. Then
+  // the retention purge deletes its content and the branch sweep its branch.
 
   projectsApp.openapi(
     createRoute({
       method: 'delete',
       path: '/{projectId}/sessions/{sessionId}',
       tags: ['sessions'],
-      summary: 'Delete a session (restorable until restore_until; its branch is kept)',
+      summary: 'Delete a session (restorable until restore_until; then its content and branch are deleted)',
       ...auth,
         request: {
           params: z.object({ projectId: z.string(), sessionId: z.string() }),

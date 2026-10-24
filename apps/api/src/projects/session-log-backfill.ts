@@ -38,6 +38,16 @@
  *   the build changes, because each dry pass reads and converts every old
  *   mirror. A skipped dry tick says so once per process at info. Run it again on
  *   the same build: `DELETE FROM kortix.session_log_backfill_state`.
+ * - Merge pass (Release B prerequisite). Once `drainedWithDeleted`, each `write` tick walks every
+ *   session with a mirror and a log (`(created_at, session_id)` cursor) and asks
+ *   `kortix.mirror_messages_missing_from_log` (migration
+ *   `20261023124001597_mirror_messages_missing_from_log.sql`, the one definition the Release B guard
+ *   reads too) which mirror messages the log lacks by id: `missing` (some content not in the log),
+ *   `present` (all of it under another id) or `empty`. A session with a `missing` one goes through
+ *   `mergeMirrorIntoLog` (`session-log-capture.ts`); a session over the cap through the same thread,
+ *   memory guard and poison pill as a conversion. A merge pass that counts no `missing` sets
+ *   `mergedMissing`; only then does `mirrorDrained` answer true. `mergePasses` and `mergeTotals`
+ *   (the passes' counts summed) stay in the state row as the record of what the merge did.
  * - Size cap (P3.4). A mirror over the capture's cap (`mirrorStoredCap`, `session-log-capture.ts`)
  *   makes the capture answer `too_large` after one cheap size query. The backfill counts it
  *   (`too_large`) and converts it in a Bun `Worker` (`session-log-backfill-thread.ts`): the same
@@ -85,7 +95,7 @@ import { config } from '../config';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { largeTextCount } from './session-log-blobs';
-import { breathe, writeSessionLogFromMirror } from './session-log-capture';
+import { breathe, mergeMirrorIntoLog, writeSessionLogFromMirror } from './session-log-capture';
 import { threadRoom } from './lib/thread-memory';
 
 export const BACKFILL_BATCH_SIZE = 50;
@@ -135,6 +145,19 @@ export const zero = () => ({
   max_session_record_bytes: 0,
   /** Wall time since the pass started. */
   pass_ms: 0,
+  // The merge pass (`mergeOne`). Mirror messages whose id the log lacks, by content
+  // (`kortix.mirror_messages_missing_from_log`): `missing` (the log lacks some content),
+  // `present` (all of it under another id), `empty` (nothing to show).
+  missing: 0,
+  present: 0,
+  empty: 0,
+  /** Messages the merge wrote, and the thread rows it created. */
+  merged: 0,
+  threads_created: 0,
+  /** Of `merged`: written after a newer stored message of their thread (no free seq in their place). */
+  misplaced: 0,
+  /** Of `missing`: not written, a compaction summary whose marker message the log holds. */
+  unplaced: 0,
 });
 export type BackfillCounts = ReturnType<typeof zero>;
 const MAX_KEYS = new Set<keyof BackfillCounts>(['max_session_ms', 'max_session_messages', 'max_session_record_bytes', 'pass_ms']);
@@ -155,6 +178,11 @@ export type BackfillState = {
   threadCrashes: Record<string, number>;
   /** A pass selected no session: no session, restorable deleted ones included, has mirror rows and no log. Kept across passes and modes. */
   drainedWithDeleted: boolean;
+  /** A merge pass (after `drainedWithDeleted`) found no mirror message whose content the log lacks. Kept across passes and modes. */
+  mergedMissing: boolean;
+  /** Merge passes completed, and their counts summed. Kept across passes and modes. */
+  mergePasses: number;
+  mergeTotals: BackfillCounts;
 };
 
 export const newBackfillState = (mode: BackfillMode | null = null): BackfillState => ({
@@ -167,11 +195,19 @@ export const newBackfillState = (mode: BackfillMode | null = null): BackfillStat
   threadStarted: null,
   threadCrashes: {},
   drainedWithDeleted: false,
+  mergedMissing: false,
+  mergePasses: 0,
+  mergeTotals: zero(),
 });
 
-/** A new pass in `state`: everything but `threadCrashes` and `drainedWithDeleted` starts over. */
+/** A new pass in `state`: everything but `threadCrashes`, `drainedWithDeleted` and the merge keys starts over. */
 const restart = (state: BackfillState, mode: BackfillMode, extra: Partial<BackfillState> = {}) =>
-  Object.assign(state, newBackfillState(mode), { threadCrashes: state.threadCrashes, drainedWithDeleted: state.drainedWithDeleted }, extra);
+  Object.assign(
+    state,
+    newBackfillState(mode),
+    { threadCrashes: state.threadCrashes, drainedWithDeleted: state.drainedWithDeleted, mergedMissing: state.mergedMissing, mergePasses: state.mergePasses, mergeTotals: state.mergeTotals },
+    extra,
+  );
 
 /** Thread attempts per session: a thread that kills its process twice never starts again. */
 export const THREAD_ATTEMPTS = 2;
@@ -194,7 +230,10 @@ async function loadState(): Promise<{ state: BackfillState; rev: number }> {
   if (!row) return { state: newBackfillState(), rev: 0 };
   const stored = row.state as BackfillState;
   // A count or a field added since the row was saved starts at its default.
-  return { state: { ...newBackfillState(), ...stored, totals: { ...zero(), ...stored.totals }, threadCrashes: { ...stored.threadCrashes } }, rev: row.rev };
+  return {
+    state: { ...newBackfillState(), ...stored, totals: { ...zero(), ...stored.totals }, mergeTotals: { ...zero(), ...stored.mergeTotals }, threadCrashes: { ...stored.threadCrashes } },
+    rev: row.rev,
+  };
 }
 
 /** Save over `rev` only. False: another tick saved since this one loaded (an old leader's late tick). */
@@ -238,6 +277,38 @@ async function selectBatch(after: BackfillState['after']) {
      LIMIT ${BACKFILL_BATCH_SIZE}`);
 }
 
+/** The merge pass's next sessions: every session with a mirror and a log, after the cursor, oldest first. */
+async function selectMergeBatch(after: BackfillState['after']) {
+  return db.execute<{ session_id: string; created_at: string; deleted: boolean }>(sql`
+    SELECT s.session_id, s.created_at::text AS created_at, false AS deleted
+      FROM kortix.session_transcript_mirrors m
+      JOIN kortix.session_logs l ON l.session_id = m.session_id
+      JOIN kortix.project_sessions s ON s.session_id = m.session_id
+     ${after ? sql`WHERE (s.created_at, s.session_id) > (${after.createdAt}::timestamptz, ${after.sessionId})` : sql``}
+     ORDER BY s.created_at, s.session_id
+     LIMIT ${BACKFILL_BATCH_SIZE}`);
+}
+
+/** Per session of `ids`: its mirror messages the log lacks by id, by `content` (`kortix.mirror_messages_missing_from_log`). */
+async function contentBySession(ids: string[]): Promise<Map<string, Record<'missing' | 'present' | 'empty', number>>> {
+  // A batch reads every block of its sessions' logs: 31 s on prod's 50 largest mirrors, over the
+  // pool's 25 s. Timed out, the tick fails before it saves the cursor and repeats the same batch.
+  const rows = await db.transaction(async (tx) => {
+    await tx.execute(sql`set local statement_timeout = '2min'`);
+    return tx.execute<{ session_id: string; content: 'missing' | 'present' | 'empty'; n: number }>(sql`
+      SELECT session_id, content, count(*)::int AS n
+        FROM kortix.mirror_messages_missing_from_log(${`{${ids.map((id) => JSON.stringify(id)).join(',')}}`}::text[])
+       GROUP BY 1, 2`);
+  });
+  const out = new Map<string, Record<'missing' | 'present' | 'empty', number>>();
+  for (const r of rows) {
+    const one = out.get(r.session_id) ?? { missing: 0, present: 0, empty: 0 };
+    one[r.content] = r.n;
+    out.set(r.session_id, one);
+  }
+  return out;
+}
+
 /** Canonical JSON: keys sorted at every level, as the P1 round-trip test compares. */
 const canon = (v: unknown): string =>
   JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x));
@@ -271,14 +342,14 @@ function addCounts(into: BackfillCounts, from: BackfillCounts) {
  * ponytail: the thread holds the whole mirror (1-vCPU Linux, 131 MB of JSON: ~1.4 GB peak with `smol`);
  * page the read and write if a session outgrows the API task's memory.
  */
-function convertInThread(sessionId: string, mode: BackfillMode): Promise<BackfillCounts> {
+function convertInThread(sessionId: string, mode: BackfillMode, merge: boolean): Promise<BackfillCounts> {
   const worker = new Worker(new URL('./session-log-backfill-thread.ts', import.meta.url).href, { smol: true });
   return new Promise<BackfillCounts>((resolve, reject) => {
     worker.onmessage = (event: MessageEvent<BackfillCounts>) => resolve(event.data);
     worker.onerror = (event) => reject(new Error(event.message));
     // A thread that exits before it answers.
     worker.addEventListener('close', () => reject(new Error('the conversion thread exited')));
-    worker.postMessage({ sessionId, mode });
+    worker.postMessage({ sessionId, mode, merge });
   }).finally(() => worker.terminate());
 }
 
@@ -338,6 +409,36 @@ export async function convertOne(
 }
 
 /**
+ * The merge of one session (`mergeMirrorIntoLog`) into `counts`; the caller counts the session and
+ * its messages by content. `inThread` as in `convertOne`.
+ */
+export async function mergeOne(
+  sessionId: string,
+  merge: typeof mergeMirrorIntoLog,
+  counts: BackfillCounts,
+  inThread?: (sessionId: string) => Promise<BackfillCounts>,
+) {
+  const started = performance.now();
+  const result = await merge(sessionId).catch((err: unknown) => {
+    logger.debug('[session-log] backfill merge threw', { sessionId, error: err instanceof Error ? err.message : String(err) });
+    return { outcome: 'failed' as const };
+  });
+  counts.max_session_ms = Math.max(counts.max_session_ms, Math.round(performance.now() - started));
+  if (result.outcome === 'too_large') {
+    counts.too_large++;
+    if (inThread) addCounts(counts, { ...(await inThread(sessionId)), sessions: 0 });
+  }
+  if (result.outcome === 'skipped') counts.skipped++;
+  if (result.outcome === 'invalid') counts.validation_failed++;
+  if (result.outcome === 'failed') counts.failed++;
+  if (result.outcome !== 'merged') return;
+  counts.merged += result.merged;
+  counts.threads_created += result.threads;
+  counts.misplaced += result.misplaced;
+  counts.unplaced += result.unplaced;
+}
+
+/**
  * One tick: up to `BACKFILL_BATCH_SIZE` sessions after the stored cursor.
  * `more` is true while the queue may hold more (a full batch, or the budget cut it).
  * When a write pass ends, the state starts over; when a dry pass ends, every later
@@ -346,9 +447,9 @@ export async function convertOne(
  */
 export async function backfillSessionLogs(
   mode: BackfillMode,
-  options: { budgetMs?: number; convert?: typeof writeSessionLogFromMirror; state?: BackfillState } = {},
+  options: { budgetMs?: number; convert?: typeof writeSessionLogFromMirror; merge?: typeof mergeMirrorIntoLog; state?: BackfillState } = {},
 ): Promise<{ more: boolean; counts: BackfillCounts }> {
-  const { budgetMs = BACKFILL_BUDGET_MS, convert = writeSessionLogFromMirror } = options;
+  const { budgetMs = BACKFILL_BUDGET_MS, convert = writeSessionLogFromMirror, merge = mergeMirrorIntoLog } = options;
   // The operator owns an ephemeral pass; background ticks keep their durable cursor.
   const loaded = options.state ? { state: options.state, rev: 0 } : await loadState();
   const { state } = loaded;
@@ -363,8 +464,9 @@ export async function backfillSessionLogs(
     logger.warn('[session-log] backfill conversion thread ended with its process; its session counts failed', { attempts: state.threadCrashes[crashed], max_attempts: THREAD_ATTEMPTS });
     logger.debug('[session-log] backfill conversion thread ended with its process', { sessionId: crashed });
   }
-  // Nothing left to convert, in any mode: no mirror table is read.
-  if (state.drainedWithDeleted) return { more: false, counts };
+  // Nothing left to convert or merge, in any mode: no mirror table is read. The merge runs in `write` only.
+  if (state.drainedWithDeleted && (state.mergedMissing || mode !== 'write')) return { more: false, counts };
+  const merging = state.drainedWithDeleted;
   // A new mode, or a dry pass that an older build ended, starts a new pass.
   if (state.mode !== mode || (state.dryDone && state.dryCommit !== config.KORTIX_COMMIT)) restart(state, mode);
   if (state.dryDone) {
@@ -391,6 +493,7 @@ export async function backfillSessionLogs(
     return saved;
   };
   const inThread = async (sessionId: string): Promise<BackfillCounts> => {
+    // ponytail: the merge's thread converts the whole mirror, as the backfill's: one memory guard for both.
     const one = { ...zero(), sessions: 1 };
     if ((state.threadCrashes[sessionId] ?? 0) >= THREAD_ATTEMPTS) {
       logger.debug('[session-log] backfill session whose thread ended its process too often; not started', { sessionId });
@@ -406,7 +509,7 @@ export async function backfillSessionLogs(
       state.threadStarted = null;
       return { ...one, failed: 1 };
     }
-    const result = await convertInThread(sessionId, mode).catch((err: unknown) => {
+    const result = await convertInThread(sessionId, mode, merging).catch((err: unknown) => {
       logger.debug('[session-log] backfill conversion thread failed', { sessionId, error: err instanceof Error ? err.message : String(err) });
       return { ...one, failed: 1 };
     });
@@ -414,24 +517,45 @@ export async function backfillSessionLogs(
     await save();
     return result;
   };
-  const batch = await selectBatch(state.after);
+  const batch = merging ? await selectMergeBatch(state.after) : await selectBatch(state.after);
+  const content = merging && batch.length > 0 ? await contentBySession(batch.map((r) => r.session_id)) : null;
   for (const row of batch) {
     state.after = { createdAt: row.created_at, sessionId: row.session_id };
     if (row.deleted) counts.deleted++;
-    await convertOne(row.session_id, mode, convert, counts, inThread);
+    if (content) {
+      counts.sessions++;
+      const found = content.get(row.session_id) ?? { missing: 0, present: 0, empty: 0 };
+      counts.missing += found.missing;
+      counts.present += found.present;
+      counts.empty += found.empty;
+      if (found.missing > 0) await mergeOne(row.session_id, merge, counts, inThread);
+    } else await convertOne(row.session_id, mode, convert, counts, inThread);
     if (Date.now() - started >= budgetMs) break;
   }
   const more = counts.sessions < batch.length || batch.length === BACKFILL_BATCH_SIZE;
   counts.pass_ms = Date.now() - state.passStartedAt;
   state.totals = { ...base };
   addCounts(state.totals, counts);
-  if (counts.sessions > 0) logger.info('[session-log] backfill tick', { mode, ...counts, more, ms: Date.now() - started });
+  if (counts.sessions > 0) logger.info(merging ? '[session-log] backfill merge tick' : '[session-log] backfill tick', { mode, ...counts, more, ms: Date.now() - started });
   const summary = !more && state.totals.sessions > 0 ? { mode, ...state.totals } : null;
+  if (merging) {
+    // A whole merge pass that found no mirror message the log lacks: no code reads the mirror again.
+    const merged = !more && state.totals.missing === 0;
+    if (!more) {
+      const mergeTotals = { ...state.mergeTotals };
+      addCounts(mergeTotals, state.totals);
+      restart(state, mode, { mergedMissing: merged, mergePasses: state.mergePasses + 1, mergeTotals });
+    }
+    if (!options.state && !(await saveState(state, rev))) logger.warn('[session-log] backfill state changed under this tick; its cursor is not saved', { mode });
+    else if (summary) logger.info('[session-log] backfill merge pass complete', { ...summary, mergedMissing: merged });
+    if (merged && !options.state) logger.info('[session-log] backfill: the session logs hold every v1 mirror message; no code reads the mirror again');
+    return { more, counts };
+  }
   // A whole pass that selected no session: the mirror holds nothing to convert.
   const drained = !more && state.totals.sessions === 0;
   if (!more) restart(state, mode, mode === 'dry' ? { dryDone: true, dryCommit: config.KORTIX_COMMIT, drainedWithDeleted: drained } : { drainedWithDeleted: drained });
   if (!options.state && !(await saveState(state, rev))) logger.warn('[session-log] backfill state changed under this tick; its cursor is not saved', { mode });
   else if (summary) logger.info('[session-log] backfill pass complete', summary);
-  else if (drained && !options.state) logger.info('[session-log] backfill: the v1 mirror holds no session without a log; the backfill stops');
+  else if (drained && !options.state) logger.info('[session-log] backfill: the v1 mirror holds no session without a log; the merge pass is next');
   return { more, counts };
 }

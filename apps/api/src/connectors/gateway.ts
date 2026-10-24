@@ -17,6 +17,7 @@ import type { ConnectorAttachmentStore } from './attachments';
 import type { ChannelReadGate, ChannelReadInput } from './channel-read-scope';
 import type { ChannelWriteGate } from './channel-write-scope';
 import { executeComposio } from './composio';
+import { createdDraftId, toResendEmailArgs } from './email-resend-args';
 import {
   EMAIL_CHANNEL_CONNECTOR_SLUG,
   SLACK_CHANNEL_CONNECTOR_SLUG,
@@ -235,17 +236,21 @@ export interface GatewayDeps {
    * Absent = unconfined: production always wires it (db-deps.ts).
    */
   gateChannelWrite?(input: ChannelReadInput): Promise<ChannelWriteGate>;
-  /** Email connections represent one installed AgentMail inbox. */
+  /** Email connections represent one installed email (Resend) inbox. */
   loadEmailConnectorContext?(
     projectId: string,
     connectorSlug: string,
   ): Promise<EmailConnectorContext | null>;
-  /** Resolve the AgentMail credential for the install that owns this inbox. */
+  /** Resolve the email (Resend) credential for the install that owns this inbox. */
   resolveEmailCredentialForInbox?(projectId: string, inboxId: string): Promise<string | null>;
   /** Private attachment staging/claim lifecycle for native email actions. */
   attachmentStore?: ConnectorAttachmentStore;
   /** Connector-scoped policies (relative patterns over the connector's tool paths). */
   loadPolicies(connectorId: string): Promise<Policy[]>;
+  /** One named policy set's rules (`connectors[].policy_sets`). `null` = the
+   *  connector defines no such set: the call is blocked. A deps without this
+   *  loader blocks every call that names a set. */
+  loadPolicySet?(connectorId: string, name: string): Promise<Policy[] | null>;
   /** Project-scoped policies (fully-qualified patterns over <slug>.<path>). */
   loadProjectPolicies?(projectId: string): Promise<Policy[]>;
   /** Project's policy.default_mode setting (risk | allow_all). Defaults to allow_all. */
@@ -408,6 +413,18 @@ export interface CallInput {
    *  Shown to the approver next to the arguments, labelled unverified. Never
    *  sent to the provider and outside the request digest. */
   approvalContext?: string | null;
+  /** The calling agent's policy set on this connector, from the caller's
+   *  agent grant (`AgentGrant.policySets`), resolved by the HTTP route. Never
+   *  read from the request body. Absent/null = base rules. */
+  policySet?: CallPolicySet | null;
+}
+
+export interface CallPolicySet {
+  name: string;
+  /** The agent whose grant named the set (audit + approval card). */
+  agent: string;
+  /** The manifest commit the grant was derived from, when known. */
+  manifestCommit: string | null;
 }
 
 /** Which account a successful call ran as — echoed on the wire (router.ts). */
@@ -435,7 +452,7 @@ export type CallResult =
       upstreamError?: string;
     }
   /** `message`: the sentence the agent reads, for a denial whose fix is not in `reason` alone. */
-  | { status: 'denied'; reason: string; message?: string }
+  | { status: 'denied'; reason: string; message?: string; policySet?: string; agent?: string }
   | {
       status: 'pending_approval';
       reason: string;
@@ -701,16 +718,20 @@ async function resolveEmailExecutionContext(
   if (!context?.inboxId) return { args, secretOverride: null };
 
   args.inbox_id = context.inboxId;
-  if ('threadId' in context && input.actionPath === 'get_thread' && context.threadId) {
+  // Inside an email session the thread and the email it answers are the
+  // session's own: Resend addresses a reply as thread + email.
+  const answersSessionEmail =
+    input.actionPath === 'reply_message' ||
+    input.actionPath === 'reply_all_message' ||
+    input.actionPath === 'get_message';
+  if (
+    'threadId' in context &&
+    context.threadId &&
+    (answersSessionEmail || input.actionPath === 'get_thread' || input.actionPath === 'list_messages')
+  ) {
     args.thread_id = context.threadId;
   }
-  if (
-    (input.actionPath === 'reply_message' ||
-      input.actionPath === 'reply_all_message' ||
-      input.actionPath === 'get_message') &&
-    'messageId' in context &&
-    context.messageId
-  ) {
+  if (answersSessionEmail && 'messageId' in context && context.messageId) {
     args.message_id = context.messageId;
   }
 
@@ -927,11 +948,18 @@ async function enforceCallPolicies(
   executionArgs: Record<string, unknown>,
   requestDigest: string,
 ): Promise<CallResult | null> {
-  const [connectorPolicies, projectPolicies, defaultMode] = await Promise.all([
+  const policySet = input.policySet ?? null;
+  const [connectorPolicies, projectPolicies, defaultMode, setPolicies] = await Promise.all([
     deps.loadPolicies(connector.connectorId),
     deps.loadProjectPolicies?.(input.projectId) ?? Promise.resolve([] as Policy[]),
     deps.loadDefaultMode?.(input.projectId) ?? Promise.resolve('allow_all' as DefaultMode),
+    // Fail closed: no loader, a failed load and an unknown set all read as
+    // missing, and a missing set blocks.
+    policySet
+      ? (deps.loadPolicySet?.(connector.connectorId, policySet.name).catch(() => null) ?? Promise.resolve(null))
+      : Promise.resolve(undefined),
   ]);
+  const setMissing = policySet !== null && setPolicies === null;
   // Built once per gated call: the redacted preview goes in the audit row and
   // the one-liner rides alongside the link, so an out-of-band relay ("approve
   // this: <url>") is still specific about what is being approved.
@@ -970,6 +998,8 @@ async function enforceCallPolicies(
     relPath: input.actionPath,
     projectPolicies,
     connectorPolicies,
+    setPolicies: setPolicies ?? undefined,
+    setMissing,
     risk: action.risk,
     defaultMode,
     sensitive: connector.sensitive,
@@ -980,6 +1010,13 @@ async function enforceCallPolicies(
     args: executionArgs,
     argsAvailable: true,
   });
+  // Audit keys naming the set that decided: the agent, the set, the manifest
+  // commit the grant came from. Omitted when a project rule, a base rule,
+  // `sensitive` or `default_mode` decided, so no surface credits the set.
+  const setDetails =
+    policySet && decision.source === 'policy_set'
+      ? { policy_set: policySet.name, agent: policySet.agent, manifest_commit: policySet.manifestCommit }
+      : {};
   if (decision.action === 'block') {
     await audit(
       deps,
@@ -988,8 +1025,9 @@ async function enforceCallPolicies(
       'denied',
       action.risk,
       {
-        reason: 'policy_block',
+        reason: setMissing ? 'policy_set_missing' : 'policy_block',
         policy_source: decision.source,
+        ...setDetails,
         args_preview_complete: argsPreviewDetails.complete,
         // A block is only auditable if you can see WHAT was blocked — otherwise
         // "denied gmail.send_email" can't be told apart from a false positive.
@@ -997,7 +1035,16 @@ async function enforceCallPolicies(
       },
       requestDigest,
     );
-    return { status: 'denied', reason: 'policy_block' };
+    if (!policySet || decision.source !== 'policy_set') return { status: 'denied', reason: 'policy_block' };
+    return {
+      status: 'denied',
+      reason: setMissing ? 'policy_set_missing' : 'policy_block',
+      message: setMissing
+        ? `Agent "${policySet.agent}" is assigned policy set "${policySet.name}", which connector "${input.connectorSlug}" does not define. Every call on this connector is blocked for this agent until the set exists or the assignment changes in kortix.yaml.`
+        : `Blocked by policy set "${policySet.name}" of agent "${policySet.agent}" on connector "${input.connectorSlug}".`,
+      policySet: policySet.name,
+      agent: policySet.agent,
+    };
   }
   if (decision.action === 'require_approval') {
     // SESSION-WIDE GRANTS ARE NO LONGER HONOURED.
@@ -1054,6 +1101,7 @@ async function enforceCallPolicies(
       await audit(deps, input, connector, 'ok', action.risk, {
         reason: 'approval_carryover',
         policy_source: decision.source,
+        ...setDetails,
       });
     } else {
       // Older clients can pass an existing id. Preserve that row instead of
@@ -1087,6 +1135,7 @@ async function enforceCallPolicies(
           {
             reason,
             policy_source: decision.source,
+            ...setDetails,
             args_preview_complete: argsPreviewDetails.complete,
             // WITHOUT THIS the approval prompt can name the tool but not its
             // target — a human was being asked to authorise `gmail.send_email`
@@ -1111,6 +1160,9 @@ async function enforceCallPolicies(
                 actionPath: `${input.connectorSlug}.${input.actionPath}`,
                 risk: action.risk,
                 resultSummary: {
+                  ...(policySet && decision.source === 'policy_set'
+                    ? { policy_set: policySet.name, agent: policySet.agent }
+                    : {}),
                   args_preview: argsPreview,
                   args_preview_complete: argsPreviewDetails.complete,
                   ...(approvalContext ? { approval_context: approvalContext } : {}),
@@ -1215,6 +1267,7 @@ async function runConnectorAction(
           attachmentClaim = await deps.attachmentStore.claimForEmail(scope, emailArgs);
           providerArgs = attachmentClaim.args;
         }
+        providerArgs = await toResendEmailArgs(input.actionPath, providerArgs);
       } else if (attachmentRefs.length > 0) {
         if (!deps.attachmentStore?.claimInline) {
           throw new Error('connector_attachment_transport_unavailable');
@@ -1249,6 +1302,22 @@ async function runConnectorAction(
           fetchImpl: (url, init) => deps.fetchImpl(url, { ...init, signal, maxResponseBytes: MAX_UPSTREAM_RESPONSE_BYTES }),
         }),
       );
+      // Email `send_message` created a draft: send it now, as one action.
+      const draftId =
+        result.ok && isEmailChannel && input.actionPath === 'send_message' ? createdDraftId(result.data) : null;
+      if (draftId) {
+        result = await withDeadline(
+          executeCall({
+            binding: { kind: 'http', method: 'POST', path: '/inboxes/{inbox_id}/drafts/{draft_id}/send' },
+            baseUrl: connector.baseUrl,
+            auth: connector.auth,
+            headers: connector.headers,
+            secret: executionSecret,
+            args: { inbox_id: providerArgs.inbox_id, draft_id: draftId },
+            fetchImpl: (url, init) => deps.fetchImpl(url, { ...init, signal, maxResponseBytes: MAX_UPSTREAM_RESPONSE_BYTES }),
+          }),
+        );
+      }
       // Channel platforms (Slack) reply HTTP 200 with an `{ ok:false, error }`
       // envelope on failure. Surface that as a real error so the agent gets the
       // cause (matching the in-sandbox CLI, which throws on `!ok`).

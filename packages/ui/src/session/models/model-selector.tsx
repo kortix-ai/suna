@@ -14,6 +14,7 @@ import {
 import Loading from '../../primitives/loading';
 import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '../../internal/lib/provider-branding';
 import { cn } from '../../lib/utils';
+import { TRIGGER_CARET_CLASS, triggerVariants } from '../../primitives/trigger-variants';
 import type { ProviderModalTab } from '../../internal/stores/provider-modal-store';
 import { useProviderModalStore } from '../../internal/stores/provider-modal-store';
 import {
@@ -364,6 +365,8 @@ export interface ModelSelectorProps {
   triggerLabelClassName?: string;
   /** `secondary` for a page-level control; the composer keeps `ghost`. */
   triggerVariant?: 'ghost' | 'secondary';
+  /** `field`: the full-width `h-9` form-field box, the same as `AgentSelector`'s. */
+  appearance?: 'chip' | 'field';
 
   projectId?: string;
 
@@ -405,6 +408,7 @@ export function ModelSelector({
   modelsLoading = false,
   triggerLabelClassName,
   triggerVariant = 'ghost',
+  appearance = 'chip',
   offerProviderAccounts = false,
   open: openProp,
   onOpenChange,
@@ -630,6 +634,16 @@ export function ModelSelector({
         onOpenChange={(next) => !disabled && setOpen(next)}
       >
         <CommandPopoverTrigger>
+          {appearance === 'field' ? (
+            <button
+              type="button"
+              disabled={disabled}
+              className={cn(triggerVariants(), 'h-9 w-full')}
+            >
+              <span className="truncate">{displayName}</span>
+              {disabled ? null : <ChevronDown className={cn(TRIGGER_CARET_CLASS, 'size-4')} />}
+            </button>
+          ) : (
           <Button
             type="button"
             variant={triggerVariant}
@@ -646,6 +660,7 @@ export function ModelSelector({
               )}
             />
           </Button>
+          )}
         </CommandPopoverTrigger>
 
         {/* `min(...)`, not a hard `300px`: on a 320px viewport a fixed 300px

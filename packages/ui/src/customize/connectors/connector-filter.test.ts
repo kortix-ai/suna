@@ -53,23 +53,13 @@ describe('the landing tab is All, unconditionally', () => {
   // connector, and the ones they have are one click away. It also made the
   // landing tab depend on a query, so the page could settle onto a different
   // tab than it first rendered.
-  //
-  // `catalogueAvailable` is not a return of that: it is not derived from the
-  // project's connectors but from the DEPLOYMENT, and it does not pick between
-  // tabs — it decides whether All exists at all. On a self-host with no
-  // Pipedream credentials the catalogue it shows answers `501`, so it is
-  // removed and Connected is the tab left to land on. See
-  // `connectors-page.pipedream-unconfigured.test.ts`.
+
   test('the default scope is a constant, not derived from the project', () => {
     // The scope moved into `?scope=` so Channels could be linked to. The
-    // landing tab is constant: an absent or unrecognised param is All,
-    // for every project, before any query resolves — unless the deployment
-    // has no catalogue to land on, in which case it falls back to Connected.
+    // landing tab is constant: an absent or unrecognised param is All, for
+    // every project, before any query resolves.
     expect(page).toContain(
-      "const requestedScope: ConnectorScope = parseScope(search?.get('scope') ?? null) ?? 'all';",
-    );
-    expect(page).toContain(
-      "catalogueAvailable || requestedScope === 'connected' || requestedScope === 'channels'",
+      "const scope: ConnectorScope = parseScope(search?.get('scope') ?? null) ?? 'all';",
     );
     expect(page).not.toContain('defaultConnectorScope');
     expect(page).not.toContain('connectors.length ?');
@@ -99,7 +89,7 @@ describe('connectorSummary', () => {
   // A connector that has never synced carries no actions. "0 tools" is the
   // honest reading and is itself a signal, so it is not suppressed.
   test('a connector with no synced tools still says so', () => {
-    expect(connectorSummary(conn(), 'App')).toBe('0 tools · App');
+    expect(connectorSummary(conn(), 'Composio')).toBe('0 tools · Composio');
   });
 });
 

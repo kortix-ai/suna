@@ -17,6 +17,7 @@ import type {
   SessionReloadResult,
   SessionTurn,
   SessionTurnStatus,
+  TurnShare,
 } from './sessions';
 import {
   type UpdateProjectSessionInput,
@@ -30,6 +31,9 @@ import {
   ensureWarmProjectSession,
   interruptSessionPrompt,
   findActiveTranscriptShare,
+  getTurnShare,
+  shareTurn,
+  unshareTurn,
   getProjectSession,
   getProjectSessionConfigState,
   getProjectSessionScope,
@@ -133,6 +137,19 @@ test('listProjectSessions keeps can_manage_sharing and can_manage_lifecycle apar
   const [session] = await listProjectSessions('P1');
   expect(session.can_manage_sharing).toBe(false);
   expect(session.can_manage_lifecycle).toBe(true);
+});
+
+test('getProjectSession carries can_publish_response apart from can_manage_sharing', async () => {
+  // A project manager may publish a response of a session a human owns
+  // (can_publish_response) without being allowed to re-share the session itself.
+  nextResponse = {
+    status: 200,
+    body: { session_id: 'S1', is_owner: false, can_manage_sharing: false, can_publish_response: true },
+  };
+  const session = await getProjectSession('P1', 'S1');
+  const publish: boolean | undefined = session.can_publish_response;
+  expect(publish).toBe(true);
+  expect(session.can_manage_sharing).toBe(false);
 });
 
 // ─── Paging ────────────────────────────────────────────────────────────────
@@ -369,6 +386,55 @@ test('revokeSessionPublicShare DELETEs the specific share', async () => {
   await revokeSessionPublicShare('P1', 'S1', 'SH1');
   expect(last().url).toContain('/projects/P1/sessions/S1/public-shares/SH1');
   expect(last().method).toBe('DELETE');
+});
+
+const TURN_SHARE: TurnShare = {
+  share_id: 'SH9',
+  turn_id: 'msg_user_1',
+  token: 'kps_abc',
+  url: 'https://kortix.test/share/response/kps_abc',
+  created_at: '2026-10-23T00:00:00.000Z',
+  snapshot_at: '2026-10-23T00:00:00.000Z',
+  stale: false,
+  include_prompt: false,
+};
+
+test('getTurnShare GETs the share of one turn and answers null when none is live', async () => {
+  nextResponse = { status: 200, body: { share: null } };
+  const result = await getTurnShare('P1', 'S1', 'msg/user 1');
+  expect(last().url).toContain('/projects/P1/sessions/S1/turns/msg%2Fuser%201/share');
+  expect(last().method).toBe('GET');
+  expect(result).toEqual({ share: null });
+});
+
+test('shareTurn PUTs the turn share, prompt excluded by default, and returns the live share', async () => {
+  nextResponse = { status: 200, body: { share: TURN_SHARE } };
+  const result = await shareTurn('P1', 'S1', 'msg_user_1');
+  expect(last().url).toContain('/projects/P1/sessions/S1/turns/msg_user_1/share');
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({ include_prompt: false });
+  expect(result.share.url).toBe('https://kortix.test/share/response/kps_abc');
+});
+
+test('shareTurn sends include_prompt in the PUT body when asked', async () => {
+  nextResponse = { status: 200, body: { share: { ...TURN_SHARE, include_prompt: true } } };
+  const result = await shareTurn('P1', 'S1', 'msg_user_1', { include_prompt: true });
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({ include_prompt: true });
+  expect(result.share.include_prompt).toBe(true);
+});
+
+test('shareTurn rejects with the status when the turn has no text yet', async () => {
+  nextResponse = { status: 409, body: { error: 'This response has no text to share yet' } };
+  await expect(shareTurn('P1', 'S1', 'msg_user_1')).rejects.toMatchObject({ status: 409 });
+});
+
+test('unshareTurn DELETEs the turn share', async () => {
+  nextResponse = { status: 200, body: { share: null } };
+  const result = await unshareTurn('P1', 'S1', 'msg_user_1');
+  expect(last().url).toContain('/projects/P1/sessions/S1/turns/msg_user_1/share');
+  expect(last().method).toBe('DELETE');
+  expect(result).toEqual({ share: null });
 });
 
 test('createProjectSession POSTs the input and marks the new session fresh', async () => {

@@ -139,12 +139,6 @@ export const uncoveredAllow: AllowEntry[] = [
       "sandbox-only projection sink: the in-guest daemon pushes its own /kortix/opencode/state document with a sandbox token, and the handler re-checks that token's sandbox against session_sandboxes (sandbox -> session -> account) before storing. Not an end-user API route — same class as /v1/platform/boot-timeline. Credential, scoping, gzip decoding and the decompressed size cap are covered black-box in apps/api/src/platform/routes/runtime-projection.test.ts; the SERVED side is flow-covered through the snapshot runtime leg in SESS-20.",
   },
   {
-    method: "POST",
-    path: "/v1/projects/:*/monitors/ingest",
-    reason:
-      "monitor-box-only event intake: the runner posts with its own box's sandbox token, authenticated against project_monitor_boxes; not an end-user API route. Auth, dedup, truncation, and rate-limit behavior are covered source-level in apps/api/src/__tests__/unit-monitor-ingest-route.test.ts",
-  },
-  {
     method: "PUT",
     path: "/v1/connectors/projects/:*/connectors/:*/sensitive",
     reason:

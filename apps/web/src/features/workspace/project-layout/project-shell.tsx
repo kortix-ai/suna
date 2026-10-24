@@ -3,6 +3,7 @@
 import { CommandPaletteBoundary } from '@/features/workspace/command-palette-boundary';
 import { DriveUploadTray } from '@kortix/ui/files';
 import { AppPreviewPoolLoader } from '@/features/apps/app-preview-pool-loader';
+import { ArtifactFramePreloader } from '@/features/artifacts/artifact-frame-preloader';
 import { useTranslations } from '@/i18n/use-translations';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
@@ -10,7 +11,6 @@ import { Suspense, lazy, useCallback, useEffect, useLayoutEffect } from 'react';
 
 import { TITLEBAR_CONTROL_CLASS } from '@kortix/ui/internal/desktop/titlebar-control';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
-import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
 import { Button } from '@kortix/ui/button';
 import Hint from '@kortix/ui/hint';
@@ -293,25 +293,12 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
         {/* App previews load here in the background and stay loaded while
             the project is open, so the Apps page shows them at once. */}
         <AppPreviewPoolLoader projectId={projectId} />
+        {/* Artifact pages too, in the same frame pool (flag `artifacts`). */}
+        <ArtifactFramePreloader projectId={projectId} />
 
         <Suspense fallback={null}>
           <PresentationViewerWrapper />
         </Suspense>
-
-        {/* A fresh account's first project arrives unstamped (the create flow
-            stamps only later projects — KRTX-2092), so this wizard opens on
-            the landing. It must carry the skip control: in the browser there
-            is no other exit — the close button is desktop-shell-only, outside
-            clicks are dead and Escape is intercepted. The wizard's own skip
-            already opens the first chat and stamps the project, so the shell
-            adds no navigation of its own. */}
-        <ProjectOnboardingWizard
-          projectId={projectId}
-          onSkip={() => {
-            /* the wizard's skip closes it in place; nothing to navigate to */
-          }}
-        />
-
 
         <PersonalOnboardingWelcome projectId={projectId} />
       </AppProviders>

@@ -2,12 +2,17 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { config } from '../config';
+import { type ConnectorCatalogItem, type ConnectorSurfaceVariant, createConnectorCatalog } from './connector-catalog';
 import { fallbackIconSource } from './connector-icon';
 import {
+  KORTIX_APPS,
   MCP_APPS,
   availableMcpApps,
   kortixClientApplication,
-  kortixMcpCatalog,
+  composioCatalogItem,
+  connectorsV2Items,
+  connectorsV2Surfaces,
+  v2AppKey,
   kortixOAuthClients,
   mcpAppForUrl,
 } from './mcp-apps';
@@ -29,7 +34,10 @@ describe('the Kortix MCP app catalogue', () => {
         }
       }
     }
-    const listed = new Set(MCP_APPS.filter((app) => app.icon).map((app) => `${app.slug}.svg`));
+    const listed = new Set([
+      ...MCP_APPS.filter((app) => app.icon).map((app) => `${app.slug}.svg`),
+      ...KORTIX_APPS.flatMap((entry) => (entry.icon ? [entry.icon.split('/').pop()!] : [])),
+    ]);
     expect(readdirSync(ICONS).filter((file) => !listed.has(file))).toEqual([]);
   });
 
@@ -71,17 +79,175 @@ describe('the Kortix MCP app catalogue', () => {
   });
 
   test('the catalogue serves Discover: list, sections and detail with the MCP surface', async () => {
-    const page = await kortixMcpCatalog.list({ q: 'linear' });
-    expect(page.items[0]).toMatchObject({ id: 'kortix:linear', kind: 'mcp', mcpUrl: 'https://mcp.linear.app/mcp', icon: '/connector-icons/linear.svg' });
-    const sections = await kortixMcpCatalog.sections();
-    expect(sections.popular.length).toBeGreaterThan(0);
+    const catalog = v2Catalog();
+    const page = await catalog.list({ q: 'linear' });
+    expect(page.items[0]).toMatchObject({ id: 'kortix:linear', kind: 'mcp', mcpUrl: 'https://mcp.linear.app/mcp', icon: '/connector-icons/linear.svg', oneClick: true });
+    const sections = await catalog.sections();
+    expect(sections.popular[0]?.id).toBe('kortix:gmail');
     expect(sections.sections.length).toBeGreaterThan(0);
-    const detail = await kortixMcpCatalog.detail('kortix:notion');
-    expect(detail.variants).toEqual([
-      expect.objectContaining({ kind: 'mcp', connector: { provider: 'mcp', url: 'https://mcp.notion.com/mcp', transport: 'http' } }),
+    // The app's ways, with no network: the Kortix app's own server leads.
+    const ways = await connectorsV2Surfaces('notion.so', { items: async () => [], surfaces: async () => [] });
+    expect(ways).toEqual([
+      expect.objectContaining({ kind: 'mcp', recommended: true, oneClick: true, connector: { provider: 'mcp', url: 'https://mcp.notion.com/mcp', transport: 'http' } }),
+    ]);
+  });
+
+  test('one card per app: a one-click MCP server, else the managed toolkit, else the API', async () => {
+    const catalog = v2Catalog();
+    const card = async (q: string) => (await catalog.list({ q })).items[0];
+    // integrations.sh has a one-click server for Acme: it beats Acme's toolkit.
+    expect(await card('acme')).toMatchObject({ id: 'acme-mcp', kind: 'mcp', oneClick: true });
+    // Outlook's MCP server needs setup, so its managed toolkit is the card.
+    expect(await card('outlook')).toMatchObject({ id: 'composio:outlook', kind: 'composio', domain: 'outlook.com', oneClick: true });
+    // A Kortix app is the only record for its app, by domain and by name:
+    // Linear's toolkit and Notion's registry entry on notion.com are gone.
+    expect((await catalog.list({ q: 'linear' })).items.map((item) => item.id)).toEqual(['kortix:linear']);
+    expect((await catalog.list({ q: 'notion' })).items.map((item) => item.id)).toEqual(['kortix:notion']);
+    // A worse surface of an app still answers a search for it.
+    expect((await catalog.list({ q: 'graph mail' })).items.map((item) => item.id)).toEqual(['graph-mail-openapi']);
+    // Browse sections keep a domain's first record: the toolkit, not Outlook's setup-only server.
+    const productivity = (await catalog.sections({ perCategory: 24 })).sections.find((section) => section.key === 'productivity');
+    expect(productivity?.items.map((item) => item.id)).toContain('composio:outlook');
+    expect(productivity?.items.map((item) => item.id)).not.toContain('outlook-mcp');
+    // An API-only app lists, but not under the one-click filter.
+    expect(await card('billing')).toMatchObject({ id: 'billing-openapi', kind: 'openapi' });
+    const oneClick = (await catalog.list({ oneClick: true, limit: 96 })).items.map((item) => item.id);
+    expect(oneClick).toContain('composio:outlook');
+    expect(oneClick).toContain('acme-mcp');
+    expect(oneClick).not.toContain('billing-openapi');
+    expect(oneClick).not.toContain('outlook-mcp');
+    // Browse order: Kortix's apps, then popular registry apps and managed apps
+    // taking turns, then the rest.
+    const browse = (await catalog.list({ limit: 96 })).items.map((item) => item.id);
+    // Kortix's own block: what it built and its MCP apps.
+    const firstOther = browse.findIndex((id) => !id.startsWith('kortix:') && !id.startsWith('native:'));
+    // Managed apps keep Composio's usage order, whatever their domain's first record.
+    expect(browse.slice(firstOther, firstOther + 3)).toEqual(['acme-mcp', 'composio:zeta', 'composio:outlook']);
+    expect(browse.indexOf('composio:outlook')).toBeLessThan(browse.indexOf('billing-openapi'));
+  });
+
+  test('a source that is down drops out and the others still list', async () => {
+    const items = await connectorsV2Items({
+      apps: () => availableMcpApps(new Map()),
+      index: async () => { throw new Error('integrations.sh is down'); },
+      toolkits: async () => [toolkit('outlook', 'Outlook')],
+    });
+    expect(items.some((item) => item.id === 'kortix:linear')).toBe(true);
+    expect(items.find((item) => item.kind === 'composio')).toMatchObject({ domain: 'outlook.composio' });
+  });
+});
+
+describe('the ways to connect one app (catalogue detail)', () => {
+  const variant = (id: string, kind: ConnectorSurfaceVariant['kind'], url: string | null, connector: boolean) =>
+    ({ id, kind, name: id, url, docs: null, description: null, transports: [], requiresAuth: true, command: null,
+       connector: connector ? { provider: kind === 'graphql' ? 'graphql' : kind === 'openapi' ? 'openapi' : 'mcp', url: url ?? undefined } : null }) as ConnectorSurfaceVariant;
+
+  test('every way of the app, best first: Kortix MCP app, registry API, managed toolkit; the duplicate server once', async () => {
+    const items = async () => [
+      { ...record('kortix:stripe', 'mcp', 'Stripe', 'stripe.com', { feeds: ['kortix'], oneClick: true }) },
+      record('stripe-openapi', 'openapi', 'Stripe', 'stripe.com'),
+      composioCatalogItem(toolkit('stripe', 'Stripe'), 'stripe.com'),
+    ];
+    const surfaces = async (domain: string) =>
+      domain === 'stripe.com'
+        ? [variant('registry-mcp', 'mcp', 'https://mcp.stripe.com', true), variant('stripe-api', 'openapi', null, true), variant('stripe-http', 'http', null, false)]
+        : [];
+    const ways = await connectorsV2Surfaces('stripe.com', { items, surfaces });
+    expect(ways.map((way) => [way.id, way.kind, way.oneClick === true, way.recommended === true])).toEqual([
+      ['kortix:stripe:mcp', 'mcp', true, true],
+      ['composio:stripe', 'composio', true, false],
+      ['stripe-api', 'openapi', false, false],
+      ['stripe-http', 'http', false, false],
+    ]);
+  });
+
+  test('"Bitbucket API" in the registry and Bitbucket in Composio are one app', async () => {
+    const items = await connectorsV2Items({
+      apps: () => [],
+      index: async () => [record('openapi/bitbucket-org', 'openapi', 'Bitbucket API', 'bitbucket.org')],
+      toolkits: async () => [toolkit('bitbucket', 'Bitbucket')],
+    });
+    expect(items.find((item) => item.kind === 'composio')?.domain).toBe('bitbucket.org');
+    expect(v2AppKey('Stripe REST API')).toBe('stripe');
+    expect(v2AppKey('API')).toBe('');
+  });
+
+  test('an app with no one-click server recommends its managed toolkit; a registry record on another domain still counts', async () => {
+    const items = async () => [
+      { ...record('jira-openapi', 'openapi', 'Bitbucket', 'bitbucket.org') },
+      composioCatalogItem(toolkit('bitbucket', 'Bitbucket'), 'bitbucket.org'),
+    ];
+    const surfaces = async () => [variant('bb-mcp', 'mcp', 'https://mcp.example/bb', true), variant('bb-api', 'openapi', null, true)];
+    const ways = await connectorsV2Surfaces('bitbucket.org', { items, surfaces });
+    expect(ways.map((way) => [way.kind, way.recommended === true])).toEqual([
+      ['composio', true],
+      ['mcp', false],
+      ['openapi', false],
     ]);
   });
 });
+
+describe('What Kortix built, in the catalogue', () => {
+  test('each is a one-click Kortix card that leads its app, ahead of the app\'s MCP server and Composio', async () => {
+    const items = await connectorsV2Items({
+      apps: () => [],
+      index: async () => [record('curated/slack-com-mcp', 'mcp', 'Slack', 'slack.com', { mcpUrl: 'https://mcp.slack.com/mcp' }), record('openapi/telegram-org', 'openapi', 'Telegram', 'telegram.org')],
+      toolkits: async () => [toolkit('telegram', 'Telegram')],
+    });
+    const kortix = items.filter((item) => item.kind === 'kortix').map((item) => item.id);
+    expect(kortix).toEqual(['native:slack', 'native:teams', 'native:email', 'native:telegram', 'native:computer']);
+    const catalog = createConnectorCatalog({ source: { items: async () => items, surfaces: () => [] } });
+    expect((await catalog.list({ q: 'slack' })).items[0]?.id).toBe('native:slack');
+    expect((await catalog.list({ q: 'telegram' })).items.map((item) => item.id)).toEqual(['native:telegram']);
+    expect((await catalog.list({ kinds: ['kortix'], limit: 10 })).items).toHaveLength(5);
+    expect((await catalog.list({ q: 'computer' })).items[0]).toMatchObject({ id: 'native:computer', kind: 'kortix', kortix: { app: 'computer' } });
+    // Links from before the rename (`channel:<platform>`) still open the app.
+    expect((await catalog.detail('channel:email')).item.id).toBe('native:email');
+    expect((await catalog.detail('native:email')).item.id).toBe('native:email');
+    await expect(catalog.detail('channel:nope')).rejects.toThrow('Connector not found');
+    const ways = await connectorsV2Surfaces('telegram.org', { items: async () => items, surfaces: async () => [] });
+    expect(ways.map((way) => [way.kind, way.recommended === true])).toEqual([['kortix', true], ['composio', false]]);
+  });
+});
+
+describe('the catalogue type filter', () => {
+  test('kinds keeps the apps that connect that way, each by its record of that kind', async () => {
+    const catalog = v2Catalog();
+    const ids = async (kinds: ConnectorCatalogItem['kind'][]) => (await catalog.list({ kinds, limit: 96 })).items.map((item) => item.id);
+    expect(await ids(['composio'])).toEqual(expect.arrayContaining(['composio:outlook', 'composio:zeta']));
+    expect((await ids(['composio'])).every((id) => id.startsWith('composio:'))).toBe(true);
+    expect(await ids(['openapi'])).toEqual(expect.arrayContaining(['billing-openapi', 'graph-mail-openapi', 'linear-openapi']));
+    expect((await ids(['mcp', 'openapi'])).some((id) => id.startsWith('composio:'))).toBe(false);
+  });
+});
+
+const toolkit = (slug: string, name: string) => ({ slug, name, logo: null, description: null, categories: ['productivity'], isNoAuth: false, connected: false });
+const record = (id: string, kind: ConnectorCatalogItem['kind'], name: string, domain: string, extra: Partial<ConnectorCatalogItem> = {}): ConnectorCatalogItem => ({
+  id, kind, slug: id, name, description: null, url: null, icon: null, domain, categories: ['productivity'], feeds: ['claude'], popularity: null, ...extra,
+});
+
+/** The Kortix catalogue over fixed sources: no network. */
+function v2Catalog() {
+  return createConnectorCatalog({
+    source: {
+      items: () =>
+        connectorsV2Items({
+          apps: () => availableMcpApps(GOOGLE),
+          index: async () => [
+            record('acme-mcp', 'mcp', 'Acme', 'acme.com', { mcpUrl: 'https://mcp.acme.com/mcp', oneClick: true, popularity: 50 }),
+            record('outlook-mcp', 'mcp', 'Outlook', 'outlook.com', { mcpUrl: 'https://mcp.outlook.example/mcp' }),
+            record('billing-openapi', 'openapi', 'Billing', 'billing.dev'),
+            record('graph-files-mcp', 'mcp', 'Graph Files', 'graph.example', { mcpUrl: 'https://graph.example/mcp', oneClick: true }),
+            record('graph-mail-openapi', 'openapi', 'Graph Mail', 'graph.example'),
+            record('linear-openapi', 'openapi', 'Linear', 'linear.app'),
+            record('notion-com-mcp', 'mcp', 'Notion', 'notion.com', { mcpUrl: 'https://mcp.notion.com/mcp', oneClick: true }),
+          ],
+          toolkits: async () => [toolkit('zeta', 'Zeta'), toolkit('acme', 'Acme'), toolkit('outlook', 'Outlook'), toolkit('linear', 'Linear')],
+        }),
+      surfaces: () => [],
+    },
+  });
+}
 
 describe('sign-in for an app on a Kortix client', () => {
   test('discovery comes from the catalogue, without probing the server, and is one click', async () => {
@@ -103,5 +269,26 @@ describe('sign-in for an app on a Kortix client', () => {
   test('a connector on a catalogue app shows the catalogue icon', () => {
     expect(fallbackIconSource('mcp', { url: 'https://mcp.figma.com/mcp' })).toEqual({ kind: 'kortix', icon: '/connector-icons/figma.svg' });
     expect(fallbackIconSource('mcp', { url: 'https://mcp.granola.ai/mcp' })).toEqual({ kind: 'catalog', host: 'mcp.granola.ai' });
+  });
+});
+
+describe('an app the project cannot use yet', () => {
+  test('`exclude` leaves it out before counting: list totals, section totals and category facets agree', async () => {
+    const catalog = v2Catalog();
+    const all = await catalog.list({ limit: 96 });
+    const hidden = new Set(['native:email']);
+    expect(all.items.some((item) => item.id === 'native:email')).toBe(true);
+    const kept = await catalog.list({ limit: 96, exclude: hidden });
+    expect(kept.items.some((item) => item.id === 'native:email')).toBe(false);
+    expect(kept.total).toBe(all.total - 1);
+    const sections = (await catalog.sections({ exclude: hidden })) as {
+      sections: Array<{ key: string; total: number }>;
+      categories: Array<{ key: string; count: number }>;
+    };
+    for (const section of sections.sections) {
+      expect(sections.categories.find((c) => c.key === section.key)?.count).toBe(section.total);
+      const page = await catalog.list({ category: section.key, exclude: hidden });
+      expect(page.total).toBe(section.total);
+    }
   });
 });

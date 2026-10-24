@@ -31,6 +31,50 @@ async function waitForFile(path: string, timeoutMs = 5_000): Promise<void> {
 }
 
 describe('agent tunnel device authorization CLI', () => {
+  test('Node pairing keeps the approval URL and polls when the browser cannot start', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'agent-tunnel-node-home-'));
+    temporaryHomes.add(home);
+    const bundle = join(home, 'cli.mjs');
+    const build = await Bun.build({ entrypoints: [CLI_PATH], target: 'node' });
+    expect(build.success).toBe(true);
+    await Bun.write(bundle, await build.outputs[0].text());
+    let polls = 0;
+    const verificationUrl = 'https://example.invalid/tunnel/authorize/TEST-0004';
+    const server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        if (request.method === 'POST') {
+          return Response.json({
+            deviceCode: 'TEST-0004', deviceSecret: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ123456',
+            verificationUrl, expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            pollIntervalMs: 250,
+          });
+        }
+        polls++;
+        return Response.json({ status: polls === 1 ? 'pending' : 'denied' });
+      },
+    });
+    try {
+      const child = Bun.spawn([
+        Bun.which('node') ?? '/usr/local/bin/node', bundle, 'connect', '--foreground',
+        '--api-url', `http://127.0.0.1:${server.port}/v1/tunnel`,
+      ], {
+        env: { ...process.env, HOME: home, AGENT_TUNNEL_HOME: join(home, 'agent'),
+          PATH: home, KORTIX_AGENT_TUNNEL_NO_BROWSER: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      });
+      const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited,
+      ]);
+      expect(stdout).toContain(verificationUrl);
+      expect(stderr).toContain('Authorization denied.');
+      expect(stderr).not.toContain('Unhandled');
+      expect(polls).toBe(2);
+      expect(exitCode).toBe(1);
+    } finally {
+      server.stop(true);
+    }
+  });
   test('persists the exact browser-approved capability list as the local ceiling', async () => {
     const approvedCapabilities = ['desktop', 'filesystem'];
     const server = Bun.serve({

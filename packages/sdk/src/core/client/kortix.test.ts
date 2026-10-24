@@ -630,6 +630,26 @@ test('project(id).connectors covers credential-mode/sensitive/policies/pipedream
   expect(last().url).toContain('/connectors/projects/PID123/connectors/slack-1/policies');
   expect(last().method).toBe('PUT');
 
+  await kortix
+    .project('PID123')
+    .connectors.policies.get('gmail', { policySet: 'read_only' });
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail/policies?policy_set=read_only');
+
+  await kortix.project('PID123').connectors.policySets.list('gmail');
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail/policy-sets');
+  expect(last().method).toBe('GET');
+
+  await kortix.project('PID123').connectors.policySets.upsert('gmail', 'read_only', { description: 'x' });
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail/policy-sets/read_only');
+  expect(last().method).toBe('PUT');
+
+  await kortix.project('PID123').connectors.policySets.rename('gmail', 'read_only', 'readers');
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail/policy-sets/read_only/name');
+
+  await kortix.project('PID123').connectors.policySets.remove('gmail', 'readers');
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail/policy-sets/readers');
+  expect(last().method).toBe('DELETE');
+
   await kortix.project('PID123').connectors.pipedream.listApps('gmail');
   expect(last().url).toContain('/connectors/projects/PID123/pipedream/apps?q=gmail');
 
@@ -640,6 +660,19 @@ test('project(id).connectors covers credential-mode/sensitive/policies/pipedream
   expect(last().url).toContain(
     '/connectors/projects/PID123/discover/connectors/detail?id=mcp%2Fnotion',
   );
+
+  await kortix.project('PID123').connectors.discover.list({ q: 'crm', kinds: ['mcp', 'composio'], oneClick: true });
+  expect(last().url).toContain('kind=mcp%2Ccomposio');
+  expect(last().url).toContain('oneClick=1');
+
+  await kortix.project('PID123').connectors.discover.tools('kortix:stripe', 'composio:stripe');
+  expect(last().url).toContain(
+    '/connectors/projects/PID123/discover/connectors/tools?id=kortix%3Astripe&way=composio%3Astripe',
+  );
+
+  await kortix.project('PID123').connectors.discover.install({ id: 'kortix:stripe', name: 'Billing' });
+  expect(last().url).toContain('/connectors/projects/PID123/discover/install');
+  expect(last().method).toBe('POST');
 
   await kortix.project('PID123').connectors.pipedream.connect('gmail-1');
   expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail-1/connect');

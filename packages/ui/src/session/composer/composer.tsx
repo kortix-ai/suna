@@ -103,6 +103,7 @@ import {
   shouldApplyPrefill,
   shouldFocusEditorFromPadding,
   shouldSubmitPrefill,
+  shouldSubmitWhenReady,
   textToDocument,
 } from './composer-logic';
 import { ComposerToolbar } from './composer-toolbar';
@@ -308,8 +309,11 @@ export interface SessionChatInputProps {
      * Enter. For one-click starters (the first chat's "Update memory"): the
      * send still carries the composer's agent and model and still hits every
      * refusal (no agent, no model, blocked images) a typed message would.
+     *
+     * `'when-ready'` holds the text until a send is possible, then submits once:
+     * the onboarding chat's "Onboard me" waits for a model to be connected.
      */
-    submit?: boolean;
+    submit?: boolean | 'when-ready';
   } | null;
   /**
    * Called with `prefill.id` the moment that prefill has actually landed in the
@@ -1288,6 +1292,8 @@ function ComposerImpl(props: SessionChatInputProps) {
   // through this ref, bound in an effect right after that declaration.
   const handleSubmitRef = useRef<() => void>(() => undefined);
   const submittedPrefillIdRef = useRef<number | null>(null);
+  // The prefill id that landed in the editor: `'when-ready'` submits only after it.
+  const [landedPrefillId, setLandedPrefillId] = useState<number | null>(null);
   const onPrefillAppliedRef = useRef(onPrefillApplied);
   useEffect(() => {
     onPrefillAppliedRef.current = onPrefillApplied;
@@ -1384,6 +1390,7 @@ function ComposerImpl(props: SessionChatInputProps) {
     // re-run the effect whenever the caller re-created it, and a `merge` prefill
     // applied twice appends its text twice.
     onPrefillAppliedRef.current?.(prefillId as number);
+    setLandedPrefillId(prefillId as number);
     // Last, so the prefill is fully applied and reported before the submit
     // takes the draft out of the editor.
     if (
@@ -1971,6 +1978,24 @@ function ComposerImpl(props: SessionChatInputProps) {
   useEffect(() => {
     handleSubmitRef.current = () => void handleSubmit();
   }, [handleSubmit]);
+
+  const submitWhenReady = prefill?.submit === 'when-ready';
+  useEffect(() => {
+    if (
+      !submitWhenReady ||
+      !shouldSubmitWhenReady({
+        prefillId,
+        landedPrefillId,
+        submittedPrefillId: submittedPrefillIdRef.current,
+        submitDisabled,
+        loading: modelsLoading || entitlementsPending,
+      })
+    ) {
+      return;
+    }
+    submittedPrefillIdRef.current = prefillId as number;
+    handleSubmitRef.current();
+  }, [submitWhenReady, prefillId, landedPrefillId, submitDisabled, modelsLoading, entitlementsPending]);
 
   // A question lock owns the editor: Up there is a caret move, never a take-back.
   const handleArrowUpAtStart = useCallback(
