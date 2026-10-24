@@ -6,7 +6,7 @@ import type { Metadata } from 'next';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import Link from '@/components/site-link';
-import { ARTIFACT_FRAME_ALLOW, ARTIFACT_IFRAME_SANDBOX } from '@/features/artifacts/frame-sandbox';
+import { ARTIFACT_FRAME_ALLOW, ARTIFACT_IFRAME_SANDBOX } from '@kortix/ui/artifacts';
 import { getTranslations } from '@/i18n/get-translations';
 
 import { SHARE_FILE_IFRAME_CLASS, SHARE_PAGE_ROOT_CLASS } from '../../session/[token]/share-layout';

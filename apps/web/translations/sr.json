@@ -22804,6 +22804,13 @@
     "bulkInheritTitle": "Вратити {count, plural, one {# алат} few {# алата} other {# алата}} на основна правила?",
     "bulkInheritBody": "Брише правило овог скупа за сваки алат под {group}, па сваки поново прати основна правила. Правила по обрасцу се не мењају."
   },
+  "sessionChangeRequests": {
+    "title": "Zahtevi za izmenu",
+    "open": "Otvoren",
+    "jump": "Idi na odgovor za #{number}",
+    "unavailable": "Ovaj odgovor nije dostupan u učitanoj istoriji.",
+    "loadError": "Odgovor nije moguće učitati. Pokušajte ponovo."
+  },
   "spaces": {
     "memory": {
       "search": "Претражи меморију",

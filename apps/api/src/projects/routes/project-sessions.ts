@@ -222,6 +222,19 @@ export function registerProjectSessionsRoutes(): void {
       if (!source || sessionIsTombstoned(source.row)) return c.json({ error: 'Not found' }, 404);
     }
 
+    if (body.parent_session_id !== undefined) {
+      // A bound credential always spawns under its own session, never a body-selected parent.
+      if (callerKortixSessionId(c)) {
+        delete body.parent_session_id;
+      } else {
+        const parentInput = SessionCreateInputSchema.shape.parent_session_id.safeParse(body.parent_session_id);
+        if (!parentInput.success || !parentInput.data) return c.json({ error: 'Invalid parent session' }, 400);
+        await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
+        const parent = await loadVisibleSession(loaded, parentInput.data, null, null);
+        if (!parent || sessionIsTombstoned(parent.row)) return c.json({ error: 'Not found' }, 404);
+      }
+    }
+
     // Per-agent gate: starting a session provisions compute. A scoped agent token
     // must hold project.session.start (no-op for human/PAT tokens).
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
@@ -329,6 +342,7 @@ export function registerProjectSessionsRoutes(): void {
       apiKeyType: c.get('apiKeyType') as string | undefined,
       inSession: isProjectSessionPrincipal(c),
       callerSessionId: callerKortixSessionId(c),
+      parentActor: loaded.actor ?? undefined,
       request: requestAuditContext(c),
       idempotencyKey,
       mayManageSystemConnections,

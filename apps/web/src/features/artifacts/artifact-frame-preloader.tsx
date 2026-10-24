@@ -5,8 +5,7 @@ import { prefetchArtifact, useArtifacts, useFeatureFlag } from '@kortix/sdk/reac
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
-import { ensureArtifactFrame } from './artifact-meta';
-import { ARTIFACT_FRAME_PREFIX, artifactFrameKey } from './frame-sandbox';
+import { ARTIFACT_FRAME_PREFIX, artifactFrameKey, ensureArtifactFrame } from '@kortix/ui/artifacts';
 
 /** At most this many artifacts load in the background; the rest load when first shown. */
 // ponytail: newest first by the list order, rank by recent opens if a project outgrows it.

@@ -254,6 +254,8 @@ export interface PendingSessionPrompt {
  * The later `/start` call is an idempotent readiness/resume operation.
  */
 export interface CreateProjectSessionInput {
+  /** Visible same-project parent. Does not change the authenticated caller or inherit sharing. */
+  parent_session_id?: string;
   /** Authorized platform session whose saved conversation is copied before boot. */
   fork_from_session_id?: string;
   /**

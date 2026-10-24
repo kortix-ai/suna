@@ -78,7 +78,18 @@ export const ARTIFACT_DOC_CSS = `
 .kx-doc .ProseMirror p.is-editor-empty:first-child::before,.kx-doc .ProseMirror .is-empty::before{content:attr(data-placeholder);color:var(--muted-foreground);float:left;height:0;pointer-events:none}
 .kx-doc .selectedCell::after{content:"";position:absolute;inset:0;background:var(--kortix-blue);opacity:.12;pointer-events:none}
 @media (max-width:640px){.kx-doc{padding-top:calc(var(--s)*10)}}
-@media print{@page{margin:18mm 16mm}.kx-doc{max-width:none;padding:0}.kx-doc a{color:inherit}.kx-doc :where(h1,h2,h3){break-after:avoid}.kx-doc :where(pre,table,img,blockquote,.kx-code){break-inside:avoid}}
+@media print{@page{margin:18mm 16mm}
+  body>:not(main){display:none!important}
+  .kx-doc{max-width:none;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .kx-doc a{color:inherit;text-decoration-color:currentColor}
+  .kx-doc :where(h1,h2,h3,h4){break-after:avoid;break-inside:avoid}
+  .kx-doc :where(p,li){orphans:3;widows:3}
+  .kx-doc :where(img,video,blockquote,.kx-diagram,tr,.kx-code>figcaption){break-inside:avoid}
+  .kx-doc pre{max-height:none;overflow:visible;white-space:pre-wrap;overflow-wrap:anywhere}
+  .kx-doc :where(.tableWrapper,.kx-table){overflow:visible}
+  .kx-doc thead{display:table-header-group}
+  .kx-doc :where(img,video){max-height:240mm;object-fit:contain}
+  .kx-doc .kx-code>figcaption button{display:none}}
 `;
 
 /** The served page around `.kx-doc`: the page background follows the tokens. */

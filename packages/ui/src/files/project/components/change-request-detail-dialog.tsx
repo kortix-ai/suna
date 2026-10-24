@@ -183,6 +183,7 @@ export function ChangeRequestDetailDialog({ crId, onClose, onOpenChangeRequest }
         number: cr.number,
         title: cr.title,
         headRef: cr.head_ref,
+        originSessionId: cr.origin_session_id,
         baseRef: cr.base_ref,
       },
       recoveryBlocker,

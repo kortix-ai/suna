@@ -48,6 +48,8 @@ import {
   StackIcon as Layers,
 } from '@phosphor-icons/react';
 import { m } from 'motion/react';
+import { jumpToOutcome } from '../outcomes/jump-to-outcome';
+import { useIsMobile } from '../../hooks/use-mobile';
 import {
   useUiLink,
   useUiPathname,
@@ -59,7 +61,6 @@ import {
 import { memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { TranscriptRowsContext, type TranscriptRows } from './transcript-rows';
 import { AgentBusyRow, PendingPromptRows } from './thread-boot-rows';
-import { useIsMobile } from '../../internal/hooks';
 import { createPortal } from 'react-dom';
 import {
   AUTHOR_RETRY_DELAYS_MS,
@@ -2494,6 +2495,64 @@ export function SessionChat({
     clearJumpTarget();
   }, [targetMessageId, clearJumpTarget, contentRef, scrollRef]);
 
+  const tChangeRequests = useTranslations('sessionChangeRequests');
+  const mobileChangeRequests = useIsMobile();
+  const [jumpingToOutcome, setJumpingToOutcome] = useState(false);
+  const outcomeJumpRef = useRef({ sessionId, hasOlder, isLoadingOlder, loadOlder });
+  useEffect(() => {
+    outcomeJumpRef.current = { sessionId, hasOlder, isLoadingOlder, loadOlder };
+  }, [sessionId, hasOlder, isLoadingOlder, loadOlder]);
+  const handleJumpToOutcome = useCallback(async (resolveTurn: () => string | undefined, createdAt: number) => {
+    if (jumpingToOutcome) return;
+    setJumpingToOutcome(true);
+    const currentSession = sessionId;
+    const settle = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    try {
+      const earliest = Math.min(...turnSpans.flatMap((span) => span.startedAt === null ? [] : [span.startedAt]));
+      await jumpToOutcome({
+        needsHistory: hasOlder && (!Number.isFinite(createdAt) || createdAt < earliest),
+        history: {
+          readState: () => outcomeJumpRef.current.sessionId === currentSession
+            ? outcomeJumpRef.current : { hasOlder: false, isLoadingOlder: false },
+          loadOlder: () => outcomeJumpRef.current.loadOlder(),
+          settle,
+        },
+        resolve: () => outcomeJumpRef.current.sessionId === currentSession ? resolveTurn() : undefined,
+        loadError: () => errorToast(tChangeRequests('loadError')),
+        unavailable: () => {
+          if (outcomeJumpRef.current.sessionId === currentSession) errorToast(tChangeRequests('unavailable'));
+        },
+        scroll: async (key) => {
+          if (mobileChangeRequests) {
+            const store = useKortixComputerStore.getState();
+            if (store.isExpanded) store.toggleExpanded();
+            store.setIsSidePanelOpen(false);
+            store.setIsActionPanelOpen(false);
+          }
+          await settle();
+          await settle();
+          releaseOlderAnchor();
+          const target = key ? Array.from(contentRef.current?.querySelectorAll<HTMLElement>('[data-turn-id]') ?? [])
+            .find((node) => node.dataset.turnId === key) : undefined;
+          const scroll = scrollRef.current;
+          if (!target || !scroll) {
+            return false;
+          }
+          const top = target.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop;
+          scroll.scrollTo({ top: Math.max(0, top), behavior: 'instant' });
+          // Static feedback, not motion: keyboard and reduced-motion navigation stay instant.
+          target.classList.add('bg-accent');
+          window.setTimeout(() => target.classList.remove('bg-accent'), 1_000);
+          return true;
+        },
+      });
+    } catch {
+      errorToast(tChangeRequests('loadError'));
+    } finally {
+      setJumpingToOutcome(false);
+    }
+  }, [jumpingToOutcome, sessionId, hasOlder, turnSpans, mobileChangeRequests, releaseOlderAnchor, contentRef, scrollRef, tChangeRequests]);
+
   // Reset on session change
   useEffect(() => {
     clearSendReceipt();
@@ -4379,6 +4438,8 @@ export function SessionChat({
                       turnSpans={turnSpans}
                       busy={effectiveBusy}
                       onOpen={handleOpenOutcome}
+                      onJump={handleJumpToOutcome}
+                      jumping={jumpingToOutcome}
                     >
                       <ToolActivateContext.Provider value={toolActivate}>
                         {/* The first prompt's producer copy (`useFirstPromptPreviewStore`),

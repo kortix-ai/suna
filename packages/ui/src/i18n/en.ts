@@ -7509,6 +7509,13 @@ const catalog = {
     "bulkInheritTitle": "Return {count, plural, one {# tool} other {# tools}} to the base rules?",
     "bulkInheritBody": "Deletes this rule set's rule for every tool listed under {group}, so each one follows the base rules again. Pattern rules are left alone."
   },
+  "sessionChangeRequests": {
+    "title": "Change requests",
+    "open": "Open",
+    "jump": "Jump to response for #{number}",
+    "unavailable": "This response is not available in the loaded history.",
+    "loadError": "Could not load the response. Try again."
+  },
   "spaces": {
     "memory": {
       "search": "Search memory",

@@ -33,13 +33,12 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
-import { artifactFrameKey } from './frame-sandbox';
+import { ArtifactFrame, artifactFrameKey } from '@kortix/ui/artifacts';
 
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 import {
   ARTIFACT_TYPE_ICON,
-  ArtifactFrame,
   VISIBILITY_ICON,
   artifactHref,
   relativeTime,

@@ -68,6 +68,8 @@ import { ViewerFrame } from './shared/viewer-frame';
 import { resolveShowType, shouldRenderFromSandboxFile } from './show-type-utils';
 import { VideoRenderer } from './video-renderer';
 import { ShowConnectHero, showConnectTarget } from '../../markdown/setup-links/show-connect-hero';
+import { ShowArtifactCard } from '../../artifacts/artifact-session';
+import { parseArtifactUrl } from '../../artifacts/frame-policy';
 
 // ── Lazy-load heavy renderers ──────────────────────────────────────────────
 
@@ -130,6 +132,11 @@ function ShowLink({ url, title, description }: { url: string; title: string; des
   const connect = showConnectTarget(url, title);
   if (connect) {
     return <ShowConnectHero url={url} target={connect} title={title} description={description} />;
+  }
+  // A Kortix artifact's link shows the artifact (a session page opens it in its panel,
+  // like an App link); a link the viewer cannot open stays a link.
+  if (parseArtifactUrl(url)) {
+    return <ShowArtifactCard url={url} fallback={<ShowLinkCard url={url} title={title} description={description} />} />;
   }
   return <ShowLinkCard url={url} title={title} description={description} />;
 }

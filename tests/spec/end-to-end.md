@@ -1908,3 +1908,5 @@ the synthetic account and auth user. Fail if cleanup fails.
 The [evaluation and runbook](../../.agents/skills/testing/references/e2e-evaluation.md)
 defines the pilot's scope and promotion criteria. Existing route-coverage and
 release contracts remain required.
+
+`SESS-60` Explicit human session parent (KRTX-3444). POST sessions with a visible same-project `parent_session_id` returns 201 and GET retains that parent. An absent parent creates a root. A cross-project or another member's private parent is rejected with 404. Explicit grouping does not inherit sharing or automation attribution; bound credentials retain their authenticated parent.

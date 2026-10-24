@@ -22804,6 +22804,13 @@
     "bulkInheritTitle": "¿Devolver {count, plural, one {# herramienta} other {# herramientas}} a las reglas base?",
     "bulkInheritBody": "Elimina la regla de este conjunto para cada herramienta de {group}, de modo que cada una vuelva a seguir las reglas base. Las reglas de patrón no cambian."
   },
+  "sessionChangeRequests": {
+    "title": "Solicitudes de cambio",
+    "open": "Abierta",
+    "jump": "Ir a la respuesta de #{number}",
+    "unavailable": "Esta respuesta no está disponible en el historial cargado.",
+    "loadError": "No se pudo cargar la respuesta. Inténtalo de nuevo."
+  },
   "spaces": {
     "memory": {
       "search": "Buscar en la memoria",
