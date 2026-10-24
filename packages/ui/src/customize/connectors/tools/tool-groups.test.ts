@@ -2,7 +2,7 @@ import type { ConnectorAction } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import { testUiTranslator } from '../../../test-utils/intl';
-import { filterActions, groupToolsByRisk, toolRowText } from './tool-groups';
+import { filterActions, groupToolsByRisk, humanizeToolName, toolRowText } from './tool-groups';
 
 const action = (path: string, risk: ConnectorAction['risk']): ConnectorAction => ({
   path,
@@ -86,18 +86,53 @@ describe('toolRowText', () => {
     ).toBeNull();
   });
 
-  test('no name — the path becomes the title and is not printed twice', () => {
+  test('no name — the path becomes a title in words, and the raw id stays beside it', () => {
     expect(toolRowText({ ...action('get_thing', 'read'), name: '', description: 'Reads' })).toEqual(
       {
-        title: 'get_thing',
-        path: null,
+        title: 'Get thing',
+        path: 'get_thing',
         description: 'Reads',
       },
     );
   });
 
+  test('the app prefix is dropped from the title, not from the id', () => {
+    expect(
+      toolRowText({ ...action('LINEAR_ARCHIVE_ISSUE', 'write'), name: 'LINEAR_ARCHIVE_ISSUE' }, [
+        'linear',
+      ]),
+    ).toMatchObject({ title: 'Archive issue', path: 'LINEAR_ARCHIVE_ISSUE' });
+  });
   test('no description at all', () => {
     expect(toolRowText(action('get_thing', 'read')).description).toBeNull();
+  });
+});
+
+describe('humanizeToolName', () => {
+  test.each([
+    ['LINEAR_ARCHIVE_ISSUE', ['linear'], 'Archive issue'],
+    ['ask_wiki_question', ['deepwiki'], 'Ask wiki question'],
+    ['GMAIL_SEND_EMAIL', ['gmail', 'Gmail'], 'Send email'],
+    ['GOOGLE_SHEETS_ADD_ROW', ['google-sheets'], 'Add row'],
+    ['GOOGLESHEETS_ADD_ROW', ['Google Sheets'], 'Add row'],
+    ['getPetById', [], 'Get pet by id'],
+    ['messages.send', [], 'Messages send'],
+    ['repos/create-issue', [], 'Repos create issue'],
+  ])('%s reads %p', (name, apps, title) => {
+    expect(humanizeToolName(name, apps)).toBe(title);
+  });
+
+  test('a name with a space is the connector wording and is kept', () => {
+    expect(humanizeToolName('Deletes a pet.', ['petstore'])).toBe('Deletes a pet.');
+  });
+
+  test('a prefix is not dropped when it is the whole name', () => {
+    expect(humanizeToolName('linear', ['linear'])).toBe('Linear');
+    expect(humanizeToolName('LINEAR_SEARCH', ['linear'])).toBe('Search');
+  });
+
+  test('only a whole leading word matches the app', () => {
+    expect(humanizeToolName('linearize_data', ['linear'])).toBe('Linearize data');
   });
 });
 

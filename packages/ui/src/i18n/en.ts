@@ -6496,7 +6496,20 @@ const catalog = {
     "allApps": "All apps",
     "typeFilterKortix": "Kortix",
     "emailGateName": "Email channel",
-    "emailGateDescription": "Give the agent a Resend inbox: an email starts a session, and a reply continues it."
+    "emailGateDescription": "Give the agent a Resend inbox: an email starts a session, and a reply continues it.",
+    "toolsDecisionBlocked": "blocked",
+    "toolsDecisionAsks": "asks",
+    "toolsDecisionRuns": "runs",
+    "toolsInheritAs": "Inherit · {action}",
+    "toolsDefaultAs": "Default · {action}",
+    "toolsSummaryTotal": "{count, plural, one {# tool} other {# tools}}",
+    "toolsSummaryBlocked": "{count} blocked",
+    "toolsSummaryAsk": "{count} ask first",
+    "toolsSummaryRun": "{count} run",
+    "toolsOnlyChanged": "Only changed",
+    "toolsNoneChangedSet": "This rule set changes no tool yet. Tools on Inherit follow the base rules.",
+    "toolsNoneChangedBase": "No tool has its own rule yet. Every tool follows the connector default.",
+    "toolsChanged": "Changed"
   },
   "connectMcp": {
     "title": "Connect Kortix over MCP",
@@ -7441,11 +7454,6 @@ const catalog = {
   "connectorPolicySets": {
     "rulesFor": "Rules for",
     "baseRules": "Base rules",
-    "newSet": "New rule set…",
-    "baseHint": "Callers without a rule set follow these rules. A rule set changes them for the agents you give it to.",
-    "setHint": "Applies only to agents given {name}. Tools on Inherit follow the base rules.",
-    "usedBy": "Used by {agents}",
-    "unused": "No agent uses this rule set yet. Pick it on an agent's Connectors page.",
     "edit": "Edit rule set",
     "delete": "Delete rule set",
     "deleteInUse": "Used by {agents}. Give those agents another rule set first.",
@@ -7470,8 +7478,6 @@ const catalog = {
     "loadFailed": "Could not load rule sets",
     "retry": "Try again",
     "inherit": "Inherit",
-    "inheritBase": "Inherits the base rules: {action}.",
-    "inheritDefault": "Inherits the base rules. No base rule names this tool, so the connector default decides.",
     "agentSection": "Rule sets",
     "agentSelectLabel": "Rules for {name}",
     "agentMissing": "Missing",
@@ -7480,7 +7486,13 @@ const catalog = {
     "approvalSet": "Rule set {set}",
     "auditSet": "rule set {set}",
     "bulkInheritTitle": "Return {count, plural, one {# tool} other {# tools}} to the base rules?",
-    "bulkInheritBody": "Deletes this rule set's rule for every tool listed under {group}, so each one follows the base rules again. Pattern rules are left alone."
+    "bulkInheritBody": "Deletes this rule set's rule for every tool listed under {group}, so each one follows the base rules again. Pattern rules are left alone.",
+    "baseContext": "Applies to every agent without a rule set.",
+    "usedByLead": "Used by",
+    "unusedLead": "No agent uses it yet.",
+    "unusedLink": "Give it to an agent on the agent's Connectors page",
+    "editShort": "Edit",
+    "ruleCount": "{count, plural, one {# rule} other {# rules}}"
   },
   "sessionChangeRequests": {
     "title": "Change requests",

@@ -21160,7 +21160,20 @@
     "allApps": "Todos os apps",
     "typeFilterKortix": "Kortix",
     "emailGateName": "Canal de e-mail",
-    "emailGateDescription": "Dê ao agente uma caixa de entrada Resend: um e-mail inicia uma sessão e uma resposta a continua."
+    "emailGateDescription": "Dê ao agente uma caixa de entrada Resend: um e-mail inicia uma sessão e uma resposta a continua.",
+    "toolsDecisionBlocked": "bloqueada",
+    "toolsDecisionAsks": "pergunta",
+    "toolsDecisionRuns": "executa",
+    "toolsInheritAs": "Herdar · {action}",
+    "toolsDefaultAs": "Padrão · {action}",
+    "toolsSummaryTotal": "{count, plural, one {# ferramenta} other {# ferramentas}}",
+    "toolsSummaryBlocked": "{count} bloqueadas",
+    "toolsSummaryAsk": "{count} perguntam antes",
+    "toolsSummaryRun": "{count} executam",
+    "toolsOnlyChanged": "Só alteradas",
+    "toolsNoneChangedSet": "Este conjunto de regras ainda não altera nenhuma ferramenta. Ferramentas em Herdar seguem as regras base.",
+    "toolsNoneChangedBase": "Nenhuma ferramenta tem regra própria ainda. Todas seguem o padrão do conector.",
+    "toolsChanged": "Alterada"
   },
   "connectMcp": {
     "title": "Conecte o Kortix via MCP",
@@ -22736,11 +22749,6 @@
   "connectorPolicySets": {
     "rulesFor": "Regras para",
     "baseRules": "Regras base",
-    "newSet": "Novo conjunto de regras…",
-    "baseHint": "Quem chama sem conjunto de regras segue estas regras. Um conjunto de regras as altera para os agentes que o recebem.",
-    "setHint": "Vale só para agentes com {name}. Ferramentas em Herdar seguem as regras base.",
-    "usedBy": "Usado por {agents}",
-    "unused": "Nenhum agente usa este conjunto de regras ainda. Escolha-o na página Conectores de um agente.",
     "edit": "Editar conjunto de regras",
     "delete": "Excluir conjunto de regras",
     "deleteInUse": "Usado por {agents}. Dê primeiro outro conjunto de regras a esses agentes.",
@@ -22765,8 +22773,6 @@
     "loadFailed": "Não foi possível carregar os conjuntos de regras",
     "retry": "Tentar novamente",
     "inherit": "Herdar",
-    "inheritBase": "Herda as regras base: {action}.",
-    "inheritDefault": "Herda as regras base. Nenhuma regra base cita esta ferramenta, então o padrão do conector decide.",
     "agentSection": "Conjuntos de regras",
     "agentSelectLabel": "Regras para {name}",
     "agentMissing": "Ausente",
@@ -22775,7 +22781,13 @@
     "approvalSet": "Conjunto de regras {set}",
     "auditSet": "conjunto de regras {set}",
     "bulkInheritTitle": "Voltar {count, plural, one {# ferramenta} other {# ferramentas}} às regras base?",
-    "bulkInheritBody": "Exclui a regra deste conjunto para cada ferramenta listada em {group}, para que cada uma volte a seguir as regras base. Regras de padrão não mudam."
+    "bulkInheritBody": "Exclui a regra deste conjunto para cada ferramenta listada em {group}, para que cada uma volte a seguir as regras base. Regras de padrão não mudam.",
+    "baseContext": "Aplica-se a todo agente sem conjunto de regras.",
+    "usedByLead": "Usado por",
+    "unusedLead": "Nenhum agente o usa ainda.",
+    "unusedLink": "Atribua-o a um agente na página Conectores dele",
+    "editShort": "Editar",
+    "ruleCount": "{count, plural, one {# regra} other {# regras}}"
   },
   "sessionChangeRequests": {
     "title": "Solicitações de alteração",

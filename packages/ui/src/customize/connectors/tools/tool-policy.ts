@@ -1,4 +1,5 @@
 import type {
+  ConnectorAction,
   ConnectorEffectivePolicy,
   ConnectorPolicyAction,
   ConnectorPolicyRule,
@@ -35,18 +36,28 @@ export function effectiveChoice(
 }
 
 /**
- * In a set, what the base rules decide for a tool the set leaves on Inherit.
- * Null when no base rule names it (the connector default decides) or when the
- * list being edited is the base list itself.
+ * What the Default segment (base rules) or the Inherit segment (a set)
+ * resolves to for one tool, so the control can say it: "Default · runs",
+ * "Inherit · blocked".
+ *
+ * - In a set, the base rules decide an inherited tool: `baseEffective` is the
+ *   server's answer for the base list.
+ * - While the tool is on Default/Inherit, its own `effective` entry is that
+ *   answer too (a pattern rule, the risk default, `allow_all`).
+ * - Otherwise the connector default (`fallback`) decides.
  */
-export function inheritedBaseAction(
+export function inheritedAction(
   path: string,
+  choice: PolicyChoice,
   effective: readonly ConnectorEffectivePolicy[],
+  baseEffective: readonly ConnectorEffectivePolicy[],
   scope: PolicyScope,
-): ConnectorPolicyAction | null {
-  if (scope !== 'set') return null;
-  const hit = effective.find((e) => e.path === path);
-  return hit?.source === 'connector' ? hit.action : null;
+  fallback: ConnectorPolicyAction,
+): ConnectorPolicyAction {
+  const base = scope === 'set' ? baseEffective.find((e) => e.path === path) : undefined;
+  if (base) return base.action;
+  const own = choice === 'default' ? effective.find((e) => e.path === path) : undefined;
+  return own?.action ?? fallback;
 }
 
 /**
@@ -185,4 +196,57 @@ export function previewEffective(
   return effective.map((entry) =>
     touched(entry) ? { path: entry.path, action: choice, source: ownSource(scope) } : entry,
   );
+}
+
+export type DefaultMode = 'risk' | 'allow_all';
+
+/**
+ * What a tool does when no rule names it: the server's default
+ * (`resolveEffectiveAction`, connectors/policy.ts). A sensitive connector asks
+ * for every tool, `allow_all` runs every tool, and otherwise reads run and
+ * writes ask.
+ */
+export function connectorDefaultAction(
+  sensitive: boolean,
+  defaultMode: DefaultMode | undefined,
+  risk: ConnectorAction['risk'],
+): ConnectorPolicyAction {
+  if (sensitive) return 'require_approval';
+  if (defaultMode === 'allow_all') return 'always_run';
+  return risk === 'read' ? 'always_run' : 'require_approval';
+}
+
+export interface ToolDecisionSummary {
+  total: number;
+  block: number;
+  ask: number;
+  run: number;
+  /** Tools the list being edited decides itself (not Default/Inherit, not a project rule). */
+  changed: number;
+}
+
+/**
+ * The counts above the tool list: what each tool does on its next call, and
+ * how many tools this list changes. `effective` is the server's answer and
+ * wins; `fallback` names what a tool with no entry does.
+ */
+export function summarizeToolDecisions(
+  actions: readonly ConnectorAction[],
+  policies: readonly ConnectorPolicyRule[],
+  effective: readonly ConnectorEffectivePolicy[],
+  scope: PolicyScope,
+  fallback: (action: ConnectorAction) => ConnectorPolicyAction,
+): ToolDecisionSummary {
+  const summary: ToolDecisionSummary = { total: actions.length, block: 0, ask: 0, run: 0, changed: 0 };
+  for (const action of actions) {
+    const choice = toolChoice(action.path, policies, effective, scope);
+    const decided =
+      effective.find((entry) => entry.path === action.path)?.action ??
+      (choice === 'default' ? fallback(action) : choice);
+    if (decided === 'block') summary.block++;
+    else if (decided === 'require_approval') summary.ask++;
+    else summary.run++;
+    if (choice !== 'default' && !isLockedByProject(action.path, effective)) summary.changed++;
+  }
+  return summary;
 }

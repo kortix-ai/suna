@@ -41,3 +41,8 @@ export function policySetNameProblem(
 export function connectorPolicySetsKey(projectId: string, slug: string) {
   return ['connector-policy-sets', projectId, slug] as const;
 }
+
+/** The react-query key of one rule list: the base rules (`null`) or one set. */
+export function connectorPoliciesKey(projectId: string, slug: string, policySet: string | null) {
+  return ['connector-policies', projectId, slug, policySet] as const;
+}

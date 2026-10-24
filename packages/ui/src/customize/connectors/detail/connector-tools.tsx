@@ -6,6 +6,8 @@ import { useLocalizedUiCatalog } from '../../../i18n/ui-catalog/use-localized-ui
 import { useTranslations } from '../../../i18n';
 import {
   type AdminConnector,
+  type ConnectorAction,
+  type ConnectorPolicyAction,
   type ConnectorPolicyRule,
   getConnectorPolicies,
   setConnectorPolicies,
@@ -39,9 +41,12 @@ import {
   InputGroupSearchInput,
 } from '../../../primitives/input-group';
 import { Skeleton } from '../../../primitives/skeleton';
+import { cn } from '../../../internal/lib/utils';
 import { errorToast, successToast } from '../../../primitives/toast';
 import { EmptyState } from '../../../primitives/empty-state';
 import { ErrorState } from '../../../primitives/error-state';
+import Hint from '../../../primitives/hint';
+import { Switch } from '../../../primitives/switch';
 
 import {
   filterActions,
@@ -51,16 +56,18 @@ import {
 } from '../tools/tool-groups';
 import {
   applyBulkPolicy,
-  inheritedBaseAction,
+  connectorDefaultAction,
+  inheritedAction,
   isAdvancedRule,
   isLockedByProject,
   orderPolicyRules,
   type PolicyChoice,
   type PolicyScope,
   previewEffective,
+  summarizeToolDecisions,
   toolChoice,
 } from '../tools/tool-policy';
-import { supportsPolicySets } from '../tools/policy-sets';
+import { connectorPoliciesKey, supportsPolicySets } from '../tools/policy-sets';
 import { ToolPolicyControl } from '../tools/tool-policy-control';
 import {
   POLICY_CHOICE_LABEL,
@@ -147,7 +154,7 @@ export function ConnectorTools({
   const scope: PolicyScope = policySet ? 'set' : 'base';
   const showSets = supportsPolicySets(connector.provider);
   const queryKey = useMemo(
-    () => ['connector-policies', projectId, slug, policySet],
+    () => connectorPoliciesKey(projectId, slug, policySet),
     [projectId, slug, policySet],
   );
 
@@ -161,6 +168,16 @@ export function ConnectorTools({
     staleTime: POLICY_QUERY_STALE_MS,
     enabled: canWrite,
   });
+
+  // In a set, Inherit names what the base rules decide. Same key and fetch as
+  // the base view and the rule-set strip: one cached request.
+  const baseQuery = useQuery({
+    queryKey: connectorPoliciesKey(projectId, slug, null),
+    queryFn: () => getConnectorPolicies(projectId, slug, { policySet: undefined }),
+    staleTime: POLICY_QUERY_STALE_MS,
+    enabled: canWrite && scope === 'set',
+  });
+  const baseEffective = useMemo(() => baseQuery.data?.effective ?? [], [baseQuery.data]);
 
   const policies = useMemo(() => policiesQuery.data?.policies ?? [], [policiesQuery.data]);
   const effective = useMemo(() => policiesQuery.data?.effective ?? [], [policiesQuery.data]);
@@ -183,11 +200,34 @@ export function ConnectorTools({
     [policies, toolPaths],
   );
 
-  const [query, setQuery] = useState('');
-  const matches = useMemo(
-    () => filterActions(connector.actions, query),
-    [connector.actions, query],
+  const sensitive = connector.sensitive === true;
+  const defaultMode = policiesQuery.data?.default_mode;
+  const fallback = useCallback(
+    (action: ConnectorAction) => connectorDefaultAction(sensitive, defaultMode, action.risk),
+    [sensitive, defaultMode],
   );
+  const summary = useMemo(
+    () => summarizeToolDecisions(connector.actions, policies, effective, scope, fallback),
+    [connector.actions, policies, effective, scope, fallback],
+  );
+  // The first word of a name is the app: `LINEAR_ARCHIVE_ISSUE` reads
+  // "Archive issue" on the Linear page.
+  const appNames = useMemo(
+    () => [slug, connector.name, displayName, slug.split('-')[0] ?? ''],
+    [slug, connector.name, displayName],
+  );
+
+  const [query, setQuery] = useState('');
+  const [onlyChanged, setOnlyChanged] = useState(false);
+  const matches = useMemo(() => {
+    const found = filterActions(connector.actions, query);
+    if (!onlyChanged) return found;
+    return found.filter(
+      (action) =>
+        toolChoice(action.path, policies, effective, scope) !== 'default' &&
+        !isLockedByProject(action.path, effective),
+    );
+  }, [connector.actions, query, onlyChanged, policies, effective, scope]);
   const groups = useMemo(() => groupToolsByRisk(matches, tI18nComplete), [matches, tI18nComplete]);
 
   const projectLockedCount = useMemo(
@@ -280,13 +320,26 @@ export function ConnectorTools({
   const hasTools = connector.actions.length > 0;
   const choiceLabel = (choice: PolicyChoice) =>
     choice === 'default' && scope === 'set' ? tSets('inherit') : POLICY_CHOICE_LABEL[choice];
-  const inheritHint = (path: string, risk: 'read' | 'write' | 'destructive') => {
-    const base = inheritedBaseAction(path, effective, scope);
-    if (base) return tSets('inheritBase', { action: POLICY_CHOICE_LABEL[base] });
+  const decisionWord = (action: ConnectorPolicyAction) =>
+    action === 'block'
+      ? t('toolsDecisionBlocked')
+      : action === 'require_approval'
+        ? t('toolsDecisionAsks')
+        : t('toolsDecisionRuns');
+  const inheritLabel = (path: string, choice: PolicyChoice, action: ConnectorAction) => {
+    const resolved = decisionWord(
+      inheritedAction(path, choice, effective, baseEffective, scope, fallback(action)),
+    );
     return scope === 'set'
-      ? tSets('inheritDefault')
-      : describeToolDefault(connector.sensitive === true, policiesQuery.data?.default_mode, risk);
+      ? t('toolsInheritAs', { action: resolved })
+      : t('toolsDefaultAs', { action: resolved });
   };
+  const summaryParts = [
+    t('toolsSummaryTotal', { count: summary.total }),
+    summary.block > 0 ? t('toolsSummaryBlocked', { count: summary.block }) : null,
+    summary.ask > 0 ? t('toolsSummaryAsk', { count: summary.ask }) : null,
+    summary.run > 0 ? t('toolsSummaryRun', { count: summary.run }) : null,
+  ].filter(Boolean);
 
   return (
     <div className="space-y-5">
@@ -300,26 +353,33 @@ export function ConnectorTools({
         />
       ) : null}
 
-      {hasTools ? (
+      {hasTools && policiesQuery.data ? (
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-muted-foreground min-w-0 text-sm text-pretty">
-            {describeDefault(connector.sensitive === true, policiesQuery.data?.default_mode)}
+          <p className="text-muted-foreground min-w-0 text-sm tabular-nums">
+            {summaryParts.join(' · ')}
           </p>
-          {connector.actions.length > SEARCH_THRESHOLD ? (
-            <InputGroupSearch className="w-full sm:max-w-64">
-              <InputGroupSearchIcon>
-                <MagnifyingGlassIcon />
-              </InputGroupSearchIcon>
-              <InputGroupSearchInput
-                placeholder={tI18nComplete.raw('textfbd165231fa1')}
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                variant="popover"
-                size="sm"
-              />
-              <InputGroupSearchClear onClick={() => setQuery('')} />
-            </InputGroupSearch>
-          ) : null}
+          <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
+            {connector.actions.length > SEARCH_THRESHOLD ? (
+              <InputGroupSearch className="w-full sm:w-56">
+                <InputGroupSearchIcon>
+                  <MagnifyingGlassIcon />
+                </InputGroupSearchIcon>
+                <InputGroupSearchInput
+                  placeholder={tI18nComplete.raw('textfbd165231fa1')}
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  size="sm"
+                />
+                <InputGroupSearchClear onClick={() => setQuery('')} />
+              </InputGroupSearch>
+            ) : null}
+            <Switch
+              label={t('toolsOnlyChanged')}
+              checked={onlyChanged}
+              onCheckedChange={setOnlyChanged}
+              className="px-0 py-0"
+            />
+          </div>
         </div>
       ) : null}
 
@@ -370,6 +430,10 @@ export function ConnectorTools({
           title={tI18nComplete.raw('text99dd86336467')}
           description={t('toolsEmptyBody', { name: displayName })}
         />
+      ) : groups.length === 0 && onlyChanged && !query.trim() ? (
+        <p className="text-muted-foreground py-6 text-center text-sm text-pretty">
+          {scope === 'set' ? t('toolsNoneChangedSet') : t('toolsNoneChangedBase')}
+        </p>
       ) : groups.length === 0 ? (
         // The same line the four catalogs render, from the same component.
         // What was searched is unambiguous here — the box above says "Search
@@ -418,32 +482,53 @@ export function ConnectorTools({
                 <ul className="divide-border/60 divide-y px-4">
                   {group.actions.map((action) => {
                     const locked = isLockedByProject(action.path, effective);
-                    const row = toolRowText(action);
+                    const row = toolRowText(action, appNames);
+                    const choice = toolChoice(action.path, policies, effective, scope);
+                    const changed = choice !== 'default' && !locked;
                     return (
                       <li
                         key={action.path}
-                        className="flex flex-wrap items-start gap-x-4 gap-y-2 py-3"
+                        className="flex flex-wrap items-center gap-x-4 gap-y-2 py-2.5"
                       >
-                        <div className="min-w-0 flex-1 basis-48 space-y-0.5">
-                          <p className="text-foreground text-sm font-medium wrap-break-word">
-                            {row.title}
-                          </p>
-                          {row.description ? (
-                            <p className="text-muted-foreground line-clamp-2 text-xs text-pretty">
-                              {row.description}
-                            </p>
-                          ) : null}
+                        <div className="flex min-w-0 flex-1 basis-56 items-start gap-2">
+                          {/* Every row keeps the marker's slot, so titles share one x. */}
+                          <span className="flex h-5 shrink-0 items-center">
+                            <span
+                              className={cn('size-1.5 rounded-full', changed && 'bg-foreground')}
+                            >
+                              {changed ? <span className="sr-only">{t('toolsChanged')}</span> : null}
+                            </span>
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            {/* Narrow: the id moves under the title instead of cutting it. */}
+                            <div className="flex flex-wrap items-baseline gap-x-2">
+                              <p className="text-foreground min-w-0 text-sm font-medium wrap-break-word">
+                                {row.title}
+                              </p>
+                              {row.path ? (
+                                <code className="text-muted-foreground max-w-full truncate font-mono text-xs">
+                                  {row.path}
+                                </code>
+                              ) : null}
+                            </div>
+                            {row.description ? (
+                              <Hint label={row.description} side="bottom">
+                                <p className="text-muted-foreground truncate text-xs">
+                                  {row.description}
+                                </p>
+                              </Hint>
+                            ) : null}
+                          </div>
                         </div>
                         <ToolPolicyControl
                           label={tI18nComplete('textb34f1e3c1569', {
                             value0: row.path ?? row.title,
                           })}
-                          value={toolChoice(action.path, policies, effective, scope)}
+                          value={choice}
                           onChange={(next) => setToolPolicy(action.path, next)}
                           disabled={frozen || busy}
                           lockedReason={locked ? LOCKED_REASON : undefined}
-                          defaultLabel={scope === 'set' ? tSets('inherit') : undefined}
-                          defaultHint={inheritHint(action.path, action.risk)}
+                          defaultLabel={inheritLabel(action.path, choice, action)}
                         />
                       </li>
                     );
@@ -527,35 +612,4 @@ function bulkConfirmDescription(groupLabel: string, choice: PolicyChoice): strin
   return choice === 'default'
     ? `Deletes the per-tool rule for every tool listed under ${groupLabel} right now, so each one follows the connector default again. ${tail}`
     : `Every tool listed under ${groupLabel} right now is set to ${POLICY_CHOICE_LABEL[choice]}. ${tail}`;
-}
-
-/**
- * What happens to a tool nobody has decided on — read off the server's own
- * answer, never guessed. `sensitive` beats `default_mode` at the gate
- * (`resolveEffectiveAction`, connectors/policy.ts:362), so it is stated first.
- */
-function describeDefault(
-  sensitive: boolean,
-  defaultMode: 'risk' | 'allow_all' | undefined,
-): string {
-  if (sensitive) {
-    return 'Every tool asks for approval before it runs, including reads. Set a tool below to change that.';
-  }
-  if (defaultMode === 'allow_all') {
-    return 'Every tool runs without asking unless you decide otherwise below.';
-  }
-  return 'Reads run without asking; writes and deletes ask first. Decide any tool below.';
-}
-
-/** The same answer for one row, so an unlit control still says what it does. */
-function describeToolDefault(
-  sensitive: boolean,
-  defaultMode: 'risk' | 'allow_all' | undefined,
-  risk: 'read' | 'write' | 'destructive',
-): string {
-  if (sensitive) return 'Following the connector default — asks before it runs.';
-  if (defaultMode === 'allow_all') return 'Following the connector default — runs without asking.';
-  return risk === 'read'
-    ? 'Following the connector default — runs without asking.'
-    : 'Following the connector default — asks before it runs.';
 }
