@@ -143,9 +143,11 @@ export function AppDetailModal({
   const busy = apps.start.isPending || apps.stop.isPending || apps.remove.isPending;
   const liveUrl = access.session.data?.url ?? app.url;
   const viewedUrl = viewedChild ? (childAccess.session.data?.url ?? viewedChild.url) : liveUrl;
-  // Nothing to frame (a worker, a backend, an App with no version yet): the
-  // view says what the App is and does instead of showing an empty frame.
-  const showOverview = !viewedChild && !app.external_url && (!preview || !app.active_deployment_id);
+  // A background App (not on the Apps page), or one with nothing to frame,
+  // opens to what it is and does: how it runs, what calls it, which agents it
+  // starts. Its page, when it has one, is still one click away (Open).
+  const showOverview = !viewedChild && !app.external_url
+    && (!preview || !app.active_deployment_id || app.display?.listed !== true);
 
   const rollback = deployments.rollback.mutateAsync;
   const onRollback = useCallback(
