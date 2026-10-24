@@ -20795,6 +20795,7 @@
     "managedTitle": "Modeli kojima upravlja Kortix",
     "managedDescription": "Модели из Platinum Inference, по његовој цени плус накнада платформе од {fee}%, плаћа се кредитима. API кључ није потребан.",
     "managedUpgradeHint": "Надоградите да бисте користили Kortix управљане моделе или повежите сопственог добављача.",
+    "managedUnavailableHint": "Kortix управљани модели нису доступни на овој инсталацији. Повежите сопственог добављача.",
     "textImage": "Текст + слика",
     "textOnly": "Само текст",
     "zdrTitle": "Nulto zadržavanje podataka",

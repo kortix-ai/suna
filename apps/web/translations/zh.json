@@ -20795,6 +20795,7 @@
     "managedTitle": "Kortix 托管模型",
     "managedDescription": "来自 Platinum Inference 的模型，按其价格加 {fee}% 平台费，从额度中支付。无需 API 密钥。",
     "managedUpgradeHint": "升级以使用 Kortix 托管模型，或连接你自己的提供商。",
+    "managedUnavailableHint": "此部署不提供 Kortix 托管模型。请连接你自己的提供商。",
     "textImage": "文本 + 图像",
     "textOnly": "仅文本",
     "zdrTitle": "零数据保留",

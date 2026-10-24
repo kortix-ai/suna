@@ -15,6 +15,10 @@ mock.module('../sections/llm-provider/use-live-catalog', () => ({
   useLiveLlmProviderCatalog: () => {},
   useLlmProviderCatalogRevision: () => 0,
 }));
+let showUpgradeOption = true;
+mock.module('../../session/models/use-model-connection-gate', () => ({
+  useModelConnectionGate: () => ({ openUpgrade: () => {}, showUpgradeOption }),
+}));
 const connect = await import('./provider-connect');
 mock.module('./provider-connect', () => ({
   ...connect,
@@ -30,4 +34,17 @@ test('quick Models dialog does not advertise a managed provider with no usable m
     expect(markup).not.toContain('aria-label="Included"');
     expect(markup).toContain('connect your own provider');
   }
+});
+
+test('the managed row says its line once, with Upgrade inline or the unavailable line when billing is off', () => {
+  models = {};
+  showUpgradeOption = true;
+  let markup = renderToStaticMarkup(<ProviderAccordion projectId="synthetic-project" />);
+  expect(markup.split('connect your own provider').length - 1).toBe(1);
+  expect(markup).toContain('Upgrade');
+  showUpgradeOption = false;
+  markup = renderToStaticMarkup(<ProviderAccordion projectId="synthetic-project" />);
+  expect(markup).toContain('not available on this deployment');
+  expect(markup).not.toContain('Upgrade to use');
+  showUpgradeOption = true;
 });

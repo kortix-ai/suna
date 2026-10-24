@@ -585,16 +585,32 @@ function SignInSubRows({
   );
 }
 
-/** Opens the plan dialog. Nothing when billing is off: no plan to sell. */
-function ManagedUpgradeButton({ projectId }: { projectId: string }) {
+/**
+ * Kortix with no servable model, as one static row: the logo, one line and,
+ * where billing sells a plan, Upgrade in the place of the chevron. Nothing to
+ * expand, so the line is said once. With billing off there is no plan to sell,
+ * so the line says managed models are unavailable here instead of "Upgrade".
+ */
+function ManagedUpgradeRow({ projectId, row }: { projectId: string; row: AccordionRowHeaderProps['row'] }) {
   const t = useTranslations('sessionUi.modelGate');
+  const tAccess = useTranslations('modelAccess');
   const { openUpgrade, showUpgradeOption } = useModelConnectionGate(undefined, { projectId });
-  if (!showUpgradeOption) return null;
   return (
-    <Button type="button" size="xs" className="shrink-0" onClick={openUpgrade}>
-      <CreditCardIcon className="size-3.5 shrink-0" />
-      {t('upgrade')}
-    </Button>
+    <div className="flex items-center gap-3">
+      <ProviderLogoStatus providerId={row.id} label={row.label} status={row.status} size="medium" />
+      <span className="min-w-0 flex-1">
+        <span className="text-foreground block truncate text-sm font-medium">{row.label}</span>
+        <span className="text-muted-foreground block truncate text-xs">
+          {showUpgradeOption ? tAccess('managedUpgradeHint') : tAccess('managedUnavailableHint')}
+        </span>
+      </span>
+      {showUpgradeOption ? (
+        <Button type="button" size="xs" className="shrink-0" onClick={openUpgrade}>
+          <CreditCardIcon className="size-3.5 shrink-0" />
+          {t('upgrade')}
+        </Button>
+      ) : null}
+    </div>
   );
 }
 
@@ -628,13 +644,7 @@ function ExpandedBody({
   let content: ReactNode;
   if (method === 'included' || (entry.envVars.length === 0 && !SUBSCRIPTION_BY_PROVIDER[entry.id])) {
     content = (
-      <AccordionSubRow
-        // Kortix with no servable model is the upgrade story: the row says so,
-        // so it carries the way out too.
-        action={entry.managed && entry.models.length === 0 ? <ManagedUpgradeButton projectId={projectId} /> : null}
-      >
-        {entry.hint}
-      </AccordionSubRow>
+      <AccordionSubRow>{entry.hint}</AccordionSubRow>
     );
   } else if (pooled.pooledSecretsEnabled && pooled.accountId && entry.id === 'openai') {
     content = (
@@ -836,6 +846,16 @@ export function ProviderAccordion({
           row={row}
           onDone={() => setAddingId(null)}
         />
+      );
+    }
+
+    if (entry.managed && entry.models.length === 0) {
+      return (
+        <AccordionRowFrame key={row.id} expanded={false}>
+          <div className="px-3.5 py-2.5">
+            <ManagedUpgradeRow projectId={projectId} row={row} />
+          </div>
+        </AccordionRowFrame>
       );
     }
 

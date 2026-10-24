@@ -6189,6 +6189,7 @@ const catalog = {
     "managedTitle": "Kortix Managed Models",
     "managedDescription": "Models from Platinum Inference, at its price plus a {fee}% platform fee, paid from credits. No API key needed.",
     "managedUpgradeHint": "Upgrade to use Kortix's managed models, or connect your own provider.",
+    "managedUnavailableHint": "Kortix-managed models are not available on this deployment. Connect your own provider.",
     "textImage": "Text + image",
     "textOnly": "Text only",
     "zdrTitle": "Zero data retention",
