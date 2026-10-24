@@ -36,6 +36,7 @@ import type { PiConfigReleases } from './config-release'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import { CODEMODE_TOOL, type CodemodeMode } from './codemode'
 import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
+import { cloudSpawnSession, cloudSubagentApiFrom } from './cloud-subagent'
 import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule } from './interactions'
 import type { PiModels, SelectedModel } from './model'
 import { compactionSettings, nativeModelId } from './model'
@@ -1473,8 +1474,24 @@ export class PiRuntime {
       compiledAgents: () => this.compiled?.agent ?? {},
       builtInSubagents: () => !this.v3(),
       subagentAllowed: (name) => this.permissions.rule('task', { subagent_type: name }) !== 'deny',
-      spawnSession: (input) => this.spawnSession(input),
+      spawnSession: (input) => this.resolveSpawn(input),
     }
+  }
+
+  /**
+   * In-process child by default. When `KORTIX_PI_CLOUD_SUBAGENTS` is on (RFC
+   * Pillar 1 keystone, default OFF) and the box can reach its control plane,
+   * spawn a REAL cloud child session instead (cloud-subagent.ts). The result
+   * shape is identical, so the tool contract and the UI are unchanged. A box
+   * with no API falls back to the in-process child even when the flag is on.
+   */
+  private resolveSpawn(input: SpawnSessionInput): Promise<SpawnSessionResult> {
+    if (this.cfg.piCloudSubagents) {
+      const api = cloudSubagentApiFrom({ apiUrl: this.cfg.apiUrl, projectId: this.cfg.projectId, sandboxToken: this.cfg.sandboxToken })
+      if (api) return cloudSpawnSession(api, input)
+      logger.warn('[pi] KORTIX_PI_CLOUD_SUBAGENTS is on but the box has no control plane; using the in-process child')
+    }
+    return this.spawnSession(input)
   }
 
   /**

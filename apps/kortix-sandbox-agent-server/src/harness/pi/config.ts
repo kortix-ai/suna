@@ -44,6 +44,16 @@ const EnvironmentSchema = z.object({
   // The session agent's codemode (`off`, `on` or `only`, codemode.ts), sent by the API. Absent or invalid: the
   // compiled agent's `codemode`, else `on` (runtime.ts `codemode`).
   KORTIX_PI_CODEMODE: z.enum(['off', 'on', 'only']).optional().catch(undefined),
+  // Keystone flag (RFC claude-code-harness-parity, Pillar 1), default OFF. When
+  // `1`/`true`, the `agent` tool spawns a REAL cloud Kortix child session
+  // (its own sandbox, auto-linked as a child via the box token) instead of the
+  // in-process child. Off: the in-process child, unchanged. The API wires this
+  // from a feature flag (stubbed — see cloud-subagent.ts); a box can set it
+  // directly for live verification.
+  KORTIX_PI_CLOUD_SUBAGENTS: z
+    .enum(['0', '1', 'false', 'true'])
+    .optional()
+    .catch(undefined),
 })
 
 export interface PiEnvironment {
@@ -57,6 +67,8 @@ export interface PiEnvironment {
   piTurnRetryBaseMs: number
   piNoProgressMs: number
   piCodemode?: 'off' | 'on' | 'only'
+  /** The `agent` tool spawns a real cloud child session, not an in-process one. Default false. */
+  piCloudSubagents: boolean
 }
 
 export const DEFAULT_PI_AGENT_DIR = '/opt/kortix/pi-agent'
@@ -73,6 +85,7 @@ export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
     KORTIX_PI_TURN_RETRY_BASE_MS: env.KORTIX_PI_TURN_RETRY_BASE_MS?.trim() || undefined,
     KORTIX_PI_NO_PROGRESS_MS: env.KORTIX_PI_NO_PROGRESS_MS?.trim() || undefined,
     KORTIX_PI_CODEMODE: env.KORTIX_PI_CODEMODE?.trim() || undefined,
+    KORTIX_PI_CLOUD_SUBAGENTS: env.KORTIX_PI_CLOUD_SUBAGENTS?.trim() || undefined,
   })
   return {
     piStateDir: parsed.KORTIX_PI_STATE_DIR?.trim() || join(resolveKortixRuntimeStateDirectory(env), 'pi'),
@@ -85,6 +98,7 @@ export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
     piTurnRetryBaseMs: parsed.KORTIX_PI_TURN_RETRY_BASE_MS ?? TURN_RETRY_DEFAULT_BASE_MS,
     piNoProgressMs: parsed.KORTIX_PI_NO_PROGRESS_MS ?? 10 * 60_000,
     piCodemode: parsed.KORTIX_PI_CODEMODE,
+    piCloudSubagents: parsed.KORTIX_PI_CLOUD_SUBAGENTS === '1' || parsed.KORTIX_PI_CLOUD_SUBAGENTS === 'true',
   }
 }
 
