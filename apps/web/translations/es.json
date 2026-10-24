@@ -22598,6 +22598,8 @@
     "removed": "Ya no se comparte",
     "mediaSingleFile": "Las imágenes y los vídeos necesitan un documento en su propia carpeta. Publica el documento como carpeta para añadir medios.",
     "mediaTooLarge": "Este archivo supera los 16 MB.",
-    "refresh": "Recargar"
+    "refresh": "Recargar",
+    "diagramEdit": "Editar diagrama",
+    "diagramDone": "Listo"
   }
 }

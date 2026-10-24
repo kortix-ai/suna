@@ -27,16 +27,37 @@ Write the answer first, in one or two sentences.
 `;
 
 const HTML_STARTER = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Untitled page</title>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Untitled page</title>
 <style>
-  :root{color-scheme:light dark;font-family:ui-sans-serif,system-ui,sans-serif}
-  body{max-width:720px;margin:0 auto;padding:64px 24px;line-height:1.6}
-  h1{font-size:2.25rem;letter-spacing:-.02em;margin:0 0 .5rem}
-</style></head>
+  /* Layout: one centered reading column. Replace the tokens with this subject's own. */
+  :root {
+    --bg: #fbfbfa; --fg: #1d1d1b; --muted: #6b6b66; --rule: #e4e3df; --accent: #2f5bd3;
+    --font-display: ui-serif, Georgia, serif; --font-body: ui-sans-serif, system-ui, sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151514; --fg: #ecebe7; --muted: #a09f99; --rule: #2c2c2a; --accent: #8aa8ff; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 var(--font-body); }
+  main { max-width: 68ch; margin: 0 auto; padding-block: 48px; padding-inline: max(16px, 4vw); }
+  h1 { font: 600 2.25rem/1.15 var(--font-display); text-wrap: balance; margin: 0 0 .5rem; }
+  p { margin: 0 0 1rem; }
+  .muted { color: var(--muted); }
+  img, video { max-width: 100%; height: auto; }
+</style>
+</head>
 <body>
-<h1>Untitled page</h1>
-<p>Any HTML, CSS and JavaScript. Put images, scripts and data next to this file.</p>
-</body></html>
+<main>
+  <h1>Untitled page</h1>
+  <p class="muted">Lead with the answer. Put images, scripts and data next to this file and load them by relative path.</p>
+</main>
+</body>
+</html>
 `;
 
 export const ARTIFACT_TYPES = [
@@ -56,9 +77,10 @@ export const ARTIFACT_TYPES = [
     name: 'HTML',
     description: 'Any page or bundle: a slide deck, a dashboard, a design mockup, a tool or an app.',
     format: [
-      'A folder with index.html and its assets (scripts, styles, images, data, referenced by relative path), or one self-contained .html file. Served exactly as written.',
-      'The page runs sandboxed: no cookies, no localStorage, no access to Kortix. Load libraries from a CDN (cdnjs, jsdelivr, unpkg) when you need them.',
-      'Make it work from 360px wide to a large screen, in light and dark.',
+      'A folder with index.html and its assets (scripts, styles, images, data, referenced by relative path). Publishing one .html file makes that folder for you. Served exactly as written: write the doctype, the viewport meta and the <title> yourself.',
+      'The page runs sandboxed: no cookies, storage may throw (wrap it in try/catch), no access to Kortix. Load libraries from a CDN (cdnjs, jsdelivr, unpkg) at a pinned version when they do real work.',
+      'Make it work from 400px wide to a large screen with no sideways scroll, and in light and dark: every color a token on :root, redefined under prefers-color-scheme: dark.',
+      'The design method (treatment, token plan, charts, copy, naming) is in the kortix-artifacts skill, references/design.md.',
     ].join('\n'),
     starter: HTML_STARTER,
   },

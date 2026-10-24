@@ -22598,6 +22598,8 @@
     "removed": "已停止分享",
     "mediaSingleFile": "图片和视频需要文档位于单独的文件夹中。请将文档发布为文件夹以添加媒体。",
     "mediaTooLarge": "此文件超过 16 MB。",
-    "refresh": "刷新"
+    "refresh": "刷新",
+    "diagramEdit": "编辑图表",
+    "diagramDone": "完成"
   }
 }

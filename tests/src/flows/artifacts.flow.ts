@@ -177,6 +177,14 @@ flow(
       if (!now.includes('1.9%')) throw new Error(now);
     });
 
+    await ctx.step('a save keeps the artifact\'s name; only an "Untitled doc" takes its first heading', async () => {
+      const fresh = (await owner.post(LIST, { files: { 'index.md': { content: '# Untitled doc\n\n' } } }, { params: p })).status(201).json<Detail>();
+      const save = (content: string) => owner.put(ONE, { files: { 'index.md': { content } } }, one(fresh.artifact_id));
+      if ((await save('# Launch notes\n\nDraft.\n')).status(200).json<Detail>().title !== 'Launch notes') throw new Error('an untitled doc did not take its heading');
+      if ((await save('# Launch notes, revised\n\nDraft.\n')).status(200).json<Detail>().title !== 'Launch notes') throw new Error('a save renamed a named artifact');
+      (await owner.del(ONE, one(fresh.artifact_id))).status(200);
+    });
+
     await ctx.step('versions come from the Files history: two saves; the old one reads 2.1%; restoring it writes it back as a third save', async () => {
       const versions = (await owner.get(VERSIONS, one())).status(200).json<{ versions: { id: string; number: number }[] }>().versions;
       if (versions.length !== 2 || versions[0]!.number !== 2) throw new Error(JSON.stringify(versions));
