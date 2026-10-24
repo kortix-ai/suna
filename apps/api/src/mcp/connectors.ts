@@ -328,7 +328,9 @@ const validBase64 = (s: string) => /^[A-Za-z0-9+/=\s]*$/.test(s) && s.replace(/[
 /** `connectors_v2`: apps come from Kortix's own MCP catalogue (Discover), not Composio. */
 async function mcpAppsCatalogue(h: Host, pid: string): Promise<boolean> {
   const r = await h.call('GET', `/v1/projects/${pid}`);
-  return r.status < 400 && parse(r.body)?.project?.experimental?.connectors_v2 === true;
+  // `GET /v1/projects/:id` answers the project itself, its resolved flags in `experimental`.
+  const project = parse(r.body);
+  return r.status < 400 && (project?.experimental ?? project?.project?.experimental)?.connectors_v2 === true;
 }
 
 // ─── The tools ──────────────────────────────────────────────────────────────

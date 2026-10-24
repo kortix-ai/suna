@@ -108,7 +108,8 @@ describe('apps on a Connectors v2 project', () => {
       text: (value: string) => ({ content: [{ type: 'text', text: value }] }),
       call: async (method: string, path: string, opts: { query?: unknown; body?: unknown } = {}) => {
         calls.push({ method, path, ...opts });
-        if (path === '/v1/projects/proj-1') return { status: 200, body: JSON.stringify({ project: { experimental: { connectors_v2: true } } }) };
+        // The real shape: the project itself, its resolved flags in `experimental`.
+        if (path === '/v1/projects/proj-1') return { status: 200, body: JSON.stringify({ project_id: 'proj-1', experimental: { connectors_v2: true } }) };
         if (path.endsWith('/discover/connectors')) {
           return { status: 200, body: JSON.stringify({ items: [{ id: 'kortix:linear', kind: 'mcp', slug: 'linear', name: 'Linear', description: 'Issues.', categories: ['productivity'], mcpUrl: 'https://mcp.linear.app/mcp', oneClick: true }], nextCursor: undefined }) };
         }

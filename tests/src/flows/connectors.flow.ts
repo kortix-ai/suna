@@ -5591,6 +5591,8 @@ flow(
       'GET /v1/connectors/projects/:projectId/discover/connectors/tools',
       'POST /v1/connectors/projects/:projectId/discover/install',
       'GET /v1/connectors/projects/:projectId/connectors',
+      'POST /v1/accounts/tokens',
+      'POST /v1/mcp',
     ],
   },
   async (ctx) => {
@@ -5654,6 +5656,33 @@ flow(
       (await owner.post('/v1/connectors/projects/:projectId/discover/install', {}, { params })).status(400);
       (await owner.post('/v1/connectors/projects/:projectId/discover/install', { id: 'kortix:missing' }, { params })).status(404);
       (await owner.post('/v1/connectors/projects/:projectId/discover/install', { id: 'kortix:linear', way: 'nope' }, { params })).status(400).body().matches('$.error', /not a way to connect/);
+    });
+
+    await ctx.step('the agent\'s MCP tools read the same catalogue: search by type, one app\'s ways and tools, and install a way by name', async () => {
+      const created = await owner.post('/v1/accounts/tokens', { name: 'CONN-39 agent' });
+      created.status(201);
+      const pat = created.json<{ secret_key: string }>().secret_key;
+      const call = async (id: number, name: string, args: Record<string, unknown>) => {
+        const r = await ctx.client.as(ctx.P.ANON).post(
+          '/v1/mcp',
+          { jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: { project_id: on.id, ...args } } },
+          { headers: { Authorization: `Bearer ${pat}` }, timeoutMs: 60_000 },
+        );
+        r.status(200);
+        const result = r.json<{ result: { isError?: boolean; content: Array<{ text: string }> } }>().result;
+        if (result.isError) throw new Error(`${name}: ${result.content[0]?.text}`);
+        return JSON.parse(result.content[0]!.text);
+      };
+      const search = await call(1, 'search_connector_apps', { query: 'linear', kind: 'mcp', one_click: true });
+      if (search.apps?.[0]?.app !== 'kortix:linear' || search.apps[0].via !== 'mcp' || search.apps[0].one_click !== true) {
+        throw new Error(`search: ${JSON.stringify(search).slice(0, 300)}`);
+      }
+      const app = await call(2, 'get_connector_app', { app: 'kortix:linear', limit: 5 });
+      if (app.ways?.[0]?.way !== 'kortix:linear:mcp' || app.ways[0].recommended !== true || app.tools?.total < 10 || app.tools.list.length !== 5) {
+        throw new Error(`app: ${JSON.stringify(app).slice(0, 300)}`);
+      }
+      const added = await call(3, 'add_connector', { app: 'kortix:linear', name: 'Agent tracker' });
+      if (added.connector !== 'agent-tracker' || added.via !== 'mcp') throw new Error(`add: ${JSON.stringify(added)}`);
     });
 
     await ctx.step('a non-member is refused, and a project without connectors_v2 or the API catalogue is 403', async () => {

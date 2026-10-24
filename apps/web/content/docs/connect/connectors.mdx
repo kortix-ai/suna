@@ -289,6 +289,7 @@ kortix connectors connect gmail                                # authorize your 
 - `kortix connectors rm <slug> [--apply]` removes a connector. `kortix connectors rename <slug> <name>` sets its display name and applies at once.
 - `kortix connectors catalog [<query>]` lists every app you can install as a connector, one row per app by its best way in. `--kind mcp,composio,openapi,graphql` filters by how it connects, `--one-click` keeps the apps you connect by signing in, and `--category` and `--limit` narrow the page.
 - `kortix connectors catalog show <id>` lists every way to connect the app, recommended first, and the tools of one way (`--way <id>`). `catalog tools <id> --way <id>` lists every tool of one way.
+- `kortix connectors catalog categories [--kind …] [--one-click]` lists the category keys `--category` takes, with how many apps each holds. Every catalog command takes `--json`.
 - `kortix connectors catalog install <id> [--way <id>] [--name <name>] [--slug <slug>]` adds the connector profile, the recommended way unless `--way`. Then `kortix connectors connect <slug>`.
 - The catalog commands need the `connectors_v2` or the `connectors_api_discover` flag.
 - `--auth-type none|bearer|basic|custom|oauth1` overrides the authentication Kortix detects from the source.
