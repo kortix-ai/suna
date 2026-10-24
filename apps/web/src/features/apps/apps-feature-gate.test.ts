@@ -390,8 +390,10 @@ test('the Apps grid is a gallery: bordered thumbnails, captions hanging below', 
   expect(card).not.toContain('border-b');
   expect(card).toContain('className="mt-3 flex items-center gap-2"');
 
-  // Still exactly one control per card — a hover overflow button inside the
-  // card button would be invalid HTML and a nested hit area.
-  expect(card.match(/<button/g)).toHaveLength(1);
+  // One card button, plus the agent-scope caption button that sits beside the
+  // grant checkbox as a sibling, never inside the card button: a hover
+  // overflow button inside the card button would be invalid HTML and a nested
+  // hit area.
+  expect(card.match(/<button/g)).toHaveLength(2);
   expect(card).not.toContain('DropdownMenu');
 });

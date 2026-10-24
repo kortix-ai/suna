@@ -1,10 +1,15 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 
 import { AgentPage } from '@kortix/ui/customize/agents/agent-page';
 
-import { AppsView } from '@/features/apps/apps-view';
+// Loaded when the Apps section opens: the Apps screen (grid, previews, the
+// detail modal) is not part of the editor's first paint.
+const AppsView = dynamic(() => import('@/features/apps/apps-view').then((m) => m.AppsView), {
+  ssr: false,
+});
 
 /**
  * /projects/[id]/agent/[name] — one agent, as a page. The Agents tab opened on

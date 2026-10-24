@@ -84,6 +84,7 @@ import {
   type ModelsPageSheetHost,
 } from './models-page-sheet';
 import { cn } from '../../internal/lib/utils';
+import { FadedScrollArea } from '../../primitives/faded-scroll-area';
 import { ModelSelector } from '../../session/models/model-selector';
 import type { ResourceScope } from '../shared/agent-resource-scope';
 import { CapabilityPageShell } from '../shared/capability-page-shell';
@@ -353,7 +354,6 @@ export function LlmSections({
 
 /** The agent variant's own tab, ahead of the seven project tabs. */
 const AGENT_TAB = 'agent';
-const AGENT_LLM_TABS: LlmTabEntry[] = [{ id: AGENT_TAB, label: 'This agent' }, ...LLM_TABS];
 
 export function LlmManagementView({
   projectId,
@@ -370,6 +370,11 @@ export function LlmManagementView({
 }) {
   const { isOpen: open, activeTab: section } = useSettingsNav();
   const agentScoped = surface.kind === 'agent' && agentSettings !== undefined;
+  const tAgentScope = useTranslations('agentScope');
+  const agentTabs = useMemo<LlmTabEntry[]>(
+    () => [{ id: AGENT_TAB, label: tAgentScope('thisAgent') }, ...LLM_TABS],
+    [tAgentScope],
+  );
   const [tab, setTab] = useState<LlmTab | typeof AGENT_TAB>(
     () => TAB_BY_SECTION[section as LegacyLlmSubTab] ?? (agentScoped ? AGENT_TAB : 'providers'),
   );
@@ -400,19 +405,27 @@ export function LlmManagementView({
     <CapabilityPageShell
       title={MODELS_PAGE_TITLE}
       description={
-        agentScoped
-          ? 'Choose the model this agent runs on, and the providers behind it.'
-          : MODELS_PAGE_DESCRIPTION
+        // Only "This agent" is the agent's own; every other tab edits state
+        // that all of the project's agents share, and the line says so.
+        agentScoped ? tAgentScope('modelsDescription') : MODELS_PAGE_DESCRIPTION
       }
       filters={
         /* The tab strip on the left, the project default on the right of the
            same row. */
         <>
-          <LlmTabStrip
-            value={tab}
-            onValueChange={(v) => setTab(v as LlmTab | typeof AGENT_TAB)}
-            tabs={agentScoped ? AGENT_LLM_TABS : LLM_TABS}
-          />
+          {agentScoped ? (
+            // Eight tabs in the editor's pane, beside the rail: the strip
+            // scrolls rather than push the row wider than the column.
+            <FadedScrollArea orientation="horizontal" fadeColor="from-background" className="min-w-0 max-w-full">
+              <LlmTabStrip
+                value={tab}
+                onValueChange={(v) => setTab(v as LlmTab | typeof AGENT_TAB)}
+                tabs={agentTabs}
+              />
+            </FadedScrollArea>
+          ) : (
+            <LlmTabStrip value={tab} onValueChange={(v) => setTab(v as LlmTab)} tabs={LLM_TABS} />
+          )}
           {canWrite && !agentScoped ? <ProjectDefaultPicker projectId={projectId} /> : null}
         </>
       }

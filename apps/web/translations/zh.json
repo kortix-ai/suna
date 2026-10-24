@@ -20959,6 +20959,26 @@
     "emptyTitle": "尚无应用",
     "emptyDescription": "部署到本项目的应用会显示在这里，供智能体选择。"
   },
+  "agentScope": {
+    "modeAll": "全部",
+    "modeSpecific": "指定",
+    "modeNone": "无",
+    "thisAgent": "此代理",
+    "modelsDescription": "此代理的模型。其他标签页适用于整个项目。",
+    "connectorsDescription": "选择此代理可以使用的连接器。",
+    "connectorsAccess": "此代理的连接器访问权限",
+    "skillsDescription": "选择此代理可以使用的技能。",
+    "skillsAccess": "此代理的技能访问权限",
+    "secretsAccess": "此代理的密钥访问权限",
+    "grantedColumn": "已授予此代理",
+    "appsAccess": "此代理的应用访问权限",
+    "missingApps": "缺失的应用",
+    "triggersDescription": "此代理何时自动启动。",
+    "triggersEmpty": "启动此代理的触发器将显示在这里。",
+    "projectPaused": "此项目当前没有任何内容会自动运行，此代理也不例外。触发器可在项目的触发器页面恢复。",
+    "requiredUnderAll": "会话开始前必需：{list}。切换到“指定”即可更改。",
+    "configError": "无法加载此代理的设置。"
+  },
   "connectorsAppReturn": {
     "done": "完成。返回 Kortix 应用"
   },

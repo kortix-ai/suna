@@ -20959,6 +20959,26 @@
     "emptyTitle": "アプリはまだありません",
     "emptyDescription": "このプロジェクトにデプロイしたアプリが、エージェントの選択肢としてここに表示されます。"
   },
+  "agentScope": {
+    "modeAll": "すべて",
+    "modeSpecific": "指定",
+    "modeNone": "なし",
+    "thisAgent": "このエージェント",
+    "modelsDescription": "このエージェントのモデル。他のタブはプロジェクト全体に適用されます。",
+    "connectorsDescription": "このエージェントが使えるコネクタを選びます。",
+    "connectorsAccess": "このエージェントのコネクタへのアクセス",
+    "skillsDescription": "このエージェントが使えるスキルを選びます。",
+    "skillsAccess": "このエージェントのスキルへのアクセス",
+    "secretsAccess": "このエージェントのシークレットへのアクセス",
+    "grantedColumn": "このエージェントに付与済み",
+    "appsAccess": "このエージェントのアプリへのアクセス",
+    "missingApps": "見つからないアプリ",
+    "triggersDescription": "このエージェントが自動で開始するタイミング。",
+    "triggersEmpty": "このエージェントを開始するトリガーがここに表示されます。",
+    "projectPaused": "現在このプロジェクトでは何も自動で実行されません。このエージェントも同様です。トリガーはプロジェクトのトリガーページから再開します。",
+    "requiredUnderAll": "セッション開始前に必須: {list}。変更するには「指定」に切り替えます。",
+    "configError": "このエージェントの設定を読み込めませんでした。"
+  },
   "connectorsAppReturn": {
     "done": "完了。Kortix アプリに戻る"
   },

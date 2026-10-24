@@ -3,13 +3,16 @@
 import { Button } from '@kortix/ui/button';
 import { Checkbox } from '@kortix/ui/checkbox';
 import { Badge } from '@kortix/ui/badge';
+// Leaf modules, never `customize/agents/agent-page`: that module is the whole
+// agent editor, and this screen is also the project-wide `/apps` route.
+import { appGrantRows } from '@kortix/ui/customize/agents/agent-apps-grant';
 import {
   type AgentGrant,
-  appGrantRows,
-  CapabilityPageShell,
   GrantModeTabs,
+  grantOrphans,
   type ResourceScope,
-} from '@kortix/ui/customize/agents/agent-page';
+} from '@kortix/ui/customize/shared/agent-resource-scope';
+import { CapabilityPageShell } from '@kortix/ui/customize/shared/capability-page-shell';
 
 import { Skeleton } from '@kortix/ui/skeleton';
 import { errorToast } from '@kortix/ui/toast';
@@ -116,6 +119,7 @@ export function AppsView({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tAgentApps = useTranslations('agentApps');
+  const tAgentScope = useTranslations('agentScope');
   const agentGrant = surface.kind === 'agent' ? grant : undefined;
   const apps = useProjectApps(projectId);
   const searchParams = useSearchParams();
@@ -173,7 +177,7 @@ export function AppsView({
           checked: agentGrant.isGranted(app.slug),
           disabled: agentGrant.mode !== 'specific',
           onToggle: () => agentGrant.toggle(app.slug),
-          label: `Grant ${app.name} to this agent`,
+          label: tI18nComplete('textd4170e74c3b0', { value0: app.name }),
           note: grantNeeded.has(app.slug) ? null : tAgentApps('openWithoutGrant'),
         }
       : undefined;
@@ -282,6 +286,9 @@ export function AppsView({
   );
 
   if (agentGrant) {
+    // Granted slugs with no App behind them (deleted, or renamed): listed
+    // above the grid with a Missing mark, so the grant can be revoked.
+    const missing = apps.data ? grantOrphans(agentGrant.value, apps.data.map((app) => app.slug)) : [];
     // Inside the agent editor's pane: the capability shell is the scroller and
     // the heading, the grant mode its filter row. The grid measures the shell's
     // column (`@container/apps`), as it measures the page's column below.
@@ -289,10 +296,35 @@ export function AppsView({
       <CapabilityPageShell
         wide
         title={tI18nComplete.raw('text89dd748442c1')}
-        description="Choose which Apps this agent can open."
+        description={tAgentApps('description')}
         action={<div className="flex shrink-0 items-center">{controls}</div>}
-        filters={<GrantModeTabs grant={agentGrant} label="App access for this agent" />}
+        filters={<GrantModeTabs grant={agentGrant} label={tAgentScope('appsAccess')} />}
       >
+        <p className="text-muted-foreground mb-4 text-xs">{tAgentApps('grantNote')}</p>
+        {missing.length > 0 ? (
+          <section className="mb-6 space-y-2">
+            <h2 className="text-sm font-medium">{tAgentScope('missingApps')}</h2>
+            <ul className="space-y-1.5">
+              {missing.map((slug) => (
+                <li key={slug} className="flex min-w-0 items-center gap-3">
+                  <Checkbox
+                    checked={agentGrant.isGranted(slug)}
+                    disabled={agentGrant.mode !== 'specific'}
+                    onCheckedChange={() => agentGrant.toggle(slug)}
+                    aria-label={tI18nComplete('textd4170e74c3b0', { value0: slug })}
+                  />
+                  <code className="text-foreground truncate font-mono text-xs">{slug}</code>
+                  <Badge variant="destructive" size="xs">
+                    {tI18nComplete.raw('text6be36ca49ee8')}
+                  </Badge>
+                  <span className="text-muted-foreground hidden truncate text-xs sm:block">
+                    {tI18nComplete.raw('textfecc36d012be')}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
         <div className={cn('flex flex-col', APP_GRID_CONTAINER)}>{body}</div>
         {overlays}
       </CapabilityPageShell>
@@ -496,7 +528,15 @@ function AppCard({
             onCheckedChange={select.onToggle}
             aria-label={select.label}
           />
-          {captionText}
+          {/* The caption opens the App as the thumbnail does: its own button,
+              a sibling of the checkbox. */}
+          <button
+            type="button"
+            onClick={onOpen}
+            className="focus-visible:ring-ring/50 flex min-w-0 flex-1 items-center gap-2 rounded-sm text-left focus-visible:ring-2 focus-visible:outline-none"
+          >
+            {captionText}
+          </button>
           {select.note ? (
             <Badge variant="muted" size="xs">
               {select.note}

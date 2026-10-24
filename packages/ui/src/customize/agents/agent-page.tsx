@@ -160,16 +160,8 @@ import { TriggersPage } from '../triggers/triggers-page';
 import { CountBadge } from '../../primitives/count-badge';
 import { ModelSection } from '../sections/view/agent-editor-basics-fields';
 import { type AgentGrant, useAgentGrant } from '../shared/agent-resource-scope';
-
-/**
- * What a host needs to render its own agent-scoped Apps screen through
- * `renderApps` — the web app's `AppsView` lives in apps/web, outside this
- * package, and takes the same two-variant contract as every other resource
- * page here.
- */
-export { CapabilityPageShell } from '../shared/capability-page-shell';
-export { GrantModeTabs, type AgentGrant, type ResourceScope } from '../shared/agent-resource-scope';
-export { appGrantRows } from './agent-apps-grant';
+import { LeaveGuardProvider, useUnsavedChangesGuard } from '../shared/leave-guard';
+import { pruneRequiredConnectors, toggleRequiredConnector } from './connectors-required';
 
 /** A host's agent-scoped Apps screen: the full Apps page for one agent. */
 export type RenderAgentApps = (args: { agentName: string; grant: AgentGrant }) => ReactNode;
@@ -209,6 +201,7 @@ export function AgentPage({
   renderApps?: RenderAgentApps;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tAgentScope = useI18nTranslations('agentScope');
   // `accountId` skips useProjectCan's own getProject and lets the IAM probe
   // run on the first render instead of waiting a round-trip for it.
   const accountId = useProjectAccountId(projectId);
@@ -272,6 +265,24 @@ export function AgentPage({
               <Link href={capabilityTabHref(projectId, 'agent')}>
                 {tI18nComplete.raw('text54c32d3e2cfa')}
               </Link>
+            </Button>
+          }
+        />
+      </CenteredState>
+    );
+  }
+
+  // A writer whose agent-config read failed would otherwise land on the
+  // read-only page with no word on why: say it failed, and offer the retry.
+  if (!isPlatform && canWrite && configQuery.isError) {
+    return (
+      <CenteredState>
+        <ErrorState
+          size="sm"
+          title={tAgentScope('configError')}
+          action={
+            <Button variant="outline" size="sm" onClick={() => configQuery.refetch()}>
+              {tI18nComplete.raw('text942087cc2d41')}
             </Button>
           }
         />
@@ -477,6 +488,13 @@ function AgentPageSkeleton() {
     return (
       <div className="flex h-full min-h-0 flex-1 flex-col">
         {header}
+        {/* The loaded mobile frame's horizontal section strip. */}
+        <div className="border-border/60 flex shrink-0 items-center gap-2 overflow-hidden border-b py-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length placeholder
+            <Skeleton key={i} className="h-8 w-20 shrink-0 rounded-md" />
+          ))}
+        </div>
         {pane}
       </div>
     );
@@ -717,7 +735,12 @@ function AgentHeader({
           </h1>
           <AgentChips agent={agent} config={config} size="xs" />
         </nav>
-        {line ? <p className="text-muted-foreground truncate text-xs">{line}</p> : null}
+        {/* One line here; the whole text on hover, and on a reader's Overview. */}
+        {line ? (
+          <p className="text-muted-foreground truncate text-xs" title={line}>
+            {line}
+          </p>
+        ) : null}
       </div>
       <AgentActions projectId={projectId} agent={agent} config={config} canWrite={canWrite} />
     </header>
@@ -728,8 +751,8 @@ function AgentHeader({
  * The rail's right-edge mark for one grant: the pick count, or All. None and
  * an unset grant show nothing — an empty edge is the quiet default.
  */
-function grantSummaryMark(value: AgentGrantSetV2 | undefined): ReactNode {
-  if (value === 'all') return <span className="text-muted-foreground shrink-0 text-xs">All</span>;
+function grantSummaryMark(value: AgentGrantSetV2 | undefined, allLabel: string): ReactNode {
+  if (value === 'all') return <span className="text-muted-foreground shrink-0 text-xs">{allLabel}</span>;
   if (Array.isArray(value) && value.length > 0) return <CountBadge count={value.length} />;
   return null;
 }
@@ -781,6 +804,7 @@ function EditableAgentPage({
   renderApps?: RenderAgentApps;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tAgentScope = useI18nTranslations('agentScope');
   const editor = useAgentDraft(initial);
   const options = useAgentEditorOptions(projectId);
   const update = useUpdateAgentConfig(projectId, agent.name);
@@ -809,38 +833,29 @@ function EditableAgentPage({
   const { draft, set } = editor;
   const connectorsGrant = useAgentGrant(draft.connectors, (v) => {
     set('connectors', v);
-    // A connector can be required only while it is picked by name — so
-    // dropping one, or switching to All or None, drops its Required flag.
-    const required = draft.connectors_required ?? [];
-    const picked = new Set(Array.isArray(v) ? v : []);
-    const kept = required.filter((slug) => picked.has(slug));
-    if (kept.length !== required.length) {
-      set('connectors_required', kept.length ? kept : undefined);
-    }
+    const kept = pruneRequiredConnectors(draft.connectors_required, v);
+    if (kept !== draft.connectors_required) set('connectors_required', kept);
   });
   const requiredConnectors = {
+    list: draft.connectors_required ?? [],
     isRequired: (slug: string) => draft.connectors_required?.includes(slug) === true,
-    toggle: (slug: string) => {
-      const current = draft.connectors_required ?? [];
-      const next = current.includes(slug)
-        ? current.filter((a) => a !== slug)
-        : [...current, slug];
-      set('connectors_required', next.length ? next : undefined);
-    },
+    toggle: (slug: string) =>
+      set('connectors_required', toggleRequiredConnector(draft.connectors_required, slug)),
   };
   const skillsGrant = useAgentGrant(draft.skills, (v) => set('skills', v));
   const secretsGrant = useAgentGrant(draft.secrets, (v) => set('secrets', v));
   const appsGrant = useAgentGrant(draft.apps, (v) => set('apps', v));
   const full = FULL_SECTIONS.includes(section) || (section === 'apps' && renderApps !== undefined);
 
+  const allLabel = tAgentScope('modeAll');
   const summary: Partial<Record<AgentConfigSectionKey, ReactNode>> = {
-    skills: grantSummaryMark(draft.skills),
-    subagents: grantSummaryMark(draft.subagents),
-    commands: grantSummaryMark(draft.commands),
-    extensions: grantSummaryMark(draft.extensions),
-    connectors: grantSummaryMark(draft.connectors),
-    secrets: grantSummaryMark(draft.secrets),
-    apps: grantSummaryMark(draft.apps),
+    skills: grantSummaryMark(draft.skills, allLabel),
+    subagents: grantSummaryMark(draft.subagents, allLabel),
+    commands: grantSummaryMark(draft.commands, allLabel),
+    extensions: grantSummaryMark(draft.extensions, allLabel),
+    connectors: grantSummaryMark(draft.connectors, allLabel),
+    secrets: grantSummaryMark(draft.secrets, allLabel),
+    apps: grantSummaryMark(draft.apps, allLabel),
   };
 
   const onSave = useCallback(async () => {
@@ -899,6 +914,9 @@ function EditableAgentPage({
   })();
 
   return (
+    // Embedded screens leave through the router too (the settings nav, a
+    // configure session): they ask the same question as a link click.
+    <LeaveGuardProvider value={leaveGuard.confirmLeave}>
     <AgentPageFrame
       header={
         <AgentHeader
@@ -977,7 +995,7 @@ function EditableAgentPage({
               sidebar, a tab, the breadcrumb. Confirming leaves; cancelling
               stays put. */}
           <ConfirmDialog
-            open={leaveGuard.pendingHref !== null}
+            open={leaveGuard.asking}
             onOpenChange={(open) => {
               if (!open) leaveGuard.stay();
             }}
@@ -991,6 +1009,7 @@ function EditableAgentPage({
         </>
       }
     />
+    </LeaveGuardProvider>
   );
 }
 
@@ -1175,61 +1194,6 @@ function useSaveShortcut(onSave: () => void) {
   }, [onSave]);
 }
 
-/**
- * Holds a dirty page on the page until the person decides.
- *
- * Two exits, two guards. A tab close or a reload reaches only `beforeunload`,
- * so that is armed while dirty. An in-app link — the sidebar, a tab, the
- * breadcrumb — never fires it, and the App Router has no navigation event to
- * cancel, so anchor clicks are intercepted in the capture phase instead: the
- * click is swallowed, the target href is parked, and the page asks. `leave`
- * pushes the parked href; `stay` drops it. Modified clicks (new tab) and
- * external links pass through — nothing is lost by opening a second tab.
- */
-function useUnsavedChangesGuard(isDirty: boolean, currentPath?: string) {
-  const router = useUiRouter();
-  const [pendingHref, setPendingHref] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!isDirty) return;
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-    };
-    const onClick = (event: MouseEvent) => {
-      if (event.defaultPrevented || event.button !== 0) return;
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      const anchor = (event.target as Element | null)?.closest?.('a[href]');
-      if (!(anchor instanceof HTMLAnchorElement)) return;
-      if (anchor.target && anchor.target !== '_self') return;
-      if (anchor.origin !== window.location.origin) return;
-      const href = anchor.pathname + anchor.search + anchor.hash;
-      if (href === window.location.pathname + window.location.search + window.location.hash) return;
-      // A link that only changes `?section=` on this page switches topic; the
-      // draft survives that, so it never needs the question.
-      if (currentPath && anchor.pathname === currentPath) return;
-      event.preventDefault();
-      event.stopPropagation();
-      setPendingHref(href);
-    };
-    window.addEventListener('beforeunload', onBeforeUnload);
-    document.addEventListener('click', onClick, true);
-    return () => {
-      window.removeEventListener('beforeunload', onBeforeUnload);
-      document.removeEventListener('click', onClick, true);
-    };
-  }, [isDirty, currentPath]);
-
-  return {
-    pendingHref,
-    stay: () => setPendingHref(null),
-    leave: () => {
-      const href = pendingHref;
-      setPendingHref(null);
-      if (href) router.push(href);
-    },
-  };
-}
-
 // ─── Read-only body ────────────────────────────────────────────────────────
 
 function ReadOnlyAgentPage({
@@ -1328,6 +1292,12 @@ function ReadOnlyAgentPage({
             ) : null}
             {isPlatform ? null : section === 'overview' ? (
               <>
+                {/* The header shows one line of it; a reader reads it whole here. */}
+                {agent.description ? (
+                  <p className="text-muted-foreground max-w-2xl text-sm text-pretty">
+                    {agent.description}
+                  </p>
+                ) : null}
                 {source}
                 <AgentScope projectId={projectId} agentName={agent.name} scope={agent.scope} />
               </>

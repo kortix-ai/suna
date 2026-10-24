@@ -18,6 +18,7 @@ import { useCallback, useState } from 'react';
 import type { PendingSessionPrompt } from '@kortix/sdk';
 import { useNewProjectSession } from '../internal/hooks/projects/use-new-project-session';
 import { useSettingsPanelStore } from '../internal/stores/settings-panel-store';
+import { useGuardedLeave } from './shared/leave-guard';
 
 export { editConfigPrompt, newConfigPrompt, type ConfigureKind } from '@kortix/shared';
 
@@ -38,6 +39,7 @@ export function useConfigureThread(projectId: string): ConfigureThread {
   const closeCustomize = useSettingsPanelStore((s) => s.close);
   const [pending, setPending] = useState(false);
   const newSession = useNewProjectSession(projectId);
+  const guardedLeave = useGuardedLeave();
 
   const start = useCallback(
     (prompt: string | PendingSessionPrompt) => {
@@ -46,25 +48,29 @@ export function useConfigureThread(projectId: string): ConfigureThread {
       // Guard re-entry: ignore extra clicks while a session is being minted so
       // we don't fire two creates (two billed sessions for one click).
       if (pending) return;
-      setPending(true);
-      // Optimistic, identical to the project-home composer: mint the session,
-      // stash the seed prompt, close the overlay, and drop into the instant shell
-      // — which shows the prompt + inline boot status and auto-sends it once the
-      // runtime is ready (the hook persists + bounces on a terminal failure).
-      // Leave `pending` true: we're navigating away and the overlay is closing,
-      // so flipping it back would only flash the idle button.
-      newSession({
-        // The prompt is a durable inbox row from the create itself — the API
-        // converts `pending_prompt` inside the session-create transaction, so
-        // a closed tab between here and the workbench cannot lose it. No
-        // start-stash: there are no picks to hand off.
-        create: { pending_prompt: pendingPrompt },
-        onNavigate: () => {
-          closeCustomize();
-        },
+      // Under a page with unsaved edits (the agent editor), the new session
+      // waits until the person chooses to leave them.
+      guardedLeave(() => {
+        setPending(true);
+        // Optimistic, identical to the project-home composer: mint the session,
+        // stash the seed prompt, close the overlay, and drop into the instant shell
+        // — which shows the prompt + inline boot status and auto-sends it once the
+        // runtime is ready (the hook persists + bounces on a terminal failure).
+        // Leave `pending` true: we're navigating away and the overlay is closing,
+        // so flipping it back would only flash the idle button.
+        newSession({
+          // The prompt is a durable inbox row from the create itself — the API
+          // converts `pending_prompt` inside the session-create transaction, so
+          // a closed tab between here and the workbench cannot lose it. No
+          // start-stash: there are no picks to hand off.
+          create: { pending_prompt: pendingPrompt },
+          onNavigate: () => {
+            closeCustomize();
+          },
+        });
       });
     },
-    [pending, newSession, closeCustomize],
+    [pending, newSession, closeCustomize, guardedLeave],
   );
 
   return { start, pending };

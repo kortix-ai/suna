@@ -20959,6 +20959,26 @@
     "emptyTitle": "Noch keine Apps",
     "emptyDescription": "In diesem Projekt bereitgestellte Apps erscheinen hier zur Auswahl für den Agenten."
   },
+  "agentScope": {
+    "modeAll": "Alle",
+    "modeSpecific": "Bestimmte",
+    "modeNone": "Keine",
+    "thisAgent": "Dieser Agent",
+    "modelsDescription": "Das Modell dieses Agents. Die anderen Tabs gelten für das ganze Projekt.",
+    "connectorsDescription": "Wähle, welche Connectors dieser Agent nutzen kann.",
+    "connectorsAccess": "Connector-Zugriff für diesen Agent",
+    "skillsDescription": "Wähle, welche Skills dieser Agent nutzen kann.",
+    "skillsAccess": "Skill-Zugriff für diesen Agent",
+    "secretsAccess": "Secret-Zugriff für diesen Agent",
+    "grantedColumn": "Diesem Agent gewährt",
+    "appsAccess": "App-Zugriff für diesen Agent",
+    "missingApps": "Fehlende Apps",
+    "triggersDescription": "Wann dieser Agent von selbst startet.",
+    "triggersEmpty": "Trigger, die diesen Agent starten, erscheinen hier.",
+    "projectPaused": "In diesem Projekt läuft gerade nichts von selbst, auch dieser Agent nicht. Trigger werden auf der Trigger-Seite des Projekts fortgesetzt.",
+    "requiredUnderAll": "Vor dem Sitzungsstart erforderlich: {list}. Wechsle zu Bestimmte, um das zu ändern.",
+    "configError": "Die Einstellungen dieses Agents konnten nicht geladen werden."
+  },
   "connectorsAppReturn": {
     "done": "Fertig. Zurück zur Kortix-App"
   },

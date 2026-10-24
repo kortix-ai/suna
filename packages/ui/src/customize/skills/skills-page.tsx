@@ -78,6 +78,7 @@ export function SkillsPage({
   /** Required in `agent` scope: the agent's `skills` grant. */
   grant?: AgentGrant;
 }) {
+  const tAgentScope = useI18nTranslations('agentScope');
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const agentScoped = surface.kind === 'agent' && grant !== undefined;
   // `accountId` skips useProjectCan's own getProject and lets the IAM probe
@@ -158,7 +159,7 @@ export function SkillsPage({
     <CapabilityPageShell
       title={tI18nComplete.raw('text66d0f523a379')}
       description={
-        agentScoped ? 'Choose which skills this agent can use.' : tI18nComplete.raw('text000c02c11c7a')
+        agentScoped ? tAgentScope('skillsDescription') : tI18nComplete.raw('text000c02c11c7a')
       }
       action={createButton('New')}
       search={
@@ -180,7 +181,7 @@ export function SkillsPage({
       filters={
         <>
           {agentScoped && grant ? (
-            <GrantModeTabs grant={grant} label="Skill access for this agent" />
+            <GrantModeTabs grant={grant} label={tAgentScope('skillsAccess')} />
           ) : null}
           <Tabs value={scope} onValueChange={(value) => setScope(value as ScopeFilter)}>
             <TabsList>
@@ -246,7 +247,7 @@ export function SkillsPage({
                     checked: grant.isGranted(skill.name),
                     disabled: grant.mode !== 'specific',
                     onCheckedChange: () => grant.toggle(skill.name),
-                    label: `Grant ${skill.name} to this agent`,
+                    label: tI18nComplete('textd4170e74c3b0', { value0: skill.name }),
                   }
                 : undefined
             }

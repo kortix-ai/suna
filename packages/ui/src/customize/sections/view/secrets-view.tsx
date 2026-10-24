@@ -88,6 +88,7 @@ import { CapabilityPageShell } from '../../shared/capability-page-shell';
 import {
   type AgentGrant,
   GrantModeTabs,
+  grantOrphans,
   type ResourceScope,
 } from '../../shared/agent-resource-scope';
 import { AudienceFields } from '../add-account-fields';
@@ -253,6 +254,7 @@ export function SecretsView({
 }) {
   const agentGrant = surface.kind === 'agent' ? grant : undefined;
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tAgentScope = useI18nTranslations('agentScope');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tSecrets = useTranslations('secrets');
@@ -329,6 +331,18 @@ export function SecretsView({
     );
   }, [allRows, query]);
 
+  // Agent scope: granted identifiers this project no longer declares (deleted,
+  // renamed, or never a project secret). Listed after the rows with a Missing
+  // mark so the editor can revoke them; a search hides them, since they hold
+  // nothing to match but the name.
+  const orphans = useMemo(
+    () =>
+      agentGrant && !query.trim()
+        ? grantOrphans(agentGrant.value, allRows.map((r) => r.identifier))
+        : [],
+    [agentGrant, allRows, query],
+  );
+
   const configure = useConfigureThread(projectId);
   const openCreate = () => {
     setDialogRow(null);
@@ -360,10 +374,12 @@ export function SecretsView({
     <CapabilityPageShell
       title={tI18nComplete.raw('textd8707d411d99')}
       description={
-        agentGrant ? 'Choose which secrets this agent receives.' : tI18nComplete.raw('texteca47e3afa10')
+        agentGrant ? tI18nComplete.raw('textbb74cc7dce98') : tI18nComplete.raw('texteca47e3afa10')
       }
       filters={
-        agentGrant ? <GrantModeTabs grant={agentGrant} label="Secret access for this agent" /> : undefined
+        agentGrant ? (
+          <GrantModeTabs grant={agentGrant} label={tAgentScope('secretsAccess')} />
+        ) : undefined
       }
       search={
         /* Hidden until there is a list to search, the same rule Triggers
@@ -437,7 +453,7 @@ export function SecretsView({
               </InfoBanner>
             )}
 
-            {filtered.length === 0 ? (
+            {filtered.length === 0 && orphans.length === 0 ? (
               query.trim() ? (
                 <p className="text-muted-foreground px-3 py-6 text-center text-xs">
                   {tI18nComplete.raw('texta8897de42124')}
@@ -465,7 +481,7 @@ export function SecretsView({
                   <TableRow className="hover:bg-transparent">
                     {agentGrant ? (
                       <TableHead className="w-10">
-                        <span className="sr-only">Granted to this agent</span>
+                        <span className="sr-only">{tAgentScope('grantedColumn')}</span>
                       </TableHead>
                     ) : null}
                     <TableHead>{tI18nComplete.raw('text9b10587f84a2')}</TableHead>
@@ -492,6 +508,11 @@ export function SecretsView({
                       onDeleteMine={() => deleteMine.mutate(row.key)}
                     />
                   ))}
+                  {agentGrant
+                    ? orphans.map((identifier) => (
+                        <MissingSecretRow key={identifier} identifier={identifier} grant={agentGrant} />
+                      ))
+                    : null}
                 </TableBody>
               </Table>
             )}
@@ -800,6 +821,41 @@ function SecretMarks({ row }: { row: SecretRow }) {
   );
 }
 
+/**
+ * A granted identifier the project no longer declares: its name, the Missing
+ * mark, and the grant checkbox to revoke it. It has no value, delivery or
+ * audience, so those cells stay empty.
+ */
+function MissingSecretRow({ identifier, grant }: { identifier: string; grant: AgentGrant }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  return (
+    <TableRow>
+      <TableCell className="w-10 align-middle">
+        <Checkbox
+          checked={grant.isGranted(identifier)}
+          disabled={grant.mode !== 'specific'}
+          onCheckedChange={() => grant.toggle(identifier)}
+          aria-label={tI18nComplete('textd4170e74c3b0', { value0: identifier })}
+        />
+      </TableCell>
+      <TableCell className="max-w-[260px] align-middle">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <code className="text-foreground truncate font-mono text-xs">{identifier}</code>
+            <Badge variant="destructive" size="xs">
+              {tI18nComplete.raw('text6be36ca49ee8')}
+            </Badge>
+          </div>
+          <span className="text-muted-foreground truncate text-xs">
+            {tI18nComplete.raw('textfecc36d012be')}
+          </span>
+        </div>
+      </TableCell>
+      <TableCell colSpan={4} />
+    </TableRow>
+  );
+}
+
 function SecretTableRow({
   row,
   grant,
@@ -840,7 +896,7 @@ function SecretTableRow({
             checked={grant.isGranted(row.identifier)}
             disabled={grant.mode !== 'specific'}
             onCheckedChange={() => grant.toggle(row.identifier)}
-            aria-label={`Grant ${row.identifier} to this agent`}
+            aria-label={tI18nComplete('textd4170e74c3b0', { value0: row.identifier })}
           />
         </TableCell>
       ) : null}

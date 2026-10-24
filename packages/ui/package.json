@@ -63,6 +63,7 @@
     "./context-menu": "./src/primitives/context-menu.tsx",
     "./count-badge": "./src/primitives/count-badge.tsx",
     "./customize": "./src/customize/index.ts",
+    "./customize/agents/agent-apps-grant": "./src/customize/agents/agent-apps-grant.ts",
     "./customize/agents/agent-detail-aside": "./src/customize/agents/agent-detail-aside.tsx",
     "./customize/agents/agent-page": "./src/customize/agents/agent-page.tsx",
     "./customize/agents/agents-page": "./src/customize/agents/agents-page.tsx",
@@ -114,7 +115,9 @@
     "./customize/settings/tabs/snapshots-tab": "./src/customize/settings/tabs/snapshots-tab.tsx",
     "./customize/settings/tabs/tokens-tab": "./src/customize/settings/tabs/tokens-tab.tsx",
     "./customize/settings/type": "./src/customize/settings/type.ts",
+    "./customize/shared/agent-resource-scope": "./src/customize/shared/agent-resource-scope.tsx",
     "./customize/shared/capability-access-gate": "./src/customize/shared/capability-access-gate.tsx",
+    "./customize/shared/capability-page-shell": "./src/customize/shared/capability-page-shell.tsx",
     "./customize/shared/capability-skeleton": "./src/customize/shared/capability-skeleton.tsx",
     "./customize/shared/capability-tabs": "./src/customize/shared/capability-tabs.tsx",
     "./customize/shared/entity/entity-files": "./src/customize/shared/entity/entity-files.ts",
@@ -716,6 +719,10 @@
         "types": "./dist/customize/index.d.ts",
         "import": "./dist/customize/index.js"
       },
+      "./customize/agents/agent-apps-grant": {
+        "types": "./dist/customize/agents/agent-apps-grant.d.ts",
+        "import": "./dist/customize/agents/agent-apps-grant.js"
+      },
       "./customize/agents/agent-detail-aside": {
         "types": "./dist/customize/agents/agent-detail-aside.d.ts",
         "import": "./dist/customize/agents/agent-detail-aside.js"
@@ -920,9 +927,17 @@
         "types": "./dist/customize/settings/type.d.ts",
         "import": "./dist/customize/settings/type.js"
       },
+      "./customize/shared/agent-resource-scope": {
+        "types": "./dist/customize/shared/agent-resource-scope.d.ts",
+        "import": "./dist/customize/shared/agent-resource-scope.js"
+      },
       "./customize/shared/capability-access-gate": {
         "types": "./dist/customize/shared/capability-access-gate.d.ts",
         "import": "./dist/customize/shared/capability-access-gate.js"
+      },
+      "./customize/shared/capability-page-shell": {
+        "types": "./dist/customize/shared/capability-page-shell.d.ts",
+        "import": "./dist/customize/shared/capability-page-shell.js"
       },
       "./customize/shared/capability-skeleton": {
         "types": "./dist/customize/shared/capability-skeleton.d.ts",

@@ -275,9 +275,15 @@ export function ConnectorsPage({
   /** Agent scope only: `connectors_required`, the connectors a session needs
    *  connected before it starts. Offered on a card the agent is granted by name
    *  (Specific), because under All or None no single connector is picked. */
-  required?: { isRequired: (slug: string) => boolean; toggle: (slug: string) => void };
+  required?: {
+    /** The stored list, shown as one note under All (a hand-written manifest). */
+    list: readonly string[];
+    isRequired: (slug: string) => boolean;
+    toggle: (slug: string) => void;
+  };
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tAgentScope = useI18nTranslations('agentScope');
   const agentScoped = surface.kind === 'agent' && grant !== undefined;
   // `accountId` comes off the detail this page already loads. Without it
   // `useProjectCan` fetches the project a second time under its own key AND
@@ -484,14 +490,18 @@ export function ConnectorsPage({
             checked: grant.isGranted(connector.slug),
             disabled: grant.mode !== 'specific',
             onCheckedChange: () => grant.toggle(connector.slug),
-            label: `Grant ${connectorDisplayName(connector)} to this agent`,
+            label: tI18nComplete('textd4170e74c3b0', { value0: connectorDisplayName(connector) }),
           }}
+          // The connected mark stays; Required joins it on a card picked by name.
           trailing={
             required && grant.mode === 'specific' && grant.isGranted(connector.slug) ? (
-              <RequiredConnectorToggle
-                active={required.isRequired(connector.slug)}
-                onToggle={() => required.toggle(connector.slug)}
-              />
+              <span className="flex items-center gap-2">
+                {shared.trailing}
+                <RequiredConnectorToggle
+                  active={required.isRequired(connector.slug)}
+                  onToggle={() => required.toggle(connector.slug)}
+                />
+              </span>
             ) : (
               shared.trailing
             )
@@ -531,7 +541,7 @@ export function ConnectorsPage({
         <CapabilityPageShell
           title={tI18nComplete.raw('textc3d2e79ebdd0')}
           description={
-            agentScoped ? 'Choose which connectors this agent can use.' : SCOPE_DESCRIPTION[scope]
+            agentScoped ? tAgentScope('connectorsDescription') : SCOPE_DESCRIPTION[scope]
           }
           search={
             channelsActive ? undefined : (
@@ -595,7 +605,7 @@ export function ConnectorsPage({
                 — the grant is the decision, the scope strip only narrows the
                 list you decide over. */}
                 {agentScoped && grant ? (
-                  <GrantModeTabs grant={grant} label="Connector access for this agent" />
+                  <GrantModeTabs grant={grant} label={tAgentScope('connectorsAccess')} />
                 ) : null}
                 {/* Rendered immediately, not behind `settled`. The strip used to
                 wait for both queries because the landing tab was derived from
@@ -688,6 +698,14 @@ export function ConnectorsPage({
           ) : (
             <>
               <ConnectorMovesBanner projectId={projectId} />
+              {/* A manifest can hold `connectors: all` beside a hand-written
+                  required list. No card is picked under All to carry the
+                  toggle, so the list is one muted line here instead. */}
+              {agentScoped && grant?.mode === 'all' && required && required.list.length > 0 ? (
+                <p className="text-muted-foreground text-xs">
+                  {tAgentScope('requiredUnderAll', { list: required.list.join(', ') })}
+                </p>
+              ) : null}
               <CatalogGrid
                 dense
                 // `!settled`, not `connectorsQuery.isLoading`: the empty state's
