@@ -125,19 +125,57 @@ export async function getFileInfo(token: string, fileId: string): Promise<SlackA
   return slackApiCall(token, 'files.info', { file: fileId });
 }
 
+/**
+ * The Kortix agent a message comes from, shown as its author in Slack
+ * (`chat:write.customize`). Only a message's creating call takes it; a later
+ * `chat.update` keeps it. Kortix's own notices carry none and read "Kortix".
+ */
+export interface SlackPersona {
+  username: string;
+}
+
+/**
+ * A creating call with a persona. An install without `chat:write.customize`
+ * (an older own app) answers `missing_scope`; the refused post created
+ * nothing, so it is sent once more as plain "Kortix" rather than lost.
+ */
+async function createWithPersona(
+  token: string,
+  method: string,
+  args: Record<string, unknown>,
+  persona: SlackPersona | null | undefined,
+): Promise<SlackApiResult> {
+  if (!persona) return slackApiCall(token, method, args, { idempotent: false });
+  const r = await slackApiCall(token, method, { ...args, username: persona.username }, { idempotent: false });
+  if (!r.ok && r.error === 'missing_scope') return slackApiCall(token, method, args, { idempotent: false });
+  return r;
+}
+
+/** This token's bot id (`auth.test`), or null when Slack does not answer with one. */
+export async function authTestBotId(token: string): Promise<string | null> {
+  try {
+    const r = await slackApiCall(token, 'auth.test', {});
+    return r.ok && typeof r.bot_id === 'string' ? r.bot_id : null;
+  } catch {
+    return null;
+  }
+}
+
 // Posts a plain message. Returns the message ts (needed to delete it later).
 export async function postMessage(
   token: string,
   channel: string,
   text: string,
   threadTs?: string,
+  persona?: SlackPersona | null,
 ): Promise<string | null> {
   try {
-    const r = await slackApiCall(
+    // A write — never retried on an ambiguous 5xx/timeout into a duplicate.
+    const r = await createWithPersona(
       token,
       'chat.postMessage',
       { channel, text, ...(threadTs ? { thread_ts: threadTs } : {}) },
-      { idempotent: false }, // a write — don't retry an ambiguous 5xx/timeout into a duplicate
+      persona,
     );
     if (!r.ok) {
       console.warn('[slack-api] chat.postMessage failed', { error: r.error });
@@ -175,13 +213,15 @@ export async function postBlocks(
   text: string,
   blocks: unknown[],
   threadTs?: string,
+  persona?: SlackPersona | null,
 ): Promise<string | null> {
   try {
-    const r = await slackApiCall(
+    // A write — never retried on an ambiguous 5xx/timeout into a duplicate.
+    const r = await createWithPersona(
       token,
       'chat.postMessage',
       { channel, text, blocks, ...(threadTs ? { thread_ts: threadTs } : {}) },
-      { idempotent: false }, // a write — don't retry an ambiguous 5xx/timeout into a duplicate
+      persona,
     );
     if (!r.ok) {
       console.warn('[slack-api] postBlocks failed', { error: r.error });
@@ -393,9 +433,11 @@ export async function startStream(
   recipientUserId: string,
   recipientTeamId: string,
   chunks: StreamChunk[],
+  persona?: SlackPersona | null,
 ): Promise<string | null> {
   try {
-    const r = await slackApiCall(
+    // Creates a message — an ambiguous retry would orphan the first.
+    const r = await createWithPersona(
       token,
       'chat.startStream',
       {
@@ -406,7 +448,7 @@ export async function startStream(
         task_display_mode: 'plan',
         chunks,
       },
-      { idempotent: false }, // creates a message — a retry would orphan the first
+      persona,
     );
     if (!r.ok) {
       console.warn('[slack-api] chat.startStream failed', { error: r.error });
