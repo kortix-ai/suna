@@ -32,7 +32,7 @@ Connectors live in `kortix.yaml` under `connectors:`, or in a file it lists unde
 | `channel` | Slack, Microsoft Teams or email. Kortix writes it when you connect a [channel](/docs/connect/channels). | `platform` |
 | `computer` | Built in. Each connected [computer](/docs/connect/computers) is one account. It is never written to `kortix.yaml`. | — |
 
-`pipedream` is a legacy provider: existing connectors run, and new managed apps use `composio`. With `connectors_v2` on, [move a Pipedream or Composio connector to Kortix](#move-a-pipedream-or-composio-connector-to-kortix).
+`pipedream` is a legacy provider: existing connectors run, and new managed apps use `composio`. To leave Pipedream, [move a Pipedream or Composio connector to Kortix](#move-a-pipedream-or-composio-connector-to-kortix).
 
 A `provider: mcp` connector is Kortix calling someone else's MCP server. The [Kortix MCP server](/docs/connect/mcp) is the other direction: your MCP client calls Kortix.
 
@@ -52,7 +52,6 @@ A `provider: mcp` connector is Kortix calling someone else's MCP server. The [Ko
 - For an MCP server, [add it from its URL](#add-an-mcp-server-from-its-url). For another API that is not in the catalog, select **New → Add a custom connector** and choose OpenAPI, Postman, GraphQL, MCP or HTTP. Paste the source URL and Kortix proposes the slug: the document's title, or else the URL's domain. Kortix then opens the connector's page. An MCP server that asks for sign-in (HTTP `401` or `403`) opens **Add account** there, as **Install** does. This needs an auth scheme: one you pick under **Auth**, or one **Auto-detect** finds in the server's `WWW-Authenticate` challenge. Without one, the `401` or `403` is shown as the failure. **New → Create in chat** has an agent scaffold the connector and open a change request.
 - When Kortix cannot load a new connector's tools, the connector's page shows the reason and **Retry**. The connector stays in the project. OAuth 2.0 client credentials entered in the form are saved as well, so **Retry** uses them.
 - With OAuth 2.0 client credentials, **Added and connected** means the tools loaded with them. When the server still refuses them, the page shows the refusal and **Retry**.
-- A search on **All** also covers published OpenAPI, MCP, GraphQL and Postman surfaces when the project flag **Connectors API Discover** (`connectors_api_discover`, off by default) is on. Turn it on under **Customize → Settings → [Feature flags](/docs/project#feature-flags)**.
 
 A connector page has up to four tabs:
 
@@ -76,16 +75,16 @@ A connector page has up to four tabs:
 - A server that asks for a credential but has no one-click OAuth opens credential entry on the connector page.
 - A sign-in that cannot start shows the server's reason. The connector and the account stay; select **Sign in** on the connector page to try again.
 
-### The MCP app catalog (experimental)
+### The app catalog
 
-With the project flag **Connectors v2** (`connectors_v2`, off by default) on, the **All** tab lists one catalog of every way to connect: the Kortix MCP apps below, every MCP server, REST (OpenAPI) and GraphQL API and CLI in the [integrations.sh](https://integrations.sh) registry, and the managed apps. Turn the flag on under **Customize → Settings → [Feature flags](/docs/project#feature-flags)**.
+The **All** tab lists one catalog of every way to connect: the Kortix MCP apps below, every MCP server and every REST (OpenAPI) and GraphQL API in the [integrations.sh](https://integrations.sh) registry, and the Composio apps.
 
 Each app shows once, by its best way in:
 
 0. **Kortix.** What Kortix built itself, with no third party: the [channels](/docs/connect/channels) Slack, Microsoft Teams, Email and Telegram, where people message the agent, and **Computer**, the machine the agent works on. Each leads its app and is set up on its own page with **Set up**, never through Install.
 1. **A one-click MCP server.** The vendor's server is public, or its OAuth server registers Kortix on the fly. You only sign in.
 2. **Composio.** A third-party partner that runs the sign-in for you, for an app with no one-click MCP server, for example Gmail or Outlook. You only sign in.
-3. **Everything else.** An MCP server that needs your own OAuth app or an API key, then the REST (OpenAPI) and GraphQL APIs, then a CLI.
+3. **Everything else.** An MCP server that needs your own OAuth app or an API key, then the REST (OpenAPI) and GraphQL APIs.
 
 - **One-click only** is on by default and lists ways 1 and 2. Turn it off to see every app.
 - The type filter (**MCP**, **Composio**, **REST API**, **GraphQL**, **Kortix**) lists the apps that connect that way. The **Kortix** tab shows all five on one page, each with its setup or, once connected, what it is connected to. In the API, the CLI (`--kind kortix`) and the agent's tools the type is `kortix`, with ids `native:slack`, `native:teams`, `native:email`, `native:telegram` and `native:computer`.
@@ -110,14 +109,14 @@ Apps sign in one of three ways:
 | None | DeepWiki, Context7 | None. The app is ready when it is installed. |
 
 - Kortix's own OAuth client is used only for the exact MCP server URL in the catalog, with the catalog's endpoints and scopes. Its client secret stays on the server.
-- Connectors you added from the managed catalog keep working with the flag on.
+- Connectors you added from the managed catalog keep working.
 - Agents see the same catalog: the `search_connector_apps` tool of the [Kortix MCP server](/docs/connect/mcp) lists every app, with `kind` and `one_click` filters, and `add_connector` with `app` installs its recommended way, or `way`. The catalog is large, not complete: for an app it lacks, agents search the web for the vendor's MCP server or API and add it directly.
 
-Catalog apps can start [triggers](/docs/connect/triggers#connector-events). With the project flag `event_triggers` also on, Kortix checks an installed app's MCP server for new items, such as a new email in Gmail, and fires the trigger once for each one. Every tool that lists items and only reads can be an event, on catalog apps and on your own MCP servers. The trigger runs on an account shared with the whole project.
+Catalog apps can start [triggers](/docs/connect/triggers#connector-events). With the project flag `event_triggers` on, Kortix checks an installed app's MCP server for new items, such as a new email in Gmail, and fires the trigger once for each one. Every tool that lists items and only reads can be an event, on catalog apps and on your own MCP servers. The trigger runs on an account shared with the whole project.
 
 #### Move a Pipedream or Composio connector to Kortix
 
-Kortix retires Pipedream and Composio. With `connectors_v2` on, a Pipedream or Composio connector moves to the catalog app for the same service and keeps its slug. Their sign-ins belong to their own OAuth clients, so they do not carry over: one person signs in to the app once, and the connector switches.
+Kortix retires Pipedream. A Pipedream or Composio connector moves to the catalog app for the same service and keeps its slug. Their sign-ins belong to their own OAuth clients, so they do not carry over: one person signs in to the app once, and the connector switches.
 
 What stays:
 
@@ -219,7 +218,6 @@ kortix connectors move issues --connection <connection-id> --no-open
 - `moves` prints `SLUG`, `PROVIDER`, `APP` (the app on that provider), `MOVES TO`, `STATE` and `ACCOUNTS`. `STATE` is `ready`, `signing in`, `signed in`, or `no Kortix app yet`. `--json` prints the API response.
 - `move` opens the app's sign-in in your browser and waits up to 10 minutes for it. `--no-open` prints the URL only. `--device` uses the device flow on a server that offers it.
 - `--connection` signs in on that account. Without it, `move` uses the connector's shared project account.
-- Without `connectors_v2`, both commands exit `1` and print `kortix projects features enable connectors_v2`.
 
 **Through the API:**
 
@@ -270,7 +268,7 @@ Content-Type: application/json
 | Status | Meaning |
 | --- | --- |
 | `400` | `connection_id` is an account of another connector. |
-| `403` | `feature_disabled` without `connectors_v2`, no permission to change the project's connectors, or no `connection_id` and no permission to manage the project's accounts. |
+| `403` | No permission to change the project's connectors, or no `connection_id` and no permission to manage the project's accounts. |
 | `404` | No connector with this slug, or `connection_id` is an account you cannot change. |
 | `409` | The connector is not a Pipedream connector, its app has no Kortix equivalent on this deployment, or it has tool rules other than `*`. The message names the rules. |
 | `502` | The `kortix.yaml` write failed. Call `move` again. |
@@ -292,7 +290,6 @@ kortix connectors connect gmail                                # authorize your 
 - `kortix connectors catalog show <id>` lists every way to connect the app, recommended first, and the tools of one way (`--way <id>`). `catalog tools <id> --way <id>` lists every tool of one way.
 - `kortix connectors catalog categories [--kind …] [--one-click]` lists the category keys `--category` takes, with how many apps each holds. Every catalog command takes `--json`.
 - `kortix connectors catalog install <id> [--way <id>] [--name <name>] [--slug <slug>]` adds the connector profile, the recommended way unless `--way`. Then `kortix connectors connect <slug>`.
-- The catalog commands need the `connectors_v2` or the `connectors_api_discover` flag.
 - `--auth-type none|bearer|basic|custom|oauth1` overrides the authentication Kortix detects from the source.
 
 ### In kortix.yaml

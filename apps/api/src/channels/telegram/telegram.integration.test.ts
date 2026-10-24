@@ -1,5 +1,5 @@
 /**
- * Real-Postgres contract for Telegram as a channel connector (connectors_v2):
+ * Real-Postgres contract for Telegram as a channel connector:
  * the inbox stores an update once, an unknown sender gets a pairing reply and
  * no session, an allowed sender in a new chat starts one session bound to the
  * chat, the next message follows up into it, `/new` forgets it, and with the
@@ -56,10 +56,10 @@ function update(text: string, from = ALLOWED, chatId = 777) {
   return telegramMessageEvent(PROJECT, BOT_ID, { update_id: updateId++, message })!;
 }
 
-async function setFlag(on: boolean) {
+async function allowSender() {
   await db
     .update(projects)
-    .set({ metadata: { experimental: { connectors_v2: on }, telegram: { allowedUserIds: [ALLOWED] } } })
+    .set({ metadata: { telegram: { allowedUserIds: [ALLOWED] } } })
     .where(eq(projects.projectId, PROJECT));
 }
 
@@ -73,7 +73,7 @@ beforeAll(async () => {
     repoUrl: 'https://example.test/t.git',
   });
   await saveTelegramInstall({ projectId: PROJECT, botId: BOT_ID, username: 'synthetic_bot', token: TOKEN, webhookSecret: 's' });
-  await setFlag(true);
+  await allowSender();
   setTelegramLifecycleForTest({
     resolveProjectAutomationActor: async () => ACTOR,
     createSession: (async (input: Record<string, any>) => {
@@ -186,17 +186,6 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
     expect(String(calls[1]!.body.text)).toContain('Send your message again');
   }, 20_000);
 
-  test('with connectors_v2 off the consumer does nothing', async () => {
-    await setFlag(false);
-    try {
-      await handleTelegramEvent(update('hello again', ALLOWED, 999));
-      expect(calls).toHaveLength(0);
-      expect(created).toHaveLength(0);
-    } finally {
-      await setFlag(true);
-    }
-  });
-
   test('the kortix_telegram connector counts as connected exactly while the project has an install', async () => {
     const check = (projectId: string) =>
       connectorConnectionIsConnected({
@@ -211,7 +200,6 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
     await setTelegramAllowedUserIds(PROJECT, ['5', '6']);
     const [row] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, PROJECT));
     expect((row!.metadata as any).telegram.allowedUserIds).toEqual(['5', '6']);
-    expect((row!.metadata as any).experimental.connectors_v2).toBe(true);
-    await setFlag(true);
+    await allowSender();
   });
 });

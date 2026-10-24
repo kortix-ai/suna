@@ -1041,21 +1041,9 @@
           "name": "Marketplace",
           "description": "Browse and install skills from community and vendor registries. Sources, updates, and team scopes are still changing."
         },
-        "connectors_api_discover": {
-          "name": "Connectors API Discover",
-          "description": "Browse direct API, MCP, GraphQL, CLI, and Postman integrations alongside optional OAuth apps."
-        },
-        "agentmail_email": {
-          "name": "AgentMail Email",
-          "description": "Assign AgentMail inboxes so incoming email threads can start and continue Kortix sessions."
-        },
         "meta_agent": {
           "name": "Meta Agent",
           "description": "Add a coordinator agent that manages specialized sessions and multi-step work across the project."
-        },
-        "monitors": {
-          "name": "Monitors",
-          "description": "Run persistent watchers that observe logs, feeds, or APIs and start agent sessions from events."
         },
         "warm_sessions": {
           "name": "Warm Sessions",
@@ -1087,7 +1075,7 @@
         },
         "event_triggers": {
           "name": "Connector event triggers",
-          "description": "Start an agent when something happens in a connected app: a new email, a pull request, a calendar event. Events come from Composio. With Connectors v2 on, Kortix also checks your connected apps itself."
+          "description": "Start an agent when something happens in a connected app: a new email, a pull request, a calendar event. Events come from Composio. Kortix also checks your connected apps itself."
         },
         "volumes": {
           "name": "Volumes",
@@ -1100,10 +1088,6 @@
         "session_log_restore": {
           "name": "Session log restore",
           "description": "Rebuilds a session from its saved session log when its computer lost the conversation. Kortix enables it per project."
-        },
-        "connectors_v2": {
-          "name": "Connectors v2",
-          "description": "The MCP app catalog in Customize → Connectors, with sign-in that Kortix runs. With Connector event triggers on, Kortix checks these apps for new emails, files and items and starts an agent. Also adds Telegram as a channel. New connector accounts are no longer shared with the whole project by default."
         },
         "agent_rooms": {
           "name": "Rooms",
@@ -1120,6 +1104,10 @@
         "artifacts": {
           "name": "Artifacts",
           "description": "Share docs (Markdown) and HTML pages (decks, dashboards, mockups, tools) from Files with the project, chosen people or anyone with a link. Docs edit in place, every save is a version from the Files history, and docs export to PDF. Adds the Artifacts page and `kortix artifacts`."
+        },
+        "email_channel": {
+          "name": "Email channel",
+          "description": "Give the agent an email inbox on Resend: inbound mail starts and continues sessions, and the agent reads, replies and sends from the inbox. Bring your own Resend API key and domain."
         }
       }
     },
@@ -20186,7 +20174,6 @@
       "text94ddcfbb2f30": "A denied call is a row too. What did not happen is as much a part of the record as what did.",
       "text89faa819e995": "What it never gets is the reach of whoever created it. There is no inheritance edge here to walk up.",
       "text6a51a65a11f4": "Starting a session cuts a branch and boots one machine for it. The database will not let a second session have that machine.",
-      "catalogExcludedNoActions": "{count, plural, one {1 app matches but publishes no actions an agent can call.} other {{count} apps match but publish no actions an agent can call.}}",
       "text08cadd4156a5": "A sandbox is a real Linux machine the model can run anything on. So the only credential in it is one Kortix token, scoped to the project.",
       "textc7d878b8738e": "Account actions land in the same place — membership, roles, policies, tokens, groups.",
       "text5b70d52b009e": "The third-party API sees an ordinary authenticated request. The answer goes back to the agent. The credential stays behind.",

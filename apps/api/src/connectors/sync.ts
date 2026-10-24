@@ -23,7 +23,6 @@ import { and, eq, inArray, isNotNull, notExists, or, sql } from 'drizzle-orm';
 import { getImpersonationContext } from '../shared/impersonation';
 import { parse as parseToml } from 'smol-toml';
 import { hasEmailInboxes, loadSlackInstall, purgeLegacyEmailState } from '../channels/install-store';
-import { resolveFeatureFlag } from '../feature-flags/registry';
 import { assertAllowedEndpointUrl, assertAllowedSourceAddress } from '../marketplace/catalog';
 import { safeEgressFetch, UnsafeEgressError } from '../shared/ssrf-guard';
 import { configuredTimeoutMs, withTimeout } from '../shared/with-timeout';
@@ -1022,27 +1021,21 @@ async function upsertConnector(
     spec.authorizationStrategy === 'project' &&
     spec.provider !== 'computer' &&
     !(spec.provider === 'channel' && spec.platform === 'email') &&
-    !(await skipsEmptyProjectAccount(projectId, spec))
+    !skipsEmptyProjectAccount(spec)
   ) {
     await ensureDefaultConnection({ projectId, connectorId });
   }
 }
 
 /**
- * connectors_v2: an account is personal unless someone shares it, so sync seeds
- * no empty "Everyone in project" account (KRTX-2317). Two kinds keep the
- * project account, because it is not empty: a channel connector (the install
- * token is the project's own identity) and a server with no auth (a public
- * MCP server such as DeepWiki: the account is the whole connection).
+ * An account is personal unless someone shares it, so sync seeds no empty
+ * "Everyone in project" account (KRTX-2317). Two kinds keep the project
+ * account, because it is not empty: a channel connector (the install token is
+ * the project's own identity) and a server with no auth (a public MCP server
+ * such as DeepWiki: the account is the whole connection).
  */
-export async function skipsEmptyProjectAccount(projectId: string, spec: ConnectorSpec): Promise<boolean> {
-  if (spec.provider === 'channel' || spec.auth?.type === 'none') return false;
-  const [row] = await db
-    .select({ metadata: projects.metadata })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
-    .limit(1);
-  return resolveFeatureFlag(row?.metadata, 'connectors_v2');
+export function skipsEmptyProjectAccount(spec: ConnectorSpec): boolean {
+  return !(spec.provider === 'channel' || spec.auth?.type === 'none');
 }
 
 /**

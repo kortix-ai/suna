@@ -1,5 +1,5 @@
 /**
- * The Kortix MCP app catalogue (`connectors_v2`).
+ * The Kortix MCP app catalogue.
  *
  * Every app here is a remote MCP server that its vendor runs. Kortix connects
  * to it directly, as an `mcp` connector: no Composio, no Pipedream. Sign-in is
@@ -465,7 +465,7 @@ export async function connectorsV2Items(
   return [...curatedApps, ...turns, ...groups.filter((group) => !placed.has(group))].flat();
 }
 
-/** The Discover catalogue a `connectors_v2` project browses. */
+/** The Discover catalogue every project browses. */
 export const kortixMcpCatalog = createConnectorCatalog({
   source: {
     items: () => connectorsV2Items(),

@@ -171,8 +171,6 @@ export type ChannelPlatform = 'slack' | 'teams' | 'email' | 'telegram';
 export function ChannelsSection({ projectId, platform }: { projectId: string; platform?: ChannelPlatform }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   useTeamsInstallReturnToast();
-  // Telegram is a channel connector behind connectors_v2; off, it is not listed.
-  const telegramEnabled = useFeatureFlag(projectId, 'connectors_v2').enabled;
   const { data: install, isLoading: loadingInstall } = useSlackInstall(projectId);
   const { data: mode, isLoading: loadingMode } = useSlackMode(projectId);
   // Teams is on for every project (its feature flag graduated on 2026-10-01).
@@ -204,12 +202,7 @@ export function ChannelsSection({ projectId, platform }: { projectId: string; pl
   // platform, the Channels tab every platform, one under the other.
   const platforms: ChannelPlatform[] = platform
     ? [platform]
-    : [
-        'slack',
-        'teams',
-        ...(emailEnabled ? (['email'] as const) : []),
-        ...(telegramEnabled ? (['telegram'] as const) : []),
-      ];
+    : ['slack', 'teams', ...(emailEnabled ? (['email'] as const) : []), 'telegram'];
   // The Kortix tab also holds the computer, where this deployment can pair one
   // (the machine list answers 503 where computers are off).
   const computersEnabled = useTunnelConnections({ refetchInterval: false }).isSuccess;

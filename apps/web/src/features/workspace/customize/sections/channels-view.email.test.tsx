@@ -69,7 +69,7 @@ mock.module('@kortix/ui/customize/sections/component/slack-connect-card', () => 
   SlackConnectCard: () => null,
   SlackChannelMock: () => null,
 }));
-// Telegram (connectors_v2, on here with every flag) reads its install hooks
+// Telegram (listed on every project) reads its install hooks
 // through a QueryClient this suite does not mount.
 mock.module('@kortix/ui/customize/sections/component/telegram-channel-row', () => ({
   TelegramChannelRow: () => null,

@@ -461,10 +461,10 @@ const envSchema = z.object({
   // every connect needs the project's own Resend key.
   RESEND_MANAGED_EMAIL_ENABLED: optBoolFalse,
 
-  // ── Channels — Telegram Bot API (connectors_v2). Overridable for tests. ──
+  // ── Channels — Telegram Bot API. Overridable for tests. ──
   TELEGRAM_API_URL: optUrl('https://api.telegram.org'),
 
-  // ── MCP apps (connectors_v2) — Kortix-owned OAuth clients ───────────────
+  // ── MCP apps — Kortix-owned OAuth clients ───────────────
   // JSON: {"google":{"client_id":"…","client_secret":"…"},"github":{…}}. One
   // client per vendor whose MCP server has no dynamic client registration
   // (connectors/mcp-apps.ts). An app whose client is absent is not listed.

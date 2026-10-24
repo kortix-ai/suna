@@ -1559,7 +1559,7 @@ export async function checkMcpServerSignIn(projectId: string, url: string) {
   );
 }
 
-/** A Pipedream or Composio connector, and the Kortix app it moves to (`connectors_v2`). */
+/** A Pipedream or Composio connector, and the Kortix app it moves to. */
 export interface ConnectorMove {
   slug: string;
   name: string;
@@ -1865,7 +1865,7 @@ export async function listConnectSections(
   );
 }
 
-/** `composio`: a managed app (Connectors v2 catalogue only). Install it as a
+/** `composio`: a managed app. Install it as a
  *  Composio toolkit from `DiscoverConnector.composio`. `cli` is kept for
  *  compatibility: the catalogue no longer returns CLI records (2026-10-24),
  *  and the API answers `400` to `kind=cli`. */
@@ -1920,7 +1920,7 @@ export interface DiscoverConnectorTemplate {
 
 export interface DiscoverConnectorVariant {
   id: string;
-  /** `composio`: a Composio app (Connectors v2), installed from `composio`. */
+  /** `composio`: a Composio app, installed from `composio`. */
   kind: 'openapi' | 'postman' | 'mcp' | 'graphql' | 'http' | 'composio' | 'kortix' | 'cli';
   name: string;
   url: string | null;
@@ -1930,9 +1930,9 @@ export interface DiscoverConnectorVariant {
   requiresAuth: boolean;
   command: string | null;
   connector: DiscoverConnectorTemplate | null;
-  /** Connects with nothing to set up (Connectors v2). */
+  /** Connects with nothing to set up. */
   oneClick?: boolean;
-  /** The way Install uses without asking; the first variant (Connectors v2). */
+  /** The way Install uses without asking; the first variant. */
   recommended?: boolean;
   /** The Composio toolkit a `composio` variant installs. */
   composio?: ConnectToolkit;
@@ -1974,7 +1974,7 @@ export interface DiscoverConnectorsQuery {
   limit?: number;
   /** Only the entries that connect with nothing to set up (`oneClick`). */
   oneClick?: boolean;
-  /** Only the entries that connect these ways (Connectors v2). */
+  /** Only the entries that connect these ways. */
   kinds?: DiscoverConnectorKind[];
 }
 
@@ -2085,7 +2085,7 @@ export interface DiscoverConnectorTools {
 }
 
 /** The tools of one way to connect a Discover app (`way`: a variant id;
- *  default the recommended way), before it is installed. Connectors v2. */
+ *  default the recommended way), before it is installed. */
 export async function getDiscoverConnectorTools(projectId: string, id: string, way?: string) {
   const params = new URLSearchParams({ id });
   if (way) params.set('way', way);
@@ -2108,7 +2108,7 @@ export interface DiscoverInstallResult {
 }
 
 /** Install one way to connect a Discover app as a connector profile:
- *  `way` by variant id, else the recommended one. Connectors v2. */
+ *  `way` by variant id, else the recommended one. */
 export async function installDiscoverConnector(
   projectId: string,
   input: { id: string; way?: string; name?: string; slug?: string },

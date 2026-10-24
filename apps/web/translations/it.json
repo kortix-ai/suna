@@ -1219,21 +1219,9 @@
           "name": "Marketplace",
           "description": "Esplora e installa competenze dai registri della community e dei fornitori. Fonti, aggiornamenti e ambiti del team sono ancora in evoluzione."
         },
-        "connectors_api_discover": {
-          "name": "Ricerca API dei connettori",
-          "description": "Esplora integrazioni API, MCP, GraphQL, CLI e Postman dirette insieme ad app OAuth facoltative."
-        },
-        "agentmail_email": {
-          "name": "Email AgentMail",
-          "description": "Assegna caselle AgentMail affinché le email in arrivo possano avviare e continuare sessioni Kortix."
-        },
         "meta_agent": {
           "name": "Meta-agente",
           "description": "Aggiungi un coordinatore che gestisce sessioni specializzate e attività in più passaggi nel progetto."
-        },
-        "monitors": {
-          "name": "Monitor",
-          "description": "Esegui controlli permanenti su registri, feed o API che avviano sessioni agente in risposta agli eventi."
         },
         "warm_sessions": {
           "name": "Sessioni preriscaldate",
@@ -1265,7 +1253,7 @@
         },
         "event_triggers": {
           "name": "Trigger di eventi dei connettori",
-          "description": "Avvia un agente quando succede qualcosa in un'app collegata: una nuova email, una pull request, un evento del calendario. Gli eventi arrivano da Composio. Con Connectors v2 attivo, Kortix controlla anche da solo le tue app collegate."
+          "description": "Avvia un agente quando succede qualcosa in un'app collegata: una nuova email, una pull request, un evento del calendario. Gli eventi arrivano da Composio. Kortix controlla anche da solo le tue app collegate."
         },
         "volumes": {
           "name": "Volumi",
@@ -1278,10 +1266,6 @@
         "session_log_restore": {
           "name": "Ripristino dal log di sessione",
           "description": "Ricostruisce una sessione dal suo log di sessione salvato quando il suo computer ha perso la conversazione. Kortix lo attiva per progetto."
-        },
-        "connectors_v2": {
-          "name": "Connettori v2",
-          "description": "Il catalogo di app MCP in Personalizza → Connettori, con accesso gestito da Kortix. Con «Trigger di eventi dell'app» attivo, Kortix controlla queste app per nuove email, file ed elementi e avvia un agente. Aggiunge anche Telegram come canale. I nuovi account dei connettori non sono più condivisi con l'intero progetto per impostazione predefinita."
         },
         "agent_rooms": {
           "name": "Stanze",
@@ -1298,6 +1282,10 @@
         "artifacts": {
           "name": "Artefatti",
           "description": "Condividi documenti (Markdown) e pagine HTML (presentazioni, dashboard, mockup, strumenti) da File con il progetto, persone scelte o chiunque abbia un link. I documenti si modificano direttamente, ogni salvataggio è una versione dalla cronologia di File e i documenti si esportano in PDF. Aggiunge la pagina Artefatti e `kortix artifacts`."
+        },
+        "email_channel": {
+          "name": "Canale email",
+          "description": "Dai all'agente una casella email su Resend: la posta in arrivo avvia e continua le sessioni, e l'agente legge, risponde e invia dalla casella. Usa la tua chiave API Resend e il tuo dominio."
         }
       }
     },
@@ -20175,7 +20163,6 @@
       "text94ddcfbb2f30": "Anche una chiamata rifiutata è una riga. Ciò che non è accaduto fa parte della documentazione tanto quanto ciò che è accaduto.",
       "text89faa819e995": "Ciò che non ottiene mai è la portata di chi lo ha creato. Non c'è alcun vantaggio ereditario qui per salire.",
       "text6a51a65a11f4": "L'avvio di una sessione taglia un ramo e avvia una macchina. Il database non consentirà a una seconda sessione di avere quella macchina.",
-      "catalogExcludedNoActions": "{count, plural, one {1 app corrisponde ma non pubblica alcuna azione che un agente possa chiamare.} other {{count} app corrispondono ma non pubblicano alcuna azione che un agente possa chiamare.}}",
       "text08cadd4156a5": "Una sandbox è una vera macchina Linux su cui il modello può eseguire qualsiasi cosa. Quindi l'unica credenziale in esso contenuta è un token Kortix, ambito al progetto.",
       "textc7d878b8738e": "Le azioni dell'account arrivano nello stesso posto: appartenenza, ruoli, policy, token, gruppi.",
       "text5b70d52b009e": "L'API di terze parti vede una normale richiesta autenticata. La risposta risale all'agente. La credenziale rimane indietro.",

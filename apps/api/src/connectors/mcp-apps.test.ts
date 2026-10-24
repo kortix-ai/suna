@@ -137,7 +137,7 @@ describe('the Kortix MCP app catalogue', () => {
   });
 });
 
-describe('the ways to connect one app (connectors_v2 detail)', () => {
+describe('the ways to connect one app (catalogue detail)', () => {
   const variant = (id: string, kind: ConnectorSurfaceVariant['kind'], url: string | null, connector: boolean) =>
     ({ id, kind, name: id, url, docs: null, description: null, transports: [], requiresAuth: true, command: null,
        connector: connector ? { provider: kind === 'graphql' ? 'graphql' : kind === 'openapi' ? 'openapi' : 'mcp', url: url ?? undefined } : null }) as ConnectorSurfaceVariant;
@@ -226,7 +226,7 @@ const record = (id: string, kind: ConnectorCatalogItem['kind'], name: string, do
   id, kind, slug: id, name, description: null, url: null, icon: null, domain, categories: ['productivity'], feeds: ['claude'], popularity: null, ...extra,
 });
 
-/** The connectors_v2 catalogue over fixed sources: no network. */
+/** The Kortix catalogue over fixed sources: no network. */
 function v2Catalog() {
   return createConnectorCatalog({
     source: {
@@ -269,5 +269,26 @@ describe('sign-in for an app on a Kortix client', () => {
   test('a connector on a catalogue app shows the catalogue icon', () => {
     expect(fallbackIconSource('mcp', { url: 'https://mcp.figma.com/mcp' })).toEqual({ kind: 'kortix', icon: '/connector-icons/figma.svg' });
     expect(fallbackIconSource('mcp', { url: 'https://mcp.granola.ai/mcp' })).toEqual({ kind: 'catalog', host: 'mcp.granola.ai' });
+  });
+});
+
+describe('an app the project cannot use yet', () => {
+  test('`exclude` leaves it out before counting: list totals, section totals and category facets agree', async () => {
+    const catalog = v2Catalog();
+    const all = await catalog.list({ limit: 96 });
+    const hidden = new Set(['native:email']);
+    expect(all.items.some((item) => item.id === 'native:email')).toBe(true);
+    const kept = await catalog.list({ limit: 96, exclude: hidden });
+    expect(kept.items.some((item) => item.id === 'native:email')).toBe(false);
+    expect(kept.total).toBe(all.total - 1);
+    const sections = (await catalog.sections({ exclude: hidden })) as {
+      sections: Array<{ key: string; total: number }>;
+      categories: Array<{ key: string; count: number }>;
+    };
+    for (const section of sections.sections) {
+      expect(sections.categories.find((c) => c.key === section.key)?.count).toBe(section.total);
+      const page = await catalog.list({ category: section.key, exclude: hidden });
+      expect(page.total).toBe(section.total);
+    }
   });
 });

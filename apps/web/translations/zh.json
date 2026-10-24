@@ -1219,21 +1219,9 @@
           "name": "市场",
           "description": "浏览并安装社区和供应商注册表中的技能。来源、更新和团队范围仍在调整。"
         },
-        "connectors_api_discover": {
-          "name": "连接器 API 发现",
-          "description": "浏览直接 API、MCP、GraphQL、CLI 和 Postman 集成，以及可选的 OAuth 应用。"
-        },
-        "agentmail_email": {
-          "name": "AgentMail 邮件",
-          "description": "分配 AgentMail 收件箱，让传入的邮件会话能够启动和继续 Kortix 会话。"
-        },
         "meta_agent": {
           "name": "元智能体",
           "description": "添加一个协调智能体，用于管理项目中的专业会话和多步骤工作。"
-        },
-        "monitors": {
-          "name": "监控器",
-          "description": "运行持久监控器来观察日志、信息源或 API，并根据事件启动智能体会话。"
         },
         "warm_sessions": {
           "name": "预热会话",
@@ -1265,7 +1253,7 @@
         },
         "event_triggers": {
           "name": "连接器事件触发器",
-          "description": "当已连接的应用中发生事件时启动智能体：新邮件、拉取请求、日历事件。事件来自 Composio。开启 Connectors v2 后，Kortix 也会自行检查你已连接的应用。"
+          "description": "当已连接的应用中发生事件时启动智能体：新邮件、拉取请求、日历事件。事件来自 Composio。Kortix 也会自行检查你已连接的应用。"
         },
         "volumes": {
           "name": "卷",
@@ -1278,10 +1266,6 @@
         "session_log_restore": {
           "name": "会话日志恢复",
           "description": "当会话的计算机丢失对话时，从保存的会话日志重建该会话。由 Kortix 按项目启用。"
-        },
-        "connectors_v2": {
-          "name": "连接器 v2",
-          "description": "自定义 → 连接器中的 MCP 应用目录，登录由 Kortix 管理。开启“应用事件触发器”后，Kortix 会检查这些应用中的新邮件、文件和条目，并启动智能体。同时添加 Telegram 作为渠道。新的连接器账户默认不再与整个项目共享。"
         },
         "agent_rooms": {
           "name": "聊天室",
@@ -1298,6 +1282,10 @@
         "artifacts": {
           "name": "工件",
           "description": "将“文件”中的文档（Markdown）和 HTML 页面（演示文稿、控制面板、原型、工具）分享给项目、指定成员或任何拥有链接的人。文档可直接编辑，每次保存都是“文件”历史中的一个版本，文档可导出为 PDF。新增“工件”页面和 `kortix artifacts`。"
+        },
+        "email_channel": {
+          "name": "电子邮件渠道",
+          "description": "为智能体提供一个 Resend 邮箱：收到的邮件会启动并延续会话，智能体从该邮箱阅读、回复和发送邮件。使用你自己的 Resend API 密钥和域名。"
         }
       }
     },
@@ -20175,7 +20163,6 @@
       "text94ddcfbb2f30": "被拒绝的电话也是一场争论。没有发生的事情和已经发生的事情一样都是记录的一部分。",
       "text89faa819e995": "它永远无法达到创造它的人的影响力。这里没有传承优势可以走上去。",
       "text6a51a65a11f4": "启动会话会剪切一个分支并为其启动一台机器。数据库不会让第二个会话拥有该机器。",
-      "catalogExcludedNoActions": "{count, plural, other {{count} 个应用匹配，但未发布代理可以调用​​的操作。}}",
       "text08cadd4156a5": "沙箱是一个真正的 Linux 机器，模型可以在上面运行任何东西。因此，其中唯一的凭证是一个 Kortix 代币，其范围仅限于该项目。",
       "textc7d878b8738e": "账户操作发生在同一个地方——成员资格、角色、策略、代币、组。",
       "text5b70d52b009e": "第三方 API 看到的是普通的经过身份验证的请求。答案返回给代理。凭证保留在后面。",

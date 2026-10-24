@@ -65,7 +65,6 @@ import { PROJECT_ACTIONS } from '../../../internal/lib/project-actions';
 import { useProjectCan } from '../../../internal/lib/use-project-can';
 
 import { connectorRunsOver, connectorStatusTone } from './connector-status';
-import { findEasyConnectApp } from './find-easy-connect-app';
 import { ProviderInfo, providerName } from './provider-info';
 import { ConnectorStatusBadge } from './status-badge';
 
@@ -162,7 +161,7 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
   // user picks another under "Ways to connect".
   const [toolsWay, setToolsWay] = useState<string | null>(null);
   const [allTools, setAllTools] = useState(false);
-  const { appQuery, waiting, resolved, managed, detail, provider } = useAppData(projectId, app);
+  const { appQuery, resolved, managed, detail, provider } = useAppData(projectId, app);
   const shownWay =
     resolved?.surfaces.find((surface) => surface.variantId !== null && surface.variantId === toolsWay) ??
     resolved?.surfaces.find((surface) => surface.variantId !== null) ??
@@ -187,7 +186,7 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
   // The connector list is part of the page, not a late addition: Install reads
   // it to reuse the app's connector, and a list that is still empty would make
   // it create a second one.
-  if (waiting || (appQuery && (appQuery.isPending || connectorsQuery.isPending))) {
+  if (appQuery && (appQuery.isPending || connectorsQuery.isPending)) {
     return (
       <DetailPageShell busy>
         <Skeleton className="h-4 w-24 rounded-sm py-0" />
@@ -257,14 +256,8 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
     const target = surface.target;
     if (!target) return;
     setPendingControl(key);
-    // The way the user picked is the way installed. Only a managed-only page
-    // (no ranked ways) still offers the app's own one-click server first.
-    const mcpUrl =
-      surface.kind === 'mcp' && surface.oneClick
-        ? surface.url
-        : target.managed && !detail
-          ? (managed?.directMcpUrl ?? null)
-          : null;
+    // The way the user picked is the way installed.
+    const mcpUrl = surface.kind === 'mcp' && surface.oneClick ? surface.url : null;
     const askName = () =>
       ask({ target, way: { kind: surface.kind, oneClick: surface.oneClick }, connectors, app });
     if (!mcpUrl) {
@@ -314,14 +307,13 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
     value: ReactNode;
   }> = [];
   // The Provider cell follows the primary way to connect: the app itself for
-  // its API/MCP server, the partner (Composio) for a managed app.
-  const managedOnly = managed && !detail;
+  // its API/MCP server, the partner for a managed way.
   const managedBy =
     primary?.kind === 'composio'
       ? 'Composio'
       : primary?.kind === 'kortix'
         ? 'Kortix'
-        : managedOnly
+        : primary?.kind === 'pipedream'
           ? connectorRunsOver(provider)
           : null;
   if (primary)
@@ -620,34 +612,19 @@ function readableCategory(key: string): string {
 }
 
 function useAppData(projectId: string, app: ReturnType<typeof appRefFromLocation>) {
-  const t = useTranslations('connectorPages');
-  const managedSlug = app?.source === 'easy-connect' ? app.slug : null;
   const connectStatus = useConnectProviderStatus(true);
   const provider = connectStatus.provider ?? 'composio';
-  // `absent`: this deployment has no managed provider, so the app cannot exist.
-  // `unknown` proceeds, as the catalogue does (`useCatalog`).
-  const managedRunnable =
-    managedSlug !== null &&
-    (connectStatus.state === 'configured' || connectStatus.state === 'unknown');
-  const managedQuery = useQuery({
-    queryKey: ['easy-connect-app', projectId, provider, managedSlug],
-    queryFn: () =>
-      findEasyConnectApp(listConnectCatalogPage, { projectId, provider, slug: managedSlug ?? '' }),
-    enabled: managedRunnable,
-    staleTime: 5 * 60_000,
-  });
-
-  // One app, both ways to connect. A managed app names its API/MCP twin
-  // (`directId`); an API/MCP app finds its managed twin by name below.
-  // Same key as the install hook and the old surface modal: one fetch.
-  const discoverId = app?.source === 'discover' ? app.id : (managedQuery.data?.directId ?? null);
+  // Same key as the install hook: one fetch.
+  const discoverId = app?.id ?? null;
   const discoverQuery = useQuery({
     queryKey: ['discover-connector-detail', projectId, discoverId],
     queryFn: () => getDiscoverConnector(projectId, discoverId ?? ''),
     enabled: discoverId !== null,
     staleTime: 15 * 60_000,
   });
-  const twinName = app?.source === 'discover' ? (discoverQuery.data?.item.name ?? null) : null;
+  // The managed (Composio) twin found by name: it adds the sign-in, category
+  // and app-event facts, and is a way to connect when the record lists none.
+  const twinName = discoverQuery.data?.item.name ?? null;
   const managedTwinQuery = useQuery({
     queryKey: ['easy-connect-twin', projectId, provider, twinName],
     queryFn: async () => {
@@ -667,14 +644,12 @@ function useAppData(projectId: string, app: ReturnType<typeof appRefFromLocation
   });
 
   // The query that resolves this app, or `null` when nothing can.
-  const appQuery =
-    app?.source === 'discover' ? discoverQuery : managedRunnable ? managedQuery : null;
-  const waiting = managedSlug !== null && connectStatus.state === 'asking';
+  const appQuery = app ? discoverQuery : null;
 
   const detail = discoverId !== null ? discoverQuery.data : undefined;
-  const managed = (managedRunnable ? managedQuery.data : managedTwinQuery.data) ?? undefined;
+  const managed = managedTwinQuery.data ?? undefined;
   // The managed app as one more way to connect, after the API/MCP surfaces,
-  // unless the catalogue already lists it (Connectors v2 ranks every way).
+  // unless the catalogue already lists it (it ranks every way).
   const listsComposio = detail?.variants.some((variant) => variant.kind === 'composio') === true;
   const managedSurface =
     managed && !listsComposio
@@ -757,15 +732,7 @@ function useAppData(projectId: string, app: ReturnType<typeof appRefFromLocation
             href: variant.docs ?? variant.url,
           })),
       }
-    : managed
-      ? {
-          name: managed.name,
-          description: managed.description,
-          logo: { slug: managed.slug, icon: managed.imgSrc },
-          surfaces: managedSurface ? [managedSurface] : [],
-          references: [],
-        }
-      : null;
+    : null;
 
-  return { appQuery, waiting, resolved, managed, detail, provider };
+  return { appQuery, resolved, managed, detail, provider };
 }

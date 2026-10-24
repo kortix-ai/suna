@@ -1219,21 +1219,9 @@
           "name": "Place de marché",
           "description": "Parcourez et installez des compétences depuis des registres communautaires et fournisseurs. Les sources, mises à jour et portées d’équipe évoluent encore."
         },
-        "connectors_api_discover": {
-          "name": "Découverte des API de connecteurs",
-          "description": "Parcourez des intégrations API, MCP, GraphQL, CLI et Postman directes avec des applications OAuth facultatives."
-        },
-        "agentmail_email": {
-          "name": "E-mail AgentMail",
-          "description": "Affectez des boîtes AgentMail pour que les e-mails entrants puissent démarrer et poursuivre des sessions Kortix."
-        },
         "meta_agent": {
           "name": "Méta-agent",
           "description": "Ajoutez un coordinateur qui gère les sessions spécialisées et les travaux en plusieurs étapes du projet."
-        },
-        "monitors": {
-          "name": "Moniteurs",
-          "description": "Exécutez des observateurs persistants de journaux, flux ou API qui démarrent des sessions d’agent lors d’événements."
         },
         "warm_sessions": {
           "name": "Sessions préchauffées",
@@ -1265,7 +1253,7 @@
         },
         "event_triggers": {
           "name": "Déclencheurs d’événements de connecteurs",
-          "description": "Démarrez un agent quand quelque chose se passe dans une app connectée : un nouvel e-mail, une pull request, un événement de calendrier. Les événements viennent de Composio. Avec Connectors v2 activé, Kortix vérifie aussi lui-même vos apps connectées."
+          "description": "Démarrez un agent quand quelque chose se passe dans une app connectée : un nouvel e-mail, une pull request, un événement de calendrier. Les événements viennent de Composio. Kortix vérifie aussi lui-même vos apps connectées."
         },
         "volumes": {
           "name": "Volumes",
@@ -1278,10 +1266,6 @@
         "session_log_restore": {
           "name": "Restauration du journal de session",
           "description": "Reconstruit une session à partir de son journal de session enregistré quand son ordinateur a perdu la conversation. Kortix l’active par projet."
-        },
-        "connectors_v2": {
-          "name": "Connecteurs v2",
-          "description": "Le catalogue d'apps MCP dans Personnaliser → Connecteurs, avec une connexion gérée par Kortix. Avec « Déclencheurs d'événements d'app » activé, Kortix vérifie ces apps à la recherche de nouveaux e-mails, fichiers et éléments et lance un agent. Ajoute aussi Telegram comme canal. Les nouveaux comptes de connecteurs ne sont plus partagés avec tout le projet par défaut."
         },
         "agent_rooms": {
           "name": "Salons",
@@ -1298,6 +1282,10 @@
         "artifacts": {
           "name": "Artefacts",
           "description": "Partagez des documents (Markdown) et des pages HTML (présentations, tableaux de bord, maquettes, outils) depuis Fichiers avec le projet, des personnes choisies ou toute personne disposant d’un lien. Les documents se modifient directement, chaque enregistrement est une version de l’historique de Fichiers et les documents s’exportent en PDF. Ajoute la page Artefacts et `kortix artifacts`."
+        },
+        "email_channel": {
+          "name": "Canal e-mail",
+          "description": "Donnez à l'agent une boîte e-mail sur Resend : les e-mails reçus démarrent et poursuivent des sessions, et l'agent lit, répond et envoie depuis la boîte. Utilisez votre propre clé API Resend et votre domaine."
         }
       }
     },
@@ -20175,7 +20163,6 @@
       "text94ddcfbb2f30": "Un appel refusé est aussi une dispute. Ce qui ne s’est pas produit fait autant partie du dossier que ce qui s’est produit.",
       "text89faa819e995": "Ce qu’il n’a jamais, c’est la portée de celui qui l’a créé. Il n'y a pas d'avantage d'héritage ici à monter.",
       "text6a51a65a11f4": "Le démarrage d'une session coupe une branche et démarre une machine pour celle-ci. La base de données ne permettra pas à une deuxième session d'accéder à cette machine.",
-      "catalogExcludedNoActions": "{count, plural, one {1 application correspond mais ne publie aucune action qu'un agent peut appeler.} other {{count} applications correspondent mais ne publient aucune action qu'un agent peut appeler.}}",
       "text08cadd4156a5": "Un bac à sable est une véritable machine Linux sur laquelle le modèle peut tout exécuter. Ainsi, le seul identifiant qu'il contient est un jeton Kortix, limité au projet.",
       "textc7d878b8738e": "Les actions du compte atterrissent au même endroit : adhésion, rôles, politiques, jetons, groupes.",
       "text5b70d52b009e": "L'API tierce voit une requête authentifiée ordinaire. La réponse revient à l'agent. Les informations d'identification restent en place.",

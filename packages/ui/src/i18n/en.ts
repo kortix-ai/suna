@@ -760,21 +760,9 @@ const catalog = {
           "name": "Marketplace",
           "description": "Browse and install skills from community and vendor registries. Sources, updates, and team scopes are still changing."
         },
-        "connectors_api_discover": {
-          "name": "Connectors API Discover",
-          "description": "Browse direct API, MCP, GraphQL, CLI, and Postman integrations alongside optional OAuth apps."
-        },
-        "agentmail_email": {
-          "name": "AgentMail Email",
-          "description": "Assign AgentMail inboxes so incoming email threads can start and continue Kortix sessions."
-        },
         "meta_agent": {
           "name": "Meta Agent",
           "description": "Add a coordinator agent that manages specialized sessions and multi-step work across the project."
-        },
-        "monitors": {
-          "name": "Monitors",
-          "description": "Run persistent watchers that observe logs, feeds, or APIs and start agent sessions from events."
         },
         "warm_sessions": {
           "name": "Warm Sessions",
@@ -806,7 +794,7 @@ const catalog = {
         },
         "event_triggers": {
           "name": "Connector event triggers",
-          "description": "Start an agent when something happens in a connected app: a new email, a pull request, a calendar event. Events come from Composio. With Connectors v2 on, Kortix also checks your connected apps itself."
+          "description": "Start an agent when something happens in a connected app: a new email, a pull request, a calendar event. Events come from Composio. Kortix also checks your connected apps itself."
         },
         "volumes": {
           "name": "Volumes",
@@ -819,10 +807,6 @@ const catalog = {
         "session_log_restore": {
           "name": "Session log restore",
           "description": "Rebuilds a session from its saved session log when its computer lost the conversation. Kortix enables it per project."
-        },
-        "connectors_v2": {
-          "name": "Connectors v2",
-          "description": "The MCP app catalog in Customize → Connectors, with sign-in that Kortix runs. With Connector event triggers on, Kortix checks these apps for new emails, files and items and starts an agent. Also adds Telegram as a channel. New connector accounts are no longer shared with the whole project by default."
         },
         "agent_rooms": {
           "name": "Rooms",
@@ -839,6 +823,10 @@ const catalog = {
         "artifacts": {
           "name": "Artifacts",
           "description": "Share docs (Markdown) and HTML pages (decks, dashboards, mockups, tools) from Files with the project, chosen people or anyone with a link. Docs edit in place, every save is a version from the Files history, and docs export to PDF. Adds the Artifacts page and `kortix artifacts`."
+        },
+        "email_channel": {
+          "name": "Email channel",
+          "description": "Give the agent an email inbox on Resend: inbound mail starts and continues sessions, and the agent reads, replies and sends from the inbox. Bring your own Resend API key and domain."
         }
       }
     },
@@ -2264,12 +2252,6 @@ const catalog = {
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionHowa31daf50": "How Kortix reaches this connector — the same settings used when it was added.",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleCouldn277b73a0": "Couldn’t load connection",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSave8c6f945f": "Save connection",
-    "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnect19ca1c01": "Easy connect",
-    "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrPlaceholderSearch9d26aaaa": "Search apps — Gmail, Slack, Stripe, Notion…",
-    "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleEasy58e9c7b1": "Easy connect isn’t configured",
-    "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnectc07266e0": "Easy-connect apps need the Connect provider configured.",
-    "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleNof8067eda": "No apps found",
-    "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextLoading7131cc18": "Loading…",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSpec4235864d": "Spec URL or repo path",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSDL2325b707": "SDL spec (optional)",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelBase744ecef9": "Base URL",
@@ -2312,7 +2294,6 @@ const catalog = {
     "autoFeaturesWorkspaceProjectSidebarModalShareSessionModalDelegateDescription": "{owner} created this session. As a project manager you govern its access.",
     "autoFeaturesWorkspaceProjectSidebarModalShareSessionModalViewerDescription": "{owner} owns this session. Only the owner can change who opens it.",
     "autoFeaturesFileViewerFileContentRendererJsxTextCouldnT794ae800": "Couldn't preview this file",
-    "autoFeaturesFileViewerFilePreviewModalJsxAttrTooltipCopy42229181": "Copy a public view-only link for this file",
     "autoFeaturesFileViewerFilePreviewModalJsxAttrTitleClosea40d0510": "Close (Esc)",
     "autoFeaturesFileViewerFilePreviewModalJsxAttrTitlePreviousb7cda316": "Previous file",
     "autoFeaturesFileViewerFilePreviewModalJsxAttrAriaLabel03ab3a76": "Previous file",
@@ -5763,7 +5744,6 @@ const catalog = {
       "textf651529d7e60": "account members organization roster owners admins",
       "texta67e3dc962e8": "Kortix Capture",
       "textf12162aa6ac0": "capture recording screen devices install enrollment",
-      "catalogExcludedNoActions": "{count, plural, one {1 app matches but publishes no actions an agent can call.} other {{count} apps match but publish no actions an agent can call.}}",
       "text81e6bf495c98": "Plans, credits, Enterprise, entitlements, members and billing state, per account.",
       "textfe3436af86b4": "Extensions",
       "textdffd02b805cb": "Commands are still loading",
@@ -5796,6 +5776,17 @@ const catalog = {
       "texta8597db6f24b": "Remove skill",
       "text5f6ba69d66d1": "Skill removed",
       "textcb8d6b0c94c9": " and every file in it, edits included, and removes the skill from every agent that lists it. One commit on the default branch.",
+      "text0ba357fa63f8": "Connector events",
+      "textca395c4d19b2": "Connector event",
+      "text6064256ee716": "connector event",
+      "text85a6c98e5584": "New connector event",
+      "text165d9237c163": "Search connector events",
+      "texta9caf7909165": "No connector events yet",
+      "text451ef98453d2": "Have an agent run when one of your Kortix Apps emits an event.",
+      "text064694999e1f": "New App event",
+      "text1934aa0740bb": "Search App events",
+      "text25db7e5609e5": "No App events yet",
+      "text9f8f92588517": "An App starts agents by emitting events. Add a trigger with on: { event, app } in kortix.yaml.",
       "textfd1317630c49": "Used as the first choice for the Resend address, for example support@kortixmail.",
       "textb270bf37ec1c": "Resend inbox assigned to this connection.",
       "text21a606ab61a7": "This channel connection has no Resend inbox yet.",

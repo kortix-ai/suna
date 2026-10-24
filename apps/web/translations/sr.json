@@ -1219,21 +1219,9 @@
           "name": "Тржиште",
           "description": "Прегледајте и инсталирајте вештине из регистара заједнице и добављача. Извори, ажурирања и тимски опсези се још мењају."
         },
-        "connectors_api_discover": {
-          "name": "Откривање API конектора",
-          "description": "Прегледајте директне API, MCP, GraphQL, CLI и Postman интеграције уз опционе OAuth апликације."
-        },
-        "agentmail_email": {
-          "name": "AgentMail е-пошта",
-          "description": "Доделите AgentMail сандучиће да би долазне поруке могле да покрену и наставе Kortix сесије."
-        },
         "meta_agent": {
           "name": "Мета агент",
           "description": "Додајте координатора који управља специјализованим сесијама и пословима у више корака у оквиру пројекта."
-        },
-        "monitors": {
-          "name": "Надгледања",
-          "description": "Покрените трајна надгледања дневника, извора или API-ја која покрећу сесије агента на основу догађаја."
         },
         "warm_sessions": {
           "name": "Загрејане сесије",
@@ -1265,7 +1253,7 @@
         },
         "event_triggers": {
           "name": "Okidači događaja konektora",
-          "description": "Pokrenite agenta kada se nešto desi u povezanoj aplikaciji: nova e-pošta, pull request, događaj u kalendaru. Događaji dolaze iz Composio-a. Kada je Connectors v2 uključen, Kortix i sam proverava vaše povezane aplikacije."
+          "description": "Pokrenite agenta kada se nešto desi u povezanoj aplikaciji: nova e-pošta, pull request, događaj u kalendaru. Događaji dolaze iz Composio-a. Kortix i sam proverava vaše povezane aplikacije."
         },
         "volumes": {
           "name": "Volumeni",
@@ -1278,10 +1266,6 @@
         "session_log_restore": {
           "name": "Vraćanje iz loga sesije",
           "description": "Ponovo gradi sesiju iz njenog sačuvanog loga sesije kada je njen računar izgubio razgovor. Kortix ga uključuje po projektu."
-        },
-        "connectors_v2": {
-          "name": "Konektori v2",
-          "description": "Katalog MCP aplikacija u Prilagodi → Konektori, sa prijavom kojom upravlja Kortix. Uz uključene „Okidače događaja aplikacije“, Kortix proverava ove aplikacije za nove mejlove, fajlove i stavke i pokreće agenta. Dodaje i Telegram kao kanal. Novi nalozi konektora se podrazumevano više ne dele sa celim projektom."
         },
         "agent_rooms": {
           "name": "Собе",
@@ -1298,6 +1282,10 @@
         "artifacts": {
           "name": "Артефакти",
           "description": "Дели документе (Markdown) и HTML странице (презентације, контролне табле, макете, алате) из Датотека са пројектом, изабраним особама или свима са линком. Документи се уређују на месту, свако чување је једна верзија из историје Датотека, а документи се могу извести у PDF. Додаје страницу Артефакти и `kortix artifacts`."
+        },
+        "email_channel": {
+          "name": "Kanal e-pošte",
+          "description": "Dajte agentu poštansko sanduče na Resend-u: dolazna pošta pokreće i nastavlja sesije, a agent čita, odgovara i šalje iz sandučeta. Koristite sopstveni Resend API ključ i domen."
         }
       }
     },
@@ -20175,7 +20163,6 @@
       "text94ddcfbb2f30": "Одбијени позив је такође спор. Оно што се није догодило је део записа колико и оно што се догодило.",
       "text89faa819e995": "Оно што никада не добија је домет онога ко га је створио. Овде нема ивице наслеђа да се напредује.",
       "text6a51a65a11f4": "Покретање сесије пресеца грану и покреће једну машину за њу. База података неће дозволити да друга сесија има ту машину.",
-      "catalogExcludedNoActions": "{count, plural, one {1 апликација се подудара, али не објављује радње које агент може да позове.} few {# апликације се подударају, али не објављују радње које агент може да позове.} other {{count} апликација се подудара, али не објављују радње које агент може да позове.}}",
       "text08cadd4156a5": "Пешчаник је права Линук машина на којој модел може да покрене било шта. Дакле, једини акредитив у њему је један Кортик токен, обухваћен пројектом.",
       "textc7d878b8738e": "Радње налога долазе на исто место — чланство, улоге, политике, токени, групе.",
       "text5b70d52b009e": "АПИ треће стране види обичан захтев са аутентификацијом. Одговор се враћа агенту. Акредитив остаје иза.",

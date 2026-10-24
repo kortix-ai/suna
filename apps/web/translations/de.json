@@ -1219,21 +1219,9 @@
           "name": "Marktplatz",
           "description": "Suchen und installieren Sie Skills aus Community- und Anbieterregistern. Quellen, Updates und Teambreiche ändern sich noch."
         },
-        "connectors_api_discover": {
-          "name": "Connector-API-Suche",
-          "description": "Durchsuchen Sie direkte API-, MCP-, GraphQL-, CLI- und Postman-Integrationen sowie optionale OAuth-Apps."
-        },
-        "agentmail_email": {
-          "name": "AgentMail-E-Mail",
-          "description": "Weisen Sie AgentMail-Postfächer zu, damit eingehende E-Mail-Threads Kortix-Sitzungen starten und fortsetzen können."
-        },
         "meta_agent": {
           "name": "Meta-Agent",
           "description": "Fügen Sie einen Koordinator hinzu, der spezialisierte Sitzungen und mehrstufige Arbeiten im Projekt verwaltet."
-        },
-        "monitors": {
-          "name": "Monitore",
-          "description": "Führen Sie dauerhafte Wächter aus, die Protokolle, Feeds oder APIs beobachten und bei Ereignissen Agentensitzungen starten."
         },
         "warm_sessions": {
           "name": "Vorgewärmte Sitzungen",
@@ -1265,7 +1253,7 @@
         },
         "event_triggers": {
           "name": "Connector-Ereignis-Trigger",
-          "description": "Starte einen Agenten, wenn in einer verbundenen App etwas passiert: eine neue E-Mail, ein Pull Request, ein Kalendertermin. Die Ereignisse kommen von Composio. Ist Connectors v2 aktiv, prüft Kortix deine verbundenen Apps zusätzlich selbst."
+          "description": "Starte einen Agenten, wenn in einer verbundenen App etwas passiert: eine neue E-Mail, ein Pull Request, ein Kalendertermin. Die Ereignisse kommen von Composio. Kortix prüft deine verbundenen Apps zusätzlich selbst."
         },
         "volumes": {
           "name": "Volumes",
@@ -1278,10 +1266,6 @@
         "session_log_restore": {
           "name": "Wiederherstellung aus dem Session-Log",
           "description": "Baut eine Session aus ihrem gespeicherten Session-Log neu auf, wenn ihr Computer die Unterhaltung verloren hat. Kortix aktiviert es pro Projekt."
-        },
-        "connectors_v2": {
-          "name": "Connectors v2",
-          "description": "Der MCP-App-Katalog unter Anpassen → Connectoren, mit Anmeldung über Kortix. Ist „App-Ereignis-Trigger“ an, prüft Kortix diese Apps auf neue E-Mails, Dateien und Einträge und startet einen Agenten. Dazu Telegram als Kanal. Neue Connector-Konten werden nicht mehr standardmäßig mit dem ganzen Projekt geteilt."
         },
         "agent_rooms": {
           "name": "Räume",
@@ -1298,6 +1282,10 @@
         "artifacts": {
           "name": "Artefakte",
           "description": "Teile Dokumente (Markdown) und HTML-Seiten (Präsentationen, Dashboards, Mockups, Tools) aus Dateien mit dem Projekt, ausgewählten Personen oder allen mit einem Link. Dokumente werden direkt bearbeitet, jedes Speichern ist eine Version aus dem Dateien-Verlauf, und Dokumente lassen sich als PDF exportieren. Fügt die Seite „Artefakte“ und `kortix artifacts` hinzu."
+        },
+        "email_channel": {
+          "name": "E-Mail-Kanal",
+          "description": "Gib dem Agenten ein E-Mail-Postfach bei Resend: eingehende Mails starten und setzen Sessions fort, und der Agent liest, antwortet und sendet aus dem Postfach. Bring deinen eigenen Resend-API-Schlüssel und deine Domain mit."
         }
       }
     },
@@ -20175,7 +20163,6 @@
       "text94ddcfbb2f30": "Auch ein abgelehnter Anruf ist ein Streit. Was nicht passiert ist, ist ebenso Teil der Aufzeichnungen wie das, was passiert ist.",
       "text89faa819e995": "Was es nie erreicht, ist die Reichweite desjenigen, der es geschaffen hat. Es gibt hier keine Vererbungskante, die man hochgehen kann.",
       "text6a51a65a11f4": "Beim Starten einer Sitzung wird ein Zweig abgeschnitten und eine Maschine dafür gestartet. Die Datenbank lässt keine zweite Sitzung auf diesem Computer zu.",
-      "catalogExcludedNoActions": "{count, plural, one {1 App stimmt überein, veröffentlicht jedoch keine Aktionen, die ein Agent aufrufen kann.} other {{count} Apps stimmen überein, veröffentlichen jedoch keine Aktionen, die ein Agent aufrufen kann.}}",
       "text08cadd4156a5": "Eine Sandbox ist eine echte Linux-Maschine, auf der das Modell alles ausführen kann. Der einzige darin enthaltene Berechtigungsnachweis ist also ein Kortix-Token, der auf das Projekt beschränkt ist.",
       "textc7d878b8738e": "Kontoaktionen landen am selben Ort – Mitgliedschaft, Rollen, Richtlinien, Token, Gruppen.",
       "text5b70d52b009e": "Die Drittanbieter-API sieht eine normale authentifizierte Anfrage. Die Antwort geht zurück an den Agenten. Der Ausweis bleibt zurück.",

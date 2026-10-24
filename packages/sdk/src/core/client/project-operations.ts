@@ -44,7 +44,7 @@ export function bindProjectOperations(
         set: (...a: DropFirst<Parameters<typeof P.setConnectorPolicies>>) =>
           P.setConnectorPolicies(projectId, ...a),
       },
-      /** Pipedream and Composio connectors and the Kortix app each moves to (`connectors_v2`). */
+      /** Pipedream and Composio connectors and the Kortix app each moves to. */
       listMoves: () => P.listConnectorMoves(projectId),
       /** Move a Pipedream or Composio connector to its Kortix app; it keeps its slug. */
       move: (...a: DropFirst<Parameters<typeof P.moveConnector>>) => P.moveConnector(projectId, ...a),

@@ -139,8 +139,6 @@ export type CrudOutcome =
 type PolicyAction = 'always_run' | 'require_approval' | 'block';
 export type DefaultMode = 'risk' | 'allow_all';
 
-/** Which catalogue Discover reads (`routes/catalogues.ts`). */
-export type DiscoverCatalogue = 'kortix' | 'integrations';
 
 export interface ProjectPolicyView {
   match: string;
@@ -498,10 +496,9 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
     categories: Array<{ key: string; label: string; count: number }>;
     indexReady: boolean;
   }>;
-  /** Browse the Discover catalogue: integrations.sh, or (`connectors_v2`)
-   *  Kortix's MCP apps, integrations.sh and the managed toolkits as one. */
+  /** Browse the Discover catalogue: Kortix's apps, integrations.sh and the
+   *  managed toolkits as one (`mcp-apps.ts`). */
   listDiscoverConnectors?(input: {
-    catalogue?: DiscoverCatalogue;
     q?: string;
     cursor?: string;
     /** A browse-section key from `listDiscoverSections`. */
@@ -510,18 +507,21 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
     /** Only the apps that connect with nothing to set up. */
     oneClick?: boolean;
     kinds?: readonly ConnectorCatalogKind[];
+    /** App ids the project cannot use yet, left out before counting. */
+    exclude?: ReadonlySet<string>;
   }): Promise<unknown>;
   /** The Discover browse page: Popular plus a fixed top slice of each
    *  section, each with the section's true total across the whole catalogue. */
   listDiscoverSections?(input: {
-    catalogue?: DiscoverCatalogue;
     perCategory?: number;
     maxCategories?: number;
     oneClick?: boolean;
     kinds?: readonly ConnectorCatalogKind[];
+    /** App ids the project cannot use yet, left out before counting. */
+    exclude?: ReadonlySet<string>;
   }): Promise<unknown>;
   /** Resolve every known surface for one trusted catalogue record. */
-  getDiscoverConnector?(id: string, catalogue?: DiscoverCatalogue): Promise<unknown>;
+  getDiscoverConnector?(id: string): Promise<unknown>;
   /** The tools one way to connect offers, before install (`catalog-tools.ts`). */
   discoverConnectorTools?(variant: ConnectorSurfaceVariant): Promise<CatalogTools>;
   /** Read project-level `policies:` list + `policy.default_mode` from kortix.yaml. */

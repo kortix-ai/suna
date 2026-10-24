@@ -58,7 +58,7 @@ const OFFICIAL_SURFACE_ENRICHMENTS: Record<string, ConnectorSurfaceVariant[]> = 
   ],
 };
 
-/** `composio`: a managed Composio toolkit (`connectors_v2` catalogue only). */
+/** `composio`: a managed Composio toolkit (Kortix catalogue only). */
 /** `kortix`: an integration Kortix built itself (Slack, Teams, Email, Telegram,
  *  Computer). It is set up on its own page, not installed as a connector. */
 export type ConnectorCatalogKind = 'openapi' | 'mcp' | 'graphql' | 'composio' | 'kortix';
@@ -97,7 +97,7 @@ export interface ConnectorCatalogItem {
   composio?: ComposioCatalogCard;
   /** The Kortix integration a `kortix` record sets up. */
   kortix?: { app: KortixApp };
-  /** `connectors_v2`: the integrations.sh domain of a record filed under a
+  /** The integrations.sh domain of a record filed under a
    *  Kortix app's domain (Notion is notion.so here, notion.com there). */
   registryDomain?: string;
 }
@@ -118,7 +118,7 @@ export interface ConnectorTemplate {
 
 export interface ConnectorSurfaceVariant {
   id: string;
-  /** `composio`: a managed toolkit (`connectors_v2` only), installed from `composio`. */
+  /** `composio`: a managed toolkit, installed from `composio`. */
   kind: 'openapi' | 'postman' | 'mcp' | 'graphql' | 'http' | 'composio' | 'kortix';
   name: string;
   url: string | null;
@@ -128,9 +128,9 @@ export interface ConnectorSurfaceVariant {
   requiresAuth: boolean;
   command: string | null;
   connector: ConnectorTemplate | null;
-  /** Connects with nothing to set up (`connectors_v2`). */
+  /** Connects with nothing to set up. */
   oneClick?: boolean;
-  /** The way Install uses without asking: the first variant (`connectors_v2`). */
+  /** The way Install uses without asking: the first variant. */
   recommended?: boolean;
   /** The toolkit a `composio` variant installs. */
   composio?: ComposioCatalogCard;
@@ -430,15 +430,19 @@ function rankByName(items: ConnectorCatalogItem[], query: string): ConnectorCata
 }
 
 /** The records a filter keeps: `oneClick`, only those that connect with
- *  nothing to set up; `kinds`, only those that connect that way. */
+ *  nothing to set up; `kinds`, only those that connect that way; never an
+ *  `exclude`d id (an app the project cannot use yet), so totals and facets
+ *  count only what the project sees. */
 const filtered = (
   items: ConnectorCatalogItem[],
-  input: { oneClick?: boolean; kinds?: readonly ConnectorCatalogKind[] },
+  input: { oneClick?: boolean; kinds?: readonly ConnectorCatalogKind[]; exclude?: ReadonlySet<string> },
 ) =>
-  input.oneClick || input.kinds?.length
+  input.oneClick || input.kinds?.length || input.exclude?.size
     ? items.filter(
         (item) =>
-          (!input.oneClick || item.oneClick) && (!input.kinds?.length || input.kinds.includes(item.kind)),
+          (!input.oneClick || item.oneClick) &&
+          (!input.kinds?.length || input.kinds.includes(item.kind)) &&
+          !input.exclude?.has(item.id),
       )
     : items;
 
@@ -559,6 +563,7 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
         category?: string;
         oneClick?: boolean;
         kinds?: readonly ConnectorCatalogKind[];
+        exclude?: ReadonlySet<string>;
       } = {},
     ) {
       const items = filtered(await loadIndex(), input);
@@ -613,6 +618,7 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
         maxCategories?: number;
         oneClick?: boolean;
         kinds?: readonly ConnectorCatalogKind[];
+        exclude?: ReadonlySet<string>;
       } = {},
     ) {
       const perCategory = boundedCount(input.perCategory, 6, 24);
@@ -729,9 +735,6 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
 
 const catalog = createConnectorCatalog();
 
-export const listConnectorCatalog = catalog.list;
-export const connectorCatalogSections = catalog.sections;
-export const getConnectorCatalogDetail = catalog.detail;
 export const connectorCatalogIcons = catalog.icons;
 export const connectorCatalogDirectIds = catalog.directIds;
 export const connectorCatalogDirectMcpUrls = catalog.directMcpUrls;

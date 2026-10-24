@@ -170,14 +170,16 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(resolveFeatureFlag({ experimental: { event_triggers: false } }, 'event_triggers')).toBe(false);
   });
 
-  test('connectors_v2 is an experimental, explicit opt-in flag offered everywhere', () => {
-    expect(findCatalogFlag('connectors_v2')).toMatchObject({
-      stability: 'experimental',
-      enabled: false,
-      operator_only: false,
-    });
-    expect(resolveFeatureFlag({}, 'connectors_v2')).toBe(false);
-    expect(resolveFeatureFlag({ experimental: { connectors_v2: true } }, 'connectors_v2')).toBe(true);
+  test('connectors_v2 and connectors_api_discover graduated: one catalog for every project, a stored override is inert', () => {
+    // 2026-10-24: the Kortix catalog (MCP apps, integrations.sh, Composio) is the
+    // only connectors path. Projects that stored either key keep the value in
+    // metadata; it must not resurface as a key, a catalog row, or a gate.
+    for (const key of ['connectors_v2', 'connectors_api_discover']) {
+      expect(isFeatureFlagKey(key)).toBe(false);
+      const metadata = { experimental: { [key]: false } };
+      expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain(key);
+      expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain(key);
+    }
   });
 
   test('session_transcript_history graduated: saved history has no off switch and a stored override is inert', () => {
@@ -217,21 +219,6 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('config_releases');
   });
 
-  test('connectors_api_discover requires explicit opt-in', () => {
-    expect(resolveFeatureFlag({}, 'connectors_api_discover')).toBe(false);
-    expect(
-      resolveFeatureFlag(
-        { experimental: { connectors_api_discover: true } },
-        'connectors_api_discover',
-      ),
-    ).toBe(true);
-    expect(
-      resolveFeatureFlag(
-        { experimental: { connectors_api_discover: false } },
-        'connectors_api_discover',
-      ),
-    ).toBe(false);
-  });
 
   test('session_log_restore follows the deployment default while a stored project value wins', () => {
     const previous = config.SESSION_LOG_RESTORE_DEFAULT_ENABLED;
