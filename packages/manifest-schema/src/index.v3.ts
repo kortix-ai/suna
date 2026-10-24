@@ -27,6 +27,7 @@ import {
   REGISTRY_NAME_RE,
   RETIRED_KORTIX_TOOLS,
   SLUG_RE,
+  SPACE_SLUG_RE,
   TOOL_NAME_RE,
 } from './constants';
 import {
@@ -328,8 +329,8 @@ function validateDomainsV3(node: unknown, path: string, issues: ManifestIssue[])
   const BLOCK_KEYS = new Set(['type', 'label', 'room', 'path', 'app', 'url', 'text']);
   for (const [slug, value] of Object.entries(node)) {
     const where = `${path}.${slug}`;
-    if (!SLUG_RE.test(slug)) {
-      issues.push({ path: where, message: 'domain name must be a slug (lowercase letters, digits, "-" or "_").', severity: 'error' });
+    if (!SPACE_SLUG_RE.test(slug)) {
+      issues.push({ path: where, message: 'domain name must be a space slug (lowercase letters, digits, "-" or "_", at most 63 characters).', severity: 'error' });
     }
     if (!isTable(value)) {
       issues.push({ path: where, message: 'must be a map with optional `label`, `description`, `order` and `blocks`.', severity: 'error' });
@@ -609,8 +610,8 @@ function validateAgentBlockV3(
   if (entry.sandbox !== undefined && !(typeof entry.sandbox === 'string' && SLUG_RE.test(entry.sandbox.trim()))) {
     issues.push({ path: `${where}.sandbox`, message: 'must be a sandbox template slug.', severity: 'error' });
   }
-  if (entry.domain !== undefined && !(typeof entry.domain === 'string' && SLUG_RE.test(entry.domain.trim()))) {
-    issues.push({ path: `${where}.domain`, message: 'must be a domain slug (lowercase letters, digits, "-" or "_").', severity: 'error' });
+  if (entry.domain !== undefined && !(typeof entry.domain === 'string' && SPACE_SLUG_RE.test(entry.domain.trim()))) {
+    issues.push({ path: `${where}.domain`, message: 'must be a space slug (lowercase letters, digits, "-" or "_", at most 63 characters).', severity: 'error' });
   }
   validateNetworkEgressV3(entry.network_egress, `${where}.network_egress`, issues);
 

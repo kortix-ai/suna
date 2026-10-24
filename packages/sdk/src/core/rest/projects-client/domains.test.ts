@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 
-import { DEFAULT_PROJECT_DOMAIN, groupByDomain, type ProjectDomain } from './domains.ts';
+import {
+  agentsInSpace,
+  bindingSpace,
+  DEFAULT_PROJECT_DOMAIN,
+  groupByDomain,
+  groupBySpace,
+  listSpaces,
+  type ProjectDomain,
+} from './domains.ts';
 
 type Item = { name: string; domain?: string | null };
 
@@ -61,5 +69,67 @@ describe('groupByDomain', () => {
   test('omits a declared domain that has no items', () => {
     const groups = groupByDomain([{ name: 'only', domain: 'engineering' }], declared);
     expect(groups.map((g) => g.name)).toEqual(['engineering']);
+  });
+});
+
+describe('spaces: bindings and listing', () => {
+  const team = [
+    { name: 'builder', domain: 'engineering' },
+    { name: 'writer', domain: 'marketing' },
+    { name: 'helper' },
+  ];
+
+  test('bindingSpace: an explicit space wins, else the agent space, else project-wide (null)', () => {
+    expect(bindingSpace({ space: 'ops', agent: 'builder' }, team)).toBe('ops');
+    expect(bindingSpace({ agent: 'builder' }, team)).toBe('engineering');
+    expect(bindingSpace({ agent: 'helper' }, team)).toBeNull();
+    expect(bindingSpace({ agent: 'unknown' }, team)).toBeNull();
+    expect(bindingSpace({ space: '  ', agent: null }, team)).toBeNull();
+    expect(bindingSpace(null, team)).toBeNull();
+    expect(bindingSpace(undefined, team)).toBeNull();
+  });
+
+  test('agentsInSpace lists the agents whose domain is the slug', () => {
+    expect(agentsInSpace('engineering', [...team, { name: 'refactorer', domain: 'engineering' }])).toEqual([
+      'builder',
+      'refactorer',
+    ]);
+    expect(agentsInSpace('ops', team)).toEqual([]);
+  });
+
+  test('groupBySpace: declared spaces first, then undeclared, then Project-wide last', () => {
+    const items = [
+      { id: 'a', space: 'marketing' },
+      { id: 'b', space: null },
+      { id: 'c', space: 'security' },
+      { id: 'd', space: 'engineering' },
+    ];
+    const groups = groupBySpace(items, declared);
+    expect(groups.map((g) => g.name)).toEqual(['engineering', 'marketing', 'security', DEFAULT_PROJECT_DOMAIN]);
+    expect(groups.at(-1)).toMatchObject({ label: 'Project-wide', isDefault: true, items: [{ id: 'b' }] });
+    expect(groups[0]).toMatchObject({ label: 'Engineering', items: [{ id: 'd' }] });
+  });
+
+  test('groupBySpace takes an accessor, so any resource shape groups through bindingSpace', () => {
+    const goals = [
+      { slug: 'g1', goal: { agent: 'builder' } },
+      { slug: 'g2', goal: null },
+    ];
+    const groups = groupBySpace(goals, declared, (g) => bindingSpace(g.goal, team));
+    expect(groups.map((g) => [g.name, g.items.map((i) => i.slug)])).toEqual([
+      ['engineering', ['g1']],
+      [DEFAULT_PROJECT_DOMAIN, ['g2']],
+    ]);
+  });
+
+  test('listSpaces: declared spaces even with no agents, then referenced ones, never the default', () => {
+    const spaces = listSpaces({
+      agents: [{ name: 'scout', domain: 'security' }, { name: 'helper' }, { name: 'builder', domain: 'engineering' }],
+      domains: [...declared, { name: 'ops', label: 'Ops', order: 3 }],
+    });
+    expect(spaces.map((s) => s.name)).toEqual(['engineering', 'marketing', 'ops', 'security']);
+    expect(spaces.find((s) => s.name === 'security')).toEqual({ name: 'security' });
+    expect(listSpaces({ agents: [] })).toEqual([]);
+    expect(listSpaces(null)).toEqual([]);
   });
 });

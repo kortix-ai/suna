@@ -22385,6 +22385,7 @@
     "gateDescription": "Agents own an objective until it is verifiably done: the goal lives in Files, a daily heartbeat wakes it, the agent chases people for what it needs, and an independent check closes it.",
     "empty": "No goals yet",
     "emptyHint": "Start one in a session: describe the outcome, for example \"make sure our old bank account is closed\". The agent creates the goal and it shows here.",
+    "spaceEmpty": "Goals in this space will show up here",
     "loadError": "Could not load goals. Try again.",
     "retry": "Try again",
     "needsYou": "Needs you",
@@ -22545,6 +22546,10 @@
     "empty": "No artifacts yet",
     "emptyHint": "Ask an agent for a doc, a deck or a dashboard, or start a new doc.",
     "emptyFiltered": "No artifacts match",
+    "moveTo": "Move to space",
+    "projectWide": "Project-wide",
+    "moved": "Artifact moved",
+    "moveFailed": "Could not move the artifact",
     "updated": "Updated {time}",
     "pinned": "Pinned",
     "visibility": {

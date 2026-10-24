@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'bun:test';
-import { createElement } from 'react';
+import { createElement, type FC } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { App, SpaceBlock } from '@kortix/sdk';
@@ -8,19 +8,21 @@ import type { App, SpaceBlock } from '@kortix/sdk';
 // whose `app` slug resolves to nothing — degrades to a muted line, never a
 // crash. The heavy embeds are mocked per the design-system skill (mock.module
 // by resolved file): AppPreview (frame pool + signed URL) and UnifiedMarkdown.
-// The `chat` block is an intentional placeholder, so it has no heavy dep.
+// The `chat` block renders the host's `RoomPanel` slot behind `agent_rooms`.
 
 // Controllable App inventory + access-session results the component reads.
 let appsResult: { data?: App[]; isLoading: boolean } = { data: [], isLoading: false };
 let accessResult: { session: { data?: { url: string }; isError: boolean } } = {
   session: { data: undefined, isError: false },
 };
+let roomsFlag = { enabled: true, isLoading: false };
 
 const sdkReact = await import('@kortix/sdk/react');
 mock.module('@kortix/sdk/react', () => ({
   ...sdkReact,
   useProjectApps: () => appsResult,
   useAppAccess: () => accessResult,
+  useFeatureFlag: () => roomsFlag,
 }));
 
 mock.module('../../apps/app-preview', () => ({
@@ -36,6 +38,9 @@ mock.module('../../markdown', () => ({
 }));
 
 const { SpaceBlocks } = await import('./space-blocks');
+const { UiProvider } = await import('../../providers/ui-provider');
+// createElement takes children as its third argument; the provider's props type requires them.
+const Host = UiProvider as unknown as FC<{ components: Parameters<typeof UiProvider>[0]['components'] }>;
 
 function render(blocks: SpaceBlock[]): string {
   return renderToStaticMarkup(createElement(SpaceBlocks, { projectId: 'p1', blocks }));
@@ -120,14 +125,36 @@ test('app block with no slug degrades to a notice', () => {
   expect(html).toContain('No app selected yet.');
 });
 
-test('chat block renders the labelled placeholder with its room', () => {
-  const html = render([{ type: 'chat', label: 'Chat', room: 'sales' }]);
-  expect(html).toContain('#sales');
-  expect(html).toContain('A shared chat for this space.');
+test('chat block renders the host room panel for its room', () => {
+  roomsFlag = { enabled: true, isLoading: false };
+  const RoomPanel = (props: { projectId: string; roomName: string }) =>
+    createElement('div', { 'data-testid': 'room-panel', 'data-room': props.roomName, 'data-project': props.projectId });
+  const html = renderToStaticMarkup(
+    createElement(
+      Host,
+      { components: { RoomPanel } },
+      createElement(SpaceBlocks, { projectId: 'p1', blocks: [{ type: 'chat', label: 'Chat', room: 'sales' }] }),
+    ),
+  );
+  expect(html).toContain('data-testid="room-panel"');
+  expect(html).toContain('data-room="sales"');
+  expect(html).toContain('data-project="p1"');
 });
 
-test('chat block with no room still renders an intentional placeholder', () => {
+test('chat block without a host room panel names the room and links to the rooms page', () => {
+  roomsFlag = { enabled: true, isLoading: false };
+  const html = render([{ type: 'chat', label: 'Chat', room: 'sales' }]);
+  expect(html).toContain('sales');
+  expect(html).toContain('href="/projects/p1/rooms"');
+});
+
+test('chat block says so when rooms are off for the project', () => {
+  roomsFlag = { enabled: false, isLoading: false };
+  const html = render([{ type: 'chat', label: 'Chat', room: 'sales' }]);
+  expect(html).toContain('Rooms are off for this project.');
+});
+
+test('chat block with no room degrades to a notice', () => {
   const html = render([{ type: 'chat', label: 'Chat' }]);
-  expect(html).not.toContain('#');
-  expect(html).toContain('A shared chat for this space.');
+  expect(html).toContain('No room yet.');
 });

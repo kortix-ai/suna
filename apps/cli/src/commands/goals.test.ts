@@ -73,6 +73,32 @@ test('the real CLI lists and shows goals from the mounted folders', async () => 
   expect(missingRoot.stderr.toString() + missingRoot.stdout.toString()).toContain('Files is not mounted here');
 });
 
+test('the real CLI binds a goal to a space, then clears it; check accepts the fields and rejects a bad slug', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'drives-'));
+  const folder = join(root, 'company', 'Goals', 'q4-pipeline');
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(join(folder, 'goal.json'), JSON.stringify({ ...base, agent: 'closer' }));
+  const run = (args: string[]) =>
+    Bun.spawnSync(['bun', join(import.meta.dir, '..', 'index.ts'), 'goals', ...args], { env: { ...process.env, KORTIX_FEATURE_FLAGS: 'goals', KORTIX_DRIVES_ROOT: root } });
+  const read = () => JSON.parse(require('node:fs').readFileSync(join(folder, 'goal.json'), 'utf8'));
+
+  const bind = run(['bind', 'q4-pipeline', '--space', 'sales', '--json']);
+  expect(bind.exitCode).toBe(0);
+  expect(JSON.parse(bind.stdout.toString())).toMatchObject({ space: 'sales', agent: 'closer' });
+  expect(read()).toMatchObject({ objective: base.objective, space: 'sales', agent: 'closer' });
+
+  const clear = run(['bind', 'q4-pipeline', '--clear']);
+  expect(clear.exitCode).toBe(0);
+  expect(read()).toMatchObject({ space: null, agent: null });
+
+  const bad = run(['bind', 'q4-pipeline', '--space', 'Not A Slug']);
+  expect(bad.exitCode).not.toBe(0);
+  expect(read().space).toBeNull();
+
+  expect(goalViolations({ ...base, space: 'sales', agent: 'closer' }, healthy)).toEqual([]);
+  expect(goalViolations({ ...base, space: 'Sales Team', agent: 7 }, healthy)).toHaveLength(2);
+});
+
 describe('transitionViolations (the goal state machine)', () => {
   const { transitionViolations } = require('./goals') as typeof import('./goals');
   const facts = { activeHeartbeats: ['reminder.a'], unattended: true, verification: null, existingEvidence: new Set<string>() };

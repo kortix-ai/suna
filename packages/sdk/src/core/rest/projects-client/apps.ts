@@ -244,6 +244,10 @@ export interface AppDisplay {
   preview?: 'live' | 'none';
   /** The App, by slug, whose detail shows this one as a tab (a backend's admin dashboard). */
   parent?: string;
+  /** The space the App is grouped in (see `ResourceBinding`). Grouping only. */
+  space?: string | null;
+  /** The agent that owns the App (see `ResourceBinding`). Grouping only. */
+  agent?: string | null;
 }
 
 export interface CreateAppInput {

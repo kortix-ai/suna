@@ -4954,6 +4954,22 @@
                     "parent": {
                       "type": "string",
                       "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+                    },
+                    "space": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$",
+                      "description": "The space the App is grouped in. Grouping only."
+                    },
+                    "agent": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
+                      "description": "The agent that owns the App. Grouping only."
                     }
                   },
                   "additionalProperties": false
@@ -7302,6 +7318,22 @@
                     "parent": {
                       "type": "string",
                       "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+                    },
+                    "space": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$",
+                      "description": "The space the App is grouped in. Grouping only."
+                    },
+                    "agent": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
+                      "description": "The agent that owns the App. Grouping only."
                     }
                   },
                   "additionalProperties": false
@@ -7576,7 +7608,7 @@
             ],
             "description": "Optional display groups for the dashboard: slug → { label, description, order }. Data-only; groups agents by their `domain`.",
             "propertyNames": {
-              "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
             },
             "additionalProperties": {
               "type": "object",
@@ -7589,6 +7621,46 @@
                 },
                 "order": {
                   "type": "number"
+                },
+                "blocks": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "type"
+                    ],
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "chat",
+                          "artifact",
+                          "app",
+                          "iframe",
+                          "text"
+                        ]
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "room": {
+                        "type": "string"
+                      },
+                      "path": {
+                        "type": "string"
+                      },
+                      "app": {
+                        "type": "string"
+                      },
+                      "url": {
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
                 }
               },
               "additionalProperties": false
@@ -8128,7 +8200,7 @@
                 },
                 "domain": {
                   "type": "string",
-                  "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$",
                   "description": "Classification group for the dashboard (a key in the top-level `domains` map, or a bare name). Display-only."
                 },
                 "network_egress": {

@@ -910,6 +910,58 @@ inline in the repo**.
   Rotating a key in the dashboard takes effect on the **next**
   session.
 
+## Spaces and bindings — `domains:`, `agents.<name>.domain`, `display.space`
+
+A space is a channel for one area of work (Sales, Ops, Engineering). Its
+home shows its agents, its room, the Apps, Goals and Artifacts bound to it,
+and the blocks it declares. It is display and grouping only: a space grants
+nothing. Agent grants (`agents.<name>.apps`, `.skills`, `.connectors`, …)
+stay the only permission source.
+
+```yaml
+domains:
+  sales:                       # the space slug: ^[a-z0-9][a-z0-9_-]{0,62}$
+    label: Sales
+    description: Pipeline, deals and forecasts
+    order: 1
+    blocks:                    # the space home, below its room
+      - { type: text, label: Brief, text: "Weekly target: 12 qualified deals." }
+      - { type: app, label: CRM, app: crm }
+      - { type: artifact, label: Playbook, path: /Company/Sales/playbook.md }
+      - { type: iframe, label: Board, url: https://example.com/board }
+      - { type: chat, label: Standup, room: sales-standup }   # another room
+agents:
+  closer:
+    domain: sales              # the agent works in this space
+apps:
+  crm:
+    display: { listed: true, space: sales, agent: closer }
+```
+
+Rules:
+
+- A space slug is also a room name. The space's room is the project room
+  with that name (`kortix rooms send sales "…"`). The first post creates it.
+  The home renders it; do not add a `chat` block for it.
+- A declared space with no agents is still a space: it shows in the sidebar.
+- Bind a resource with `space` and/or `agent`. Resolution: its `space`, else
+  its agent's `domain`, else project-wide. A name that matches nothing is not
+  an error: an unknown space groups under its slug.
+  - App: `apps.<slug>.display.space` / `.agent` in this file. `kortix apps
+    deploy` copies `display` to the App, so a UI move is overwritten on the
+    next deploy while `display` is declared here.
+  - Goal: `kortix goals new "…" --space sales` (the agent defaults to
+    `$KORTIX_AGENT_NAME`), later `kortix goals bind <slug> --space sales`
+    or `--clear`. Writes `space` / `agent` in `goal.json`.
+  - Artifact: `kortix artifacts publish <file> --space sales` (the agent
+    defaults to the publishing session's agent), later `kortix artifacts bind
+    <id> --space sales` or `--clear`. `kortix artifacts ls --space sales`.
+- To build a space: add `domains.<slug>`, set `agents.<name>.domain` for the
+  agents that work there, bind what they make with `--space <slug>`, and post
+  progress with `kortix rooms send <slug> "…"`. Renaming a space slug leaves
+  old bindings under the old slug: re-bind them (`goals bind`, `artifacts bind`,
+  `display.space`) in the same change.
+
 ## Editing the manifest
 
 The manifest round-trips through the dashboard. When editing in a

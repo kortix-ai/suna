@@ -11,8 +11,8 @@
 //          when `public` (the content server)
 //   edit   who may write the path in Files (the folder rules of the drive)
 //   share  the creator, or project.write
-import { artifacts } from '@kortix/db';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { artifacts, projectSessions } from '@kortix/db';
+import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { signStableChannelState } from '../channels/core/signed-state';
 import { db } from '../shared/db';
@@ -122,6 +122,26 @@ export interface Author {
   sessionId: string | null;
 }
 
+/**
+ * Where an artifact is grouped: a space slug and/or an owning agent. Grouping
+ * only: nothing derives access from it. Null clears a field.
+ */
+export interface Binding {
+  space?: string | null;
+  agent?: string | null;
+}
+
+/** The agent of the publishing session, when the body names none: grouping happens without manual tagging. */
+async function bindingAtCreate(author: Author, input: Binding): Promise<{ space: string | null; agent: string | null }> {
+  let agent = input.agent;
+  if (agent === undefined && author.sessionId) {
+    const [session] = await db.select({ agentName: projectSessions.agentName }).from(projectSessions)
+      .where(eq(projectSessions.sessionId, author.sessionId)).limit(1);
+    agent = session?.agentName ?? null;
+  }
+  return { space: input.space ?? null, agent: agent ?? null };
+}
+
 /** Who asks, as the Files folder rules see them. ponytail: group grants are not resolved here; add groupIds if teams share artifact folders. */
 export interface Viewer {
   userId: string;
@@ -183,7 +203,7 @@ async function exists(volume: string, path: string): Promise<boolean> {
 export async function publishNew(
   scope: { accountId: string; projectId: string },
   author: Author,
-  input: { title?: string; description?: string | null; visibility?: ArtifactVisibility; files: Record<string, FileInput> },
+  input: { title?: string; description?: string | null; visibility?: ArtifactVisibility; files: Record<string, FileInput> } & Binding,
 ): Promise<ArtifactRow> {
   const files = encodeFiles(input.files);
   const entry = ENTRIES.find((e) => files.some((f) => f.rel === e));
@@ -206,6 +226,7 @@ export async function publishNew(
     root, entry, folder: true, title, type,
     description: input.description ?? null, visibility: input.visibility ?? 'private',
     createdByUserId: author.userId, createdBySessionId: author.sessionId,
+    ...(await bindingAtCreate(author, input)),
   }).returning();
   return row!;
 }
@@ -218,7 +239,7 @@ export async function share(
   scope: { accountId: string; projectId: string },
   author: Author,
   viewer: Viewer,
-  input: { path: string; title?: string; description?: string | null; visibility?: ArtifactVisibility },
+  input: { path: string; title?: string; description?: string | null; visibility?: ArtifactVisibility } & Binding,
 ): Promise<ArtifactRow> {
   const path = normalizeDrivePath(input.path);
   if (!path || path === '/') throw new ArtifactError(400, 'Name a file or a folder in Files', 'invalid_path');
@@ -250,6 +271,7 @@ export async function share(
     title: input.title?.trim() || titleOf(type, text) || target.entry,
     description: input.description ?? null, visibility: input.visibility ?? 'private',
     createdByUserId: author.userId, createdBySessionId: author.sessionId,
+    ...(await bindingAtCreate(author, input)),
   }).onConflictDoNothing().returning();
   if (!row) throw new ArtifactError(409, 'This path is already an artifact', 'already_shared');
   return row;
@@ -405,9 +427,23 @@ export async function getArtifactById(artifactId: string): Promise<ArtifactRow |
 export type ListScope = 'all' | 'mine' | 'shared' | 'pinned';
 
 /** The artifacts of a project that `userId` may view, newest change first. */
-export async function listArtifacts(projectId: string, userId: string, opts: { scope: ListScope; type?: string; q?: string; limit: number }) {
+export async function listArtifacts(
+  projectId: string,
+  userId: string,
+  opts: { scope: ListScope; type?: string; q?: string; limit: number; space?: string; agents?: string[]; unbound?: boolean },
+) {
   const visible = sql`(${artifacts.visibility} <> 'private' or ${artifacts.createdByUserId} = ${userId} or ${userId}::uuid = any(${artifacts.sharedWithUserIds}))`;
   const filters = [eq(artifacts.projectId, projectId), visible];
+  // A space: rows bound to it, plus rows with no space owned by one of its
+  // agents (the caller passes them, so the server needs no manifest).
+  if (opts.space) {
+    filters.push(opts.agents?.length
+      ? or(eq(artifacts.space, opts.space), and(isNull(artifacts.space), inArray(artifacts.agent, opts.agents)))!
+      : eq(artifacts.space, opts.space));
+  } else if (opts.agents?.length) {
+    filters.push(inArray(artifacts.agent, opts.agents));
+  }
+  if (opts.unbound) filters.push(isNull(artifacts.space), isNull(artifacts.agent));
   if (opts.scope === 'mine') filters.push(eq(artifacts.createdByUserId, userId));
   if (opts.scope === 'shared') filters.push(sql`${artifacts.createdByUserId} <> ${userId}`);
   if (opts.scope === 'pinned') filters.push(sql`${userId}::uuid = any(${artifacts.pinnedByUserIds})`);
@@ -427,9 +463,11 @@ export function canManage(row: ArtifactRow, viewer: Viewer): boolean {
 
 export async function updateArtifactMeta(
   row: ArtifactRow,
-  patch: { title?: string; description?: string | null; visibility?: ArtifactVisibility; shared_with_user_ids?: string[] },
+  patch: { title?: string; description?: string | null; visibility?: ArtifactVisibility; shared_with_user_ids?: string[] } & Binding,
 ): Promise<ArtifactRow> {
   const [updated] = await db.update(artifacts).set({
+    ...(patch.space !== undefined ? { space: patch.space } : {}),
+    ...(patch.agent !== undefined ? { agent: patch.agent } : {}),
     ...(patch.title?.trim() ? { title: patch.title.trim() } : {}),
     ...(patch.description !== undefined ? { description: patch.description } : {}),
     ...(patch.visibility ? { visibility: patch.visibility } : {}),

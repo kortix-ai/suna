@@ -44,6 +44,8 @@ Subcommands:
                       heartbeat, done has an independent PASS in
                       evidence/verification.md, a closed goal has no heartbeat.
                       Exit 1 on a violation.
+  bind [<slug>]       Group the goal under a space or an agent (--space,
+                      --agent, --clear). Grouping only: it grants nothing.
   ls                  List every goal in the mounted folders.
   status [<slug>]     One goal: status, summary, criteria, open asks, next wake.
 
@@ -51,6 +53,9 @@ Options:
   --slug <slug>       new: the folder name (default: from the objective).
   --shared            new: create it in /drives/company (the project) instead of
                       /drives/me (only you).
+  --space <slug>      new, bind: the space the goal is grouped in.
+  --agent <name>      new, bind: the owning agent (new default: $KORTIX_AGENT_NAME).
+  --clear             bind: remove the space and the agent (project-wide).
   --enforce           check: on a violation, queue a prompt to this session that
                       names it (at most 3 per goal in 6 hours). The on-idle hook
                       runs this.
@@ -107,9 +112,16 @@ export interface Goal {
   transitions?: Array<{ from: string | null; to: string; at: string; reason: string; by: string }>;
   verified_by?: string | null;
   next_wake_at?: string | null;
+  /** The space the goal is grouped in (a `domains.<slug>` key). Grouping only. */
+  space?: string | null;
+  /** The owning agent. Grouping only; with no `space`, the goal sits in this agent's space. */
+  agent?: string | null;
 }
 
-const GOAL_KEYS = new Set(['version', 'objective', 'status', 'summary', 'success_criteria', 'items', 'sessions', 'reminder_id', 'transitions', 'verified_by', 'next_wake_at']);
+const GOAL_KEYS = new Set(['version', 'objective', 'status', 'summary', 'success_criteria', 'items', 'sessions', 'reminder_id', 'transitions', 'verified_by', 'next_wake_at', 'space', 'agent']);
+/** A space slug is also a room name: the space's room is the room with its slug. */
+const SPACE_SLUG = /^[a-z0-9][a-z0-9_-]{0,62}$/;
+const AGENT_NAME = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 const ITEM_KEYS = new Set(['id', 'kind', 'title', 'status', 'owner', 'due']);
 
 /** What `check` sees about one goal besides goal.json. */
@@ -145,6 +157,12 @@ export function goalViolations(raw: unknown, facts: GoalFacts): string[] {
       const extra = Object.keys(item ?? {}).filter((k) => !ITEM_KEYS.has(k));
       if (extra.length) out.push(`item ${item?.id ?? '?'}: unknown field(s) ${extra.join(', ')}; keep notes in notes.md.`);
     }
+  }
+  if (g.space != null && (typeof g.space !== 'string' || !SPACE_SLUG.test(g.space))) {
+    out.push('goal.json "space" must be a space slug (lowercase letters, digits, "-" or "_", at most 63 characters) or null.');
+  }
+  if (g.agent != null && (typeof g.agent !== 'string' || !AGENT_NAME.test(g.agent))) {
+    out.push('goal.json "agent" must be an agent name or null.');
   }
   const unknown = Object.keys(g).filter((k) => !GOAL_KEYS.has(k));
   if (unknown.length) out.push(`goal.json has unknown field(s) ${unknown.join(', ')}; keep them in notes.md.`);
@@ -329,8 +347,14 @@ export async function runGoals(argv: string[]): Promise<number> {
   let enforce = false;
   let quiet = false;
   let json = false;
+  let spaceFlag: string | undefined;
+  let agentFlag: string | undefined;
+  let clear = false;
   try {
     slugFlag = takeFlagValue(rest, ['--slug']);
+    spaceFlag = takeFlagValue(rest, ['--space']);
+    agentFlag = takeFlagValue(rest, ['--agent']);
+    clear = takeFlagBool(rest, ['--clear']);
     shared = takeFlagBool(rest, ['--shared']);
     enforce = takeFlagBool(rest, ['--enforce']);
     quiet = takeFlagBool(rest, ['--quiet']);
@@ -345,7 +369,9 @@ export async function runGoals(argv: string[]): Promise<number> {
   } catch (err) {
     return fail((err as Error).message);
   }
-  if (!sub || !['new', 'check', 'transition', 'ls', 'list', 'status'].includes(sub)) {
+  if (spaceFlag !== undefined && !SPACE_SLUG.test(spaceFlag)) return fail(`--space "${spaceFlag}" is not a space slug (lowercase letters, digits, "-" or "_", at most 63 characters).`);
+  if (agentFlag !== undefined && !AGENT_NAME.test(agentFlag)) return fail(`--agent "${agentFlag}" is not an agent name.`);
+  if (!sub || !['new', 'check', 'transition', 'bind', 'ls', 'list', 'status'].includes(sub)) {
     return fail(`Unknown subcommand "${sub ?? ''}". Run \`kortix goals --help\`.`);
   }
   if (sub !== 'new' && !existsSync(drivesRoot())) {
@@ -353,6 +379,7 @@ export async function runGoals(argv: string[]): Promise<number> {
   }
   if (sub === 'ls' || sub === 'list') return listGoals(json);
   if (sub === 'status') return goalStatus(rest[0], json);
+  if (sub === 'bind') return bindGoal(rest[0], { space: spaceFlag, agent: agentFlag, clear }, json);
 
   const sessionId = process.env.KORTIX_SESSION_ID;
   if (!sessionId) return fail('No $KORTIX_SESSION_ID: kortix goals new/check run inside a session.');
@@ -397,6 +424,9 @@ export async function runGoals(argv: string[]): Promise<number> {
         verified_by: null,
         next_wake_at: reminder.next_fire_at,
         transitions: [{ from: null, to: 'draft', at: now, reason: 'goal created', by: sessionId }],
+        // Grouping: the creating agent owns it; --space puts it in a space.
+        space: spaceFlag ?? null,
+        agent: agentFlag ?? process.env.KORTIX_AGENT_NAME ?? null,
       };
       writeFileSync(join(folder, 'goal.json'), `${JSON.stringify(goal, null, 2)}\n`);
       writeFileSync(join(folder, 'log.md'), `# Log\n\n- ${now} Goal created: ${objective}\n`);
@@ -559,9 +589,34 @@ function listGoals(json: boolean): number {
   return 0;
 }
 
-function goalStatus(slug: string | undefined, json: boolean): number {
+/** Find a goal folder by slug, or the only one mounted. */
+function findGoalFolder(slug: string | undefined): string | undefined {
   const folders = goalFolders();
-  const folder = slug ? folders.find((f) => f.endsWith(`/${slug}`)) : folders.length === 1 ? folders[0] : undefined;
+  return slug ? folders.find((f) => f.endsWith(`/${slug}`)) : folders.length === 1 ? folders[0] : undefined;
+}
+
+/** `kortix goals bind`: set or clear the goal's `space` / `agent` in goal.json. */
+function bindGoal(slug: string | undefined, binding: { space?: string; agent?: string; clear: boolean }, json: boolean): number {
+  if (!binding.clear && binding.space === undefined && binding.agent === undefined) {
+    return missing('--space <slug>, --agent <name> or --clear');
+  }
+  const folder = findGoalFolder(slug);
+  if (!folder) return fail(slug ? `No goal "${slug}" in the mounted folders.` : 'Name the goal: kortix goals bind <slug> (kortix goals ls lists them).');
+  const goal = readGoal(folder) as Goal | null;
+  if (!goal) return fail(`${folder}/goal.json is missing or is not JSON.`);
+  const next: Goal = {
+    ...goal,
+    space: binding.clear ? null : (binding.space ?? goal.space ?? null),
+    agent: binding.clear ? null : (binding.agent ?? goal.agent ?? null),
+  };
+  writeFileSync(join(folder, 'goal.json'), `${JSON.stringify(next, null, 2)}\n`);
+  if (json) emitJson({ folder, space: next.space, agent: next.agent });
+  else process.stdout.write(`${status.ok(`Goal ${C.bold}${folder.split('/').at(-1)}${C.reset} is in ${next.space ?? (next.agent ? `${next.agent}'s space` : 'no space (project-wide)')}`)}\n`);
+  return 0;
+}
+
+function goalStatus(slug: string | undefined, json: boolean): number {
+  const folder = findGoalFolder(slug);
   if (!folder) return fail(slug ? `No goal "${slug}" in the mounted folders.` : 'Name the goal: kortix goals status <slug> (kortix goals ls lists them).');
   const s = summarize(folder);
   if (json) {

@@ -25,6 +25,7 @@ import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed, 
 import { projectsApp } from '../lib/app';
 import { DriveStorageError } from '../../drives/volumes';
 import { ARTIFACT_TYPES, ARTIFACT_TYPE_KEYS } from '../../artifacts/formats';
+import { BINDING_AGENT_RE, SPACE_SLUG_RE } from '@kortix/shared/app-config';
 import {
   ARTIFACTS_FLAG,
   ARTIFACT_VISIBILITIES,
@@ -67,11 +68,20 @@ const FileInputSchema = z.object({
 });
 const Files = z.record(z.string(), FileInputSchema);
 
+// Where an artifact is grouped. Grouping only: a binding grants nothing.
+const SpaceSlug = z.string().regex(SPACE_SLUG_RE, 'a space slug: lowercase letters, digits, "-" or "_", at most 63 characters');
+const AgentName = z.string().regex(BINDING_AGENT_RE, 'an agent name');
+const BindingFields = {
+  space: SpaceSlug.nullable().optional().openapi({ description: 'The space it is grouped in. Null: project-wide (or the space of `agent`).' }),
+  agent: AgentName.nullable().optional().openapi({ description: 'The owning agent. Default on publish and share from a session: that session\'s agent.' }),
+};
+
 const PublishBody = z.object({
   title: z.string().min(1).max(200).optional().openapi({ description: "Default: a doc's first `# ` heading, a page's <title>." }),
   description: z.string().max(1000).nullable().optional(),
   visibility: VisibilityEnum.optional().openapi({ description: 'Default private.' }),
   files: Files.openapi({ description: 'path → file. index.md makes a doc, index.html a page. One file is stored as `<title>.md|.html` in your folder in Files, more as a folder.' }),
+  ...BindingFields,
 });
 
 const ShareBody = z.object({
@@ -79,6 +89,7 @@ const ShareBody = z.object({
   title: z.string().min(1).max(200).optional(),
   description: z.string().max(1000).nullable().optional(),
   visibility: VisibilityEnum.optional(),
+  ...BindingFields,
 });
 
 const SaveBody = z.object({
@@ -93,6 +104,7 @@ const PatchBody = z.object({
   description: z.string().max(1000).nullable().optional(),
   visibility: VisibilityEnum.optional(),
   shared_with_user_ids: z.array(z.string().uuid()).max(200).optional().openapi({ description: 'People who may view a private artifact. Replaces the list.' }),
+  ...BindingFields,
 });
 
 const PersonSchema = z.object({ user_id: z.string(), name: z.string().nullable(), email: z.string().nullable(), avatar_url: z.string().nullable() });
@@ -115,6 +127,8 @@ const ArtifactSchema = z.object({
   web_url: z.string(),
   public_url: z.string().nullable().openapi({ description: 'Anyone-with-the-link page, when public.' }),
   public_content_url: z.string().nullable().openapi({ description: 'The raw page without Kortix chrome, when public.' }),
+  space: z.string().nullable().openapi({ description: 'The space it is grouped in, or null. Grouping only.' }),
+  agent: z.string().nullable().openapi({ description: 'The owning agent, or null. Grouping only.' }),
   created_at: z.string(),
   updated_at: z.string(),
 }).openapi('Artifact');
@@ -162,6 +176,8 @@ async function serialize(rows: ArtifactRow[], viewer: Viewer) {
       web_url: `${frontendBase()}/projects/${row.projectId}/artifacts/${row.artifactId}`,
       public_url: isPublic ? `${frontendBase()}/share/artifact/${row.artifactId}` : null,
       public_content_url: isPublic ? artifactPublicContentUrl(row.artifactId) : null,
+      space: row.space,
+      agent: row.agent,
       created_at: row.createdAt.toISOString(),
       updated_at: row.updatedAt.toISOString(),
     };
@@ -246,7 +262,10 @@ export function registerArtifactRoutes(): void {
   projectsApp.openapi(createRoute({
     method: 'get', path: '/{projectId}/artifacts', tags: ['artifacts'],
     summary: "List the project's artifacts you may view",
-    description: '`scope`: all (default), mine (you shared), shared (others shared), pinned (you pinned). Newest change first.',
+    description:
+      '`scope`: all (default), mine (you shared), shared (others shared), pinned (you pinned). Newest change first. ' +
+      '`space`: only artifacts bound to that space; with `agent` (repeatable, the agents of that space) also those with no space owned by one of them. ' +
+      '`agent` alone: owned by one of them. `unbound=1`: no space and no agent (project-wide).',
     ...auth,
     request: {
       params: ProjectParams,
@@ -255,6 +274,9 @@ export function registerArtifactRoutes(): void {
         type: TypeEnum.optional(),
         q: z.string().max(200).optional(),
         limit: z.coerce.number().int().min(1).max(200).optional(),
+        space: SpaceSlug.optional(),
+        agent: z.union([AgentName, z.array(AgentName).max(100)]).optional(),
+        unbound: z.enum(['1', 'true']).optional(),
       }),
     },
     responses: { 200: json(z.object({ artifacts: z.array(ArtifactSchema) }), 'The artifacts'), ...errors(400, 403, 404) },
@@ -263,7 +285,12 @@ export function registerArtifactRoutes(): void {
     const q = c.req.valid('query');
     const access = await authorize(c, projectId, 'read');
     if (!access.ok) return access.response;
-    const rows = await listArtifacts(projectId, access.viewer.userId, { scope: q.scope ?? 'all', type: q.type, q: q.q, limit: q.limit ?? 100 });
+    // One `agent` validates as a string, a repeated one as an array.
+    const agents = q.agent === undefined ? [] : [q.agent].flat();
+    const rows = await listArtifacts(projectId, access.viewer.userId, {
+      scope: q.scope ?? 'all', type: q.type, q: q.q, limit: q.limit ?? 100,
+      space: q.space, agents, unbound: q.unbound !== undefined,
+    });
     return c.json({ artifacts: await serialize(rows, access.viewer) }, 200);
   });
 

@@ -215,4 +215,11 @@ describe('kortix_version 3: domains (optional grouping)', () => {
     const yaml = swap('agents:', 'domains:\n  eng:\n    blocks:\n      - type: chat\n        color: red\nagents:');
     expect(errorPaths(yaml)).toContain('domains.eng.blocks[0].color');
   });
+
+  test('a space slug is also a room name: at most 63 characters, no dots', () => {
+    const long = 'a'.repeat(64);
+    expect(errorPaths(swap('agents:', `domains:\n  ${long}:\n    label: Long\nagents:`))).toContain(`domains.${long}`);
+    expect(check(swap('agents:', `domains:\n  ${'a'.repeat(63)}:\n    label: Ok\nagents:`)).errors).toEqual([]);
+    expect(errorPaths(swap('codemode: on', `codemode: on\n    domain: ${long}`))).toContain('agents.assistant.domain');
+  });
 });

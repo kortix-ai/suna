@@ -11,7 +11,8 @@
  */
 
 import { ApiError } from '../../http/api-client';
-import { getProjectDrive, listDriveFolder, readDriveFile } from './drives';
+import type { ResourceBinding } from './domains';
+import { getProjectDrive, listDriveFolder, readDriveFile, uploadDriveFile } from './drives';
 import { listProjectReminders, type ProjectReminder } from './session-reminders';
 
 export type ProjectGoalStatus =
@@ -70,6 +71,10 @@ export interface ProjectGoalDocument {
   transitions: ProjectGoalTransition[];
   verified_by: string | null;
   next_wake_at: string | null;
+  /** The space the goal is grouped in (see `ResourceBinding`). Absent in older files. */
+  space?: string | null;
+  /** The agent that owns the goal (see `ResourceBinding`). Absent in older files. */
+  agent?: string | null;
 }
 
 /**
@@ -233,6 +238,27 @@ export async function listProjectGoals(projectId: string, options?: { now?: numb
       health: goalHealth(goal, heartbeat, now),
     };
   });
+}
+
+/**
+ * Bind a goal to a space or an agent: read `goal.json` with its version,
+ * merge `space` / `agent` (null clears one, an absent key keeps it) and write
+ * it back with `If-Match`. A concurrent write throws `ApiError` 409. Returns
+ * the document as written. Grouping only: it grants nothing.
+ */
+export async function setProjectGoalBinding(
+  goal: Pick<ProjectGoal, 'driveId' | 'folder'>,
+  binding: ResourceBinding,
+): Promise<ProjectGoalDocument> {
+  const path = `${goal.folder}/goal.json`;
+  const { blob, version } = await readDriveFile(goal.driveId, path);
+  const current = JSON.parse(await blob.text()) as ProjectGoalDocument;
+  const next: ProjectGoalDocument = { ...current };
+  if (binding.space !== undefined) next.space = binding.space;
+  if (binding.agent !== undefined) next.agent = binding.agent;
+  const body = new TextEncoder().encode(`${JSON.stringify(next, null, 2)}\n`);
+  await uploadDriveFile(goal.driveId, path, body, { ifMatch: version });
+  return next;
 }
 
 export interface ProjectGoalFiles {

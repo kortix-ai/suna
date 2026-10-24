@@ -70,38 +70,123 @@ export function groupByDomain<T extends { domain?: string | null }>(
   items: T[],
   domains?: ProjectDomain[],
 ): Array<DomainGroup<T>> {
+  return groupInto(items, domains, (item) => item.domain, 'General');
+}
+
+function declaredMap(domains?: ProjectDomain[]): Map<string, ProjectDomain> {
   const declared = new Map<string, ProjectDomain>();
   for (const d of domains ?? []) if (d?.name) declared.set(d.name, d);
+  return declared;
+}
 
-  const buckets = new Map<string, T[]>();
-  for (const item of items) {
-    const name = resolveDomain(item.domain);
-    const bucket = buckets.get(name);
-    if (bucket) bucket.push(item);
-    else buckets.set(name, [item]);
-  }
-
+/** Declared first (by `order`, label, slug), then undeclared alphabetically, then the default. */
+function bySpaceRank(declared: Map<string, ProjectDomain>) {
   const rank = (name: string): [number, number, string] => {
     if (name === DEFAULT_PROJECT_DOMAIN) return [2, 0, name];
     const d = declared.get(name);
     if (d) return [0, d.order ?? Number.MAX_SAFE_INTEGER, (d.label ?? name).toLowerCase()];
     return [1, 0, name.toLowerCase()];
   };
+  return (a: string, b: string) => {
+    const [ga, oa, la] = rank(a);
+    const [gb, ob, lb] = rank(b);
+    return ga - gb || oa - ob || la.localeCompare(lb);
+  };
+}
 
-  return [...buckets.keys()]
-    .sort((a, b) => {
-      const [ga, oa, la] = rank(a);
-      const [gb, ob, lb] = rank(b);
-      return ga - gb || oa - ob || la.localeCompare(lb);
-    })
-    .map((name) => {
-      const d = declared.get(name);
-      return {
-        name,
-        label: d?.label ?? (name === DEFAULT_PROJECT_DOMAIN ? 'General' : name),
-        description: d?.description,
-        items: buckets.get(name)!,
-        isDefault: name === DEFAULT_PROJECT_DOMAIN,
-      };
-    });
+function groupInto<T>(
+  items: T[],
+  domains: ProjectDomain[] | undefined,
+  nameOf: (item: T) => string | null | undefined,
+  defaultLabel: string,
+): Array<DomainGroup<T>> {
+  const declared = declaredMap(domains);
+  const buckets = new Map<string, T[]>();
+  for (const item of items) {
+    const name = resolveDomain(nameOf(item));
+    const bucket = buckets.get(name);
+    if (bucket) bucket.push(item);
+    else buckets.set(name, [item]);
+  }
+  return [...buckets.keys()].sort(bySpaceRank(declared)).map((name) => {
+    const d = declared.get(name);
+    return {
+      name,
+      label: d?.label ?? (name === DEFAULT_PROJECT_DOMAIN ? defaultLabel : name),
+      description: d?.description,
+      items: buckets.get(name)!,
+      isDefault: name === DEFAULT_PROJECT_DOMAIN,
+    };
+  });
+}
+
+/**
+ * Where a viewable resource (an App, a Goal, an Artifact) is grouped. Both
+ * fields are optional; neither means project-wide. Grouping only: a binding
+ * never grants access (`agents.<name>.apps` and the other grants stay the only
+ * permission source). `Artifact`, `AppDisplay` and `ProjectGoalDocument` each
+ * satisfy it structurally.
+ */
+export interface ResourceBinding {
+  /** A space slug: a key of the manifest's `domains:` map. */
+  space?: string | null;
+  /** An agent name, a built-in agent included. */
+  agent?: string | null;
+}
+
+/**
+ * The space a binding resolves to: its `space`, else the `domain` of its
+ * `agent` in the manifest, else null (project-wide). A name that resolves to
+ * nothing is never an error: an unknown space groups under its own slug, and
+ * an unknown agent counts as having no space.
+ */
+export function bindingSpace(
+  binding: ResourceBinding | null | undefined,
+  agents: ReadonlyArray<{ name: string; domain?: string | null }>,
+): string | null {
+  const space = binding?.space?.trim();
+  if (space) return space;
+  const agent = binding?.agent?.trim();
+  if (!agent) return null;
+  return agents.find((a) => a.name === agent)?.domain?.trim() || null;
+}
+
+/** The names of the agents whose `domain` is `slug`, in manifest order. */
+export function agentsInSpace(
+  slug: string,
+  agents: ReadonlyArray<{ name: string; domain?: string | null }>,
+): string[] {
+  return agents.filter((a) => a.domain?.trim() === slug).map((a) => a.name);
+}
+
+/**
+ * Group resources by space, in `groupByDomain`'s order: declared spaces, then
+ * undeclared ones, then the default group (label "Project-wide") last.
+ * `spaceOf` names an item's space; for a bound resource pass
+ * `(item) => bindingSpace(item, config.agents)`.
+ */
+export function groupBySpace<T>(
+  items: T[],
+  spaces?: ProjectDomain[],
+  spaceOf: (item: T) => string | null | undefined = (item) => (item as { space?: string | null }).space,
+): Array<DomainGroup<T>> {
+  return groupInto(items, spaces, spaceOf, 'Project-wide');
+}
+
+/**
+ * Every space of a project, in order: the declared ones (an empty space
+ * included), then the ones agents reference without declaring. Never the
+ * default group. The Spaces nav lists these.
+ */
+export function listSpaces(
+  config: { agents?: ReadonlyArray<{ name: string; domain?: string | null }>; domains?: ProjectDomain[] } | null | undefined,
+): ProjectDomain[] {
+  const declared = declaredMap(config?.domains);
+  const names = new Set(declared.keys());
+  for (const agent of config?.agents ?? []) {
+    const name = agent.domain?.trim();
+    if (name) names.add(name);
+  }
+  names.delete(DEFAULT_PROJECT_DOMAIN);
+  return [...names].sort(bySpaceRank(declared)).map((name) => declared.get(name) ?? { name });
 }

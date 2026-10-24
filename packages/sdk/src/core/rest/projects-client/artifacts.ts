@@ -51,8 +51,33 @@ export interface Artifact {
   public_url: string | null;
   /** The raw page without Kortix chrome, when public. */
   public_content_url: string | null;
+  /** The space it is grouped in (see `ResourceBinding`), or null. Older servers omit it. */
+  space?: string | null;
+  /** The agent that owns it: by default the agent of the session that published it. Older servers omit it. */
+  agent?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** Where an artifact is grouped. Grouping only: it grants nothing. Null clears a field. */
+export interface ArtifactBindingInput {
+  /** A space slug. */
+  space?: string | null;
+  /** An agent name. Default on publish/share from a session: that session's agent. */
+  agent?: string | null;
+}
+
+export interface ListArtifactsOptions {
+  scope?: ArtifactListScope;
+  type?: ArtifactType;
+  q?: string;
+  limit?: number;
+  /** Only artifacts in this space. With `agents`: bound to the space, or unbound to a space and owned by one of `agents`. */
+  space?: string;
+  /** The agents of `space` (`agentsInSpace`), so the server needs no manifest. */
+  agents?: string[];
+  /** Only artifacts with no space and no agent (project-wide). */
+  unbound?: boolean;
 }
 
 export interface ArtifactFile {
@@ -94,7 +119,7 @@ export interface ArtifactFileInput {
   content_base64?: string;
 }
 
-export interface PublishArtifactInput {
+export interface PublishArtifactInput extends ArtifactBindingInput {
   title?: string;
   description?: string | null;
   /** Default private. */
@@ -103,7 +128,7 @@ export interface PublishArtifactInput {
   files: Record<string, ArtifactFileInput>;
 }
 
-export interface ShareArtifactPathInput {
+export interface ShareArtifactPathInput extends ArtifactBindingInput {
   /** A path in Files: a .md or .html file, or a folder with index.md or index.html. */
   path: string;
   title?: string;
@@ -120,7 +145,7 @@ export interface SaveArtifactInput {
   base_version?: string;
 }
 
-export interface UpdateArtifactInput {
+export interface UpdateArtifactInput extends ArtifactBindingInput {
   title?: string;
   description?: string | null;
   visibility?: ArtifactVisibility;
@@ -141,11 +166,13 @@ export async function listArtifactTypes(projectId: string) {
   return unwrap(await backendApi.get<{ types: ArtifactTypeInfo[] }>(`${base(projectId)}/types`)).types;
 }
 
-export async function listArtifacts(
-  projectId: string,
-  options: { scope?: ArtifactListScope; type?: ArtifactType; q?: string; limit?: number } = {},
-) {
-  return unwrap(await backendApi.get<{ artifacts: Artifact[] }>(`${base(projectId)}${query(options)}`)).artifacts;
+export async function listArtifacts(projectId: string, options: ListArtifactsOptions = {}) {
+  const { agents, unbound, ...rest } = options;
+  const search = new URLSearchParams(query(rest).slice(1));
+  for (const agent of agents ?? []) search.append('agent', agent);
+  if (unbound) search.set('unbound', '1');
+  const text = search.toString();
+  return unwrap(await backendApi.get<{ artifacts: Artifact[] }>(`${base(projectId)}${text ? `?${text}` : ''}`)).artifacts;
 }
 
 export async function getArtifact(projectId: string, artifactId: string, options: { version?: string } = {}) {

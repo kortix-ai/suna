@@ -120,6 +120,10 @@ const components: UiHostComponents = {
       (m) => m.ShareSessionModal,
     ),
   ),
+  // A space home's room (flag `agent_rooms`), from the Rooms feature.
+  RoomPanel: lazyClient(() =>
+    import('@/features/workspace/rooms/space-room-panel').then((m) => m.SpaceRoomPanel),
+  ),
   // The whole Customize → Models surface: loaded on first open only.
   ProjectProviderModal: lazyClient(() =>
     import('@kortix/ui/customize/sections/llm-provider/llm-provider-modal').then(

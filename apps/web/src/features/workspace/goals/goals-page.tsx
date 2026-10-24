@@ -12,13 +12,16 @@ import {
   goalOpenAsks,
   goalProgress,
   GoalStatusBadge,
+  ALL_DOMAINS,
+  DomainFilterTabs,
   ProjectPageHeader,
   useGoalClock,
   useGoalIssueText,
+  useSpaceFilter,
 } from '@kortix/ui/workspace';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import type { ProjectGoal } from '@kortix/sdk';
-import { useProjectGoals } from '@kortix/sdk/react';
+import { bindingSpace, DEFAULT_PROJECT_DOMAIN, groupBySpace, type ProjectGoal } from '@kortix/sdk';
+import { useProjectConfig, useProjectGoals } from '@kortix/sdk/react';
 import Link from 'next/link';
 
 /**
@@ -31,7 +34,15 @@ import Link from 'next/link';
 export function GoalsPage({ projectId }: { projectId: string }) {
   const t = useTranslations('goals');
   const goals = useProjectGoals(projectId);
-  const all = goals.data ?? [];
+  const config = useProjectConfig(projectId);
+  const agents = config?.agents ?? [];
+  // A goal sits in its bound space, else its agent's space, else Project-wide.
+  const spaceOf = (goal: ProjectGoal) => bindingSpace(goal.goal, agents) ?? DEFAULT_PROJECT_DOMAIN;
+  const groups = groupBySpace(goals.data ?? [], config?.domains, spaceOf);
+  const labels = new Map(groups.map((group) => [group.name, group.label]));
+  const [space, setSpace] = useSpaceFilter(projectId);
+  const all = (goals.data ?? []).filter((goal) => space === ALL_DOMAINS || spaceOf(goal) === space);
+  const spaceLabel = (goal: ProjectGoal) => (space === ALL_DOMAINS ? labels.get(spaceOf(goal)) : undefined);
   const needsYou = all.filter(goalNeedsYou);
   const open = all.filter((g) => g.health.state !== 'closed' && !goalNeedsYou(g));
   const closed = all.filter((g) => g.health.state === 'closed');
@@ -56,13 +67,15 @@ export function GoalsPage({ projectId }: { projectId: string }) {
                 <Skeleton key={i} className="h-14 w-full rounded-md" />
               ))}
             </div>
-          ) : all.length === 0 ? (
+          ) : (goals.data ?? []).length === 0 ? (
             <EmptyState title={t('empty')} description={t('emptyHint')} />
           ) : (
             <>
-              <GoalGroup projectId={projectId} title={t('needsYou')} goals={needsYou} />
-              <GoalGroup projectId={projectId} title={t('open')} goals={open} />
-              <GoalGroup projectId={projectId} title={t('closed')} goals={closed} />
+              <DomainFilterTabs groups={groups} value={space} onValueChange={setSpace} />
+              {all.length === 0 ? <EmptyState size="sm" title={t('spaceEmpty')} /> : null}
+              <GoalGroup projectId={projectId} title={t('needsYou')} goals={needsYou} spaceLabel={spaceLabel} />
+              <GoalGroup projectId={projectId} title={t('open')} goals={open} spaceLabel={spaceLabel} />
+              <GoalGroup projectId={projectId} title={t('closed')} goals={closed} spaceLabel={spaceLabel} />
             </>
           )}
         </div>
@@ -71,7 +84,18 @@ export function GoalsPage({ projectId }: { projectId: string }) {
   );
 }
 
-function GoalGroup({ projectId, title, goals }: { projectId: string; title: string; goals: ProjectGoal[] }) {
+function GoalGroup({
+  projectId,
+  title,
+  goals,
+  spaceLabel,
+}: {
+  projectId: string;
+  title: string;
+  goals: ProjectGoal[];
+  /** The space chip of a row: only while every space is shown. */
+  spaceLabel: (goal: ProjectGoal) => string | undefined;
+}) {
   if (goals.length === 0) return null;
   return (
     <section className="flex flex-col gap-1">
@@ -80,14 +104,14 @@ function GoalGroup({ projectId, title, goals }: { projectId: string; title: stri
       </h2>
       <ul className="flex flex-col">
         {goals.map((goal) => (
-          <GoalRow key={`${goal.scope}/${goal.slug}`} projectId={projectId} goal={goal} />
+          <GoalRow key={`${goal.scope}/${goal.slug}`} projectId={projectId} goal={goal} space={spaceLabel(goal)} />
         ))}
       </ul>
     </section>
   );
 }
 
-function GoalRow({ projectId, goal }: { projectId: string; goal: ProjectGoal }) {
+function GoalRow({ projectId, goal, space }: { projectId: string; goal: ProjectGoal; space?: string }) {
   const t = useTranslations('goals');
   const locale = useLocale();
   const now = useGoalClock();
@@ -124,6 +148,7 @@ function GoalRow({ projectId, goal }: { projectId: string; goal: ProjectGoal }) 
           <span className="text-muted-foreground hidden text-xs tabular-nums sm:inline">
             {t('criteria', { met: progress.met, total: progress.total })}
           </span>
+          {space ? <span className="text-muted-foreground hidden text-xs md:inline">{space}</span> : null}
           <span className="text-muted-foreground hidden text-xs md:inline">{t(`scope.${goal.scope}`)}</span>
           <GoalStatusBadge status={doc?.status} />
         </span>

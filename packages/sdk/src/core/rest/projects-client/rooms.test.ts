@@ -5,6 +5,7 @@ import {
   addRoomPerson,
   addRoomSession,
   createRoom,
+  findRoomByName,
   getRoom,
   listRoomMessages,
   listRoomPeople,
@@ -56,6 +57,14 @@ test('listRooms lists named rooms, or the caller\'s conversations with mine', as
   expect(last().url).toBe(`${BASE}?mine=true`);
   await listRooms('p1', { name: 'platinum/dev', archived: true });
   expect(last().url).toBe(`${BASE}?name=platinum%2Fdev&archived=true`);
+});
+
+test('findRoomByName returns the named room, or null when the project has none', async () => {
+  nextBody = { rooms: [{ room_id: 'r1', name: 'ops' }] };
+  expect(await findRoomByName('p1', 'ops')).toMatchObject({ room_id: 'r1', name: 'ops' });
+  expect(last().url).toBe(`${BASE}?name=ops`);
+  nextBody = { rooms: [] };
+  expect(await findRoomByName('p1', 'ops')).toBeNull();
 });
 
 test('createRoom, getRoom and updateRoom hit the room routes', async () => {
