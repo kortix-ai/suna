@@ -3,7 +3,9 @@
 import { useLayoutEffect, useState, type ReactNode } from 'react';
 
 import { SessionWelcome } from '../../session/thread/session-welcome';
-import { useProjectName } from '@kortix/sdk/react';
+import { useProjectConfig, useProjectName } from '@kortix/sdk/react';
+
+import { useActiveDomain } from '../../internal/stores/active-domain-store';
 import {
   HOME_GREETINGS,
   HOME_GREETING_STORAGE_KEY,
@@ -68,11 +70,21 @@ export function ProjectHomeWelcomeBody({
 }) {
   // One source for the project name — see `useProjectName`'s doc comment.
   const name = useProjectName(projectId) ?? '';
+  // The active space (the sidebar's Spaces selection). When one is chosen the
+  // home is that space's home: the heading names the space, its description
+  // reads as the space's brief, and the composer below already starts only this
+  // space's agents.
+  const [activeDomain] = useActiveDomain(projectId);
+  const config = useProjectConfig(projectId);
+  const space = activeDomain
+    ? config?.domains?.find((domain) => domain.name === activeDomain)
+    : undefined;
+  const spaceLabel = space?.label || activeDomain || null;
   // One word, not two. The name sits inside the sentence in `text-foreground`
   // while the rest is muted, so the fallback has to read as a NAME in that
   // slot — "this project" is a description wearing a name's highlight, and it
   // stretches the line for a case where we know the least.
-  const displayName = name.trim() || 'it';
+  const displayName = spaceLabel ?? (name.trim() || 'it');
   // Variant 0 on the server and through hydration; the stored visit count
   // picks the real one before first paint. See `home-greeting.ts`.
   const [greeting, setGreeting] = useState(HOME_GREETINGS[0]);
@@ -120,6 +132,14 @@ export function ProjectHomeWelcomeBody({
               centred block, and this one is ragged-right by design; pretty just
               keeps the last line off a single orphan word.
             */}
+          {spaceLabel && !sentTurn ? (
+            <div className="flex items-center gap-2 px-4">
+              <span className="bg-foreground size-1.5 rounded-full" aria-hidden />
+              <span className="text-muted-foreground text-sm">
+                In <span className="text-foreground font-medium">{spaceLabel}</span> space
+              </span>
+            </div>
+          ) : null}
           <h1
             className="text-muted-foreground w-full px-4 text-3xl leading-[1.2] tracking-tight text-balance max-sm:text-2xl"
             hidden={!!sentTurn}
@@ -129,6 +149,11 @@ export function ProjectHomeWelcomeBody({
             {spaceBefore(greeting.after) ? ' ' : ''}
             {greeting.after}
           </h1>
+          {space?.description && !sentTurn ? (
+            <p className="text-muted-foreground w-full px-4 text-sm text-pretty">
+              {space.description}
+            </p>
+          ) : null}
 
           {/* The sent message takes the heading's slot — same column, same rail,
               so the bubble the instant shell paints a moment later is already
