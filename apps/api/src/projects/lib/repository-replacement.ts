@@ -39,6 +39,9 @@ export async function replaceProjectRepository(input: {
       if (installation.account?.login?.toLowerCase() !== parsed.owner.toLowerCase()) {
         throw new Error('GitHub installation does not own this repository');
       }
+      if (installation.permissions?.contents !== 'write') {
+        throw new Error(`The Kortix GitHub App on ${parsed.owner} lacks Contents: Read and write — an owner must accept that permission so sessions can push branches.`);
+      }
       token = (await createInstallationToken(input.installationId, [parsed.repo])).token;
     } catch (error) {
       throw new RepositoryValidationError(error instanceof Error ? error.message : 'Could not authorize GitHub App grant');
@@ -46,7 +49,7 @@ export async function replaceProjectRepository(input: {
   }
   let imported: Awaited<ReturnType<typeof resolveGitHubImportWithPat>>;
   try {
-    imported = await resolveGitHubImportWithPat({ repoUrl: input.repoUrl, token });
+    imported = await resolveGitHubImportWithPat({ repoUrl: input.repoUrl, token, pushVerified: Boolean(input.installationId) });
   } catch (error) {
     throw new RepositoryValidationError(error instanceof Error ? error.message : 'Could not validate GitHub repository');
   }

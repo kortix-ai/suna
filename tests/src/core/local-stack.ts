@@ -477,6 +477,44 @@ export async function localWebHealthy(webUrl: string): Promise<boolean> {
 }
 
 /**
+ * The one readiness poll every local-stack wait shares: run `probe` until it
+ * answers true, fail fast the moment an `owned` process exits, sleep 250 ms
+ * between rounds, and throw the `describe` timeout after `timeoutMs` (default
+ * 180 s). A probe that throws reads as not-ready (the dev server can accept
+ * connections before its first route compiles). `alive` lets a call site
+ * stand down quietly when a concurrent stop() ended the wait.
+ */
+export async function waitUntilReady(options: {
+  probe: () => Promise<boolean>;
+  describe: string;
+  owned?: Array<{ exitCode: number | null }>;
+  timeoutMs?: number;
+  alive?: () => boolean;
+  clock?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+}): Promise<void> {
+  const timeoutMs = options.timeoutMs ?? 180_000;
+  const clock = options.clock ?? Date.now;
+  const sleep = options.sleep ?? Bun.sleep;
+  const alive = options.alive ?? (() => true);
+  const deadline = clock() + timeoutMs;
+  while (alive() && clock() < deadline) {
+    const exited = options.owned?.find((process) => process.exitCode !== null);
+    if (exited) {
+      throw new Error(`local process exited with code ${exited.exitCode} before readiness`);
+    }
+    try {
+      if (await options.probe()) return;
+    } catch {
+      // The dev server can accept connections before its first route compiles.
+    }
+    await sleep(250);
+  }
+  if (!alive()) return;
+  throw new Error(`${options.describe} within ${timeoutMs}ms`);
+}
+
+/**
  * The environment the deterministic local stack hands its Next dev server.
  *
  * Exported as a pure function so the contract is assertable without spawning a
@@ -516,6 +554,134 @@ export function localWebEnvironment(options: {
   };
 }
 
+/**
+ * The environment the deterministic local stack hands its API process. The
+ * `--no-env-file` spawn means apps/api/.env is NOT read there, so the whole
+ * block has to be explicit. Exported as a pure function so the contract is
+ * assertable without spawning a process, like localWebEnvironment.
+ */
+export function localApiEnvironment(options: {
+  apiPort: number;
+  webPort: number;
+  gatewayPort: number;
+  apiUrl: string;
+  supabase: LocalSupabaseEnvironment;
+}): Record<string, string> {
+  const { apiPort, webPort, gatewayPort, apiUrl } = options;
+  const { DB_URL, API_URL, ANON_KEY, SERVICE_ROLE_KEY, JWT_SECRET, S3_PROTOCOL_ACCESS_KEY_ID, S3_PROTOCOL_ACCESS_KEY_SECRET } = options.supabase;
+  if (!DB_URL || !API_URL || !SERVICE_ROLE_KEY) {
+    throw new Error("local Supabase environment is incomplete");
+  }
+  return {
+    ...process.env,
+    ENV_MODE: "local",
+    INTERNAL_KORTIX_ENV: "dev",
+    KORTIX_LOCAL_DEV: "1",
+    KORTIX_LOCAL_TEST_PROFILE: "1",
+    // Connector flows stand up a loopback upstream (CONN-ATT-1, CONN-EGRESS-1).
+    // Only this exact host is exempt from the connector egress check;
+    // every other private address stays refused.
+    KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: "127.0.0.1",
+    // GW-CUSTOM-1 stands up a loopback OpenAI-compatible model the gateway calls.
+    KORTIX_LLM_CUSTOM_PROVIDER_ALLOW_HOSTS: "127.0.0.1",
+    // CONN-CALL-1 waits out the connector upstream deadline (60 s by default).
+    KORTIX_CONNECTOR_CALL_TIMEOUT_MS: "15000",
+    // TRG-19 and SCOPE-6 push kortix.yaml and poll until the API's git
+    // mirror sees it. The 60 s default refresh made them wait ~180 s.
+    KORTIX_GIT_REFRESH_INTERVAL_MS: "1000",
+    PORT: String(apiPort),
+    KORTIX_APPS_LOCAL: "true",
+    KORTIX_APPS_LOCAL_PORT: String(apiPort),
+    KORTIX_URL: apiUrl.replace(/\/v1$/, ""),
+    NEXT_PUBLIC_BACKEND_URL: apiUrl,
+    KORTIX_PUBLIC_BACKEND_URL: apiUrl,
+    BACKEND_URL: apiUrl,
+    FRONTEND_URL: `http://127.0.0.1:${webPort}`,
+    CORS_ALLOWED_ORIGINS: localWebUrl(webPort),
+    DATABASE_URL: DB_URL,
+    SUPABASE_URL: API_URL,
+    SUPABASE_SERVICE_ROLE_KEY: SERVICE_ROLE_KEY,
+    // Public by design; served by GET /v1/auth/client-config (AUTH-3).
+    ...(ANON_KEY ? { SUPABASE_ANON_KEY: ANON_KEY } : {}),
+    API_KEY_SECRET: LOCAL_FLOW_API_KEY_SECRET,
+    INTERNAL_SERVICE_KEY: LOCAL_FLOW_INTERNAL_SERVICE_KEY,
+    // ADM-25: the self-host operator allowlist, naming one synthetic
+    // address that no principal holds.
+    KORTIX_PLATFORM_ADMIN_EMAILS: LOCAL_PLATFORM_ADMIN_EMAIL,
+    ...(JWT_SECRET ? { SUPABASE_JWT_SECRET: JWT_SECRET } : {}),
+    KORTIX_SKIP_ENSURE_SCHEMA: "1",
+    // Config archives go through the API's one object store, pointed at
+    // this profile's Supabase Storage S3 endpoint. `--no-env-file` above
+    // means apps/api/.env is NOT read here, so the whole block has to be
+    // explicit.
+    KORTIX_CONFIG_ARCHIVE_S3_BUCKET: "kortix-config-releases",
+    KORTIX_CONFIG_ARCHIVE_S3_REGION: "local",
+    KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: `${API_URL.replace(/\/+$/, "")}/storage/v1/s3`,
+    KORTIX_CONFIG_ARCHIVE_S3_FORCE_PATH_STYLE: "true",
+    ...(S3_PROTOCOL_ACCESS_KEY_ID
+      ? { KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID: S3_PROTOCOL_ACCESS_KEY_ID }
+      : {}),
+    ...(S3_PROTOCOL_ACCESS_KEY_SECRET
+      ? { KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY: S3_PROTOCOL_ACCESS_KEY_SECRET }
+      : {}),
+    // Kortix Capture reads the same endpoint, bucket `kortix-capture`
+    // (migration). Supabase Storage has no STS: device credentials answer
+    // 503 here and the CAP flows write as a static-credential device.
+    KORTIX_CAPTURE_S3_BUCKET: "kortix-capture",
+    KORTIX_CAPTURE_S3_REGION: "local",
+    KORTIX_CAPTURE_S3_ENDPOINT: `${API_URL.replace(/\/+$/, "")}/storage/v1/s3`,
+    KORTIX_CAPTURE_S3_FORCE_PATH_STYLE: "true",
+    ...(S3_PROTOCOL_ACCESS_KEY_ID ? { KORTIX_CAPTURE_S3_ACCESS_KEY_ID: S3_PROTOCOL_ACCESS_KEY_ID } : {}),
+    ...(S3_PROTOCOL_ACCESS_KEY_SECRET ? { KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY: S3_PROTOCOL_ACCESS_KEY_SECRET } : {}),
+    KORTIX_CAPTURE_INDEX_POLL_SECONDS: "2",
+    // No network in the deterministic profile: fleet health skips the newest-version check.
+    KORTIX_CAPTURE_UPDATE_MANIFEST_URL: "",
+    SCHEDULER_ENABLED: "false",
+    // OAU-7 replays a rotated refresh token after this window; keep it short.
+    KORTIX_OAUTH_REFRESH_GRACE_MS: "2000",
+    KORTIX_TRIGGER_SCHEDULER_ENABLED: "false",
+    KORTIX_WORKERS_ENABLED: "false",
+    // The App deploy route kicks its worker directly, so the general
+    // switch above does not cover it. Every provider here points at an
+    // unreachable address, so driving a sandbox build only races a doomed
+    // build: on Linux it fails in milliseconds, on macOS the upload hangs.
+    // `static` drives only static deployments, which need no provider:
+    // APP-8 deploys and serves for real, and a sandbox deployment stays
+    // `queued`, so APP-7 is deterministic.
+    KORTIX_APPS_WORKER_ENABLED: "static",
+    KORTIX_BILLING_INTERNAL_ENABLED: "true",
+    ALLOWED_SANDBOX_PROVIDERS: "platinum,daytona",
+    PLATINUM_API_KEY: "local-test-provider-disabled",
+    PLATINUM_API_URL: "http://127.0.0.1:1",
+    DAYTONA_API_KEY: "local-test-provider-disabled",
+    DAYTONA_SERVER_URL: "http://127.0.0.1:1",
+    DAYTONA_TARGET: "local-test-provider-disabled",
+    STRIPE_SECRET_KEY: "sk_test_local_flow_runner_disabled",
+    STRIPE_WEBHOOK_SECRET: LOCAL_STRIPE_WEBHOOK_SECRET,
+    PIPEDREAM_WEBHOOK_SECRET: "local-flow-runner-disabled",
+    SLACK_CLIENT_ID: "local-flow-runner-disabled",
+    SLACK_CLIENT_SECRET: "local-flow-runner-disabled",
+    SLACK_SIGNING_SECRET: "local-flow-runner-disabled",
+    LLM_GATEWAY_BASE_URL: "",
+    LLM_GATEWAY_PROXY_PORT: String(gatewayPort),
+    GATEWAY_INTERNAL_TOKEN: LOCAL_GATEWAY_INTERNAL_TOKEN,
+    TUNNEL_ENABLED: "true",
+    TUNNEL_SIGNING_SECRET: "local-flow-runner-tunnel-signing-secret",
+    // One connection string configures delivery, exactly as an operator
+    // sets it — so the local suite exercises the EMAIL_URL path itself.
+    ...(options.supabase.MAILPIT_URL
+      ? {
+          EMAIL_URL: `mailpit://${options.supabase.MAILPIT_URL.replace(/^https?:\/\//, "")}`,
+        }
+      : {}),
+    EMAIL_FROM: "Kortix Local <noreply@kortix.local>",
+    AUTH_EMAIL_HOOK_SECRET: LOCAL_AUTH_EMAIL_HOOK_SECRET,
+    KORTIX_MARKETPLACE_EXTERNAL_ENABLED: "0",
+    KORTIX_MODEL_CATALOG_LIVE_ENABLED: "0",
+    KORTIX_MODEL_PRICING_LIVE_ENABLED: "0",
+  };
+}
+
 export async function ensureLocalWeb(
   topology: LocalTopology,
   options: { autoStart: boolean; supabase: LocalSupabaseEnvironment },
@@ -533,7 +699,7 @@ export async function ensureLocalWeb(
   if (!API_URL || !ANON_KEY) {
     throw new Error("local Supabase environment is incomplete");
   }
-  const web = Bun.spawn(
+  const spawnWeb = () => Bun.spawn(
     ["pnpm", "--filter", "Kortix-Computer-Frontend", "dev"],
     {
       cwd: topology.root,
@@ -554,42 +720,68 @@ export async function ensureLocalWeb(
     },
   );
 
-  const deadline = Date.now() + 180_000;
-  while (Date.now() < deadline) {
-    if (await localWebHealthy(webUrl)) {
-      // Nothing watches the dev server once it is ready, so a mid-run death
-      // used to reach the report as N unrelated spec failures — each one
-      // blaming itself for an ERR_CONNECTION_REFUSED against a dead port, the
-      // real cause hundreds of lines earlier in a shared stdout. Say it once,
-      // loudly, at the moment it happens.
-      let stopping = false;
-      void web.exited.then((code) => {
-        if (stopping) return;
-        console.error(
-          `[local-stack] the local web server exited with code ${code} while ` +
-            `tests were still running. Every browser spec from this point on ` +
-            `will fail against ${webUrl} with a connection error, whatever ` +
-            `each one reports. Look above this line for the cause.`,
-        );
-      });
-      return {
-        started: true,
-        stop: async () => {
-          stopping = true;
-          await stopOwnedStack(web);
-        },
-      };
-    }
-    if (web.exitCode !== null) {
-      throw new Error(
-        `local web exited with code ${web.exitCode} before readiness`,
-      );
-    }
-    await Bun.sleep(250);
-  }
+  let web = spawnWeb();
+  let stopping = false;
+  let recovery: Promise<void> = Promise.resolve();
+  let restarts = 0;
 
-  await stopOwnedStack(web);
-  throw new Error(`local web did not become ready at ${webUrl} within 180s`);
+  const awaitReady = () =>
+    waitUntilReady({
+      probe: () => localWebHealthy(webUrl),
+      owned: [web],
+      describe: `local web did not become ready at ${webUrl}`,
+      alive: () => !stopping,
+    });
+
+  const watchExit = () => {
+    void web.exited.then((code) => {
+      if (stopping) return;
+      console.error(
+        `[local-stack] the local web server exited with code ${code} during tests at ${webUrl}.`,
+      );
+      try { process.kill(-web.pid, "SIGKILL"); } catch {}
+      if (restarts >= 3) {
+        console.error("[local-stack] local web recovery exhausted after 3 restarts; browser failures remain failures.");
+        return;
+      }
+      recovery = (async () => {
+        while (!stopping && restarts < 3) {
+          restarts++;
+          console.error(`[local-stack] restarting local web (${restarts}/3).`);
+          try {
+            web = spawnWeb();
+            await awaitReady();
+            if (stopping) return;
+            console.error(`[local-stack] local web recovered at ${webUrl}.`);
+            watchExit();
+            return;
+          } catch (error) {
+            console.error("[local-stack] local web recovery failed; browser failures remain failures:", error);
+            await stopOwnedStack(web);
+          }
+        }
+        if (!stopping) {
+          console.error("[local-stack] local web recovery exhausted after 3 restarts; browser failures remain failures.");
+        }
+      })();
+    });
+  };
+
+  try {
+    await awaitReady();
+  } catch (error) {
+    await stopOwnedStack(web);
+    throw error;
+  }
+  watchExit();
+  return {
+    started: true,
+    stop: async () => {
+      stopping = true;
+      await stopOwnedStack(web);
+      await recovery;
+    },
+  };
 }
 
 export async function ensureLocalStack(
@@ -613,19 +805,6 @@ export async function ensureLocalStack(
     );
   }
 
-  const {
-    DB_URL,
-    API_URL,
-    ANON_KEY,
-    SERVICE_ROLE_KEY,
-    JWT_SECRET,
-    S3_PROTOCOL_ACCESS_KEY_ID,
-    S3_PROTOCOL_ACCESS_KEY_SECRET,
-  } = options.supabase;
-  if (!DB_URL || !API_URL || !SERVICE_ROLE_KEY) {
-    throw new Error("local Supabase environment is incomplete");
-  }
-
   const apiPort = topology.marker?.ports.api ?? 8008;
   const webPort = topology.marker?.ports.web ?? 3000;
   const gatewayPort = topology.marker?.ports.gateway ?? 8090;
@@ -635,122 +814,13 @@ export async function ensureLocalStack(
     : Bun.spawn(["bun", "--no-env-file", "run", "src/index.ts"], {
         cwd: join(topology.root, "apps/api"),
         detached: true,
-        env: {
-          ...process.env,
-          ENV_MODE: "local",
-          INTERNAL_KORTIX_ENV: "dev",
-          KORTIX_LOCAL_DEV: "1",
-          KORTIX_LOCAL_TEST_PROFILE: "1",
-          // Connector flows stand up a loopback upstream (CONN-ATT-1, CONN-EGRESS-1).
-          // Only this exact host is exempt from the connector egress check;
-          // every other private address stays refused.
-          KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: "127.0.0.1",
-          // CONN-CALL-1 waits out the connector upstream deadline (60 s by default).
-          KORTIX_CONNECTOR_CALL_TIMEOUT_MS: "15000",
-          // TRG-19 and SCOPE-6 push kortix.yaml and poll until the API's git
-          // mirror sees it. The 60 s default refresh made them wait ~180 s.
-          KORTIX_GIT_REFRESH_INTERVAL_MS: "1000",
-          PORT: String(apiPort),
-          KORTIX_APPS_LOCAL: "true",
-          KORTIX_APPS_LOCAL_PORT: String(apiPort),
-          KORTIX_URL: topology.apiUrl.replace(/\/v1$/, ""),
-          NEXT_PUBLIC_BACKEND_URL: topology.apiUrl,
-          KORTIX_PUBLIC_BACKEND_URL: topology.apiUrl,
-          BACKEND_URL: topology.apiUrl,
-          FRONTEND_URL: `http://127.0.0.1:${webPort}`,
-          CORS_ALLOWED_ORIGINS: localWebUrl(webPort),
-          DATABASE_URL: DB_URL,
-          SUPABASE_URL: API_URL,
-          SUPABASE_SERVICE_ROLE_KEY: SERVICE_ROLE_KEY,
-          // Public by design; served by GET /v1/auth/client-config (AUTH-3).
-          ...(ANON_KEY ? { SUPABASE_ANON_KEY: ANON_KEY } : {}),
-          API_KEY_SECRET: LOCAL_FLOW_API_KEY_SECRET,
-          INTERNAL_SERVICE_KEY: LOCAL_FLOW_INTERNAL_SERVICE_KEY,
-          // ADM-25: the self-host operator allowlist, naming one synthetic
-          // address that no principal holds.
-          KORTIX_PLATFORM_ADMIN_EMAILS: LOCAL_PLATFORM_ADMIN_EMAIL,
-          ...(JWT_SECRET ? { SUPABASE_JWT_SECRET: JWT_SECRET } : {}),
-          // Every access token is confirmed live with GoTrue. TTL 0 sends one
-          // GoTrue `/user` call per request; a full core run then exhausts
-          // GoTrue's ephemeral DB ports (see the learnings ledger, 2026-10-01).
-          // 2 s bounds that to one call per token per 2 s, and logout drops the
-          // cached verdict on this single replica at once.
-          SUPABASE_JWT_LIVENESS_TTL_MS: "2000",
-          KORTIX_SKIP_ENSURE_SCHEMA: "1",
-          // Config archives go through the API's one object store, pointed at
-          // this profile's Supabase Storage S3 endpoint. `--no-env-file` above
-          // means apps/api/.env is NOT read here, so the whole block has to be
-          // explicit.
-          KORTIX_CONFIG_ARCHIVE_S3_BUCKET: "kortix-config-releases",
-          KORTIX_CONFIG_ARCHIVE_S3_REGION: "local",
-          KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: `${API_URL.replace(/\/+$/, "")}/storage/v1/s3`,
-          KORTIX_CONFIG_ARCHIVE_S3_FORCE_PATH_STYLE: "true",
-          ...(S3_PROTOCOL_ACCESS_KEY_ID
-            ? { KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID: S3_PROTOCOL_ACCESS_KEY_ID }
-            : {}),
-          ...(S3_PROTOCOL_ACCESS_KEY_SECRET
-            ? { KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY: S3_PROTOCOL_ACCESS_KEY_SECRET }
-            : {}),
-          // Kortix Capture reads the same endpoint, bucket `kortix-capture`
-          // (migration). Supabase Storage has no STS: device credentials answer
-          // 503 here and the CAP flows write as a static-credential device.
-          KORTIX_CAPTURE_S3_BUCKET: "kortix-capture",
-          KORTIX_CAPTURE_S3_REGION: "local",
-          KORTIX_CAPTURE_S3_ENDPOINT: `${API_URL.replace(/\/+$/, "")}/storage/v1/s3`,
-          KORTIX_CAPTURE_S3_FORCE_PATH_STYLE: "true",
-          ...(S3_PROTOCOL_ACCESS_KEY_ID ? { KORTIX_CAPTURE_S3_ACCESS_KEY_ID: S3_PROTOCOL_ACCESS_KEY_ID } : {}),
-          ...(S3_PROTOCOL_ACCESS_KEY_SECRET ? { KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY: S3_PROTOCOL_ACCESS_KEY_SECRET } : {}),
-          KORTIX_CAPTURE_INDEX_POLL_SECONDS: "2",
-          // No network in the deterministic profile: fleet health skips the newest-version check.
-          KORTIX_CAPTURE_UPDATE_MANIFEST_URL: "",
-          SCHEDULER_ENABLED: "false",
-          // OAU-7 replays a rotated refresh token after this window; keep it short.
-          KORTIX_OAUTH_REFRESH_GRACE_MS: "2000",
-          KORTIX_TRIGGER_SCHEDULER_ENABLED: "false",
-          KORTIX_WORKERS_ENABLED: "false",
-          // The App deploy route kicks its worker directly, so the general
-          // switch above does not cover it. Every provider here points at an
-          // unreachable address, so driving a sandbox build only races a doomed
-          // build: on Linux it fails in milliseconds, on macOS the upload hangs.
-          // `static` drives only static deployments, which need no provider:
-          // APP-8 deploys and serves for real, and a sandbox deployment stays
-          // `queued`, so APP-7 is deterministic.
-          KORTIX_APPS_WORKER_ENABLED: "static",
-          KORTIX_BILLING_INTERNAL_ENABLED: "true",
-          ALLOWED_SANDBOX_PROVIDERS: "platinum,daytona",
-          PLATINUM_API_KEY: "local-test-provider-disabled",
-          PLATINUM_API_URL: "http://127.0.0.1:1",
-          DAYTONA_API_KEY: "local-test-provider-disabled",
-          DAYTONA_SERVER_URL: "http://127.0.0.1:1",
-          DAYTONA_TARGET: "local-test-provider-disabled",
-          STRIPE_SECRET_KEY: "sk_test_local_flow_runner_disabled",
-          STRIPE_WEBHOOK_SECRET: LOCAL_STRIPE_WEBHOOK_SECRET,
-          PIPEDREAM_WEBHOOK_SECRET: "local-flow-runner-disabled",
-          SLACK_CLIENT_ID: "local-flow-runner-disabled",
-          SLACK_CLIENT_SECRET: "local-flow-runner-disabled",
-          SLACK_SIGNING_SECRET: "local-flow-runner-disabled",
-          LLM_GATEWAY_ENABLED: "true",
-          LLM_GATEWAY_BASE_URL: "",
-          LLM_GATEWAY_PROXY_PORT: String(gatewayPort),
-          GATEWAY_INTERNAL_TOKEN: LOCAL_GATEWAY_INTERNAL_TOKEN,
-          TUNNEL_ENABLED: "true",
-          TUNNEL_SIGNING_SECRET: "local-flow-runner-tunnel-signing-secret",
-          // One connection string configures delivery, exactly as an operator
-          // sets it — so the local suite exercises the EMAIL_URL path itself.
-          ...(options.supabase.MAILPIT_URL
-            ? {
-                EMAIL_URL: `mailpit://${options.supabase.MAILPIT_URL.replace(/^https?:\/\//, "")}`,
-              }
-            : {}),
-          EMAIL_FROM: "Kortix Local <noreply@kortix.local>",
-          AUTH_EMAIL_HOOK_SECRET: LOCAL_AUTH_EMAIL_HOOK_SECRET,
-          KORTIX_MARKETPLACE_EXTERNAL_ENABLED: "0",
-          KORTIX_MODEL_CATALOG_LIVE_ENABLED: "0",
-          KORTIX_MODEL_PRICING_LIVE_ENABLED: "0",
-        },
-        stdin: "ignore",
-        stdout: "inherit",
-        stderr: "inherit",
+        env: localApiEnvironment({
+          apiPort,
+          webPort,
+          gatewayPort,
+          apiUrl: topology.apiUrl,
+          supabase: options.supabase,
+        }),
       });
   if (api) owned.push(api);
   const gateway = gatewayWasHealthy
@@ -773,41 +843,35 @@ export async function ensureLocalStack(
       });
   if (gateway) owned.push(gateway);
 
-  const deadline = Date.now() + 180_000;
-  while (Date.now() < deadline) {
-    if (
-      (await localApiHealthy(topology.apiUrl)) &&
-      (await localGatewayHealthy(gatewayUrl))
-    ) {
-      return {
-        started: true,
-        stop: async () => stopOwnedProcesses(owned),
-      };
-    }
-    const exited = owned.find((process) => process.exitCode !== null);
-    if (exited) {
-      await stopOwnedProcesses(owned);
-      throw new Error(
-        `local process exited with code ${exited.exitCode} before readiness`,
-      );
-    }
-    await Bun.sleep(250);
+  try {
+    await waitUntilReady({
+      probe: async () =>
+        (await localApiHealthy(topology.apiUrl)) && (await localGatewayHealthy(gatewayUrl)),
+      owned,
+      describe: `local API did not become ready at ${topology.apiUrl}`,
+    });
+  } catch (error) {
+    await stopOwnedProcesses(owned);
+    throw error;
   }
-
-  await stopOwnedProcesses(owned);
-  throw new Error(
-    `local API did not become ready at ${topology.apiUrl} within 180s`,
-  );
+  return {
+    started: true,
+    stop: async () => stopOwnedProcesses(owned),
+  };
 }
 
 async function stopOwnedStack(stack: Bun.Subprocess): Promise<void> {
-  if (stack.exitCode !== null) return;
+  if (stack.exitCode !== null) {
+    try { process.kill(-stack.pid, "SIGKILL"); } catch {}
+    return;
+  }
   signalOwnedProcessGroup(stack, "SIGTERM");
   await Promise.race([stack.exited, Bun.sleep(15_000)]);
   if (stack.exitCode === null) {
     signalOwnedProcessGroup(stack, "SIGKILL");
     await stack.exited;
   }
+  try { process.kill(-stack.pid, "SIGKILL"); } catch {}
 }
 
 function signalOwnedProcessGroup(

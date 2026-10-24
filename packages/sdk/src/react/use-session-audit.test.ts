@@ -43,7 +43,7 @@ describe('readSessionAudit and the open bundle', () => {
       queue: { known: true, prompts: [], held: false },
       transcript: { known: true, requested: false },
       config: { known: true },
-      models: { known: false, reason: 'llm_gateway_disabled' },
+      models: { known: false, reason: 'read_failed' },
       audit,
     };
   }

@@ -1,5 +1,5 @@
 import { writeFileSync } from 'node:fs';
-import { downloadAccountAudit, type AuditEvent, type AuditEventList } from '@kortix/sdk';
+import { downloadAccountAudit, type AuditActivity, type AuditEvent, type AuditEventList } from '@kortix/sdk';
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
@@ -14,7 +14,7 @@ import {
 } from '../command-helpers.ts';
 import { trim, C, help, pad, status } from '../style.ts';
 import { auditLabelForAction, auditLabelForHttpAction } from '@kortix/shared/audit-labels';
-import { printEvents } from './audit-render.ts';
+import { printEvents, printSessionActions, type SessionAuditAction } from './audit-render.ts';
 
 // The account audit trail — the CLI face of `kortix.audit_events`, which the
 // dashboard already reads. Reads are gated server-side on `audit.read` plus the
@@ -29,7 +29,8 @@ import { printEvents } from './audit-render.ts';
 //     route with a different gate — a non-Enterprise account still sees its
 //     pending approvals there, never a 402.
 
-type AuditPage = AuditEventList;
+/** The session route adds its connector-gated calls and the entitlement verdict. */
+type AuditPage = AuditEventList & { audit_access?: boolean; actions?: SessionAuditAction[] };
 
 const HELP = help`Usage: kortix audit <subcommand> [options]
 
@@ -43,11 +44,16 @@ Subcommands:
                                   365 days: events older than 90 days come from the
                                   archive.
   project <project-id> [--json]   One project's canonical audit log.
+  activity [filters] [--json]     Who was active and how often, per UTC day: active
+                                  days, distinct active hours, events, and a
+                                  day-by-day strip. Default: the last 28 days.
   session <session-id> --project <project-id> [--json]
-                                   One session's canonical ordered timeline.
+                                   One session's canonical ordered timeline and
+                                   its connector calls gated for approval.
+                                   Without Enterprise: the pending approvals.
 
-Stream the trail to a SIEM (needs account.write; create/enable also needs the
-Enterprise entitlement — disable and delete never do):
+Stream the trail to a SIEM (needs account.write; add, enable and disable also
+need the Enterprise entitlement — rm never does):
   webhooks ls [--json]            List audit webhooks.
   webhooks add --name <n> --url <u> [--action-prefix <p>]
                                   Create one. The signing secret prints ONCE,
@@ -55,6 +61,11 @@ Enterprise entitlement — disable and delete never do):
   webhooks enable <webhook-id>    Resume delivery.
   webhooks disable <webhook-id>   Pause delivery, keeping the endpoint.
   webhooks rm <webhook-id>        Delete permanently.
+
+Activity filters: --since/--until (a date, ISO instant, or span like 6w),
+--project, --actor, --actor-type, --credential-kind, and:
+  --client <c>         browser (a person in a web page) | program (CLI, SDK,
+                       sandbox, or a script acting as the user).
 
 Filters (ls, export, project):
   --since <when>       Only events at or after this point. ISO-8601, or a
@@ -97,6 +108,7 @@ Examples:
   kortix audit ls --action iam. --json
   kortix audit ls --project <project-id> --all
   kortix audit session <session-id> --project <project-id>
+  kortix audit activity --project <project-id> --since 6w --client browser
   kortix audit export --since 30d --format jsonl --out audit.jsonl
   kortix audit webhooks add --name splunk --url https://siem.corp.com/kortix
 `;
@@ -225,10 +237,16 @@ async function listAuditEvents(
   const seen = new Set<string>();
   if (cursor) seen.add(cursor);
   let nextCursor: string | null = null;
+  // Session route only: the gated calls (the same list on every page) and
+  // whether the account holds the Enterprise trail.
+  let session: { audit_access?: boolean; actions?: SessionAuditAction[] } = {};
   for (;;) {
     if (cursor) search.set('cursor', cursor);
     else search.delete('cursor');
     const page = await ctx.client.get<AuditPage>(url(search));
+    if (footer === 'session' && page.actions && !session.actions) {
+      session = { audit_access: page.audit_access, actions: page.actions };
+    }
     events.push(...page.events);
     nextCursor = page.next_cursor;
     if (!all || !nextCursor) break;
@@ -240,19 +258,33 @@ async function listAuditEvents(
   }
 
   if (json) {
-    emitJson({ events, next_cursor: all ? null : nextCursor });
+    emitJson({ events, next_cursor: all ? null : nextCursor, ...session });
+    return 0;
+  }
+  if (footer === 'session' && session.audit_access === false) {
+    // No Enterprise trail: the route answers no events and only the
+    // unresolved approvals in `actions`.
+    process.stdout.write(
+      `\n  ${C.dim}The full session timeline needs the Enterprise plan. Pending approvals:${C.reset}\n`,
+    );
+    printSessionActions(session.actions ?? []);
     return 0;
   }
   printEvents(events);
   if (footer === 'session') {
     // An empty session timeline ends at the table's own closing blank line.
-    if (events.length === 0) return 0;
-    if (nextCursor && !all) {
-      process.stdout.write(
-        `\n  ${C.dim}more available — use --all, or --cursor ${nextCursor}${C.reset}`,
-      );
+    if (events.length > 0) {
+      if (nextCursor && !all) {
+        process.stdout.write(
+          `\n  ${C.dim}more available — use --all, or --cursor ${nextCursor}${C.reset}`,
+        );
+      }
+      process.stdout.write('\n');
     }
-    process.stdout.write('\n');
+    if (session.actions?.length) {
+      process.stdout.write(`  ${C.dim}Connector calls gated for approval:${C.reset}\n`);
+      printSessionActions(session.actions);
+    }
     return 0;
   }
   process.stdout.write(
@@ -266,6 +298,66 @@ async function listAuditEvents(
     );
   }
   process.stdout.write('\n\n');
+  return 0;
+}
+
+/** `2026-10-01`, an ISO instant, or a span like `6w` → a UTC day. */
+function activityDay(raw: string | undefined, name: string): string | undefined | { error: string } {
+  if (!raw) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const iso = resolveInstant(raw);
+  return iso ? iso.slice(0, 10) : { error: `--${name} "${raw}" is not a date, ISO-8601 instant, or a span like 6w.` };
+}
+
+const STRIP = ' ▁▂▃▄▅▆▇█';
+
+/** One character per day: blank = no activity, taller = more distinct active hours (8+ = full). */
+export function activityStrip(since: string, until: string, days: Array<{ day: string; active_hours: number }>): string {
+  const hours = new Map(days.map((d) => [d.day, d.active_hours]));
+  let out = '';
+  for (let t = Date.parse(`${since}T00:00:00Z`); t <= Date.parse(`${until}T00:00:00Z`); t += 86_400_000) {
+    const h = hours.get(new Date(t).toISOString().slice(0, 10)) ?? 0;
+    out += h === 0 ? '·' : STRIP[Math.min(8, h)];
+  }
+  return out;
+}
+
+async function showActivity(ctx: AccountContext, f: Record<string, string | undefined>, json: boolean): Promise<number> {
+  const since = activityDay(f.since, 'since');
+  const until = activityDay(f.until, 'until');
+  for (const v of [since, until]) if (v && typeof v === 'object') return fail(v.error);
+  if (f.client && f.client !== 'browser' && f.client !== 'program') return fail('--client must be browser or program.');
+  const search = new URLSearchParams();
+  const wire: Array<[string, string | undefined]> = [
+    ['since', since as string | undefined],
+    ['until', until as string | undefined],
+    ['project_id', f.project],
+    ['actor', f.actor],
+    ['client', f.client],
+    ['actor_type', f.actorType],
+    ['credential_kind', f.credentialKind],
+  ];
+  for (const [key, value] of wire) if (value) search.set(key, value);
+  const result = await ctx.client.get<AuditActivity>(`/accounts/${ctx.accountId}/audit/activity${search.size ? `?${search}` : ''}`);
+  if (json) {
+    emitJson(result);
+    return 0;
+  }
+  const strip = (Date.parse(result.until) - Date.parse(result.since)) / 86_400_000 < 92;
+  process.stdout.write(`\n  ${C.dim}${result.since} → ${result.until} (UTC)${C.reset}\n\n`);
+  if (result.actors.length === 0) {
+    process.stdout.write(`  ${C.dim}No activity.${C.reset}\n\n`);
+  } else {
+    const width = Math.min(40, Math.max(...result.actors.map((a) => (a.email ?? a.actor_user_id).length)));
+    process.stdout.write(`  ${C.dim}${pad('USER', width)}  ${pad('DAYS', 4)}  ${pad('HOURS', 5)}  ${pad('EVENTS', 8)}  ${pad('LAST', 10)}${strip ? '  BY DAY' : ''}${C.reset}\n`);
+    for (const a of result.actors) {
+      process.stdout.write(
+        `  ${pad(trim(a.email ?? a.actor_user_id, width), width)}  ${pad(String(a.active_days), 4)}  ${pad(String(a.active_hours), 5)}  ${pad(String(a.events), 8)}  ${a.last_at.slice(0, 10)}${strip ? `  ${activityStrip(result.since, result.until, a.days)}` : ''}\n`,
+      );
+    }
+    process.stdout.write('\n');
+  }
+  process.stdout.write(`  ${C.dim}Counted through ${result.rolled_through ?? 'nothing yet'}. HOURS = distinct UTC hours with activity.${C.reset}\n\n`);
   return 0;
 }
 
@@ -302,6 +394,7 @@ export async function runAudit(argv: string[]): Promise<number> {
     f.name = takeFlagValue(rest, ['--name']);
     f.url = takeFlagValue(rest, ['--url']);
     f.actionPrefix = takeFlagValue(rest, ['--action-prefix']);
+    f.client = takeFlagValue(rest, ['--client']);
     json = takeFlagBool(rest, ['--json']);
     all = takeFlagBool(rest, ['--all']);
   } catch (err) {
@@ -331,6 +424,9 @@ export async function runAudit(argv: string[]): Promise<number> {
           'project',
         );
       }
+
+      case 'activity':
+        return await showActivity(ctx, f, json);
 
       case 'export': {
         const built = buildAuditQuery(f);

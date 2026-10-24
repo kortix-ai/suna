@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import { type SavedCopyStore, setSavedCopyStore } from '../../session-sync/saved-copy-store';
 import { clearSessionFresh, isSessionFresh } from '../../http/fresh-sessions';
-import { onSessionStopped } from '../../http/session-stopped';
+import { onSessionDeleted, onSessionStopped } from '../../http/session-stopped';
 import type {
   CreateProjectSessionInput,
   ProjectSession,
@@ -10,12 +10,14 @@ import type {
   SessionConfigRelease,
   SessionListState,
   SessionManagedCatalogState,
+  SessionModelUsage,
   SessionParticipants,
   SessionPrompt,
   SessionPublicShare,
   SessionReloadResult,
   SessionTurn,
   SessionTurnStatus,
+  TurnShare,
 } from './sessions';
 import {
   type UpdateProjectSessionInput,
@@ -29,6 +31,9 @@ import {
   ensureWarmProjectSession,
   interruptSessionPrompt,
   findActiveTranscriptShare,
+  getTurnShare,
+  shareTurn,
+  unshareTurn,
   getProjectSession,
   getProjectSessionConfigState,
   getProjectSessionScope,
@@ -134,6 +139,19 @@ test('listProjectSessions keeps can_manage_sharing and can_manage_lifecycle apar
   expect(session.can_manage_lifecycle).toBe(true);
 });
 
+test('getProjectSession carries can_publish_response apart from can_manage_sharing', async () => {
+  // A project manager may publish a response of a session a human owns
+  // (can_publish_response) without being allowed to re-share the session itself.
+  nextResponse = {
+    status: 200,
+    body: { session_id: 'S1', is_owner: false, can_manage_sharing: false, can_publish_response: true },
+  };
+  const session = await getProjectSession('P1', 'S1');
+  const publish: boolean | undefined = session.can_publish_response;
+  expect(publish).toBe(true);
+  expect(session.can_manage_sharing).toBe(false);
+});
+
 // ─── Paging ────────────────────────────────────────────────────────────────
 // The list is a bounded keyset PAGE. It used to return every session row the
 // viewer could see: a 12,617-session project shipped a multi-megabyte body on a
@@ -164,6 +182,26 @@ test('listProjectSessionsPage reads the continuation token from X-Next-Cursor', 
   const page = await listProjectSessionsPage('P1', { limit: 1 });
   expect(page.items).toEqual([{ session_id: 'S1' }] as unknown as ProjectSession[]);
   expect(page.next_cursor).toBe('NEXT1');
+});
+
+test('listProjectSessionsPage never routes a failure to the host global error handler', async () => {
+  // The project shell prefetches this list before the access gate knows the
+  // caller may read the project, and the sidebar re-polls it every 5s. With
+  // `showErrors` at its TRUE default a non-member's 403 toasted "You do not
+  // have access to this account" over the access-request screen that already
+  // says so. The list's own query state reports the failure.
+  const errors: unknown[] = [];
+  configureKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+    onError: (err: unknown) => errors.push(err),
+  });
+
+  nextResponse = { status: 403, body: { error: 'You do not have access to this account' } };
+  await expect(listProjectSessionsPage('P1')).rejects.toMatchObject({ status: 403 });
+  expect(errors).toEqual([]);
+
+  configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
 });
 
 test('listProjectSessionsPage reports the last page as next_cursor null', async () => {
@@ -348,6 +386,55 @@ test('revokeSessionPublicShare DELETEs the specific share', async () => {
   await revokeSessionPublicShare('P1', 'S1', 'SH1');
   expect(last().url).toContain('/projects/P1/sessions/S1/public-shares/SH1');
   expect(last().method).toBe('DELETE');
+});
+
+const TURN_SHARE: TurnShare = {
+  share_id: 'SH9',
+  turn_id: 'msg_user_1',
+  token: 'kps_abc',
+  url: 'https://kortix.test/share/response/kps_abc',
+  created_at: '2026-10-23T00:00:00.000Z',
+  snapshot_at: '2026-10-23T00:00:00.000Z',
+  stale: false,
+  include_prompt: false,
+};
+
+test('getTurnShare GETs the share of one turn and answers null when none is live', async () => {
+  nextResponse = { status: 200, body: { share: null } };
+  const result = await getTurnShare('P1', 'S1', 'msg/user 1');
+  expect(last().url).toContain('/projects/P1/sessions/S1/turns/msg%2Fuser%201/share');
+  expect(last().method).toBe('GET');
+  expect(result).toEqual({ share: null });
+});
+
+test('shareTurn PUTs the turn share, prompt excluded by default, and returns the live share', async () => {
+  nextResponse = { status: 200, body: { share: TURN_SHARE } };
+  const result = await shareTurn('P1', 'S1', 'msg_user_1');
+  expect(last().url).toContain('/projects/P1/sessions/S1/turns/msg_user_1/share');
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({ include_prompt: false });
+  expect(result.share.url).toBe('https://kortix.test/share/response/kps_abc');
+});
+
+test('shareTurn sends include_prompt in the PUT body when asked', async () => {
+  nextResponse = { status: 200, body: { share: { ...TURN_SHARE, include_prompt: true } } };
+  const result = await shareTurn('P1', 'S1', 'msg_user_1', { include_prompt: true });
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({ include_prompt: true });
+  expect(result.share.include_prompt).toBe(true);
+});
+
+test('shareTurn rejects with the status when the turn has no text yet', async () => {
+  nextResponse = { status: 409, body: { error: 'This response has no text to share yet' } };
+  await expect(shareTurn('P1', 'S1', 'msg_user_1')).rejects.toMatchObject({ status: 409 });
+});
+
+test('unshareTurn DELETEs the turn share', async () => {
+  nextResponse = { status: 200, body: { share: null } };
+  const result = await unshareTurn('P1', 'S1', 'msg_user_1');
+  expect(last().url).toContain('/projects/P1/sessions/S1/turns/msg_user_1/share');
+  expect(last().method).toBe('DELETE');
+  expect(result).toEqual({ share: null });
 });
 
 test('createProjectSession POSTs the input and marks the new session fresh', async () => {
@@ -1290,6 +1377,21 @@ test('stopProjectSession tells the open session hook, but only when the stop suc
   }
 });
 
+test('deleteProjectSession tells the open session hook, but only when the delete succeeded', async () => {
+  const heard: string[] = [];
+  const off = onSessionDeleted((id) => heard.push(id));
+  try {
+    nextResponse = { status: 404, body: { error: 'Session not found' } };
+    await deleteProjectSession('P1', 'S-fail').catch(() => {});
+    expect(heard).toEqual([]);
+    nextResponse = { status: 200, body: { ok: true } };
+    await deleteProjectSession('P1', 'S-ok');
+    expect(heard).toEqual(['S-ok']);
+  } finally {
+    off();
+  }
+});
+
 test('getProjectSessionScope reads canonical session scope', async () => {
   const scope = {
     secrets_allowlist: ['GMAIL_TOKEN'],
@@ -1750,8 +1852,8 @@ test('getSessionOpenBundle throws when the response is unsuccessful', async () =
 // deliberately kept on the LIST payload — see LIST_OMITTED_SESSION_METADATA_KEYS
 // in apps/api/src/projects/lib/serializers.ts:84). `metadata` was
 // `Record<string, unknown>`, so every host re-derived the same `typeof … ===
-// 'string'` cast: apps/web/src/components/projects/session-label.ts:61,
-// apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.ts:359,
+// 'string'` cast: packages/ui/src/session/actions/session-label.ts:61,
+// packages/ui/src/session/actions/project-session-list-helpers.ts:359,
 // apps/tui/src/lib/session-groups.ts:145.
 
 const child = (metadata: Record<string, unknown>, sessionId = 'child') =>
@@ -1860,11 +1962,14 @@ test('getSessionMessageAuthors reads members and sessions keyed by message id', 
 });
 
 test('getSessionModelUsage reads the model that answered, the billed cost and each turn', async () => {
-  const body = {
-    latest: { served_model: 'glm-5.3-flash', fallback_from: 'codex/gpt-6.1-sol', at: '2026-10-02T15:02:50.697Z' },
+  const body: SessionModelUsage = {
+    latest: { served_model: 'glm-5.3-flash', fallback_from: 'codex/gpt-6.1-sol', at: '2026-10-02T15:02:50.697Z', outcome: 'answered' },
     billed_cost: 0.875,
     turns: {
-      msg_a: { served_models: ['glm-5.3-flash', 'codex/gpt-6.1-sol'], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0.75 },
+      msg_a: { served_models: ['glm-5.3-flash', 'codex/gpt-6.1-sol'], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0.75, fallbacks: [
+        { requested_model: 'codex/gpt-6.1-sol', served_model: 'glm-5.3-flash', error_code: 'provider_pool_rate_limited' },
+        { requested_model: 'openai/gpt-5.4', served_model: 'glm-5.3-flash', error_code: 'upstream_error' },
+      ] },
       msg_b: { served_models: ['codex/gpt-6.1-sol'], fallback_from: null, billed_cost: 0 },
     },
   };
@@ -1963,6 +2068,16 @@ describe('session pin and archive', () => {
     expect(last().url).not.toContain('archived=');
   });
 
+  // KRTX-2853: Recently deleted, the deleted sessions the caller may restore.
+  test('listProjectSessionsPage sends view deleted as deleted=only, alone', async () => {
+    nextResponse = { status: 200, body: [] };
+    await listProjectSessionsPage('P1', { view: 'deleted' });
+    const params = new URL(last().url).searchParams;
+    expect(params.get('deleted')).toBe('only');
+    expect(params.get('pinned')).toBeNull();
+    expect(params.get('archived')).toBeNull();
+  });
+
   test('setSessionPinned PUTs { pinned } and returns the stored state', async () => {
     const stored = { pinned_at: '2026-10-15T10:00:00.000Z', archived_at: null };
     nextResponse = { status: 200, body: stored };
@@ -2018,4 +2133,11 @@ describe('getSessionLogPage', () => {
     nextResponse = { status: 200, body: { messages: 'no' } };
     await expect(getSessionLogPage('P1', 'S1')).rejects.toThrow('not a session log page');
   });
+});
+
+test('fork create retains saved history instead of mounting the empty fresh shell', async () => {
+  nextResponse.body = { session_id: 'synthetic-fork' };
+  await createProjectSession('synthetic-project', { fork_from_session_id: 'synthetic-source' });
+  expect(calls[0]?.body).toEqual({ fork_from_session_id: 'synthetic-source' });
+  expect(isSessionFresh('synthetic-fork')).toBe(false);
 });

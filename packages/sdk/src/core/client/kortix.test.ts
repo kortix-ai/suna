@@ -457,6 +457,25 @@ test('project(id).modelPicker loads the compact selector catalog', async () => {
   expect(last().method).toBe('GET');
 });
 
+test('project(id) and projects reach the custom LLM provider routes', async () => {
+  const input = { name: 'My LLM', base_url: 'https://llm.example.test/v1', models: [{ id: 'm', name: 'M' }] };
+  await kortix.project('PID123').customLlmProviders();
+  expect(last().method).toBe('GET');
+  expect(last().url).toEndWith('/projects/PID123/custom-providers');
+  await kortix.project('PID123').setCustomLlmProvider('my-llm', input);
+  expect(last().method).toBe('PUT');
+  expect(last().url).toEndWith('/projects/PID123/custom-providers/my-llm');
+  await kortix.project('PID123').deleteCustomLlmProvider('my-llm');
+  expect(calls.slice(-2).map((call) => `${call.method} ${new URL(call.url).pathname}`)).toEqual([
+    'DELETE /projects/PID123/custom-providers/my-llm',
+    'DELETE /projects/PID123/secrets/CUSTOM_MY_LLM_API_KEY',
+  ]);
+  await kortix.projects.setCustomLlmProvider('PID123', 'my-llm', input);
+  expect(last().url).toEndWith('/projects/PID123/custom-providers/my-llm');
+  expect(kortix.projects.customLlmProviders).toBeFunction();
+  expect(kortix.projects.deleteCustomLlmProvider).toBeFunction();
+});
+
 test('project(id).sandbox hits the sandbox/snapshot/template admin endpoints', async () => {
   await kortix.project('PID123').sandbox.list();
   expect(last().url).toContain('/projects/PID123/sandboxes');
@@ -611,6 +630,26 @@ test('project(id).connectors covers credential-mode/sensitive/policies/pipedream
   expect(last().url).toContain('/connectors/projects/PID123/connectors/slack-1/policies');
   expect(last().method).toBe('PUT');
 
+  await kortix
+    .project('PID123')
+    .connectors.policies.get('gmail', { policySet: 'read_only' });
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail/policies?policy_set=read_only');
+
+  await kortix.project('PID123').connectors.policySets.list('gmail');
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail/policy-sets');
+  expect(last().method).toBe('GET');
+
+  await kortix.project('PID123').connectors.policySets.upsert('gmail', 'read_only', { description: 'x' });
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail/policy-sets/read_only');
+  expect(last().method).toBe('PUT');
+
+  await kortix.project('PID123').connectors.policySets.rename('gmail', 'read_only', 'readers');
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail/policy-sets/read_only/name');
+
+  await kortix.project('PID123').connectors.policySets.remove('gmail', 'readers');
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail/policy-sets/readers');
+  expect(last().method).toBe('DELETE');
+
   await kortix.project('PID123').connectors.pipedream.listApps('gmail');
   expect(last().url).toContain('/connectors/projects/PID123/pipedream/apps?q=gmail');
 
@@ -621,6 +660,19 @@ test('project(id).connectors covers credential-mode/sensitive/policies/pipedream
   expect(last().url).toContain(
     '/connectors/projects/PID123/discover/connectors/detail?id=mcp%2Fnotion',
   );
+
+  await kortix.project('PID123').connectors.discover.list({ q: 'crm', kinds: ['mcp', 'composio'], oneClick: true });
+  expect(last().url).toContain('kind=mcp%2Ccomposio');
+  expect(last().url).toContain('oneClick=1');
+
+  await kortix.project('PID123').connectors.discover.tools('kortix:stripe', 'composio:stripe');
+  expect(last().url).toContain(
+    '/connectors/projects/PID123/discover/connectors/tools?id=kortix%3Astripe&way=composio%3Astripe',
+  );
+
+  await kortix.project('PID123').connectors.discover.install({ id: 'kortix:stripe', name: 'Billing' });
+  expect(last().url).toContain('/connectors/projects/PID123/discover/install');
+  expect(last().method).toBe('POST');
 
   await kortix.project('PID123').connectors.pipedream.connect('gmail-1');
   expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail-1/connect');
@@ -1396,7 +1448,7 @@ test('sandboxPortUrl() throws SessionNotReadyError before ensureReady()', () => 
 
 // health() is a liveness POLL, not an action gated on the runtime being up —
 // pollers (e.g. a header dot ticking every 15s on a fresh inline
-// `kortix.session(...)` handle, see apps/whitelabel-demo/session-header.tsx)
+// `kortix.session(...)` handle, see apps/white-label/lumen/src/components/workbench/session-header.tsx)
 // must be able to call it before the session has ever resolved a runtime, so
 // it degrades to the graceful "no URL yet" shape instead of throwing.
 test('health() resolves gracefully (ok: false) before ensureReady() instead of throwing', async () => {
@@ -1420,9 +1472,9 @@ test("health() resolves against the handle's own runtime URL once ready", async 
   expect(calls.some((c) => c.url.includes('/p/sb-A/8000/kortix/health'))).toBe(true);
 });
 
-// ── shared session-runtime registry (regression: apps/whitelabel-demo's
+// ── shared session-runtime registry (regression: apps/white-label/lumen's
 // session-header.tsx polls health() on a FRESH `kortix.session(...)` handle
-// every 15s, and preview-panel.tsx calls previewUrl() in render on a handle
+// every 15s, and a preview panel calls previewUrl() in render on a handle
 // that never itself called ensureReady() — both used to throw
 // SessionNotReadyError forever because a handle's `_ready` cache never
 // survived past that one instance) ──────────────────────────────────────────

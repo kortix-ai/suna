@@ -17,6 +17,7 @@ import {
   emitJson,
   fail,
   missing,
+  resolveAccountContext,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
@@ -37,11 +38,12 @@ import {
   triggersRmLocal,
   triggersToggle,
 } from './triggers-manifest.ts';
+import { parsePayloadFlag, triggersDryRun, triggersReplay, triggersRuns } from './triggers-runs.ts';
 
 const HELP = help`Usage: kortix triggers <subcommand> [options]
 
 Manage the [[triggers]] declared in your project's kortix.yaml — cron
-schedules, webhooks, monitors, and app events. add/rm/enable/disable edit the LOCAL
+schedules, webhooks, connector events, and App events. add/rm/enable/disable edit the LOCAL
 manifest (the source of truth); \`kortix ship\` applies them. When kortix.yaml
 lists \`imports:\`, rm/enable/disable edit the file that declares the trigger;
 add writes to kortix.yaml. ls/fire/info
@@ -49,13 +51,14 @@ read live state from the cloud. pause/resume are a SERVER-SIDE activation
 switch (cloud state, not the manifest).
 
 Subcommands:
-  ls [--type <cron|webhook|event|monitor>] [--connector <slug>] [--json]
+  ls [--type <cron|webhook|event|app>] [--connector <slug>] [--json]
                            List triggers + runtime state. --type keeps one
                            kind; --type event groups the rows by app.
-                           --connector keeps the app events on one connector
+                           --connector keeps the connector events on one connector
                            (profile). The two combine. --json respects both.
-                           All app events: \`kortix triggers ls --type event\`.
-  add <slug> [options]     Append a [[triggers]] block (cron, webhook, monitor, event).
+                           All connector events: \`kortix triggers ls --type event\`.
+  add <slug> [options]     Add a trigger (on: + run:) to kortix.yaml: cron, webhook,
+                           event (connector event), app (App event).
              [--apply]     Create it on the cloud project now instead (commit
                            to kortix.yaml on main + reconcile).
   set <slug> [options]     Change a LIVE trigger. Only the flags you pass are
@@ -71,13 +74,35 @@ Subcommands:
                            [--wait <dur>]  How long to watch for the outcome
                            (default 90s; 0 returns as soon as the fire is
                            accepted).
-  enable <slug> [--apply]  Set enabled = true on a trigger.
+                           [--payload <json|@file>]  A JSON object merged over
+                           the manual payload, e.g. '{"body":{"ticket":"T-1"}}'
+                           or @event.json. Test a webhook or event prompt.
+                           [--dry-run]  Fire nothing: print the rendered
+                           prompt, the filter verdict, and the session key.
+                           --json prints the raw response.
+  runs <slug> [--status <s>] [--limit N] [--cursor <c>] [--json]
+                           List the trigger's runs, newest first: run id,
+                           started, source, status, run status, duration,
+                           cost, session. --status: queued, running, fired, failed,
+                           skipped, rejected. --limit 1-100 (default 25).
+  replay <slug> <run_id> [--confirm-unverified] [--json]
+                           Fire the trigger again with that run's stored
+                           payload. A run whose webhook signature did not
+                           verify needs --confirm-unverified.
+  enable <slug> [--apply]  Set enabled = true on a trigger. With --apply it also
+                           resumes a trigger that auto-paused at its run limit.
   disable <slug> [--apply] Set enabled = false on a trigger.
   pause                    Deactivate ALL of this project's triggers server-side
                            (crons + webhooks stop auto-running). Use it on one
                            of two deployments of the same repo to stop double-
                            firing. Manual \`fire\` still works.
   resume                   Re-activate this project's triggers server-side.
+  pause --account-wide     Pause all automations: every project of the account
+                           stops auto-running its schedules, reminders,
+                           webhooks, connector events and App events. Needs
+                           account.write. Manual \`fire\` still works.
+  resume --account-wide    Resume them. A schedule slot missed while paused
+                           fires once.
   info <slug> [--json]     Show one trigger in full.
   events --apps [--json]   List apps that can trigger events: each app's
                            connectors (profiles) and their shared accounts
@@ -95,7 +120,7 @@ Subcommands:
                            {{ event.data.* }} prompt variables.
 
 Add options:
-  --type <cron|webhook|monitor|event>
+  --type <cron|webhook|event|app>
                            Trigger type (default cron).
   --prompt <text>          Initial prompt for the spawned session (required).
   --agent <name>           Logical agent to run (default: project default_agent).
@@ -107,7 +132,7 @@ Add options:
   --name <label>           Display name (default: slug).
   --disabled               Create it disabled (default enabled).
 
-Event options (--type event). Run the agent when an app event happens on a
+Event options (--type event). Run the agent when a connector event happens on a
 connected app (e.g. a new pull request). The prompt reads the event as
 {{ event.data.<field> }}, plus event.id, event.type, event.app,
 event.connector, and event.occurred_at.
@@ -141,8 +166,7 @@ trigger status and the next step. Autonomous setup:
   5. kortix triggers add <slug> --type event --connector <slug> --event <TYPE> \\
        --config <k>=<v> --prompt "…{{ event.data.<field> }}…" --apply
   6. kortix triggers info <slug>   (until it prints "live")
-Event triggers take none of --cron, --run-at, --timezone, --secret-env,
---run, --mode, --interval, or --expect-event-within.
+Event triggers take none of --cron, --run-at, --timezone, or --secret-env.
 
 Live-only options (--apply on \`add\`, and every \`set\`):
   --model <provider/model> Model for the spawned session. Omit for the default.
@@ -157,22 +181,43 @@ Live-only options (--apply on \`add\`, and every \`set\`):
   --group <uuid>           Grant one group access. Repeat. Implies members.
   --filter <path=value>    Only fire when the payload matches. Repeat for more;
                            every one must match. e.g. --filter body.type=push
+  --filter <path:op=value> Use an operator: not, in, prefix, not_prefix take
+                           comma-separated values; exists takes true|false.
+                           e.g. --filter body.ref:not_prefix=refs/heads/kortix/
+                                --filter body.sender.login:not=kortix-bot
 
 Set options: every live-only option above, plus --name, --prompt, --cron,
 --run-at, --timezone, --secret-env, --agent, and --enabled true|false.
-\`--cron\` and \`--run-at\` are exclusive — setting one clears the other. Monitor
-fields (--run/--mode/--interval/--expect-event-within) are add-only.
+\`--cron\` and \`--run-at\` are exclusive — setting one clears the other.
 
-Monitor options (--type monitor). A monitor is a repo command the platform
-runs 24/7; each stdout line fires the trigger. EXPERIMENTAL — the platform
-runs monitors only where the \`monitors\` feature flag is on.
-  --run <cmd>              Repo-relative command to supervise (required).
-  --mode <poll|stream>     poll = re-run on --interval; stream = keep alive
-                           (required).
-  --interval <dur>         Poll period, mode=poll only. Min 30s. e.g. 60s, 5m.
-  --expect-event-within <dur>
-                           Silence watchdog: no event inside this window fires
-                           a lifecycle event instead. Min 5m. e.g. 24h.
+Run limits (any type; add, add --apply, and set):
+  --max-runs-per-hour <n>  Runs the trigger may start in any 60 minutes
+                           (default 60). A fire past it starts nothing: it
+                           is a skipped run, "throttled: …".
+  --max-runs-per-day <n>   Runs it may start in a UTC day (default: no cap).
+                           On \`set\`, \`none\` removes either cap.
+A manual \`fire\` is never held, but it counts.
+  --overlap skip|allow     Fresh session mode only: skip holds a fire while
+                           the previous run is still active. Default: skip for
+                           cron, allow for the others. On \`set\`, \`default\`
+                           resets it.
+
+Schedules and App targets (add, add --apply):
+  --every <dur>            A cron trigger on a fixed period instead of --cron:
+                           5m, 1h, 1d (at least 1m).
+  --target-app <slug>      Each fire calls this App instead of running an
+                           agent: Kortix wakes it and POSTs the payload to
+                           --target-path (default /). --prompt is then optional.
+  --target-path <path>     The App path the fire calls.
+
+App options (--type app). The App decides when to fire: it POSTs events to
+$KORTIX_APP_EVENTS_URL with $KORTIX_APP_TOKEN (every App machine has both).
+  --app <slug>             The App whose events fire the trigger (required).
+                           The prompt reads {{ event.name }} and
+                           {{ event.data.<field> }}; narrow with
+                           --filter event.name=<name> (live add).
+App triggers take none of --cron, --run-at, --timezone, --secret-env, or the
+event options.
 
 Global options:
   --project <id>     Operate on this project id (default: linked).
@@ -191,6 +236,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
   let disabled = false;
   let json = false;
   let applyRemote = false;
+  let accountWide = false;
   let members: string[] = [];
   let groups: string[] = [];
   let filters: string[] = [];
@@ -198,14 +244,28 @@ export async function runTriggers(argv: string[]): Promise<number> {
   let configJson: string | undefined;
   let apps = false;
   let eventsApp: string | undefined;
+  let dryRun = false;
+  let confirmUnverified = false;
+  let payloadFlag: string | undefined;
+  const rf: { status?: string; limit?: string; cursor?: string } = {};
   try {
+    dryRun = takeFlagBool(rest, ['--dry-run']);
+    confirmUnverified = takeFlagBool(rest, ['--confirm-unverified']);
+    payloadFlag = takeFlagValue(rest, ['--payload']);
+    rf.status = takeFlagValue(rest, ['--status']);
+    rf.limit = takeFlagValue(rest, ['--limit']);
+    rf.cursor = takeFlagValue(rest, ['--cursor']);
     json = takeFlagBool(rest, ['--json']);
     applyRemote = takeFlagBool(rest, ['--apply']);
+    accountWide = takeFlagBool(rest, ['--account-wide']);
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
     tf.runAt = takeFlagValue(rest, ['--run-at']);
     tf.model = takeFlagValue(rest, ['--model']);
     tf.sessionMode = takeFlagValue(rest, ['--session-mode']);
+    tf.maxRunsPerHour = takeFlagValue(rest, ['--max-runs-per-hour']);
+    tf.maxRunsPerDay = takeFlagValue(rest, ['--max-runs-per-day']);
+    tf.overlap = takeFlagValue(rest, ['--overlap']);
     tf.sessionKey = takeFlagValue(rest, ['--session-key']);
     tf.sessionId = takeFlagValue(rest, ['--session-id']);
     tf.sessionAccess = takeFlagValue(rest, ['--session-access']);
@@ -218,6 +278,8 @@ export async function runTriggers(argv: string[]): Promise<number> {
     apps = takeFlagBool(rest, ['--apps']);
     tf.connector = takeFlagValue(rest, ['--connector']);
     eventsApp = takeFlagValue(rest, ['--app']);
+    // `--app` names the App of a `--type app` trigger, and the app of `triggers events --app`.
+    tf.app = eventsApp;
     tf.account = takeFlagValue(rest, ['--account']);
     tf.source = takeFlagValue(rest, ['--source']);
     if (takeFlagBool(rest, ['--default-account'])) tf.defaultAccount = '1';
@@ -226,12 +288,11 @@ export async function runTriggers(argv: string[]): Promise<number> {
     tf.prompt = takeFlagValue(rest, ['--prompt']);
     tf.agent = takeFlagValue(rest, ['--agent']);
     tf.cron = takeFlagValue(rest, ['--cron']);
+    tf.every = takeFlagValue(rest, ['--every']);
+    tf.targetApp = takeFlagValue(rest, ['--target-app']);
+    tf.targetPath = takeFlagValue(rest, ['--target-path']);
     tf.timezone = takeFlagValue(rest, ['--timezone']);
     tf.secretEnv = takeFlagValue(rest, ['--secret-env']);
-    tf.run = takeFlagValue(rest, ['--run']);
-    tf.mode = takeFlagValue(rest, ['--mode']);
-    tf.interval = takeFlagValue(rest, ['--interval']);
-    tf.expectEventWithin = takeFlagValue(rest, ['--expect-event-within']);
     tf.wait = takeFlagValue(rest, ['--wait']);
     tf.name = takeFlagValue(rest, ['--name']);
     disabled = (() => {
@@ -271,8 +332,18 @@ export async function runTriggers(argv: string[]): Promise<number> {
       return applyRemote
         ? triggersRmLive(positional[0], ctxOpts, json)
         : triggersRmLocal(positional[0]);
-    case 'fire':
-      return triggersFire(positional[0], tf.wait, ctxOpts);
+    case 'fire': {
+      const parsed = payloadFlag === undefined ? undefined : parsePayloadFlag(payloadFlag);
+      if (parsed && 'error' in parsed) return fail(parsed.error);
+      const payload = parsed?.value;
+      return dryRun
+        ? triggersDryRun(positional[0], payload, ctxOpts, json)
+        : triggersFire(positional[0], tf.wait, ctxOpts, payload);
+    }
+    case 'runs':
+      return triggersRuns(positional[0], rf, ctxOpts, json);
+    case 'replay':
+      return triggersReplay(positional[0], positional[1], confirmUnverified, ctxOpts, json);
     case 'enable':
       return applyRemote
         ? triggersToggleLive(positional[0], true, ctxOpts, json)
@@ -282,9 +353,9 @@ export async function runTriggers(argv: string[]): Promise<number> {
         ? triggersToggleLive(positional[0], false, ctxOpts, json)
         : triggersToggle(positional[0], false);
     case 'pause':
-      return triggersActivation(ctxOpts, true);
+      return accountWide ? accountAutomations(true, hostFlag) : triggersActivation(ctxOpts, true);
     case 'resume':
-      return triggersActivation(ctxOpts, false);
+      return accountWide ? accountAutomations(false, hostFlag) : triggersActivation(ctxOpts, false);
     case 'events':
       return triggersEvents({ apps, app: eventsApp, source: tf.source, connector: tf.connector, event: tf.event }, ctxOpts, json);
     case 'info':
@@ -296,7 +367,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
   }
 }
 
-const LS_TYPES = ['cron', 'webhook', 'event', 'monitor'] as const;
+const LS_TYPES = ['cron', 'webhook', 'event', 'app'] as const;
 
 export interface TriggerLsFilter {
   type?: string;
@@ -351,6 +422,11 @@ async function triggersLs(
     return 0;
   }
 
+  if (resp.account_automations_paused) {
+    process.stdout.write(
+      `\n  ${status.warn('All automations are PAUSED for this account')} ${C.dim}— no project's triggers auto-run (manual \`fire\` still works). \`kortix triggers resume --account-wide\` to resume.${C.reset}\n`,
+    );
+  }
   if (resp.triggers_paused) {
     process.stdout.write(
       `\n  ${status.warn('Triggers are PAUSED server-side for this project')} ${C.dim}— crons + webhooks won't auto-run (manual \`fire\` still works). \`kortix triggers resume\` to re-activate.${C.reset}\n`,
@@ -369,14 +445,22 @@ async function triggersLs(
       `  ${C.dim}${pad('SLUG', slugW)}   ${pad('NAME', nameW)}   TYPE     STATE     SCHEDULE / SECRET / MODE / SOURCE              LAST FIRED${C.reset}\n`,
     );
     const printRow = (t: ProjectTrigger) => {
-      const state = t.enabled ? `${C.green}enabled ${C.reset}` : `${C.faded}disabled${C.reset}`;
+      const state = t.auto_paused_at
+        ? `${C.yellow}paused  ${C.reset}`
+        : t.enabled
+          ? `${C.green}enabled ${C.reset}`
+          : `${C.faded}disabled${C.reset}`;
       const detail = triggerDetail(t);
       const eventNote =
         t.type === 'event' && t.event
           ? `  ${t.event.status === 'active' ? C.green : t.event.status === 'error' ? C.red : C.yellow}${eventNextStep(t).word}${C.reset}`
           : '';
       const lastFired = t.last_fired_at ? formatRelative(t.last_fired_at) : '—';
-      const failed = t.last_status === 'failed' ? `  ${C.red}last run failed${C.reset}` : '';
+      const failed = t.auto_paused_at
+        ? `  ${C.yellow}auto-paused${C.reset}`
+        : t.last_status === 'failed'
+          ? `  ${C.red}last run failed${C.reset}`
+          : '';
       process.stdout.write(
         `  ${pad(t.slug, slugW)}   ${pad(t.name, nameW)}   ${pad(t.type, 7)}  ${state}   ${pad(trimMid(detail, 44), 44)}  ${C.faded}${lastFired}${C.reset}${failed}${eventNote}\n`,
       );
@@ -414,6 +498,7 @@ async function triggersFire(
   slug: string | undefined,
   waitFlag: string | undefined,
   opts: CtxOpts,
+  payload?: Record<string, unknown>,
 ): Promise<number> {
   if (!slug) return missing('a trigger slug');
   const ctx = await resolveProjectContext(opts);
@@ -423,6 +508,7 @@ async function triggersFire(
   try {
     resp = await ctx.client.post<TriggerFireResponse>(
       `/projects/${ctx.projectId}/triggers/${encodeURIComponent(slug)}/fire`,
+      payload ? { payload } : undefined,
     );
   } catch (err) {
     return surfaceApiError(err);
@@ -491,16 +577,17 @@ async function triggersFire(
   } else if (watch?.outcome === 'unwatched') {
     note = ` ${C.dim}— could not watch the run outcome (${watch.reason}); \`kortix triggers ls\` shows it.${C.reset}`;
   }
+  const run = resp.run_id ? ` → run ${resp.run_id}` : '';
   if (fired && resp.session_id) {
     process.stdout.write(
-      `${status.ok(`Fired ${C.bold}${slug}${C.reset} → session ${C.dim}${resp.session_id}${C.reset}`)}${note}\n`,
+      `${status.ok(`Fired ${C.bold}${slug}${C.reset}${run} → session ${C.dim}${resp.session_id}${C.reset}`)}${note}\n`,
     );
   } else if (!fired) {
     process.stdout.write(
-      `${status.info(`Queued ${C.bold}${slug}${C.reset}${resp.reason ? `${C.dim} — ${resp.reason}${C.reset}` : ''}`)}${note}\n`,
+      `${status.info(`Queued ${C.bold}${slug}${C.reset}${run}${resp.reason ? `${C.dim} — ${resp.reason}${C.reset}` : ''}`)}${note}\n`,
     );
   } else {
-    process.stdout.write(`${status.ok(`Fired ${C.bold}${slug}${C.reset}`)}\n`);
+    process.stdout.write(`${status.ok(`Fired ${C.bold}${slug}${C.reset}${run}`)}\n`);
   }
   return 0;
 }
@@ -595,6 +682,24 @@ async function triggersActivation(opts: CtxOpts, paused: boolean): Promise<numbe
   return 0;
 }
 
+// Pause all automations (KRTX-1721): the ACCOUNT's switch, cloud state on the
+// account. Every project of the account stops auto-running its triggers.
+async function accountAutomations(paused: boolean, hostArg: string | undefined): Promise<number> {
+  const ctx = resolveAccountContext({ hostArg });
+  if (!ctx) return 1;
+  try {
+    await ctx.client.patch(`/accounts/${ctx.accountId}/automations`, { paused });
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  process.stdout.write(
+    paused
+      ? `${status.ok('All automations PAUSED for this account')} ${C.dim}— no project's schedules, webhooks, connector events or App events auto-run. Manual \`fire\` still works.${C.reset}\n`
+      : `${status.ok('All automations RESUMED for this account')} ${C.dim}— a schedule slot missed while paused fires once.${C.reset}\n`,
+  );
+  return 0;
+}
+
 async function triggersInfo(
   slug: string | undefined,
   opts: CtxOpts,
@@ -632,8 +737,7 @@ async function triggersInfo(
     return 0;
   }
 
-  // One label column, sized to the widest label actually shown, so a monitor's
-  // long `expect_event_within` doesn't leave the panel ragged.
+  // One label column, sized to the widest label actually shown.
   const rows: Array<[string, string]> = [
     ['type', t.type],
     ['enabled', t.enabled ? `${C.green}true${C.reset}` : `${C.faded}false${C.reset}`],
@@ -642,14 +746,8 @@ async function triggersInfo(
   if (t.type === 'cron') {
     rows.push(['cron', t.cron ?? '—'], ['timezone', t.timezone]);
     if (t.run_at) rows.push(['run_at', String(t.run_at)]);
-  } else if (t.type === 'monitor') {
-    rows.push(['run', t.run ?? '—'], ['mode', t.mode ?? '—']);
-    if (t.interval_seconds !== null && t.interval_seconds !== undefined) {
-      rows.push(['interval', formatDurationSeconds(t.interval_seconds)]);
-    }
-    if (t.expect_event_within_seconds !== null && t.expect_event_within_seconds !== undefined) {
-      rows.push(['expect_event_within', formatDurationSeconds(t.expect_event_within_seconds)]);
-    }
+  } else if (t.type === 'app') {
+    rows.push(['app', t.app ?? '—']);
   } else if (t.type === 'event') {
     const e = t.event;
     rows.push(['connector', e ? `${e.connector}${e.app ? ` (${e.app})` : ''}` : '—']);
@@ -664,10 +762,22 @@ async function triggersInfo(
     ]);
     if (e?.error) rows.push(['event_error', e.error]);
     rows.push(['last_event', e?.last_event_at ?? 'never']);
+    // Kortix checks these apps itself: when it last did, and when it does next.
+    if ((e?.source ?? e?.provider) === 'mcp') {
+      rows.push(['checked', e?.checked_at ?? 'not yet']);
+      rows.push(['next_check', e?.next_check_at ?? '—']);
+    }
   } else {
     rows.push(['secret_env', t.secret_env ?? '—']);
     if (t.webhook_url) rows.push(['webhook_url', t.webhook_url]);
     rows.push(['signature', `${WEBHOOK_SIGNATURE_HEADER}: ${WEBHOOK_SIGNATURE_ALGORITHM}`]);
+  }
+  rows.push(['max_runs_per_hour', String(t.max_runs_per_hour ?? '60 (default)')]);
+  if (t.max_runs_per_day) rows.push(['max_runs_per_day', String(t.max_runs_per_day)]);
+  if (t.session_mode === 'fresh') rows.push(['overlap', t.overlap ?? `${t.type === 'cron' ? 'skip' : 'allow'} (default)`]);
+  if (t.auto_paused_at) {
+    rows.push(['auto_paused', `${C.yellow}${t.auto_paused_at}${C.reset} — ${t.auto_paused_reason ?? 'auto-paused'}`]);
+    rows.push(['resume', `kortix triggers enable ${t.slug} --apply`]);
   }
   rows.push(['last_fired', t.last_fired_at ?? 'never']);
   if (t.last_status)
@@ -698,15 +808,10 @@ async function triggersInfo(
   return 0;
 }
 
-/** One-line schedule/source column for `ls` — cron expression, webhook secret, monitor shape, or event source. */
+/** One-line schedule/source column for `ls` — cron expression or period, webhook secret, App, or event source. */
 function triggerDetail(t: ProjectTrigger): string {
-  if (t.type === 'cron') return `${t.cron ?? '?'} (${t.timezone})`;
-  if (t.type === 'monitor') {
-    const mode = t.mode ?? '?';
-    return t.interval_seconds !== null && t.interval_seconds !== undefined
-      ? `${mode} ${formatDurationSeconds(t.interval_seconds)}`
-      : mode;
-  }
+  if (t.type === 'cron') return t.every_seconds ? `every ${formatDurationSeconds(t.every_seconds)}` : `${t.cron ?? '?'} (${t.timezone})`;
+  if (t.type === 'app') return `app=${t.app ?? '?'}`;
   if (t.type === 'event') {
     if (!t.event) return '?';
     // The source shows only when it is not the connector's own provider (a mismatch).

@@ -14,4 +14,10 @@ describe('date utils', () => {
     expect(relativeTime(Date.now() - 30_000)).toBe('just now');
     expect(relativeTime(Date.now() - 5 * 60_000)).toBe('5m ago');
   });
+  it('renders a future timestamp as its countdown, not as "just now"', () => {
+    // A key expiring in a day is not fresh — it has not happened yet.
+    expect(relativeTime(Date.now() + 5 * 60_000)).toBe('in 5m');
+    expect(relativeTime(Date.now() + 23 * 3600_000)).toBe('in 23h');
+    expect(relativeTime(Date.now() + 24 * 3600_000)).toBe('in 1d');
+  });
 });

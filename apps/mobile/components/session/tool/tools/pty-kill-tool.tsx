@@ -19,6 +19,7 @@ import { ToolRegistry } from '../shared/registry';
 import { TURN_TYPE, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 
+/** @deprecated Renders an OpenCode-only tool in an OpenCode session (pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode. */
 export function PtyKillTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
   const ptyId = ptyKillId(partInput(call));

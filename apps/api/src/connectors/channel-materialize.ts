@@ -1,11 +1,11 @@
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import {
-  listAgentMailInstalls,
+  hasEmailInboxes,
   loadSlackInstall,
   loadTeamsInstall,
+  loadTelegramInstall,
 } from '../channels/install-store';
-import { resolveFeatureFlag } from '../feature-flags/registry';
 /**
  * Auto-materialize channel connectors from platform installs.
  *
@@ -103,23 +103,26 @@ export async function synthesizeChannelConnectors(
     .where(eq(projects.projectId, projectId))
     .limit(1);
 
-  if (!project || !resolveFeatureFlag(project.metadata, 'agentmail_email')) {
-    return specs;
+  if (!project) return specs;
+
+  // Telegram: the bot install is the registration, like Slack.
+  const telegramSlug = channelDefaultSlug('telegram');
+  if (
+    !channelAlreadyDeclared(declared, 'telegram', telegramSlug) &&
+    (await loadTelegramInstall(projectId).catch(() => null))
+  ) {
+    specs.push(channelSpec('telegram', telegramSlug));
   }
 
-  const emailInstalls = await listAgentMailInstalls(projectId).catch(() => []);
+  // One `kortix_email` connector; every inbox is one of its accounts. Not
+  // gated on `email_channel`: the connector carries the accounts, and
+  // dropping it would delete them (the flag gates routes and inbound mail).
   const canonicalEmailSlug = channelDefaultSlug('email');
-  if (emailInstalls.length > 0 && !channelAlreadyDeclared(declared, 'email', canonicalEmailSlug)) {
+  if (
+    !channelAlreadyDeclared(declared, 'email', canonicalEmailSlug) &&
+    (await hasEmailInboxes(projectId).catch(() => false))
+  ) {
     specs.push(channelSpec('email', canonicalEmailSlug, channelLabel('email')));
-  }
-  for (const install of emailInstalls) {
-    const slug = install.connectionSlug || channelDefaultSlug('email');
-    if (slug === canonicalEmailSlug) continue;
-    if (!channelAlreadyDeclared(declared, 'email', slug)) {
-      specs.push(
-        channelSpec('email', slug, install.displayName || install.email || channelLabel('email')),
-      );
-    }
   }
 
   return specs;

@@ -39,12 +39,14 @@ let remoteRefs = 0;
 let pinnedRefs = 0;
 let credentialWorkflows = 0;
 let credentialViolations = 0;
+let thirdPartyViolations = 0;
 for (const file of files) {
   const text = readFileSync(join(dir, file), 'utf8');
   const refs = [...text.matchAll(REMOTE_USES)];
   remoteRefs += refs.length;
   const unpinned = refs.filter(([, , ref]) => !SHA.test(ref));
   pinnedRefs += refs.length - unpinned.length;
+  thirdPartyViolations += unpinned.filter(([, action]) => !action.startsWith('actions/')).length;
   const holdsCredentials = CREDENTIAL_MARKERS.some((marker) => marker.test(text));
   if (!holdsCredentials) continue;
   credentialWorkflows += 1;
@@ -55,7 +57,7 @@ for (const file of files) {
 console.log(
   `workflows=${files.length} remote_refs=${remoteRefs} pinned=${pinnedRefs} ` +
     `unpinned=${remoteRefs - pinnedRefs} credentialWorkflows=${credentialWorkflows} ` +
-    `credentialWorkflowViolations=${credentialViolations}`,
+    `credentialWorkflowViolations=${credentialViolations} thirdPartyViolations=${thirdPartyViolations}`,
 );
 // ponytail: the gate covers credential-holding workflows only; non-credential
 // workflows keep their mutable refs until someone scopes them in here.

@@ -2,6 +2,8 @@
 
 # MCP servers
 
+> **Deprecated: OpenCode is sunset.** Every new Kortix session runs pi (`../pi/overview.md`). This page applies only to a session that still runs OpenCode. Do not add OpenCode config to a project.
+
 Add local and remote MCP tools.
 
 You can add external tools to OpenCode using the _Model Context Protocol_, or MCP. OpenCode supports both local and remote servers.

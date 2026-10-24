@@ -10,14 +10,14 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const rendered: string[] = [];
-mock.module('./file-content-renderer', () => ({
+mock.module('@kortix/ui/files/project/components/file-content-renderer', () => ({
   FileContentRenderer: ({ filePath }: { filePath: string }) => {
     rendered.push(filePath);
     return <pre>{filePath}</pre>;
   },
   getFileCategory: () => 'code',
 }));
-const { FileThumbnail, THUMBNAIL_NEAR_MARGIN } = await import('./file-thumbnail');
+const { FileThumbnail, THUMBNAIL_NEAR_MARGIN } = await import('@kortix/ui/files/project/components/file-thumbnail');
 
 type Callback = (entries: Array<{ isIntersecting: boolean }>) => void;
 let observers: Array<{
@@ -90,5 +90,28 @@ describe('FileThumbnail near the viewport', () => {
     (globalThis as { IntersectionObserver?: unknown }).IntersectionObserver = undefined;
     mount();
     expect(rendered).toEqual(['a/f0001.txt']);
+  });
+});
+
+describe('markdown thumbnail expansion affordance', () => {
+  test('renders a readable Show more control outside the scaled preview', () => {
+    const open = mock(() => {});
+    act(() => {
+      renderer = create(
+        <FileThumbnail filePath="agents/example.md" fileName="example.md" onOpen={open} />,
+        { createNodeMock: () => ({}) },
+      );
+    });
+    act(() => observers[0]!.callback([{ isIntersecting: true }]));
+    const button = renderer!.root.findByType('button');
+    expect(button.children).toEqual(['Show more']);
+    const stopPropagation = mock(() => {});
+    act(() => button.props.onClick({ stopPropagation }));
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(stopPropagation).toHaveBeenCalledTimes(1);
+    for (let parent = button.parent; parent; parent = parent.parent) {
+      expect(parent.props.style?.transform).toBeUndefined();
+      expect(parent.props['aria-hidden']).not.toBe(true);
+    }
   });
 });

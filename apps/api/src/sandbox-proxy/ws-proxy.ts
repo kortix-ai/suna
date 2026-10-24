@@ -33,6 +33,7 @@ import { healthHarnessId, healthRuntimePort } from '@kortix/api-contract/runtime
 import { invalidatePreviewLink, resolveSandboxIngress } from './backend';
 import { establishPreviewSession, resolvePreviewRequest, sessionFromCookies } from './preview-origin';
 
+/** @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
 // opencode's PTY WebSocket endpoint lives on opencode's own port, reachable via
 // a dedicated Daytona preview link (the daemon on 8000 can't proxy WS).
 //
@@ -57,6 +58,7 @@ const AGENT_PORT = 8000;
  * the pair answers there (R7.5). Falls back to 4096 on anything unexpected: an
  * older daemon that does not report the field, an unreachable box, a slow one.
  * That is the previous behaviour, so this can only improve on it.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
  */
 async function resolveLiveOpencodePort(sandboxId: string): Promise<{ port: number } | { harness: string }> {
   const fallback = { port: OPENCODE_FALLBACK_PORT };
@@ -299,6 +301,7 @@ async function resolveUpgradeForPrincipal(input: {
   // means nothing to the daemon — strip it with the credentials.
   const wakeRequested = upstreamQuery.get('wake') === '1';
   upstreamQuery.delete('token');
+  upstreamQuery.delete('preview_ticket');
   upstreamQuery.delete('public_share');
   upstreamQuery.delete('wake');
   const queryString = upstreamQuery.toString() ? `?${upstreamQuery.toString()}` : '';

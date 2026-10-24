@@ -1,14 +1,13 @@
-import { VALID_TABS } from '@/features/accounts/hub/sections';
+import { VALID_TABS } from '@kortix/ui/internal/account-hub/sections';
 import { describe, expect, test } from 'bun:test';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { CAPABILITY_TABS } from '@kortix/ui/internal/lib/capability-tab-routes';
 import {
-  CAPABILITY_TABS,
   capabilityTabHref,
   channelsHref,
-  reviewHref,
-} from '@/features/workspace/capabilities/shared/capability-tab-routes';
+} from '@kortix/ui/workspace';
 import {
   SETTINGS_TAB_SUBMENU_PAGE,
   SUBMENU_PAGE_BY_ID,
@@ -78,8 +77,13 @@ function collectRoutes(dir: string, segments: string[] = [], out: string[][] = [
 }
 
 // Every page lives under app/[locale]; its URL is the path below that segment.
+// A bare catch-all page (`[locale]/[...rest]`, which renders `notFound()`) is
+// not a destination: it matched every href and made the reachability loop
+// vacuous (KRTX-2587), so routes containing a catch-all segment are dropped.
+// Concrete dynamic pages (`[id]`, `[[...slug]]` is also dropped) still match
+// through `routeMatches` below.
 const APP_DIR = join(import.meta.dir, '..', 'app', '[locale]');
-const ROUTES = collectRoutes(APP_DIR);
+const ROUTES = collectRoutes(APP_DIR).filter((route) => !route.some((s) => s.includes('...')));
 
 /**
  * One href's path against one route's segments.
@@ -87,21 +91,15 @@ const ROUTES = collectRoutes(APP_DIR);
  * A literal segment must match exactly. A dynamic one (`[id]`) matches any
  * single segment, which is what lets the registry's own `{projectId}` and
  * `{accountId}` tokens stand in for the ids they are replaced by at render.
- * A catch-all (`[...slug]`) swallows the remainder; the optional form
- * (`[[...slug]]`) also matches a path that stops before it.
+ * (`ROUTES` no longer contains catch-all routes, so no other form needs
+ * handling here.)
  */
 function routeMatches(route: string[], path: string[]): boolean {
-  let r = 0;
-  for (const actual of path) {
-    const segment = route[r];
-    if (segment === undefined) return false;
-    if (segment.startsWith('[[...') || segment.startsWith('[...')) return true;
-    const isDynamic = segment.startsWith('[') && segment.endsWith(']');
-    if (!isDynamic && segment !== actual) return false;
-    r++;
-  }
-  if (r === route.length) return true;
-  return route.length === r + 1 && route[r]!.startsWith('[[...');
+  if (route.length !== path.length) return false;
+  return route.every((segment, i) => {
+    if (segment.startsWith('[') && segment.endsWith(']')) return true;
+    return segment === path[i];
+  });
 }
 
 /** Whether any route in `src/app` serves this href. */
@@ -124,7 +122,7 @@ const paletteHrefs = new Set(
  *
  * Account rows are `kind: 'account'`, not `navigate`, and carry no href — the
  * hub has no route, only `?accountId=` on the page you are already on
- * (`stores/account-panel-store.ts`). So the reachability check below is
+ * (`packages/ui/src/internal/stores/account-panel-store.ts`). So the reachability check below is
  * against `VALID_TABS` rather than against `src/app`, which is a STRONGER
  * join: it compares a row to the section catalog the hub actually renders
  * from, instead of to a directory that merely has to exist.
@@ -167,7 +165,7 @@ describe('the Review page', () => {
     // Review left Customize for a project page of its own (2026-10-02). Review
     // Center graduated out of the flag system, so its row must never hide
     // behind one.
-    const row = rowFor(reviewHref(PROJECT_TOKEN));
+    const row = rowFor(capabilityTabHref(PROJECT_TOKEN, 'review'));
     expect(row).toBeDefined();
     expect(row?.requiresFlag).toBeUndefined();
   });
@@ -179,7 +177,7 @@ describe('every account section has a palette row', () => {
    * `/accounts/[id]/page.tsx`, so this read the page's source and parsed it
    * with a regex — importing the page drags every IAM tab module in with it.
    * The allowlist is an exported constant of the hub catalog now
-   * (`features/accounts/hub/sections.ts`), which imports only icons, so the
+   * (`packages/ui/src/internal/account-hub/sections.ts`), which imports only icons, so the
    * join is a plain import and cannot silently stop matching.
    */
   test('the allowlist is not empty', () => {

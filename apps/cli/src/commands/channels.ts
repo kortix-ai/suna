@@ -12,6 +12,8 @@ import {
 } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
 import { bindingsLs, bindingsPatch } from './channels-bindings.ts';
+import type { EmailInstallation, EmailMode } from './channels-email.ts';
+import type { TeamsInstallation } from './channels-teams.ts';
 import { emailCommand } from './channels-email.ts';
 import { teamsConnect, teamsDisconnect, teamsManifest, teamsStatus } from './channels-teams.ts';
 
@@ -22,7 +24,7 @@ Connect this project to a chat platform (Slack by default; MS Teams via
 bound channel runs.
 
 Subcommands:
-  status                  Show the current connection.
+  status                  Show Slack, Teams and Email connection states.
   connect                 Connect. Slack: on Kortix Cloud (or any host with the
                           shared Slack app configured) this prints a one-click
                           "Add to Slack" install link — open it, pick the
@@ -40,18 +42,36 @@ Subcommands:
                           manifest from the server. The one-click install
                           never needs this.
 
-Email (AgentMail — needs the \`agentmail_email\` feature flag):
-  email status [--json]           Inbox + delivery mode for one connector.
-  email connect [options]         Create (or attach) the inbox.
-  email disconnect                Drop the inbox connection.
-  email policy [options]          Replace who may email the agent.
+Email (Resend Inboxes, experimental — kortix projects features enable email_channel;
+  your own Resend account: https://resend.com/docs/dashboard/inboxes/introduction):
+  Every inbox is an ACCOUNT of the project's email connector (kortix_email):
+  add as many as you need; each is only yours or shared with the project.
+  email inboxes [--json]          The inboxes you can see.
+  email inboxes add [options]     Add an inbox: --username, --domain, --api-key,
+                                  --share me|project (default project), --label.
+  email inboxes rm <address|id>   Remove one (Resend deletes it when Kortix made it).
+  email inboxes policy <address|id> --allow … | --allow-all
+                                  Replace who may email that inbox.
+  email inboxes default <address|id>
+                                  Make it the default inbox of its owner.
+  email status [--json]           The default inbox + delivery mode.
+  email connect --api-key <re_…>  Add a shared inbox (same as inboxes add).
+                                  A key from resend.com/api-keys, on a domain
+                                  with receiving on. Without a key: only where
+                                  Kortix-managed email is on.
+  email domains [--api-key k]     Domains an inbox can use (no key: the managed one).
+  email domains add <domain>      Add a custom domain to your Resend account
+                                  (--api-key); prints the DNS records to set.
+  email domains verify <id>       Check that domain's DNS records again.
+  email disconnect                Remove the default inbox.
+  email policy [options]          Replace who may email the default inbox.
 
 Channel bindings (which agent/model/join-policy one bound channel uses):
   bindings [ls] [--json]          List every bound channel + what it resolves to.
   bind <bindingId> [options]      Change one binding.
 
 Global options:
-  --platform <slack|teams>  Chat platform (default: slack).
+  --platform <slack|teams>  Filter status; other commands default to Slack.
   --project <id>          Operate on this project id (default: linked or
                           \$KORTIX_PROJECT_ID).
   --host <name>           Use this host instead of the linked / active one.
@@ -70,13 +90,15 @@ Connect options:
                           SLACK_SIGNING_SECRET. Or \`-\` for stdin.
 
 Email options:
-  --connector <slug>      Which email connector (default: kortix_email).
-  --api-key <k>           Bring your own AgentMail key instead of the managed
-                          one. Or \`-\` for stdin.
+  --api-key <re_…>        Your Resend API key (full access). Or \`-\` for stdin.
+                          Required unless Kortix-managed email is on.
   --display-name <n>      From-name on outgoing mail (default: project name).
-  --username <u>          Local part of a NEW managed inbox.
-  --domain <d>            Domain of a NEW managed inbox.
-  --inbox-id <id>         Attach an EXISTING AgentMail inbox. Needs --email too.
+  --username <u>          Local part of a NEW inbox.
+  --domain <d>            Domain of a NEW inbox (your Resend domain, or the
+                          managed one).
+  --share <me|project>    inboxes add: only you, or the project (default).
+  --label <name>          inboxes add: the account's name (default: address).
+  --inbox-id <id>         Attach an EXISTING Resend inbox. Needs --email too.
   --email <addr>          That inbox's address. Needs --inbox-id too.
   --allow <email|@domain> Repeatable. Only these senders reach the agent. A bare
                           value with no \`@\` (or a leading \`@\`) is a DOMAIN.
@@ -120,6 +142,10 @@ export interface ExtraFlags {
   domain?: string;
   inboxId?: string;
   email?: string;
+  /** `email inboxes add`: `me` (only you) or `project` (shared, the default). */
+  share?: string;
+  /** `email inboxes add`: the account's name (default: the address). */
+  label?: string;
   allow: string[];
   allowRegex?: string;
   allowAll: boolean;
@@ -168,6 +194,8 @@ export async function runChannels(argv: string[]): Promise<number> {
       domain: takeFlagValue(rest, ['--domain']),
       inboxId: takeFlagValue(rest, ['--inbox-id']),
       email: takeFlagValue(rest, ['--email']),
+      share: takeFlagValue(rest, ['--share']),
+      label: takeFlagValue(rest, ['--label']),
       allowRegex: takeFlagValue(rest, ['--allow-regex']),
       agent: takeFlagValue(rest, ['--agent']),
       model: takeFlagValue(rest, ['--model']),
@@ -186,18 +214,29 @@ export async function runChannels(argv: string[]): Promise<number> {
 
   switch (sub) {
     case 'status':
+      if (!platformFlag) return allChannelsStatus(ctxOpts, extra.connector, json);
       return platform === 'teams' ? teamsStatus(ctxOpts, json) : channelsStatus(ctxOpts, json);
-    case 'connect':
+    case 'connect': {
+      // Reject an invalid --timeout here, at the one read site: a
+      // non-numeric or negative value used to reach the poll deadline raw,
+      // and NaN never satisfies `Date.now() >= deadline` (Infinity never
+      // does either), so `connect --wait` hung forever. A finite value whose
+      // ms multiplication overflows (`--timeout 2e305`) hangs the same way.
+      const timeoutSec = timeoutFlag ? Number(timeoutFlag) : 300;
+      if (timeoutSec < 0 || !Number.isFinite(timeoutSec * 1000)) {
+        return fail(`--timeout requires a non-negative number of seconds, got '${timeoutFlag}'`);
+      }
       return platform === 'teams'
         ? teamsConnect(ctxOpts, { json })
         : channelsConnect(ctxOpts, {
             json,
             manual,
             wait,
-            timeoutSec: timeoutFlag ? Number(timeoutFlag) : 300,
+            timeoutSec,
             botTokenFlag,
             signingSecretFlag,
           });
+    }
     case 'disconnect':
     case 'remove':
     case 'rm':
@@ -213,6 +252,44 @@ export async function runChannels(argv: string[]): Promise<number> {
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
+  }
+}
+
+async function allChannelsStatus(
+  ctxOpts: { projectArg?: string; hostArg?: string },
+  connector: string | undefined,
+  json: boolean,
+): Promise<number> {
+  const ctx = await resolveProjectContext(ctxOpts);
+  if (!ctx) return 1;
+  const base = `/projects/${ctx.projectId}/channels`;
+  try {
+    const [slack, teams, mode, email] = await Promise.all([
+      ctx.client.get<SlackInstallation | null>(`${base}/slack/installation`),
+      ctx.client.get<TeamsInstallation | null>(`${base}/teams/installation`),
+      ctx.client.get<EmailMode>(`${base}/email/mode`),
+      ctx.client.get<EmailInstallation | null>(
+        `${base}/email/installation?connector_slug=${encodeURIComponent(connector ?? 'kortix_email')}`,
+      ),
+    ]);
+    if (json) {
+      emitJson({
+        slack: { connected: Boolean(slack), installation: slack ?? null },
+        teams: { connected: Boolean(teams), installation: teams ?? null },
+        email: { connected: Boolean(email), mode, installation: email ?? null },
+      });
+    } else {
+      process.stdout.write(
+        `CHANNEL  STATUS\n` +
+          `slack    ${slack ? 'connected' : 'not connected'}\n` +
+          `teams    ${teams ? 'connected' : 'not connected'}\n` +
+          `email    ${!mode.enabled ? 'off (kortix projects features enable email_channel)' : email ? 'connected' : 'not connected'}\n` +
+          `\nDetails: kortix channels status --platform <slack|teams> or kortix channels email status\n`,
+      );
+    }
+    return 0;
+  } catch (err) {
+    return surfaceApiError(err);
   }
 }
 

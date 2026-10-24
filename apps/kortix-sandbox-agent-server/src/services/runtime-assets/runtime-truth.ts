@@ -190,7 +190,10 @@ export function deriveDaemonSignal(
   return deriveAssetsSignal(outcome, cause)
 }
 
-/** The box's own catalog state — see `RuntimeTruthDeps.readCatalog`. */
+/**
+ * The box's own catalog state — see `RuntimeTruthDeps.readCatalog`.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export interface RuntimeTruthCatalogState {
   /** The ids this box's provider map currently serves. Null before a config has been built. */
   configuredIds: readonly string[] | null
@@ -200,6 +203,7 @@ export interface RuntimeTruthCatalogState {
   missingIds: readonly string[]
 }
 
+/** @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function deriveCatalogSignal(input: RuntimeTruthCatalogState): RuntimeTruthSignal {
   if (input.configuredIds === null) {
     return { outcome: 'unknown', cause: 'the runtime has not built a provider config yet' }

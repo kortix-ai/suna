@@ -214,25 +214,22 @@ describe('withLiveTurn — a running session shows the turn the log does not hol
   const shape = (threads: Array<{ thread_id: string; messages: SessionLogMessage[]; has_more: boolean }>) =>
     threads.map((t) => [t.thread_id, t.messages.map((m) => [m.message_id, m.seq, (m.ext?.kortix?.data as { provisional?: boolean } | undefined)?.provisional ?? false]), t.has_more]);
 
-  test('a live message carries both marks (top-level `provisional`, deprecated, and `ext.kortix.data.provisional`); a stored one neither', () => {
+  test('a live message carries `ext.kortix.data.provisional`, and no top-level `provisional`; a stored one neither', () => {
     const own = { pi: { version: '1', data: { cwd: '/w' } }, kortix: { version: '1', data: { origin: 'x' } } };
     const window = { ...head('ses_root', null), messages: [record('m1', 1), { ...record('m2', 2, { role: 'assistant' }), ext: own }] };
     const [thread] = withLiveTurn([root([record('m1', 1)])], window, 10);
-    const [stored, tail] = thread!.messages as Array<SessionLogMessage & { provisional?: boolean }>;
-    expect(tail!.provisional).toBe(true);
+    const [stored, tail] = thread!.messages;
     expect(tail!.ext).toEqual({ pi: own.pi, kortix: { version: '1', data: { origin: 'x', provisional: true } } });
+    expect('provisional' in tail!).toBe(false);
     expect('provisional' in stored!).toBe(false);
     expect(stored!.ext?.kortix).toBeUndefined();
   });
 
-  test('an `ext.kortix.data` that is not a plain object is left as it is; the top-level mark still says provisional', () => {
+  test('an `ext.kortix.data` that is not a plain object gives way to the mark', () => {
     for (const data of ['text', [1, 2], null]) {
-      const ext = { kortix: { version: '1', data } };
-      const window = { ...head('ses_root', null), messages: [record('m1', 1), { ...record('m2', 2, { role: 'assistant' }), ext }] };
+      const window = { ...head('ses_root', null), messages: [record('m1', 1), { ...record('m2', 2, { role: 'assistant' }), ext: { kortix: { version: '1', data } } }] };
       const [thread] = withLiveTurn([root([record('m1', 1)])], window, 10);
-      const tail = thread!.messages[1] as SessionLogMessage & { provisional?: boolean };
-      expect(tail.provisional).toBe(true);
-      expect(tail.ext).toEqual(ext);
+      expect(thread!.messages[1]!.ext).toEqual({ kortix: { version: '1', data: { provisional: true } } });
     }
   });
 
@@ -301,5 +298,26 @@ describe('logHeaderState — the `sessions log` header names the sandbox and, wh
   test('a sandbox not read live names only its status', () => {
     expect(logHeaderState('stopped', null)).toBe('sandbox stopped');
     expect(logHeaderState('running', null)).toBe('sandbox running');
+  });
+});
+
+describe('roomMessageHeader', () => {
+  test('a delivered room message prints where it came from and who sent it, never the reply footer', async () => {
+    const { roomMessageHeader } = await import('./sessions-chat.ts');
+    const { roomPromptText } = await import('@kortix/shared');
+    const text = roomPromptText({
+      room: 'dev', seq: 4, senderKind: 'session', sender: '3f2a1b9c (builder)', replyTo: 2, text: 'dev is clear',
+    });
+    expect(roomMessageHeader(text)).toEqual({ header: 'room dev #4 · from agent session 3f2a1b9c (builder) ↳#2', body: 'dev is clear' });
+    expect(roomMessageHeader('hello')).toBeNull();
+  });
+});
+
+describe('roomMessageHeader digest', () => {
+  test('a batched digest prints the room, the range and one line per message', async () => {
+    const { roomMessageHeader } = await import('./sessions-chat.ts');
+    const { roomDigestText } = await import('@kortix/shared');
+    const text = roomDigestText({ room: 'dev', fromSeq: 4, toSeq: 5, more: 0, lines: [{ seq: 4, sender: 'Ada', text: 'deploy at 5' }, { seq: 5, sender: 'Bob', text: 'ok' }] });
+    expect(roomMessageHeader(text)).toEqual({ header: 'room dev #4–#5 · 2 new messages', body: '#4 Ada: deploy at 5\n#5 Bob: ok' });
   });
 });

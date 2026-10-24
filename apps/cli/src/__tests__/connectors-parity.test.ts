@@ -19,9 +19,13 @@ let server: ReturnType<typeof Bun.serve> | null = null;
 let calls: Call[] = [];
 let projectPolicies: Array<Record<string, unknown>> = [];
 let defaultMode = 'risk';
-let discoverEnabled = true;
 /** The accounts GET .../connectors/:slug/accounts returns, default first. */
 let connectorAccounts: Array<Record<string, unknown>> = [];
+/** What POST .../connectors/:slug/move answers, in order (the last one repeats). */
+let moveAnswers: Array<{ status: number; body: unknown }> = [];
+/** Slugs the fake server switched to `mcp`: an active sign-in switches the marked connector. */
+let switched = new Set<string>();
+let switchOnSignIn = true;
 
 function writeConfig(apiBase: string): string {
   const path = join(tmp, 'config.json');
@@ -53,6 +57,46 @@ function startServer(): string {
       const body = req.method === 'GET' || req.method === 'DELETE' ? null : await req.json().catch(() => null);
       calls.push({ method: req.method, path: url.pathname + url.search, body });
       const ex = `/v1/connectors/projects/${PROJECT}`;
+
+      // ── Pipedream → Kortix moves ──────────────────────────────────────────
+      if (url.pathname === `/v1/projects/${PROJECT}/connector-moves` && req.method === 'GET') {
+        return Response.json({
+          moves: [
+            { slug: 'crm', name: 'CRM', provider: 'pipedream', app: 'hubspot', to: null, connection_id: null, signed_in: false, accounts: 1 },
+            { slug: 'linear', name: 'Linear', provider: 'pipedream', app: 'linear_app', to: { slug: 'linear', name: 'Linear', icon: null }, connection_id: null, signed_in: false, accounts: 2 },
+            { slug: 'mail', name: 'Mail', provider: 'composio', app: 'gmail', to: { slug: 'gmail', name: 'Gmail', icon: null }, connection_id: null, signed_in: false, accounts: 1 },
+            { slug: 'notes', name: 'Notes', provider: 'pipedream', app: 'notion', to: { slug: 'notion', name: 'Notion', icon: null }, connection_id: 'conn_move', signed_in: false, accounts: 1 },
+          ].filter((move) => !switched.has(move.slug)),
+        });
+      }
+      if (/^\/v1\/projects\/proj_connectors\/connectors\/[^/]+\/move$/.test(url.pathname) && req.method === 'POST') {
+        const answer = moveAnswers.length > 1 ? moveAnswers.shift()! : moveAnswers[0]!;
+        return Response.json(answer.body, { status: answer.status });
+      }
+      if (url.pathname === `/v1/projects/${PROJECT}/connections/conn_move/oauth2/discover-resource`) {
+        return Response.json({
+          discovery: {
+            resource_url: 'https://mcp.linear.test/mcp',
+            requires_authorization: true,
+            resource_name: 'Linear',
+            authorization_server: 'https://auth.linear.test',
+            registration_endpoint: 'https://auth.linear.test/register',
+            metadata: { authorization_url: 'https://auth.linear.test/authorize', token_url: 'https://auth.linear.test/token' },
+            scopes: [],
+            warnings: [],
+          },
+        });
+      }
+      if (url.pathname === `/v1/projects/${PROJECT}/connections/conn_move/oauth2/register`) {
+        return Response.json({ application: { client_id: 'cli_move' } });
+      }
+      if (url.pathname === `/v1/projects/${PROJECT}/connections/conn_move/oauth2/authorize`) {
+        return Response.json({ authorization_url: 'https://auth.linear.test/authorize?state=s1', expires_at: '2026-10-19T12:00:00.000Z' });
+      }
+      if (url.pathname === `/v1/projects/${PROJECT}/connections/conn_move/oauth2/status`) {
+        if (switchOnSignIn) switched.add('linear');
+        return Response.json({ status: 'active', scopes: [] });
+      }
 
       if (url.pathname === `${ex}/policies` && req.method === 'GET') {
         return Response.json({ policies: projectPolicies, defaultMode });
@@ -95,21 +139,22 @@ function startServer(): string {
         return Response.json({
           item: { id: 'stripe', kind: 'api', slug: 'stripe', name: 'Stripe', description: 'Payments', url: null, categories: ['finance'] },
           variants: [
+            { id: 'stripe-mcp', kind: 'mcp', name: 'Stripe', url: 'https://mcp.stripe.test', docs: null, description: null, transports: ['http'], requiresAuth: true, command: null, connector: { provider: 'mcp' }, oneClick: true, recommended: true },
+            { id: 'composio:stripe', kind: 'composio', name: 'Stripe', url: null, docs: null, description: null, transports: [], requiresAuth: true, command: null, connector: null, oneClick: true },
             { id: 'stripe-openapi', kind: 'openapi', name: 'Stripe REST', url: 'https://stripe.test/openapi.json', docs: null, description: null, transports: [], requiresAuth: true, command: null, connector: null },
           ],
         });
       }
+      if (url.pathname === `${ex}/discover/connectors/tools` && req.method === 'GET') {
+        return Response.json({ way: { id: url.searchParams.get('way'), kind: 'mcp', name: 'Stripe' }, tools: [{ name: 'list_customers', description: 'List customers' }], total: 1, source: 'directory' });
+      }
+      if (url.pathname === `${ex}/discover/sections` && req.method === 'GET') {
+        return Response.json({ popular: [], sections: [], categories: [{ key: 'finance', label: 'Finance', count: 71 }, { key: 'crm', label: 'CRM', count: 40 }] });
+      }
+      if (url.pathname === `${ex}/discover/install` && req.method === 'POST') {
+        return Response.json({ ok: true, slug: 'billing', name: 'Billing', provider: 'composio', way: { id: 'composio:stripe', kind: 'composio', name: 'Stripe', oneClick: true }, next: 'connect' });
+      }
       if (url.pathname === `${ex}/discover/connectors` && req.method === 'GET') {
-        if (!discoverEnabled) {
-          return Response.json(
-            {
-              error: 'Connector discovery is not enabled for this project. Enable it in Settings → Feature flags.',
-              code: 'feature_disabled',
-              feature: 'connectors_api_discover',
-            },
-            { status: 403 },
-          );
-        }
         return Response.json({
           items: [
             { id: 'stripe', kind: 'api', slug: 'stripe', name: 'Stripe', description: 'Payments', url: null, categories: ['finance'] },
@@ -232,9 +277,11 @@ describe('kortix connectors — capability-page parity', () => {
     tmp = mkdtempSync(join(tmpdir(), 'kortix-connectors-'));
     process.env = { ...ORIGINAL_ENV };
     calls = [];
+    switched = new Set();
+    switchOnSignIn = true;
     projectPolicies = [{ match: 'send_*', action: 'require_approval' }];
     defaultMode = 'risk';
-    discoverEnabled = true;
+    moveAnswers = [{ status: 200, body: { status: 'moved' } }];
     connectorAccounts = [
       {
         connection_id: '11111111-1111-4111-8111-111111111111',
@@ -564,30 +611,63 @@ describe('kortix connectors — capability-page parity', () => {
     });
   });
 
-  test('catalog lists records and forwards q + cursor', async () => {
+  test('catalog lists every app by default and forwards q + cursor', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'catalog', 'pay', '--cursor', 'cur_1', '--project', PROJECT], config);
     expect(r.code).toBe(0);
     expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors?q=pay&cursor=cur_1`);
     expect(r.stdout).toContain('stripe');
     expect(r.stdout).toContain('--cursor cur_2');
+    expect(r.stdout).toContain('catalog show <id>');
+  });
+
+  test('catalog filters by type, one-click, category and page size', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'catalog', 'pay', '--kind', 'mcp,composio', '--one-click', '--category', 'finance', '--limit', '10', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors?q=pay&category=finance&limit=10&kind=mcp%2Ccomposio&oneClick=1`);
+  });
+
+  test('catalog categories lists the keys --category takes, with the same filters', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'catalog', 'categories', '--kind', 'composio', '--one-click', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/sections?perCategory=1&maxCategories=40&kind=composio&oneClick=1`);
+    expect(r.stdout).toContain('finance');
+    expect(r.stdout).toContain('71');
+    const j = await runCli(['connectors', 'catalog', 'categories', '--json', '--project', PROJECT], config);
+    expect(JSON.parse(j.stdout)).toEqual([{ key: 'finance', label: 'Finance', count: 71 }, { key: 'crm', label: 'CRM', count: 40 }]);
+  });
+
+  test('catalog tools --json prints one way\'s tools', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'catalog', 'tools', 'stripe', '--way', 'composio:stripe', '--json', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors/tools?id=stripe&way=composio%3Astripe`);
+    expect(JSON.parse(r.stdout).tools[0].name).toBe('list_customers');
+  });
+
+  test('catalog install posts the id, way, name and slug and names the profile', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'catalog', 'install', 'kortix:stripe', '--way', 'composio:stripe', '--name', 'Billing', '--slug', 'billing', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)).toMatchObject({ method: 'POST', path: `/v1/connectors/projects/${PROJECT}/discover/install`, body: { id: 'kortix:stripe', way: 'composio:stripe', name: 'Billing', slug: 'billing' } });
+    expect(r.stdout).toContain('connector profile');
+    expect(r.stdout).toContain('kortix connectors connect billing');
   });
 
   test('catalog show reads the detail route by id', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'catalog', 'show', 'stripe', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors/detail?id=stripe`);
-    expect(r.stdout).toContain('stripe-openapi');
-    expect(r.stdout).toContain('(auth)');
-  });
-
-  test('catalog surfaces the connectors_api_discover gate verbatim', async () => {
-    const config = writeConfig(startServer());
-    discoverEnabled = false;
-    const r = await runCli(['connectors', 'catalog', '--project', PROJECT], config);
-    expect(r.code).toBe(1);
-    expect(r.stderr).toContain('Connector discovery is not enabled for this project');
+    expect(calls.at(-2)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors/detail?id=stripe`);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors/tools?id=stripe&way=stripe-mcp`);
+    expect(r.stdout).toContain('stripe-mcp');
+    expect(r.stdout).toContain('(recommended, 1-click)');
+    expect(r.stdout).toContain('Composio');
+    expect(r.stdout).toContain('third-party partner');
+    expect(r.stdout).toContain('(not installable)');
+    expect(r.stdout).toContain('list_customers');
   });
 
   for (const sub of ['machines', 'computers']) {
@@ -750,6 +830,73 @@ describe('kortix connectors — capability-page parity', () => {
     expect(parsed.user_code).toBe('WDJB-MJHT');
     expect(parsed.session_id).toBe('sess_dev');
     expect(calls.some((c) => c.path.endsWith('/device/sess_dev'))).toBe(false);
+  });
+
+  test('moves tables each Pipedream and Composio connector, its Kortix app and the move state', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'moves', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([`GET /v1/projects/${PROJECT}/connector-moves`]);
+    const lines = r.stdout.split('\n').map((line) => line.trim());
+    expect(lines).toContain('SLUG     PROVIDER    APP          MOVES TO   STATE               ACCOUNTS');
+    expect(lines).toContain('crm      pipedream   hubspot      —          no Kortix app yet   1');
+    expect(lines).toContain('linear   pipedream   linear_app   Linear     ready               2');
+    expect(lines).toContain('mail     composio    gmail        Gmail      ready               1');
+    expect(lines).toContain('notes    pipedream   notion       Notion     signing in          1');
+    expect(r.stdout).toContain('Move one: kortix connectors move <slug>');
+  });
+
+  test('moves --json emits the API payload', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'moves', '--json', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    const parsed = JSON.parse(r.stdout) as { moves: Array<{ slug: string; provider: string; to: { slug: string; name: string; icon: string | null } | null }> };
+    expect(parsed.moves.map((m) => m.slug)).toEqual(['crm', 'linear', 'mail', 'notes']);
+    expect(parsed.moves[2]!.provider).toBe('composio');
+    expect(parsed.moves[1]!.to).toEqual({ slug: 'linear', name: 'Linear', icon: null });
+  });
+
+  test('move on a connector already on its Kortix app says there is nothing to move', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'move', 'linear', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls).toEqual([{ method: 'POST', path: `/v1/projects/${PROJECT}/connectors/linear/move`, body: {} }]);
+    expect(r.stdout).toContain('linear already uses its Kortix app (provider mcp). Nothing to move.');
+    expect(r.stdout).not.toContain('sign in again');
+  });
+
+  test('move signs in on the marked account, waits for the token, then finishes the move', async () => {
+    const config = writeConfig(startServer());
+    moveAnswers = [
+      { status: 200, body: { status: 'sign_in', connection_id: 'conn_move', to: { slug: 'linear', name: 'Linear', url: 'https://mcp.linear.test/mcp' } } },
+      { status: 200, body: { status: 'moved' } },
+    ];
+    const r = await runCli(['connectors', 'move', 'linear', '--connection', 'conn_move', '--no-open', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    const oauth2 = `/v1/projects/${PROJECT}/connections/conn_move/oauth2`;
+    // The server switches on the sign-in by itself: the CLI waits for it, no second write.
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+      `POST /v1/projects/${PROJECT}/connectors/linear/move`,
+      `POST ${oauth2}/discover-resource`,
+      `POST ${oauth2}/register`,
+      `POST ${oauth2}/authorize`,
+      `GET ${oauth2}/status`,
+      `GET /v1/projects/${PROJECT}/connector-moves`,
+    ]);
+    expect(calls[0]!.body).toEqual({ connection_id: 'conn_move' });
+    expect(r.stdout).toContain('https://auth.linear.test/authorize?state=s1');
+    expect(r.stdout).not.toContain('Opened in your browser');
+    expect(r.stdout).toContain('Signed in');
+    expect(r.stdout).toContain('linear now uses Linear (provider mcp) and keeps its slug.');
+  });
+
+  test('move prints the API refusal and exits non-zero', async () => {
+    const config = writeConfig(startServer());
+    moveAnswers = [{ status: 409, body: { error: 'Only a Pipedream connector moves. gmail uses composio.' } }];
+    const r = await runCli(['connectors', 'move', 'gmail', '--project', PROJECT], config);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('Only a Pipedream connector moves. gmail uses composio.');
+    expect(calls).toHaveLength(1);
   });
 
   test('connector-scoped policy verbs still work unchanged', async () => {

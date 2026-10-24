@@ -1,11 +1,13 @@
 /**
  * Integration test (real PostgreSQL, fresh migrated database): the retention
- * purge (P2.8, decision D6). A deleted session loses its rows 30 days after the
- * delete and its objects 7 days after the rows. A session of a closed account
- * (decision D6b: an open `account_deletion_requests` row, closed at its
- * `scheduled_for`) loses its rows at day 80 and its objects at day 87. The
- * purge covers the v2 `session_log*` rows, the v1 `session_transcript_*` rows
- * and the `session-attachments` objects alike, and never touches a live session.
+ * purge (P2.8, decision D6). A deleted session loses all its content 30 days
+ * after the delete, in one tick. A session of a closed account (decision D6b: an
+ * open `account_deletion_requests` row, closed at its `scheduled_for`) loses it
+ * at day 80. The purge covers the v2 `session_log*` rows, the v1
+ * `session_transcript_*` rows, the copies of the conversation in other tables
+ * (model requests, prompt commands, voice turns, notifications, connector
+ * results) and the `session-attachments` objects alike, and never touches a
+ * live session. A deleted session's own row stays as a shell of ids and dates.
  *
  * The clock is the `now` argument of `purgeSessionContent`: every day below is
  * an offset from BASE, so no test sleeps. Real: every row, every query. Fake:
@@ -14,9 +16,13 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   accountDeletionRequests,
+  connectorCalls,
   creditAccounts,
+  gatewayRequestLogs,
+  notifications,
   projectSessions,
   sessionContentPurges,
+  sessionLifecycleCommands,
   sessionLogBlobs,
   sessionLogMessages,
   sessionLogs,
@@ -24,6 +30,7 @@ import {
   sessionTurns,
   sessionTranscriptMessages,
   sessionTranscriptMirrors,
+  voiceCallTurns,
 } from '@kortix/db';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { createSessionAttachmentStore } from '../projects/lib/session-attachments';
@@ -54,11 +61,16 @@ const newProject = async (label: string, accountId?: string) => {
 async function seedContent(project: SeededProject, opts: { deletedAt?: Date } = {}) {
   const sessionId = await seedSession(project, USER);
   // Created long before BASE: a session created after an account closure counts as used.
-  await db.update(projectSessions).set({ createdAt: day(-30) }).where(eq(projectSessions.sessionId, sessionId));
+  await db
+    .update(projectSessions)
+    .set({ createdAt: day(-30), labels: ['synthetic'], error: 'synthetic error', metadata: { title: 'synthetic title', initial_prompt: 'synthetic prompt' } })
+    .where(eq(projectSessions.sessionId, sessionId));
   if (opts.deletedAt) await markDeleted(sessionId, opts.deletedAt);
   const scope = { sessionId, projectId: project.project_id, accountId: project.account_id };
   const t = BASE;
-  await db.insert(sessionLogs).values({ ...scope, v: 1, harnessCurrent: 'opencode', restoreGrade: 'A', record: {} });
+  // A journal's log, as the box writes it: a restore leaves it alone (its
+  // mirror conversion runs only for a log no journal owns).
+  await db.insert(sessionLogs).values({ ...scope, v: 1, harnessCurrent: 'opencode', restoreGrade: 'A', record: {}, journalSeenAt: new Date() });
   await db.insert(sessionLogThreads).values({ sessionId, threadId: 'main', v: 1, record: {} });
   await db.insert(sessionLogMessages).values({
     sessionId, messageId: 'msg_1', threadId: 'main', seq: 0, role: 'user', kind: 'turn', inContext: true, createdAt: t,
@@ -68,6 +80,15 @@ async function seedContent(project: SeededProject, opts: { deletedAt?: Date } = 
   await db.insert(sessionLogBlobs).values({ sessionId, sha256: 'a'.repeat(64), objectKey: object, bytes: 3, mime: 'text/plain' });
   await db.insert(sessionTranscriptMirrors).values(scope);
   await db.insert(sessionTranscriptMessages).values({ sessionId, messageId: 'msg_1', role: 'user', info: {}, parts: [] });
+  // Copies of the conversation outside the log.
+  await db.insert(gatewayRequestLogs).values({
+    requestId: crypto.randomUUID(), ...scope, requestedModel: 'm', resolvedModel: 'm', provider: 'p', status: 200, ok: true,
+    request: { messages: [{ role: 'user', content: 'synthetic prompt' }] }, response: { value: 'synthetic answer' },
+  });
+  await db.insert(sessionLifecycleCommands).values({ ...scope, commandType: 'continue_session', source: 'test', payload: { text: 'synthetic prompt' } });
+  await db.insert(voiceCallTurns).values({ sessionId, projectId: project.project_id, callId: 'call', role: 'user', text: 'synthetic' });
+  await db.insert(notifications).values({ ...scope, userId: USER, kind: 'turn_done', title: 'synthetic', body: 'synthetic' });
+  await db.insert(connectorCalls).values({ ...scope, actionPath: 'a.b', status: 'ok', resultSummary: { text: 'synthetic' } });
   bucket.objects.set(object, new Blob(['abc']));
   // An orphan the capture left behind: no blob row names it.
   bucket.objects.set(`${project.project_id}/${sessionId}/00000000-0000-4000-8000-000000000002`, new Blob(['orphan']));
@@ -88,9 +109,21 @@ const rowsOf = async (sessionId: string) => ({
   blobs: await count(sessionLogBlobs, sessionId),
   mirrors: await count(sessionTranscriptMirrors, sessionId),
   v1: await count(sessionTranscriptMessages, sessionId),
+  ...(await copiesOf(sessionId)),
 });
-const ALL = { logs: 1, threads: 1, messages: 1, blobs: 1, mirrors: 1, v1: 1 };
-const NONE = { logs: 0, threads: 0, messages: 0, blobs: 0, mirrors: 0, v1: 0 };
+/** The content of the copies: rows that billing or audit counts stay, without it. */
+const copiesOf = async (sessionId: string) => {
+  const [row] = await db.execute(sql`select
+    (select count(*)::int from kortix.gateway_request_logs where session_id = ${sessionId} and (request is not null or response is not null)) as "modelBodies",
+    (select count(*)::int from kortix.session_lifecycle_commands where session_id = ${sessionId} and payload <> '{}'::jsonb) as prompts,
+    (select count(*)::int from kortix.voice_call_turns where session_id = ${sessionId}) as voice,
+    (select count(*)::int from kortix.notifications where session_id = ${sessionId}) as notifications,
+    (select count(*)::int from kortix.connector_calls where session_id::text = ${sessionId} and result_summary is not null) as "connectorResults"`);
+  return row as { modelBodies: number; prompts: number; voice: number; notifications: number; connectorResults: number };
+};
+const COPIES = { modelBodies: 1, prompts: 1, voice: 1, notifications: 1, connectorResults: 1 };
+const ALL = { logs: 1, threads: 1, messages: 1, blobs: 1, mirrors: 1, v1: 1, ...COPIES };
+const NONE = { logs: 0, threads: 0, messages: 0, blobs: 0, mirrors: 0, v1: 0, modelBodies: 0, prompts: 0, voice: 0, notifications: 0, connectorResults: 0 };
 const objectsOf = (c: { projectId: string; sessionId: string }) => [...bucket.objects.keys()].filter((k) => k.startsWith(`${c.projectId}/${c.sessionId}/`)).length;
 const bookkeeping = async (sessionId: string) => (await db.select().from(sessionContentPurges).where(eq(sessionContentPurges.sessionId, sessionId)))[0];
 
@@ -114,29 +147,29 @@ describe('a deleted session', () => {
     expect(await bookkeeping(c.sessionId)).toBeUndefined();
   });
 
-  test('day 30: every row goes, both stores, the objects stay, one bookkeeping row says why and when', async () => {
-    expect(await tick(30)).toMatchObject({ sessions: 1, objects: 0 });
+  test('day 30: every row, every copy and every object goes in one tick, orphans included; one bookkeeping row says why and when', async () => {
+    expect(await tick(30)).toMatchObject({ sessions: 1, objects: 1 });
     expect(await rowsOf(c.sessionId)).toEqual(NONE);
-    expect(objectsOf(c)).toBe(2);
-    const row = await bookkeeping(c.sessionId);
-    expect(row).toMatchObject({ projectId: c.projectId, accountId: c.accountId, reason: 'session_deleted', objectsPurgedAt: null });
-    expect(row!.rowsPurgedAt).toEqual(day(30));
-  });
-
-  test('day 36: the objects are still there; the session row itself stays', async () => {
-    expect(await tick(36.9)).toMatchObject({ sessions: 0, objects: 0 });
-    expect(objectsOf(c)).toBe(2);
-    expect(await db.select().from(projectSessions).where(eq(projectSessions.sessionId, c.sessionId))).toHaveLength(1);
-  });
-
-  test('day 37: every object under the session folder goes, orphans included; a second tick does nothing', async () => {
-    expect(await tick(37)).toMatchObject({ sessions: 0, objects: 1 });
     expect(objectsOf(c)).toBe(0);
-    expect((await bookkeeping(c.sessionId))!.objectsPurgedAt).toEqual(day(37));
+    const row = await bookkeeping(c.sessionId);
+    expect(row).toMatchObject({ projectId: c.projectId, accountId: c.accountId, reason: 'session_deleted' });
+    expect(row!.rowsPurgedAt).toEqual(day(30));
+    expect(row!.objectsPurgedAt).toEqual(day(30));
+  });
+
+  test('day 30: the session row stays as a shell of ids and dates; the model request row stays for billing', async () => {
+    const [shell] = await db.select().from(projectSessions).where(eq(projectSessions.sessionId, c.sessionId));
+    expect(shell!.metadata).toEqual({ deletedAt: day(0).toISOString(), copiesPurgedAt: day(30).toISOString() });
+    expect(shell!.labels).toEqual([]);
+    expect(shell!.error).toBeNull();
+    expect(await db.select().from(gatewayRequestLogs).where(eq(gatewayRequestLogs.sessionId, c.sessionId))).toHaveLength(1);
+  });
+
+  test('a second tick does nothing', async () => {
     const before = [...bucket.objects.keys()].length;
     expect(await tick(60)).toEqual({ sessions: 0, objects: 0, failed: 0, liveClosed: 0 });
     expect([...bucket.objects.keys()].length).toBe(before);
-    expect((await bookkeeping(c.sessionId))!.objectsPurgedAt).toEqual(day(37));
+    expect((await bookkeeping(c.sessionId))!.objectsPurgedAt).toEqual(day(30));
   });
 });
 
@@ -176,7 +209,7 @@ describe('restoreSession and the purge', () => {
   const restore = (c: { projectId: string; sessionId: string; accountId: string }, now: Date) =>
     restoreSession({ projectId: c.projectId, sessionId: c.sessionId, accountId: c.accountId, now });
 
-  test('a session restored on day 29 keeps every row and object past day 37', async () => {
+  test('a session restored on day 29 keeps every row, copy and object past day 30', async () => {
     const project = await newProject('purge-restore-in-window');
     const c = await seedContent(project, { deletedAt: day(0) });
     expect(await restore(c, day(29))).toEqual({ ok: true });
@@ -220,20 +253,17 @@ describe('a closed account (D6b)', () => {
     expect(objectsOf(c)).toBe(2);
   });
 
-  test('day 80: the rows go, the objects stay', async () => {
-    expect(await tick(80)).toMatchObject({ sessions: 1, objects: 0 });
+  test('day 80: the rows, the copies and the objects go, inside 90 days; the session row keeps its metadata', async () => {
+    expect(await tick(80)).toMatchObject({ sessions: 1, objects: 1 });
     expect(await rowsOf(c.sessionId)).toEqual(NONE);
-    expect(objectsOf(c)).toBe(2);
-    expect(await bookkeeping(c.sessionId)).toMatchObject({ reason: 'subscription_ended', objectsPurgedAt: null });
+    expect(objectsOf(c)).toBe(0);
+    expect(await bookkeeping(c.sessionId)).toMatchObject({ reason: 'subscription_ended', objectsPurgedAt: day(80) });
+    const [row] = await db.select().from(projectSessions).where(eq(projectSessions.sessionId, c.sessionId));
+    expect(row!.metadata).toMatchObject({ title: 'synthetic title' });
   });
 
-  test('day 86: the objects stay; day 87: they go, so all content is gone inside 90 days; a second tick does nothing', async () => {
-    await tick(86.9);
-    expect(objectsOf(c)).toBe(2);
-    expect(await tick(87)).toMatchObject({ objects: 1 });
-    expect(objectsOf(c)).toBe(0);
+  test('a second tick does nothing', async () => {
     expect(await tick(91)).toEqual({ sessions: 0, objects: 0, failed: 0, liveClosed: 0 });
-    expect(await bookkeeping(c.sessionId)).toMatchObject({ objectsPurgedAt: day(87) });
   });
 
   test('the close is the end of the grace (scheduled_for), not the request; a stale `processing` claim counts too', async () => {
@@ -349,17 +379,17 @@ describe('an account that is not closed', () => {
     expect(await rowsOf(b.sessionId)).toEqual(ALL);
   });
 
-  test('a closure cancelled between the rows phase and the objects phase still loses its objects, then its marker', async () => {
+  test('a closure cancelled while its objects removal fails still loses its objects, then its marker', async () => {
     const p = await newProject('purge-cancel-between');
     const s = await seedContent(p);
     const req = await requestClosure(p.account_id, day(0));
-    expect(await tick(80)).toMatchObject({ sessions: 1 });
+    const failing = { removeSession: async () => { throw new Error('storage down'); } };
+    expect(await tick(80, { store: failing })).toMatchObject({ sessions: 1, objects: 0, failed: 1 });
     await cancelClosure(req.id);
-    expect(await tick(83)).toMatchObject({ sessions: 0, objects: 0 });
     expect(await bookkeeping(s.sessionId)).toMatchObject({ reason: 'subscription_ended', objectsPurgedAt: null });
-    expect(await tick(87)).toMatchObject({ objects: 1 });
+    expect(await tick(81)).toMatchObject({ objects: 1 });
     expect(objectsOf(s)).toBe(0);
-    await tick(88);
+    await tick(82);
     expect(await bookkeeping(s.sessionId)).toBeUndefined();
     expect(await rowsOf(s.sessionId)).toEqual(NONE);
   });
@@ -378,7 +408,6 @@ describe('an account that is not closed', () => {
     const s = await seedContent(p);
     const first = await requestClosure(p.account_id, day(0));
     await tick(80);
-    await tick(87);
     expect(await rowsOf(s.sessionId)).toEqual(NONE);
     expect(objectsOf(s)).toBe(0);
     await cancelClosure(first.id);
@@ -392,9 +421,8 @@ describe('an account that is not closed', () => {
     // It closes again: a new date, a new 80 days.
     await requestClosure(p.account_id, day(151));
     expect(await tick(230)).toMatchObject({ sessions: 0 });
-    expect(await tick(231)).toMatchObject({ sessions: 1 });
+    expect(await tick(231)).toMatchObject({ sessions: 1, objects: 1 });
     expect(await count(sessionLogs, s.sessionId)).toBe(0);
-    expect(await tick(238)).toMatchObject({ objects: 1 });
     expect(objectsOf(s)).toBe(0);
   });
 });
@@ -419,9 +447,8 @@ describe('the tick is bounded and survives a failing store', () => {
   test('a store that fails leaves the session due, and the next tick retries it', async () => {
     const project = await newProject('purge-store-fails');
     const c = await seedContent(project, { deletedAt: day(0) });
-    await tick(30);
     const failing = { removeSession: async () => { throw new Error('storage down'); } };
-    expect(await tick(40, { store: failing })).toMatchObject({ objects: 0, failed: 1 });
+    expect(await tick(30, { store: failing })).toMatchObject({ sessions: 1, objects: 0, failed: 1 });
     expect((await bookkeeping(c.sessionId))!.objectsPurgedAt).toBeNull();
     expect(objectsOf(c)).toBe(2);
     expect(await tick(41)).toMatchObject({ objects: 1, failed: 0 });
@@ -453,8 +480,94 @@ describe('the tick is bounded and survives a failing store', () => {
     const gone = await seedContent(project, { deletedAt: day(0) });
     const kept = await seedContent(project);
     await tick(30);
-    await tick(37);
     expect(objectsOf(gone)).toBe(0);
     expect(objectsOf(kept)).toBe(2);
+  });
+});
+
+/**
+ * Every table that names a session, and what the purge does with it. A new table
+ * fails here until it is classified: a table that copies session content must be
+ * purged or scrubbed in `purgeRows`, or the "gone after 30 days" promise breaks.
+ */
+const SESSION_TABLES: Record<string, 'purged' | 'scrubbed' | `kept: ${string}`> = {
+  'session_logs.session_id': 'purged',
+  'session_log_threads.session_id': 'purged',
+  'session_log_messages.session_id': 'purged',
+  'session_log_blobs.session_id': 'purged',
+  'session_transcript_messages.session_id': 'purged',
+  'session_transcript_mirrors.session_id': 'purged',
+  'voice_call_turns.session_id': 'purged',
+  'session_pending_questions.session_id': 'purged',
+  'session_runtime_projections.session_id': 'purged',
+  'project_session_runtime_contexts.session_id': 'purged',
+  'chat_turn_streams.session_id': 'purged',
+  'project_session_public_shares.session_id': 'purged',
+  'notifications.session_id': 'purged',
+  'gateway_request_logs.session_id': 'scrubbed',
+  'connector_calls.session_id': 'scrubbed',
+  'session_lifecycle_commands.session_id': 'scrubbed',
+  'project_sessions.session_id': 'scrubbed',
+  'project_sessions.parent_session_id': 'kept: an id',
+  'session_content_purges.session_id': 'kept: the done marker',
+  'usage_events.session_id': 'kept: billing',
+  'sandbox_compute_sessions.session_id': 'kept: billing',
+  'session_turns.session_id': 'kept: metering, no content',
+  'audit_events.session_id': 'kept: audit trail',
+  'audit_events_legacy.session_id': 'kept: audit trail',
+  'audit_session_sequences.session_id': 'kept: audit trail',
+  'tunnel_audit_logs.session_id': 'kept: audit trail',
+  'provider_events.session_id': 'kept: provider operations, no content',
+  'session_sandboxes.session_id': 'kept: the box record, no content',
+  'account_session_activity.session_id': 'kept: a login session, not a project session',
+  'account_tokens.session_id': 'kept: token metadata, no content',
+  'connection_oauth_sessions.session_id': 'kept: an OAuth flow, no content',
+  'app_deployments.source_session_id': 'kept: the App outlives the session',
+  'change_requests.origin_session_id': 'kept: the change request outlives the session',
+  'review_items.origin_session_id': 'kept: the review outlives the session',
+  'project_trigger_executions.session_id': 'kept: the trigger outlives the session',
+  'project_trigger_runtime.session_id': 'kept: the trigger outlives the session',
+  'project_monitor_events.session_id': 'kept: the monitor has its own retention',
+  'config_release_failures.session_id': 'kept: ids and a reason code',
+  'connector_attachments.session_id': 'kept: expires on its own (cleanupExpiredConnectorAttachments)',
+  'legacy_sandbox_migrations.session_id': 'kept: migration bookkeeping',
+  'chat_threads.session_id': 'kept: ids only',
+  'chat_thread_participants.session_id': 'kept: ids only',
+  'room_members.session_id': 'kept: ids only',
+  'notification_watchers.session_id': 'kept: ids only',
+  'permission_push_claims.session_id': 'kept: ids only',
+  'session_presence_leases.session_id': 'kept: ids only, expires',
+  'project_session_user_states.session_id': 'kept: pin and archive dates only',
+  'project_session_connector_bindings.session_id': 'kept: ids only',
+  'project_session_grants.session_id': 'kept: ids only',
+  'project_session_secret_handles.session_id': 'kept: secret names, no values',
+  'session_provider_secret_pools.session_id': 'kept: secret ids, no values',
+  'session_user_provider_connections.session_id': 'kept: ids only',
+  'session_tool_approvals.session_id': 'kept: an action path, no content',
+};
+
+test('every table that names a session is classified for the purge', async () => {
+  const rows = await db.execute(sql`
+    select c.relname || '.' || a.attname as col
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace join pg_attribute a on a.attrelid = c.oid
+    where n.nspname = 'kortix' and c.relkind in ('r', 'p') and not c.relispartition and not a.attisdropped
+      and a.attname in ('session_id', 'source_session_id', 'origin_session_id', 'parent_session_id')`);
+  expect((rows as unknown as { col: string }[]).map((r) => r.col).sort()).toEqual(Object.keys(SESSION_TABLES).sort());
+});
+
+describe('a deleted session purged before the copies were covered', () => {
+  cleanup();
+  test('the next tick scrubs its copies and shells its row, and keeps the first purge date', async () => {
+    const project = await newProject('purge-backlog');
+    const c = await seedContent(project, { deletedAt: day(0) });
+    // The old purge: the log rows gone and the marker written, the copies and the metadata left.
+    await db.delete(sessionLogMessages).where(eq(sessionLogMessages.sessionId, c.sessionId));
+    await db.insert(sessionContentPurges).values({ sessionId: c.sessionId, projectId: c.projectId, accountId: c.accountId, reason: 'session_deleted', rowsPurgedAt: day(30), objectsPurgedAt: day(37) });
+    expect(await tick(100)).toMatchObject({ sessions: 1, failed: 0 });
+    expect(await copiesOf(c.sessionId)).toEqual({ modelBodies: 0, prompts: 0, voice: 0, notifications: 0, connectorResults: 0 });
+    const [row] = await db.select({ metadata: projectSessions.metadata }).from(projectSessions).where(eq(projectSessions.sessionId, c.sessionId));
+    expect(row!.metadata).toEqual({ deletedAt: day(0).toISOString(), copiesPurgedAt: day(100).toISOString() });
+    expect((await bookkeeping(c.sessionId))!.rowsPurgedAt).toEqual(day(30));
+    expect(await tick(101)).toMatchObject({ sessions: 0 });
   });
 });

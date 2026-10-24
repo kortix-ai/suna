@@ -4,8 +4,8 @@
  * gzipped JSON body. Maps to spec §7 `SLOG-1`. The operator switch (503) needs
  * the API's env and is covered in
  * apps/api/src/__tests__/integration-session-log-ingest.test.ts.
- * `SLOG-2` is the read path (P4.2): the v1 reads with the `session_log` flag
- * off and on, and `GET …/log`. `SLOG-3` is the restore claim (P6.1); its operator
+ * `SLOG-2` is the read path (P4.2, P8.2): a mirror-only session converted by its
+ * first read, the same v1 reads after the journal writes the log, and `GET …/log`. `SLOG-3` is the restore claim (P6.1); its operator
  * switch (503) is covered in
  * apps/api/src/__tests__/integration-session-log-restore.test.ts.
  * `SLOG-4` is the switch preflight (P7.1): the loss report of a stored log on another harness.
@@ -111,11 +111,11 @@ flow(
         (await post(batch(0, [{ rev: REV + 4, message: message("msg_zombie", 3) }]))).status(409).body().has("$", { generation: 1 });
       });
 
-      await ctx.step("a put that reuses a seq its thread holds → 422 with the offending pair, nothing written", async () => {
+      await ctx.step("a put that reuses a seq its thread holds → 422 with the offending pair and the thread's seq_max, nothing written", async () => {
         (await post(batch(1, [{ rev: REV + 5, message: message("msg_dup", 1) }])))
           .status(422)
           .body()
-          .has("$", { error: "seq_conflict", message_id: "msg_dup", rev: REV + 5, thread_id: "main", seq: 1 });
+          .has("$", { error: "seq_conflict", message_id: "msg_dup", rev: REV + 5, thread_id: "main", seq: 1, seq_max: 2 });
       });
 
       await ctx.step("the manifest lists the generation and each stored message with its rev as a JSON number", async () => {
@@ -197,7 +197,7 @@ flow(
     domain: "sessions",
     requires: ["database"],
     routes: [
-      "POST /v1/accounts/tokens", `POST ${JOURNAL}`, "PUT /v1/admin/api/projects/:id/features", `GET ${TRANSCRIPT}`, `GET ${BUNDLE}`, `GET ${LOG}`,
+      "POST /v1/accounts/tokens", `POST ${JOURNAL}`, `GET ${TRANSCRIPT}`, `GET ${BUNDLE}`, `GET ${LOG}`,
       // `kortix sessions log` logs in and locates the session before it reads the log.
       "GET /v1/accounts/me", "GET /v1/projects/:projectId/sessions/:sessionId",
     ],
@@ -208,7 +208,7 @@ flow(
     const sessionId = await createDatabaseSession(ctx.env, { projectId: project.id, accountId, userId: ctx.P.OWNER.userId! });
     ctx.track("session", sessionId, { projectId: project.id });
     const child = `ses_${sessionId.replaceAll("-", "").slice(0, 20)}child`;
-    // The mirror rows, as the transcript capture stores them.
+    // An old session: its history only in the v1 mirror, as the pre-journal capture stored it.
     const { root, messages } = await seedSessionTranscript(ctx.env, {
       projectId: project.id, accountId, sessionId, ensureSandbox: false,
       messages: (r) => syntheticConversation(r, child, 6),
@@ -240,7 +240,15 @@ flow(
     };
 
     try {
-      await ctx.step("the session daemon journals fromV1 of the same rows under producer opencode → 200, every message acknowledged", async () => {
+      let converted: Awaited<ReturnType<typeof v1Reads>>;
+      await ctx.step("the first read of the mirror-only session converts it into the log: every v1 read answers, and the open bundle's log leg holds the root thread", async () => {
+        converted = await v1Reads();
+        if (converted.bodies.length < 6) throw new Error(`expected at least 3 sync pages, got ${converted.bodies.length - 3}`);
+        const leg = converted.log as { known: boolean; page: { thread_id: string; messages: unknown[]; has_more: boolean } | null };
+        if (!leg?.known || leg.page?.thread_id !== root || leg.page.messages.length === 0) throw new Error(`log leg: ${JSON.stringify(leg)?.slice(0, 300)}`);
+      });
+
+      await ctx.step("the session daemon then journals fromV1 of the same rows under producer opencode → 200, every message acknowledged", async () => {
         const rows = messages.map((m) => ({ runtime_session_id: (m.info.sessionID as string) ?? root, info: m.info, parts: m.parts })) as unknown as V1Row[];
         const log = fromV1({ session_id: sessionId, root_id: root, rows }, { harness: "opencode" });
         const producer = { harness: "opencode", harness_version: "1.18.23", adapter_version: "1.0.0" };
@@ -251,21 +259,11 @@ flow(
           .status(200).body().has("$.acked.length", puts.length);
       });
 
-      let off: Awaited<ReturnType<typeof v1Reads>>;
-      await ctx.step("flag off: the v1 reads answer from the mirror, and the open bundle has no log leg", async () => {
-        off = await v1Reads();
-        if (off.bodies.length < 6) throw new Error(`expected at least 3 sync pages, got ${off.bodies.length - 3}`);
-        if (off.log !== undefined) throw new Error("the open bundle carries a log leg with the flag off");
-      });
-
-      await ctx.step("an operator enables session_log; the same reads answer the same bodies from the log, apart from captured_at", async () => {
-        await setFeatureAsOperator(ctx, project.id, "session_log", true);
-        const on = await v1Reads();
-        for (let i = 0; i < off!.bodies.length; i++) {
-          if (!Bun.deepEquals(on.bodies[i], off!.bodies[i])) throw new Error(`v1 read ${i} differs with the flag on:\n${JSON.stringify(on.bodies[i])}\n---\n${JSON.stringify(off!.bodies[i])}`);
+      await ctx.step("the journal's log answers the same v1 bodies as the converted mirror, apart from captured_at", async () => {
+        const journaled = await v1Reads();
+        for (let i = 0; i < converted!.bodies.length; i++) {
+          if (!Bun.deepEquals(journaled.bodies[i], converted!.bodies[i])) throw new Error(`v1 read ${i} differs after the journal:\n${JSON.stringify(journaled.bodies[i])}\n---\n${JSON.stringify(converted!.bodies[i])}`);
         }
-        const leg = on.log as { known: boolean; page: { thread_id: string; messages: unknown[]; has_more: boolean } };
-        if (!leg?.known || leg.page.thread_id !== root || leg.page.messages.length === 0) throw new Error(`log leg: ${JSON.stringify(leg)?.slice(0, 300)}`);
       });
 
       await ctx.step("GET …/log pages the root thread backwards by seq and reads the child thread by thread=", async () => {
@@ -332,7 +330,6 @@ flow(
         (await owner.get(LOG, { params, query: { thread: "ses_not_a_thread" } })).status(404);
       });
     } finally {
-      await setFeatureAsOperator(ctx, project.id, "session_log", null).catch(() => {});
       await close();
     }
   },
@@ -475,16 +472,14 @@ flow(
         ...["session.rewind", "session.fork", "session.mcp", "session.todo", "session.shell", "session.attach", "session.config"].map((feature) => ({ feature, status: "lost" })),
       ];
 
-      await ctx.step("restore off, gateway off: preflight to pi → 200 not available (llm_gateway_off), and the whole history (4 live messages) is the first loss", async () => {
-        await setFeatureAsOperator(ctx, project.id, "llm_gateway", false);
+      await ctx.step("restore off: preflight to pi → 200 available without a restore, and the whole history (4 live messages) is the first loss", async () => {
         (await preflight("pi")).status(200).body().schema(SessionLogSwitchPreflightSchema).has("$", {
-          session_id: sessionId, from: "opencode", to: "pi", available: false, reason: "llm_gateway_off", restores: false,
+          session_id: sessionId, from: "opencode", to: "pi", available: true, reason: null, restores: false,
           losses: [{ feature: "history", used: 4, status: "lost" }, ...losses], unsupported,
         });
       });
 
-      await ctx.step("restore and gateway on: preflight to pi → 200 available; losses: the PDF, the todos, the rewind, the MCP tool (the sub-agent is native on pi); unsupported adds what was never used (fork, shell, attach, config)", async () => {
-        await setFeatureAsOperator(ctx, project.id, "llm_gateway", true);
+      await ctx.step("restore on: preflight to pi → 200 available; losses: the PDF, the todos, the rewind, the MCP tool (the sub-agent is native on pi); unsupported adds what was never used (fork, shell, attach, config)", async () => {
         await setFeatureAsOperator(ctx, project.id, "session_log_restore", true);
         (await preflight("pi")).status(200).body().schema(SessionLogSwitchPreflightSchema).has("$", {
           session_id: sessionId, from: "opencode", to: "pi", available: true, reason: null, restores: true, losses, unsupported,
@@ -531,7 +526,6 @@ flow(
       });
     } finally {
       await setFeatureAsOperator(ctx, project.id, "session_log_restore", null).catch(() => {});
-      await setFeatureAsOperator(ctx, project.id, "llm_gateway", null).catch(() => {});
       await close();
     }
   },

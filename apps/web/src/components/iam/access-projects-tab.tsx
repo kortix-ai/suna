@@ -21,7 +21,7 @@ import { useTranslations } from '@/i18n/use-translations';
  *                                         `approveProjectAccessRequest` / `rejectProjectAccessRequest`
  *
  * **Everything visual comes from the shared access primitives**
- * (`features/workspace/shared/access`): `AccessRow` for every list row (flattened
+ * (`packages/ui/src/access/access`): `AccessRow` for every list row (flattened
  * to a Linear list row by `FLAT_ROW_CLASS`), and `AccessDialog` for
  * every "give / edit access" interaction. This file owns NO picker, role
  * select, list row, modal, or destructive-confirm copy of its own — the
@@ -72,27 +72,29 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { isInheritedFromGroupOnly } from '@/components/iam/iam-display-helpers';
-import { useAccountHubSheet } from '@/features/accounts/hub/hub-sheet';
+import { useAccountHubSheet } from '@kortix/ui/internal/account-hub/hub-sheet';
 import { ProjectAgentAccessList } from '@/components/iam/project-agent-access-list';
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import Hint from '@/components/ui/hint';
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import Hint from '@kortix/ui/hint';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@kortix/ui/hover-card';
 import {
   InputGroupSearch,
   InputGroupSearchClear,
   InputGroupSearchIcon,
   InputGroupSearchInput,
-} from '@/components/ui/input-group';
-import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast, successToast, warningToast } from '@/components/ui/toast';
-import { UserAvatar } from '@/components/ui/user-avatar';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
+} from '@kortix/ui/input-group';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { errorToast, successToast, warningToast } from '@kortix/ui/toast';
+import { UserAvatar } from '@kortix/ui/user-avatar';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { ErrorState } from '@kortix/ui/error-state';
 import {
   AccessDialog,
   AccessRow,
+} from '@kortix/ui/access';
+import {
   ROLE_NONE,
   builtinRole,
   customRole,
@@ -106,17 +108,16 @@ import {
   type AccessDialogPrincipal,
   type KebabItem,
   type RoleValue,
-} from '@/features/workspace/shared/access';
-import { useCopy } from '@/hooks/use-copy';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
-import { cn } from '@/lib/utils';
+} from '@kortix/ui/access/access/index';
+import { useCopy } from '@kortix/ui/internal/hooks/use-copy';
+import { PROJECT_ACTIONS, useProjectCan } from '@kortix/ui/workspace';
+import { cn } from '@kortix/ui';
 import {
   agentIdentitiesQueryKey,
   agentRolesQueryKey,
   fetchProjectAgentAssignments,
   projectAgentAssignmentsQueryKey,
-} from '@/features/workspace/shared/access/agent-principals';
+} from '@kortix/ui/access/access/agent-principals';
 import {
   approveProjectAccessRequest,
   detachGroupFromProject,
@@ -136,7 +137,6 @@ import {
   type PendingProjectInvite,
   type ProjectAccessMember,
   type ProjectAccessResponse,
-  type ProjectRole,
 } from '@kortix/sdk';
 import { contract, invalidatePermissionProbes, qk } from '@kortix/sdk/react';
 import {
@@ -160,6 +160,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
  *  this bound directly, or inherited via a group?) and absent on a GROUP's
  *  own entries in `group_access` — a group's policies have no further
  *  attribution chain. */
+/** The shared reader shape for a custom-role policy row. The SDK models
+ *  member rows (which carry a `source` attribution) and group rows (whose
+ *  policies are the group's own binding, no `source`) separately; these
+ *  derivations read both through one relaxed shape. */
 interface CustomRolePolicyEntry {
   policy_id: string;
   role_id: string;
@@ -185,26 +189,10 @@ interface ResourceGrantEntry {
   group_name?: string | null;
 }
 
-interface ExtendedProjectAccessMember extends ProjectAccessMember {
-  custom_role_policies?: CustomRolePolicyEntry[];
-  resource_grants?: ResourceGrantEntry[];
-}
-
-/** A group's access to this project — the group counterpart of
- *  `ExtendedProjectAccessMember`. No `expires_at` here — see this file's
- *  header comment, "One gap in the live contract". */
-interface GroupAccessRow {
-  group_id: string;
-  group_name: string | null;
-  built_in_role: ProjectRole | null;
-  custom_role_policies?: CustomRolePolicyEntry[];
-  resource_grants?: ResourceGrantEntry[];
-}
-
-interface ExtendedProjectAccessResponse extends ProjectAccessResponse {
-  members: ExtendedProjectAccessMember[];
-  group_access?: GroupAccessRow[];
-}
+/** A group's access row, as `@kortix/sdk` models it in
+ *  `ProjectAccessResponse.group_access`. No `expires_at` here — see this
+ *  file's header comment, "One gap in the live contract". */
+type GroupAccessRow = NonNullable<ProjectAccessResponse['group_access']>[number];
 
 /** Bounded page for the project picker — see header comment. */
 const PROJECT_LIST_PAGE_SIZE = 20;
@@ -264,7 +252,7 @@ type RoleSection = 'admins' | 'members' | 'custom' | 'none';
 
 /** Display grouping only: which heading a row reads under. No control gates
  *  on it; every write gates on `PROJECT_MEMBERS_MANAGE`. */
-function memberSection(member: ExtendedProjectAccessMember): RoleSection {
+function memberSection(member: ProjectAccessMember): RoleSection {
   if (directProjectPolicy(member.custom_role_policies)) return 'custom';
   return sectionOfRole(member.effective_project_role);
 }
@@ -274,9 +262,18 @@ function groupSection(group: GroupAccessRow): RoleSection {
   return sectionOfRole(group.built_in_role);
 }
 
-function sectionOfRole(role: ProjectRole | null | undefined): RoleSection {
+function sectionOfRole(role: string | null | undefined): RoleSection {
   if (!role) return 'none';
   return role === 'manager' ? 'admins' : 'members';
+}
+
+/** The server's `buildGroupAccess` writes the raw role key, not the SDK's
+ *  narrower `ProjectRole` union. Narrow honestly: a key this surface does not
+ *  know is no role value — it renders as none rather than being coerced. */
+function groupBuiltInRole(role: string | null | undefined): RoleValue {
+  return role === 'owner' || role === 'admin' || role === 'member' || role === 'manager'
+    ? builtinRole(role)
+    : ROLE_NONE;
 }
 
 // ─── Row derivations (one shape for members and groups) ────────────────────
@@ -324,7 +321,7 @@ export function isDirectGrant(grant: Pick<ResourceGrantEntry, 'source'>): boolea
  *  a plain direct grant, which needs no attribution line. */
 export function accessVia(
   member: Pick<
-    ExtendedProjectAccessMember,
+    ProjectAccessMember,
     'effective_project_role' | 'effective_source' | 'group_sources'
   >,
 ): string | null {
@@ -459,7 +456,9 @@ function ProjectPicker({
   return (
     <div className="space-y-4">
       <div className="space-y-0.5">
-        <p className="text-foreground text-sm font-medium">{tI18nComplete.raw('text04e2a9728af7')}</p>
+        <h1 className="text-foreground text-2xl font-medium tracking-tight text-balance">
+          {tI18nComplete.raw('text04e2a9728af7')}
+        </h1>
         <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text9949095feb15')}</p>
       </div>
 
@@ -646,7 +645,7 @@ function ProjectAccessPanel({
 
   const accessQuery = useQuery({
     queryKey: qk.project.access(projectId),
-    queryFn: () => listProjectAccess(projectId) as Promise<ExtendedProjectAccessResponse>,
+    queryFn: () => listProjectAccess(projectId),
     ...contract('inventory'),
   });
 
@@ -724,7 +723,7 @@ function ProjectAccessPanel({
   }
 
   // ── Remove access / detach group ──────────────────────────────────────
-  const [removeMemberTarget, setRemoveMemberTarget] = useState<ExtendedProjectAccessMember | null>(
+  const [removeMemberTarget, setRemoveMemberTarget] = useState<ProjectAccessMember | null>(
     null,
   );
   const [pendingUserIds, setPendingUserIds] = useState<Set<string>>(() => new Set());
@@ -862,7 +861,6 @@ function ProjectAccessPanel({
       description: projectName,
       body: (
         <AccessDialog
-          presentation="split-sheet"
           open
           onOpenChange={(next) => {
             if (!next) sheet.close();
@@ -887,7 +885,6 @@ function ProjectAccessPanel({
       body: (
         <AccessDialog
           key={`${target.principal.type}:${target.principal.id}`}
-          presentation="split-sheet"
           open
           onOpenChange={(next) => {
             if (!next) sheet.close();
@@ -1273,7 +1270,7 @@ function MemberAccessRow({
   onEdit,
   onRequestRemove,
 }: {
-  member: ExtendedProjectAccessMember;
+  member: ProjectAccessMember;
   canManageMembers: boolean;
   busy: boolean;
   projectAgentCount: number | undefined;
@@ -1415,7 +1412,7 @@ function GroupAccessRowView({
   const role: RoleValue = policy
     ? customRole(policy.role_id)
     : group.built_in_role
-      ? builtinRole(group.built_in_role)
+      ? groupBuiltInRole(group.built_in_role)
       : ROLE_NONE;
   const roleLabel = policy
     ? policy.role_name

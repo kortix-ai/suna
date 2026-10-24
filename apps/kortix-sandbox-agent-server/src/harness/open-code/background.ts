@@ -24,7 +24,10 @@ import {
   projectOpenCodeResourceSnapshot,
 } from './resource-diagnostics'
 
-/** Quick Queue interrupt over the pinned OpenCode root; created once per service. */
+/**
+ * Quick Queue interrupt over the pinned OpenCode root; created once per service.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function createOpenCodeQuickQueueInterrupt(
   opencode: Pick<Opencode, 'getInternalUrl'>,
   cfg: Pick<Config, 'workspace'>,
@@ -68,7 +71,10 @@ export function createOpenCodeQuickQueueInterrupt(
   })
 }
 
-/** Native attachment upkeep and abort policy over host resource measurements. */
+/**
+ * Native attachment upkeep and abort policy over host resource measurements.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function startOpenCodeBackground(
   opencode: Opencode,
   cfg: Config,
@@ -123,6 +129,7 @@ export function startOpenCodeBackground(
     formatStateTransition: formatOpenCodeResourceTransition,
     runtimeState: () => opencode.getState(),
     diskPaths: [cfg.workspace, '/opt/kortix', '/tmp'],
+    diskCleanup: { workspaceRoot: cfg.workspace },
     guard: {
       guardPct: Number(process.env.KORTIX_MEMORY_GUARD_PCT) || undefined,
       formatReason: formatOpenCodeMemoryGuardReason,

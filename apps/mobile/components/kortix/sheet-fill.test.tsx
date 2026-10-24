@@ -63,6 +63,7 @@ const sheet = {
 
 mock.module('react-native', () => ({
   Keyboard: { dismiss: () => {} },
+  Platform: { OS: 'ios' },
   StyleSheet: { absoluteFill: { position: 'absolute' } },
   View: host('view'),
   useWindowDimensions: () => ({ width: 400, height: 800 }),
@@ -136,6 +137,8 @@ const registry = (() => {
 type AnimatedStyle = { __animated: true; current: Record<string, unknown> };
 mock.module('react-native-reanimated', () => ({
   default: { View: host('animated-view') },
+  // `SHEET_MOTION.close` builds its curve at module load.
+  Easing: { bezier: () => (t: number) => t },
   useSharedValue: <T,>(value: T) => React.useRef(shared(value)).current,
   // Registers with its output: sorted before every mapper that reads it.
   useDerivedValue: <T,>(updater: () => T, deps: unknown[] = []) => {
@@ -178,6 +181,7 @@ mock.module('@/components/ui/text', () => ({ Text: host('text') }));
 mock.module('expo-clipboard', () => ({ setStringAsync: async () => {} }));
 mock.module('@/lib/haptics', () => ({ haptics: { success: () => {} } }));
 mock.module('@/lib/icons', () => ({ CheckIcon: 'check', CopyIcon: 'copy', XIcon: 'x' }));
+mock.module('@/components/kortix/liquid-glass-capsule', () => ({ LIQUID_GLASS_AVAILABLE: false, LiquidGlassCapsule: () => null }));
 
 let mod: typeof import('./sheet');
 let bar: typeof import('./pinned-bar');

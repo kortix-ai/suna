@@ -1,5 +1,6 @@
 import { and, eq, or, sql } from 'drizzle-orm';
 
+import { platformDefaultModelId } from '../llm-gateway/models/served-managed-models';
 import { projectSessions } from '@kortix/db';
 import { splitPastedContent } from '@kortix/shared';
 import { config } from '../config';
@@ -10,7 +11,6 @@ import {
   deleteGatewayKey,
 } from '../llm-gateway/gateway-keys';
 import { toWireModel } from '../llm-gateway/resolution/effective';
-import { projectLlmGatewayEnabledById } from '../llm-gateway/enablement';
 import { db } from '../shared/db';
 import { PLACEHOLDER_TITLE_SQL_PATTERN, isPlaceholderOpencodeTitle } from './lib/opencode-title';
 import type { ProjectSessionRow } from './lib/serializers';
@@ -89,6 +89,18 @@ export function sanitizeGeneratedTitle(raw: string | null | undefined): string |
   if (title.length > MAX_TITLE_LENGTH) title = title.slice(0, MAX_TITLE_LENGTH).trim();
   if (!title || isPlaceholderOpencodeTitle(title)) return null;
   return title;
+}
+
+/** A prompt this short is already its own best title. Given so little topic,
+ * a model titles the message instead: "Say a" became "Incomplete Request To
+ * Say A" (KRTX-2651). The character bound keeps a long prompt in a script
+ * without spaces (Chinese, Japanese) on the model path. */
+const SHORT_PROMPT_MAX_WORDS = 3;
+const SHORT_PROMPT_MAX_CHARS = 20;
+
+function isShortPrompt(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed.length <= SHORT_PROMPT_MAX_CHARS && trimmed.split(/\s+/).length <= SHORT_PROMPT_MAX_WORDS;
 }
 
 /** Last-resort title when every configured model fails. Keep the first prompt
@@ -299,10 +311,7 @@ function storedTitleSource(row: ProjectSessionRow): string | null {
 
 /** The platform default, in gateway wire form. */
 function platformDefaultModel(): string | null {
-  const ref =
-    typeof config.LLM_GATEWAY_DEFAULT_MODEL === 'string'
-      ? config.LLM_GATEWAY_DEFAULT_MODEL.trim()
-      : '';
+  const ref = platformDefaultModelId();
   return ref ? toWireModel(ref) : null;
 }
 
@@ -419,10 +428,6 @@ export interface GenerateSessionTitleOptions {
     excludedModel?: string,
   ) => Promise<string | null>;
   generationTimeoutMs?: number;
-  /** The project's `llm_gateway` mode (defaults to the DB read). Off ⇒ no
-   *  gateway pipeline runs and the deterministic prompt excerpt titles the
-   *  session. */
-  resolveLlmGatewayEnabled?: (projectId: string) => Promise<boolean>;
 }
 
 async function generateWithDeadline(
@@ -507,27 +512,18 @@ export async function generateSessionTitleFromFirstPrompt(
     // create sees the user's actual message.
     const promptText = titlePromptText(storedTitleSource(row) ?? suppliedText);
 
-    // Two paths on the project's `llm_gateway` flag. Gateway OFF ⇒ this hook
-    // runs NO gateway pipeline at all — no key mint, no resolution, no usage
-    // event; the deterministic prompt-excerpt below is the title. (In native
-    // mode the session's model ref is a native `provider/model` id the
-    // in-process gateway cannot serve, and titling through the gateway would
-    // be exactly the traffic the flag turns off.)
-    const llmGatewayEnabled = await (options.resolveLlmGatewayEnabled ?? projectLlmGatewayEnabledById)(
-      input.projectId,
-    );
-
     // Prefer the model the user actually picked for this turn (from the prompt
     // body); the session's stored `opencode_model` is only the boot default and
     // goes stale the moment the model is switched. Both are known-servable —
     // one is being served right now, the other was validated at create — so
     // only the last resort has to prove itself.
-    const model = llmGatewayEnabled
-      ? input.modelHint?.trim() || sessionModel(row) || (await fallbackModel(input)) || null
-      : null;
+    const shortPrompt = isShortPrompt(promptText);
+    const model = shortPrompt
+      ? null
+      : input.modelHint?.trim() || sessionModel(row) || (await fallbackModel(input)) || null;
     let title: string | null = null;
     if (!model) {
-      if (llmGatewayEnabled) {
+      if (!shortPrompt) {
         appLogger.warn('[title-generate] no servable model to title with', {
           sessionId: input.sessionId,
         });
@@ -573,7 +569,7 @@ export async function generateSessionTitleFromFirstPrompt(
     }
     if (!title) {
       title = deterministicTitleFromPrompt(promptText);
-      if (title) {
+      if (title && !shortPrompt) {
         appLogger.warn('[title-generate] using deterministic prompt fallback', {
           sessionId: input.sessionId,
         });

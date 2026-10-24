@@ -48,8 +48,8 @@ jobs:
       desktop: ${{ steps.filter.outputs.desktop }}
       self_host: ${{ steps.filter.outputs.self_host }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: dorny/paths-filter@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         id: filter
         with:
           filters: |
@@ -85,6 +85,7 @@ jobs:
               - '.github/workflows/ci.yml'
               - 'tsconfig.base.json'
               - 'apps/kortix-sandbox-agent-server/**'
+              - 'packages/shared/src/ssrf-guard.ts'
               # Bundled into the daemon (KORTIXD_SHARED_SOURCES).
               - 'packages/api-contract/src/**'
               - 'packages/sdk/src/core/session/wire-message-id.ts'
@@ -120,15 +121,15 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
       - name: Install Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: latest
 
@@ -146,6 +147,9 @@ jobs:
       # (apps/web `bun test`); only the lint is unique to this job.
       - name: Enforce frontend lint
         run: pnpm --dir apps/web exec eslint src --quiet
+
+      - name: Lint translations
+        run: pnpm --dir apps/web run lint:i18n
 
       # Next.js 16.3 turns on Turbopack's FileSystem cache for `next build`
       # (`experimental.turbopackFileSystemCacheForBuild`, default true) and
@@ -172,7 +176,7 @@ jobs:
       # a re-run logged "Cache restored from key" and the Turbopack compile
       # went 105s -> 1.549s.
       - name: Restore Turbopack build cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: apps/web/.next/cache
           key: nextjs-turbopack-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
@@ -197,17 +201,17 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: latest
 
       # The import-boundary lint runs under Node: ESLint's config validation
       # crashes under the Bun runtime (apps/kortix-sandbox-agent-server/ARCHITECTURE.md).
       - name: Install Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
@@ -242,7 +246,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Every apt package the sandbox image installs resolves
         run: bash scripts/check-sandbox-apt-packages.sh
@@ -255,15 +259,15 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
       - name: Install Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: latest
 
@@ -303,15 +307,15 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
       - name: Install Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: latest
 
@@ -348,10 +352,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
@@ -360,7 +364,7 @@ jobs:
 
       # The installer bundles the computer agent (packages/agent-tunnel), built
       # with bun by scripts/ensure-runtime.js before electron-builder runs.
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: latest
 

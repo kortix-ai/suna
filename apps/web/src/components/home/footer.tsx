@@ -2,8 +2,8 @@
 
 import { CtaSection } from '@/features/marketing/landing/cta-section';
 import { FOOTER_TRANSLATION_KEYS } from '@/i18n/footer-translation-keys.generated';
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
-import { cn } from '@/lib/utils';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
+import { cn } from '@kortix/ui';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';
 import { ThemeToggle } from './theme-toggle';
@@ -73,6 +73,7 @@ const FOOTER_SECTIONS: FooterSection[] = [
       { label: 'Careers', href: '/careers' },
       { label: 'Blog', href: '/blog' },
       { label: 'Changelog', href: '/changelog' },
+      { label: 'Release history', href: '/changelog/releases' },
       { label: 'Use Cases', href: '/use-cases' },
       { label: 'Brand', href: '/design-system' },
     ],

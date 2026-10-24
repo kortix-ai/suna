@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kortix merch</title>
+<style>
+  body { margin: 0; background: #ededed; font-family: Roobert, sans-serif; }
+  #grid { display: flex; flex-wrap: wrap; gap: 24px; padding: 24px; }
+  #grid svg { width: 220px; height: auto; }
+  #stage { position: absolute; left: 0; top: 0; width: 825px; height: 1125px; }
+  #stage svg { display: block; width: 825px; height: 1125px; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="grid"></div>
+<script>
+// Print geometry at 300 dpi: 2.5 x 3.5 in trim + 0.125 in bleed per side.
+const W = 825, H = 1125, BLEED = 37.5, CX = W / 2, CY = H / 2;
+const TRIM_R = 37.5; // 1/8 in corner radius, preview only
+
+// Colors from .agents/skills/kortix-brand/references/visual/tokens.css
+const C = {
+  paper: '#ffffff',        // --background (light)
+  ink: '#1f1f1f',          // --foreground (light)
+  red: '#f14b4c',          // --kortix-red
+  muted: '#666666',        // --muted-foreground (light)
+  nightMuted: '#999999',   // --muted-foreground (dark)
+  green: '#199338',        // --kortix-green
+  blue: '#2b91f7',         // --kortix-blue
+  hair: '#e2e2e2',         // --border (light)
+  night: '#0b0b0b',        // --background (dark)
+  nightDot: '#262626',     // --border (dark)
+  nightInk: '#ffffff',     // --foreground (dark)
+};
+
+// Master symbol: apps/web/public/brandkit/Logo/Brandmark/SVG/Brandmark Black.svg (164 x 140)
+const SYMBOL_D = 'M139.737 139.53H163.055C163.055 109.932 147.261 84.0225 123.642 69.7694C147.261 55.5163 163.054 29.6068 163.054 0.0085907H139.736C139.736 28.0165 119.67 51.4471 93.2922 56.9406V0.0085907H69.9773V56.9406C43.4754 51.5428 23.5331 28.1045 23.5331 0.0085907H0.21529C0.21529 29.6068 16.0088 55.5163 39.6282 69.7694C16.0086 84.0225 0.214773 109.932 0.214773 139.53H23.5325C23.5325 111.434 43.4754 87.996 69.9773 82.5981V139.556H93.2922V82.598C119.794 87.9957 139.737 111.434 139.737 139.53Z';
+const SYMBOL_W = 163.27, SYMBOL_H = 139.56, SYMBOL_X0 = 0.2;
+
+// Phosphor fill-weight suits (@phosphor-icons/react 2.1.10), viewBox 256.
+const SUITS = {
+  S: { d: 'M232,136a56,56,0,0,1-83.4,48.82l11.06,36.88A8,8,0,0,1,152,232H104a8,8,0,0,1-7.66-10.3l11.06-36.88A56,56,0,0,1,24,136c0-32,17.65-62.84,51-89.27a234.14,234.14,0,0,1,49.89-30.11,7.930,7.930,0,0,1,6.160,0A234.14,234.14,0,0,1,181,46.73C214.35,73.16,232,104,232,136Z', box: [24, 16, 208, 216], color: C.ink, name: 'spades' },
+  H: { d: 'M240,102c0,70-103.79,126.66-108.21,129a8,8,0,0,1-7.58,0C119.79,228.66,16,172,16,102A62.07,62.07,0,0,1,78,40c20.65,0,38.73,8.88,50,23.89C139.27,48.88,157.35,40,178,40A62.07,62.07,0,0,1,240,102Z', box: [16, 40, 224, 192], color: C.red, name: 'hearts' },
+  D: { d: 'M240,128a15.85,15.85,0,0,1-4.67,11.28l-96.05,96.06a16,16,0,0,1-22.56,0h0l-96-96.06a16,16,0,0,1,0-22.56l96.05-96.06a16,16,0,0,1,22.56,0l96.05,96.06A15.85,15.85,0,0,1,240,128Z', box: [16, 16, 224, 224], color: C.red, name: 'diamonds' },
+  C: { d: 'M240,144a56,56,0,0,1-84.81,48h-4.44l8.91,29.7A8,8,0,0,1,152,232H104a8,8,0,0,1-7.66-10.3l8.91-29.7h-4.44A56,56,0,1,1,72,88c.78,0,1.550,0,2.330,0a56,56,0,1,1,107.34,0c.77,0,1.550,0,2.330,0A56.060,56.060,0,0,1,240,144Z', box: [16, 32, 224, 200], color: C.ink, name: 'clubs' },
+};
+
+// Pixel Kortix mark: packages/ui/src/primitives/pixel-kortix-mark.tsx
+const PIXEL_KORTIX = [
+  '##   ##   ##',
+  '##   ##   ##',
+  '+#+  ##  +#+',
+  ' ##+ ## +## ',
+  '  ########  ',
+  '  ########  ',
+  ' ##+ ## +## ',
+  '+#+  ##  +#+',
+  '##   ##   ##',
+  '##   ##   ##',
+];
+
+// Court crowns, drawn in the same # / + cell language.
+const CROWNS = {
+  K: [
+    '+     #     +',
+    '#    ###    #',
+    '##  #####  ##',
+    '#############',
+    '#############',
+    '#+#+#+#+#+#+#',
+  ],
+  Q: [
+    '  #   #   #  ',
+    ' ### ### ### ',
+    '  #########  ',
+    '  #########  ',
+    ' ########### ',
+    ' #+#+#+#+#+# ',
+  ],
+  J: [
+    '      #      ',
+    '     ###     ',
+    '    #####    ',
+    '   #######   ',
+    '  #########  ',
+    '  #+#+#+#+#  ',
+  ],
+};
+const COURT_NAME = { J: 'JACK', Q: 'QUEEN', K: 'KING' };
+
+// Sample a suit path onto an n x n grid: '#' full, '+' partial (drawn as checker).
+function suitGrid(s, n) {
+  const ss = 12, px = n * ss;
+  const cv = document.createElement('canvas'); cv.width = cv.height = px;
+  const g = cv.getContext('2d');
+  const [bx, by, bw, bh] = s.box, side = Math.max(bw, bh);
+  const k = px / side;
+  g.setTransform(k, 0, 0, k, -bx * k + (side - bw) * k / 2, -by * k + (side - bh) * k / 2);
+  g.fill(new Path2D(s.d));
+  const a = g.getImageData(0, 0, px, px).data, rows = [];
+  for (let y = 0; y < n; y++) {
+    let row = '';
+    for (let x = 0; x < n; x++) {
+      let sum = 0;
+      for (let j = 0; j < ss; j++) for (let i = 0; i < ss; i++) sum += a[((y * ss + j) * px + x * ss + i) * 4 + 3];
+      const cov = sum / (ss * ss * 255);
+      row += cov > 0.62 ? '#' : cov > 0.22 ? '+' : ' ';
+    }
+    rows.push(row);
+  }
+  while (rows.length && !rows[0].trim()) rows.shift();
+  while (rows.length && !rows[rows.length - 1].trim()) rows.pop();
+  return rows;
+}
+
+let patId = 0;
+// Pixel art from rows. cx/cy = center. cell = filled size, pitch = cell + gap.
+function pixels(rows, cx, cy, pitch, gap, color) {
+  const id = 'chk' + (patId++), cell = pitch - gap, ck = cell / 5;
+  const w = rows[0].length * pitch - gap, h = rows.length * pitch - gap;
+  const x0 = cx - w / 2, y0 = cy - h / 2;
+  let out = `<defs><pattern id="${id}" width="${ck * 2}" height="${ck * 2}" patternUnits="userSpaceOnUse" x="${x0}" y="${y0}"><rect width="${ck}" height="${ck}" fill="${color}"/><rect x="${ck}" y="${ck}" width="${ck}" height="${ck}" fill="${color}"/></pattern></defs><g shape-rendering="crispEdges">`;
+  rows.forEach((r, y) => [...r].forEach((c, x) => {
+    if (c === ' ') return;
+    out += `<rect x="${x0 + x * pitch}" y="${y0 + y * pitch}" width="${cell}" height="${cell}" fill="${c === '+' ? `url(#${id})` : color}"/>`;
+  }));
+  return out + '</g>';
+}
+
+function suitPath(s, cx, cy, size, rot = 0) {
+  const [bx, by, bw, bh] = s.box, k = size / Math.max(bw, bh);
+  return `<path d="${s.d}" fill="${s.color}" transform="rotate(${rot} ${cx} ${cy}) translate(${cx - (bx + bw / 2) * k} ${cy - (by + bh / 2) * k}) scale(${k})"/>`;
+}
+
+function symbolPath(cx, cy, h, color) {
+  const k = h / SYMBOL_H;
+  return `<path d="${SYMBOL_D}" fill="${color}" transform="translate(${cx - (SYMBOL_X0 + SYMBOL_W / 2) * k} ${cy - SYMBOL_H / 2 * k}) scale(${k})"/>`;
+}
+
+// Corner index: rank over suit, top-left, repeated rotated 180 deg bottom-right.
+function index(rank, s, color) {
+  const x = 116;
+  const narrow = rank === '10' ? ' letter-spacing="-6"' : '';
+  const one = `<text x="${x}" y="186" text-anchor="middle" font-family="Roobert" font-weight="600" font-size="88"${narrow} fill="${color}">${rank}</text>` +
+    (s ? suitPath(s, x, 240, 58) : '');
+  return one + `<g transform="rotate(180 ${CX} ${CY})">${one}</g>`;
+}
+
+const svgWrap = (bg, body) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="${bg}"/>${body}</svg>`;
+
+// Pip layouts: [column, t] with column -1/0/1 and t from 0 (top) to 1 (bottom).
+const PIPS = {
+  2: [[0, 0], [0, 1]],
+  3: [[0, 0], [0, .5], [0, 1]],
+  4: [[-1, 0], [1, 0], [-1, 1], [1, 1]],
+  5: [[-1, 0], [1, 0], [0, .5], [-1, 1], [1, 1]],
+  6: [[-1, 0], [1, 0], [-1, .5], [1, .5], [-1, 1], [1, 1]],
+  7: [[-1, 0], [1, 0], [0, .25], [-1, .5], [1, .5], [-1, 1], [1, 1]],
+  8: [[-1, 0], [1, 0], [0, .25], [-1, .5], [1, .5], [0, .75], [-1, 1], [1, 1]],
+  9: [[-1, 0], [1, 0], [-1, 1 / 3], [1, 1 / 3], [0, .5], [-1, 2 / 3], [1, 2 / 3], [-1, 1], [1, 1]],
+  10: [[-1, 0], [1, 0], [0, 1 / 6], [-1, 1 / 3], [1, 1 / 3], [-1, 2 / 3], [1, 2 / 3], [0, 5 / 6], [-1, 1], [1, 1]],
+};
+const PIP_TOP = 262, PIP_BOT = 863, PIP_DX = 170, PIP_SIZE = 128;
+
+function numberCard(n, s) {
+  let body = index(String(n), s, s.color);
+  for (const [col, t] of PIPS[n]) {
+    const y = PIP_TOP + (PIP_BOT - PIP_TOP) * t;
+    body += suitPath(s, CX + col * PIP_DX, y, PIP_SIZE, t > .5 ? 180 : 0);
+  }
+  return svgWrap(C.paper, body);
+}
+
+function aceCard(sk) {
+  const s = SUITS[sk];
+  let body = index('A', s, s.color);
+  if (sk === 'S') {
+    body += symbolPath(CX, CY, 300, C.ink);
+  } else {
+    body += suitPath(s, CX, CY, 330);
+  }
+  return svgWrap(C.paper, body);
+}
+
+function courtCard(r, sk) {
+  const s = SUITS[sk];
+  const grid = suitGrid(s, 13);
+  // Fit crown + gap + suit into 330 px of the half panel.
+  const pitch = Math.min(19, Math.floor(330 / (CROWNS[r].length + 1 + grid.length))), gap = 3;
+  // One half, drawn upright above the center line, mirrored by a 180 deg turn.
+  const crownH = CROWNS[r].length * pitch, suitH = grid.length * pitch;
+  const total = crownH + pitch + suitH, top = CY - 60 - total;
+  const half =
+    pixels(CROWNS[r], CX, top + crownH / 2, pitch, gap, s.color) +
+    pixels(grid, CX, top + crownH + pitch + suitH / 2, pitch, gap, s.color) +
+    `<text x="${CX}" y="${CY - 18}" text-anchor="middle" font-family="Roobert Mono" font-weight="500" font-size="22" letter-spacing="7" fill="${C.muted}">${COURT_NAME[r]}</text>`;
+  const panel = `<rect x="182" y="118" width="${W - 364}" height="${H - 236}" rx="18" fill="none" stroke="${C.hair}" stroke-width="3"/>` +
+    `<line x1="206" y1="${CY}" x2="${W - 206}" y2="${CY}" stroke="${C.hair}" stroke-width="3"/>`;
+  return svgWrap(C.paper, index(r, s, s.color) + panel + half + `<g transform="rotate(180 ${CX} ${CY})">${half}</g>`);
+}
+
+function jokerCard(big) {
+  const bg = big ? C.night : C.paper, ink = big ? C.nightInk : C.ink;
+  const letters = (x, y0) => [...'JOKER'].map((ch, i) =>
+    `<text x="${x}" y="${y0 + i * 62}" text-anchor="middle" font-family="Roobert Mono" font-weight="600" font-size="54" fill="${ink}">${ch}</text>`).join('');
+  const corner = letters(112, 168);
+  const body = corner + `<g transform="rotate(180 ${CX} ${CY})">${corner}</g>` +
+    pixels(PIXEL_KORTIX, CX, CY, 36, 6, ink);
+  return svgWrap(bg, body);
+}
+
+// 4 x 4 Bayer matrix for the ordered dither fade on the back.
+const BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]].map(r => r.map(v => (v + .5) / 16));
+const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+function backCard(light = false) {
+  const bg = light ? C.paper : C.night, dotC = light ? C.hair : C.nightDot, ink = light ? C.ink : C.nightInk;
+  const pitch = 15, dot = 6;
+  const nx = Math.ceil(W / pitch / 2), ny = Math.ceil(H / pitch / 2);
+  let dots = '<g shape-rendering="crispEdges" fill="' + dotC + '">';
+  for (let j = -ny; j <= ny; j++) for (let i = -nx; i <= nx; i++) {
+    const x = CX + i * pitch, y = CY + j * pitch;
+    // Elliptical distance from center; field clears around the symbol.
+    const d = Math.hypot((x - CX) / 1.0, (y - CY) / 1.18);
+    const v = smooth(185, 380, d);
+    if (v > BAYER[(j + 400) % 4][(i + 400) % 4]) dots += `<rect x="${x - dot / 2}" y="${y - dot / 2}" width="${dot}" height="${dot}"/>`;
+  }
+  dots += '</g>';
+  return svgWrap(bg, dots + symbolPath(CX, CY, 196, ink));
+}
+
+const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+const CARDS = [{ id: '00-back', svg: backCard() }, { id: '00-back-white', svg: backCard(true) }];
+for (const sk of ['S', 'H', 'D', 'C']) RANKS.forEach((r, i) => {
+  const id = `${String(i + 1).padStart(2, '0')}-${SUITS[sk].name}-${r}`;
+  const svg = r === 'A' ? aceCard(sk) : 'JQK'.includes(r) ? courtCard(r, sk) : numberCard(+r, SUITS[sk]);
+  CARDS.push({ id: `${'SHDC'.indexOf(sk) + 1}${id}`, svg });
+});
+CARDS.push({ id: '5-joker-big', svg: jokerCard(true) }, { id: '5-joker-little', svg: jokerCard(false) });
+window.CARDS = CARDS;
+
+// Poker chip inlays: square 1200 px upload, round print area. Art stays inside r = 480.
+const CS = 1200, CC = 600;
+function chipRing(r, n, size, color) {
+  let out = '<g shape-rendering="crispEdges">';
+  for (let i = 0; i < n; i++) {
+    const a = i / n * Math.PI * 2, x = CC + r * Math.cos(a), y = CC + r * Math.sin(a);
+    out += `<rect x="${x - size / 2}" y="${y - size / 2}" width="${size}" height="${size}" fill="${color}" transform="rotate(${a * 180 / Math.PI} ${x} ${y})"/>`;
+  }
+  return out + '</g>';
+}
+function chipFront() {
+  // White inlay: black dither ring that fades in toward the edge, black symbol.
+  let dots = `<g shape-rendering="crispEdges" fill="${C.ink}">`;
+  const pitch = 40, dot = 20, n = Math.ceil(CS / pitch / 2);
+  for (let j = -n; j <= n; j++) for (let i = -n; i <= n; i++) {
+    const x = CC + i * pitch, y = CC + j * pitch, d = Math.hypot(x - CC, y - CC);
+    const v = smooth(250, 430, d) * (1 - smooth(440, 452, d));
+    if (v > BAYER[(j + 400) % 4][(i + 400) % 4]) dots += `<rect x="${x - dot / 2}" y="${y - dot / 2}" width="${dot}" height="${dot}"/>`;
+  }
+  dots += '</g>';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${CS} ${CS}" width="${CS}" height="${CS}"><rect width="${CS}" height="${CS}" fill="${C.paper}"/>${dots}${symbolPath(CC, CC, 250, C.ink)}</svg>`;
+}
+function chipBack() {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${CS} ${CS}" width="${CS}" height="${CS}"><rect width="${CS}" height="${CS}" fill="${C.paper}"/>${chipRing(445, 36, 24, C.ink)}${pixels(PIXEL_KORTIX, CC, CC, 40, 7, C.ink)}</svg>`;
+}
+window.CHIPS = [{ id: 'chip-front', svg: chipFront() }, { id: 'chip-back', svg: chipBack() }];
+
+// Logo lockup, used by flags, mug, desk mat, tote and the logo sticker.
+// Logo: apps/web/public/brandkit/Logo/Logomark/SVG/Logomark Black.svg (708 x 142), path data inlined.
+const LOGO_DS = [
+  'M139.522 139.53H162.84C162.84 109.932 147.046 84.0225 123.427 69.7694C147.046 55.5163 162.839 29.6068 162.839 0.00859395H139.522C139.522 28.0165 119.455 51.4472 93.0774 56.9407V0.00859395H69.7625V56.9407C43.2607 51.5428 23.3183 28.1045 23.3183 0.00859395H0.000517529C0.000517529 29.6068 15.7941 55.5163 39.4134 69.7694C15.7938 84.0225 0 109.932 0 139.53H23.3178C23.3178 111.434 43.2606 87.996 69.7625 82.5981V139.556H93.0774V82.598C119.579 87.9957 139.522 111.434 139.522 139.53Z',
+  'M379.024 141.074C348.339 141.074 326.422 119.156 326.422 89.2687C326.422 59.3811 348.339 37.4636 379.024 37.4636C409.509 37.4636 431.426 59.3811 431.426 89.2687C431.426 119.156 409.509 141.074 379.024 141.074ZM379.024 119.953C395.561 119.953 406.719 107.4 406.719 89.2687C406.719 71.1369 395.561 58.5842 379.024 58.5842C362.287 58.5842 351.129 71.1369 351.129 89.2687C351.129 107.4 362.287 119.953 379.024 119.953Z',
+  'M500.433 59.5804V39.0577H492.199C475.462 39.0577 441.988 49.0999 441.988 89.2687V139.48H466.496L467.243 89.2687C467.243 70.1407 472.673 59.5804 488.214 59.5804H500.433Z',
+  'M255.933 0.000104096H231.24V139.452H255.933V82.5926C282.273 88.0977 302.057 111.452 302.057 139.426H325.359C325.359 109.848 309.576 83.9564 285.972 69.713C309.575 55.4697 325.358 29.5779 325.358 0H302.056C302.056 27.8862 282.15 51.2318 255.933 56.832V0.000104096Z',
+  'M509.742 8.77166H534.25V39.0577H568.298V59.5804H534.25V103.415C534.25 113.577 539.63 118.758 548.795 118.758H568.298V139.48H546.006C524.088 139.48 509.742 126.728 509.742 104.412V8.77166Z',
+  'M578.743 13.1152C578.762 5.86622 584.644 0 591.893 0C599.17 0 605.063 5.90915 605.044 13.1857L605.042 13.7245C605.023 20.9735 599.141 26.8397 591.892 26.8397C584.615 26.8397 578.722 20.9306 578.742 13.654L578.743 13.1152ZM579.774 139.48V39.0577H604.282V139.48H579.774Z',
+  'M638.582 139.42H616.248C616.248 118.788 626.473 100.544 642.133 89.479C626.474 78.4143 616.249 60.1716 616.249 39.5397H638.583C638.583 55.3892 648.093 69.0176 661.718 75.0301C675.342 69.0176 684.852 55.3892 684.852 39.5397H707.187C707.187 60.1716 696.961 78.4143 681.302 89.479C696.962 100.544 707.188 118.788 707.188 139.42H684.853C684.853 123.571 675.343 109.943 661.718 103.93C648.092 109.943 638.582 123.571 638.582 139.42Z',
+];
+const LOGO_W = 708, LOGO_H = 142;
+function logoPaths(cx, cy, w, color) {
+  const k = w / LOGO_W;
+  return `<g fill="${color}" transform="translate(${cx - w / 2} ${cy - LOGO_H * k / 2}) scale(${k})">` +
+    LOGO_DS.map(d => `<path d="${d}"/>`).join('') + '</g>';
+}
+// Every other item is one function: a mark on the dot field. Units are mm.
+// theme: 'black' | 'white' (filled ground) or 'ink-white' | 'ink-black' (transparent, for garments and totes).
+const THEMES = {
+  black: { bg: C.night, dot: C.nightDot, ink: C.nightInk },
+  white: { bg: C.paper, dot: C.hair, ink: C.ink },
+  'ink-white': { bg: null, dot: C.nightInk, ink: C.nightInk },
+  'ink-black': { bg: null, dot: C.ink, ink: C.ink },
+};
+// App icon tile: apps/web/public/favicon.svg (270 x 270), path data and its two fills inlined.
+const ICON_D = 'M201.936 214.971H229C229 181.034 210.669 151.327 183.255 134.985C210.669 118.643 228.999 88.9363 228.999 55H201.936C201.936 87.1129 178.645 113.978 148.03 120.276V55H120.97V120.276C90.2104 114.087 67.0643 87.2139 67.0643 55H40.0007C40.0007 88.9363 58.3314 118.643 85.7451 134.985C58.331 151.327 40 181.034 40 214.971H67.0636C67.0636 182.757 90.2104 155.883 120.97 149.694V215H148.03V149.694C178.79 155.883 201.936 182.757 201.936 214.971Z';
+const ICON_TILE = '#F8F8F8', ICON_INK = '#121215';
+
+function mark(kind, cx, cy, size, color) {
+  if (kind === 'logo') return logoPaths(cx, cy, size, color);
+  if (kind === 'symbol') return symbolPath(cx, cy, size, color);
+  const pitch = size / 12; // pixel mark: 12 cells wide
+  return pixels(PIXEL_KORTIX, cx, cy, pitch, pitch / 6, color);
+}
+
+// dots: { pitch, size, clear: [r0, r1], sx, sy, halo } — halo puts the dots near the mark and fades them out.
+function field(w, h, dots) {
+  const t = THEMES[dots.theme], fx = w / 2, fy = h / 2, { pitch, size } = dots;
+  const nx = Math.ceil(w / pitch / 2), ny = Math.ceil(h / pitch / 2);
+  let out = `<g shape-rendering="crispEdges" fill="${t.dot}">`;
+  for (let j = -ny; j <= ny; j++) for (let i = -nx; i <= nx; i++) {
+    const x = fx + i * pitch, y = fy + j * pitch;
+    const d = Math.hypot((x - fx) / (dots.sx || 1), (y - fy) / (dots.sy || 1));
+    const v = dots.halo ? (d < dots.clear[0] ? 0 : 1 - smooth(dots.clear[0], dots.clear[1], d)) : smooth(dots.clear[0], dots.clear[1], d);
+    if (v > BAYER[(j + 400) % 4][(i + 400) % 4]) out += `<rect x="${x - size / 2}" y="${y - size / 2}" width="${size}" height="${size}"/>`;
+  }
+  return out + '</g>';
+}
+
+function item({ w, h, theme, kind, markSize, dots, shape }) {
+  const t = THEMES[theme];
+  let body = t.bg ? `<rect width="${w}" height="${h}" fill="${t.bg}"/>` : '';
+  if (shape) body = `<rect width="${w}" height="${h}" rx="${shape.r}" fill="${shape.fill}"/>`;
+  if (dots) body += field(w, h, { ...dots, theme });
+  body += mark(kind, w / 2, h / 2, markSize, shape ? shape.ink : t.ink);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">${body}</svg>`;
+}
+
+function appIconSticker(w) {
+  const k = w / 270;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${w}" width="${w}" height="${w}"><rect width="${w}" height="${w}" rx="${20 * k}" fill="${ICON_TILE}"/><path d="${ICON_D}" fill="${ICON_INK}" transform="scale(${k})"/></svg>`;
+}
+
+const DPI300 = 300 / 25.4;
+// [id, w mm, h mm, px per mm, transparent, spec]
+const SPECS = [];
+const both = (base, spec, light = 'white', dark = 'black') => [dark, light].forEach(theme => SPECS.push([`${base}-${theme}`, spec.w, spec.h, spec.ppm, !!spec.transparent, { ...spec, theme }]));
+
+// Flags: 70x100 and 105x150 cm share 10:7; 130x150 cm is its own shape. 4 px/mm, about 100 dpi.
+const FLAG_DOTS = { pitch: 30, size: 12, clear: [250, 500], sx: 2.2 };
+for (const [name, h] of [['150x105', 1050], ['150x130', 1300]])
+  for (const theme of ['black', 'white'])
+    SPECS.push([`flag-${theme}-${name}`, 1500, h, 4, false, { w: 1500, h, theme, kind: 'logo', markSize: 930, dots: FLAG_DOTS }]);
+
+// Poster 18 x 24 in.
+both('poster-18x24in', { w: 457.2, h: 609.6, ppm: DPI300, kind: 'symbol', markSize: 105, dots: { pitch: 9, size: 3.6, clear: [100, 210], sy: 1.18 } });
+// Mug wrap, 11 oz (8.5 x 3.5 in). The logo sits at the center, opposite the handle.
+both('mug-wrap-11oz', { w: 215.9, h: 88.9, ppm: DPI300, kind: 'logo', markSize: 80, dots: { pitch: 4, size: 1.6, clear: [22, 44], sx: 2.4 } });
+// Mousepad 9.25 x 7.75 in.
+both('mousepad', { w: 234.95, h: 196.85, ppm: DPI300, kind: 'symbol', markSize: 40, dots: { pitch: 6, size: 2.4, clear: [45, 95], sy: 1.1 } });
+// Desk mat 80 x 40 cm, 200 dpi.
+both('deskmat-80x40cm', { w: 800, h: 400, ppm: 200 / 25.4, kind: 'logo', markSize: 260, dots: { pitch: 12, size: 4.8, clear: [110, 220], sx: 2.2 } });
+// Tote bag print area 12 x 12 in, transparent. ink-black for a natural or white tote, ink-white for a black one.
+both('tote-12x12in', { w: 304.8, h: 304.8, ppm: DPI300, transparent: true, kind: 'logo', markSize: 240 }, 'ink-black', 'ink-white');
+// T-shirt / hoodie: left-chest symbol (4 x 4 in, also fits cap embroidery) and a 12 x 16 in back print.
+both('tee-chest-4x4in', { w: 101.6, h: 101.6, ppm: DPI300, transparent: true, kind: 'symbol', markSize: 70 }, 'ink-black', 'ink-white');
+both('tee-back-12x16in', { w: 304.8, h: 406.4, ppm: DPI300, transparent: true, kind: 'pixel', markSize: 150, dots: { pitch: 7, size: 2.8, clear: [100, 150], halo: true } }, 'ink-black', 'ink-white');
+// Stickers, transparent outside the shape: the shop cuts along the shape.
+SPECS.push(['sticker-pixel-3in', 76.2, 76.2, DPI300, true, { w: 76.2, h: 76.2, theme: 'ink-black', kind: 'pixel', markSize: 52, shape: { r: 8, fill: C.paper, ink: C.ink } }]);
+SPECS.push(['sticker-logo-4x1.5in', 101.6, 38.1, DPI300, true, { w: 101.6, h: 38.1, theme: 'ink-white', kind: 'logo', markSize: 76, shape: { r: 8, fill: C.night, ink: C.nightInk } }]);
+
+window.ITEMS = SPECS.map(([id, w, h, ppm, transparent, spec]) => ({ id, w, h, ppm, transparent, svg: item(spec) }));
+window.ITEMS.push({ id: 'sticker-app-icon-3in', w: 76.2, h: 76.2, ppm: DPI300, transparent: true, svg: appIconSticker(76.2) });
+
+// Sticker pack. Each sticker is transparent outside its shape: the shop cuts along the shape.
+const svgMm = (w, h, body) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">${body}</svg>`;
+const STICKERS = [];
+const sticker = (id, w, h, body) => STICKERS.push({ id: `sticker-${id}`, w, h, ppm: DPI300, transparent: true, svg: svgMm(w, h, body) });
+const disc = (d, fill) => `<circle cx="${d / 2}" cy="${d / 2}" r="${d / 2}" fill="${fill}"/>`;
+const tile = (w, h, r, fill) => `<rect width="${w}" height="${h}" rx="${r}" fill="${fill}"/>`;
+const D3 = 76.2; // 3 in
+
+// The symbol in a circle, both grounds.
+sticker('symbol-circle-black-3in', D3, D3, disc(D3, C.night) + symbolPath(D3 / 2, D3 / 2, 30, C.nightInk));
+sticker('symbol-circle-white-3in', D3, D3, disc(D3, C.paper) + symbolPath(D3 / 2, D3 / 2, 30, C.ink));
+// The pixel mark on the dark ground.
+sticker('pixel-black-3in', D3, D3, tile(D3, D3, 8, C.night) + mark('pixel', D3 / 2, D3 / 2, 52, C.nightInk));
+
+// Terminal stickers: real CLI commands (apps/cli/src/command-table.ts).
+// Roobert is installed locally, so canvas measures it synchronously.
+const measure = (text, font) => { const g = document.createElement('canvas').getContext('2d'); g.font = font; return g.measureText(text).width; };
+function terminal(id, cmd) {
+  const w = 101.6, h = 31.75, fs = 9, line = `$ ${cmd}`;
+  const lw = measure(line, `500 ${fs}px "Roobert Mono"`), cw = measure('M', `500 ${fs}px "Roobert Mono"`);
+  const x0 = (w - lw - cw * 1.5) / 2, base = h / 2 + fs * 0.35;
+  sticker(`terminal-${id}-4x1.25in`, w, h, tile(w, h, 6, C.night) +
+    `<text x="${x0}" y="${base}" font-family="Roobert Mono" font-weight="500" font-size="${fs}" xml:space="preserve"><tspan fill="${C.nightMuted}">$</tspan><tspan fill="${C.nightInk}"> ${cmd}</tspan></text>` +
+    `<rect x="${x0 + lw + cw * 0.5}" y="${h / 2 - fs * 0.45}" width="${cw}" height="${fs * 0.9}" fill="${C.nightInk}"/>`);
+}
+terminal('ship', 'kortix ship');
+terminal('doctor', 'kortix doctor');
+
+// Status chips: the hue on the dot, the word in ink (color.md, status table).
+function status(word, hue) {
+  const w = 76.2, h = 25.4, fs = 9, tw = measure(word, `500 ${fs}px Roobert`), dot = 6, gap = 4;
+  const x0 = (w - dot - gap - tw) / 2;
+  sticker(`status-${word.replace(/ /g, '-')}-3x1in`, w, h, tile(w, h, h / 2, C.paper) +
+    `<circle cx="${x0 + dot / 2}" cy="${h / 2}" r="${dot / 2}" fill="${hue}"/>` +
+    `<text x="${x0 + dot + gap}" y="${h / 2 + fs * 0.35}" font-family="Roobert" font-weight="500" font-size="${fs}" fill="${C.ink}">${word}</text>`);
+}
+status('merged', C.green);
+status('running', C.green);
+status('in review', C.blue);
+status('failed', C.red);
+
+// Pixel art from the card deck.
+const pixelSticker = (id, rows, color) => {
+  const pitch = 52 / Math.max(rows[0].length, rows.length);
+  sticker(`pixel-${id}-3in`, D3, D3, tile(D3, D3, 8, C.paper) + pixels(rows, D3 / 2, D3 / 2, pitch, pitch / 6, color));
+};
+pixelSticker('spade', suitGrid(SUITS.S, 13), C.ink);
+pixelSticker('heart', suitGrid(SUITS.H, 13), C.red);
+// King of hearts: the K crown over the heart, as on the K♥ court card.
+{
+  const heart = suitGrid(SUITS.H, 11), crown = CROWNS.K, pitch = 54 / (crown.length + 1 + heart.length);
+  const top = D3 / 2 - (crown.length + 1 + heart.length) * pitch / 2;
+  sticker('pixel-king-of-hearts-3in', D3, D3, tile(D3, D3, 8, C.paper) +
+    pixels(crown, D3 / 2, top + crown.length * pitch / 2, pitch, pitch / 6, C.red) +
+    pixels(heart, D3 / 2, top + (crown.length + 1 + heart.length / 2) * pitch, pitch, pitch / 6, C.red));
+}
+
+// The Kortix asterisk (packages/ui/src/primitives/kortix-asterisk.tsx), solid variant: four rounded arms.
+sticker('asterisk-3in', D3, D3, disc(D3, C.paper) + [0, 90, 45, -45].map(a =>
+  `<rect x="${D3 / 2 - 2.6}" y="${D3 / 2 - 22}" width="5.2" height="44" rx="2.6" fill="${C.ink}" transform="rotate(${a} ${D3 / 2} ${D3 / 2})"/>`).join(''));
+
+// Pin buttons, 2.25 in: the art is 2.625 in so 0.1875 in wraps around the edge; the face keeps the mark inside 1.75 in.
+const BTN = 66.675;
+STICKERS.push({ id: 'button-symbol-black-2.25in', w: BTN, h: BTN, ppm: DPI300, transparent: true, svg: svgMm(BTN, BTN, disc(BTN, C.night) + symbolPath(BTN / 2, BTN / 2, 19, C.nightInk)) });
+STICKERS.push({ id: 'button-pixel-white-2.25in', w: BTN, h: BTN, ppm: DPI300, transparent: true, svg: svgMm(BTN, BTN, disc(BTN, C.paper) + mark('pixel', BTN / 2, BTN / 2, 30, C.ink)) });
+
+window.ITEMS.push(...STICKERS);
+
+if (!location.hash.includes('export')) {
+  const big = (svg, bg) => `<div style="background:${bg};padding:8px">${svg.replace('<svg ', '<svg style="width:300px;height:auto" ')}</div>`;
+  document.getElementById('grid').innerHTML = CARDS.map(c => c.svg).join('') + CHIPS.map(c => c.svg).join('') +
+    ITEMS.map(i => big(i.svg, i.id.includes('ink-white') ? C.night : 'transparent')).join('');
+  document.getElementById('stage').remove();
+}
+</script>
+</body>
+</html>

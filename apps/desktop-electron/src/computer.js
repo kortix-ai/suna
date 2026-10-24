@@ -327,7 +327,7 @@ function runAgent(args, { cli, home, execPath = process.execPath, timeoutMs = 30
     execFile(
       execPath,
       [cli, ...args],
-      { env: agentEnv(home), timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 },
+      { env: agentEnv(home), timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, windowsHide: true },
       (error, stdout, stderr) => {
         resolve({ code: error ? (typeof error.code === 'number' ? error.code : 1) : 0, stdout, stderr });
       },
@@ -360,7 +360,7 @@ function connectComputer({ cli, home, apiUrl, projectId, reauth, onChallenge, on
     const args = [cli, 'connect', '--json', '--daemon', '--api-url', apiUrl];
     if (projectId) args.push('--project-id', projectId);
     if (reauth) args.push('--reauth');
-    const child = spawn(execPath, args, { env: agentEnv(home), stdio: ['ignore', 'pipe', 'pipe'], signal });
+    const child = spawn(execPath, args, { env: agentEnv(home), stdio: ['ignore', 'pipe', 'pipe'], signal, windowsHide: true });
     let settled = false;
     let approved = null;
     let stderr = '';

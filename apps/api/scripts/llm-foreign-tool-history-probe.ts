@@ -23,7 +23,7 @@
  */
 import { createGateway, type GatewayHooks, type UpstreamDescriptor, type UsageEvent } from '@kortix/llm-gateway';
 import { threadView, type SessionLog } from '@kortix/api-contract/session-log';
-import { getManagedModel } from '@kortix/llm-catalog';
+import { getRuntimeManagedModel, loadManagedLineup } from '../src/llm-gateway/models/managed-models';
 import { bedrockByokBaseUrl, managedCandidates } from '../src/llm-gateway/resolution/descriptors';
 import { resolveCatalogUpstream } from '../src/llm-gateway/models/provider-registry';
 
@@ -64,13 +64,12 @@ function byok(provider: string, model: string, envVar: string): UpstreamDescript
   return { provider, kind: up.kind, npm: up.npm, baseUrl: bedrock ? bedrockByokBaseUrl(BEDROCK_REGION) : up.baseUrl, ...(bedrock ? { region: BEDROCK_REGION } : {}), apiKey, billingMode: 'none', markup: 0, resolvedModel: model } as UpstreamDescriptor;
 }
 
-const glm = getManagedModel('glm-5.3-flash');
-const managed = glm ? managedCandidates(glm).map((c) => (c.provider === 'opencode' ? { ...c, headers: { 'x-opencode-session': 'kortix-probe', 'User-Agent': 'Kortix (https://kortix.com)' } } : c)) : [];
+await loadManagedLineup();
+const glm = getRuntimeManagedModel('glm-5.3-flash');
+const managed = glm ? managedCandidates(glm) : [];
 const pick = (provider: string) => managed.find((c) => c.provider === provider) ?? `not a managed candidate here`;
 const cases: Array<{ label: string; model: string; upstream: UpstreamDescriptor | string }> = [
-  { label: 'opencode (Zen, managed)', model: 'glm-5.3-flash', upstream: pick('opencode') },
-  { label: 'openrouter (managed pool)', model: 'glm-5.3-flash', upstream: pick('openrouter') },
-  { label: 'morph (managed)', model: 'glm-5.3-flash', upstream: pick('morph') },
+  { label: 'platinum (managed)', model: 'glm-5.3-flash', upstream: pick('platinum') },
   { label: 'openrouter (BYOK, Claude)', model: 'anthropic/claude-haiku-4.5', upstream: byok('openrouter', 'anthropic/claude-haiku-4.5', 'OPENROUTER_API_KEY') },
   { label: 'openai (BYOK)', model: 'gpt-4.1-nano', upstream: byok('openai', 'gpt-4.1-nano', 'OPENAI_API_KEY') },
   { label: 'xai (BYOK)', model: 'grok-4.3', upstream: byok('xai', 'grok-4.3', 'XAI_API_KEY') },

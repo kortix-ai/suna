@@ -16,11 +16,14 @@ export type SessionInvocationSource =
   | 'trigger:manual'
   | 'trigger:monitor'
   | 'trigger:event'
+  | 'trigger:app'
   | 'trigger:reminder'
   | 'system:sandbox-build-fix'
   | 'system:approval-resume'
   | 'system:secret-submitted'
   | 'system:connector-connected'
+  /** A message another participant posted in a room the session joined (`projects/rooms`). */
+  | 'system:room-message'
   /** The continuation of a turn a provider-originated `runtime_gone` cut short
    *  when no `continue_session` row took the turn over — the session's own
    *  initial prompt, or an unattended session's row that could not be requeued
@@ -47,6 +50,16 @@ export type SessionLifecyclePostCreateAction =
       /** Resolve at execution time so queued creates never capture stale access. */
       type: 'apply_trigger_session_access';
       triggerSlug: string;
+    }
+  | {
+      /** Move a session reminder to the new session (its session failed). */
+      type: 'repin_reminder';
+      reminderId: string;
+    }
+  | {
+      /** Take over the chat threads bound to a failed predecessor session. */
+      type: 'adopt_chat_threads';
+      fromSessionId: string;
     };
 
 export type SessionLifecycleStatus =

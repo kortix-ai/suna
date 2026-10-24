@@ -18,7 +18,7 @@ import { join } from 'node:path';
 const WEB_ROOT = join(import.meta.dir, '..');
 
 type LinkSite = {
-  /** Repo-relative path under apps/web/src. */
+  /** A path under apps/web/src, or `packages/ui/src/…` for a @kortix/ui file. */
   file: string;
   /** Substrings that must each appear at least once. */
   expectPresent: string[];
@@ -38,7 +38,7 @@ const LINK_SITES: LinkSite[] = [
     expectAbsent: [`href: '/legal?tab=terms'`],
   },
   {
-    file: 'features/auth/auth-card-shell.tsx',
+    file: 'packages/ui/src/internal/auth/auth-card-shell.tsx',
     expectPresent: [`href="/legal/terms"`, `href="/legal?tab=privacy"`],
     expectAbsent: [`href="/legal?tab=terms"`],
   },
@@ -60,7 +60,9 @@ const LINK_SITES: LinkSite[] = [
 
 for (const site of LINK_SITES) {
   test(`${site.file}: Terms -> /legal/terms, privacy/imprint local`, () => {
-    const abs = join(WEB_ROOT, site.file);
+    const abs = site.file.startsWith('packages/')
+      ? join(WEB_ROOT, '../../..', site.file)
+      : join(WEB_ROOT, site.file);
     const src = readFileSync(abs, 'utf8');
 
     for (const needle of site.expectPresent) {

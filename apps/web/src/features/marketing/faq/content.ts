@@ -43,8 +43,8 @@
  *  - PRICE. Managed cloud is credits: one paid plan sold in tiers from $50 a month,
  *    1 credit = $0.01, unlimited members sharing one pool —
  *    `apps/web/src/features/billing/pricing-plans.ts`, the `credits` entry of
- *    `PRICING_PLANS`. Its `free` entry is $0 with "200 credits / month, no card
- *    needed" and "1 project". This FAQ names no dollar plan: amounts live on
+ *    `PRICING_PLANS`. Its `free` entry is $0 with "500 credits / month, no card
+ *    needed" and "1 project"; managed models are in the `credits` entry only. This FAQ names no dollar plan: amounts live on
  *    /pricing and in the plan picker. (Cited by plan id, not line number — the
  *    ids are stable, the line numbers were not.) Never write "seat" or "per
  *    seat", and never invent a discount, a trial length or a usage rate.
@@ -74,12 +74,12 @@
  *    `apps/api/src/types.ts:129-135`). That distinction is the honest answer and
  *    must survive editing.
  *  - ISOLATION. "Its own isolated machine" only. NEVER a blanket "microVM" —
- *    true for the Platinum provider (Cloud Hypervisor) and not for the default.
+ *    true for the Platinum provider (Cloud Hypervisor), not for legacy Daytona.
  *    Never "container" in external copy. Never claim egress is controlled at the
  *    network; nothing implements it.
- *  - HARNESS. OpenCode only. pi is an experimental, opt-in harness
- *    (`pi_harness` flag or `runtime: pi`); brand decision D9 is open, so do
- *    not name it. No Claude Code or Codex harness exists. Never name them.
+ *  - HARNESS. Every new session runs pi since 2026-10-23 and OpenCode is
+ *    deprecated. Brand decision D9 (naming pi in copy) is open, so do not name
+ *    pi yet, and do not promise OpenCode. No Claude Code or Codex harness exists. Never name them.
  *  - LICENCE. Say "open source" and stop. Never name one.
  *  - NO CUSTOMER NAMES. NO INVENTED METRICS. The live GitHub star count is the
  *    only sanctioned figure on the site and it belongs to the open-source
@@ -138,7 +138,7 @@ export const faq = {
       id: 'price',
       question: 'What does it cost?',
       answer:
-        'Free is $0 — one project and 200 credits a month of sandbox compute, with your own key for any premium model. Paid plans are credits: pick a monthly amount, members are free and unlimited, and one pool covers the whole account. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.',
+        'Free is $0 — one project, 500 credits a month and every feature, with your own key or ChatGPT subscription for models. Kortix-managed models need a paid plan. Paid plans are credits: pick a monthly amount, members are free and unlimited, and one pool covers the whole account. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.',
     },
   ] satisfies readonly FaqItem[],
 } as const;

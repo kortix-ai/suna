@@ -2,10 +2,10 @@
 // the verdict and the activity writes live in `iam/session-gate.ts`.
 
 import type { Context, MiddlewareHandler } from 'hono';
-import { HTTPException } from 'hono/http-exception';
 import { evaluateSessionGate, loadPolicyAndActivity, markRevoked, touchActivity } from '../iam/session-gate';
 import { auditSessionFirstSight } from './auth-audit';
 import { requestClientIp } from './client-ip';
+import { deadCredential401 } from '../shared/dead-credential-log';
 
 /**
  * Mount this on /v1/accounts/:accountId/* AFTER auth middleware. It
@@ -83,9 +83,17 @@ export function accountSessionGate(): MiddlewareHandler {
           console.warn('[session-gate] markRevoked failed', err);
         });
       }
-      throw new HTTPException(401, {
-        message: `session ${verdict.replace('_', ' ')} — please sign in again`,
-      });
+      // A dead session is a dead credential (KRTX-446/1039 class): the
+      // session can never come back, only a fresh sign-in restores access.
+      // `deadCredential401` gives the reading client the machine-readable
+      // stop signal (`code: 'session_token_revoked'`) and marks the
+      // exception so the global error handler's dead-credential log
+      // throttle bounds the warn lines a NON-reading client produces —
+      // prod 2026-10-14 20:55–21:00 UTC: one browser polling eight account
+      // routes with a just-revoked session wrote 113 warn lines in five
+      // minutes (KRTX-2369), every one the gate working as designed. The
+      // response status and message are unchanged.
+      throw deadCredential401(`session ${verdict.replace('_', ' ')} — please sign in again`);
     }
 
     // Update last_seen lazily. When the activity row is INSERTED (i.e.

@@ -32,6 +32,7 @@ import type { Config as HostConfig } from '@/lib/config/config'
  * always holds the CURRENT `opencode`/`cfg`. `startRuntimeTruthTicker` is
  * idempotent, so a second call here never stacks a second interval.
  */
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function wireRuntimeTruth(cfg: HostConfig, opencode: Opencode): void {
   configureRuntimeTruth(buildRuntimeTruthDeps(cfg, opencode))
   startRuntimeTruthTicker()

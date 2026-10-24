@@ -3,7 +3,6 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { BUNDLED_MANAGED_MODELS, MINIMAL_FALLBACK_MODELS } from '@kortix/api-contract/fallback-models'
 import {
   buildOpencodeConfigContent,
   catalogIsDegraded,
@@ -120,22 +119,6 @@ describe('managed listing fetch', () => {
     expect(calls).toBe(3)
     expect(Date.now() - started).toBeLessThan(5_500)
   })
-
-  test('an empty picker listing (free tier) still leaves every bundled managed model', async () => {
-    globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ models: {} }), { status: 200 })) as unknown as typeof fetch
-
-    startManagedModelsPrefetch(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_TOKEN)
-    await settleManagedModelsPrefetch()
-    const models = providerModels(
-      await buildOpencodeConfigContent({
-        ...GATEWAY,
-        KORTIX_LLM_CATALOG_FILE: await bakedCatalogFile(),
-      } as NodeJS.ProcessEnv),
-    )
-
-    for (const id of Object.keys(BUNDLED_MANAGED_MODELS)) expect(models[id]).toBeDefined()
-  })
 })
 
 describe('boot config composition', () => {
@@ -186,7 +169,7 @@ describe('boot config composition', () => {
     expect(models['openai/gpt-5.5']?.name).toBe('GPT-5.5')
   })
 
-  test('a failed managed fetch still leaves the bundled managed floor', async () => {
+  test('a failed managed fetch keeps the baked catalog as it is', async () => {
     globalThis.fetch = (async () =>
       new Response('down', { status: 500 })) as unknown as typeof fetch
 
@@ -197,29 +180,8 @@ describe('boot config composition', () => {
     } as NodeJS.ProcessEnv)
     const models = providerModels(raw)
 
-    for (const id of Object.keys(BUNDLED_MANAGED_MODELS)) {
-      expect(models[id]).toBeDefined()
-    }
-    // Fill-only: the hand-maintained table never overwrites the baked record.
     expect(models['deepseek-v4-flash']?.name).toBe('DeepSeek V4 Flash (stale)')
     expect(models['openai/gpt-5.5']).toBeDefined()
-  })
-
-  // Dev 2026-09-30: the builder swapped a new daemon into an image baked
-  // before the managed limit changed, so OpenCode booted with the old
-  // 1,048,576 window and compacted only at the context wall.
-  test('a baked managed record takes the bundled limit, and keeps every other field', async () => {
-    globalThis.fetch = (async () => new Response('down', { status: 500 })) as unknown as typeof fetch
-    const [id, bundled] = Object.entries(BUNDLED_MANAGED_MODELS)[0]!
-    const raw = await buildOpencodeConfigContent({
-      ...GATEWAY,
-      KORTIX_LLM_CATALOG_FILE: await bakedCatalogFile({
-        models: { [id]: { name: 'Baked Name', provider: 'kortix', limit: { context: 1_048_576, output: 16_384 } } },
-      }),
-    } as NodeJS.ProcessEnv)
-    const model = providerModels(raw)[id] as { name?: string; limit?: unknown }
-    expect(model.limit).toEqual(bundled.limit)
-    expect(model.name).toBe('Baked Name')
   })
 
   // THE latency regression this design exists to prevent. `opencode serve`
@@ -250,8 +212,8 @@ describe('boot config composition', () => {
     const models = providerModels(raw)
 
     expect(elapsed).toBeLessThan(50)
-    // The bundled floor still ships, so the picker is never short.
-    expect(models['deepseek-v4.1-flash']).toBeDefined()
+    // The baked catalog still ships, so the picker is never short.
+    expect(Object.keys(models).length).toBeGreaterThan(0)
     expect(models['openai/gpt-5.5']).toBeDefined()
   }, 15_000)
 
@@ -287,16 +249,14 @@ describe('the boot config never touches the network', () => {
     return calls
   }
 
-  test('with no catalog file it falls back to the minimal model set, with no fetch', async () => {
+  test('with no catalog file it invents no models, with no fetch', async () => {
     const calls = recordFetches()
     const models = providerModels(await buildOpencodeConfigContent(NO_FILE_ENV as NodeJS.ProcessEnv))
-    expect(Object.keys(models)).toEqual(Object.keys(MINIMAL_FALLBACK_MODELS))
+    expect(models).toEqual({})
     expect(calls).toEqual([])
   })
 
-  test('a catalog file is used verbatim plus the bundled managed floor, with no fetch', async () => {
-    // Prod 2026-08-19: a baked catalog older than the managed lineup hid a
-    // managed model from OpenCode. The bundled set fills the gap.
+  test('a catalog file is used verbatim, with no fetch', async () => {
     const calls = recordFetches()
     const models = providerModels(
       await buildOpencodeConfigContent({
@@ -305,7 +265,6 @@ describe('the boot config never touches the network', () => {
       } as NodeJS.ProcessEnv),
     )
     expect(models['test/only-model']).toBeDefined()
-    for (const id of Object.keys(BUNDLED_MANAGED_MODELS)) expect(models[id]).toBeDefined()
     expect(calls).toEqual([])
   })
 
@@ -317,32 +276,49 @@ describe('the boot config never touches the network', () => {
     expect(catalogIsDegraded(file)).toBe(false)
   })
 
-  test('every model gets a context window: a known one by id tail, else the conservative default', async () => {
-    // The gateway listing carries no limits; without one OpenCode cannot size
-    // the conversation and auto-compaction never fires.
-    const knownTail = Object.entries(MINIMAL_FALLBACK_MODELS).find(([, model]) => model.limit?.context)!
-    const tail = knownTail[0].split('/').pop()!
+  test("a model keeps its own window; only a model no source can size gets the default", async () => {
+    // Without a window OpenCode cannot size the conversation and never compacts.
+    // Another provider's model with the same last id segment does not lend its window.
+    const tail = 'deepseek-v4.1-flash'
     recordFetches()
     const models = providerModels(
       await buildOpencodeConfigContent({
         ...NO_FILE_ENV,
         KORTIX_LLM_CATALOG_FILE: await bakedCatalogFile({
-          models: { [`other-provider/${tail}`]: { name: 'Known tail' }, 'unknown/model-x': { name: 'Unknown' } },
+          models: {
+            'own/model': { name: 'Own', limit: { context: 1_048_576, output: 65_536 } },
+            [`deepseek/${tail}`]: { name: 'Known', limit: { context: 1_048_576, output: 393_216 } },
+            [`other-provider/${tail}`]: { name: 'Same tail' },
+          },
         }),
       } as NodeJS.ProcessEnv),
     ) as Record<string, { limit?: { context?: number; output?: number } }>
-    expect(models[`other-provider/${tail}`]?.limit).toEqual(knownTail[1].limit)
-    expect(models['unknown/model-x']?.limit).toEqual({ context: 200_000, output: 32_000 })
+    expect(models['own/model']?.limit).toEqual({ context: 1_048_576, output: 65_536 })
+    expect(models[`other-provider/${tail}`]?.limit).toEqual({ context: 200_000, output: 32_000 })
   })
 
-  test('no OpenAI reasoning model in the fallback set claims temperature support', () => {
-    // OpenCode would send `temperature` and every turn 400s while the fallback
-    // set is in effect.
-    const offenders = Object.entries(MINIMAL_FALLBACK_MODELS)
-      .filter(([id, model]) => id.startsWith('openai/') && model.reasoning && model.temperature)
-      .map(([id]) => id)
-    expect(offenders).toEqual([])
+  test('a model with a known window and no output limit still gets an output limit', async () => {
+    // OpenCode's config schema requires `limit.output` next to `limit.context`. One
+    // model without it fails the whole config: no OpenCode session can start
+    // (v0.14.7 staging, `ConfigInvalidError … limit.output: Missing key`).
+    recordFetches()
+    const models = providerModels(
+      await buildOpencodeConfigContent({
+        ...NO_FILE_ENV,
+        KORTIX_LLM_CATALOG_FILE: await bakedCatalogFile({
+          models: {
+            'poe/novita/deepseek-v3.2': { name: 'Window only', limit: { context: 163_840 } },
+            'tiny/model': { name: 'Small window', limit: { context: 8_192 } },
+            'with-input/model': { name: 'Input too', limit: { context: 400_000, input: 272_000 } },
+          },
+        }),
+      } as NodeJS.ProcessEnv),
+    ) as Record<string, { limit?: { context?: number; input?: number; output?: number } }>
+    expect(models['poe/novita/deepseek-v3.2']?.limit).toEqual({ context: 163_840, output: 32_000 })
+    expect(models['tiny/model']?.limit).toEqual({ context: 8_192, output: 8_192 })
+    expect(models['with-input/model']?.limit).toEqual({ context: 400_000, input: 272_000, output: 32_000 })
   })
+
 })
 
 describe('a repaired catalog is rebuilt to a known shape before it reaches disk', () => {
@@ -503,7 +479,7 @@ describe('post-spawn managed reconcile', () => {
   }
 
   /** Boot exactly as production does: prefetch in flight, config built WITHOUT
-   *  waiting for it — so the running OpenCode has only the bundled managed set. */
+   *  waiting for it — so the running OpenCode has only the baked catalog. */
   async function bootWithLiveGateway(): Promise<void> {
     globalThis.fetch = (async () =>
       new Response(JSON.stringify(LIVE_MANAGED), { status: 200 })) as unknown as typeof fetch
@@ -607,7 +583,7 @@ describe('post-spawn managed reconcile', () => {
     }
   })
 
-  test('is a no-op when the gateway never answers (bundled managed set stands)', async () => {
+  test('is a no-op when the gateway never answers (the baked catalog stands)', async () => {
     globalThis.fetch = (async () =>
       new Response('down', { status: 500 })) as unknown as typeof fetch
     process.env.KORTIX_LLM_CATALOG_FILE = await bakedCatalogFile()

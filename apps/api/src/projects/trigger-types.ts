@@ -1,9 +1,7 @@
-import type { ManifestFormat, ResolvedManifest } from '@kortix/manifest-schema';
+import type { ManifestFormat, ResolvedManifest, TriggerFilter } from '@kortix/manifest-schema';
 
-export type GitTriggerType = 'cron' | 'webhook' | 'monitor' | 'event';
+export type GitTriggerType = 'cron' | 'webhook' | 'event' | 'app';
 
-/** For type=monitor only — how the platform runs `run`. */
-export type GitMonitorMode = 'poll' | 'stream';
 
 /** For type=event only — which app event on which connector fires the trigger. */
 export interface GitTriggerEventFields {
@@ -56,32 +54,46 @@ export interface GitTriggerSpec {
   /** For type=cron only. IANA timezone. Defaults to UTC. */
   timezone: string;
   /**
+   * For type=cron only (`max_lateness`). A slot claimed more than this many
+   * seconds after its time is recorded as a skipped run instead of firing.
+   * Omitted when unset: the late slot fires once, as before.
+   */
+  maxLatenessSeconds?: number;
+  /**
+   * Any trigger type (`max_runs_per_hour`, KRTX-1721): runs started in any 60
+   * minutes. A fire past it is recorded as a throttled, skipped run. Omitted
+   * when unset: the platform default (60) applies.
+   */
+  maxRunsPerHour?: number;
+  /** Any trigger type (`max_runs_per_day`): runs started in a UTC day. Omitted when unset: no daily cap. */
+  maxRunsPerDay?: number;
+  /**
+   * `overlap` (KRTX-1721), fresh session mode only: `skip` holds a fire while
+   * the trigger's previous run is still active (`lib/trigger-overlap.ts`).
+   * Omitted when unset: `skip` for a cron trigger, `allow` for the others.
+   */
+  overlap?: 'skip' | 'allow';
+  /**
    * For type=webhook only — the project_secrets key that holds the HMAC
    * signing secret. The actual secret value is never inline.
    */
   secretEnv: string | null;
-  /**
-   * For type=monitor only — the repo-relative command the platform supervises
-   * 24/7 in the project's monitor box. Its stdout lines are the events;
-   * nothing else is.
-   */
-  run: string | null;
-  /**
-   * For type=monitor only. `'poll'` runs `run` every `intervalSeconds` and
-   * exits; `'stream'` runs it once and keeps it alive. Downstream (filter →
-   * prompt → session_mode) cannot tell the two apart.
-   */
-  monitorMode: GitMonitorMode | null;
-  /** For `monitorMode === 'poll'` only — the poll period, in whole seconds. */
-  intervalSeconds: number | null;
-  /**
-   * For type=monitor only — the silence watchdog. No event within this window
-   * synthesizes a `silent` lifecycle event, so a wedged monitor can never fail
-   * silently. Null when the monitor declares no expectation.
-   */
-  expectEventWithinSeconds: number | null;
   /** For type=event only. Absent (or null) for every other type — parsed non-event specs omit it so existing spec shapes are unchanged. */
   event?: GitTriggerEventFields | null;
+  /** For type=app only: the slug of the App whose emitted events fire this trigger. Absent for every other type. */
+  app?: string | null;
+  /**
+   * What a fire does when it is not an agent run: call an App. A fire wakes
+   * the App and sends the payload to `method path` (apps/app-call.ts). Absent:
+   * the fire starts or continues an agent session, as before.
+   */
+  target?: { app: string; path: string; method: 'POST' | 'GET'; payload?: Record<string, unknown> } | null;
+  /**
+   * For type=cron only (`every`): a fixed period in whole seconds instead of a
+   * `cron` or `run_at`. The period runs from each claim, so missed slots never
+   * bunch up. Omitted when unset.
+   */
+  everySeconds?: number;
   /**
    * Session reuse policy.
    * - `'fresh'` (default): every fire mints a brand-new session (new sandbox +
@@ -124,8 +136,10 @@ export interface GitTriggerSpec {
    * directions of a conversation would otherwise re-trigger the agent with the
    * agent's own reply. `{ "body.data.direction": "inbound" }` ends that without
    * having to narrow the subscription and lose every other event type.
+   * A path maps to a value (equals) or one operator: `not`, `in`, `exists`,
+   * `prefix`, `not_prefix` (`@kortix/manifest-schema` `trigger-filter.ts`).
    */
-  filter: Record<string, string> | null;
+  filter: TriggerFilter | null;
   /**
    * Set only on a session reminder (`lib/session-reminders.ts`): a DB-native `cron`
    * row that re-prompts `pinnedSessionId`. The manifest never declares one, so
@@ -154,23 +168,11 @@ export const GIT_TRIGGER_SESSION_MODES: readonly GitTriggerSessionMode[] = [
   'keyed',
 ];
 
-/**
- * The `session_mode` a trigger gets when it declares none.
- *
- * `'reuse'` for a monitor, `'fresh'` for cron/webhook. A monitor fires
- * repeatedly by design — a live log emits all day — so defaulting it to fresh
- * would mint one session per event.
- */
-export function defaultTriggerSessionMode(type: GitTriggerType): GitTriggerSessionMode {
-  return type === 'monitor' ? 'reuse' : 'fresh';
+/** The `session_mode` a trigger gets when it declares none: a new session per fire. */
+export function defaultTriggerSessionMode(_type: GitTriggerType): GitTriggerSessionMode {
+  return 'fresh';
 }
 
-export interface GitMonitorFields {
-  run: string;
-  monitorMode: GitMonitorMode;
-  intervalSeconds: number | null;
-  expectEventWithinSeconds: number | null;
-}
 
 export interface GitTriggerParseError {
   slug: string;
@@ -203,6 +205,16 @@ export interface ParsedManifest {
    * edit back to the declaring file instead of flattening it into the root.
    */
   imports?: ResolvedManifest;
+  /**
+   * The exact source text this manifest was parsed from, when it was read as
+   * YAML. Comment preservation is per-FORMAT: the `yaml` package's Document
+   * is lossless (comments + blank lines ride on the node tree), while a TOML
+   * parser only decodes data, so a TOML write is a full re-serialize. The
+   * edit path (serializeManifest) splices its changes into this text instead
+   * of reserializing; reads never need it. null/undefined = fall back to a
+   * full re-serialize.
+   */
+  source?: string | null;
 }
 
 /** Result of `loadProjectTriggers` — same shape callers got pre-refactor. */

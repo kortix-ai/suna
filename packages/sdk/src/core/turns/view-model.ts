@@ -41,6 +41,7 @@
  * tool call itself — there's no tool named `permission` on the wire.
  */
 
+import { stripAnsi } from './parts';
 import { editBlocks } from './edit-blocks';
 import { toolKind } from './tool-kind';
 import type { ToolView } from './classify';
@@ -240,22 +241,11 @@ function stripInternalTagTail(s: string): string {
   return cut === -1 ? s : s.slice(0, cut);
 }
 
-// Minimal local ANSI stripper mirroring `stripAnsi` in turns/index.ts —
-// duplicated (rather than imported) to avoid a circular import between this
-// module and the barrel file that re-exports it.
-const ANSI_RE =
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: matching terminal escape sequences requires literal ESC/BEL control characters
-  /\x1B\[[\d;]*[A-Za-z]|\x1B\][^\x07]{0,512}\x07|\x1B[()#][A-Z0-9]|\x1B\[?[\d;]*[hl]|\x1B[>=<]|\x1B\[[?]?\d*[A-Z]|\x1B\[\d*[JKHG]|\x1B\[\d*;\d*[Hf]|\x1b\[[0-9;]*m/g;
-
-function stripAnsiLocal(str: string): string {
-  return str.replace(ANSI_RE, '');
-}
-
 function shellViewModel(tool: ToolView): Extract<ToolViewModel, { kind: 'shell' }> {
   const command = firstString(tool.input?.command) ?? '';
   const raw = tool.output ?? '';
   const exitCode = shellExitCode(raw);
-  const cleaned = stripAnsiLocal(
+  const cleaned = stripAnsi(
     stripInternalTagTail(stripTagBlocks(raw, '<bash_metadata>', '</bash_metadata>')),
   ).trim();
   const stdout = cleaned || (tool.status === 'error' ? tool.error : undefined);

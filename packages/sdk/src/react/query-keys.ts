@@ -88,6 +88,8 @@ export const qk = {
     timelineRead: (accountId: string, kind: string, query: unknown) =>
       [...qk.capture.timeline(accountId), kind, query] as const,
     policy: (accountId: string) => [...qk.capture.account(accountId), 'policy'] as const,
+    /** `getCaptureStorage` — where the account keeps its recordings. */
+    storage: (accountId: string) => [...qk.capture.account(accountId), 'storage'] as const,
     /** `listCaptureEnrollmentTokens` — the IT rollout tokens. */
     enrollmentTokens: (accountId: string) => [...qk.capture.account(accountId), 'enrollment-tokens'] as const,
     /** `listCaptureEnrollments` — computers that presented a token; every status filter under one prefix. */
@@ -205,6 +207,15 @@ export const qk = {
 
     /** Every project the account can see. `undefined` means the active account. */
     list: (accountId?: string) => [...qk.projects.scope(), accountId ?? 'all'] as const,
+
+    /** `getProjectQuota({ accountId })` — the account's project-cap state, as
+     *  the /new create form reads it before the first submit. Like `list`,
+     *  `undefined` (`'default'`) is the server-resolved default account slot,
+     *  a SIBLING of every named account — never a prefix of one. Creating a
+     *  project invalidates the `scope()` prefix, so a form remounting on the
+     *  same key refetches a fresh answer. */
+    quota: (accountId?: string) =>
+      [...qk.projects.scope(), 'quota', accountId ?? 'default'] as const,
   },
 
   /**
@@ -312,6 +323,10 @@ export const qk = {
 
     /** Persisted provider/model inference restrictions and the effective default. */
     modelAccess: (projectId: string) => [...qk.project.scope(projectId), 'model-access'] as const,
+
+    /** `listCustomLlmProviders`: the project's OpenAI-compatible endpoints (`useCustomLlmProviders`). */
+    customLlmProviders: (projectId: string) =>
+      [...qk.project.scope(projectId), 'custom-llm-providers'] as const,
 
     /**
      * Invalidation prefix for the WHOLE sessions family: the list, in every
@@ -506,10 +521,51 @@ export const qk = {
     /** `listProjectTriggerEventApps` — the apps that can trigger events. */
     triggerEventApps: (id: string) => [...qk.project.triggers(id), 'event-apps'] as const,
 
+    /** `listTriggerRuns` pages — one trigger's run history. Under `triggers`,
+     *  so a fire or replay that invalidates the listing refreshes it too. */
+    triggerRuns: (id: string, slug: string) => [...qk.project.triggers(id), 'runs', slug] as const,
+
+    /** `listProjectTriggerRuns` pages — every run of the project, one slot per status filter. */
+    projectTriggerRuns: (id: string, status?: string | null) =>
+      [...qk.project.triggers(id), 'project-runs', status ?? 'all'] as const,
+
+    /** Every conversation read of a project (flag `agent_rooms`): the prefix of
+     *  the keys below, so a post or a read refreshes the list, the unread
+     *  counts and the thread together. */
+    rooms: (id: string) => [...qk.project.scope(id), 'rooms'] as const,
+    /** `listRooms` — the named rooms. */
+    roomList: (id: string) => [...qk.project.rooms(id), 'list'] as const,
+    /** `listRooms({ mine: true })` — the caller's conversations with unread counts. */
+    roomConversations: (id: string) => [...qk.project.rooms(id), 'mine'] as const,
+    /** `getRoom` — one conversation and its members. */
+    room: (id: string, roomId: string) => [...qk.project.rooms(id), 'room', roomId] as const,
+    /** `listRoomMessages` — the newest messages of one conversation. */
+    roomMessages: (id: string, roomId: string, view: 'all' | 'top' = 'all') => [...qk.project.rooms(id), 'messages', roomId, view] as const,
+    /** `listRoomMessages(…, { thread })` — one thread. */
+    roomThread: (id: string, roomId: string, root: number) => [...qk.project.rooms(id), 'thread', roomId, root] as const,
+
     /** `listProjectReminders` — `GET /projects/:id/reminders`. Also the prefix
      *  of every `sessionReminders` key, so invalidating it refreshes the
      *  project page and every session's reminder chip together. */
     reminders: (id: string) => [...qk.project.scope(id), 'reminders'] as const,
+    /** Every artifact read of a project (flag `artifacts`): the prefix of the
+     *  keys below, so a publish refreshes the gallery and the open artifact. */
+    artifacts: (id: string) => [...qk.project.scope(id), 'artifacts'] as const,
+    /** `listArtifacts` — the gallery, per scope/type/search. */
+    artifactList: (id: string, filter: string) => [...qk.project.artifacts(id), 'list', filter] as const,
+    /** `getArtifact` — one artifact now (`current`) or at a Files commit. */
+    artifact: (id: string, artifactId: string, version: string = 'current') => [...qk.project.artifacts(id), 'one', artifactId, version] as const,
+    /** `listArtifactVersions`. */
+    artifactVersions: (id: string, artifactId: string) => [...qk.project.artifacts(id), 'versions', artifactId] as const,
+    /** `readArtifactFile` of a doc's Markdown at one entry version. Immutable,
+     *  so outside the `artifacts` prefix: a write never refetches it. */
+    artifactText: (id: string, artifactId: string, entryVersion: string) => [...qk.project.scope(id), 'artifact-text', artifactId, entryVersion] as const,
+    /** `listArtifactTypes`. */
+    artifactTypes: (id: string) => [...qk.project.artifacts(id), 'types'] as const,
+    /** `listProjectGoals` — the goal folders in Files with their heartbeats. */
+    goals: (id: string) => [...qk.project.scope(id), 'goals'] as const,
+    /** `getProjectGoalFiles` — one goal folder's log, notes and verification. */
+    goalFiles: (id: string, folder: string) => [...qk.project.goals(id), 'files', folder] as const,
     /** `listSessionReminders` — `GET /projects/:id/sessions/:sid/reminders`. */
     sessionReminders: (id: string, sessionId: string) =>
       [...qk.project.reminders(id), 'session', sessionId] as const,

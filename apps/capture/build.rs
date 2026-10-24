@@ -10,6 +10,15 @@ fn main() {
     println!("cargo:rerun-if-changed={source}");
     println!("cargo:rerun-if-changed=build.rs");
 
+    // Windows: the app icon in every exe (Explorer, the taskbar, a pinned shortcut).
+    #[cfg(windows)]
+    {
+        println!("cargo:rerun-if-changed=assets/icons/windows/app.rc");
+        println!("cargo:rerun-if-changed=assets/icons/windows/app.ico");
+        embed_resource::compile("assets/icons/windows/app.rc", embed_resource::NONE)
+            .manifest_optional()
+            .expect("embed the Windows icon");
+    }
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
         return;
     }

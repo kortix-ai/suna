@@ -12,10 +12,10 @@
  *
  * REALITY, same as run-session-backlog.flow.ts: every flow here needs a real
  * booted sandbox, which the local profile does not have. Every flow is gated
- * `requires: ["funded", "daytona"]`; the local runner self-skips it cleanly
+ * `requires: ["funded", "sandbox"]`; the local runner self-skips it cleanly
  * (planLocalFlows), and it runs for real against a deployed target.
  *
- * RUN-9, SESS-23 and SESS-24 run once per harness (`harnessFlow`) and read the
+ * RUN-9, SESS-23 and SESS-24 run on pi (`harnessFlow`) and read the
  * conversation through `GET .../transcript`: live while the session runs, the
  * durable mirror once it is stopped (`source` says which). The client Stop is
  * the runtime abort the web sends (`abortTurn`, fixtures/session-run.ts); no
@@ -66,7 +66,7 @@ harnessFlow(
   'RUN-9',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -178,7 +178,7 @@ harnessFlow(
   'SESS-23',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     // Known OpenCode defect (local stack 2026-09-28, 2 of 2 runs): the first
     // prompt after the wake is "accepted by the runtime but never became a
     // message" and gets no reply. SESS-23-pi passed the same flow. A red
@@ -336,7 +336,7 @@ harnessFlow(
   'SESS-24',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 1_200_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -347,7 +347,7 @@ harnessFlow(
     ],
   },
   async (ctx, harness) => {
-    const project = await ctx.fixtures.sharedSeededProject(harness);
+    const project = await ctx.fixtures.sharedSeededProject();
     const owner = ctx.client.as(ctx.P.OWNER);
     const markerA = `SESS24_SESSION_A_${Date.now()}`;
     const markerB = `SESS24_SESSION_B_${Date.now()}`;
@@ -642,8 +642,8 @@ flow(
   'SESS-25',
   {
     domain: 'sessions',
-    requires: ['daytona', 'funded'],
-    // Preview run 34938179244 measured a fresh Daytona image build at up to
+    requires: ['sandbox', 'funded'],
+    // Preview run 34938179244 measured a fresh provider image build at up to
     // 439s. Readiness now permits that cold path before the inbox assertions.
     timeoutMs: 1_200_000,
     routes: [
@@ -876,7 +876,7 @@ harnessFlow(
   'SESS-49',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     // Boot (≤540s) + the boot turn + a held turn + the batch turn.
     timeoutMs: 1_200_000,
     routes: [

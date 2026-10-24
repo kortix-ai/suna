@@ -63,6 +63,8 @@ test('the notice is an inbox prompt the queue lists and a running turn reads at 
     remintOnDelivery: true,
     actorUserId: 'user-1',
   });
+  // Synthetic: a notice, never a user bubble, and it never dismisses an open question.
+  expect(enqueued[0].parts).toEqual([{ type: 'text', text: expect.stringContaining('gmail'), synthetic: true }]);
   // Steer admission requires a wire id (`admitInboxPrompt`).
   expect(enqueued[0].wireMessageId).toMatch(/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
 });

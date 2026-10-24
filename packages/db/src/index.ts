@@ -7,6 +7,7 @@ export {
   // Schema namespace
   kortixSchema,
   usedRefreshTokens,
+  cliDeviceGrants,
   // Enums
   sandboxStatusEnum,
   projectStatusEnum,
@@ -37,6 +38,8 @@ export {
   gatewayRequestLogs,
   gatewayApiKeys,
   gatewayBudgets,
+  gatewaySpendDaily,
+  gatewaySpendPendingDays,
   gatewayOtelConfigs,
   // Kortix tables
   projects,
@@ -51,6 +54,7 @@ export {
   projectAccessRequests,
   projectSecrets,
   projectSecretTombstones,
+  projectSecretRequests,
   accountSecretResources,
   accountSecretGrants,
   sessionProviderSecretPools,
@@ -62,6 +66,7 @@ export {
   projectSecretScopeEnum,
   projectTriggerRuntime,
   projectTriggerEventSubscriptions,
+  projectTriggerEventPolls,
   projectTriggerSessionAccessGrants,
   projectTriggerExecutions,
   projectMonitorEvents,
@@ -146,6 +151,13 @@ export {
   notificationWatchers,
   triggerWatchers,
   webPushSubscriptions,
+  // Rooms: agent-to-agent messaging (flag agent_rooms)
+  rooms,
+  roomMessages,
+  roomMembers,
+  sessionIdleWatches,
+  // Artifacts: published HTML pages (flag artifacts)
+  artifacts,
   // Product feedback (POST /v1/feedback)
   feedback,
   // Billing v2 — per-seat + compute metering + per-member YOLO
@@ -264,6 +276,7 @@ export {
   connectorActions,
   connectionPolicies,
   connectorPolicies,
+  connectorPolicySets,
   connectorProjectPolicies,
   connectorProjectSettings,
   connectorSyncFences,

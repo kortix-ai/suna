@@ -1,6 +1,7 @@
 import type { ApiClient } from '../api/client.ts';
 import type {
   ProjectTrigger,
+  TriggerEventApp,
   TriggerEventAppsResponse,
   TriggerEventType,
   TriggerEventTypesResponse,
@@ -162,7 +163,7 @@ export function surfaceEventTriggerError(err: unknown): number {
   const body = (err as { body?: { code?: unknown; feature?: unknown } } | null)?.body;
   if (body?.code === 'feature_disabled' && body.feature === 'event_triggers') {
     process.stderr.write(
-      `${status.err('App event triggers are off for this project. Turn them on: kortix projects features enable event_triggers')}\n`,
+      `${status.err('Connector event triggers are off for this project. Turn them on: kortix projects features enable event_triggers')}\n`,
     );
     return 1;
   }
@@ -192,15 +193,21 @@ export function eventNextStep(
       return {
         word: 'needs connection',
         lines: [
-          e.account
-            ? `Needs a project-shared ${e.app ?? e.connector} account labelled "${e.account}" on ${e.connector}. A person must open the link: kortix connectors connect ${e.connector} --owner project  (label it "${e.account}": kortix connectors rename <id> ${e.account})`
-            : `Needs a project-shared ${e.app ?? e.connector} account. A person must open the link: kortix connectors connect ${e.connector} --owner project`,
+          // An MCP connector signs in with OAuth (`authorize`, the project's
+          // default shared account); `connect` links are Composio/Pipedream only.
+          (e.source ?? e.provider) === 'mcp'
+            ? e.account
+              ? `Needs the project-shared ${e.app ?? e.connector} account labelled "${e.account}" on ${e.connector}, signed in. A person signs in the default shared account: kortix connectors authorize ${e.connector}  (pin "${e.account}" as the default first: kortix connectors connections default <id>)`
+              : `Needs a signed-in project-shared ${e.app ?? e.connector} account. A person must sign it in: kortix connectors authorize ${e.connector}`
+            : e.account
+              ? `Needs a project-shared ${e.app ?? e.connector} account labelled "${e.account}" on ${e.connector}. A person must open the link: kortix connectors connect ${e.connector} --owner project  (label it "${e.account}": kortix connectors connections rename <id> ${e.account})`
+              : `Needs a project-shared ${e.app ?? e.connector} account. A person must open the link: kortix connectors connect ${e.connector} --owner project`,
           'It goes live when the account is connected.',
         ],
       };
     case 'error': {
       // The project flag is off: the fix is the flag, not the trigger's settings.
-      if (e.error?.startsWith('App event triggers are off')) {
+      if (e.error?.startsWith('Connector event triggers are off') || e.error?.startsWith('App event triggers are off')) {
         return {
           word: 'error',
           lines: [`Error: ${e.error}`, 'Turn them on: kortix projects features enable event_triggers'],
@@ -237,6 +244,65 @@ const eventTypesPath = (projectId: string, connector: string): string =>
 const appEventTypesPath = (projectId: string, app: string, source?: string): string =>
   `/projects/${projectId}/triggers/event-types?app=${encodeURIComponent(app)}${source ? `&source=${encodeURIComponent(source)}` : ''}`;
 
+const eventAppsPath = (projectId: string): string => `/projects/${projectId}/triggers/event-apps`;
+
+const sourceOf = (x: { source?: string; provider: string }): string => x.source ?? x.provider;
+
+/** What an MCP app needs before a trigger can run on it: `steps` (may be empty), then a trigger on `connector`. */
+interface McpSetup {
+  connector: string;
+  steps: string[];
+}
+
+const AUTHORIZE_NOTE = '  (a person signs in; the account is shared with the project)';
+
+/**
+ * The setup of one MCP app, from its `event-apps` entry. An app with a
+ * connector (every project MCP server has one) only needs its account signed
+ * in; a catalogue app is added from its `mcp_url` first. No entry (the
+ * listing failed): the generic steps.
+ */
+function mcpSetup(app: string, entry: TriggerEventApp | undefined): McpSetup {
+  if (entry?.connector) {
+    return {
+      connector: entry.connector,
+      steps: entry.connected ? [] : [`kortix connectors authorize ${entry.connector}${AUTHORIZE_NOTE}`],
+    };
+  }
+  const slug = entry?.new_connector_slug ?? app;
+  return {
+    connector: slug,
+    steps: [
+      `kortix connectors add ${slug} --provider mcp --url ${entry?.mcp_url ?? '<mcp_url from kortix triggers events --apps --json>'} --apply`,
+      `kortix connectors authorize ${slug}${AUTHORIZE_NOTE}`,
+    ],
+  };
+}
+
+/** The only source that lists `app`, or undefined (none, several, or the listing failed). */
+async function soleSourceOf(ctx: { client: ApiClient; projectId: string }, app: string): Promise<string | undefined> {
+  try {
+    const { apps } = await ctx.client.get<TriggerEventAppsResponse>(eventAppsPath(ctx.projectId));
+    const sources = new Set(apps.filter((a) => a.app === app).map(sourceOf));
+    return sources.size === 1 ? [...sources][0] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function loadMcpSetup(ctx: { client: ApiClient; projectId: string }, app: string): Promise<McpSetup> {
+  let apps: TriggerEventApp[] = [];
+  try {
+    ({ apps } = await ctx.client.get<TriggerEventAppsResponse>(eventAppsPath(ctx.projectId)));
+  } catch {
+    /* the hint falls back to the generic steps */
+  }
+  return mcpSetup(app, apps.find((a) => a.app === app && sourceOf(a) === 'mcp'));
+}
+
+const numbered = (steps: string[]): string =>
+  steps.map((s, i) => `    ${C.dim}${i + 1}.${C.reset} ${s}\n`).join('');
+
 export async function triggersEvents(
   args: { apps: boolean; connector?: string; app?: string; source?: string; event?: string },
   opts: CtxOpts,
@@ -250,13 +316,17 @@ export async function triggersEvents(
   if (!ctx) return 1;
   try {
     if (args.apps) return await printApps(ctx, json);
+    // No --source: the app's own, when the app listing names exactly one (the API's default is composio).
+    const source = args.app && !args.source ? await soleSourceOf(ctx, args.app) : args.source;
     const resp = await ctx.client.get<TriggerEventTypesResponse>(
       args.app
-        ? appEventTypesPath(ctx.projectId, args.app, args.source)
+        ? appEventTypesPath(ctx.projectId, args.app, source)
         : eventTypesPath(ctx.projectId, args.connector as string),
     );
     const via = args.app ? { app: args.app } : { connector: args.connector as string };
-    return args.event ? printEvent(resp, args.event, json, via) : printEvents(resp, json, via);
+    // An MCP app is added from its catalogue URL, which only the app listing carries.
+    const mcp = !json && args.app && sourceOf(resp) === 'mcp' ? await loadMcpSetup(ctx, args.app) : undefined;
+    return args.event ? printEvent(resp, args.event, json, via, mcp) : printEvents(resp, json, via, mcp);
   } catch (err) {
     return surfaceEventTriggerError(err);
   }
@@ -266,9 +336,7 @@ async function printApps(
   ctx: { client: ApiClient; projectId: string },
   json: boolean,
 ): Promise<number> {
-  const resp = await ctx.client.get<TriggerEventAppsResponse>(
-    `/projects/${ctx.projectId}/triggers/event-apps`,
-  );
+  const resp = await ctx.client.get<TriggerEventAppsResponse>(eventAppsPath(ctx.projectId));
   if (json) {
     emitJson(resp);
     return 0;
@@ -281,10 +349,10 @@ async function printApps(
   out.write('\n');
   const withConnector = resp.apps
     .filter((a) => (a.connectors?.length ?? 0) > 0)
-    .sort((a, b) => (a.source ?? a.provider).localeCompare(b.source ?? b.provider));
+    .sort((a, b) => sourceOf(a).localeCompare(sourceOf(b)));
   let lastSource = '';
   for (const a of withConnector) {
-    const source = a.source ?? a.provider;
+    const source = sourceOf(a);
     if (source !== lastSource) {
       out.write(`${lastSource ? '\n' : ''}  ${C.dim}source: ${source}${C.reset}\n`);
       lastSource = source;
@@ -293,7 +361,7 @@ async function printApps(
       ? `${C.green}connected${C.reset}`
       : `${C.yellow}needs account${C.reset}`;
     out.write(
-      `  ${C.bold}${a.app}${C.reset}  ${C.dim}${a.event_count} events${C.reset}  ${state}\n`,
+      `  ${C.bold}${a.app}${C.reset}  ${C.dim}${a.event_count} event${a.event_count === 1 ? '' : 's'}${C.reset}  ${state}\n`,
     );
     for (const c of a.connectors ?? []) {
       out.write(
@@ -310,13 +378,25 @@ async function printApps(
     }
   }
   const rest = resp.apps.filter((a) => (a.connectors?.length ?? 0) === 0);
-  if (rest.length > 0) {
+  const restSources = [...new Set(rest.map(sourceOf))].sort();
+  for (const source of restSources) {
+    const apps = rest.filter((a) => sourceOf(a) === source);
     out.write(
-      `\n  ${C.dim}No connector yet (${rest.length}): ${rest.map((a) => `${a.app} (${a.event_count}${a.new_connector_slug && a.new_connector_slug !== a.app ? `, add as ${a.new_connector_slug}` : ''})`).join(', ')}${C.reset}\n`,
+      `\n  ${C.dim}No connector yet, source ${source} (${apps.length}): ${apps.map((a) => `${a.app} (${a.event_count}${a.new_connector_slug && a.new_connector_slug !== a.app ? `, add as ${a.new_connector_slug}` : ''})`).join(', ')}${C.reset}\n`,
     );
   }
+  // Each source adds a connector its own way. Composio apps are listed only
+  // where a connector exists, so its add line shows only when one is missing.
+  const addLines = [
+    ...(restSources.includes('composio')
+      ? ['Add a connector: kortix connectors add <slug> --provider composio --app <app> --apply']
+      : []),
+    ...(restSources.includes('mcp')
+      ? ["Add an MCP app (its read-only list tools become events too): kortix connectors add <slug> --provider mcp --url <mcp_url> --apply, then sign it in for the project: kortix connectors authorize <slug>. One app's exact commands: kortix triggers events --app <app>."]
+      : []),
+  ];
   out.write(
-    `\n  ${C.dim}${resp.apps.length} apps. List an app's events (no connector needed): kortix triggers events --app <app>. A connector's: --connector <slug>.\n  Add a connector: kortix connectors add <slug> --provider composio --app <app> --apply\n  Pick an account: kortix triggers add … --connector <slug> --account <label> (omit it for the default).\n  See every app event trigger: kortix triggers ls --type event  (one connector: kortix triggers ls --connector <slug>).${C.reset}\n\n`,
+    `\n  ${C.dim}${resp.apps.length} apps. List an app's events (no connector needed): kortix triggers events --app <app>. A connector's: --connector <slug>.\n${addLines.map((l) => `  ${l}\n`).join('')}  Pick an account: kortix triggers add … --connector <slug> --account <label> (omit it for the default).\n  See every app event trigger: kortix triggers ls --type event  (one connector: kortix triggers ls --connector <slug>).${C.reset}\n\n`,
   );
   return 0;
 }
@@ -324,13 +404,22 @@ async function printApps(
 type EventsVia = { connector: string } | { app: string };
 const viaFlag = (via: EventsVia): string => ('app' in via ? `--app ${via.app}` : `--connector ${via.connector}`);
 
-function printEvents(resp: TriggerEventTypesResponse, json: boolean, via: EventsVia): number {
+function printEvents(
+  resp: TriggerEventTypesResponse,
+  json: boolean,
+  via: EventsVia,
+  mcp?: McpSetup,
+): number {
   if (json) {
     emitJson(resp);
     return 0;
   }
   if (resp.event_types.length === 0) {
-    process.stdout.write(`  ${C.dim}${resp.app} has no event types.${C.reset}\n`);
+    process.stdout.write(
+      mcp?.steps.length
+        ? `  ${C.dim}${resp.app} has no event types yet. Its read-only list tools become events after these steps:${C.reset}\n${numbered(mcp.steps)}`
+        : `  ${C.dim}${resp.app} has no event types.${C.reset}\n`,
+    );
     return 0;
   }
   const typeW = Math.max(...resp.event_types.map((e) => e.type.length), 4);
@@ -344,7 +433,9 @@ function printEvents(resp: TriggerEventTypesResponse, json: boolean, via: Events
     );
   }
   process.stdout.write(
-    `\n  ${C.dim}${resp.event_types.length} event type${resp.event_types.length === 1 ? '' : 's'} on ${resp.app} (${resp.source ?? resp.provider}). Details: kortix triggers events ${viaFlag(via)} --event <TYPE>${C.reset}\n\n`,
+    `\n  ${C.dim}${resp.event_types.length} event type${resp.event_types.length === 1 ? '' : 's'} on ${resp.app} (${sourceOf(resp)}). Details: kortix triggers events ${viaFlag(via)} --event <TYPE>${C.reset}\n` +
+      (mcp?.steps.length ? `  ${C.dim}Set it up first:${C.reset}\n${numbered(mcp.steps)}` : '') +
+      '\n',
   );
   return 0;
 }
@@ -354,6 +445,7 @@ function printEvent(
   type: string,
   json: boolean,
   via: EventsVia,
+  mcp?: McpSetup,
 ): number {
   const e = resp.event_types.find((x) => x.type === type);
   if (!e) {
@@ -395,10 +487,16 @@ function printEvent(
     );
   }
   if (payload.length === 0) out.write('    {{ event.data.<field> }} — the provider payload\n');
+  const addTrigger = (connector: string) =>
+    `kortix triggers add <slug> --type event --connector ${connector} --event ${e.type} --prompt "…" --apply`;
   out.write(
-    'app' in via
-      ? `\n  ${C.dim}Add it: kortix connectors add <slug> --provider composio --app ${via.app} --apply, then kortix triggers add <slug> --type event --connector <slug> --event ${e.type} --prompt "…" --apply${C.reset}\n\n`
-      : `\n  ${C.dim}Add it: kortix triggers add <slug> --type event --connector ${via.connector} --event ${e.type} --prompt "…" --apply${C.reset}\n\n`,
+    mcp
+      ? mcp.steps.length
+        ? `\n  ${C.dim}Add it:${C.reset}\n${numbered([...mcp.steps, addTrigger(mcp.connector)])}\n`
+        : `\n  ${C.dim}Add it: ${addTrigger(mcp.connector)}${C.reset}\n\n`
+      : 'app' in via
+        ? `\n  ${C.dim}Add it: kortix connectors add <slug> --provider composio --app ${via.app} --apply, then ${addTrigger('<slug>')}${C.reset}\n\n`
+        : `\n  ${C.dim}Add it: ${addTrigger(via.connector)}${C.reset}\n\n`,
   );
   return 0;
 }

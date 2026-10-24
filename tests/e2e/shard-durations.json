@@ -6,10 +6,14 @@
     "e2e/specs/27-desktop-parity.spec.ts": 442.8,
     "e2e/specs/34-instant-session-loads.spec.ts": 117.1,
     "e2e/specs/37-new-user-lands-on-projects.spec.ts": 16.4,
+    "e2e/specs/38-project-shell-account-menu.spec.ts": 18.0,
     "e2e/specs/45-invite-lands-in-invited-project.spec.ts": 22.7,
     "e2e/specs/49-connector-connect-landing.spec.ts": 73.1,
     "e2e/specs/55-session-own-model.spec.ts": 60,
-    "e2e/specs/free-tier-pricing-onboarding.spec.ts": 8.4
+    "e2e/specs/free-tier-pricing-onboarding.spec.ts": 8.4,
+    "e2e/specs/50-onboarding-wizard-exit-dismissal.spec.ts": 0,
+    "e2e/specs/56-deleted-project-gone.spec.ts": 78,
+    "e2e/specs/docs-home-link.spec.ts": 0
   },
   "deployed": {
     "e2e/specs/01-account-auth.spec.ts": 17,
@@ -18,9 +22,13 @@
     "e2e/specs/27-desktop-parity.spec.ts": 217.1,
     "e2e/specs/34-instant-session-loads.spec.ts": 165.8,
     "e2e/specs/37-new-user-lands-on-projects.spec.ts": 8.1,
+    "e2e/specs/38-project-shell-account-menu.spec.ts": 10.0,
     "e2e/specs/45-invite-lands-in-invited-project.spec.ts": 15.3,
     "e2e/specs/49-connector-connect-landing.spec.ts": 65,
     "e2e/specs/55-session-own-model.spec.ts": 60,
-    "e2e/specs/free-tier-pricing-onboarding.spec.ts": 1.9
+    "e2e/specs/free-tier-pricing-onboarding.spec.ts": 1.9,
+    "e2e/specs/50-onboarding-wizard-exit-dismissal.spec.ts": 0,
+    "e2e/specs/56-deleted-project-gone.spec.ts": 0,
+    "e2e/specs/docs-home-link.spec.ts": 0
   }
 }

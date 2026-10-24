@@ -1,7 +1,7 @@
 'use client';
 
-import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
-import { Button } from '@/components/ui/button';
+import { UnifiedMarkdown } from '@kortix/ui/markdown';
+import { Button } from '@kortix/ui/button';
 import {
   Modal,
   ModalBody,
@@ -9,10 +9,10 @@ import {
   ModalDescription,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Copy } from '@/features/icon/icons/copy';
-import { useCopy } from '@/hooks/use-copy';
+} from '@kortix/ui/modal';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@kortix/ui/tabs';
+import { Copy } from '@kortix/ui/icons';
+import { useCopy } from '@kortix/ui/internal/hooks/use-copy';
 import { useTranslations } from '@/i18n/use-translations';
 import {
   APP_CONNECT_TABS,

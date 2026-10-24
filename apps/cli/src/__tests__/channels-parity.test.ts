@@ -65,8 +65,28 @@ const BINDING = {
   effectiveModel: { model: null, source: 'platform' },
 };
 
-function startServer(opts: { emailEnabled?: boolean } = {}): string {
+const INBOX = {
+  connection_id: 'conn_1',
+  inbox_id: 'inb_1',
+  email: 'support@kortixmail.com',
+  display_name: 'Support',
+  label: 'support@kortixmail.com',
+  owner_type: 'project',
+  owner_id: null,
+  is_default: true,
+  managed: true,
+  created_by_kortix: true,
+  sender_policy: { mode: 'allow_all', allowed_emails: [], allowed_domains: [], allowed_regex: null },
+  agent_name: null,
+  created_at: '2026-10-24T00:00:00.000Z',
+};
+const PRIVATE_INBOX = { ...INBOX, connection_id: 'conn_2', inbox_id: 'inb_2', email: 'me@kortixmail.com', label: 'me@kortixmail.com', owner_type: 'member', owner_id: 'u1', is_default: true };
+
+function startServer(
+  opts: { emailEnabled?: boolean; failTeams?: boolean; connected?: boolean; managedEmail?: boolean } = {},
+): string {
   const emailEnabled = opts.emailEnabled ?? true;
+  const managedEmail = opts.managedEmail ?? true;
   server = Bun.serve({
     port: 0,
     fetch: async (req) => {
@@ -78,14 +98,20 @@ function startServer(opts: { emailEnabled?: boolean } = {}): string {
       if (p === '' && req.method === 'GET') {
         return Response.json({ project_id: PROJECT, name: 'Channels', metadata: {} });
       }
+      if ((p === '/channels/slack/installation' || p === '/channels/teams/installation') && req.method === 'GET') {
+        if (opts.failTeams && p.includes('/teams/')) {
+          return Response.json({ error: 'Teams unavailable' }, { status: 503 });
+        }
+        return Response.json(opts.connected ? { installedAt: '2026-01-01' } : null);
+      }
       if (p === '/channels/teams/installation' && req.method === 'DELETE') {
         return Response.json({ status: 'disconnected' });
       }
       if (p === '/channels/email/mode' && req.method === 'GET') {
         return Response.json({
-          provider: 'agentmail',
+          provider: 'resend',
           enabled: emailEnabled,
-          managed_available: true,
+          managed_available: managedEmail,
         });
       }
       if (p === '/channels/email/installation' && req.method === 'GET') {
@@ -94,11 +120,44 @@ function startServer(opts: { emailEnabled?: boolean } = {}): string {
       if (p === '/channels/email/connect' && req.method === 'POST') {
         if (!emailEnabled) {
           return Response.json(
-            { error: 'Email is not enabled for this project.', code: 'feature_disabled', feature: 'agentmail_email' },
+            { error: 'Email is not enabled for this project.', code: 'feature_disabled', feature: 'email_channel' },
             { status: 403 },
           );
         }
         return Response.json(EMAIL_INSTALL);
+      }
+      if (p === '/channels/email/inboxes' && req.method === 'GET') {
+        return Response.json({ inboxes: [INBOX, PRIVATE_INBOX] });
+      }
+      if (p === '/channels/email/inboxes' && req.method === 'POST') {
+        const b = body as { share?: string; username?: string };
+        return Response.json(b.share === 'me' ? { ...PRIVATE_INBOX, email: `${b.username}@kortixmail.com` } : INBOX, { status: 201 });
+      }
+      if (p === '/channels/email/inboxes/conn_2' && req.method === 'DELETE') {
+        return Response.json({ status: 'deleted', inbox_deleted: true });
+      }
+      if (p === '/channels/email/inboxes/conn_1' && req.method === 'PATCH') {
+        const b = body as { sender_policy: { allowedDomains: string[] } };
+        return Response.json({
+          ...INBOX,
+          sender_policy: { mode: 'restricted', allowed_emails: [], allowed_domains: b.sender_policy.allowedDomains, allowed_regex: null },
+        });
+      }
+      if (p === '/connections/conn_2/default' && req.method === 'PUT') {
+        return Response.json({ ok: true });
+      }
+      if (p === '/channels/email/domains/add' && req.method === 'POST') {
+        const b = body as { domain: string };
+        return Response.json({
+          domain: {
+            domain_id: 'dom_1',
+            domain: b.domain,
+            status: 'PENDING',
+            verified: false,
+            records: [{ type: 'MX', name: b.domain, value: 'inbound-smtp.us-east-1.amazonaws.com', status: 'MISSING', priority: 10 }],
+          },
+          setup: null,
+        });
       }
       if (p === '/channels/email/installation' && req.method === 'DELETE') {
         return Response.json({ status: 'disconnected' });
@@ -176,6 +235,53 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
     calls = [];
   });
 
+  test('bare channels and status list Slack, Teams and disabled Email together', async () => {
+    const config = writeConfig(startServer({ emailEnabled: false }));
+    for (const sub of [[], ['status']]) {
+      const result = await runCli(['channels', ...sub, '--project', PROJECT], config);
+      expect(result.code).toBe(0);
+      expect(result.stdout).toMatch(/slack\s+not connected/i);
+      expect(result.stdout).toMatch(/teams\s+not connected/i);
+      expect(result.stdout).toMatch(/email\s+off/i);
+    }
+  });
+
+  test('combined JSON reports all states; explicit platform preserves its JSON shape', async () => {
+    const config = writeConfig(startServer());
+    const result = await runCli(['channels', 'status', '--json', '--project', PROJECT], config);
+    expect(result.code).toBe(0);
+    const value = JSON.parse(result.stdout);
+    expect(value.slack).toEqual({ connected: false, installation: null });
+    expect(value.teams).toEqual({ connected: false, installation: null });
+    expect(value.email.connected).toBe(true);
+    expect(value.email.mode.enabled).toBe(true);
+    for (const platform of ['slack', 'teams']) {
+      calls = [];
+      const filtered = await runCli([
+        'channels', 'status', '--platform', platform, '--json', '--project', PROJECT,
+      ], config);
+      expect(filtered.code).toBe(0);
+      expect(JSON.parse(filtered.stdout)).toEqual({ connected: false, installation: null });
+      expect(calls.filter((call) => call.path.includes('/channels/')).map((call) => call.path))
+        .toEqual([`/v1/projects/${PROJECT}/channels/${platform}/installation`]);
+    }
+  });
+
+  test('connected chat channels render connected and a failed read never claims disconnected', async () => {
+    let config = writeConfig(startServer({ connected: true }));
+    const connected = await runCli(['channels', '--project', PROJECT], config);
+    expect(connected.code).toBe(0);
+    expect(connected.stdout).toMatch(/slack\s+connected/);
+    expect(connected.stdout).toMatch(/teams\s+connected/);
+    expect(connected.stdout).toMatch(/email\s+connected/);
+    server?.stop(true);
+    config = writeConfig(startServer({ failTeams: true }));
+    const failed = await runCli(['channels', '--project', PROJECT], config);
+    expect(failed.code).not.toBe(0);
+    expect(failed.stderr).toContain('Teams unavailable');
+    expect(failed.stdout).not.toContain('not connected');
+  });
+
   afterEach(() => {
     server?.stop(true);
     server = null;
@@ -244,6 +350,8 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
     );
     expect(r.code).toBe(0);
     expect(calls).toEqual([
+      // No --api-key: the CLI first checks that this server offers managed inboxes.
+      { method: 'GET', path: `/v1/projects/${PROJECT}/channels/email/mode`, query: '', body: null },
       {
         method: 'POST',
         path: `/v1/projects/${PROJECT}/channels/email/connect`,
@@ -265,6 +373,46 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
     expect(r.stdout).toContain('support@acme.kortix.email');
   });
 
+  test('email connect without --api-key, where Kortix-managed email is off, asks for your Resend key', async () => {
+    const config = writeConfig(startServer({ managedEmail: false }));
+    const r = await runCli(['channels', 'email', 'connect', '--username', 'support', '--project', PROJECT], config);
+    expect(r.code).not.toBe(0);
+    expect(r.stderr).toContain('--api-key <re_');
+    expect(r.stderr).toContain('https://resend.com/api-keys');
+    expect(calls.some((c) => c.path.endsWith('/channels/email/connect'))).toBe(false);
+  });
+
+  test('email connect --api-key goes straight to connect with the key in the body', async () => {
+    const config = writeConfig(startServer({ managedEmail: false }));
+    const r = await runCli(
+      ['channels', 'email', 'connect', '--api-key', 're_secret', '--domain', 'mail.acme.io', '--project', PROJECT],
+      config,
+    );
+    expect(r.code).toBe(0);
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([`POST /v1/projects/${PROJECT}/channels/email/connect`]);
+    expect((calls[0]?.body as { api_key?: string }).api_key).toBe('re_secret');
+  });
+
+  test('email domains add POSTs the key in the body and prints the DNS records to set', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['channels', 'email', 'domains', 'add', 'mail.acme.io', '--api-key', 're_secret', '--project', PROJECT],
+      config,
+    );
+    expect(r.code).toBe(0);
+    expect(calls).toEqual([
+      {
+        method: 'POST',
+        path: `/v1/projects/${PROJECT}/channels/email/domains/add`,
+        query: '',
+        body: { api_key: 're_secret', domain: 'mail.acme.io' },
+      },
+    ]);
+    expect(r.stdout).toContain('mail.acme.io');
+    expect(r.stdout).toContain('inbound-smtp.us-east-1.amazonaws.com');
+    expect(r.stdout).toContain('domains verify dom_1');
+  });
+
   test('email connect refuses --inbox-id without --email before any request', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(
@@ -274,6 +422,61 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
     expect(r.code).toBe(2);
     expect(r.stderr).toContain('needs BOTH --inbox-id and --email');
     expect(calls).toEqual([]);
+  });
+
+  test('email inboxes lists every inbox with its owner, kind and default', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['channels', 'email', 'inboxes', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('support@kortixmail.com');
+    expect(r.stdout).toContain('project · Kortix managed');
+    expect(r.stdout).toContain('me@kortixmail.com');
+    expect(r.stdout).toContain('only you');
+    expect(calls.at(-1)).toMatchObject({ method: 'GET', path: `/v1/projects/${PROJECT}/channels/email/inboxes` });
+  });
+
+  test('email inboxes add posts share, the name and the sender policy; the key stays in the body', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['channels', 'email', 'inboxes', 'add', '--username', 'help', '--share', 'me', '--allow', '@acme.com', '--json', '--project', PROJECT],
+      config,
+    );
+    expect(r.code).toBe(0);
+    const post = calls.find((c) => c.method === 'POST')!;
+    expect(post.path).toBe(`/v1/projects/${PROJECT}/channels/email/inboxes`);
+    expect(post.body).toEqual({
+      share: 'me',
+      username: 'help',
+      sender_policy: { mode: 'restricted', allowedEmails: [], allowedDomains: ['acme.com'], allowedRegex: null },
+    });
+    expect(JSON.parse(r.stdout).email).toBe('help@kortixmail.com');
+  });
+
+  test('email inboxes add refuses an unknown --share before any request', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['channels', 'email', 'inboxes', 'add', '--share', 'team', '--project', PROJECT], config);
+    expect(r.code).not.toBe(0);
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
+  });
+
+  test('email inboxes rm, default and policy name an inbox by its address', async () => {
+    const config = writeConfig(startServer());
+    const rm = await runCli(['channels', 'email', 'inboxes', 'rm', 'me@kortixmail.com', '--project', PROJECT], config);
+    expect(rm.code).toBe(0);
+    expect(rm.stdout).toContain('deleted on Resend');
+    expect(calls.at(-1)).toMatchObject({ method: 'DELETE', path: `/v1/projects/${PROJECT}/channels/email/inboxes/conn_2` });
+
+    const def = await runCli(['channels', 'email', 'inboxes', 'default', 'me@kortixmail.com', '--project', PROJECT], config);
+    expect(def.code).toBe(0);
+    expect(calls.at(-1)).toMatchObject({ method: 'PUT', path: `/v1/projects/${PROJECT}/connections/conn_2/default` });
+
+    const pol = await runCli(['channels', 'email', 'inboxes', 'policy', 'support@kortixmail.com', '--allow', '@acme.com', '--project', PROJECT], config);
+    expect(pol.code).toBe(0);
+    expect(pol.stdout).toContain('@acme.com');
+    expect(calls.at(-1)).toMatchObject({ method: 'PATCH', path: `/v1/projects/${PROJECT}/channels/email/inboxes/conn_1` });
+
+    const missing = await runCli(['channels', 'email', 'inboxes', 'rm', 'nobody@kortixmail.com', '--project', PROJECT], config);
+    expect(missing.code).not.toBe(0);
   });
 
   test('email disconnect passes connector_slug on the query string', async () => {
@@ -328,11 +531,18 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
     expect(calls).toEqual([]);
   });
 
-  test('the feature-flag 403 on email connect is surfaced verbatim', async () => {
+  test('email connect with the email_channel flag off names the command that turns it on', async () => {
     const config = writeConfig(startServer({ emailEnabled: false }));
-    const r = await runCli(['channels', 'email', 'connect', '--project', PROJECT], config);
+    const r = await runCli(['channels', 'email', 'connect', '--api-key', 're_secret', '--project', PROJECT], config);
     expect(r.code).toBe(1);
-    expect(r.stderr).toContain('Email is not enabled for this project.');
+    expect(r.stderr).toContain('kortix projects features enable email_channel');
+  });
+
+  test('email status with the flag off says so and how to turn it on', async () => {
+    const config = writeConfig(startServer({ emailEnabled: false }));
+    const r = await runCli(['channels', 'email', 'status', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('email_channel feature flag is off');
   });
 
   test('bindings ls prints each channel with its effective agent/model/policy', async () => {

@@ -190,22 +190,8 @@ export function buildDaemonApp(
   // /web-proxy/{scheme}/{host}/{path} — forward proxy that rewrites HTML/CSS
   // so external sites embed cleanly inside the internal browser iframe.
   //
-  // Blocked loopback ports keep it off our own control plane: reaching the
-  // daemon or runtime through here would tunnel past every path-keyed control
-  // apps/api applies on the way in (agent authorization, connector gate, run
-  // cap, prompt idempotency, secret-grant re-mint).
-  app.route(
-    '/web-proxy',
-    createWebProxyRouter({
-      // Include every port the selected harness can use, including standby
-      // listeners. Reload must not create an unguarded route to the runtime.
-      blockedSelfPorts: new Set([
-        cfg.servicePort,
-        egressShimPort(),
-        ...harness.proxy.blockedPorts(cfg),
-      ]),
-    }),
-  )
+  // Every target and redirect is checked by the shared SSRF guard.
+  app.route('/web-proxy', createWebProxyRouter())
 
   // The daemon owns file reads and writes directly from the workspace,
   // including binary previews and downloads, independently of the harness.

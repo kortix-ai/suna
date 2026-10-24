@@ -225,6 +225,8 @@ export function registerSandboxTemplatesRoutes(): void {
     const existing = await getTemplateById(templateId);
     if (!existing) return c.json({ error: 'Not found' }, 404);
     if (existing.projectId !== projectId) return c.json({ error: 'Not found' }, 404);
+    // kortix.yaml owns a declared template: an edit here would be reverted by the next sync.
+    if (existing.source === 'toml') return c.json({ error: 'kortix.yaml declares this template. Change it under sandbox.templates in kortix.yaml.', code: 'template_declared_in_manifest' }, 409);
 
     try {
       const updated = await updateTemplate(templateId, patch, projectId);
@@ -285,6 +287,7 @@ export function registerSandboxTemplatesRoutes(): void {
     if (!row) return c.json({ error: 'Not found' }, 404);
     if (row.projectId !== projectId) return c.json({ error: 'Not found' }, 404);
     if (row.isShared) return c.json({ error: 'Shared platform templates cannot be deleted.' }, 409);
+    if (row.source === 'toml') return c.json({ error: 'kortix.yaml declares this template. Change it under sandbox.templates in kortix.yaml.', code: 'template_declared_in_manifest' }, 409);
 
     try {
       // Best-effort: clear this content identity from every enabled provider.

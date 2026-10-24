@@ -387,6 +387,20 @@ export async function resumeStoppedSandboxByExternalId(externalId: string): Prom
 }
 
 /**
+ * Is a wake of this stopped box already in flight? A claim (from `/start` or a
+ * session mutation) leaves the row `stopped` until the provider confirms the
+ * box, so a read in that window is still worth retrying.
+ */
+export async function stoppedSandboxWakePending(externalId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ metadata: sessionSandboxes.metadata })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.externalId, externalId))
+    .limit(1);
+  return runtimeWakeInProgress(row?.metadata as Record<string, unknown> | null | undefined);
+}
+
+/**
  * Stop reasons a keep-alive poll must never undo: the user pressed Stop, or
  * Kortix's own idle policy parked the box. Only a provider-originated park
  * (and a row with no reason) is worth waking from a poll.

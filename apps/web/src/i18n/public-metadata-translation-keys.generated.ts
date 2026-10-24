@@ -65,6 +65,8 @@ export const PUBLIC_METADATA_TRANSLATION_KEYS: Readonly<Record<string, string>> 
     'textad70f35eaccc',
   'Field notes on building, running, and governing AI agents that do real work — from the team building Kortix.':
     'text66b6392a2418',
+  'What shipped in Kortix each week, straight from our production releases.':
+    'text19e6841a618f',
   "Contact sales and book a demo": 'text228359b08506',
   "About": 'text4efca0d10c5f',
   "Legal": 'text4787eaf7c938',
@@ -94,4 +96,7 @@ export const PUBLIC_METADATA_TRANSLATION_KEYS: Readonly<Record<string, string>> 
   "AI agents for sales teams": 'text09e71792c6c3',
   "AI agents for marketing teams": 'textaaab3a59b808',
   "AI agents for finance teams": 'text8f480bae8d16',
+  'White-label: your AI product on Platinum.dev compute': 'texta0990a4a86dc',
+  'Fork Kortix, put your brand on it, and sell it as your own product. The license is free. The one requirement is that your compute runs on Platinum.dev.':
+    'text6189ab6313de',
 };

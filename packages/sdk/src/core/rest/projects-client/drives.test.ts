@@ -4,6 +4,7 @@ import { configureKortix } from '../../http/config';
 import {
   deleteDriveFile,
   downloadDriveFile,
+  getFolderAccess,
   getDriveFileUrl,
   listDriveFiles,
   listDriveVersions,
@@ -121,4 +122,144 @@ test('stopping a share reports the sessions it has not reached yet', async () =>
 
   respond(202, { pendingSessions: 2 });
   expect(await unshareFolder(D, 'g1')).toEqual({ pendingSessions: 2 });
+});
+
+// ── Upload progress over XHR ──
+// `fetch` reports no upload progress, so `onProgress` sends the body with
+// XMLHttpRequest instead, under the same auth and headers.
+type FakeXhr = {
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  body: unknown;
+  upload: { onprogress: ((e: { loaded: number }) => void) | null };
+  onload: (() => void) | null;
+  onerror: (() => void) | null;
+  onabort: (() => void) | null;
+  status: number;
+  responseText: string;
+};
+function installXhr(answer: (xhr: FakeXhr) => void): FakeXhr[] {
+  const sent: FakeXhr[] = [];
+  class Xhr implements FakeXhr {
+    method = '';
+    url = '';
+    headers: Record<string, string> = {};
+    body: unknown = null;
+    upload = { onprogress: null as ((e: { loaded: number }) => void) | null };
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    onabort: (() => void) | null = null;
+    status = 0;
+    responseText = '';
+    open(method: string, url: string) {
+      this.method = method;
+      this.url = url;
+    }
+    setRequestHeader(name: string, value: string) {
+      this.headers[name.toLowerCase()] = value;
+    }
+    send(body: unknown) {
+      this.body = body;
+      sent.push(this);
+      queueMicrotask(() => answer(this));
+    }
+    abort() {
+      this.onabort?.();
+    }
+  }
+  (globalThis as { XMLHttpRequest?: unknown }).XMLHttpRequest = Xhr;
+  return sent;
+}
+
+test('onProgress uploads over XHR, reports bytes sent, and resolves the server answer', async () => {
+  const sent = installXhr((xhr) => {
+    xhr.upload.onprogress?.({ loaded: 4 });
+    xhr.upload.onprogress?.({ loaded: 10 });
+    xhr.status = 200;
+    xhr.responseText = JSON.stringify({ path: '/a/x.bin', size: 10 });
+    xhr.onload?.();
+  });
+  const progress: Array<[number, number]> = [];
+  try {
+    const result = await uploadDriveFile(D, '/a/x.bin', new Blob(['0123456789']), {
+      ifMatch: 'v1',
+      onProgress: (sentBytes, total) => progress.push([sentBytes, total]),
+    });
+    expect(result).toEqual({ path: '/a/x.bin', size: 10 });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.method).toBe('PUT');
+    expect(sent[0]!.url).toBe(`http://test.local/drives/${D}/files/content?path=%2Fa%2Fx.bin`);
+    expect(sent[0]!.headers.authorization).toBe('Bearer tok');
+    expect(sent[0]!.headers['content-type']).toBe('application/octet-stream');
+    expect(sent[0]!.headers['if-match']).toBe('v1');
+    expect(progress).toEqual([
+      [4, 10],
+      [10, 10],
+    ]);
+    // Nothing went through fetch.
+    expect(calls).toHaveLength(0);
+  } finally {
+    delete (globalThis as { XMLHttpRequest?: unknown }).XMLHttpRequest;
+  }
+});
+
+test('an XHR upload the server refuses throws an ApiError with its status and message', async () => {
+  installXhr((xhr) => {
+    xhr.status = 409;
+    xhr.responseText = JSON.stringify({ message: 'file changed', code: 'file_changed' });
+    xhr.onload?.();
+  });
+  try {
+    const error = await uploadDriveFile(D, '/x', new Blob(['a']), { onProgress: () => undefined }).catch(
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).status).toBe(409);
+    expect((error as ApiError).message).toBe('file changed');
+  } finally {
+    delete (globalThis as { XMLHttpRequest?: unknown }).XMLHttpRequest;
+  }
+});
+
+test('without XMLHttpRequest, onProgress falls back to fetch and reports completion', async () => {
+  respond(200, { path: '/x', size: 1 });
+  const progress: Array<[number, number]> = [];
+  await uploadDriveFile(D, '/x', new Blob(['a']), { onProgress: (s, t) => progress.push([s, t]) });
+  expect(last().method).toBe('PUT');
+  expect(progress).toEqual([[1, 1]]);
+});
+
+// A folder listing is rendered by its caller (an error state, or a step up to
+// the parent when the folder is gone), so a failed one raises no app-wide
+// error. A new folder's card listed it before the server had made it, and the
+// 404 surfaced as a "File or folder not found" toast.
+test('a failed folder listing does not reach the app-wide error handler', async () => {
+  const seen: unknown[] = [];
+  configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError: (e) => void seen.push(e) });
+  try {
+    respond(404, { message: 'File or folder not found' });
+    const error = await listDriveFiles(D, '/new').catch((e: unknown) => e);
+    expect((error as ApiError).status).toBe(404);
+    expect(seen).toHaveLength(0);
+  } finally {
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError: undefined });
+  }
+});
+
+test('a refused folder write or sharing read leaves the error to the caller: no app-wide onError', async () => {
+  const reported: unknown[] = [];
+  configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError: (e) => void reported.push(e) });
+  try {
+    respond(400, { error: true, message: 'This folder cannot be moved or renamed' });
+    const moved = await moveDriveFile(D, '/Users', '/People').catch((e) => e);
+    expect((moved as ApiError).message).toBe('This folder cannot be moved or renamed');
+    await makeDriveFolder(D, '/Users/x').catch(() => undefined);
+    await deleteDriveFile(D, '/Company').catch(() => undefined);
+    respond(403, { error: true, message: 'You cannot open this folder' });
+    await getFolderAccess(D, '/a').catch(() => undefined);
+    expect(reported).toEqual([]);
+  } finally {
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError: undefined });
+  }
 });

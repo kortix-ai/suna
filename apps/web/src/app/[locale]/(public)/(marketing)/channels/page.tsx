@@ -8,7 +8,7 @@ import { SurfaceTable } from '@/features/marketing/channels/surface-table';
 import { ThreadMock } from '@/features/marketing/channels/thread-mock';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import SectionHeader from '@/features/marketing/component/section-header';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { getTranslations } from '@/i18n/get-translations';
 import Link from '@/components/site-link';
 import type { ReactNode } from 'react';

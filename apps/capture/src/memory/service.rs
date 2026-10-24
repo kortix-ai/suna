@@ -473,6 +473,23 @@ fn sys_retry_ms() -> u64 {
     }
 }
 
+/// Stops the service now and leaves it on at login: the next login or `start` (opening
+/// the app) runs it again. `stop` keeps it off.
+pub fn quit_now(sys: &dyn Sys, unit: &Unit) {
+    match unit.os {
+        Os::Macos => {
+            let domain = sys.launchd_domain(unit);
+            sys.run("launchctl", &a(&["bootout", &format!("{domain}/{}", unit.label)]));
+        }
+        Os::Linux => {
+            sys.run("systemctl", &a(&["--user", "stop", &format!("{}.service", unit.label)]));
+        }
+        Os::Windows => {
+            sys.run("schtasks.exe", &a(&["/End", "/TN", &unit.label]));
+        }
+    }
+}
+
 /// Stops the service and keeps it stopped across logins, until `start`.
 pub fn stop(sys: &dyn Sys, unit: &Unit) {
     match unit.os {
@@ -720,8 +737,8 @@ impl Slot {
         let Some(child) = self.child.as_mut() else {
             return;
         };
-        // Every exit restarts, exit 0 too: there is no Quit, and macOS quits the tray
-        // (exit 0) when a person changes one of its privacy permissions.
+        // Every exit restarts, exit 0 too: macOS quits the tray (exit 0) when a person
+        // changes one of its privacy permissions. "Quit" stops this service itself instead.
         if let Ok(Some(status)) = child.try_wait() {
             self.last_exit = Some(status.to_string());
             self.child = None;

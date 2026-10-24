@@ -14,7 +14,7 @@ import { db } from '../../shared/db';
 export interface ChatThreadKey {
   /** `slack`, `teams`, `email`, or `telegram` (the `chat_threads.platform` column). */
   platform: string;
-  /** Slack team, Teams tenant, or AgentMail inbox. */
+  /** Slack team, Teams tenant, or email (Resend) inbox. */
   workspaceId: string;
   threadId: string;
 }
@@ -92,6 +92,20 @@ export async function bindChatThread(
     .onConflictDoNothing({ target: [chatThreads.platform, chatThreads.workspaceId, chatThreads.threadId] })
     .returning({ sessionId: chatThreads.sessionId, projectId: chatThreads.projectId });
   return inserted ?? (await findChatThread(key));
+}
+
+/**
+ * Move every thread bound to one session of a project to another: a successor
+ * session takes over its failed predecessor's conversations, so replies in
+ * those threads reach it. Returns the number of threads moved.
+ */
+export async function adoptChatThreads(projectId: string, fromSessionId: string, toSessionId: string): Promise<number> {
+  const moved = await db
+    .update(chatThreads)
+    .set({ sessionId: toSessionId })
+    .where(and(eq(chatThreads.projectId, projectId), eq(chatThreads.sessionId, fromSessionId)))
+    .returning({ threadId: chatThreads.threadId });
+  return moved.length;
 }
 
 /** Record a delivered message on the thread. */

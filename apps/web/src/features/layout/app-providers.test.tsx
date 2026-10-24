@@ -15,7 +15,7 @@ const Named = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
 const stub = (name: string, extra: Record<string, unknown> = {}) =>
   mock.module(name, () => ({ default: Named, ...extra }));
 
-stub('@/components/ui/sidebar', {
+stub('@kortix/ui/sidebar', {
   SidebarProvider: ({ children }: { children?: ReactNode }) => (
     <div data-stub="SidebarProvider">{children}</div>
   ),
@@ -28,14 +28,14 @@ stub('@/features/billing/global-upgrade-modal', { GlobalUpgradeModal: Named });
 stub('@/features/connectors/connector-connection-gate-dialog', {
   ConnectorConnectionGateDialog: Named,
 });
-stub('@/lib/storage/managed-storage', { pruneAllRegisteredCaches: () => {} });
+stub('@kortix/ui/internal/lib/storage/managed-storage', { pruneAllRegisteredCaches: () => {} });
 stub('@/lib/device-caches', { sweepRetiredDeviceCaches: () => {} });
-stub('@/components/ui/sidebar-width', { SIDEBAR_MAX_WIDTH_PX: 416 });
+stub('@kortix/ui/sidebar-width', { SIDEBAR_MAX_WIDTH_PX: 416 });
 mock.module('@/lib/config', () => ({ isBillingEnabled: () => false }));
-mock.module('@/stores/onboarding-mode-store', () => ({
+mock.module('@kortix/ui/internal/stores/onboarding-mode-store', () => ({
   useOnboardingModeStore: () => ({ active: false, morphing: false }),
 }));
-mock.module('@/stores/subscription-store', () => ({
+mock.module('@kortix/ui/internal/stores/subscription-store', () => ({
   SubscriptionStoreSync: ({ children }: { children?: ReactNode }) => (
     <div data-stub="SubscriptionStoreSync">{children}</div>
   ),

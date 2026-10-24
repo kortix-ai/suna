@@ -1,4 +1,4 @@
-import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
+import { CANONICAL_ORIGIN } from '@kortix/ui/internal/lib/site-metadata';
 
 const CANONICAL_HOSTS = new Set(['kortix.com', 'www.kortix.com']);
 
@@ -31,7 +31,11 @@ Sitemap: ${CANONICAL_ORIGIN}/blog/sitemap.xml
 # Disallow sensitive routes
 Disallow: /api/
 Disallow: /_next/
-Disallow: /admin/
+
+# Pages need their stylesheets, scripts and images to render. The longest
+# matching rule wins, so these override \`Disallow: /_next/\`.
+Allow: /_next/static/
+Allow: /_next/image
 
 # Machine-readable public content is intentionally crawlable.
 Allow: /llms.txt

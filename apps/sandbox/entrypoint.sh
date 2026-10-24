@@ -220,6 +220,27 @@ if [ "${KORTIX_DRIVES:-}" = "1" ]; then
   start_drive_owner || true
 fi
 
+# /workspace is a Platinum volume (KORTIX_WORKSPACE_VOLUME=1), the only copy
+# of the session's files. Platinum mounts it before the guest runs; a box whose
+# mount is missing must not start on its own empty disk (kortixd would fill it
+# and the session would continue without its files), so wait out a late mount
+# for 60 s, then fail the boot. The ext4 root has an empty, root-only
+# `lost+found` the runtime user can neither list nor remove, so a checkout swap
+# into /workspace would fail on it: root removes it while it is empty. The loop
+# below hands the mountpoint to the runtime user.
+if [ "${KORTIX_WORKSPACE_VOLUME:-}" = "1" ]; then
+  for _ in $(seq 1 240); do mountpoint -q "${WORKSPACE}" && break; sleep 0.25; done
+  if ! mountpoint -q "${WORKSPACE}"; then
+    echo "[entrypoint] ${WORKSPACE} is not mounted, and this session's files are on its volume: not starting" >&2
+    exit 1
+  fi
+  if [ "$(id -u)" -eq 0 ]; then
+    rmdir "${WORKSPACE}/lost+found" 2>/dev/null || true
+  else
+    sudo -n rmdir "${WORKSPACE}/lost+found" 2>/dev/null || true
+  fi
+fi
+
 # Kortix Drive off Platinum (KORTIX_DRIVE_SYNC=1): no volume mounts here; the
 # daemon copies the session's drives into /drives and keeps them in sync, as
 # the runtime user, so /drives must be that user's.
@@ -239,6 +260,9 @@ DEADLINE_S=120
 # brief post-exec flap is already tolerated — 2 probes is enough to clear the
 # Daytona overlayfs init race without paying a flat 2s on every boot.
 STABLE_REQUIRED=2
+# A /workspace volume is mounted before the guest runs (Platinum reports the box
+# running only after the guest mount), so the overlay race does not apply.
+if [ "${KORTIX_WORKSPACE_VOLUME:-}" = "1" ]; then STABLE_REQUIRED=1; fi
 INTERVAL_S=0.25
 
 start=$(date +%s)

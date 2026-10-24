@@ -1,71 +1,51 @@
 'use client';
 
-/**
- * The Security tab — two-factor authentication and every device you are
- * signed in on.
- *
- * Split out of Profile on 2026-09-02 (Jay: "for security it should be a
- * separate tab"). Profile answers "who am I" — picture, name, email, which
- * organizations. This pane answers "how is that identity protected", which is
- * a different question a person comes here with a different intent for, and
- * one that does not belong under a heading between Organizations and Danger
- * zone.
- *
- * Same row shape as every pane (`SettingsRowGroup` / `SettingsRow`), same MFA
- * plumbing as before: `hooks/account/use-mfa.ts` owns the factor queries and
- * the enroll / verify / remove mutations. `FactorRow` and `totpQrSrc` moved
- * here from `profile-tab.tsx` with the section that renders them.
- *
- * `SecurityTabView` is the pure, props-only half — it renders under
- * `renderToStaticMarkup` with no React Query client or Supabase session (see
- * `security-tab.test.tsx`). `SecurityTab` is the container; it only mounts
- * while this tab is active, so opening the panel never fires its queries.
- */
+import { localizedCopy } from './localized-copy';
 
 import { useLocale, useTranslations } from '@/i18n/use-translations';
+import { listSignedInDevices, signOutDevice } from '@kortix/sdk';
 import {
+  DesktopIcon as Desktop,
   KeyIcon as KeyRound,
   PlusIcon as Plus,
   ShieldWarningIcon as ShieldWarning,
-  DesktopIcon as Desktop,
   DeviceMobileIcon as Smartphone,
   TrashIcon as Trash2,
   WarningIcon as Warning,
 } from '@phosphor-icons/react';
-import { listSignedInDevices, signOutDevice } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 
-import { CopyButton } from '@/components/markdown/copy-button';
+import { CopyButton } from '@kortix/ui/markdown';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import Hint from '@/components/ui/hint';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { Modal, ModalContent, ModalDescription, ModalTitle } from '@/components/ui/modal';
-import { inputSurfaceClasses, inputTransitionClasses } from '@/components/ui/input';
-import Loading from '@/components/ui/loading';
-import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
-import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
-import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
-import { type EnrollingFactor, useMfa } from '@/hooks/account/use-mfa';
-import { useCopy } from '@/hooks/use-copy';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { SessionDotMatrix } from '@kortix/ui/dot-matrix/session-dot-matrix';
+import Hint from '@kortix/ui/hint';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { inputSurfaceClasses, inputTransitionClasses } from '@kortix/ui/input';
+import Loading from '@kortix/ui/loading';
+import { Modal, ModalContent, ModalDescription, ModalTitle } from '@kortix/ui/modal';
+import { SettingsRow, SettingsRowGroup } from '@kortix/ui/settings-row';
+import { SettingsSubsectionHeader } from '@kortix/ui/settings-subsection-header';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import { requestMfaStepUp } from '@/features/auth/mfa-step-up';
-import { createClient } from '@/lib/supabase/client';
-import type { FactorInfo } from '@/lib/supabase/mfa';
-import { cn } from '@/lib/utils';
-import { SettingsTabHeader } from '../settings-tab-header';
 import { Bun } from '@/features/icon/icons/bun';
 import { Chrome } from '@/features/icon/icons/chrome';
 import { Edge } from '@/features/icon/icons/edge';
 import { Firefox } from '@/features/icon/icons/firefox';
 import { Linux } from '@/features/icon/icons/linux';
 import { Safari } from '@/features/icon/icons/safari';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { ErrorState } from '@kortix/ui/error-state';
+import { type EnrollingFactor, useMfa } from '@/hooks/account/use-mfa';
+import { useCopy } from '@kortix/ui/internal/hooks/use-copy';
+import { createClient } from '@/lib/supabase/client';
+import type { FactorInfo } from '@/lib/supabase/mfa';
+import { cn } from '@kortix/ui';
+import { SettingsTabHeader } from '@kortix/ui/customize/settings/settings-tab-header';
 import { type DeviceBrand, describeUserAgent } from './device-label';
 
 const BRAND_MARK: Record<DeviceBrand, (props: { className?: string }) => React.JSX.Element> = {
@@ -139,9 +119,7 @@ const CODE_LENGTH = 6;
 /** Groups a TOTP secret in fours, the way authenticator apps print it,
  *  four groups to a line so a 32-character key splits into two even rows. */
 export function formatSecret(secret: string): string {
-  return secret
-    .replace(/(.{4})(?=.)/g, '$1 ')
-    .replace(/((?:\S{4} ){3}\S{4}) /g, '$1\n');
+  return secret.replace(/(.{4})(?=.)/g, '$1 ').replace(/((?:\S{4} ){3}\S{4}) /g, '$1\n');
 }
 
 /** The enrollment dialog: scan on the left, type the code on the right.
@@ -192,7 +170,9 @@ export function EnrollDialog({
 
             <div className="flex min-w-0 flex-1 flex-col gap-6 p-6">
               <div className="space-y-1 pe-8">
-                <ModalTitle className="text-lg leading-7 tracking-tight">{copy.codeTitle}</ModalTitle>
+                <ModalTitle className="text-lg leading-7 tracking-tight">
+                  {copy.codeTitle}
+                </ModalTitle>
                 <ModalDescription className="text-pretty">{copy.codeDescription}</ModalDescription>
               </div>
 
@@ -209,7 +189,7 @@ export function EnrollDialog({
                       // The real input is invisible; the cell it is typing into
                       // wears the Input focus treatment while the field has focus.
                       i === Math.min(code.length, CODE_LENGTH - 1) &&
-                      'group-focus-within:border-ring group-focus-within:ring-ring/15 group-focus-within:ring-3',
+                        'group-focus-within:border-ring group-focus-within:ring-ring/15 group-focus-within:ring-3',
                     )}
                   >
                     {code[i] ?? ''}
@@ -354,7 +334,6 @@ export interface SecurityTabCopy {
   phone: string;
   sms: string;
   authenticatorTotp: string;
-  verified: string;
   unverified: string;
 }
 
@@ -398,7 +377,6 @@ export const DEFAULT_SECURITY_TAB_COPY: SecurityTabCopy = {
   phone: 'Phone',
   sms: 'SMS',
   authenticatorTotp: 'Authenticator app (TOTP)',
-  verified: 'verified',
   unverified: 'unverified',
 };
 
@@ -409,28 +387,28 @@ export function SecurityTabView({
   factors = [],
   factorsLoading = false,
   factorsError = false,
-  onRetryFactors = () => { },
+  onRetryFactors = () => {},
   removeFactorTarget = null,
-  onRequestRemoveFactor = () => { },
-  onCancelRemoveFactor = () => { },
-  onConfirmRemoveFactor = () => { },
+  onRequestRemoveFactor = () => {},
+  onCancelRemoveFactor = () => {},
+  onConfirmRemoveFactor = () => {},
   isRemovingFactor = false,
   enrolling = null,
   enrollCode = '',
-  onEnrollCodeChange = () => { },
-  onStartEnroll = () => { },
+  onEnrollCodeChange = () => {},
+  onStartEnroll = () => {},
   isStartingEnroll = false,
-  onVerifyEnroll = () => { },
+  onVerifyEnroll = () => {},
   isVerifyingEnroll = false,
-  onCancelEnroll = () => { },
+  onCancelEnroll = () => {},
   devices = [],
   devicesLoading = false,
   devicesError = false,
-  onRetryDevices = () => { },
-  onSignOutDevice = () => { },
-  onCopyIp = () => { },
+  onRetryDevices = () => {},
+  onSignOutDevice = () => {},
+  onCopyIp = () => {},
   signingOutDeviceId = null,
-  onSignOutOtherDevices = () => { },
+  onSignOutOtherDevices = () => {},
   isSigningOutOtherDevices = false,
   copy: copyOverrides = {},
 }: SecurityTabViewProps) {
@@ -573,11 +551,11 @@ export function DevicesSection({
   devices = [],
   devicesLoading = false,
   devicesError = false,
-  onRetryDevices = () => { },
-  onSignOutDevice = () => { },
-  onCopyIp = () => { },
+  onRetryDevices = () => {},
+  onSignOutDevice = () => {},
+  onCopyIp = () => {},
   signingOutDeviceId = null,
-  onSignOutOtherDevices = () => { },
+  onSignOutOtherDevices = () => {},
   isSigningOutOtherDevices = false,
   copy,
 }: DevicesSectionProps) {
@@ -607,7 +585,13 @@ export function DevicesSection({
                       <DeviceIcon className="text-muted-foreground size-4" />
                     </span>
                     {BrandMark ? (
-                      <Hint label={device.label} side="bottom" sideOffset={6} alignOffset={0} align="start">
+                      <Hint
+                        label={device.label}
+                        side="bottom"
+                        sideOffset={6}
+                        alignOffset={0}
+                        align="start"
+                      >
                         <span
                           data-device-brand={device.brand}
                           className="ring-popover absolute -right-1.5 -bottom-1.5 inline-flex rounded ring-1"
@@ -672,7 +656,9 @@ export function DevicesSection({
             onClick={onSignOutOtherDevices}
             disabled={isSigningOutOtherDevices}
           >
-            {isSigningOutOtherDevices ? <Loading variant="spokes" className="size-3.5 shrink-0" /> : null}
+            {isSigningOutOtherDevices ? (
+              <Loading variant="spokes" className="size-3.5 shrink-0" />
+            ) : null}
             {copy.signOutOtherDevices}
           </Button>
         </SettingsRow>
@@ -705,44 +691,7 @@ export function DevicesSection({
 export function SecurityTab() {
   const t = useTranslations('settings.security');
   const locale = useLocale();
-  const copy: SecurityTabCopy = {
-    twoFactorTitle: t('twoFactorTitle'),
-    twoFactorDescription: t('twoFactorDescription'),
-    authenticatorApp: t('authenticatorApp'),
-    authenticatorDescription: t('authenticatorDescription'),
-    statusOn: t('statusOn'),
-    addAuthenticatorApp: t('addAuthenticatorApp'),
-    factorsLoadFailed: t('factorsLoadFailed'),
-    retry: t('retry'),
-    factorsUnchanged: t('factorsUnchanged'),
-    noFactorEnrolled: t('noFactorEnrolled'),
-    noFactorDescription: t('noFactorDescription'),
-    scanTitle: t('scanTitle'),
-    scanDescription: t('scanDescription'),
-    qrAlt: t('qrAlt'),
-    manualSecret: t('manualSecret'),
-    codeTitle: t('codeTitle'),
-    codeDescription: t('codeDescription'),
-    verifyAndEnable: t('verifyAndEnable'),
-    cancel: t('cancel'),
-    removeFactorTitle: t('removeFactorTitle'),
-    removeFactorDescription: t('removeFactorDescription'),
-    removeFactor: t('removeFactor'),
-    devices: t('devices'),
-    currentDevice: t('currentDevice'),
-    signOutDevice: t('signOutDevice'),
-    copyIp: t('copyIp'),
-    noDevices: t('noDevices'),
-    noDevicesDescription: t('noDevicesDescription'),
-    devicesLoadFailed: t('devicesLoadFailed'),
-    signOutOtherDevices: t('signOutOtherDevices'),
-    signOutOtherDevicesDescription: t('signOutOtherDevicesDescription'),
-    phone: t('phone'),
-    sms: t('sms'),
-    authenticatorTotp: t('authenticatorTotp'),
-    verified: t('verified'),
-    unverified: t('unverified'),
-  };
+  const copy = localizedCopy(DEFAULT_SECURITY_TAB_COPY, t);
   const supabase = createClient();
   const mfa = useMfa();
 
@@ -758,14 +707,15 @@ export function SecurityTab() {
     staleTime: 10_000,
   });
 
-  const dateFormat = new Intl.DateTimeFormat(locale, { dateStyle: 'long' });
-  const dateTimeFormat = new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' });
+  const dateFormat = useMemo(() => new Intl.DateTimeFormat(locale, { dateStyle: 'long' }), [locale]);
+  const dateTimeFormat = useMemo(
+    () => new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }),
+    [locale],
+  );
   const devices: DeviceRow[] = (deviceQuery.data ?? []).map((device) => {
     const { browser, os, mobile, brand } = describeUserAgent(device.user_agent);
     const label =
-      browser && os
-        ? t('deviceName', { browser, os })
-        : (browser ?? os ?? t('unknownDevice'));
+      browser && os ? t('deviceName', { browser, os }) : (browser ?? os ?? t('unknownDevice'));
     const when = device.current
       ? t('deviceSignedInAt', { date: dateFormat.format(new Date(device.signed_in_at)) })
       : t('deviceLastActive', { date: dateTimeFormat.format(new Date(device.last_active_at)) });
@@ -810,8 +760,7 @@ export function SecurityTab() {
   // (KRTX-1386): requestMfaStepUp opens the global challenge dialog and runs
   // the action once the code verifies. A verified session runs the action
   // directly.
-  const runWithStepUp = (action: () => void) =>
-    requestMfaStepUp(mfa.challengeRequired, action);
+  const runWithStepUp = (action: () => void) => requestMfaStepUp(mfa.challengeRequired, action);
 
   // The sixth digit submits the code; no button press needed.
   const { enrollCode, isVerifyingEnroll, verifyEnroll } = mfa;

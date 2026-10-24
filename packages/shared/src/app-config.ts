@@ -312,7 +312,7 @@ export function appServicesFor(config: AppReleaseConfig, group: string): AppServ
  * only: nothing about how the App runs or who may open it changes.
  */
 export interface AppDisplay {
-  /** A card in the Apps grid. Default true; an App with a `parent` has none. */
+  /** A card in the Apps grid. Default false: an App is on the Apps page only when registered with `listed: true`. A `parent` puts it in that App's tabs instead. */
   listed?: boolean;
   /** The card thumbnail: `live` frames the App, `none` shows an icon. Default `live`. */
   preview?: 'live' | 'none';

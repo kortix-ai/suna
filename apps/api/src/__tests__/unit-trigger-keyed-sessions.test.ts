@@ -29,10 +29,6 @@ function spec(overrides: Partial<GitTriggerSpec> = {}): GitTriggerSpec {
     runAt: null,
     timezone: 'UTC',
     secretEnv: 'WAG_WEBHOOK_SECRET',
-    run: null,
-    monitorMode: null,
-    intervalSeconds: null,
-    expectEventWithinSeconds: null,
     sessionMode: 'fresh',
     pinnedSessionId: null,
     sessionKey: null,
@@ -121,6 +117,24 @@ describe('trigger filter', () => {
     expect(triggerFilterMatches(spec({ filter: { 'body.ok': 'true' } }), payload)).toBe(true);
     expect(triggerFilterMatches(spec({ filter: { 'body.count': '3' } }), payload)).toBe(true);
     expect(triggerFilterMatches(spec({ filter: { 'body.count': '4' } }), payload)).toBe(false);
+  });
+
+  // KRTX-1721: a push trigger whose agent pushes fixes must not re-fire on its
+  // own pushes. It excludes the agent's branch prefix and its sender.
+  test('operators: a push trigger skips its own agent branch and sender, and fires for a person', () => {
+    const loopSafe = spec({
+      filter: {
+        'body.ref': { not_prefix: ['refs/heads/kortix/'] },
+        'body.sender.login': { not: ['kortix-bot'] },
+        'body.repository.default_branch': { exists: true },
+        'body.action': { in: ['', 'created'] },
+      },
+    });
+    const push = (ref: string, login: string) => ({ body: { ref, sender: { login }, repository: { default_branch: 'main' } } });
+    expect(triggerFilterMatches(loopSafe, push('refs/heads/main', 'a-person'))).toBe(true);
+    expect(triggerFilterMatches(loopSafe, push('refs/heads/kortix/fix-lint', 'a-person'))).toBe(false);
+    expect(triggerFilterMatches(loopSafe, push('refs/heads/main', 'kortix-bot'))).toBe(false);
+    expect(triggerFilterMatches(loopSafe, { body: { ref: 'refs/heads/main', sender: { login: 'a-person' } } })).toBe(false);
   });
 });
 

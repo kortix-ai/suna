@@ -231,11 +231,9 @@ describe('ProjectLeftDrawer renders', () => {
     expect(selected[0]).toStartWith('Child 6, sub-session of ');
   });
 
-  test('notification_center off: the pills from before KRTX-1742, no Notifications', async () => {
+  test('the nav pills are Search, Files, Review and Apps: Notifications is the home bell', async () => {
     await act(async () => {
-      tree = create(
-        React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true, notificationsUnreadCount: 3 })
-      );
+      tree = create(React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true }));
     });
     expect([...new Set(navPills.map((props) => props.label))]).toEqual(['Search', 'Files', 'Review', 'Apps']);
   });
@@ -255,37 +253,6 @@ describe('ProjectLeftDrawer renders', () => {
     expect([...new Set(navPills.map((props) => props.label))]).toEqual(['Search', 'Files', 'Apps']);
   });
 
-  test('the Notifications pill shows the unread count and opens the inbox', async () => {
-    navigated.length = 0;
-    await act(async () => {
-      tree = create(
-        React.createElement(Drawer.ProjectLeftDrawer, {
-          projectId: 'proj',
-          ...handlers,
-          open: true,
-          notificationsEnabled: true,
-          notificationsUnreadCount: 3,
-        })
-      );
-    });
-    expect([...new Set(navPills.map((props) => props.label))]).toEqual(['Search', 'Files', 'Review', 'Notifications', 'Apps']);
-    const pill = navPills.filter((props) => props.label === 'Notifications').at(-1);
-    expect(pill.accessibilityLabel).toBe('Notifications, 3 unread');
-    expect(pill.trailing.props.count).toBe(3);
-    await act(async () => pill.onPress());
-    expect(navigated).toEqual([['inbox']]);
-  });
-
-  test('with nothing unread the pill reads its name alone', async () => {
-    await act(async () => {
-      tree = create(
-        React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true, notificationsEnabled: true })
-      );
-    });
-    const pill = navPills.filter((props) => props.label === 'Notifications').at(-1);
-    expect(pill.accessibilityLabel).toBe('Notifications');
-    expect(pill.trailing.props.count).toBe(0);
-  });
 });
 
 // KRTX-1727: the server drops rows the viewer may not see after a bounded

@@ -13,10 +13,8 @@ import {
 import {
   type SandboxPreviewDeploymentInput,
   deployPlatinumPreview,
-  reconcileDaytonaPreviews,
   runPlatinumPreviewSuite,
   reconcilePlatinumPreviews,
-  teardownDaytonaPreview,
   teardownPlatinumPreview,
 } from '../src/core/sandbox-preview-providers';
 import { readPreviewRuntimeSecrets } from '../src/core/preview-stack';
@@ -143,11 +141,6 @@ const platinum = {
   apiUrl: value('PLATINUM_API_URL', 'https://api.platinum.dev'),
   apiKey: value('PLATINUM_API_KEY'),
 };
-const daytona = {
-  apiUrl: value('DAYTONA_API_URL', value('DAYTONA_SERVER_URL', 'https://app.daytona.io/api')),
-  apiKey: value('DAYTONA_API_KEY'),
-  target: value('DAYTONA_CI_TARGET', value('DAYTONA_TARGET', 'us')),
-};
 
 if (action === 'deploy') {
   const prNumber = positiveInteger('PREVIEW_PR_NUMBER');
@@ -187,13 +180,6 @@ if (action === 'deploy') {
       platinum: () => deployPlatinumPreview(deployment),
     },
   );
-  // Previews created before Platinum-only (2026-09-22) may still exist on
-  // Daytona. Remove this pull request's one; nothing new is ever created there.
-  await teardownDaytonaPreview({ ...daytona, prNumber }).catch((error) => {
-    console.warn(
-      `[sandbox-preview] stale provider cleanup failed; scheduled reconciliation will retry: ${String(error)}`,
-    );
-  });
   await writeOutput('provider', result.provider);
   await writeOutput('sandbox_id', result.sandboxId ?? '');
   await writeOutput('preview_url', result.previewUrl ?? '');
@@ -244,28 +230,20 @@ if (action === 'deploy') {
     branchEnv && !process.env.PREVIEW_PR_NUMBER?.trim()
       ? undefined
       : positiveInteger('PREVIEW_PR_NUMBER');
-  const [platinumDeleted, daytonaDeleted] = await Promise.all([
-    teardownPlatinumPreview({
-      ...platinum,
-      ...(prNumber === undefined ? {} : { prNumber }),
-      ...(branchEnv ? { branchEnv } : {}),
-    }),
-    prNumber === undefined ? Promise.resolve(0) : teardownDaytonaPreview({ ...daytona, prNumber }),
-  ]);
-  console.log(`[sandbox-preview] teardown platinum=${platinumDeleted} daytona=${daytonaDeleted}`);
+  const platinumDeleted = await teardownPlatinumPreview({
+    ...platinum,
+    ...(prNumber === undefined ? {} : { prNumber }),
+    ...(branchEnv ? { branchEnv } : {}),
+  });
+  console.log(`[sandbox-preview] teardown platinum=${platinumDeleted}`);
 } else if (action === 'reconcile') {
   const token = required('GITHUB_TOKEN');
   const active = await activePreviewPullRequests(repository, token);
   // A branch environment is retired by its BRANCH disappearing, not by its pull
   // request closing, so the sweep needs to know which branches still exist.
   const liveBranchSandboxNames = await liveBranchNames(repository, token);
-  const [platinumDeleted, daytonaDeleted] = await Promise.all([
-    reconcilePlatinumPreviews({ ...platinum, activePullRequests: active, liveBranchSandboxNames }),
-    reconcileDaytonaPreviews({ ...daytona, activePullRequests: active }),
-  ]);
-  console.log(
-    `[sandbox-preview] reconcile active=${active.size} platinum_deleted=${platinumDeleted} daytona_deleted=${daytonaDeleted}`,
-  );
+  const platinumDeleted = await reconcilePlatinumPreviews({ ...platinum, activePullRequests: active, liveBranchSandboxNames });
+  console.log(`[sandbox-preview] reconcile active=${active.size} platinum_deleted=${platinumDeleted}`);
 } else {
   throw new Error(`unknown sandbox preview action: ${action}`);
 }

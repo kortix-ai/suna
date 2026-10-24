@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { type ShardTarget, listSpecFiles, loadDurations, planBrowserShard } from './browser-shard';
+import { parseShardBounds } from './shard';
 import { LOCAL_AUTH_EMAIL_HOOK_SECRET, localWebUrl } from './local-profile';
 import {
   type LocalStackHandle,
@@ -12,6 +13,7 @@ import {
   ensureLocalWeb,
   readLocalSupabaseEnvironment,
   resolveLocalTopology,
+  waitUntilReady,
 } from './local-stack';
 import { resolveTargetSmokeConfig, waitForTargetSha } from './target-smoke';
 
@@ -92,10 +94,8 @@ function hasFlowFilter(args: string[]): boolean {
 }
 
 function assertShardValue(value: string | undefined, flag: string): void {
-  const match = value?.match(/^(\d+)\/(\d+)$/);
-  const current = Number(match?.[1]);
-  const total = Number(match?.[2]);
-  if (!match || current < 1 || total < 2 || current > total) {
+  const parsed = parseShardBounds(value ?? '', 2);
+  if (!parsed.matched || !parsed.inBounds) {
     throw new Error(`${flag} must use CURRENT/TOTAL with 1 <= CURRENT <= TOTAL`);
   }
 }
@@ -451,22 +451,110 @@ export async function waitForLocalWeb(
   } = {},
 ): Promise<void> {
   const checkedWebUrl = assertLoopbackHttpUrl(webUrl, 'local web').toString();
-  const timeoutMs = options.timeoutMs ?? 60_000;
-  const deadline = performance.now() + timeoutMs;
   const probe =
     options.probe ?? ((url: string) => fetch(url, { signal: AbortSignal.timeout(5_000) }));
-  const sleep = options.sleep ?? Bun.sleep;
-  do {
-    try {
-      const response = await probe(checkedWebUrl);
-      if (response.ok) return;
-    } catch {
-      // The dev server can accept connections before its first route compiles.
-    }
-    await sleep(250);
-  } while (performance.now() < deadline);
-  throw new Error(`local web is not ready at ${webUrl} after ${timeoutMs}ms`);
+  await waitUntilReady({
+    probe: async () => (await probe(checkedWebUrl)).ok,
+    describe: `local web is not ready at ${webUrl}`,
+    timeoutMs: options.timeoutMs ?? 60_000,
+    clock: () => performance.now(),
+    sleep: options.sleep,
+  });
 }
+
+/**
+ * The local browser lane's env: wait for the local web to be ready, then hand
+ * the flows the whole local stack's coordinates (API, Supabase, Mailpit, the
+ * capture store).
+ */
+async function prepareBrowserEnv(
+  root: string,
+  env: Record<string, string | undefined>,
+): Promise<Record<string, string | undefined>> {
+  const topology = resolveLocalTopology(root);
+  const supabase = await readLocalSupabaseEnvironment(topology);
+  const webPort = topology.marker?.ports.web ?? 3000;
+  const webUrl = localWebUrl(webPort);
+  await waitForLocalWeb(webUrl);
+  if (
+    !supabase.API_URL ||
+    !supabase.DB_URL ||
+    !supabase.ANON_KEY ||
+    !supabase.SERVICE_ROLE_KEY
+  ) {
+    throw new Error('local Supabase environment is incomplete');
+  }
+  return {
+    ...env,
+    E2E_BASE_URL: webUrl,
+    E2E_API_URL: topology.apiUrl,
+    E2E_SUPABASE_URL: supabase.API_URL,
+    E2E_MAILPIT_URL: supabase.MAILPIT_URL ?? '',
+    E2E_DATABASE_URL: supabase.DB_URL,
+    KE2E_DATABASE_URL: supabase.DB_URL,
+    DATABASE_URL: supabase.DB_URL,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: supabase.ANON_KEY,
+    SUPABASE_SERVICE_ROLE_KEY: supabase.SERVICE_ROLE_KEY,
+    // The capture store (Supabase Storage S3): journeys write a device's day with it.
+    E2E_CAPTURE_S3_ENDPOINT: `${supabase.API_URL.replace(/\/+$/, '')}/storage/v1/s3`,
+    E2E_CAPTURE_S3_ACCESS_KEY_ID: supabase.S3_PROTOCOL_ACCESS_KEY_ID ?? '',
+    E2E_CAPTURE_S3_SECRET_ACCESS_KEY: supabase.S3_PROTOCOL_ACCESS_KEY_SECRET ?? '',
+  };
+}
+
+/** The deployed browser lane's env: demand the target's credentials up front. */
+function prepareTargetBrowserFullEnv(
+  _root: string,
+  env: Record<string, string | undefined>,
+): Promise<Record<string, string | undefined>> {
+  const required = [
+    'KE2E_API_URL',
+    'KE2E_SUPABASE_URL',
+    'KE2E_SUPABASE_ANON_KEY',
+    'KE2E_SUPABASE_SERVICE_ROLE_KEY',
+    'KE2E_DATABASE_URL',
+    'KE2E_STRIPE_SECRET_KEY',
+    'KE2E_STRIPE_WEBHOOK_SECRET',
+  ] as const;
+  const missing = required.filter((name) => !process.env[name]?.trim());
+  if (
+    !process.env.E2E_RESEND_API_KEY?.trim() &&
+    !process.env.E2E_MAILPIT_URL?.trim()
+  ) {
+    missing.push('E2E_RESEND_API_KEY or E2E_MAILPIT_URL' as never);
+  }
+  if (missing.length > 0) {
+    throw new Error(`deployed browser suite requires ${missing.join(', ')}`);
+  }
+  const targetApiUrl = process.env.KE2E_API_URL ?? '';
+  const targetSupabaseUrl = process.env.KE2E_SUPABASE_URL ?? '';
+  const targetDatabaseUrl = process.env.KE2E_DATABASE_URL ?? '';
+  const targetSupabaseAnonKey = process.env.KE2E_SUPABASE_ANON_KEY ?? '';
+  const targetSupabaseServiceRoleKey = process.env.KE2E_SUPABASE_SERVICE_ROLE_KEY ?? '';
+  return Promise.resolve({
+    ...env,
+    E2E_API_URL: targetApiUrl,
+    E2E_SUPABASE_URL: targetSupabaseUrl,
+    E2E_DATABASE_URL: targetDatabaseUrl,
+    DATABASE_URL: targetDatabaseUrl,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: targetSupabaseAnonKey,
+    SUPABASE_SERVICE_ROLE_KEY: targetSupabaseServiceRoleKey,
+  });
+}
+
+/**
+ * The lanes that assemble their own env before spawn, by lane name: runLane
+ * calls the entry instead of inlining each branch. `browser` waits for the
+ * local web and hands the flows the local stack's coordinates;
+ * `target-browser-full` demands the deployed target's credentials up front.
+ */
+const LANE_PREPARE_ENV: Record<
+  string,
+  (root: string, env: Record<string, string | undefined>) => Promise<Record<string, string | undefined>>
+> = {
+  browser: prepareBrowserEnv,
+  'target-browser-full': prepareTargetBrowserFullEnv,
+};
 
 async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
   const startedAt = performance.now();
@@ -495,71 +583,8 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
         : { KE2E_AUTH_EMAIL_HOOK_SECRET: LOCAL_AUTH_EMAIL_HOOK_SECRET }),
       ...(lane.env ?? {}),
     };
-    if (lane.name === 'browser') {
-      const topology = resolveLocalTopology(root);
-      const supabase = await readLocalSupabaseEnvironment(topology);
-      const webPort = topology.marker?.ports.web ?? 3000;
-      const webUrl = localWebUrl(webPort);
-      await waitForLocalWeb(webUrl);
-      if (
-        !supabase.API_URL ||
-        !supabase.DB_URL ||
-        !supabase.ANON_KEY ||
-        !supabase.SERVICE_ROLE_KEY
-      ) {
-        throw new Error('local Supabase environment is incomplete');
-      }
-      env = {
-        ...env,
-        E2E_BASE_URL: webUrl,
-        E2E_API_URL: topology.apiUrl,
-        E2E_SUPABASE_URL: supabase.API_URL,
-        E2E_MAILPIT_URL: supabase.MAILPIT_URL ?? '',
-        E2E_DATABASE_URL: supabase.DB_URL,
-        KE2E_DATABASE_URL: supabase.DB_URL,
-        DATABASE_URL: supabase.DB_URL,
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: supabase.ANON_KEY,
-        SUPABASE_SERVICE_ROLE_KEY: supabase.SERVICE_ROLE_KEY,
-        // The capture store (Supabase Storage S3): journeys write a device's day with it.
-        E2E_CAPTURE_S3_ENDPOINT: `${supabase.API_URL.replace(/\/+$/, '')}/storage/v1/s3`,
-        E2E_CAPTURE_S3_ACCESS_KEY_ID: supabase.S3_PROTOCOL_ACCESS_KEY_ID ?? '',
-        E2E_CAPTURE_S3_SECRET_ACCESS_KEY: supabase.S3_PROTOCOL_ACCESS_KEY_SECRET ?? '',
-      };
-    } else if (lane.name === 'target-browser-full') {
-      const required = [
-        'KE2E_API_URL',
-        'KE2E_SUPABASE_URL',
-        'KE2E_SUPABASE_ANON_KEY',
-        'KE2E_SUPABASE_SERVICE_ROLE_KEY',
-        'KE2E_DATABASE_URL',
-        'KE2E_STRIPE_SECRET_KEY',
-        'KE2E_STRIPE_WEBHOOK_SECRET',
-      ] as const;
-      const missing = required.filter((name) => !process.env[name]?.trim());
-      if (
-        !process.env.E2E_AGENTMAIL_API_KEY?.trim() &&
-        !process.env.E2E_MAILPIT_URL?.trim()
-      ) {
-        missing.push('E2E_AGENTMAIL_API_KEY or E2E_MAILPIT_URL' as never);
-      }
-      if (missing.length > 0) {
-        throw new Error(`deployed browser suite requires ${missing.join(', ')}`);
-      }
-      const targetApiUrl = process.env.KE2E_API_URL ?? '';
-      const targetSupabaseUrl = process.env.KE2E_SUPABASE_URL ?? '';
-      const targetDatabaseUrl = process.env.KE2E_DATABASE_URL ?? '';
-      const targetSupabaseAnonKey = process.env.KE2E_SUPABASE_ANON_KEY ?? '';
-      const targetSupabaseServiceRoleKey = process.env.KE2E_SUPABASE_SERVICE_ROLE_KEY ?? '';
-      env = {
-        ...env,
-        E2E_API_URL: targetApiUrl,
-        E2E_SUPABASE_URL: targetSupabaseUrl,
-        E2E_DATABASE_URL: targetDatabaseUrl,
-        DATABASE_URL: targetDatabaseUrl,
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: targetSupabaseAnonKey,
-        SUPABASE_SERVICE_ROLE_KEY: targetSupabaseServiceRoleKey,
-      };
-    }
+    const prepareEnv = LANE_PREPARE_ENV[lane.name];
+    if (prepareEnv) env = await prepareEnv(root, env);
     const child = Bun.spawn(lane.command, {
       cwd: lane.cwd ? resolve(root, lane.cwd) : root,
       env,
@@ -689,6 +714,19 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
     if (localSupabase?.started) await localSupabase.stop();
   }
   const durationMs = performance.now() - startedAt;
+  const benchmarkPath = await writeBenchmark(root, results, plan, durationMs);
+  printResults(results, plan, durationMs, benchmarkPath);
+  const failed = results.filter((result) => result.exitCode !== 0);
+  return failed.length === 0 ? 0 : 1;
+}
+
+/** Build and write the benchmark JSON for one local run; returns its path. */
+async function writeBenchmark(
+  root: string,
+  results: LaneResult[],
+  plan: LocalTestPlan,
+  durationMs: number,
+): Promise<string> {
   const failed = results.filter((result) => result.exitCode !== 0);
   const benchmark = {
     gitSha: (await Bun.$`git rev-parse --short=10 HEAD`.cwd(root).quiet().text()).trim(),
@@ -702,7 +740,17 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
   await mkdir(outputDir, { recursive: true });
   const outputPath = resolve(outputDir, `benchmark-${Date.now()}.json`);
   await writeFile(outputPath, `${JSON.stringify(benchmark, null, 2)}\n`);
+  return outputPath;
+}
 
+/** Print the run verdict, one line per lane, and where the benchmark landed. */
+function printResults(
+  results: LaneResult[],
+  plan: LocalTestPlan,
+  durationMs: number,
+  benchmarkPath: string,
+): void {
+  const failed = results.filter((result) => result.exitCode !== 0);
   console.log(
     `\n[test] ${failed.length === 0 ? 'PASS' : 'FAIL'} ${plan.mode} ${(durationMs / 1000).toFixed(1)}s`,
   );
@@ -711,6 +759,5 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
       `[test] ${result.exitCode === 0 ? 'PASS' : 'FAIL'} ${result.name} ${(result.durationMs / 1000).toFixed(1)}s`,
     );
   }
-  console.log(`[test] benchmark ${outputPath}`);
-  return failed.length === 0 ? 0 : 1;
+  console.log(`[test] benchmark ${benchmarkPath}`);
 }

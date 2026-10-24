@@ -5,7 +5,7 @@
  * refresh serves every parallel 401. No React Native imports: `api/config.ts`
  * binds it to Supabase.
  */
-export interface TokenSource {
+interface TokenSource {
   /** The stored session's access token (supabase-js refreshes it near expiry). */
   read: () => Promise<string | null>;
   /** Force a refresh with the refresh token; null when it fails. */

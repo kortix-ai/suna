@@ -1,6 +1,6 @@
 ---
 name: kortix-system
-description: "Canonical reference for Kortix projects, Apps (sites, servers, backends with volumes) and internal business apps, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and the two session harnesses, pi and OpenCode. Covers `kortix.yaml` versions 1 and 2, App deployments, harness configuration (`harnesses/pi/`, `harnesses/opencode/`), session identity, credential boundaries, and the complete pi and OpenCode references. Load when the user asks how Kortix works, what Kortix can do, how to deploy an App, how an agent discovers platform instructions, how to customize or configure this project's agents (create or fix an agent, subagent, skill, tool, plugin, extension, pi package, command, MCP server, model or permission rule; edit `opencode.jsonc`), how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
+description: "Canonical reference for Kortix projects, Apps (sites, servers, backends with volumes) and internal business apps, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and the session harness: pi runs every new session; OpenCode is deprecated. Covers `kortix.yaml` versions 1 and 2, App deployments, harness configuration (`harnesses/pi/`, `harnesses/opencode/`), session identity, credential boundaries, and the complete pi and OpenCode references. Load when the user asks how Kortix works, what Kortix can do, how to deploy an App, how an agent discovers platform instructions, how to customize or configure this project's agents (create or fix an agent, subagent, skill, tool, plugin, extension, pi package, command, MCP server, model or permission rule; edit `opencode.jsonc`), how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
 ---
 
 <skill name="kortix-system">
@@ -48,15 +48,16 @@ under `harnesses/`:
   (`<name>: kortix:<name>`) and its own tools, one module each
   (`tools/<name>.ts` by convention). Every harness runs them
   (`references/kortix/tools.md`).
-- **OpenCode config** — `harnesses/opencode/` (`opencode.config_dir`):
+- **OpenCode config (deprecated)** — `harnesses/opencode/` (`opencode.config_dir`):
   `opencode.jsonc`, plugins, commands, MCP and provider settings.
-  Only an OpenCode session reads it.
+  Only a session that still runs OpenCode reads it. Do not add to it.
 - **pi config** — `harnesses/pi/` (`pi.config_dir`): extensions, prompt
   templates, `settings.json`. Only a pi session reads it. The starter does
   not create it.
 
-A session runs one harness, **OpenCode** or **pi** (`<harnesses>` below).
-Both read the same agents, skills, memory and `kortix.yaml`.
+Every new session runs **pi**. **OpenCode** is deprecated and serves only
+sessions that started on it (`<harnesses>` below). Both read the same agents,
+skills, memory and `kortix.yaml`.
 
 Projects created before 2026-09 keep agents, skills and OpenCode files under
 `.kortix/opencode/` and memory under `.kortix/memory/`. Both layouts work,
@@ -76,18 +77,20 @@ in that harness's config directory.
 <harnesses>
 ## The harness — check it before you change agent behavior
 
-A harness is the agent runtime inside the session sandbox. Kortix has two.
-A session runs exactly one, and the two read different config files.
+A harness is the agent runtime inside the session sandbox. Every new session
+runs pi. OpenCode is deprecated: only a session that started on it before
+2026-10-23 still runs it, and Kortix will remove it. A session keeps the
+harness it started on.
 
 ```bash
-echo "${KORTIX_HARNESS:-opencode}"     # prints pi or opencode
+echo "${KORTIX_HARNESS:-opencode}"     # prints pi, or opencode in an older session
 ```
 
-Kortix selects the harness when a session starts: `llm_gateway` off →
-OpenCode; else the `pi_harness` project flag on → pi; else `runtime: pi` in
-`kortix.yaml` → pi; else OpenCode.
+Do not add OpenCode config to a project (`harnesses/opencode/`,
+`opencode.jsonc`, OpenCode plugins or commands), and do not set `runtime:` in
+`kortix.yaml`: it selects nothing. Build on pi.
 
-| You want to… | On OpenCode | On pi |
+| You want to… | On OpenCode (deprecated) | On pi |
 | --- | --- | --- |
 | Change an agent's prompt, model or permissions | `agents/<name>.md` | `agents/<name>.md` |
 | Add a skill | `skills/<name>/SKILL.md` | `skills/<name>/SKILL.md` |
@@ -166,7 +169,7 @@ Load this skill when the user asks any of:
   do Y in Kortix?" / how Kortix compares to other AI tools or assistants
 - "Schedule this / remind me later / run this every morning / on a
   schedule" / "recurring task" / "cron job" / "webhook trigger" / "when a PR opens /
-  an email arrives" (app event trigger)
+  an email arrives" (connector event trigger)
 - "Check back on this later / follow up tomorrow / keep checking until X
   happens" — a session reminder (`kortix remind`)
 - "What does `kortix.yaml` do?" / "What is `kortix_version`?"
@@ -225,15 +228,16 @@ Kortix cloud state — not just files in the repo. Examples:
 | "turn on / off a feature flag (Reminders, Meta Agent, …)" | `kortix projects features` · `kortix projects features enable <flag>`. The internal-only flags (`session_log`, `session_log_restore`) are Kortix-managed: listed only while on; only Kortix changes them. |
 | "rename the project / change its icon or default branch" | `kortix projects set --name … --icon … --branch …` |
 | "which models can this project use? set the default model" | `kortix models ls` · `kortix models default <model>` · `models enable|disable <id>` |
-| "change the default agent / an agent's scope or config" | `kortix agents default <name>` · `kortix agents scope <agent> [--secrets …] [--connectors …] [--apps …]` · `kortix agents config <agent>` |
+| "change the default agent / an agent's scope or config" | `kortix agents default <name>` · `kortix agents scope <agent> [--secrets …] [--connectors …] [--apps …] [--policy-set <slug>=<name>]` · `kortix agents config <agent>` |
 | "stop / wake a session, share it, or publish a preview link" | `kortix sessions stop|start <id>` · `sessions share <id> --mode …` · `sessions links <id> create --port 3000` |
 | "queue a prompt for later / see or reorder the queue" | `kortix sessions chat <id> -p "…" --queue` · `kortix sessions queue <id> ls|now|rm|hold|release` |
 | "approve / deny a pending connector call" | `kortix sessions approvals <id> ls|approve|deny` |
 | "call Gmail / a CRM / any connector from an App (a backend included) or a script" | `@kortix/sdk` through the connector gateway, never a raw provider key · `kortix system-skills get kortix-connectors` (**From apps and backends**) |
+| "build a dashboard / custom UI / chat over Kortix sessions" (an App or any React host) | `@kortix/sdk` + `@kortix/ui`, never a raw API `fetch` · `kortix system-skills file kortix-ui references/custom-dashboard.md` (modules: `references/modules.md`) |
 | "edit files in another session's sandbox" | `kortix sessions files <id> ls|write|mv|rm|find` |
 | "what needs review? approve / reject / request changes" | `kortix review ls` · `kortix review act <id> approve` · `kortix cr request-changes <cr> --message` |
-| "show me every app event trigger" / "what listens to <app>?" | `kortix triggers ls --type event` (grouped by app) · `kortix triggers ls --connector <slug>` · web: Triggers → **App events** |
-| "when X happens in <app>, do Y" (new email, PR, issue, calendar event, Slack message). Beta: needs the project flag `event_triggers` (`kortix projects features enable event_triggers`; a `403 feature_disabled` means it is off) | `kortix triggers events --apps` → `triggers events --app <app> [--event <TYPE>]` (browse events before any connector) → `triggers events --connector <slug> --event <TYPE>` → `triggers add … --type event … --apply` · playbook: `references/scheduling.md` → App event triggers |
+| "show me every connector event trigger" / "what listens to <app>?" | `kortix triggers ls --type event` (grouped by app) · `kortix triggers ls --connector <slug>` · web: Triggers → **Connector events** |
+| "when X happens in <app>, do Y" (new email, PR, issue, calendar event, Slack message). Uses the project flag `event_triggers`, on by default (`403 feature_disabled` means someone turned it off: `kortix projects features enable event_triggers`) | `kortix triggers events --apps` → `triggers events --app <app> [--event <TYPE>]` (browse events before any connector) → `triggers events --connector <slug> --event <TYPE>` → `triggers add … --type event … --apply` · playbook: `references/scheduling.md` → App event triggers |
 | "edit a trigger live (schedule, conditions, agent, model)" | `kortix triggers set <slug> --cron … --filter k=v` · `triggers add … --apply` |
 | "which tools does this project have? remove / change a Kortix tool" | `kortix tools ls` · delete the `<name>: kortix:<name>` line in `kortix.yaml` · `kortix tools eject <name>` *(`references/kortix/tools.md` has the checklists)* |
 | "who is in the account / invite someone / manage groups" | `kortix members ls|invite` · `kortix groups …` · `kortix access requests ls` |
@@ -337,8 +341,9 @@ MCP tools: `list_connectors` → `search_connector_actions` →
 args are only ids; a `pending_approval` result carries a link the person
 opens, then call again with the same args). `connect_connector` returns the
 link that connects an account. `upload_connector_attachment` stages a file.
-`search_connector_apps`, `add_connector` and `remove_connector` change which
-connectors the project has.
+`search_connector_apps` finds an app in the catalogue, `get_connector_app`
+lists its ways to connect and their tools, and `add_connector` and
+`remove_connector` change which connectors the project has.
 
 The `kortix` MCP tool runs the real CLI as the person: `args` is the argv after
 `kortix` (`["secrets", "ls", "--json"]`), `project_id` and `session_id` set the
@@ -560,7 +565,7 @@ watching — usually via `slack send`, silent otherwise), and it must be
   operational playbook: full cron cheat-sheet + gotchas (DOM+DOW OR-not-AND
   trap, no exact-minute gates), fresh-vs-reuse guidance, notifying/
   idempotency practices in depth, the pause-and-wait re-fire pattern,
-  worked examples, a pre-ship checklist, and the **App event triggers**
+  worked examples, a pre-ship checklist, and the **Connector event triggers**
   playbook (autonomous setup recipe, statuses, noise control).
 - `references/kortix/kortix-cli.md`
   — the `kortix triggers ls/info/fire/enable/disable/events/add/set` and
@@ -654,13 +659,14 @@ When you, as an agent, have changes you believe should persist:
    If it shows no changes, your push didn't land — push and re-check
    the SAME CR (the diff recomputes live from the refs). Never open a
    duplicate CR for the same work.
-6. **Surface the CR to the user.** Print the CR number so they can
-   review:
-   ```sh
-   kortix cr ls
-   ```
-7. **Wait.** The user merges via dashboard, CLI (`kortix cr merge
-   <n>`), or asks for changes. *You do not merge your own CRs.*
+6. **Surface the CR to the user.** Name the CR number and title in your
+   reply (`kortix cr ls` gives you both). In the web app a **Review**
+   button appears under your reply: tell the user to use it to see and
+   apply the changes. Mention `kortix cr merge <n>` only when the user
+   works from the CLI or a channel without the web app.
+7. **Wait.** The user applies the CR (the Review button, the dashboard,
+   or `kortix cr merge <n>`), or asks for changes. *You do not merge your
+   own CRs.*
 
 ### Don't bypass this
 

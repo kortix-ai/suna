@@ -3,7 +3,7 @@
 import { type ApiClientOptions, ApiError, backendApi } from '../../http/api-client';
 import { markSessionFresh } from '../../http/fresh-sessions';
 import { currentSavedCopyStore } from '../../session-sync/saved-copy-store';
-import { noteSessionStopped } from '../../http/session-stopped';
+import { noteSessionDeleted, noteSessionStopped } from '../../http/session-stopped';
 import { isSessionLogPage } from '../../session-log/guard';
 import { loadSessionLogPage, type SessionLogPage, type SessionLogPageQuery } from '../../session-log/source';
 import type { AuditEvent } from './audit';
@@ -65,12 +65,14 @@ export interface ProjectSessionInitiator {
 }
 
 export interface ProjectSession {
+  /** Conversation model from the durable log; creation pin until one is recorded. Absent on older APIs. */
+  model?: string | null;
   session_id: string;
   account_id: string;
   project_id: string;
   branch_name: string;
   base_ref: string;
-  sandbox_provider: 'daytona' | 'platinum' | 'e2b' | null;
+  sandbox_provider: 'platinum' | 'daytona' | null;
   /** Null until the session has a sandbox. */
   sandbox_id: string | null;
   sandbox_url: string | null;
@@ -98,6 +100,13 @@ export interface ProjectSession {
   labels?: string[];
   agent_name: string | null;
   status: ProjectSessionStatus;
+  /** Canonical work activity, independent of computer lifecycle. Absent on older servers. */
+  working?: {
+    state: 'working' | 'idle';
+    since: string | null;
+    turn_token: string | null;
+    pending_delivery: boolean;
+  };
   error: string | null;
   metadata: ProjectSessionMetadata;
   /** The runtime's conversation tree. Served by APIs since W4. */
@@ -143,13 +152,23 @@ export interface ProjectSession {
    * re-share its contents.
    */
   can_manage_lifecycle?: boolean;
+  /**
+   * May the viewer publish one assistant response of this session through a
+   * public link (`shareTurn`)? A human (not an agent or service credential) who
+   * can read the session and is its owner or a project manager. Only the
+   * single-session reads carry it; absent means unknown, so hide the control.
+   */
+  can_publish_response?: boolean;
   /** Whether the current viewer may open/read this session. */
   can_access?: boolean;
   /** Exact lifecycle state of the backing runtime resource, when present. */
   runtime_status?: 'provisioning' | 'active' | 'stopped' | 'error' | 'archived' | null;
-  /** Server-managed soft-deletion audit fields, present in project inventory mode. */
+  /** Server-managed soft-deletion audit fields: the `project` inventory and
+   *  the `deleted: 'only'` list (Recently deleted). */
   deleted_at?: string | null;
   deleted_by?: string | null;
+  /** A deleted session: the last instant `restoreProjectSession` takes it back. */
+  restore_until?: string | null;
   /** When the caller pinned / archived this session in their own list
    *  (KRTX-2418). Present for a person's list and read by id; absent for an
    *  agent, an API key or a service account. */
@@ -164,8 +183,8 @@ export interface ProjectSession {
  *
  * Three hosts hand-rolled the identical `typeof meta.spawned_by_session ===
  * 'string'` cast over an `unknown` bag
- * (`apps/web/src/components/projects/session-label.ts:61`,
- * `apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.ts:359`,
+ * (`packages/ui/src/session/actions/session-label.ts:61`,
+ * `packages/ui/src/session/actions/project-session-list-helpers.ts:359`,
  * `apps/tui/src/lib/session-groups.ts:145`). `metadata` is jsonb, so a
  * malformed row is possible and a non-string must never escape as a session
  * id. A self-referential link is rejected too: a session that is its own
@@ -226,6 +245,8 @@ export interface PendingSessionPrompt {
  * The later `/start` call is an idempotent readiness/resume operation.
  */
 export interface CreateProjectSessionInput {
+  /** Authorized platform session whose saved conversation is copied before boot. */
+  fork_from_session_id?: string;
   base_ref?: string;
   agent_name?: string;
   /** Slug of the sandbox template to boot from. Defaults to "default". */
@@ -248,7 +269,7 @@ export interface CreateProjectSessionInput {
   labels?: string[];
   /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */
   session_id?: string;
-  provider?: 'daytona' | 'platinum' | 'e2b';
+  provider?: 'platinum' | 'daytona';
   /** @deprecated Withdrawn — persistent machines left the product. The API ignores it. Removed in the next major. */
   persistent_machine?: boolean;
   branch_already_created?: boolean;
@@ -311,6 +332,8 @@ export interface ClaimWarmProjectSessionInput {
 /** One conversation in the session runtime's tree (the root and its subagent children). */
 export interface ProjectRuntimeSession {
   id: string;
+  /** Explicit server-registered fork provenance, never inferred from titles. */
+  fork_source_id?: string;
   title: string | null;
   parent_id: string | null;
   project_id: string | null;
@@ -361,8 +384,10 @@ export interface ListProjectSessionsOptions {
   /** Only sessions that carry EVERY one of these labels (exact match). */
   labels?: string[];
   /** Only the caller's pinned or archived sessions. Omit for the list, which
-   *  leaves out the sessions the caller archived. */
-  view?: 'pinned' | 'archived';
+   *  leaves out the sessions the caller archived. `'deleted'`: Recently
+   *  deleted, the deleted sessions the caller may restore
+   *  (`restoreProjectSession`) inside their window, each with `restore_until`. */
+  view?: 'pinned' | 'archived' | 'deleted';
 }
 
 /** One keyset page of a project's sessions. */
@@ -404,6 +429,10 @@ export async function listProjectSessionsPage(
 ): Promise<ProjectSessionPage> {
   const response = await backendApi.get<ProjectSession[]>(
     `/projects/${projectId}/sessions${projectSessionListQuery(options)}`,
+    // A background read (shell prefetch, 5s sidebar poll): its query state
+    // reports a failure. The host toast would announce a 403 over the access
+    // gate that already explains it.
+    { showErrors: false },
   );
   const items = unwrap(response);
   return {
@@ -545,8 +574,9 @@ export interface SessionPublicShare {
   share_id: string;
   session_id: string;
   project_id: string;
-  /** `transcript` names the session conversation; its `public_url` is the
-   *  web viewer (`/share/session/<public_token>`). */
+  /** `transcript` named the session conversation. Public transcript sharing
+   *  was removed (KRTX-2358): no server mints that kind any more and every
+   *  legacy row is revoked. The name stays in the union for legacy rows. */
   resource_type: 'preview' | 'file' | 'transcript' | string;
   label: string;
   port: number | null;
@@ -573,12 +603,11 @@ export interface SessionPublicShare {
 
 export interface CreateSessionPublicShareInput {
   /**
-   * `true` shares the session conversation as a read-only, sanitized
-   * transcript. A session has at most one live transcript share: minting
-   * again returns the live one as-is (HTTP 200) instead of a new link, and
-   * the `label` and `expires_at` of that second call are ignored. Revoke it
-   * first to mint a link with new values. Cannot be combined with `preview`,
-   * `preview_id`, or `file`. Deleting the session revokes it.
+   * Deprecated: public transcript sharing was removed (KRTX-2358). A server
+   * that ships the removal answers 400
+   * (`Transcript sharing is no longer available`).
+   *
+   * @deprecated Removed in the next major.
    */
   transcript?: boolean;
   preview_id?: string;
@@ -629,6 +658,12 @@ export function resolvePublicShareUrl(
  * The live transcript share among a session's shares (newest first), or null.
  * Live means not revoked and not expired at `now`. Pure: pass the `shares`
  * from `listSessionPublicShares`.
+ *
+ * Public transcript sharing was removed (KRTX-2358): servers that ship the
+ * removal never mint transcript shares, so this returns null there. It still
+ * reports a legacy row a server older than the removal hands out.
+ *
+ * @deprecated Removed in the next major.
  */
 export function findActiveTranscriptShare(
   shares: readonly SessionPublicShare[],
@@ -661,9 +696,9 @@ export async function listSessionPublicShares(projectId: string, sessionId: stri
 }
 
 /**
- * Mint a public share link. With `{ transcript: true }` this is idempotent:
- * an existing live transcript share is returned as-is (its label and expiry
- * unchanged; the ones passed are ignored).
+ * Mint a public share link for a preview or a workspace file. A server that
+ * ships the transcript-share removal (KRTX-2358) answers 400 to a
+ * `{ transcript: true }` body instead of minting.
  */
 export async function createSessionPublicShare(
   projectId: string,
@@ -691,6 +726,65 @@ export async function revokeSessionPublicShare(
 }
 
 /**
+ * The public share of ONE assistant response (one turn). The turn is keyed by
+ * its user message id (`SessionLogTurn.id`). The server publishes the response
+ * text as an immutable snapshot at `url`; `stale` is true when the live
+ * response no longer matches it (edited or regenerated): `shareTurn` again
+ * refreshes the snapshot and keeps the URL.
+ */
+export interface TurnShare {
+  share_id: string;
+  turn_id: string;
+  token: string;
+  url: string;
+  created_at: string;
+  snapshot_at: string;
+  stale: boolean;
+  /** The snapshot also publishes the prompt that started the turn. */
+  include_prompt: boolean;
+}
+
+function turnSharePath(projectId: string, sessionId: string, turnId: string): string {
+  return `/projects/${projectId}/sessions/${sessionId}/turns/${encodeURIComponent(turnId)}/share`;
+}
+
+/** The live share of one turn, or `{ share: null }`. */
+export async function getTurnShare(projectId: string, sessionId: string, turnId: string): Promise<{ share: TurnShare | null }> {
+  return unwrap(
+    await backendApi.get<{ share: TurnShare | null }>(turnSharePath(projectId, sessionId, turnId), { showErrors: false }),
+  );
+}
+
+/**
+ * Share one response publicly, or refresh the snapshot of its live share (same
+ * URL). `include_prompt: true` also publishes the prompt's text (default off;
+ * every call sets it anew). Rejects with status 409 while the turn has no
+ * response text, 404 for an unknown turn.
+ */
+export async function shareTurn(
+  projectId: string,
+  sessionId: string,
+  turnId: string,
+  options?: { include_prompt?: boolean },
+): Promise<{ share: TurnShare }> {
+  return unwrap(
+    // `showErrors: false`: the share dialog shows the failure inline, once.
+    await backendApi.put<{ share: TurnShare }>(
+      turnSharePath(projectId, sessionId, turnId),
+      { include_prompt: options?.include_prompt === true },
+      { showErrors: false },
+    ),
+  );
+}
+
+/** Revoke the public share of one turn. The link answers 410 afterwards. */
+export async function unshareTurn(projectId: string, sessionId: string, turnId: string): Promise<{ share: null }> {
+  return unwrap(
+    await backendApi.delete<{ share: null }>(turnSharePath(projectId, sessionId, turnId), { showErrors: false }),
+  );
+}
+
+/**
  * Create a session and immediately kick its runtime provisioning.
  *
  * Await any project-secret or connector-credential mutations that the runtime
@@ -708,7 +802,7 @@ export async function createProjectSession(projectId: string, input?: CreateProj
   // `session_id` is exactly the route param those navigations land on.
   // Skip when an initial_prompt is set: those sessions get a server-side reply,
   // so they must mount the real chat to stream it (the shell would hold it back).
-  if (!input?.initial_prompt) {
+  if (!input?.initial_prompt && !input?.fork_from_session_id) {
     markSessionFresh((session as ProjectSession | undefined)?.session_id);
   }
   return session;
@@ -871,11 +965,13 @@ export async function getSessionAudit(
   );
 }
 
+/** @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major. */
 export interface SessionTranscriptToolCall {
   tool: string;
   status: string | null;
 }
 
+/** @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major. */
 export interface SessionTranscriptMessage {
   role: string;
   created: string | null;
@@ -895,12 +991,17 @@ export interface SessionTranscriptMessage {
  * STOPPED or waking session answer at all. `none` is the honest "nothing could
  * answer" and is the only value that accompanies `available: false`. The two
  * sources are never merged — this field says which one you got.
+ *
+ * @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
  */
 export type SessionTranscriptSource = 'live' | 'mirror' | 'none';
 
 /** Compact server-side transcript read — text + tool calls, stripped of tool
  *  inputs/outputs, for project automation (callable with project-scoped
- *  session tokens, unlike the raw sandbox proxy). */
+ *  session tokens, unlike the raw sandbox proxy).
+ *
+ * @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
+ */
 export interface SessionTranscript {
   available: boolean;
   reason: string | null;
@@ -920,7 +1021,10 @@ export interface SessionTranscript {
 
 /** One mirrored message in the shape the session sync store hydrates from:
  *  OpenCode's own envelope, with the parts array stripped of tool
- *  inputs/outputs and file urls. */
+ *  inputs/outputs and file urls.
+ *
+ * @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
+ */
 export interface SessionTranscriptSyncMessage {
   info: Record<string, unknown>;
   parts: Array<Record<string, unknown>>;
@@ -932,6 +1036,8 @@ export interface SessionTranscriptSyncMessage {
  * `source` is `mirror` or `none` — never `live`. A client whose sandbox is up
  * reads the runtime directly, so this endpoint deliberately does not re-proxy
  * it.
+ *
+ * @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
  */
 export interface SessionTranscriptSyncEnvelope {
   available: boolean;
@@ -960,6 +1066,7 @@ export interface SessionTranscriptSyncEnvelope {
   messages: SessionTranscriptSyncMessage[];
 }
 
+/** @deprecated Reads the v1 transcript (`GET …/transcript`). Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major. */
 export async function getSessionTranscript(
   projectId: string,
   sessionId: string,
@@ -986,6 +1093,8 @@ export async function getSessionTranscript(
  * Messages carry OpenCode's real ids, so a client hydrates them provisionally
  * (`hydrate(..., { source: 'cache' })`) and the live runtime read SETTLES them
  * by id rather than duplicating them.
+ *
+ * @deprecated Reads the v1 transcript (`GET …/transcript?shape=sync`). Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
  */
 export async function getSessionTranscriptSync(
   projectId: string,
@@ -1182,11 +1291,15 @@ export interface SessionOpenBundleConfig {
   known: true;
   base_ref: string | null;
   agent_name: string | null;
+  /** @deprecated Always true: the LLM gateway is the only model path. Removed in the next major. */
   llm_gateway_enabled: boolean;
+  /** The project's default reasoning effort (a models.dev effort label), or
+   *  null for automatic — what delivery injects as the prompt's `variant`
+   *  when the session pick names none. */
+  default_reasoning_effort?: string | null;
 }
 
-/** = `GET /projects/:id/model-defaults`. `known: false` with
- *  `reason: 'llm_gateway_disabled'` mirrors that route's own 404. */
+/** = `GET /projects/:id/model-defaults`. `known: false` when that read failed. */
 export type SessionOpenBundleModels =
   | {
       known: true;
@@ -1685,8 +1798,8 @@ export async function updateProjectSession(
 
 /**
  * Delete a session. It stays restorable until `restore_until` (30 days):
- * `restoreProjectSession` brings it back. Its branch is kept for good; its
- * messages and stored files are deleted after the window. `restore_until` is
+ * `restoreProjectSession` brings it back. After the window its messages,
+ * stored files and branch are deleted. `restore_until` is
  * absent from an API that predates restore.
  */
 export async function deleteProjectSession(projectId: string, sessionId: string) {
@@ -1697,6 +1810,7 @@ export async function deleteProjectSession(projectId: string, sessionId: string)
   );
   // The device's saved copy of a deleted session would only take space.
   void currentSavedCopyStore()?.remove(projectId, sessionId);
+  noteSessionDeleted(sessionId);
   return result;
 }
 
@@ -2293,18 +2407,25 @@ export async function getSessionMessageAuthors(
   );
 }
 
-/** The model that answered a request, read from the gateway's request record. */
+/** The model each request ended up on, read from the gateway's request record. */
 export interface SessionServedModel {
-  /** Route id of the model that answered, as the model picker names it. */
+  /** Route id recorded for the request — the model that answered it, or on an
+   *  unanswered request the model it was being served by. */
   served_model: string;
-  /** The model the request was routed to, when a fallback model answered in
-   *  its place. Null when the routed model answered. */
+  /** The model the request was rerouted to after a failed attempt, whether or
+   *  not the fallback answered. Null when no attempt failed. */
   fallback_from: string | null;
   at: string;
+  /** How the request ended: `answered` (a model answered it), `client_aborted`
+   *  (the caller canceled it) or `error` (it failed outright). A cancel is not
+   *  a model failure — the UI must not present one as such (KRTX-2572). */
+  outcome?: 'answered' | 'client_aborted' | 'error';
 }
 
 /** The models that answered one turn, and what Kortix billed for it. */
 export interface SessionTurnModelUsage {
+  /** Successful fallback requests, oldest first. Error codes are safe public categories. */
+  fallbacks?: { requested_model: string; served_model: string; error_code: string }[];
   /** Route ids of the models that answered in this turn, most requests first. */
   served_models: string[];
   fallback_from: string | null;
@@ -2313,7 +2434,7 @@ export interface SessionTurnModelUsage {
 }
 
 export interface SessionModelUsage {
-  /** The newest answered model request. Null before the first answer. */
+  /** The newest request and how it ended. Null before the first request. */
   latest: SessionServedModel | null;
   /** What Kortix debited for the session's model calls, in USD. */
   billed_cost: number;

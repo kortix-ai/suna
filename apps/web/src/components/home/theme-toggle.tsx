@@ -3,7 +3,7 @@
 import { useTranslations } from '@/i18n/use-translations';
 
 import { Button } from '@/components/ui/marketing/button';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { useTheme } from 'next-themes';
 import * as React from 'react';
 
@@ -190,8 +190,8 @@ export function ThemeToggle({ variant = 'icon', className, systemTheme = true }:
     );
   }
 
-  const lightIcon = THEME_OPTIONS.find((o) => o.id === 'light')!.icon;
-  const darkIcon = THEME_OPTIONS.find((o) => o.id === 'dark')!.icon;
+  const lightIcon = THEME_OPTIONS.find((o) => o.id === 'light')?.icon;
+  const darkIcon = THEME_OPTIONS.find((o) => o.id === 'dark')?.icon;
 
   return (
     <div className="flex items-center gap-1.5">

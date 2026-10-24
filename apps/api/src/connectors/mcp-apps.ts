@@ -1,0 +1,523 @@
+/**
+ * The Kortix MCP app catalogue.
+ *
+ * Every app here is a remote MCP server that its vendor runs. Kortix connects
+ * to it directly, as an `mcp` connector: no Composio, no Pipedream. Sign-in is
+ * one of two kinds:
+ *
+ *   dcr            The vendor's authorization server registers Kortix on the
+ *                  fly (RFC 7591). Nothing to configure.
+ *   kortix_client  The server has no dynamic registration. Kortix signs in with
+ *                  its own OAuth client, configured once per deployment in
+ *                  `KORTIX_OAUTH_CLIENTS`. The app is listed only when that
+ *                  client is configured.
+ *   none           A public server: no sign-in.
+ *
+ * This list is the trust anchor for `kortix_client`. Kortix's client, and the
+ * endpoints it is sent to, are used only for a connector whose URL is exactly
+ * an entry's `url`, and only with the endpoints written here. A server that
+ * merely names Google as its authorization server never gets a token issued
+ * through Kortix's Google client.
+ *
+ * Endpoints and sign-in kinds were verified with a live probe on 2026-10-18
+ * (unauthenticated `initialize` → 401 + RFC 9728/8414 metadata). Icons are
+ * generated from simple-icons (CC0) into `apps/web/public/connector-icons/`;
+ * the marks belong to their owners.
+ */
+import type { OAuth2ApplicationInput } from '@kortix/api-contract';
+import { config } from '../config';
+import { logger } from '../lib/logger';
+import { composioVisibleToolkits, publicToolkit } from './composio-catalog-search';
+import { appNameKey } from './connect-direct-twins';
+import {
+  type ComposioCatalogCard,
+  type ConnectorCatalogItem,
+  type ConnectorSurfaceVariant,
+  type KortixApp,
+  connectorCatalogItems,
+  connectorCatalogSurfaces,
+  createConnectorCatalog,
+  isOneClickMcpUrl,
+  surfaceRank,
+  variantRank,
+} from './connector-catalog';
+
+export type KortixOAuthClientName = 'google' | 'github' | 'slack' | 'hubspot' | 'asana' | 'box';
+
+export interface KortixClientAuth {
+  kind: 'kortix_client';
+  client: KortixOAuthClientName;
+  issuer: string;
+  authorizationUrl: string;
+  tokenUrl: string;
+  revocationUrl?: string;
+  tokenEndpointAuthMethod: 'client_secret_basic' | 'client_secret_post';
+  scopes: string[];
+  authorizationParams?: Record<string, string>;
+}
+
+export interface McpApp {
+  slug: string;
+  name: string;
+  description: string;
+  /** One app per domain: the catalogue lists one card per domain. */
+  domain: string;
+  categories: string[];
+  /** The MCP endpoint (Streamable HTTP). */
+  url: string;
+  /** `apps/web/public/connector-icons/<slug>.svg` exists. */
+  icon: boolean;
+  auth: { kind: 'dcr' } | { kind: 'none' } | KortixClientAuth;
+}
+
+const DCR = { kind: 'dcr' } as const;
+const NONE = { kind: 'none' } as const;
+
+const GOOGLE = {
+  kind: 'kortix_client',
+  client: 'google',
+  issuer: 'https://accounts.google.com',
+  authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+  tokenUrl: 'https://oauth2.googleapis.com/token',
+  revocationUrl: 'https://oauth2.googleapis.com/revoke',
+  tokenEndpointAuthMethod: 'client_secret_post',
+  // Google issues a refresh token only for offline access, on a fresh consent.
+  authorizationParams: { access_type: 'offline', prompt: 'consent' },
+} as const;
+
+/** The scopes each Google Workspace MCP server requires (developers.google.com,
+ *  "Configure the Google Workspace MCP servers"). */
+const DRIVE_SCOPES = [
+  'https://www.googleapis.com/auth/drive.readonly',
+  'https://www.googleapis.com/auth/drive.file',
+];
+
+export const MCP_APPS: readonly McpApp[] = [
+  { slug: 'linear', name: 'Linear', description: 'Issues, projects and cycles.', domain: 'linear.app', categories: ['productivity', 'developer-tools'], url: 'https://mcp.linear.app/mcp', icon: true, auth: DCR },
+  { slug: 'notion', name: 'Notion', description: 'Pages, databases and comments.', domain: 'notion.so', categories: ['productivity'], url: 'https://mcp.notion.com/mcp', icon: true, auth: DCR },
+  { slug: 'atlassian', name: 'Atlassian', description: 'Jira issues and Confluence pages.', domain: 'atlassian.com', categories: ['productivity', 'developer-tools'], url: 'https://mcp.atlassian.com/v1/mcp', icon: true, auth: DCR },
+  { slug: 'monday', name: 'monday.com', description: 'Boards, items and updates.', domain: 'monday.com', categories: ['productivity'], url: 'https://mcp.monday.com/mcp', icon: false, auth: DCR },
+  { slug: 'clickup', name: 'ClickUp', description: 'Tasks, lists and docs.', domain: 'clickup.com', categories: ['productivity'], url: 'https://mcp.clickup.com/mcp', icon: true, auth: DCR },
+  { slug: 'airtable', name: 'Airtable', description: 'Bases, tables and records.', domain: 'airtable.com', categories: ['productivity', 'data'], url: 'https://mcp.airtable.com/mcp', icon: true, auth: DCR },
+  { slug: 'dropbox', name: 'Dropbox', description: 'Files and folders.', domain: 'dropbox.com', categories: ['productivity'], url: 'https://mcp.dropbox.com/mcp', icon: true, auth: DCR },
+  { slug: 'granola', name: 'Granola', description: 'Meeting notes and transcripts.', domain: 'granola.ai', categories: ['meetings', 'productivity'], url: 'https://mcp.granola.ai/mcp', icon: false, auth: DCR },
+  { slug: 'figma', name: 'Figma', description: 'Design files, frames and components.', domain: 'figma.com', categories: ['design'], url: 'https://mcp.figma.com/mcp', icon: true, auth: DCR },
+  { slug: 'canva', name: 'Canva', description: 'Designs, folders and exports.', domain: 'canva.com', categories: ['design'], url: 'https://mcp.canva.com/mcp', icon: true, auth: DCR },
+  { slug: 'miro', name: 'Miro', description: 'Boards and diagrams.', domain: 'miro.com', categories: ['design', 'productivity'], url: 'https://mcp.miro.com/', icon: true, auth: DCR },
+  { slug: 'webflow', name: 'Webflow', description: 'Sites, pages and CMS collections.', domain: 'webflow.com', categories: ['website-builders'], url: 'https://mcp.webflow.com/mcp', icon: true, auth: DCR },
+  { slug: 'wix', name: 'Wix', description: 'Sites, stores and bookings.', domain: 'wix.com', categories: ['website-builders'], url: 'https://mcp.wix.com/mcp', icon: true, auth: DCR },
+  { slug: 'jotform', name: 'Jotform', description: 'Forms and submissions.', domain: 'jotform.com', categories: ['operations'], url: 'https://mcp.jotform.com/', icon: false, auth: DCR },
+  { slug: 'stripe', name: 'Stripe', description: 'Customers, payments and subscriptions.', domain: 'stripe.com', categories: ['payments'], url: 'https://mcp.stripe.com', icon: true, auth: DCR },
+  { slug: 'paypal', name: 'PayPal', description: 'Invoices, orders and payments.', domain: 'paypal.com', categories: ['payments'], url: 'https://mcp.paypal.com/mcp', icon: true, auth: DCR },
+  { slug: 'attio', name: 'Attio', description: 'CRM records, lists and notes.', domain: 'attio.com', categories: ['crm'], url: 'https://mcp.attio.com/mcp', icon: false, auth: DCR },
+  { slug: 'close', name: 'Close', description: 'Leads, opportunities and activities.', domain: 'close.com', categories: ['crm'], url: 'https://mcp.close.com/mcp', icon: false, auth: DCR },
+  { slug: 'intercom', name: 'Intercom', description: 'Conversations, contacts and tickets.', domain: 'intercom.com', categories: ['customer-support'], url: 'https://mcp.intercom.com/mcp', icon: true, auth: DCR },
+  { slug: 'posthog', name: 'PostHog', description: 'Product analytics, flags and experiments.', domain: 'posthog.com', categories: ['product-analytics'], url: 'https://mcp.posthog.com/mcp', icon: true, auth: DCR },
+  { slug: 'sentry', name: 'Sentry', description: 'Errors, issues and releases.', domain: 'sentry.io', categories: ['developer-tools', 'monitoring'], url: 'https://mcp.sentry.dev/mcp', icon: true, auth: DCR },
+  { slug: 'supabase', name: 'Supabase', description: 'Projects, databases and edge functions.', domain: 'supabase.com', categories: ['developer-tools', 'database'], url: 'https://mcp.supabase.com/mcp', icon: true, auth: DCR },
+  { slug: 'neon', name: 'Neon', description: 'Serverless Postgres projects and branches.', domain: 'neon.tech', categories: ['developer-tools', 'database'], url: 'https://mcp.neon.tech/mcp', icon: false, auth: DCR },
+  { slug: 'vercel', name: 'Vercel', description: 'Projects, deployments and logs.', domain: 'vercel.com', categories: ['developer-tools', 'hosting'], url: 'https://mcp.vercel.com', icon: true, auth: DCR },
+  { slug: 'deepwiki', name: 'DeepWiki', description: 'Ask about any public GitHub repository.', domain: 'deepwiki.com', categories: ['developer-tools'], url: 'https://mcp.deepwiki.com/mcp', icon: false, auth: NONE },
+  { slug: 'context7', name: 'Context7', description: 'Up-to-date docs for libraries and frameworks.', domain: 'context7.com', categories: ['developer-tools'], url: 'https://mcp.context7.com/mcp', icon: false, auth: NONE },
+  { slug: 'cloudflare', name: 'Cloudflare', description: 'Accounts, Workers and DNS.', domain: 'cloudflare.com', categories: ['developer-tools', 'hosting'], url: 'https://mcp.cloudflare.com/mcp', icon: true, auth: DCR },
+  {
+    slug: 'gmail', name: 'Gmail', description: 'Read, search and draft email.', domain: 'gmail.com', categories: ['email'], url: 'https://gmailmcp.googleapis.com/mcp/v1', icon: true,
+    auth: { ...GOOGLE, scopes: ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.compose'] },
+  },
+  {
+    slug: 'google_calendar', name: 'Google Calendar', description: 'Calendars, events and free time.', domain: 'calendar.google.com', categories: ['productivity', 'meetings'], url: 'https://calendarmcp.googleapis.com/mcp/v1', icon: true,
+    auth: { ...GOOGLE, scopes: ['https://www.googleapis.com/auth/calendar.calendarlist.readonly', 'https://www.googleapis.com/auth/calendar.events.freebusy', 'https://www.googleapis.com/auth/calendar.events.readonly'] },
+  },
+  {
+    slug: 'google_drive', name: 'Google Drive', description: 'Files and folders.', domain: 'drive.google.com', categories: ['productivity'], url: 'https://drivemcp.googleapis.com/mcp/v1', icon: true,
+    auth: { ...GOOGLE, scopes: DRIVE_SCOPES },
+  },
+  {
+    slug: 'google_docs', name: 'Google Docs', description: 'Documents.', domain: 'docs.google.com', categories: ['productivity'], url: 'https://docsmcp.googleapis.com/mcp/v1', icon: true,
+    auth: { ...GOOGLE, scopes: [...DRIVE_SCOPES, 'https://www.googleapis.com/auth/documents.readonly', 'https://www.googleapis.com/auth/documents'] },
+  },
+  {
+    slug: 'google_sheets', name: 'Google Sheets', description: 'Spreadsheets.', domain: 'sheets.google.com', categories: ['productivity', 'data'], url: 'https://sheetsmcp.googleapis.com/mcp/v1', icon: true,
+    auth: { ...GOOGLE, scopes: [...DRIVE_SCOPES, 'https://www.googleapis.com/auth/spreadsheets.readonly', 'https://www.googleapis.com/auth/spreadsheets'] },
+  },
+  {
+    slug: 'github', name: 'GitHub', description: 'Repositories, issues and pull requests.', domain: 'github.com', categories: ['developer-tools'], url: 'https://api.githubcopilot.com/mcp/', icon: true,
+    auth: { kind: 'kortix_client', client: 'github', issuer: 'https://github.com/login/oauth', authorizationUrl: 'https://github.com/login/oauth/authorize', tokenUrl: 'https://github.com/login/oauth/access_token', tokenEndpointAuthMethod: 'client_secret_post', scopes: ['repo', 'read:org', 'read:user', 'user:email'] },
+  },
+  {
+    slug: 'slack', name: 'Slack', description: 'Search and post as you in Slack.', domain: 'slack.com', categories: ['messaging'], url: 'https://mcp.slack.com/mcp', icon: true,
+    auth: { kind: 'kortix_client', client: 'slack', issuer: 'https://mcp.slack.com', authorizationUrl: 'https://slack.com/oauth/v2_user/authorize', tokenUrl: 'https://slack.com/api/oauth.v2.user.access', tokenEndpointAuthMethod: 'client_secret_post', scopes: ['channels:history', 'channels:read', 'chat:write', 'groups:history', 'groups:read', 'im:history', 'im:read', 'search:read.public', 'users:read'] },
+  },
+  {
+    slug: 'hubspot', name: 'HubSpot', description: 'Contacts, companies and deals.', domain: 'hubspot.com', categories: ['crm', 'marketing'], url: 'https://mcp.hubspot.com/', icon: true,
+    auth: { kind: 'kortix_client', client: 'hubspot', issuer: 'https://mcp.hubspot.com', authorizationUrl: 'https://mcp.hubspot.com/oauth/authorize/user', tokenUrl: 'https://mcp.hubspot.com/oauth/v3/token', tokenEndpointAuthMethod: 'client_secret_post', scopes: [] },
+  },
+  {
+    slug: 'asana', name: 'Asana', description: 'Tasks, projects and portfolios.', domain: 'asana.com', categories: ['productivity'], url: 'https://mcp.asana.com/v2/mcp', icon: true,
+    auth: { kind: 'kortix_client', client: 'asana', issuer: 'https://app.asana.com', authorizationUrl: 'https://app.asana.com/-/oauth_authorize', tokenUrl: 'https://app.asana.com/-/oauth_token', revocationUrl: 'https://app.asana.com/-/oauth_revoke', tokenEndpointAuthMethod: 'client_secret_post', scopes: ['default'] },
+  },
+  {
+    slug: 'box', name: 'Box', description: 'Files, folders and Box AI.', domain: 'box.com', categories: ['productivity'], url: 'https://mcp.box.com', icon: true,
+    auth: { kind: 'kortix_client', client: 'box', issuer: 'https://api.box.com', authorizationUrl: 'https://account.box.com/api/oauth2/authorize', tokenUrl: 'https://api.box.com/oauth2/token', revocationUrl: 'https://api.box.com/oauth2/revoke', tokenEndpointAuthMethod: 'client_secret_post', scopes: [] },
+  },
+];
+
+interface KortixOAuthClient {
+  client_id: string;
+  client_secret: string;
+}
+
+let parsedClients: { raw: string; clients: Map<string, KortixOAuthClient> } | null = null;
+
+/** `KORTIX_OAUTH_CLIENTS`, parsed once per value. A malformed value lists no client. */
+export function kortixOAuthClients(raw: string = config.KORTIX_OAUTH_CLIENTS ?? ''): Map<string, KortixOAuthClient> {
+  if (parsedClients?.raw === raw) return parsedClients.clients;
+  const clients = new Map<string, KortixOAuthClient>();
+  if (raw.trim()) {
+    try {
+      for (const [name, value] of Object.entries(JSON.parse(raw) as Record<string, unknown>)) {
+        const entry = value as Partial<KortixOAuthClient> | null;
+        if (typeof entry?.client_id === 'string' && entry.client_id && typeof entry.client_secret === 'string' && entry.client_secret) {
+          clients.set(name, { client_id: entry.client_id, client_secret: entry.client_secret });
+        }
+      }
+    } catch {
+      logger.warn('[mcp-apps] KORTIX_OAUTH_CLIENTS is not valid JSON; no Kortix OAuth client is configured');
+    }
+  }
+  parsedClients = { raw, clients };
+  return clients;
+}
+
+/** An app is usable when it needs no client of Kortix's, or that client is configured. */
+export function mcpAppAvailable(app: McpApp, clients = kortixOAuthClients()): boolean {
+  return app.auth.kind !== 'kortix_client' || clients.has(app.auth.client);
+}
+
+export function availableMcpApps(clients = kortixOAuthClients()): McpApp[] {
+  return MCP_APPS.filter((app) => mcpAppAvailable(app, clients));
+}
+
+/** `https://Mcp.Linear.app/mcp/` and `https://mcp.linear.app/mcp` are one server. */
+function endpointKey(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' || parsed.search || parsed.hash) return null;
+    return `${parsed.host.toLowerCase()}${parsed.pathname.replace(/\/+$/, '')}`;
+  } catch {
+    return null;
+  }
+}
+
+/** The catalogue entry whose MCP endpoint is exactly `url`. */
+export function mcpAppForUrl(url: string): McpApp | null {
+  const key = endpointKey(url);
+  if (!key) return null;
+  return MCP_APPS.find((app) => endpointKey(app.url) === key) ?? null;
+}
+
+/**
+ * The OAuth application Kortix signs in with for the MCP server at `url`:
+ * Kortix's own client, with the catalogue's endpoints and scopes. `null` when
+ * `url` is not a `kortix_client` app or its client is not configured.
+ */
+export function kortixClientApplication(
+  url: string,
+  clients = kortixOAuthClients(),
+): OAuth2ApplicationInput | null {
+  const app = mcpAppForUrl(url);
+  if (!app || app.auth.kind !== 'kortix_client') return null;
+  const client = clients.get(app.auth.client);
+  if (!client) return null;
+  const auth = app.auth;
+  return {
+    issuer: auth.issuer,
+    authorization_url: auth.authorizationUrl,
+    token_url: auth.tokenUrl,
+    ...(auth.revocationUrl ? { revocation_url: auth.revocationUrl } : {}),
+    client_id: client.client_id,
+    client_secret: client.client_secret,
+    token_endpoint_auth_method: auth.tokenEndpointAuthMethod,
+    ...(auth.scopes.length ? { scopes: auth.scopes } : {}),
+    ...(auth.authorizationParams ? { authorization_params: auth.authorizationParams } : {}),
+  };
+}
+
+/** The Popular section, in this order. */
+const POPULAR = ['gmail', 'google_calendar', 'slack', 'github', 'notion', 'linear', 'google_drive', 'hubspot', 'atlassian', 'figma', 'airtable', 'stripe'];
+
+export function mcpAppIcon(app: McpApp): string | null {
+  return app.icon ? `/connector-icons/${app.slug}.svg` : null;
+}
+
+/** An app as a Discover catalogue record, so the web's Discover grid,
+ *  app page and Install serve it unchanged. */
+export function mcpAppCatalogItem(app: McpApp): ConnectorCatalogItem {
+  const rank = POPULAR.indexOf(app.slug);
+  return {
+    id: `kortix:${app.slug}`,
+    kind: 'mcp',
+    slug: app.slug,
+    name: app.name,
+    description: app.description,
+    url: `https://${app.domain}`,
+    icon: mcpAppIcon(app),
+    domain: app.domain,
+    categories: app.categories,
+    feeds: ['kortix'],
+    // Above every integrations.sh score, so Popular opens with these.
+    popularity: rank === -1 ? null : 1_000_000 + POPULAR.length - rank,
+    mcpUrl: app.url,
+    oauth: true,
+    oneClick: true,
+  };
+}
+
+/** The one surface Install builds the connector from: the vendor's MCP server. */
+export function mcpAppSurface(app: McpApp): ConnectorSurfaceVariant {
+  return {
+    id: `kortix:${app.slug}:mcp`,
+    kind: 'mcp',
+    name: app.name,
+    url: app.url,
+    docs: null,
+    description: app.description,
+    transports: ['http'],
+    requiresAuth: true,
+    command: null,
+    connector: { provider: 'mcp', url: app.url, transport: 'http' },
+    oneClick: true,
+  };
+}
+
+/** A managed toolkit as a way to connect its app. */
+export function composioSurface(item: ConnectorCatalogItem): ConnectorSurfaceVariant {
+  return {
+    id: item.id,
+    kind: 'composio',
+    name: item.name,
+    url: null,
+    docs: null,
+    description: item.description,
+    transports: [],
+    requiresAuth: item.composio?.isNoAuth !== true,
+    command: null,
+    connector: null,
+    oneClick: true,
+    ...(item.composio ? { composio: item.composio } : {}),
+  };
+}
+
+/** What Kortix built itself: the four channels people message the agent in,
+ *  and the computer it works on. Each is set up on its own page
+ *  (`kortix channels …`, the desktop app or the pairing command), never
+ *  through Install, and it is the recommended way to its app (`variantRank`). */
+export const KORTIX_APPS: ReadonlyArray<{
+  app: KortixApp;
+  name: string;
+  domain: string;
+  description: string;
+  icon: string | null;
+  categories: string[];
+}> = [
+  { app: 'slack', name: 'Slack', domain: 'slack.com', description: 'Message the agent in Slack: mentions, DMs and channels, through the Kortix Slack app.', icon: '/connector-icons/slack.svg', categories: ['communication'] },
+  { app: 'teams', name: 'Microsoft Teams', domain: 'teams.microsoft.com', description: 'Message the agent in Microsoft Teams chats and channels, through the Kortix Teams app.', icon: '/connector-icons/teams.svg', categories: ['communication'] },
+  { app: 'email', name: 'Email', domain: 'email.kortix', description: 'Give the project an inbox: people email the agent and it replies.', icon: '/connector-icons/email.svg', categories: ['communication'] },
+  { app: 'telegram', name: 'Telegram', domain: 'telegram.org', description: 'Message the agent from Telegram through a bot you own.', icon: '/connector-icons/telegram.svg', categories: ['communication'] },
+  { app: 'computer', name: 'Computer', domain: 'computer.kortix', description: 'Let agents work with the files, terminal and apps on your own computer, with the access you allow.', icon: '/connector-icons/computer.svg', categories: ['developer-tools'] },
+];
+
+/** The catalogue id of a Kortix integration: the web opens `native:computer` on its own page. */
+export const kortixAppId = (app: KortixApp): string => `native:${app}`;
+
+export function kortixCatalogItem(entry: (typeof KORTIX_APPS)[number]): ConnectorCatalogItem {
+  return {
+    id: kortixAppId(entry.app),
+    kind: 'kortix',
+    slug: entry.app,
+    name: entry.name,
+    description: entry.description,
+    url: null,
+    icon: entry.icon,
+    domain: entry.domain,
+    categories: entry.categories,
+    feeds: ['kortix'],
+    popularity: null,
+    oneClick: true,
+    kortix: { app: entry.app },
+  };
+}
+
+export function kortixSurface(entry: (typeof KORTIX_APPS)[number]): ConnectorSurfaceVariant {
+  return {
+    id: kortixAppId(entry.app),
+    kind: 'kortix',
+    name: `Kortix ${entry.name}`,
+    url: null,
+    docs: null,
+    description: entry.description,
+    transports: [],
+    requiresAuth: true,
+    command: null,
+    connector: null,
+    oneClick: true,
+    kortix: { app: entry.app },
+  };
+}
+
+/** A managed toolkit as a catalogue record. `domain` is the same app's domain
+ *  in the other catalogues, so one card stands for both; else a pseudo-domain
+ *  with no surfaces. */
+export function composioCatalogItem(card: ComposioCatalogCard, domain: string | undefined): ConnectorCatalogItem {
+  return {
+    id: `composio:${card.slug}`,
+    kind: 'composio',
+    slug: card.slug,
+    name: card.name,
+    description: card.description,
+    url: null,
+    icon: card.logo,
+    domain: domain ?? `${card.slug}.composio`,
+    categories: card.categories,
+    feeds: ['composio'],
+    popularity: null,
+    oneClick: true,
+    composio: card,
+  };
+}
+
+/** One app across the catalogues: `appNameKey`, a trailing "API" or
+ *  "GraphQL" dropped too ("Bitbucket API" is Bitbucket). Empty: no key. */
+export function v2AppKey(name: string): string {
+  return appNameKey(name).replace(/(rest)?(api|graphql)$/, '');
+}
+
+/**
+ * Every way to connect, one record per surface: Kortix's apps, integrations.sh
+ * (MCP, OpenAPI, GraphQL, CLI) and the managed toolkits. `list` shows each app
+ * once, by its best surface (`surfaceRank`): a one-click MCP server, then the
+ * managed toolkit, then the rest. A source that is down drops out; the others
+ * still list.
+ */
+export async function connectorsV2Items(
+  load: {
+    apps?: () => McpApp[];
+    index?: () => Promise<ConnectorCatalogItem[]>;
+    toolkits?: () => Promise<ComposioCatalogCard[]>;
+  } = {},
+): Promise<ConnectorCatalogItem[]> {
+  const kortix = [...KORTIX_APPS.map(kortixCatalogItem), ...(load.apps ?? availableMcpApps)().map(mcpAppCatalogItem)];
+  const [index, toolkits] = await Promise.all([
+    (load.index ?? connectorCatalogItems)().catch(() => [] as ConnectorCatalogItem[]),
+    (load.toolkits ?? (async () => (await composioVisibleToolkits()).map(publicToolkit)))().catch(
+      () => [] as ComposioCatalogCard[],
+    ),
+  ]);
+  // A Kortix app owns its app's records, by domain and by name (Notion is
+  // notion.so here and notion.com in the registry): they file under its
+  // domain, so the list shows one card and the app page every way in.
+  const curatedDomain = new Map(kortix.map((item) => [v2AppKey(item.name), item.domain]));
+  const direct = index.map((item) => {
+    const domain = curatedDomain.get(v2AppKey(item.name));
+    return domain && domain !== item.domain ? { ...item, domain, registryDomain: item.domain } : item;
+  });
+  const domainOf = new Map<string, string>();
+  for (const item of [...kortix, ...direct]) {
+    const key = v2AppKey(item.name);
+    if (key && !domainOf.has(key)) domainOf.set(key, item.domain);
+  }
+  const items = [
+    ...kortix,
+    ...direct,
+    ...toolkits.map((card) => composioCatalogItem(card, domainOf.get(v2AppKey(card.name)))),
+  ];
+  // Every record stays: a search must still find a worse surface of an app,
+  // and the registry files several apps under one domain (Microsoft Graph).
+  // Records come grouped by domain, best way in first, so `list` and the
+  // browse sections stand each app for its best record.
+  const byDomain = new Map<string, ConnectorCatalogItem[]>();
+  for (const item of items) {
+    const group = byDomain.get(item.domain);
+    if (group) group.push(item);
+    else byDomain.set(item.domain, [item]);
+  }
+  const position = new Map(items.map((item, index) => [item, index]));
+  const groups = [...byDomain.values()].map((group) =>
+    group.sort((a, b) => surfaceRank(a) - surfaceRank(b) || position.get(a)! - position.get(b)!),
+  );
+  // Browse order, by each app's best record: Kortix's apps; then the
+  // registry's popular apps and the managed apps (in their usage order) taking
+  // turns, as neither ranks the other; then the long tail.
+  const head = (group: ConnectorCatalogItem[]) => group[0]!;
+  const curatedApps = groups.filter((group) => head(group).feeds.includes('kortix'));
+  const popular = groups
+    .filter((group) => !head(group).feeds.includes('kortix') && head(group).popularity !== null)
+    .sort((a, b) => (head(b).popularity ?? 0) - (head(a).popularity ?? 0));
+  const managed = groups
+    .filter((group) => head(group).kind === 'composio')
+    .sort((a, b) => position.get(head(a))! - position.get(head(b))!);
+  const turns: ConnectorCatalogItem[][] = [];
+  for (let i = 0; i < Math.max(popular.length, managed.length); i++) {
+    if (popular[i]) turns.push(popular[i]);
+    if (managed[i]) turns.push(managed[i]);
+  }
+  const placed = new Set([...curatedApps, ...turns]);
+  return [...curatedApps, ...turns, ...groups.filter((group) => !placed.has(group))].flat();
+}
+
+/** The Discover catalogue every project browses. */
+export const kortixMcpCatalog = createConnectorCatalog({
+  source: {
+    items: () => connectorsV2Items(),
+    surfaces: (domain) => connectorsV2Surfaces(domain),
+  },
+});
+
+/**
+ * Every way to connect one app, best first (`variantRank`), the first marked
+ * `recommended`: Kortix's MCP app, the integrations.sh surfaces of every
+ * domain its records come from, and its managed toolkit. A surface that is
+ * down drops out; the others still list.
+ */
+export async function connectorsV2Surfaces(
+  domain: string,
+  load: {
+    items?: () => Promise<ConnectorCatalogItem[]>;
+    surfaces?: (domain: string) => Promise<ConnectorSurfaceVariant[]>;
+  } = {},
+): Promise<ConnectorSurfaceVariant[]> {
+  const records = (await (load.items ?? connectorsV2Items)()).filter((item) => item.domain === domain);
+  const curated = [
+    ...KORTIX_APPS.filter((entry) => entry.domain === domain).map(kortixSurface),
+    ...availableMcpApps()
+      .filter((app) => app.domain === domain)
+      .map(mcpAppSurface),
+  ];
+  const registryDomains = new Set(
+    records.filter((item) => !item.feeds.includes('kortix') && item.kind !== 'composio').map((item) => item.registryDomain ?? item.domain),
+  );
+  if (!curated.length && !domain.endsWith('.composio')) registryDomains.add(domain);
+  const registry = (
+    await Promise.all(
+      [...registryDomains].map((d) => (load.surfaces ?? connectorCatalogSurfaces)(d).catch(() => [])),
+    )
+  )
+    .flat()
+    .map((variant) =>
+      variant.kind === 'mcp' && isOneClickMcpUrl(variant.url) ? { ...variant, oneClick: true } : variant,
+    );
+  // One row per endpoint: the registry often lists a Kortix app's server too.
+  const seen = new Set<string>();
+  const ways = [...curated, ...registry, ...records.filter((item) => item.kind === 'composio').map(composioSurface)].filter(
+    (variant) => {
+      const key = variant.kind === 'composio' ? variant.id : `${variant.kind}:${(variant.url ?? variant.connector?.spec ?? variant.id).replace(/\/+$/, '')}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    },
+  );
+  return ways
+    .map((variant, index) => ({ variant, index }))
+    .sort((a, b) => variantRank(a.variant) - variantRank(b.variant) || a.index - b.index)
+    .map(({ variant }, index) => (index === 0 && variantRank(variant) < 10 ? { ...variant, recommended: true } : variant));
+}

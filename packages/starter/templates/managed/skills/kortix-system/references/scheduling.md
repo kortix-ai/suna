@@ -31,9 +31,23 @@ Rules: `kortix-yaml.md` → `imports:`.
 | To follow up on **this** task later ("remind me at 4pm", "check tomorrow whether they replied", "keep checking hourly until the deploy is green") | **session reminder** | `kortix remind "<what to do>" --at <ISO> \| --in 24h [--every 1h]` — no `kortix.yaml` change |
 | A one-time project job not tied to this session ("send the launch email tomorrow 9am") | **cron trigger, one-off** | `type: cron` + `run_at: "<ISO-8601>"` |
 | Something to repeat ("every weekday morning", "daily digest", "check hourly") | **cron trigger, recurring** | `type: cron` + `cron: "<6-field>"` + `timezone` |
-| To react to an event **in a connected app** ("when a PR opens", "when an email arrives", "when an issue changes", "when a calendar event is created", "when a Slack message is posted") | **event trigger** | `type: event` + `connector` + `event` (optional `source`). Beta, behind the project flag `event_triggers` — see [App event triggers](#app-event-triggers) |
-| To react to a system that has **no app connector** ("when our in-house tool calls us") | **webhook trigger** | `type: webhook` + `secret_env` |
+| To react to an event **in a connected app** ("when a PR opens", "when an email arrives", "when an issue changes", "when a calendar event is created", "when a Slack message is posted") | **connector event trigger** | `on: { event, connector }` (flat: `type: event`). See [Connector event triggers](#connector-event-triggers) |
+| To react to a system that has **no app connector** but can call a URL ("when our in-house tool calls us", Stripe, a CI job) | **webhook trigger** | `on: { webhook: { secret } }` (flat: `type: webhook` + `secret_env`) |
+| To react to something that **sends no event and no webhook**, needs code to decide what matters, or needs a long-lived connection (a WebSocket, a stream) | **App event trigger — last resort** | An App watches and posts events; `on: { event, app }`. See [App events](#app-events-last-resort) |
 | To **pause mid-task and resume later with full context** | **session reminder** | See [Pausing mid-task](#pausing-mid-task) |
+
+**React to something outside Kortix: pick the first that fits.**
+
+1. **A connector event.** The service already emits it (new email, new pull
+   request, new calendar event). No code, no secret.
+2. **A webhook.** The service can call a URL (Stripe, GitHub without a
+   connector, your own backend). One secret, no code to run.
+3. **A schedule.** Checking on a fixed cadence is enough ("every hour, look
+   for new orders"). The agent checks; nothing runs in between.
+4. **An App that posts App events.** Only when 1–3 cannot work: the source
+   has no events and no webhook, code must filter what deserves an agent, or
+   the watch needs a connection that stays open. An App is code you deploy
+   and keep running; it is the most work and the most to maintain.
 
 Don't reach for a trigger when the work finishes in this turn, or when you
 just need to ask the user something — answer or ask directly. Triggers are
@@ -187,7 +201,8 @@ reminder text: the fire is not a channel turn, so the answer must be posted
 with `slack send --channel <id> --thread <ts>` (see `kortix-slack`).
 
 `kortix reminders ls` shows this session's reminders, `pause <id>` /
-`resume <id>` turn one off and on. A reminder lives in the database, not
+`resume <id>` turn one off and on, and `run <id>` fires one once now (the
+retry of a failed run; the schedule does not move). A reminder lives in the database, not
 `kortix.yaml`: no CR, no manifest edit, and it pauses itself if its session
 is deleted. It never starts a new session — for work that must survive the
 session, use a trigger.
@@ -195,7 +210,7 @@ session, use a trigger.
 For very short waits *within* a single turn (seconds to a couple of
 minutes), a plain `sleep` in the run is fine.
 
-## App event triggers
+## Connector event triggers
 
 **Rule:** "when X happens in <app>" is an `event` trigger, NOT a webhook.
 Kortix creates the subscription for you. You wire no webhook, secret, or
@@ -203,19 +218,20 @@ signature. Use a webhook trigger only for a system with no app connector.
 
 ### Turn the feature on first
 
-App event triggers are a **beta** feature behind the project flag
-`event_triggers`. The flag is **off** by default.
+Connector event triggers are a **beta** feature behind the project flag
+`event_triggers`. The flag is **on** by default; a project owner can turn it
+off. If it is off:
 
 - With the flag off, `kortix triggers events …` and `kortix triggers add|set
-  --type event` print `App event triggers are off for this project. Turn them
+  --type event` print `Connector event triggers are off for this project. Turn them
   on: kortix projects features enable event_triggers` and exit 1. The API
-  answers `403` with `code: feature_disabled`. Cron, webhook and monitor
+  answers `403` with `code: feature_disabled`. Cron, webhook and App event
   triggers are not affected.
 - Turn it on: `kortix projects features enable event_triggers`, or **Settings →
-  Feature flags → App event triggers** in the web app. A person with project
+  Feature flags → Connector event triggers** in the web app. A person with project
   write access does this. Ask the user when you cannot.
 - A `type: event` trigger already in `kortix.yaml` while the flag is off is not
-  subscribed. `kortix triggers ls` shows it as `error` with `App event triggers
+  subscribed. `kortix triggers ls` shows it as `error` with `Connector event triggers
   are off for this project. Turn them on in Settings → Feature flags.` The other
   triggers still apply.
 - Turning the flag on subscribes the declared event triggers by itself. Turning
@@ -223,15 +239,15 @@ App event triggers are a **beta** feature behind the project flag
 
 ### See every event trigger
 
-- `kortix triggers ls --type event` lists only app events, grouped by app
+- `kortix triggers ls --type event` lists only connector events, grouped by app
   (`github (2)`, `gmail (1)`), with each status word.
-- `kortix triggers ls --connector <slug>` keeps the app events on one
+- `kortix triggers ls --connector <slug>` keeps the connector events on one
   connector (profile). `--type` and `--connector` combine. `--json` returns
-  the filtered list. `--type` also takes `cron`, `webhook` and `monitor`.
-- Web: **Triggers** has the filter `All · Schedules · App events · Webhooks`
-  with counts, kept in the URL as `?type=event`. **App events** groups the
-  rows by app and lists every app with events below them. A connector's
-  detail window has a **Triggers** tab with the app events on it.
+  the filtered list. `--type` also takes `cron`, `webhook` and `app`.
+- Web: **Triggers** has the filter `All · Schedules · Connector events · Webhooks`
+  (plus **App events** once a project has one), kept in the URL as
+  `?type=event`. **Connector events** groups the rows by app. A connector's
+  detail window has a **Triggers** tab with its connector events.
 
 ### Autonomous setup recipe
 
@@ -324,6 +340,31 @@ or `--config-json '<json>'` (replace). Do not pass both.
   session pushes its own message (e.g. `slack send`) and stays silent when
   there is nothing to report.
 
+## App events (last resort)
+
+Use this only when a connector event, a webhook and a schedule all fail (see
+the order above). Your App does the watching; a trigger decides which agent
+runs. The App never starts an agent itself and never calls the SDK for it.
+
+1. Build the watcher as an App (load `kortix-apps`). Every machine has
+   `KORTIX_APP_TOKEN` and `KORTIX_APP_EVENTS_URL`.
+2. When something deserves an agent, POST
+   `{"name": "reply.received", "data": {...}, "id": "<your id>"}` to the URL
+   with `Authorization: Bearer $KORTIX_APP_TOKEN`. `id` makes a retry fire once.
+3. Declare the trigger:
+   ```yaml
+   - slug: handle-reply
+     on:  { event: reply.received, app: inbox-poller }
+     run: { prompt: "Answer {{ event.data.subject }}" }
+   ```
+4. Filter in the App, not in the agent: emit only what is worth a session, or
+   one summary event ("12 new emails") instead of 12. Each trigger takes at
+   most 60 events an hour; past that it is suppressed, and repeated
+   suppression disables it.
+
+To have Kortix call the App on a cadence (a poller that sleeps between
+checks), add `on: { every: 5m }` + `run: { app: inbox-poller, path: /tick }`.
+
 ## Stopping & managing triggers
 
 Acknowledging "okay, I stopped it" without actually changing config means it
@@ -365,7 +406,7 @@ on a zero-ticket night.
 → Event trigger: `connector: github`, a release event from
 `kortix triggers events --connector github`, `config: { repo: acme/api }`.
 Prompt reads `{{ event.data.* }}`, drafts notes, opens a CR. See
-[App event triggers](#app-event-triggers).
+[Connector event triggers](#connector-event-triggers).
 
 **"Alert our in-house tool's calls to us."** (no app connector)
 → Webhook trigger with `secret_env: WEBHOOK_INHOUSE_SECRET`; the tool posts to
@@ -387,7 +428,7 @@ end the turn. See [Pausing mid-task](#pausing-mid-task).
 ## Quick checklist
 
 - [ ] Right mechanism? Session reminder (this task) vs one-off `run_at`
-      vs recurring `cron` vs `event` (app event) vs `webhook` (no connector).
+      vs recurring `cron` vs `event` (connector event) vs `webhook` (no connector).
 - [ ] Event trigger: `kortix triggers info <slug>` prints `live`; `filter`
       or `session_key` set where events are noisy.
 - [ ] 6-field cron, correct `timezone`, no DOM+DOW "first-Monday" trap, no

@@ -84,6 +84,7 @@ export function deliveryForKind(
     case 'question':
     case 'permission':
     case 'shared':
+    case 'message':
       return { channelId: CHANNEL_ATTENTION, iosSound: 'kortix_attention.wav' };
   }
 }
@@ -119,6 +120,28 @@ export function parsePushData(raw: unknown): PushData | null {
     sessionId: nonEmptyString(data.sessionId) ? data.sessionId : null,
     notificationId: nonEmptyString(data.notificationId) ? data.notificationId : null,
   };
+}
+
+function hostOf(url: string): string | null {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * True when the push names a sending backend (`data.origin`, the API's
+ * KORTIX_URL) whose host is not the host of `backendUrl`, the backend this
+ * app is signed in to. Its tap is ignored (KRTX-2938: a local or dev stack
+ * that holds this phone's token). A push with no `origin` is from this
+ * backend: servers before KRTX-2938 send none.
+ */
+export function pushFromOtherBackend(raw: unknown, backendUrl: string): boolean {
+  const origin = raw && typeof raw === 'object' ? (raw as Record<string, unknown>).origin : undefined;
+  if (!nonEmptyString(origin)) return false;
+  const from = hostOf(origin);
+  return from !== null && from !== hostOf(backendUrl);
 }
 
 /**

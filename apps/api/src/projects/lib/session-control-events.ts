@@ -4,7 +4,7 @@
  * `GET .../sessions/:sid/stream` multiplexes two sources onto one client
  * connection: the sandbox daemon's sequenced runtime events, and the facts only
  * the API knows — the prompt queue, the turn verdict, the wake/boot envelope,
- * the transcript mirror's watermark. This module owns the second half.
+ * the audit watermark. This module owns the second half.
  *
  * ─── TWO CURSORS, NEVER ONE ────────────────────────────────────────────────
  * WS-Z1's rule, verbatim: *"Do not renumber: `seq` is the daemon's, and a
@@ -70,8 +70,6 @@ export type ControlEventType =
   | 'kortix.control.queue'
   /** Runtime reachability + wake/boot progress, as the CONTROL plane sees it. */
   | 'kortix.control.runtime'
-  /** The transcript mirror's watermark (how far the durable copy has caught up). */
-  | 'kortix.control.mirror'
   /**
    * The session's audit/approval WATERMARK — a change-detection signal for the
    * per-session audit surface (`GET .../audit`). It carries the count of

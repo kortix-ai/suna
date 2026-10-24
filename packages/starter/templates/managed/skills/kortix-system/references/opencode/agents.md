@@ -2,6 +2,8 @@
 
 # Agents
 
+> **Deprecated: OpenCode is sunset.** Every new Kortix session runs pi (`../pi/overview.md`). This page applies only to a session that still runs OpenCode. Do not add OpenCode config to a project.
+
 Configure and use specialized agents.
 
 Agents are specialized AI assistants that can be configured for specific tasks and workflows. They allow you to create focused tools with custom prompts, models, and tool access.

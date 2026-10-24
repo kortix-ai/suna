@@ -6,8 +6,9 @@ import { parseChannelMessage } from './channel-message';
 
 /**
  * The scaffolds below are copied from the API renderers that produce them:
- * apps/api/src/channels/slack/session.ts, teams/session.ts,
- * telegram-webhook.ts. If one of those changes shape, the matching case here
+ * apps/api/src/channels/slack/session.ts and teams/session.ts; the Telegram
+ * scaffold is from the retired legacy webhook, kept for old transcripts. If one
+ * of those changes shape, the matching case here
  * is what tells you the session view will fall back to the raw prompt.
  */
 

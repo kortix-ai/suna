@@ -110,6 +110,18 @@ export async function linkCommand(
  * (`uses` within the manifest), then by name. A use of an App outside the
  * manifest does not constrain the order. A cycle throws.
  */
+/**
+ * The blocks `kortix apps deploy` (no target) deploys: those that name a source,
+ * `path` or `image`. A block that only declares settings (`display`,
+ * `always_on`, `resources`…, written when the App is changed in the web app)
+ * is skipped: with no `path` it would deploy the repository root.
+ */
+export function deployableBlocks<B extends { path?: unknown; image?: unknown }>(blocks: Record<string, B>): { deploy: string[]; skipped: string[] } {
+  const names = Object.keys(blocks);
+  const deploy = names.filter((name) => blocks[name]?.path !== undefined || blocks[name]?.image !== undefined);
+  return { deploy, skipped: names.filter((name) => !deploy.includes(name)) };
+}
+
 export function deployOrder(blocks: Record<string, { uses?: string[] }>): string[] {
   const pending = new Set(Object.keys(blocks));
   const order: string[] = [];

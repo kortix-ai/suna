@@ -88,15 +88,16 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
     displayName: 'No Plan',
   },
 
-  // $2 (200 credits) a month. Sandbox compute spends them; managed models stay
-  // gated — except the platform default, which every tier may run (KRTX-1067).
+  // $5 (500 credits) a month and top-ups, for compute and the user's own
+  // provider keys or ChatGPT subscription. Never the Kortix-managed models:
+  // the gateway refuses them for every account without `managedModels`.
   free: {
     key: 'free',
     family: 'free',
     status: 'current',
     shape: 'none',
     rank: 1,
-    entitlements: { ...NO_ENTERPRISE, managedModels: false, canPurchaseCredits: false, byokFee: true },
+    entitlements: { ...NO_ENTERPRISE, managedModels: false, canPurchaseCredits: true, byokFee: true },
     limits: { llmRateMultiplier: 0 },
     displayName: 'Free',
   },

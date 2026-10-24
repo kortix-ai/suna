@@ -602,7 +602,7 @@ describe('the computer connector is a regular connector', () => {
     expect(actions.map((action) => action.path)).toContain('status');
     expect(actions.map((action) => action.path)).not.toContain('list_computers');
     const policies = await dbConnectorRouterDeps.getConnectorPolicies!(PROJECT, 'computer');
-    expect(policies?.policies).toEqual([{ match: 'fs.delete', action: 'block' }]);
+    expect(policies && 'policies' in policies ? policies.policies : null).toEqual([{ match: 'fs.delete', action: 'block' }]);
     expect((await computerConnection(aliceConnection))?.status).toBe('active');
     const machineless = await db
       .select()

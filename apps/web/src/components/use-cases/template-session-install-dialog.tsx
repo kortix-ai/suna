@@ -13,22 +13,22 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
+import { Button } from '@kortix/ui/button';
+import { Dialog, DialogContent, DialogTitle } from '@kortix/ui/dialog';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from '@kortix/ui/select';
 import { useProjectPicker } from '@/features/marketplace/marketplace-project-picker';
 import { useAuth } from '@/features/providers/auth-provider';
 import { installMarketplaceItemAsSession } from '@/lib/marketplace-client';
-import { isManagedGitUnavailableError } from '@/lib/onboarding/provision-errors';
+import { isManagedGitUnavailableError } from '@kortix/ui/internal/lib/onboarding/provision-errors';
 
 // First-party use-case templates ship in the bundled `kortix-starter` registry,
 // so a use-case slug maps to the catalog id the install-session resolves by.
@@ -64,12 +64,18 @@ export function TemplateSessionInstallDialog({
   const { projects, projectsQuery } = useProjectPicker({ open, enabled: !!user });
   const activeProjects = useMemo(() => projects.filter((p) => p.status === 'active'), [projects]);
 
-  useEffect(() => {
-    if (!open) return;
-    setError(null);
-    setOpening(false);
-    setNewProjectName(title ?? '');
-  }, [open, title]);
+  const [prevOpenTitle, setPrevOpenTitle] = useState<{ open: boolean; title?: string }>({
+    open: false,
+    title,
+  });
+  if (open !== prevOpenTitle.open || title !== prevOpenTitle.title) {
+    setPrevOpenTitle({ open, title });
+    if (open) {
+      setError(null);
+      setOpening(false);
+      setNewProjectName(title ?? '');
+    }
+  }
 
   // Default the target once the list is known: the first project, or inline
   // creation when the account genuinely has none.

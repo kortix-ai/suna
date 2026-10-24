@@ -40,6 +40,7 @@ import {
   stringValue,
 } from '../connector-gateway/io.ts';
 import { saveResult } from '../connector-gateway/result-spill.ts';
+import { resolveProjectId } from '../project-link.ts';
 
 const PROVIDERS = ['composio', 'pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http'];
 
@@ -189,7 +190,7 @@ interface Invocation {
 type Handler = (invocation: Invocation) => Promise<void>;
 
 async function listConnectors({ flags }: Invocation): Promise<void> {
-  const connector = connectorClient(stringValue(flags.project));
+  const connector = await connectorClient(stringValue(flags.project), stringValue(flags.host));
   // Name/status/tool-count only — never ask for the per-action schemas.
   const connectors = await connector.catalog({ includeSchemas: false });
   out({
@@ -203,7 +204,7 @@ async function listConnectors({ flags }: Invocation): Promise<void> {
 }
 
 async function discover({ args, flags }: Invocation): Promise<void> {
-  const connector = connectorClient(stringValue(flags.project));
+  const connector = await connectorClient(stringValue(flags.project), stringValue(flags.host));
   const q = args.join(' ') || stringValue(flags.query) || '';
   const matches = await connector.search(q, {
     limit: Number(stringValue(flags.limit)) || 20,
@@ -218,7 +219,7 @@ async function discover({ args, flags }: Invocation): Promise<void> {
 }
 
 async function show({ args, flags }: Invocation): Promise<void> {
-  const connector = connectorClient(stringValue(flags.project));
+  const connector = await connectorClient(stringValue(flags.project), stringValue(flags.host));
   const ref = args[0];
   if (!ref || !ref.includes('.'))
     throw new CliError('usage: kortix connectors show <connector>.<action>', 'USAGE');
@@ -241,7 +242,7 @@ async function show({ args, flags }: Invocation): Promise<void> {
 async function call({ args, flags, repeated }: Invocation): Promise<void> {
   const { slug, action, rawArgs } = parseConnectorCallInput(args, flags);
   if (flags.out === true) throw new CliError('--out needs a file path', 'USAGE');
-  const connector = connectorClient(stringValue(flags.project));
+  const connector = await connectorClient(stringValue(flags.project), stringValue(flags.host));
   let parsed = await readCallArgs(rawArgs);
   // A valueless `--attach` is the `true` sentinel — it carries no path.
   const attach = (repeated.attach ?? []).filter((path): path is string => typeof path === 'string');
@@ -280,8 +281,7 @@ async function call({ args, flags, repeated }: Invocation): Promise<void> {
       throw new CliError((error as Error).message, 'BAD_ATTACHMENT');
     }
   }
-  // A gated call returns its authenticated approval URL immediately. The
-  // server sends the decision back into the session after a human acts.
+  // The server sends the decision back into the session after a human acts.
   //
   // `--account` picks WHICH connected account to run as when the connector
   // holds more than one (the project's shared account and each member's
@@ -292,6 +292,15 @@ async function call({ args, flags, repeated }: Invocation): Promise<void> {
     account: flags.account,
     approvalContext: flags.reason,
   });
+  // Keep bearer approval links on the web surface, not in terminal output or files.
+  if (result.status === 'pending_approval') {
+    result.approval_url = undefined;
+    const projectId = resolveProjectId(stringValue(flags.project));
+    const scope = projectId ? ` --project ${projectId}` : '';
+    result.approval_instructions = result.execution_id
+      ? `Have an authorized human review the call and use their personal CLI credentials to run kortix review act call:${result.execution_id} approve${scope} or kortix review act call:${result.execution_id} reject${scope}.`
+      : 'Ask a human to review the pending call in the project Review Center.';
+  }
   // `--out <file>`: the full result goes to the file, a summary to stdout
   // (bytes, the shape of `data`, the path). Large results stay out of the
   // agent's context, where OpenCode would truncate them.
@@ -312,7 +321,7 @@ async function upload({ args, flags }: Invocation): Promise<void> {
   const filename = stringValue(flags.filename);
   const contentType = stringValue(flags['content-type']);
   const contentId = stringValue(flags['content-id']);
-  const connector = connectorClient(stringValue(flags.project));
+  const connector = await connectorClient(stringValue(flags.project), stringValue(flags.host));
   let uploaded;
   try {
     [uploaded] = await uploadAttachmentFiles(
@@ -348,7 +357,7 @@ async function add({ args, flags }: Invocation): Promise<void> {
     );
   rejectBuiltinChannel(slug);
   const draft = connectorDraftFromFlags(slug, flags);
-  const res = await addConnector(draft, stringValue(flags.project));
+  const res = await addConnector(draft, stringValue(flags.project), stringValue(flags.host));
   out({
     ok: true,
     slug,
@@ -362,7 +371,7 @@ async function add({ args, flags }: Invocation): Promise<void> {
 async function remove({ args, flags }: Invocation): Promise<void> {
   const slug = args[0];
   if (!slug) throw new CliError('usage: kortix connectors rm <slug>', 'USAGE');
-  await removeConnector(slug, stringValue(flags.project));
+  await removeConnector(slug, stringValue(flags.project), stringValue(flags.host));
   out({
     ok: true,
     slug,
@@ -394,6 +403,7 @@ async function connect({ args, flags }: Invocation): Promise<void> {
     slug,
     expiresInMinutes: expires ? Number(expires) : undefined,
     projectOverride: stringValue(flags.project),
+    hostArg: stringValue(flags.host),
     ...(owner ? { owner } : {}),
   });
   out({

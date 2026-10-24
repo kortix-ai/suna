@@ -74,6 +74,16 @@ export async function listAccountTokens(
   return unwrap(await backendApi.get<AccountToken[]>(`/accounts/tokens${qs}`));
 }
 
+/** Approve a CLI device login (`kortix login` on a machine with no browser
+ *  callback): the signed-in browser confirms the code the terminal shows. The
+ *  API answers 404 for an expired or used code and 403 for a non-browser
+ *  caller; both reject with the API's sentence. */
+export async function approveCliDevice(userCode: string) {
+  return unwrap(
+    await backendApi.post<{ ok: boolean }>('/cli/device/decide', { user_code: userCode, approve: true }),
+  );
+}
+
 /** Mint a new account-scoped CLI PAT. The `secret_key` is returned once — the
  *  caller must persist it immediately; subsequent reads only ever see `public_key`. */
 export async function createAccountToken(input: CreateAccountTokenInput) {
@@ -88,11 +98,23 @@ export async function createAccountToken(input: CreateAccountTokenInput) {
   );
 }
 
-/** Revoke an account-scoped CLI PAT. */
-export async function revokeAccountToken(tokenId: string, accountId?: string) {
-  const qs = accountId ? `?account_id=${encodeURIComponent(accountId)}` : '';
+/** Revoke an account-scoped CLI PAT. With `{ deleteRevoked: true }`, DELETE
+ *  becomes "remove this dead row": the API only honors it for a personal key
+ *  that is already revoked (the caller's own), and answers 404 otherwise —
+ *  the settings page's Delete action for a revoked key rides on it. */
+export async function revokeAccountToken(
+  tokenId: string,
+  accountId?: string,
+  options?: { deleteRevoked?: boolean },
+) {
+  const params = new URLSearchParams();
+  if (accountId) params.set('account_id', accountId);
+  if (options?.deleteRevoked) params.set('delete_revoked', 'true');
+  const qs = params.size > 0 ? `?${params.toString()}` : '';
   return unwrap(
-    await backendApi.delete<{ ok: boolean }>(`/accounts/tokens/${tokenId}${qs}`),
+    await backendApi.delete<{ ok: boolean; deleted?: boolean }>(
+      `/accounts/tokens/${encodeURIComponent(tokenId)}${qs}`,
+    ),
   );
 }
 

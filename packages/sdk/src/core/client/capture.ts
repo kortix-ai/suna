@@ -34,6 +34,11 @@ export function bindAccountCapture(accountId: string) {
       get: () => C.getCapturePolicy(accountId),
       set: (policy: C.CapturePolicy) => C.setCapturePolicy(accountId, policy),
     },
+    /** Where the account keeps its recordings: the managed store, or its own S3 bucket (IAM `capture.manage`). */
+    storage: {
+      get: () => C.getCaptureStorage(accountId),
+      set: (input: C.CaptureStorageInput) => C.setCaptureStorage(accountId, input),
+    },
     timeline: {
       get: (query?: C.CaptureWindowQuery) => C.getCaptureTimeline(accountId, query),
       items: (query?: C.CaptureWindowQuery) => C.getCaptureTimelineItems(accountId, query),
@@ -42,7 +47,8 @@ export function bindAccountCapture(accountId: string) {
     },
     search: (query: C.CaptureSearchQuery) => C.searchCapture(accountId, query),
     frame: (frameId: string, opts?: { userId?: string }) => C.getCaptureFrame(accountId, frameId, opts),
-    media: (chunkId: string, opts?: { userId?: string }) => C.getCaptureChunkMedia(accountId, chunkId, opts),
+    media: (chunkId: string, opts?: { userId?: string; deviceId?: string }) =>
+      C.getCaptureChunkMedia(accountId, chunkId, opts),
   };
 }
 

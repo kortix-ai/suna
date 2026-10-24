@@ -44,14 +44,12 @@ import {
   validateAgentMdFrontmatter,
 } from '@kortix/manifest-schema';
 import { eq } from 'drizzle-orm';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { PROJECT_ACTIONS } from '../../iam/actions';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { resolveTemplateBySlug } from '../../snapshots/templates';
-import { extractAgents, grantsByAgent } from '../agents';
-import { assertNoGrantEscalation } from '../../iam/agent-grant-ceiling';
+import { extractAgents, agentNotDeclaredError, grantsByAgent } from '../agents';
+import { assertNoGrantEscalation, changedPolicySet } from '../../iam/agent-grant-ceiling';
 import { isRepoFileNotFoundError, readRepoFile } from '../git';
 import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from '../git/branches';
 import { isRemotePushPolicyRejection } from '../git/mirror';
@@ -68,6 +66,7 @@ import {
   normalizeRequiredConnectorAliases,
   resolveBehaviorDraft,
   readAgentBlockV2,
+  dropEmptyPolicySets,
 } from '../lib/agent-config-v2';
 import { parseAgentMarkdown, serializeAgentMarkdown } from '../lib/agent-markdown';
 import { projectsApp } from '../lib/app';
@@ -75,8 +74,6 @@ import {
   KNOWN_BEHAVIOR_KEYS,
   OpencodeAgentConfigSchema,
   readAgentMarkdownFile,
-  manifestRuntime,
-  selectSessionHarness,
 } from '../lib/compile-agent-config';
 import { withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
@@ -117,6 +114,9 @@ const AgentBlockSchema = z
     connectors_required: z.array(z.string().trim().min(1).max(200)).max(500).optional(),
     // Deprecated request alias. The handler normalizes it before serialization.
     connectors_personal: z.array(z.string().min(1).max(200)).max(500).optional(),
+    // Connector slug → policy set name. A PUT that omits it keeps the declared
+    // value; a PUT that changes it needs project.connector.write too.
+    policy_sets: z.record(z.string().min(1).max(128), z.string().max(64)).optional(),
     secrets: GrantSetSchema.optional(),
     skills: GrantSetSchema.optional(),
     // Kortix Apps (by slug) this agent may open when restricted/private (§2.5).
@@ -283,6 +283,18 @@ export function registerAgentConfigRoutes(): void {
       const read = readAgentBlockV2(manifest, agentName);
       if (!read.ok) return c.json({ error: read.error, code: 'manifest_malformed' }, 400);
 
+      // A name the manifest does not declare is a 404, not an empty success:
+      // the dashboard's editor contract says a missing agent answers 404 (its
+      // not-found state comes from /detail), and the CLI's `agents config` /
+      // `agents scope --show` must not exit 0 on a phantom agent
+      // (KRTX-2071/KRTX-2535). v1 keeps its declared-agent null block (v1
+      // always reads back null), so the declared check runs on the manifest's
+      // own roster.
+      if (read.block === null) {
+        const notDeclared = agentNotDeclaredError(manifest, agentName);
+        if (notDeclared) return c.json(notDeclared, 404);
+      }
+
       let block:
         | (AgentBlockV2 & { behavior?: Record<string, unknown>; opencode?: Record<string, unknown> })
         | null = read.block;
@@ -307,22 +319,16 @@ export function registerAgentConfigRoutes(): void {
         block = { ...(read.block ?? {}), behavior, opencode: behavior };
       }
 
-      // The harness a new session of this project runs, and the agent settings
-      // it ignores, so the editor marks them instead of letting them look applied.
-      const harness = selectSessionHarness({
-        piHarnessFlag: resolveFeatureFlag(loaded.row.metadata, 'pi_harness'),
-        runtime: manifestRuntime(manifest.raw),
-        llmGateway: projectLlmGatewayEnabled(loaded.row.metadata),
-      });
-
       return c.json({
         agent: agentName,
         schema_version: read.schemaVersion,
         editable: read.schemaVersion >= 2,
         default_agent: read.defaultAgent,
         block,
-        harness,
-        ignored_settings: ignoredAgentSettings(harness),
+        // Every new session runs pi. The editor marks the agent settings pi
+        // ignores instead of letting them look applied.
+        harness: 'pi',
+        ignored_settings: ignoredAgentSettings('pi'),
       });
     },
   );
@@ -542,11 +548,26 @@ export function registerAgentConfigRoutes(): void {
             });
       if (!edit.ok) return c.json(edit.body, edit.status);
 
+      // `policy_sets: {}` clears the agent's sets: write no key at all.
+      const writtenBlock = (edit.raw.agents as Record<string, Record<string, unknown>> | undefined)?.[agentName];
+      if (writtenBlock) dropEmptyPolicySets(writtenBlock);
       // Re-parse through the runtime grant reader before committing.
       const parsedCheck = extractAgents({ ...manifest, raw: edit.raw });
       const parseProblem = parsedCheck.errors.find((e) => e.name === agentName);
       if (parseProblem) {
         return c.json({ error: parseProblem.error, code: 'invalid_config' }, 400);
+      }
+      // Changing which policy set an agent runs under is a rule edit.
+      const grantBefore = grantsByAgent(extractAgents(manifest)).get(agentName);
+      const grantAfter = grantsByAgent(parsedCheck).get(agentName);
+      if (grantAfter && changedPolicySet(grantBefore, grantAfter) !== null) {
+        await assertProjectCapability(
+          c,
+          loaded.userId,
+          loaded.row.accountId,
+          projectId,
+          PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+        );
       }
       // An agent grants only what it holds (iam/agent-grant-ceiling.ts).
       await assertNoGrantEscalation(c, projectId, grantsByAgent(extractAgents(manifest)), grantsByAgent(parsedCheck));
@@ -647,6 +668,18 @@ async function prepareAgentConfigV2(
     if (!resolved.ok) return { ok: false, status: 400, body: { error: resolved.error, code: 'invalid_body' } };
     behaviorDraft = resolved.draft;
     const currentBlock = readAgentBlockV2(manifest, agentName);
+    // The write replaces the whole block. Keys this body cannot carry
+    // (`harnesses`, `network_egress`) are not this editor's to delete: keep
+    // them, as the v3 write does.
+    for (const [key, value] of Object.entries((currentBlock.ok && currentBlock.block) || {})) {
+      if (!(key in AgentBlockSchema.shape)) (governanceBlock as Record<string, unknown>)[key] = value;
+    }
+    // `policy_sets` is in the schema (the GET → PUT round trip carries it) but
+    // keeps the declared value when omitted, like the v3 grants.
+    const declaredSets = currentBlock.ok ? (currentBlock.block as Record<string, unknown> | null)?.policy_sets : undefined;
+    if ((governanceBlock as Record<string, unknown>).policy_sets === undefined && declaredSets !== undefined) {
+      (governanceBlock as Record<string, unknown>).policy_sets = declaredSets;
+    }
     const explicitFile = currentBlock.ok ? currentBlock.block?.file : undefined;
     if (explicitFile !== undefined) governanceBlock.file = explicitFile;
     else if (agentMd.exists || behaviorDraft !== undefined) governanceBlock.file = agentMd.path;

@@ -2,19 +2,22 @@
 import {
   connectorConnections,
   connectorActions,
+  connectorPolicySets,
   connectors,
   projectSecrets,
   projectSessionConnectorBindings,
 } from '@kortix/db';
 import { SLUG_RE } from '@kortix/manifest-schema';
-import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { ChannelPlatform } from '../projects/connectors';
 import { db } from '../shared/db';
 import { validateConnectorSecretBinding } from './connector-secret-binding';
+import { commitConnectorAuthSecret } from './manifest-auth-secret';
 import { credentialExists } from './credentials';
 import {
   getConnectorConfigFromManifest,
   getConnectorPoliciesFromManifest,
+  listConnectorPolicySetsFromManifest,
   setConnectorPoliciesInManifest,
 } from './manifest-crud';
 import {
@@ -22,6 +25,7 @@ import {
   type EffectiveResolveResult,
   type Policy,
   type PolicyAction,
+  type PolicyArgCondition,
   isValidMatcher,
   resolveEffectiveAction,
   selectPoliciesForRead,
@@ -38,6 +42,8 @@ import {
   channelPlatform,
   headersOf,
   loadConnectorPoliciesFor,
+  loadConnectorPolicySetFor,
+  policiesOfStoredSet,
   loadDefaultModeFor,
   loadProjectPoliciesFor,
 } from './db-deps-rows';
@@ -58,6 +64,8 @@ export async function setConnectorSecretBinding(
   if (!connector) return { ok: false as const, error: 'connector not found', status: 404 };
 
   if (secretIdentifier === null) {
+    const declared = await commitConnectorAuthSecret(projectId, slug, null);
+    if (!declared.ok) return { ok: false as const, error: declared.error, status: declared.status as 404 | 409 };
     await db
       .update(connectors)
       .set({ authSecret: null, updatedAt: new Date() })
@@ -88,6 +96,10 @@ export async function setConnectorSecretBinding(
   });
   if (validation) return { ok: false as const, ...validation };
 
+  // kortix.yaml owns connectors[].auth.secret: commit it first, so a later
+  // sync applies the same value and the file never disagrees with the row.
+  const declared = await commitConnectorAuthSecret(projectId, slug, secretIdentifier);
+  if (!declared.ok) return { ok: false as const, error: declared.error, status: declared.status as 404 | 409 };
   await db
     .update(connectors)
     .set({ authSecret: secretIdentifier, updatedAt: new Date() })
@@ -116,18 +128,25 @@ export async function setConnectorSecretBinding(
 export async function getConnectorPolicies(
   projectId: string,
   slug: string,
-): Promise<{
-  policies: Array<{ match: string; action: string }>;
-  effective: Array<{
-    path: string;
-    action: PolicyAction;
-    source: EffectiveSource;
-  }>;
-  project_policies: Array<{ match: string; action: string }>;
-  default_mode: DefaultMode;
-} | null> {
+  policySet?: string | null,
+): Promise<
+  | {
+      policies: ApiRule[];
+      /** The set these rules belong to; absent for the base rules. */
+      policy_set?: string;
+      effective: Array<{
+        path: string;
+        action: PolicyAction;
+        source: EffectiveSource;
+      }>;
+      project_policies: Array<{ match: string; action: string }>;
+      default_mode: DefaultMode;
+    }
+  | { error: string; code: 'policy_set_not_found' }
+  | null
+> {
   const [fromManifest, [row]] = await Promise.all([
-    getConnectorPoliciesFromManifest(projectId, slug),
+    getConnectorPoliciesFromManifest(projectId, slug, policySet),
     db
       .select({
         connectorId: connectors.connectorId,
@@ -140,21 +159,36 @@ export async function getConnectorPolicies(
   ]);
   if (!fromManifest && !row) return null;
 
-  const materialized = row
-    ? (await loadConnectorPoliciesFor(row.connectorId)).map((p) => ({
-        match: p.match,
-        action: p.action,
-      }))
-    : null;
-  const policies = selectPoliciesForRead(materialized, fromManifest?.policies ?? null)!;
+  const materializedBase = row ? (await loadConnectorPoliciesFor(row.connectorId)).map(apiRule) : null;
+  const base = policySet
+    ? materializedBase ?? (await getConnectorPoliciesFromManifest(projectId, slug))?.policies ?? []
+    : selectPoliciesForRead(materializedBase, fromManifest?.policies ?? null)!;
+  // A set's rules: the materialized row when the connector is synced (a git
+  // read can lag the commit), the manifest otherwise.
+  let setRules: ApiRule[] | null = null;
+  if (policySet) {
+    const stored = row ? await loadConnectorPolicySetFor(row.connectorId, policySet) : null;
+    setRules = stored
+      ? stored.map(apiRule)
+      : fromManifest?.policySetFound
+        ? fromManifest.policies
+        : null;
+    if (!setRules) {
+      return { error: `connector "${slug}" has no policy set "${policySet}"`, code: 'policy_set_not_found' };
+    }
+  }
+  const policies = setRules ?? base;
+  const setView = policySet ? { policy_set: policySet } : {};
 
   // The editor also needs to know WHICH scope decides each tool. A project-scope
   // rule is evaluated first and cannot be overridden here (see policy.ts), so
   // without this the panel would happily show a connector rule the runtime is
-  // ignoring. Resolve every action through the same function the call gate uses.
+  // ignoring. Resolve every action through the same function the call gate
+  // uses — for a set, as an agent holding that set would be resolved.
   if (!row) {
     return {
       policies,
+      ...setView,
       effective: [],
       project_policies: [],
       default_mode: 'allow_all',
@@ -170,16 +204,13 @@ export async function getConnectorPolicies(
       .then((stored) => withComputerCatalog(row.connectorId, row.providerType, stored)),
   ]);
   const sensitive = (row.config as { sensitive?: unknown } | null)?.sensitive === true;
-  const connectorPolicies: Policy[] = policies.map((p) => ({
-    match: p.match,
-    action: p.action as PolicyAction,
-  }));
   const effective = actions.map((a) => {
     const resolved = resolveEffectiveAction({
       fullPath: `${slug}.${a.path}`,
       relPath: a.path,
       projectPolicies,
-      connectorPolicies,
+      setPolicies: setRules ? setRules.map(enginePolicy) : undefined,
+      connectorPolicies: base.map(enginePolicy),
       risk: a.risk,
       defaultMode,
       sensitive,
@@ -188,6 +219,7 @@ export async function getConnectorPolicies(
   });
   return {
     policies,
+    ...setView,
     effective,
     project_policies: projectPolicies.map((p) => ({
       match: p.match,
@@ -195,6 +227,80 @@ export async function getConnectorPolicies(
     })),
     default_mode: defaultMode,
   };
+}
+
+/**
+ * Channel and computer connectors cannot carry policy sets: computer and
+ * synthetic channel connectors have no manifest entry, and sync never writes
+ * their rules back to git. Returns the 400 to answer, or null.
+ */
+export async function policySetsUnsupportedFor(projectId: string, slug: string) {
+  const [row] = await db
+    .select({ providerType: connectors.providerType })
+    .from(connectors)
+    .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
+    .limit(1);
+  if (row?.providerType !== 'channel' && row?.providerType !== 'computer') return null;
+  const error = `${row.providerType} connectors cannot carry policy sets`;
+  return { ok: false as const, error, status: 400, body: { error, code: 'policy_sets_unsupported' } };
+}
+
+/** A rule as the policy API answers it: conditions kept when present. */
+type ApiRule = { match: string; action: PolicyAction; conditions?: PolicyArgCondition[] | null };
+
+function apiRule(p: { match: string; action: PolicyAction; conditions?: PolicyArgCondition[] | null }): ApiRule {
+  return {
+    match: p.match,
+    action: p.action,
+    ...(p.conditions && p.conditions.length > 0 ? { conditions: p.conditions } : {}),
+  };
+}
+
+function enginePolicy(p: ApiRule, position: number): Policy {
+  return { match: p.match, action: p.action, position, conditions: p.conditions ?? null };
+}
+
+/**
+ * The sets of one connector, each with its rules and the agents that use it.
+ * Rules and descriptions come from the materialized rows when the connector
+ * is synced (the git view can lag a write), the manifest otherwise; agent
+ * usage comes from the manifest, the only place assignments live.
+ */
+export async function listConnectorPolicySets(
+  projectId: string,
+  slug: string,
+): Promise<{
+  sets: Array<{ name: string; description: string | null; policies: ApiRule[]; agents: string[] }>;
+} | null> {
+  const [fromManifest, [row]] = await Promise.all([
+    listConnectorPolicySetsFromManifest(projectId, slug),
+    db
+      .select({ connectorId: connectors.connectorId })
+      .from(connectors)
+      .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
+      .limit(1),
+  ]);
+  if (!fromManifest && !row) return null;
+  const agentsOf = (name: string) =>
+    fromManifest && Object.hasOwn(fromManifest.agents, name) ? fromManifest.agents[name]! : [];
+  if (row) {
+    const stored = await db
+      .select()
+      .from(connectorPolicySets)
+      .where(eq(connectorPolicySets.connectorId, row.connectorId))
+      .orderBy(asc(connectorPolicySets.createdAt), asc(connectorPolicySets.name));
+    if (stored.length > 0 || !fromManifest) {
+      return {
+        sets: stored.map((set) => ({
+          name: set.name,
+          description: set.description,
+          policies: (policiesOfStoredSet(set.policies) ?? []).map(apiRule),
+          agents: agentsOf(set.name),
+        })),
+      };
+    }
+  }
+  return { sets: (fromManifest?.sets ?? []).map((set) => ({ ...set, policies: set.policies.map((p) => apiRule(p)), agents: agentsOf(set.name) })) };
 }
 
 /**
@@ -233,7 +339,9 @@ export async function getConnectorConfig(
     spec: cfg.spec ?? null,
     auth: {
       type: auth.type,
-      in: auth.in,
+      // `path` exists only on platform-owned channel connectors (Telegram), which
+      // nobody edits; the manifest editor's contract knows header/query/cookie.
+      in: auth.in === 'path' ? 'header' : auth.in,
       name: auth.name,
       prefix: auth.prefix,
     },

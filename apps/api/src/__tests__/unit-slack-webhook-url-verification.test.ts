@@ -8,6 +8,8 @@ const handledBlockActions: unknown[] = [];
 const realInstallStore = await import('../channels/install-store');
 mock.module('../channels/install-store', () => ({
   ...realInstallStore,
+  loadSlackBotIdForProject: async () => null,
+  ensureSlackBotId: async () => null,
   SLACK_BOT_TOKEN: 'SLACK_BOT_TOKEN',
   SLACK_SIGNING_SECRET: 'SLACK_SIGNING_SECRET',
   SLACK_TEAM_ID: 'SLACK_TEAM_ID',
@@ -16,7 +18,7 @@ mock.module('../channels/install-store', () => ({
   TELEGRAM_BOT_TOKEN: 'TELEGRAM_BOT_TOKEN',
   TELEGRAM_WEBHOOK_SECRET: 'TELEGRAM_WEBHOOK_SECRET',
   deleteSlackInstall: async () => {},
-  listProjectsForWorkspace: async () => ['proj-1'],
+  listProjectsForWorkspace: async () => ['3f1c2b7e-0000-4000-8000-000000000001'],
   loadSlackInstall: async () => null,
   loadSlackBotUserIdForProject: async () => 'B1',
   loadSlackSigningSecretForProject: async () => {
@@ -114,7 +116,7 @@ describe('a per-project Slack app reaches only the workspace its install proved'
   test('interactivity naming another workspace is refused and never handled', async () => {
     projectSigningSecret = 'signing-secret';
     const body = new URLSearchParams({ payload: JSON.stringify(foreignPayload) }).toString();
-    const res = await slackWebhookApp.request('/proj-1/interactivity', signed(body, 'application/x-www-form-urlencoded'));
+    const res = await slackWebhookApp.request('/3f1c2b7e-0000-4000-8000-000000000001/interactivity', signed(body, 'application/x-www-form-urlencoded'));
     expect(res.status).toBe(403);
     expect(handledBlockActions).toEqual([]);
   });
@@ -123,15 +125,15 @@ describe('a per-project Slack app reaches only the workspace its install proved'
     projectSigningSecret = 'signing-secret';
     const payload = { ...foreignPayload, team: { id: 'T1' } };
     const body = new URLSearchParams({ payload: JSON.stringify(payload) }).toString();
-    const res = await slackWebhookApp.request('/proj-1/interactivity', signed(body, 'application/x-www-form-urlencoded'));
+    const res = await slackWebhookApp.request('/3f1c2b7e-0000-4000-8000-000000000001/interactivity', signed(body, 'application/x-www-form-urlencoded'));
     expect(res.status).toBe(200);
-    expect(handledInbound).toEqual([{ kind: 'project', projectId: 'proj-1', teamId: 'T1' }]);
+    expect(handledInbound).toEqual([{ kind: 'project', projectId: '3f1c2b7e-0000-4000-8000-000000000001', teamId: 'T1' }]);
   });
 
   test('a slash command naming another workspace is refused and never run', async () => {
     projectSigningSecret = 'signing-secret';
     const body = new URLSearchParams({ command: '/kortix', text: 'logout', team_id: 'T_OTHER', user_id: 'U1', channel_id: 'C1' }).toString();
-    const res = await slackWebhookApp.request('/proj-1/commands', signed(body, 'application/x-www-form-urlencoded'));
+    const res = await slackWebhookApp.request('/3f1c2b7e-0000-4000-8000-000000000001/commands', signed(body, 'application/x-www-form-urlencoded'));
     expect(res.status).toBe(403);
     expect(slashCalls).toEqual([]);
   });
@@ -139,9 +141,9 @@ describe('a per-project Slack app reaches only the workspace its install proved'
   test('a slash command from the proven workspace runs scoped to this project', async () => {
     projectSigningSecret = 'signing-secret';
     const body = new URLSearchParams({ command: '/kortix', text: 'help', team_id: 'T1', user_id: 'U1', channel_id: 'C1' }).toString();
-    const res = await slackWebhookApp.request('/proj-1/commands', signed(body, 'application/x-www-form-urlencoded'));
+    const res = await slackWebhookApp.request('/3f1c2b7e-0000-4000-8000-000000000001/commands', signed(body, 'application/x-www-form-urlencoded'));
     expect(res.status).toBe(200);
-    expect(slashCalls).toEqual([{ sub: 'help', ctx: expect.objectContaining({ teamId: 'T1', projectScopedProjectId: 'proj-1' }) }]);
+    expect(slashCalls).toEqual([{ sub: 'help', ctx: expect.objectContaining({ teamId: 'T1', projectScopedProjectId: '3f1c2b7e-0000-4000-8000-000000000001' }) }]);
   });
 
   test('an event naming another workspace is refused and never dispatched', async () => {
@@ -152,7 +154,7 @@ describe('a per-project Slack app reaches only the workspace its install proved'
       team_id: 'T_OTHER',
       event: { type: 'app_mention', channel: 'C1', user: 'U1', ts: '1.0', text: 'hi' },
     });
-    const res = await slackWebhookApp.request('/proj-1', signed(body, 'application/json'));
+    const res = await slackWebhookApp.request('/3f1c2b7e-0000-4000-8000-000000000001', signed(body, 'application/json'));
     expect(res.status).toBe(403);
     await new Promise((r) => setTimeout(r, 10));
     expect(dispatchedEvents).toEqual([]);
@@ -162,14 +164,14 @@ describe('a per-project Slack app reaches only the workspace its install proved'
     projectSigningSecret = 'signing-secret';
     provenTeams = [];
     const body = new URLSearchParams({ payload: JSON.stringify({ ...foreignPayload, team: { id: 'T1' } }) }).toString();
-    const res = await slackWebhookApp.request('/proj-1/interactivity', signed(body, 'application/x-www-form-urlencoded'));
+    const res = await slackWebhookApp.request('/3f1c2b7e-0000-4000-8000-000000000001/interactivity', signed(body, 'application/x-www-form-urlencoded'));
     expect(res.status).toBe(403);
   });
 });
 
 describe('BYO Slack Events API URL verification', () => {
   test('answers the verification challenge before a project signing secret exists', async () => {
-    const res = await slackWebhookApp.request('/proj-1', {
+    const res = await slackWebhookApp.request('/3f1c2b7e-0000-4000-8000-000000000001', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -184,7 +186,7 @@ describe('BYO Slack Events API URL verification', () => {
   });
 
   test('still requires a project signing secret for real event callbacks', async () => {
-    const res = await slackWebhookApp.request('/proj-1', {
+    const res = await slackWebhookApp.request('/3f1c2b7e-0000-4000-8000-000000000001', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -214,7 +216,7 @@ describe('BYO Slack Events API URL verification', () => {
       .update(`v0:${timestamp}:${body}`)
       .digest('hex')}`;
 
-    const res = await slackWebhookApp.request('/proj-1/interactivity', {
+    const res = await slackWebhookApp.request('/3f1c2b7e-0000-4000-8000-000000000001/interactivity', {
       method: 'POST',
       headers: {
         'content-type': 'application/x-www-form-urlencoded',

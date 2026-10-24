@@ -123,7 +123,8 @@ export function registerChangeRequestActionsRoutes(): void {
             cr: cr.number,
             error: err instanceof Error ? err.message : String(err),
           });
-          c.header('Retry-After', '5');
+          // Header inline, never `c.header(...)` first — same race as the
+          // journal 429 (KRTX-2737): the deadline may have answered already.
           return c.json(
             {
               error:
@@ -133,6 +134,7 @@ export function registerChangeRequestActionsRoutes(): void {
               action: PROJECT_ACTIONS.PROJECT_GITOPS_MERGE,
             },
             503,
+            { 'Retry-After': '5' },
           );
         }
         for (const action of change.required) {
@@ -252,7 +254,11 @@ export function registerChangeRequestActionsRoutes(): void {
           baseCommitSha: result.base_sha_before,
           updatedAt: new Date(),
         })
-        .where(eq(changeRequests.crId, crId))
+        // crId here is whatever the caller sent (a UUID, a number, "#233"):
+        // bind the write to the RESOLVED row's canonical id, never the raw path
+        // param — a numeric id that matched above must not 22P02 this update
+        // after the merge has already landed.
+        .where(eq(changeRequests.crId, cr.crId))
         .returning();
 
       invalidateProjectMirror(projectId);
@@ -347,7 +353,8 @@ export function registerChangeRequestActionsRoutes(): void {
           closedBy: loaded.userId,
           updatedAt: new Date(),
         })
-        .where(eq(changeRequests.crId, crId))
+        // Bind the write to the resolved row's canonical id (see the merge route).
+        .where(eq(changeRequests.crId, cr.crId))
         .returning();
       return c.json(serializeChangeRequest(row));
     },
@@ -394,7 +401,8 @@ export function registerChangeRequestActionsRoutes(): void {
           closedBy: null,
           updatedAt: new Date(),
         })
-        .where(eq(changeRequests.crId, crId))
+        // Bind the write to the resolved row's canonical id (see the merge route).
+        .where(eq(changeRequests.crId, cr.crId))
         .returning();
       return c.json(serializeChangeRequest(row));
     },
