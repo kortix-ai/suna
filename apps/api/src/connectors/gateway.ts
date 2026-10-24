@@ -17,6 +17,7 @@ import type { ConnectorAttachmentStore } from './attachments';
 import type { ChannelReadGate, ChannelReadInput } from './channel-read-scope';
 import type { ChannelWriteGate } from './channel-write-scope';
 import { executeComposio } from './composio';
+import { createdDraftId, toResendEmailArgs } from './email-resend-args';
 import {
   EMAIL_CHANNEL_CONNECTOR_SLUG,
   SLACK_CHANNEL_CONNECTOR_SLUG,
@@ -235,12 +236,12 @@ export interface GatewayDeps {
    * Absent = unconfined: production always wires it (db-deps.ts).
    */
   gateChannelWrite?(input: ChannelReadInput): Promise<ChannelWriteGate>;
-  /** Email connections represent one installed AgentMail inbox. */
+  /** Email connections represent one installed email (Resend) inbox. */
   loadEmailConnectorContext?(
     projectId: string,
     connectorSlug: string,
   ): Promise<EmailConnectorContext | null>;
-  /** Resolve the AgentMail credential for the install that owns this inbox. */
+  /** Resolve the email (Resend) credential for the install that owns this inbox. */
   resolveEmailCredentialForInbox?(projectId: string, inboxId: string): Promise<string | null>;
   /** Private attachment staging/claim lifecycle for native email actions. */
   attachmentStore?: ConnectorAttachmentStore;
@@ -701,16 +702,20 @@ async function resolveEmailExecutionContext(
   if (!context?.inboxId) return { args, secretOverride: null };
 
   args.inbox_id = context.inboxId;
-  if ('threadId' in context && input.actionPath === 'get_thread' && context.threadId) {
+  // Inside an email session the thread and the email it answers are the
+  // session's own: Resend addresses a reply as thread + email.
+  const answersSessionEmail =
+    input.actionPath === 'reply_message' ||
+    input.actionPath === 'reply_all_message' ||
+    input.actionPath === 'get_message';
+  if (
+    'threadId' in context &&
+    context.threadId &&
+    (answersSessionEmail || input.actionPath === 'get_thread' || input.actionPath === 'list_messages')
+  ) {
     args.thread_id = context.threadId;
   }
-  if (
-    (input.actionPath === 'reply_message' ||
-      input.actionPath === 'reply_all_message' ||
-      input.actionPath === 'get_message') &&
-    'messageId' in context &&
-    context.messageId
-  ) {
+  if (answersSessionEmail && 'messageId' in context && context.messageId) {
     args.message_id = context.messageId;
   }
 
@@ -1215,6 +1220,7 @@ async function runConnectorAction(
           attachmentClaim = await deps.attachmentStore.claimForEmail(scope, emailArgs);
           providerArgs = attachmentClaim.args;
         }
+        providerArgs = await toResendEmailArgs(input.actionPath, providerArgs);
       } else if (attachmentRefs.length > 0) {
         if (!deps.attachmentStore?.claimInline) {
           throw new Error('connector_attachment_transport_unavailable');
@@ -1249,6 +1255,22 @@ async function runConnectorAction(
           fetchImpl: (url, init) => deps.fetchImpl(url, { ...init, signal, maxResponseBytes: MAX_UPSTREAM_RESPONSE_BYTES }),
         }),
       );
+      // Email `send_message` created a draft: send it now, as one action.
+      const draftId =
+        result.ok && isEmailChannel && input.actionPath === 'send_message' ? createdDraftId(result.data) : null;
+      if (draftId) {
+        result = await withDeadline(
+          executeCall({
+            binding: { kind: 'http', method: 'POST', path: '/inboxes/{inbox_id}/drafts/{draft_id}/send' },
+            baseUrl: connector.baseUrl,
+            auth: connector.auth,
+            headers: connector.headers,
+            secret: executionSecret,
+            args: { inbox_id: providerArgs.inbox_id, draft_id: draftId },
+            fetchImpl: (url, init) => deps.fetchImpl(url, { ...init, signal, maxResponseBytes: MAX_UPSTREAM_RESPONSE_BYTES }),
+          }),
+        );
+      }
       // Channel platforms (Slack) reply HTTP 200 with an `{ ok:false, error }`
       // envelope on failure. Surface that as a real error so the agent gets the
       // cause (matching the in-sandbox CLI, which throws on `!ok`).

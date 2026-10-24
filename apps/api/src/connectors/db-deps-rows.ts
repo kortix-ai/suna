@@ -8,7 +8,8 @@ import {
 import { sanitizeConnectorHeaders } from '@kortix/manifest-schema';
 import { eq, inArray } from 'drizzle-orm';
 import {
-  loadAgentMailInstall,
+  hasEmailInboxes,
+  loadEmailInboxAccountForInbox,
   loadSlackInstall,
   loadTeamsInstall,
   loadTelegramInstall,
@@ -115,8 +116,7 @@ async function channelInstalled(
   if (platform === 'slack') return (await loadSlackInstall(projectId).catch(() => null)) != null;
   if (platform === 'teams') return (await loadTeamsInstall(projectId).catch(() => null)) != null;
   if (platform === 'telegram') return (await loadTelegramInstall(projectId).catch(() => null)) != null;
-  if (platform === 'email')
-    return (await loadAgentMailInstall(projectId, slug).catch(() => null)) != null;
+  if (platform === 'email') return hasEmailInboxes(projectId).catch(() => false);
   return false;
 }
 
@@ -146,8 +146,12 @@ export async function connectorConnected(
       channelPlatform(row.config) === 'email' &&
       typeof connection?.metadata.inbox_id === 'string'
     ) {
-      const install = await loadAgentMailInstall(row.projectId, connectionSlug).catch(() => null);
-      return install?.inboxId === connection.metadata.inbox_id;
+      // An email account is connected while its inbox account is active.
+      const account = await loadEmailInboxAccountForInbox(
+        row.projectId,
+        connection.metadata.inbox_id,
+      ).catch(() => null);
+      return account?.connectionId === connection.connectionId;
     }
     return true;
   }

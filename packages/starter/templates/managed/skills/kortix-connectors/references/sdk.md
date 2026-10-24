@@ -136,26 +136,24 @@ const connectors = process.env.KORTIX_PROJECT_ID
   ? kortix.project(process.env.KORTIX_PROJECT_ID).connectors
   : kortix.connectors;
 
-const matches = await connectors.search('email inbox unread', { limit: 5 });
-const listAction = matches.find((item) => item.tool.includes('list_messages'));
-if (!listAction) throw new Error('No inbox list action is available');
-
-const listed = await connectors.call<{
-  messages: Array<{ id: string; text?: string }>;
-}>(listAction.tool, {
-  inbox_id: 'email-inbox@agentmail.to',
-  label: 'unread',
-  limit: 10,
-});
-
-if (!listed.ok) {
-  throw new Error(`List failed: ${listed.reason ?? listed.status ?? 'unknown'}`);
+const threads = await connectors.call<{ data: Array<{ id: string }> }>(
+  'email_email_inbox_bjgk.list_threads',
+  { inbox_id: 'agent@kortixmail.com', read: false, limit: 10 },
+);
+if (!threads.ok) {
+  throw new Error(`List failed: ${threads.reason ?? threads.status ?? 'unknown'}`);
 }
 
-for (const message of listed.data?.messages ?? []) {
-  if (!message.text?.toLowerCase().includes('invoice')) continue;
+for (const thread of threads.data?.data ?? []) {
+  const emails = await connectors.call<{ data: Array<{ id: string; text?: string | null }> }>(
+    'email_email_inbox_bjgk.list_messages',
+    { inbox_id: 'agent@kortixmail.com', thread_id: thread.id },
+  );
+  const message = emails.data?.data.at(-1);
+  if (!message?.text?.toLowerCase().includes('invoice')) continue;
   const reply = await connectors.call('email_email_inbox_bjgk.reply_message', {
-    inbox_id: 'email-inbox@agentmail.to',
+    inbox_id: 'agent@kortixmail.com',
+    thread_id: thread.id,
     message_id: message.id,
     text: 'Received. I will review this and follow up.',
   });

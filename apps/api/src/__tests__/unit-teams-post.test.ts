@@ -186,6 +186,8 @@ mock.module('@kortix/db', () => ({
 }));
 
 mock.module('../channels/install-store', () => ({
+  loadSlackBotIdForProject: async () => null,
+  ensureSlackBotId: async () => null,
   loadTeamsServiceUrlForProject: async () => storedServiceUrl,
 }));
 

@@ -22,8 +22,7 @@ import {
 import { and, eq, inArray, isNotNull, notExists, or, sql } from 'drizzle-orm';
 import { getImpersonationContext } from '../shared/impersonation';
 import { parse as parseToml } from 'smol-toml';
-import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
-import { resolveFeatureFlag } from '../feature-flags/registry';
+import { hasEmailInboxes, loadSlackInstall, purgeLegacyEmailState } from '../channels/install-store';
 import { assertAllowedEndpointUrl, assertAllowedSourceAddress } from '../marketplace/catalog';
 import { safeEgressFetch, UnsafeEgressError } from '../shared/ssrf-guard';
 import { configuredTimeoutMs, withTimeout } from '../shared/with-timeout';
@@ -391,21 +390,21 @@ export async function reconcileChannelConnectors(
     if (slackInstalled) await ensureChannelConnectorDeclared(projectId, 'slack');
     else await removeChannelConnectorDeclared(projectId, 'slack');
 
-    const emailEnabled = resolveFeatureFlag(row.metadata, 'agentmail_email');
-    if (removed?.platform === 'email' || !emailEnabled) {
-      await removeChannelConnectorDeclared(projectId, 'email', removed?.slug);
+    // Email state from before inboxes were accounts (AgentMail, per-slug
+    // secrets) is dead data: drop it here.
+    await purgeLegacyEmailState(projectId).catch(() => 0);
+    // One `kortix_email` connector while the project holds an inbox; each
+    // inbox is one of its accounts, never a connector of its own. The
+    // connector stays while inboxes exist even with `email_channel` off:
+    // removing it would cascade-delete the accounts while their Resend
+    // inboxes live on. The flag gates the routes and inbound mail instead.
+    if (removed?.platform === 'email' && removed.slug !== 'kortix_email') {
+      await removeChannelConnectorDeclared(projectId, 'email', removed.slug);
     }
-    if (emailEnabled) {
-      const emailInstalls = await listAgentMailInstalls(projectId).catch(() => []);
-      for (const install of emailInstalls) {
-        await ensureChannelConnectorDeclared(
-          projectId,
-          'email',
-          install.connectionSlug,
-          install.displayName || install.email || 'Email',
-        );
-      }
-      if (emailInstalls.length === 0) await removeChannelConnectorDeclared(projectId, 'email');
+    if (await hasEmailInboxes(projectId).catch(() => false)) {
+      await ensureChannelConnectorDeclared(projectId, 'email');
+    } else {
+      await removeChannelConnectorDeclared(projectId, 'email');
     }
     await syncProjectConnectors(projectId, row.accountId);
   } catch (e) {
@@ -701,7 +700,7 @@ async function syncProjectConnectorsFenced(
     }
   }
 
-  await reconcileEmailConnections(projectId, accountId);
+  await reconcileEmailConnections(projectId).catch(() => {});
 
   // Reconcile deletions. When the manifest is readable it's the source of truth
   // for declared connectors — drop any it no longer lists (channel specs are in
@@ -770,85 +769,13 @@ async function syncProjectConnectorsFenced(
   return { synced, errors };
 }
 
-export async function reconcileEmailConnections(
-  projectId: string,
-  accountId: string,
-): Promise<void> {
-  const installs = await listAgentMailInstalls(projectId);
-  const canonicalSlug = channelDefaultSlug('email');
-  const [connector] = await db
-    .select({ connectorId: connectors.connectorId })
-    .from(connectors)
-    .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, canonicalSlug)))
-    .limit(1);
-  if (!connector) return;
-  await ensureDefaultConnection({
-    projectId,
-    connectorId: connector.connectorId,
-  });
-  const activeOwnerIds = new Set(installs.map((install) => `agentmail:${install.inboxId}`));
-  const existingEmailConnections = await db
-    .select({
-      connectionId: connectorConnections.connectionId,
-      ownerId: connectorConnections.ownerId,
-    })
-    .from(connectorConnections)
-    .where(
-      and(
-        eq(connectorConnections.connectorId, connector.connectorId),
-        eq(connectorConnections.ownerType, 'external'),
-      ),
-    );
-  for (const existing of existingEmailConnections) {
-    if (existing.ownerId?.startsWith('agentmail:') && !activeOwnerIds.has(existing.ownerId)) {
-      await db
-        .update(connectorConnections)
-        .set({ status: 'revoked', updatedAt: new Date() })
-        .where(eq(connectorConnections.connectionId, existing.connectionId));
-    }
-  }
-
-  for (const install of installs) {
-    const ownerId = `agentmail:${install.inboxId}`;
-    const [existing] = await db
-      .select({ connectionId: connectorConnections.connectionId })
-      .from(connectorConnections)
-      .where(
-        and(
-          eq(connectorConnections.connectorId, connector.connectorId),
-          eq(connectorConnections.ownerType, 'external'),
-          eq(connectorConnections.ownerId, ownerId),
-        ),
-      )
-      .limit(1);
-    const values = {
-      label: install.displayName || install.email,
-      status: 'active' as const,
-      metadata: {
-        connector_slug: install.connectionSlug,
-        inbox_id: install.inboxId,
-        email: install.email,
-        channel_connection: true,
-      },
-      updatedAt: new Date(),
-    };
-    if (existing) {
-      await db
-        .update(connectorConnections)
-        .set(values)
-        .where(eq(connectorConnections.connectionId, existing.connectionId));
-    } else {
-      await db.insert(connectorConnections).values({
-        accountId,
-        projectId,
-        connectorId: connector.connectorId,
-        ownerType: 'external',
-        ownerId,
-        isDefault: false,
-        ...values,
-      });
-    }
-  }
+/**
+ * Email accounts are written by the inbox routes, not derived here: an inbox
+ * IS its account row (channels/email/installs.ts). Sync only drops the rows
+ * from before that (`external` owners, rows without an inbox).
+ */
+export async function reconcileEmailConnections(projectId: string): Promise<void> {
+  await purgeLegacyEmailState(projectId);
 }
 
 type SyncTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -1120,33 +1047,28 @@ async function upsertConnector(
 
   // After commit: the connection row references the connector, and
   // `ensureDefaultConnection` writes through its own connection. A computer
-  // account is always one paired machine, so a computer connector never gets
-  // a machine-less project default.
+  // account is always one paired machine, and an email account one inbox, so
+  // neither connector gets an empty project default.
   if (
     connectorId &&
     spec.authorizationStrategy === 'project' &&
     spec.provider !== 'computer' &&
-    !(await skipsEmptyProjectAccount(projectId, spec))
+    !(spec.provider === 'channel' && spec.platform === 'email') &&
+    !skipsEmptyProjectAccount(spec)
   ) {
     await ensureDefaultConnection({ projectId, connectorId });
   }
 }
 
 /**
- * connectors_v2: an account is personal unless someone shares it, so sync seeds
- * no empty "Everyone in project" account (KRTX-2317). Two kinds keep the
- * project account, because it is not empty: a channel connector (the install
- * token is the project's own identity) and a server with no auth (a public
- * MCP server such as DeepWiki: the account is the whole connection).
+ * An account is personal unless someone shares it, so sync seeds no empty
+ * "Everyone in project" account (KRTX-2317). Two kinds keep the project
+ * account, because it is not empty: a channel connector (the install token is
+ * the project's own identity) and a server with no auth (a public MCP server
+ * such as DeepWiki: the account is the whole connection).
  */
-export async function skipsEmptyProjectAccount(projectId: string, spec: ConnectorSpec): Promise<boolean> {
-  if (spec.provider === 'channel' || spec.auth?.type === 'none') return false;
-  const [row] = await db
-    .select({ metadata: projects.metadata })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
-    .limit(1);
-  return resolveFeatureFlag(row?.metadata, 'connectors_v2');
+export function skipsEmptyProjectAccount(spec: ConnectorSpec): boolean {
+  return !(spec.provider === 'channel' || spec.auth?.type === 'none');
 }
 
 /**

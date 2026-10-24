@@ -9,7 +9,6 @@ import { EVENT_TRIGGERS_OFF_MESSAGE, eventTriggersOffForProject } from '../trigg
 import { connectionIdentity } from '../trigger-events/subscriptions';
 import { MCP_SOURCE_ID, connectorEventApp } from '../trigger-events/mcp-source';
 import { streamSchedules } from '../trigger-events/poll-store';
-import { eventSourceAvailable } from '../trigger-events/registry';
 import { ensureProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { nextTriggerScheduleSlot, validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';
 import { GIT_TRIGGER_SESSION_MODES, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseMaxLateness, parseOverlap, parseRunCaps, parseAppField, parseEventFields, parseEvery, parseTargetField, readManifest, triggerSpecToTomlEntry, MONITOR_REMOVED } from '../triggers';
@@ -77,15 +76,15 @@ export async function loadTriggersForResponse(
           .select()
           .from(projectTriggerRuntime)
           .where(eq(projectTriggerRuntime.projectId, projectId));
-  const eventConnectors = await loadEventConnectorInfo(projectId, specs, project.metadata);
+  const eventConnectors = await loadEventConnectorInfo(projectId, specs);
   const subscriptionBySlug = new Map(
     specs.some((spec) => spec.event) ? (await store.listByProject(projectId)).map((r) => [r.slug, r]) : [],
   );
   const eventsOff = eventTriggersOffForProject(project.metadata);
   const connectedAsBySlug = await loadConnectedAs([...subscriptionBySlug.values()]);
   // Kortix-polled triggers (source `mcp`) say when their app was checked and is checked next.
-  // The poller skips every stream of a paused project, or one without either flag: no next check then.
-  const checksRun = !eventsOff && !triggersPausedForProject(project.metadata) && eventSourceAvailable(MCP_SOURCE_ID, project.metadata);
+  // The poller skips every stream of a paused project, or one with event triggers off: no next check then.
+  const checksRun = !eventsOff && !triggersPausedForProject(project.metadata);
   const schedules = await streamSchedules(
     [...subscriptionBySlug.values()].flatMap((r) => (r.provider === MCP_SOURCE_ID && r.externalId ? [r.externalId] : [])),
   );
@@ -183,7 +182,6 @@ async function loadConnectedAs(subs: store.EventSubscriptionRow[]): Promise<Map<
 async function loadEventConnectorInfo(
   projectId: string,
   specs: GitTriggerSpec[],
-  projectMetadata: unknown,
 ): Promise<Map<string, { provider: string; app: string | null }>> {
   const slugs = [...new Set(specs.flatMap((spec) => (spec.event ? [spec.event.connector] : [])))];
   if (slugs.length === 0) return new Map();
@@ -191,8 +189,7 @@ async function loadEventConnectorInfo(
     .select({ slug: connectors.slug, provider: connectors.providerType, config: connectors.config })
     .from(connectors)
     .where(and(eq(connectors.projectId, projectId), inArray(connectors.slug, slugs)));
-  const mcpAvailable = eventSourceAvailable(MCP_SOURCE_ID, projectMetadata);
-  return new Map(rows.map((row) => [row.slug, { provider: row.provider, app: connectorEventApp(row, mcpAvailable) }]));
+  return new Map(rows.map((row) => [row.slug, { provider: row.provider, app: connectorEventApp(row) }]));
 }
 
 /**

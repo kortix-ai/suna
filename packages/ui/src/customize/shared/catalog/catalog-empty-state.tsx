@@ -18,31 +18,12 @@ export function CatalogEmptyNote({ children }: { children: ReactNode }) {
  * spaces inside a monospace span, which reads as a rendering bug rather than as
  * a report of what was searched for.
  */
-export function CatalogNoMatch({
-  query,
-  excludedNoActions = 0,
-}: {
-  query: string;
-  /**
-   * Apps that matched but expose no actions, so the catalogue does not offer
-   * them.
-   *
-   * Without this the page reports a flat "No matches for SAP" — which is wrong
-   * twice, because `sap_s_4hana_cloud` and `sap_s_4hana_cloud_sandbox` both
-   * exist upstream and the reason they are absent is one we can state.
-   * Reporting a bare zero is what made the catalogue look broken rather than
-   * selective.
-   */
-  excludedNoActions?: number;
-}) {
+export function CatalogNoMatch({ query }: { query: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <CatalogEmptyNote>
       {tI18nComplete.raw('texta8897de42124')}{' '}
       <span className="text-foreground font-mono">{query.trim()}</span>.
-      {excludedNoActions > 0 ? (
-        <> {tI18nComplete('catalogExcludedNoActions', { count: excludedNoActions })}</>
-      ) : null}
     </CatalogEmptyNote>
   );
 }

@@ -209,7 +209,7 @@ export function registerTriggersRoutes(): void {
       tags: ['triggers'],
       summary: 'List the apps that can trigger an event',
       description:
-        'Apps that can trigger an event, with the project connector for each and whether a project-shared account is connected. Source `composio`: apps with at least one event type. Source `mcp` (projects with connectors_v2): every catalog app with sign-in, with `mcp_url` to install it (`event_count` 0 until it is connected and its tools are read), and every project MCP server (`event_count` 0 when none of its tools lists or searches).',
+        'Apps that can trigger an event, with the project connector for each and whether a project-shared account is connected. Source `composio`: apps with at least one event type. Source `mcp`: every catalog app with sign-in, with `mcp_url` to install it (`event_count` 0 until it is connected and its tools are read), and every project MCP server (`event_count` 0 when none of its tools lists or searches).',
       ...auth,
       request: { params: z.object({ projectId: z.string() }) },
       responses: {
@@ -336,12 +336,11 @@ export function registerTriggersRoutes(): void {
       const app = c.req.query('app')?.trim();
       if (!slug === !app) return c.json({ error: 'Send exactly one of connector or app' }, 400);
       const source = c.req.query('source')?.trim() || 'composio';
-      const metadata = loaded.row.metadata;
-      const unknownSource = app ? unknownSourceMessage(source, metadata) : null;
+      const unknownSource = app ? unknownSourceMessage(source) : null;
       if (unknownSource) return c.json({ error: unknownSource }, 400);
       const catalog = app
-        ? await listAppEventTypes(source, app, { projectId, metadata })
-        : await listConnectorEventTypes(projectId, slug as string, null, metadata);
+        ? await listAppEventTypes(source, app, { projectId })
+        : await listConnectorEventTypes(projectId, slug as string, null);
       if (catalog.kind === 'connector_not_found') return c.json({ error: `Connector "${slug}" not found` }, 404);
       if (catalog.kind === 'app_not_found') return c.json({ error: 'app_not_found' }, 404);
       if (catalog.kind === 'unavailable') return c.json({ error: 'event_source_unavailable' }, 409);
@@ -1059,7 +1058,7 @@ async function authorizeTriggerFire(c: Context<AppEnv>, projectId: string, slug:
 
 /** The synthetic payload of a manual fire. An event trigger fires with an empty event, so the user can test the prompt. */
 async function manualFirePayload({ projectId, loaded, spec }: FireTarget, now: Date) {
-  const eventConnector = spec.event ? await connectorInfo(projectId, spec.event.connector, loaded.row.metadata) : null;
+  const eventConnector = spec.event ? await connectorInfo(projectId, spec.event.connector) : null;
   const eventRoot = spec.event && eventConnector
     ? eventPayload({
         spec,

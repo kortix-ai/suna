@@ -1,5 +1,5 @@
 /**
- * The integration event inbox (connectors_v2): an inbound event is stored once,
+ * The integration event inbox: an inbound event is stored once,
  * keyed by (source, id), before any work starts, and the webhook acks only
  * after the store. It rides the durable job queue (shared/job-queue.ts):
  * enqueue dedups on the key, every replica claims with SKIP LOCKED, a failure

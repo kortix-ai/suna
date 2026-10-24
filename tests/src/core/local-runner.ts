@@ -518,10 +518,10 @@ function prepareTargetBrowserFullEnv(
   ] as const;
   const missing = required.filter((name) => !process.env[name]?.trim());
   if (
-    !process.env.E2E_AGENTMAIL_API_KEY?.trim() &&
+    !process.env.E2E_RESEND_API_KEY?.trim() &&
     !process.env.E2E_MAILPIT_URL?.trim()
   ) {
-    missing.push('E2E_AGENTMAIL_API_KEY or E2E_MAILPIT_URL' as never);
+    missing.push('E2E_RESEND_API_KEY or E2E_MAILPIT_URL' as never);
   }
   if (missing.length > 0) {
     throw new Error(`deployed browser suite requires ${missing.join(', ')}`);

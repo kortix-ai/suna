@@ -332,8 +332,18 @@ export function serializeProject(
     // and SDKs from before then read false as the removed native model mode.
     // `session_log` graduated on 2026-10-22 and stays `true` too: older SDKs, CLIs
     // and mobile builds read false as "serve the v1 transcript". `pi_harness`
-    // graduated on 2026-10-23: every new session runs pi.
-    experimental: { ...resolveFeatureFlags(row.metadata), apps: true, llm_gateway: true, session_log: true, pi_harness: true },
+    // graduated on 2026-10-23: every new session runs pi. `connectors_v2` and
+    // `connectors_api_discover` graduated on 2026-10-24: older SDKs and hosts
+    // read false as "show the legacy catalog".
+    experimental: {
+      ...resolveFeatureFlags(row.metadata),
+      apps: true,
+      llm_gateway: true,
+      session_log: true,
+      pi_harness: true,
+      connectors_v2: true,
+      connectors_api_discover: true,
+    },
     experimental_features: buildFeatureFlagCatalog(row.metadata),
     // Per-project sandbox-provider override (Customize → Settings). `default_sandbox_provider`
     // is the current pin (null = follow the platform default/distribution);
