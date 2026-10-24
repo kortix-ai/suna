@@ -621,7 +621,7 @@ Rules:
 | --- | --- |
 | A session: the `kortix` CLI in its sandbox, the SDK with its `KORTIX_TOKEN`, the agent's MCP tools | The session agent's set. |
 | A pi subagent | The set of the agent that started the root session. The subagent shares that session's token. |
-| A person's token with `X-Kortix-Session-Id` | That session agent's set. |
+| A person's token with `X-Kortix-Session-Id` | Refused (`403`). Only a session's own token carries a session, so a person cannot act as a session's agent. |
 | A person's token or API key without a session, the web app, a script, an App | The base rules. |
 | A trigger's poll for new items | The base rules. The session the trigger starts uses its agent's set. |
 
