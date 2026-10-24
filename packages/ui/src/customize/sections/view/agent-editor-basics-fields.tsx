@@ -130,20 +130,19 @@ export function BasicsSection({
         </Select>
       </SettingRow>
 
-      {/* Dashboard domain: which group this agent shows under on the Agents
-          page. A slug (`engineering`), or empty for the default "General"
-          group. Display-only — no behavior, no grants. i18n keys TODO before
-          merge. */}
+      {/* The agent's space (`agents.<name>.space`): the space it works in.
+          A slug (`engineering`), or empty for Project-wide. Grouping only:
+          no behavior, no grants. */}
       <SettingRow
-        label="Domain"
-        help="Group this agent on the dashboard — a slug like engineering or marketing. Empty = General."
+        label="Space"
+        help="The space this agent works in: a slug like engineering or sales. Empty: Project-wide."
       >
         <Input
-          aria-label="Domain"
+          aria-label="Space"
           className="h-9 w-full sm:max-w-56"
-          value={draft.domain ?? ''}
+          value={draft.space ?? ''}
           placeholder="e.g. engineering"
-          onChange={(e) => set('domain', e.target.value.toLowerCase() || undefined)}
+          onChange={(e) => set('space', e.target.value.toLowerCase() || undefined)}
         />
       </SettingRow>
 

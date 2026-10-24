@@ -22,11 +22,11 @@ import { cn } from '../../lib/utils';
 import { SpaceRoom } from './space-room';
 
 /**
- * The inside of a Space, rendered as a simple responsive grid of blocks.
+ * A space's board tab, rendered as a simple responsive grid of blocks.
  *
- * A Space is agent-configurable: the agent declares `blocks: SpaceBlock[]` in
- * `kortix.yaml`, and this renderer lays them out — it does not decide what a
- * Space contains. v1 is deliberately flat: one card per block, two columns on
+ * A board is agent-configurable: the agent declares the tab's `blocks` in
+ * `kortix.yaml` (`spaces.<slug>.tabs[]`, `type: board`), and this renderer
+ * lays them out — it does not decide what a board contains. v1 is deliberately flat: one card per block, two columns on
  * `sm`, each card showing the block's `label` and its embed. No drag, no
  * resize, no nesting — the grid IS the layout (Marko: "simple & elegant, not
  * overwhelming").

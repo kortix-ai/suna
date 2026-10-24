@@ -161,6 +161,60 @@ describe('loadProjectConfig characterization', () => {
     expect(config.agents.filter(isSelectableAgent).map((agent) => agent.name)).toEqual(['assistant']);
   });
 
+  test('v3 spaces: agents carry their space, and spaces list header and tabs, dropping unknown tab types', async () => {
+    await push(
+      {
+        'kortix.yaml': [
+          'kortix_version: 3',
+          'default_agent: assistant',
+          'spaces:',
+          '  ops:',
+          '    label: Ops',
+          '    order: 2',
+          '  eng:',
+          '    label: Engineering',
+          '    description: Ship it.',
+          '    order: 1',
+          '    header: [agents, new_session]',
+          '    tabs:',
+          '      - type: goals',
+          '      - type: link',
+          '        label: Status',
+          '        url: https://status.example.com',
+          '        embed: true',
+          '      - type: board',
+          '        blocks:',
+          '          - type: text',
+          '            text: Hello',
+          '      - type: video',
+          'agents:',
+          '  assistant:',
+          '    mode: primary',
+          '    space: eng',
+          '',
+        ].join('\n'),
+      },
+      'declare v3 spaces',
+    );
+    const config = await loadProjectConfig(project);
+    expect(config.agents.map((agent) => [agent.name, agent.space])).toEqual([['assistant', 'eng']]);
+    expect(config.spaces).toEqual([
+      {
+        name: 'eng',
+        label: 'Engineering',
+        description: 'Ship it.',
+        order: 1,
+        header: ['agents', 'new_session'],
+        tabs: [
+          { type: 'goals' },
+          { type: 'link', label: 'Status', url: 'https://status.example.com', embed: true },
+          { type: 'board', blocks: [{ type: 'text', text: 'Hello' }] },
+        ],
+      },
+      { name: 'ops', label: 'Ops', order: 2 },
+    ]);
+  });
+
   test('imported agents: every registered agent is listed, a disabled one with enabled: false, attributed to its declaring file', async () => {
     // The reported shape: a root manifest that declares no `agents:` of its own
     // and imports a domain file that does — one enabled, one disabled agent.
@@ -239,7 +293,7 @@ opencode:
         description: null,
         mode: null,
         model: null,
-        domain: null,
+        space: null,
         source: 'opencode',
         enabled: true,
       },
@@ -249,7 +303,7 @@ opencode:
         description: 'The zeta agent',
         mode: 'primary',
         model: 'test/zeta-model',
-        domain: null,
+        space: null,
         source: 'opencode',
         enabled: true,
       },
@@ -259,7 +313,7 @@ opencode:
         description: 'The alpha agent',
         mode: null,
         model: null,
-        domain: null,
+        space: null,
         source: 'opencode',
         enabled: true,
       },

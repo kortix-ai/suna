@@ -1,6 +1,8 @@
 'use client';
 
-import { lazy, Suspense, useLayoutEffect, useState, type ReactNode } from 'react';
+import { useLayoutEffect, useState, type ReactNode } from 'react';
+
+import { HashIcon, XIcon } from '@phosphor-icons/react';
 
 import { SessionWelcome } from '../../session/thread/session-welcome';
 import { agentsInSpace, listSpaces } from '@kortix/sdk';
@@ -9,22 +11,16 @@ import { useProjectConfig, useProjectName } from '@kortix/sdk/react';
 import { useTranslations } from '../../i18n';
 import { AgentMark } from '../../internal/components/agent-mark';
 import { agentHref } from '../../internal/lib/capability-tab-routes';
-import { useActiveDomain } from '../../internal/stores/active-domain-store';
-import { useUiLink } from '../../providers/ui-provider';
+import { useActiveSpace } from '../../internal/stores/active-space-store';
+import { uiRoutes } from '../../lib/routes';
+import { Button } from '../../primitives/button';
+import { UiLink as Link } from '../../providers/ui-provider';
 import {
   HOME_GREETINGS,
   HOME_GREETING_STORAGE_KEY,
   greetingIndexFor,
   spaceBefore,
 } from './home-greeting';
-
-// Lazy: keeps the space home's heavy embeds (App preview, Files viewer, the
-// room panel) out of the project-home compile graph until a space is active.
-// Dev-mode Turbopack compiles everything a route imports eagerly, and this
-// component is reachable from the barrel that ~44 routes import.
-const SpaceHome = lazy(() =>
-  import('../space/space-home').then((m) => ({ default: m.SpaceHome })),
-);
 
 /**
  * The project-home empty state: ONE centred column.
@@ -83,20 +79,18 @@ export function ProjectHomeWelcomeBody({
 }) {
   // One source for the project name — see `useProjectName`'s doc comment.
   const name = useProjectName(projectId) ?? '';
-  // The active space (the sidebar's Spaces selection). When one is chosen the
-  // home is that space's home: the heading names the space, its description
-  // reads as the space's brief, and the composer below already starts only this
-  // space's agents.
-  const [activeDomain] = useActiveDomain(projectId);
+  // The active space (the last space opened, or its New session). The heading
+  // names the space, its description reads as its brief, and the composer
+  // below starts only this space's agents. Leave clears it.
+  const [activeSpace, setActiveSpace] = useActiveSpace(projectId);
   const config = useProjectConfig(projectId);
   // Declared or only referenced by an agent; a stale selection (the space was
   // removed) is no space.
-  const space = activeDomain
-    ? listSpaces(config).find((candidate) => candidate.name === activeDomain)
+  const space = activeSpace
+    ? listSpaces(config).find((candidate) => candidate.name === activeSpace)
     : undefined;
   const spaceLabel = space ? space.label || space.name : null;
   const spaceAgents = space ? agentsInSpace(space.name, config?.agents ?? []) : [];
-  const Link = useUiLink();
   const tSpaces = useTranslations('spaces');
   // One word, not two. The name sits inside the sentence in `text-foreground`
   // while the rest is muted, so the fallback has to read as a NAME in that
@@ -151,11 +145,22 @@ export function ProjectHomeWelcomeBody({
               keeps the last line off a single orphan word.
             */}
           {spaceLabel && !sentTurn ? (
-            <div className="flex items-center gap-2 px-4">
-              <span className="bg-foreground size-1.5 rounded-full" aria-hidden />
-              <span className="text-muted-foreground text-sm">
-                In <span className="text-foreground font-medium">{spaceLabel}</span> space
-              </span>
+            <div className="flex items-center gap-1 px-4">
+              <Link
+                href={uiRoutes().space(projectId, space!.name) ?? uiRoutes().project(projectId)}
+                className="hover:bg-hover text-foreground flex min-w-0 items-center gap-1 rounded-sm px-1 text-sm font-medium transition-colors"
+              >
+                <HashIcon className="text-muted-foreground size-3.5 shrink-0" />
+                <span className="truncate">{spaceLabel}</span>
+              </Link>
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                onClick={() => setActiveSpace(null)}
+                aria-label={tSpaces('leave', { name: spaceLabel })}
+              >
+                <XIcon />
+              </Button>
               {spaceAgents.length ? (
                 <span role="group" className="ml-auto flex items-center gap-1" aria-label={tSpaces('agents')}>
                   {spaceAgents.map((name) => (
@@ -194,20 +199,11 @@ export function ProjectHomeWelcomeBody({
 
           {composer ? <div className="flex w-full flex-col gap-4">{composer}</div> : null}
 
-          {/* A space's home is a channel: its room beside what is bound to
-              it, then the blocks it declares. Without a space the home keeps
-              its plain composer-only column. */}
-          {space && !sentTurn ? (
-            <Suspense fallback={null}>
-              <SpaceHome projectId={projectId} space={space} />
-            </Suspense>
-          ) : null}
         </div>
 
-        {/* Nothing under the composer unless a space is active (Marko,
-            2026-09-02: "just have the chat input there & that's it"). An
-            active space renders its home there: its room, what is bound to
-            it, its blocks. The setup steps stay reachable from Customize. */}
+        {/* Nothing under the composer, on purpose (Marko, 2026-09-02: "just
+            have the chat input there & that's it"). A space's room and tabs
+            live on its own page (`/spaces/<slug>`). */}
       </div>
     </div>
   );

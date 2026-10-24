@@ -52,11 +52,11 @@ describe('AgentConfigBlock', () => {
     expect(block.connectors_required).toEqual(['gmail']);
   });
 
-  test('accepts a dashboard domain slug (and empty string to clear)', () => {
-    const grouped: AgentConfigBlock = { domain: 'engineering' };
-    const cleared: AgentConfigBlock = { domain: '' };
-    expect(grouped.domain).toBe('engineering');
-    expect(cleared.domain).toBe('');
+  test('accepts a space slug (and empty string to clear)', () => {
+    const grouped: AgentConfigBlock = { space: 'engineering' };
+    const cleared: AgentConfigBlock = { space: '' };
+    expect(grouped.space).toBe('engineering');
+    expect(cleared.space).toBe('');
   });
 });
 
@@ -73,9 +73,9 @@ describe('updateAgentConfig', () => {
     expect(calls[0]?.body).not.toHaveProperty('connectors_personal');
   });
 
-  test('sends the agent domain through to the PUT body', async () => {
-    await updateAgentConfig('project-1', 'support', { skills: 'all', domain: 'engineering' });
-    expect(calls[0]?.body).toMatchObject({ domain: 'engineering' });
+  test('sends the agent space through to the PUT body', async () => {
+    await updateAgentConfig('project-1', 'support', { skills: 'all', space: 'engineering' });
+    expect(calls[0]?.body).toMatchObject({ space: 'engineering' });
   });
 
   test('a GET -> PUT round trip sends the block `file` back unchanged', async () => {

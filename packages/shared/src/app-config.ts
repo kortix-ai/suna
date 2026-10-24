@@ -318,7 +318,7 @@ export interface AppDisplay {
   preview?: 'live' | 'none';
   /** The App, by slug, whose detail shows this one as a tab (a backend's admin dashboard). */
   parent?: string;
-  /** The space (a `domains.<slug>` key) the App is grouped in. Grouping only, never a grant. Null or absent: project-wide. */
+  /** The space (a `spaces.<slug>` key) the App is grouped in. Grouping only, never a grant. Null or absent: project-wide. */
   space?: string | null;
   /** The agent that owns the App. Grouping only, never a grant. With no `space`, the App sits in this agent's space. */
   agent?: string | null;

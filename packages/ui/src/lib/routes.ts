@@ -26,6 +26,8 @@ export interface UiRoutes {
   goals: (projectId: string) => string | null;
   /** The project's artifacts (flag `artifacts`); one is `<artifacts>/<artifact_id>`. */
   artifacts: (projectId: string) => string | null;
+  /** One space: a channel, its room and its tabs (`?tab=` opens one). */
+  space: (projectId: string, slug: string) => string | null;
   members: (projectId: string) => string | null;
   /** The project settings page, on its sandbox section. */
   sandboxSettings: (projectId: string) => string | null;
@@ -47,6 +49,7 @@ const DEFAULT_ROUTES = {
   rooms: (p: string) => `/projects/${p}/rooms`,
   goals: (p: string) => `/projects/${p}/goals`,
   artifacts: (p: string) => `/projects/${p}/artifacts`,
+  space: (p: string, slug: string) => `/projects/${p}/spaces/${encodeURIComponent(slug)}`,
   members: (p: string) => `/projects/${p}/members`,
   sandboxSettings: (p: string) => `/projects/${p}/config?section=sandbox`,
   customize: (p: string, path?: string) => `/projects/${p}/customize${path ? `/${path}` : ''}`,

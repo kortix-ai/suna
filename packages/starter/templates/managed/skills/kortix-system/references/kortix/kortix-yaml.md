@@ -910,29 +910,46 @@ inline in the repo**.
   Rotating a key in the dashboard takes effect on the **next**
   session.
 
-## Spaces and bindings — `domains:`, `agents.<name>.domain`, `display.space`
+## Spaces — `spaces:`, `agents.<name>.space`, `display.space`
 
 A space is a channel for one area of work (Sales, Ops, Engineering). Its
-home shows its agents, its room, the Apps, Goals and Artifacts bound to it,
-and the blocks it declares. It is display and grouping only: a space grants
-nothing. Agent grants (`agents.<name>.apps`, `.skills`, `.connectors`, …)
-stay the only permission source.
+page is `/projects/<id>/spaces/<slug>`: a header, then a tab strip. The
+first tab is always the space's room, where people and agents post. The
+tabs after it are configured here. A space is display and grouping only:
+it grants nothing. Agent grants (`agents.<name>.apps`, `.skills`,
+`.connectors`, …) stay the only permission source.
 
 ```yaml
-domains:
+spaces:
   sales:                       # the space slug: ^[a-z0-9][a-z0-9_-]{0,62}$
     label: Sales
     description: Pipeline, deals and forecasts
-    order: 1
-    blocks:                    # the space home, below its room
-      - { type: text, label: Brief, text: "Weekly target: 12 qualified deals." }
-      - { type: app, label: CRM, app: crm }
-      - { type: artifact, label: Playbook, path: /Company/Sales/playbook.md }
-      - { type: iframe, label: Board, url: https://example.com/board }
-      - { type: chat, label: Standup, room: sales-standup }   # another room
+    order: 1                   # position in the sidebar, lower first
+    header: [agents, members, needs_you, new_session, ask_my_kortix]
+    tabs:                      # after the room tab, in this order
+      - type: goals            # views: goals | apps | artifacts
+      - type: apps
+      - type: files            # a project folder
+        path: sales
+      - type: app              # one App, by slug
+        app: crm
+      - type: artifact         # one Artifact, by artifact_id
+        artifact: <artifact_id>
+      - type: link             # a url; embed: true frames it
+        label: Forecast
+        url: https://example.com/forecast
+        embed: true
+      - type: board            # a grid of blocks
+        label: Overview
+        blocks:
+          - { type: text, label: Brief, text: "Weekly target: 12 qualified deals." }
+          - { type: app, label: CRM, app: crm }
+          - { type: artifact, label: Playbook, path: sales/playbook.md }
+          - { type: iframe, label: Board, url: https://example.com/board }
+          - { type: chat, label: Standup, room: sales-standup }   # another room
 agents:
   closer:
-    domain: sales              # the agent works in this space
+    space: sales               # the agent works in this space
 apps:
   crm:
     display: { listed: true, space: sales, agent: closer }
@@ -940,19 +957,31 @@ apps:
 
 Rules:
 
+- `tabs` absent: the space shows Goals, Apps and Artifacts after its room.
+  `tabs: []`: the room only. A tab of a feature the project has off
+  (`goals`, `artifacts`) is hidden. `label` renames any tab.
+- Each pinned tab names its target: `files.path`, `app.app`,
+  `artifact.artifact`, `link.url` (http or https). `kortix validate`
+  rejects one without it.
+- `header` absent: every item. The items are `agents` (the agents whose
+  `space` is this slug), `members` (the people in the room), `needs_you`
+  (the space's sessions that wait on the viewer), `new_session` and
+  `ask_my_kortix`.
+- The page's "+" menu and "Edit tabs" write this same `spaces.<slug>.tabs`
+  list as one commit on the default branch.
 - A space slug is also a room name. The space's room is the project room
-  with that name. The home renders it; do not add a `chat` block for it.
+  with that name. Do not add a `chat` block for it.
 - A session posts to the room only as a member. `kortix rooms join sales`
   creates the room when it does not exist and adds this session to it; then
   `kortix rooms send sales "…"` posts. `send` alone fails with "room not
-  found" until someone joins or a person posts from the space home.
+  found" until someone joins or a person posts from the space page.
 - A room delivers a post only to its members. An agent session hears what
   people post in the space only after it joins: when you start a session
   for an agent of the space, run `kortix rooms join <slug> --session <id>`
   for it. Nothing joins an agent's sessions automatically.
 - A declared space with no agents is still a space: it shows in the sidebar.
 - Bind a resource with `space` and/or `agent`. Resolution: its `space`, else
-  its agent's `domain`, else project-wide. A name that matches nothing is not
+  its agent's `space`, else project-wide. A name that matches nothing is not
   an error: an unknown space groups under its slug.
   - App: `apps.<slug>.display.space` / `.agent` in this file. `kortix apps
     deploy` copies `display` to the App, so a UI move is overwritten on the
@@ -963,12 +992,12 @@ Rules:
   - Artifact: `kortix artifacts publish <file> --space sales` (the agent
     defaults to the publishing session's agent), later `kortix artifacts bind
     <id> --space sales` or `--clear`. `kortix artifacts ls --space sales`.
-- To build a space: add `domains.<slug>`, set `agents.<name>.domain` for the
-  agents that work there, bind what they make with `--space <slug>`, join
-  the room (`kortix rooms join <slug>`) and post progress with
-  `kortix rooms send <slug> "…"`. A space slug is at most 63 characters
-  (a room name), with no dots. Renaming a space slug leaves
-  old bindings under the old slug: re-bind them (`goals bind`, `artifacts bind`,
+- To build a space: add `spaces.<slug>` with its tabs, set
+  `agents.<name>.space` for the agents that work there, bind what they make
+  with `--space <slug>`, join the room (`kortix rooms join <slug>`) and post
+  progress with `kortix rooms send <slug> "…"`. A space slug is at most 63
+  characters (a room name), with no dots. Renaming a space slug leaves old
+  bindings under the old slug: re-bind them (`goals bind`, `artifacts bind`,
   `display.space`) in the same change.
 
 ## Editing the manifest

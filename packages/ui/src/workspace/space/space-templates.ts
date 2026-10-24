@@ -1,57 +1,41 @@
 /**
- * Default Space templates and the pure manifest write that creates a Space.
- *
- * A Space is a `domains.<slug>` entry in `kortix.yaml` (see `SpaceBlock` /
- * `ProjectDomain` in `@kortix/sdk`). Creating one writes a new entry. These
- * presets are starting scaffolds — an agent or the user edits the blocks after.
- * Framework-free so it is unit-testable and host-agnostic.
+ * Space templates and the pure `kortix.yaml` edits that create a space and
+ * set its tabs. A space is `spaces.<slug>` (see `ProjectSpace` in
+ * `@kortix/sdk`). Every edit round-trips through the `yaml` document model,
+ * so comments and the rest of the manifest stay as they were.
  */
 
-import { parseDocument } from 'yaml';
+import { isSeq, parseDocument } from 'yaml';
 
-import type { SpaceBlock } from '@kortix/sdk';
+import { DEFAULT_SPACE_TABS, type SpaceTab } from '@kortix/sdk';
 
 export interface SpaceTemplate {
-  id: string;
-  label: string;
-  description: string;
-  blocks: SpaceBlock[];
+  /** Also the catalog key of its name and hint: `spaces.templates.<id>`. */
+  id: 'standard' | 'room' | 'board';
+  /** The tabs after the room. */
+  tabs: SpaceTab[];
 }
 
-/** The presets the "New space" picker offers, in order. Keep this short. */
+/** The presets the New space dialog offers, in order. The first is the default. */
 export const SPACE_TEMPLATES: SpaceTemplate[] = [
   {
-    id: 'blank',
-    label: 'Blank',
-    description: 'An empty space you fill in yourself.',
-    blocks: [],
+    id: 'standard',
+    tabs: [...DEFAULT_SPACE_TABS],
   },
   {
-    id: 'channel',
-    label: 'Channel',
-    description: 'One shared chat room for the space.',
-    // room is left empty and defaulted to the space slug at create time, so
-    // each Channel space gets its own session instead of sharing one.
-    blocks: [{ type: 'chat', label: 'Chat' }],
+    id: 'room',
+    tabs: [],
   },
   {
-    id: 'dashboard',
-    label: 'Dashboard',
-    description: 'A Kortix App beside an embedded page.',
-    blocks: [
-      { type: 'app', label: 'App' },
-      { type: 'iframe', label: 'Embed', url: 'https://example.com' },
+    id: 'board',
+    tabs: [
+      { type: 'board', label: 'Board', blocks: [{ type: 'text', label: 'Brief', text: 'What this space is for, and how to help.' }] },
+      { type: 'goals' },
     ],
-  },
-  {
-    id: 'docs',
-    label: 'Docs',
-    description: 'A document from the project files.',
-    blocks: [{ type: 'artifact', label: 'Doc', path: 'docs/README.md' }],
   },
 ];
 
-/** Turn a space name into a `domains:` key. The result is also a valid room
+/** Turn a space name into a `spaces:` key. The result is also a valid room
  *  name (the space's room is the room with its slug): at most 63 characters,
  *  starting with a letter or a digit. */
 export function slugifySpace(name: string): string {
@@ -68,27 +52,35 @@ export function slugifySpace(name: string): string {
   );
 }
 
-/** Resolve a template's blocks for a concrete space: a chat block with no
- *  room defaults to the space slug so channels don't collide. */
-export function spaceBlocks(template: SpaceTemplate, slug: string): SpaceBlock[] {
-  return template.blocks.map((block) =>
-    block.type === 'chat' && !block.room ? { ...block, room: slug } : block,
-  );
-}
-
-/**
- * Add `domains.<slug>` to a `kortix.yaml` text, creating the `domains:` map if
- * absent. Round-trips through the `yaml` document model so comments and the
- * rest of the manifest are preserved. Returns the new YAML text.
- */
+/** Add `spaces.<slug>` to a `kortix.yaml` text. Returns the new text. */
 export function addSpaceToManifest(
   yamlText: string,
-  input: { slug: string; label: string; blocks: SpaceBlock[] },
+  input: { slug: string; label: string; description?: string; tabs: SpaceTab[] },
 ): string {
   const doc = parseDocument(yamlText);
-  doc.setIn(['domains', input.slug], {
+  const description = input.description?.trim();
+  doc.setIn(['spaces', input.slug], {
     label: input.label,
-    blocks: input.blocks,
+    ...(description ? { description } : {}),
+    tabs: input.tabs,
   });
+  return doc.toString();
+}
+
+/** Replace `spaces.<slug>.tabs` in a `kortix.yaml` text, declaring the space
+ *  when only an agent names it. Returns the new text. */
+export function setSpaceTabs(yamlText: string, slug: string, tabs: SpaceTab[]): string {
+  const doc = parseDocument(yamlText);
+  doc.setIn(['spaces', slug, 'tabs'], tabs);
+  return doc.toString();
+}
+
+/** Append one tab to `spaces.<slug>.tabs` as the file has it now. A space
+ *  with no `tabs` shows the default set, so the new list starts from it. */
+export function appendSpaceTab(yamlText: string, slug: string, tab: SpaceTab): string {
+  const doc = parseDocument(yamlText);
+  const current = doc.getIn(['spaces', slug, 'tabs']);
+  const tabs = isSeq(current) ? (current.toJSON() as SpaceTab[]) : [...DEFAULT_SPACE_TABS];
+  doc.setIn(['spaces', slug, 'tabs'], [...tabs, tab]);
   return doc.toString();
 }

@@ -558,7 +558,8 @@
     "./workspace/sidebar/session-section-labels": "./src/workspace/sidebar/session-section-labels.ts",
     "./workspace/sidebar/session-source-icons": "./src/workspace/sidebar/session-source-icons.ts",
     "./workspace/sidebar/workspace-grouping": "./src/workspace/sidebar/workspace-grouping.ts",
-    "./workspace/sidebar/workspace-menu-section": "./src/workspace/sidebar/workspace-menu-section.tsx"
+    "./workspace/sidebar/workspace-menu-section": "./src/workspace/sidebar/workspace-menu-section.tsx",
+    "./workspace/space/space-page": "./src/workspace/space/space-page.tsx"
   },
   "publishConfig": {
     "access": "public",
@@ -2678,6 +2679,10 @@
       "./workspace/sidebar/workspace-menu-section": {
         "types": "./dist/workspace/sidebar/workspace-menu-section.d.ts",
         "import": "./dist/workspace/sidebar/workspace-menu-section.js"
+      },
+      "./workspace/space/space-page": {
+        "types": "./dist/workspace/space/space-page.d.ts",
+        "import": "./dist/workspace/space/space-page.js"
       }
     },
     "files": [

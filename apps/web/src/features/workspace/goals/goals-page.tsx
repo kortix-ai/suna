@@ -12,7 +12,7 @@ import {
   goalOpenAsks,
   goalProgress,
   GoalStatusBadge,
-  ALL_DOMAINS,
+  ALL_SPACES,
   ProjectPageHeader,
   SpaceFilterTabs,
   spaceFilterLabel,
@@ -21,7 +21,7 @@ import {
   useSpaceFilter,
 } from '@kortix/ui/workspace';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { bindingSpace, DEFAULT_PROJECT_DOMAIN, groupBySpace, listSpaces, type ProjectGoal } from '@kortix/sdk';
+import { bindingSpace, PROJECT_WIDE_SPACE, groupBySpace, listSpaces, type ProjectGoal } from '@kortix/sdk';
 import { useProjectConfig, useProjectGoals } from '@kortix/sdk/react';
 import Link from 'next/link';
 
@@ -39,13 +39,13 @@ export function GoalsPage({ projectId }: { projectId: string }) {
   const config = useProjectConfig(projectId);
   const agents = config?.agents ?? [];
   // A goal sits in its bound space, else its agent's space, else Project-wide.
-  const spaceOf = (goal: ProjectGoal) => bindingSpace(goal.goal, agents) ?? DEFAULT_PROJECT_DOMAIN;
-  const groups = groupBySpace(goals.data ?? [], config?.domains, spaceOf);
+  const spaceOf = (goal: ProjectGoal) => bindingSpace(goal.goal, agents) ?? PROJECT_WIDE_SPACE;
+  const groups = groupBySpace(goals.data ?? [], config?.spaces, spaceOf);
   const labels = new Map(groups.map((group) => [group.name, group.label]));
   const spaces = listSpaces(config);
   const [space, setSpace] = useSpaceFilter(projectId);
-  const all = (goals.data ?? []).filter((goal) => space === ALL_DOMAINS || spaceOf(goal) === space);
-  const spaceLabel = (goal: ProjectGoal) => (space === ALL_DOMAINS ? labels.get(spaceOf(goal)) : undefined);
+  const all = (goals.data ?? []).filter((goal) => space === ALL_SPACES || spaceOf(goal) === space);
+  const spaceLabel = (goal: ProjectGoal) => (space === ALL_SPACES ? labels.get(spaceOf(goal)) : undefined);
   const needsYou = all.filter(goalNeedsYou);
   const open = all.filter((g) => g.health.state !== 'closed' && !goalNeedsYou(g));
   const closed = all.filter((g) => g.health.state === 'closed');
@@ -80,7 +80,7 @@ export function GoalsPage({ projectId }: { projectId: string }) {
                   size="sm"
                   title={t('spaceEmpty', { space: spaceFilterLabel(space, spaces, tSpaces('projectWide')) })}
                   action={
-                    <Button size="sm" variant="outline" onClick={() => setSpace(ALL_DOMAINS)}>
+                    <Button size="sm" variant="outline" onClick={() => setSpace(ALL_SPACES)}>
                       {t('showAll')}
                     </Button>
                   }

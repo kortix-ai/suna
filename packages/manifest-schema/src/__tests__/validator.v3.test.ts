@@ -191,66 +191,114 @@ describe('agents.<name>.workspace.project_repository default', () => {
   });
 });
 
-describe('kortix_version 3: domains (optional grouping)', () => {
-  test('golden has no domain and stays valid (backward compatible)', () => {
+describe('kortix_version 3: spaces (a channel: a room plus configurable tabs)', () => {
+  test('golden has no space and stays valid', () => {
     expect(check(GOLDEN).errors).toEqual([]);
   });
 
-  test('an agent may declare a domain', () => {
+  test('an agent may declare a space', () => {
+    const yaml = swap('codemode: on', 'codemode: on\n    space: engineering');
+    expect(check(yaml).errors).toEqual([]);
+  });
+
+  test('the old `domain` key is unknown', () => {
     const yaml = swap('codemode: on', 'codemode: on\n    domain: engineering');
-    expect(check(yaml).errors).toEqual([]);
+    expect(errorPaths(yaml)).toContain('agents.assistant.domain');
+    expect(errorPaths(swap('agents:', 'domains:\n  eng:\n    label: Eng\nagents:'))).toContain('domains');
   });
 
-  test('a top-level domains map is accepted', () => {
+  test('a top-level spaces map with a header and every tab type is accepted', () => {
     const yaml = swap(
       'agents:',
-      'domains:\n  engineering:\n    label: Engineering\n    order: 1\n  marketing:\n    label: Marketing\nagents:',
+      [
+        'spaces:',
+        '  eng:',
+        '    label: Engineering',
+        '    description: Ship the product.',
+        '    order: 1',
+        '    header: [agents, members, needs_you, new_session, ask_my_kortix]',
+        '    tabs:',
+        '      - type: goals',
+        '      - type: apps',
+        '      - type: artifacts',
+        '      - type: files',
+        '        path: docs',
+        '      - type: board',
+        '        label: Overview',
+        '        blocks:',
+        '          - type: text',
+        '            text: Welcome',
+        '          - type: iframe',
+        '            url: https://example.com',
+        '      - type: app',
+        '        app: dashboard',
+        '      - type: artifact',
+        '        artifact: 00000000-0000-4000-8000-000000000001',
+        '      - type: link',
+        '        label: Status',
+        '        url: https://status.example.com',
+        '        embed: true',
+        'agents:',
+      ].join('\n'),
     );
     expect(check(yaml).errors).toEqual([]);
   });
 
-  test('a non-string agent domain is an error', () => {
-    const yaml = swap('codemode: on', 'codemode: on\n    domain: 42');
-    expect(errorPaths(yaml)).toContain('agents.assistant.domain');
+  test('a non-string agent space is an error', () => {
+    expect(errorPaths(swap('codemode: on', 'codemode: on\n    space: 42'))).toContain('agents.assistant.space');
   });
 
-  test('an invalid agent domain slug is an error', () => {
-    const yaml = swap('codemode: on', 'codemode: on\n    domain: "Not A Slug"');
-    expect(errorPaths(yaml)).toContain('agents.assistant.domain');
+  test('an invalid agent space slug is an error', () => {
+    expect(errorPaths(swap('codemode: on', 'codemode: on\n    space: "Not A Slug"'))).toContain('agents.assistant.space');
   });
 
-  test('an unknown key inside a domain is an error', () => {
-    const yaml = swap('agents:', 'domains:\n  eng:\n    color: red\nagents:');
-    expect(errorPaths(yaml)).toContain('domains.eng.color');
+  test('an unknown key inside a space is an error', () => {
+    expect(errorPaths(swap('agents:', 'spaces:\n  eng:\n    color: red\nagents:'))).toContain('spaces.eng.color');
   });
 
-  test('a non-numeric domain order is an error', () => {
-    const yaml = swap('agents:', 'domains:\n  eng:\n    order: soon\nagents:');
-    expect(errorPaths(yaml)).toContain('domains.eng.order');
+  test('space-level blocks moved into a board tab', () => {
+    expect(errorPaths(swap('agents:', 'spaces:\n  eng:\n    blocks: []\nagents:'))).toContain('spaces.eng.blocks');
   });
 
-  test('a space may declare configurable blocks (chat/artifact/app/iframe/text)', () => {
-    const yaml = swap(
-      'agents:',
-      'domains:\n  eng:\n    label: Engineering\n    blocks:\n      - type: chat\n        label: Standup\n        room: eng-standup\n      - type: artifact\n        path: docs/plan.md\n      - type: app\n        app: dashboard\n      - type: iframe\n        url: https://example.com\n      - type: text\n        text: Welcome\nagents:',
-    );
-    expect(check(yaml).errors).toEqual([]);
+  test('a non-numeric space order is an error', () => {
+    expect(errorPaths(swap('agents:', 'spaces:\n  eng:\n    order: soon\nagents:'))).toContain('spaces.eng.order');
   });
 
-  test('an invalid block type is an error', () => {
-    const yaml = swap('agents:', 'domains:\n  eng:\n    blocks:\n      - type: video\nagents:');
-    expect(errorPaths(yaml)).toContain('domains.eng.blocks[0].type');
+  test('an unknown header item is an error', () => {
+    expect(errorPaths(swap('agents:', 'spaces:\n  eng:\n    header: [weather]\nagents:'))).toContain('spaces.eng.header[0]');
   });
 
-  test('an unknown block key is an error', () => {
-    const yaml = swap('agents:', 'domains:\n  eng:\n    blocks:\n      - type: chat\n        color: red\nagents:');
-    expect(errorPaths(yaml)).toContain('domains.eng.blocks[0].color');
+  test('an unknown tab type is an error', () => {
+    expect(errorPaths(swap('agents:', 'spaces:\n  eng:\n    tabs:\n      - type: video\nagents:'))).toContain('spaces.eng.tabs[0].type');
   });
 
-  test('a space slug is also a room name: at most 63 characters, no dots', () => {
+  test('a pinned tab without its target is an error', () => {
+    const tab = (body: string) => swap('agents:', `spaces:\n  eng:\n    tabs:\n      - ${body}\nagents:`);
+    expect(errorPaths(tab('type: app'))).toContain('spaces.eng.tabs[0].app');
+    expect(errorPaths(tab('type: artifact'))).toContain('spaces.eng.tabs[0].artifact');
+    expect(errorPaths(tab('type: link'))).toContain('spaces.eng.tabs[0].url');
+    expect(errorPaths(tab('type: files'))).toContain('spaces.eng.tabs[0].path');
+  });
+
+  test('a link tab needs an http(s) url', () => {
+    const yaml = swap('agents:', 'spaces:\n  eng:\n    tabs:\n      - type: link\n        url: javascript:alert(1)\nagents:');
+    expect(errorPaths(yaml)).toContain('spaces.eng.tabs[0].url');
+  });
+
+  test('an unknown tab key is an error', () => {
+    const yaml = swap('agents:', 'spaces:\n  eng:\n    tabs:\n      - type: goals\n        color: red\nagents:');
+    expect(errorPaths(yaml)).toContain('spaces.eng.tabs[0].color');
+  });
+
+  test('an invalid board block type is an error', () => {
+    const yaml = swap('agents:', 'spaces:\n  eng:\n    tabs:\n      - type: board\n        blocks:\n          - type: video\nagents:');
+    expect(errorPaths(yaml)).toContain('spaces.eng.tabs[0].blocks[0].type');
+  });
+
+  test('a space slug is also a room name: at most 63 characters', () => {
     const long = 'a'.repeat(64);
-    expect(errorPaths(swap('agents:', `domains:\n  ${long}:\n    label: Long\nagents:`))).toContain(`domains.${long}`);
-    expect(check(swap('agents:', `domains:\n  ${'a'.repeat(63)}:\n    label: Ok\nagents:`)).errors).toEqual([]);
-    expect(errorPaths(swap('codemode: on', `codemode: on\n    domain: ${long}`))).toContain('agents.assistant.domain');
+    expect(errorPaths(swap('agents:', `spaces:\n  ${long}:\n    label: Long\nagents:`))).toContain(`spaces.${long}`);
+    expect(check(swap('agents:', `spaces:\n  ${'a'.repeat(63)}:\n    label: Ok\nagents:`)).errors).toEqual([]);
+    expect(errorPaths(swap('codemode: on', `codemode: on\n    space: ${long}`))).toContain('agents.assistant.space');
   });
 });

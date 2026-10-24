@@ -2,19 +2,22 @@
 
 import { type FormEvent, useState } from 'react';
 
-import { CaretRightIcon, PlusIcon, StackSimpleIcon } from '@phosphor-icons/react';
-import { useQueryClient } from '@tanstack/react-query';
+import { CaretRightIcon, HashIcon, PlusIcon, StackSimpleIcon } from '@phosphor-icons/react';
 
-import { agentsInSpace, listSpaces, readProjectFile, writeProjectFile } from '@kortix/sdk';
-import { qk, useProjectConfig } from '@kortix/sdk/react';
+import { listSpaces } from '@kortix/sdk';
+import { useFeatureFlag, useProjectConfig, useRoomConversations } from '@kortix/sdk/react';
 
-import { customizePath, uiRoutes } from '../../lib/routes';
+import { useTranslations } from '../../i18n';
+import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
+import { useProjectCan } from '../../internal/lib/use-project-can';
+import { useActiveSpace } from '../../internal/stores/active-space-store';
+import { uiRoutes } from '../../lib/routes';
 import { cn } from '../../lib/utils';
-import { useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
+import { UiLink as Link, useUiPathname, useUiRouter } from '../../providers/ui-provider';
 import { Button } from '../../primitives/button';
+import { CountBadge } from '../../primitives/count-badge';
 import { Field, FieldLabel } from '../../primitives/field';
 import { Input } from '../../primitives/input';
-import Loading from '../../primitives/loading';
 import {
   Modal,
   ModalBody,
@@ -24,13 +27,7 @@ import {
   ModalHeader,
   ModalTitle,
 } from '../../primitives/modal';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../../primitives/select';
+import { RadioGroup, RadioGroupItem } from '../../primitives/radio-group';
 import {
   SidebarMenuButton,
   SidebarMenuItem,
@@ -38,58 +35,32 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from '../../primitives/sidebar';
+import { Textarea } from '../../primitives/textarea';
 import { errorToast, successToast } from '../../primitives/toast';
-import { useActiveDomain } from '../../internal/stores/active-domain-store';
-import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
-import { useProjectCan } from '../../internal/lib/use-project-can';
-import {
-  addSpaceToManifest,
-  slugifySpace,
-  spaceBlocks,
-  SPACE_TEMPLATES,
-} from '../space/space-templates';
-
-const MANIFEST_PATH = 'kortix.yaml';
+import { addSpaceToManifest, slugifySpace, SPACE_TEMPLATES } from '../space/space-templates';
+import { useManifestWrite } from '../space/use-space-manifest';
 
 /**
- * Spaces — a collapsible section in the project sidebar that lists the project's
- * domains as spaces. Selecting one sets the active space (`active-domain-store`);
- * the whole workspace then scopes to it: which agents you can start, the
- * sessions you see, and Customize. `All spaces` clears the scope. A project with
- * no spaces still shows the section header so the user can create the first one,
- * unless they lack write access, in which case it renders nothing.
+ * Spaces in the project sidebar, listed like channels: `# name` and the unread
+ * count of the space's room. A declared space with no agents is listed. A row
+ * opens the space page and makes the space active, so the project home's
+ * composer starts only its agents. A project with no spaces still shows the
+ * section to a viewer who may create one, and nothing to anyone else.
  */
 export function ProjectSpacesNav({ projectId }: { projectId: string }) {
+  const t = useTranslations('spaces');
   const config = useProjectConfig(projectId);
-  const [active, setActive] = useActiveDomain(projectId);
-  const router = useUiRouter();
+  const [, setActive] = useActiveSpace(projectId);
   const pathname = useUiPathname();
-  const spaceParam = useUiSearchParams().get('space');
-  // Pages that read the active space (Customize, Goals, Artifacts) stay put
-  // and rescope; from any other page, choosing a space opens its home.
-  const here = pathname.replace(/\/$/, '');
-  const routes = uiRoutes();
-  const under = (root: string | null) => !!root && (here === root || here.startsWith(`${root}/`));
-  const readsActiveSpace =
-    here === routes.project(projectId).replace(/\/$/, '') ||
-    [customizePath(projectId), routes.goals(projectId), routes.artifacts(projectId)].some(under);
+  const roomsOn = useFeatureFlag(projectId, 'agent_rooms').enabled;
+  const rooms = useRoomConversations(roomsOn ? projectId : null);
   const [open, setOpen] = useState(true);
   const [creating, setCreating] = useState(false);
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_FILE_WRITE).allowed === true;
-
-  // Declared spaces (an empty one included) plus the ones agents reference:
-  // a space someone just created, before any agent joins it, is listed.
-  const agents = config?.agents ?? [];
   const spaces = listSpaces(config);
-  const select = (slug: string | null) => {
-    setActive(slug);
-    // The space home is the project home with the space active.
-    if (!readsActiveSpace) router.push(routes.project(projectId));
-    // A list page's ?space= wins over the active space: drop it.
-    else if (spaceParam) router.replace(pathname);
-  };
+  const unread = new Map((rooms.data ?? []).map((room) => [room.name, room.unread]));
+  const here = pathname.replace(/\/$/, '');
 
-  // Nothing to show and nothing to do: keep a plain project unchanged.
   if (spaces.length === 0 && !canWrite) return null;
 
   return (
@@ -103,84 +74,57 @@ export function ProjectSpacesNav({ projectId }: { projectId: string }) {
           <span className="shrink-0">
             <StackSimpleIcon />
           </span>
-          <span className="truncate">Spaces</span>
+          <span className="truncate">{t('nav.title')}</span>
           <CaretRightIcon
             weight="bold"
-            className={cn(
-              'text-muted-foreground ml-auto size-3.5 shrink-0 transition-transform',
-              open && 'rotate-90',
-            )}
+            className={cn('text-muted-foreground ml-auto size-3.5 shrink-0 transition-transform', open && 'rotate-90')}
           />
         </SidebarMenuButton>
       </SidebarMenuItem>
       {open ? (
         <SidebarMenuSub>
-          {spaces.length > 0 ? (
-            <SpaceRow
-              label="All spaces"
-              selected={active === null}
-              onSelect={() => select(null)}
-            />
-          ) : null}
-          {spaces.map((space) => (
-            <SpaceRow
-              key={space.name}
-              label={space.label || space.name}
-              count={agentsInSpace(space.name, agents).length}
-              selected={active === space.name}
-              onSelect={() => select(space.name)}
-            />
-          ))}
+          {spaces.map((space) => {
+            const href = uiRoutes().space(projectId, space.name);
+            const count = unread.get(space.name) ?? 0;
+            return (
+              <SidebarMenuSubItem key={space.name}>
+                <SidebarMenuSubButton asChild isActive={!!href && here.endsWith(href.replace(/\/$/, ''))}>
+                  {href ? (
+                    <Link href={href} onClick={() => setActive(space.name)}>
+                      <HashIcon className="text-muted-foreground size-3.5 shrink-0" />
+                      <span className={cn('truncate', count > 0 && 'text-foreground font-medium')}>
+                        {space.label || space.name}
+                      </span>
+                      {count > 0 ? (
+                        <CountBadge count={count} className="ml-auto" aria-label={t('nav.unread', { count })} />
+                      ) : null}
+                    </Link>
+                  ) : (
+                    <span>{space.label || space.name}</span>
+                  )}
+                </SidebarMenuSubButton>
+              </SidebarMenuSubItem>
+            );
+          })}
           {canWrite ? (
             <SidebarMenuSubItem>
               <SidebarMenuSubButton asChild>
-                <button
-                  type="button"
-                  onClick={() => setCreating(true)}
-                  className="text-muted-foreground"
-                >
+                <button type="button" onClick={() => setCreating(true)} className="text-muted-foreground">
                   <PlusIcon className="size-3.5 shrink-0" />
-                  <span className="truncate">New space</span>
+                  <span className="truncate">{t('nav.new')}</span>
                 </button>
               </SidebarMenuSubButton>
             </SidebarMenuSubItem>
           ) : null}
         </SidebarMenuSub>
       ) : null}
-      {canWrite ? (
-        <NewSpaceModal projectId={projectId} open={creating} onOpenChange={setCreating} />
-      ) : null}
+      {canWrite ? <NewSpaceModal projectId={projectId} open={creating} onOpenChange={setCreating} /> : null}
     </>
   );
 }
 
-function SpaceRow({
-  label,
-  count,
-  selected,
-  onSelect,
-}: {
-  label: string;
-  count?: number;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <SidebarMenuSubItem>
-      <SidebarMenuSubButton asChild isActive={selected}>
-        <button type="button" onClick={onSelect}>
-          <span className="truncate">{label}</span>
-          {count !== undefined ? (
-            <span className="text-muted-foreground ml-auto tabular-nums">{count}</span>
-          ) : null}
-        </button>
-      </SidebarMenuSubButton>
-    </SidebarMenuSubItem>
-  );
-}
-
-/** Create a new Space: a name + a template preset, written as `domains.<slug>`
- *  into `kortix.yaml`. */
+/** Create a space: a name, a description and the starting tabs, written as
+ *  `spaces.<slug>` into `kortix.yaml`. Then open it. */
 function NewSpaceModal({
   projectId,
   open,
@@ -190,40 +134,36 @@ function NewSpaceModal({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const queryClient = useQueryClient();
+  const t = useTranslations('spaces');
+  const write = useManifestWrite(projectId);
+  const router = useUiRouter();
+  const config = useProjectConfig(projectId);
+  const [, setActive] = useActiveSpace(projectId);
   const [name, setName] = useState('');
-  const [templateId, setTemplateId] = useState(SPACE_TEMPLATES[0]!.id);
+  const [description, setDescription] = useState('');
+  const [templateId, setTemplateId] = useState<string>(SPACE_TEMPLATES[0]!.id);
   const [pending, setPending] = useState(false);
+  const trimmed = name.trim();
+  const slug = slugifySpace(trimmed);
+  const taken = !!trimmed && listSpaces(config).some((space) => space.name === slug);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    const trimmed = name.trim();
-    if (!trimmed || pending) return;
-
-    const template = SPACE_TEMPLATES.find((t) => t.id === templateId) ?? SPACE_TEMPLATES[0]!;
-    const slug = slugifySpace(trimmed);
+    if (!trimmed || taken || pending) return;
+    const template = SPACE_TEMPLATES.find((candidate) => candidate.id === templateId) ?? SPACE_TEMPLATES[0]!;
     setPending(true);
     try {
-      const file = await readProjectFile(projectId, MANIFEST_PATH, 'main');
-      if (!file.revision) throw new Error('Could not read the project manifest.');
-      const content = addSpaceToManifest(file.content, {
-        slug,
-        label: trimmed,
-        blocks: spaceBlocks(template, slug),
-      });
-      await writeProjectFile(projectId, {
-        path: MANIFEST_PATH,
-        ref: 'main',
-        content,
-        expected_revision: file.revision,
-      });
-      await queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
-      successToast(`Space “${trimmed}” created.`);
+      await write((yaml) => addSpaceToManifest(yaml, { slug, label: trimmed, description, tabs: template.tabs }));
+      successToast(t('create.created'));
       setName('');
+      setDescription('');
       setTemplateId(SPACE_TEMPLATES[0]!.id);
       onOpenChange(false);
+      setActive(slug);
+      const href = uiRoutes().space(projectId, slug);
+      if (href) router.push(href);
     } catch (error) {
-      errorToast(error instanceof Error ? error.message : 'Could not create the space.');
+      errorToast(t('create.error'), { description: error instanceof Error ? error.message : undefined });
     } finally {
       setPending(false);
     }
@@ -233,49 +173,62 @@ function NewSpaceModal({
     <Modal open={open} onOpenChange={onOpenChange}>
       <ModalContent className="lg:max-w-md">
         <ModalHeader>
-          <ModalTitle>New space</ModalTitle>
-          <ModalDescription>
-            A space groups agents, sessions and a layout under one name.
-          </ModalDescription>
+          <ModalTitle>{t('create.title')}</ModalTitle>
+          <ModalDescription>{t('create.description')}</ModalDescription>
         </ModalHeader>
         <form onSubmit={handleSubmit}>
-          <ModalBody>
+          <ModalBody className="space-y-4">
             <Field>
-              <FieldLabel htmlFor="space-name">Name</FieldLabel>
+              <FieldLabel htmlFor="space-name">{t('create.name')}</FieldLabel>
               <Input
                 id="space-name"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="e.g. Sales"
+                placeholder={t('create.namePlaceholder')}
+                aria-invalid={taken || undefined}
                 autoFocus
+              />
+              {trimmed ? (
+                <p className="text-muted-foreground text-xs">
+                  {taken ? t('create.taken', { slug }) : <span className="font-mono">#{slug}</span>}
+                </p>
+              ) : null}
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="space-description">{t('create.about')}</FieldLabel>
+              <Textarea
+                id="space-description"
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                placeholder={t('create.aboutPlaceholder')}
+                rows={2}
               />
             </Field>
             <Field>
-              <FieldLabel htmlFor="space-template">Template</FieldLabel>
-              <Select value={templateId} onValueChange={setTemplateId}>
-                <SelectTrigger id="space-template" className="w-full cursor-pointer text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SPACE_TEMPLATES.map((template) => (
-                    <SelectItem key={template.id} value={template.id} className="cursor-pointer">
-                      <span className="flex flex-col">
-                        <span>{template.label}</span>
-                        <span className="text-muted-foreground text-xs">{template.description}</span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <FieldLabel>{t('create.template')}</FieldLabel>
+              <RadioGroup value={templateId} onValueChange={setTemplateId} className="gap-0">
+                {SPACE_TEMPLATES.map((template) => (
+                  <label
+                    key={template.id}
+                    htmlFor={`space-template-${template.id}`}
+                    className="hover:bg-hover flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 transition-colors"
+                  >
+                    <RadioGroupItem id={`space-template-${template.id}`} value={template.id} className="mt-0.5" />
+                    <span className="flex min-w-0 flex-col gap-0.5">
+                      <span className="text-foreground text-sm">{t(`templates.${template.id}.label`)}</span>
+                      <span className="text-muted-foreground text-xs">{t(`templates.${template.id}.description`)}</span>
+                    </span>
+                  </label>
+                ))}
+              </RadioGroup>
             </Field>
           </ModalBody>
           <ModalFooter className="sm:justify-between">
             <Button type="button" variant="outline-ghost" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t('cancel')}
             </Button>
-            <Button type="submit" disabled={pending || !name.trim()}>
-              {pending ? <Loading className="size-4 shrink-0" /> : null}
-              Create space
+            <Button type="submit" disabled={pending || !trimmed || taken} aria-busy={pending || undefined}>
+              {t('create.submit')}
             </Button>
           </ModalFooter>
         </form>
