@@ -14,6 +14,7 @@ import { sweepAppVolumes } from '../apps/volumes';
 import { reclaimAppSiteBlobs } from '../apps/static-site';
 import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
 import { purgeExpiredMonitorEvents, reconcileMonitorBoxes } from './lib/monitor-box';
+import { purgeFiredAppRuns } from './lib/app-runs';
 import { SESSION_DELETE_ROWS_DAYS } from './session-log-purge';
 import { purgeExpiredTriggerRuns } from './trigger-execution-store';
 import { settleTriggerRunsFromTurns } from './lib/trigger-run-outcome';
@@ -535,8 +536,9 @@ function runMaintenanceSweeps() {
       );
       return { ...emptyMonitorReconcileResult(), errors: 1 };
     }),
-    // 30-day retention on the append-only monitor event log.
-    () => purgeExpiredMonitorEvents().catch((err) => {
+    // 30-day retention on the append-only monitor event log, and on fired
+    // one-off App runs (lib/app-runs.ts). The step reports the event count.
+    () => purgeFiredAppRuns().catch(() => 0).then(() => purgeExpiredMonitorEvents()).catch((err) => {
       console.warn(
         '[project-maintenance] monitor-event retention failed:',
         err instanceof Error ? err.message : err,

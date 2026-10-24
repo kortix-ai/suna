@@ -28,7 +28,9 @@ export interface TriggerScheduleSpec {
   /** type=app only — see GitTriggerSpec.app. */
   app?: string | null;
   /** See GitTriggerSpec.target. */
-  target?: { app: string; path: string; method: 'POST' | 'GET' } | null;
+  target?: { app: string; path: string; method: 'POST' | 'GET'; payload?: Record<string, unknown> } | null;
+  /** type=cron only — see GitTriggerSpec.everySeconds. */
+  everySeconds?: number;
   /** Session reminder only — see GitTriggerSpec.reminder. */
   reminder?: { everySeconds: number | null } | null;
   /** type=cron only — see GitTriggerSpec.maxLatenessSeconds. */
@@ -105,6 +107,7 @@ export function triggerScheduleRevision(spec: TriggerScheduleSpec): string {
     ...(spec.type === 'app' ? { app: spec.app ?? null } : {}),
     // Joins only when set, like the fields below: a spec without a target keeps its revision.
     ...(spec.target ? { target: spec.target } : {}),
+    ...(spec.everySeconds ? { everySeconds: spec.everySeconds } : {}),
     // Same rule as the monitor fields: absent for every manifest trigger.
     ...(spec.reminder ? { reminderEverySeconds: spec.reminder.everySeconds } : {}),
     // Joins only when set: the claim reads it from the stored spec, which is
@@ -167,7 +170,7 @@ function cronJitterMs(cron: Cron, after: Date, key: string, windowMs: number): n
 }
 
 export function nextTriggerScheduleSlot(
-  spec: Pick<TriggerScheduleSpec, 'type' | 'enabled' | 'cron' | 'runAt' | 'timezone' | 'reminder'>,
+  spec: Pick<TriggerScheduleSpec, 'type' | 'enabled' | 'cron' | 'runAt' | 'timezone' | 'reminder' | 'everySeconds'>,
   after: Date,
   options: { includePastOneOff?: boolean; jitterKey?: string; jitterWindowMs?: number } = {},
 ): Date | null {
@@ -178,8 +181,8 @@ export function nextTriggerScheduleSlot(
     if (runAtMs > after.getTime()) return new Date(runAtMs);
     return options.includePastOneOff ? new Date(runAtMs) : null;
   }
-  // A reminder's period runs from the claim, so a missed slot never bunches up.
-  const everySeconds = spec.reminder?.everySeconds;
+  // An `every` period (a schedule's, or a reminder's) runs from the claim, so a missed slot never bunches up.
+  const everySeconds = spec.everySeconds ?? spec.reminder?.everySeconds;
   if (everySeconds) return new Date(after.getTime() + everySeconds * 1000);
   if (!spec.cron) return null;
   const error = validateTriggerCron(spec.cron, spec.timezone);

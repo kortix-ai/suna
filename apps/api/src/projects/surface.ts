@@ -66,6 +66,8 @@ export { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
 export { listResolvedProjectSecrets } from './secrets';
 // App events (`type: app` triggers): apps/event-routes.ts appends through these.
 export { ingestAppEvents, parseAppEventsBody, type AppEventInput } from './lib/app-events';
+// One-off App runs (runAfter / runAt) on the trigger engine.
+export { cancelAppRun, insertAppRun } from './lib/app-runs';
 export { currentInstanceId } from './instance-scope';
 
 // What account erasure deletes outside the database (consumed by

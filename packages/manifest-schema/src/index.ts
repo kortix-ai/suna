@@ -1422,7 +1422,8 @@ function validateTriggerTarget(entry: Record<string, unknown>, where: string, ty
   };
   if (type === 'monitor') return push('', 'is not valid on a monitor trigger.');
   if (!isTable(target)) return push('', 'must be a table: { app, path, method }.');
-  for (const key of Object.keys(target)) if (!['app', 'path', 'method'].includes(key)) push(`.${key}`, 'is not a target field (app, path, method).');
+  for (const key of Object.keys(target)) if (!['app', 'path', 'method', 'payload'].includes(key)) push(`.${key}`, 'is not a target field (app, path, method, payload).');
+  if (target.payload !== undefined && !isTable(target.payload)) push('.payload', 'must be a table.');
   if (typeof target.app !== 'string' || !APP_SLUG_RE.test(target.app.trim())) push('.app', 'must be the slug of an App in this project.');
   if (target.path !== undefined && (typeof target.path !== 'string' || !target.path.startsWith('/'))) push('.path', 'must be an HTTP path starting with /.');
   if (target.method !== undefined && target.method !== 'POST' && target.method !== 'GET') push('.method', 'must be POST or GET.');
@@ -1529,7 +1530,9 @@ export function validateTriggers(node: unknown, path: string, issues: ManifestIs
           : typeof entry.runAt === 'string'
             ? entry.runAt.trim()
             : '';
-      if (runAt) {
+      if (entry.every !== undefined) {
+        if (cron || runAt) issues.push({ path: `${where}.every`, message: 'declare one of cron, run_at or every.', severity: 'error' });
+      } else if (runAt) {
         if (Number.isNaN(Date.parse(runAt))) {
           issues.push({
             path: `${where}.run_at`,
@@ -1540,7 +1543,7 @@ export function validateTriggers(node: unknown, path: string, issues: ManifestIs
       } else if (!cron) {
         issues.push({
           path: `${where}.cron`,
-          message: 'cron triggers must declare a `cron` expression or a one-off `run_at`.',
+          message: 'cron triggers must declare a `cron` expression, an `every` period, or a one-off `run_at`.',
           severity: 'error',
         });
       } else {
@@ -1611,6 +1614,10 @@ export function validateTriggers(node: unknown, path: string, issues: ManifestIs
       validateAppTrigger(entry, where, issues);
     }
     validateTriggerTarget(entry, where, type, issues);
+    if (entry.every !== undefined) {
+      if (type !== 'cron') issues.push({ path: `${where}.every`, message: `is only valid on a cron trigger (type is "${type}").`, severity: 'error' });
+      else validateMonitorDuration(entry.every, `${where}.every`, 60, issues);
+    }
     if (type && type !== 'app' && entry.app !== undefined) {
       issues.push({
         path: `${where}.app`,

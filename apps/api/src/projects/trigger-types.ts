@@ -109,7 +109,13 @@ export interface GitTriggerSpec {
    * the App and sends the payload to `method path` (apps/app-call.ts). Absent:
    * the fire starts or continues an agent session, as before.
    */
-  target?: { app: string; path: string; method: 'POST' | 'GET' } | null;
+  target?: { app: string; path: string; method: 'POST' | 'GET'; payload?: Record<string, unknown> } | null;
+  /**
+   * For type=cron only (`every`): a fixed period in whole seconds instead of a
+   * `cron` or `run_at`. The period runs from each claim, so missed slots never
+   * bunch up. Omitted when unset.
+   */
+  everySeconds?: number;
   /**
    * Session reuse policy.
    * - `'fresh'` (default): every fire mints a brand-new session (new sandbox +

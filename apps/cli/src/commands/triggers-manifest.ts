@@ -311,6 +311,15 @@ export function appFlagProblem(type: string, tf: Record<string, string | undefin
   return stray ? `${stray[0]} is not valid on an app trigger: the App decides when to fire.` : null;
 }
 
+/** `--every` is a cron trigger's alternative to `--cron`; `--target-*` needs `--target-app` and no monitor. */
+export function scheduleFlagProblem(type: string, tf: Record<string, string | undefined>): string | null {
+  if (tf.every && type !== 'cron') return '--every is only valid on a cron trigger (--type cron).';
+  if (tf.every && (tf.cron || tf.runAt)) return '--every, --cron and --run-at are exclusive: pass one.';
+  if (tf.targetPath && !tf.targetApp) return '--target-path needs --target-app <slug>.';
+  if (tf.targetApp && type === 'monitor') return '--target-app is not valid on a monitor trigger.';
+  return null;
+}
+
 export async function triggersAddLocal(
   slug: string | undefined,
   tf: Record<string, string | undefined>,
@@ -322,15 +331,15 @@ export async function triggersAddLocal(
   if (type !== 'cron' && type !== 'webhook' && type !== 'monitor' && type !== 'event' && type !== 'app') {
     return fail('--type must be cron, webhook, monitor, event, or app.');
   }
-  if (!tf.prompt) return fail('--prompt is required.');
+  if (!tf.prompt && !tf.targetApp) return fail('--prompt is required (or --target-app).');
   if (type !== 'event') {
     const stray = strayEventFlag(tf);
     if (stray) return fail(stray);
   }
-  const appProblem = appFlagProblem(type, tf);
+  const appProblem = appFlagProblem(type, tf) ?? scheduleFlagProblem(type, tf);
   if (appProblem) return fail(appProblem);
-  if (type === 'cron' && !tf.cron) {
-    return fail('cron triggers need --cron "<6-field expr>".');
+  if (type === 'cron' && !tf.cron && !tf.every) {
+    return fail('cron triggers need --cron "<6-field expr>" or --every <dur>.');
   }
   // Monitor flags on a cron/webhook trigger are a hard error, not a silent
   // drop — the platform would never read them.
@@ -378,7 +387,9 @@ export async function triggersAddLocal(
     fields.type = type;
     if (tf.agent) fields.agent = tf.agent;
     fields.enabled = !disabled;
-    if (type === 'cron') {
+    if (type === 'cron' && tf.every) {
+      fields.every = tf.every;
+    } else if (type === 'cron') {
       fields.cron = tf.cron;
       fields.timezone = tf.timezone ?? 'UTC';
     } else if (type === 'monitor' && monitor) {
@@ -404,7 +415,8 @@ export async function triggersAddLocal(
       fields.secret_env = tf.secretEnv;
     }
     Object.assign(fields, caps);
-    fields.prompt = tf.prompt;
+    if (tf.targetApp) fields.target = { app: tf.targetApp, ...(tf.targetPath ? { path: tf.targetPath } : {}) };
+    if (tf.prompt) fields.prompt = tf.prompt;
     appendArrayBlock('triggers', fields);
     process.stdout.write(
       `${status.ok(`Added [[triggers]] ${C.bold}${slug}${C.reset} (${type}) to kortix.yaml`)} ${C.dim}— \`kortix ship\` to apply.${C.reset}\n`,

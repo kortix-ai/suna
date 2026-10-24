@@ -1817,6 +1817,26 @@ describe('kortix triggers — app triggers', () => {
     expect(text).not.toContain('timezone:');
   });
 
+  test('add writes an every schedule that calls an App, with no prompt', async () => {
+    const result = await runCli(['triggers', 'add', 'poll-bank', '--type', 'cron', '--every', '5m', '--target-app', 'bank-watcher', '--target-path', '/tick']);
+    expect(result.code).toBe(0);
+    const text = manifestText();
+    expect(text).toContain('every: 5m');
+    expect(text).toContain('app: bank-watcher');
+    expect(text).toContain('path: /tick');
+    expect(text).not.toContain('cron:');
+    expect(text).not.toContain('prompt:');
+  });
+
+  test('add refuses --every with --cron, --every on a webhook, and --target-path alone', async () => {
+    const both = await runCli(['triggers', 'add', 'a', '--type', 'cron', '--every', '5m', '--cron', '0 0 9 * * *', '--prompt', 'x']);
+    expect([both.code, both.stderr.includes('--every, --cron and --run-at are exclusive')]).toEqual([2, true]);
+    const webhook = await runCli(['triggers', 'add', 'b', '--type', 'webhook', '--secret-env', 'S', '--every', '5m', '--prompt', 'x']);
+    expect([webhook.code, webhook.stderr.includes('--every is only valid on a cron trigger')]).toEqual([2, true]);
+    const path = await runCli(['triggers', 'add', 'c', '--type', 'cron', '--cron', '0 0 9 * * *', '--target-path', '/x', '--prompt', 'x']);
+    expect([path.code, path.stderr.includes('--target-path needs --target-app')]).toEqual([2, true]);
+  });
+
   test('add refuses an app trigger without --app, with --cron, and --app on a cron trigger', async () => {
     const noApp = await runCli(['triggers', 'add', 'a', '--type', 'app', '--prompt', 'x']);
     expect([noApp.code, noApp.stderr.includes('app triggers need --app <slug>')]).toEqual([2, true]);

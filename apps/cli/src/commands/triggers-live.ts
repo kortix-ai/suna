@@ -12,7 +12,7 @@ import {
 } from '../command-helpers.ts';
 import { C, status } from '../style.ts';
 import { checkEventConfig, eventNextStep, surfaceEventTriggerError } from './triggers-events.ts';
-import { appFlagProblem, parseEventFlags, parseFilterFlags, parseMonitorFlags, parseRunCapFlags, strayEventFlag } from './triggers-manifest.ts';
+import { appFlagProblem, scheduleFlagProblem, parseEventFlags, parseFilterFlags, parseMonitorFlags, parseRunCapFlags, strayEventFlag } from './triggers-manifest.ts';
 
 // ── The LIVE path (--apply, and every `set`) ───────────────────────────────
 //
@@ -76,16 +76,16 @@ export async function triggersAddLive(
   if (type !== 'cron' && type !== 'webhook' && type !== 'monitor' && type !== 'event' && type !== 'app') {
     return fail('--type must be cron, webhook, monitor, event, or app.');
   }
-  if (!tf.prompt) return fail('--prompt is required.');
+  if (!tf.prompt && !tf.targetApp) return fail('--prompt is required (or --target-app).');
   if (type !== 'event') {
     const stray = strayEventFlag(tf);
     if (stray) return fail(stray);
   }
-  const appProblem = appFlagProblem(type, tf);
+  const appProblem = appFlagProblem(type, tf) ?? scheduleFlagProblem(type, tf);
   if (appProblem) return fail(appProblem);
   if (tf.cron && tf.runAt) return fail('--cron and --run-at are exclusive — pass one.');
-  if (type === 'cron' && !tf.cron && !tf.runAt) {
-    return fail('cron triggers need --cron "<6-field expr>" or --run-at <iso>.');
+  if (type === 'cron' && !tf.cron && !tf.runAt && !tf.every) {
+    return fail('cron triggers need --cron "<6-field expr>", --every <dur> or --run-at <iso>.');
   }
   if (type === 'webhook' && !tf.secretEnv) {
     return fail('webhook triggers need --secret-env <NAME>.');
@@ -106,7 +106,8 @@ export async function triggersAddLive(
     slug,
     name: tf.name ?? slug,
     type,
-    prompt_template: tf.prompt,
+    ...(tf.prompt ? { prompt_template: tf.prompt } : {}),
+    ...(tf.targetApp ? { target: { app: tf.targetApp, ...(tf.targetPath ? { path: tf.targetPath } : {}) } } : {}),
     enabled: !disabled,
     ...(tf.agent ? { agent: tf.agent } : {}),
     ...(tf.model ? { model: tf.model } : {}),
@@ -114,7 +115,9 @@ export async function triggersAddLive(
     ...(access ? { session_access: access } : {}),
     ...(filter ? { filter } : {}),
   };
-  if (type === 'cron') {
+  if (type === 'cron' && tf.every) {
+    body.every = tf.every;
+  } else if (type === 'cron') {
     if (tf.runAt) body.run_at = tf.runAt;
     else body.cron = tf.cron;
     body.timezone = tf.timezone ?? 'UTC';

@@ -203,6 +203,14 @@ A manual \`fire\` is never held, but it counts.
                            cron, allow for the others. On \`set\`, \`default\`
                            resets it.
 
+Schedules and App targets (add, add --apply):
+  --every <dur>            A cron trigger on a fixed period instead of --cron:
+                           5m, 1h, 1d (at least 1m).
+  --target-app <slug>      Each fire calls this App instead of running an
+                           agent: Kortix wakes it and POSTs the payload to
+                           --target-path (default /). --prompt is then optional.
+  --target-path <path>     The App path the fire calls.
+
 App options (--type app). The App decides when to fire: it POSTs events to
 $KORTIX_APP_EVENTS_URL with $KORTIX_APP_TOKEN (every App machine has both).
   --app <slug>             The App whose events fire the trigger (required).
@@ -292,6 +300,9 @@ export async function runTriggers(argv: string[]): Promise<number> {
     tf.prompt = takeFlagValue(rest, ['--prompt']);
     tf.agent = takeFlagValue(rest, ['--agent']);
     tf.cron = takeFlagValue(rest, ['--cron']);
+    tf.every = takeFlagValue(rest, ['--every']);
+    tf.targetApp = takeFlagValue(rest, ['--target-app']);
+    tf.targetPath = takeFlagValue(rest, ['--target-path']);
     tf.timezone = takeFlagValue(rest, ['--timezone']);
     tf.secretEnv = takeFlagValue(rest, ['--secret-env']);
     tf.run = takeFlagValue(rest, ['--run']);

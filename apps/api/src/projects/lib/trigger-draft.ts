@@ -12,7 +12,7 @@ import { streamSchedules } from '../trigger-events/poll-store';
 import { eventSourceAvailable } from '../trigger-events/registry';
 import { ensureProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { nextTriggerScheduleSlot, validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';
-import { GIT_TRIGGER_SESSION_MODES, type GitMonitorMode, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseMaxLateness, parseOverlap, parseRunCaps, parseAppField, parseEventFields, parseTargetField, parseMonitorFields, readManifest, triggerSpecToTomlEntry } from '../triggers';
+import { GIT_TRIGGER_SESSION_MODES, type GitMonitorMode, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseMaxLateness, parseOverlap, parseRunCaps, parseAppField, parseEventFields, parseEvery, parseTargetField, parseMonitorFields, readManifest, triggerSpecToTomlEntry } from '../triggers';
 import { PRIVATE_TRIGGER_SESSION_ACCESS, loadTriggerSessionAccessMap } from '../trigger-session-access';
 import { withProjectGitAuth } from './git';
 import { type ProjectRow, deriveKortixApiRoot, normalizeBoolean, normalizeString } from './serializers';
@@ -104,6 +104,7 @@ export async function loadTriggersForResponse(
       enabled: spec.enabled,
       cron: spec.cron,
       run_at: spec.runAt,
+      every_seconds: spec.everySeconds ?? null,
       timezone: spec.timezone,
       secret_env: spec.secretEnv,
       run: spec.run,
@@ -261,6 +262,8 @@ export interface TriggerDraft {
   app?: string | null;
   /** A fire calls this App instead of running an agent (GitTriggerSpec.target). */
   target?: GitTriggerSpec['target'];
+  /** For type=cron only — a fixed period instead of a cron expression (GitTriggerSpec.everySeconds). */
+  everySeconds?: number;
   sessionMode: GitTriggerSessionMode;
   /** For sessionMode === 'pinned' only: the exact session id to loop. */
   pinnedSessionId: string | null;
@@ -295,6 +298,9 @@ export function parseTriggerDraft(
   }
   if (type !== 'app' && body.app !== undefined && body.app !== null) {
     return { error: `app is only valid on an app trigger (type is "${type}")` };
+  }
+  if (type !== 'cron' && body.every !== undefined && body.every !== null) {
+    return { error: `every is only valid on a cron trigger (type is "${type}")` };
   }
 
   const parsedTarget = parseTargetField(body, type);
@@ -434,8 +440,17 @@ function parseCronDraft(body: Record<string, unknown>, common: DraftCommon): Tri
     const timezone = normalizeString(body.timezone) ?? 'UTC';
     const timezoneError = validateTriggerTimezone(timezone);
     if (timezoneError) return { error: timezoneError };
-    // One-off ("run once") schedules carry `run_at` instead of `cron`.
+    const every = parseEvery(body);
+    if ('error' in every) return every;
     const runAtRaw = normalizeString(body.run_at ?? body.runAt);
+    if (every.everySeconds !== undefined) {
+      if (runAtRaw || normalizeString(body.cron ?? body.schedule)) return { error: 'declare one of cron, run_at or every' };
+      return {
+        ...common, type: 'cron', cron: null, runAt: null, timezone, secretEnv: null, run: null,
+        monitorMode: null, intervalSeconds: null, expectEventWithinSeconds: null, everySeconds: every.everySeconds,
+      };
+    }
+    // One-off ("run once") schedules carry `run_at` instead of `cron`.
     if (runAtRaw) {
       const parsed = Date.parse(runAtRaw);
       if (Number.isNaN(parsed)) {
@@ -456,7 +471,7 @@ function parseCronDraft(body: Record<string, unknown>, common: DraftCommon): Tri
     }
     const cron = normalizeString(body.cron ?? body.schedule);
     if (!cron)
-      return { error: 'cron triggers must declare a `cron` expression or a one-off `run_at`' };
+      return { error: 'cron triggers must declare a `cron` expression, an `every` period, or a one-off `run_at`' };
     const cronError = validateTriggerCron(cron, timezone) ?? cronIntervalError(cron, timezone);
     if (cronError) return { error: cronError };
     return {
@@ -512,6 +527,7 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
     // `run_at` trigger would drop its schedule and fail re-validation ("cron
     // triggers must declare a `cron` expression or a one-off `run_at`").
     run_at: spec.runAt,
+    every: spec.everySeconds ? formatDurationSeconds(spec.everySeconds) : null,
     // A monitor/event rejects cron wiring outright, so its merge body must carry the
     // implicit 'UTC' as null — re-parsing the splat would otherwise fail on the
     // timezone the spec only holds as a placeholder.
@@ -585,6 +601,7 @@ export function draftToSpec(
     event: draft.event,
     ...(draft.type === 'app' ? { app: draft.app ?? null } : {}),
     ...(draft.target ? { target: draft.target } : {}),
+    ...(draft.everySeconds ? { everySeconds: draft.everySeconds } : {}),
     sessionMode: draft.sessionMode,
     pinnedSessionId: draft.pinnedSessionId,
     sessionKey: draft.sessionKey,

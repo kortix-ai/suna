@@ -48,6 +48,8 @@ export interface ProjectTriggerTarget {
   app: string;
   path: string;
   method: 'POST' | 'GET';
+  /** Fixed JSON body the call sends instead of the fire's payload. */
+  payload?: Record<string, unknown>;
 }
 
 /** Subscription state of a `type: event` trigger. */
@@ -137,6 +139,8 @@ export interface ProjectTrigger {
   app?: string | null;
   /** A fire calls this App instead of running an agent. Null or absent: an agent run. */
   target?: ProjectTriggerTarget | null;
+  /** For type='cron' with `every` — the fixed period in whole seconds. Null or absent otherwise. */
+  every_seconds?: number | null;
   prompt_template: string;
   /** Session strategy — see {@link ProjectTriggerSessionMode}. */
   session_mode: ProjectTriggerSessionMode;
@@ -269,7 +273,9 @@ export interface CreateProjectTriggerInput {
   /** Required for type='app'. Slug of the App whose events fire the trigger; the App must exist. */
   app?: string;
   /** Call an App instead of running an agent; `prompt_template` is then optional. */
-  target?: { app: string; path?: string; method?: 'POST' | 'GET' };
+  target?: { app: string; path?: string; method?: 'POST' | 'GET'; payload?: Record<string, unknown> };
+  /** For type='cron'. A fixed period such as `5m`, `1h`, `1d` (at least 1m) instead of `cron` or `run_at`. */
+  every?: string;
   /** Required for type='event'. Connector slug the event happens on. */
   connector?: string;
   /** For type='event'. Label of one shared account of the connector; omit or null for the connector default. */
@@ -332,7 +338,9 @@ export interface UpdateProjectTriggerInput {
   /** For type='app'. Slug of the App whose events fire the trigger. */
   app?: string;
   /** Call an App instead of running an agent; null clears it. */
-  target?: { app: string; path?: string; method?: 'POST' | 'GET' } | null;
+  target?: { app: string; path?: string; method?: 'POST' | 'GET'; payload?: Record<string, unknown> } | null;
+  /** For type='cron'. A fixed period such as `5m`; null clears it. */
+  every?: string | null;
   /** For type='event'. Connector slug. Changing it clears the account unless `event_account` is sent. */
   connector?: string;
   /** For type='event'. Label of one shared account of the connector; null clears it to the connector default. */

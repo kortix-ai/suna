@@ -508,6 +508,32 @@ channels:
     input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: \"0 0 9 * * *\"\n',
   },
 
+  // ─── triggers: every ─────────────────────────────────────────────────
+  {
+    name: 'every: a cron trigger may run on a fixed period',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    every: 5m\n    prompt: go\n',
+  },
+  {
+    name: 'every: with target payload',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    every: 1h\n    target: { app: w, path: /tick, payload: { a: 1 } }\n',
+  },
+  {
+    name: 'every: not on a webhook',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: HOOK_SECRET\n    every: 5m\n    prompt: go\n',
+  },
+  {
+    name: 'every: target payload must be an object',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    every: 1h\n    target: { app: w, payload: nope }\n',
+  },
+
   // ─── shared sections: triggers type = "event" ─────────────────────────
   {
     name: 'event: connector + event + config object is valid',

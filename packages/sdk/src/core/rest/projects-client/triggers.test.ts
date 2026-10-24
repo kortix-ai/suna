@@ -712,3 +712,12 @@ test('a trigger may call an App: create sends target, the listing reads it, upda
   await updateProjectTrigger('P1', 'poll-bank', clear);
   expect(last()!.body).toEqual({ target: null });
 });
+
+test('an every schedule with an App target payload: create sends every and payload, the listing reads every_seconds', async () => {
+  const input: CreateProjectTriggerInput = { name: 'Poll', type: 'cron', every: '5m', target: { app: 'w', path: '/tick', payload: { source: 'bank' } } };
+  await createProjectTrigger('P1', input);
+  expect(last()!.body).toMatchObject({ every: '5m', target: { payload: { source: 'bank' } } });
+  nextResponse = { status: 200, body: { triggers: [{ ...MONITOR_WIRE_ENTRY, type: 'cron', run: null, mode: null, every_seconds: 300 }], errors: [] } };
+  const trigger: ProjectTrigger = (await listProjectTriggers('P1')).triggers[0]!;
+  expect(trigger.every_seconds).toBe(300);
+});

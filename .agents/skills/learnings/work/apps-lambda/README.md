@@ -114,8 +114,8 @@ Decisions:
 |---|---|---|
 | 1 | event_triggers flag text | shipped #10872 (e67722ab12); relabel to "Connector event triggers" pending with 3 |
 | 2 | `type: app` triggers (App → agent) | committed c2a108c29d, live-verified on Platinum |
-| 3a | App target on the trigger engine | code done, needs integration test + commit |
-| 3b | `every` schedules, one-off runs from Apps (`runAfter` / `runAt`) | next |
+| 3a | App target on the trigger engine | committed bcbae7e5a1 |
+| 3b | `every` schedules, `target.payload`, one-off App runs (`POST …/apps/:id/runs`) | committed (this commit) |
 | 3c | remove the MCP poll loop; connector checks as schedules | after 3b |
 | 3d | remove the monitor box and `type: monitor` `run` | after 3c; check prod usage first |
 | 3e | `schedules:` / `webhooks:` / `events:` manifest + CLI/API/SDK/UI rename | waits for Marko's go on the shape |

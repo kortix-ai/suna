@@ -534,8 +534,11 @@ function triggerSchema(version: 1 | 2): JsonSchemaFragment {
           app: { type: 'string', pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$' },
           path: { type: 'string', pattern: '^/' },
           method: { type: 'string', enum: ['POST', 'GET'] },
+          payload: { type: 'object' },
         },
       },
+      // `type: cron` only: a fixed period instead of a cron expression or run_at.
+      every: durationSchema,
     },
     additionalProperties: true,
     allOf: [
@@ -569,10 +572,11 @@ function triggerSchema(version: 1 | 2): JsonSchemaFragment {
       {
         if: { properties: { type: { const: 'cron' } } },
         then: {
-          // A recurring `cron`/`schedule`, or a one-off `run_at`/`runAt`.
+          // A recurring `cron`/`schedule` or `every`, or a one-off `run_at`/`runAt`.
           anyOf: [
             { required: ['cron'] },
             { required: ['schedule'] },
+            { required: ['every'] },
             { required: ['run_at'] },
             { required: ['runAt'] },
           ],
@@ -630,9 +634,9 @@ function triggerSchema(version: 1 | 2): JsonSchemaFragment {
         then: { properties: { connector: false, account: false, source: false, event: false, config: false } },
       },
       {
-        // The misfire bound exists only on a cron trigger.
+        // The misfire bound and `every` exist only on a cron trigger.
         if: { properties: { type: { enum: ['webhook', 'monitor', 'event', 'app'] } }, required: ['type'] },
-        then: { properties: { max_lateness: false } },
+        then: { properties: { max_lateness: false, every: false } },
       },
       {
         // `interval` is the poll period: required on poll, forbidden on stream.

@@ -263,3 +263,13 @@ test('KRTX-2058 exact display occurrence for a six-field daily UTC cron excludes
   expect(nextTriggerScheduleSlot(spec, after, { jitterKey: 'synthetic-project:daily' })?.getTime())
     .toBeGreaterThan(new Date('2026-10-10T09:00:00.000Z').getTime());
 });
+
+describe('every', () => {
+  test('an every schedule fires one period after the claim and joins the revision only when set', () => {
+    const after = new Date('2026-10-24T10:00:07Z');
+    const every = schedule({ cron: null, everySeconds: 300 });
+    expect(nextTriggerScheduleSlot(every, after)?.toISOString()).toBe('2026-10-24T10:05:07.000Z');
+    expect(triggerScheduleRevision(every)).not.toBe(triggerScheduleRevision(schedule({ cron: null })));
+    expect(triggerScheduleRevision(schedule())).toBe(triggerScheduleRevision({ ...schedule(), everySeconds: undefined }));
+  });
+});

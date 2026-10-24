@@ -418,7 +418,8 @@ async function fireAppTarget(
     app: target.app,
     method: target.method,
     path: target.path,
-    payload: input.payload,
+    // A target's own payload (fixed arguments, a one-off run's body) replaces the fire's.
+    payload: target.payload ?? input.payload,
     headers: {
       'x-kortix-trigger': input.spec.slug,
       'x-kortix-trigger-source': input.source,

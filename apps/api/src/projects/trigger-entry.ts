@@ -156,6 +156,16 @@ export function parseAppField(row: Record<string, unknown>): { app: string } | {
   return { app };
 }
 
+/** The smallest `every` period: one minute, the cron floor. */
+export const TRIGGER_MIN_EVERY_SECONDS = 60;
+
+/** A schedule's `every: 5m` (cron type only), in whole seconds. Absent → `{}`. */
+export function parseEvery(row: Record<string, unknown>): { everySeconds?: number } | { error: string } {
+  if (row.every === undefined || row.every === null) return {};
+  const parsed = parseMonitorDuration(row.every, 'every', TRIGGER_MIN_EVERY_SECONDS);
+  return 'error' in parsed ? parsed : { everySeconds: parsed.seconds };
+}
+
 /**
  * `target: { app, path?, method? }`: a fire calls an App instead of running an
  * agent. Absent → `{}`, so a spec without it keeps its shape and revision.
@@ -169,13 +179,16 @@ export function parseTargetField(
   if (raw === undefined || raw === null) return {};
   if (type === 'monitor') return { error: 'target is not valid on a monitor trigger' };
   if (!isPlainObject(raw)) return { error: 'target must be an object: { app, path, method }' };
-  const { app, path = '/', method = 'POST', ...rest } = raw as Record<string, unknown>;
+  const { app, path = '/', method = 'POST', payload, ...rest } = raw as Record<string, unknown>;
   const unknown = Object.keys(rest)[0];
-  if (unknown) return { error: `target.${unknown} is not a target field (app, path, method)` };
+  if (unknown) return { error: `target.${unknown} is not a target field (app, path, method, payload)` };
+  if (payload !== undefined && (!isPlainObject(payload) || JSON.stringify(payload).length > 64 * 1024)) {
+    return { error: 'target.payload must be an object of at most 64 KiB' };
+  }
   if (typeof app !== 'string' || !APP_SLUG_RE.test(app.trim())) return { error: 'target.app must be the slug of an App in this project' };
   if (typeof path !== 'string' || !path.startsWith('/') || /[\r\n]/.test(path) || path.length > 2048) return { error: 'target.path must be an HTTP path starting with /' };
   if (method !== 'POST' && method !== 'GET') return { error: 'target.method must be POST or GET' };
-  return { target: { app: app.trim(), path, method } };
+  return { target: { app: app.trim(), path, method, ...(payload ? { payload: payload as Record<string, unknown> } : {}) } };
 }
 
 /**
@@ -418,6 +431,8 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
   if (spec.type === 'cron') {
     if (spec.runAt) {
       entry.run_at = spec.runAt;
+    } else if (spec.everySeconds) {
+      entry.every = formatDurationSeconds(spec.everySeconds);
     } else {
       entry.cron = spec.cron ?? '';
     }
@@ -506,6 +521,9 @@ function parseTriggerEntry(
   }
   if (type !== 'app' && row.app !== undefined && row.app !== null) {
     return err(slug, `app is only valid on an app trigger (type is "${type}")`);
+  }
+  if (type !== 'cron' && row.every !== undefined && row.every !== null) {
+    return err(slug, `every is only valid on a cron trigger (type is "${type}")`);
   }
 
   const prompt =
@@ -694,6 +712,19 @@ function parseTriggerEntry(
     const timezoneError = validateTriggerTimezone(timezone);
     if (timezoneError) return err(slug, timezoneError);
 
+    const every = parseEvery(row);
+    if ('error' in every) return err(slug, every.error);
+    if (every.everySeconds !== undefined) {
+      if (cron || runAtRaw) return err(slug, 'declare one of cron, run_at or every');
+      return {
+        ok: true,
+        spec: {
+          ...base, type: 'cron', cron: null, runAt: null, timezone, secretEnv: null, run: null,
+          monitorMode: null, intervalSeconds: null, expectEventWithinSeconds: null, ...lateness, everySeconds: every.everySeconds,
+        },
+      };
+    }
+
     // A one-off ("run once") schedule carries `run_at` instead of `cron`.
     if (runAtRaw) {
       const parsed = Date.parse(runAtRaw);
@@ -719,7 +750,7 @@ function parseTriggerEntry(
     }
 
     if (!cron)
-      return err(slug, 'cron triggers must declare a `cron` expression or a one-off `run_at`');
+      return err(slug, 'cron triggers must declare a `cron` expression, an `every` period, or a one-off `run_at`');
     const cronError = validateTriggerCron(cron, timezone);
     if (cronError) return err(slug, cronError);
     return {

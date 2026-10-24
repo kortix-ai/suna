@@ -1536,7 +1536,9 @@ export const TriggerSchema = z.object({
   /** For type=app only — the slug of the App whose emitted events fire the trigger. */
   app: z.string().nullable().optional(),
   /** A fire calls this App (method path) instead of running an agent. Null: an agent run. */
-  target: z.object({ app: z.string(), path: z.string(), method: z.enum(['POST', 'GET']) }).nullable().optional(),
+  target: z.object({ app: z.string(), path: z.string(), method: z.enum(['POST', 'GET']), payload: z.record(z.string(), z.unknown()).optional() }).nullable().optional(),
+  /** For type=cron with `every` — the fixed period in whole seconds; null otherwise. */
+  every_seconds: z.number().nullable().optional(),
   /**
    * For type=event only. `pending` = declared but no subscription row yet.
    * Null for every other type.

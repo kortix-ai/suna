@@ -114,7 +114,7 @@ const EVENT_BODY_KEYS = ['connector', 'event_account', 'event_source', 'event', 
 
 /** Merge-body keys owned by one trigger type, dropped when a PATCH changes the type. */
 const TYPE_SPECIFIC_BODY_KEYS = [
-  'cron', 'run_at', 'timezone', 'secret_env', 'run', 'mode', 'interval',
+  'cron', 'run_at', 'every', 'timezone', 'secret_env', 'run', 'mode', 'interval',
   'expect_event_within', 'connector', 'event_account', 'event_source', 'event', 'event_config', 'app',
 ] as const;
 
@@ -132,6 +132,7 @@ const TRIGGER_MANIFEST_KEYS = [
   'prompt_template',
   'promptTemplate',
   'cron',
+  'every',
   'schedule',
   'run_at',
   'runAt',
@@ -383,6 +384,7 @@ export function registerTriggersRoutes(): void {
             enabled: z.boolean().optional().openapi({ description: 'Default true.' }),
             cron: z.string().optional().openapi({ description: 'Cron expression. Required for a cron trigger unless run_at is set.' }),
             run_at: z.string().optional().openapi({ description: 'ISO-8601 instant for a one-off cron trigger.' }),
+            every: z.string().nullish().openapi({ description: 'A fixed period such as 5m, 1h or 1d (at least 1m), instead of cron or run_at. Cron triggers only.' }),
             timezone: z.string().optional().openapi({ description: 'IANA timezone for cron. Default UTC.' }),
             secret_env: z.string().optional().openapi({ description: 'Project secret holding the webhook signing secret. Required for a webhook trigger.' }),
             connector: z.string().optional().openapi({ description: 'Connector slug the event happens on. Required for an event trigger.' }),
@@ -395,7 +397,7 @@ export function registerTriggersRoutes(): void {
             interval: z.string().optional().openapi({ description: 'Poll period such as 5m. Monitors with mode poll only.' }),
             expect_event_within: z.string().optional().openapi({ description: 'Silence watchdog such as 1h. Monitors only.' }),
             app: z.string().optional().openapi({ description: 'Slug of the App whose events fire the trigger. Required for an app trigger.' }),
-            target: z.object({ app: z.string(), path: z.string().optional(), method: z.enum(['POST', 'GET']).optional() }).nullish().openapi({ description: 'Call an App instead of running an agent: each fire wakes the App and sends the payload to method path (default POST /). prompt_template is then optional.' }),
+            target: z.object({ app: z.string(), path: z.string().optional(), method: z.enum(['POST', 'GET']).optional(), payload: z.record(z.string(), z.any()).optional() }).nullish().openapi({ description: 'Call an App instead of running an agent: each fire wakes the App and sends the payload to method path (default POST /). prompt_template is then optional.' }),
             session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']).optional().openapi({ description: 'Whether each fire starts a new session, reuses one, pins one, or keys by session_key.' }),
             session_id: z.string().optional().openapi({ description: 'Session to pin when session_mode is pinned.' }),
             session_key: z.string().optional().openapi({ description: 'Template deriving one session per key when session_mode is keyed.' }),
@@ -600,6 +602,7 @@ export function registerTriggersRoutes(): void {
             enabled: z.boolean().optional().openapi({ description: 'Turn the trigger on or off.' }),
             cron: z.string().optional().openapi({ description: 'Cron expression.' }),
             run_at: z.string().optional().openapi({ description: 'ISO-8601 instant for a one-off trigger.' }),
+            every: z.string().nullish().openapi({ description: 'A fixed period such as 5m, 1h or 1d (at least 1m), instead of cron or run_at. Cron triggers only.' }),
             timezone: z.string().optional().openapi({ description: 'IANA timezone.' }),
             secret_env: z.string().optional().openapi({ description: 'Webhook signing secret name.' }),
             connector: z.string().optional().openapi({ description: 'Connector slug of an event trigger.' }),
@@ -608,7 +611,7 @@ export function registerTriggersRoutes(): void {
             event: z.string().optional().openapi({ description: 'The adapter event type id of an event trigger.' }),
             event_config: z.record(z.string(), z.any()).optional().openapi({ description: 'Provider event config of an event trigger.' }),
             app: z.string().optional().openapi({ description: 'App slug of an app trigger.' }),
-            target: z.object({ app: z.string(), path: z.string().optional(), method: z.enum(['POST', 'GET']).optional() }).nullish().openapi({ description: 'Call an App instead of running an agent: each fire wakes the App and sends the payload to method path (default POST /). null clears it.' }),
+            target: z.object({ app: z.string(), path: z.string().optional(), method: z.enum(['POST', 'GET']).optional(), payload: z.record(z.string(), z.any()).optional() }).nullish().openapi({ description: 'Call an App instead of running an agent: each fire wakes the App and sends the payload to method path (default POST /). null clears it.' }),
             session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']).optional().openapi({ description: 'Session reuse mode.' }),
             session_id: z.string().optional().openapi({ description: 'Session to pin.' }),
             session_key: z.string().optional().openapi({ description: 'Session key template.' }),

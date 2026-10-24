@@ -20,9 +20,11 @@ const databaseStore: TriggerRuntimeCatalogStore = {
       .where(
         and(
           eq(projectTriggerRuntime.projectId, projectId),
-          // Session reminders live only in this table. The manifest never declares
-          // them, so reconcile must not see them or it prunes them as stale.
-          sql`${projectTriggerRuntime.scheduleSpec} ->> 'reminder' is null`,
+          // Rows the manifest never declares live only in this table: session
+          // reminders (`reminder.<hex>`) and one-off App runs (`apprun.<hex>`). A
+          // manifest slug has no `.`, so reconcile skips every dotted slug, or it
+          // would prune them as stale.
+          sql`position('.' in ${projectTriggerRuntime.slug}) = 0`,
         ),
       );
   },

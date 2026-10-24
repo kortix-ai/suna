@@ -20,6 +20,8 @@ flow(
       "DELETE /v1/projects/:projectId/triggers/:slug",
       "GET /v1/projects/:projectId/apps/:appId/events/credentials",
       "POST /v1/projects/:projectId/apps/:appId/events",
+      "POST /v1/projects/:projectId/apps/:appId/runs",
+      "DELETE /v1/projects/:projectId/apps/:appId/runs/:runId",
     ],
   },
   async (ctx) => {
@@ -92,6 +94,21 @@ flow(
       if (rows.rowCount !== 1 || row?.slug !== slug || row.status !== "pending" || row.kind !== "event" || row.line.name !== "reply.received" || row.line.data.subject !== "Term sheet") {
         throw new Error(`event log: ${JSON.stringify(rows.rows)}`);
       }
+    });
+
+    await ctx.step("the App schedules a one-off run and cancels it; a wrong token, a bad body and a second cancel are refused", async () => {
+      const runs = "/v1/projects/:projectId/apps/:appId/runs";
+      const as = (bearer: string) => ({ params: { ...params, appId }, headers: { authorization: `Bearer ${bearer}` } });
+      (await anon.post(runs, { run_after: "10m" }, as("0".repeat(64)))).status(401).body().has("$.code", "app_token_invalid");
+      (await anon.post(runs, { run_after: "10m", run_at: "2030-01-01T00:00:00Z" }, as(token))).status(400);
+      (await anon.post(runs, { run_after: "soon" }, as(token))).status(400);
+      (await anon.post(runs, { run_after: "400d" }, as(token))).status(400);
+      const created = (await anon.post(runs, { run_after: "10m", path: "/tick", payload: { n: 1 } }, as(token))).status(201);
+      const runId = created.json<{ run_id: string; run_at: string }>().run_id;
+      if (!/^apprun\.[a-f0-9]{16}$/.test(runId)) throw new Error(`run: ${created.text()}`);
+      const cancel = () => anon.del("/v1/projects/:projectId/apps/:appId/runs/:runId", { params: { ...params, appId, runId }, headers: { authorization: `Bearer ${token}` } });
+      (await cancel()).status(200).body().has("$.cancelled", true);
+      (await cancel()).status(404);
     });
 
     await ctx.step("a disabled app trigger matches no event: triggers 0", async () => {

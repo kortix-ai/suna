@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 914,
+  "count": 916,
   "routes": [
     {
       "method": "GET",
@@ -1965,6 +1965,14 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/apps/:appId/rollback"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/runs"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/apps/:appId/runs/:runId"
     },
     {
       "method": "PUT",

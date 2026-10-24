@@ -493,6 +493,8 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|projects|:projectId|apps|:appId|machines|:machineId|start",
   "POST|v1|projects|:projectId|apps|:appId|machines|:machineId|stop",
   "POST|v1|projects|:projectId|apps|:appId|rollback",
+  "POST|v1|projects|:projectId|apps|:appId|runs",
+  "DELETE|v1|projects|:projectId|apps|:appId|runs|:runId",
   "PUT|v1|projects|:projectId|apps|:appId|scale",
   "POST|v1|projects|:projectId|apps|:appId|start",
   "POST|v1|projects|:projectId|apps|:appId|stop",

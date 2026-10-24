@@ -30,3 +30,13 @@ export function appEventsUrl(app: { appId: string; projectId: string }): string 
 export function appEventEnv(app: { appId: string; projectId: string }): Record<string, string> {
   return { KORTIX_APP_ID: app.appId, KORTIX_APP_EVENTS_URL: appEventsUrl(app), KORTIX_APP_TOKEN: appEventToken(app.appId) };
 }
+
+const DURATION = /^(\d+)(s|m|h|d)?$/;
+const UNIT_SECONDS = { s: 1, m: 60, h: 3600, d: 86400 } as const;
+
+/** `30s`, `10m`, `2h`, `7d`, or a number of seconds → seconds; NaN when malformed. */
+export function scheduleDelaySeconds(value: string | number): number {
+  if (typeof value === 'number') return Number.isFinite(value) && value >= 0 ? value : Number.NaN;
+  const match = DURATION.exec(value.trim());
+  return match ? Number(match[1]) * UNIT_SECONDS[(match[2] ?? 's') as keyof typeof UNIT_SECONDS] : Number.NaN;
+}
