@@ -5839,7 +5839,15 @@ const catalog = {
       "text064694999e1f": "New App event",
       "text1934aa0740bb": "Search App events",
       "text25db7e5609e5": "No App events yet",
-      "text9f8f92588517": "An App starts agents by emitting events. Add a trigger with on: { event, app } in kortix.yaml."
+      "text9f8f92588517": "An App starts agents by emitting events. Add a trigger with on: { event, app } in kortix.yaml.",
+      "text73738b374f4b": "Project admin",
+      "text2b8a7a0458b5": "The libraries every agent draws from, and how this project runs.",
+      "text4da7c2d25273": "Project resources",
+      "textc08f99e3947d": "Loops",
+      "text37737d817d12": "Back to project",
+      "text9eebeabf6094": "Could not check your access",
+      "text078931e34187": "Project admin needs the settings grant",
+      "textb24d48611918": "It needs {grant}. Anyone who manages this project can grant it."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

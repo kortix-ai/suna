@@ -20390,7 +20390,15 @@
       "text064694999e1f": "Nuevo evento de App",
       "text1934aa0740bb": "Buscar eventos de App",
       "text25db7e5609e5": "Aún no hay eventos de App",
-      "text9f8f92588517": "Una App inicia agentes emitiendo eventos. Añade un disparador con on: { event, app } en kortix.yaml."
+      "text9f8f92588517": "Una App inicia agentes emitiendo eventos. Añade un disparador con on: { event, app } en kortix.yaml.",
+      "text73738b374f4b": "Administración del proyecto",
+      "text2b8a7a0458b5": "Las bibliotecas que usa cada agente y cómo funciona este proyecto.",
+      "text4da7c2d25273": "Recursos del proyecto",
+      "textc08f99e3947d": "Recordatorios",
+      "text37737d817d12": "Volver al proyecto",
+      "text9eebeabf6094": "No se pudo comprobar tu acceso",
+      "text078931e34187": "La administración del proyecto necesita el permiso de configuración",
+      "textb24d48611918": "Necesita {grant}. Cualquier persona que gestione este proyecto puede concederlo."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

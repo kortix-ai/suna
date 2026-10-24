@@ -1,566 +1,587 @@
 'use client';
 
 /**
- * /projects/[id]/admin — the project's wp-admin-style overview.
+ * /projects/[id]/admin — Project admin.
  *
- * Kortix configuration is agent-centric: authorization is a per-agent grant on
- * the agent's `scope`, so a standalone connector, secret, skill, model, trigger
- * or reminder is inert until an agent is granted it. The day-to-day flow
- * (Customize) is organised around the agent; this dashboard is the OTHER view:
- * a full-project inventory where a manager SEES every resource at once.
+ * Customize is agent-first: an agent's page configures what that agent draws
+ * on. Project admin is the project-wide view, one full page with a rail in two
+ * groups:
  *
- * Read-only on purpose. Each section lists its resource with the few facts that
- * identify it, and links to the capability page that already owns the edit UI
- * (`capabilityLinkHref`, `agentHref`, `remindersHref`, `reviewHref`). Nothing
- * here mutates; nothing here is a second editor.
+ *  - **Project resources**: the GLOBAL variant of every library page
+ *    (Connectors, Skills, Triggers, Loops, Models, Secrets, Apps, and Repo
+ *    with `drives` on), each the complete screen its Customize route renders,
+ *    mounted with no props beyond `projectId`.
+ *  - **Settings**: every section of the project Settings page
+ *    (`project-settings-sections.ts`), plus the Members link.
  *
- * Every section reads the SAME React Query entry its capability page reads
- * (`useProjectConfig`, `useProjectTriggers`, `useProjectReminders`,
- * `useProjectSecrets`, `useReviewSummary`, `qk.project.connectors`), so the two
- * surfaces can never disagree about what a project holds.
+ * The section lives in `?section=<key>` (`projectAdminHref`); no query opens
+ * the first resource the caller may open. Only the active section mounts, and
+ * each one is a lazy chunk: opening Project admin loads one catalog, not all
+ * of them. A `?section=` this caller cannot open is rewritten to the section
+ * that opened, so the URL always names the visible pane.
  *
- * Gated on `project.settings.write` (`PROJECT_SETTINGS_WRITE`): this is the
- * project-admin view, not a member surface. A viewer without it gets a plain
- * access message, never a page of 403s.
+ * Gated on `project.settings.write`, the Settings page's own leaf. Each row
+ * then follows the rule its own surface already applies: a resource row
+ * follows `capabilityAccess` (the Customize rule), a settings row follows
+ * `isCustomizeSectionVisible` (the Settings page rule). Nothing renders until
+ * those probes, the `drives` flag and the project detail (Members needs its
+ * account) answer, so a row never appears and then leaves.
+ *
+ * The page's `SettingsNav` catches `navigate(tab)` calls from a pane. A pane
+ * that pushes its own route (ConnectorsPage opening a connector) still leaves
+ * for that route: the resource pages take no base-path prop yet.
+ *
+ * Loops and Apps are pages of the host app, not of this package. The host
+ * passes them in `hostSections`; a row without a page is not listed.
  */
 
-import type { ComponentType, ReactNode } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { lazy, Suspense, useCallback, useEffect, useMemo, type ComponentType, type ReactNode } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowUpRightIcon, UsersIcon, type Icon } from '@phosphor-icons/react';
 
-import {
-  listConnectors,
-  type AdminConnector,
-  type ProjectTrigger,
-  type ProjectReminder,
-  type ProjectSecret,
-} from '@kortix/sdk';
-import {
-  contract,
-  qk,
-  useProjectConfig,
-  useProjectModels,
-  useProjectReminders,
-  useProjectSecrets,
-  useProjectTriggers,
-  useReviewSummary,
-} from '@kortix/sdk/react';
-import {
-  ArrowRightIcon,
-  BellIcon,
-  ClockIcon,
-  CpuIcon,
-  KeyIcon,
-  LockKeyIcon,
-  PlugIcon,
-  RobotIcon,
-  SparkleIcon,
-  TrayIcon,
-} from '@phosphor-icons/react';
+import { getProjectDetail } from '@kortix/sdk';
+import { contract, invalidatePermissionProbes, qk, useFeatureFlag } from '@kortix/sdk/react';
 
-import { Badge } from '../../primitives/badge';
+import { useTranslations as useI18nTranslations } from '../../i18n';
 import { Button } from '../../primitives/button';
-import { CountBadge } from '../../primitives/count-badge';
+import { EmptyState } from '../../primitives/empty-state';
 import { ErrorState } from '../../primitives/error-state';
+import { FadedScrollArea } from '../../primitives/faded-scroll-area';
+import { SettingsSectionHeader } from '../../primitives/settings-section-header';
 import { Skeleton } from '../../primitives/skeleton';
-import { UiLink as Link } from '../../providers/ui-provider';
-import { CapabilityPageShell } from '../../customize/shared/capability-page-shell';
+import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
+import { UiLink as Link, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
+import { CapabilitiesSkeleton } from '../../customize/shared/capability-skeleton';
+import { projectSettingsSections } from '../../customize/project-settings/project-settings-sections';
+import { HubLink } from '../../internal/account-hub/account-hub-location';
+import { SETTINGS_SIDEBAR_WIDTH_PX } from '../../internal/account-hub/account-settings-shell';
+import { useIsMobile } from '../../internal/hooks';
+import { capabilityAccess } from '../../internal/layout/project-settings-nav';
+import { SettingsNavProvider } from '../../internal/layout/settings-nav-context';
+import { withStaleChunkRecovery } from '../../internal/lib/chunk-reload';
+import { detectManifestVersion } from '../../internal/lib/manifest-version';
 import {
-  agentHref,
-  capabilityLinkHref,
-  remindersHref,
-  reviewHref,
-  type CapabilityTab,
-} from '../../internal/lib/capability-tab-routes';
-import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
-import { useProjectCan, type CanResult } from '../../internal/lib/use-project-can';
+  CUSTOMIZE_SECTION_GATE_ACTIONS,
+  isCustomizeSectionVisible,
+  PROJECT_ACTIONS,
+} from '../../internal/lib/project-actions';
+import { useProjectCans, useProjectPageCans, type CanResult } from '../../internal/lib/use-project-can';
+import { cn } from '../../internal/lib/utils';
+import { hubTarget } from '../../internal/stores/account-panel-store';
+import { useSettingsPanelStore } from '../../internal/stores/settings-panel-store';
 
-/** How many rows a section shows before it defers to "View all N". */
-const MAX_ROWS = 6;
+import { buildProjectAdminNav } from './project-admin-nav';
+import {
+  DEFAULT_PROJECT_ADMIN_SECTION,
+  isProjectAdminResource,
+  parseProjectAdminSection,
+  PROJECT_ADMIN_RESOURCES,
+  projectAdminHref,
+  type ProjectAdminResourceKey,
+  type ProjectAdminSectionKey,
+  type ProjectAdminSettingsKey,
+} from './project-admin-sections';
 
-/** A verdict the engine actually returned — not a probe in flight or an error. */
-function deniedAccess(result: CanResult): boolean {
-  return !result.isLoading && !result.isError && !result.allowed;
+export { buildProjectAdminNav } from './project-admin-nav';
+export {
+  DEFAULT_PROJECT_ADMIN_SECTION,
+  parseProjectAdminSection,
+  projectAdminHref,
+  type ProjectAdminSectionKey,
+} from './project-admin-sections';
+
+type SectionPage = ComponentType<{ projectId: string }>;
+
+/** Pages that live in the host app (`apps/web`), passed in by its route. */
+export type ProjectAdminHostSections = Partial<Record<'loops' | 'apps', SectionPage>>;
+
+function lazyPage<M>(load: () => Promise<M>, pick: (mod: M) => SectionPage) {
+  return lazy(withStaleChunkRecovery(() => load().then((mod) => ({ default: pick(mod) }))));
 }
 
-export function ProjectAdminDashboard({ projectId }: { projectId: string }) {
-  const canAdmin = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
-
-  if (deniedAccess(canAdmin)) {
-    return (
-      <CapabilityPageShell
-        title="Admin"
-        description="A full-project overview of every resource."
-      >
-        <div className="bg-popover flex flex-col items-center gap-2 rounded-md border px-4 py-16 text-center">
-          <span className="bg-muted text-muted-foreground flex size-9 items-center justify-center rounded-md">
-            <LockKeyIcon className="size-5" />
-          </span>
-          <h2 className="text-foreground text-sm font-medium">You don&apos;t have access</h2>
-          <p className="text-muted-foreground max-w-sm text-sm text-balance">
-            The admin overview needs the project settings permission. Ask a project manager
-            to grant it.
-          </p>
-        </div>
-      </CapabilityPageShell>
-    );
-  }
-
-  return (
-    <CapabilityPageShell
-      title="Admin"
-      description="A full-project overview of every resource an agent can be granted."
-      wide
-    >
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <AgentsSection projectId={projectId} />
-        <SkillsSection projectId={projectId} />
-        <ConnectorsSection projectId={projectId} />
-        <TriggersSection projectId={projectId} />
-        <RemindersSection projectId={projectId} />
-        <ModelsSection projectId={projectId} />
-        <SecretsSection projectId={projectId} />
-        <ReviewSection projectId={projectId} />
-      </div>
-    </CapabilityPageShell>
-  );
-}
-
-/* ------------------------------------------------------------------ frame */
-
-interface ResourceCardProps {
-  icon: ComponentType<{ className?: string }>;
-  title: string;
-  /** The capability page that owns editing this resource. Null = host serves
-   *  no customize pages; the Manage link is then omitted. */
-  href: string | null;
-  /** Total resources, shown as the count beside the title. Undefined = still
-   *  loading. */
-  count: number | undefined;
-  children: ReactNode;
-}
-
-/** One dashboard widget: a flush bordered panel with a header seam and a body.
- *  Hand-composed (not `Card`) so the header and the list sit edge-to-edge with
- *  one hairline between them — the sanctioned panel-with-flush-child pattern. */
-function ResourceCard({ icon: Icon, title, href, count, children }: ResourceCardProps) {
-  return (
-    <section className="bg-popover flex flex-col overflow-hidden rounded-md border">
-      <div className="flex items-center gap-2.5 border-b px-4 py-3">
-        <span className="bg-muted text-muted-foreground flex size-7 shrink-0 items-center justify-center rounded-md">
-          <Icon className="size-4" />
-        </span>
-        <h2 className="text-foreground text-sm font-medium">{title}</h2>
-        {count !== undefined ? <CountBadge count={count} /> : null}
-        {href ? (
-          <Button asChild variant="ghost" size="sm" className="ml-auto gap-1">
-            <Link href={href}>
-              Manage
-              <ArrowRightIcon className="size-3.5 shrink-0" />
-            </Link>
-          </Button>
-        ) : null}
-      </div>
-      <div className="flex min-h-0 flex-1 flex-col">{children}</div>
-    </section>
-  );
-}
-
-/** The body state machine shared by every list section. */
-function CardBody({
-  isLoading,
-  isError,
-  onRetry,
-  isEmpty,
-  emptyLabel,
-  children,
-}: {
-  isLoading: boolean;
-  isError: boolean;
-  onRetry?: () => void;
-  isEmpty: boolean;
-  emptyLabel: string;
-  children: ReactNode;
-}) {
-  if (isLoading) {
-    return (
-      <div className="space-y-2 px-4 py-3">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-5 w-full rounded-md" />
-        ))}
-      </div>
-    );
-  }
-  if (isError) {
-    return (
-      <div className="px-4 py-6">
-        <ErrorState
-          size="sm"
-          title="Couldn't load"
-          action={
-            onRetry ? (
-              <Button variant="outline" size="sm" onClick={onRetry}>
-                Try again
-              </Button>
-            ) : undefined
-          }
-        />
-      </div>
-    );
-  }
-  if (isEmpty) {
-    return <p className="text-muted-foreground px-4 py-4 text-xs">{emptyLabel}</p>;
-  }
-  return <ul className="py-1.5">{children}</ul>;
-}
-
-/** One list row: a name, muted supporting text, and trailing meta (a badge).
- *  A link when `rowHref` is set, inert text otherwise. */
-function ResourceRow({
-  rowHref,
-  name,
-  meta,
-  trailing,
-}: {
-  rowHref?: string | null;
-  name: string;
-  meta?: string | null;
-  trailing?: ReactNode;
-}) {
-  const body = (
-    <>
-      <span className="flex min-w-0 flex-1 items-baseline gap-2">
-        <span className="text-foreground truncate text-sm">{name}</span>
-        {meta ? (
-          <span className="text-muted-foreground truncate text-xs">{meta}</span>
-        ) : null}
-      </span>
-      {trailing ? <span className="shrink-0">{trailing}</span> : null}
-    </>
-  );
-  if (rowHref) {
-    return (
-      <li>
-        <Link
-          href={rowHref}
-          className="hover:bg-muted-foreground/5 duration-fast flex items-center gap-2 rounded-md px-4 py-1.5 transition-colors"
-        >
-          {body}
-        </Link>
-      </li>
-    );
-  }
-  return <li className="flex items-center gap-2 px-4 py-1.5">{body}</li>;
-}
-
-/** "View all N" footer when a resource has more rows than the card shows. */
-function MoreRow({ moreHref, hidden }: { moreHref: string | null; hidden: number }) {
-  if (hidden <= 0) return null;
-  const label = `View all (+${hidden} more)`;
-  if (!moreHref) return <li className="text-muted-foreground px-4 py-1.5 text-xs">{label}</li>;
-  return (
-    <li>
-      <Link
-        href={moreHref}
-        className="text-muted-foreground hover:text-foreground duration-fast block px-4 py-1.5 text-xs transition-colors"
-      >
-        {label}
-      </Link>
-    </li>
-  );
-}
-
-function capHref(projectId: string, key: CapabilityTab['key']): string | null {
-  return capabilityLinkHref(projectId, key);
-}
-
-/* --------------------------------------------------------------- sections */
-
-function AgentsSection({ projectId }: { projectId: string }) {
-  const config = useProjectConfig(projectId);
-  const agents = (config?.agents ?? []).filter((a) => !a.hidden);
-  const link = capHref(projectId, 'agent');
-  return (
-    <ResourceCard icon={RobotIcon} title="Agents" href={link} count={config ? agents.length : undefined}>
-      <CardBody
-        isLoading={!config}
-        isError={false}
-        isEmpty={agents.length === 0}
-        emptyLabel="No agents declared yet."
-      >
-        {agents.slice(0, MAX_ROWS).map((a) => (
-          <ResourceRow
-            key={a.name}
-            rowHref={agentHref(projectId, a.name)}
-            name={a.name}
-            meta={a.model ?? a.description ?? undefined}
-            trailing={a.platform ? <Badge variant="outline" size="xs">Platform</Badge> : undefined}
-          />
-        ))}
-        <MoreRow moreHref={link} hidden={agents.length - MAX_ROWS} />
-      </CardBody>
-    </ResourceCard>
-  );
-}
-
-function SkillsSection({ projectId }: { projectId: string }) {
-  const config = useProjectConfig(projectId);
-  const skills = config?.skills ?? [];
-  const link = capHref(projectId, 'skills');
-  return (
-    <ResourceCard icon={SparkleIcon} title="Skills" href={link} count={config ? skills.length : undefined}>
-      <CardBody
-        isLoading={!config}
-        isError={false}
-        isEmpty={skills.length === 0}
-        emptyLabel="No skills in this project yet."
-      >
-        {skills.slice(0, MAX_ROWS).map((s) => (
-          <ResourceRow key={s.path} rowHref={link} name={s.name} meta={s.description ?? undefined} />
-        ))}
-        <MoreRow moreHref={link} hidden={skills.length - MAX_ROWS} />
-      </CardBody>
-    </ResourceCard>
-  );
-}
-
-const CONNECTOR_STATUS: Record<
-  AdminConnector['status'],
-  { label: string; variant: 'success' | 'warning' | 'destructive' | 'outline' }
-> = {
-  active: { label: 'Active', variant: 'success' },
-  needs_auth: { label: 'Needs auth', variant: 'warning' },
-  disabled: { label: 'Disabled', variant: 'outline' },
-  error: { label: 'Error', variant: 'destructive' },
+/* The package's own pages, one lazy chunk each, mounted exactly as their
+   Customize routes mount them. */
+const RESOURCE_PAGES: Partial<Record<ProjectAdminResourceKey, SectionPage>> = {
+  connectors: lazyPage(() => import('../../customize/connectors/connectors-page'), (m) => m.ConnectorsPage),
+  skills: lazyPage(() => import('../../customize/skills/skills-page'), (m) => m.SkillsPage),
+  triggers: lazyPage(() => import('../../customize/triggers/triggers-page'), (m) => m.TriggersPage),
+  models: lazyPage(() => import('../../customize/models/models-page'), (m) => m.ModelsPage),
+  secrets: lazyPage(() => import('../../customize/secrets/secrets-page'), (m) => m.SecretsPage),
+  repo: lazyPage(() => import('../layout/project-files-view'), (m) => m.ProjectFilesView),
 };
 
-function ConnectorsSection({ projectId }: { projectId: string }) {
-  const query = useQuery({
-    queryKey: qk.project.connectors(projectId),
-    queryFn: () => listConnectors(projectId),
+/* Rail labels, keyed by section: the `hardcodedUi.i18nComplete` strings the
+   Customize bar and the sidebar already show for these libraries. */
+const RESOURCE_LABEL_KEYS = {
+  connectors: 'textc3d2e79ebdd0',
+  skills: 'text66d0f523a379',
+  triggers: 'texte62f2148a64d',
+  loops: 'textc08f99e3947d',
+  models: 'textd17d2d78d76e',
+  secrets: 'textd8707d411d99',
+  apps: 'text89dd748442c1',
+  repo: 'text91dba14806eb',
+} as const satisfies Record<ProjectAdminResourceKey, string>;
+
+/* A host page owns a full-viewport root (`AppsView` is `h-svh`). Inside this
+   pane that box would overflow by the header's height and clip its last row,
+   so the pane bounds its direct child to the pane's own height. */
+const HOST_PANE_CLASS = '*:h-full';
+
+/* The Settings page's panes, mounted with the same props and in the same
+   order `ProjectSettingsSectionPane` mounts them. */
+const SETTINGS_PAGES: Record<ProjectAdminSettingsKey, SectionPage> = {
+  general: lazyPage(() => import('../../customize/settings/tabs/general-tab'), (m) => m.GeneralTab),
+  git: lazyPage(() => import('../../customize/sections/view/git-view'), (m) => {
+    const { GitView } = m;
+    return function GitSection({ projectId }) {
+      const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+      return (
+        <div className="mx-auto w-full max-w-2xl space-y-8">
+          <SettingsSectionHeader
+            title={tI18nComplete.raw('text95ddc9c4dfd3')}
+            description={tI18nComplete.raw('texte0d7209f4c07')}
+            className="pb-1"
+          />
+          <GitView projectId={projectId} />
+        </div>
+      );
+    };
+  }),
+  sandbox: lazyPage(
+    () =>
+      Promise.all([
+        import('../../customize/settings/tabs/sandbox-tab'),
+        import('../../customize/settings/tabs/snapshots-tab'),
+      ]),
+    ([sandbox, snapshots]) => {
+      const { SandboxTab } = sandbox;
+      const { SnapshotsTab } = snapshots;
+      return function SandboxSection({ projectId }) {
+        return (
+          <div className="space-y-8">
+            <SandboxTab projectId={projectId} />
+            <SnapshotsTab projectId={projectId} />
+          </div>
+        );
+      };
+    },
+  ),
+  'feature-flags': lazyPage(
+    () => import('../../customize/settings/tabs/experimental-tab'),
+    (m) => m.ExperimentalTab,
+  ),
+  upgrades: lazyPage(() => import('../../customize/migrate-to-v2/upgrade-view'), (m) => m.UpgradesView),
+};
+
+interface RailRow {
+  key: ProjectAdminSectionKey;
+  label: string;
+  icon: Icon;
+  /** The orange dot: Upgrades on a v1 manifest. */
+  attention?: boolean;
+}
+
+/** A verdict the engine returned: not a probe in flight, not a failed probe. */
+function receivedDenial(result: CanResult | undefined): boolean {
+  return !!result && !result.isLoading && !result.isError && !result.allowed;
+}
+
+function answered(caps: Record<string, CanResult>, actions: readonly string[]): boolean {
+  return actions.every((action) => caps[action] && !caps[action].isLoading);
+}
+
+const NO_HOST_SECTIONS: ProjectAdminHostSections = {};
+
+export function ProjectAdminDashboard({
+  projectId,
+  hostSections = NO_HOST_SECTIONS,
+}: {
+  projectId: string;
+  hostSections?: ProjectAdminHostSections;
+}) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const isMobile = useIsMobile();
+  const searchParams = useUiSearchParams();
+  const router = useUiRouter();
+  const queryClient = useQueryClient();
+
+  const detail = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    enabled: !!projectId,
     ...contract('config'),
   });
-  const connectors = query.data?.connectors ?? [];
-  const link = capHref(projectId, 'connectors');
-  return (
-    <ResourceCard
-      icon={PlugIcon}
-      title="Connectors"
-      href={link}
-      count={query.isLoading ? undefined : connectors.length}
-    >
-      <CardBody
-        isLoading={query.isLoading}
-        isError={query.isError}
-        onRetry={() => query.refetch()}
-        isEmpty={connectors.length === 0}
-        emptyLabel="No connectors configured yet."
-      >
-        {connectors.slice(0, MAX_ROWS).map((c) => {
-          const status = CONNECTOR_STATUS[c.status];
-          return (
-            <ResourceRow
-              key={c.slug}
-              rowHref={link}
-              name={c.name}
-              meta={c.provider}
-              trailing={<Badge variant={status.variant} size="xs">{status.label}</Badge>}
-            />
-          );
-        })}
-        <MoreRow moreHref={link} hidden={connectors.length - MAX_ROWS} />
-      </CardBody>
-    </ResourceCard>
+  const accountId = detail.data?.project?.account_id;
+
+  // One batch for the page gate, the resource rows and Members: the same
+  // `PROJECT_PAGE_ACTIONS` batch the sidebar has usually cached already.
+  const pageCans = useProjectPageCans(projectId);
+  const settingsCans = useProjectCans(projectId, CUSTOMIZE_SECTION_GATE_ACTIONS, { accountId });
+  const canAdmin = pageCans[PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE];
+  const drives = useFeatureFlag(projectId, 'drives');
+
+  // The Customize rule for each library, without its flag clauses: a flag-off
+  // Loops page explains its own gate (`FeatureGateScreen`) instead of
+  // disappearing from the rail. Repo applies `drives` itself, below.
+  const resources = capabilityAccess(pageCans, { drives: true, reminders: true });
+  const settingsAnswered = answered(settingsCans, CUSTOMIZE_SECTION_GATE_ACTIONS);
+  const settingsProbeFailed = CUSTOMIZE_SECTION_GATE_ACTIONS.some((action) => settingsCans[action]?.isError);
+  const settled =
+    !!canAdmin &&
+    !canAdmin.isLoading &&
+    resources.settled &&
+    settingsAnswered &&
+    !drives.isLoading &&
+    // Members needs the account id: wait for the detail so it never pops in.
+    detail.isFetched;
+
+  const upgradeAttention = detail.data
+    ? detectManifestVersion(detail.data.config.manifest_raw) === 1
+    : false;
+
+  // `resources.tabs` is a fresh array each render; its contents are the key.
+  const allowedTabs = resources.tabs.join(',');
+  const drivesOn = drives.enabled;
+  const resourceRows = useMemo<RailRow[]>(() => {
+    const allowed = new Set(allowedTabs.split(','));
+    return PROJECT_ADMIN_RESOURCES.filter((r) => (r.host ? !!hostSections[r.key as 'loops' | 'apps'] : true))
+      .filter((r) => !r.capability || allowed.has(r.capability))
+      .filter((r) => r.flag !== 'drives' || drivesOn)
+      .map((r) => ({ key: r.key, label: tI18nComplete.raw(RESOURCE_LABEL_KEYS[r.key]), icon: r.icon }));
+  }, [hostSections, allowedTabs, drivesOn, tI18nComplete]);
+
+  const settingsRows = useMemo<RailRow[]>(
+    () =>
+      projectSettingsSections(tI18nComplete)
+        .filter((s): s is typeof s & { key: ProjectAdminSettingsKey } => s.key !== 'review')
+        // The Settings page's rule: a failed probe hides nothing. The pane
+        // itself reports a 403 if the server refuses it.
+        .filter(
+          (s) =>
+            settingsProbeFailed ||
+            isCustomizeSectionVisible(s.gate, (action) => settingsCans[action]?.allowed === true),
+        )
+        .map((s) => ({
+          key: s.key,
+          label: s.label,
+          icon: s.icon,
+          attention: s.key === 'upgrades' && upgradeAttention,
+        })),
+    [settingsCans, settingsProbeFailed, tI18nComplete, upgradeAttention],
   );
-}
 
-function triggerMeta(t: ProjectTrigger): string {
-  if (t.type === 'cron') return t.cron ? `cron · ${t.cron}` : 'schedule';
-  return t.type;
-}
+  const showMembers = !receivedDenial(pageCans[PROJECT_ACTIONS.PROJECT_MEMBERS_READ]);
+  const rows = [...resourceRows, ...settingsRows];
 
-function TriggersSection({ projectId }: { projectId: string }) {
-  const query = useProjectTriggers(projectId);
-  const triggers = query.data?.triggers ?? [];
-  const link = capHref(projectId, 'triggers');
+  // A section named in the URL but not listed for this caller falls back to
+  // the first listed row, so a stale link lands on a real pane.
+  const requested = parseProjectAdminSection(searchParams.get('section'));
+  const active: ProjectAdminSectionKey | undefined =
+    (requested && rows.some((r) => r.key === requested) ? requested : undefined) ??
+    (rows.some((r) => r.key === DEFAULT_PROJECT_ADMIN_SECTION) ? DEFAULT_PROJECT_ADMIN_SECTION : rows[0]?.key);
+
+  // The rail is final once `settled`: rewrite a fallen-back `?section=` so a
+  // copied link names the pane on screen.
+  const rawSection = searchParams.get('section');
+  useEffect(() => {
+    if (!settled || !active || rawSection === null || rawSection === active) return;
+    router.replace(projectAdminHref(projectId, active));
+  }, [settled, active, rawSection, projectId, router]);
+
+  const membersTab = useSettingsPanelStore((s) => s.membersTab);
+  const navigateTo = useCallback((href: string) => router.push(href), [router]);
+  const settingsNav = useMemo(
+    () =>
+      buildProjectAdminNav({
+        projectId,
+        section: active ?? DEFAULT_PROJECT_ADMIN_SECTION,
+        membersTab,
+        accountId,
+        navigateTo,
+      }),
+    [projectId, active, membersTab, accountId, navigateTo],
+  );
+
+  // The gate probe failed: say so once, instead of guessing either way.
+  if (canAdmin?.isError) {
+    return (
+      <AdminAccessCheckFailed
+        onRetry={() => {
+          void invalidatePermissionProbes(queryClient, { accountId });
+          void queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
+        }}
+      />
+    );
+  }
+
+  if (settled && (receivedDenial(canAdmin) || rows.length === 0)) {
+    return <AdminAccessDenied projectId={projectId} />;
+  }
+
+  const ActivePage = !active
+    ? null
+    : isProjectAdminResource(active)
+      ? (RESOURCE_PAGES[active] ?? hostSections[active as 'loops' | 'apps'] ?? null)
+      : SETTINGS_PAGES[active];
+
+  const members =
+    showMembers && accountId ? (
+      <MembersLink projectId={projectId} accountId={accountId} horizontal={isMobile} />
+    ) : null;
+  const title = tI18nComplete.raw('text73738b374f4b');
+
   return (
-    <ResourceCard
-      icon={ClockIcon}
-      title="Triggers"
-      href={link}
-      count={query.isLoading ? undefined : triggers.length}
-    >
-      <CardBody
-        isLoading={query.isLoading}
-        isError={query.isError}
-        onRetry={() => query.refetch()}
-        isEmpty={triggers.length === 0}
-        emptyLabel="No triggers defined yet."
+    <SettingsNavProvider value={settingsNav}>
+      <div
+        className={cn('min-h-0 flex-1 overflow-hidden', isMobile ? 'flex flex-col' : 'grid')}
+        // The Settings page's rail width, so the two settings surfaces are one shape.
+        style={isMobile ? undefined : { gridTemplateColumns: `${SETTINGS_SIDEBAR_WIDTH_PX}px 1fr` }}
       >
-        {triggers.slice(0, MAX_ROWS).map((t) => (
-          <ResourceRow
-            key={t.slug}
-            rowHref={link}
-            name={t.name}
-            meta={triggerMeta(t)}
-            trailing={
-              t.enabled ? (
-                <Badge variant="success" size="xs">On</Badge>
+        {isMobile ? (
+          <nav aria-label={title} className="border-border/60 bg-background flex shrink-0 flex-col border-b">
+            <h1 className="text-foreground px-4 pt-3 text-sm font-medium">{title}</h1>
+            <FadedScrollArea orientation="horizontal" fadeColor="from-background" className="min-w-0 flex-1 py-2">
+              {settled ? (
+                <div className="flex w-fit items-center gap-2">
+                  <Tabs value={active} className="w-fit">
+                    <TabsList orientation="horizontal" className="w-fit">
+                      {rows.map((row) => (
+                        <RailTrigger key={row.key} projectId={projectId} row={row} horizontal />
+                      ))}
+                    </TabsList>
+                  </Tabs>
+                  {members}
+                </div>
               ) : (
-                <Badge variant="outline" size="xs">Paused</Badge>
-              )
-            }
-          />
-        ))}
-        <MoreRow moreHref={link} hidden={triggers.length - MAX_ROWS} />
-      </CardBody>
-    </ResourceCard>
-  );
-}
-
-const REMINDER_STATE: Record<
-  ProjectReminder['state'],
-  { label: string; variant: 'success' | 'outline' }
-> = {
-  active: { label: 'Active', variant: 'success' },
-  paused: { label: 'Paused', variant: 'outline' },
-  done: { label: 'Done', variant: 'outline' },
-};
-
-function reminderSchedule(r: ProjectReminder): string | null {
-  if (r.every) return `every ${r.every}`;
-  if (r.cron) return `cron · ${r.cron}`;
-  if (r.at) return 'once';
-  return null;
-}
-
-function RemindersSection({ projectId }: { projectId: string }) {
-  const query = useProjectReminders(projectId);
-  const reminders = query.data?.reminders ?? [];
-  const link = remindersHref(projectId);
-  return (
-    <ResourceCard
-      icon={BellIcon}
-      title="Reminders"
-      href={link}
-      count={query.isLoading ? undefined : reminders.length}
-    >
-      <CardBody
-        isLoading={query.isLoading}
-        isError={query.isError}
-        onRetry={() => query.refetch()}
-        isEmpty={reminders.length === 0}
-        emptyLabel="No reminders scheduled yet."
-      >
-        {reminders.slice(0, MAX_ROWS).map((r) => {
-          const state = REMINDER_STATE[r.state];
-          return (
-            <ResourceRow
-              key={r.id}
-              rowHref={link}
-              name={r.name || r.prompt}
-              meta={reminderSchedule(r)}
-              trailing={<Badge variant={state.variant} size="xs">{state.label}</Badge>}
-            />
-          );
-        })}
-        <MoreRow moreHref={link} hidden={reminders.length - MAX_ROWS} />
-      </CardBody>
-    </ResourceCard>
-  );
-}
-
-function ModelsSection({ projectId }: { projectId: string }) {
-  const models = useProjectModels(projectId);
-  const link = capHref(projectId, 'models');
-  return (
-    <ResourceCard icon={CpuIcon} title="Models" href={link} count={models.length}>
-      <CardBody
-        isLoading={false}
-        isError={false}
-        isEmpty={models.length === 0}
-        emptyLabel="No models available yet."
-      >
-        {models.slice(0, MAX_ROWS).map((m) => (
-          <ResourceRow
-            key={`${m.providerID}/${m.modelID}`}
-            rowHref={link}
-            name={m.modelName}
-            meta={m.provider ?? m.providerName}
-          />
-        ))}
-        <MoreRow moreHref={link} hidden={models.length - MAX_ROWS} />
-      </CardBody>
-    </ResourceCard>
-  );
-}
-
-function secretConfigured(s: ProjectSecret): boolean {
-  return s.configured || s.effective_source !== 'none';
-}
-
-function SecretsSection({ projectId }: { projectId: string }) {
-  const query = useProjectSecrets(projectId);
-  const secrets = query.data?.items ?? [];
-  const link = capHref(projectId, 'secrets');
-  return (
-    <ResourceCard
-      icon={KeyIcon}
-      title="Secrets"
-      href={link}
-      count={query.isLoading ? undefined : secrets.length}
-    >
-      <CardBody
-        isLoading={query.isLoading}
-        isError={query.isError}
-        onRetry={() => query.refetch()}
-        isEmpty={secrets.length === 0}
-        emptyLabel="No secrets stored yet."
-      >
-        {secrets.slice(0, MAX_ROWS).map((s) => (
-          <ResourceRow
-            key={s.identifier}
-            rowHref={link}
-            name={s.name}
-            meta={s.identifier === s.name ? undefined : s.identifier}
-            trailing={
-              secretConfigured(s) ? (
-                <Badge variant="success" size="xs">Set</Badge>
+                <Skeleton className="mx-3 h-7 w-64 rounded-md" />
+              )}
+            </FadedScrollArea>
+          </nav>
+        ) : (
+          <aside className="flex min-h-0 flex-col border-r bg-inherit">
+            <nav
+              aria-label={title}
+              className="flex min-h-0 flex-1 [scrollbar-width:none] flex-col gap-4 overflow-y-auto px-2 pt-4 pb-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+            >
+              <header className="space-y-1 px-2.5">
+                <h1 className="text-foreground text-base font-medium">{title}</h1>
+                <p className="text-muted-foreground text-xs text-balance">
+                  {tI18nComplete.raw('text2b8a7a0458b5')}
+                </p>
+              </header>
+              {settled ? (
+                <Tabs value={active} orientation="vertical" className="gap-4">
+                  {resourceRows.length > 0 ? (
+                    <RailGroup label={tI18nComplete.raw('text4da7c2d25273')}>
+                      {resourceRows.map((row) => (
+                        <RailTrigger key={row.key} projectId={projectId} row={row} />
+                      ))}
+                    </RailGroup>
+                  ) : null}
+                  {settingsRows.length > 0 || members ? (
+                    <RailGroup label={tI18nComplete.raw('text74a883a037bc')} after={members}>
+                      {settingsRows.map((row) => (
+                        <RailTrigger key={row.key} projectId={projectId} row={row} />
+                      ))}
+                    </RailGroup>
+                  ) : null}
+                </Tabs>
               ) : (
-                <Badge variant="outline" size="xs">Unset</Badge>
-              )
-            }
-          />
-        ))}
-        <MoreRow moreHref={link} hidden={secrets.length - MAX_ROWS} />
-      </CardBody>
-    </ResourceCard>
+                <RailSkeleton />
+              )}
+            </nav>
+          </aside>
+        )}
+
+        <main className="bg-background flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          {settled && ActivePage && active ? (
+            <Suspense key={active} fallback={<CapabilitiesSkeleton />}>
+              {isProjectAdminResource(active) ? (
+                <div
+                  className={cn(
+                    'flex min-h-0 flex-1 flex-col overflow-hidden',
+                    (active === 'loops' || active === 'apps') && HOST_PANE_CLASS,
+                  )}
+                >
+                  <ActivePage projectId={projectId} />
+                </div>
+              ) : (
+                <div className="mx-auto flex min-h-0 w-full flex-1 flex-col space-y-6 overflow-y-auto px-4 py-10 pb-20 lg:py-14">
+                  <ActivePage projectId={projectId} />
+                </div>
+              )}
+            </Suspense>
+          ) : (
+            <CapabilitiesSkeleton />
+          )}
+        </main>
+      </div>
+    </SettingsNavProvider>
   );
 }
 
-function ReviewSection({ projectId }: { projectId: string }) {
-  const query = useReviewSummary(projectId);
-  const needsYou = query.data?.needs_you_total ?? 0;
-  const link = reviewHref(projectId);
+/* ------------------------------------------------------------------ rail */
+
+/**
+ * The account hub's group label dialect (`account-settings-sidebar.tsx`).
+ * Each group is its own labelled tablist: arrow keys move inside a group, Tab
+ * moves to the next one. `after` sits below the list, outside it: a link that
+ * is not a tab (Members).
+ */
+function RailGroup({ label, children, after }: { label: string; children: ReactNode; after?: ReactNode }) {
   return (
-    <ResourceCard
-      icon={TrayIcon}
-      title="Review"
-      href={link}
-      count={query.isLoading ? undefined : needsYou}
+    <div>
+      <p className="text-muted-foreground flex h-8 items-center px-2.5 text-xs font-medium">{label}</p>
+      <TabsList orientation="vertical" aria-label={label} className="w-full">
+        {children}
+      </TabsList>
+      {after}
+    </div>
+  );
+}
+
+/** The Settings page's rail-row dialect (`project-settings-page.tsx`). */
+const ROW_CLASS = cn(
+  'gap-2 px-2.5 py-1 font-normal transition-none has-[>svg]:px-2.5',
+  'text-foreground data-[state=inactive]:text-foreground hover:bg-hover hover:text-foreground',
+  'data-[state=active]:bg-active data-[state=active]:font-medium',
+  '[&_svg]:text-muted-foreground data-[state=active]:[&_svg]:text-foreground',
+);
+const HORIZONTAL_ROW_CLASS = 'w-auto shrink-0 gap-2.5 px-3 py-0.75 whitespace-nowrap';
+
+/** One row: a real link inside the trigger, since the section is URL state. */
+function RailTrigger({
+  projectId,
+  row,
+  horizontal = false,
+}: {
+  projectId: string;
+  row: RailRow;
+  horizontal?: boolean;
+}) {
+  const Glyph = row.icon;
+  return (
+    <TabsTrigger
+      value={row.key}
+      asChild
+      size={horizontal ? undefined : 'md'}
+      className={horizontal ? HORIZONTAL_ROW_CLASS : ROW_CLASS}
     >
-      <CardBody
-        isLoading={query.isLoading}
-        isError={query.isError}
-        onRetry={() => query.refetch()}
-        isEmpty={false}
-        emptyLabel=""
-      >
-        <ResourceRow
-          rowHref={link}
-          name={needsYou === 0 ? 'Nothing waiting on you' : `${needsYou} waiting on you`}
-          meta={needsYou === 0 ? 'The inbox is clear' : 'Open the review inbox'}
-        />
-      </CardBody>
-    </ResourceCard>
+      <Link href={projectAdminHref(projectId, row.key)} prefetch>
+        <Glyph className="size-4 shrink-0" />
+        <span className={cn(!horizontal && 'truncate')}>{row.label}</span>
+        {row.attention ? (
+          <span
+            aria-hidden
+            className={cn('bg-kortix-orange size-1.5 shrink-0 rounded-full', !horizontal && 'ml-auto')}
+          />
+        ) : null}
+      </Link>
+    </TabsTrigger>
+  );
+}
+
+/**
+ * Members is the account hub's project panel, not a pane of this page, so it
+ * is a plain link, not a tab. It opens the hub the way the Customize bar's
+ * Members link does. Its classes copy a rail row's resting state.
+ */
+const MEMBERS_LINK_CLASS = cn(
+  'text-foreground hover:bg-hover flex items-center gap-2 rounded-md px-2.5 text-sm',
+  'focus-visible:ring-kortix-blue focus-visible:ring-1 focus-visible:outline-none',
+  '[&_svg]:text-muted-foreground',
+);
+
+function MembersLink({
+  projectId,
+  accountId,
+  horizontal,
+}: {
+  projectId: string;
+  accountId: string;
+  horizontal: boolean;
+}) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  return (
+    <HubLink
+      to={hubTarget(accountId, { tab: 'access-projects', project: projectId })}
+      className={cn(MEMBERS_LINK_CLASS, horizontal ? 'h-8 shrink-0 whitespace-nowrap' : 'h-10 w-full')}
+    >
+      <UsersIcon aria-hidden className="size-4 shrink-0" />
+      <span className={cn(!horizontal && 'truncate')}>{tI18nComplete.raw('text1044a4c056d0')}</span>
+      <ArrowUpRightIcon aria-hidden className={cn('size-3 shrink-0', !horizontal && 'ml-auto')} />
+    </HubLink>
+  );
+}
+
+/** The loaded rail's shape: two labelled groups of icon + label rows. */
+const RAIL_SKELETON_GROUPS = [
+  ['w-20', 'w-12', 'w-16', 'w-12', 'w-14', 'w-14', 'w-10'],
+  ['w-14', 'w-16', 'w-28', 'w-20', 'w-16', 'w-16'],
+];
+
+function RailSkeleton() {
+  return (
+    <div className="space-y-4" aria-hidden>
+      {RAIL_SKELETON_GROUPS.map((group, g) => (
+        <div key={g} className="space-y-1">
+          <Skeleton className="mx-2.5 my-2 h-3 w-20 rounded-sm" />
+          {group.map((width, i) => (
+            <div key={i} className="flex h-8 items-center gap-2 px-2.5">
+              <Skeleton className="size-4 shrink-0 rounded-sm" />
+              <Skeleton className={cn('h-3.5 rounded-sm', width)} />
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ----------------------------------------------------------------- states */
+
+function AdminAccessDenied({ projectId }: { projectId: string }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  // The voice rule for a refused action (voice-and-tone.md section 4): name
+  // the grant in mono once, then say who can grant it.
+  const [beforeGrant, afterGrant] = tI18nComplete.raw('textb24d48611918').split('{grant}');
+  return (
+    <div className="flex min-h-0 flex-1 items-center justify-center px-4 py-8">
+      <EmptyState
+        size="sm"
+        title={tI18nComplete.raw('text078931e34187')}
+        description={
+          <>
+            {beforeGrant}
+            <code className="font-mono">{PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE}</code>
+            {afterGrant}
+          </>
+        }
+        action={
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/projects/${projectId}`}>{tI18nComplete.raw('text37737d817d12')}</Link>
+          </Button>
+        }
+      />
+    </div>
+  );
+}
+
+function AdminAccessCheckFailed({ onRetry }: { onRetry: () => void }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  return (
+    <div className="flex min-h-0 flex-1 items-center justify-center px-4 py-8">
+      <ErrorState
+        size="sm"
+        title={tI18nComplete.raw('text9eebeabf6094')}
+        description={tI18nComplete.raw('texta0c2cc1374d9')}
+        action={
+          <Button variant="outline" size="sm" onClick={onRetry}>
+            {tI18nComplete.raw('textd8b8392e2c54')}
+          </Button>
+        }
+      />
+    </div>
   );
 }
