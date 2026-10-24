@@ -1248,7 +1248,7 @@
           "description": "セッションに関わる人（プロンプトを送った人、作成者、フォロワー）に、ベルの受信箱、ブラウザのプッシュ通知、メールで知らせ、失敗したトリガーとリマインダーを通知します。オフの場合、セッションのプッシュ通知はセッション作成者のスマートフォンにのみ届き、トリガーが失敗し始めるとアカウントオーナーのスマートフォンにプッシュ通知が届きます。"
         },
         "event_triggers": {
-          "name": "コネクタイベントトリガー",
+          "name": "Composio イベントトリガー",
           "description": "連携したアプリで何かが起きたときにエージェントを起動します。新しいメール、プルリクエスト、カレンダーの予定など。イベントは Composio から届きます。Kortix が連携済みアプリを自分でも確認します。"
         },
         "volumes": {
@@ -22779,7 +22779,9 @@
     "diagramEdit": "図を編集",
     "diagramDone": "完了",
     "codeLanguage": "コードの言語",
-    "editedAgo": "{time}に編集"
+    "editedAgo": "{time}に編集",
+    "openFullPage": "ページ全体で開く",
+    "close": "閉じる"
   },
   "emailConnect": {
     "homeTitle": "受信箱の場所",
@@ -22852,5 +22854,56 @@
     "removeDeletes": "アカウントを削除し、Resend の {address} も削除します。以後このアドレス宛てのメールは返送されます。",
     "removeKeeps": "Kortix からアカウントを削除します。{address} は Resend アカウントに残ります。",
     "removed": "受信箱を削除しました"
+  },
+  "connectorPolicySets": {
+    "rulesFor": "ルールの対象",
+    "baseRules": "基本ルール",
+    "newSet": "新しいルールセット…",
+    "baseHint": "ルールセットのない呼び出し元はこのルールに従います。ルールセットは、割り当てたエージェントのルールを変更します。",
+    "setHint": "{name} を割り当てたエージェントにのみ適用されます。「継承」のツールは基本ルールに従います。",
+    "usedBy": "{agents} が使用中",
+    "unused": "このルールセットを使っているエージェントはまだありません。エージェントのコネクタページで選択してください。",
+    "edit": "ルールセットを編集",
+    "delete": "ルールセットを削除",
+    "deleteInUse": "{agents} が使用中です。先にそのエージェントに別のルールセットを割り当ててください。",
+    "deleteTitle": "ルールセット {name} を削除しますか?",
+    "deleteBody": "そのルールは kortix.yaml から削除されます。元に戻せません。",
+    "deleteConfirm": "削除",
+    "deleted": "ルールセット {name} を削除しました",
+    "createTitle": "新しいルールセット",
+    "createBody": "一部のエージェントにこのコネクタで別のルールを与えます。アカウントは同じままです。",
+    "editTitle": "ルールセットを編集",
+    "editBody": "名前を変更すると、このルールセットを使うすべてのエージェントが更新されます。",
+    "nameLabel": "名前",
+    "nameHelp": "小文字、数字、_ と - が使えます。base という名前は予約済みです。",
+    "nameTaken": "このコネクタには同じ名前のルールセットがすでにあります。",
+    "descriptionLabel": "説明",
+    "descriptionPlaceholder": "読み取りと検索のみ、送信はしない",
+    "cancel": "キャンセル",
+    "create": "作成",
+    "save": "保存",
+    "created": "ルールセット {name} を作成しました",
+    "saved": "ルールセットを保存しました",
+    "loadFailed": "ルールセットを読み込めませんでした",
+    "retry": "再試行",
+    "inherit": "継承",
+    "inheritBase": "基本ルールを継承: {action}。",
+    "inheritDefault": "基本ルールを継承します。このツールを指定する基本ルールがないため、コネクタの既定値で決まります。",
+    "agentSection": "ルールセット",
+    "agentSelectLabel": "{name} のルール",
+    "agentMissing": "見つかりません",
+    "agentMissingHint": "ルールセット {name} はこのコネクタにありません。ルールセットを選ぶまで、このコネクタへの呼び出しはブロックされます。",
+    "approvalSetAgent": "エージェント {agent} · ルールセット {set}",
+    "approvalSet": "ルールセット {set}",
+    "auditSet": "ルールセット {set}",
+    "bulkInheritTitle": "{count, plural, other {# 個のツール}}を基本ルールに戻しますか?",
+    "bulkInheritBody": "{group} にある各ツールについて、このルールセットのルールを削除し、基本ルールに従うようにします。パターンルールは変更されません。"
+  },
+  "sessionChangeRequests": {
+    "title": "変更リクエスト",
+    "open": "未適用",
+    "jump": "#{number} の応答に移動",
+    "unavailable": "この応答は読み込まれた履歴にはありません。",
+    "loadError": "応答を読み込めませんでした。もう一度お試しください。"
   }
 }

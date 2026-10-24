@@ -14,6 +14,7 @@
  * import cycle with `./index` is safe (see the header of `./index.v2.ts`).
  */
 
+import { validateAgentPolicySetRefs } from './policy-sets';
 import {
   AGENT_MODES_V2,
   CODEMODE_VALUES,
@@ -267,6 +268,7 @@ const AGENT_KEYS_V3 = new Set<string>([
   'extensions',
   'connectors',
   'connectors_required',
+  'policy_sets',
   'secrets',
   'apps',
   'kortix_permissions',
@@ -339,6 +341,7 @@ export function validateManifestBodyV3(
   validateBuiltinAgentsV3(parsed.builtin_agents, 'builtin_agents', agents, issues);
   validateDefaultAgentV3(parsed.default_agent, 'default_agent', agents, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', [...agents.keys()], issues);
+  validateAgentPolicySetRefs(parsed.agents, parsed.connectors, 'agents', issues);
 }
 
 /**

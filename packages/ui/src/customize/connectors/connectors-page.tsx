@@ -18,7 +18,7 @@ import {
   useUiShallowNavigate,
 } from '../../providers/ui-provider';
 import { useDebounce } from '../../hooks/use-debounce';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { PoliciesPanel } from '../../workspace/projects/policies-panel';
 import { Button } from '../../primitives/button';
@@ -278,6 +278,7 @@ export function ConnectorsPage({
   surface = { kind: 'global' },
   grant,
   required,
+  agentPanel,
 }: {
   projectId: string;
   /** `global` (default) is the project catalogue; `agent` scopes the same page
@@ -295,6 +296,9 @@ export function ConnectorsPage({
     isRequired: (slug: string) => boolean;
     toggle: (slug: string) => void;
   };
+  /** Agent scope only: agent settings that belong with its connectors (the
+   *  per-connector policy sets), shown above the catalogue. */
+  agentPanel?: ReactNode;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tAgentScope = useI18nTranslations('agentScope');
@@ -676,6 +680,7 @@ export function ConnectorsPage({
             ) : undefined
           }
         >
+          {agentScoped && agentPanel ? <div className="mb-8">{agentPanel}</div> : null}
           {channelsActive ? (
             /* The whole of what used to be `/projects/<id>/channels`, minus the
            shell it used to bring — this page's `CapabilityPageShell` is the

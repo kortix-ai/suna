@@ -13,6 +13,14 @@ import { useTranslations as useI18nTranslations } from '../../i18n';
 import { Badge } from '../../primitives/badge';
 import { Button } from '../../primitives/button';
 import { Checkbox } from '../../primitives/checkbox';
+import Hint from '../../primitives/hint';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../primitives/select';
 import { Skeleton } from '../../primitives/skeleton';
 import { EmptyState } from '../../primitives/empty-state';
 import { ErrorState } from '../../primitives/error-state';
@@ -25,6 +33,11 @@ import type { AgentGrantSetV2 } from '@kortix/sdk';
 import { useProjectApps } from '@kortix/sdk/react';
 import type { ReactNode } from 'react';
 import { appGrantRows } from './agent-apps-grant';
+import {
+  type PolicySetOption,
+  policySetRows,
+  withPolicySet,
+} from './agent-policy-sets';
 
 // ─── The shared catalog ──────────────────────────────────────────────────
 

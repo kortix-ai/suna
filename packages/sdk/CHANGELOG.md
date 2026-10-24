@@ -17,6 +17,25 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `FeatureFlagKey` `'cloud_subagents'`, listed in `FEATURE_FLAG_KEYS`: on, the pi `agent` tool runs each
   subagent as a real child session on its own sandbox. Off by default.
 
+### Added (connector policy sets)
+- `listConnectorPolicySets`, `upsertConnectorPolicySet`, `renameConnectorPolicySet`,
+  `deleteConnectorPolicySet` and the `ConnectorPolicySet` type: named rule sets on one connector
+  (`connectors[].policy_sets` in kortix.yaml) that an agent selects with `agents.<a>.policy_sets`
+  (`/connectors/projects/:id/connectors/:slug/policy-sets`). `deleteConnectorPolicySet` answers 409
+  `policy_set_in_use` (with `agents`) while an agent uses the set.
+- Facade `p.connectors.policySets.{list,upsert,rename,remove}`.
+- `ConnectorPolicySetOptions` (`{ policySet }`): the optional last argument of
+  `getConnectorPolicies` and `setConnectorPolicies` reads or writes one set's rules. Absent = the
+  base rules.
+- `ConnectorPolicyRule.conditions`, `ConnectorCatalogEntry.policy_set` (the caller's set),
+  `ConnectorCallResult.policy_set` / `.agent` (on a denial the set decided),
+  `ApprovalLinkDetails.policy_set` / `.agent`, `AgentConfigBlock.policy_sets`, and `policy_sets` on
+  the `setAgentScope` input (`null` or `base` removes one entry) and result.
+
+### Changed (connector policy sets)
+- `ConnectorPolicySource` gains `'policy_set'`. A consumer with an exhaustive `switch` over the
+  union must add the case.
+
 ### Added (share one assistant response)
 - `getTurnShare`, `shareTurn`, `unshareTurn` and the `TurnShare` type: the public share of one
   turn's response (`/projects/:id/sessions/:sid/turns/:turnId/share`, GET / PUT / DELETE). The

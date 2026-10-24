@@ -3458,6 +3458,12 @@ export interface AgentGrant {
    *  declares no Apps, and grants minted before this field existed carry none
    *  — read it through `agentMayOpenApp` (apps/api iam/agent-scope.ts). */
   apps?: string[] | 'all';
+  /** Connector slug (canonical) → the policy set this agent gets on it
+   *  (`agents.<a>.policy_sets`). ABSENT key = the connector's base rules.
+   *  Key `*` = every connector (a malformed map). A name the connector does
+   *  not define blocks that connector (`policy_set_missing`). Read through
+   *  `agentPolicySet` (apps/api iam/agent-scope.ts). JSON only, no column. */
+  policySets?: Record<string, string>;
   /**
    * PROVENANCE — which manifest this grant was derived from. Stamped by the
    * resolver (`projects/lib/secret-grant.ts`) and read by the re-mint policy
@@ -7139,6 +7145,36 @@ export const connectorPolicies = kortixSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index('idx_connector_policies_connector').on(table.connectorId)],
+);
+
+/**
+ * Named rule sets on one connector (`connectors[].policy_sets` in kortix.yaml),
+ * which an agent is given through `agents.<name>.policy_sets`. One row per set:
+ * the row is the registry (a set with zero rules is a row with `[]`), so "this
+ * set exists" and "these are its rules" never disagree.
+ *
+ * Separate from `connector_policies` on purpose: every base-rule reader loads
+ * that table by `connector_id` alone, so set rows there would apply to every
+ * caller under API code that predates sets (rollout, rollback).
+ *
+ * Single writer: the manifest materializer (connectors/sync.ts).
+ */
+export const connectorPolicySets = kortixSchema.table(
+  'connector_policy_sets',
+  {
+    connectorId: uuid('connector_id')
+      .notNull()
+      .references(() => connectors.connectorId, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description'),
+    /** Ordered rules: `{ match, action, conditions? }[]`, first match wins. */
+    policies: jsonb('policies')
+      .$type<Array<{ match: string; action: string; conditions?: ConnectorPolicyCondition[] | null }>>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.connectorId, table.name] })],
 );
 
 /**

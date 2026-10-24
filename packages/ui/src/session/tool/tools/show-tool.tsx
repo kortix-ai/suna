@@ -1,5 +1,6 @@
 'use client';
 
+import { parseArtifactUrl } from '../../../artifacts/frame-policy';
 import { Button } from '../../../primitives/button';
 import Hint from '../../../primitives/hint';
 import Loading from '../../../primitives/loading';
@@ -160,9 +161,11 @@ export function ShowTool({ call, sessionId }: ToolProps) {
   const activeItemLabel = currentItem
     ? currentItem.title || currentItem.path?.split('/').pop()
     : '';
+  // A Kortix artifact's app link is the artifact, not a website: its name and a document icon.
+  const isArtifactLink = !!activeUrl && !!parseArtifactUrl(activeUrl);
   const displayTitle = isCarousel
     ? activeItemLabel || title || `${items!.length} items`
-    : title || (type === 'error' ? 'Error' : type === 'url' ? subtitleDomain || 'Link' : 'Output');
+    : title || (isArtifactLink ? 'Artifact' : type === 'error' ? 'Error' : type === 'url' ? subtitleDomain || 'Link' : 'Output');
 
   const hoverTarget = {
     path: activePath,
@@ -185,7 +188,7 @@ export function ShowTool({ call, sessionId }: ToolProps) {
       <SessionDotMatrix sessionId={item.title || item.url} size={14} className="shrink-0" />
     ) : null;
 
-  const headerIcon = isCarousel ? currentItem?.type || 'image' : isWebsitePreview ? 'url' : type;
+  const headerIcon = isCarousel ? currentItem?.type || 'image' : isArtifactLink ? 'markdown' : isWebsitePreview ? 'url' : type;
 
   // Inline card header owns the toolbar. Panel keeps the actions inside the
   // renderer / website header as before.

@@ -26,6 +26,8 @@ import {
   ArrowCounterClockwiseIcon,
   CaretRightIcon,
   ArrowSquareOutIcon,
+  ArrowsOutSimpleIcon,
+  XIcon,
   ClockCounterClockwiseIcon,
   CornersOutIcon,
   DotsThreeIcon,
@@ -40,13 +42,13 @@ import {
 } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { drivePathToParam } from '@/features/drives/drive-path-param';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
-import { ArtifactFrame, VISIBILITY_ICON, relativeTime } from './artifact-meta';
-import { artifactFrameKey } from './frame-sandbox';
+import { VISIBILITY_ICON, relativeTime } from './artifact-meta';
+import { ArtifactFrame, artifactFrameKey, printArtifact } from '@kortix/ui/artifacts';
 import { DocEditor, type DocSaveStatus } from './doc-editor';
 import { ShareArtifactDialog } from './share-artifact-dialog';
 
@@ -81,7 +83,17 @@ function editArtifactPrompt(a: ArtifactDetail, change: string): string {
  * Files); an HTML page runs in a sandboxed frame. The history is the Files
  * commit log of its path.
  */
-export function ArtifactViewer({ projectId, artifactId }: { projectId: string; artifactId: string }) {
+export function ArtifactViewer({
+  projectId,
+  artifactId,
+  onClose,
+}: {
+  projectId: string;
+  artifactId: string;
+  /** Embedded (the session panel): fill the panel, close instead of the sidebar toggle, and a way to the full page. */
+  onClose?: () => void;
+}) {
+  const embedded = !!onClose;
   const t = useTranslations('artifacts');
   const locale = useLocale();
   const router = useRouter();
@@ -91,6 +103,14 @@ export function ArtifactViewer({ projectId, artifactId }: { projectId: string; a
   const mutations = useArtifactMutations(projectId);
   const frame = useRef<HTMLDivElement>(null);
   const [docStatus, setDocStatus] = useState<DocSaveStatus>('saved');
+  // Export as PDF prints the saved file: with edits pending, it waits for the autosave.
+  const [exporting, setExporting] = useState(false);
+  const exportUrl = artifact?.version.view_url;
+  useEffect(() => {
+    if (!exporting || !exportUrl || docStatus !== 'saved') return;
+    setExporting(false);
+    printArtifact(exportUrl);
+  }, [exporting, exportUrl, docStatus]);
   const [sharing, setSharing] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [asking, setAsking] = useState(false);
@@ -126,18 +146,27 @@ export function ArtifactViewer({ projectId, artifactId }: { projectId: string; a
   const rows = historyRows(versions.data ?? []);
 
   return (
-    <div className="flex h-svh flex-col overflow-hidden">
-      {/* The project page header (ProjectPageHeader's title-bar classes): a breadcrumb, then quiet actions. */}
+    <div className={embedded ? 'flex h-full min-h-0 flex-col overflow-hidden' : 'flex h-svh flex-col overflow-hidden'}>
+      {/* The project page header (ProjectPageHeader's title-bar classes): a breadcrumb, then quiet actions.
+          Embedded in the session panel: the panel's own plain header row. */}
       <header
-        className="kx-titlebar-row kx-capability-titlebar relative flex shrink-0 items-center gap-1 border-b px-2"
-        data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
+        className={
+          embedded
+            ? 'flex h-10 shrink-0 items-center gap-1 border-b px-1'
+            : 'kx-titlebar-row kx-capability-titlebar relative flex shrink-0 items-center gap-1 border-b px-2'
+        }
+        data-sidebar-collapsed={embedded ? undefined : sidebar?.state === 'collapsed' || undefined}
       >
-        <SidebarToggle />
-        <div className="kx-titlebar-tabs flex h-10 min-w-0 flex-1 items-center gap-1.5 px-3 text-sm">
-          <Link href={`/projects/${projectId}/artifacts`} className="text-muted-foreground hover:text-foreground shrink-0 transition-colors">
-            {t('title')}
-          </Link>
-          <CaretRightIcon className="text-muted-foreground size-3 shrink-0" aria-hidden />
+        {embedded ? null : <SidebarToggle />}
+        <div className={`${embedded ? '' : 'kx-titlebar-tabs '}flex h-10 min-w-0 flex-1 items-center gap-1.5 px-3 text-sm`}>
+          {embedded ? null : (
+            <>
+              <Link href={`/projects/${projectId}/artifacts`} className="text-muted-foreground hover:text-foreground shrink-0 transition-colors">
+                {t('title')}
+              </Link>
+              <CaretRightIcon className="text-muted-foreground size-3 shrink-0" aria-hidden />
+            </>
+          )}
           {artifact ? (
             renaming ? (
               <input
@@ -245,7 +274,7 @@ export function ArtifactViewer({ projectId, artifactId }: { projectId: string; a
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 {isDoc ? (
-                  <DropdownMenuItem onSelect={() => window.open(`${artifact.version.view_url}?print=1`, '_blank', 'noopener')}>
+                  <DropdownMenuItem onSelect={() => setExporting(true)}>
                     <FilePdfIcon /> {t('exportPdf')}
                   </DropdownMenuItem>
                 ) : (
@@ -282,6 +311,26 @@ export function ArtifactViewer({ projectId, artifactId }: { projectId: string; a
                 ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
+          </div>
+        ) : null}
+        {embedded ? (
+          <div className="flex shrink-0 items-center">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button size="icon-sm" variant="ghost" aria-label={t('openFullPage')} onClick={() => router.push(`/projects/${projectId}/artifacts/${artifactId}`)}>
+                  <ArrowsOutSimpleIcon className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('openFullPage')}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button size="icon-sm" variant="ghost" aria-label={t('close')} onClick={onClose}>
+                  <XIcon className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('close')}</TooltipContent>
+            </Tooltip>
           </div>
         ) : null}
       </header>
@@ -346,7 +395,8 @@ export function ArtifactViewer({ projectId, artifactId }: { projectId: string; a
         onConfirm={async () => {
           await mutations.remove.mutateAsync(artifactId);
           successToast(t('removed'));
-          router.push(`/projects/${projectId}/artifacts`);
+          if (onClose) onClose();
+          else router.push(`/projects/${projectId}/artifacts`);
         }}
       />
     </div>

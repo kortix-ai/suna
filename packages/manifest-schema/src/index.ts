@@ -25,6 +25,7 @@ import { appDisplayIssues, appReleaseConfigIssues, resolveAppReleaseConfig } fro
 import { appReleaseInputFromBlock } from './app-config';
 import { parseTriggerFilter } from './trigger-filter';
 import { validateManifestBodyV3 } from './index.v3';
+import { validateAgentPolicySetRefs, validateConnectorPolicySets } from './policy-sets';
 import {
   CHANNEL_PLATFORMS,
   CONNECTOR_AUTH_TYPES,
@@ -121,6 +122,14 @@ export {
 } from './format';
 
 export { slugifySlug } from './slug';
+export {
+  MAX_POLICY_SETS_PER_CONNECTOR,
+  MAX_RULES_PER_POLICY_SET,
+  POLICY_SETS_UNSUPPORTED_PROVIDERS,
+  POLICY_SET_NAME_RE,
+  RESERVED_POLICY_SET_NAME,
+  policySetNameError,
+} from './policy-sets';
 export { normalizeTriggerEntry, normalizeTriggerList } from './trigger-shape';
 export {
   TRIGGER_FILTER_OPERATORS,
@@ -441,6 +450,7 @@ function validateManifestBodyV2(
   warnUnknownAgentTools(parsed.agents, parsed.tools, issues);
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
+  validateAgentPolicySetRefs(parsed.agents, parsed.connectors, 'agents', issues);
 }
 
 /**
@@ -1883,6 +1893,7 @@ export function validateConnectors(node: unknown, path: string, issues: Manifest
         });
       }
     }
+    validateConnectorPolicySets(entry, where, issues, version);
     // Optional [[connectors.policies]]
     if (entry.policies !== undefined) {
       const policies = entry.policies;

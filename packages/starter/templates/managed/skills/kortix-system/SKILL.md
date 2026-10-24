@@ -228,7 +228,7 @@ Kortix cloud state — not just files in the repo. Examples:
 | "turn on / off a feature flag (Reminders, Meta Agent, …)" | `kortix projects features` · `kortix projects features enable <flag>`. The internal-only flags (`session_log`, `session_log_restore`) are Kortix-managed: listed only while on; only Kortix changes them. |
 | "rename the project / change its icon or default branch" | `kortix projects set --name … --icon … --branch …` |
 | "which models can this project use? set the default model" | `kortix models ls` · `kortix models default <model>` · `models enable|disable <id>` |
-| "change the default agent / an agent's scope or config" | `kortix agents default <name>` · `kortix agents scope <agent> [--secrets …] [--connectors …] [--apps …]` · `kortix agents config <agent>` |
+| "change the default agent / an agent's scope or config" | `kortix agents default <name>` · `kortix agents scope <agent> [--secrets …] [--connectors …] [--apps …] [--policy-set <slug>=<name>]` · `kortix agents config <agent>` |
 | "stop / wake a session, share it, or publish a preview link" | `kortix sessions stop|start <id>` · `sessions share <id> --mode …` · `sessions links <id> create --port 3000` |
 | "queue a prompt for later / see or reorder the queue" | `kortix sessions chat <id> -p "…" --queue` · `kortix sessions queue <id> ls|now|rm|hold|release` |
 | "approve / deny a pending connector call" | `kortix sessions approvals <id> ls|approve|deny` |
@@ -237,7 +237,7 @@ Kortix cloud state — not just files in the repo. Examples:
 | "edit files in another session's sandbox" | `kortix sessions files <id> ls|write|mv|rm|find` |
 | "what needs review? approve / reject / request changes" | `kortix review ls` · `kortix review act <id> approve` · `kortix cr request-changes <cr> --message` |
 | "show me every connector event trigger" / "what listens to <app>?" | `kortix triggers ls --type event` (grouped by app) · `kortix triggers ls --connector <slug>` · web: Triggers → **Connector events** |
-| "when X happens in <app>, do Y" (new email, PR, issue, calendar event, Slack message). Uses the project flag `event_triggers`, on by default (`403 feature_disabled` means someone turned it off: `kortix projects features enable event_triggers`) | `kortix triggers events --apps` → `triggers events --app <app> [--event <TYPE>]` (browse events before any connector) → `triggers events --connector <slug> --event <TYPE>` → `triggers add … --type event … --apply` · playbook: `references/scheduling.md` → App event triggers |
+| "when X happens in <app>, do Y" (new email, PR, issue, calendar event, Slack message). Beta: needs the project flag `event_triggers`, off by default (`kortix projects features enable event_triggers`; a `403 feature_disabled` means it is off) | `kortix triggers events --apps` → `triggers events --app <app> [--event <TYPE>]` (browse events before any connector) → `triggers events --connector <slug> --event <TYPE>` → `triggers add … --type event … --apply` · playbook: `references/scheduling.md` → App event triggers |
 | "edit a trigger live (schedule, conditions, agent, model)" | `kortix triggers set <slug> --cron … --filter k=v` · `triggers add … --apply` |
 | "which tools does this project have? remove / change a Kortix tool" | `kortix tools ls` · delete the `<name>: kortix:<name>` line in `kortix.yaml` · `kortix tools eject <name>` *(`references/kortix/tools.md` has the checklists)* |
 | "who is in the account / invite someone / manage groups" | `kortix members ls|invite` · `kortix groups …` · `kortix access requests ls` |
@@ -565,7 +565,7 @@ watching — usually via `slack send`, silent otherwise), and it must be
   operational playbook: full cron cheat-sheet + gotchas (DOM+DOW OR-not-AND
   trap, no exact-minute gates), fresh-vs-reuse guidance, notifying/
   idempotency practices in depth, the pause-and-wait re-fire pattern,
-  worked examples, a pre-ship checklist, and the **Connector event triggers**
+  worked examples, a pre-ship checklist, and the **Composio event triggers**
   playbook (autonomous setup recipe, statuses, noise control).
 - `references/kortix/kortix-cli.md`
   — the `kortix triggers ls/info/fire/enable/disable/events/add/set` and

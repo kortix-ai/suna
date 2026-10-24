@@ -52,6 +52,12 @@ import {
   setConnectorSecretBinding,
   setConnectorName,
   setConnectorPolicies,
+  listConnectorPolicySets,
+  upsertConnectorPolicySet,
+  renameConnectorPolicySet,
+  deleteConnectorPolicySet,
+  type ConnectorPolicySet,
+  type ConnectorPolicySource,
   setConnectorSensitive,
   setDefaultConnection,
   startConnectionOAuth2Authorization,
@@ -612,6 +618,102 @@ test('setConnectorPolicies PUTs { policies }', async () => {
   expect(last().url).toContain('/connectors/projects/P1/connectors/slack/policies');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ policies });
+});
+
+test('getConnectorPolicies reads one policy set with { policySet }', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      policies: [{ match: 'send_*', action: 'block' }],
+      policy_set: 'read_only',
+      effective: [{ path: 'send_email', action: 'block', source: 'policy_set' }],
+    },
+  };
+  const result = await getConnectorPolicies('P1', 'gmail', { policySet: 'read only' });
+  expect(last().url).toContain(
+    '/connectors/projects/P1/connectors/gmail/policies?policy_set=read%20only',
+  );
+  expect(last().method).toBe('GET');
+  expect(result.policy_set).toBe('read_only');
+  const source: ConnectorPolicySource | undefined = result.effective?.[0]?.source;
+  expect(source).toBe('policy_set');
+});
+
+test('getConnectorPolicies without a set sends no policy_set query', async () => {
+  nextResponse = { status: 200, body: { policies: [] } };
+  await getConnectorPolicies('P1', 'gmail', {});
+  expect(last().url).not.toContain('policy_set');
+});
+
+test('setConnectorPolicies writes one policy set and keeps rule conditions', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  const policies = [
+    {
+      match: 'send_email',
+      action: 'always_run' as const,
+      conditions: [{ arg: 'to', match: '*@example.com' }],
+    },
+  ];
+  await setConnectorPolicies('P1', 'gmail', policies, { policySet: 'outreach' });
+  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/policies?policy_set=outreach');
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({ policies });
+});
+
+test('listConnectorPolicySets GETs every set with its rules and agents', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      sets: [
+        { name: 'read_only', description: null, policies: [{ match: 'send_*', action: 'block' }], agents: ['support'] },
+      ],
+    },
+  };
+  const result = await listConnectorPolicySets('P1', 'gmail');
+  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/policy-sets');
+  expect(last().method).toBe('GET');
+  const set: ConnectorPolicySet | undefined = result.sets[0];
+  expect(set?.agents).toEqual(['support']);
+});
+
+test('upsertConnectorPolicySet PUTs only the description', async () => {
+  nextResponse = { status: 200, body: { ok: true, created: true } };
+  const result = await upsertConnectorPolicySet('P1', 'gmail', 'read_only', {
+    description: 'No sends',
+  });
+  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/policy-sets/read_only');
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({ description: 'No sends' });
+  expect(result.created).toBe(true);
+});
+
+test('upsertConnectorPolicySet with no input sends an empty body', async () => {
+  nextResponse = { status: 200, body: { ok: true, created: false } };
+  await upsertConnectorPolicySet('P1', 'gmail', 'read_only');
+  expect(last().body).toEqual({});
+});
+
+test('renameConnectorPolicySet PUTs { name } to the name route', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  await renameConnectorPolicySet('P1', 'gmail', 'read_only', 'readers');
+  expect(last().url).toContain(
+    '/connectors/projects/P1/connectors/gmail/policy-sets/read_only/name',
+  );
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({ name: 'readers' });
+});
+
+test('deleteConnectorPolicySet DELETEs the set and surfaces policy_set_in_use', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  await deleteConnectorPolicySet('P1', 'gmail', 'read_only');
+  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/policy-sets/read_only');
+  expect(last().method).toBe('DELETE');
+
+  nextResponse = {
+    status: 409,
+    body: { error: 'in use', code: 'policy_set_in_use', agents: ['support'] },
+  };
+  await expect(deleteConnectorPolicySet('P1', 'gmail', 'read_only')).rejects.toThrow();
 });
 
 test('getConnectorConfig GETs the config, url-encoding a slug with special characters', async () => {

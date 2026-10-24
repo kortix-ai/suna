@@ -425,6 +425,11 @@ export interface UiHostComponents {
     /** False or missing: read only. */
     canWrite?: boolean;
   }>;
+  /**
+   * The full artifact viewer (doc editor, history, share, PDF export) for a
+   * session panel. Without it, the panel shows the artifact's page read-only.
+   */
+  ArtifactViewer?: React.ComponentType<{ projectId: string; artifactId: string; onClose: () => void }>;
   /** The decorative background of an empty session. Without it, the plain surface. */
   Wallpaper?: React.ComponentType;
   /**

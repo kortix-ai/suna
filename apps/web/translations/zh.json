@@ -1248,7 +1248,7 @@
           "description": "通过铃铛收件箱、浏览器推送和电子邮件通知与会话相关的人（发送提示的人、创建者和关注者），并在触发器和提醒失败时发出警报。关闭时，会话的推送只发到会话创建者的手机；触发器开始失败时，账户所有者的手机会收到一条推送。"
         },
         "event_triggers": {
-          "name": "连接器事件触发器",
+          "name": "Composio 事件触发器",
           "description": "当已连接的应用中发生事件时启动智能体：新邮件、拉取请求、日历事件。事件来自 Composio。Kortix 也会自行检查你已连接的应用。"
         },
         "volumes": {
@@ -22779,7 +22779,9 @@
     "diagramEdit": "编辑图表",
     "diagramDone": "完成",
     "codeLanguage": "代码语言",
-    "editedAgo": "编辑于 {time}"
+    "editedAgo": "编辑于 {time}",
+    "openFullPage": "全页打开",
+    "close": "关闭"
   },
   "emailConnect": {
     "homeTitle": "收件箱所在位置",
@@ -22852,5 +22854,56 @@
     "removeDeletes": "移除该账户并在 Resend 中删除 {address}。此后发往该地址的邮件会被退回。",
     "removeKeeps": "从 Kortix 中移除该账户。{address} 仍保留在你的 Resend 账户中。",
     "removed": "收件箱已移除"
+  },
+  "connectorPolicySets": {
+    "rulesFor": "规则适用于",
+    "baseRules": "基础规则",
+    "newSet": "新建规则集…",
+    "baseHint": "没有规则集的调用方遵循这些规则。规则集会为你分配它的代理更改这些规则。",
+    "setHint": "仅适用于分配了 {name} 的代理。设为“继承”的工具遵循基础规则。",
+    "usedBy": "{agents} 正在使用",
+    "unused": "还没有代理使用此规则集。请在代理的连接器页面中选择它。",
+    "edit": "编辑规则集",
+    "delete": "删除规则集",
+    "deleteInUse": "{agents} 正在使用。请先为这些代理分配其他规则集。",
+    "deleteTitle": "删除规则集 {name}?",
+    "deleteBody": "其规则将从 kortix.yaml 中移除。此操作无法撤销。",
+    "deleteConfirm": "删除",
+    "deleted": "已删除规则集 {name}",
+    "createTitle": "新建规则集",
+    "createBody": "为部分代理在此连接器上设置不同的规则。它们保留相同的账户。",
+    "editTitle": "编辑规则集",
+    "editBody": "重命名会更新所有使用此规则集的代理。",
+    "nameLabel": "名称",
+    "nameHelp": "小写字母、数字、_ 和 -。名称 base 为保留名称。",
+    "nameTaken": "此连接器已有同名规则集。",
+    "descriptionLabel": "描述",
+    "descriptionPlaceholder": "只读取和搜索,从不发送",
+    "cancel": "取消",
+    "create": "创建",
+    "save": "保存",
+    "created": "已创建规则集 {name}",
+    "saved": "规则集已保存",
+    "loadFailed": "无法加载规则集",
+    "retry": "重试",
+    "inherit": "继承",
+    "inheritBase": "继承基础规则:{action}。",
+    "inheritDefault": "继承基础规则。没有基础规则指定此工具,因此由连接器默认值决定。",
+    "agentSection": "规则集",
+    "agentSelectLabel": "{name} 的规则",
+    "agentMissing": "缺失",
+    "agentMissingHint": "此连接器上不存在规则集 {name}。在你选择规则集之前,对它的调用会被阻止。",
+    "approvalSetAgent": "代理 {agent} · 规则集 {set}",
+    "approvalSet": "规则集 {set}",
+    "auditSet": "规则集 {set}",
+    "bulkInheritTitle": "将 {count, plural, other {# 个工具}}恢复为基础规则?",
+    "bulkInheritBody": "删除此规则集中 {group} 下每个工具的规则,使其重新遵循基础规则。模式规则保持不变。"
+  },
+  "sessionChangeRequests": {
+    "title": "更改请求",
+    "open": "待处理",
+    "jump": "跳转到 #{number} 的回复",
+    "unavailable": "已加载的历史记录中没有此回复。",
+    "loadError": "无法加载回复。请重试。"
   }
 }

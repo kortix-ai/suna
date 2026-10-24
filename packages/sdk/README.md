@@ -1536,3 +1536,15 @@ sends one pseudonymous PostHog event at install time; set `OPENUI_TELEMETRY_DISA
 `kortix.project(projectId).files.write({ path, ref: branch, content, expected_revision: revision })`.
 The server requires `project.file.write` and returns `{ commit_sha }` after pushing.
 A changed file returns HTTP 409 instead of overwriting another edit. Reload before retrying.
+
+### Change request recovery
+
+`recoverChangeRequest(projectId, target, blocker)` queues a follow-up on the
+visible origin session and returns its ID. It uses queue delivery, so a running
+turn is not interrupted. The origin prompt updates the existing change request
+and leaves application to the person. A visible archived origin creates a child;
+an unavailable origin creates a root with `metadata.origin_session_id`.
+`createProjectSession` accepts an optional `parent_session_id` for a visible
+same-project parent. This groups the new session without inheriting the parent's
+sharing or automation identity. A session-bound credential retains its own
+server-derived parent regardless of that field.

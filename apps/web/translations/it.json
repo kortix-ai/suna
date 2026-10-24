@@ -1248,7 +1248,7 @@
           "description": "Avvisa le persone a cui una sessione interessa (chi ha inviato il prompt, chi l’ha creata e chi la segue) con una casella con campanella, notifiche push del browser ed email, e segnala trigger e promemoria che falliscono. Disattivato: solo il telefono di chi ha creato la sessione riceve il suo push, e il telefono di un proprietario dell’account ne riceve uno quando un trigger inizia a fallire."
         },
         "event_triggers": {
-          "name": "Trigger di eventi dei connettori",
+          "name": "Trigger di eventi Composio",
           "description": "Avvia un agente quando succede qualcosa in un'app collegata: una nuova email, una pull request, un evento del calendario. Gli eventi arrivano da Composio. Kortix controlla anche da solo le tue app collegate."
         },
         "volumes": {
@@ -22779,7 +22779,9 @@
     "diagramEdit": "Modifica diagramma",
     "diagramDone": "Fatto",
     "codeLanguage": "Linguaggio del codice",
-    "editedAgo": "Modificato {time}"
+    "editedAgo": "Modificato {time}",
+    "openFullPage": "Apri a pagina intera",
+    "close": "Chiudi"
   },
   "emailConnect": {
     "homeTitle": "Dove si trova la casella",
@@ -22852,5 +22854,56 @@
     "removeDeletes": "Rimuove l'account ed elimina {address} in Resend. Da quel momento le email a quell'indirizzo tornano indietro.",
     "removeKeeps": "Rimuove l'account da Kortix. {address} resta nel tuo account Resend.",
     "removed": "Casella rimossa"
+  },
+  "connectorPolicySets": {
+    "rulesFor": "Regole per",
+    "baseRules": "Regole di base",
+    "newSet": "Nuovo set di regole…",
+    "baseHint": "Chi chiama senza set di regole segue queste regole. Un set di regole le cambia per gli agenti a cui lo assegni.",
+    "setHint": "Vale solo per gli agenti con {name}. Gli strumenti su Eredita seguono le regole di base.",
+    "usedBy": "Usato da {agents}",
+    "unused": "Nessun agente usa ancora questo set di regole. Sceglilo nella pagina Connettori di un agente.",
+    "edit": "Modifica set di regole",
+    "delete": "Elimina set di regole",
+    "deleteInUse": "Usato da {agents}. Assegna prima a questi agenti un altro set di regole.",
+    "deleteTitle": "Eliminare il set di regole {name}?",
+    "deleteBody": "Le sue regole vengono rimosse da kortix.yaml. L'operazione non è reversibile.",
+    "deleteConfirm": "Elimina",
+    "deleted": "Set di regole {name} eliminato",
+    "createTitle": "Nuovo set di regole",
+    "createBody": "Dai ad alcuni agenti regole diverse su questo connettore. Mantengono gli stessi account.",
+    "editTitle": "Modifica set di regole",
+    "editBody": "Rinominarlo aggiorna ogni agente che usa questo set di regole.",
+    "nameLabel": "Nome",
+    "nameHelp": "Lettere minuscole, cifre, _ e -. Il nome base è riservato.",
+    "nameTaken": "Questo connettore ha già un set di regole con questo nome.",
+    "descriptionLabel": "Descrizione",
+    "descriptionPlaceholder": "Leggi e cerca, non inviare mai",
+    "cancel": "Annulla",
+    "create": "Crea",
+    "save": "Salva",
+    "created": "Set di regole {name} creato",
+    "saved": "Set di regole salvato",
+    "loadFailed": "Impossibile caricare i set di regole",
+    "retry": "Riprova",
+    "inherit": "Eredita",
+    "inheritBase": "Eredita le regole di base: {action}.",
+    "inheritDefault": "Eredita le regole di base. Nessuna regola di base nomina questo strumento, quindi decide il valore predefinito del connettore.",
+    "agentSection": "Set di regole",
+    "agentSelectLabel": "Regole per {name}",
+    "agentMissing": "Mancante",
+    "agentMissingHint": "Il set di regole {name} non esiste su questo connettore. Le chiamate sono bloccate finché non scegli un set di regole.",
+    "approvalSetAgent": "Agente {agent} · set di regole {set}",
+    "approvalSet": "Set di regole {set}",
+    "auditSet": "set di regole {set}",
+    "bulkInheritTitle": "Riportare {count, plural, one {# strumento} other {# strumenti}} alle regole di base?",
+    "bulkInheritBody": "Elimina la regola di questo set per ogni strumento elencato in {group}, così ognuno torna a seguire le regole di base. Le regole a schema restano invariate."
+  },
+  "sessionChangeRequests": {
+    "title": "Richieste di modifica",
+    "open": "Aperta",
+    "jump": "Vai alla risposta per #{number}",
+    "unavailable": "Questa risposta non è disponibile nella cronologia caricata.",
+    "loadError": "Impossibile caricare la risposta. Riprova."
   }
 }

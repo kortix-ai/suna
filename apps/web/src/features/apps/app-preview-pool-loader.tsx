@@ -8,7 +8,7 @@ import type { App } from '@kortix/sdk';
 import { useAppAccess, useProjectApps } from '@kortix/sdk/react';
 import { useEffect, useState } from 'react';
 
-import { ARTIFACT_FRAME_PREFIX } from '@/features/artifacts/frame-sandbox';
+import { ARTIFACT_FRAME_PREFIX } from '@kortix/ui/artifacts';
 
 import {
   ensureFrame,

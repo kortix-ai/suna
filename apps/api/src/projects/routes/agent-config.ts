@@ -52,7 +52,7 @@ import { resolveTemplateBySlug } from '../../snapshots/templates';
 import { extractAgents, agentNotDeclaredError, grantsByAgent } from '../agents';
 import { projectBuiltinAgents } from '../lib/builtin-agents';
 import { builtinAgentConfigView, builtinAgentWriteRefusal, enabledBuiltinAgentKey } from '../lib/platform-meta-agent';
-import { assertNoGrantEscalation } from '../../iam/agent-grant-ceiling';
+import { assertNoGrantEscalation, changedPolicySet } from '../../iam/agent-grant-ceiling';
 import { isRepoFileNotFoundError, readRepoFile } from '../git';
 import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from '../git/branches';
 import { isRemotePushPolicyRejection } from '../git/mirror';
@@ -69,6 +69,7 @@ import {
   normalizeRequiredConnectorAliases,
   resolveBehaviorDraft,
   readAgentBlockV2,
+  dropEmptyPolicySets,
 } from '../lib/agent-config-v2';
 import { parseAgentMarkdown, serializeAgentMarkdown } from '../lib/agent-markdown';
 import { projectsApp } from '../lib/app';
@@ -119,6 +120,9 @@ const AgentBlockSchema = z
     connectors_required: z.array(z.string().trim().min(1).max(200)).max(500).optional(),
     // Deprecated request alias. The handler normalizes it before serialization.
     connectors_personal: z.array(z.string().min(1).max(200)).max(500).optional(),
+    // Connector slug → policy set name. A PUT that omits it keeps the declared
+    // value; a PUT that changes it needs project.connector.write too.
+    policy_sets: z.record(z.string().min(1).max(128), z.string().max(64)).optional(),
     secrets: GrantSetSchema.optional(),
     skills: GrantSetSchema.optional(),
     // Kortix Apps (by slug) this agent may open when restricted/private (§2.5).
@@ -565,11 +569,26 @@ export function registerAgentConfigRoutes(): void {
             });
       if (!edit.ok) return c.json(edit.body, edit.status);
 
+      // `policy_sets: {}` clears the agent's sets: write no key at all.
+      const writtenBlock = (edit.raw.agents as Record<string, Record<string, unknown>> | undefined)?.[agentName];
+      if (writtenBlock) dropEmptyPolicySets(writtenBlock);
       // Re-parse through the runtime grant reader before committing.
       const parsedCheck = extractAgents({ ...manifest, raw: edit.raw });
       const parseProblem = parsedCheck.errors.find((e) => e.name === agentName);
       if (parseProblem) {
         return c.json({ error: parseProblem.error, code: 'invalid_config' }, 400);
+      }
+      // Changing which policy set an agent runs under is a rule edit.
+      const grantBefore = grantsByAgent(extractAgents(manifest)).get(agentName);
+      const grantAfter = grantsByAgent(parsedCheck).get(agentName);
+      if (grantAfter && changedPolicySet(grantBefore, grantAfter) !== null) {
+        await assertProjectCapability(
+          c,
+          loaded.userId,
+          loaded.row.accountId,
+          projectId,
+          PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+        );
       }
       // An agent grants only what it holds (iam/agent-grant-ceiling.ts).
       await assertNoGrantEscalation(c, projectId, grantsByAgent(extractAgents(manifest)), grantsByAgent(parsedCheck));
@@ -675,6 +694,12 @@ async function prepareAgentConfigV2(
     // them, as the v3 write does.
     for (const [key, value] of Object.entries((currentBlock.ok && currentBlock.block) || {})) {
       if (!(key in AgentBlockSchema.shape)) (governanceBlock as Record<string, unknown>)[key] = value;
+    }
+    // `policy_sets` is in the schema (the GET → PUT round trip carries it) but
+    // keeps the declared value when omitted, like the v3 grants.
+    const declaredSets = currentBlock.ok ? (currentBlock.block as Record<string, unknown> | null)?.policy_sets : undefined;
+    if ((governanceBlock as Record<string, unknown>).policy_sets === undefined && declaredSets !== undefined) {
+      (governanceBlock as Record<string, unknown>).policy_sets = declaredSets;
     }
     const explicitFile = currentBlock.ok ? currentBlock.block?.file : undefined;
     if (explicitFile !== undefined) governanceBlock.file = explicitFile;

@@ -31,6 +31,7 @@ import {
   removeArrayBlock,
   setTableScalar,
 } from '../manifest-edit.ts';
+import { surfacePolicySetError } from '../policy-set-errors.ts';
 import { promptSecret } from '../prompts.ts';
 import { C, help, pad, status, trim } from '../style.ts';
 import { runConnector } from './connector-gateway.ts';
@@ -326,9 +327,16 @@ Subcommands:
   policy rm <match>                 Remove a project-wide rule (applies now).
   policy <slug> ls [--json]         Show one connector's tool-call rules.
   policy <slug> set <match> <act>   Allow|ask|block a tool/glob/regex (applies now).
-                                    <match> = tool name, glob (send_*) or /regex/.
+        [--condition <k=v>]…        <match> = tool name, glob (send_*) or /regex/.
   policy <slug> rm <match>          Remove a connector rule.
   policy <slug> clear               Remove all of a connector's rules.
+  policy <slug> --policy-set <name> ls|set|rm|clear
+                                    The same verbs on one policy set's rules.
+  policy-sets <slug> ls|create|rename|rm
+                                    Named rule sets on one connector. Give an
+                                    agent one with \`kortix agents scope <agent>
+                                    --policy-set <slug>=<name>\`; one account,
+                                    different rules per agent.
   authorize <slug> [--json]         OAuth 2.1 a connector end to end: discover
                                     the server's authorization metadata,
                                     register Kortix as a client (RFC 7591) when
@@ -413,6 +421,42 @@ Per-connector:
   <slug> rm <match>                 Remove a connector rule (applies now).
   <slug> clear                      Remove all of a connector's rules (applies
                                     now).
+  <slug> --policy-set <name> …      Same verbs on one policy set's rules: an
+                                    agent given the set checks them before the
+                                    base rules. Sets: \`policy-sets --help\`.
+
+Global:
+  --project <id>     Operate on this project id (default: linked).
+  --host <name>      Operate against a non-default Kortix host.
+  --json             Machine-readable output.
+  -h, --help         Show this help.
+`;
+
+const POLICY_SETS_HELP = help`Usage: kortix connectors policy-sets <slug> <subcommand> [options]
+
+A policy set is a named list of tool-call rules on one connector. Each agent
+uses the connector's one set of accounts, and an agent given a set (in
+kortix.yaml \`agents.<agent>.policy_sets\`) is checked against the set's rules
+first, then the connector's base rules. An agent without a set gets the base
+rules. Every form applies on the cloud project at once.
+
+Subcommands:
+  ls [--json]                       List the sets, their rules and the agents
+                                    that use each one.
+  create <name> [--description <t>] Create a set with no rules, or change the
+                                    description of an existing one.
+                                    \`--description=\` clears it.
+  rename <name> <new-name>          Rename the set and every agent that uses
+                                    it, in one commit.
+  rm <name>                         Remove the set. Refused while an agent
+                                    uses it.
+
+Rules of a set:   kortix connectors policy <slug> --policy-set <name> set <match> <action>
+Give an agent it: kortix agents scope <agent> --policy-set <slug>=<name>
+Back to base:     kortix agents scope <agent> --policy-set <slug>=base
+
+Names: a-z, 0-9, - and _, at most 64 characters; \`base\` is reserved.
+Policy sets need kortix.yaml (kortix_version 2 or 3).
 
 Global:
   --project <id>     Operate on this project id (default: linked).
@@ -481,8 +525,12 @@ export async function runConnectors(argv: string[]): Promise<number> {
   // `policy` owns dedicated help too (KRTX-1914): the four per-connector
   // policy forms and the cloud-side semantics, not the full connectors page.
   if ((sub === 'policy' || sub === 'policies') && (rest.includes('-h') || rest.includes('--help'))) {
-    process.stdout.write(POLICY_HELP);
+    process.stdout.write(rest.includes('sets') ? POLICY_SETS_HELP : POLICY_HELP);
     return 0;
+  }
+  if (sub === 'policy-sets' && (rest.length === 0 || rest.includes('-h') || rest.includes('--help'))) {
+    process.stdout.write(POLICY_SETS_HELP);
+    return rest.length === 0 ? 2 : 0;
   }
   // The root help promises `kortix connectors <subcommand> --help`. Only
   // `connections` and `policy` (handled above) own dedicated help text; every
@@ -568,6 +616,8 @@ export async function runConnectors(argv: string[]): Promise<number> {
     f.kind = takeFlagValue(rest, ['--kind', '--type']);
     f.way = takeFlagValue(rest, ['--way']);
     f.slug = takeFlagValue(rest, ['--slug']);
+    f.policySet = takeFlagValue(rest, ['--policy-set', '--set']);
+    f.description = takeFlagValue(rest, ['--description']);
     conditions = takeFlagValues(rest, ['--condition', '--cond']);
     shareGroups = takeFlagValues(rest, ['--group']);
     shareUsers = takeFlagValues(rest, ['--user', '--member']);
@@ -1668,14 +1718,33 @@ export async function runConnectors(argv: string[]): Promise<number> {
           return 0;
         }
 
-        // Connector-scoped: `policy <slug> <ls|set|rm|clear> …`
+        // Connector-scoped: `policy <slug> [--policy-set <name>] <ls|set|rm|clear> …`
         const slug = a0;
         const cAction = positional[1] ?? 'ls';
-        const path = `${ex}/connectors/${encodeURIComponent(slug)}/policies`;
-        const load = () => ctx.client.get<{ policies: { match: string; action: string }[] }>(path);
+        if (cAction === 'sets') {
+          return await runPolicySets(ctx, slug, positional.slice(2), f.description, json);
+        }
+        // Absent or `base` = the connector's base rules (the route's rule too).
+        const policySet = f.policySet && f.policySet !== 'base' ? f.policySet : null;
+        const path = `${ex}/connectors/${encodeURIComponent(slug)}/policies${policySet ? `?policy_set=${encodeURIComponent(policySet)}` : ''}`;
+        const label = policySet ? `${slug} [${policySet}]` : slug;
+        const load = () => ctx.client.get<{ policies: PolicyRule[] }>(path);
+        const write = async (policies: PolicyRule[]) => {
+          try {
+            await ctx.client.put(path, { policies });
+            return null;
+          } catch (err) {
+            return surfacePolicySetError(err, { slug });
+          }
+        };
 
         if (cAction === 'ls' || cAction === 'list') {
-          const resp = await load();
+          let resp: { policies: PolicyRule[] };
+          try {
+            resp = await load();
+          } catch (err) {
+            return surfacePolicySetError(err, { slug });
+          }
           if (json) {
             emitJson(resp);
             return 0;
@@ -1683,13 +1752,17 @@ export async function runConnectors(argv: string[]): Promise<number> {
           const { policies } = resp;
           if (policies.length === 0) {
             process.stdout.write(
-              `  ${C.dim}No rules for ${slug} — every tool follows global rules & risk.${C.reset}\n`,
+              policySet
+                ? `  ${C.dim}No rules in set ${policySet} — calls fall through to ${slug}'s base rules.${C.reset}\n`
+                : `  ${C.dim}No rules for ${slug} — every tool follows global rules & risk.${C.reset}\n`,
             );
             return 0;
           }
           process.stdout.write('\n');
           for (const p of policies)
-            process.stdout.write(`  ${C.cyan}${p.match}${C.reset} → ${p.action}\n`);
+            process.stdout.write(
+              `  ${C.cyan}${p.match}${C.reset} → ${p.action}${conditionsLabel(p.conditions)}\n`,
+            );
           process.stdout.write('\n');
           return 0;
         }
@@ -1698,32 +1771,68 @@ export async function runConnectors(argv: string[]): Promise<number> {
           const action = normalizePolicyAction(positional[3]);
           if (!match) return missing('a <match> (tool name, glob, or /regex/)');
           if (!action) return missing('an action: allow | ask | block');
-          const { policies } = await load();
-          const next = [...policies.filter((p) => p.match !== match), { match, action }];
-          await ctx.client.put(path, { policies: next });
+          const parsedConditions = parsePolicyConditions(conditions);
+          if ('error' in parsedConditions) return fail(parsedConditions.error);
+          let current: PolicyRule[];
+          try {
+            current = (await load()).policies;
+          } catch (err) {
+            return surfacePolicySetError(err, { slug });
+          }
+          // Read-merge-write: every other rule goes back with its conditions.
+          const next = [
+            ...current.filter((p) => p.match !== match),
+            {
+              match,
+              action,
+              ...(parsedConditions.conditions.length ? { conditions: parsedConditions.conditions } : {}),
+            },
+          ];
+          const failed = await write(next);
+          if (failed !== null) return failed;
+          if (json) {
+            emitJson({ ok: true, slug, policy_set: policySet, policies: next });
+            return 0;
+          }
           process.stdout.write(
-            `${status.ok(`${C.bold}${slug}${C.reset}: ${match} → ${action}`)}\n`,
+            `${status.ok(`${C.bold}${label}${C.reset}: ${match} → ${action}${conditionsLabel(parsedConditions.conditions)}`)}\n`,
           );
           return 0;
         }
         if (cAction === 'rm' || cAction === 'remove') {
           const match = positional[2];
           if (!match) return missing('the <match> to remove');
-          const { policies } = await load();
-          await ctx.client.put(path, {
-            policies: policies.filter((p) => p.match !== match),
-          });
-          process.stdout.write(`${status.ok(`${C.bold}${slug}${C.reset}: removed ${match}`)}\n`);
+          let current: PolicyRule[];
+          try {
+            current = (await load()).policies;
+          } catch (err) {
+            return surfacePolicySetError(err, { slug });
+          }
+          const next = current.filter((p) => p.match !== match);
+          const failed = await write(next);
+          if (failed !== null) return failed;
+          if (json) {
+            emitJson({ ok: true, slug, policy_set: policySet, policies: next });
+            return 0;
+          }
+          process.stdout.write(`${status.ok(`${C.bold}${label}${C.reset}: removed ${match}`)}\n`);
           return 0;
         }
         if (cAction === 'clear') {
-          await ctx.client.put(path, { policies: [] });
-          process.stdout.write(`${status.ok(`${C.bold}${slug}${C.reset}: cleared all rules`)}\n`);
+          const failed = await write([]);
+          if (failed !== null) return failed;
+          if (json) {
+            emitJson({ ok: true, slug, policy_set: policySet, policies: [] });
+            return 0;
+          }
+          process.stdout.write(`${status.ok(`${C.bold}${label}${C.reset}: cleared all rules`)}\n`);
           return 0;
         }
         process.stderr.write(`${status.err(`unknown policy action "${cAction}"`)}\n`);
         return 2;
       }
+      case 'policy-sets':
+        return await runPolicySets(ctx, positional[0], positional.slice(1), f.description, json);
       default:
         process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
         return 2;
@@ -1731,6 +1840,112 @@ export async function runConnectors(argv: string[]): Promise<number> {
   } catch (err) {
     return surfaceApiError(err);
   }
+}
+
+/** GET .../connectors/:slug/policy-sets */
+interface PolicySetView {
+  name: string;
+  description: string | null;
+  policies: PolicyRule[];
+  /** The agents whose `policy_sets` names this set. */
+  agents: string[];
+}
+
+/**
+ * `connectors policy-sets <slug> ls|create|rename|rm` (also reachable as
+ * `policy <slug> sets …`). The set itself lives on these routes; its rules
+ * are written only through `policy <slug> --policy-set <name> set …`.
+ */
+async function runPolicySets(
+  ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>,
+  slug: string | undefined,
+  args: string[],
+  descriptionFlag: string | undefined,
+  json: boolean,
+): Promise<number> {
+  if (!slug) return missing('a connector <slug>');
+  const base = `/connectors/projects/${ctx.projectId}/connectors/${encodeURIComponent(slug)}/policy-sets`;
+  const setPath = (name: string) => `${base}/${encodeURIComponent(name)}`;
+  const action = args[0] ?? 'ls';
+  try {
+    if (action === 'ls' || action === 'list') {
+      const resp = await ctx.client.get<{ sets: PolicySetView[] }>(base);
+      if (json) {
+        emitJson(resp);
+        return 0;
+      }
+      if (resp.sets.length === 0) {
+        process.stdout.write(
+          `  ${C.dim}${slug} has no policy sets — every agent gets its base rules. Create one: kortix connectors policy-sets ${slug} create <name>${C.reset}\n`,
+        );
+        return 0;
+      }
+      process.stdout.write('\n');
+      for (const set of resp.sets) {
+        const rules = `${set.policies.length} rule${set.policies.length === 1 ? '' : 's'}`;
+        const agents = set.agents.length ? set.agents.join(', ') : 'no agent';
+        process.stdout.write(
+          `  ${C.cyan}${set.name}${C.reset}  ${C.dim}${rules} · ${agents}${C.reset}${set.description ? `  ${set.description}` : ''}\n`,
+        );
+        for (const p of set.policies) {
+          process.stdout.write(`    ${p.match} → ${p.action}${conditionsLabel(p.conditions)}\n`);
+        }
+      }
+      process.stdout.write('\n');
+      return 0;
+    }
+    if (action === 'create' || action === 'add' || action === 'describe') {
+      const name = args[1];
+      if (!name) return missing('the set <name>');
+      // `--description=` (empty) clears; no flag leaves it as it is.
+      const body =
+        descriptionFlag === undefined ? {} : { description: descriptionFlag === '' ? null : descriptionFlag };
+      const resp = await ctx.client.put<{ ok: boolean; created?: boolean }>(setPath(name), body);
+      if (json) {
+        emitJson({ ...resp, slug, name });
+        return 0;
+      }
+      process.stdout.write(
+        `${status.ok(`${C.bold}${slug}${C.reset}: policy set ${name} ${resp.created ? 'created' : 'updated'}`)}\n`,
+      );
+      if (resp.created) {
+        process.stdout.write(
+          `  ${C.dim}Add a rule:   kortix connectors policy ${slug} --policy-set ${name} set <match> allow|ask|block${C.reset}\n` +
+            `  ${C.dim}Give it out:  kortix agents scope <agent> --policy-set ${slug}=${name}${C.reset}\n`,
+        );
+      }
+      return 0;
+    }
+    if (action === 'rename' || action === 'mv') {
+      const from = args[1];
+      const to = args[2];
+      if (!from || !to) return missing('the set <name> and its <new-name>');
+      const resp = await ctx.client.put<{ ok: boolean }>(`${setPath(from)}/name`, { name: to });
+      if (json) {
+        emitJson({ ...resp, slug, name: to, from });
+        return 0;
+      }
+      process.stdout.write(
+        `${status.ok(`${C.bold}${slug}${C.reset}: policy set ${from} → ${to}`)} ${C.dim}(agents that used it moved with it)${C.reset}\n`,
+      );
+      return 0;
+    }
+    if (action === 'rm' || action === 'remove' || action === 'delete') {
+      const name = args[1];
+      if (!name) return missing('the set <name> to remove');
+      const resp = await ctx.client.delete<{ ok: boolean }>(setPath(name));
+      if (json) {
+        emitJson({ ...(resp ?? { ok: true }), slug, name });
+        return 0;
+      }
+      process.stdout.write(`${status.ok(`${C.bold}${slug}${C.reset}: removed policy set ${name}`)}\n`);
+      return 0;
+    }
+  } catch (err) {
+    return surfacePolicySetError(err, { slug });
+  }
+  process.stderr.write(`${status.err(`unknown policy-sets action "${action}"`)}\n\n${POLICY_SETS_HELP}`);
+  return 2;
 }
 
 async function runConnections(input: {

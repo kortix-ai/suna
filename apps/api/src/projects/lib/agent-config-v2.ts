@@ -403,6 +403,8 @@ export function applyAgentScopeV2(
     connectorsRequired?: string[];
     /** Kortix App slugs, same grant-set shape as `connectors`. */
     apps?: string[] | 'all';
+    /** Connector slug → set name; MERGES per slug. `null` or `base` removes. */
+    policySets?: Record<string, string | null>;
   },
 ): ApplyAgentBlockResult & { notFound?: boolean } {
   if (manifest.schemaVersion < 2) {
@@ -437,6 +439,17 @@ export function applyAgentScopeV2(
     if (required.length === 0) delete merged.connectors_required;
     else merged.connectors_required = required;
   }
+  if (scope.policySets !== undefined) {
+    const current = merged.policy_sets;
+    const sets: Record<string, unknown> =
+      current && typeof current === 'object' && !Array.isArray(current) ? { ...(current as Record<string, unknown>) } : {};
+    for (const [slug, name] of Object.entries(scope.policySets)) {
+      if (name === null || name === 'base') delete sets[slug];
+      else sets[slug] = name;
+    }
+    merged.policy_sets = sets;
+  }
+  dropEmptyPolicySets(merged);
   const effectiveConnectors = merged.connectors;
   const effectiveRequired = merged.connectors_required;
   if (Array.isArray(effectiveRequired)) {
@@ -450,6 +463,19 @@ export function applyAgentScopeV2(
     }
   }
   return applyAgentMapBlock(manifest, agentName, merged);
+}
+
+/**
+ * Drop an emptied `policy_sets` map (`{}` from an editor that cleared the last
+ * set). Entries on connectors the block no longer grants are KEPT: such an
+ * entry is inert while the connector is un-granted and applies again on
+ * re-grant. Pruning it would let a writer without project.connector.write move
+ * the agent onto the base rules by un-granting and re-granting the connector.
+ */
+export function dropEmptyPolicySets(block: Record<string, unknown>): void {
+  const map = block.policy_sets;
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return;
+  if (Object.keys(map).length === 0) delete block.policy_sets;
 }
 
 /** Grant membership. Case-insensitive, mirroring `listAdmits`
@@ -620,6 +646,7 @@ const BLOCK_ORDER_V3: readonly string[] = [
   'codemode',
   'connectors',
   'connectors_required',
+  'policy_sets',
   'secrets',
   'apps',
   'kortix_permissions',

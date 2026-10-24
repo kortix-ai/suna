@@ -31,7 +31,7 @@ Rules: `kortix-yaml.md` → `imports:`.
 | To follow up on **this** task later ("remind me at 4pm", "check tomorrow whether they replied", "keep checking hourly until the deploy is green") | **session reminder** | `kortix remind "<what to do>" --at <ISO> \| --in 24h [--every 1h]` — no `kortix.yaml` change |
 | A one-time project job not tied to this session ("send the launch email tomorrow 9am") | **cron trigger, one-off** | `type: cron` + `run_at: "<ISO-8601>"` |
 | Something to repeat ("every weekday morning", "daily digest", "check hourly") | **cron trigger, recurring** | `type: cron` + `cron: "<6-field>"` + `timezone` |
-| To react to an event **in a connected app** ("when a PR opens", "when an email arrives", "when an issue changes", "when a calendar event is created", "when a Slack message is posted") | **connector event trigger** | `on: { event, connector }` (flat: `type: event`). See [Connector event triggers](#connector-event-triggers) |
+| To react to an event **in a connected app** ("when a PR opens", "when an email arrives", "when an issue changes", "when a calendar event is created", "when a Slack message is posted") | **connector event trigger** | `on: { event, connector }` (flat: `type: event`). See [Composio event triggers](#composio-event-triggers) |
 | To react to a system that has **no app connector** but can call a URL ("when our in-house tool calls us", Stripe, a CI job) | **webhook trigger** | `on: { webhook: { secret } }` (flat: `type: webhook` + `secret_env`) |
 | To react to something that **sends no event and no webhook**, needs code to decide what matters, or needs a long-lived connection (a WebSocket, a stream) | **App event trigger — last resort** | An App watches and posts events; `on: { event, app }`. See [App events](#app-events-last-resort) |
 | To **pause mid-task and resume later with full context** | **session reminder** | See [Pausing mid-task](#pausing-mid-task) |
@@ -39,7 +39,8 @@ Rules: `kortix-yaml.md` → `imports:`.
 **React to something outside Kortix: pick the first that fits.**
 
 1. **A connector event.** The service already emits it (new email, new pull
-   request, new calendar event). No code, no secret.
+   request, new calendar event). No code, no secret. Needs the project flag
+   `event_triggers` (off by default); ask the user to turn it on.
 2. **A webhook.** The service can call a URL (Stripe, GitHub without a
    connector, your own backend). One secret, no code to run.
 3. **A schedule.** Checking on a fixed cadence is enough ("every hour, look
@@ -210,7 +211,7 @@ session, use a trigger.
 For very short waits *within* a single turn (seconds to a couple of
 minutes), a plain `sleep` in the run is fine.
 
-## Connector event triggers
+## Composio event triggers
 
 **Rule:** "when X happens in <app>" is an `event` trigger, NOT a webhook.
 Kortix creates the subscription for you. You wire no webhook, secret, or
@@ -218,20 +219,19 @@ signature. Use a webhook trigger only for a system with no app connector.
 
 ### Turn the feature on first
 
-Connector event triggers are a **beta** feature behind the project flag
-`event_triggers`. The flag is **on** by default; a project owner can turn it
-off. If it is off:
+Composio event triggers (connector events: Composio, plus apps Kortix checks itself with Connectors v2) are a **beta** feature behind the project flag
+`event_triggers`. The flag is **off** by default.
 
 - With the flag off, `kortix triggers events …` and `kortix triggers add|set
-  --type event` print `Connector event triggers are off for this project. Turn them
+  --type event` print `Composio event triggers are off for this project. Turn them
   on: kortix projects features enable event_triggers` and exit 1. The API
   answers `403` with `code: feature_disabled`. Cron, webhook and App event
   triggers are not affected.
 - Turn it on: `kortix projects features enable event_triggers`, or **Settings →
-  Feature flags → Connector event triggers** in the web app. A person with project
+  Feature flags → Composio event triggers** in the web app. A person with project
   write access does this. Ask the user when you cannot.
 - A `type: event` trigger already in `kortix.yaml` while the flag is off is not
-  subscribed. `kortix triggers ls` shows it as `error` with `Connector event triggers
+  subscribed. `kortix triggers ls` shows it as `error` with `Composio event triggers
   are off for this project. Turn them on in Settings → Feature flags.` The other
   triggers still apply.
 - Turning the flag on subscribes the declared event triggers by itself. Turning
@@ -406,7 +406,7 @@ on a zero-ticket night.
 → Event trigger: `connector: github`, a release event from
 `kortix triggers events --connector github`, `config: { repo: acme/api }`.
 Prompt reads `{{ event.data.* }}`, drafts notes, opens a CR. See
-[Connector event triggers](#connector-event-triggers).
+[Composio event triggers](#composio-event-triggers).
 
 **"Alert our in-house tool's calls to us."** (no app connector)
 → Webhook trigger with `secret_env: WEBHOOK_INHOUSE_SECRET`; the tool posts to

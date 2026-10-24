@@ -64,7 +64,10 @@ The CLI also checks the files around the manifest. In a v2 manifest it reports t
 - a missing tool module;
 - a skill with no `skills/<name>/SKILL.md`;
 - an agent `connectors` or `connectors_required` slug that `connectors` does not declare (`kortix_slack`, `kortix_teams`, `kortix_email` and `computer` always count as declared);
-- an agent `secrets` or trigger `secret_env` name that `env` does not declare.
+- an agent `secrets` or trigger `secret_env` name that `env` does not declare;
+- an agent `policy_sets` value that names a set the connector does not define, or `base`.
+
+An agent `policy_sets` key for a connector that the agent is not granted, or that `connectors` does not declare, is a warning.
 
 It lints each template Dockerfile. It warns when the files in Git exceed 512 MiB or when one file reaches 10 MiB.
 
@@ -177,6 +180,7 @@ An agent name matches `[a-z0-9][a-z0-9_-]{0,127}`.
 | `secrets` | none | Grant set of secret names the agent receives in its sandbox. |
 | `skills` | the `.md` decides | Grant set of skill names. Set, it overrides `permission.skill` in the agent `.md`. Omitted, the `.md` rule applies. |
 | `apps` | none | Grant set of App slugs the agent may open when the App access is `restricted` or `private`. |
+| `policy_sets` | none | Map of connector slug to the name of a policy set on that connector. The agent's calls on that connector use the set's rules before the base rules. A connector with no entry uses the base rules. See [Policy sets](/docs/connect/connectors#policy-sets). |
 | `commands` | none | v3 only. Grant set of command names from the top-level `commands`. The agent runs only these. |
 | `kortix_permissions` | none | Grant set of project permissions. Capped by the agent's ceiling role, never by the role of the person who starts the session. See [What an agent may do](/docs/project/agents#what-an-agent-may-do). |
 | `tools` | all | `all`, `none`, a list of tool names, or `{ exclude: [names] }`. The map form `{ bash: false }` also works. |
@@ -390,7 +394,7 @@ A trigger or connector entry is identified by its `slug`, and an App by its key 
 | `webhook` type | `secret_env`: the name of the signing secret. |
 | `app` type | `app`: the slug of the App whose posted events fire it. |
 | `target` | Optional, any type. `{ app, path, method, payload }`: the fire calls the App instead of an agent. |
-| `event` type | `connector` and `event`. Optional `account`, `source`, `config`. Uses the `event_triggers` feature flag (Connector event triggers), on by default. |
+| `event` type | `connector` and `event`. Optional `account`, `source`, `config`. Needs the `event_triggers` feature flag (Composio event triggers), off by default. |
 
 `type: monitor` is refused with `MONITOR_REMOVED`: an App that posts events replaces it. An event trigger rejects every cron and webhook field. `connector`, `event`, `account`, `source` and `config` are errors on any type except `event`.
 
@@ -406,7 +410,8 @@ A trigger or connector entry is identified by its `slug`, and an App by its key 
 | `sensitive` | `true`: an unmatched call needs approval. |
 | `auth` | `type`: `bearer`, `basic`, `custom`, `api_key`, `oauth1`, `hmac`, `aws_sigv4`, `mtls` or `none`. `in`: `header` (default), `query` or `cookie`. `name` for `custom` and `api_key`. `oauth1` only on `openapi`, `postman` and `http`. |
 | `headers` | Static headers, at most 32. Never a credential. |
-| `policies` | List of `{ match, action }`. `match` is a glob over tool names. `action` is `always_run`, `require_approval` or `block`. |
+| `policies` | The base rules. List of `{ match, action, conditions? }`. `match` is a glob over tool names. `action` is `always_run`, `require_approval` or `block`. `conditions` is the same as in [project rules](#policy-and-policies). |
+| `policy_sets` | v2 and v3. Map of set name to `{ description?, policies? }`. A name matches `[a-z0-9][a-z0-9_-]{0,63}` and is not `base`. At most 32 sets, each with at most 200 rules in the `policies` shape. Not allowed on `channel` or `computer` connectors. Agents get a set with `agents.<name>.policy_sets`. See [Policy sets](/docs/connect/connectors#policy-sets). |
 
 `computer` is not a valid provider: connecting a computer creates that connector. The slugs `kortix_slack`, `kortix_teams`, `kortix_email` and `computer` are reserved for the built-in connectors. Connecting a channel writes its `channel` connector for you: see [Slack, Teams & email](/docs/connect/channels).
 
@@ -470,7 +475,7 @@ Every tab takes `label`. A tab of a feature the project has off is hidden. The *
 - `allow_all` (default): the call runs.
 - `risk`: a read runs; a write or destructive call needs approval.
 
-`policies` holds project-wide rules. A rule matches a fully qualified tool path, `<connector-slug>.<tool>`, with `*` globs. Kortix checks project rules first, then the connector's own `policies`. The first matching rule wins. `conditions` limits a rule to calls whose arguments match:
+`policies` holds project-wide rules. A rule matches a fully qualified tool path, `<connector-slug>.<tool>`, with `*` globs. Kortix checks project rules first, then the calling agent's [policy set](/docs/connect/connectors#policy-sets) on the connector, then the connector's base `policies`. The first matching rule wins. `conditions` limits a rule to calls whose arguments match:
 
 ```yaml
 policy:
@@ -494,7 +499,7 @@ approvals:
 
 All conditions of a rule must hold. `negate: true` inverts one condition. How approvals reach a person is on [Policies and approvals](/docs/connect/connectors#policies-and-approvals).
 
-`kortix validate` does not check `policy` or `policies`. When Kortix syncs connectors, it skips a malformed rule and reports it as a connector sync error. Check the rules in the connector settings after the merge.
+`kortix validate` does not check `policy` or `policies`. It does check `policy_sets`: see [File and schema](#file-and-schema). When Kortix syncs connectors, it skips a malformed rule and reports it as a connector sync error. Check the rules in the connector settings after the merge.
 
 ## Dashboard and CLI edits
 

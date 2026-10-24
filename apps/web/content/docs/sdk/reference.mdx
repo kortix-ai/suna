@@ -321,13 +321,14 @@ Exposure policies and flags are explained in [Secrets](/docs/project/secrets).
 | `connectors.catalog(options?)` · `.tools()` · `.search(query)` · `.describe(tool)` · `.accounts(slug)` · `.uploadAttachment(…)` | Find and inspect callable tools and accounts. |
 | `connectors.list()` · `.config(slug)` · `.create(input)` · `.remove(slug)` · `.sync()` · `.auth.discover(input)` | Configure connectors. `auth.discover` reads auth from an OpenAPI spec, a Postman collection or an endpoint. |
 | `connectors.setName` · `.setSensitive` · `.setCredentialMode` · `.setCredential` · `.deleteCredential` | Connector settings and its stored credential. |
-| `connectors.policies.get(slug)` · `connectors.policies.set(slug, policies)` | One connector's tool policies. |
+| `connectors.policies.get(slug, { policySet? })` · `connectors.policies.set(slug, policies, { policySet? })` | One connector's base rules, or with `policySet` the rules of that policy set. A rule is `{ match, action, conditions? }`. |
+| `connectors.policySets.list(slug)` · `.upsert(slug, name, { description? })` · `.rename(slug, name, newName)` · `.remove(slug, name)` | The connector's [policy sets](/docs/connect/connectors#policy-sets): list each set with its rules and the agents that use it · create one or set its description · rename it and every agent reference · delete it (`409`, `policy_set_in_use`, while an agent uses it). The root exports `listConnectorPolicySets`, `upsertConnectorPolicySet`, `renameConnectorPolicySet` and `deleteConnectorPolicySet`. |
 | `connectors.connections.list()` · `.listAll()` · `.reconcile(…)` · `.reconcileMember(…)` · `.updateCredential(…)` · `.revoke(…)` · `.activate(…)` · `.setDefault(…)` · `.rename(…)` · `.share(…)` · `.addComputer(…)` | Connected accounts: shared or private, defaults, labels, sharing and paired computers. |
 | `connectors.pipedream.listApps` · `.listSections` · `.connect` · `.finalize` | Legacy Pipedream connect for OAuth apps. |
 | `connectors.listMoves()` · `connectors.move(slug, { connectionId? })` | Move a Pipedream or Composio connector to its Kortix MCP app. It keeps its slug. `listMoves` returns `ConnectorMove[]`. `move` returns `ConnectorMoveResult`: `status: 'sign_in'` with the `connection_id` to sign in on, or `status: 'moved'`. The root exports the same calls as `listConnectorMoves(projectId)` and `moveConnector(projectId, slug, { connectionId? })`. See [Move a Pipedream or Composio connector to Kortix](/docs/connect/connectors#move-a-pipedream-or-composio-connector-to-kortix). |
 | `connectors.discover.list` · `.sections` · `.detail` · `.tools` · `.install` | The app catalog: every MCP server, REST and GraphQL API and Composio app. `list` and `sections` take `q`, `category`, `kinds` (`mcp`, `composio`, `openapi`, `graphql`) and `oneClick`. `detail(id)` lists the app's ways to connect, best first, the first `recommended`. `tools(id, way?)` lists what one way can do before install. `install({ id, way?, name?, slug? })` adds a named connector profile and returns `next` (`connect`, `credential` or `ready`). |
 | `policies.list()` · `policies.set(policies)` | Project policies. |
-| `agentIdentities()` · `setAgentScope(agentName, scope)` | The project's agents as principals · bind secrets and connectors to one agent. |
+| `agentIdentities()` · `setAgentScope(agentName, scope)` | The project's agents as principals · bind secrets, connectors and policy sets to one agent. `scope.policy_sets` is `{ <slug>: <name> \| null }`, merged per connector; `null` or `'base'` removes the entry. |
 
 Accounts, the account a call uses, typed calls and errors are explained in [Connectors](/docs/connect/connectors) and [Call connectors from code](/docs/connect/connectors#call-connectors-from-code).
 
@@ -665,7 +666,7 @@ Each name below is marked `@deprecated` and stays until the next major version. 
 | `OpenCodeConfigIssue` · `OpenCodeConfigInvalidError` · `getOpenCodeConfigInvalidError` · `isOpenCodeConfigInvalidError` | `RuntimeConfigIssue` · `RuntimeConfigInvalidError` · `getRuntimeConfigInvalidError` · `isRuntimeConfigInvalidError` |
 | `p.sessions.claimWarm(input)` · `claimWarmProjectSession` | Open the session from `p.sessions.ensureWarm()` and prompt it |
 | `p.connectors.setAuthorizationStrategy` · `setConnectorAuthorizationStrategy` | The call changes nothing. To create an account under one owner, pass `owner` to `connectorConnect`. |
-| `getConnectionPolicies` · `setConnectionPolicies` | `p.connectors.policies.get` · `p.connectors.policies.set` |
+| `getConnectionPolicies` · `setConnectionPolicies` | `p.connectors.policies.get` · `p.connectors.policies.set`. For other rules per agent, a [policy set](/docs/connect/connectors#policy-sets). |
 | `pipedreamConnect` · `pipedreamFinalize` | `connectorConnect` · `connectorFinalize` |
 | `listDiscoverIntegrations` · `getDiscoverIntegration` · `DiscoverIntegration*` types | `listDiscoverConnectors` · `getDiscoverConnector` · `DiscoverConnector*` types |
 | `SessionScopeResult` · `toWorkspaceRelative` | `SessionScope` · `toDaemonPath` |

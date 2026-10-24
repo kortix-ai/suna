@@ -339,6 +339,12 @@ kortix connectors connect <slug>                    # the human signs in
 Install adds a connector PROFILE (an entry in `kortix.yaml`): its accounts, who
 may use them and its tool rules (`kortix connectors policy`) live on it.
 
+Install one profile per WAY of connecting an app (Stripe over MCP and Stripe
+over its REST API are two profiles: different tools, different sign-ins).
+Never install a second profile of the same way only to give an agent other
+rules: every profile needs its own accounts and its own sign-in. Give the
+agent a policy set on the one profile instead (see **Policy sets** below).
+
 The catalogue is large, not complete. When it has no entry for the app, search
 the web for the vendor's MCP server (`<vendor> MCP server`, the vendor's
 developer docs, the MCP registry at registry.modelcontextprotocol.io) or its
@@ -365,6 +371,70 @@ kortix channels connect
 ```
 </adding-connectors>
 
+<policy-sets>
+A **policy set** is a named rule list on one connector profile
+(`connectors[].policy_sets` in `kortix.yaml`). An agent gets a set with
+`agents.<name>.policy_sets: { <connector slug>: <set name> }`. Its calls on
+that connector then resolve in this order (first layer with a match decides):
+
+1. project-wide `policies:` (a set never overrides them);
+2. the agent's set on this connector;
+3. the connector's base `policies:`;
+4. `sensitive: true` → approval;
+5. `policy.default_mode`.
+
+A caller with no set (a person's token, a script, a trigger poll) gets the
+base rules. A pi subagent runs under the set of the root session's agent. A
+set can loosen a base rule for its agent; a rule for every caller goes in
+project `policies:`.
+
+```yaml
+connectors:
+  - slug: gmail
+    provider: composio
+    app: gmail
+    policy_sets:
+      read_only:
+        description: Read and search, never send
+        policies:
+          - match: send_*
+            action: block
+agents:
+  support:
+    connectors: [gmail]
+    policy_sets:
+      gmail: read_only
+```
+
+Commands (each commits `kortix.yaml` on the default branch and syncs):
+
+```sh
+kortix connectors policy gmail sets                                     # sets + the agents that use each
+kortix connectors policy gmail sets create read_only --description "Read and search, never send"
+kortix connectors policy gmail --policy-set read_only set "send_*" block # set rules: ls, set, rm, clear
+kortix connectors policy gmail sets rename read_only readonly           # rewrites agent references too
+kortix connectors policy gmail sets rm readonly                         # 409 policy_set_in_use while an agent uses it
+kortix agents scope support --policy-set gmail=read_only                # gmail=base removes the entry
+```
+
+- A name is `[a-z0-9][a-z0-9_-]{0,63}`; `base` is reserved. At most 32 sets
+  per connector, 200 rules per set. `kortix_version` 2 or 3 only. Channel
+  connectors and `computer` cannot hold sets.
+- Changing any agent's `policy_sets` needs `project.agent.write` AND
+  `project.connector.write`. Without `project.connector.write` in your own
+  grant you cannot change any entry, your own included
+  (`403 agent_grant_escalation`): ask the human.
+- `list_connectors` (MCP) shows `policy_set` per connector: the set YOUR
+  agent runs under, `null` for the base rules. The catalog omits actions your
+  set blocks.
+- `policy_block` with `policy_set` in the body: your agent's set blocked the
+  call. Final. Do not retry, and do not look for another profile or account
+  to get around it. Tell the human which set blocked which action.
+- `policy_set_missing`: your agent names a set this connector does not
+  define, so every call on the connector is blocked for you. Tell the human
+  to fix `agents.<name>.policy_sets` or add the set.
+</policy-sets>
+
 <rules>
 - A connector is not an account. One connector (e.g. Gmail) can hold many
   accounts (shared or private) — see **Choosing the account** above.
@@ -386,6 +456,10 @@ kortix channels connect
 - Report which account ran when it could matter — read the result's
   `account` field, never assume.
 - Confirm irreversible work before a destructive connector call.
+- One profile per way of connecting an app. Different rules for different
+  agents → a policy set, never a duplicate profile.
+- A `policy_block` or `policy_set_missing` is final. Never route around a
+  set through another profile, account, or raw key.
 </rules>
 
 </skill>

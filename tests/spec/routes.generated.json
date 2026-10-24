@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 924,
+  "count": 928,
   "routes": [
     {
       "method": "GET",
@@ -1353,6 +1353,22 @@
     {
       "method": "PUT",
       "path": "/v1/connectors/projects/:projectId/connectors/:slug/policies"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/policy-sets"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name/name"
     },
     {
       "method": "PUT",

@@ -1354,8 +1354,104 @@
                       "pattern": "^\\s*(?:[aA][lL][wW][aA][yY][sS]_[rR][uU][nN]|[rR][eE][qQ][uU][iI][rR][eE]_[aA][pP][pP][rR][oO][vV][aA][lL]|[bB][lL][oO][cC][kKK])\\s*$(?![\\s\\S])"
                     }
                   ]
+                },
+                "conditions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "arg",
+                      "match"
+                    ],
+                    "properties": {
+                      "arg": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      },
+                      "match": {
+                        "type": "string"
+                      },
+                      "negate": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
                 }
               }
+            }
+          },
+          "policy_sets": {
+            "type": "object",
+            "description": "Named rule sets an agent can be given (agents.<name>.policy_sets). A set's rules run before the base `policies`; project `policies` still run first. kortix_version 2 and 3.",
+            "maxProperties": 32,
+            "propertyNames": {
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+              "not": {
+                "const": "base"
+              }
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "description": {
+                  "type": "string"
+                },
+                "policies": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "match",
+                      "action"
+                    ],
+                    "properties": {
+                      "match": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      },
+                      "action": {
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "always_run",
+                              "require_approval",
+                              "block"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[aA][lL][wW][aA][yY][sS]_[rR][uU][nN]|[rR][eE][qQ][uU][iI][rR][eE]_[aA][pP][pP][rR][oO][vV][aA][lL]|[bB][lL][oO][cC][kKK])\\s*$(?![\\s\\S])"
+                          }
+                        ]
+                      },
+                      "conditions": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "arg",
+                            "match"
+                          ],
+                          "properties": {
+                            "arg": {
+                              "type": "string",
+                              "pattern": "\\S"
+                            },
+                            "match": {
+                              "type": "string"
+                            },
+                            "negate": {
+                              "type": "boolean"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "maxItems": 200
+                }
+              },
+              "additionalProperties": false
             }
           }
         },
@@ -2972,6 +3068,14 @@
               "pattern": "\\S"
             },
             "description": "Connector slugs that must resolve before the session starts."
+          },
+          "policy_sets": {
+            "type": "object",
+            "description": "Connector slug → the policy set (connectors[].policy_sets) this agent gets on it. Absent: the base rules.",
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+            }
           },
           "secrets": {
             "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",

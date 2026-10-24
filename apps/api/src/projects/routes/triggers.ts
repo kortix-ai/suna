@@ -989,7 +989,7 @@ export function registerTriggersRoutes(): void {
       const source = run.source as TriggerFireSource;
       const template = renderPromptTemplate(target.spec.promptTemplate, run.payload);
       const renderedPrompt =
-        source === 'event' ? `${eventPromptPreamble(target.spec)}${template}`
+        source === 'event' ? `${eventPromptPreamble(target.spec, ((run.payload as { event?: { provider?: string } } | null)?.event?.provider) ?? null)}${template}`
           : source === 'app' ? `${APP_EVENT_PROMPT_PREAMBLE}${template}`
             : template;
       return fireAndAnswer(c, target, {

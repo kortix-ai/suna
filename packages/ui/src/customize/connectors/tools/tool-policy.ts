@@ -7,6 +7,19 @@ import type {
 export type PolicyChoice = 'default' | ConnectorPolicyAction;
 
 /**
+ * Which rule list the Tools tab edits: the connector's base rules, or one
+ * policy set. In a set, `'default'` means "inherit": the tool has no rule in
+ * the set, so the base rules decide (`resolveEffectiveAction` checks the set
+ * before the base rules, connectors/policy.ts).
+ */
+export type PolicyScope = 'base' | 'set';
+
+/** The `effective.source` that marks a decision made in the list being edited. */
+function ownSource(scope: PolicyScope): ConnectorEffectivePolicy['source'] {
+  return scope === 'set' ? 'policy_set' : 'connector';
+}
+
+/**
  * What the control should read for a tool. `risk_default` and `allow_all` are
  * the platform deciding, not the user — showing them as an explicit Allow would
  * claim a choice nobody made, and hide that changing the default moves them.
@@ -14,10 +27,26 @@ export type PolicyChoice = 'default' | ConnectorPolicyAction;
 export function effectiveChoice(
   path: string,
   effective: readonly ConnectorEffectivePolicy[],
+  scope: PolicyScope = 'base',
 ): PolicyChoice {
   const hit = effective.find((e) => e.path === path);
   if (!hit) return 'default';
-  return hit.source === 'connector' || hit.source === 'project' ? hit.action : 'default';
+  return hit.source === ownSource(scope) || hit.source === 'project' ? hit.action : 'default';
+}
+
+/**
+ * In a set, what the base rules decide for a tool the set leaves on Inherit.
+ * Null when no base rule names it (the connector default decides) or when the
+ * list being edited is the base list itself.
+ */
+export function inheritedBaseAction(
+  path: string,
+  effective: readonly ConnectorEffectivePolicy[],
+  scope: PolicyScope,
+): ConnectorPolicyAction | null {
+  if (scope !== 'set') return null;
+  const hit = effective.find((e) => e.path === path);
+  return hit?.source === 'connector' ? hit.action : null;
 }
 
 /**
@@ -60,7 +89,9 @@ export function applyBulkPolicy(
   const targets = new Set(paths.map((path) => path.toLowerCase()));
   // Only an exact rule can name one tool. A glob is never replaced by a
   // per-tool decision, even when it happens to cover the same tool.
-  const kept = rules.filter((r) => isPatternRule(r.match) || !targets.has(r.match.toLowerCase()));
+  // A conditional rule (`conditions:` in kortix.yaml) is kept too: a per-tool
+  // click has no way to express it, and replacing it would drop the condition.
+  const kept = rules.filter((r) => isAdvancedRule(r) || !targets.has(r.match.toLowerCase()));
   if (choice === 'default') return kept;
   return [...kept, ...paths.map((match) => ({ match, action: choice }))];
 }
@@ -74,6 +105,14 @@ export function applyBulkPolicy(
  */
 export function isPatternRule(match: string): boolean {
   return match.includes('*') || /^\/.*\/[a-z]*$/.test(match);
+}
+
+/**
+ * A rule the per-tool control cannot represent: a pattern, or a rule with
+ * argument conditions. Both live in the Advanced editor.
+ */
+export function isAdvancedRule(rule: ConnectorPolicyRule): boolean {
+  return isPatternRule(rule.match) || (rule.conditions?.length ?? 0) > 0;
 }
 
 /**
@@ -109,11 +148,12 @@ export function toolChoice(
   path: string,
   policies: readonly ConnectorPolicyRule[],
   effective: readonly ConnectorEffectivePolicy[],
+  scope: PolicyScope = 'base',
 ): PolicyChoice {
-  if (effective.some((e) => e.path === path)) return effectiveChoice(path, effective);
+  if (effective.some((e) => e.path === path)) return effectiveChoice(path, effective, scope);
   // Case-insensitive, like the engine — `GetPetById` governs `getpetbyid`.
   const needle = path.toLowerCase();
-  const exact = policies.find((p) => !isPatternRule(p.match) && p.match.toLowerCase() === needle);
+  const exact = policies.find((p) => !isAdvancedRule(p) && p.match.toLowerCase() === needle);
   return exact ? exact.action : 'default';
 }
 
@@ -136,12 +176,13 @@ export function previewEffective(
   effective: readonly ConnectorEffectivePolicy[],
   paths: readonly string[],
   choice: PolicyChoice,
+  scope: PolicyScope = 'base',
 ): ConnectorEffectivePolicy[] {
   const targets = new Set(paths);
   const touched = (entry: ConnectorEffectivePolicy) =>
     targets.has(entry.path) && entry.source !== 'project';
   if (choice === 'default') return effective.filter((entry) => !touched(entry));
   return effective.map((entry) =>
-    touched(entry) ? { path: entry.path, action: choice, source: 'connector' as const } : entry,
+    touched(entry) ? { path: entry.path, action: choice, source: ownSource(scope) } : entry,
   );
 }

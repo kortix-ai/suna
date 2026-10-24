@@ -1248,7 +1248,7 @@
           "description": "Avisa as pessoas a quem uma sessão diz respeito (quem enviou o prompt, quem a criou e quem a segue) com uma caixa de entrada com sino, push do navegador e e-mail, e alerta sobre gatilhos e lembretes que falham. Desligado: só o telefone de quem criou a sessão recebe o push dela, e o telefone de um proprietário da conta recebe um quando um gatilho começa a falhar."
         },
         "event_triggers": {
-          "name": "Gatilhos de eventos de conectores",
+          "name": "Gatilhos de eventos do Composio",
           "description": "Inicie um agente quando algo acontece em um app conectado: um novo e-mail, um pull request, um evento do calendário. Os eventos vêm do Composio. O Kortix também verifica por conta própria seus apps conectados."
         },
         "volumes": {
@@ -22779,7 +22779,9 @@
     "diagramEdit": "Editar diagrama",
     "diagramDone": "Concluído",
     "codeLanguage": "Linguagem do código",
-    "editedAgo": "Editado {time}"
+    "editedAgo": "Editado {time}",
+    "openFullPage": "Abrir em página inteira",
+    "close": "Fechar"
   },
   "emailConnect": {
     "homeTitle": "Onde a caixa fica",
@@ -22852,5 +22854,56 @@
     "removeDeletes": "Remove a conta e exclui {address} no Resend. Depois disso, e-mails para esse endereço voltam.",
     "removeKeeps": "Remove a conta do Kortix. {address} continua na sua conta Resend.",
     "removed": "Caixa removida"
+  },
+  "connectorPolicySets": {
+    "rulesFor": "Regras para",
+    "baseRules": "Regras base",
+    "newSet": "Novo conjunto de regras…",
+    "baseHint": "Quem chama sem conjunto de regras segue estas regras. Um conjunto de regras as altera para os agentes que o recebem.",
+    "setHint": "Vale só para agentes com {name}. Ferramentas em Herdar seguem as regras base.",
+    "usedBy": "Usado por {agents}",
+    "unused": "Nenhum agente usa este conjunto de regras ainda. Escolha-o na página Conectores de um agente.",
+    "edit": "Editar conjunto de regras",
+    "delete": "Excluir conjunto de regras",
+    "deleteInUse": "Usado por {agents}. Dê primeiro outro conjunto de regras a esses agentes.",
+    "deleteTitle": "Excluir o conjunto de regras {name}?",
+    "deleteBody": "Suas regras são removidas do kortix.yaml. Isso não pode ser desfeito.",
+    "deleteConfirm": "Excluir",
+    "deleted": "Conjunto de regras {name} excluído",
+    "createTitle": "Novo conjunto de regras",
+    "createBody": "Dê a alguns agentes regras diferentes neste conector. Eles mantêm as mesmas contas.",
+    "editTitle": "Editar conjunto de regras",
+    "editBody": "Renomear atualiza todos os agentes que usam este conjunto de regras.",
+    "nameLabel": "Nome",
+    "nameHelp": "Letras minúsculas, dígitos, _ e -. O nome base é reservado.",
+    "nameTaken": "Este conector já tem um conjunto de regras com este nome.",
+    "descriptionLabel": "Descrição",
+    "descriptionPlaceholder": "Ler e pesquisar, nunca enviar",
+    "cancel": "Cancelar",
+    "create": "Criar",
+    "save": "Salvar",
+    "created": "Conjunto de regras {name} criado",
+    "saved": "Conjunto de regras salvo",
+    "loadFailed": "Não foi possível carregar os conjuntos de regras",
+    "retry": "Tentar novamente",
+    "inherit": "Herdar",
+    "inheritBase": "Herda as regras base: {action}.",
+    "inheritDefault": "Herda as regras base. Nenhuma regra base cita esta ferramenta, então o padrão do conector decide.",
+    "agentSection": "Conjuntos de regras",
+    "agentSelectLabel": "Regras para {name}",
+    "agentMissing": "Ausente",
+    "agentMissingHint": "O conjunto de regras {name} não existe neste conector. As chamadas ficam bloqueadas até você escolher um conjunto de regras.",
+    "approvalSetAgent": "Agente {agent} · conjunto de regras {set}",
+    "approvalSet": "Conjunto de regras {set}",
+    "auditSet": "conjunto de regras {set}",
+    "bulkInheritTitle": "Voltar {count, plural, one {# ferramenta} other {# ferramentas}} às regras base?",
+    "bulkInheritBody": "Exclui a regra deste conjunto para cada ferramenta listada em {group}, para que cada uma volte a seguir as regras base. Regras de padrão não mudam."
+  },
+  "sessionChangeRequests": {
+    "title": "Solicitações de alteração",
+    "open": "Aberta",
+    "jump": "Ir para a resposta de #{number}",
+    "unavailable": "Esta resposta não está disponível no histórico carregado.",
+    "loadError": "Não foi possível carregar a resposta. Tente novamente."
   }
 }

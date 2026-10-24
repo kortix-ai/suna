@@ -1,6 +1,6 @@
 {
   "id": "7b4c1550-0c30-4423-9a10-5980f141b2c7",
-  "prevId": "ed273110-3c1f-4588-8001-1d7c6c0e0f8e",
+  "prevId": "c1bebaa2-c154-47a2-8f07-6ab9aee915ec",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4697,18 +4697,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "space": {
-          "name": "space",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "agent": {
-          "name": "agent",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -4722,6 +4710,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "space": {
+          "name": "space",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "agent": {
+          "name": "agent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -10232,6 +10232,74 @@
         }
       },
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.connector_policy_sets": {
+      "name": "connector_policy_sets",
+      "schema": "kortix",
+      "columns": {
+        "connector_id": {
+          "name": "connector_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "policies": {
+          "name": "policies",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "connector_policy_sets_connector_id_connectors_connector_id_fk": {
+          "name": "connector_policy_sets_connector_id_connectors_connector_id_fk",
+          "tableFrom": "connector_policy_sets",
+          "tableTo": "connectors",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "connector_id"
+          ],
+          "columnsTo": [
+            "connector_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "connector_policy_sets_connector_id_name_pk": {
+          "name": "connector_policy_sets_connector_id_name_pk",
+          "columns": [
+            "connector_id",
+            "name"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},

@@ -1248,7 +1248,7 @@
           "description": "Avisa a las personas a las que concierne una sesión (quien envió el prompt, quien la creó y quien la sigue) con una bandeja con campana, notificaciones push del navegador y correo, y alerta cuando fallan disparadores y recordatorios. Desactivado: solo el teléfono de quien creó la sesión recibe su push, y el teléfono de un propietario de la cuenta recibe uno cuando un disparador empieza a fallar."
         },
         "event_triggers": {
-          "name": "Disparadores de eventos de conectores",
+          "name": "Disparadores de eventos de Composio",
           "description": "Inicia un agente cuando ocurre algo en una app conectada: un correo nuevo, un pull request, un evento del calendario. Los eventos vienen de Composio. Kortix también revisa por sí mismo tus apps conectadas."
         },
         "volumes": {
@@ -22779,7 +22779,9 @@
     "diagramEdit": "Editar diagrama",
     "diagramDone": "Listo",
     "codeLanguage": "Lenguaje del código",
-    "editedAgo": "Editado {time}"
+    "editedAgo": "Editado {time}",
+    "openFullPage": "Abrir a página completa",
+    "close": "Cerrar"
   },
   "emailConnect": {
     "homeTitle": "Dónde vive el buzón",
@@ -22852,5 +22854,56 @@
     "removeDeletes": "Quita la cuenta y elimina {address} en Resend. Después, el correo a esa dirección rebota.",
     "removeKeeps": "Quita la cuenta de Kortix. {address} sigue en tu cuenta de Resend.",
     "removed": "Bandeja eliminada"
+  },
+  "connectorPolicySets": {
+    "rulesFor": "Reglas para",
+    "baseRules": "Reglas base",
+    "newSet": "Nuevo conjunto de reglas…",
+    "baseHint": "Quien llama sin conjunto de reglas sigue estas reglas. Un conjunto de reglas las cambia para los agentes a los que se lo das.",
+    "setHint": "Solo se aplica a los agentes con {name}. Las herramientas en Heredar siguen las reglas base.",
+    "usedBy": "Lo usa {agents}",
+    "unused": "Ningún agente usa todavía este conjunto de reglas. Elígelo en la página Conectores de un agente.",
+    "edit": "Editar conjunto de reglas",
+    "delete": "Eliminar conjunto de reglas",
+    "deleteInUse": "Lo usa {agents}. Primero da a esos agentes otro conjunto de reglas.",
+    "deleteTitle": "¿Eliminar el conjunto de reglas {name}?",
+    "deleteBody": "Sus reglas se quitan de kortix.yaml. No se puede deshacer.",
+    "deleteConfirm": "Eliminar",
+    "deleted": "Conjunto de reglas {name} eliminado",
+    "createTitle": "Nuevo conjunto de reglas",
+    "createBody": "Da a algunos agentes reglas distintas en este conector. Mantienen las mismas cuentas.",
+    "editTitle": "Editar conjunto de reglas",
+    "editBody": "Al cambiar el nombre se actualiza cada agente que usa este conjunto de reglas.",
+    "nameLabel": "Nombre",
+    "nameHelp": "Minúsculas, dígitos, _ y -. El nombre base está reservado.",
+    "nameTaken": "Este conector ya tiene un conjunto de reglas con este nombre.",
+    "descriptionLabel": "Descripción",
+    "descriptionPlaceholder": "Leer y buscar, nunca enviar",
+    "cancel": "Cancelar",
+    "create": "Crear",
+    "save": "Guardar",
+    "created": "Conjunto de reglas {name} creado",
+    "saved": "Conjunto de reglas guardado",
+    "loadFailed": "No se pudieron cargar los conjuntos de reglas",
+    "retry": "Reintentar",
+    "inherit": "Heredar",
+    "inheritBase": "Hereda las reglas base: {action}.",
+    "inheritDefault": "Hereda las reglas base. Ninguna regla base nombra esta herramienta, así que decide el valor predeterminado del conector.",
+    "agentSection": "Conjuntos de reglas",
+    "agentSelectLabel": "Reglas para {name}",
+    "agentMissing": "Falta",
+    "agentMissingHint": "El conjunto de reglas {name} no existe en este conector. Las llamadas se bloquean hasta que elijas un conjunto de reglas.",
+    "approvalSetAgent": "Agente {agent} · conjunto de reglas {set}",
+    "approvalSet": "Conjunto de reglas {set}",
+    "auditSet": "conjunto de reglas {set}",
+    "bulkInheritTitle": "¿Devolver {count, plural, one {# herramienta} other {# herramientas}} a las reglas base?",
+    "bulkInheritBody": "Elimina la regla de este conjunto para cada herramienta de {group}, de modo que cada una vuelva a seguir las reglas base. Las reglas de patrón no cambian."
+  },
+  "sessionChangeRequests": {
+    "title": "Solicitudes de cambio",
+    "open": "Abierta",
+    "jump": "Ir a la respuesta de #{number}",
+    "unavailable": "Esta respuesta no está disponible en el historial cargado.",
+    "loadError": "No se pudo cargar la respuesta. Inténtalo de nuevo."
   }
 }

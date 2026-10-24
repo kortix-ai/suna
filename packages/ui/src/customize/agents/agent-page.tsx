@@ -126,6 +126,8 @@ import {
   SECTION_ICON,
 } from './agent-overview';
 import { AppsGrantPage } from './agent-grant-pages';
+import { connectorPolicySetOptions } from './agent-policy-sets';
+import { AgentPolicySetsPanel } from './agent-policy-sets-section';
 import { AgentPeopleSection } from './agent-people-section';
 import { AgentShareControl } from './agent-share-control';
 import { PlatformAgentOverview } from './platform-agent-overview';
@@ -774,6 +776,10 @@ function EditableAgentPage({
     () => registryGrantOptions({ manifest_raw: config.manifest_raw, agents: toArray(config.agents) }, agent.name),
     [config.manifest_raw, config.agents, agent.name],
   );
+  const policySetOptions = useMemo(
+    () => connectorPolicySetOptions(config.manifest_raw),
+    [config.manifest_raw],
+  );
   const section = useAgentSection(sections);
   const counts = useAgentUseCounts(projectId, agent.name, config);
   const surface = { kind: 'agent', agentName: agent.name } as const;
@@ -834,6 +840,9 @@ function EditableAgentPage({
             surface={surface}
             grant={connectorsGrant}
             required={requiredConnectors}
+            agentPanel={
+              <AgentPolicySetsPanel projectId={projectId} editor={editor} catalog={policySetOptions} />
+            }
           />
         );
       case 'skills':

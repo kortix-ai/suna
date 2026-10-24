@@ -27,6 +27,7 @@ function template(overrides: Partial<ResolvedTemplate> = {}): ResolvedTemplate {
     contentHash: null,
     builtFromCommit: null,
     swapKey: null,
+    lastReady: {},
     ...overrides,
   };
 }

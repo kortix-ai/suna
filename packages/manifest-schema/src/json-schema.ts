@@ -89,6 +89,7 @@ import {
   CONNECTOR_HEADER_VALUE_MAX_LENGTH,
   CONNECTOR_HEADERS_MAX_COUNT,
 } from './connector-headers';
+import { MAX_POLICY_SETS_PER_CONNECTOR, MAX_RULES_PER_POLICY_SET, POLICY_SET_NAME_RE, RESERVED_POLICY_SET_NAME } from './policy-sets';
 
 /** A JSON Schema fragment — plain data, no `$id`/`$schema` (those belong on
  *  the top-level documents only). Kept loose (not the full 2020-12 meta-type)
@@ -695,6 +696,26 @@ const RESERVED_SLUG_CONST_CHECKS: JsonSchemaFragment[] = Object.entries(RESERVED
  *    tolerates the stray legacy key (warning-level only, so unconstrained
  *    here); v2 forbids it outright (`false` schema — matches the `auth.secret`
  *    forbidden-key pattern below) — see `validateConnectors`. */
+const CONNECTOR_POLICY_LIST_SCHEMA: JsonSchemaFragment = {
+  type: 'array',
+  items: {
+    type: 'object',
+    required: ['match', 'action'],
+    properties: {
+      match: NON_BLANK_STRING,
+      action: normalizedEnumSchema(CONNECTOR_POLICY_ACTIONS),
+      conditions: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['arg', 'match'],
+          properties: { arg: NON_BLANK_STRING, match: { type: 'string' }, negate: { type: 'boolean' } },
+        },
+      },
+    },
+  },
+};
+
 function connectorSchema(version: 1 | 2): JsonSchemaFragment {
   const credentialSchema: JsonSchemaFragment = version === 2 ? normalizedEnumSchema(['shared']) : {};
   const agentScopeSchema: JsonSchemaFragment | boolean = version === 2 ? false : {};
@@ -748,15 +769,21 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
           pattern: '^[^\\r\\n]*$',
         },
       },
-      policies: {
-        type: 'array',
-        items: {
+      policies: CONNECTOR_POLICY_LIST_SCHEMA,
+      // v1 refuses policy sets (`unsupported_in_v1`): `false`, as for the other v2-only keys.
+      policy_sets: version === 1 ? false : {
+        type: 'object',
+        description:
+          'Named rule sets an agent can be given (agents.<name>.policy_sets). A set\'s rules run before the base `policies`; project `policies` still run first. kortix_version 2 and 3.',
+        maxProperties: MAX_POLICY_SETS_PER_CONNECTOR,
+        propertyNames: { pattern: POLICY_SET_NAME_RE.source, not: { const: RESERVED_POLICY_SET_NAME } },
+        additionalProperties: {
           type: 'object',
-          required: ['match', 'action'],
           properties: {
-            match: NON_BLANK_STRING,
-            action: normalizedEnumSchema(CONNECTOR_POLICY_ACTIONS),
+            description: { type: 'string' },
+            policies: { ...CONNECTOR_POLICY_LIST_SCHEMA, maxItems: MAX_RULES_PER_POLICY_SET },
           },
+          additionalProperties: false,
         },
       },
     },
@@ -890,6 +917,11 @@ function agentBlockV2Schema(): JsonSchemaFragment {
         items: NON_BLANK_STRING,
         deprecated: true,
         description: 'Deprecated input alias for connectors_required.',
+      },
+      policy_sets: {
+        type: 'object',
+        description: 'Connector slug → the policy set (connectors[].policy_sets) this agent gets on it. Absent: the base rules.',
+        additionalProperties: { type: 'string', pattern: POLICY_SET_NAME_RE.source },
       },
       secrets: grantSetSchema(),
       skills: grantSetSchema(),
@@ -1248,6 +1280,7 @@ function agentBlockV3Schema(): JsonSchemaFragment {
       extensions: namedGrantSchema('Registered extensions a session of this agent loads.'),
       connectors: v2.properties.connectors,
       connectors_required: v2.properties.connectors_required,
+      policy_sets: v2.properties.policy_sets,
       secrets: v2.properties.secrets,
       apps: v2.properties.apps,
       kortix_permissions: v2.properties.kortix_permissions,

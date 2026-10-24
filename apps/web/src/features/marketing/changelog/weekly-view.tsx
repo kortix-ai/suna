@@ -4,6 +4,7 @@ import { Badge } from '@kortix/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
 import { Separator } from '@kortix/ui/separator';
 import { ArrowRightIcon } from '@/features/icon/arrow-right';
+import { cn } from '@kortix/ui';
 import Link from 'next/link';
 
 import { ChangelogAnchorRedirect } from './anchor-redirect';
@@ -22,6 +23,22 @@ export function weekRange(week: ChangelogWeek, locale: string): string {
   });
   // `end` is exclusive: the last day is the Sunday before it.
   return format.formatRange(new Date(week.start), new Date(Date.parse(week.end) - 1));
+}
+
+/** The week's agent-written summary: 1–5 plain lines, one bullet each. */
+export function WeekSummary({ lines, className }: { lines: string[]; className?: string }) {
+  return (
+    <ul
+      className={cn(
+        'text-foreground marker:text-muted-foreground list-disc space-y-3 pl-5 text-[15px] leading-7',
+        className,
+      )}
+    >
+      {lines.map((line, i) => (
+        <li key={i}>{line}</li>
+      ))}
+    </ul>
+  );
 }
 
 export async function WeeklyView({ data }: { data: ChangelogWeekly }) {
@@ -74,11 +91,13 @@ export async function WeeklyView({ data }: { data: ChangelogWeekly }) {
           // of everything else, which Release history lists in full.
           weeks.map((week) => {
             const weekHref = `/changelog/${week.slug}`;
-            // Everything the highlights leave out, as one line of counts.
+            // Everything the highlights leave out, as one line of counts. The
+            // summary rephrases rather than lists New items, so it leaves all of them.
+            const shownNew = week.summary ? 0 : week.highlights.length;
             const rest = [
-              week.counts.new - week.highlights.length > 0 &&
+              week.counts.new - shownNew > 0 &&
                 tI18nComplete('textb8471beb7d98', {
-                  count: week.counts.new - week.highlights.length,
+                  count: week.counts.new - shownNew,
                 }),
               week.counts.improved > 0 &&
                 tI18nComplete('text48198dbb8f5e', { count: week.counts.improved }),
@@ -139,7 +158,9 @@ export async function WeeklyView({ data }: { data: ChangelogWeekly }) {
                   </div>
 
                   <div className="min-w-0">
-                    {week.highlights.length > 0 ? (
+                    {week.summary ? (
+                      <WeekSummary lines={week.summary} />
+                    ) : week.highlights.length > 0 ? (
                       <ul className="space-y-6">
                         {week.highlights.map((highlight, i) => (
                           <li key={i}>

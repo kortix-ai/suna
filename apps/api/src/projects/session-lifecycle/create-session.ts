@@ -93,6 +93,7 @@ export async function createSession(
         ? (existingPayload.body as Record<string, unknown>)
         : {};
     const conflicts = [
+      [() => forkSourceConflicts(existingBody.parent_session_id, command.body.parent_session_id), 'IDEMPOTENCY_PARENT_CONFLICT', 'a different parent session'],
       [() => forkSourceConflicts(existingBody.fork_from_session_id, command.body.fork_from_session_id), 'IDEMPOTENCY_FORK_CONFLICT', 'a different fork source'],
       [() => connectorBindingPayloadConflicts(existingBody.connector_bindings, command.body.connector_bindings), 'IDEMPOTENCY_BINDING_CONFLICT', 'different connector bindings'],
       [() => providerPoolConflicts(existingBody.provider_secret_pools, command.body.provider_secret_pools), 'IDEMPOTENCY_PROVIDER_POOL_CONFLICT', 'different provider secret pools'],
@@ -344,6 +345,7 @@ export async function executeQueuedCreate(
     apiKeyType: payload.apiKeyType,
     inSession: payload.inSession,
     callerSessionId: payload.callerSessionId,
+    parentActor: payload.parentActor,
   });
 }
 
@@ -378,6 +380,7 @@ async function executeCreateSession(
     apiKeyType: command.apiKeyType,
     inSession: command.inSession,
     callerSessionId: command.callerSessionId,
+    parentActor: command.parentActor,
     mayManageSystemConnections: command.mayManageSystemConnections,
   });
 

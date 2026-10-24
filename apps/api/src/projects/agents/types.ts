@@ -17,6 +17,13 @@ export interface AgentSpec {
   connectors: GrantSet;
   /** Connectors that must resolve before the session starts. */
   connectorsRequired?: string[];
+  /** Connector slug → the policy set (`connectors[].policy_sets`) this agent
+   *  gets on that connector (`agents.<name>.policy_sets`). Absent key = the
+   *  base rules. Kept AS WRITTEN, even when the set does not exist: the
+   *  gateway then blocks that connector for this agent (`policy_set_missing`).
+   *  Dropping a bad entry would fall back to the base rules, which fails open.
+   *  Null-prototype object; see `readAgentPolicySets`. */
+  policySets?: Record<string, string>;
   /** Kortix permissions (project-scoped iam actions). `[]` = none (default). */
   permissions: GrantSet;
   /** Project-secret IDENTIFIERS (project_secrets.identifier, not raw env-var
