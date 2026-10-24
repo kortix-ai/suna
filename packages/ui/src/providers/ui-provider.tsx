@@ -445,6 +445,8 @@ export interface UiHostComponents {
     roomName: string;
     emptyTopic?: string;
     fill?: boolean;
+    /** Replaces the room's one-line intro above its first message (the space page's room tab). */
+    intro?: React.ReactNode;
   }>;
   /** Who can open a session, and its public link. Without it, the header has no Share button. */
   ShareSessionModal?: React.ComponentType<{

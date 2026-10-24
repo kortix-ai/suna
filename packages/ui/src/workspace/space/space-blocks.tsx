@@ -50,7 +50,7 @@ export function SpaceBlocks({
 }) {
   if (!blocks.length) return null;
   return (
-    <div className="grid w-full gap-4 px-4 sm:grid-cols-2">
+    <div className="grid w-full gap-4 sm:grid-cols-2">
       {blocks.map((block, index) => (
         <SpaceBlockCard key={index} projectId={projectId} block={block} />
       ))}
@@ -74,7 +74,8 @@ const TYPE_FALLBACK_LABEL = {
   text: 'Note',
 } as const;
 
-const PANEL = 'bg-popover flex min-w-0 flex-col overflow-hidden rounded-md border';
+// In flow on the page: the page surface and a hairline (color.md, in-flow section).
+const PANEL = 'bg-background flex min-w-0 flex-col overflow-hidden rounded-md border';
 
 function SpaceBlockCard({ projectId, block }: { projectId: string; block: SpaceBlock }) {
   const openPreview = useFilePreviewStore((state) => state.openPreview);
@@ -106,7 +107,7 @@ function SpaceBlockCard({ projectId, block }: { projectId: string; block: SpaceB
         onClick={() => openPreview(block.path as string)}
         className={cn(
           PANEL,
-          'hover:bg-muted/40 items-start gap-1.5 px-4 py-3 text-left transition-colors',
+          'hover:bg-hover items-start gap-1.5 px-4 py-3 text-left transition-colors',
         )}
       >
         <BlockTitle icon={Icon} label={label} />

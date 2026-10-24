@@ -25,7 +25,8 @@ import { ArrowSquareOutIcon, FileTextIcon, FolderSimpleIcon } from '@phosphor-ic
 
 import { AppPreview } from '../../apps/app-preview';
 import { appCan, appStatus } from '../../apps/app-shared';
-import { useTranslations } from '../../i18n';
+import { useLocale, useTranslations } from '../../i18n';
+import { AgentMark, agentDisplayName } from '../../internal/components/agent-mark';
 import { GoalHealthDot, goalHref } from '../../internal/goals/goal-meta';
 import { useFilePreviewStore } from '../../internal/stores/file-preview-store';
 import { uiRoutes } from '../../lib/routes';
@@ -101,12 +102,50 @@ function RoomTab({ projectId, space }: { projectId: string; space: ProjectSpace 
       </Centered>
     );
   }
-  return <SpaceRoom projectId={projectId} roomName={space.name} topic={space.description} fill className="h-full" />;
+  return (
+    <SpaceRoom
+      projectId={projectId}
+      roomName={space.name}
+      topic={space.description}
+      fill
+      intro={<RoomIntro projectId={projectId} space={space} />}
+      className="h-full"
+    />
+  );
 }
 
-/** A list tab's frame: one column, the page rhythm. */
+/** The top of the room: what the space is for, who posts in it, and how to bring someone in. */
+function RoomIntro({ projectId, space }: { projectId: string; space: ProjectSpace }) {
+  const t = useTranslations('spaces');
+  const locale = useLocale();
+  const agents = agentsInSpace(space.name, useProjectConfig(projectId)?.agents ?? []);
+  const names = new Intl.ListFormat(locale, { type: 'conjunction' }).format(agents.map(agentDisplayName));
+  return (
+    <div className="flex max-w-2xl flex-col gap-3 px-5 pb-2">
+      {agents.length ? (
+        <span className="flex -space-x-1">
+          {agents.map((name) => (
+            <AgentMark key={name} slug={name} size={21} className="ring-background ring-2" />
+          ))}
+        </span>
+      ) : null}
+      <div className="flex flex-col gap-1.5">
+        <h2 className="text-foreground text-xl font-medium text-balance">
+          {t('room.introTitle', { name: space.label || space.name })}
+        </h2>
+        <p className="text-muted-foreground text-sm text-pretty">{space.description?.trim() || t('room.introBody')}</p>
+      </div>
+      <p className="text-muted-foreground text-xs text-pretty">
+        {agents.length ? t('room.introAgents', { count: agents.length, names }) : t('room.introNoAgents')}{' '}
+        {t('room.introMention')}
+      </p>
+    </div>
+  );
+}
+
+/** A list tab's frame: one column on the header's gutter, so rows line up with the tabs. */
 function ListFrame({ children }: { children: ReactNode }) {
-  return <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 py-6 pb-20 md:px-8">{children}</div>;
+  return <div className="flex w-full max-w-3xl flex-col gap-4 px-5 py-5 pb-20">{children}</div>;
 }
 
 function Centered({ children }: { children: ReactNode }) {
@@ -356,7 +395,7 @@ function BoardTab({ projectId, tab }: { projectId: string; tab: SpaceTab }) {
     );
   }
   return (
-    <div className="mx-auto w-full max-w-6xl py-6 pb-20 md:px-4">
+    <div className="w-full max-w-6xl px-5 py-5 pb-20">
       <SpaceBlocks projectId={projectId} blocks={blocks} />
     </div>
   );
@@ -403,7 +442,7 @@ function ArtifactTab({ projectId, artifactId }: { projectId: string; artifactId:
   }
   return (
     <div className="flex h-full flex-col">
-      <div className="border-border flex shrink-0 items-center gap-2 border-b px-4 py-2 md:px-8">
+      <div className="border-border flex shrink-0 items-center gap-2 border-b px-5 py-1.5">
         <span className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">{artifact.data.title}</span>
         {href ? (
           <Button asChild size="sm" variant="ghost">

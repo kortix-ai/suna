@@ -1,5 +1,7 @@
 'use client';
 
+import type { ReactNode } from 'react';
+
 import { useFeatureFlag } from '@kortix/sdk/react';
 import { HashIcon } from '@phosphor-icons/react';
 
@@ -20,6 +22,7 @@ export function SpaceRoom({
   roomName,
   topic,
   fill = false,
+  intro,
   className,
 }: {
   projectId: string;
@@ -28,6 +31,8 @@ export function SpaceRoom({
   topic?: string | null;
   /** Fill the container with no frame and no header: the space page's room tab. */
   fill?: boolean;
+  /** What the room shows above its first message, in place of the one-line intro. */
+  intro?: ReactNode;
   className?: string;
 }) {
   const { RoomPanel } = useUiComponents();
@@ -39,7 +44,7 @@ export function SpaceRoom({
   if (RoomPanel) {
     return (
       <div className={className}>
-        <RoomPanel projectId={projectId} roomName={roomName} emptyTopic={topic ?? undefined} fill={fill} />
+        <RoomPanel projectId={projectId} roomName={roomName} emptyTopic={topic ?? undefined} fill={fill} intro={intro} />
       </div>
     );
   }

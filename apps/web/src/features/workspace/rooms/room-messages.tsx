@@ -12,7 +12,14 @@ import Link from 'next/link';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 
 import { ParticipantAvatar } from './room-identity';
-import { groupMessages, relativeTime, sessionDisplay, splitMessageText, type MentionTarget } from './room-text';
+import {
+  groupMessages,
+  personName,
+  relativeTime,
+  sessionDisplay,
+  splitMessageText,
+  type MentionTarget,
+} from './room-text';
 
 /** How close to the bottom (px) still counts as "reading the newest message". */
 const STICK_TO_BOTTOM_PX = 120;
@@ -26,7 +33,8 @@ export interface SenderView {
   href: string | null;
 }
 
-export function senderView(projectId: string, message: RoomMessage): SenderView {
+/** `targets` names a person by their profile name, so a sender who posted with an email reads as a name. */
+export function senderView(projectId: string, message: RoomMessage, targets: readonly MentionTarget[] = []): SenderView {
   if (message.sender_kind === 'session') {
     const { name, detail } = sessionDisplay(message.sender_label);
     return {
@@ -36,7 +44,9 @@ export function senderView(projectId: string, message: RoomMessage): SenderView 
       href: message.sender_session_id ? `/projects/${projectId}/sessions/${message.sender_session_id}` : null,
     };
   }
-  return { name: message.sender_label, detail: null, agent: false, href: null };
+  const id = message.sender_user_id;
+  const known = id ? targets.find((target) => target.ids.includes(id))?.label : undefined;
+  return { name: personName(known ?? message.sender_label), detail: null, agent: false, href: null };
 }
 
 /** One person or agent who replied in a thread, for the summary's avatar stack. */
@@ -190,7 +200,8 @@ export function RoomMessageList({
         }}
         className="min-h-0 flex-1 overflow-y-auto"
       >
-        <div className="flex min-h-full flex-col justify-end pt-4 pb-3">
+        {/* Top-anchored: a short conversation reads from its intro down, not from a gulf above it. */}
+        <div className="flex min-h-full flex-col pt-5 pb-3">
           {showIntro ? <div className="pb-4">{intro}</div> : null}
           <ol aria-label={t('messages')} className="space-y-3">
             {days.map((day) => (
@@ -274,12 +285,20 @@ export function MessageRow({
   onOpenThread?: () => void;
 }) {
   const t = useTranslations('rooms');
-  const sender = senderView(projectId, message);
+  const sender = senderView(projectId, message, targets);
   const parts = useMemo(() => splitMessageText(message.text, targets), [message.text, targets]);
   const at = new Date(message.created_at);
+  // A continuation's clock fits the avatar column: "11:52", the AM/PM dropped (Slack). The title keeps the full time.
   const stamp = (
     <time dateTime={message.created_at} title={format.exact.format(at)} className="tabular-nums">
-      {format.clock.format(at)}
+      {continuation
+        ? format.clock
+            .formatToParts(at)
+            .filter((part) => part.type !== 'dayPeriod')
+            .map((part) => part.value)
+            .join('')
+            .trim()
+        : format.clock.format(at)}
     </time>
   );
   const replies = message.reply_count;
@@ -296,13 +315,13 @@ export function MessageRow({
     >
       <div className="w-10 shrink-0">
         {continuation ? (
-          <span className="text-muted-foreground invisible block pt-0.5 text-right text-xs group-hover/message:visible">
+          <span className="text-muted-foreground invisible block pt-0.5 text-right text-xs whitespace-nowrap group-hover/message:visible">
             {stamp}
           </span>
         ) : (
           <ParticipantAvatar
             kind={sender.agent ? 'session' : 'person'}
-            label={message.sender_label}
+            label={sender.agent ? message.sender_label : sender.name}
             userId={message.sender_user_id}
             size="lg"
           />
@@ -312,11 +331,13 @@ export function MessageRow({
         {continuation ? null : (
           <div className="flex min-w-0 items-baseline gap-1.5">
             {sender.href ? (
-              <Link href={sender.href} className="text-foreground truncate text-sm font-semibold hover:underline">
+              <Link href={sender.href} className="text-foreground truncate text-sm font-medium hover:underline">
                 {sender.name}
               </Link>
             ) : (
-              <span className="text-foreground truncate text-sm font-semibold">{sender.name}</span>
+              <span title={message.sender_label} className="text-foreground truncate text-sm font-medium">
+                {sender.name}
+              </span>
             )}
             {sender.agent ? (
               <Badge variant="default" size="xs" className="self-center">

@@ -5,7 +5,7 @@ import { qk, useProjectSessions } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
-import { parseSessionLabel, sessionDisplay, type MentionTarget } from './room-text';
+import { parseSessionLabel, personName, sessionDisplay, type MentionTarget } from './room-text';
 
 /** People the caller may message in the project; `q` filters by name or email on the server. */
 export function useRoomPeople(projectId: string, q = '', enabled = true) {
@@ -41,6 +41,7 @@ export function useMentionTargets(
   return useMemo(() => {
     const seen = new Set<string>();
     const emailById = new Map(people.map((p) => [p.user_id, p.email]));
+    const nameById = new Map(people.map((p) => [p.user_id, p.name]));
     const out: MentionTarget[] = [];
     const push = (id: string, target: MentionTarget) => {
       if (seen.has(id)) return;
@@ -56,7 +57,8 @@ export function useMentionTargets(
         push(id, { ids: [id], names: [agent, title].filter((v): v is string => !!v), label });
       } else {
         const email = emailById.get(id);
-        push(id, { ids: [id], names: [m.label, email].filter((v): v is string => !!v), label: m.label, self: id === viewerId });
+        const label = personName(nameById.get(id) ?? m.label);
+        push(id, { ids: [id], names: [m.label, email].filter((v): v is string => !!v), label, self: id === viewerId });
       }
     }
     for (const s of sessions) {
@@ -68,7 +70,7 @@ export function useMentionTargets(
       });
     }
     for (const p of people) {
-      const label = p.name ?? p.email ?? p.user_id.slice(0, 8);
+      const label = personName(p.name ?? p.email ?? p.user_id.slice(0, 8));
       const names = [p.name, p.email].filter((v): v is string => !!v);
       push(p.user_id, { ids: [p.user_id], names, label, self: p.user_id === viewerId });
     }

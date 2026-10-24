@@ -30,6 +30,12 @@ export function sessionDisplay(label: string): { name: string; detail: string | 
   return { name: agent ?? shortId, detail: null };
 }
 
+/** A person as others read them: the name, else the part of the email before the `@`. */
+export function personName(label: string): string {
+  const at = label.indexOf('@');
+  return at > 0 && !/\s/.test(label) ? label.slice(0, at) : label;
+}
+
 /** Who sent a message, as one key: consecutive messages with the same key group. */
 export function senderKey(message: RoomMessage): string {
   return message.sender_kind === 'session'

@@ -22981,6 +22981,13 @@
     "askPrompt": "I want to change the {name} space (`spaces.{slug}` in kortix.yaml): its tabs, its header or the agents in it. Ask me what to change.",
     "roomsOff": "Rooms are off for this project",
     "roomsOffHint": "Turn on Rooms in the project settings to talk with people and agents here.",
+    "room": {
+      "introTitle": "This is the start of #{name}",
+      "introBody": "The room for everyone who works in this space.",
+      "introAgents": "{count, plural, one {{names} posts updates here.} other {{names} post updates here.}}",
+      "introNoAgents": "Agents you add to this space post their updates here.",
+      "introMention": "Type @ to mention a person or an agent."
+    },
     "filter": "Filter by space",
     "all": "All",
     "projectWide": "Project-wide"

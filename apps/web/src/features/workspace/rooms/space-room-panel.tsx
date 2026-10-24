@@ -10,7 +10,7 @@ import { qk, useRoom, useRoomMessages, useSpaceRoom } from '@kortix/sdk/react';
 import { HashIcon } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useRef } from 'react';
+import { useRef, type ReactNode } from 'react';
 
 import { RoomComposer } from './room-composer';
 import { RoomMessageList } from './room-messages';
@@ -32,11 +32,13 @@ export function SpaceRoomPanel({
   roomName,
   emptyTopic,
   fill = false,
+  intro,
 }: {
   projectId: string;
   roomName: string;
   emptyTopic?: string;
   fill?: boolean;
+  intro?: ReactNode;
 }) {
   const t = useTranslations('rooms');
   const queryClient = useQueryClient();
@@ -101,7 +103,7 @@ export function SpaceRoomPanel({
           projectId={projectId}
           messages={roomId ? (messages.data?.messages ?? EMPTY_MESSAGES) : EMPTY_MESSAGES}
           intro={
-            <p className="text-muted-foreground px-5 text-sm text-pretty">{t('introRoom', { name: roomName })}</p>
+            intro ?? <p className="text-muted-foreground px-5 text-sm text-pretty">{t('introRoom', { name: roomName })}</p>
           }
           introAlways={!roomId}
           dayDividers={false}

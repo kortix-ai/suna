@@ -66,9 +66,10 @@ beforeEach(() => {
   flags = {};
 });
 
-test('the header names the space, and the room is the first tab, filling the page', () => {
+test('the header names the space once, and the room is the first tab, filling the page', () => {
   const html = render();
-  expect(html).toContain('>Sales</h2>');
+  expect(html.match(/<h1[^>]*>.*?<\/h1>/)?.[0]).toContain('>Sales<');
+  expect(html.split('>Sales<').length - 1).toBe(1);
   expect(html).toContain('Pipeline and deals');
   expect(html).toContain('data-room="sales"');
   expect(html).toContain('data-fill="true"');
