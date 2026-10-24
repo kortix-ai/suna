@@ -154,6 +154,9 @@ function encodeFiles(files: Record<string, FileInput>) {
   return out;
 }
 
+/** The names a new artifact gets before anyone names it (the starters, an empty page). */
+const UNNAMED = new Set(['Untitled', 'Untitled doc', 'Untitled page']);
+
 function titleOf(type: ArtifactType, text: string): string | null {
   return type === 'doc' ? docTitle(text) : htmlTitle(text);
 }
@@ -300,8 +303,12 @@ export async function publishChanges(
     }
     throw err;
   }
+  // The title is the artifact's name: a save keeps it unless it sets one. Only
+  // an artifact still named like a starter follows its first heading.
+  // ponytail: a fixed list of starter names; a `named` flag if more creation paths appear.
   const entry = files.find((f) => f.rel === row.entry);
-  const title = input.title?.trim() || (entry ? titleOf(row.type as ArtifactType, new TextDecoder().decode(entry.bytes)) : null);
+  const derived = entry && UNNAMED.has(row.title) ? titleOf(row.type as ArtifactType, new TextDecoder().decode(entry.bytes)) : null;
+  const title = input.title?.trim() || derived;
   const [updated] = await db.update(artifacts).set({
     updatedAt: new Date(),
     ...(title ? { title } : {}),

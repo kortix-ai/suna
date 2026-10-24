@@ -256,6 +256,10 @@ export async function runArtifacts(argv: string[]): Promise<number> {
           } catch {
             return fail(`Cannot read ${a0}.`);
           }
+          // A title is a name: an explanation after ':' / ' - ' / '—' / '→' belongs in --description.
+          if (f.title && /:|\s[-–—]\s|→/.test(f.title)) {
+            process.stderr.write(`${C.dim}hint: a title is a short name ("${f.title.split(/:|\s[-–—]\s|→/)[0]!.trim()}"); put the rest in --description${C.reset}\n`);
+          }
           const [first, ...rest] = batches(files);
           let a: Artifact;
           if (f.id) {

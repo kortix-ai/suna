@@ -22598,6 +22598,8 @@
     "removed": "Wird nicht mehr geteilt",
     "mediaSingleFile": "Bilder und Videos brauchen ein Dokument in einem eigenen Ordner. Veröffentliche das Dokument als Ordner, um Medien hinzuzufügen.",
     "mediaTooLarge": "Diese Datei ist größer als 16 MB.",
-    "refresh": "Neu laden"
+    "refresh": "Neu laden",
+    "diagramEdit": "Diagramm bearbeiten",
+    "diagramDone": "Fertig"
   }
 }
