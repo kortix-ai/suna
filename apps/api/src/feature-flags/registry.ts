@@ -373,8 +373,10 @@ const FLAGS: readonly FeatureFlagDef[] = [
     stability: 'experimental',
     // Every volume is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
-    // Explicit opt-in. A project with `goals` needs it on.
-    platformDefault: () => false,
+    // On by default (founder, 2026-10-24): every project gets Files — a private
+    // folder per person (`/drives/me`, where the agent keeps user memory) and
+    // the shared `/Company` folder (`Company/Memory`). Onboarding writes both.
+    platformDefault: () => true,
     enforcement: 'behavioral',
     enforcementNote:
       'BEHAVIORAL only, through the flag derived from it: drives (Files routes and ' +
