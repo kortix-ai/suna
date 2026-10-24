@@ -145,10 +145,6 @@ test('Apps UI is operational only and has no creation action or modal', () => {
 
 test('the Apps header is the capability tab bar, not a settings masthead', () => {
   const view = appsSource();
-  const tabs = readFileSync(
-    uiSourcePath('customize/shared/capability-tabs.tsx'),
-    'utf8',
-  );
 
   // The exact bar contract, read off the file that owns it — if the tab row is
   // ever restyled this fails rather than letting Apps drift into a second
@@ -160,7 +156,6 @@ test('the Apps header is the capability tab bar, not a settings masthead', () =>
     'utf8',
   );
   const BAR = 'relative flex shrink-0 items-center gap-1 border-b px-2';
-  expect(tabs).toContain(`kx-titlebar-row kx-capability-titlebar ${BAR}`);
   expect(header).toContain(`kx-titlebar-row kx-capability-titlebar ${BAR}`);
   expect(view).toContain('<ProjectPageHeader');
 

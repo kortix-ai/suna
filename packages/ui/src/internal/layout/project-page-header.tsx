@@ -6,7 +6,7 @@ import { SidebarToggle } from './sidebar-toggle';
 /**
  * The header of a standalone project page (Files, Apps):
  * the sidebar toggle, then the page title as the page's `<h1>`. It uses the
- * same title-bar classes as the Customize tab bar (`CapabilityTabs`), so it
+ * same title-bar classes as the agent identity header (`agent-page-chrome.tsx`), so it
  * has the same height and clears the desktop window controls the same way.
  * A page has one view, so the title is plain text, not a one-tab underline
  * bar. `children` sit at the trailing edge (page actions, a docs link).

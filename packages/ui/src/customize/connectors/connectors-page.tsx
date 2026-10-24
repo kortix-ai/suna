@@ -473,12 +473,18 @@ export function ConnectorsPage({
           key={connector.slug}
           {...shared}
           onClick={() => router.push(connectorHref(projectId, connector.slug))}
-          select={{
-            checked: grant.isGranted(connector.slug),
-            disabled: grant.mode !== 'specific',
-            onCheckedChange: () => grant.toggle(connector.slug),
-            label: tI18nComplete('textd4170e74c3b0', { value0: connectorDisplayName(connector) }),
-          }}
+          // The checkbox exists only under Specific. Under All or None the
+          // grant sentence decides every card, and a checked box nobody can
+          // uncheck read as a disabled control.
+          select={
+            grant.mode === 'specific'
+              ? {
+                  checked: grant.isGranted(connector.slug),
+                  onCheckedChange: () => grant.toggle(connector.slug),
+                  label: tI18nComplete('textd4170e74c3b0', { value0: connectorDisplayName(connector) }),
+                }
+              : undefined
+          }
           // The connected mark stays; Required joins it on a card picked by name.
           trailing={
             required && grant.mode === 'specific' && grant.isGranted(connector.slug) ? (
@@ -562,6 +568,23 @@ export function ConnectorsPage({
   const searchRef = useRef<HTMLInputElement>(null);
   useSlashFocus(searchRef, !channelsActive && !rulesOpen);
 
+  // The catalogue scope strip. Rendered immediately, not behind `settled`:
+  // static labels over a scope read out of the URL have nothing to wait for.
+  // Project scope shows it in the filter row; agent scope shows it on the
+  // heading of the list it narrows, below the grant sentence.
+  const scopeTabs =
+    visibleScopes.length > 1 ? (
+      <Tabs value={scope} onValueChange={(value) => setScope(value as ConnectorScope)}>
+        <TabsList>
+          {visibleScopes.map((value) => (
+            <TabsTrigger key={value} value={value}>
+              {SCOPE_LABEL[value]}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+    ) : null;
+
   return (
     // Global rules open in a SplitSheet: the page narrows to make room instead
     // of being covered. `PoliciesPanel` is a long CRUD list whose save bar
@@ -624,29 +647,14 @@ export function ConnectorsPage({
             agentScoped || visibleScopes.length > 1 ? (
               <>
                 {/* Agent scope's primary control: All · Specific · None for what
-                this agent may reach. It sits left of the catalogue scope strip
-                — the grant is the decision, the scope strip only narrows the
-                list you decide over. */}
+                this agent may reach, on its own row. The catalogue scope strip
+                (All | Connected) moves down to the list it narrows, so the
+                row never shows two unrelated "All" controls. */}
                 {agentScoped && grant ? (
                   <GrantModeTabs grant={grant} label={tAgentScope('connectorsAccess')} />
-                ) : null}
-                {/* Rendered immediately, not behind `settled`. The strip used to
-                wait for both queries because the landing tab was derived from
-                one of them and Connected carried a count off the other; neither
-                is true now, so waiting only meant an empty 28px slot on every
-                load followed by the tabs popping in. Static labels over a
-                scope read out of the URL have nothing to wait for. */}
-                {visibleScopes.length > 1 ? (
-                <Tabs value={scope} onValueChange={(value) => setScope(value as ConnectorScope)}>
-                  <TabsList>
-                    {visibleScopes.map((value) => (
-                      <TabsTrigger key={value} value={value}>
-                        {SCOPE_LABEL[value]}
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                </Tabs>
-                ) : null}
+                ) : (
+                  scopeTabs
+                )}
                 {/* Global rules — connector approval policy, so it belongs on this
                 page and not on the shared capability bar, which also rides over
                 Agents, Skills and Triggers.
@@ -690,7 +698,10 @@ export function ConnectorsPage({
             <>
               {ownMatches.length > 0 ? (
                 <div className="space-y-3">
-                  <h2 className="text-sm font-medium">{tPages('yourConnectors')}</h2>
+                  <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                    <h2 className="text-sm font-medium">{tPages('yourConnectors')}</h2>
+                    {agentScoped ? scopeTabs : null}
+                  </div>
                   {/* Rendered only once the page has settled (ownMatches is
                   non-empty), so the grid needs no loading/error/empty state:
                   the page-level ones cover it. */}
@@ -710,7 +721,10 @@ export function ConnectorsPage({
                   filter, under the project's own connectors. */}
               <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
                 <h2 className="text-sm font-medium">{tPages('allApps')}</h2>
-                {catalogFilters}
+                <div className="flex flex-wrap items-center gap-4">
+                  {catalogFilters}
+                  {agentScoped && ownMatches.length === 0 ? scopeTabs : null}
+                </div>
               </div>
               <ConnectorBrowse
                 state={catalog}
@@ -727,6 +741,12 @@ export function ConnectorsPage({
           ) : (
             <>
               <ConnectorMovesBanner projectId={projectId} />
+              {agentScoped ? (
+                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                  <h2 className="text-sm font-medium">{tPages('yourConnectors')}</h2>
+                  {scopeTabs}
+                </div>
+              ) : null}
               {/* A manifest can hold `connectors: all` beside a hand-written
                   required list. No card is picked under All to carry the
                   toggle, so the list is one muted line here instead. */}

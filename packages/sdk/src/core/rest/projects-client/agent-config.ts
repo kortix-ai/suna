@@ -128,10 +128,15 @@ export interface AgentConfigResponse {
   builtin?: 'my_kortix';
 }
 
+/**
+ * The caller draws every failure of this read (the agent page's not-found and
+ * error states), so it does not also reach the host's global `onError` toast.
+ */
 export async function getAgentConfig(projectId: string, agentName: string) {
   const response = unwrap(
     await backendApi.get<AgentConfigResponse>(
       `/projects/${projectId}/agents/${encodeURIComponent(agentName)}/config`,
+      { showErrors: false },
     ),
   );
   return {

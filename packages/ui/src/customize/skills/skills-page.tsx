@@ -155,6 +155,18 @@ export function SkillsPage({
       />
     ) : null;
 
+  const scopeTabs = (
+    <Tabs value={scope} onValueChange={(value) => setScope(value as ScopeFilter)}>
+      <TabsList>
+        {SCOPE_FILTERS.map((filter) => (
+          <TabsTrigger key={filter.value} value={filter.value}>
+            {filter.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
+  );
+
   return (
     <CapabilityPageShell
       title={tI18nComplete.raw('text66d0f523a379')}
@@ -175,26 +187,15 @@ export function SkillsPage({
             variant="popover"
             size="sm"
           />
-          <InputGroupSearchClear onClick={() => setQuery('')} />
+          {query ? <InputGroupSearchClear onClick={() => setQuery('')} /> : null}
         </InputGroupSearch>
       }
-      filters={
-        <>
-          {agentScoped && grant ? (
-            <GrantModeTabs grant={grant} label={tAgentScope('skillsAccess')} />
-          ) : null}
-          <Tabs value={scope} onValueChange={(value) => setScope(value as ScopeFilter)}>
-            <TabsList>
-              {SCOPE_FILTERS.map((filter) => (
-                <TabsTrigger key={filter.value} value={filter.value}>
-                  {filter.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-        </>
-      }
+      // Agent scope: the grant sentence owns the filter row; the list filter
+      // (All | Project | Kortix) sits on its own row above the list it
+      // narrows, so the row never shows two unrelated "All" controls.
+      filters={agentScoped && grant ? <GrantModeTabs grant={grant} label={tAgentScope('skillsAccess')} /> : scopeTabs}
     >
+      {agentScoped && grant ? <div className="flex justify-end">{scopeTabs}</div> : null}
       <CatalogGrid
         isLoading={detailQuery.isLoading}
         isError={detailQuery.isError}
@@ -242,10 +243,10 @@ export function SkillsPage({
             description={skill.description}
             onClick={() => setSelectedPath(skill.path)}
             select={
-              agentScoped && grant
+              // Only under Specific: under All or None the grant sentence decides.
+              agentScoped && grant && grant.mode === 'specific'
                 ? {
                     checked: grant.isGranted(skill.name),
-                    disabled: grant.mode !== 'specific',
                     onCheckedChange: () => grant.toggle(skill.name),
                     label: tI18nComplete('textd4170e74c3b0', { value0: skill.name }),
                   }

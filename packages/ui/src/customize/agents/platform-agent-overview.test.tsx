@@ -35,7 +35,7 @@ function render(goals: boolean) {
 describe('PlatformAgentOverview (My Kortix)', () => {
   test('lists the agents it runs, never itself, and links each one', () => {
     const markup = render(true);
-    expect(markup).toContain('>Agents<');
+    expect(markup).toContain('>Agents <span');
     expect(markup).toContain(`/projects/${PROJECT}/customize/agents/kortix`);
     expect(markup).toContain(`/projects/${PROJECT}/customize/agents/researcher`);
     expect(markup).not.toContain(`/customize/agents/meta`);

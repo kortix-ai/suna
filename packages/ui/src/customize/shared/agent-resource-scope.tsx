@@ -19,7 +19,9 @@ import type { AgentGrantSetV2 } from '@kortix/sdk';
 import { useState } from 'react';
 
 import { useTranslations } from '../../i18n';
-import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
+import { agentDisplayName } from '../../internal/components/agent-mark';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../primitives/select';
+import { useCapabilityShellEmbed } from './capability-page-shell';
 
 /** Which surface a resource catalog renders for. */
 export type ResourceScope = { kind: 'global' } | { kind: 'agent'; agentName: string };
@@ -98,21 +100,54 @@ const GRANT_MODE_TABS: ReadonlyArray<{ value: GrantMode; labelKey: string }> = [
 ];
 
 /**
- * The agent's grant-mode selector — the catalog's primary control in `agent`
- * scope. Segmented, like the connectors scope strip beside it, so the two
- * read as one header row.
+ * The agent's grant-mode selector, the catalog's primary control in `agent`
+ * scope. A select inside one sentence ("researcher can use [Specific]"), then
+ * one muted line that says what the mode means, so the decision never reads
+ * as a list filter. It takes its own row: a catalog's list filters (All |
+ * Connected) sit with the list they filter, never beside it. `agentName`
+ * names the agent outside an embedded resource screen (Kortix permissions).
  */
-export function GrantModeTabs({ grant, label }: { grant: AgentGrant; label: string }) {
+export function GrantModeTabs({
+  grant,
+  label,
+  agentName,
+}: {
+  grant: AgentGrant;
+  label: string;
+  agentName?: string;
+}) {
   const t = useTranslations('agentScope');
+  const tTabs = useTranslations('agentEditor.tabs');
+  const embed = useCapabilityShellEmbed();
+  const name = agentName ?? embed?.agentName;
+  const hint =
+    grant.mode === 'all'
+      ? tTabs('grantAllHint')
+      : grant.mode === 'specific'
+        ? tTabs('grantSpecificHint')
+        : tTabs('grantNoneHint');
   return (
-    <Tabs value={grant.mode} onValueChange={(next) => grant.setMode(next as GrantMode)}>
-      <TabsList aria-label={label}>
-        {GRANT_MODE_TABS.map((tab) => (
-          <TabsTrigger key={tab.value} value={tab.value}>
-            {t(tab.labelKey)}
-          </TabsTrigger>
-        ))}
-      </TabsList>
-    </Tabs>
+    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+      <div className="flex min-w-0 items-center gap-2">
+        {name ? (
+          <span className="text-foreground shrink-0 truncate text-sm">
+            {tTabs('canUse', { name: agentDisplayName(name) })}
+          </span>
+        ) : null}
+        <Select value={grant.mode} onValueChange={(next) => grant.setMode(next as GrantMode)}>
+          <SelectTrigger aria-label={label} size="sm" className="w-36 shrink-0">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="start">
+            {GRANT_MODE_TABS.map((tab) => (
+              <SelectItem key={tab.value} value={tab.value}>
+                {t(tab.labelKey)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <p className="text-muted-foreground min-w-0 text-sm text-pretty">{hint}</p>
+    </div>
   );
 }

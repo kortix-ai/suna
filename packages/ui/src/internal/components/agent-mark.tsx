@@ -20,10 +20,21 @@ export type AgentMarkSize = keyof typeof TILE;
  */
 export function agentMarkVars(slug: string): CSSProperties {
   const { tone } = pixelMark(slug);
+  // The Kortix tile (My Kortix, the starter `kortix` agent) follows the Kortix
+  // tile rule: the page surface with a hairline, never an inverted black tile
+  // (decisions.md #8421). `agentMarkTileClass` adds the hairline.
+  if (tone.name === 'brand') {
+    return { '--mark-tile': 'var(--background)', '--mark-ink': 'var(--foreground)' } as CSSProperties;
+  }
   return {
     '--mark-tile': `light-dark(${tone.tile}, ${tone.tileDark})`,
     '--mark-ink': `light-dark(${tone.ink}, ${tone.inkDark})`,
   } as CSSProperties;
+}
+
+/** The tile's boundary: a hairline on the Kortix tile, none on a tinted one. */
+export function agentMarkTileClass(slug: string): string | undefined {
+  return pixelMark(slug).tone.name === 'brand' ? 'ring-1 ring-inset ring-border' : undefined;
 }
 
 /** The bare pixel figure, painted with `--mark-ink` from an ancestor. A 7 × 7
@@ -76,6 +87,7 @@ export function AgentMark({
       className={cn(
         'inline-flex shrink-0 items-center justify-center bg-(--mark-tile)',
         size >= 28 ? 'rounded-md' : 'rounded-sm',
+        agentMarkTileClass(slug),
         className,
       )}
     >

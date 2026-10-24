@@ -3,59 +3,34 @@
 import { useParams } from 'next/navigation';
 
 import { CapabilityAccessGate } from '@kortix/ui/customize/shared/capability-access-gate';
-import { CapabilityTabs } from '@kortix/ui/customize/shared/capability-tabs';
 
 /**
- * Shared shell for /projects/[id]/{agent,connectors,skills,triggers,models,
- * secrets,review,members,customize}. `channels` is under this group too, but
- * only as a redirect into `connectors?scope=channels` — it is not a tab. `customize` (the index/hub page, and
- * its legacy `[section]` redirect) lives under this group too, on purpose —
- * the bar stays visible even on the page that introduces every tab in it, so
- * "landing on the index" never means "the tabs disappeared." No `customize`
- * entry in `CAPABILITY_TABS` means `activeCapabilityTab()` highlights none of
- * them there, which is correct: the index is not any one of the tabs.
- * The `(capabilities)` route group keeps the segment out of the URL. The tab bar
- * lives here — not in each page — so it does not remount when switching tabs.
+ * Shared shell for /projects/[id]/customize/* (and the retired `members` and
+ * `channels` redirects). The `(capabilities)` route group keeps the segment out
+ * of the URL.
  *
- * **`h-svh`, and it is what pins the tab bar.** This box used to be
- * `min-h-0 flex-1`, which reads correct and is not: NOTHING above it has a
- * definite height. `<body>` is `min-height: 100dvh`, `sidebar-wrapper` is
- * `min-h-svh`, and `SidebarInset` plus the three project shells are all
- * `flex-1 … overflow-hidden` with no height of their own. `min-height` is a
- * floor, not a ceiling, so every one of those boxes sized to its content, the
- * `overflow-y-auto` in `CapabilityPageShell` never had a bound to scroll
- * within, and the WINDOW scrolled — taking the tab bar with it.
+ * Customize has no top bar (Marko, 2026-10-24: "remove the customize topbar and
+ * give it space to edit"). Its navigation lives in the sidebar's Customize
+ * group: My Kortix, the agents, New agent, Review and Settings (Project admin,
+ * where Members also lives). Each page draws its own header and its own
+ * sidebar opener: the agent page in its identity header, every other page in
+ * `CapabilityPageShell`.
  *
- * One definite height anywhere in that chain fixes it, and this is the lowest
- * place it can go without touching shared primitives every authenticated route
- * renders through. `svh` (not `dvh`) because the small viewport assumes mobile
- * browser chrome is visible, so the bar cannot be pushed off under a toolbar
- * that reappears.
+ * **`h-svh` bounds the page.** Nothing above this box has a definite height
+ * (`<body>` is `min-height: 100dvh`, the sidebar wrapper `min-h-svh`), so
+ * without it the page's own `overflow-y-auto` scroller would never bound and
+ * the window would scroll instead. `svh` assumes mobile browser chrome is
+ * visible, so content is never pushed under a toolbar that reappears.
  *
- * `h-svh` is exact here rather than approximate: this is the first in-flow
- * child of `ProjectSheelLayout`, whose own ancestors add no vertical offset —
- * `SidebarInset`'s `m-2` applies only to `variant="inset"` and the sidebar
- * renders as `variant="sidebar"`, and the desktop title bar
- * (`.kx-desktop-chrome`) is `position: fixed`, so neither takes layout space.
- *
- * With the box bounded, the tab bar needs no `sticky` and no `fixed`. It is a
- * sibling ABOVE the only scrolling element on the page, so it structurally
- * cannot move. `sticky` would in fact have done nothing: `overflow: hidden`
- * makes an element a scroll container, sticky resolves against the nearest
- * ancestor scroll container, and there are five of those between the bar and
- * the viewport — it would have pinned to a box that never scrolls.
- *
- * **One access rule for the bar and the body.** `CapabilityTabs` lists only
- * the tabs `capabilityAccess()` allows; `CapabilityAccessGate` renders
- * `{children}` only for such a tab and replaces any other URL with the first
- * allowed tab or the project home.
+ * **One access rule for the sidebar and the body.** `CapabilityAccessGate`
+ * renders `{children}` only for a page `capabilityAccess()` allows and
+ * replaces any other URL with the first allowed page or the project home.
  */
 export default function CapabilitiesLayout({ children }: { children: React.ReactNode }) {
   const { id: projectId } = useParams<{ id: string }>();
 
   return (
     <div className="flex h-svh flex-col overflow-hidden">
-      <CapabilityTabs projectId={projectId} />
       <CapabilityAccessGate projectId={projectId}>{children}</CapabilityAccessGate>
     </div>
   );

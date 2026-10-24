@@ -9,7 +9,7 @@ import {
   CustomizeGlyph,
   useCapabilityAccess,
 } from '../../internal/layout/project-settings-nav';
-import { ProjectCapabilityNav } from '../../internal/layout/project-capability-nav';
+import { isProjectAdminPath, ProjectCapabilityNav } from '../../internal/layout/project-capability-nav';
 import { ProjectSpacesNav } from './project-spaces-nav';
 import { cn } from '../../lib/utils';
 import { SidebarMenuButton, SidebarMenuItem } from '../../primitives/sidebar';
@@ -53,7 +53,9 @@ function CustomizeNavEntry({ projectId }: { projectId: string }) {
   // so it does not sit expanded while you are in a session. A manual click
   // overrides that until you cross between those contexts, then it follows the
   // page again. `includes` tolerates the locale prefix the host may not strip.
-  const onCustomizePage = !!pathname && pathname.includes('/customize');
+  // Project admin counts: the group's Settings row opened it, so the row stays
+  // in view and lit there.
+  const onCustomizePage = !!pathname && (pathname.includes('/customize') || isProjectAdminPath(pathname));
   const [override, setOverride] = useState<boolean | null>(null);
   useEffect(() => setOverride(null), [onCustomizePage]);
   const open = override ?? onCustomizePage;

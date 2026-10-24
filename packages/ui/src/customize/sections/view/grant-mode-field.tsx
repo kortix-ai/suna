@@ -17,6 +17,7 @@ import { type ReactNode, useState } from 'react';
 import { KORTIX_PERMISSIONS_CATALOG } from './agent-editor-catalog';
 import { useUiParams } from '../../../providers/ui-provider';
 import { useProjectFeatureFlags } from '../../../internal/lib/use-project-feature-flags';
+import { GrantModeTabs, useAgentGrant } from '../../shared/agent-resource-scope';
 
 export type GrantMode = 'all' | 'pick' | 'none';
 
@@ -208,12 +209,14 @@ export function KortixPermissionsField({
   const params = useUiParams();
   const { flags } = useProjectFeatureFlags(typeof params.id === 'string' ? params.id : null);
   const groups = KORTIX_PERMISSIONS_CATALOG.filter((grp) => !grp.featureFlag || flags[grp.featureFlag] === true);
+  // The same grant sentence as every other Access view (`GrantModeTabs`):
+  // "researcher can use [Specific]", then the catalog to pick from.
+  const grant = useAgentGrant(value, onChange);
+  const selected = new Set(Array.isArray(value) ? value : []);
   return (
-    <GrantModeField
-      value={value}
-      onChange={onChange}
-    >
-      {({ selected, toggle }) => (
+    <div className="space-y-5">
+      <GrantModeTabs grant={grant} label={tI18nComplete.raw('text74009e6664f5')} />
+      {grant.mode === 'specific' ? (
         <div className="bg-popover divide-border divide-y rounded-md border">
           {groups.map((grp) => (
             <div key={grp.group} className="space-y-2.5 px-4 py-3">
@@ -224,7 +227,7 @@ export function KortixPermissionsField({
                     key={action}
                     variant="black"
                     checked={selected.has(action)}
-                    onCheckedChange={() => toggle(action)}
+                    onCheckedChange={() => grant.toggle(action)}
                     label={
                       <span className="font-mono text-xs">
                         {action.replace(/^project\./, '')}
@@ -236,7 +239,7 @@ export function KortixPermissionsField({
             </div>
           ))}
         </div>
-      )}
-    </GrantModeField>
+      ) : null}
+    </div>
   );
 }
