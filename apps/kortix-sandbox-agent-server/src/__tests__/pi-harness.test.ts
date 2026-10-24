@@ -784,6 +784,22 @@ describe('pi harness', () => {
     await waitFor(() => runtime.questions.list().length === 0 && runtime.idle())
   })
 
+  test('a synthetic steer leaves an open question open', async () => {
+    const r = await boot({
+      script: [
+        { tool: 'question', args: { questions: [{ question: 'Which way?', header: 'Pick', options: [{ label: 'A', description: 'a' }] }] } },
+        { text: 'read the steer' },
+      ],
+    })
+    const runtime = r.service.runtime()!
+    const root = runtime.rootId
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'first' }] })).status).toBe(204)
+    await waitFor(() => runtime.questions.list().length === 1)
+    expect(await runtime.steer({ messageID: siblingId(runtime.activeTurnMessageId()!, 'z'), text: 'The linear connector was just connected', parts: [], synthetic: true } as never)).toBe('steered')
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(runtime.questions.list()).toHaveLength(1)
+  })
+
   test('a rejected permission blocks the tool and the turn still ends', async () => {
     const r = await boot({
       script: [{ tool: 'bash', args: { command: 'echo never' } }, { text: 'blocked, sorry' }],
