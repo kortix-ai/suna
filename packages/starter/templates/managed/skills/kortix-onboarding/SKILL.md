@@ -1,136 +1,157 @@
 ---
 name: kortix-onboarding
-description: "Guide a new Kortix user through their first session: set expectations about what Kortix is, turn a vague ask into a strong first prompt, deliver one real result, then surface deeper capabilities (connectors, memory, triggers, subagents, marketplace) and plant a retention hook. Use when the user is new, asks 'what can you do / how does this work / where do I start', sends a vague or exploratory first message, or has no prior history in this project. Do NOT use when they arrive with a specific, well-formed task — just do it."
+description: "Onboard a person to Kortix in chat, end to end: learn who they are and save it to their memory, learn the workspace and team, invite teammates, connect Slack or Microsoft Teams, connect the tools they use, show what Kortix can do with GenUI, and finish one real first task. Load when the first message is \"Onboard me\" (or its translation: \"Führ mich durch Kortix\", \"Guíame para empezar con Kortix\", \"Fais-moi découvrir Kortix\", \"Guidami alla scoperta di Kortix\", \"Kortixの使い方を案内して\", \"Me guie pelo Kortix\", \"Уведи ме у Kortix\", \"带我上手 Kortix\"), when the user asks to be onboarded, asks what Kortix can do or where to start, or is a teammate whose user memory is still empty."
 ---
 
-# Onboarding a New Kortix User
+# Onboarding
 
-The best onboarding is a solved problem. My job in a first session is to get the user one real, finished result fast — then let the deeper capabilities reveal themselves as the natural answer to a question they're already asking. I guide, I don't lecture.
+A new project opens on a chat that sends "Onboard me" by itself the moment a
+model is connected. That message starts you. There is no form and no wizard:
+**you are the onboarding.** The person leaves it known (memory), connected
+(team, channel, tools), oriented (what Kortix does), and holding one finished
+result.
 
-## When to use
+## How every stage runs
 
-- The user's first message is exploratory: "what can you do?", "how does this work?", "I'm new here", "where do I start?"
-- Their prompt is vague or under-specified, suggesting they don't yet know what Kortix can do.
-- There's no prior session history in this project.
-- They explicitly ask for help getting started.
+- **Ask with the `question` tool.** Each stage is ONE `question` call with 1–3
+  questions, 2–5 options each, `custom: true` so they can type their own
+  answer, and `multiple: true` where several answers fit. Options are
+  tap-to-answer in the app. Where the tool is missing, ask the same question
+  in one short line of text.
+- **Show with GenUI.** Load `kortix-genui` before your first reply and use its
+  blocks for anything visual: the tour, the setup links, the first-task
+  options, the closing summary. Prose stays to 1–3 sentences per turn.
+- **Act in the same turn.** Every answer becomes something real before you ask
+  the next question: a memory file, an invite, a setup link. Say what you did
+  in one line ("Saved to your memory: you run growth at a 12-person agency.").
+- **Know before you ask.** Read the state first (stage 0) and skip every
+  question it already answers.
+- **Every stage can be skipped.** "Skip" is always an option. A skip moves on
+  without comment.
 
-**Do NOT use this when the user arrives with a specific, well-formed task.** If they know what they want, skip straight to doing it. Solving is the onboarding.
+## Stage 0: read the state (silent)
 
-## Core philosophy
+Run these before the first reply. Their results decide which stages run.
 
-1. **Solve first, teach second.** Never explain a feature in the abstract. Get to a real outcome, *then* name what just happened. The "aha" comes from a finished deliverable, not a feature tour.
-2. **Reduce fear before adding options.** A new user is unsure what's safe to try. The Kortix safety story is concrete and worth leading with: every session runs in a disposable sandbox on its own branch, and **nothing becomes permanent until they approve a change request.** Say this once, early — it frees them to experiment.
-3. **Each stage earns the next.** A new capability should land only when the current task makes it obviously useful — not as a menu.
+- `cat /drives/me/Memory/MEMORY.md`: what you already know about this person
+  (`kortix-user-memory`).
+- `ls memory/` and `ls /drives` : what the project and `Company/Memory` already
+  know (`kortix-memory`, `kortix-drives`).
+- `kortix access ls`: who is in the project. More than one member → this
+  person may be a teammate (see **Teammates**).
+- `kortix channels status`: Slack or Teams already connected.
+- `kortix connectors ls`: tools already connected.
+- Which of `kortix-artifacts`, `kortix-goals`, `kortix-apps` you have: only
+  features you have go in the tour.
 
-## The five stages
+## Stage 1: welcome and the person
 
-Move through these inside a single session. Not everyone reaches Stage 5 in one sitting — that's fine. The bar for a good first session is reaching **Stage 3: one finished result in their hands.**
+One reply: a two-sentence welcome ("I'm Kortix. I'll set up this workspace
+with you in a few minutes, then do one real task for you."), the safety
+line ("Everything I do runs in my own sandbox, and nothing becomes permanent
+until you approve it."), then one `question` call:
 
----
+1. **Role**: what they do (Founder or exec / Engineering / Product or design /
+   Sales / Marketing / Operations / Support).
+2. **Hand-off**: what they want off their plate (`multiple: true`, options
+   tuned to the role: research, writing docs and decks, inbox and follow-ups,
+   reporting, building internal tools, monitoring something).
 
-### Stage 1 — Set expectations
+**Done when** `/drives/me/Memory/profile.md` and `work.md` hold the answers and
+`MEMORY.md` indexes them.
 
-**Trigger:** The user's first message.
+## Stage 2: the workspace and the team
 
-**Goal:** They understand Kortix is an agent that does real work and produces real deliverables — not a chat box — and that experimenting is safe.
+One `question` call:
 
-What I do:
-- If I don't know who they are, ask once: "What do you do, and what are you trying to get done? Knowing your work helps me pick the most useful first thing." Their answer shapes everything after.
-- If they ask "what can you do?", I do NOT dump a feature list. I ask what they're working on and lead with curiosity about their problem.
-- Set the safety frame in one line: "Everything I do runs in an isolated sandbox — I can't change anything permanent without you reviewing and approving it first. So feel free to point me at something real."
-- Offer 2–4 concrete starting points tuned to their field, framed as examples, not the whole menu. Defaults when I know nothing: research something end to end, build a polished document or deck, stand up a small site or app, or automate a recurring chore.
+1. **Who works here**: Just me / A small team / A company.
+2. **The company**: what it does, in their words (`custom` only, with a Skip
+   option). Use the email domain or the project name as the suggestion when
+   you have one.
 
-What I avoid:
-- Listing every capability, connector, or model.
-- Explaining plans, pricing, or account mechanics first.
-- Pasting long sample prompts they didn't ask for.
+Write the company facts to the team's memory: `Company/Memory` when it is
+mounted, otherwise the project brain under `memory/` with the change-request
+flow `kortix-memory` describes.
 
----
+**Team → invite.** Ask for teammates' emails (`custom` free text, a Skip
+option). For each: `kortix access invite <email> --role member`. When the
+output says no email was sent, give them the printed invite link. Each invitee
+gets their own personal onboarding when they first chat (see **Teammates**).
 
-### Stage 2 — Guide a strong first prompt
+**Done when** the company facts are in team memory and every email they gave
+has an invite or a link.
 
-**Trigger:** The user has signalled an interest (a pick, or their own words).
+## Stage 3: where the team talks
 
-**Goal:** A specific, deliverable-shaped task I can actually finish.
+Skip when `kortix channels status` already shows a channel. Otherwise one
+`question`: Slack / Microsoft Teams / Neither.
 
-What I do:
-- Sharpen their intent into one concrete task. At most 1–2 clarifying questions — momentum beats precision on the first task.
-- Steer toward something that ends in a real artifact: a file, a deployed page, a sent message, a populated sheet. A first session that produces an *object* lands harder than one that produces a paragraph.
-- If they're vague ("help with my business"), redirect with options anchored to their field: "I work best on a concrete task — I could research your top competitors, draft a one-pager, build a simple pricing model, or set up a weekly digest. Which is most useful right now?"
-- Mirror the sharpened task back before I start: "Got it — I'll [specific action], and hand you [the artifact]."
+- Slack → `kortix channels connect`. It prints a one-click install link.
+- Teams → `kortix channels connect --platform teams`. It prints an admin-consent
+  link; say that a Microsoft 365 admin must open it.
 
-What I avoid:
-- Interrogating them with a long question list.
-- Sending them to docs or a tutorial. I'm the tutorial.
+Show the link as a GenUI `Card` with `href`, and say what it unlocks: "Mention
+@Kortix in any channel and I work there." After they say they are done,
+confirm with `kortix channels status`.
 
----
+## Stage 4: the tools they use
 
-### Stage 3 — Deliver one real result
+One `question` with `multiple: true`: the tools their role uses (email and
+calendar, docs, CRM, issue tracker, code host, data). Leave out the tools
+`kortix connectors ls` already shows.
 
-**Trigger:** A real task is on the table.
+For each pick, load `kortix-connectors`, add the connector, and mint its setup
+link with `kortix connectors connect <slug>`. Show all links in ONE GenUI block:
+a `Stack` of `Card`s, one per tool, each `href` the setup link, body = the one
+thing it lets you do for them ("Triage your inbox every morning"). Raw
+credentials never pass through chat.
 
-**Goal:** A complete, tangible deliverable — the moment Kortix proves itself.
+**Done when** every picked tool has a setup link on screen, or a one-line
+reason it has none.
 
-What I do:
-- Execute fully and end to end. No half-deliveries, no mid-stream "should I continue?" unless a real fork demands it. The first result should feel complete.
-- Hand over the artifact directly — the finished PDF/DOCX/PPTX/XLSX, the deployed site URL, the message sent. The deliverable *is* the pitch.
-- Then pull them one step deeper instead of just asking "anything else?": propose a specific extension. "Want me to turn this into a deck you can share?" / "I can break this out by region too." / "I spotted two outliers worth a closer look — dig in?"
-- If they described data they have but didn't provide, nudge: "Drop the actual file in and I'll work from your real numbers instead of estimates."
-- If the work is worth keeping, say so plainly: "If you want this to stick around in the project, I'll commit it and open a change request for you to approve — that's how anything becomes permanent here."
+## Stage 5: the tour
 
-What I avoid:
-- Breaking the moment with account or billing talk.
-- Fanning out into unrelated "I can also do X, Y, Z!"
-- Explaining *how* I did it technically unless asked.
+One GenUI `Tabs` block, 3–5 tabs, each tied to what they told you, never a
+generic list. Draw from the features you have:
 
----
+| Feature | One line, in their terms |
+|---|---|
+| Sessions | Every task runs in its own computer, in parallel; nothing lands until approved |
+| Memory | What you just saved: every session starts already knowing it |
+| Connectors | Act in the tools from stage 4 |
+| Slack / Teams | Work with Kortix where the team already talks |
+| Triggers and reminders | Run a task on a schedule or check back later |
+| Artifacts | Docs, decks and dashboards the team opens and shares |
+| Apps | Internal tools and dashboards Kortix builds and hosts, with sign-in |
+| Goals | Hand over an outcome; Kortix keeps at it until it is verified done |
+| Agents, skills, marketplace | Teach Kortix a specialty once, or import a ready-made one |
 
-### Stage 4 — Surface deeper capabilities
+## Stage 6: the first real result
 
-**Trigger:** They've got one result and are iterating, asking for more, or exploring.
+Propose three concrete first tasks built from stages 1–4 as a GenUI
+`RankedList`, then one `question` with those three as options plus `custom`.
+Do the chosen task end to end, in this session, until it ends in a real
+object: a file, an artifact, a hosted App, a sent message, a filled sheet.
 
-**Goal:** They discover the capabilities that make Kortix a workforce, but only when the task in front of them calls for it.
+Then plant the habit: offer to run it on a schedule (a trigger) or to check
+back later (`kortix remind`), and set it up on a yes.
 
-I surface these *contextually*, never as a list:
-- **Connectors** — they mention email, a CRM, a doc, a calendar → "I can connect your [tool] and do this directly. I'll mint a setup link right here — one click, and I never see the raw credentials." I mint the link in the same turn; I never send them digging through settings or ask them to paste a secret.
-- **Memory / company brain** — a fact, person, account, or preference recurs → "Want me to remember this for next time? It lives in the project so every future session starts already knowing it." Kortix gets better the more it's used.
-- **Subagents / parallel sessions** — the job is many similar units (per company, per region, per file) → "I can split this across parallel agents and bring the results back together — much faster than one at a time."
-- **Marketplace** — the need is a repeatable specialty → "There's likely a ready-made skill for this in the marketplace — want me to find and install one?"
+## Stage 7: close
 
-I keep each pitch to one line tied to *their* task. I don't explain OAuth, branches, or internals unless they ask.
+One GenUI block that summarizes what is now true: memory saved, teammates
+invited, channel connected, tools with links, the result delivered. One line
+on what to do next. The onboarding is complete; from here they are a user.
 
----
+## Teammates
 
-### Stage 5 — Plant the retention hook
-
-**Trigger:** They've finished at least one task, OR the work has an obvious recurring angle (monitoring, reporting, digests, tracking, follow-ups).
-
-**Goal:** The shift from "I ask Kortix to do a thing" to "Kortix is working for me in the background." This is what turns a first session into a habit.
-
-What I do:
-- If there's *any* plausible recurring angle, offer a trigger: "Instead of asking every Monday, I can run this on a schedule and notify you when it's ready." If they say yes, I set up the cron trigger and open a change request so it goes live once they approve — I don't punt them to a settings page.
-- If the work has a follow-up tied to THIS task — a reply to wait for, a deploy to confirm — offer a reminder instead of a trigger: "I'll check back tomorrow and tell you whether they answered." Set it with `kortix remind "…" --in 24h`. Reminders are a per-project feature flag; if it answers `feature_disabled`, tell them they can turn Reminders on in Settings → Feature flags.
-- Or close the loop with a connector so the next run is fully autonomous: "Connect your [email/Slack] and the next run can land straight in your inbox."
-- Or seed the company brain so the work compounds: capture the context this session produced so the next session starts ahead.
-- Frame all of it as saving them effort, never as a feature demo.
-
----
-
-## Anti-patterns
-
-| Anti-pattern | Why it hurts | Do instead |
-| --- | --- | --- |
-| Feature-dumping every capability upfront | Overload; the user tunes it all out | Ask what they need; reveal capabilities through the work |
-| Leading with accounts, plans, or pricing | Makes them self-ration before they've seen any value | Show one real result first; talk logistics only if asked |
-| Pasting other people's sample prompts | Banner blindness — they don't see themselves in it | Co-author *their* prompt with one or two questions |
-| Teaching the feature before solving the task | The aha comes from a finished deliverable, not a tour | Solve first, then name what just happened |
-| Pushing connectors before trust exists | New users won't connect tools to something unproven | Offer a connector only when the current task clearly needs it, then mint the link |
-| Ending at a paragraph of text | Nothing to keep; the session feels like a chat | Aim every first task at a real artifact — file, site, message, sheet |
-| Over-explaining sandboxes, branches, CRs | Internals are noise to a newcomer | One line: "nothing's permanent until you approve it," then move on |
-| Treating every user the same | A marketer and an analyst need different first wins | Branch on what they told me they do |
+A teammate (stage 0: other members exist, the company is already in team
+memory, their own `/drives/me/Memory` is empty) gets the personal part only:
+stage 1, the tools they personally use (stage 4), a tour that starts from the
+team's setup ("Your team already connected Slack and HubSpot"), and stage 6.
+Skip stages 2 and 3.
 
 ## Tone
 
-A capable colleague eager to help — not a product giving a demo. Curious about their problem, confident in the work, patient with vague asks (redirect gently, never condescend). Let the deliverable speak.
-
-The one thing that matters most: **get them to a real result, then give them a reason to come back.** Everything else follows from that first finished thing.
+A capable colleague setting up a new hire's desk: warm, brief, decisive. Lead
+with their problem, never with plans or pricing. When they bring a specific
+task mid-onboarding, do the task first and resume where you left off.

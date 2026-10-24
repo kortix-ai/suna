@@ -3,13 +3,13 @@ import type { SessionPromptPart } from '@kortix/sdk';
 import { createElement, type ComponentProps, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ComposerChatInput } from '@kortix/ui/composer';
-import type { FirstChat } from '@kortix/ui/workspace/home/first-chat';
 
 let composer!: ComponentProps<typeof ComposerChatInput>;
-let firstChat: ComponentProps<typeof FirstChat> | undefined;
-let firstChatPending = false;
-/** Whether the address carries `?chat=first` (the sidebar row, onboarding). */
-let firstChatRequested = true;
+/** `metadata.onboarding_completed_at` on the project detail; `null` = not onboarded. */
+let onboardedAt: string | null = '2026-10-01T00:00:00Z';
+/** The `project.write` probe: who may set the project up. */
+let canWrite = true;
+const stamp = mock(async () => ({}));
 // `mock.module` is process-wide: every shared module keeps its real exports and
 // overrides only what this test needs, so other suites in the same run still link.
 const realComposerInput = await import('@kortix/ui/session/composer/composer-chat-input');
@@ -19,12 +19,6 @@ const realProjectCan = await import('@kortix/ui/internal/lib/use-project-can');
 const realAccountPanel = await import('@kortix/ui/internal/stores/account-panel-store');
 const realSdk = await import('@kortix/sdk');
 const realSdkReact = await import('@kortix/sdk/react');
-const realFirstChatStore = await import('@kortix/ui/internal/stores/first-chat-store');
-const realUiProvider = { ...(await import('@kortix/ui/providers/ui-provider')) };
-mock.module('@kortix/ui/providers/ui-provider', () => ({
-  ...realUiProvider,
-  useUiSearchParams: () => new URLSearchParams(firstChatRequested ? 'chat=first' : ''),
-}));
 mock.module('@kortix/ui/session/composer/composer-chat-input', () => ({
   ...realComposerInput,
   ComposerChatInput: (props: typeof composer) => {
@@ -34,27 +28,32 @@ mock.module('@kortix/ui/session/composer/composer-chat-input', () => ({
 }));
 const translationsMock = () => ({
   ...realTranslations,
-  // Callable for the first chat's keys (`firstChat.placeholder`), `.raw` for
-  // the home placeholder. Both return something a test can tell apart.
+  // Callable for the onboarding chat's keys (`onboardingChat.placeholder`),
+  // `.raw` for the home placeholder. Both return something a test can tell apart.
   useTranslations: (namespace: string) =>
     Object.assign((key: string) => `${namespace}.${key}`, { raw: () => 'Message' }),
 });
 mock.module('@/i18n/use-translations', translationsMock);
 mock.module('@kortix/ui/i18n', translationsMock);
-// Zustand hooks read the store's initial state under `renderToStaticMarkup`, so
-// the pending flag is set here rather than through the store.
-mock.module('@kortix/ui/internal/stores/first-chat-store', () => ({
-  ...realFirstChatStore,
-  useFirstChatPending: () => firstChatPending,
-}));
 mock.module('@tanstack/react-query', () => ({
   ...realQuery,
-  useQuery: () => ({ data: undefined }),
+  // One answer fits every query: the project detail (its metadata decides
+  // onboarding), an empty sandbox list and no access requests.
+  useQuery: () => ({
+    isSuccess: true,
+    data: {
+      project: { account_id: 'a1', metadata: onboardedAt ? { onboarding_completed_at: onboardedAt } : {} },
+      items: [],
+      requests: [],
+    },
+  }),
   useQueryClient: () => new realQuery.QueryClient(),
 }));
 mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
   ...realProjectCan,
-  useProjectCan: () => ({ allowed: false }),
+  useProjectCan: (_projectId: string, action: string) => ({
+    allowed: action === realSdk.PROJECT_ACTIONS.PROJECT_WRITE ? canWrite : false,
+  }),
 }));
 mock.module('@kortix/ui/internal/stores/account-panel-store', () => ({ ...realAccountPanel, hubTarget: () => null }));
 mock.module('@kortix/sdk', () => ({
@@ -62,10 +61,12 @@ mock.module('@kortix/sdk', () => ({
   getProjectDetail: mock(),
   listProjectAccessRequests: mock(),
   listProjectSandboxes: mock(),
+  setProjectOnboardingComplete: stamp,
 }));
 mock.module('@kortix/sdk/react', () => ({
   ...realSdkReact,
   contract: () => ({}),
+  invalidateProject: async () => {},
   qk: {
     ...realSdkReact.qk,
     project: {
@@ -81,12 +82,6 @@ mock.module('@kortix/ui/internal/layout/sidebar-toggle', () => ({
 }));
 mock.module('@kortix/ui/workspace/home/access-requests-bell', () => ({ AccessRequestsBell: () => null }));
 mock.module('@kortix/ui/workspace/home/sandbox-picker', () => ({ SandboxPicker: () => null }));
-mock.module('@kortix/ui/workspace/home/first-chat', () => ({
-  FirstChat: (props: ComponentProps<typeof FirstChat>) => {
-    firstChat = props;
-    return props.composer;
-  },
-}));
 mock.module('@kortix/ui/workspace/home/welcome-body', () => ({
   ProjectHomeWallpaper: () => null,
   ProjectHomeWelcomeBody: ({ composer: input }: { composer: ReactNode }) => input,
@@ -101,13 +96,13 @@ const handle: SessionPromptPart = {
 };
 
 function mount(onSend: ComponentProps<typeof ProjectHome>['onSend']) {
-  firstChat = undefined;
   renderToStaticMarkup(createElement(ProjectHome, { projectId: 'project-1', onSend, busy: false }));
 }
 
 afterEach(() => {
-  firstChatRequested = true;
-  firstChatPending = false;
+  onboardedAt = '2026-10-01T00:00:00Z';
+  canWrite = true;
+  stamp.mockClear();
 });
 
 test('composer Send forwards attachment handles and propagates a failed create', async () => {
@@ -148,53 +143,47 @@ test('a slash command whose send fails leaves no unhandled rejection', async () 
   }
 });
 
-test('a project without a first chat opens on the usual home and hero composer', () => {
+test('an onboarded project opens on the usual home and hero composer', () => {
   mount(mock(async () => {}));
 
-  expect(firstChat).toBeUndefined();
   expect(composer.placeholder).toBe('Message');
   expect(composer.underbarPlacement).toBe('inline');
   expect(composer.slashMenuPlacement).toBe('below');
 });
 
-test('a pending first chat docks the composer under the welcome', () => {
-  firstChatPending = true;
+test('a project that is not onboarded opens as a chat with the composer docked', () => {
+  onboardedAt = null;
   mount(mock(async () => {}));
 
-  expect(firstChat).toBeDefined();
-  expect(composer.placeholder).toBe('firstChat.placeholder');
+  expect(composer.placeholder).toBe('onboardingChat.placeholder');
   expect(composer.underbarPlacement).toBe('below');
   expect(composer.slashMenuPlacement).toBe('above');
 });
 
-// "New session" opens plain project home. The first chat stays pending, but
-// without `?chat=first` the page is the usual home, never the welcome again.
-test('a pending first chat does not open without the explicit link', () => {
-  firstChatPending = true;
-  firstChatRequested = false;
+// A member who cannot write the project cannot stamp it, so the onboarding
+// chat would come back on every load. They see the usual home.
+test('a member who cannot set the project up never gets the onboarding chat', () => {
+  onboardedAt = null;
+  canWrite = false;
   mount(mock(async () => {}));
 
-  expect(firstChat).toBeUndefined();
   expect(composer.placeholder).toBe('Message');
 });
 
-// Neither starter may call `onSend` itself. Both submit through the composer
-// (`prefill.submit`), so each send carries the composer's agent and model and
-// meets its refusals.
-test('neither starter sends around the composer', async () => {
-  firstChatPending = true;
+test('the kickoff send stamps the project onboarded once the session is created', async () => {
+  onboardedAt = null;
   const onSend = mock(async () => {});
   mount(onSend);
 
-  firstChat!.onRecommendTools();
-  firstChat!.onUpdateMemory();
+  await composer.onSend('Onboard me', undefined, {});
   await new Promise((resolve) => setTimeout(resolve, 0));
 
-  expect(onSend).not.toHaveBeenCalled();
+  expect(onSend).toHaveBeenCalledWith('Onboard me', undefined, {}, undefined);
+  expect(stamp).toHaveBeenCalledWith('project-1', true);
 });
 
-test('a failed first-chat send still reaches the composer as a rejection', async () => {
-  firstChatPending = true;
+test('a refused kickoff leaves the project unstamped and reaches the composer', async () => {
+  onboardedAt = null;
   const failure = new Error('Account cannot start a session');
   mount(
     mock(async () => {
@@ -202,5 +191,15 @@ test('a failed first-chat send still reaches the composer as a rejection', async
     }),
   );
 
-  await expect(composer.onSend('hello', undefined, {})).rejects.toBe(failure);
+  await expect(composer.onSend('Onboard me', undefined, {})).rejects.toBe(failure);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(stamp).not.toHaveBeenCalled();
+});
+
+test('a send from an onboarded project stamps nothing', async () => {
+  mount(mock(async () => {}));
+
+  await composer.onSend('hello', undefined, {});
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(stamp).not.toHaveBeenCalled();
 });

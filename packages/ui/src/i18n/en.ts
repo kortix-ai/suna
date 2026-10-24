@@ -1908,20 +1908,9 @@ const catalog = {
       "unmuted": "Notifications unmuted"
     }
   },
-  "firstChat": {
-    "title": "Your first chat with Kortix",
-    "greeting": "Welcome, {name}. I'm Kortix.",
-    "greetingNoName": "Welcome. I'm Kortix.",
-    "intro": "Bring me anything: a task, a workflow, or a half-formed idea. We'll figure it out together.",
-    "question": "Where do you want to start?",
-    "recommendTools": "Recommend tools",
-    "updateMemory": "Update memory",
-    "placeholder": "Tell Kortix what you're working on",
-    "toolsPrompt": "Recommend tools and connectors that fit my workflow. Ask me what I work on first if you need to.",
-    "memoryPrompt": "Get to know how I work. Ask me one short question at a time about my role, what I work on, the tools I use, and how I like to work. Save my answers to project memory so future sessions start with them.",
-    "inviteTeammate": "Invite teammate",
-    "connectSlack": "Connect Slack",
-    "slackConnected": "Slack connected"
+  "onboardingChat": {
+    "kickoff": "Onboard me",
+    "placeholder": "Tell Kortix what you're working on"
   },
   "hardcodedUi": {
     "appProjectsIdCustomizeSecretsPage": {
@@ -2312,7 +2301,6 @@ const catalog = {
     "autoFeaturesWorkspaceProjectSidebarModalShareSessionModalDelegateDescription": "{owner} created this session. As a project manager you govern its access.",
     "autoFeaturesWorkspaceProjectSidebarModalShareSessionModalViewerDescription": "{owner} owns this session. Only the owner can change who opens it.",
     "autoFeaturesFileViewerFileContentRendererJsxTextCouldnT794ae800": "Couldn't preview this file",
-    "autoFeaturesFileViewerFilePreviewModalJsxAttrTooltipCopy42229181": "Copy a public view-only link for this file",
     "autoFeaturesFileViewerFilePreviewModalJsxAttrTitleClosea40d0510": "Close (Esc)",
     "autoFeaturesFileViewerFilePreviewModalJsxAttrTitlePreviousb7cda316": "Previous file",
     "autoFeaturesFileViewerFilePreviewModalJsxAttrAriaLabel03ab3a76": "Previous file",

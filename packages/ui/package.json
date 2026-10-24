@@ -349,7 +349,6 @@
     "./internal/stores/current-account-store": "./src/internal/stores/current-account-store.ts",
     "./internal/stores/diagnostics-store": "./src/internal/stores/diagnostics-store.ts",
     "./internal/stores/files-store": "./src/internal/stores/files-store.ts",
-    "./internal/stores/first-chat-store": "./src/internal/stores/first-chat-store.ts",
     "./internal/stores/kortix-computer-store": "./src/internal/stores/kortix-computer-store.ts",
     "./internal/stores/mobile-app-promo-store": "./src/internal/stores/mobile-app-promo-store.ts",
     "./internal/stores/onboarding-mode-store": "./src/internal/stores/onboarding-mode-store.ts",
@@ -511,7 +510,6 @@
     "./wallpaper-shaders": "./src/primitives/wallpaper-shaders.tsx",
     "./workspace": "./src/workspace/index.ts",
     "./workspace/home/access-requests-bell": "./src/workspace/home/access-requests-bell.tsx",
-    "./workspace/home/first-chat": "./src/workspace/home/first-chat.tsx",
     "./workspace/home/mobile-app-promo": "./src/workspace/home/mobile-app-promo.tsx",
     "./workspace/home/sandbox-picker": "./src/workspace/home/sandbox-picker.tsx",
     "./workspace/home/welcome-body": "./src/workspace/home/welcome-body.tsx",
@@ -1855,10 +1853,6 @@
         "types": "./dist/internal/stores/files-store.d.ts",
         "import": "./dist/internal/stores/files-store.js"
       },
-      "./internal/stores/first-chat-store": {
-        "types": "./dist/internal/stores/first-chat-store.d.ts",
-        "import": "./dist/internal/stores/first-chat-store.js"
-      },
       "./internal/stores/kortix-computer-store": {
         "types": "./dist/internal/stores/kortix-computer-store.d.ts",
         "import": "./dist/internal/stores/kortix-computer-store.js"
@@ -2484,10 +2478,6 @@
       "./workspace/home/access-requests-bell": {
         "types": "./dist/workspace/home/access-requests-bell.d.ts",
         "import": "./dist/workspace/home/access-requests-bell.js"
-      },
-      "./workspace/home/first-chat": {
-        "types": "./dist/workspace/home/first-chat.d.ts",
-        "import": "./dist/workspace/home/first-chat.js"
       },
       "./workspace/home/mobile-app-promo": {
         "types": "./dist/workspace/home/mobile-app-promo.d.ts",

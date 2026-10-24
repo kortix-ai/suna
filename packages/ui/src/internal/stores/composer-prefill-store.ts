@@ -11,9 +11,7 @@
  * A prefill fills the box. Only `submit: true` also sends it, and only the
  * desktop Quick Entry sets that: a prompt the person typed into the app's own
  * bar (`components/desktop/desktop-quick-entry.tsx`). A URL (`?q=`) never
- * sends, because anyone can write a link. The onboarding hand-off that used to
- * auto-send its kickoff prompt now opens the first chat instead
- * (`first-chat-store.ts`).
+ * sends, because anyone can write a link.
  */
 
 import type { AttachedFile } from '../../session/composer/types';

@@ -69,24 +69,7 @@ describe('both empty session lists use it', () => {
     expect(page).toContain('<SessionsEmptyState');
   });
 
-  // The sidebar's empty list is the first chat's row while that chat waits,
-  // and the pixel empty state otherwise.
-  test('the sidebar, after the first chat', () => {
-    const empty = sidebar.slice(
-      sidebar.indexOf("if (viewState === 'empty')"),
-      sidebar.indexOf("if (viewState === 'no-matches')"),
-    );
-    expect(empty).toContain('firstChatPending ?');
-    expect(empty).toContain('<FirstChatRow');
-    expect(empty).toContain('<SessionsEmptyState');
-  });
-
-  // The first chat never leaves: once sessions exist it sits at the bottom,
-  // after the last page.
-  test('the sidebar, with sessions', () => {
-    const list = sidebar.slice(sidebar.indexOf('<FadedScrollArea fadeColor="from-background"'));
-    expect(list.indexOf('{firstChatPending &&')).toBeGreaterThan(
-      list.indexOf('grouped.sections.map('),
-    );
+  test('the sidebar', () => {
+    expect(sidebar).toContain('<SessionsEmptyState');
   });
 });

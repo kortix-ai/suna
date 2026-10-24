@@ -3411,20 +3411,9 @@
       }
     }
   },
-  "firstChat": {
-    "title": "Ihr erster Chat mit Kortix",
-    "greeting": "Willkommen, {name}. Ich bin Kortix.",
-    "greetingNoName": "Willkommen. Ich bin Kortix.",
-    "intro": "Bringen Sie mir alles: eine Aufgabe, einen Workflow oder eine halbfertige Idee. Wir finden es gemeinsam heraus.",
-    "question": "Wo möchten Sie anfangen?",
-    "recommendTools": "Tools empfehlen",
-    "updateMemory": "Projektspeicher aktualisieren",
-    "placeholder": "Sagen Sie Kortix, woran Sie arbeiten",
-    "toolsPrompt": "Empfehlen Sie mir Tools und Connectoren, die zu meinem Workflow passen. Fragen Sie mich bei Bedarf zuerst, woran ich arbeite.",
-    "memoryPrompt": "Lernen Sie, wie ich arbeite. Stellen Sie mir jeweils eine kurze Frage zu meiner Rolle, woran ich arbeite, welche Tools ich nutze und wie ich gerne arbeite. Speichern Sie meine Antworten im Projektspeicher, damit künftige Sitzungen direkt darauf aufbauen.",
-    "inviteTeammate": "Teammitglied einladen",
-    "connectSlack": "Slack verbinden",
-    "slackConnected": "Slack verbunden"
+  "onboardingChat": {
+    "kickoff": "Führ mich durch Kortix",
+    "placeholder": "Sagen Sie Kortix, woran Sie arbeiten"
   },
   "announcements": {
     "memories": {
@@ -20515,61 +20504,6 @@
       "aboutDescription": "Über diese Beschreibung",
       "senderUnavailable": "Das sendende Konto konnte nicht geladen werden. Prüfe die Zeile „Von“.",
       "quoted": "„{text}“"
-    }
-  },
-  "projectOnboarding": {
-    "resetSuccess": "Onboarding-Reset",
-    "back": "Zurück",
-    "skip": "Überspringen",
-    "skipForNow": "Überspringen Sie es vorerst",
-    "progress": "Einrichtungsfortschritt",
-    "work": {
-      "title": "Woran arbeitest du hauptsächlich?",
-      "description": "Kortix schlägt dir damit deine ersten Aufgaben vor.",
-      "ariaLabel": "Woran du arbeitest",
-      "noteLabel": "Beschreib es in ein paar Worten",
-      "notePlaceholder": "Zum Beispiel Forschung oder Recruiting",
-      "continue": "Weiter",
-      "options": {
-        "founder": "Ein Unternehmen führen",
-        "engineering": "Engineering",
-        "product_design": "Produkt und Design",
-        "sales": "Vertrieb",
-        "marketing": "Marketing",
-        "finance_ops": "Betrieb",
-        "support": "Support und Kundenerfolg",
-        "other": "Etwas anderes"
-      }
-    },
-    "apps": {
-      "title": "Welche Apps nutzt du?",
-      "description": "Klicke auf eine App, um sie zu verbinden. Du kannst jederzeit weitere hinzufügen.",
-      "ariaLabel": "Apps",
-      "searchPlaceholder": "Apps oder Kategorien suchen",
-      "clearSearch": "Suche löschen",
-      "connectApp": "{app} verbinden",
-      "appConnected": "{app} ist verbunden",
-      "connectedCount": "{count} verbunden",
-      "noMatches": "Keine Apps passen zu „{query}“",
-      "notConfiguredTitle": "Apps sind hier nicht eingerichtet",
-      "notConfiguredDescription": "Diese Installation hat keinen App-Katalog. Du kannst Connectors später in den Einstellungen hinzufügen.",
-      "continue": "Weiter"
-    },
-    "plan": {
-      "title": "Welche Modelle soll Kortix nutzen?",
-      "description": "Du kannst das jederzeit in den Einstellungen ändern.",
-      "seePlans": "Pläne ansehen",
-      "open": "Workspace öffnen",
-      "addKey": "Schlüssel hinzufügen",
-      "modelAccess": "Modellzugang",
-      "useKortix": "Kortix-Modelle",
-      "recommended": "Empfohlen",
-      "useKortixDescription": "Sofort bereit. Läuft mit den Credits deines Plans.",
-      "useKortixNeedsPlan": "Braucht einen Kortix-Plan oder Credits.",
-      "bringKey": "Mein eigener API-Schlüssel",
-      "providerDescription": "Anthropic, OpenAI oder ein anderer Anbieter.",
-      "keyConnected": "Ein Schlüssel ist verbunden.",
-      "decideLater": "Später entscheiden"
     }
   },
   "commandPalette": {

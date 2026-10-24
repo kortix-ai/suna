@@ -25,7 +25,6 @@ import {
 } from '../../primitives/dropdown-menu';
 import { FadedScrollArea } from '../../primitives/faded-scroll-area';
 import Hint from '../../primitives/hint';
-import { KortixLogo } from '../../primitives/kortix-logo';
 import Loading from '../../primitives/loading';
 import { useSidebar } from '../../primitives/sidebar';
 import { Skeleton } from '../../primitives/skeleton';
@@ -73,11 +72,6 @@ import { isReviewOverdue, SessionStatusMark } from './session-status-mark';
 import { SessionTitle } from './session-title';
 import { useMediaQuery } from '../../internal/hooks';
 import { cn } from '../../internal/lib/utils';
-import {
-  firstChatHref,
-  isFirstChatRequested,
-  useFirstChatPending,
-} from '../../internal/stores/first-chat-store';
 import { selectExpandedIds, useSessionExpandedStore } from '../../internal/stores/session-expanded-store';
 import {
   selectCollapsedSections,
@@ -251,7 +245,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const pathname = useUiPathname();
   const router = useUiRouter();
   const searchParams = useUiSearchParams();
-  const firstChatPending = useFirstChatPending(projectId);
   const activeRuntimeSessionId = readRuntimeSessionParam(searchParams);
   const activeSessionId = sessionIdFromPath(pathname, projectId);
   const switchingToSessionId = useSessionSwitchStore((state) => state.targetSessionId);
@@ -590,14 +583,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     }
 
     if (viewState === 'empty') {
-      return firstChatPending ? (
-        <FirstChatRow
-          projectId={projectId}
-          isActive={pathname === uiRoutes().project(projectId) && isFirstChatRequested(searchParams)}
-        />
-      ) : (
-        <SessionsEmptyState className="flex-1 pb-16" />
-      );
+      return <SessionsEmptyState className="flex-1 pb-16" />;
     }
 
     if (viewState === 'no-matches') {
@@ -692,17 +678,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           renderNode={(session) => renderSessionNode(session, false)}
           caretOnHover
         />
-        {/* The first chat never leaves. It is the oldest conversation, so it
-            sits at the very bottom — after the last page, never mid-list. */}
-        {firstChatPending &&
-          !hasNextPage &&
-          !sharedQuery.hasNextPage &&
-          !automatedQuery.hasNextPage && (
-            <FirstChatRow
-              projectId={projectId}
-              isActive={pathname === uiRoutes().project(projectId) && isFirstChatRequested(searchParams)}
-            />
-          )}
       </FadedScrollArea>
     );
   }
@@ -1629,41 +1604,6 @@ function ProjectSessionRow({
         </DropdownMenu>
       </div>
     </div>
-  );
-}
-
-/**
- * The project's first chat (`first-chat-store.ts`), at the bottom of the list
- * (it is the oldest conversation) and shown alone when there are no sessions. It opens project home,
- * where that chat lives.
- *
- * The same box as `ProjectSessionRow`, with the Kortix mark in the status slot
- * and nothing after the title: no status, no hover card, no `⋯`. It is not a
- * session yet, so there is nothing to report and nothing to act on.
- */
-function FirstChatRow({ projectId, isActive }: { projectId: string; isActive: boolean }) {
-  const t = useTranslations('firstChat');
-
-  return (
-    <HoverPrefetchLink
-      href={firstChatHref(projectId)}
-      aria-current={isActive ? 'page' : undefined}
-      className={cn(
-        'flex h-8 items-center gap-2 rounded-md px-2 transition-none',
-        'max-md:h-auto max-md:min-h-12 max-md:gap-1',
-        '[@media(hover:none)]:h-auto [@media(hover:none)]:min-h-12 [@media(hover:none)]:gap-1',
-        'pointer-coarse:h-auto pointer-coarse:min-h-12 pointer-coarse:gap-1',
-        'focus-visible:ring-kortix-base focus-visible:ring-[0.6px] focus-visible:outline-none',
-        isActive
-          ? 'bg-sidebar-row text-sidebar-foreground'
-          : 'text-muted-foreground hover:bg-sidebar-row hover:text-sidebar-foreground',
-      )}
-    >
-      <span className="text-muted-foreground flex size-4 shrink-0 items-center justify-center">
-        <KortixLogo variant="icon" size={12} />
-      </span>
-      <SessionTitle title={t('title')} className={cn('min-w-0', isActive && 'font-medium')} />
-    </HoverPrefetchLink>
   );
 }
 
