@@ -158,6 +158,53 @@
       "slack": {
         "status": "skipped"
       }
+    },
+    "2026-W42": {
+      "week": "2026-W42",
+      "start": "2026-10-12T00:00:00.000Z",
+      "end": "2026-10-19T00:00:00.000Z",
+      "releases": [
+        "v0.14.1",
+        "v0.14.0",
+        "v0.13.57",
+        "v0.13.56"
+      ],
+      "highlights": [
+        {
+          "text": "Restore deleted sessions for 30 days, or continue a session on a new computer with its saved conversation, images and files.",
+          "tags": [
+            "v0.14.0"
+          ]
+        },
+        {
+          "text": "Agents can answer with visual cards, comparisons, photo steps, product cards, maps and figures on web and mobile.",
+          "tags": [
+            "v0.14.0"
+          ]
+        },
+        {
+          "text": "Pin and archive sessions to keep your list organized.",
+          "tags": [
+            "v0.14.0"
+          ]
+        },
+        {
+          "text": "Large folders load in pages, and file search finds content as well as names.",
+          "tags": [
+            "v0.13.57"
+          ]
+        },
+        {
+          "text": "Beta app event triggers can run an agent when something happens in a connected app, such as a new email or opened pull request.",
+          "tags": [
+            "v0.13.56"
+          ]
+        }
+      ],
+      "generated_at": "2026-10-24T10:21:41.591Z",
+      "slack": {
+        "status": "skipped"
+      }
     }
   }
 }
