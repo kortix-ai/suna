@@ -638,6 +638,13 @@ flow('FILE-14', { domain: 'files', routes: ['GET /v1/projects/:projectId/files/c
     const after = await owner.get('/v1/projects/:projectId/files/content', { params, query: { path: body.path } });
     after.status(200).body().has('$.content', body.content);
   });
+  await ctx.step('non-JSON writes return 400 instead of throwing', async () => {
+    (await owner.put('/v1/projects/:projectId/files/content', JSON.stringify(body), {
+      params, raw: true, headers: { 'Content-Type': 'text/plain' },
+    })).status(400);
+    const after = await owner.get('/v1/projects/:projectId/files/content', { params, query: { path: body.path } });
+    after.status(200).body().has('$.content', body.content);
+  });
   await ctx.step('stale revision cannot overwrite the committed edit', async () => {
     (await owner.put('/v1/projects/:projectId/files/content', body, { params })).status(409);
   });
