@@ -565,7 +565,7 @@ watching — usually via `slack send`, silent otherwise), and it must be
   operational playbook: full cron cheat-sheet + gotchas (DOM+DOW OR-not-AND
   trap, no exact-minute gates), fresh-vs-reuse guidance, notifying/
   idempotency practices in depth, the pause-and-wait re-fire pattern,
-  worked examples, a pre-ship checklist, and the **Connector event triggers**
+  worked examples, a pre-ship checklist, and the **Composio event triggers**
   playbook (autonomous setup recipe, statuses, noise control).
 - `references/kortix/kortix-cli.md`
   — the `kortix triggers ls/info/fire/enable/disable/events/add/set` and

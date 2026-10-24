@@ -188,7 +188,7 @@ Kortix runs a delivery once per event. It reads the event id from the first of t
 
 An `event` trigger runs an agent when something happens in a connected app: a pull request opens, an email arrives. You do not sign anything. Kortix subscribes to the event, or checks the app, for you.
 
-Connector event triggers need the project flag `event_triggers`, off by default. Turn it on in **Customize → Settings → Feature flags → Connector event triggers**, or run `kortix projects features enable event_triggers`. While it is off, the event routes answer `403` with `code: feature_disabled`. The CLI prints the command that turns it on. An `event` trigger in `kortix.yaml` reads status `error`. Turning it on subscribes those triggers without another save.
+Connector events need the project flag `event_triggers` (**Composio event triggers**), off by default. It covers events from Composio and, with Connectors v2, events Kortix checks itself. Turn it on in **Customize → Settings → Feature flags → Composio event triggers**, or run `kortix projects features enable event_triggers`. While it is off, the event routes answer `403` with `code: feature_disabled`. The CLI prints the command that turns it on. An `event` trigger in `kortix.yaml` reads status `error`. Turning it on subscribes those triggers without another save.
 
 ### Event sources
 

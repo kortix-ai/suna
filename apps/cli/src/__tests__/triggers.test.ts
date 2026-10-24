@@ -750,7 +750,7 @@ describe('kortix triggers — events', () => {
       },
     });
     const cfg = writeConfig(`http://127.0.0.1:${server.port}`);
-    const line = 'Connector event triggers are off for this project. Turn them on: kortix projects features enable event_triggers';
+    const line = 'Composio event triggers are off for this project. Turn them on: kortix projects features enable event_triggers';
     for (const args of [
       ['triggers', 'events', '--apps'],
       ['triggers', 'events', '--connector', 'github'],

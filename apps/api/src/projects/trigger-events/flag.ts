@@ -3,7 +3,7 @@ import { resolveFeatureFlag } from '../../feature-flags/registry';
 
 /** Shown as the trigger's `error` while the project has the flag off. */
 export const EVENT_TRIGGERS_OFF_MESSAGE =
-  'Connector event triggers are off for this project. Turn them on in Settings → Feature flags.';
+  'Composio event triggers are off for this project. Turn them on in Settings → Feature flags.';
 
 /** The project has the `event_triggers` flag on. */
 export const eventTriggersEnabled = (projectMetadata: unknown): boolean =>

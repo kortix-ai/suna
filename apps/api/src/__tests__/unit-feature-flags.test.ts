@@ -156,7 +156,7 @@ describe('resolveFeatureFlag — explicit override wins', () => {
 
   test('event_triggers is a beta, explicit opt-in flag offered everywhere', () => {
     expect(findCatalogFlag('event_triggers')).toMatchObject({
-      name: 'Connector event triggers',
+      name: 'Composio event triggers',
       stability: 'beta',
       enabled: false,
       operator_only: false,

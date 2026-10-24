@@ -710,11 +710,11 @@ describe('an app event', () => {
 
   test('events off: the catalog is not used, the saved event is shown and other fields still save', async () => {
     const sheet = mountEvent(
-      { event: { ...(eventOverrides.event as NonNullable<ProjectTrigger['event']>), status: 'error', error: 'Connector event triggers are off for this project.' } },
+      { event: { ...(eventOverrides.event as NonNullable<ProjectTrigger['event']>), status: 'error', error: 'Composio event triggers are off for this project.' } },
       false,
     );
     const text = JSON.stringify(sheet.renderer.toJSON());
-    expect(text).toContain('Connector event triggers are off');
+    expect(text).toContain('Composio event triggers are off');
     expect(sheet.buttonsWithin('Change')).toHaveLength(0);
     await type(sheet.instruction(), 'Still editable');
     await sheet.save();

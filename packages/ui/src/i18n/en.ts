@@ -793,7 +793,7 @@ const catalog = {
           "description": "Tell the people a session concerns (its prompter, its creator and its followers) through a bell inbox, browser push and email, and alert on failing triggers and reminders. Off: only the session creator's phone gets a session push, and an account owner's phone gets one when a trigger starts failing."
         },
         "event_triggers": {
-          "name": "Connector event triggers",
+          "name": "Composio event triggers",
           "description": "Start an agent when something happens in a connected app: a new email, a pull request, a calendar event. Events come from Composio. Kortix also checks your connected apps itself."
         },
         "volumes": {
