@@ -17,6 +17,8 @@ import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { mutateManifestWithRetry, type ManifestCommitResult } from '../connectors/manifest-mutation';
 import { withProjectGitAuth } from '../projects/surface';
 import { db } from '../shared/db';
+import { AppLimitError, assertAppMachineWithinLimits } from './limits';
+import { UnknownLinkedAppError, resolveAppLinks } from './links';
 
 export interface AppManifestFields {
   cpu?: number;
@@ -95,6 +97,40 @@ export async function commitAppFields(projectId: string, slug: string, fields: A
   });
 }
 
+/** `appsNode` without `slug`, and without every reference to it (`uses`, `display.parent`). */
+export function withoutApp(appsNode: Row, slug: string): Row {
+  const out: Row = {};
+  for (const [name, block] of Object.entries(appsNode)) {
+    if (name === slug) continue;
+    if (!isRow(block)) { out[name] = block; continue; }
+    const next: Row = { ...block };
+    if (Array.isArray(next.uses)) next.uses = next.uses.filter((used) => used !== slug);
+    if (isRow(next.display) && next.display.parent === slug) {
+      const { parent: _parent, ...display } = next.display;
+      next.display = display;
+    }
+    out[name] = next;
+  }
+  return out;
+}
+
+/** Remove `apps.<slug>` (and references to it) from kortix.yaml. Nothing is committed when the file does not declare it. */
+export async function commitAppRemoval(projectId: string, slug: string): Promise<ManifestCommitResult> {
+  const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  if (!row) return { ok: false, error: 'project not found', status: 404 };
+  let project: Awaited<ReturnType<typeof withProjectGitAuth>>;
+  try {
+    project = await withProjectGitAuth(row);
+  } catch (error) {
+    return { ok: false, error: (error as Error).message || 'failed to read kortix.yaml', status: 400 };
+  }
+  return mutateManifestWithRetry(project, `the App ${slug} was being deleted`, (manifest) => {
+    if (!isRow(manifest.raw.apps) || !(slug in manifest.raw.apps)) return { ok: true, commitMessage: null };
+    manifest.raw.apps = withoutApp(manifest.raw.apps, slug);
+    return { ok: true, commitMessage: `chore: remove App ${slug}` };
+  });
+}
+
 /**
  * Apply what kortix.yaml declares to the project's App rows. An App the file
  * does not declare, and a field a block does not declare, stay as they are.
@@ -112,6 +148,16 @@ export async function syncDeclaredApps(projectId: string, appsNode: unknown): Pr
     const row = rows.find((candidate) => candidate.slug === slug);
     if (!row) continue; // Declared, not created yet: the first deploy creates it.
     const fields = declaredAppFields(block);
+    // The App routes refuse a machine above APP_MACHINE_LIMITS; the file must not
+    // be a way around that ceiling. An out-of-range size is reported and leaves
+    // the row as it is.
+    try {
+      assertAppMachineWithinLimits({ cpu: fields.cpu, memoryGb: fields.memory_gb, diskGb: fields.disk_gb });
+    } catch (error) {
+      if (!(error instanceof AppLimitError)) throw error;
+      result.errors.push({ slug, error: error.message });
+      continue;
+    }
     const update = {
       ...(fields.cpu !== undefined && fields.cpu !== row.cpuCores ? { cpuCores: fields.cpu } : {}),
       ...(fields.memory_gb !== undefined && fields.memory_gb !== row.memoryGb ? { memoryGb: fields.memory_gb } : {}),
@@ -123,17 +169,18 @@ export async function syncDeclaredApps(projectId: string, appsNode: unknown): Pr
     };
     let links: Array<{ appId: string }> | null = null;
     if (fields.uses !== undefined) {
-      const wanted = [...new Set(fields.uses)];
-      const found = wanted.length
-        ? await db.select({ appId: apps.appId, slug: apps.slug }).from(apps)
-          .where(and(eq(apps.projectId, projectId), inArray(apps.slug, wanted), isNull(apps.deletedAt)))
-        : [];
-      const missing = wanted.filter((name) => name === slug || !found.some((candidate) => candidate.slug === name));
-      if (missing.length) result.errors.push({ slug, error: `apps.${slug}.uses names no App of this project: ${missing.join(', ')}` });
-      else {
+      // A link acts as the App, so it resolves with the same visibility check the
+      // API makes, for the App's creator: the file cannot link an App they may not see.
+      try {
+        // No creator to check visibility for: change no links.
+        if (!row.createdBy) throw new UnknownLinkedAppError(fields.uses);
+        const found = await resolveAppLinks(row, fields.uses, row.createdBy);
         const current = await db.select({ usesAppId: appLinks.usesAppId }).from(appLinks).where(eq(appLinks.appId, row.appId));
         const same = current.length === found.length && found.every((candidate) => current.some((link) => link.usesAppId === candidate.appId));
         if (!same) links = found;
+      } catch (error) {
+        if (!(error instanceof UnknownLinkedAppError)) throw error;
+        result.errors.push({ slug, error: `apps.${slug}.uses names no App of this project its creator can open: ${error.slugs.join(', ')}` });
       }
     }
     if (Object.keys(update).length === 0 && !links) continue;
