@@ -316,8 +316,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // Always offered: on a deployment with no event source configured, the
     // triggers themselves say so (status `error` naming COMPOSIO_API_KEY).
     available: () => true,
-    // On for every project (2026-10-24); a project can still turn it off.
-    platformDefault: () => true,
+    // Per-project opt-in on every environment (Marko, 2026-10-24: keep it behind the flag).
+    platformDefault: () => false,
     enforcement: 'routes',
     enforcementNote:
       'ROUTES: GET /triggers/event-types, GET /triggers/event-apps, and POST|PATCH /triggers ' +

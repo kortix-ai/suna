@@ -39,7 +39,8 @@ Rules: `kortix-yaml.md` → `imports:`.
 **React to something outside Kortix: pick the first that fits.**
 
 1. **A connector event.** The service already emits it (new email, new pull
-   request, new calendar event). No code, no secret.
+   request, new calendar event). No code, no secret. Needs the project flag
+   `event_triggers` (off by default); ask the user to turn it on.
 2. **A webhook.** The service can call a URL (Stripe, GitHub without a
    connector, your own backend). One secret, no code to run.
 3. **A schedule.** Checking on a fixed cadence is enough ("every hour, look
@@ -219,8 +220,7 @@ signature. Use a webhook trigger only for a system with no app connector.
 ### Turn the feature on first
 
 Connector event triggers are a **beta** feature behind the project flag
-`event_triggers`. The flag is **on** by default; a project owner can turn it
-off. If it is off:
+`event_triggers`. The flag is **off** by default.
 
 - With the flag off, `kortix triggers events …` and `kortix triggers add|set
   --type event` print `Connector event triggers are off for this project. Turn them
