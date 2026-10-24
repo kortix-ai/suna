@@ -1264,7 +1264,7 @@
           "description": "Avisa a las personas a las que concierne una sesión (quien envió el prompt, quien la creó y quien la sigue) con una bandeja con campana, notificaciones push del navegador y correo, y alerta cuando fallan disparadores y recordatorios. Desactivado: solo el teléfono de quien creó la sesión recibe su push, y el teléfono de un propietario de la cuenta recibe uno cuando un disparador empieza a fallar."
         },
         "event_triggers": {
-          "name": "Disparadores de eventos de app",
+          "name": "Disparadores de eventos de conectores",
           "description": "Inicia un agente cuando ocurre algo en una app conectada: un correo nuevo, un pull request, un evento del calendario. Los eventos vienen de Composio. Con Connectors v2 activado, Kortix también revisa por sí mismo tus apps conectadas."
         },
         "volumes": {
@@ -20383,7 +20383,18 @@
       "text22f3da948b4b": "Pide a un agente que la despliegue, o ejecuta:",
       "textfaca381ebe87": "Se detiene tras {value0} min sin solicitudes y despierta con la siguiente solicitud o disparador.",
       "text1d7b00a8a249": "Mostrar en la página de Apps",
-      "textf15a2daaaabf": "Una tarjeta en la cuadrícula. Desactivado: aparece en Segundo plano."
+      "textf15a2daaaabf": "Una tarjeta en la cuadrícula. Desactivado: aparece en Segundo plano.",
+      "text0ba357fa63f8": "Eventos de conectores",
+      "textca395c4d19b2": "Evento de conector",
+      "text6064256ee716": "evento de conector",
+      "text85a6c98e5584": "Nuevo evento de conector",
+      "text165d9237c163": "Buscar eventos de conectores",
+      "texta9caf7909165": "Aún no hay eventos de conectores",
+      "text451ef98453d2": "Haz que un agente se ejecute cuando una de tus Kortix Apps emita un evento.",
+      "text064694999e1f": "Nuevo evento de App",
+      "text1934aa0740bb": "Buscar eventos de App",
+      "text25db7e5609e5": "Aún no hay eventos de App",
+      "text9f8f92588517": "Una App inicia agentes emitiendo eventos. Añade un disparador con on: { event, app } en kortix.yaml."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

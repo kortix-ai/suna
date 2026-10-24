@@ -22,17 +22,27 @@ import type { ProjectTrigger } from '@kortix/sdk';
 
 import { describeEventTitle } from './event-trigger-copy';
 
-export type TriggerKind = 'cron' | 'webhook' | 'event';
+export type TriggerKind = 'cron' | 'webhook' | 'event' | 'app';
 
 /**
- * The trigger kinds this screen edits. `ProjectTrigger['type']` on the wire
- * also carries `'app'`, which this screen does not render yet.
- * `ScheduleView` filters every list through this before it reaches the table,
- * the row actions, or the detail sheet, so `trigger.type` is safe to treat as
- * {@link TriggerKind} anywhere downstream of that filter.
+ * The trigger kinds this screen lists. `ScheduleView` filters every list
+ * through this before it reaches the table, the row actions, or the detail
+ * sheet, so `trigger.type` is safe to treat as {@link TriggerKind} anywhere
+ * downstream of that filter. `app` (an App's own events) is listed and
+ * managed here; it is written in `kortix.yaml`, not in the composer.
  */
 export function isTriggerKind(type: ProjectTrigger['type']): type is TriggerKind {
-  return type === 'cron' || type === 'webhook' || type === 'event';
+  return type === 'cron' || type === 'webhook' || type === 'event' || type === 'app';
+}
+
+/** The kinds the composer can create. */
+export const COMPOSER_KINDS: readonly TriggerKind[] = ['cron', 'webhook', 'event'];
+
+/** `every_seconds` as a sentence: "Every 5 minutes", "Every 2 hours". */
+export function describeEvery(seconds: number): string {
+  if (seconds % 3600 === 0) return seconds === 3600 ? 'Every hour' : `Every ${seconds / 3600} hours`;
+  if (seconds % 60 === 0) return seconds === 60 ? 'Every minute' : `Every ${seconds / 60} minutes`;
+  return `Every ${seconds} seconds`;
 }
 
 /**
@@ -177,7 +187,12 @@ export function describeWhen(
 ): string {
   if (trigger.type === 'webhook') return 'When a request arrives';
   if (trigger.type === 'event') return describeEventTitle(trigger.event, eventNames);
+  if (trigger.type === 'app') {
+    const name = trigger.filter?.['event.name'];
+    return name ? `When ${trigger.app} emits ${name}` : `When ${trigger.app} emits an event`;
+  }
   if (trigger.run_at) return describeOneOff(trigger.run_at);
+  if (trigger.every_seconds) return describeEvery(trigger.every_seconds);
   if (trigger.cron) return describeCadence(trigger.cron);
   return CUSTOM_TIMING_LABEL;
 }
@@ -204,6 +219,7 @@ export function triggerName(trigger: ProjectTrigger): string {
   if (named) return named;
   if (trigger.type === 'cron') return describeWhen(trigger);
   if (trigger.type === 'event') return describeWhen(trigger);
+  if (trigger.type === 'app') return describeWhen(trigger);
   return 'Untitled webhook';
 }
 
@@ -299,6 +315,8 @@ export const SESSION_MODE_HELP: Record<SessionMode, string> = {
 
 /** One-line summary for read-only views and the list. */
 export function describeRunLocation(trigger: ProjectTrigger): string {
+  // A trigger that calls an App starts no session.
+  if (trigger.target?.app) return `Calls ${trigger.target.app}${trigger.target.path ?? '/'}`;
   const base = SESSION_MODE_LABEL[trigger.session_mode];
   if (trigger.session_mode === 'pinned' && trigger.session_id) {
     return `${base} (${trigger.session_id.slice(0, 8)})`;
@@ -396,13 +414,23 @@ export const KIND_COPY: Record<TriggerKind, KindCopy> = {
     column: 'Security',
   },
   event: {
-    title: 'App events',
+    title: 'Connector events',
     description: 'Have an agent run when something happens in a connected app.',
-    noun: 'app event',
-    createLabel: 'New app event',
-    searchPlaceholder: 'Search app events',
-    emptyTitle: 'No app events yet',
+    noun: 'connector event',
+    createLabel: 'New connector event',
+    searchPlaceholder: 'Search connector events',
+    emptyTitle: 'No connector events yet',
     emptyBody: 'Create one to have an agent run when a connected app reports something new.',
+    column: 'Status',
+  },
+  app: {
+    title: 'App events',
+    description: 'Have an agent run when one of your Kortix Apps emits an event.',
+    noun: 'App event',
+    createLabel: 'New App event',
+    searchPlaceholder: 'Search App events',
+    emptyTitle: 'No App events yet',
+    emptyBody: 'An App starts agents by emitting events. Add a trigger with on: { event, app } in kortix.yaml.',
     column: 'Status',
   },
 };

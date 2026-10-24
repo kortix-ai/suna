@@ -468,7 +468,7 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
       await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
       const row = await store.get(PROJECT_ID, 'a');
       expect(row?.status).toBe('error');
-      expect(row?.lastError).toBe('App event triggers are off for this project. Turn them on in Settings → Feature flags.');
+      expect(row?.lastError).toBe('Connector event triggers are off for this project. Turn them on in Settings → Feature flags.');
       expect(calls).toEqual([]);
     });
 

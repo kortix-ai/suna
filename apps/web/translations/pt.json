@@ -1264,7 +1264,7 @@
           "description": "Avisa as pessoas a quem uma sessão diz respeito (quem enviou o prompt, quem a criou e quem a segue) com uma caixa de entrada com sino, push do navegador e e-mail, e alerta sobre gatilhos e lembretes que falham. Desligado: só o telefone de quem criou a sessão recebe o push dela, e o telefone de um proprietário da conta recebe um quando um gatilho começa a falhar."
         },
         "event_triggers": {
-          "name": "Gatilhos de eventos do app",
+          "name": "Gatilhos de eventos de conectores",
           "description": "Inicie um agente quando algo acontece em um app conectado: um novo e-mail, um pull request, um evento do calendário. Os eventos vêm do Composio. Com o Connectors v2 ativado, o Kortix também verifica por conta própria seus apps conectados."
         },
         "volumes": {
@@ -20383,7 +20383,18 @@
       "text22f3da948b4b": "Peça a um agente para implantá-la, ou execute:",
       "textfaca381ebe87": "Para após {value0} min sem solicitações e acorda na próxima solicitação ou gatilho.",
       "text1d7b00a8a249": "Mostrar na página de Apps",
-      "textf15a2daaaabf": "Um cartão na grade. Desligado: listado em Segundo plano."
+      "textf15a2daaaabf": "Um cartão na grade. Desligado: listado em Segundo plano.",
+      "text0ba357fa63f8": "Eventos de conectores",
+      "textca395c4d19b2": "Evento de conector",
+      "text6064256ee716": "evento de conector",
+      "text85a6c98e5584": "Novo evento de conector",
+      "text165d9237c163": "Pesquisar eventos de conectores",
+      "texta9caf7909165": "Nenhum evento de conector ainda",
+      "text451ef98453d2": "Execute um agente quando uma das suas Kortix Apps emitir um evento.",
+      "text064694999e1f": "Novo evento de App",
+      "text1934aa0740bb": "Pesquisar eventos de App",
+      "text25db7e5609e5": "Nenhum evento de App ainda",
+      "text9f8f92588517": "Uma App inicia agentes emitindo eventos. Adicione um gatilho com on: { event, app } no kortix.yaml."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

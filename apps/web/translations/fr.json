@@ -1264,7 +1264,7 @@
           "description": "Prévient les personnes concernées par une session (l'auteur du prompt, son créateur et ses abonnés) par une boîte de réception avec cloche, des notifications push du navigateur et des e-mails, et signale les déclencheurs et rappels en échec. Désactivé : seul le téléphone du créateur de la session reçoit son push, et le téléphone d'un propriétaire du compte en reçoit un quand un déclencheur commence à échouer."
         },
         "event_triggers": {
-          "name": "Déclencheurs d'événements d'app",
+          "name": "Déclencheurs d’événements de connecteurs",
           "description": "Démarrez un agent quand quelque chose se passe dans une app connectée : un nouvel e-mail, une pull request, un événement de calendrier. Les événements viennent de Composio. Avec Connectors v2 activé, Kortix vérifie aussi lui-même vos apps connectées."
         },
         "volumes": {
@@ -20383,7 +20383,18 @@
       "text22f3da948b4b": "Demandez à un agent de la déployer, ou exécutez :",
       "textfaca381ebe87": "S’arrête après {value0} min sans requête et se réveille à la prochaine requête ou au prochain déclencheur.",
       "text1d7b00a8a249": "Afficher sur la page Apps",
-      "textf15a2daaaabf": "Une carte dans la grille. Désactivé : listée sous Arrière-plan."
+      "textf15a2daaaabf": "Une carte dans la grille. Désactivé : listée sous Arrière-plan.",
+      "text0ba357fa63f8": "Événements de connecteurs",
+      "textca395c4d19b2": "Événement de connecteur",
+      "text6064256ee716": "événement de connecteur",
+      "text85a6c98e5584": "Nouvel événement de connecteur",
+      "text165d9237c163": "Rechercher des événements de connecteurs",
+      "texta9caf7909165": "Aucun événement de connecteur pour l’instant",
+      "text451ef98453d2": "Lancez un agent quand l’une de vos Kortix Apps émet un événement.",
+      "text064694999e1f": "Nouvel événement d’App",
+      "text1934aa0740bb": "Rechercher des événements d’App",
+      "text25db7e5609e5": "Aucun événement d’App pour l’instant",
+      "text9f8f92588517": "Une App lance des agents en émettant des événements. Ajoutez un déclencheur avec on: { event, app } dans kortix.yaml."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

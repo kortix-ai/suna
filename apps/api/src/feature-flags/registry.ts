@@ -324,7 +324,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
   },
   {
     key: 'event_triggers',
-    name: 'App event triggers',
+    name: 'Connector event triggers',
     description:
       'Start an agent when something happens in a connected app: a new email, a pull request, a calendar event. ' +
       'Events come from Composio. With Connectors v2 on, Kortix also checks your connected apps itself.',
@@ -463,7 +463,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'connectors_v2',
     name: 'Connectors v2',
     description:
-      'Connectors on Kortix: the MCP app catalog in Customize → Connectors (vendor MCP servers, signed in with OAuth that Kortix runs), app events that Kortix checks on those apps (with App event triggers on), and Telegram as a channel connector. New connector accounts are no longer created for the whole project by default.',
+      'Connectors on Kortix: the MCP app catalog in Customize → Connectors (vendor MCP servers, signed in with OAuth that Kortix runs), app events that Kortix checks on those apps (with Connector event triggers on), and Telegram as a channel connector. New connector accounts are no longer created for the whole project by default.',
     stability: 'experimental',
     available: () => true,
     platformDefault: () => false,
