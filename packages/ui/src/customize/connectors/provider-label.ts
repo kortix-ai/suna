@@ -21,6 +21,10 @@ export function providerLabel(p: AdminConnector['provider']): string {
   if (p === 'channel') return 'Channel';
   if (p === 'computer') return 'Computer';
   if (p === 'postman') return 'Postman';
+  // The catalogue's words for the same ways in (`install/way-kind.ts`).
+  if (p === 'openapi') return 'REST API';
+  if (p === 'graphql') return 'GraphQL';
+  if (p === 'http') return 'HTTP API';
   return p.toUpperCase();
 }
 

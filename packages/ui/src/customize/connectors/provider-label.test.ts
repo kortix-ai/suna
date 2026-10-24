@@ -11,6 +11,13 @@ describe('providerLabel', () => {
     expect(providerLabel('computer')).toBe('Computer');
   });
 
+  test('names a direct API the way the catalogue does', () => {
+    expect(providerLabel('openapi')).toBe('REST API');
+    expect(providerLabel('graphql')).toBe('GraphQL');
+    expect(providerLabel('http')).toBe('HTTP API');
+    expect(providerLabel('mcp')).toBe('MCP');
+  });
+
   test('normalizes managed connector providers behind one product label', () => {
     expect(providerLabel('composio')).toBe('Composio');
     expect(providerLabel('pipedream')).toBe('Pipedream');
