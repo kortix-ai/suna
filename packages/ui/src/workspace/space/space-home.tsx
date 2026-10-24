@@ -33,6 +33,7 @@ export function SpaceHome({ projectId, space }: { projectId: string; space: Proj
   const agents = config?.agents ?? [];
   const goalsOn = useFeatureFlag(projectId, 'goals').enabled;
   const artifactsOn = useFeatureFlag(projectId, 'artifacts').enabled;
+  const roomsOn = useFeatureFlag(projectId, 'agent_rooms').enabled;
   const apps = useProjectApps(projectId);
   const goals = useProjectGoals(goalsOn ? projectId : null);
   const artifacts = useArtifacts(artifactsOn ? projectId : null, {
@@ -41,6 +42,7 @@ export function SpaceHome({ projectId, space }: { projectId: string; space: Proj
     limit: RAIL_LIMIT,
   });
   const tApps = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('spaces');
 
   const spaceApps = (apps.data ?? []).filter((app) => bindingSpace(app.display, agents) === slug);
   const spaceGoals = goalsOn ? (goals.data ?? []).filter((goal) => bindingSpace(goal.goal, agents) === slug) : [];
@@ -56,42 +58,49 @@ export function SpaceHome({ projectId, space }: { projectId: string; space: Proj
 
   return (
     <div className="flex w-full flex-col gap-4">
-      <div className={cn('grid w-full items-start gap-4 px-4', hasRail && 'lg:grid-cols-[minmax(0,1fr)_15rem]')}>
-        <SpaceRoom projectId={projectId} roomName={slug} topic={space.description} className="min-w-0" />
-        {hasRail ? (
-          <aside aria-label="In this space" className="flex min-w-0 flex-col gap-4">
-            <RailList title="Goals" total={spaceGoals.length} href={filtered(goalsHref)}>
-              {spaceGoals.slice(0, RAIL_LIMIT).map((goal) => (
-                <RailRow key={`${goal.scope}/${goal.slug}`} href={goalHref(projectId, goal)} mark={<GoalHealthDot goal={goal} />}>
-                  {goal.goal?.objective ?? goal.slug}
-                </RailRow>
-              ))}
-            </RailList>
-            <RailList title="Apps" total={spaceApps.length} href={appsHref}>
-              {spaceApps.slice(0, RAIL_LIMIT).map((app) => (
-                <RailRow
-                  key={app.app_id}
-                  href={appsHref}
-                  mark={<span className={cn('inline-block size-2 shrink-0 rounded-full', appStatus(app, tApps).dot)} />}
-                >
-                  {app.name}
-                </RailRow>
-              ))}
-            </RailList>
-            <RailList title="Artifacts" total={spaceArtifacts.length} href={filtered(artifactsHref)}>
-              {spaceArtifacts.slice(0, RAIL_LIMIT).map((artifact) => (
-                <RailRow
-                  key={artifact.artifact_id}
-                  href={artifactsHref ? `${artifactsHref}/${artifact.artifact_id}` : null}
-                  meta={artifact.type === 'doc' ? 'Doc' : 'Page'}
-                >
-                  {artifact.title}
-                </RailRow>
-              ))}
-            </RailList>
-          </aside>
-        ) : null}
-      </div>
+      {roomsOn || hasRail ? (
+        <div
+          className={cn('grid w-full items-start gap-4 px-4', roomsOn && hasRail && 'lg:grid-cols-[minmax(0,1fr)_15rem]')}
+        >
+          {roomsOn ? (
+            <SpaceRoom projectId={projectId} roomName={slug} topic={space.description} className="min-w-0" />
+          ) : null}
+          {hasRail ? (
+            <aside aria-label={t('inThisSpace')} className="flex min-w-0 flex-col gap-4">
+              <RailList title={t('goals')} total={spaceGoals.length} href={filtered(goalsHref)}>
+                {spaceGoals.slice(0, RAIL_LIMIT).map((goal) => (
+                  <RailRow key={`${goal.scope}/${goal.slug}`} href={goalHref(projectId, goal)} mark={<GoalHealthDot goal={goal} />}>
+                    {goal.goal?.objective ?? goal.slug}
+                  </RailRow>
+                ))}
+              </RailList>
+              {/* The Apps page has no space filter: "View all" opens the full list. */}
+              <RailList title={t('apps')} total={spaceApps.length} href={appsHref}>
+                {spaceApps.slice(0, RAIL_LIMIT).map((app) => (
+                  <RailRow
+                    key={app.app_id}
+                    href={appsHref ? `${appsHref}?app=${encodeURIComponent(app.app_id)}` : null}
+                    mark={<span className={cn('inline-block size-2 shrink-0 rounded-full', appStatus(app, tApps).dot)} />}
+                  >
+                    {app.name}
+                  </RailRow>
+                ))}
+              </RailList>
+              <RailList title={t('artifacts')} total={spaceArtifacts.length} href={filtered(artifactsHref)}>
+                {spaceArtifacts.slice(0, RAIL_LIMIT).map((artifact) => (
+                  <RailRow
+                    key={artifact.artifact_id}
+                    href={artifactsHref ? `${artifactsHref}/${artifact.artifact_id}` : null}
+                    meta={artifact.type === 'doc' ? t('doc') : t('page')}
+                  >
+                    {artifact.title}
+                  </RailRow>
+                ))}
+              </RailList>
+            </aside>
+          ) : null}
+        </div>
+      ) : null}
       {blocks.length ? <SpaceBlocks projectId={projectId} blocks={blocks} /> : null}
     </div>
   );
@@ -110,6 +119,7 @@ function RailList({
   children: ReactNode;
 }) {
   const Link = useUiLink();
+  const t = useTranslations('spaces');
   if (total === 0) return null;
   return (
     <section className="flex flex-col gap-1.5">
@@ -117,11 +127,11 @@ function RailList({
         <h2 className="text-muted-foreground text-xs font-medium">{title}</h2>
         {href ? (
           <Link href={href} className="text-muted-foreground hover:text-foreground text-xs transition-colors">
-            View all
+            {t('viewAll')}
           </Link>
         ) : null}
       </div>
-      <ul className="bg-popover divide-border flex flex-col divide-y rounded-md border">{children}</ul>
+      <ul className="bg-background border-border divide-border flex flex-col divide-y rounded-md border">{children}</ul>
     </section>
   );
 }

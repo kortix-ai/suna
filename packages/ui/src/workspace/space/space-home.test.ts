@@ -95,6 +95,8 @@ test('asks the server for the space and its agents, and links "View all" to the 
   expect(html).toContain('href="/projects/p1/artifacts/a1"');
   expect(html).toContain('href="/projects/p1/goals?space=sales"');
   expect(html).toContain('href="/projects/p1/artifacts?space=sales"');
+  // An App row opens that App on the Apps page.
+  expect(html).toContain('href="/projects/p1/apps?app=app_crm"');
 });
 
 test('an empty list is hidden, and the rail is gone when nothing is bound', () => {

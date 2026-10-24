@@ -99,15 +99,20 @@ export function SpaceRoomPanel({
           atBottomRef={atBottomRef}
         />
       )}
-      <RoomComposer
-        placeholder={t('messageRoom', { name: roomName })}
-        roomName={roomName}
-        members={members}
-        sessions={sessions.sessions}
-        people={people.data ?? []}
-        viewerId={viewerId}
-        onSend={send}
-      />
+      {/* An archived room keeps its messages and takes no new ones (the API answers 409). */}
+      {spaceRoom.data?.archived_at ? (
+        <p className="border-border text-muted-foreground shrink-0 border-t px-4 py-3 text-xs">{t('archivedNotice')}</p>
+      ) : (
+        <RoomComposer
+          placeholder={t('messageRoom', { name: roomName })}
+          roomName={roomName}
+          members={members}
+          sessions={sessions.sessions}
+          people={people.data ?? []}
+          viewerId={viewerId}
+          onSend={send}
+        />
+      )}
     </section>
   );
 }

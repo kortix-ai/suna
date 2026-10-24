@@ -13,14 +13,15 @@ import {
   goalProgress,
   GoalStatusBadge,
   ALL_DOMAINS,
-  DomainFilterTabs,
   ProjectPageHeader,
+  SpaceFilterTabs,
+  spaceFilterLabel,
   useGoalClock,
   useGoalIssueText,
   useSpaceFilter,
 } from '@kortix/ui/workspace';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { bindingSpace, DEFAULT_PROJECT_DOMAIN, groupBySpace, type ProjectGoal } from '@kortix/sdk';
+import { bindingSpace, DEFAULT_PROJECT_DOMAIN, groupBySpace, listSpaces, type ProjectGoal } from '@kortix/sdk';
 import { useProjectConfig, useProjectGoals } from '@kortix/sdk/react';
 import Link from 'next/link';
 
@@ -33,6 +34,7 @@ import Link from 'next/link';
  */
 export function GoalsPage({ projectId }: { projectId: string }) {
   const t = useTranslations('goals');
+  const tSpaces = useTranslations('spaces');
   const goals = useProjectGoals(projectId);
   const config = useProjectConfig(projectId);
   const agents = config?.agents ?? [];
@@ -40,6 +42,7 @@ export function GoalsPage({ projectId }: { projectId: string }) {
   const spaceOf = (goal: ProjectGoal) => bindingSpace(goal.goal, agents) ?? DEFAULT_PROJECT_DOMAIN;
   const groups = groupBySpace(goals.data ?? [], config?.domains, spaceOf);
   const labels = new Map(groups.map((group) => [group.name, group.label]));
+  const spaces = listSpaces(config);
   const [space, setSpace] = useSpaceFilter(projectId);
   const all = (goals.data ?? []).filter((goal) => space === ALL_DOMAINS || spaceOf(goal) === space);
   const spaceLabel = (goal: ProjectGoal) => (space === ALL_DOMAINS ? labels.get(spaceOf(goal)) : undefined);
@@ -71,8 +74,18 @@ export function GoalsPage({ projectId }: { projectId: string }) {
             <EmptyState title={t('empty')} description={t('emptyHint')} />
           ) : (
             <>
-              <DomainFilterTabs groups={groups} value={space} onValueChange={setSpace} />
-              {all.length === 0 ? <EmptyState size="sm" title={t('spaceEmpty')} /> : null}
+              <SpaceFilterTabs spaces={spaces} groups={groups} value={space} onValueChange={setSpace} />
+              {all.length === 0 ? (
+                <EmptyState
+                  size="sm"
+                  title={t('spaceEmpty', { space: spaceFilterLabel(space, spaces, tSpaces('projectWide')) })}
+                  action={
+                    <Button size="sm" variant="outline" onClick={() => setSpace(ALL_DOMAINS)}>
+                      {t('showAll')}
+                    </Button>
+                  }
+                />
+              ) : null}
               <GoalGroup projectId={projectId} title={t('needsYou')} goals={needsYou} spaceLabel={spaceLabel} />
               <GoalGroup projectId={projectId} title={t('open')} goals={open} spaceLabel={spaceLabel} />
               <GoalGroup projectId={projectId} title={t('closed')} goals={closed} spaceLabel={spaceLabel} />
@@ -148,8 +161,9 @@ function GoalRow({ projectId, goal, space }: { projectId: string; goal: ProjectG
           <span className="text-muted-foreground hidden text-xs tabular-nums sm:inline">
             {t('criteria', { met: progress.met, total: progress.total })}
           </span>
-          {space ? <span className="text-muted-foreground hidden text-xs md:inline">{space}</span> : null}
-          <span className="text-muted-foreground hidden text-xs md:inline">{t(`scope.${goal.scope}`)}</span>
+          <span className="text-muted-foreground hidden text-xs sm:inline">
+            {space ? t('spaceScope', { space, scope: t(`scope.${goal.scope}`) }) : t(`scope.${goal.scope}`)}
+          </span>
           <GoalStatusBadge status={doc?.status} />
         </span>
       </Link>

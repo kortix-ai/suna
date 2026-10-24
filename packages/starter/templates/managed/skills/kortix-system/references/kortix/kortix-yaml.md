@@ -941,8 +941,15 @@ apps:
 Rules:
 
 - A space slug is also a room name. The space's room is the project room
-  with that name (`kortix rooms send sales "…"`). The first post creates it.
-  The home renders it; do not add a `chat` block for it.
+  with that name. The home renders it; do not add a `chat` block for it.
+- A session posts to the room only as a member. `kortix rooms join sales`
+  creates the room when it does not exist and adds this session to it; then
+  `kortix rooms send sales "…"` posts. `send` alone fails with "room not
+  found" until someone joins or a person posts from the space home.
+- A room delivers a post only to its members. An agent session hears what
+  people post in the space only after it joins: when you start a session
+  for an agent of the space, run `kortix rooms join <slug> --session <id>`
+  for it. Nothing joins an agent's sessions automatically.
 - A declared space with no agents is still a space: it shows in the sidebar.
 - Bind a resource with `space` and/or `agent`. Resolution: its `space`, else
   its agent's `domain`, else project-wide. A name that matches nothing is not
@@ -957,8 +964,10 @@ Rules:
     defaults to the publishing session's agent), later `kortix artifacts bind
     <id> --space sales` or `--clear`. `kortix artifacts ls --space sales`.
 - To build a space: add `domains.<slug>`, set `agents.<name>.domain` for the
-  agents that work there, bind what they make with `--space <slug>`, and post
-  progress with `kortix rooms send <slug> "…"`. Renaming a space slug leaves
+  agents that work there, bind what they make with `--space <slug>`, join
+  the room (`kortix rooms join <slug>`) and post progress with
+  `kortix rooms send <slug> "…"`. A space slug is at most 63 characters
+  (a room name), with no dots. Renaming a space slug leaves
   old bindings under the old slug: re-bind them (`goals bind`, `artifacts bind`,
   `display.space`) in the same change.
 

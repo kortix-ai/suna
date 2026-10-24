@@ -59,10 +59,10 @@ test('listRooms lists named rooms, or the caller\'s conversations with mine', as
   expect(last().url).toBe(`${BASE}?name=platinum%2Fdev&archived=true`);
 });
 
-test('findRoomByName returns the named room, or null when the project has none', async () => {
-  nextBody = { rooms: [{ room_id: 'r1', name: 'ops' }] };
+test('findRoomByName returns the named room, archived included, or null when the project has none', async () => {
+  nextBody = { rooms: [{ room_id: 'r1', name: 'ops', archived_at: '2026-10-24T00:00:00.000Z' }] };
   expect(await findRoomByName('p1', 'ops')).toMatchObject({ room_id: 'r1', name: 'ops' });
-  expect(last().url).toBe(`${BASE}?name=ops`);
+  expect(last().url).toBe(`${BASE}?name=ops&archived=true`);
   nextBody = { rooms: [] };
   expect(await findRoomByName('p1', 'ops')).toBeNull();
 });

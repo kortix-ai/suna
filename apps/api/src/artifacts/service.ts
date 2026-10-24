@@ -465,14 +465,24 @@ export async function updateArtifactMeta(
   row: ArtifactRow,
   patch: { title?: string; description?: string | null; visibility?: ArtifactVisibility; shared_with_user_ids?: string[] } & Binding,
 ): Promise<ArtifactRow> {
-  const [updated] = await db.update(artifacts).set({
-    ...(patch.space !== undefined ? { space: patch.space } : {}),
-    ...(patch.agent !== undefined ? { agent: patch.agent } : {}),
+  const meta = {
     ...(patch.title?.trim() ? { title: patch.title.trim() } : {}),
     ...(patch.description !== undefined ? { description: patch.description } : {}),
     ...(patch.visibility ? { visibility: patch.visibility } : {}),
     ...(patch.shared_with_user_ids ? { sharedWithUserIds: [...new Set(patch.shared_with_user_ids)] } : {}),
-    updatedAt: new Date(),
+  };
+  const binding = {
+    ...(patch.space !== undefined ? { space: patch.space } : {}),
+    ...(patch.agent !== undefined ? { agent: patch.agent } : {}),
+  };
+  // A binding is grouping only: moving an artifact to a space does not make
+  // it "updated" (the gallery sorts by updated_at). An empty patch still
+  // writes updatedAt, so the statement always sets a column.
+  const touched = Object.keys(meta).length > 0 || Object.keys(binding).length === 0;
+  const [updated] = await db.update(artifacts).set({
+    ...binding,
+    ...meta,
+    ...(touched ? { updatedAt: new Date() } : {}),
   }).where(eq(artifacts.artifactId, row.artifactId)).returning();
   return updated!;
 }

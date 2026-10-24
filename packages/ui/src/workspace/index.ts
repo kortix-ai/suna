@@ -77,5 +77,6 @@ export {
 } from '../internal/goals/goal-meta';
 // Spaces: the per-viewer active space and the space filter the Goals and Artifacts pages share.
 export { useActiveDomain } from '../internal/stores/active-domain-store';
-export { ALL_DOMAINS, DomainFilterTabs } from '../customize/shared/catalog/domain-filter-tabs';
+export { ALL_DOMAINS } from '../customize/shared/catalog/domain-filter-tabs';
+export { SpaceFilterTabs, spaceFilterLabel } from './space/space-filter-tabs';
 export { useSpaceFilter } from './space/use-space-filter';

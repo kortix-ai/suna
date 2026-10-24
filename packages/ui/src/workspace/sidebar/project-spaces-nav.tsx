@@ -8,9 +8,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { agentsInSpace, listSpaces, readProjectFile, writeProjectFile } from '@kortix/sdk';
 import { qk, useProjectConfig } from '@kortix/sdk/react';
 
-import { uiRoutes } from '../../lib/routes';
+import { customizePath, uiRoutes } from '../../lib/routes';
 import { cn } from '../../lib/utils';
-import { useUiPathname, useUiRouter } from '../../providers/ui-provider';
+import { useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
 import { Button } from '../../primitives/button';
 import { Field, FieldLabel } from '../../primitives/field';
 import { Input } from '../../primitives/input';
@@ -64,7 +64,15 @@ export function ProjectSpacesNav({ projectId }: { projectId: string }) {
   const [active, setActive] = useActiveDomain(projectId);
   const router = useUiRouter();
   const pathname = useUiPathname();
-  const isProjectHome = pathname.replace(/\/$/, '') === uiRoutes().project(projectId).replace(/\/$/, '');
+  const spaceParam = useUiSearchParams().get('space');
+  // Pages that read the active space (Customize, Goals, Artifacts) stay put
+  // and rescope; from any other page, choosing a space opens its home.
+  const here = pathname.replace(/\/$/, '');
+  const routes = uiRoutes();
+  const under = (root: string | null) => !!root && (here === root || here.startsWith(`${root}/`));
+  const readsActiveSpace =
+    here === routes.project(projectId).replace(/\/$/, '') ||
+    [customizePath(projectId), routes.goals(projectId), routes.artifacts(projectId)].some(under);
   const [open, setOpen] = useState(true);
   const [creating, setCreating] = useState(false);
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_FILE_WRITE).allowed === true;
@@ -76,7 +84,9 @@ export function ProjectSpacesNav({ projectId }: { projectId: string }) {
   const select = (slug: string | null) => {
     setActive(slug);
     // The space home is the project home with the space active.
-    if (!isProjectHome) router.push(uiRoutes().project(projectId));
+    if (!readsActiveSpace) router.push(routes.project(projectId));
+    // A list page's ?space= wins over the active space: drop it.
+    else if (spaceParam) router.replace(pathname);
   };
 
   // Nothing to show and nothing to do: keep a plain project unchanged.

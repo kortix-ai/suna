@@ -148,10 +148,11 @@ test('chat block without a host room panel names the room and links to the rooms
   expect(html).toContain('href="/projects/p1/rooms"');
 });
 
-test('chat block says so when rooms are off for the project', () => {
+test('chat block renders nothing when rooms are off for the project', () => {
   roomsFlag = { enabled: false, isLoading: false };
   const html = render([{ type: 'chat', label: 'Chat', room: 'sales' }]);
-  expect(html).toContain('Rooms are off for this project.');
+  expect(html).not.toContain('sales');
+  expect(html).not.toContain('/rooms');
 });
 
 test('chat block with no room degrades to a notice', () => {

@@ -6,6 +6,7 @@ import { SessionWelcome } from '../../session/thread/session-welcome';
 import { agentsInSpace, listSpaces } from '@kortix/sdk';
 import { useProjectConfig, useProjectName } from '@kortix/sdk/react';
 
+import { useTranslations } from '../../i18n';
 import { AgentMark } from '../../internal/components/agent-mark';
 import { agentHref } from '../../internal/lib/capability-tab-routes';
 import { useActiveDomain } from '../../internal/stores/active-domain-store';
@@ -96,6 +97,7 @@ export function ProjectHomeWelcomeBody({
   const spaceLabel = space ? space.label || space.name : null;
   const spaceAgents = space ? agentsInSpace(space.name, config?.agents ?? []) : [];
   const Link = useUiLink();
+  const tSpaces = useTranslations('spaces');
   // One word, not two. The name sits inside the sentence in `text-foreground`
   // while the rest is muted, so the fallback has to read as a NAME in that
   // slot — "this project" is a description wearing a name's highlight, and it
@@ -155,9 +157,14 @@ export function ProjectHomeWelcomeBody({
                 In <span className="text-foreground font-medium">{spaceLabel}</span> space
               </span>
               {spaceAgents.length ? (
-                <span className="ml-auto flex items-center gap-1" aria-label="Agents in this space">
+                <span role="group" className="ml-auto flex items-center gap-1" aria-label={tSpaces('agents')}>
                   {spaceAgents.map((name) => (
-                    <Link key={name} href={agentHref(projectId, name)} className="rounded-sm">
+                    <Link
+                      key={name}
+                      href={agentHref(projectId, name)}
+                      className="rounded-sm"
+                      aria-label={tSpaces('openAgent', { name })}
+                    >
                       <AgentMark slug={name} />
                     </Link>
                   ))}
@@ -166,7 +173,7 @@ export function ProjectHomeWelcomeBody({
             </div>
           ) : null}
           <h1
-            className="text-muted-foreground w-full px-4 text-3xl leading-[1.2] tracking-tight text-balance max-sm:text-2xl"
+            className="text-muted-foreground w-full px-4 text-2xl tracking-tight text-balance"
             hidden={!!sentTurn}
           >
             {greeting.before}{' '}
@@ -197,9 +204,10 @@ export function ProjectHomeWelcomeBody({
           ) : null}
         </div>
 
-        {/* Nothing under the composer, on purpose (Marko, 2026-09-02: "just
-            have the chat input there & that's it"). The setup steps stay
-            reachable from Customize. */}
+        {/* Nothing under the composer unless a space is active (Marko,
+            2026-09-02: "just have the chat input there & that's it"). An
+            active space renders its home there: its room, what is bound to
+            it, its blocks. The setup steps stay reachable from Customize. */}
       </div>
     </div>
   );

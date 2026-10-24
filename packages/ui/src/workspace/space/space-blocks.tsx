@@ -13,6 +13,7 @@ import {
 } from '@phosphor-icons/react';
 
 import { AppPreview } from '../../apps/app-preview';
+import { useTranslations } from '../../i18n';
 import { appCan } from '../../apps/app-shared';
 import { UnifiedMarkdown } from '../../markdown';
 import Loading from '../../primitives/loading';
@@ -79,6 +80,7 @@ function SpaceBlockCard({ projectId, block }: { projectId: string; block: SpaceB
   const openPreview = useFilePreviewStore((state) => state.openPreview);
   const Icon = TYPE_ICON[block.type];
   const label = block.label?.trim() || TYPE_FALLBACK_LABEL[block.type];
+  const t = useTranslations('spaces');
 
   // A chat block is a room: the host's room panel draws its own frame.
   if (block.type === 'chat') {
@@ -89,7 +91,7 @@ function SpaceBlockCard({ projectId, block }: { projectId: string; block: SpaceB
         <div className="flex items-center gap-2 px-4 py-2.5">
           <BlockTitle icon={Icon} label={label} />
         </div>
-        <EmptyLine>No room yet.</EmptyLine>
+        <EmptyLine>{t('noRoom')}</EmptyLine>
       </div>
     );
   }

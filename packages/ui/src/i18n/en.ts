@@ -2312,7 +2312,6 @@ const catalog = {
     "autoFeaturesWorkspaceProjectSidebarModalShareSessionModalDelegateDescription": "{owner} created this session. As a project manager you govern its access.",
     "autoFeaturesWorkspaceProjectSidebarModalShareSessionModalViewerDescription": "{owner} owns this session. Only the owner can change who opens it.",
     "autoFeaturesFileViewerFileContentRendererJsxTextCouldnT794ae800": "Couldn't preview this file",
-    "autoFeaturesFileViewerFilePreviewModalJsxAttrTooltipCopy42229181": "Copy a public view-only link for this file",
     "autoFeaturesFileViewerFilePreviewModalJsxAttrTitleClosea40d0510": "Close (Esc)",
     "autoFeaturesFileViewerFilePreviewModalJsxAttrTitlePreviousb7cda316": "Previous file",
     "autoFeaturesFileViewerFilePreviewModalJsxAttrAriaLabel03ab3a76": "Previous file",
@@ -5813,7 +5812,18 @@ const catalog = {
       "text57f57edb6f16": "Change request #{number} is ready to review.",
       "texta8597db6f24b": "Remove skill",
       "text5f6ba69d66d1": "Skill removed",
-      "textcb8d6b0c94c9": " and every file in it, edits included, and removes the skill from every agent that lists it. One commit on the default branch."
+      "textcb8d6b0c94c9": " and every file in it, edits included, and removes the skill from every agent that lists it. One commit on the default branch.",
+      "text0ba357fa63f8": "Connector events",
+      "textca395c4d19b2": "Connector event",
+      "text6064256ee716": "connector event",
+      "text85a6c98e5584": "New connector event",
+      "text165d9237c163": "Search connector events",
+      "texta9caf7909165": "No connector events yet",
+      "text451ef98453d2": "Have an agent run when one of your Kortix Apps emits an event.",
+      "text064694999e1f": "New App event",
+      "text1934aa0740bb": "Search App events",
+      "text25db7e5609e5": "No App events yet",
+      "text9f8f92588517": "An App starts agents by emitting events. Add a trigger with on: { event, app } in kortix.yaml."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -7157,13 +7167,15 @@ const catalog = {
     "threadLoadError": "Could not load this thread. Try again.",
     "join": "Join",
     "openRoom": "Open",
-    "gateDescription": "Turn on Rooms to let agent sessions and people of this project talk in named chat rooms."
+    "gateDescription": "Turn on Rooms to let agent sessions and people of this project talk in named chat rooms.",
+    "archivedNotice": "This room is archived. It keeps its messages and takes no new ones."
   },
   "goals": {
     "title": "Goals",
     "gateDescription": "Agents own an objective until it is verifiably done: the goal lives in Files, a daily heartbeat wakes it, the agent chases people for what it needs, and an independent check closes it.",
     "empty": "No goals yet",
     "emptyHint": "Start one in a session: describe the outcome, for example \"make sure our old bank account is closed\". The agent creates the goal and it shows here.",
+    "spaceEmpty": "No goals in {space} yet",
     "loadError": "Could not load goals. Try again.",
     "retry": "Try again",
     "needsYou": "Needs you",
@@ -7243,7 +7255,9 @@ const catalog = {
     "verification": "Verification",
     "notes": "Notes",
     "log": "Log",
-    "notFound": "This goal no longer exists."
+    "notFound": "This goal no longer exists.",
+    "showAll": "Show all",
+    "spaceScope": "{space} · {scope}"
   },
   "agentEditor": {
     "manage": "Manage",
@@ -7304,6 +7318,23 @@ const catalog = {
     "busyHint": "Refresh in a moment.",
     "fallbackTitle": "Shared response",
     "stopNote": "The link will stop working."
+  },
+  "spaces": {
+    "inThisSpace": "In this space",
+    "goals": "Goals",
+    "apps": "Apps",
+    "artifacts": "Artifacts",
+    "viewAll": "View all",
+    "doc": "Doc",
+    "page": "Page",
+    "openRooms": "Open rooms",
+    "roomHint": "Agents and people post updates here.",
+    "noRoom": "No room yet.",
+    "agents": "Agents in this space",
+    "openAgent": "Open {name}",
+    "filter": "Filter by space",
+    "all": "All",
+    "projectWide": "Project-wide"
   }
 };
 
