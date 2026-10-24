@@ -67,6 +67,7 @@ import { MermaidDiagram } from './mermaid/mermaid-diagram';
 import { ViewerFrame } from './shared/viewer-frame';
 import { resolveShowType, shouldRenderFromSandboxFile } from './show-type-utils';
 import { VideoRenderer } from './video-renderer';
+import { ShowConnectHero, showConnectTarget } from '../../markdown/setup-links/show-connect-hero';
 
 // ── Lazy-load heavy renderers ──────────────────────────────────────────────
 
@@ -114,6 +115,66 @@ export function showDomain(url: string): string {
   } catch {
     return url;
   }
+}
+
+const SHOW_LINK_COPY = { open: 'Open' } as const;
+
+/**
+ * The `url` show: one card, centered in the panel.
+ *
+ * A connect URL (a Kortix link or a provider's sign-in page) is not a page to
+ * visit: it renders the connect step, `ShowConnectHero`. Every other URL is a link card:
+ * favicon, title, domain, the agent's sentence, and an explicit Open action.
+ */
+function ShowLink({ url, title, description }: { url: string; title: string; description: string }) {
+  const connect = showConnectTarget(url, title);
+  if (connect) {
+    return <ShowConnectHero url={url} target={connect} title={title} description={description} />;
+  }
+  return <ShowLinkCard url={url} title={title} description={description} />;
+}
+
+function ShowLinkCard({ url, title, description }: { url: string; title: string; description: string }) {
+  const copy = useLocalizedUiCatalog(SHOW_LINK_COPY);
+  const favicon = showFavicon(url);
+  const domain = showDomain(url);
+  const [faviconFailed, setFaviconFailed] = useState(false);
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      data-testid="show-link-card"
+      className="group border-border bg-card hover:bg-hover flex w-full max-w-xl items-start gap-3 rounded-lg border p-4 transition-colors"
+    >
+      <span className="bg-muted flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-md">
+        {favicon && !faviconFailed ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            src={favicon}
+            alt=""
+            className="size-5 rounded-sm"
+            onError={() => setFaviconFailed(true)}
+          />
+        ) : (
+          <Globe className="text-muted-foreground size-4" />
+        )}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="text-foreground block truncate text-sm font-medium">{title || domain}</span>
+        <span className="text-muted-foreground block truncate text-xs">{domain}</span>
+        {description ? (
+          <span className="text-muted-foreground mt-2 line-clamp-3 block text-sm text-pretty">
+            {description}
+          </span>
+        ) : null}
+      </span>
+      <span className="text-muted-foreground group-hover:text-foreground flex shrink-0 items-center gap-1 text-xs font-medium transition-colors">
+        {copy.open}
+        <ExternalLink className="size-3.5" />
+      </span>
+    </a>
+  );
 }
 
 export function showAspectRatioToCSS(ar: string | undefined): string | undefined {
@@ -526,44 +587,14 @@ export function ShowContentRenderer({
         </div>
       );
     }
-    const favicon = showFavicon(safeExternalUrl);
-    const domain = showDomain(safeExternalUrl);
     return (
-      <div className={cn('px-5 py-5', fill && 'flex h-full items-center')}>
-        <a
-          href={safeExternalUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="group border-border/30 bg-muted/5 hover:bg-muted/20 flex w-full items-center gap-4 rounded-2xl border p-4 transition-colors"
-        >
-          <div className="bg-muted/30 flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg">
-            {favicon ? (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                src={favicon}
-                alt=""
-                className="size-6 rounded"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
-              />
-            ) : (
-              <Globe className="text-muted-foreground/50 size-5" />
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-foreground group-hover:text-primary truncate text-sm font-medium transition-colors">
-              {title || domain}
-            </div>
-            <div className="text-muted-foreground/60 mt-0.5 truncate font-mono text-xs">
-              {domain}
-            </div>
-            {description && (
-              <div className="text-muted-foreground mt-1 line-clamp-2 text-xs">{description}</div>
-            )}
-          </div>
-          <ExternalLink className="text-muted-foreground/30 group-hover:text-muted-foreground/60 size-4 shrink-0 transition-colors" />
-        </a>
+      <div
+        className={cn(
+          'flex justify-center px-5 py-5',
+          fill && 'h-full items-center',
+        )}
+      >
+        <ShowLink url={safeExternalUrl} title={title} description={description} />
       </div>
     );
   }

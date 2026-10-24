@@ -356,7 +356,7 @@ function SessionTurnImpl({
     hasSteps,
     hasAssistantContent,
     showInlineContent,
-    isCommand: !!commandForTurn,
+    isCommand: !!commandForTurn && commandForTurn.source !== 'skill',
   });
 
   // 2. Segments
@@ -437,7 +437,8 @@ function SessionTurnImpl({
   // A slash-command reply streams in its card with the chrome off. The
   // streaming and the finished card share the key "response", so the reply
   // keeps its views when the turn ends instead of remounting.
-  if (layout.text === 'response' && commandForTurn && response) {
+  // A pi skill answers like any chat turn: no command card.
+  if (layout.text === 'response' && commandForTurn && commandForTurn.source !== 'skill' && response) {
     body.push(
       <CommandOutputCard key="response" name={commandForTurn.name} chrome={!working}>
         <TextPartBlock text={response} isDark={isDark} isStreaming={working} revealKey={`${turn.id}:response`} />
