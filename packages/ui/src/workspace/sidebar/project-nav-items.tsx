@@ -12,142 +12,27 @@ import {
 import { ProjectCapabilityNav } from '../../internal/layout/project-capability-nav';
 import { ProjectSpacesNav } from './project-spaces-nav';
 import { cn } from '../../lib/utils';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '../../primitives/dropdown-menu';
-import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '../../primitives/sidebar';
-import { useNavRowMeta } from './nav-row-meta';
-import { useIsMobile } from '../../internal/hooks';
+import { SidebarMenuButton, SidebarMenuItem } from '../../primitives/sidebar';
 import { useTranslations } from '../../i18n';
-import {
-  SIDEBAR_NAV_DEFAULTS,
-  useSidebarNavStore,
-  type SidebarNavEntry,
-} from '../../internal/stores/sidebar-nav-store';
-import { CaretRightIcon, DotsThreeOutlineIcon } from '@phosphor-icons/react';
-import { UiLink as Link, useUiPathname } from '../../providers/ui-provider';
-import { useEffect, useRef, useState, useSyncExternalStore, type PointerEvent } from 'react';
-
-const subscribeNoop = () => () => {};
-
-/** Time to cross the gap between the More row and its menu before it closes. */
-const HOVER_CLOSE_DELAY_MS = 150;
+import { SIDEBAR_NAV_DEFAULTS, type SidebarNavEntry } from '../../internal/stores/sidebar-nav-store';
+import { CaretRightIcon } from '@phosphor-icons/react';
+import { useUiPathname } from '../../providers/ui-provider';
+import { useEffect, useState } from 'react';
 
 /**
- * The customizable nav rows under New session, in the order and with the
- * visibility chosen in "Customize sidebar" (`customize-sidebar-modal.tsx`).
- * Each row still applies its own flag and permission gate.
- *
- * The layout lives in localStorage, which the server cannot read. The first
- * client render therefore uses the defaults, the same as the server HTML, and
- * the saved layout applies right after hydration.
+ * Every nav row under New session, always rendered, in `SIDEBAR_NAV_DEFAULTS`
+ * order (Marko, 2026-10-24: everything in the sidebar, no More menu, while the
+ * arrangement is worked out). Each row still applies its own flag and
+ * permission gate, so a row the project does not offer stays absent.
  */
 export function ProjectNavItems({ projectId }: { projectId: string }) {
-  const saved = useSidebarNavStore((s) => s.items);
-  const hydrated = useSyncExternalStore(subscribeNoop, () => true, () => false);
-  const items = hydrated ? saved : SIDEBAR_NAV_DEFAULTS;
   return (
     <>
-      {items.map((entry) => (
+      {SIDEBAR_NAV_DEFAULTS.map((entry) => (
         <NavItem key={entry.id} entry={entry} projectId={projectId} />
       ))}
       <ProjectSpacesNav projectId={projectId} />
-      <MoreNavItem projectId={projectId} items={items} />
     </>
-  );
-}
-
-/**
- * The last nav row. Its menu holds every row set to "Show in More", so hiding
- * a row never makes its page unreachable, and then the one pointer path into
- * "Customize sidebar". Absent when the project offers the caller no row.
- */
-function MoreNavItem({
-  projectId,
-  items,
-}: {
-  projectId: string;
-  items: readonly SidebarNavEntry[];
-}) {
-  const t = useTranslations('sidebar');
-  const meta = useNavRowMeta(projectId);
-  const isMobile = useIsMobile();
-  const { setOpenMobile } = useSidebar();
-  const [open, setOpen] = useState(false);
-  const closeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const hidden = items.filter((e) => e.visibility === 'never' && meta[e.id]);
-
-  const closeSheet = () => {
-    if (isMobile) setOpenMobile(false);
-  };
-
-  // A mouse opens the menu on hover. Touch and keyboard keep the click and
-  // Enter/Space toggle from Radix.
-  const cancelClose = () => clearTimeout(closeTimer.current);
-  const hoverOpen = (e: PointerEvent) => {
-    if (e.pointerType !== 'mouse') return;
-    cancelClose();
-    setOpen(true);
-  };
-  const hoverClose = (e: PointerEvent) => {
-    if (e.pointerType !== 'mouse') return;
-    cancelClose();
-    closeTimer.current = setTimeout(() => setOpen(false), HOVER_CLOSE_DELAY_MS);
-  };
-  useEffect(() => cancelClose, []);
-
-  // The More menu now holds only the rows set to "Show in More". With none
-  // hidden, it would open empty, so the row does not render.
-  if (hidden.length === 0) return null;
-
-  return (
-    <SidebarMenuItem>
-      {/* Non-modal: a modal menu sets pointer-events: none on the body, which
-          fires pointerleave on the row and closes the menu it just opened. */}
-      <DropdownMenu open={open} onOpenChange={setOpen} modal={false}>
-        <DropdownMenuTrigger asChild>
-          <SidebarMenuButton
-            tooltip={t('more')}
-            className="group/menu-button text-sidebar-foreground relative"
-            onPointerEnter={hoverOpen}
-            onPointerLeave={hoverClose}
-            // Hover already opened it: stop the Radix pointerdown toggle from
-            // closing the menu when the mouse then clicks the row.
-            onPointerDown={(e) => {
-              if (e.pointerType === 'mouse' && open) e.preventDefault();
-            }}
-          >
-            <span className="shrink-0">
-              <DotsThreeOutlineIcon weight="fill" />
-            </span>
-            <span className="truncate">{t('more')}</span>
-          </SidebarMenuButton>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="start"
-          side="right"
-          sideOffset={8}
-          className="w-[15rem]"
-          onPointerEnter={hoverOpen}
-          onPointerLeave={hoverClose}
-        >
-          {hidden.map((entry) => {
-            const row = meta[entry.id]!;
-            return (
-              <DropdownMenuItem key={entry.id} asChild size="sm">
-                <Link href={row.href} prefetch={false} onClick={closeSheet}>
-                  {row.icon}
-                  {row.label}
-                </Link>
-              </DropdownMenuItem>
-            );
-          })}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </SidebarMenuItem>
   );
 }
 
@@ -202,7 +87,6 @@ function CustomizeNavEntry({ projectId }: { projectId: string }) {
 }
 
 function NavItem({ entry, projectId }: { entry: SidebarNavEntry; projectId: string }) {
-  if (entry.visibility === 'never') return null;
   switch (entry.id) {
     case 'customize':
       return <CustomizeNavEntry projectId={projectId} />;
