@@ -17,7 +17,7 @@ import { C, help, pad, status } from '../style.ts';
 import { accessCommand, accessLinkCommand } from './apps-access.ts';
 import { addAppBlocks } from './apps-launch-yaml.ts';
 import { authEnvCommand, execCommand, labelsCommand, machinesCommand, releasesCommand, scaleCommand, volumesCommand } from './apps-fleet.ts';
-import { connectCommand, deployOrder, linkCommand, tokenCommand, usesList } from './apps-capabilities.ts';
+import { connectCommand, deployOrder, deployableBlocks, linkCommand, tokenCommand, usesList } from './apps-capabilities.ts';
 import {
   type ContextOptions,
   commandArg,
@@ -592,8 +592,12 @@ async function deployCommand(
   const manifestApps = !pathArgument && !flags.image && !flags.app && !flags.manifestApp && !flags.slug
     ? loadManifestApps(process.cwd())
     : null;
+  const { deploy: deployable, skipped } = manifestApps ? deployableBlocks(manifestApps.blocks) : { deploy: [], skipped: [] };
   if (manifestApps && Object.keys(manifestApps.blocks).length > 1) {
-    const order = deployOrder(manifestApps.blocks);
+    const order = deployOrder(manifestApps.blocks).filter((name) => deployable.includes(name));
+    for (const name of skipped) {
+      if (!json) process.stderr.write(`${C.dim}Skipping apps.${name}: it declares settings only (no path or image)${C.reset}\n`);
+    }
     const ctx = await context(options);
     if (!ctx) return 1;
     const results: unknown[] = [];
