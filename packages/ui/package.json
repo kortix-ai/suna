@@ -359,7 +359,6 @@
     "./internal/stores/session-browser-store": "./src/internal/stores/session-browser-store.ts",
     "./internal/stores/session-switch-store": "./src/internal/stores/session-switch-store.ts",
     "./internal/stores/settings-panel-store": "./src/internal/stores/settings-panel-store.ts",
-    "./internal/stores/sidebar-nav-store": "./src/internal/stores/sidebar-nav-store.ts",
     "./internal/stores/sound-store": "./src/internal/stores/sound-store.ts",
     "./internal/stores/subscription-store": "./src/internal/stores/subscription-store.tsx",
     "./internal/stores/tab-store": "./src/internal/stores/tab-store.ts",
@@ -510,6 +509,7 @@
     "./user-avatar": "./src/primitives/user-avatar.tsx",
     "./wallpaper-shaders": "./src/primitives/wallpaper-shaders.tsx",
     "./workspace": "./src/workspace/index.ts",
+    "./workspace/admin/project-admin-dashboard": "./src/workspace/admin/project-admin-dashboard.tsx",
     "./workspace/home/access-requests-bell": "./src/workspace/home/access-requests-bell.tsx",
     "./workspace/home/first-chat": "./src/workspace/home/first-chat.tsx",
     "./workspace/home/mobile-app-promo": "./src/workspace/home/mobile-app-promo.tsx",
@@ -540,7 +540,6 @@
     "./workspace/review/mock-data": "./src/workspace/review/mock-data.ts",
     "./workspace/review/review-center": "./src/workspace/review/review-center.tsx",
     "./workspace/review/types": "./src/workspace/review/types.ts",
-    "./workspace/sidebar/customize-sidebar-modal": "./src/workspace/sidebar/customize-sidebar-modal.tsx",
     "./workspace/sidebar/footer/project-apps-nav": "./src/workspace/sidebar/footer/project-apps-nav.tsx",
     "./workspace/sidebar/footer/project-balance-warning": "./src/workspace/sidebar/footer/project-balance-warning.tsx",
     "./workspace/sidebar/footer/project-computer-nav": "./src/workspace/sidebar/footer/project-computer-nav.tsx",
@@ -1895,10 +1894,6 @@
         "types": "./dist/internal/stores/settings-panel-store.d.ts",
         "import": "./dist/internal/stores/settings-panel-store.js"
       },
-      "./internal/stores/sidebar-nav-store": {
-        "types": "./dist/internal/stores/sidebar-nav-store.d.ts",
-        "import": "./dist/internal/stores/sidebar-nav-store.js"
-      },
       "./internal/stores/sound-store": {
         "types": "./dist/internal/stores/sound-store.d.ts",
         "import": "./dist/internal/stores/sound-store.js"
@@ -2481,6 +2476,10 @@
         "types": "./dist/workspace/index.d.ts",
         "import": "./dist/workspace/index.js"
       },
+      "./workspace/admin/project-admin-dashboard": {
+        "types": "./dist/workspace/admin/project-admin-dashboard.d.ts",
+        "import": "./dist/workspace/admin/project-admin-dashboard.js"
+      },
       "./workspace/home/access-requests-bell": {
         "types": "./dist/workspace/home/access-requests-bell.d.ts",
         "import": "./dist/workspace/home/access-requests-bell.js"
@@ -2600,10 +2599,6 @@
       "./workspace/review/types": {
         "types": "./dist/workspace/review/types.d.ts",
         "import": "./dist/workspace/review/types.js"
-      },
-      "./workspace/sidebar/customize-sidebar-modal": {
-        "types": "./dist/workspace/sidebar/customize-sidebar-modal.d.ts",
-        "import": "./dist/workspace/sidebar/customize-sidebar-modal.js"
       },
       "./workspace/sidebar/footer/project-apps-nav": {
         "types": "./dist/workspace/sidebar/footer/project-apps-nav.d.ts",

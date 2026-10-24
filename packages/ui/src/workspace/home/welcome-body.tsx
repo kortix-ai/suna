@@ -1,18 +1,25 @@
 'use client';
 
-import { useLayoutEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useLayoutEffect, useState, type ReactNode } from 'react';
 
 import { SessionWelcome } from '../../session/thread/session-welcome';
 import { useProjectConfig, useProjectName } from '@kortix/sdk/react';
 
 import { useActiveDomain } from '../../internal/stores/active-domain-store';
-import { SpaceBlocks } from '../space/space-blocks';
 import {
   HOME_GREETINGS,
   HOME_GREETING_STORAGE_KEY,
   greetingIndexFor,
   spaceBefore,
 } from './home-greeting';
+
+// Lazy: keeps SpaceBlocks' heavy embeds (App preview, Files viewer, SessionThread)
+// out of the project-home compile graph until a space actually declares blocks.
+// Dev-mode Turbopack compiles everything a route imports eagerly, and this
+// component is reachable from the barrel that ~44 routes import.
+const SpaceBlocks = lazy(() =>
+  import('../space/space-blocks').then((m) => ({ default: m.SpaceBlocks })),
+);
 
 /**
  * The project-home empty state: ONE centred column.
@@ -160,7 +167,9 @@ export function ProjectHomeWelcomeBody({
               simple grid below the brief. With no blocks the home keeps its
               plain composer-only column. */}
           {space?.blocks?.length && !sentTurn ? (
-            <SpaceBlocks projectId={projectId} blocks={space.blocks} />
+            <Suspense fallback={null}>
+              <SpaceBlocks projectId={projectId} blocks={space.blocks} />
+            </Suspense>
           ) : null}
 
           {/* The sent message takes the heading's slot — same column, same rail,

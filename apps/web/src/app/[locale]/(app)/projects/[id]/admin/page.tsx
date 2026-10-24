@@ -2,7 +2,7 @@
 
 import { useParams } from 'next/navigation';
 
-import { ProjectAdminDashboard } from '@kortix/ui/workspace';
+import { ProjectAdminDashboard } from '@kortix/ui/workspace/admin/project-admin-dashboard';
 
 /**
  * /projects/[id]/admin — the project's wp-admin-style overview. A read-only

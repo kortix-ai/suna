@@ -3,7 +3,11 @@
  * resizable side panel), the project sidebar, sessions list, project home, and the
  * permission and route helpers they share.
  */
-export { ProjectAdminDashboard } from './admin/project-admin-dashboard';
+// NOTE: ProjectAdminDashboard is intentionally NOT re-exported here. It pulls
+// every capability data hook (connectors/triggers/reminders/models/secrets/
+// review); since Turbopack does not tree-shake this barrel in dev, re-exporting
+// it made all ~44 routes that import `@kortix/ui/workspace` compile that graph.
+// The /admin route imports it directly from '@kortix/ui/workspace/admin/project-admin-dashboard'.
 export { ProjectPageHeader } from '../internal/layout/project-page-header';
 export { useCapabilityAccess, useProjectNavRows } from '../internal/layout/project-settings-nav';
 export { SidebarToggle } from '../internal/layout/sidebar-toggle';
@@ -50,7 +54,6 @@ export { ProjectFilesView } from './layout/project-files-view';
 export { ProjectHome, type ProjectHomeSendOptions } from './layout/project-home';
 export { useProjectHomeSend, type UseProjectHomeSendOptions } from './layout/use-project-home-send';
 export { SavedSessionSkeleton } from './saved-session-skeleton';
-export { SpaceBlocks } from './space/space-blocks';
 export {
   SessionLayout,
   SessionWorkspace,
