@@ -1065,8 +1065,8 @@ html[data-desktop='true'] .kx-below-titlebar {
    title-bar band, where the traffic lights (macOS) and Back sit. On desktop
    the row clears both the band and Back, with one spacing step of air.
 
-   Positioned rows only: `top` does nothing in flow. An in-flow header (the
-   onboarding wizard) puts `.kx-titlebar-spacer` above itself instead.
+   Positioned rows only: `top` does nothing in flow. An in-flow header puts
+   `.kx-titlebar-spacer` above itself instead.
 
    Unlayered, so it beats the row's own `top-*` utilities. */
 html[data-desktop='true'] .kx-desktop-band-row {
