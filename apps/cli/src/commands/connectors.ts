@@ -2046,10 +2046,10 @@ function connectionActionPastTense(action: 'revoke' | 'activate' | 'default'): s
 
 // ── Local kortix.yaml config edits (source of truth; no cloud round-trip) ────
 
-/** The one recipe a missing --provider usually means: a SaaS app from the catalog. */
+/** What a missing --provider usually means: a SaaS app, which the catalog installs. */
 const ADD_PROVIDER_HINT =
-  '--provider. For a SaaS app: kortix connectors add <slug> --provider composio --app <toolkit> --apply ' +
-  '(find the toolkit with kortix connectors apps <name>), then kortix connectors connect <slug>';
+  '--provider. For a SaaS app, install it from the catalog instead: kortix connectors catalog <name>, ' +
+  'then kortix connectors catalog install <id> and kortix connectors connect <slug>';
 
 function connectorAddLocal(
   slug: string | undefined,

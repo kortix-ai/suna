@@ -13,16 +13,16 @@ to discover with `--help`.
    `ACCOUNTS` column. A connector with 2 or more accounts needs
    `--account "<label>"` on every call: `kortix connectors accounts <slug>`
    lists the labels.
-2. **Add a SaaS app** the project lacks, then hand the human the link:
+2. **Add an app** the project lacks, then hand the human the link:
    ```sh
-   kortix connectors apps <name>                     # the toolkit slug, e.g. linear, googlesuper
-   kortix connectors add <slug> --provider composio --app <toolkit> --apply
-   kortix connectors connect <slug>                  # prints the setup link for the human
+   kortix connectors catalog <name>          # find it; the first way to connect is recommended
+   kortix connectors catalog install <id>    # e.g. kortix:linear, composio:gmail; live at once
+   kortix connectors connect <slug>          # prints the sign-in link for the human
    ```
-   Always pass `--apply` in a session: without it, `add` only edits this
-   session branch's `kortix.yaml` and nothing goes live. When the human
-   finishes, Kortix tells you the connector is connected; do not mint a
-   second link.
+   An app the catalog lacks: see `<adding-connectors>` (MCP or OpenAPI with
+   `add … --apply`). Without `--apply`, `add` only edits this session branch's
+   `kortix.yaml` and nothing goes live. When the human finishes, Kortix tells
+   you the connector is connected; do not mint a second link.
 3. **Read the action before calling it.** `kortix connectors show <slug>.<action>`
    prints its input schema and description. The description says which
    filters run on the server.
