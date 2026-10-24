@@ -1265,7 +1265,7 @@
         },
         "event_triggers": {
           "name": "应用事件触发器",
-          "description": "当已连接的应用中发生事件时启动智能体：新邮件、拉取请求、日历事件。"
+          "description": "当已连接的应用中发生事件时启动智能体：新邮件、拉取请求、日历事件。事件来自 Composio。开启 Connectors v2 后，Kortix 也会自行检查你已连接的应用。"
         },
         "volumes": {
           "name": "卷",

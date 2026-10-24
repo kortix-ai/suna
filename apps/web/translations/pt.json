@@ -1265,7 +1265,7 @@
         },
         "event_triggers": {
           "name": "Gatilhos de eventos do app",
-          "description": "Inicie um agente quando algo acontece em um app conectado: um novo e-mail, um pull request, um evento do calendário."
+          "description": "Inicie um agente quando algo acontece em um app conectado: um novo e-mail, um pull request, um evento do calendário. Os eventos vêm do Composio. Com o Connectors v2 ativado, o Kortix também verifica por conta própria seus apps conectados."
         },
         "volumes": {
           "name": "Volumes",

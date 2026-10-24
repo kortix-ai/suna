@@ -1265,7 +1265,7 @@
         },
         "event_triggers": {
           "name": "Okidači događaja aplikacije",
-          "description": "Pokrenite agenta kada se nešto desi u povezanoj aplikaciji: nova e-pošta, pull request, događaj u kalendaru."
+          "description": "Pokrenite agenta kada se nešto desi u povezanoj aplikaciji: nova e-pošta, pull request, događaj u kalendaru. Događaji dolaze iz Composio-a. Kada je Connectors v2 uključen, Kortix i sam proverava vaše povezane aplikacije."
         },
         "volumes": {
           "name": "Volumeni",
