@@ -57,9 +57,7 @@ function stubLayout(name: Box, row: Box) {
   const proto = win.HTMLElement.prototype as unknown as object;
   const isName = (el: Element) =>
     el.tagName === "SPAN" && el.textContent === FILE;
-  const isRow = (el: Element) =>
-    !!el.firstElementChild?.firstElementChild &&
-    isName(el.firstElementChild.firstElementChild);
+  const isRow = (el: Element) => el.hasAttribute("data-file-toolbar");
   const width = (key: keyof Box) =>
     function (this: Element) {
       return isName(this) ? name[key] : isRow(this) ? row[key] : 0;
