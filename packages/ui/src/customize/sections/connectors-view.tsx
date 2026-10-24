@@ -129,7 +129,7 @@ import {
   startConnectionOAuth2DeviceAuthorization,
   updateConnectionCredential,
 } from '@kortix/sdk';
-import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
+import { contract, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
 import { AddAccountFields } from './add-account-fields';
 import { EmailConnectForm } from './component/email-connect-form';
 import {
@@ -1109,7 +1109,7 @@ function EmailChannelConnection({
   return (
     <section className="space-y-4">
       <Label>{tI18nComplete.raw('text7033ce3d1e7a')}</Label>
-      <p className="text-muted-foreground -mt-2 text-xs">{tI18nComplete.raw('text28d1c949e5e6')}</p>
+      <p className="text-muted-foreground -mt-2 text-xs">{tI18nComplete.raw('textb270bf37ec1c')}</p>
       <div className="bg-popover rounded-md border px-4 py-3">
         {install.isLoading ? (
           <Skeleton className="h-24 w-full rounded-md" />
@@ -1129,7 +1129,7 @@ function EmailChannelConnection({
           />
         ) : (
           <InfoBanner tone="neutral" icon={Mail} title={tI18nComplete.raw('textf0aea4d97b8e')}>
-            {tI18nComplete.raw('text2dec6c273b47')}
+            {tI18nComplete.raw('text21a606ab61a7')}
           </InfoBanner>
         )}
       </div>
@@ -1989,9 +1989,11 @@ function ChannelCatalogue({
   projectId: string;
   onAdded: (slug?: string) => void;
 }) {
+  // Email is experimental behind `email_channel`: off, it is not offered.
+  const emailChannelEnabled = useFeatureFlag(projectId, 'email_channel').enabled;
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      <AddEmailConnectionCard projectId={projectId} onAdded={onAdded} />
+      {emailChannelEnabled ? <AddEmailConnectionCard projectId={projectId} onAdded={onAdded} /> : null}
       <AddSlackConnectionCard projectId={projectId} onAdded={onAdded} />
     </div>
   );
@@ -2077,14 +2079,14 @@ function AddEmailConnectionCard({
           </div>
         </div>
         <p className="text-muted-foreground mt-2 line-clamp-2 min-h-[2rem] text-xs leading-relaxed">
-          {tI18nComplete.raw('text3b61c181f516')}
+          {tI18nComplete.raw('text6ae82b1545c9')}
         </p>
       </button>
       <Modal open={open} onOpenChange={(next) => !add.isPending && setOpen(next)}>
         <ModalContent className="lg:max-w-md">
           <ModalHeader>
             <ModalTitle>{tI18nComplete.raw('text2b47dcc33a2a')}</ModalTitle>
-            <ModalDescription>{tI18nComplete.raw('text630694bd2dec')}</ModalDescription>
+            <ModalDescription>{tI18nComplete.raw('text8d6a5c4c17be')}</ModalDescription>
           </ModalHeader>
           <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
             <Field>
@@ -2115,7 +2117,7 @@ function AddEmailConnectionCard({
                 spellCheck={false}
               />
               <p className="text-muted-foreground text-xs">
-                {tI18nComplete.raw('text2549e14d07c9')}
+                {tI18nComplete.raw('textfd1317630c49')}
               </p>
             </Field>
           </ModalBody>
@@ -2507,6 +2509,7 @@ function ConnectorConfigFields({
   draft,
   onChange,
   slugEditable,
+  emailChannelEnabled = true,
   readOnly = false,
   detectedAuth = null,
   detectedTitle = null,
@@ -2516,6 +2519,8 @@ function ConnectorConfigFields({
   draft: ConnectorDraftInput;
   onChange: (d: ConnectorDraftInput) => void;
   slugEditable?: boolean;
+  /** The project's `email_channel` flag. Off, a NEW channel connector cannot be Email. */
+  emailChannelEnabled?: boolean;
   readOnly?: boolean;
   /** What auto-detect found on the source, surfaced inline on the Auth field. */
   detectedAuth?: { type: string; parameterName: string | null } | null;
@@ -2580,7 +2585,7 @@ function ConnectorConfigFields({
                 provider,
                 platform:
                   provider === 'channel'
-                    ? (draft.platform ?? 'email')
+                    ? (draft.platform ?? (emailChannelEnabled ? 'email' : 'slack'))
                     : undefined,
                 auth:
                   provider === 'channel'
@@ -2617,7 +2622,7 @@ function ConnectorConfigFields({
         <div className="space-y-1.5">
           <Label>{tI18nHardcoded.raw('i18nComplete.textce4683e7013a')}</Label>
           <Select
-            value={draft.platform ?? 'email'}
+            value={draft.platform ?? (emailChannelEnabled ? 'email' : 'slack')}
             disabled={readOnly}
             onValueChange={(v) => set({ platform: v as ChannelPlatform, auth: { type: 'none' } })}
           >
@@ -2625,9 +2630,11 @@ function ConnectorConfigFields({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+{emailChannelEnabled || draft.platform === 'email' ? (
               <SelectItem value="email">
                 {tI18nHardcoded.raw('i18nComplete.text969ccbd3cf63')}
               </SelectItem>
+              ) : null}
               <SelectItem value="slack">
                 {tI18nHardcoded.raw('i18nComplete.textb27fb38ba323')}
               </SelectItem>
@@ -2935,7 +2942,7 @@ function ConnectorConfigFields({
   );
 }
 
-function connectionValid(d: ConnectorDraftInput): boolean {
+function connectionValid(d: ConnectorDraftInput, emailChannelEnabled = true): boolean {
   if ((d.auth?.type === 'custom' || d.auth?.type === 'api_key') && !d.auth.name?.trim()) {
     return false;
   }
@@ -2945,7 +2952,7 @@ function connectionValid(d: ConnectorDraftInput): boolean {
   if (d.provider === 'graphql') return !!d.endpoint?.trim();
   if (d.provider === 'http') return !!d.baseUrl?.trim();
   if (d.provider === 'channel') {
-    return d.platform === 'slack' || d.platform === 'email';
+    return d.platform === 'slack' || (emailChannelEnabled && d.platform === 'email');
   }
   return true;
 }
@@ -2959,6 +2966,7 @@ export function CustomConnectorForm({
   onAdded: (slug: string, options: { addAccount: boolean }) => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const emailChannelEnabled = useFeatureFlag(projectId, 'email_channel').enabled;
   const [draft, setDraft] = useState<ConnectorDraftInput>({
     slug: '',
     provider: 'openapi',
@@ -2981,7 +2989,7 @@ export function CustomConnectorForm({
     queryFn: () => discoverConnectorAuth(projectId, discoveryDraft),
     enabled:
       discoveryDraft.auth === undefined &&
-      connectionValid(discoveryDraft) &&
+      connectionValid(discoveryDraft, emailChannelEnabled) &&
       discoveryDraft.provider !== 'channel' &&
       discoveryDraft.provider !== 'pipedream' &&
       discoveryDraft.provider !== 'computer',
@@ -3003,6 +3011,7 @@ export function CustomConnectorForm({
             draft={draft}
             onChange={setDraft}
             slugEditable
+            emailChannelEnabled={emailChannelEnabled}
             detectedAuth={
               discovery.data?.recommended
                 ? {
@@ -3062,7 +3071,7 @@ export function CustomConnectorForm({
               disabled={
                 !draft.slug ||
                 save.isPending ||
-                !connectionValid(draft) ||
+                !connectionValid(draft, emailChannelEnabled) ||
                 (oauth2Selected && !oauth2CredentialFormValid(oauth2))
               }
               className="gap-1.5"

@@ -157,7 +157,7 @@ export function isTrustedManagedChannelAuthorization(input: {
     input.metadata.channel_connection === true &&
     typeof inboxId === 'string' &&
     inboxId.length > 0 &&
-    input.ownerId === `agentmail:${inboxId}`
+    input.ownerId === `email:${inboxId}`
   );
 }
 

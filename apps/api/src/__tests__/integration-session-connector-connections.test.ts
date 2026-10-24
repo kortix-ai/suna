@@ -18,7 +18,7 @@ import {
   serviceAccounts,
 } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { deleteAgentMailInstall, saveAgentMailInstall } from '../channels/install-store';
+import { deleteEmailInstall, saveEmailInstall } from '../channels/install-store';
 import {
   connectionIsEffectiveProjectDefault,
   connectorIdsWithSharedCredentials,
@@ -411,18 +411,18 @@ beforeAll(async () => {
     createdBy: USER,
     rotatedAt: new Date(),
   });
-  await saveAgentMailInstall({
+  await saveEmailInstall({
     projectId: PROJECT_A,
     connectionSlug: 'kortix_email',
     inboxId: 'connection-test-default-inbox',
     email: 'default@example.test',
     displayName: 'Default inbox',
-    apiKey: 'agentmail-key',
+    apiKey: 're_project_key',
   });
 });
 
 afterAll(async () => {
-  await deleteAgentMailInstall(PROJECT_A, 'kortix_email');
+  await deleteEmailInstall(PROJECT_A, 'kortix_email');
   await db.delete(connectionCredentials).where(eq(connectionCredentials.connectorId, CONNECTOR_A));
   await db.delete(projectSessions).where(eq(projectSessions.projectId, PROJECT_A));
   await db
@@ -1149,22 +1149,22 @@ describe('session connector isolation', () => {
     }
   });
 
-  test('AgentMail connections stay immutable per inbox and revoke on partial or final disconnect', async () => {
-    await saveAgentMailInstall({
+  test('Email connections stay immutable per inbox and revoke on partial or final disconnect', async () => {
+    await saveEmailInstall({
       projectId: PROJECT_A,
       connectionSlug: 'workspace_a',
       inboxId: 'inbox-workspace-a',
       email: 'a@example.test',
       displayName: 'Workspace A',
-      apiKey: 'agentmail-key',
+      apiKey: 're_project_key',
     });
-    await saveAgentMailInstall({
+    await saveEmailInstall({
       projectId: PROJECT_A,
       connectionSlug: 'workspace_b',
       inboxId: 'inbox-workspace-b',
       email: 'b@example.test',
       displayName: 'Workspace B',
-      apiKey: 'agentmail-key',
+      apiKey: 're_project_key',
     });
     await reconcileEmailConnections(PROJECT_A, ACCOUNT_A);
 
@@ -1177,8 +1177,8 @@ describe('session connector isolation', () => {
       })
       .from(connectorConnections)
       .where(eq(connectorConnections.connectorId, EMAIL_CONNECTOR));
-    const connectionA = connections.find((connection) => connection.ownerId === 'agentmail:inbox-workspace-a');
-    const connectionB = connections.find((connection) => connection.ownerId === 'agentmail:inbox-workspace-b');
+    const connectionA = connections.find((connection) => connection.ownerId === 'email:inbox-workspace-a');
+    const connectionB = connections.find((connection) => connection.ownerId === 'email:inbox-workspace-b');
     expect(connectionA?.status).toBe('active');
     expect(connectionB?.status).toBe('active');
     expect(connectionA?.metadata).toMatchObject({
@@ -1189,9 +1189,9 @@ describe('session connector isolation', () => {
       connector_slug: 'workspace_b',
       inbox_id: 'inbox-workspace-b',
     });
-    if (!connectionA || !connectionB) throw new Error('Expected both AgentMail connections');
+    if (!connectionA || !connectionB) throw new Error('Expected both email connections');
 
-    await deleteAgentMailInstall(PROJECT_A, 'workspace_a');
+    await deleteEmailInstall(PROJECT_A, 'workspace_a');
     await reconcileEmailConnections(PROJECT_A, ACCOUNT_A);
     const [afterPartial] = await db
       .select({ status: connectorConnections.status })
@@ -1199,7 +1199,7 @@ describe('session connector isolation', () => {
       .where(eq(connectorConnections.connectionId, connectionA.connectionId));
     expect(afterPartial?.status).toBe('revoked');
 
-    await deleteAgentMailInstall(PROJECT_A, 'workspace_b');
+    await deleteEmailInstall(PROJECT_A, 'workspace_b');
     await reconcileEmailConnections(PROJECT_A, ACCOUNT_A);
     const [afterFinal] = await db
       .select({ status: connectorConnections.status })
@@ -1208,16 +1208,16 @@ describe('session connector isolation', () => {
     expect(afterFinal?.status).toBe('revoked');
   });
 
-  test('AgentMail installation persists and removes its explicit channel-agent binding', async () => {
+  test('Email installation persists and removes its explicit channel-agent binding', async () => {
     const connectionSlug = 'veyris_bound';
     const inboxId = 'inbox-veyris-bound';
-    await saveAgentMailInstall({
+    await saveEmailInstall({
       projectId: PROJECT_A,
       connectionSlug,
       inboxId,
       email: 'veyris-bound@example.test',
       displayName: 'Veyris bound inbox',
-      apiKey: 'agentmail-key',
+      apiKey: 're_project_key',
       agentName: 'veyris',
     });
 
@@ -1245,7 +1245,7 @@ describe('session connector isolation', () => {
       agentName: 'veyris',
     });
 
-    await deleteAgentMailInstall(PROJECT_A, connectionSlug);
+    await deleteEmailInstall(PROJECT_A, connectionSlug);
     const rows = await db
       .select({ bindingId: chatChannelBindings.bindingId })
       .from(chatChannelBindings)
@@ -1259,31 +1259,31 @@ describe('session connector isolation', () => {
     expect(rows).toEqual([]);
   });
 
-  test('saveAgentMailInstall does not delete another project chat_installs row for the same inbox (pentest 2026-07-27)', async () => {
-    // Regression for the AgentMail inbox hijack. PROJECT_A claims inbox
+  test('saveEmailInstall does not delete another project chat_installs row for the same inbox (pentest 2026-07-27)', async () => {
+    // Regression for the inbox hijack. PROJECT_A claims inbox
     // "shared-inbox". PROJECT_B then claims the SAME inbox. Before the fix,
-    // saveAgentMailInstall ran an unscoped DELETE (platform + workspaceId only)
+    // saveEmailInstall ran an unscoped DELETE (platform + workspaceId only)
     // that wiped PROJECT_A's chat_installs row. With the fix, the DELETE is
     // scoped to the calling project, so both rows coexist (unique index allows
-    // multiple projects per inbox) and resolveProjectForAgentMailInbox keeps
+    // multiple projects per inbox) and resolveProjectForEmailInbox keeps
     // returning PROJECT_A for PROJECT_A's install.
     const sharedInbox = 'shared-inbox-hijack-test';
-    await saveAgentMailInstall({
+    await saveEmailInstall({
       projectId: PROJECT_A,
       connectionSlug: 'kortix_email',
       inboxId: sharedInbox,
       email: 'shared-a@example.test',
       displayName: 'A',
-      apiKey: 'agentmail-key',
+      apiKey: 're_project_key',
     });
     // PROJECT_B claims the same inbox. This must NOT remove PROJECT_A's row.
-    await saveAgentMailInstall({
+    await saveEmailInstall({
       projectId: PROJECT_B,
       connectionSlug: 'kortix_email',
       inboxId: sharedInbox,
       email: 'shared-b@example.test',
       displayName: 'B',
-      apiKey: 'agentmail-key',
+      apiKey: 're_project_key',
     });
 
     const owners = await db
@@ -1294,8 +1294,8 @@ describe('session connector isolation', () => {
     expect(ownerIds).toEqual([PROJECT_A, PROJECT_B].sort());
 
     // Cleanup so the row does not leak into other tests.
-    await deleteAgentMailInstall(PROJECT_A, 'kortix_email');
-    await deleteAgentMailInstall(PROJECT_B, 'kortix_email');
+    await deleteEmailInstall(PROJECT_A, 'kortix_email');
+    await deleteEmailInstall(PROJECT_B, 'kortix_email');
   });
 });
 

@@ -20,7 +20,7 @@ const projectRow = row({ ownerType: 'project', ownerId: null });
 
 const managedChannelRow = row({
   ownerType: 'external',
-  ownerId: `agentmail:${INBOX}`,
+  ownerId: `email:${INBOX}`,
   providerType: 'channel',
   connectorConfig: { platform: 'email' },
   metadata: { channel_connection: true, inbox_id: INBOX },
@@ -71,7 +71,7 @@ describe('mayMutateConnection', () => {
   test('a trusted managed-channel row is reachable and still needs the manage capability', () => {
     expect(mayMutateConnection(managedChannelRow, human(OWNER, true))).toBe(true);
     expect(mayMutateConnection(managedChannelRow, human(OWNER, false))).toBe(false);
-    const untrusted = { ...managedChannelRow, ownerId: 'agentmail:another-inbox' };
+    const untrusted = { ...managedChannelRow, ownerId: 'email:another-inbox' };
     expect(mayMutateConnection(untrusted, human(OWNER, true))).toBe(false);
   });
 

@@ -22,7 +22,7 @@ import {
 import { and, eq, inArray, isNotNull, notExists, or, sql } from 'drizzle-orm';
 import { getImpersonationContext } from '../shared/impersonation';
 import { parse as parseToml } from 'smol-toml';
-import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
+import { listEmailInstalls, loadSlackInstall, purgeLegacyAgentMailInstall } from '../channels/install-store';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { assertAllowedEndpointUrl, assertAllowedSourceAddress } from '../marketplace/catalog';
 import { safeEgressFetch, UnsafeEgressError } from '../shared/ssrf-guard';
@@ -390,19 +390,24 @@ export async function reconcileChannelConnectors(
     if (slackInstalled) await ensureChannelConnectorDeclared(projectId, 'slack');
     else await removeChannelConnectorDeclared(projectId, 'slack');
 
-    if (removed?.platform === 'email') {
-      await removeChannelConnectorDeclared(projectId, 'email', removed.slug);
+    // The retired AgentMail install (2026-10-24) is dead data: drop it here.
+    await purgeLegacyAgentMailInstall(projectId).catch(() => 0);
+    const emailEnabled = resolveFeatureFlag(row.metadata, 'email_channel');
+    if (removed?.platform === 'email' || !emailEnabled) {
+      await removeChannelConnectorDeclared(projectId, 'email', removed?.slug);
     }
-    const emailInstalls = await listAgentMailInstalls(projectId).catch(() => []);
-    for (const install of emailInstalls) {
-      await ensureChannelConnectorDeclared(
-        projectId,
-        'email',
-        install.connectionSlug,
-        install.displayName || install.email || 'Email',
-      );
+    if (emailEnabled) {
+      const emailInstalls = await listEmailInstalls(projectId).catch(() => []);
+      for (const install of emailInstalls) {
+        await ensureChannelConnectorDeclared(
+          projectId,
+          'email',
+          install.connectionSlug,
+          install.displayName || install.email || 'Email',
+        );
+      }
+      if (emailInstalls.length === 0) await removeChannelConnectorDeclared(projectId, 'email');
     }
-    if (emailInstalls.length === 0) await removeChannelConnectorDeclared(projectId, 'email');
     await syncProjectConnectors(projectId, row.accountId);
   } catch (e) {
     console.warn('[connector] channel connector reconcile failed', {
@@ -741,7 +746,7 @@ export async function reconcileEmailConnections(
   projectId: string,
   accountId: string,
 ): Promise<void> {
-  const installs = await listAgentMailInstalls(projectId);
+  const installs = await listEmailInstalls(projectId);
   const canonicalSlug = channelDefaultSlug('email');
   const [connector] = await db
     .select({ connectorId: connectors.connectorId })
@@ -753,7 +758,7 @@ export async function reconcileEmailConnections(
     projectId,
     connectorId: connector.connectorId,
   });
-  const activeOwnerIds = new Set(installs.map((install) => `agentmail:${install.inboxId}`));
+  const activeOwnerIds = new Set(installs.map((install) => `email:${install.inboxId}`));
   const existingEmailConnections = await db
     .select({
       connectionId: connectorConnections.connectionId,
@@ -767,7 +772,11 @@ export async function reconcileEmailConnections(
       ),
     );
   for (const existing of existingEmailConnections) {
-    if (existing.ownerId?.startsWith('agentmail:') && !activeOwnerIds.has(existing.ownerId)) {
+    // `agentmail:` owners are the retired AgentMail inboxes (2026-10-24): always dead.
+    const stale =
+      existing.ownerId?.startsWith('agentmail:') ||
+      (existing.ownerId?.startsWith('email:') && !activeOwnerIds.has(existing.ownerId));
+    if (stale) {
       await db
         .update(connectorConnections)
         .set({ status: 'revoked', updatedAt: new Date() })
@@ -776,7 +785,7 @@ export async function reconcileEmailConnections(
   }
 
   for (const install of installs) {
-    const ownerId = `agentmail:${install.inboxId}`;
+    const ownerId = `email:${install.inboxId}`;
     const [existing] = await db
       .select({ connectionId: connectorConnections.connectionId })
       .from(connectorConnections)

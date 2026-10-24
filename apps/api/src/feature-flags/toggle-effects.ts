@@ -31,11 +31,12 @@ const reconcileProjectChannels: ToggleEffect = async ({ projectId }) => {
 };
 
 /**
- * Effects by flag. A channel-backed flag (connectors_v2, for Telegram) re-runs
+ * Effects by flag. A channel-backed flag (email_channel; connectors_v2, for Telegram) re-runs
  * channel-connector materialization so the connector row appears or
  * disappears with the flag instead of waiting for the next periodic sweep.
  */
 const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
+  email_channel: reconcileProjectChannels,
   // Also the Kortix event source: off, its triggers report the legacy "no app-event source" text and
   // their poll streams are dropped; on, they subscribe without a re-save.
   connectors_v2: async (ctx) => {

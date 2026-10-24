@@ -143,7 +143,7 @@ test('getEmailInstallation forwards an optional connector_slug query param', asy
 test('getEmailMode falls back to a safe default on failure', async () => {
   nextResponse = { status: 500, body: {} };
   const result = await getEmailMode('P1');
-  expect(result).toEqual({ provider: 'agentmail', managed_available: false });
+  expect(result).toEqual({ provider: 'resend', managed_available: false });
 });
 
 test('connectEmail posts the connect payload', async () => {
@@ -461,25 +461,25 @@ test('listEmailDomains posts the key in the body, never in the URL', async () =>
     status: 200,
     body: {
       managed: false,
-      default_domain: 'agentmail.to',
+      default_domain: 'kortixmail.com',
       domains: [
-        { domain_id: null, domain: 'agentmail.to', status: 'VERIFIED', verified: true, records: [] },
+        { domain_id: null, domain: 'kortixmail.com', status: 'VERIFIED', verified: true, records: [] },
         { domain_id: 'd1', domain: 'mail.example.com', status: 'PENDING', verified: false, records: [] },
       ],
     },
   };
-  const list = await listEmailDomains('P1', { apiKey: 'am_secret' });
+  const list = await listEmailDomains('P1', { apiKey: 're_secret' });
   expect(last().url).toMatch(/\/projects\/P1\/channels\/email\/domains$/);
-  expect(last().url).not.toContain('am_secret');
+  expect(last().url).not.toContain('re_secret');
   expect(last().method).toBe('POST');
-  expect(last().body).toEqual({ api_key: 'am_secret' });
-  expect(list.domains.map((d) => d.domain)).toEqual(['agentmail.to', 'mail.example.com']);
+  expect(last().body).toEqual({ api_key: 're_secret' });
+  expect(list.domains.map((d) => d.domain)).toEqual(['kortixmail.com', 'mail.example.com']);
 });
 
 test('listEmailDomains without a key asks for the managed domain', async () => {
   nextResponse = {
     status: 200,
-    body: { managed: true, default_domain: 'agentmail.to', domains: [] },
+    body: { managed: true, default_domain: 'kortixmail.com', domains: [] },
   };
   const list = await listEmailDomains('P1');
   expect(last().body).toEqual({});
@@ -495,21 +495,21 @@ test('addEmailDomain and verifyEmailDomain post to their routes and return the d
     records: [{ type: 'TXT', name: '_dmarc.mail.example.com', value: 'v=DMARC1', status: 'MISSING' }],
   };
   nextResponse = { status: 200, body: { domain, setup: null } };
-  const added = await addEmailDomain('P1', { apiKey: 'am_secret', domain: 'mail.example.com' });
+  const added = await addEmailDomain('P1', { apiKey: 're_secret', domain: 'mail.example.com' });
   expect(last().url).toContain('/projects/P1/channels/email/domains/add');
-  expect(last().body).toEqual({ api_key: 'am_secret', domain: 'mail.example.com' });
+  expect(last().body).toEqual({ api_key: 're_secret', domain: 'mail.example.com' });
   expect(added.domain.records[0]?.type).toBe('TXT');
 
   nextResponse = { status: 200, body: { domain: { ...domain, status: 'VERIFIED', verified: true }, setup: null } };
-  const checked = await verifyEmailDomain('P1', { apiKey: 'am_secret', domainId: 'd1' });
+  const checked = await verifyEmailDomain('P1', { apiKey: 're_secret', domainId: 'd1' });
   expect(last().url).toContain('/projects/P1/channels/email/domains/verify');
-  expect(last().body).toEqual({ api_key: 'am_secret', domain_id: 'd1' });
+  expect(last().body).toEqual({ api_key: 're_secret', domain_id: 'd1' });
   expect(checked.domain.verified).toBe(true);
 });
 
 test('addEmailDomain throws the server refusal', async () => {
-  nextResponse = { status: 400, body: { error: 'AgentMail rejected this API key.', code: 'agentmail_key_rejected' } };
+  nextResponse = { status: 400, body: { error: 'Resend rejected this API key.', code: 'email_key_rejected' } };
   await expect(addEmailDomain('P1', { apiKey: 'bad', domain: 'mail.example.com' })).rejects.toThrow(
-    'AgentMail rejected this API key.',
+    'Resend rejected this API key.',
   );
 });

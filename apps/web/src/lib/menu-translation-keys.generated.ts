@@ -87,8 +87,8 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'browser chromium agent viewport automation live stream': 'texta019a77aa6df',
   'browser preview app port localhost session': 'textb597cb0305b9',
   'capture recording screen devices install enrollment': 'textf12162aa6ac0',
-  'channels channel slack teams discord email agentmail inbox inbound messaging':
-    'text508121aba2d4',
+  'channels channel slack teams discord email telegram inbox inbound messaging':
+    'textbc0c928676d0',
   'connectors connections pipedream mcp openapi postman collections connector': 'text40f61622c4a4',
   'credits coins billing usage tokens cost explain explained': 'text5cc7f54069fc',
   'customize configure setup capabilities overview hub': 'textc6bd146b2125',

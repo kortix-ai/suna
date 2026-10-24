@@ -28,6 +28,8 @@ import {
   projectPolicySettingsToToml,
 } from '../projects/policies';
 import { db } from '../shared/db';
+import { featureDisabledBody } from '../feature-flags/gate';
+import { resolveFeatureFlag } from '../feature-flags/registry';
 import { upsertCredential, upsertOAuth2Credential } from './credentials';
 import { areValidConditions, isValidMatcher } from './policy';
 import {
@@ -212,6 +214,15 @@ export async function upsertConnectorInManifest(
 
   const row = await loadRow(projectId);
   if (!row) return { ok: false, error: 'project not found', status: 404 };
+  if (
+    draft.provider === 'channel' &&
+    draft.platform === 'email' &&
+    !resolveFeatureFlag(row.metadata, 'email_channel')
+  ) {
+    const disabled = featureDisabledBody('email_channel');
+    return { ok: false, error: disabled.error, status: 403, body: disabled };
+  }
+
   let gitProject: Awaited<ReturnType<typeof withProjectGitAuth>>;
   try {
     gitProject = await withProjectGitAuth(row);

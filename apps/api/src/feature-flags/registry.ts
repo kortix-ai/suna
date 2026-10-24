@@ -437,6 +437,20 @@ const FLAGS: readonly FeatureFlagDef[] = [
       '/v1/artifacts/* (the content server) answers 404 for an artifact of a flag-off project. BOX: off, ' +
       'a session box has no kortix-artifacts skill and its CLI hides and refuses `kortix artifacts`.',
   },
+  {
+    key: 'email_channel',
+    name: 'Email channel',
+    description:
+      'Give the agent an email inbox on Resend: inbound mail starts and continues sessions, and the agent reads, replies and sends from the inbox. Bring your own Resend API key and domain.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'ROUTES: …/channels/email/connect, /domains*, PATCH …/email/installation and an email `POST /connectors` answer 403 `feature_disabled`; ' +
+      'GET …/email/installation answers null and …/email/mode `enabled: false`; the Resend webhook ignores the project\'s inboxes; ' +
+      'channel materialize and sync drop the email connector; the catalog hides native:email.',
+  },
   // `session_log` graduated (2026-10-22, P8.2): the session log is every session's
   // saved history and the v1 transcript mirror is no longer read. No flag and no
   // operator lever. A stored `experimental.session_log` override is inert.

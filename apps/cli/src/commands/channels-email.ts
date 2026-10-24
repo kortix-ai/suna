@@ -3,8 +3,8 @@ import { emitJson, fail, resolveProjectContext, surfaceApiError } from '../comma
 import { C, status } from '../style.ts';
 import type { ExtraFlags } from './channels.ts';
 
-// apps/api/src/channels/install-store.ts AgentMailSenderPolicy /
-// AgentMailInstallSummary; routes at apps/api/src/projects/routes/channel-email.ts.
+// The email install the API returns (Resend Inboxes); routes at
+// apps/api/src/projects/routes/channel-email.ts.
 
 interface EmailSenderPolicy {
   mode: 'allow_all' | 'restricted';
@@ -26,7 +26,8 @@ export interface EmailInstallation {
 }
 
 export interface EmailMode {
-  provider: 'agentmail';
+  /** `'agentmail'`: a server from before the Resend switch. */
+  provider: 'resend' | 'agentmail';
   enabled?: boolean;
   managed_available: boolean;
   managed_domain?: string;
@@ -63,13 +64,24 @@ function printDomain(d: EmailDomain): void {
 /** The default connector slug every email route falls back to (channel-email.ts). */
 const DEFAULT_EMAIL_CONNECTOR = 'kortix_email';
 
-// ─── Email (AgentMail) ───────────────────────────────────────────────────
+/** The project flag the email channel sits behind (experimental, off by default). */
+const EMAIL_FLAG = 'email_channel';
+
+function emailOffLine(flag: string): string {
+  return `off for this project — the ${flag} feature flag is off. Turn it on: kortix projects features enable ${flag}`;
+}
+
+const OWN_KEY_NEEDED =
+  'Pass --api-key <re_…>: a full-access key from https://resend.com/api-keys, on a Resend account with a ' +
+  'receiving domain (https://resend.com/docs/dashboard/receiving/custom-domains).';
+
+// ─── Email (Resend) ───────────────────────────────────────────────────
 
 /**
  * Build the wire `sender_policy` from repeated `--allow` values.
  *
  * The server's policy has ONE list per kind and no deny list at all
- * (AgentMailSenderPolicy: mode + allowedEmails + allowedDomains +
+ * (the sender policy: mode + allowedEmails + allowedDomains +
  * allowedRegex), so a value is routed by shape: `@acme.com` or a bare
  * `acme.com` is a DOMAIN, anything containing a local part is an EMAIL. The
  * server re-derives `mode` — any non-empty list forces `restricted`
@@ -143,11 +155,9 @@ export async function emailCommand(
           return 0;
         }
         if (!mode.enabled) {
-          process.stdout.write(
-            // Only an older server still gates email behind the `agentmail_email` flag.
-            `${C.dim}email${C.reset}  off — this server still gates email behind the ${C.cyan}agentmail_email${C.reset} feature flag.\n` +
-              `       Turn it on: ${C.cyan}kortix projects features enable agentmail_email${C.reset}\n`,
-          );
+          // An older (AgentMail) server gated email behind `agentmail_email`.
+          const flag = mode.provider === 'agentmail' ? 'agentmail_email' : EMAIL_FLAG;
+          process.stdout.write(`${C.dim}email${C.reset}  ${emailOffLine(flag)}\n`);
           return 0;
         }
         if (!install) {
@@ -165,6 +175,12 @@ export async function emailCommand(
           return fail('Attaching an existing inbox needs BOTH --inbox-id and --email.');
         }
         const apiKey = extra.apiKey === '-' ? readFileSync(0, 'utf-8').trim() : extra.apiKey;
+        // Your own Resend key comes first. Without one, only a server that
+        // offers managed inboxes (RESEND_MANAGED_EMAIL_ENABLED) can create one.
+        if (!apiKey) {
+          const mode = await ctx.client.get<EmailMode>(`${base}/mode`).catch(() => null);
+          if (!mode?.managed_available) return fail(OWN_KEY_NEEDED);
+        }
         const body: Record<string, unknown> = { connector_slug: slug };
         if (apiKey) body.api_key = apiKey;
         if (extra.displayName) body.display_name = extra.displayName;
@@ -173,7 +189,16 @@ export async function emailCommand(
         if (extra.inboxId) body.inbox_id = extra.inboxId;
         if (extra.email) body.email = extra.email;
         body.sender_policy = buildSenderPolicy(extra);
-        const install = await ctx.client.post<EmailInstallation>(`${base}/connect`, body);
+        let install: EmailInstallation;
+        try {
+          install = await ctx.client.post<EmailInstallation>(`${base}/connect`, body);
+        } catch (err) {
+          // Managed inboxes are off on this deployment: say what works instead.
+          if ((err as { body?: { code?: unknown } }).body?.code === 'email_key_required') {
+            return fail(`Kortix-managed email is not offered on this deployment. ${OWN_KEY_NEEDED}`);
+          }
+          throw err;
+        }
         if (json) {
           emitJson(install);
           return 0;
@@ -219,7 +244,7 @@ export async function emailCommand(
           return 0;
         }
         process.stdout.write(
-          `${list.managed ? 'Managed account' : 'Your AgentMail account'} — inboxes can use:\n`,
+          `${list.managed ? 'Managed account' : 'Your Resend account'} — inboxes can use:\n`,
         );
         for (const d of list.domains) printDomain(d);
         if (list.managed) {
@@ -236,7 +261,7 @@ export async function emailCommand(
           return 0;
         }
         process.stdout.write(
-          `${status.ok('Disconnected')} ${C.dim}— connector ${slug}; the AgentMail secrets are removed.${C.reset}\n`,
+          `${status.ok('Disconnected')} ${C.dim}— connector ${slug}; the inbox secrets are removed.${C.reset}\n`,
         );
         return 0;
       }
@@ -274,6 +299,11 @@ export async function emailCommand(
         return fail(`unknown email action "${action}" — status|connect|domains|disconnect|policy`);
     }
   } catch (err) {
+    // The project's `email_channel` flag is off: name the one command that turns it on.
+    if ((err as { body?: { feature?: unknown } }).body?.feature === EMAIL_FLAG) {
+      process.stderr.write(`${status.err(`Email is ${emailOffLine(EMAIL_FLAG)}`)}\n`);
+      return 1;
+    }
     return surfaceApiError(err);
   }
 }

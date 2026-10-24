@@ -65,8 +65,11 @@ const BINDING = {
   effectiveModel: { model: null, source: 'platform' },
 };
 
-function startServer(opts: { emailEnabled?: boolean; failTeams?: boolean; connected?: boolean } = {}): string {
+function startServer(
+  opts: { emailEnabled?: boolean; failTeams?: boolean; connected?: boolean; managedEmail?: boolean } = {},
+): string {
   const emailEnabled = opts.emailEnabled ?? true;
+  const managedEmail = opts.managedEmail ?? true;
   server = Bun.serve({
     port: 0,
     fetch: async (req) => {
@@ -89,9 +92,9 @@ function startServer(opts: { emailEnabled?: boolean; failTeams?: boolean; connec
       }
       if (p === '/channels/email/mode' && req.method === 'GET') {
         return Response.json({
-          provider: 'agentmail',
+          provider: 'resend',
           enabled: emailEnabled,
-          managed_available: true,
+          managed_available: managedEmail,
         });
       }
       if (p === '/channels/email/installation' && req.method === 'GET') {
@@ -100,7 +103,7 @@ function startServer(opts: { emailEnabled?: boolean; failTeams?: boolean; connec
       if (p === '/channels/email/connect' && req.method === 'POST') {
         if (!emailEnabled) {
           return Response.json(
-            { error: 'Email is not enabled for this project.', code: 'feature_disabled', feature: 'agentmail_email' },
+            { error: 'Email is not enabled for this project.', code: 'feature_disabled', feature: 'email_channel' },
             { status: 403 },
           );
         }
@@ -114,7 +117,7 @@ function startServer(opts: { emailEnabled?: boolean; failTeams?: boolean; connec
             domain: b.domain,
             status: 'PENDING',
             verified: false,
-            records: [{ type: 'MX', name: b.domain, value: 'inbound.agentmail.to', status: 'MISSING', priority: 10 }],
+            records: [{ type: 'MX', name: b.domain, value: 'inbound-smtp.us-east-1.amazonaws.com', status: 'MISSING', priority: 10 }],
           },
           setup: null,
         });
@@ -310,6 +313,8 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
     );
     expect(r.code).toBe(0);
     expect(calls).toEqual([
+      // No --api-key: the CLI first checks that this server offers managed inboxes.
+      { method: 'GET', path: `/v1/projects/${PROJECT}/channels/email/mode`, query: '', body: null },
       {
         method: 'POST',
         path: `/v1/projects/${PROJECT}/channels/email/connect`,
@@ -331,10 +336,30 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
     expect(r.stdout).toContain('support@acme.kortix.email');
   });
 
+  test('email connect without --api-key, where Kortix-managed email is off, asks for your Resend key', async () => {
+    const config = writeConfig(startServer({ managedEmail: false }));
+    const r = await runCli(['channels', 'email', 'connect', '--username', 'support', '--project', PROJECT], config);
+    expect(r.code).not.toBe(0);
+    expect(r.stderr).toContain('--api-key <re_');
+    expect(r.stderr).toContain('https://resend.com/api-keys');
+    expect(calls.some((c) => c.path.endsWith('/channels/email/connect'))).toBe(false);
+  });
+
+  test('email connect --api-key goes straight to connect with the key in the body', async () => {
+    const config = writeConfig(startServer({ managedEmail: false }));
+    const r = await runCli(
+      ['channels', 'email', 'connect', '--api-key', 're_secret', '--domain', 'mail.acme.io', '--project', PROJECT],
+      config,
+    );
+    expect(r.code).toBe(0);
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([`POST /v1/projects/${PROJECT}/channels/email/connect`]);
+    expect((calls[0]?.body as { api_key?: string }).api_key).toBe('re_secret');
+  });
+
   test('email domains add POSTs the key in the body and prints the DNS records to set', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(
-      ['channels', 'email', 'domains', 'add', 'mail.acme.io', '--api-key', 'am_secret', '--project', PROJECT],
+      ['channels', 'email', 'domains', 'add', 'mail.acme.io', '--api-key', 're_secret', '--project', PROJECT],
       config,
     );
     expect(r.code).toBe(0);
@@ -343,11 +368,11 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
         method: 'POST',
         path: `/v1/projects/${PROJECT}/channels/email/domains/add`,
         query: '',
-        body: { api_key: 'am_secret', domain: 'mail.acme.io' },
+        body: { api_key: 're_secret', domain: 'mail.acme.io' },
       },
     ]);
     expect(r.stdout).toContain('mail.acme.io');
-    expect(r.stdout).toContain('inbound.agentmail.to');
+    expect(r.stdout).toContain('inbound-smtp.us-east-1.amazonaws.com');
     expect(r.stdout).toContain('domains verify dom_1');
   });
 
@@ -414,11 +439,18 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
     expect(calls).toEqual([]);
   });
 
-  test('the feature-flag 403 on email connect is surfaced verbatim', async () => {
+  test('email connect with the email_channel flag off names the command that turns it on', async () => {
     const config = writeConfig(startServer({ emailEnabled: false }));
-    const r = await runCli(['channels', 'email', 'connect', '--project', PROJECT], config);
+    const r = await runCli(['channels', 'email', 'connect', '--api-key', 're_secret', '--project', PROJECT], config);
     expect(r.code).toBe(1);
-    expect(r.stderr).toContain('Email is not enabled for this project.');
+    expect(r.stderr).toContain('kortix projects features enable email_channel');
+  });
+
+  test('email status with the flag off says so and how to turn it on', async () => {
+    const config = writeConfig(startServer({ emailEnabled: false }));
+    const r = await runCli(['channels', 'email', 'status', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('email_channel feature flag is off');
   });
 
   test('bindings ls prints each channel with its effective agent/model/policy', async () => {

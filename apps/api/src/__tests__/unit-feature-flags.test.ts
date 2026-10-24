@@ -114,6 +114,14 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(resolveFeatureFlag({ experimental: { warm_sessions: false } }, 'warm_sessions')).toBe(false);
   });
 
+  test('email_channel is an explicit opt-in', () => {
+    // The Resend inbox channel ships behind its own flag; the retired
+    // `agentmail_email` key stays graduated and inert.
+    expect(resolveFeatureFlag({}, 'email_channel')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { email_channel: true } }, 'email_channel')).toBe(true);
+    expect(findCatalogFlag('email_channel')).toMatchObject({ stability: 'experimental', enabled: false });
+  });
+
   test('agentmail_email graduated: every project can connect email and a stored override is inert', () => {
     // 2026-10-24: the email channel is on for every project. Turning it on
     // never created an inbox (only an explicit connect does), so graduating

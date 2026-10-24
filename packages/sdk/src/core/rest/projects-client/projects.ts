@@ -92,6 +92,8 @@ export type FeatureFlagKey =
   | 'goals'
   | 'workspace_volume'
   | 'artifacts'
+  /** The email channel: a Resend inbox that starts and continues sessions. Experimental, off by default. */
+  | 'email_channel'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
@@ -141,6 +143,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'goals',
   'workspace_volume',
   'artifacts',
+  'email_channel',
 ] as const;
 
 /**

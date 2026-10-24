@@ -8,7 +8,7 @@ import {
 import { sanitizeConnectorHeaders } from '@kortix/manifest-schema';
 import { eq, inArray } from 'drizzle-orm';
 import {
-  loadAgentMailInstall,
+  loadEmailInstall,
   loadSlackInstall,
   loadTeamsInstall,
   loadTelegramInstall,
@@ -116,7 +116,7 @@ async function channelInstalled(
   if (platform === 'teams') return (await loadTeamsInstall(projectId).catch(() => null)) != null;
   if (platform === 'telegram') return (await loadTelegramInstall(projectId).catch(() => null)) != null;
   if (platform === 'email')
-    return (await loadAgentMailInstall(projectId, slug).catch(() => null)) != null;
+    return (await loadEmailInstall(projectId, slug).catch(() => null)) != null;
   return false;
 }
 
@@ -146,7 +146,7 @@ export async function connectorConnected(
       channelPlatform(row.config) === 'email' &&
       typeof connection?.metadata.inbox_id === 'string'
     ) {
-      const install = await loadAgentMailInstall(row.projectId, connectionSlug).catch(() => null);
+      const install = await loadEmailInstall(row.projectId, connectionSlug).catch(() => null);
       return install?.inboxId === connection.metadata.inbox_id;
     }
     return true;

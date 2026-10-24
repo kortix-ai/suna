@@ -242,7 +242,9 @@ Set these with `kortix self-host env set`. Each row says what the variable turns
 | `KORTIX_OAUTH_CLIENTS` | Your own OAuth clients for the [MCP app catalog](/docs/connect/connectors#the-mcp-app-catalog-experimental) apps whose servers have no dynamic client registration. JSON, one entry per vendor: `google`, `github`, `slack`, `hubspot`, `asana`, `box`. Without an entry, those apps are not listed. See [Kortix OAuth clients](#kortix-oauth-clients). |
 | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_SIGNING_SECRET` | One-click **Add to Slack** with your own Slack app. Without all three, each project connects its own Slack app. See [Slack, Teams & email](/docs/connect/channels). |
 | `MICROSOFT_APP_ID`, `MICROSOFT_APP_PASSWORD`, `MICROSOFT_APP_TENANT` (default `botframework.com`) | One shared Microsoft Teams bot. Without them, each project brings its own bot app. |
-| `AGENTMAIL_API_KEY` | Managed inboxes for the email channel. |
+| `RESEND_API_KEY` | Transactional email, and the Resend team that holds managed inboxes for the email channel. |
+| `RESEND_MANAGED_EMAIL_ENABLED` | `true` offers Kortix-managed inboxes on `RESEND_MANAGED_DOMAIN`. Unset: projects connect email only with their own Resend key. Each managed inbox is billed to the deployment's Resend team. |
+| `RESEND_MANAGED_DOMAIN` | Domain for managed inboxes, verified with receiving on in that Resend team. |
 | `TUNNEL_ENABLED` | Default `true`. `false` turns off [computers](/docs/connect/computers): `/v1/tunnel/*` answers `503` `tunnel_disabled`. |
 | `PLATINUM_API_KEY` | Monitors (also need `platinum` in `ALLOWED_SANDBOX_PROVIDERS`), project Files (`volumes`). |
 

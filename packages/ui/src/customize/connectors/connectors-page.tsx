@@ -223,9 +223,9 @@ const SCOPES: readonly ConnectorScope[] = ['all', 'connected', 'channels'];
 const SCOPE_LABEL: Record<ConnectorScope, string> = {
   all: 'All',
   connected: 'Connected',
-  // The URL keeps `scope=channels` (links, the retired /channels redirect);
-  // the tab holds everything Kortix built: the channels and the computer.
-  channels: 'Kortix',
+  // The tab holds everything Kortix built (Slack, Teams, Email, Telegram and
+  // the computer). People call those channels; the catalog type stays "Kortix".
+  channels: 'Channels',
 };
 
 /**

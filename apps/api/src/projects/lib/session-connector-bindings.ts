@@ -18,7 +18,7 @@ import {
   publicConnectorAlias,
 } from '../../shared/connector-alias';
 import {
-  loadAgentMailInstall,
+  loadEmailInstall,
   loadSlackInstall,
   loadTeamsInstall,
   loadTelegramInstall,
@@ -133,7 +133,7 @@ export async function connectorConnectionIsConnected(input: {
         return (await loadTelegramInstall(connector.projectId).catch(() => null)) !== null;
       }
       if (platform === 'email') {
-        const install = await loadAgentMailInstall(connector.projectId, connectionSlug).catch(
+        const install = await loadEmailInstall(connector.projectId, connectionSlug).catch(
           () => null,
         );
         if (!install) return false;

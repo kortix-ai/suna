@@ -144,7 +144,7 @@ kortix connectors show email_email_inbox_bjgk.reply_message
 
 ```sh
 kortix connectors call email_email_inbox_bjgk reply_message \
-  '{"inbox_id":"email-inbox@agentmail.to","message_id":"<message-id>","text":"Reply text"}'
+  '{"inbox_id":"agent@kortixmail.com","thread_id":"<thread-id>","message_id":"<message-id>","text":"Reply text"}'
 ```
 
 **Attach files.** Write the file under `/workspace/artifacts` (or
@@ -198,7 +198,8 @@ const action = await connectors.describe(matches[0]!.tool);
 if (!action) throw new Error('Email action not found');
 
 const result = await connectors.call('email_email_inbox_bjgk.reply_message', {
-  inbox_id: 'email-inbox@agentmail.to',
+  inbox_id: 'agent@kortixmail.com',
+  thread_id: '<thread-id>',
   message_id: '<message-id>',
   text: 'Reply text',
 });

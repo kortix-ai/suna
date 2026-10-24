@@ -292,12 +292,14 @@ Teams bots cannot add reactions or search messages.
 
 ## Email
 
-Every project can connect an email inbox. The inbox comes from AgentMail. Nothing is created until you connect.
+Email is experimental and off by default. Turn on the **Email channel** project flag (`email_channel`) in **Customize → Settings → Feature flags**, or run `kortix projects features enable email_channel`. Off, Email is on no surface. The inbox is a [Resend inbox](https://resend.com/docs/dashboard/inboxes/introduction) on your own Resend account. Nothing is created until you connect.
 
-Open **Customize → Connectors → Channels** and select **Connect** on Email. Pick where the inbox lives:
+1. Create a [Resend](https://resend.com) account.
+2. Add your domain and turn on receiving: Resend shows one MX record to set ([receiving domains](https://resend.com/docs/dashboard/receiving/custom-domains)). Use a subdomain such as `mail.example.com` when the domain already receives mail elsewhere.
+3. Create a full-access [API key](https://resend.com/api-keys) (`re_…`).
+4. Open **Customize → Connectors → Kortix** and select **Connect** on Email. Paste the key. The domain list shows every domain on that account; one that is not verified yet shows its DNS records. **Add a domain…** adds a new one with receiving on and lists the records to set. **Check again** asks Resend to re-read them. An inbox can use a domain once it is verified and receiving.
 
-- **Kortix managed.** The inbox is created on the deployment's managed domain (`agentmail.to` unless the operator sets `AGENTMAIL_MANAGED_DOMAIN`). You choose only the name before the `@`.
-- **Your AgentMail account.** Paste your AgentMail API key. The domain list then shows `agentmail.to` and every domain on that account; one that is not verified yet shows its DNS records. **Add a domain…** adds a new one to your account and lists the records to set at your DNS provider. When the provider supports it, **Set up in one click** writes them for you. **Check again** re-reads them. An inbox can use a domain once it is verified.
+**Kortix managed.** Where the operator offers it, the dialog also lists an inbox on the deployment's managed domain. You choose only the name before the `@`. It is a deployment setting (`RESEND_MANAGED_EMAIL_ENABLED` and `RESEND_MANAGED_DOMAIN`), never a project one. Otherwise an inbox needs your own key.
 
 Then choose **Who can email the agent**. A work email preselects everyone at your domain; a public address (Gmail, Outlook…) preselects only you. **Anyone** lets every sender start a session on this project's credits.
 
@@ -316,10 +318,10 @@ kortix channels email connect --api-key - --username support --domain mail.examp
 | Command | What it does |
 | --- | --- |
 | `email connect` | Create a managed inbox. `--username` and `--domain` set the address. The username defaults to the project name. `--display-name` sets the from-name (default: the project name). |
-| `email connect --inbox-id <id> --email <address>` | Attach an existing AgentMail inbox. An inbox connected to another project is refused. |
-| `email connect --api-key <key>` | Use your own AgentMail key instead of the managed one. `-` reads it from stdin. Without a key, `--domain` accepts only the managed domain. |
+| `email connect --inbox-id <id> --email <address>` | Attach an existing Resend inbox. An inbox connected to another project is refused. |
+| `email connect --api-key <key>` | Use your own Resend API key instead of the managed one. `-` reads it from stdin. Without a key, `--domain` accepts only the managed domain. |
 | `email domains [--api-key <key>]` | List the domains an inbox can use, with status. Without a key: the managed domain. |
-| `email domains add <domain> --api-key <key>` | Add a custom domain to your AgentMail account and print the DNS records to set. |
+| `email domains add <domain> --api-key <key>` | Add a custom domain to your Resend account and print the DNS records to set. |
 | `email domains verify <domain_id> --api-key <key>` | Check that domain's DNS records again. |
 | `email status [--json]` | Show the inbox, the connector and the sender policy |
 | `email policy` | Replace the sender policy |
@@ -390,4 +392,4 @@ The same settings change from chat (`/kortix agent`, `/model`, `/policy`, and th
 
 Each channel is also a connector with `provider: channel`: `kortix_slack`, `kortix_teams` and `kortix_email` (or the slug you pass). Kortix writes the Slack and email entries in `kortix.yaml` when you connect, and removes them when you disconnect. Teams needs no entry. These slugs are reserved: `kortix connectors add slack` is refused and points to `kortix channels connect`. The bot token and the bot's client secret never enter a sandbox and do not appear on the Secrets page. See [Connectors](/docs/connect/connectors).
 
-A self-hosted instance needs the Slack, Microsoft and AgentMail credentials for the managed paths. See [Self-hosting](/docs/host#integrations).
+A self-hosted instance needs the Slack, Microsoft and Resend credentials for the managed paths. See [Self-hosting](/docs/host#integrations).

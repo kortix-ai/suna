@@ -5634,11 +5634,13 @@ flow(
       (await owner.get('/v1/connectors/projects/:projectId/discover/connectors/tools', { params, query: { id: 'kortix:missing' } })).status(404);
     });
 
-    await ctx.step('what Kortix built leads its apps: kind=kortix lists the four channels and Computer; Slack\'s page recommends the Kortix way; install points to each setup', async () => {
+    await ctx.step('what Kortix built leads its apps: kind=kortix lists the channels and Computer (Email only with email_channel); Slack\'s page recommends the Kortix way; install points to each setup', async () => {
       const list = await owner.get('/v1/connectors/projects/:projectId/discover/connectors', { params, query: { kind: 'kortix', limit: '10' } });
       list.status(200);
       const ids = list.json<{ items: Array<{ id: string }> }>().items.map((item) => item.id).sort();
-      if (JSON.stringify(ids) !== JSON.stringify(['native:computer', 'native:email', 'native:slack', 'native:teams', 'native:telegram'])) throw new Error(`kortix: ${ids}`);
+      // Email is behind its own flag (`email_channel`, off here): hidden, and its page answers 404.
+      if (JSON.stringify(ids) !== JSON.stringify(['native:computer', 'native:slack', 'native:teams', 'native:telegram'])) throw new Error(`kortix: ${ids}`);
+      (await owner.get('/v1/connectors/projects/:projectId/discover/connectors/detail', { params, query: { id: 'native:email' } })).status(404);
       const detail = await owner.get('/v1/connectors/projects/:projectId/discover/connectors/detail', { params, query: { id: 'native:slack' } });
       detail.status(200);
       const first = detail.json<{ variants: Array<{ kind: string; recommended?: boolean; kortix?: { app: string } }> }>().variants[0];

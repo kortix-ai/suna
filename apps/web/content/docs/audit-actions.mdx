@@ -1034,8 +1034,8 @@ One table per domain. The route column shows the method and route template. `any
 
 | Action | Title | Route |
 | --- | --- | --- |
-| `webhook.agentmail.message.receive` | Received AgentMail inbound email | `POST /v1/webhooks/email/agentmail` |
 | `webhook.daytona.sandbox_lifecycle.receive` | Received Daytona sandbox lifecycle event | `POST /v1/webhooks/sandbox/daytona` |
+| `webhook.email.message.receive` | Received inbound email | `POST /v1/webhooks/email/resend` |
 | `webhook.event.receive` | Received app event | `POST /v1/webhooks/events/:provider` |
 | `webhook.pipedream.connection.receive` | Received Pipedream connection webhook | `POST /v1/connectors/webhook/pipedream` |
 | `webhook.platinum.sandbox_lifecycle.receive` | Received Platinum sandbox lifecycle event | `POST /v1/webhooks/sandbox/platinum` |

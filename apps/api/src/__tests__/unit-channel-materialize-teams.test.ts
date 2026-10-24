@@ -26,7 +26,7 @@ mock.module('../channels/install-store', () => ({
   ensureSlackBotId: async () => null,
   loadSlackInstall: async () => null,
   loadTeamsInstall: async () => (hasTeamsInstall ? { tenantId: 'tenant-1' } : null),
-  listAgentMailInstalls: async () => [],
+  listEmailInstalls: async () => [],
   loadTelegramInstall: async () => null,
 }));
 

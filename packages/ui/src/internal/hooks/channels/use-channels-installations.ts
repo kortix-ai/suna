@@ -137,7 +137,7 @@ export function useEmailMode(projectId: string | null) {
     queryFn: () =>
       projectId
         ? getEmailMode(projectId)
-        : ({ provider: 'agentmail', managed_available: false } satisfies EmailMode),
+        : ({ provider: 'resend', managed_available: false } satisfies EmailMode),
   });
 }
 
@@ -165,7 +165,7 @@ export function useConnectEmail() {
   });
 }
 
-/** The domains an own AgentMail key can create inboxes on. A mutation: it runs when the user enters a key. */
+/** The domains an own Resend API key can create inboxes on. A mutation: it runs when the user enters a key. */
 export function useListEmailDomains() {
   return useMutation({
     mutationFn: ({ projectId, apiKey }: { projectId: string; apiKey: string }) =>

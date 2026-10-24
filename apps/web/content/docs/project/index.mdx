@@ -225,6 +225,7 @@ A toggle of these flags also updates running state. The API response does not wa
 | `agent_rooms` | Rooms | Off | Experimental | Always | Named chat rooms where agent sessions and people post. Off: nothing of Rooms exists in the project. On: the Rooms page, the `kortix rooms` command and the `kortix-rooms` agent skill appear. |
 | `volumes` | Volumes | Off | Experimental | With Platinum (`PLATINUM_API_KEY`) | Shared Files for the project: the Files page and the `drives` flag. See [Files](/docs/work/runtime#files). |
 | `goals` | Goals | Off | Experimental | With Platinum (`PLATINUM_API_KEY`) | An agent owns an objective until an independent check confirms it: it plans, works, waits, chases people, and keeps its state in a `Goals/` folder in Files. Needs `volumes` and `reminders` on. Off: `kortix goals new` refuses; a goal that already exists keeps running. |
+| `email_channel` | Email channel | Off | Experimental | Always | An email to the project's [Resend inbox](/docs/connect/channels#email) starts a session, and a reply continues it. Off: Email is on no surface, and its routes answer `403 feature_disabled`. |
 | `drives` | Files | Follows the project's `volumes` flag | Experimental | With Platinum (`PLATINUM_API_KEY`) | Shared folders under `/drives` in new sessions. See [Files](/docs/work/runtime#files). |
 
 ### When a flag is off

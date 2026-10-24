@@ -145,14 +145,14 @@ describe('connection reachability', () => {
       providerType: 'channel',
       platform: 'email',
       ownerType: 'external',
-      ownerId: 'agentmail:inbox-1',
+      ownerId: 'email:inbox-1',
       metadata: { channel_connection: true, inbox_id: 'inbox-1' },
     });
     expect(managedSystem).toBe(true);
     expect(
       connectionIsReachable({
         ownerType: 'external',
-        ownerId: 'agentmail:inbox-1',
+        ownerId: 'email:inbox-1',
         trustedManagedSystem: managedSystem,
         ...human,
       }),
@@ -165,7 +165,7 @@ describe('connection reachability', () => {
         providerType: 'http',
         platform: null,
         ownerType: 'external',
-        ownerId: 'agentmail:inbox-1',
+        ownerId: 'email:inbox-1',
         metadata: { channel_connection: true, inbox_id: 'inbox-1' },
       }),
     ).toBe(false);
@@ -260,7 +260,7 @@ describe('connection row reachability', () => {
     overrides: Partial<ConnectionReachabilityRow> = {},
   ): ConnectionReachabilityRow => ({
     ownerType: 'external',
-    ownerId: 'agentmail:inbox-1',
+    ownerId: 'email:inbox-1',
     metadata: { channel_connection: true, inbox_id: 'inbox-1' },
     providerType: 'channel',
     connectorConfig: { platform: 'email' },
@@ -302,7 +302,7 @@ describe('connection row reachability', () => {
     ).toBe(false);
     expect(
       connectionRowIsReachable(
-        managedChannelRow({ ownerId: 'agentmail:another-inbox' }),
+        managedChannelRow({ ownerId: 'email:another-inbox' }),
         humanActor('user-1'), 'open'
       ),
     ).toBe(false);

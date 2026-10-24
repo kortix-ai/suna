@@ -250,7 +250,7 @@ app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slac
 app.route('/v1/channels/teams/identity', teamsIdentityApp); // /v1/channels/teams/identity/bind — authed login bind
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
 registerEmailWebhookRoutes();
-app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — AgentMail inbound email (Svix-signed)
+app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/resend — Resend inbound inbox email (Svix-signed)
 registerSendEmailHookRoutes();
 app.route('/v1/webhooks/auth', authEmailHookApp); // /v1/webhooks/auth/send-email — Supabase Auth send-email hook (Standard Webhooks-signed)
 

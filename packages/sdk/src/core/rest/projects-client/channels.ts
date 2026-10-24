@@ -341,15 +341,24 @@ function normalizeEmailInstallation(value: EmailInstallationWire): EmailConnecti
   };
 }
 
+/**
+ * The email provider a server runs: `'resend'` (Resend Inboxes). `'agentmail'`
+ * is what servers before the Resend switch report.
+ */
+export type EmailProvider =
+  | 'resend'
+  /** @deprecated Older servers ran email on AgentMail. Removed in the next major. */
+  | 'agentmail';
+
 export interface EmailMode {
-  provider: 'agentmail';
+  provider: EmailProvider;
   enabled?: boolean;
   managed_available: boolean;
-  /** Where a managed inbox lives: `<username>@<managed_domain>`. Older servers omit it (`agentmail.to`). */
+  /** Where a managed inbox lives: `<username>@<managed_domain>`. Older servers omit it. */
   managed_domain?: string;
 }
 
-const DEFAULT_EMAIL_MODE: EmailMode = { provider: 'agentmail', managed_available: false };
+const DEFAULT_EMAIL_MODE: EmailMode = { provider: 'resend', managed_available: false };
 
 export async function getEmailInstallation(
   projectId: string,
@@ -399,7 +408,7 @@ export async function connectEmail(
   return normalizeEmailInstallation(installation);
 }
 
-/** A DNS record AgentMail needs before a custom domain can send and receive. */
+/** A DNS record the email provider needs before a custom domain can send and receive. */
 export interface EmailDomainRecord {
   type: 'TXT' | 'CNAME' | 'MX';
   name: string;
@@ -409,7 +418,7 @@ export interface EmailDomainRecord {
   reason?: string;
 }
 
-/** A domain an AgentMail account can create inboxes on. `domain_id` is null for `agentmail.to` and the managed domain. */
+/** A domain an email account (Resend) can create inboxes on. `domain_id` is null for the managed domain. */
 export interface EmailDomain {
   domain_id: string | null;
   domain: string;
@@ -417,7 +426,7 @@ export interface EmailDomain {
   /** `status === 'VERIFIED'`: an inbox can be created on it. */
   verified: boolean;
   records: EmailDomainRecord[];
-  /** Why the domain is not verified yet, in AgentMail's words. */
+  /** Why the domain is not verified yet, in the provider's words. */
   reason?: string;
 }
 
@@ -442,7 +451,7 @@ export interface EmailDomainResult {
 }
 
 /**
- * The domains an AgentMail key can create inboxes on. No `apiKey`: the
+ * The domains a Resend API key can create inboxes on. No `apiKey`: the
  * deployment's managed account, which offers its one managed domain. The key
  * travels in the POST body, never in a URL.
  */
@@ -460,7 +469,7 @@ export async function listEmailDomains(
   );
 }
 
-/** Add a custom domain to the AgentMail account of `apiKey`; returns the DNS records to set. */
+/** Add a custom domain to the Resend account of `apiKey`; returns the DNS records to set. */
 export async function addEmailDomain(
   projectId: string,
   input: { apiKey: string; domain: string },
@@ -475,7 +484,7 @@ export async function addEmailDomain(
   );
 }
 
-/** Ask AgentMail to check a custom domain's DNS records again. */
+/** Ask Resend to check a custom domain's DNS records again. */
 export async function verifyEmailDomain(
   projectId: string,
   input: { apiKey: string; domainId: string },

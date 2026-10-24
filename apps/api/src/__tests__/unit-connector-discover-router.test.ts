@@ -71,6 +71,36 @@ describe('Discover catalogue routes', () => {
     expect(seen).toHaveLength(3);
   });
 
+  test('Email is hidden from the catalogue until the project turns email_channel on', async () => {
+    let flags = new Set(['connectors_v2']);
+    const items = [
+      { id: 'native:slack', name: 'Slack' },
+      { id: 'native:email', name: 'Email' },
+    ];
+    const app = createConnectorRouter(
+      deps({
+        featureFlagEnabled: async (_projectId, key) => flags.has(key),
+        listDiscoverConnectors: async () => ({ items, total: 2, hasMore: false }),
+        listDiscoverSections: async () => ({ sections: [{ key: 'kortix', total: 2, items }] }),
+        getDiscoverConnector: async (id) => ({ item: { id }, variants: [] }),
+      }),
+    );
+    const list = await request(app, `/projects/${PROJECT}/discover/connectors`, { headers: ADMIN });
+    expect(await list.json()).toEqual({ items: [items[0]], total: 1, hasMore: false });
+    const sections = await request(app, `/projects/${PROJECT}/discover/sections`, { headers: ADMIN });
+    expect(await sections.json()).toEqual({ sections: [{ key: 'kortix', total: 1, items: [items[0]] }] });
+    // The old `channel:email` id is the same app: hidden too.
+    for (const id of ['native:email', 'channel:email']) {
+      const detail = await request(app, `/projects/${PROJECT}/discover/connectors/detail?id=${id}`, { headers: ADMIN });
+      expect(detail.status).toBe(404);
+    }
+
+    flags = new Set(['connectors_v2', 'email_channel']);
+    const on = await request(app, `/projects/${PROJECT}/discover/connectors`, { headers: ADMIN });
+    expect(await on.json()).toEqual({ items, total: 2, hasMore: false });
+    expect((await request(app, `/projects/${PROJECT}/discover/connectors/detail?id=native:email`, { headers: ADMIN })).status).toBe(200);
+  });
+
   test('sections forward their limits behind admin and the Discover flag', async () => {
     const seen: unknown[] = [];
     let flag = true;

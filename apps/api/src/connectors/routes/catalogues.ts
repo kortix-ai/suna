@@ -1,7 +1,7 @@
 /** Catalogue browse routes: Discover (integrations.sh, or everything under connectors_v2), easy-connect toolkits, Pipedream apps. */
 import { withDirectIds, withDirectMcpUrls } from '../connect-direct-twins';
 import { CatalogInstallError, catalogInstallDraft } from '../catalog-install';
-import type { ConnectorCatalogDetail } from '../connector-catalog';
+import { type ConnectorCatalogDetail, canonicalCatalogId } from '../connector-catalog';
 import { allowedSourceValidationResponse } from './admin';
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
@@ -62,7 +62,8 @@ export function registerDiscoverRoutes(app: OpenAPIHono, deps: ConnectorRouterDe
       if (!deps.listDiscoverConnectors) return c.json({ error: 'catalogue unavailable' }, 502);
       const limit = Number(c.req.query('limit'));
       try {
-        return c.json(
+        const hidden = await hiddenKortixApps(deps, projectId);
+        return c.json(withoutHidden(
           await deps.listDiscoverConnectors({
             catalogue,
             q: c.req.query('q') || undefined,
@@ -72,7 +73,7 @@ export function registerDiscoverRoutes(app: OpenAPIHono, deps: ConnectorRouterDe
             ...(oneClickQuery(c) ? { oneClick: true } : {}),
             ...kindsQuery(c),
           }),
-        );
+        hidden));
       } catch (error) {
         return c.json({ error: (error as Error).message || 'catalogue unavailable' }, 502);
       }
@@ -114,7 +115,8 @@ export function registerDiscoverRoutes(app: OpenAPIHono, deps: ConnectorRouterDe
       const perCategory = Number(c.req.query('perCategory'));
       const maxCategories = Number(c.req.query('maxCategories'));
       try {
-        return c.json(
+        const hidden = await hiddenKortixApps(deps, projectId);
+        return c.json(withoutHidden(
           await deps.listDiscoverSections({
             catalogue,
             ...(Number.isFinite(perCategory) && perCategory > 0 ? { perCategory } : {}),
@@ -122,7 +124,7 @@ export function registerDiscoverRoutes(app: OpenAPIHono, deps: ConnectorRouterDe
             ...(oneClickQuery(c) ? { oneClick: true } : {}),
             ...kindsQuery(c),
           }),
-        );
+        hidden));
       } catch (error) {
         return c.json({ error: (error as Error).message || 'catalogue unavailable' }, 502);
       }
@@ -157,7 +159,7 @@ export function registerDiscoverDetailRoutes(app: OpenAPIHono, deps: ConnectorRo
       if (!catalogue) return c.json(featureDisabledBody('connectors_api_discover'), 403);
       if (!deps.getDiscoverConnector) return c.json({ error: 'catalogue unavailable' }, 502);
       try {
-        return c.json(await deps.getDiscoverConnector(c.req.query('id'), catalogue));
+        return c.json(await visibleDetail(deps, projectId, c.req.query('id'), catalogue));
       } catch (error) {
         const message = (error as Error).message || 'catalogue unavailable';
         return c.json({ error: message }, message === 'Connector not found' ? 404 : 502);
@@ -201,7 +203,7 @@ function registerDiscoverToolsAndInstallRoutes(app: OpenAPIHono, deps: Connector
       if (!deps.getDiscoverConnector || !deps.discoverConnectorTools) return c.json({ error: 'catalogue unavailable' }, 502);
       let detail: ConnectorCatalogDetail;
       try {
-        detail = (await deps.getDiscoverConnector(c.req.query('id') ?? '', catalogue)) as ConnectorCatalogDetail;
+        detail = (await visibleDetail(deps, projectId, c.req.query('id') ?? '', catalogue)) as ConnectorCatalogDetail;
       } catch (error) {
         const message = (error as Error).message || 'catalogue unavailable';
         return c.json({ error: message }, message === 'Connector not found' ? 404 : 502);
@@ -254,7 +256,7 @@ function registerDiscoverToolsAndInstallRoutes(app: OpenAPIHono, deps: Connector
       const body = parsed.data;
       let detail: ConnectorCatalogDetail;
       try {
-        detail = (await deps.getDiscoverConnector(body.id, catalogue)) as ConnectorCatalogDetail;
+        detail = (await visibleDetail(deps, projectId, body.id, catalogue)) as ConnectorCatalogDetail;
       } catch (error) {
         const message = (error as Error).message || 'catalogue unavailable';
         return c.json({ error: message }, message === 'Connector not found' ? 404 : 502);
@@ -302,6 +304,39 @@ function registerDiscoverToolsAndInstallRoutes(app: OpenAPIHono, deps: Connector
       }
     },
   );
+}
+
+/**
+ * The Kortix apps a project cannot use yet: Email is behind its own flag
+ * (`email_channel`). Hidden from the listings, and its detail answers 404.
+ */
+async function hiddenKortixApps(deps: ConnectorRouterDeps, projectId: string): Promise<Set<string>> {
+  return (await deps.featureFlagEnabled(projectId, 'email_channel')) ? new Set() : new Set(['native:email']);
+}
+
+/** `result` without the hidden app records, each list's `total` lowered to match. */
+function withoutHidden(result: unknown, hidden: Set<string>): unknown {
+  if (hidden.size === 0 || !result || typeof result !== 'object') return result;
+  if (Array.isArray(result)) return result.map((item) => withoutHidden(item, hidden));
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(result)) out[key] = withoutHidden(value, hidden);
+  if (Array.isArray(out.items)) {
+    const kept = (out.items as Array<{ id?: unknown }>).filter((item) => !hidden.has(String(item?.id ?? '')));
+    if (typeof out.total === 'number') out.total = Math.max(0, out.total - (out.items.length - kept.length));
+    out.items = kept;
+  }
+  return out;
+}
+
+/** The detail lookup, refusing a hidden app as unknown. */
+async function visibleDetail(
+  deps: ConnectorRouterDeps,
+  projectId: string,
+  id: string,
+  catalogue: 'kortix' | 'integrations',
+): Promise<unknown> {
+  if ((await hiddenKortixApps(deps, projectId)).has(canonicalCatalogId(id))) throw new Error('Connector not found');
+  return deps.getDiscoverConnector!(id, catalogue);
 }
 
 /**

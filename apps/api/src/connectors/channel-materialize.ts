@@ -1,7 +1,7 @@
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import {
-  listAgentMailInstalls,
+  listEmailInstalls,
   loadSlackInstall,
   loadTeamsInstall,
   loadTelegramInstall,
@@ -116,7 +116,11 @@ export async function synthesizeChannelConnectors(
     specs.push(channelSpec('telegram', telegramSlug));
   }
 
-  const emailInstalls = await listAgentMailInstalls(projectId).catch(() => []);
+  if (!resolveFeatureFlag(project.metadata, 'email_channel')) {
+    return specs;
+  }
+
+  const emailInstalls = await listEmailInstalls(projectId).catch(() => []);
   const canonicalEmailSlug = channelDefaultSlug('email');
   if (emailInstalls.length > 0 && !channelAlreadyDeclared(declared, 'email', canonicalEmailSlug)) {
     specs.push(channelSpec('email', canonicalEmailSlug, channelLabel('email')));

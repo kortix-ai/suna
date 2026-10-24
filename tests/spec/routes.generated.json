@@ -3604,7 +3604,7 @@
     },
     {
       "method": "POST",
-      "path": "/v1/webhooks/email/agentmail"
+      "path": "/v1/webhooks/email/resend"
     },
     {
       "method": "POST",

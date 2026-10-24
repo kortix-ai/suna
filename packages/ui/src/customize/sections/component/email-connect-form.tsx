@@ -1,12 +1,14 @@
 'use client';
 
 /**
- * Connect Email: give the agent an inbox. Two homes for it:
- *   - Kortix managed: the deployment's AgentMail account, on its managed
- *     domain (`mode.managed_domain`, `agentmail.to` unless configured).
- *   - Your AgentMail account: your key, on `agentmail.to` or any domain you
- *     verified there. A new domain is added here and shows the DNS records
- *     to set, with one-click setup when the DNS provider supports it.
+ * Connect Email: give the agent a Resend inbox. Two homes for it:
+ *   - Your Resend account (first, and the default): your API key, on any
+ *     domain you verified there with receiving on. A new domain is added here
+ *     and shows the DNS records to set, with "Check again" until Resend
+ *     verifies it.
+ *   - Kortix managed: the deployment's Resend team on its managed domain
+ *     (`mode.managed_domain`). Offered only where the operator turned it on
+ *     (`mode.managed_available`).
  * Then who may email the agent: a new inbox starts sessions on this
  * project's credits, so the preselected choice is the viewer alone, or their
  * work domain. "Anyone" stays one click away.
@@ -37,8 +39,13 @@ import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, Sele
 import { Textarea } from '../../../primitives/textarea';
 import { UiLink as Link, useUiViewer } from '../../../providers/ui-provider';
 
-const AGENTMAIL_DOMAIN = 'agentmail.to';
 const ADD_DOMAIN = '__add__';
+/** What an own-key inbox needs, at Resend. */
+const RESEND_LINKS = {
+  apiKeys: 'https://resend.com/api-keys',
+  inboxes: 'https://resend.com/docs/dashboard/inboxes/introduction',
+  receiving: 'https://resend.com/docs/dashboard/receiving/custom-domains',
+} as const;
 
 // ponytail: a short list of public mail providers, so "people at gmail.com" is
 // never offered as a team. A provider not listed only changes the preselection.
@@ -107,14 +114,18 @@ export function EmailConnectForm({
   const viewerEmail = useUiViewer()?.email?.trim().toLowerCase() || null;
   const teamDomain = teamDomainOf(viewerEmail);
 
+  // Kortix managed is a second, optional home: the operator turns it on for
+  // the whole deployment (RESEND_MANAGED_EMAIL_ENABLED), never a project.
   const managedAvailable = mode.data?.managed_available === true;
-  const managedDomain = mode.data?.managed_domain || AGENTMAIL_DOMAIN;
+  // An older server omits it; the address preview then shows "…".
+  const managedDomain = mode.data?.managed_domain || '…';
   const [homeChoice, setHome] = useState<Home | null>(null);
   // Until the user picks, the home follows what the deployment offers.
-  const home: Home = homeChoice ?? (managedAvailable ? 'managed' : 'own');
+  const home: Home = managedAvailable ? (homeChoice ?? 'own') : 'own';
 
   const [apiKey, setApiKey] = useState('');
-  const [domain, setDomain] = useState(AGENTMAIL_DOMAIN);
+  // '' until the user picks: then the first verified domain of the key's account.
+  const [domainChoice, setDomain] = useState('');
   const [added, setAdded] = useState<EmailDomain[]>([]);
   const [username, setUsername] = useState(() => defaultUsername(connectorSlug));
   const [displayName, setDisplayName] = useState('Kortix Agent');
@@ -139,16 +150,16 @@ export function EmailConnectForm({
     const listed = home === 'own' && key ? (listDomains.data?.domains ?? []) : [];
     const byName = new Map<string, EmailDomain>();
     for (const d of [...listed, ...added]) byName.set(d.domain, d);
-    if (!byName.has(AGENTMAIL_DOMAIN)) {
-      byName.set(AGENTMAIL_DOMAIN, { domain_id: null, domain: AGENTMAIL_DOMAIN, status: 'VERIFIED', verified: true, records: [] });
-    }
     return [...byName.values()];
   }, [added, home, key, listDomains.data]);
+  // A Resend account has no shared domain: an inbox lives on one of its own.
+  const domain =
+    domainChoice || ownDomains.find((d) => d.verified)?.domain || ownDomains[0]?.domain || (key ? ADD_DOMAIN : '');
 
   const selected = home === 'own' ? ownDomains.find((d) => d.domain === domain) : undefined;
-  const addressDomain = home === 'managed' ? managedDomain : domain === ADD_DOMAIN ? '…' : domain;
+  const addressDomain = home === 'managed' ? managedDomain : !domain || domain === ADD_DOMAIN ? '…' : domain;
   const address = `${username || 'agent'}@${addressDomain}`;
-  const domainReady = home === 'managed' || (domain !== ADD_DOMAIN && selected?.verified !== false);
+  const domainReady = home === 'managed' || (Boolean(domain) && domain !== ADD_DOMAIN && selected?.verified !== false);
 
   const submit = () => {
     setError(null);
@@ -168,7 +179,7 @@ export function EmailConnectForm({
           ? { inbox_id: inboxId.trim(), email: inboxEmail.trim() }
           : {
               username: username.trim() || undefined,
-              ...(home === 'own' && domain !== AGENTMAIL_DOMAIN ? { domain } : {}),
+              ...(home === 'own' ? { domain } : {}),
             }),
         sender_policy: policy,
       },
@@ -179,17 +190,34 @@ export function EmailConnectForm({
   return (
     <div className="space-y-6">
       <section className="space-y-3">
-        <h3 className="text-foreground text-sm font-medium">{t('homeTitle')}</h3>
-        <RadioGroup value={home} onValueChange={(v) => setHome(v as Home)} className="grid gap-2 sm:grid-cols-2">
-          <RadioGroupItem
-            value="managed"
-            variant="outline"
-            disabled={!managedAvailable}
-            label={t('homeManaged')}
-            description={managedAvailable ? t('homeManagedHint', { domain: managedDomain }) : t('homeManagedOff')}
-          />
-          <RadioGroupItem value="own" variant="outline" label={t('homeOwn')} description={t('homeOwnHint')} />
-        </RadioGroup>
+        <h3 className="text-foreground text-sm font-medium">{managedAvailable ? t('homeTitle') : t('homeOwn')}</h3>
+        {managedAvailable ? (
+          <RadioGroup value={home} onValueChange={(v) => setHome(v as Home)} className="grid gap-2 sm:grid-cols-2">
+            <RadioGroupItem value="own" variant="outline" label={t('homeOwn')} description={t('homeOwnHint')} />
+            <RadioGroupItem
+              value="managed"
+              variant="outline"
+              label={t('homeManaged')}
+              description={t('homeManagedHint', { domain: managedDomain })}
+            />
+          </RadioGroup>
+        ) : null}
+        {home === 'own' ? (
+          <p className="text-muted-foreground text-sm text-pretty">
+            {t('ownNeeds')}{' '}
+            <Link href={RESEND_LINKS.apiKeys} target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">
+              {t('linkApiKeys')}
+            </Link>
+            {' · '}
+            <Link href={RESEND_LINKS.receiving} target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">
+              {t('linkReceiving')}
+            </Link>
+            {' · '}
+            <Link href={RESEND_LINKS.inboxes} target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">
+              {t('linkInboxes')}
+            </Link>
+          </p>
+        ) : null}
         {home === 'own' ? (
           <Field>
             <FieldLabel htmlFor="email-connect-key">{t('keyLabel')}</FieldLabel>
@@ -198,7 +226,7 @@ export function EmailConnectForm({
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="am_…"
+              placeholder="re_…"
               autoComplete="off"
               spellCheck={false}
             />

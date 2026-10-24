@@ -8,13 +8,17 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 let canWrite = true;
+let emailChannel = true;
 const emailInstall = mock(() => ({ data: null, isLoading: false }));
 const disconnected = () => ({ data: null, isLoading: false });
 const disconnect = () => ({ isPending: false, mutate: mock() });
 
 mock.module('@kortix/sdk/react', () => ({
   ...sdkReact,
-  useFeatureFlag: () => ({ enabled: true, isLoading: false }),
+  useFeatureFlag: (_projectId: string, key: string) => ({
+    enabled: key === 'email_channel' ? emailChannel : true,
+    isLoading: false,
+  }),
   useVisibleAgents: () => [],
   useRuntimeProviders: disconnected,
   modelKeyToWire: ({ providerID, modelID }: { providerID: string; modelID: string }) =>
@@ -87,13 +91,32 @@ function renderEmail() {
 
 beforeEach(() => {
   canWrite = true;
+  emailChannel = true;
   emailInstall.mockClear();
 });
 
-// The `agentmail_email` flag graduated (2026-10-24): Email is on for every
-// project, drawn as its hero like every other Kortix channel.
+// Email (Resend Inboxes) is experimental behind the `email_channel` flag: on,
+// it is a hero like every other Kortix channel; off, it is on no surface.
 describe('ChannelsSection — Email', () => {
-  test('every project gets the Email hero with Connect, and no Feature flags detour', () => {
+  test('flag off: no Email hero, and its install is never read', () => {
+    emailChannel = false;
+    const markup = renderEmail();
+    expect(markup).not.toContain('Give your agent an inbox');
+    expect(emailInstall).toHaveBeenCalledWith(null, 'kortix_email');
+  });
+
+  test("flag off: Email's own page is the standard flag-off screen", () => {
+    emailChannel = false;
+    const markup = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <ChannelsSection projectId="email-test" platform="email" />
+      </QueryClientProvider>,
+    );
+    expect(markup).toContain('Email channel');
+    expect(markup).not.toContain('Give your agent an inbox');
+  });
+
+  test('flag on: the Email hero with Connect, and no Feature flags detour', () => {
     const markup = renderEmail();
     expect(markup).toContain('Give your agent an inbox');
     expect(markup).toContain('>Connect</button>');

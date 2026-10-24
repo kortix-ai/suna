@@ -14,7 +14,7 @@ import { db } from '../../shared/db';
 export interface ChatThreadKey {
   /** `slack`, `teams`, `email`, or `telegram` (the `chat_threads.platform` column). */
   platform: string;
-  /** Slack team, Teams tenant, or AgentMail inbox. */
+  /** Slack team, Teams tenant, or email (Resend) inbox. */
   workspaceId: string;
   threadId: string;
 }

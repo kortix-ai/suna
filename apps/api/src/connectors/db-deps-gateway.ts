@@ -9,13 +9,13 @@ import {
 } from '@kortix/db';
 import { appAuthorizationForConnectorCall } from '../apps/connector-assertion';
 import { and, desc, eq, gt, isNotNull, isNull, sql } from 'drizzle-orm';
-import { resolveAgentMailApiKey } from '../channels/agentmail-api';
+import { resolveEmailApiKey } from '../channels/resend-email-api';
 import { bindSlackThreadToSession } from '../channels/slack/binding';
 import { slackUserNames } from '../channels/slack/labels';
 import {
-  loadAgentMailApiKeyForInbox,
-  loadAgentMailApiKeyForProject,
-  loadAgentMailInstall,
+  loadEmailApiKeyForInbox,
+  loadEmailApiKeyForProject,
+  loadEmailInstall,
   loadSlackTeamIdForProject,
   loadSlackTokenForProject,
   loadTeamsBotCredentials,
@@ -201,7 +201,7 @@ async function channelToken(
     return graphToken(tenant, creds).catch(() => null);
   }
   if (platform === 'email')
-    return resolveAgentMailApiKey(await loadAgentMailApiKeyForProject(projectId, slug));
+    return resolveEmailApiKey(await loadEmailApiKeyForProject(projectId, slug));
   if (platform === 'telegram') return loadTelegramBotToken(projectId);
   return null;
 }
@@ -463,11 +463,11 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     gateChannelWrite: (input) => gateChannelWrite(input),
     loadEmailSessionContext: async () => null,
     loadEmailConnectorContext: async (projectId, connectorSlug) => {
-      const install = await loadAgentMailInstall(projectId, connectorSlug).catch(() => null);
+      const install = await loadEmailInstall(projectId, connectorSlug).catch(() => null);
       return install?.inboxId ? { inboxId: install.inboxId } : null;
     },
     resolveEmailCredentialForInbox: async (projectId, inboxId) =>
-      resolveAgentMailApiKey(await loadAgentMailApiKeyForInbox(projectId, inboxId)),
+      resolveEmailApiKey(await loadEmailApiKeyForInbox(projectId, inboxId)),
     loadPolicies: loadConnectorPoliciesFor,
     loadProjectPolicies: loadProjectPoliciesFor,
     loadDefaultMode: loadDefaultModeFor,

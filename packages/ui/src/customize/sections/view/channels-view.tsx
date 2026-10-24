@@ -168,6 +168,7 @@ import { UiLink as Link, useUiPathname, useUiRouter, useUiSearchParams } from '.
 import { useEffect, useMemo, useState } from 'react';
 import { useTunnelConnections } from '@kortix/sdk/react';
 import { ComputerHero } from '../../connectors/detail/computer-app-page';
+import { FeatureGateScreen } from '../../shared/feature-gate-screen';
 
 /** Reserved slug for the built-in Email channel (see api connectors.ts). */
 const EMAIL_CONNECTOR_SLUG = 'kortix_email';
@@ -187,9 +188,16 @@ export function ChannelsSection({ projectId, platform }: { projectId: string; pl
   const { data: teamsMode } = useTeamsMode(projectId);
   // Not connected, Teams gets the same hero as Slack; connected, it is a row.
   const teamsHero = !teamsInstall && Boolean(teamsMode?.enabled);
-  // Email is on for every project (its `agentmail_email` flag graduated on 2026-10-24).
-  const { data: emailInstall, isLoading: loadingEmail } = useEmailInstall(projectId, EMAIL_CONNECTOR_SLUG);
-  const loading = loadingInstall || loadingMode || loadingEmail;
+  // Email (Resend Inboxes) is experimental behind `email_channel`. Off, it is on
+  // no surface, and its install is never read.
+  const emailFlag = useFeatureFlag(projectId, 'email_channel');
+  const emailEnabled = emailFlag.enabled;
+  const { data: emailInstall, isLoading: loadingEmail } = useEmailInstall(
+    emailEnabled ? projectId : null,
+    EMAIL_CONNECTOR_SLUG,
+  );
+  const loading = loadingInstall || loadingMode || emailFlag.isLoading || (emailEnabled && loadingEmail);
+  const tPages = useTranslations('connectorPages');
   const oauthInstallUrl = mode?.oauth_available ? mode.install_url : null;
   const canWrite =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE).allowed === true;
@@ -208,7 +216,12 @@ export function ChannelsSection({ projectId, platform }: { projectId: string; pl
   // platform, the Channels tab every platform, one under the other.
   const platforms: ChannelPlatform[] = platform
     ? [platform]
-    : ['slack', 'teams', 'email', ...(telegramEnabled ? (['telegram'] as const) : [])];
+    : [
+        'slack',
+        'teams',
+        ...(emailEnabled ? (['email'] as const) : []),
+        ...(telegramEnabled ? (['telegram'] as const) : []),
+      ];
   // The Kortix tab also holds the computer, where this deployment can pair one
   // (the machine list answers 503 where computers are off).
   const computersEnabled = useTunnelConnections({ refetchInterval: false }).isSuccess;
@@ -253,6 +266,17 @@ export function ChannelsSection({ projectId, platform }: { projectId: string; pl
         return <TelegramChannelRow projectId={projectId} canWrite={canWrite} />;
     }
   };
+
+  // The Email page with the flag off: the standard flag-off screen, with its enable action.
+  if (platform === 'email' && !emailFlag.isLoading && !emailEnabled) {
+    return (
+      <FeatureGateScreen
+        featureKey="email_channel"
+        featureName={tPages('emailGateName')}
+        description={tPages('emailGateDescription')}
+      />
+    );
+  }
 
   return (
     /* Full width of the Connectors shell: the heroes are split cards whose
@@ -1162,7 +1186,7 @@ function EmailChannelRow({
         <ModalContent className="lg:max-w-2xl">
           <ModalHeader>
             <ModalTitle>{tI18nComplete.raw('text3de5e2a29bbc')}</ModalTitle>
-            <ModalDescription>{tI18nComplete.raw('texte13e04973080')}</ModalDescription>
+            <ModalDescription>{tI18nComplete.raw('text000a82dd887b')}</ModalDescription>
           </ModalHeader>
           <ModalBody className="max-h-[75vh] overflow-y-auto">
             <EmailConnectForm

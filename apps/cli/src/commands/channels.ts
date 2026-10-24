@@ -42,11 +42,15 @@ Subcommands:
                           manifest from the server. The one-click install
                           never needs this.
 
-Email (AgentMail):
+Email (Resend Inboxes, experimental — kortix projects features enable email_channel;
+  your own Resend account: https://resend.com/docs/dashboard/inboxes/introduction):
   email status [--json]           Inbox + delivery mode for one connector.
-  email connect [options]         Create (or attach) the inbox.
+  email connect --api-key <re_…>  Create (or attach) the inbox on your Resend
+                                  account. A key from resend.com/api-keys, on
+                                  a domain with receiving on. Without a key:
+                                  only where Kortix-managed email is on.
   email domains [--api-key k]     Domains an inbox can use (no key: the managed one).
-  email domains add <domain>      Add a custom domain to your AgentMail account
+  email domains add <domain>      Add a custom domain to your Resend account
                                   (--api-key); prints the DNS records to set.
   email domains verify <id>       Check that domain's DNS records again.
   email disconnect                Drop the inbox connection.
@@ -76,13 +80,13 @@ Connect options:
                           SLACK_SIGNING_SECRET. Or \`-\` for stdin.
 
 Email options:
+  --api-key <re_…>        Your Resend API key (full access). Or \`-\` for stdin.
+                          Required unless Kortix-managed email is on.
   --connector <slug>      Which email connector (default: kortix_email).
-  --api-key <k>           Bring your own AgentMail key instead of the managed
-                          one. Or \`-\` for stdin.
   --display-name <n>      From-name on outgoing mail (default: project name).
   --username <u>          Local part of a NEW managed inbox.
   --domain <d>            Domain of a NEW managed inbox.
-  --inbox-id <id>         Attach an EXISTING AgentMail inbox. Needs --email too.
+  --inbox-id <id>         Attach an EXISTING Resend inbox. Needs --email too.
   --email <addr>          That inbox's address. Needs --inbox-id too.
   --allow <email|@domain> Repeatable. Only these senders reach the agent. A bare
                           value with no \`@\` (or a leading \`@\`) is a DOMAIN.
@@ -261,7 +265,7 @@ async function allChannelsStatus(
         `CHANNEL  STATUS\n` +
           `slack    ${slack ? 'connected' : 'not connected'}\n` +
           `teams    ${teams ? 'connected' : 'not connected'}\n` +
-          `email    ${!mode.enabled ? 'off on this server (older Kortix version)' : email ? 'connected' : 'not connected'}\n` +
+          `email    ${!mode.enabled ? 'off (kortix projects features enable email_channel)' : email ? 'connected' : 'not connected'}\n` +
           `\nDetails: kortix channels status --platform <slack|teams> or kortix channels email status\n`,
       );
     }
