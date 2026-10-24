@@ -1,14 +1,16 @@
-import type { ConnectorEffectivePolicy } from '@kortix/sdk';
+import type { ConnectorAction, ConnectorEffectivePolicy } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import {
   applyBulkPolicy,
   effectiveChoice,
-  inheritedBaseAction,
+  connectorDefaultAction,
+  inheritedAction,
   isLockedByProject,
   isPatternRule,
   orderPolicyRules,
   previewEffective,
+  summarizeToolDecisions,
   toolChoice,
 } from './tool-policy';
 
@@ -285,11 +287,20 @@ describe('policy set scope', () => {
       'default',
     );
   });
-  test('inheritedBaseAction names the base action only for an inherited tool in a set', () => {
-    const entries = [eff('a', 'block', 'connector'), eff('b', 'block', 'policy_set')];
-    expect(inheritedBaseAction('a', entries, 'set')).toBe('block');
-    expect(inheritedBaseAction('b', entries, 'set')).toBeNull();
-    expect(inheritedBaseAction('a', entries, 'base')).toBeNull();
+  test('inheritedAction: a set inherits what the base rules decide', () => {
+    const base = [eff('a', 'block', 'connector')];
+    // The set has its own rule on `a`: Inherit still names the base answer.
+    expect(inheritedAction('a', 'always_run', [eff('a', 'always_run', 'policy_set')], base, 'set', 'require_approval')).toBe('block');
+    // No base entry: the connector default.
+    expect(inheritedAction('b', 'default', [], base, 'set', 'require_approval')).toBe('require_approval');
+  });
+  test('inheritedAction: on Default the own entry is the answer, otherwise the connector default', () => {
+    const own = [eff('a', 'always_run', 'allow_all')];
+    expect(inheritedAction('a', 'default', own, [], 'base', 'require_approval')).toBe('always_run');
+    // A tool with its own rule: its entry is that rule, not what Default resolves to.
+    expect(inheritedAction('a', 'block', [eff('a', 'block', 'connector')], [], 'base', 'always_run')).toBe('always_run');
+    // The base list never reads baseEffective.
+    expect(inheritedAction('a', 'default', [], [eff('a', 'block', 'connector')], 'base', 'always_run')).toBe('always_run');
   });
   test('previewEffective in a set moves the entry to the set scope', () => {
     expect(previewEffective([eff('a', 'block', 'connector')], ['a'], 'always_run', 'set')).toEqual([
@@ -318,5 +329,68 @@ describe('conditional rules', () => {
   });
   test('a conditional rule is not read as the tool decision', () => {
     expect(toolChoice('send_email', [conditional], [])).toBe('default');
+  });
+});
+
+const tool = (path: string, risk: ConnectorAction['risk']): ConnectorAction => ({
+  path,
+  name: path,
+  description: '',
+  risk,
+  inputSchema: null,
+});
+
+describe('connectorDefaultAction', () => {
+  test('reads run and writes ask; sensitive asks for all; allow_all runs all', () => {
+    expect(connectorDefaultAction(false, 'risk', 'read')).toBe('always_run');
+    expect(connectorDefaultAction(false, 'risk', 'write')).toBe('require_approval');
+    expect(connectorDefaultAction(false, undefined, 'destructive')).toBe('require_approval');
+    expect(connectorDefaultAction(true, 'allow_all', 'read')).toBe('require_approval');
+    expect(connectorDefaultAction(false, 'allow_all', 'destructive')).toBe('always_run');
+  });
+});
+
+describe('summarizeToolDecisions', () => {
+  const actions = [tool('a', 'read'), tool('b', 'write'), tool('c', 'write'), tool('d', 'read')];
+  const fallback = (action: ConnectorAction) => connectorDefaultAction(false, 'risk', action.risk);
+
+  test('counts what each tool does from the server answer, and what the list changes', () => {
+    const effective = [
+      eff('a', 'always_run', 'risk_default'),
+      eff('b', 'block', 'connector'),
+      eff('c', 'require_approval', 'risk_default'),
+      eff('d', 'block', 'project'),
+    ];
+    expect(summarizeToolDecisions(actions, [], effective, 'base', fallback)).toEqual({
+      total: 4,
+      block: 2,
+      ask: 1,
+      run: 1,
+      // `b` only: `d` is decided by a project rule, not this list.
+      changed: 1,
+    });
+  });
+
+  test('a set counts only its own rules as changed', () => {
+    const effective = [
+      eff('a', 'block', 'policy_set'),
+      eff('b', 'block', 'connector'),
+      eff('c', 'require_approval', 'risk_default'),
+      eff('d', 'always_run', 'risk_default'),
+    ];
+    const summary = summarizeToolDecisions(actions, [], effective, 'set', fallback);
+    expect(summary.changed).toBe(1);
+    expect(summary.block).toBe(2);
+  });
+
+  test('a tool with no entry falls back to its stored rule, then the default', () => {
+    const summary = summarizeToolDecisions(
+      actions,
+      [{ match: 'a', action: 'block' }],
+      [],
+      'base',
+      fallback,
+    );
+    expect(summary).toEqual({ total: 4, block: 1, ask: 2, run: 1, changed: 1 });
   });
 });

@@ -21160,7 +21160,20 @@
     "allApps": "所有应用",
     "typeFilterKortix": "Kortix",
     "emailGateName": "电子邮件渠道",
-    "emailGateDescription": "给智能体一个 Resend 收件箱：一封邮件会启动会话，回复会继续该会话。"
+    "emailGateDescription": "给智能体一个 Resend 收件箱：一封邮件会启动会话，回复会继续该会话。",
+    "toolsDecisionBlocked": "阻止",
+    "toolsDecisionAsks": "询问",
+    "toolsDecisionRuns": "运行",
+    "toolsInheritAs": "继承 · {action}",
+    "toolsDefaultAs": "默认 · {action}",
+    "toolsSummaryTotal": "{count, plural, other {# 个工具}}",
+    "toolsSummaryBlocked": "{count} 个阻止",
+    "toolsSummaryAsk": "{count} 个先询问",
+    "toolsSummaryRun": "{count} 个运行",
+    "toolsOnlyChanged": "仅显示已更改",
+    "toolsNoneChangedSet": "此规则集尚未更改任何工具。设为继承的工具遵循基本规则。",
+    "toolsNoneChangedBase": "还没有工具有自己的规则。所有工具都遵循连接器默认值。",
+    "toolsChanged": "已更改"
   },
   "connectMcp": {
     "title": "通过 MCP 连接 Kortix",
@@ -22736,11 +22749,6 @@
   "connectorPolicySets": {
     "rulesFor": "规则适用于",
     "baseRules": "基础规则",
-    "newSet": "新建规则集…",
-    "baseHint": "没有规则集的调用方遵循这些规则。规则集会为你分配它的代理更改这些规则。",
-    "setHint": "仅适用于分配了 {name} 的代理。设为“继承”的工具遵循基础规则。",
-    "usedBy": "{agents} 正在使用",
-    "unused": "还没有代理使用此规则集。请在代理的连接器页面中选择它。",
     "edit": "编辑规则集",
     "delete": "删除规则集",
     "deleteInUse": "{agents} 正在使用。请先为这些代理分配其他规则集。",
@@ -22765,8 +22773,6 @@
     "loadFailed": "无法加载规则集",
     "retry": "重试",
     "inherit": "继承",
-    "inheritBase": "继承基础规则:{action}。",
-    "inheritDefault": "继承基础规则。没有基础规则指定此工具,因此由连接器默认值决定。",
     "agentSection": "规则集",
     "agentSelectLabel": "{name} 的规则",
     "agentMissing": "缺失",
@@ -22775,7 +22781,13 @@
     "approvalSet": "规则集 {set}",
     "auditSet": "规则集 {set}",
     "bulkInheritTitle": "将 {count, plural, other {# 个工具}}恢复为基础规则?",
-    "bulkInheritBody": "删除此规则集中 {group} 下每个工具的规则,使其重新遵循基础规则。模式规则保持不变。"
+    "bulkInheritBody": "删除此规则集中 {group} 下每个工具的规则,使其重新遵循基础规则。模式规则保持不变。",
+    "baseContext": "适用于所有没有规则集的智能体。",
+    "usedByLead": "使用者：",
+    "unusedLead": "还没有智能体使用它。",
+    "unusedLink": "在智能体的连接器页面中分配",
+    "editShort": "编辑",
+    "ruleCount": "{count, plural, other {# 条规则}}"
   },
   "sessionChangeRequests": {
     "title": "更改请求",

@@ -4,17 +4,18 @@ import { useTranslations } from '../../../i18n';
 import {
   type ConnectorPolicySet,
   deleteConnectorPolicySet,
+  getConnectorPolicies,
   listConnectorPolicySets,
   renameConnectorPolicySet,
   upsertConnectorPolicySet,
 } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
-import { PencilSimpleIcon, TrashIcon } from '@phosphor-icons/react';
+import { PlusIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useId, useState } from 'react';
+import { Fragment, useEffect, useId, useState } from 'react';
 
 import { Button } from '../../../primitives/button';
-import { ButtonGroup } from '../../../primitives/button-group';
+import { CountBadge } from '../../../primitives/count-badge';
 import { ConfirmDialog } from '../../../primitives/confirm-dialog';
 import { ErrorState } from '../../../primitives/error-state';
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '../../../primitives/field';
@@ -30,35 +31,39 @@ import {
   ModalHeader,
   ModalTitle,
 } from '../../../primitives/modal';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-} from '../../../primitives/select';
 import { Skeleton } from '../../../primitives/skeleton';
+import { Tabs, TabsListCompact, TabsTriggerCompact } from '../../../primitives/tabs';
 import { errorToast, successToast } from '../../../primitives/toast';
 
-import { connectorPolicySetsKey, policySetNameProblem } from '../tools/policy-sets';
+import { agentHref, capabilityTabHref } from '../../../internal/lib/capability-tab-routes';
+import { UiLink as Link } from '../../../providers/ui-provider';
 
-/** Select values that are not set names. A set name starts with [a-z0-9]. */
+import {
+  connectorPoliciesKey,
+  connectorPolicySetsKey,
+  policySetNameProblem,
+} from '../tools/policy-sets';
+
+/** The tab value of the base rules. A set name starts with [a-z0-9]. */
 const BASE_VALUE = '__base';
-const NEW_VALUE = '__new';
 
 /**
- * The rule-list switcher above the Tools tab: "Base rules", each policy set,
- * and "New rule set…". A set gives the agents it is assigned to different
- * rules on this connector, with the same accounts.
+ * The rule-list strip above the Tools tab: "Base rules", each policy set,
+ * then "New rule set". A set gives the agents it is assigned to different
+ * rules on this connector, with the same accounts. Each tab counts the rules
+ * its list holds. Past about six sets the strip scrolls sideways.
+ *
+ * Under the strip, one line says who the selected list applies to: every
+ * agent without a set, or the agents that use this set (each a link to that
+ * agent's Connectors page).
  *
  * The bar owns create, edit (rename + description) and delete. The rules of
  * the selected set are edited by the Tools list below, through the one rule
  * writer (`PUT .../policies?policy_set=<name>`).
  *
- * Delete is refused while an agent uses the set: the list names the agents,
- * so the button is disabled with that reason, and a 409 from a concurrent
- * assignment surfaces the server's message naming them.
+ * Delete is refused while an agent uses the set: the button is disabled with
+ * that reason, and a 409 from a concurrent assignment surfaces the server's
+ * message naming the agents.
  */
 export function ConnectorPolicySetBar({
   projectId,
@@ -80,6 +85,14 @@ export function ConnectorPolicySetBar({
   const setsQuery = useQuery({
     queryKey,
     queryFn: () => listConnectorPolicySets(projectId, slug),
+    enabled: canWrite,
+  });
+  // The same key and fetch as the Tools list's base query, so this is the
+  // one cached request, not a second one.
+  const baseQuery = useQuery({
+    queryKey: connectorPoliciesKey(projectId, slug, null),
+    queryFn: () => getConnectorPolicies(projectId, slug, { policySet: undefined }),
+    staleTime: 5_000,
     enabled: canWrite,
   });
   const sets: ConnectorPolicySet[] = setsQuery.data?.sets ?? [];
@@ -122,7 +135,7 @@ export function ConnectorPolicySetBar({
   });
 
   if (!canWrite) return null;
-  if (setsQuery.isPending) return <Skeleton className="h-8 w-56 rounded-md" />;
+  if (setsQuery.isPending) return <Skeleton className="h-7 w-56 rounded-md" />;
   if (setsQuery.isError) {
     return (
       <ErrorState
@@ -140,73 +153,98 @@ export function ConnectorPolicySetBar({
 
   const agents = selected?.agents ?? [];
   const agentList = agents.join(', ');
+  const ruleCount = (count: number) =>
+    count > 0 ? <CountBadge count={count} aria-label={t('ruleCount', { count })} /> : null;
 
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <Select
-          value={value ?? BASE_VALUE}
-          onValueChange={(next) => {
-            if (next === NEW_VALUE) setEditor({ mode: 'create' });
-            else onChange(next === BASE_VALUE ? null : next);
-          }}
-        >
-          <SelectTrigger size="sm" className="w-full sm:w-56" aria-label={t('rulesFor')}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={BASE_VALUE}>{t('baseRules')}</SelectItem>
-            {sets.map((set) => (
-              <SelectItem key={set.name} value={set.name} description={set.description ?? undefined}>
-                <span className="font-mono">{set.name}</span>
-              </SelectItem>
-            ))}
-            <SelectSeparator />
-            <SelectItem value={NEW_VALUE}>{t('newSet')}</SelectItem>
-          </SelectContent>
-        </Select>
+      <div className="flex min-w-0 items-center gap-2">
+        <div className="min-w-0 overflow-x-auto">
+          <Tabs value={value ?? BASE_VALUE} onValueChange={(next) => onChange(next === BASE_VALUE ? null : next)}>
+            <TabsListCompact aria-label={t('rulesFor')}>
+              <TabsTriggerCompact value={BASE_VALUE}>
+                {t('baseRules')}
+                {ruleCount(baseQuery.data?.policies.length ?? 0)}
+              </TabsTriggerCompact>
+              {sets.map((set) => (
+                <TabsTriggerCompact key={set.name} value={set.name}>
+                  <span className="font-mono">{set.name}</span>
+                  {ruleCount(set.policies.length)}
+                </TabsTriggerCompact>
+              ))}
+            </TabsListCompact>
+          </Tabs>
+        </div>
+        <Button variant="ghost" size="sm" className="shrink-0" onClick={() => setEditor({ mode: 'create' })}>
+          <PlusIcon className="size-3.5 shrink-0" />
+          {t('createTitle')}
+        </Button>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+        <p className="text-muted-foreground min-w-0 text-xs text-pretty">
+          {selected ? (
+            <>
+              {selected.description ? `${selected.description} · ` : null}
+              {agents.length > 0 ? (
+                <>
+                  {t('usedByLead')}{' '}
+                  {agents.map((agent, index) => (
+                    <Fragment key={agent}>
+                      {index > 0 ? ', ' : null}
+                      <Link
+                        href={`${agentHref(projectId, agent)}?section=connectors`}
+                        className="text-foreground underline-offset-4 hover:underline"
+                      >
+                        {agent}
+                      </Link>
+                    </Fragment>
+                  ))}
+                </>
+              ) : (
+                <>
+                  {t('unusedLead')}{' '}
+                  <Link
+                    href={capabilityTabHref(projectId, 'agent')}
+                    className="text-foreground underline-offset-4 hover:underline"
+                  >
+                    {t('unusedLink')}
+                  </Link>
+                </>
+              )}
+            </>
+          ) : (
+            t('baseContext')
+          )}
+        </p>
         {selected ? (
-          <ButtonGroup>
-            <Hint label={t('edit')}>
-              <Button
-                variant="outline"
-                size="icon-base"
-                aria-label={t('edit')}
-                onClick={() => setEditor({ mode: 'edit', set: selected })}
-              >
-                <PencilSimpleIcon className="size-3.5 shrink-0" />
-              </Button>
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
+              variant="ghost"
+              size="xs"
+              aria-label={t('edit')}
+              onClick={() => setEditor({ mode: 'edit', set: selected })}
+            >
+              {t('editShort')}
+            </Button>
+            {/* A disabled button takes no pointer events: the span carries the reason. */}
+            <Hint label={agents.length > 0 ? t('deleteInUse', { agents: agentList }) : t('delete')} side="bottom">
+              <span className="inline-flex">
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  aria-label={t('delete')}
+                  disabled={agents.length > 0 || remove.isPending}
+                  aria-busy={remove.isPending || undefined}
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  {t('deleteConfirm')}
+                </Button>
+              </span>
             </Hint>
-            <Hint label={agents.length > 0 ? t('deleteInUse', { agents: agentList }) : t('delete')}>
-              <Button
-                variant="outline"
-                size="icon-base"
-                aria-label={t('delete')}
-                disabled={agents.length > 0 || remove.isPending}
-                onClick={() => setConfirmDelete(true)}
-              >
-                {remove.isPending ? (
-                  <Loading className="size-3.5 shrink-0" />
-                ) : (
-                  <TrashIcon className="size-3.5 shrink-0" />
-                )}
-              </Button>
-            </Hint>
-          </ButtonGroup>
+          </div>
         ) : null}
       </div>
-      <p className="text-muted-foreground text-xs text-pretty">
-        {selected
-          ? `${selected.description ? `${selected.description} · ` : ''}${
-              agents.length > 0 ? t('usedBy', { agents: agentList }) : t('unused')
-            }`
-          : t('baseHint')}
-      </p>
-      {selected ? (
-        <p className="text-muted-foreground text-xs text-pretty">
-          {t('setHint', { name: selected.name })}
-        </p>
-      ) : null}
 
       <PolicySetEditor
         key={editor ? (editor.mode === 'edit' ? `edit:${editor.set.name}` : 'create') : 'closed'}

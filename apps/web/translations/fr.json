@@ -21160,7 +21160,20 @@
     "allApps": "Toutes les apps",
     "typeFilterKortix": "Kortix",
     "emailGateName": "Canal e-mail",
-    "emailGateDescription": "Donnez à l'agent une boîte Resend : un e-mail démarre une session, une réponse la poursuit."
+    "emailGateDescription": "Donnez à l'agent une boîte Resend : un e-mail démarre une session, une réponse la poursuit.",
+    "toolsDecisionBlocked": "bloqué",
+    "toolsDecisionAsks": "demande",
+    "toolsDecisionRuns": "s'exécute",
+    "toolsInheritAs": "Hériter · {action}",
+    "toolsDefaultAs": "Par défaut · {action}",
+    "toolsSummaryTotal": "{count, plural, one {# outil} other {# outils}}",
+    "toolsSummaryBlocked": "{count} bloqués",
+    "toolsSummaryAsk": "{count} demandent d'abord",
+    "toolsSummaryRun": "{count} s'exécutent",
+    "toolsOnlyChanged": "Modifiés uniquement",
+    "toolsNoneChangedSet": "Cet ensemble de règles ne modifie encore aucun outil. Les outils sur Hériter suivent les règles de base.",
+    "toolsNoneChangedBase": "Aucun outil n'a encore sa propre règle. Chaque outil suit le comportement par défaut du connecteur.",
+    "toolsChanged": "Modifié"
   },
   "connectMcp": {
     "title": "Connecter Kortix via MCP",
@@ -22736,11 +22749,6 @@
   "connectorPolicySets": {
     "rulesFor": "Règles pour",
     "baseRules": "Règles de base",
-    "newSet": "Nouveau jeu de règles…",
-    "baseHint": "Les appelants sans jeu de règles suivent ces règles. Un jeu de règles les modifie pour les agents auxquels vous le donnez.",
-    "setHint": "S'applique uniquement aux agents qui ont {name}. Les outils sur Hériter suivent les règles de base.",
-    "usedBy": "Utilisé par {agents}",
-    "unused": "Aucun agent n'utilise encore ce jeu de règles. Choisissez-le sur la page Connecteurs d'un agent.",
     "edit": "Modifier le jeu de règles",
     "delete": "Supprimer le jeu de règles",
     "deleteInUse": "Utilisé par {agents}. Donnez d'abord un autre jeu de règles à ces agents.",
@@ -22765,8 +22773,6 @@
     "loadFailed": "Impossible de charger les jeux de règles",
     "retry": "Réessayer",
     "inherit": "Hériter",
-    "inheritBase": "Hérite des règles de base : {action}.",
-    "inheritDefault": "Hérite des règles de base. Aucune règle de base ne nomme cet outil, donc la valeur par défaut du connecteur décide.",
     "agentSection": "Jeux de règles",
     "agentSelectLabel": "Règles pour {name}",
     "agentMissing": "Manquant",
@@ -22775,7 +22781,13 @@
     "approvalSet": "Jeu de règles {set}",
     "auditSet": "jeu de règles {set}",
     "bulkInheritTitle": "Remettre {count, plural, one {# outil} other {# outils}} sur les règles de base ?",
-    "bulkInheritBody": "Supprime la règle de ce jeu pour chaque outil listé sous {group}, pour que chacun suive à nouveau les règles de base. Les règles de motif ne changent pas."
+    "bulkInheritBody": "Supprime la règle de ce jeu pour chaque outil listé sous {group}, pour que chacun suive à nouveau les règles de base. Les règles de motif ne changent pas.",
+    "baseContext": "S'applique à chaque agent sans ensemble de règles.",
+    "usedByLead": "Utilisé par",
+    "unusedLead": "Aucun agent ne l'utilise encore.",
+    "unusedLink": "Attribuez-le à un agent sur sa page Connecteurs",
+    "editShort": "Modifier",
+    "ruleCount": "{count, plural, one {# règle} other {# règles}}"
   },
   "sessionChangeRequests": {
     "title": "Demandes de modification",

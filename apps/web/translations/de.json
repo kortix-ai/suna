@@ -21160,7 +21160,20 @@
     "allApps": "Alle Apps",
     "typeFilterKortix": "Kortix",
     "emailGateName": "E-Mail-Kanal",
-    "emailGateDescription": "Gib dem Agenten ein Resend-Postfach: Eine E-Mail startet eine Session, eine Antwort setzt sie fort."
+    "emailGateDescription": "Gib dem Agenten ein Resend-Postfach: Eine E-Mail startet eine Session, eine Antwort setzt sie fort.",
+    "toolsDecisionBlocked": "blockiert",
+    "toolsDecisionAsks": "fragt",
+    "toolsDecisionRuns": "läuft",
+    "toolsInheritAs": "Erben · {action}",
+    "toolsDefaultAs": "Standard · {action}",
+    "toolsSummaryTotal": "{count, plural, one {# Tool} other {# Tools}}",
+    "toolsSummaryBlocked": "{count} blockiert",
+    "toolsSummaryAsk": "{count} fragen zuerst",
+    "toolsSummaryRun": "{count} laufen",
+    "toolsOnlyChanged": "Nur geänderte",
+    "toolsNoneChangedSet": "Dieses Regelset ändert noch kein Tool. Tools auf Erben folgen den Basisregeln.",
+    "toolsNoneChangedBase": "Noch kein Tool hat eine eigene Regel. Jedes Tool folgt dem Connector-Standard.",
+    "toolsChanged": "Geändert"
   },
   "connectMcp": {
     "title": "Kortix über MCP verbinden",
@@ -22736,11 +22749,6 @@
   "connectorPolicySets": {
     "rulesFor": "Regeln für",
     "baseRules": "Basisregeln",
-    "newSet": "Neues Regelset…",
-    "baseHint": "Aufrufer ohne Regelset folgen diesen Regeln. Ein Regelset ändert sie für die Agenten, denen du es gibst.",
-    "setHint": "Gilt nur für Agenten mit {name}. Tools auf Erben folgen den Basisregeln.",
-    "usedBy": "Verwendet von {agents}",
-    "unused": "Noch kein Agent nutzt dieses Regelset. Wähle es auf der Connectors-Seite eines Agenten.",
     "edit": "Regelset bearbeiten",
     "delete": "Regelset löschen",
     "deleteInUse": "Verwendet von {agents}. Gib diesen Agenten zuerst ein anderes Regelset.",
@@ -22765,8 +22773,6 @@
     "loadFailed": "Regelsets konnten nicht geladen werden",
     "retry": "Erneut versuchen",
     "inherit": "Erben",
-    "inheritBase": "Erbt die Basisregeln: {action}.",
-    "inheritDefault": "Erbt die Basisregeln. Keine Basisregel nennt dieses Tool, daher entscheidet der Connector-Standard.",
     "agentSection": "Regelsets",
     "agentSelectLabel": "Regeln für {name}",
     "agentMissing": "Fehlt",
@@ -22775,7 +22781,13 @@
     "approvalSet": "Regelset {set}",
     "auditSet": "Regelset {set}",
     "bulkInheritTitle": "{count, plural, one {# Tool} other {# Tools}} auf die Basisregeln zurücksetzen?",
-    "bulkInheritBody": "Löscht die Regel dieses Regelsets für jedes Tool unter {group}, damit jedes wieder den Basisregeln folgt. Musterregeln bleiben unverändert."
+    "bulkInheritBody": "Löscht die Regel dieses Regelsets für jedes Tool unter {group}, damit jedes wieder den Basisregeln folgt. Musterregeln bleiben unverändert.",
+    "baseContext": "Gilt für jeden Agenten ohne Regelset.",
+    "usedByLead": "Verwendet von",
+    "unusedLead": "Noch kein Agent nutzt es.",
+    "unusedLink": "Gib es einem Agenten auf dessen Connectors-Seite",
+    "editShort": "Bearbeiten",
+    "ruleCount": "{count, plural, one {# Regel} other {# Regeln}}"
   },
   "sessionChangeRequests": {
     "title": "Änderungsanfragen",

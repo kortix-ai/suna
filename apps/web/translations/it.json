@@ -21160,7 +21160,20 @@
     "allApps": "Tutte le app",
     "typeFilterKortix": "Kortix",
     "emailGateName": "Canale email",
-    "emailGateDescription": "Dai all'agente una casella Resend: un'email avvia una sessione e una risposta la continua."
+    "emailGateDescription": "Dai all'agente una casella Resend: un'email avvia una sessione e una risposta la continua.",
+    "toolsDecisionBlocked": "bloccato",
+    "toolsDecisionAsks": "chiede",
+    "toolsDecisionRuns": "esegue",
+    "toolsInheritAs": "Eredita · {action}",
+    "toolsDefaultAs": "Predefinito · {action}",
+    "toolsSummaryTotal": "{count, plural, one {# strumento} other {# strumenti}}",
+    "toolsSummaryBlocked": "{count} bloccati",
+    "toolsSummaryAsk": "{count} chiedono prima",
+    "toolsSummaryRun": "{count} eseguono",
+    "toolsOnlyChanged": "Solo modificati",
+    "toolsNoneChangedSet": "Questo set di regole non modifica ancora nessuno strumento. Gli strumenti su Eredita seguono le regole di base.",
+    "toolsNoneChangedBase": "Nessuno strumento ha ancora una regola propria. Ogni strumento segue il comportamento predefinito del connettore.",
+    "toolsChanged": "Modificato"
   },
   "connectMcp": {
     "title": "Collega Kortix tramite MCP",
@@ -22736,11 +22749,6 @@
   "connectorPolicySets": {
     "rulesFor": "Regole per",
     "baseRules": "Regole di base",
-    "newSet": "Nuovo set di regole…",
-    "baseHint": "Chi chiama senza set di regole segue queste regole. Un set di regole le cambia per gli agenti a cui lo assegni.",
-    "setHint": "Vale solo per gli agenti con {name}. Gli strumenti su Eredita seguono le regole di base.",
-    "usedBy": "Usato da {agents}",
-    "unused": "Nessun agente usa ancora questo set di regole. Sceglilo nella pagina Connettori di un agente.",
     "edit": "Modifica set di regole",
     "delete": "Elimina set di regole",
     "deleteInUse": "Usato da {agents}. Assegna prima a questi agenti un altro set di regole.",
@@ -22765,8 +22773,6 @@
     "loadFailed": "Impossibile caricare i set di regole",
     "retry": "Riprova",
     "inherit": "Eredita",
-    "inheritBase": "Eredita le regole di base: {action}.",
-    "inheritDefault": "Eredita le regole di base. Nessuna regola di base nomina questo strumento, quindi decide il valore predefinito del connettore.",
     "agentSection": "Set di regole",
     "agentSelectLabel": "Regole per {name}",
     "agentMissing": "Mancante",
@@ -22775,7 +22781,13 @@
     "approvalSet": "Set di regole {set}",
     "auditSet": "set di regole {set}",
     "bulkInheritTitle": "Riportare {count, plural, one {# strumento} other {# strumenti}} alle regole di base?",
-    "bulkInheritBody": "Elimina la regola di questo set per ogni strumento elencato in {group}, così ognuno torna a seguire le regole di base. Le regole a schema restano invariate."
+    "bulkInheritBody": "Elimina la regola di questo set per ogni strumento elencato in {group}, così ognuno torna a seguire le regole di base. Le regole a schema restano invariate.",
+    "baseContext": "Si applica a ogni agente senza set di regole.",
+    "usedByLead": "Usato da",
+    "unusedLead": "Nessun agente lo usa ancora.",
+    "unusedLink": "Assegnalo a un agente nella sua pagina Connettori",
+    "editShort": "Modifica",
+    "ruleCount": "{count, plural, one {# regola} other {# regole}}"
   },
   "sessionChangeRequests": {
     "title": "Richieste di modifica",

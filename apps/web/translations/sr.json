@@ -21160,7 +21160,20 @@
     "allApps": "Sve aplikacije",
     "typeFilterKortix": "Kortix",
     "emailGateName": "Imejl kanal",
-    "emailGateDescription": "Daj agentu Resend sanduče: imejl pokreće sesiju, a odgovor je nastavlja."
+    "emailGateDescription": "Daj agentu Resend sanduče: imejl pokreće sesiju, a odgovor je nastavlja.",
+    "toolsDecisionBlocked": "blokiran",
+    "toolsDecisionAsks": "pita",
+    "toolsDecisionRuns": "radi",
+    "toolsInheritAs": "Nasledi · {action}",
+    "toolsDefaultAs": "Podrazumevano · {action}",
+    "toolsSummaryTotal": "{count, plural, one {# alat} few {# alata} other {# alata}}",
+    "toolsSummaryBlocked": "{count} blokirano",
+    "toolsSummaryAsk": "{count} prvo pita",
+    "toolsSummaryRun": "{count} radi",
+    "toolsOnlyChanged": "Samo izmenjeni",
+    "toolsNoneChangedSet": "Ovaj skup pravila još ne menja nijedan alat. Alati na Nasledi prate osnovna pravila.",
+    "toolsNoneChangedBase": "Nijedan alat još nema svoje pravilo. Svaki alat prati podrazumevano ponašanje konektora.",
+    "toolsChanged": "Izmenjeno"
   },
   "connectMcp": {
     "title": "Povežite Kortix preko MCP-a",
@@ -22736,11 +22749,6 @@
   "connectorPolicySets": {
     "rulesFor": "Правила за",
     "baseRules": "Основна правила",
-    "newSet": "Нови скуп правила…",
-    "baseHint": "Позиваоци без скупа правила прате ова правила. Скуп правила их мења за агенте којима га доделите.",
-    "setHint": "Важи само за агенте са {name}. Алати на Наследи прате основна правила.",
-    "usedBy": "Користи {agents}",
-    "unused": "Ниједан агент још не користи овај скуп правила. Изаберите га на страници Конектори неког агента.",
     "edit": "Измени скуп правила",
     "delete": "Обриши скуп правила",
     "deleteInUse": "Користи {agents}. Прво доделите тим агентима други скуп правила.",
@@ -22765,8 +22773,6 @@
     "loadFailed": "Скупови правила нису могли да се учитају",
     "retry": "Покушај поново",
     "inherit": "Наследи",
-    "inheritBase": "Наслеђује основна правила: {action}.",
-    "inheritDefault": "Наслеђује основна правила. Ниједно основно правило не наводи овај алат, па одлучује подразумевана вредност конектора.",
     "agentSection": "Скупови правила",
     "agentSelectLabel": "Правила за {name}",
     "agentMissing": "Недостаје",
@@ -22775,7 +22781,13 @@
     "approvalSet": "Скуп правила {set}",
     "auditSet": "скуп правила {set}",
     "bulkInheritTitle": "Вратити {count, plural, one {# алат} few {# алата} other {# алата}} на основна правила?",
-    "bulkInheritBody": "Брише правило овог скупа за сваки алат под {group}, па сваки поново прати основна правила. Правила по обрасцу се не мењају."
+    "bulkInheritBody": "Брише правило овог скупа за сваки алат под {group}, па сваки поново прати основна правила. Правила по обрасцу се не мењају.",
+    "baseContext": "Važi za svakog agenta bez skupa pravila.",
+    "usedByLead": "Koristi",
+    "unusedLead": "Nijedan agent ga još ne koristi.",
+    "unusedLink": "Dodelite ga agentu na njegovoj stranici Konektori",
+    "editShort": "Izmeni",
+    "ruleCount": "{count, plural, one {# pravilo} few {# pravila} other {# pravila}}"
   },
   "sessionChangeRequests": {
     "title": "Zahtevi za izmenu",
