@@ -54,6 +54,7 @@ import {
 } from './access';
 import { authorizedProject, capabilityRefusal, visibleApp } from './route-access';
 import { AppObject, appJson, appsJson } from './serialize';
+import { commitAppFields, manifestFieldsOf } from './app-manifest';
 import { probeFrameable } from './external';
 import { UnknownLinkedAppError, resolveAppLinks, writeAppLinks } from './links';
 import { registerAppCapabilityRoutes } from './capability-routes';
@@ -510,6 +511,15 @@ export function registerAppsRoutes(): void {
         }
       }
       const externalFrameable = externalUrl ? await probeFrameable(externalUrl, config.FRONTEND_URL) : false;
+      // kortix.yaml owns the declarable fields: what the request sets explicitly
+      // is committed to apps.<slug> before the row exists. An external App is
+      // declared listed, so the file says it is on the Apps page.
+      const declared = await commitAppFields(projectId, slug, {
+        ...manifestFieldsOf({ cpu: body.cpu, memory_gb: body.memory_gb, disk_gb: body.disk_gb, always_on: body.always_on }),
+        ...(body.uses.length ? { uses: body.uses } : {}),
+        ...(externalUrl ? { display: { listed: true } } : {}),
+      });
+      if (!declared.ok) return c.json({ error: declared.error, code: declared.code ?? 'manifest_write_failed' }, declared.status);
       let row: typeof apps.$inferSelect;
       try {
         const alwaysOn = body.always_on ?? config.KORTIX_APPS_DEFAULT_ALWAYS_ON;
@@ -689,6 +699,10 @@ export function registerAppsRoutes(): void {
       // links and the row, so a refused PATCH changes nothing.
       const links = body.uses === undefined ? undefined : await resolveLinksOrRefuse(c, current, body.uses, loaded.userId);
       if (links instanceof Response) return links;
+      // kortix.yaml owns these fields: commit them to apps.<slug> first; a
+      // refused commit writes nothing, so the row never disagrees with the file.
+      const declared = await commitAppFields(projectId, current.slug, manifestFieldsOf(body));
+      if (!declared.ok) return c.json({ error: declared.error, code: declared.code ?? 'manifest_write_failed' }, declared.status);
       const [row] = await db.transaction(async (tx) => {
         if (links) await writeAppLinks(tx, appId, links);
         return tx.update(apps).set({

@@ -43,6 +43,7 @@ import {
 } from '../projects/secrets';
 import { SecretUndecryptableError } from '../secrets/undecryptable';
 import { type GitTriggerSpec, extractTriggers, readManifest } from '../projects/triggers';
+import { syncDeclaredApps } from '../apps/app-manifest';
 import { reconcileProjectTriggerRuntime } from '../projects/trigger-runtime-catalog';
 import { reconcileEventSubscriptions } from '../projects/surface';
 import { db } from '../shared/db';
@@ -737,6 +738,12 @@ async function syncProjectConnectorsFenced(
   // The periodic sweep also retries `error` / `needs_connection` subscriptions here.
   if (triggerSpecs) await reconcileEventSubscriptions(projectId, accountId, triggerSpecs);
 
+  // kortix.yaml owns the App fields it declares: a push applies them without a deploy.
+  if (manifest) {
+    const appSync = await syncDeclaredApps(projectId, manifest.raw.apps);
+    for (const failure of appSync.errors) errors.push({ slug: failure.slug, error: failure.error });
+  }
+
   return { synced, errors };
 }
 
@@ -931,6 +938,9 @@ async function upsertConnector(
   // Cheap fields reconciled on every sync. `config` (which folds in the
   // discovered server) only changes when we actually re-resolved the catalog.
   const common = {
+    // kortix.yaml owns a declared auth.secret. An omitted one keeps the stored
+    // binding: bindings made before they were committed to the file live only here.
+    ...(spec.auth.secret ? { authSecret: spec.auth.secret } : {}),
     name: spec.name,
     providerType: spec.provider,
     enabled: spec.enabled,
