@@ -11,6 +11,8 @@
  * golden test in `pixel-mark.test.ts` exists to make that a deliberate act.
  */
 
+import { PIXEL_KORTIX_ROWS } from '../../primitives/pixel-kortix-mark';
+
 export const PIXEL_MARK_SIZE = 7;
 const HALF = 4;
 const MAX_ATTEMPTS = 256;
@@ -64,6 +66,11 @@ const BRAND: PixelMarkTone = {
   inkDark: '#FFFFFF',
 };
 const RESERVED: Record<string, PixelMarkTone> = { kortix: BRAND, meta: BRAND };
+
+/** My Kortix (slug `meta`) wears the Kortix symbol itself, the same 12 × 10
+ *  grid as `PixelKortixMark` and the merch chips. `+` cells are the dithered
+ *  curve cells; at agent-mark sizes they paint at half ink. */
+const RESERVED_ROWS: Record<string, readonly string[]> = { meta: PIXEL_KORTIX_ROWS };
 
 type Grid = boolean[][];
 
@@ -142,27 +149,50 @@ export function passesPixelMarkGate(grid: Grid): boolean {
   return largestComponent(grid) >= Math.ceil(filled * 0.85);
 }
 
-/** One SVG path, horizontal runs merged. Render in `viewBox="0 0 7 7"`. */
+/** One SVG path, horizontal runs merged, in grid units. */
 function toPath(grid: Grid): string {
   let d = '';
   grid.forEach((row, y) => {
-    for (let x = 0; x < PIXEL_MARK_SIZE; ) {
+    for (let x = 0; x < row.length; ) {
       if (!row[x]) {
         x++;
         continue;
       }
       const start = x;
-      while (x < PIXEL_MARK_SIZE && row[x]) x++;
+      while (x < row.length && row[x]) x++;
       d += `M${start} ${y}h${x - start}v1h-${x - start}z`;
     }
   });
   return d;
 }
 
+/** Runs of one cell character on one row, as an SVG path. */
+function rowsToPath(rows: readonly string[], cell: string): string {
+  return toPath(rows.map((row) => [...row].map((c) => c === cell)));
+}
+
 export function pixelMark(slug: string) {
+  const rows = RESERVED_ROWS[slug];
+  if (rows) {
+    return {
+      grid: rows.map((row) => [...row].map((c) => c !== ' ')),
+      path: rowsToPath(rows, '#'),
+      ditherPath: rowsToPath(rows, '+'),
+      width: rows[0].length,
+      height: rows.length,
+      tone: RESERVED[slug] ?? BRAND,
+    };
+  }
   let grid = draw(fnv1a(slug));
   for (let attempt = 1; !passesPixelMarkGate(grid) && attempt < MAX_ATTEMPTS; attempt++)
     grid = draw(fnv1a(`${slug}:${attempt}`));
   const tone = RESERVED[slug] ?? PIXEL_MARK_TONES[fnv1a(`${slug}#tone`) % PIXEL_MARK_TONES.length];
-  return { grid, path: toPath(grid), tone };
+  return {
+    grid,
+    path: toPath(grid),
+    ditherPath: '',
+    width: PIXEL_MARK_SIZE,
+    height: PIXEL_MARK_SIZE,
+    tone,
+  };
 }

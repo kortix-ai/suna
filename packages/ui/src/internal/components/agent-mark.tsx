@@ -5,7 +5,7 @@ import type { CSSProperties } from 'react';
 import { cn } from '../lib/utils';
 import { Hint } from '../../primitives/hint';
 import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
-import { PIXEL_MARK_SIZE, pixelMark } from '../lib/pixel-mark';
+import { pixelMark } from '../lib/pixel-mark';
 
 /** Mark size → tile size. The mark is a multiple of 7, so each pixel lands on
  *  whole device pixels; any other size blurs the edges. Literal px because
@@ -26,18 +26,25 @@ export function agentMarkVars(slug: string): CSSProperties {
   } as CSSProperties;
 }
 
-/** The bare pixel figure, painted with `--mark-ink` from an ancestor. */
+/** The bare pixel figure, painted with `--mark-ink` from an ancestor. A 7 × 7
+ *  mark fills `size`; a wider reserved grid (My Kortix's 12 × 10 symbol) keeps
+ *  whole-pixel cells, `floor(size / 12)` px each. */
 export function AgentMarkGlyph({ slug, size }: { slug: string; size: AgentMarkSize }) {
+  const mark = pixelMark(slug);
+  const cell = mark.width === 7 ? size / 7 : Math.max(1, Math.floor(size / 12));
   return (
     <svg
       aria-hidden
-      width={size}
-      height={size}
-      viewBox={`0 0 ${PIXEL_MARK_SIZE} ${PIXEL_MARK_SIZE}`}
+      width={mark.width * cell}
+      height={mark.height * cell}
+      viewBox={`0 0 ${mark.width} ${mark.height}`}
       shapeRendering="crispEdges"
       className="shrink-0"
     >
-      <path d={pixelMark(slug).path} className="fill-(--mark-ink)" />
+      <path d={mark.path} className="fill-(--mark-ink)" />
+      {mark.ditherPath ? (
+        <path d={mark.ditherPath} className="fill-(--mark-ink)" opacity={0.5} />
+      ) : null}
     </svg>
   );
 }
