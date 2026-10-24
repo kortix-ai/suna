@@ -697,3 +697,18 @@ test('createProjectTrigger sends a type app trigger; the listing reads its app',
   const type: ProjectTriggerType = trigger.type;
   expect([type, trigger.app]).toEqual(['app', 'bank-replies']);
 });
+
+test('a trigger may call an App: create sends target, the listing reads it, update clears it with null', async () => {
+  const input: CreateProjectTriggerInput = { name: 'Poll bank', type: 'cron', cron: '0 */5 * * * *', target: { app: 'bank-watcher', path: '/tick' } };
+  await createProjectTrigger('P1', input);
+  expect(last()!.body).toMatchObject({ type: 'cron', target: { app: 'bank-watcher', path: '/tick' } });
+  expect((last()!.body as Record<string, unknown>).prompt_template).toBeUndefined();
+
+  nextResponse = { status: 200, body: { triggers: [{ ...MONITOR_WIRE_ENTRY, type: 'cron', run: null, mode: null, target: { app: 'bank-watcher', path: '/tick', method: 'POST' } }], errors: [] } };
+  const trigger: ProjectTrigger = (await listProjectTriggers('P1')).triggers[0]!;
+  expect(trigger.target).toEqual({ app: 'bank-watcher', path: '/tick', method: 'POST' });
+
+  const clear: UpdateProjectTriggerInput = { target: null };
+  await updateProjectTrigger('P1', 'poll-bank', clear);
+  expect(last()!.body).toEqual({ target: null });
+});

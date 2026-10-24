@@ -105,6 +105,12 @@ export interface GitTriggerSpec {
   /** For type=app only: the slug of the App whose emitted events fire this trigger. Absent for every other type. */
   app?: string | null;
   /**
+   * What a fire does when it is not an agent run: call an App. A fire wakes
+   * the App and sends the payload to `method path` (apps/app-call.ts). Absent:
+   * the fire starts or continues an agent session, as before.
+   */
+  target?: { app: string; path: string; method: 'POST' | 'GET' } | null;
+  /**
    * Session reuse policy.
    * - `'fresh'` (default): every fire mints a brand-new session (new sandbox +
    *   new ephemeral branch) — the historical behavior.

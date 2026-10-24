@@ -1,6 +1,6 @@
 ---
 title: Apps as the compute platform (Lambda + EventBridge on Platinum microVMs)
-status: planning — branch apps-lambda, nothing merged
+status: building — branch apps-lambda (type app triggers committed c2a108c29d), nothing merged
 owner: Marko Kraemer (decisions), agent sessions (build)
 updated: 2026-10-24
 ---
@@ -82,3 +82,44 @@ machines), then 3, then 1 and 2.
   `apps/api/src/projects/trigger-events/`, contract
   `packages/api-contract/src/index.ts` (`type: cron | webhook | monitor | event`).
 - Monitor ingest to reuse for App events: `apps/api/src/projects/lib/monitor-ingest.ts`.
+
+## Unified automation model (Marko, 2026-10-24)
+
+One engine, separate concepts: **sources** (when) → **the trigger engine**
+(`project_trigger_runtime` + `project_trigger_executions`: dedupe, retries,
+jitter, max_lateness, run caps, overlap, pause-all, run history, alerts) →
+**targets** (then).
+
+| Sources | Targets |
+|---|---|
+| schedule: `cron`, `every`, `at` (one-off; reminders and App `runAfter` are rows like this) | agent: new / reuse / keyed / pinned session + prompt |
+| webhook: signed HTTP POST | session: prompt into one session (today's reminder) |
+| event: connector (Composio push) or App (`emit`) | app: `target: { app, path, method }`, wakes the App and sends the payload |
+
+Decisions:
+- No second scheduler. A draft `app_schedules` table + worker was built and
+  removed the same day: App schedules are triggers with an App target.
+- Remove, do not port: the monitor box (`projects/lib/monitor-box*`, the agent
+  server monitor runner, `type: monitor` with `run`) and the Kortix MCP poll
+  loop (`trigger-events/mcp-poll.ts`, `poll-store.ts`, its worker). Their jobs
+  become schedule rows on the one engine: a monitor is an App, and connector
+  checks are schedules whose target checks the connector and emits events.
+- `kortix.yaml` sections `schedules:` / `webhooks:` / `events:` with a
+  `target:`; `triggers:` stays a legacy alias. Waiting on Marko's go for the
+  public rename.
+
+## Tracker (every ask, in order)
+
+| # | Ask | State |
+|---|---|---|
+| 1 | event_triggers flag text | shipped #10872 (e67722ab12); relabel to "Connector event triggers" pending with 3 |
+| 2 | `type: app` triggers (App → agent) | committed c2a108c29d, live-verified on Platinum |
+| 3a | App target on the trigger engine | code done, needs integration test + commit |
+| 3b | `every` schedules, one-off runs from Apps (`runAfter` / `runAt`) | next |
+| 3c | remove the MCP poll loop; connector checks as schedules | after 3b |
+| 3d | remove the monitor box and `type: monitor` `run` | after 3c; check prod usage first |
+| 3e | `schedules:` / `webhooks:` / `events:` manifest + CLI/API/SDK/UI rename | waits for Marko's go on the shape |
+| 4 | Lambda-style Apps: `memory_mb` sizes, pause/resume, invoke | after 3 |
+| 5 | `/apps` shows only Apps with `display.listed: true` + rendering pass | needs `next dev`; when the laptop has RAM |
+| 6 | docs (`apps.mdx`, `connect/triggers.mdx`), agent skill + templates | with each piece |
+| 7 | Platinum template build stuck in `building` (kortix-appimg-dev-06b5823eb6aab7bb5d209061) | reported to the Platinum session, passed to Marko |

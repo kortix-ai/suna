@@ -27,6 +27,8 @@ export interface TriggerScheduleSpec {
   event?: { connector: string; account?: string | null; source?: string | null; type: string; config: Record<string, unknown> } | null;
   /** type=app only — see GitTriggerSpec.app. */
   app?: string | null;
+  /** See GitTriggerSpec.target. */
+  target?: { app: string; path: string; method: 'POST' | 'GET' } | null;
   /** Session reminder only — see GitTriggerSpec.reminder. */
   reminder?: { everySeconds: number | null } | null;
   /** type=cron only — see GitTriggerSpec.maxLatenessSeconds. */
@@ -101,6 +103,8 @@ export function triggerScheduleRevision(spec: TriggerScheduleSpec): string {
     // `source` joins the event only when set, so earlier event revisions stay put.
     ...(spec.type === 'event' ? { event: spec.event ? withSourceIfSet(spec.event) : null } : {}),
     ...(spec.type === 'app' ? { app: spec.app ?? null } : {}),
+    // Joins only when set, like the fields below: a spec without a target keeps its revision.
+    ...(spec.target ? { target: spec.target } : {}),
     // Same rule as the monitor fields: absent for every manifest trigger.
     ...(spec.reminder ? { reminderEverySeconds: spec.reminder.everySeconds } : {}),
     // Joins only when set: the claim reads it from the stored spec, which is

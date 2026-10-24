@@ -157,6 +157,28 @@ export function parseAppField(row: Record<string, unknown>): { app: string } | {
 }
 
 /**
+ * `target: { app, path?, method? }`: a fire calls an App instead of running an
+ * agent. Absent → `{}`, so a spec without it keeps its shape and revision.
+ * A monitor runs its own command and takes no target.
+ */
+export function parseTargetField(
+  row: Record<string, unknown>,
+  type: GitTriggerType,
+): { target?: NonNullable<GitTriggerSpec['target']> } | { error: string } {
+  const raw = row.target;
+  if (raw === undefined || raw === null) return {};
+  if (type === 'monitor') return { error: 'target is not valid on a monitor trigger' };
+  if (!isPlainObject(raw)) return { error: 'target must be an object: { app, path, method }' };
+  const { app, path = '/', method = 'POST', ...rest } = raw as Record<string, unknown>;
+  const unknown = Object.keys(rest)[0];
+  if (unknown) return { error: `target.${unknown} is not a target field (app, path, method)` };
+  if (typeof app !== 'string' || !APP_SLUG_RE.test(app.trim())) return { error: 'target.app must be the slug of an App in this project' };
+  if (typeof path !== 'string' || !path.startsWith('/') || /[\r\n]/.test(path) || path.length > 2048) return { error: 'target.path must be an HTTP path starting with /' };
+  if (method !== 'POST' && method !== 'GET') return { error: 'target.method must be POST or GET' };
+  return { target: { app: app.trim(), path, method } };
+}
+
+/**
  * A cron trigger's `max_lateness` (KRTX-1743): the misfire bound. Absent → `{}`,
  * so a spec without it keeps its shape and schedule revision. Mirrors
  * `@kortix/manifest-schema`'s rule: cron only, at least 60s.
@@ -422,7 +444,8 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
   } else if (spec.secretEnv) {
     entry.secret_env = spec.secretEnv;
   }
-  entry.prompt = spec.promptTemplate;
+  if (spec.target) entry.target = spec.target;
+  if (spec.promptTemplate) entry.prompt = spec.promptTemplate;
   return entry;
 }
 
@@ -491,7 +514,10 @@ function parseTriggerEntry(
       : typeof row.prompt_template === 'string'
         ? row.prompt_template
         : '';
-  if (!prompt.trim()) {
+  const parsedTarget = parseTargetField(row, type);
+  if ('error' in parsedTarget) return err(slug, parsedTarget.error);
+  // An App target receives the payload, not a prompt.
+  if (!prompt.trim() && !parsedTarget.target) {
     return err(slug, 'prompt is required and may not be empty');
   }
 
@@ -579,6 +605,7 @@ function parseTriggerEntry(
     model,
     enabled,
     promptTemplate: prompt,
+    ...parsedTarget,
     sessionMode,
     pinnedSessionId,
     sessionKey,

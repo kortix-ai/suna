@@ -333,6 +333,8 @@ export async function fireGitTrigger(input: {
       if (overlap) return { status: 'skipped', reason: overlap };
     }
   }
+  // An App target is a call to the App, not a session: no actor, model or prompt.
+  if (spec.target?.app) return fireAppTarget(input, spec.target);
   // The session's owning identity (created_by / billing / audit). Automated runs
   // never impersonate a picked human — the agent's declared scope governs access.
   // See resolveTriggerActor().
@@ -405,6 +407,29 @@ const CREATE_WAIT_POLL_MS = 1_000;
  * the reminder off. A failed session hands the reminder to a successor session
  * (fireReminderSuccessor), which picks up the work its predecessor kept in Files.
  */
+/** `target: { app }`: wake the App and send the payload to its path (apps/app-call.ts). */
+async function fireAppTarget(
+  input: Parameters<typeof fireGitTrigger>[0],
+  target: NonNullable<GitTriggerSpec['target']>,
+): ReturnType<typeof fireGitTrigger> {
+  const { callAppTarget } = await import('../../apps/app-call');
+  const result = await callAppTarget({
+    projectId: input.project.projectId,
+    app: target.app,
+    method: target.method,
+    path: target.path,
+    payload: input.payload,
+    headers: {
+      'x-kortix-trigger': input.spec.slug,
+      'x-kortix-trigger-source': input.source,
+      ...(input.idempotencyKey ? { 'x-kortix-delivery-id': input.idempotencyKey } : {}),
+    },
+  });
+  return result.ok
+    ? { status: 'fired' }
+    : { status: 'failed', error: result.error ?? 'App call failed', retryable: result.retryable };
+}
+
 async function fireSessionReminder(
   input: Parameters<typeof fireGitTrigger>[0],
   actor: string,

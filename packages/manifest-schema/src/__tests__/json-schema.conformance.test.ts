@@ -470,6 +470,44 @@ channels:
     input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: \"0 0 9 * * *\"\n    app: bank-replies\n    prompt: go\n',
   },
 
+  // ─── triggers: target (call an App) ───────────────────────────────────
+  {
+    name: 'target: a cron trigger may call an App with no prompt',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: \"0 0 9 * * *\"\n    target: { app: bank-watcher, path: /tick }\n',
+  },
+  {
+    name: 'target: a webhook trigger may call an App',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: HOOK_SECRET\n    target: { app: bank-watcher, method: POST }\n',
+  },
+  {
+    name: 'target: needs app',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: \"0 0 9 * * *\"\n    target: { path: /tick }\n',
+  },
+  {
+    name: 'target: unknown key rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: \"0 0 9 * * *\"\n    target: { app: w, url: x }\n',
+  },
+  {
+    name: 'target: not on a monitor',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./m.ts\n    mode: stream\n    target: { app: w }\n    prompt: go\n',
+  },
+  {
+    name: 'target: a cron trigger without target still needs a prompt',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: \"0 0 9 * * *\"\n',
+  },
+
   // ─── shared sections: triggers type = "event" ─────────────────────────
   {
     name: 'event: connector + event + config object is valid',

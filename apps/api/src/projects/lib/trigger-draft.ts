@@ -12,7 +12,7 @@ import { streamSchedules } from '../trigger-events/poll-store';
 import { eventSourceAvailable } from '../trigger-events/registry';
 import { ensureProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { nextTriggerScheduleSlot, validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';
-import { GIT_TRIGGER_SESSION_MODES, type GitMonitorMode, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseMaxLateness, parseOverlap, parseRunCaps, parseAppField, parseEventFields, parseMonitorFields, readManifest, triggerSpecToTomlEntry } from '../triggers';
+import { GIT_TRIGGER_SESSION_MODES, type GitMonitorMode, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseMaxLateness, parseOverlap, parseRunCaps, parseAppField, parseEventFields, parseTargetField, parseMonitorFields, readManifest, triggerSpecToTomlEntry } from '../triggers';
 import { PRIVATE_TRIGGER_SESSION_ACCESS, loadTriggerSessionAccessMap } from '../trigger-session-access';
 import { withProjectGitAuth } from './git';
 import { type ProjectRow, deriveKortixApiRoot, normalizeBoolean, normalizeString } from './serializers';
@@ -111,6 +111,7 @@ export async function loadTriggersForResponse(
       interval_seconds: spec.intervalSeconds,
       expect_event_within_seconds: spec.expectEventWithinSeconds,
       app: spec.app ?? null,
+      target: spec.target ?? null,
       event: spec.event
         ? {
             connector: spec.event.connector,
@@ -258,6 +259,8 @@ export interface TriggerDraft {
   event?: GitTriggerEventFields | null;
   /** For type=app only — the slug of the App whose events fire the trigger. */
   app?: string | null;
+  /** A fire calls this App instead of running an agent (GitTriggerSpec.target). */
+  target?: GitTriggerSpec['target'];
   sessionMode: GitTriggerSessionMode;
   /** For sessionMode === 'pinned' only: the exact session id to loop. */
   pinnedSessionId: string | null;
@@ -294,10 +297,11 @@ export function parseTriggerDraft(
     return { error: `app is only valid on an app trigger (type is "${type}")` };
   }
 
-  const promptTemplate = normalizeString(
-    body.prompt_template ?? body.promptTemplate,
-  );
-  if (!promptTemplate) return { error: 'prompt_template is required' };
+  const parsedTarget = parseTargetField(body, type);
+  if ('error' in parsedTarget) return parsedTarget;
+  // An App target receives the payload, not a prompt.
+  const promptTemplate = normalizeString(body.prompt_template ?? body.promptTemplate) ?? (parsedTarget.target ? '' : null);
+  if (promptTemplate === null) return { error: 'prompt_template is required' };
 
   const agent = normalizeString(body.agent ?? body.agent_name) ?? 'default';
   // null/empty model = "Default" — leave it to the resolution chain at fire time.
@@ -329,7 +333,7 @@ export function parseTriggerDraft(
           ? parseCronDraft(body, common)
           : parseWebhookDraft(body, common);
   if ('error' in draft) return draft;
-  return { ...draft, ...(type === 'cron' ? lateness : {}), ...caps, ...overlap };
+  return { ...draft, ...(type === 'cron' ? lateness : {}), ...caps, ...overlap, ...parsedTarget };
 }
 
 function parseDraftSession(body: Record<string, unknown>, type: GitTriggerType):
@@ -535,6 +539,8 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
       ? { connector: spec.event.connector, event_account: spec.event.account ?? null, event_source: spec.event.source ?? null, event: spec.event.type, event_config: spec.event.config }
       : {}),
     ...(spec.type === 'app' ? { app: spec.app ?? null } : {}),
+    // Kept on PATCH like the caps; `target: null` in a PATCH body clears it.
+    target: spec.target ?? null,
   };
 }
 
@@ -578,6 +584,7 @@ export function draftToSpec(
     ...(draft.overlap ? { overlap: draft.overlap } : {}),
     event: draft.event,
     ...(draft.type === 'app' ? { app: draft.app ?? null } : {}),
+    ...(draft.target ? { target: draft.target } : {}),
     sessionMode: draft.sessionMode,
     pinnedSessionId: draft.pinnedSessionId,
     sessionKey: draft.sessionKey,

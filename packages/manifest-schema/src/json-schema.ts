@@ -525,6 +525,17 @@ function triggerSchema(version: 1 | 2): JsonSchemaFragment {
       config: { type: 'object' },
       // `type: app` only — the slug of the App whose events fire the trigger.
       app: { type: 'string', pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$' },
+      // Any type but monitor: a fire calls this App instead of running an agent.
+      target: {
+        type: 'object',
+        required: ['app'],
+        additionalProperties: false,
+        properties: {
+          app: { type: 'string', pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$' },
+          path: { type: 'string', pattern: '^/' },
+          method: { type: 'string', enum: ['POST', 'GET'] },
+        },
+      },
     },
     additionalProperties: true,
     allOf: [
@@ -541,11 +552,19 @@ function triggerSchema(version: 1 | 2): JsonSchemaFragment {
           else: { required: ['sessionId'], properties: { sessionId: NON_BLANK_STRING } },
         },
       },
-      // A prompt (or its alias) is always required, non-empty.
+      // A prompt (or its alias) is required, non-empty, unless an App target receives the payload.
       {
-        if: { required: ['prompt'] },
-        then: { properties: { prompt: NON_BLANK_STRING } },
-        else: { required: ['prompt_template'], properties: { prompt_template: NON_BLANK_STRING } },
+        if: { not: { required: ['target'] } },
+        then: {
+          if: { required: ['prompt'] },
+          then: { properties: { prompt: NON_BLANK_STRING } },
+          else: { required: ['prompt_template'], properties: { prompt_template: NON_BLANK_STRING } },
+        },
+      },
+      // A monitor runs its own command: no target.
+      {
+        if: { properties: { type: { const: 'monitor' } }, required: ['type'] },
+        then: { properties: { target: false } },
       },
       {
         if: { properties: { type: { const: 'cron' } } },

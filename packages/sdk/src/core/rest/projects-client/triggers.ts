@@ -43,6 +43,13 @@ export interface TriggerSessionAccess {
   groupIds: string[];
 }
 
+/** What a fire calls when a trigger targets an App: `method path` on the App, with the fire's payload. */
+export interface ProjectTriggerTarget {
+  app: string;
+  path: string;
+  method: 'POST' | 'GET';
+}
+
 /** Subscription state of a `type: event` trigger. */
 export interface ProjectTriggerEvent {
   /** The connector (profile) the event happens on. */
@@ -128,6 +135,8 @@ export interface ProjectTrigger {
   event: ProjectTriggerEvent | null;
   /** For type='app' only — the slug of the App whose emitted events fire this trigger. Null or absent otherwise. */
   app?: string | null;
+  /** A fire calls this App instead of running an agent. Null or absent: an agent run. */
+  target?: ProjectTriggerTarget | null;
   prompt_template: string;
   /** Session strategy — see {@link ProjectTriggerSessionMode}. */
   session_mode: ProjectTriggerSessionMode;
@@ -231,7 +240,7 @@ export interface CreateProjectTriggerInput {
    */
   slug?: string;
   type: ProjectTriggerType;
-  prompt_template: string;
+  prompt_template?: string;
   /** Defaults to 'default'. */
   agent?: string;
   /** Wire-form model (`provider/model`). Omit or pass null to resolve the
@@ -259,6 +268,8 @@ export interface CreateProjectTriggerInput {
   expect_event_within?: string;
   /** Required for type='app'. Slug of the App whose events fire the trigger; the App must exist. */
   app?: string;
+  /** Call an App instead of running an agent; `prompt_template` is then optional. */
+  target?: { app: string; path?: string; method?: 'POST' | 'GET' };
   /** Required for type='event'. Connector slug the event happens on. */
   connector?: string;
   /** For type='event'. Label of one shared account of the connector; omit or null for the connector default. */
@@ -320,6 +331,8 @@ export interface UpdateProjectTriggerInput {
   expect_event_within?: string | null;
   /** For type='app'. Slug of the App whose events fire the trigger. */
   app?: string;
+  /** Call an App instead of running an agent; null clears it. */
+  target?: { app: string; path?: string; method?: 'POST' | 'GET' } | null;
   /** For type='event'. Connector slug. Changing it clears the account unless `event_account` is sent. */
   connector?: string;
   /** For type='event'. Label of one shared account of the connector; null clears it to the connector default. */

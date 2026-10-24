@@ -1409,6 +1409,25 @@ function validateAppTrigger(
   }
 }
 
+/**
+ * `target: { app, path?, method? }` — a fire calls an App of this project
+ * instead of running an agent; `prompt` is then optional. Any type but monitor.
+ * MUST stay in sync with `parseTargetField` (apps/api).
+ */
+function validateTriggerTarget(entry: Record<string, unknown>, where: string, type: string, issues: ManifestIssue[]): void {
+  const target = entry.target;
+  if (target === undefined) return;
+  const push = (path: string, message: string): void => {
+    issues.push({ path: `${where}.target${path}`, message, severity: 'error' });
+  };
+  if (type === 'monitor') return push('', 'is not valid on a monitor trigger.');
+  if (!isTable(target)) return push('', 'must be a table: { app, path, method }.');
+  for (const key of Object.keys(target)) if (!['app', 'path', 'method'].includes(key)) push(`.${key}`, 'is not a target field (app, path, method).');
+  if (typeof target.app !== 'string' || !APP_SLUG_RE.test(target.app.trim())) push('.app', 'must be the slug of an App in this project.');
+  if (target.path !== undefined && (typeof target.path !== 'string' || !target.path.startsWith('/'))) push('.path', 'must be an HTTP path starting with /.');
+  if (target.method !== undefined && target.method !== 'POST' && target.method !== 'GET') push('.method', 'must be POST or GET.');
+}
+
 export function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
@@ -1463,7 +1482,8 @@ export function validateTriggers(node: unknown, path: string, issues: ManifestIs
         : typeof entry.prompt_template === 'string'
           ? entry.prompt_template
           : '';
-    if (!promptRaw.trim()) {
+    // An App target receives the payload, not a prompt.
+    if (!promptRaw.trim() && entry.target === undefined) {
       issues.push({
         path: `${where}.prompt`,
         message: 'prompt is required and may not be empty.',
@@ -1590,6 +1610,7 @@ export function validateTriggers(node: unknown, path: string, issues: ManifestIs
     } else if (type === 'app') {
       validateAppTrigger(entry, where, issues);
     }
+    validateTriggerTarget(entry, where, type, issues);
     if (type && type !== 'app' && entry.app !== undefined) {
       issues.push({
         path: `${where}.app`,

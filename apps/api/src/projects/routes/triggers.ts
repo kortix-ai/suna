@@ -123,6 +123,7 @@ const TYPE_SPECIFIC_BODY_KEYS = [
 // and treat it as a no-op.
 const TRIGGER_MANIFEST_KEYS = [
   'app',
+  'target',
   'name',
   'type',
   'agent',
@@ -394,6 +395,7 @@ export function registerTriggersRoutes(): void {
             interval: z.string().optional().openapi({ description: 'Poll period such as 5m. Monitors with mode poll only.' }),
             expect_event_within: z.string().optional().openapi({ description: 'Silence watchdog such as 1h. Monitors only.' }),
             app: z.string().optional().openapi({ description: 'Slug of the App whose events fire the trigger. Required for an app trigger.' }),
+            target: z.object({ app: z.string(), path: z.string().optional(), method: z.enum(['POST', 'GET']).optional() }).nullish().openapi({ description: 'Call an App instead of running an agent: each fire wakes the App and sends the payload to method path (default POST /). prompt_template is then optional.' }),
             session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']).optional().openapi({ description: 'Whether each fire starts a new session, reuses one, pins one, or keys by session_key.' }),
             session_id: z.string().optional().openapi({ description: 'Session to pin when session_mode is pinned.' }),
             session_key: z.string().optional().openapi({ description: 'Template deriving one session per key when session_mode is keyed.' }),
@@ -437,6 +439,10 @@ export function registerTriggersRoutes(): void {
       }
       if (draft.type === 'app' && draft.app) {
         const problem = await validateAppTriggerTarget(projectId, draft.app);
+        if (problem) return c.json({ error: problem }, 400);
+      }
+      if (draft.target) {
+        const problem = await validateAppTriggerTarget(projectId, draft.target.app);
         if (problem) return c.json({ error: problem }, 400);
       }
       if (draft.type === 'webhook' && draft.secretEnv) {
@@ -602,6 +608,7 @@ export function registerTriggersRoutes(): void {
             event: z.string().optional().openapi({ description: 'The adapter event type id of an event trigger.' }),
             event_config: z.record(z.string(), z.any()).optional().openapi({ description: 'Provider event config of an event trigger.' }),
             app: z.string().optional().openapi({ description: 'App slug of an app trigger.' }),
+            target: z.object({ app: z.string(), path: z.string().optional(), method: z.enum(['POST', 'GET']).optional() }).nullish().openapi({ description: 'Call an App instead of running an agent: each fire wakes the App and sends the payload to method path (default POST /). null clears it.' }),
             session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']).optional().openapi({ description: 'Session reuse mode.' }),
             session_id: z.string().optional().openapi({ description: 'Session to pin.' }),
             session_key: z.string().optional().openapi({ description: 'Session key template.' }),
@@ -686,6 +693,10 @@ export function registerTriggersRoutes(): void {
           }
           if (draft.type === 'app' && draft.app && (body.type === 'app' || 'app' in body)) {
             const problem = await validateAppTriggerTarget(projectId, draft.app);
+            if (problem) return { ok: false, error: problem, status: 400 };
+          }
+          if (draft.target && 'target' in body) {
+            const problem = await validateAppTriggerTarget(projectId, draft.target.app);
             if (problem) return { ok: false, error: problem, status: 400 };
           }
           if (draft.type === 'webhook' && draft.secretEnv) {
