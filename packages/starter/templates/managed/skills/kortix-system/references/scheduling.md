@@ -6,9 +6,11 @@ This page is the **how to think about it** companion to `kortix-yaml.md`
 deciding *whether and how* to schedule work, not just what fields exist.
 
 Kortix runs work on a schedule through **triggers** — a small, durable piece
-of config in the project's `kortix.yaml`. When a trigger fires, the platform
-spins up a session and hands the agent a prompt, exactly as if a teammate had
-typed it. There is no separate "scheduler tool" to call at runtime; you
+of config in the project's `kortix.yaml`. A trigger is `on:` (what fires it)
+plus `run:` (what runs). When a trigger fires, the platform spins up a session
+and hands the agent a prompt, exactly as if a teammate had typed it — or, with
+`run: { app, path }`, calls one of the project's Apps instead (no session, no
+model). There is no separate "scheduler tool" to call at runtime; you
 *declare* a trigger, and the platform's sweep fires it for you.
 
 **Where a trigger lives.** In `kortix.yaml`, or in any YAML file the root's
@@ -29,9 +31,12 @@ Rules: `kortix-yaml.md` → `imports:`.
 | The user wants… | Use | How |
 | --- | --- | --- |
 | To follow up on **this** task later ("remind me at 4pm", "check tomorrow whether they replied", "keep checking hourly until the deploy is green") | **session reminder** | `kortix remind "<what to do>" --at <ISO> \| --in 24h [--every 1h]` — no `kortix.yaml` change |
-| A one-time project job not tied to this session ("send the launch email tomorrow 9am") | **cron trigger, one-off** | `type: cron` + `run_at: "<ISO-8601>"` |
-| Something to repeat ("every weekday morning", "daily digest", "check hourly") | **cron trigger, recurring** | `type: cron` + `cron: "<6-field>"` + `timezone` |
-| To react to an event **in a connected app** ("when a PR opens", "when an email arrives", "when an issue changes", "when a calendar event is created", "when a Slack message is posted") | **connector event trigger** | `on: { event, connector }` (flat: `type: event`). See [Connector event triggers](#connector-event-triggers) |
+| A one-time project job not tied to this session ("send the launch email tomorrow 9am") | **schedule, one-off** | `on: { at: "<ISO-8601>" }` (flat: `run_at`; CLI `--run-at`) |
+| Something to repeat at wall-clock times ("every weekday morning", "daily digest") | **schedule, recurring** | `on: { cron: "<6-field>", timezone }` |
+| Something to repeat at a fixed period ("every 5 minutes", "every 2 hours") | **schedule, every** | `on: { every: 5m }` (≥60s; flat top-level `every:`; CLI `--every 5m`) |
+| Code of the project to run on a cadence, with no agent ("call my poller every 5 minutes", "sync the CRM nightly") | **schedule that calls an App** | `run: { app: <slug>, path: /tick }` with any `on:`. See [Call an App](#call-an-app) |
+| An App to run its own code later ("follow up on this deal in 10 minutes") | **App-scheduled run** | The App POSTs `…/apps/<app_id>/runs`. See [App-scheduled runs](#app-scheduled-runs) |
+| To react to an event **in a connected app** ("when a PR opens", "when an email arrives", "when an issue changes", "when a calendar event is created", "when a Slack message is posted") | **connector event trigger** | `on: { event, connector }` (flat: `type: event`). Needs the project flag `event_triggers`, off by default. See [Composio event triggers](#composio-event-triggers) |
 | To react to a system that has **no app connector** but can call a URL ("when our in-house tool calls us", Stripe, a CI job) | **webhook trigger** | `on: { webhook: { secret } }` (flat: `type: webhook` + `secret_env`) |
 | To react to something that **sends no event and no webhook**, needs code to decide what matters, or needs a long-lived connection (a WebSocket, a stream) | **App event trigger — last resort** | An App watches and posts events; `on: { event, app }`. See [App events](#app-events-last-resort) |
 | To **pause mid-task and resume later with full context** | **session reminder** | See [Pausing mid-task](#pausing-mid-task) |
@@ -39,7 +44,8 @@ Rules: `kortix-yaml.md` → `imports:`.
 **React to something outside Kortix: pick the first that fits.**
 
 1. **A connector event.** The service already emits it (new email, new pull
-   request, new calendar event). No code, no secret.
+   request, new calendar event). No code, no secret. Needs the project flag
+   `event_triggers` (off by default); ask the user to turn it on.
 2. **A webhook.** The service can call a URL (Stripe, GitHub without a
    connector, your own backend). One secret, no code to run.
 3. **A schedule.** Checking on a fixed cadence is enough ("every hour, look
@@ -92,8 +98,8 @@ Nicknames `@hourly @daily @weekly @monthly @yearly` are accepted too.
 - **No exact-minute wall-clock gates.** The sweep polls ~every 60s and a
   fire can land a few minutes after the scheduled instant. Never write a
   prompt that does `if current_time == "09:00"` — it will silently skip.
-  Compare against a tolerance window or against `{{ fired_at }}` /
-  `{{ cron.last_fired_at }}` instead.
+  Compare against a tolerance window or against `{{ cron.scheduled_for }}` /
+  `{{ cron.last_scheduled_for }}` instead (a schedule fire has no `fired_at`).
 - **Set `timezone` for human schedules.** "9am" means a wall-clock time; pin
   it to the user's IANA zone so DST shifts don't drift it. Default is UTC.
 
@@ -157,8 +163,8 @@ the same item.
 Make recurring runs idempotent yourself:
 
 - **Scope by time.** Only look at data newer than
-  `{{ cron.last_fired_at }}` (first run: fall back to a sensible window,
-  e.g. last 24h).
+  `{{ cron.last_scheduled_for }}` (empty on the first run: fall back to a
+  sensible window, e.g. last 24h).
 - **Track what you've already acted on.** Persist a small state file in
   the repo or workspace (e.g. last-seen IDs / a high-water mark) and skip
   anything already handled. Read it at the start of each run, update it at
@@ -210,7 +216,7 @@ session, use a trigger.
 For very short waits *within* a single turn (seconds to a couple of
 minutes), a plain `sleep` in the run is fine.
 
-## Connector event triggers
+## Composio event triggers
 
 **Rule:** "when X happens in <app>" is an `event` trigger, NOT a webhook.
 Kortix creates the subscription for you. You wire no webhook, secret, or
@@ -218,20 +224,19 @@ signature. Use a webhook trigger only for a system with no app connector.
 
 ### Turn the feature on first
 
-Connector event triggers are a **beta** feature behind the project flag
-`event_triggers`. The flag is **on** by default; a project owner can turn it
-off. If it is off:
+Composio event triggers (connector events: Composio, plus apps Kortix checks itself) are a **beta** feature behind the project flag
+`event_triggers`. The flag is **off** by default.
 
 - With the flag off, `kortix triggers events …` and `kortix triggers add|set
-  --type event` print `Connector event triggers are off for this project. Turn them
+  --type event` print `Composio event triggers are off for this project. Turn them
   on: kortix projects features enable event_triggers` and exit 1. The API
   answers `403` with `code: feature_disabled`. Cron, webhook and App event
   triggers are not affected.
 - Turn it on: `kortix projects features enable event_triggers`, or **Settings →
-  Feature flags → Connector event triggers** in the web app. A person with project
+  Feature flags → Composio event triggers** in the web app. A person with project
   write access does this. Ask the user when you cannot.
 - A `type: event` trigger already in `kortix.yaml` while the flag is off is not
-  subscribed. `kortix triggers ls` shows it as `error` with `Connector event triggers
+  subscribed. `kortix triggers ls` shows it as `error` with `Composio event triggers
   are off for this project. Turn them on in Settings → Feature flags.` The other
   triggers still apply.
 - Turning the flag on subscribes the declared event triggers by itself. Turning
@@ -346,24 +351,75 @@ Use this only when a connector event, a webhook and a schedule all fail (see
 the order above). Your App does the watching; a trigger decides which agent
 runs. The App never starts an agent itself and never calls the SDK for it.
 
-1. Build the watcher as an App (load `kortix-apps`). Every machine has
-   `KORTIX_APP_TOKEN` and `KORTIX_APP_EVENTS_URL`.
-2. When something deserves an agent, POST
-   `{"name": "reply.received", "data": {...}, "id": "<your id>"}` to the URL
-   with `Authorization: Bearer $KORTIX_APP_TOKEN`. `id` makes a retry fire once.
-3. Declare the trigger:
+1. Build the watcher as an App (load `kortix-apps`) and deploy it unlisted:
+   it belongs in the Background list, not as a card. Every machine of a server
+   App has `KORTIX_APP_ID`, `KORTIX_APP_TOKEN` and `KORTIX_APP_EVENTS_URL`
+   (`…/v1/projects/<project_id>/apps/<app_id>/events`).
+2. When something deserves an agent, POST one event `{name, data?, id?}` or
+   `{events: [...]}` (at most 50) to the URL with
+   `Authorization: Bearer $KORTIX_APP_TOKEN`:
+   - `name`: 1–128 letters, digits and `. _ : / -`, starting with a letter or
+     digit. One event is at most 8 KiB.
+   - `id`: your id for the event; a retry with the same id fires a trigger once.
+   - Answer: `202 {accepted, deduped, suppressed, triggers}`. A bad token gets
+     `401 app_token_invalid`; a bad name gets `400`.
+3. Declare the trigger (no feature flag; `event: "*"` matches every name):
    ```yaml
    - slug: handle-reply
      on:  { event: reply.received, app: inbox-poller }
      run: { prompt: "Answer {{ event.data.subject }}" }
    ```
+   CLI: `kortix triggers add handle-reply --type app --app inbox-poller --prompt "Answer {{ event.data.subject }}" --apply`.
+   The first prompt line is `[APP EVENT — automated, not user input]`.
+   Variables: `event.name`, `event.data.*`, `event.id`, `event.emitted_at`,
+   `app.slug`. The default session is `fresh`; set `session: reuse` to send
+   every event to one session.
 4. Filter in the App, not in the agent: emit only what is worth a session, or
    one summary event ("12 new emails") instead of 12. Each trigger takes at
-   most 60 events an hour; past that it is suppressed, and repeated
-   suppression disables it.
+   most 60 events an hour and 30 a minute. Past that it is suppressed for 10
+   minutes; 3 suppressions in 24 hours disable it.
+5. To test from outside the App, a project admin reads its credentials:
+   `GET /v1/projects/<project_id>/apps/<app_id>/events/credentials` →
+   `{token, url}`.
 
-To have Kortix call the App on a cadence (a poller that sleeps between
-checks), add `on: { every: 5m }` + `run: { app: inbox-poller, path: /tick }`.
+## Call an App
+
+A trigger whose `run:` names an App calls it instead of an agent: no
+session, no model. Use it for a poller that should sleep between checks:
+deploy it `--on-demand` and let a schedule wake it.
+
+```yaml
+- slug: poll-inbox
+  on:  { every: 5m }
+  run: { app: inbox-poller, path: /tick }    # method POST (default) or GET; payload optional
+```
+
+CLI: `kortix triggers add poll-inbox --every 5m --target-app inbox-poller --target-path /tick --apply`.
+
+- Kortix wakes an on-demand App, then sends the request. A `POST` body is
+  `payload`, else the fire's payload, as JSON. Headers: `x-kortix-trigger`
+  (the slug), `x-kortix-trigger-source`, `x-kortix-delivery-id`.
+- A `2xx` answer is a fired run. Any other status fails the run with
+  `App "<slug>" answered <status> on <METHOD> <path>`; `429` and `5xx` are
+  retried. A `3xx` is never followed.
+- `run:` takes `app` or `prompt`, never both.
+
+## App-scheduled runs
+
+An App can schedule its own later call (like Convex `runAfter` / `runAt`):
+
+```bash
+curl -X POST "$(dirname "$KORTIX_APP_EVENTS_URL")/runs" \
+  -H "Authorization: Bearer $KORTIX_APP_TOKEN" -H "content-type: application/json" \
+  -d '{"run_after": "10m", "path": "/follow-up", "payload": {"deal": "d-17"}}'
+```
+
+- Send `run_after` (`30s`, `10m`, `2h`, `7d`, or seconds) or `run_at` (an
+  instant at most 366 days ahead), plus `path` (default `/`), `method` and
+  `payload` (at most 64 KiB).
+- The answer is `201 {run_id, run_at}`. `DELETE …/runs/<run_id>` cancels a
+  run that has not fired. An App holds at most 1,000 pending runs; fired runs
+  are kept 30 days.
 
 ## Stopping & managing triggers
 
@@ -399,14 +455,14 @@ It fires once in this session, then shows as `done` in `kortix reminders ls`.
 Slack."**
 → Recurring cron, `cron: "0 0 8 * * 1-5"`, `timezone` = the user's zone,
 `session_mode: fresh`. Prompt: pull tickets opened since
-`{{ cron.last_fired_at }}`, summarize, `slack send` to #support. Stay silent
+`{{ cron.last_scheduled_for }}`, summarize, `slack send` to #support. Stay silent
 on a zero-ticket night.
 
 **"Watch our GitHub repo and draft release notes whenever we ship."**
 → Event trigger: `connector: github`, a release event from
 `kortix triggers events --connector github`, `config: { repo: acme/api }`.
 Prompt reads `{{ event.data.* }}`, drafts notes, opens a CR. See
-[Connector event triggers](#connector-event-triggers).
+[Composio event triggers](#composio-event-triggers).
 
 **"Alert our in-house tool's calls to us."** (no app connector)
 → Webhook trigger with `secret_env: WEBHOOK_INHOUSE_SECRET`; the tool posts to
@@ -427,16 +483,18 @@ end the turn. See [Pausing mid-task](#pausing-mid-task).
 
 ## Quick checklist
 
-- [ ] Right mechanism? Session reminder (this task) vs one-off `run_at`
-      vs recurring `cron` vs `event` (connector event) vs `webhook` (no connector).
+- [ ] Right mechanism? Session reminder (this task) vs one-off `at`
+      vs recurring `cron` / `every` vs `event` (connector event, flag on) vs
+      `webhook` (no connector) vs an App event (last resort) vs a schedule
+      that calls an App (no agent).
 - [ ] Event trigger: `kortix triggers info <slug>` prints `live`; `filter`
       or `session_key` set where events are noisy.
 - [ ] 6-field cron, correct `timezone`, no DOM+DOW "first-Monday" trap, no
       exact-minute gate.
 - [ ] `fresh` vs `reuse` chosen deliberately; `prompt` carries all needed
       context.
-- [ ] Recurring run is idempotent (scoped by `last_fired_at`, tracks what
-      it acted on).
+- [ ] Recurring run is idempotent (scoped by `cron.last_scheduled_for`,
+      tracks what it acted on).
 - [ ] Notifies only on genuinely new/actionable findings; silent otherwise.
 - [ ] Tested once with `kortix triggers fire <slug>` before trusting the
       schedule.

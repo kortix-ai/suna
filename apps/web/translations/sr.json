@@ -1252,7 +1252,7 @@
           "description": "Обавештава људе којих се сесија тиче (ко је послао промпт, ко ју је направио и ко је прати) преко пријемног сандучета са звонцем, push обавештења у прегледачу и е-поште, и упозорава на окидаче и подсетнике који не успевају. Искључено: push сесије добија само телефон особе која ју је направила, а телефон власника налога добија један push кад окидач почне да не успева."
         },
         "event_triggers": {
-          "name": "Okidači događaja konektora",
+          "name": "Composio okidači događaja",
           "description": "Pokrenite agenta kada se nešto desi u povezanoj aplikaciji: nova e-pošta, pull request, događaj u kalendaru. Događaji dolaze iz Composio-a. Kortix i sam proverava vaše povezane aplikacije."
         },
         "volumes": {
@@ -22722,7 +22722,9 @@
     "diagramEdit": "Уреди дијаграм",
     "diagramDone": "Готово",
     "codeLanguage": "Језик кода",
-    "editedAgo": "Измењено {time}"
+    "editedAgo": "Измењено {time}",
+    "openFullPage": "Отвори целу страницу",
+    "close": "Затвори"
   },
   "emailConnect": {
     "homeTitle": "Gde je sanduče",

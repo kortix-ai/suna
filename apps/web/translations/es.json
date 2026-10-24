@@ -1252,7 +1252,7 @@
           "description": "Avisa a las personas a las que concierne una sesión (quien envió el prompt, quien la creó y quien la sigue) con una bandeja con campana, notificaciones push del navegador y correo, y alerta cuando fallan disparadores y recordatorios. Desactivado: solo el teléfono de quien creó la sesión recibe su push, y el teléfono de un propietario de la cuenta recibe uno cuando un disparador empieza a fallar."
         },
         "event_triggers": {
-          "name": "Disparadores de eventos de conectores",
+          "name": "Disparadores de eventos de Composio",
           "description": "Inicia un agente cuando ocurre algo en una app conectada: un correo nuevo, un pull request, un evento del calendario. Los eventos vienen de Composio. Kortix también revisa por sí mismo tus apps conectadas."
         },
         "volumes": {
@@ -22722,7 +22722,9 @@
     "diagramEdit": "Editar diagrama",
     "diagramDone": "Listo",
     "codeLanguage": "Lenguaje del código",
-    "editedAgo": "Editado {time}"
+    "editedAgo": "Editado {time}",
+    "openFullPage": "Abrir a página completa",
+    "close": "Cerrar"
   },
   "emailConnect": {
     "homeTitle": "Dónde vive el buzón",

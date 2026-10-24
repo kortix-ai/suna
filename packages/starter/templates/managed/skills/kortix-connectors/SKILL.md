@@ -116,6 +116,20 @@ approval card in the thread (`approval_instructions` says so): do not repost
 the link.
 </approvals>
 
+<connector-events>
+## Start an agent when something happens in a connected app
+
+To run an agent on a new email, a pull request or an issue, use a connector
+event trigger: `on: { event: <TYPE>, connector: <slug> }` (flat `type: event`).
+It is a beta behind the project flag `event_triggers` (**Composio event
+triggers**), off by default: ask the user to run
+`kortix projects features enable event_triggers`. Sources: `composio`, and
+`mcp` (Kortix checks the connected app itself). The prompt starts with
+`[Composio event: …]` or `[Connector event: …]`. These are not App events:
+an App event is one a Kortix App posts. Recipes: kortix-system →
+`references/scheduling.md` → Composio event triggers.
+</connector-events>
+
 <adding-connectors>
 Search the catalog first:
 

@@ -38,7 +38,7 @@ A self-hosted instance runs with billing off by default (`KORTIX_BILLING_INTERNA
 | --- | --- |
 | Kortix-managed model calls | Input, output and cache tokens of each request, at the provider's base price plus a 5.5% platform fee. |
 | Model calls on your own provider key | Nothing for the first $1,000 of usage a month at the provider's list price. After that, 5% of each request's list price. A ChatGPT subscription and OpenCode Go are never charged. Enterprise has no fee, and Kortix can waive it per account. |
-| Sandbox compute | The reserved spec (`cpu`, `memory`, `disk`) multiplied by the seconds the sandbox is active. Session sandboxes, App machines and project monitors all count. |
+| Sandbox compute | The reserved spec (`cpu`, `memory`, `disk`) multiplied by the seconds the sandbox is active. Session sandboxes and App machines count. An on-demand App that has stopped uses no compute. |
 | Kortix-proxied tools | Each web search, image search or web scraping request that goes through Kortix. |
 
 - Compute meters the spec the sandbox reserves, not what it uses. Set the spec in `kortix.yaml`. See [Sandboxes & previews](/docs/work/runtime#hardware-and-docker).

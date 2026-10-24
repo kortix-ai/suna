@@ -1252,7 +1252,7 @@
           "description": "Informiert die Personen, die eine Sitzung betrifft (wer den Prompt sendete, wer sie erstellte und wer ihr folgt), über eine Glocke, Browser-Push und E-Mail, und meldet fehlschlagende Trigger und Erinnerungen. Aus: Den Push einer Sitzung erhält nur das Telefon der Person, die sie erstellt hat, und das Telefon eines Kontoinhabers erhält einen Push, wenn ein Trigger anfängt fehlzuschlagen."
         },
         "event_triggers": {
-          "name": "Connector-Ereignis-Trigger",
+          "name": "Composio-Ereignis-Trigger",
           "description": "Starte einen Agenten, wenn in einer verbundenen App etwas passiert: eine neue E-Mail, ein Pull Request, ein Kalendertermin. Die Ereignisse kommen von Composio. Kortix prüft deine verbundenen Apps zusätzlich selbst."
         },
         "volumes": {
@@ -22722,7 +22722,9 @@
     "diagramEdit": "Diagramm bearbeiten",
     "diagramDone": "Fertig",
     "codeLanguage": "Sprache des Codes",
-    "editedAgo": "Bearbeitet {time}"
+    "editedAgo": "Bearbeitet {time}",
+    "openFullPage": "Ganze Seite öffnen",
+    "close": "Schließen"
   },
   "emailConnect": {
     "homeTitle": "Wo das Postfach liegt",
