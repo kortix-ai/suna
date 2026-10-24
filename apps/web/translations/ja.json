@@ -20795,7 +20795,7 @@
     "managedTitle": "Kortix管理モデル",
     "managedDescription": "Platinum Inference のモデルです。その価格に {fee}% のプラットフォーム手数料を加えた額をクレジットで支払います。APIキーは不要です。",
     "managedUpgradeHint": "アップグレードしてKortixの管理モデルを利用するか、独自のプロバイダーに接続してください。",
-    "managedUnavailableHint": "このデプロイでは Kortix の管理モデルは利用できません。独自のプロバイダーに接続してください。",
+    "managedRowHint": "自分の API キーなしですべてのモデルを利用できます。有料プランに含まれます。",
     "textImage": "テキスト + 画像",
     "textOnly": "テキストのみ",
     "zdrTitle": "ゼロデータ保持",

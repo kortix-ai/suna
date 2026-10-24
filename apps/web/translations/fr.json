@@ -20795,7 +20795,7 @@
     "managedTitle": "Modèles gérés par Kortix",
     "managedDescription": "Modèles de Platinum Inference, à leur prix plus des frais de plateforme de {fee} %, payés en crédits. Aucune clé API nécessaire.",
     "managedUpgradeHint": "Passez à une offre supérieure pour utiliser les modèles gérés de Kortix, ou connectez votre propre fournisseur.",
-    "managedUnavailableHint": "Les modèles gérés par Kortix ne sont pas disponibles sur ce déploiement. Connectez votre propre fournisseur.",
+    "managedRowHint": "Utilisez tous les modèles sans vos propres clés d'API. Inclus dans les offres payantes.",
     "textImage": "Texte + image",
     "textOnly": "Texte uniquement",
     "zdrTitle": "Conservation zéro des données",

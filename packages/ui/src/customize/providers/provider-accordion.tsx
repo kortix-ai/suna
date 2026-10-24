@@ -586,30 +586,26 @@ function SignInSubRows({
 }
 
 /**
- * Kortix with no servable model, as one static row: the logo, one line and,
- * where billing sells a plan, Upgrade in the place of the chevron. Nothing to
- * expand, so the line is said once. With billing off there is no plan to sell,
- * so the line says managed models are unavailable here instead of "Upgrade".
+ * Kortix with no servable model, as one static row: the logo, one line and
+ * Upgrade in the place of the chevron. Nothing to expand, so it says its line
+ * once. The caller renders it only where billing sells a plan: a self-hosted
+ * deployment has no Kortix-managed models, so the row would be a dead end.
  */
 function ManagedUpgradeRow({ projectId, row }: { projectId: string; row: AccordionRowHeaderProps['row'] }) {
   const t = useTranslations('sessionUi.modelGate');
   const tAccess = useTranslations('modelAccess');
-  const { openUpgrade, showUpgradeOption } = useModelConnectionGate(undefined, { projectId });
+  const { openUpgrade } = useModelConnectionGate(undefined, { projectId });
   return (
     <div className="flex items-center gap-3">
       <ProviderLogoStatus providerId={row.id} label={row.label} status={row.status} size="medium" />
       <span className="min-w-0 flex-1">
         <span className="text-foreground block truncate text-sm font-medium">{row.label}</span>
-        <span className="text-muted-foreground block truncate text-xs">
-          {showUpgradeOption ? tAccess('managedUpgradeHint') : tAccess('managedUnavailableHint')}
-        </span>
+        <span className="text-muted-foreground block truncate text-xs">{tAccess('managedRowHint')}</span>
       </span>
-      {showUpgradeOption ? (
-        <Button type="button" size="xs" className="shrink-0" onClick={openUpgrade}>
-          <CreditCardIcon className="size-3.5 shrink-0" />
-          {t('upgrade')}
-        </Button>
-      ) : null}
+      <Button type="button" size="xs" className="shrink-0" onClick={openUpgrade}>
+        <CreditCardIcon className="size-3.5 shrink-0" />
+        {t('upgrade')}
+      </Button>
     </div>
   );
 }
@@ -733,6 +729,9 @@ export function ProviderAccordion({
   const meta = useProviderMeta();
   const access = useModelAccess(enabled ? projectId : null);
   const managedProvider = useManagedProvider(enabled ? projectId : null);
+  // Where billing sells no plan (a self-hosted deployment) Kortix-managed
+  // models do not exist, so the managed row with no models is left out.
+  const { showUpgradeOption } = useModelConnectionGate(undefined, { projectId });
   const pooled = usePooledProviderIds(projectId, enabled);
   useLiveLlmProviderCatalog(projectId, enabled);
   const catalogRevision = useLlmProviderCatalogRevision();
@@ -850,6 +849,7 @@ export function ProviderAccordion({
     }
 
     if (entry.managed && entry.models.length === 0) {
+      if (!showUpgradeOption) return null;
       return (
         <AccordionRowFrame key={row.id} expanded={false}>
           <div className="px-3.5 py-2.5">

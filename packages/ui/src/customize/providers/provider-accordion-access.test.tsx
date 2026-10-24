@@ -32,19 +32,19 @@ test('quick Models dialog does not advertise a managed provider with no usable m
     const markup = renderToStaticMarkup(<ProviderAccordion projectId="synthetic-project" />);
     expect(markup).not.toContain('Paid from credits');
     expect(markup).not.toContain('aria-label="Included"');
-    expect(markup).toContain('connect your own provider');
+    expect(markup).toContain('Included with a paid plan');
   }
 });
 
-test('the managed row says its line once, with Upgrade inline or the unavailable line when billing is off', () => {
+test('the managed row says its line once with Upgrade inline, and is absent where billing sells no plan', () => {
   models = {};
   showUpgradeOption = true;
   let markup = renderToStaticMarkup(<ProviderAccordion projectId="synthetic-project" />);
-  expect(markup.split('connect your own provider').length - 1).toBe(1);
+  expect(markup.split('Included with a paid plan').length - 1).toBe(1);
   expect(markup).toContain('Upgrade');
   showUpgradeOption = false;
   markup = renderToStaticMarkup(<ProviderAccordion projectId="synthetic-project" />);
-  expect(markup).toContain('not available on this deployment');
-  expect(markup).not.toContain('Upgrade to use');
+  expect(markup).not.toContain('Included with a paid plan');
+  expect(markup).not.toContain('data-accordion-row="kortix"');
   showUpgradeOption = true;
 });
