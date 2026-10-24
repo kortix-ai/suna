@@ -21,5 +21,5 @@ set statement_timeout = '30s';
 --   [ ] Any ALTER TYPE ... ADD VALUE needs:
 -- enum-value-checked: <how you verified every env, including any faked baseline, has this value>
 
-ALTER TABLE "kortix"."artifacts" ADD COLUMN "space" text;--> statement-breakpoint
-ALTER TABLE "kortix"."artifacts" ADD COLUMN "agent" text;
+ALTER TABLE "kortix"."artifacts" ADD COLUMN IF NOT EXISTS "space" text;--> statement-breakpoint
+ALTER TABLE "kortix"."artifacts" ADD COLUMN IF NOT EXISTS "agent" text;
