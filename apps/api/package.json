@@ -51,7 +51,7 @@
     "hono": "^4.13.11",
     "jose": "^5.9.6",
     "marked": "^15.0.7",
-    "nodemailer": "^10.0.13",
+    "nodemailer": "^10.1.4",
     "oauth4webapi": "^3.8.7",
     "postgres": "^3.4.8",
     "re2js": "2.8.6",
