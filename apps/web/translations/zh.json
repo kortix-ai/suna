@@ -3416,15 +3416,36 @@
     "greeting": "欢迎，{name}。我是 Kortix。",
     "greetingNoName": "欢迎。我是 Kortix。",
     "intro": "无论是任务、工作流，还是还没想清楚的点子，都可以带给我。我们一起理清楚。",
-    "question": "您想从哪里开始？",
-    "recommendTools": "推荐工具",
-    "updateMemory": "更新项目记忆",
+    "canTitle": "你可以用 Kortix 做什么",
+    "can": {
+      "work": {
+        "title": "交给它真正的工作",
+        "body": "调研、文档、演示文稿、表格和网站。每个会话都有自己独立隔离的机器。"
+      },
+      "memory": {
+        "title": "它会记住",
+        "body": "它对你、你的团队和公司的了解会带入每一个会话。"
+      },
+      "tools": {
+        "title": "在你的工具里工作",
+        "body": "一键连接 3,000+ 应用。连接器凭据从不进入机器。"
+      },
+      "chat": {
+        "title": "加入团队聊天",
+        "body": "在 Slack 或 Microsoft Teams 中提及它并交代任务。"
+      },
+      "schedule": {
+        "title": "自动运行",
+        "body": "触发器按计划或通过 Webhook 启动工作。"
+      },
+      "apps": {
+        "title": "构建应用",
+        "body": "内部工具和仪表盘，带登录托管。"
+      }
+    },
+    "startHint": "在下方告诉 Kortix 你在做什么，或发送“带我上手 Kortix”开始引导式设置。",
     "placeholder": "告诉 Kortix 您在做什么",
-    "toolsPrompt": "推荐适合我工作流的工具和连接器。如果需要，先问我在做什么。",
-    "memoryPrompt": "了解我的工作方式。每次只问我一个简短的问题，内容关于我的角色、我在做什么、我使用的工具，以及我喜欢的工作方式。把我的回答保存到项目记忆中，让以后的会话直接从这些信息开始。",
-    "inviteTeammate": "邀请成员",
-    "connectSlack": "连接 Slack",
-    "slackConnected": "Slack 已连接"
+    "kickoff": "带我上手 Kortix"
   },
   "announcements": {
     "memories": {
@@ -20552,61 +20573,6 @@
       "aboutDescription": "关于此描述",
       "senderUnavailable": "无法加载发送账户。请检查发件人一行。",
       "quoted": "“{text}”"
-    }
-  },
-  "projectOnboarding": {
-    "resetSuccess": "入职重置",
-    "back": "返回",
-    "skip": "跳过",
-    "skipForNow": "暂时跳过",
-    "progress": "设置进度",
-    "work": {
-      "title": "你主要做什么工作？",
-      "description": "Kortix 会据此为你推荐第一批任务。",
-      "ariaLabel": "你的工作领域",
-      "noteLabel": "用几个词告诉我们",
-      "notePlaceholder": "例如：研究或招聘",
-      "continue": "继续",
-      "options": {
-        "founder": "经营公司",
-        "engineering": "工程",
-        "product_design": "产品与设计",
-        "sales": "销售",
-        "marketing": "市场营销",
-        "finance_ops": "运营",
-        "support": "支持与客户成功",
-        "other": "其他"
-      }
-    },
-    "apps": {
-      "title": "你使用哪些应用？",
-      "description": "点击应用即可连接。你可以随时添加更多。",
-      "ariaLabel": "应用",
-      "searchPlaceholder": "搜索应用或类别",
-      "clearSearch": "清除搜索",
-      "connectApp": "连接 {app}",
-      "appConnected": "{app} 已连接",
-      "connectedCount": "已连接 {count} 个",
-      "noMatches": "没有与“{query}”匹配的应用",
-      "notConfiguredTitle": "此处未设置应用",
-      "notConfiguredDescription": "此部署没有应用目录。你可以稍后在设置中添加连接器。",
-      "continue": "继续"
-    },
-    "plan": {
-      "title": "Kortix 应该使用哪些模型？",
-      "description": "你可以随时在设置中更改。",
-      "seePlans": "查看套餐",
-      "open": "打开工作区",
-      "addKey": "添加密钥",
-      "modelAccess": "模型访问",
-      "useKortix": "Kortix 模型",
-      "recommended": "推荐",
-      "useKortixDescription": "立即可用。使用你套餐中的额度。",
-      "useKortixNeedsPlan": "需要 Kortix 套餐或额度。",
-      "bringKey": "我自己的 API 密钥",
-      "providerDescription": "Anthropic、OpenAI 或其他提供商。",
-      "keyConnected": "已连接一个密钥。",
-      "decideLater": "稍后决定"
     }
   },
   "commandPalette": {

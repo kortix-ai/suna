@@ -881,9 +881,6 @@ function scanFile(file) {
       const coveredSettingsRail =
         file === path.join(uiSrcDir, 'customize/settings/rail.ts') &&
         ['STATIC_GROUPS', 'RETIRED_RAIL_ITEMS'].includes(catalogRoot);
-      const coveredOnboardingProfileFixture =
-        file === path.join(srcDir, 'components/projects/onboarding/onboarding-profile.ts') &&
-        catalogRoot === 'USE_CASE_OPTIONS';
       // The foreign-harness sample payloads (Codex / Claude Code session-log
       // fixtures) are synthetic DATA, not UI copy: they render as sample tool
       // content in tests and /debug/session-fixture, and translating what a
@@ -1136,7 +1133,6 @@ function scanFile(file) {
         !coveredAuditTitleText &&
         !coveredSessionsCopy &&
         !coveredSettingsRail &&
-        !coveredOnboardingProfileFixture &&
         !coveredForeignToolFixture &&
         !coveredCompanyOsMessageKey &&
         !coveredRoleCapabilityCopy &&

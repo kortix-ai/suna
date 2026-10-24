@@ -31,11 +31,9 @@ export function projectProviderModalTab(tab: ProviderModalTab): 'providers' | 'm
  * route segment is the fallback.
  *
  * The fallback is what every original caller relies on — they all render under
- * `/projects/[id]`. The explicit id exists because the onboarding wizard's plan
- * step now also runs on `/new` (`app/(app)/new`), which has NO `[id]` segment:
- * there the route yields `null`, `modal` is therefore `null`, and
- * `openConnectProvider` renders nothing while the step's only control never
- * advances the wizard.
+ * `/projects/[id]`. The explicit id serves callers outside that route, such as
+ * Customize's provider list: there the route may yield `null`, `modal` is
+ * then `null`, and `openConnectProvider` renders nothing.
  *
  * `!== undefined`, never `??`: a caller that deliberately passes `null` means
  * "act on no project", and must not silently inherit whatever route it happens

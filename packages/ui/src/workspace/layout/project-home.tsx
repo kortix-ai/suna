@@ -1,9 +1,9 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { hubTarget } from '../../internal/stores/account-panel-store';
 import { useTranslations } from '../../i18n';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ComposerChatInput, type ComposerOptions } from '../../session/composer/composer-chat-input';
 import { ComposerDropZone } from '../../session/composer/composer-drop-zone';
@@ -12,20 +12,26 @@ import type { AttachedFile } from '../../session/composer/session-chat-input';
 import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
 import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
 import { useIsMobile } from '../../internal/hooks';
-import { useProjectCan } from '../../internal/lib/use-project-can';
+import { useProjectCan, useProjectCans } from '../../internal/lib/use-project-can';
 import { useComposerPrefillStore } from '../../internal/stores/composer-prefill-store';
-import { isFirstChatRequested, useFirstChatPending } from '../../internal/stores/first-chat-store';
+import {
+  firstChatHref,
+  isFirstChatRequested,
+  useFirstChatPending,
+  useFirstChatStore,
+} from '../../internal/stores/first-chat-store';
 import { ProjectScope } from '../../internal/project-scope';
-import { useUiComponents, useUiSearchParams } from '../../providers/ui-provider';
+import { useUiComponents, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
 import {
   getProjectDetail,
   listProjectAccessRequests,
   listProjectSandboxes,
+  setProjectOnboardingComplete,
   type SandboxTemplate,
   type SessionPromptOverrides,
 } from '@kortix/sdk';
 import type { AttachmentSubmission } from '../../session/composer/attachment-submission';
-import { contract, qk, type Command } from '@kortix/sdk/react';
+import { contract, invalidateProject, qk, type Command } from '@kortix/sdk/react';
 import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
 import { AccessRequestsBell } from '../home/access-requests-bell';
 import { notificationCenterOn } from '../../internal/hooks/use-notification-center';
@@ -38,6 +44,12 @@ import { useProjectHomeSend } from './use-project-home-send';
 // IAM tests already import from here, so the moved pieces keep their address.
 export { ProjectHomeWelcomeBody } from '../home/welcome-body';
 
+/** What finishing the onboarding takes. Module-level: the batch key needs a stable list. */
+const ONBOARDING_ACTIONS = [
+  PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE,
+  PROJECT_ACTIONS.PROJECT_SESSION_START,
+] as const;
+
 export interface ProjectHomeSendOptions extends ComposerOptions {
   sandbox_slug?: string;
 }
@@ -48,8 +60,14 @@ export interface ProjectHomeSendOptions extends ComposerOptions {
  * setup checklist.
  *
  * Until a new project's first message is sent, the column is the first chat
- * instead (`home/first-chat.tsx`, started by onboarding): the same composer,
- * docked at the bottom under a welcome from Kortix.
+ * instead (`home/first-chat.tsx`): the same composer, docked at the bottom
+ * under a welcome from Kortix.
+ *
+ * With `onboarding`, a project that is not onboarded yet redirects here, and
+ * the first chat's composer holds "Onboard me". It sends itself as soon as a
+ * model is usable; the agent runs the onboarding from there (the
+ * `kortix-onboarding` skill). Without a model the composer's tray offers
+ * Upgrade and Connect model.
  *
  * This component owns the composer's WIRING — which sandbox, which agent, what
  * a send carries, what a prefill does. Everything it renders is a component of
@@ -73,6 +91,12 @@ export type ProjectHomeProps = {
   busy?: boolean;
   /** With the default send: runs first; throw to refuse the send (the draft stays). */
   beforeSend?: () => Promise<void>;
+  /**
+   * A project that is not onboarded yet opens on the first chat, whose
+   * composer sends "Onboard me" once a model is usable. Off by default: a
+   * white-label or SDK host decides its own first run. Kortix web turns it on.
+   */
+  onboarding?: boolean;
 };
 
 /**
@@ -92,6 +116,7 @@ function ProjectHomeView({
   onSend,
   busy,
   beforeSend,
+  onboarding: onboardingEnabled = false,
 }: ProjectHomeProps) {
   const defaultSend = useProjectHomeSend(projectId, { beforeSend });
   const { HomeAnnouncement } = useUiComponents();
@@ -104,14 +129,16 @@ function ProjectHomeView({
   // home, which "New session" opens, stays the normal home.
   const searchParams = useUiSearchParams();
   const firstChatPending = useFirstChatPending(projectId);
-  const firstChat = firstChatPending && isFirstChatRequested(searchParams);
+  const firstChatRequested = isFirstChatRequested(searchParams);
+  const router = useUiRouter();
+  const queryClient = useQueryClient();
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [prefill, setPrefill] = useState<{
     text: string;
     id: number;
-    submit?: boolean;
+    submit?: boolean | 'when-ready';
     files?: AttachedFile[];
     options?: SessionPromptOverrides;
   } | null>(null);
@@ -167,12 +194,40 @@ function ProjectHomeView({
     ...contract('config'),
   });
   const accountId = projectDetailQuery.data?.project?.account_id;
-  // The onboarding wizard opens over this page until the project is stamped
-  // (`project-shell.tsx`); the promo waits for the stamp (KRTX-2378).
+  // The promo waits for the onboarding stamp (KRTX-2378).
   const onboarded = Boolean(
     (projectDetailQuery.data?.project?.metadata as { onboarding_completed_at?: string } | undefined)
       ?.onboarding_completed_at,
   );
+  // Only someone who can finish the onboarding is sent into it: the kickoff
+  // starts a session (project.session.start) and the stamp,
+  // `PATCH /projects/:id/onboarding`, asserts project.settings.write. A role
+  // missing either would auto-send a kickoff whose stamp is refused, and get
+  // the onboarding again on every visit. `=== true`: an unresolved probe
+  // never redirects someone the onboarding is not for.
+  const onboardingCans = useProjectCans(projectId, ONBOARDING_ACTIONS);
+  const canSetUpProject = ONBOARDING_ACTIONS.every(
+    (action) => onboardingCans[action]?.allowed === true,
+  );
+  const onboarding =
+    onboardingEnabled && projectDetailQuery.isSuccess && !onboarded && canSetUpProject;
+  // The onboarding lands on the first chat: it starts the chat (the sidebar
+  // row) and moves the address to it. Rendered as the first chat from this
+  // render on, so the usual home never paints in between.
+  useEffect(() => {
+    if (!onboarding) return;
+    useFirstChatStore.getState().start(projectId);
+    if (!firstChatRequested) router.replace(firstChatHref(projectId));
+  }, [onboarding, firstChatRequested, projectId, router]);
+  const firstChat = (firstChatPending && firstChatRequested) || onboarding;
+
+  // Once per mount: a second prefill id would send a second kickoff.
+  const kickoffQueuedRef = useRef(false);
+  useEffect(() => {
+    if (!onboarding || kickoffQueuedRef.current) return;
+    kickoffQueuedRef.current = true;
+    setPrefill({ text: tFirstChat('kickoff'), id: Date.now(), submit: 'when-ready' });
+  }, [onboarding, tFirstChat]);
   // Resolved during render so the bell is an anchor and Next holds its payload
   // in the segment cache. `account_id` arrives on a different query than the
   // count, so the bell can paint before the destination exists.
@@ -187,22 +242,35 @@ function ProjectHomeView({
       options: ComposerOptions,
       attachments?: AttachmentSubmission,
     ) => {
-      const sent = send(
-        text,
-        files,
-        {
-          ...options,
-          ...(metaSelected
-            ? { sandbox_slug: META_SANDBOX_SLUG }
-            : selectedSlug
-              ? { sandbox_slug: selectedSlug }
-              : {}),
-        },
-        attachments,
+      const sent = Promise.resolve(
+        send(
+          text,
+          files,
+          {
+            ...options,
+            ...(metaSelected
+              ? { sandbox_slug: META_SANDBOX_SLUG }
+              : selectedSlug
+                ? { sandbox_slug: selectedSlug }
+                : {}),
+          },
+          attachments,
+        ),
       );
+      // The first send opened a session: the project is onboarded. Stamped
+      // only after the create resolves, so a refused send keeps the
+      // onboarding for the next visit.
+      if (onboarding) {
+        // Spent: a composer mounted later must not apply it again.
+        setPrefill(null);
+        void sent
+          .then(() => setProjectOnboardingComplete(projectId, true))
+          .then(() => invalidateProject(queryClient, projectId))
+          .catch(() => undefined);
+      }
       return sent;
     },
-    [metaSelected, selectedSlug, send],
+    [metaSelected, selectedSlug, send, onboarding, projectId, queryClient],
   );
 
   const isMobile = useIsMobile();
@@ -337,22 +405,7 @@ function ProjectHomeView({
           the first turn there (`useFirstPromptPreviewStore`). Painting the turn
           here left a slow or stuck create looking like a live session. */}
       {firstChat ? (
-        <FirstChat
-          projectId={projectId}
-          inviteTo={canManageMembers ? accessRequestsTo : null}
-          composer={composer}
-          busy={creating}
-          // Both starters send at once, each into a new session. Through the
-          // composer's own submit, not `sendOutsideComposer`: the send carries
-          // the agent and model the composer shows, and a missing model refuses
-          // it the same way a typed message is refused.
-          onRecommendTools={() =>
-            setPrefill({ text: tFirstChat('toolsPrompt'), id: Date.now(), submit: true })
-          }
-          onUpdateMemory={() =>
-            setPrefill({ text: tFirstChat('memoryPrompt'), id: Date.now(), submit: true })
-          }
-        />
+        <FirstChat composer={composer} />
       ) : (
         <ProjectHomeWelcomeBody
           projectId={projectId}
