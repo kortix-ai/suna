@@ -19,3 +19,4 @@ planned, in flight, or parked, so another person or agent can pick it up.
 | Topic | Status |
 |---|---|
 | [`goals-and-workflows/`](goals-and-workflows/README.md) | stage 1 merged on dev (flag `goals`); stage 2 planning |
+| [`email-cost-passthrough/`](email-cost-passthrough/README.md) | parked: meter managed Resend inboxes and emails per account |

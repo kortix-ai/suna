@@ -641,6 +641,19 @@ test('project(id).connectors covers credential-mode/sensitive/policies/pipedream
     '/connectors/projects/PID123/discover/connectors/detail?id=mcp%2Fnotion',
   );
 
+  await kortix.project('PID123').connectors.discover.list({ q: 'crm', kinds: ['mcp', 'composio'], oneClick: true });
+  expect(last().url).toContain('kind=mcp%2Ccomposio');
+  expect(last().url).toContain('oneClick=1');
+
+  await kortix.project('PID123').connectors.discover.tools('kortix:stripe', 'composio:stripe');
+  expect(last().url).toContain(
+    '/connectors/projects/PID123/discover/connectors/tools?id=kortix%3Astripe&way=composio%3Astripe',
+  );
+
+  await kortix.project('PID123').connectors.discover.install({ id: 'kortix:stripe', name: 'Billing' });
+  expect(last().url).toContain('/connectors/projects/PID123/discover/install');
+  expect(last().method).toBe('POST');
+
   await kortix.project('PID123').connectors.pipedream.connect('gmail-1');
   expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail-1/connect');
   expect(last().method).toBe('POST');

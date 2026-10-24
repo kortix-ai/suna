@@ -1,7 +1,11 @@
 'use client';
 import { DetailPageShell } from './detail-page-shell';
+import { ConnectorLogo } from '../../../internal/connector-logo/connector-logo';
+import { ChannelHeroLogoInHeader } from '../../sections/component/channel-hero-frame';
+import { discoverLogoSource, type ConnectorLogoSource } from '../../../internal/connector-logo/connector-logo-source';
+import { ComputerAppPage } from './computer-app-page';
 
-import { getDiscoverConnector, getProjectDetail, listConnectors } from '@kortix/sdk';
+import { getDiscoverConnector, getDiscoverConnectorTools, getProjectDetail, listConnectors } from '@kortix/sdk';
 import { contract, FRESHNESS, qk, useProjectAccountId } from '@kortix/sdk/react';
 import {
   ArrowSquareOutIcon,
@@ -17,7 +21,6 @@ import { useState, type ReactNode } from 'react';
 
 import { Badge } from '../../../primitives/badge';
 import { Button } from '../../../primitives/button';
-import { EntityAvatar } from '../../../primitives/entity-avatar';
 import { Skeleton } from '../../../primitives/skeleton';
 import { EmptyState } from '../../../primitives/empty-state';
 import { ErrorState } from '../../../primitives/error-state';
@@ -25,7 +28,7 @@ import {
   type CatalogEntry,
   appNameKey,
   catalogEntryConnectors,
-  discoverEntryIcon,
+  connectToolkitApp,
 } from '../catalog/catalog-entry';
 import {
   listConnectCatalogPage,
@@ -36,6 +39,8 @@ import {
   connectorSummary,
 } from '../connector-filter';
 import {
+  COMPUTER_APP_ID,
+  appHref,
   appRefFromLocation,
   connectorHref,
   connectorsHref,
@@ -46,6 +51,8 @@ import {
   type InstallTarget,
 } from '../install/install';
 import { InstallButton } from '../install/install-menu';
+import { InstallDialog, wayDescription } from '../install/install-dialog';
+import { wayKindLabel, type WayKind } from '../install/way-kind';
 import {
   installableVariants,
   surfaceInstallName,
@@ -58,7 +65,6 @@ import { PROJECT_ACTIONS } from '../../../internal/lib/project-actions';
 import { useProjectCan } from '../../../internal/lib/use-project-can';
 
 import { connectorRunsOver, connectorStatusTone } from './connector-status';
-import { findEasyConnectApp } from './find-easy-connect-app';
 import { ProviderInfo, providerName } from './provider-info';
 import { ConnectorStatusBadge } from './status-badge';
 
@@ -70,46 +76,31 @@ const SURFACE_ROW = 'flex items-center gap-3 px-4 py-3';
 /** One bordered group of rows, divided. Shared by both lists on the page. */
 const ROW_GROUP = 'bg-popover divide-y overflow-hidden rounded-md border';
 
-const surfaceLabel = (kind: string) => (kind === 'openapi' ? 'OpenAPI' : kind.toUpperCase());
+const surfaceLabel = (kind: string) => wayKindLabel(kind as WayKind);
 
-/**
- * The app page's icon tile (`ConnectorAppIcon`, size `lg`): the resolved
- * favicon, or the glyph tile when the record has none — and the same glyph
- * tile when the URL fails to load, which used to render the browser's
- * broken-image glyph beside the title. Mirrors the catalogue card's
- * `ConnectorIcon`. The latch is per URL (`failedUrl`), so the late-arriving
- * managed logo — which swaps the URL — gets a fresh try without a call-site
- * key.
- */
-function AppIcon({ icon, name }: { icon: string | null; name: string }) {
-  const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  if (!icon || failedUrl === icon) {
-    return <EntityAvatar icon={GlobeIcon} size="lg" label={name} />;
-  }
-  return (
-    <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-sm">
-      {/* eslint-disable-next-line @next/next/no-img-element -- a third-party favicon; the Next loader is bypassed anyway. */}
-      <img
-        src={icon}
-        alt=""
-        width={36}
-        height={36}
-        referrerPolicy="no-referrer"
-        className="size-9 object-contain"
-        onError={() => setFailedUrl(icon)}
-      />
-    </span>
-  );
-}
+/** Tools shown before "Show all". */
+const TOOLS_PREVIEW = 40;
 
 /** What the page needs from either catalogue. */
 interface ResolvedApp {
   name: string;
   description: string | null;
-  icon: string | null;
-  /** The install target of each surface, recommended first. `kind` is the
-   *  badge beside the name; a managed surface has none. */
-  surfaces: Array<{ key: string; label: string; kind: string | null; target: InstallTarget }>;
+  /** The logo source: the same as the app's catalogue card. */
+  logo: ConnectorLogoSource;
+  /** The install target of each way to connect, recommended first. `kind`
+   *  is the badge beside the name. `variantId` reads its tools. */
+  surfaces: Array<{
+    key: string;
+    label: string;
+    kind: WayKind;
+    /** `null` for a Kortix channel: it is set up on the channel page (`setupHref`). */
+    target: InstallTarget | null;
+    setupHref?: string;
+    oneClick: boolean;
+    recommended: boolean;
+    variantId: string | null;
+    url: string | null;
+  }>;
   /** Surfaces Kortix cannot install, with where to read about them. */
   references: Array<{ key: string; label: string; kind: string; href: string | null }>;
 }
@@ -123,12 +114,22 @@ interface ResolvedApp {
  * here, under "Ways to connect".
  */
 
+const ChannelsSection = lazyClient(() =>
+  import('../../sections/view/channels-view').then((m) => m.ChannelsSection),
+);
+
 const AddMcpServerDialog = lazyClient(() =>
   import('../add-mcp/add-mcp-server-dialog').then(
     (m) => m.AddMcpServerDialog,
   ),
 );
 export function AppPage({ projectId, appSegment }: { projectId: string; appSegment: string }) {
+  const search = useUiSearchParams();
+  if (search?.get('id') === COMPUTER_APP_ID) return <ComputerAppPage projectId={projectId} />;
+  return <CatalogAppPage projectId={projectId} appSegment={appSegment} />;
+}
+
+function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegment: string }) {
   const t = useTranslations('connectorPages');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tSharing = useTranslations('accessSharing');
@@ -156,9 +157,25 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
     ? tSharing('everyone', { project: projectName })
     : tSharing('visibilityEveryone');
 
-  const { appQuery, waiting, resolved, managed, detail, provider } = useAppData(projectId, app);
+  // Which way's tools the Tools section lists: the recommended one until the
+  // user picks another under "Ways to connect".
+  const [toolsWay, setToolsWay] = useState<string | null>(null);
+  const [allTools, setAllTools] = useState(false);
+  const { appQuery, resolved, managed, detail, provider } = useAppData(projectId, app);
+  const shownWay =
+    resolved?.surfaces.find((surface) => surface.variantId !== null && surface.variantId === toolsWay) ??
+    resolved?.surfaces.find((surface) => surface.variantId !== null) ??
+    null;
+  const toolsQuery = useQuery({
+    queryKey: ['discover-connector-tools', projectId, detail?.item.id ?? null, shownWay?.variantId ?? null],
+    queryFn: () => getDiscoverConnectorTools(projectId, detail?.item.id ?? '', shownWay?.variantId ?? undefined),
+    enabled: Boolean(detail && shownWay?.variantId),
+    staleTime: 15 * 60_000,
+    retry: false,
+  });
 
-  const { install, pendingKey, setPendingKey } = useInstall(projectId);
+  const { install, ask, confirm, request, setRequest, pendingKey, setPendingKey } = useInstall(projectId);
+
   // The app's own MCP server, when Install connects through it (one-click
   // sign-in): the MCP dialog opens for it instead of the managed app.
   const [mcpApp, setMcpApp] = useState<McpServerApp | null>(null);
@@ -169,7 +186,7 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
   // The connector list is part of the page, not a late addition: Install reads
   // it to reuse the app's connector, and a list that is still empty would make
   // it create a second one.
-  if (waiting || (appQuery && (appQuery.isPending || connectorsQuery.isPending))) {
+  if (appQuery && (appQuery.isPending || connectorsQuery.isPending)) {
     return (
       <DetailPageShell busy>
         <Skeleton className="h-4 w-24 rounded-sm py-0" />
@@ -232,36 +249,56 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
   const installing = pendingKey === app.slug;
   /** `name` tells the page's Install controls apart for assistive tech; `key`
    *  tells them apart for the progress indicator. */
-  const installMenu = (
-    key: string,
-    target: InstallTarget,
-    variant: 'default' | 'secondary',
-    name: string,
-  ) =>
-    canWrite ? (
+  type Surface = ResolvedApp['surfaces'][number];
+  /** Install one way: a one-click MCP server opens the MCP dialog, which
+   *  names the profile; every other way asks for the name first. */
+  const startInstall = (key: string, surface: Surface, name: string) => {
+    const target = surface.target;
+    if (!target) return;
+    setPendingControl(key);
+    // The way the user picked is the way installed.
+    const mcpUrl = surface.kind === 'mcp' && surface.oneClick ? surface.url : null;
+    const askName = () =>
+      ask({ target, way: { kind: surface.kind, oneClick: surface.oneClick }, connectors, app });
+    if (!mcpUrl) {
+      askName();
+      return;
+    }
+    setPendingKey(app.slug);
+    void mcpServerFor(projectId, { name, directMcpUrl: mcpUrl }).then((server) => {
+      setPendingKey(null);
+      if (server) setMcpApp(server);
+      else askName();
+    });
+  };
+  /** `name` tells the page's Install controls apart for assistive tech; `key`
+   *  tells them apart for the progress indicator. */
+  const installMenu = (key: string, surface: Surface, variant: 'default' | 'secondary', name: string) =>
+    surface.setupHref ? (
+      <Button asChild size="sm" variant={variant} className="shrink-0">
+        <Link href={surface.setupHref} aria-label={t('setUpNamed', { name })}>
+          {t('waySetUp')}
+        </Link>
+      </Button>
+    ) : canWrite ? (
       <InstallButton
         label={t('install')}
         aria-label={t('installNamed', { name })}
         variant={variant}
-        onInstall={() => {
-          setPendingControl(key);
-          const mcpUrl = target.managed ? managed?.directMcpUrl : null;
-          if (!mcpUrl) {
-            install(target, { connectors, app });
-            return;
-          }
-          setPendingKey(app.slug);
-          void mcpServerFor(projectId, { name: name, directMcpUrl: mcpUrl }).then((server) => {
-            setPendingKey(null);
-            if (server) setMcpApp(server);
-            else install(target, { connectors, app });
-          });
-        }}
+        onInstall={() => startInstall(key, surface, name)}
         pending={installing && pendingControl === key}
         disabled={installing}
       />
     ) : null;
   const primary = resolved.surfaces[0] ?? null;
+  // A Kortix channel's own page draws the channel as its hero; the ways list
+  // keeps only the other ways (the vendor's MCP server, Composio, the API).
+  // Computer has a page of its own (`ComputerAppPage`).
+  const kortixApp = detail?.item.kind === 'kortix' ? (detail.item.kortix?.app ?? null) : null;
+  const channelPlatform = kortixApp && kortixApp !== 'computer' ? kortixApp : null;
+  const waySurfaces = channelPlatform
+    ? resolved.surfaces.filter((surface) => surface.kind !== 'kortix')
+    : resolved.surfaces;
   const waysCount = resolved.surfaces.length + resolved.references.length;
   const infoCells: Array<{
     key: string;
@@ -270,9 +307,15 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
     value: ReactNode;
   }> = [];
   // The Provider cell follows the primary way to connect: the app itself for
-  // its API/MCP server, Kortix for a managed-only app.
-  const managedOnly = managed && !detail;
-  const managedBy = managedOnly ? connectorRunsOver(provider) : null;
+  // its API/MCP server, the partner for a managed way.
+  const managedBy =
+    primary?.kind === 'composio'
+      ? 'Composio'
+      : primary?.kind === 'kortix'
+        ? 'Kortix'
+        : primary?.kind === 'pipedream'
+          ? connectorRunsOver(provider)
+          : null;
   if (primary)
     infoCells.push({
       key: 'provider',
@@ -293,7 +336,8 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
     if (managed.hasTriggers)
       infoCells.push({ key: 'events', label: t('infoAppEvents'), value: t('infoAppEventsYes') });
   }
-  if (primary?.kind) infoCells.push({ key: 'runs', label: t('infoRunsOver'), value: primary.kind });
+  if (primary?.kind)
+    infoCells.push({ key: 'runs', label: t('infoRunsOver'), value: wayKindLabel(primary.kind) });
   if (waysCount > 1)
     infoCells.push({ key: 'ways', label: t('waysToConnect'), value: String(waysCount) });
 
@@ -308,19 +352,34 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
 
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
-          <AppIcon icon={resolved.icon} name={resolved.name} />
+          <ConnectorLogo source={resolved.logo} size="lg" />
           <h1 className="text-foreground min-w-0 text-xl font-medium text-balance wrap-break-word">
             {resolved.name}
           </h1>
         </div>
-        {primary ? (
-          <div className="shrink-0">
-            {installMenu('header', primary.target, 'default', resolved.name)}
+        {primary && !channelPlatform ? (
+          <div className="flex shrink-0 items-center gap-2">
+            {resolved.surfaces.length > 1 ? (
+              <span className="text-muted-foreground text-xs">
+                {primary.kind === 'kortix'
+                  ? t('setUpWhere')
+                  : t('installsWay', { kind: wayKindLabel(primary.kind) })}
+              </span>
+            ) : null}
+            {installMenu('header', primary, 'default', resolved.name)}
           </div>
         ) : null}
       </header>
 
-      {infoCells.length > 0 || resolved.description ? (
+      {/* A Kortix channel's page: its hero, connected or not, says it all. */}
+      {channelPlatform ? (
+        // The header above shows the app's logo: the hero below does not repeat it.
+        <ChannelHeroLogoInHeader>
+          <ChannelsSection projectId={projectId} platform={channelPlatform} />
+        </ChannelHeroLogoInHeader>
+      ) : null}
+
+      {!channelPlatform && (infoCells.length > 0 || resolved.description) ? (
         <div className="bg-popover divide-border divide-y overflow-hidden rounded-md border">
           {infoCells.length > 0 ? (
             <dl className="flex flex-wrap gap-x-8 gap-y-3 px-4 py-3">
@@ -395,23 +454,50 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
 
       {/* One installable surface and nothing else is no choice: the header's
             Install covers it. */}
-      {resolved.surfaces.length > 1 || resolved.references.length > 0 ? (
+      {waySurfaces.length > (channelPlatform ? 0 : 1) || resolved.references.length > 0 ? (
         <section className="space-y-3">
-          <h2 className="text-foreground text-sm font-medium">{t('waysToConnect')}</h2>
+          <h2 className="text-foreground text-sm font-medium">
+            {channelPlatform ? t('otherWaysToConnect') : t('waysToConnect')}
+          </h2>
           <ul className={ROW_GROUP}>
-            {resolved.surfaces.map((surface) => (
+            {waySurfaces.map((surface) => (
               <li key={surface.key} className={SURFACE_ROW}>
-                <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                  <span className="text-foreground truncate text-sm font-medium">
-                    {surface.label}
-                  </span>
-                  {surface.kind ? (
+                <span className="min-w-0 flex-1 space-y-0.5">
+                  <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                    <span className="text-foreground truncate text-sm font-medium">{surface.label}</span>
                     <Badge variant="muted" size="xs">
-                      {surface.kind}
+                      {wayKindLabel(surface.kind)}
                     </Badge>
-                  ) : null}
+                    {surface.oneClick ? (
+                      <Badge variant="secondary" size="xs">
+                        {t('wayOneClick')}
+                      </Badge>
+                    ) : null}
+                    {surface.recommended ? (
+                      <Badge variant="success" size="xs">
+                        {t('wayRecommended')}
+                      </Badge>
+                    ) : null}
+                  </span>
+                  <span className="text-muted-foreground block text-xs text-pretty">
+                    {wayDescription(t, { kind: surface.kind, oneClick: surface.oneClick }, resolved.name)}
+                  </span>
                 </span>
-                {installMenu(surface.key, surface.target, 'secondary', surface.label)}
+                {surface.variantId && detail ? (
+                  <Button
+                    type="button"
+                    variant={shownWay?.variantId === surface.variantId ? 'secondary' : 'outline-ghost'}
+                    size="sm"
+                    aria-pressed={shownWay?.variantId === surface.variantId}
+                    onClick={() => {
+                      setToolsWay(surface.variantId);
+                      setAllTools(false);
+                    }}
+                  >
+                    {t('wayTools')}
+                  </Button>
+                ) : null}
+                {installMenu(surface.key, surface, 'secondary', surface.label)}
               </li>
             ))}
             {resolved.references.map((reference) => (
@@ -440,6 +526,61 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
             ))}
           </ul>
         </section>
+      ) : null}
+      {shownWay ? (
+        <section className="space-y-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="text-foreground text-sm font-medium">
+              {t('toolsOf', { kind: wayKindLabel(shownWay.kind) })}
+            </h2>
+            {toolsQuery.data ? (
+              <span className="text-muted-foreground text-xs tabular-nums">
+                {t('toolsCount', { count: toolsQuery.data.total })}
+              </span>
+            ) : null}
+          </div>
+          {toolsQuery.isPending ? (
+            <Skeleton className="h-24 w-full py-0" />
+          ) : toolsQuery.isError ? (
+            <p className="text-muted-foreground text-sm">{t('toolsUnavailable')}</p>
+          ) : toolsQuery.data && toolsQuery.data.tools.length > 0 ? (
+            <>
+              <p className="text-muted-foreground text-xs">{t(`toolsSource_${toolsQuery.data.source}`)}</p>
+              <ul className={ROW_GROUP}>
+                {(allTools ? toolsQuery.data.tools : toolsQuery.data.tools.slice(0, TOOLS_PREVIEW)).map((tool) => (
+                  <li key={tool.name} className="space-y-0.5 px-4 py-2.5">
+                    <span className="text-foreground block font-mono text-xs break-all">{tool.name}</span>
+                    {tool.description ? (
+                      <span className="text-muted-foreground line-clamp-2 text-xs text-pretty" title={tool.description}>
+                        {tool.description}
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+              {!allTools && toolsQuery.data.tools.length > TOOLS_PREVIEW ? (
+                <Button type="button" variant="outline" size="sm" onClick={() => setAllTools(true)}>
+                  {t('toolsShowAll', { count: toolsQuery.data.tools.length })}
+                </Button>
+              ) : null}
+            </>
+          ) : (
+            <p className="text-muted-foreground text-sm">
+              {t('toolsAfterInstall', { kind: wayKindLabel(shownWay.kind) })}
+            </p>
+          )}
+        </section>
+      ) : null}
+      {request ? (
+        <InstallDialog
+          key={request.target.appName}
+          appName={request.target.appName}
+          way={request.way}
+          open
+          pending={false}
+          onOpenChange={(open) => !open && setRequest(null)}
+          onConfirm={confirm}
+        />
       ) : null}
       {mcpApp ? (
         <AddMcpServerDialog
@@ -471,34 +612,19 @@ function readableCategory(key: string): string {
 }
 
 function useAppData(projectId: string, app: ReturnType<typeof appRefFromLocation>) {
-  const t = useTranslations('connectorPages');
-  const managedSlug = app?.source === 'easy-connect' ? app.slug : null;
   const connectStatus = useConnectProviderStatus(true);
   const provider = connectStatus.provider ?? 'composio';
-  // `absent`: this deployment has no managed provider, so the app cannot exist.
-  // `unknown` proceeds, as the catalogue does (`useCatalog`).
-  const managedRunnable =
-    managedSlug !== null &&
-    (connectStatus.state === 'configured' || connectStatus.state === 'unknown');
-  const managedQuery = useQuery({
-    queryKey: ['easy-connect-app', projectId, provider, managedSlug],
-    queryFn: () =>
-      findEasyConnectApp(listConnectCatalogPage, { projectId, provider, slug: managedSlug ?? '' }),
-    enabled: managedRunnable,
-    staleTime: 5 * 60_000,
-  });
-
-  // One app, both ways to connect. A managed app names its API/MCP twin
-  // (`directId`); an API/MCP app finds its managed twin by name below.
-  // Same key as the install hook and the old surface modal: one fetch.
-  const discoverId = app?.source === 'discover' ? app.id : (managedQuery.data?.directId ?? null);
+  // Same key as the install hook: one fetch.
+  const discoverId = app?.id ?? null;
   const discoverQuery = useQuery({
     queryKey: ['discover-connector-detail', projectId, discoverId],
     queryFn: () => getDiscoverConnector(projectId, discoverId ?? ''),
     enabled: discoverId !== null,
     staleTime: 15 * 60_000,
   });
-  const twinName = app?.source === 'discover' ? (discoverQuery.data?.item.name ?? null) : null;
+  // The managed (Composio) twin found by name: it adds the sign-in, category
+  // and app-event facts, and is a way to connect when the record lists none.
+  const twinName = discoverQuery.data?.item.name ?? null;
   const managedTwinQuery = useQuery({
     queryKey: ['easy-connect-twin', projectId, provider, twinName],
     queryFn: async () => {
@@ -518,41 +644,87 @@ function useAppData(projectId: string, app: ReturnType<typeof appRefFromLocation
   });
 
   // The query that resolves this app, or `null` when nothing can.
-  const appQuery =
-    app?.source === 'discover' ? discoverQuery : managedRunnable ? managedQuery : null;
-  const waiting = managedSlug !== null && connectStatus.state === 'asking';
+  const appQuery = app ? discoverQuery : null;
 
   const detail = discoverId !== null ? discoverQuery.data : undefined;
-  const managed = (managedRunnable ? managedQuery.data : managedTwinQuery.data) ?? undefined;
-  // The managed App as one more way to connect, after the API/MCP surfaces.
-  const managedSurface = managed
-    ? {
-        key: `managed:${managed.slug}`,
-        label: t('managedSurfaceLabel', { name: managed.name }),
-        kind: 'App',
-        target: easyConnectInstallTarget(managed),
-      }
-    : null;
+  const managed = managedTwinQuery.data ?? undefined;
+  // The managed app as one more way to connect, after the API/MCP surfaces,
+  // unless the catalogue already lists it (it ranks every way).
+  const listsComposio = detail?.variants.some((variant) => variant.kind === 'composio') === true;
+  const managedSurface =
+    managed && !listsComposio
+      ? {
+          key: `managed:${managed.slug}`,
+          label: managed.name,
+          kind: (provider === 'pipedream' ? 'pipedream' : 'composio') as WayKind,
+          target: easyConnectInstallTarget(managed),
+          oneClick: true,
+          recommended: false,
+          variantId: null,
+          url: null,
+        }
+      : null;
+  const installable = detail ? installableVariants(detail.variants) : [];
   const resolved: ResolvedApp | null = detail
     ? {
         name: managed?.name ?? detail.item.name,
         description: detail.item.description ?? managed?.description ?? null,
-        // The managed logo is sharp where the catalogue's favicon is not.
-        icon: managed?.imgSrc ?? discoverEntryIcon(detail.item),
+        // The catalogue card's source, so the page and the card show one logo.
+        logo: discoverLogoSource(detail.item),
+        // Server order: best way first, the recommended one marked.
         surfaces: [
-          ...installableVariants(detail.variants).map((variant, index) => ({
-            key: `${variant.kind}:${variant.id}`,
-            label: variant.name,
-            kind: surfaceLabel(variant.kind),
-            target: discoverInstallTarget(
-              surfaceInstallName(detail.item.name, variant, index),
-              variant,
-            ),
-          })),
+          ...detail.variants.flatMap((variant): ResolvedApp['surfaces'] => {
+            if (variant.kind === 'kortix') {
+              return [
+                {
+                  key: `kortix:${variant.id}`,
+                  label: variant.name,
+                  kind: 'kortix' as WayKind,
+                  target: null,
+                  setupHref: appHref(projectId, { source: 'discover', slug: variant.kortix?.app ?? 'kortix', id: variant.id }),
+                  oneClick: true,
+                  recommended: variant.recommended === true,
+                  variantId: null,
+                  url: null,
+                },
+              ];
+            }
+            if (variant.kind === 'composio') {
+              return variant.composio
+                ? [
+                    {
+                      key: `composio:${variant.id}`,
+                      label: variant.name,
+                      kind: 'composio' as WayKind,
+                      target: easyConnectInstallTarget(connectToolkitApp(variant.composio)),
+                      oneClick: true,
+                      recommended: variant.recommended === true,
+                      variantId: variant.id,
+                      url: null,
+                    },
+                  ]
+                : [];
+            }
+            const index = installable.findIndex((candidate) => candidate.id === variant.id);
+            const usable = installable[index];
+            if (!usable) return [];
+            return [
+              {
+                key: `${variant.kind}:${variant.id}`,
+                label: variant.name,
+                kind: variant.kind as WayKind,
+                target: discoverInstallTarget(surfaceInstallName(detail.item.name, usable, index), usable),
+                oneClick: variant.oneClick === true,
+                recommended: variant.recommended === true,
+                variantId: variant.id,
+                url: variant.url,
+              },
+            ];
+          }),
           ...(managedSurface ? [managedSurface] : []),
         ],
         references: detail.variants
-          .filter((variant) => !variant.connector)
+          .filter((variant) => !variant.connector && variant.kind !== 'composio' && variant.kind !== 'kortix')
           .map((variant) => ({
             key: `${variant.kind}:${variant.id}`,
             label: variant.name,
@@ -560,15 +732,7 @@ function useAppData(projectId: string, app: ReturnType<typeof appRefFromLocation
             href: variant.docs ?? variant.url,
           })),
       }
-    : managed
-      ? {
-          name: managed.name,
-          description: managed.description,
-          icon: managed.imgSrc,
-          surfaces: managedSurface ? [managedSurface] : [],
-          references: [],
-        }
-      : null;
+    : null;
 
-  return { appQuery, waiting, resolved, managed, detail, provider };
+  return { appQuery, resolved, managed, detail, provider };
 }

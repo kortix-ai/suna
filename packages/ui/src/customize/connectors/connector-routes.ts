@@ -7,13 +7,14 @@ import type { CatalogEntry } from './catalog/catalog-entry';
  */
 export const CONNECTED_APP_SEGMENT = 'connected';
 
+/** The id of the native Computer entry: it has its own page (`ComputerAppPage`). */
+export const COMPUTER_APP_ID = 'native:computer';
+
 /**
- * Which catalogue app a page belongs to, as the URL carries it. A Discover app
- * is fetched by `id` (`getDiscoverConnector`), so the id rides in the query;
- * a managed app is looked up by slug.
+ * Which catalogue app a page belongs to, as the URL carries it. The app is
+ * fetched by `id` (`getDiscoverConnector`), so the id rides in the query.
  */
-export type AppRef =
-  { source: 'discover'; slug: string; id: string } | { source: 'easy-connect'; slug: string };
+export type AppRef = { source: 'discover'; slug: string; id: string };
 
 function base(projectId: string): string {
   return customizePath(encodeURIComponent(projectId), 'connectors');
@@ -25,10 +26,7 @@ function withQuery(path: string, params: URLSearchParams): string {
 }
 
 function appParams(app: AppRef): URLSearchParams {
-  const params = new URLSearchParams();
-  if (app.source === 'discover') params.set('id', app.id);
-  else params.set('src', 'apps');
-  return params;
+  return new URLSearchParams({ id: app.id });
 }
 
 export function connectorsHref(
@@ -38,7 +36,6 @@ export function connectorsHref(
   return scope ? `${base(projectId)}?scope=${scope}` : base(projectId);
 }
 
-/** `null` for the computer entry: a computer has no app page. */
 /**
  * The catalogue search, held in `?q=`. Opening a connector is a route change
  * that unmounts the catalogue; a search kept only in state was gone on browser
@@ -58,12 +55,8 @@ export function withConnectorSearch(params: URLSearchParams, query: string): URL
   return params;
 }
 
-export function appRefFromEntry(entry: CatalogEntry): AppRef | null {
-  if (entry.source === 'discover') {
-    return { source: 'discover', slug: entry.slug, id: entry.connector.id };
-  }
-  if (entry.source === 'easy-connect') return { source: 'easy-connect', slug: entry.slug };
-  return null;
+export function appRefFromEntry(entry: CatalogEntry): AppRef {
+  return { source: 'discover', slug: entry.slug, id: entry.connector.id };
 }
 
 export function appHref(projectId: string, app: AppRef): string {
@@ -76,9 +69,7 @@ export function appRefFromLocation(
 ): AppRef | null {
   if (appSegment === CONNECTED_APP_SEGMENT) return null;
   const id = search?.get('id');
-  if (id) return { source: 'discover', slug: appSegment, id };
-  if (search?.get('src') === 'apps') return { source: 'easy-connect', slug: appSegment };
-  return null;
+  return id ? { source: 'discover', slug: appSegment, id } : null;
 }
 
 export function connectorHref(

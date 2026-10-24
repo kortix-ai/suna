@@ -185,28 +185,12 @@ const FLAGS: readonly FeatureFlagDef[] = [
     platformDefault: () => true,
     enforcement: 'routes',
   },
-  {
-    key: 'connectors_api_discover',
-    name: 'Connectors API Discover',
-    description:
-      'Browse direct API, MCP, GraphQL, CLI, and Postman surfaces without requiring a managed provider.',
-    stability: 'beta',
-    available: () => true,
-    // Direct discovery is an explicit opt-in, not the reliable managed default.
-    platformDefault: () => false,
-    enforcement: 'routes',
-  },
-  {
-    key: 'agentmail_email',
-    name: 'AgentMail Email',
-    description:
-      'Assign AgentMail inbox connections to the agent so inbound email threads can start and continue Kortix sessions. Native email channels are still experimental.',
-    stability: 'experimental',
-    available: () => true,
-    // Explicit opt-in: hidden unless a project enables it in Settings.
-    platformDefault: () => false,
-    enforcement: 'routes',
-  },
+  // `connectors_api_discover` graduated (2026-10-24) with `connectors_v2`:
+  // integrations.sh is part of the one Kortix catalog every project browses.
+  // A stored override is inert.
+  // `agentmail_email` graduated (2026-10-24): every project can connect an
+  // email inbox. Turning it on never provisioned an inbox (only an explicit
+  // connect does), so graduating creates nothing. A stored override is inert.
   // `llm_gateway` graduated (2026-10-20): the LLM gateway is the only model
   // path for every project. No flag, no native OpenCode provider mode, no
   // operator lever. A stored `experimental.llm_gateway` override is inert.
@@ -327,7 +311,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     name: 'Connector event triggers',
     description:
       'Start an agent when something happens in a connected app: a new email, a pull request, a calendar event. ' +
-      'Events come from Composio. With Connectors v2 on, Kortix also checks your connected apps itself.',
+      'Events come from Composio, and Kortix also checks your connected apps itself.',
     stability: 'beta',
     // Always offered: on a deployment with no event source configured, the
     // triggers themselves say so (status `error` naming COMPOSIO_API_KEY).
@@ -438,6 +422,20 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'a session box has no kortix-artifacts skill and its CLI hides and refuses `kortix artifacts`. ' +
       'IAM: project.artifact.* leave the account permission catalog until a project of the account has it on.',
   },
+  {
+    key: 'email_channel',
+    name: 'Email channel',
+    description:
+      'Give the agent an email inbox on Resend: inbound mail starts and continues sessions, and the agent reads, replies and sends from the inbox. Bring your own Resend API key and domain.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'ROUTES: …/channels/email/connect, /domains*, PATCH …/email/installation and an email `POST /connectors` answer 403 `feature_disabled`; ' +
+      'GET …/email/installation answers null and …/email/mode `enabled: false`; the Resend webhook ignores the project\'s inboxes; ' +
+      'channel materialize and sync drop the email connector; the catalog hides native:email.',
+  },
   // `session_log` graduated (2026-10-22, P8.2): the session log is every session's
   // saved history and the v1 transcript mirror is no longer read. No flag and no
   // operator lever. A stored `experimental.session_log` override is inert.
@@ -463,25 +461,11 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED (dev). A log over SESSION_LOG_RESTORE_MAX_BYTES ' +
       '(24 MiB) answers 413 and the box boots with the D3 note alone (harness/README.md).',
   },
-  {
-    key: 'connectors_v2',
-    name: 'Connectors v2',
-    description:
-      'Connectors on Kortix: the MCP app catalog in Customize → Connectors (vendor MCP servers, signed in with OAuth that Kortix runs), app events that Kortix checks on those apps (with Connector event triggers on), and Telegram as a channel connector. New connector accounts are no longer created for the whole project by default.',
-    stability: 'experimental',
-    available: () => true,
-    platformDefault: () => false,
-    enforcement: 'routes',
-    enforcementNote:
-      'ROUTES: /projects/:id/channels/telegram/* answer 403 `feature_disabled` when off ' +
-      '(projects/routes/channel-telegram.ts). BEHAVIORAL: the Telegram webhook keeps its legacy ' +
-      'one-session-per-message path when off (channels/telegram-webhook.ts); the kortix_telegram ' +
-      'connector is materialized only while on (connectors/channel-materialize.ts); sync seeds no ' +
-      'empty project-owned account while on (connectors/sync.ts). Discover serves the Kortix MCP ' +
-      'catalog while on (connectors/routes/catalogues.ts). The `mcp` app-event source exists only ' +
-      'while on (projects/trigger-events/registry.ts); turning it off moves those triggers to error ' +
-      'and drops their poll streams (feature-flags/toggle-effects.ts).',
-  },
+  // `connectors_v2` graduated (2026-10-24): the Kortix catalog (MCP apps,
+  // integrations.sh, Composio), Telegram as a channel connector, the Kortix
+  // app-event source (under `event_triggers`) and no seeded empty project
+  // account are the only connectors path. A stored override is inert; the
+  // serializer keeps sending `true` for older clients.
   {
     key: 'agent_rooms',
     name: 'Rooms',

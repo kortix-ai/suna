@@ -72,6 +72,7 @@ export function approvalIdentity(details: ApprovalLinkDetails) {
       details.connector_name ??
       (details.connector ? details.connector.charAt(0).toUpperCase() + details.connector.slice(1) : null),
     action: actionLabel(details.action),
+    slug: details.connector ?? null,
     iconUrl: connectorLogoUrl(details),
   };
 }
@@ -583,6 +584,7 @@ export function ApprovalDecisionPanel({
           <div className="flex min-w-0 items-center gap-3" title={details.action}>
             <ConnectorAppMark
               name={connectorName ?? details.action}
+              slug={details.connector}
               iconUrl={connectorLogoUrl(details)}
               size="md"
             />

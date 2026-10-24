@@ -65,7 +65,7 @@ export interface ArtifactFile {
 export interface ArtifactVersion {
   /** The Files commit that made it: pass it as `version` to read or restore it. */
   id: string;
-  /** 1 for the oldest save in the history window. */
+  /** 1 for the oldest save the history returns. */
   number: number;
   created_at: string;
 }
