@@ -32,8 +32,8 @@ let project: SeededProject;
 
 const spec = {
   slug: 'poll-bank', path: 'kortix.yaml#triggers.poll-bank', name: 'poll-bank', type: 'cron', agent: 'default', model: null,
-  enabled: true, promptTemplate: '', cron: '0 */5 * * * *', runAt: null, timezone: 'UTC', secretEnv: null, run: null,
-  monitorMode: null, intervalSeconds: null, expectEventWithinSeconds: null, sessionMode: 'fresh', pinnedSessionId: null,
+  enabled: true, promptTemplate: '', cron: '0 */5 * * * *', runAt: null, timezone: 'UTC', secretEnv: null,
+  sessionMode: 'fresh', pinnedSessionId: null,
   sessionKey: null, filter: null, target: { app: 'bank-watcher', path: '/tick', method: 'POST' },
 } as const;
 

@@ -1,10 +1,6 @@
 import { BoundedMap } from '../shared/bounded-map';
 import {
   EVENT_FORBIDDEN_KEYS,
-  MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
-  MONITOR_MIN_INTERVAL_SECONDS,
-  MONITOR_MODES,
-  MONITOR_RUN_MAX_LENGTH,
   TRIGGER_MIN_MAX_LATENESS_SECONDS,
   formatDurationSeconds,
   parseDurationSeconds,
@@ -16,9 +12,7 @@ import { MANIFEST_FILENAME, readManifest } from './manifest-io';
 import { validateTriggerCron, validateTriggerTimezone } from './trigger-schedule';
 import {
   GIT_TRIGGER_SESSION_MODES,
-  type GitMonitorFields,
   type GitTriggerEventFields,
-  type GitMonitorMode,
   type GitTriggerParseError,
   type GitTriggerSessionMode,
   type GitTriggerSpec,
@@ -30,61 +24,6 @@ import {
 
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
-/**
- * Parse + validate the `type: monitor` fields off a manifest entry or a CRUD
- * body. ONE implementation for both paths, mirroring
- * `@kortix/manifest-schema`'s `validateMonitorTrigger` rule for rule — the
- * write gate and the runtime reader must never disagree on what a monitor is.
- * Returns a plain error string so each caller can wrap it in its own shape.
- */
-export function parseMonitorFields(
-  row: Record<string, unknown>,
-): GitMonitorFields | { error: string } {
-  const run = typeof row.run === 'string' ? row.run.trim() : '';
-  if (!run) return { error: 'monitor triggers must declare a `run` command (repo-relative)' };
-  if (run.length > MONITOR_RUN_MAX_LENGTH) {
-    return { error: `run must be at most ${MONITOR_RUN_MAX_LENGTH} characters` };
-  }
-  if (/[\r\n]/.test(run)) return { error: 'run must be a single command line — no newlines' };
-
-  const modeRaw = typeof row.mode === 'string' ? row.mode.trim().toLowerCase() : '';
-  if (!(MONITOR_MODES as readonly string[]).includes(modeRaw)) {
-    return { error: `mode must be "poll" or "stream" (got "${modeRaw || 'unset'}")` };
-  }
-  const monitorMode = modeRaw as GitMonitorMode;
-
-  let intervalSeconds: number | null = null;
-  if (monitorMode === 'poll') {
-    const parsed = parseMonitorDuration(row.interval, 'interval', MONITOR_MIN_INTERVAL_SECONDS);
-    if ('error' in parsed) return parsed;
-    intervalSeconds = parsed.seconds;
-  } else if (row.interval !== undefined && row.interval !== null) {
-    return { error: 'interval is only valid on a `mode: poll` monitor — a stream runs continuously' };
-  }
-
-  let expectEventWithinSeconds: number | null = null;
-  const expectRaw = row.expect_event_within ?? row.expectEventWithin;
-  if (expectRaw !== undefined && expectRaw !== null) {
-    const parsed = parseMonitorDuration(
-      expectRaw,
-      'expect_event_within',
-      MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
-    );
-    if ('error' in parsed) return parsed;
-    expectEventWithinSeconds = parsed.seconds;
-  }
-
-  // cron/webhook wiring on a monitor is a hard error, not a silent drop: a
-  // manifest that claims a schedule the monitor runner never reads is a lie.
-  for (const key of ['cron', 'schedule', 'run_at', 'runAt', 'timezone', 'secret_env', 'secretEnv']) {
-    if (row[key] !== undefined && row[key] !== null) {
-      return {
-        error: `${key} is not valid on a monitor trigger — monitors are driven by their \`run\` process`,
-      };
-    }
-  }
-  return { run, monitorMode, intervalSeconds, expectEventWithinSeconds };
-}
 
 /**
  * Parse + validate the `type: event` fields off a manifest entry (`config` key)
@@ -140,6 +79,10 @@ export function eventOnlyKeyError(
 
 const APP_SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
+/** What a `type: monitor` entry answers since the monitor box was removed. */
+export const MONITOR_REMOVED =
+  'monitor triggers were removed. Run the watcher in an App (a process that POSTs to $KORTIX_APP_EVENTS_URL) and fire with a `type: app` trigger, or poll with a cron trigger whose `target` is the App';
+
 /**
  * The `type: app` field: the slug of the App whose events fire the trigger.
  * Every other type's wiring is a hard error. Mirrors `@kortix/manifest-schema`'s
@@ -177,7 +120,6 @@ export function parseTargetField(
 ): { target?: NonNullable<GitTriggerSpec['target']> } | { error: string } {
   const raw = row.target;
   if (raw === undefined || raw === null) return {};
-  if (type === 'monitor') return { error: 'target is not valid on a monitor trigger' };
   if (!isPlainObject(raw)) return { error: 'target must be an object: { app, path, method }' };
   const { app, path = '/', method = 'POST', payload, ...rest } = raw as Record<string, unknown>;
   const unknown = Object.keys(rest)[0];
@@ -438,16 +380,6 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
     }
     entry.timezone = spec.timezone;
     if (spec.maxLatenessSeconds) entry.max_lateness = formatDurationSeconds(spec.maxLatenessSeconds);
-  } else if (spec.type === 'monitor') {
-    entry.run = spec.run ?? '';
-    entry.mode = spec.monitorMode ?? '';
-    // Durations re-emit in canonical form (largest whole unit) — the same
-    // normalization `run_at` gets. `interval` is poll-only; a stream monitor
-    // has none to write.
-    if (spec.intervalSeconds !== null) entry.interval = formatDurationSeconds(spec.intervalSeconds);
-    if (spec.expectEventWithinSeconds !== null) {
-      entry.expect_event_within = formatDurationSeconds(spec.expectEventWithinSeconds);
-    }
   } else if (spec.type === 'event' && spec.event) {
     entry.connector = spec.event.connector;
     if (spec.event.account) entry.account = spec.event.account;
@@ -496,16 +428,16 @@ function parseTriggerEntry(
   }
 
   const typeRaw = typeof row.type === 'string' ? row.type.trim() : '';
+  if (typeRaw === 'monitor') return err(slug, MONITOR_REMOVED);
   if (
     typeRaw !== 'cron' &&
     typeRaw !== 'webhook' &&
-    typeRaw !== 'monitor' &&
     typeRaw !== 'event' &&
     typeRaw !== 'app'
   ) {
     return err(
       slug,
-      `type must be "cron", "webhook", "monitor", "event", or "app" (got "${typeRaw || 'unset'}")`,
+      `type must be "cron", "webhook", "event", or "app" (got "${typeRaw || 'unset'}")`,
     );
   }
   const type = typeRaw as GitTriggerType;
@@ -644,10 +576,6 @@ function parseTriggerEntry(
         runAt: null,
         timezone: 'UTC',
         secretEnv: null,
-        run: null,
-        monitorMode: null,
-        intervalSeconds: null,
-        expectEventWithinSeconds: null,
         app: parsed.app,
       },
     };
@@ -665,31 +593,7 @@ function parseTriggerEntry(
         runAt: null,
         timezone: 'UTC',
         secretEnv: null,
-        run: null,
-        monitorMode: null,
-        intervalSeconds: null,
-        expectEventWithinSeconds: null,
         event,
-      },
-    };
-  }
-
-  if (type === 'monitor') {
-    const monitor = parseMonitorFields(row);
-    if ('error' in monitor) return err(slug, monitor.error);
-    return {
-      ok: true,
-      spec: {
-        ...base,
-        type: 'monitor',
-        cron: null,
-        runAt: null,
-        timezone: 'UTC',
-        secretEnv: null,
-        run: monitor.run,
-        monitorMode: monitor.monitorMode,
-        intervalSeconds: monitor.intervalSeconds,
-        expectEventWithinSeconds: monitor.expectEventWithinSeconds,
       },
     };
   }
@@ -719,8 +623,8 @@ function parseTriggerEntry(
       return {
         ok: true,
         spec: {
-          ...base, type: 'cron', cron: null, runAt: null, timezone, secretEnv: null, run: null,
-          monitorMode: null, intervalSeconds: null, expectEventWithinSeconds: null, ...lateness, everySeconds: every.everySeconds,
+          ...base, type: 'cron', cron: null, runAt: null, timezone, secretEnv: null,
+          ...lateness, everySeconds: every.everySeconds,
         },
       };
     }
@@ -740,10 +644,6 @@ function parseTriggerEntry(
           runAt: new Date(parsed).toISOString(),
           timezone,
           secretEnv: null,
-          run: null,
-          monitorMode: null,
-          intervalSeconds: null,
-          expectEventWithinSeconds: null,
           ...lateness,
         },
       };
@@ -762,10 +662,6 @@ function parseTriggerEntry(
         runAt: null,
         timezone,
         secretEnv: null,
-        run: null,
-        monitorMode: null,
-        intervalSeconds: null,
-        expectEventWithinSeconds: null,
         ...lateness,
       },
     };
@@ -796,10 +692,6 @@ function parseTriggerEntry(
       runAt: null,
       timezone: 'UTC',
       secretEnv,
-      run: null,
-      monitorMode: null,
-      intervalSeconds: null,
-      expectEventWithinSeconds: null,
     },
   };
 }

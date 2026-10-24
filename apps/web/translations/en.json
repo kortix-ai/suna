@@ -20368,7 +20368,11 @@
       "cliDeviceWarning": "Approve only a login you started. Type the code your terminal shows.",
       "cliDeviceCode": "Login code",
       "cliDeviceApproved": "Login approved. Return to your terminal.",
-      "cliDeviceAction": "Authorize CLI"
+      "cliDeviceAction": "Authorize CLI",
+      "text705a7e325b66": "Kortix App emitted events",
+      "text4b80152fb96b": "Read Kortix App event credentials",
+      "text59374c1f1acd": "Kortix App scheduled a run",
+      "text32f35e849409": "Kortix App cancelled a run"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

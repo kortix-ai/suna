@@ -685,16 +685,16 @@ channels:
 
   // ─── shared sections: triggers type = "monitor" ───────────────────────
   {
-    name: 'monitor: a stream monitor with run + mode is valid',
+    name: 'monitor: type monitor is rejected (the monitor box was removed)',
     format: 'yaml',
-    valid: true,
+    valid: false,
     input:
       'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./monitors/t.ts\n    mode: stream\n    prompt: go\n',
   },
   {
-    name: 'monitor: a poll monitor with an interval is valid',
+    name: 'monitor: a poll monitor is rejected too',
     format: 'yaml',
-    valid: true,
+    valid: false,
     input:
       'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./monitors/t.ts\n    mode: poll\n    interval: 60s\n    expect_event_within: 24h\n    prompt: go\n',
   },
@@ -1706,19 +1706,11 @@ describe('Known divergence: cross-field rules only the imperative validator enfo
     expect(validateCombined(parseToml(toml))).toBe(true);
   });
 
-  // A monitor's duration FLOORS (interval ≥ 30s, expect_event_within ≥ 5m)
-  // are value ranges over a formatted string. JSON Schema can pin the shape
-  // (`DURATION_RE`) but not the magnitude, so the floors stay imperative-only.
-  test('monitor interval below the 30s floor: imperative rejects, schema accepts the shape', () => {
-    const yaml =
-      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./m.ts\n    mode: poll\n    interval: 5s\n    prompt: go\n';
-    expect(validateManifest(yaml, 'yaml').valid).toBe(false);
-    expect(validateCombined(parseYaml(yaml))).toBe(true);
-  });
-
-  test('monitor expect_event_within below the 5m floor: imperative rejects, schema accepts the shape', () => {
-    const yaml =
-      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./m.ts\n    mode: stream\n    expect_event_within: 60s\n    prompt: go\n';
+  // A schedule's `every` FLOOR (≥ 1m) is a value range over a formatted
+  // string. JSON Schema can pin the shape (`DURATION_RE`) but not the
+  // magnitude, so the floor stays imperative-only.
+  test('every below the 1m floor: imperative rejects, schema accepts the shape', () => {
+    const yaml = 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    every: 30s\n    prompt: go\n';
     expect(validateManifest(yaml, 'yaml').valid).toBe(false);
     expect(validateCombined(parseYaml(yaml))).toBe(true);
   });

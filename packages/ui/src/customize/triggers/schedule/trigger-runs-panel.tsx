@@ -91,6 +91,7 @@ const SOURCE_LABEL_KEY = {
   monitor: 'text4c2e1df4570b',
   reminder: 'text31757bbfa17e',
   event: 'text5441e7146193',
+  app: 'text0d04bfeb7d64',
 } as const satisfies Record<ProjectTriggerRunSource, string>;
 
 /** Column widths, named once (the Models logs `LANE`). */

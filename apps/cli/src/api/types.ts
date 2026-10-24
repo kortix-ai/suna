@@ -219,9 +219,6 @@ export interface ProjectSessionInitiator {
 
 // ── Triggers ──────────────────────────────────────────────────────────────
 
-/** A `type: monitor` trigger's shape. */
-export type MonitorMode = 'poll' | 'stream';
-
 /** A `type: event` trigger's source + subscription state. */
 export interface ProjectTriggerEvent {
   connector: string;
@@ -311,7 +308,7 @@ export interface ProjectTrigger {
   slug: string;
   path: string;
   name: string;
-  type: 'cron' | 'webhook' | 'monitor' | 'event' | 'app';
+  type: 'cron' | 'webhook' | 'event' | 'app';
   agent: string;
   enabled: boolean;
   cron: string | null;
@@ -319,16 +316,12 @@ export interface ProjectTrigger {
   run_at?: string | null;
   timezone: string;
   secret_env: string | null;
-  /** monitor only — the repo-relative command whose stdout lines are the events. */
-  run: string | null;
-  /** monitor only — `poll` runs `run` every interval; `stream` keeps it alive. */
-  mode: MonitorMode | null;
-  /** mode='poll' only — the poll period in whole seconds. */
-  interval_seconds: number | null;
-  /** monitor only — the silence watchdog in whole seconds. */
-  expect_event_within_seconds: number | null;
+  /** type=cron with `every`: the fixed period in whole seconds. */
+  every_seconds?: number | null;
   /** type=app only: the App whose events fire the trigger. */
   app?: string | null;
+  /** A fire calls this App instead of running an agent. */
+  target?: { app: string; path: string; method: 'POST' | 'GET'; payload?: Record<string, unknown> } | null;
   /** type=event only; null for every other type. */
   event?: ProjectTriggerEvent | null;
   prompt_template: string;

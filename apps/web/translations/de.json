@@ -20357,7 +20357,11 @@
       "cliDeviceWarning": "Genehmige nur eine Anmeldung, die du selbst gestartet hast. Gib den Code ein, den dein Terminal anzeigt.",
       "cliDeviceCode": "Anmeldecode",
       "cliDeviceApproved": "Anmeldung genehmigt. Kehre zu deinem Terminal zurück.",
-      "cliDeviceAction": "CLI autorisieren"
+      "cliDeviceAction": "CLI autorisieren",
+      "text705a7e325b66": "Kortix-App hat Ereignisse gesendet",
+      "text4b80152fb96b": "Ereignis-Zugangsdaten der Kortix-App gelesen",
+      "text59374c1f1acd": "Kortix-App hat einen Lauf geplant",
+      "text32f35e849409": "Kortix-App hat einen Lauf abgebrochen"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

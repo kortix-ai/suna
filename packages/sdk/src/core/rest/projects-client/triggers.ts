@@ -11,10 +11,17 @@ import { unwrap } from './shared';
 // in `project_trigger_runtime` so a fire doesn't amplify into a git commit.
 // ---------------------------------------------------------------------------
 
+/**
+ * `'monitor'` is deprecated: the monitor box was removed, and the API answers
+ * 400 to a new monitor trigger. An App with a schedule or a `type: app`
+ * trigger replaces it. The member stays until the next major.
+ */
 export type ProjectTriggerType = 'cron' | 'webhook' | 'monitor' | 'event' | 'app';
 
 /**
- * How the platform runs a `type: monitor` trigger's `run` command:
+ * @deprecated The monitor box was removed; the API sends `null`. Removed in the next major.
+ *
+ * How the platform ran a `type: monitor` trigger's `run` command:
  * - `poll` — run it every `interval`, print, exit.
  * - `stream` — run it once and keep it alive.
  *
@@ -117,21 +124,13 @@ export interface ProjectTrigger {
   timezone: string;
   /** project_secrets key holding the webhook HMAC secret. */
   secret_env: string | null;
-  /**
-   * For type='monitor' only — the repo-relative command the platform
-   * supervises 24/7 in the project's monitor box. Its stdout lines are the
-   * events; nothing else is. Null on cron/webhook.
-   */
+  /** @deprecated The monitor box was removed; always `null`. Removed in the next major. */
   run: string | null;
-  /** For type='monitor' only — see {@link ProjectMonitorMode}. Null otherwise. */
+  /** @deprecated The monitor box was removed; always `null`. Removed in the next major. */
   mode: ProjectMonitorMode | null;
-  /** For mode='poll' only — the poll period in whole seconds. Null otherwise. */
+  /** @deprecated The monitor box was removed; always `null`. Removed in the next major. */
   interval_seconds: number | null;
-  /**
-   * For type='monitor' only — the silence watchdog in whole seconds. No event
-   * inside this window synthesizes a `silent` lifecycle event, so a wedged
-   * monitor can never fail silently. Null when the monitor declares none.
-   */
+  /** @deprecated The monitor box was removed; always `null`. Removed in the next major. */
   expect_event_within_seconds: number | null;
   /** For type='event' only — see {@link ProjectTriggerEvent}. Null otherwise. */
   event: ProjectTriggerEvent | null;
@@ -259,16 +258,13 @@ export interface CreateProjectTriggerInput {
   timezone?: string;
   /** For type='webhook'. Name of a project_secrets entry. */
   secret_env?: string;
-  /** Required for type='monitor'. Repo-relative command whose stdout lines fire. */
+  /** @deprecated The monitor box was removed; the API refuses monitor triggers. Removed in the next major. */
   run?: string;
-  /** Required for type='monitor'. See {@link ProjectMonitorMode}. */
+  /** @deprecated The monitor box was removed; the API refuses monitor triggers. Removed in the next major. */
   mode?: ProjectMonitorMode;
-  /**
-   * Required for mode='poll', rejected on mode='stream'. Duration literal
-   * (`30s`, `5m`, `24h`, `7d`), floor 30s. Never a bare number.
-   */
+  /** @deprecated The monitor box was removed; the API refuses monitor triggers. Removed in the next major. */
   interval?: string;
-  /** For type='monitor'. Silence watchdog as a duration literal; floor 5m. */
+  /** @deprecated The monitor box was removed; the API refuses monitor triggers. Removed in the next major. */
   expect_event_within?: string;
   /** Required for type='app'. Slug of the App whose events fire the trigger; the App must exist. */
   app?: string;
@@ -324,16 +320,13 @@ export interface UpdateProjectTriggerInput {
   run_at?: string | null;
   timezone?: string;
   secret_env?: string;
-  /** For type='monitor'. Repo-relative command whose stdout lines fire. */
+  /** @deprecated The monitor box was removed; the API refuses monitor triggers. Removed in the next major. */
   run?: string;
-  /** For type='monitor'. See {@link ProjectMonitorMode}. */
+  /** @deprecated The monitor box was removed; the API refuses monitor triggers. Removed in the next major. */
   mode?: ProjectMonitorMode;
-  /**
-   * For mode='poll'. Duration literal (`30s`, `5m`, `24h`, `7d`), floor 30s.
-   * null clears it — required when switching a poll monitor to 'stream'.
-   */
+  /** @deprecated The monitor box was removed; the API refuses monitor triggers. Removed in the next major. */
   interval?: string | null;
-  /** For type='monitor'. Duration literal, floor 5m. null clears the watchdog. */
+  /** @deprecated The monitor box was removed; the API refuses monitor triggers. Removed in the next major. */
   expect_event_within?: string | null;
   /** For type='app'. Slug of the App whose events fire the trigger. */
   app?: string;

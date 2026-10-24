@@ -12,7 +12,7 @@ import {
 } from '../command-helpers.ts';
 import { C, status } from '../style.ts';
 import { checkEventConfig, eventNextStep, surfaceEventTriggerError } from './triggers-events.ts';
-import { appFlagProblem, scheduleFlagProblem, parseEventFlags, parseFilterFlags, parseMonitorFlags, parseRunCapFlags, strayEventFlag } from './triggers-manifest.ts';
+import { appFlagProblem, scheduleFlagProblem, parseEventFlags, parseFilterFlags, parseRunCapFlags, MONITOR_REMOVED, strayEventFlag } from './triggers-manifest.ts';
 
 // ── The LIVE path (--apply, and every `set`) ───────────────────────────────
 //
@@ -73,8 +73,9 @@ export async function triggersAddLive(
 ): Promise<number> {
   if (!slug) return missing('a trigger slug');
   const type = (tf.type ?? 'cron').toLowerCase();
-  if (type !== 'cron' && type !== 'webhook' && type !== 'monitor' && type !== 'event' && type !== 'app') {
-    return fail('--type must be cron, webhook, monitor, event, or app.');
+  if (type === 'monitor') return fail(MONITOR_REMOVED);
+  if (type !== 'cron' && type !== 'webhook' && type !== 'event' && type !== 'app') {
+    return fail('--type must be cron, webhook, event, or app.');
   }
   if (!tf.prompt && !tf.targetApp) return fail('--prompt is required (or --target-app).');
   if (type !== 'event') {
@@ -133,19 +134,6 @@ export async function triggersAddLive(
     if (parsed.account) body.event_account = parsed.account;
     if (parsed.source) body.event_source = parsed.source;
     body.event = parsed.event;
-  } else {
-    // A monitor rejects cron/webhook wiring outright, so send only its own
-    // fields — the same validation `kortix triggers add` runs locally.
-    const monitor = parseMonitorFlags(tf);
-    if ('error' in monitor) return fail(monitor.error);
-    body.run = monitor.run;
-    body.mode = monitor.mode;
-    if (monitor.intervalSeconds !== null) {
-      body.interval = formatDurationSeconds(monitor.intervalSeconds);
-    }
-    if (monitor.expectEventWithinSeconds !== null) {
-      body.expect_event_within = formatDurationSeconds(monitor.expectEventWithinSeconds);
-    }
   }
 
   const ctx = await resolveProjectContext(opts);

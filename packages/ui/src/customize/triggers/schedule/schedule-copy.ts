@@ -25,11 +25,11 @@ import { describeEventTitle } from './event-trigger-copy';
 export type TriggerKind = 'cron' | 'webhook' | 'event';
 
 /**
- * `ProjectTrigger['type']` on the wire also carries `'monitor'` — a separate
- * experimental feature (Monitors) with its own surface, not something this
- * screen edits. `ScheduleView` filters every list through this before it
- * reaches the table, the row actions, or the detail sheet, so `trigger.type`
- * is safe to treat as {@link TriggerKind} anywhere downstream of that filter.
+ * The trigger kinds this screen edits. `ProjectTrigger['type']` on the wire
+ * also carries `'app'`, which this screen does not render yet.
+ * `ScheduleView` filters every list through this before it reaches the table,
+ * the row actions, or the detail sheet, so `trigger.type` is safe to treat as
+ * {@link TriggerKind} anywhere downstream of that filter.
  */
 export function isTriggerKind(type: ProjectTrigger['type']): type is TriggerKind {
   return type === 'cron' || type === 'webhook' || type === 'event';

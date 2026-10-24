@@ -115,11 +115,14 @@ Decisions:
 | 1 | event_triggers flag text | shipped #10872 (e67722ab12); relabel to "Connector event triggers" pending with 3 |
 | 2 | `type: app` triggers (App → agent) | committed c2a108c29d, live-verified on Platinum |
 | 3a | App target on the trigger engine | committed bcbae7e5a1 |
-| 3b | `every` schedules, `target.payload`, one-off App runs (`POST …/apps/:id/runs`) | committed (this commit) |
-| 3c | remove the MCP poll loop; connector checks as schedules | after 3b |
-| 3d | remove the monitor box and `type: monitor` `run` | after 3c; check prod usage first |
+| 3b | `every` schedules, `target.payload`, one-off App runs (`POST …/apps/:id/runs`) | committed 94fa9a534a |
+| 3c | MCP poll loop | Marko 2026-10-24: keep it as is (it works); maybe move onto the engine later |
+| 3d | remove the monitor box and `type: monitor` | committed (this commit); prod usage not checkable locally, so a maintenance step retires any live box; drop `project_monitor_boxes` + `monitor-retire.ts` in a later migration |
 | 3e | `schedules:` / `webhooks:` / `events:` manifest + CLI/API/SDK/UI rename | waits for Marko's go on the shape |
 | 4 | Lambda-style Apps: `memory_mb` sizes, pause/resume, invoke | after 3 |
-| 5 | `/apps` shows only Apps with `display.listed: true` + rendering pass | needs `next dev`; when the laptop has RAM |
-| 6 | docs (`apps.mdx`, `connect/triggers.mdx`), agent skill + templates | with each piece |
+| 5 | `/apps` shows only Apps with `display.listed: true` + rendering pass; **Triggers page renders `type: app` triggers and App targets (today `isTriggerKind` hides them)** | needs `next dev`; when the laptop has RAM |
+| 6 | docs (`apps.mdx`, `connect/triggers.mdx`, `project/manifest.mdx`), agent skill + templates | one pass after 3e, for the final shape; docs still describe monitors until then |
 | 7 | Platinum template build stuck in `building` (kortix-appimg-dev-06b5823eb6aab7bb5d209061) | reported to the Platinum session, passed to Marko |
+
+Found on the way (not this branch's work): `apps/api/src/__tests__/unit-audit-route-labels.test.ts`
+fails on dev because the 18 Artifacts routes (#10842, #10862) have no audit label.

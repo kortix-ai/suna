@@ -3,7 +3,7 @@ import type { UiTranslator } from '../../../i18n';
 import type { UiRouter } from '../../../providers/ui-provider';
 import { projectSessionHref } from '../../../internal/lib/navigation/session-href';
 import type { FireProjectTriggerResponse, ProjectTrigger } from '@kortix/sdk';
-import { ClockIcon, LightningIcon, PulseIcon, WebhooksLogoIcon } from '@phosphor-icons/react';
+import { AppWindowIcon, ClockIcon, LightningIcon, PulseIcon, WebhooksLogoIcon } from '@phosphor-icons/react';
 
 /**
  * The entity row a trigger toast carries: the kind's glyph and the trigger's
@@ -15,6 +15,7 @@ const TRIGGER_TOAST_ICON = {
   webhook: WebhooksLogoIcon,
   monitor: PulseIcon,
   event: LightningIcon,
+  app: AppWindowIcon,
 } as const;
 
 export function triggerToastEntity(

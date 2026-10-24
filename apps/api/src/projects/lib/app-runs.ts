@@ -38,8 +38,8 @@ export async function insertAppRun(input: {
   const slug = `${APP_RUN_SLUG_PREFIX}${randomBytes(8).toString('hex')}`;
   const spec: GitTriggerSpec = {
     slug, path: `apps.${input.app}#runs`, name: `Run of ${input.app}`, type: 'cron', agent: 'default', model: null, enabled: true,
-    promptTemplate: '', cron: null, runAt: input.runAt.toISOString(), timezone: 'UTC', secretEnv: null, run: null,
-    monitorMode: null, intervalSeconds: null, expectEventWithinSeconds: null, sessionMode: 'fresh', pinnedSessionId: null,
+    promptTemplate: '', cron: null, runAt: input.runAt.toISOString(), timezone: 'UTC', secretEnv: null,
+    sessionMode: 'fresh', pinnedSessionId: null,
     sessionKey: null, filter: null, target: { app: input.app, path: input.path, method: input.method, payload: input.payload },
   };
   return db.transaction(async (tx) => {

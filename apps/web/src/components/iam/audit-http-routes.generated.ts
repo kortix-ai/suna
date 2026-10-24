@@ -659,7 +659,6 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "PUT|v1|projects|:projectId|model-defaults",
   "PUT|v1|projects|:projectId|model-enablement",
   "GET|v1|projects|:projectId|model-picker",
-  "POST|v1|projects|:projectId|monitors|ingest",
   "GET|v1|projects|:projectId|oauth",
   "DELETE|v1|projects|:projectId|oauth|:provider",
   "POST|v1|projects|:projectId|oauth|:provider|poll",

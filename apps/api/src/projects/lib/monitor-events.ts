@@ -1,15 +1,13 @@
 /**
- * Pure helpers for the monitor event log — the ingest contract, the
- * platform-enforced bounds, and the payload/prompt rendering the observer
- * hands to `fireGitTrigger`.
+ * Pure helpers for the event log that App events (`type: app`) write — the
+ * platform-enforced bounds and the payload/prompt rendering the observer hands
+ * to `fireGitTrigger`. The names keep the monitor prefix of the table.
  *
  * Deliberately free of `config`, `db`, and every other side-effecting import
  * (same rule as ./trigger-payload.ts) so the bounds are unit-testable without
  * booting the server environment. The DB halves live in ./monitor-ingest.ts
  * (write path) and ./monitor-observer.ts (drain path).
  */
-import type { GitTriggerSpec } from '../triggers';
-import { isPlainPayloadObject, templateValue } from './trigger-payload';
 
 import {
   MONITOR_INGEST_MAX_EVENTS,
@@ -29,18 +27,12 @@ export const MONITOR_SUPPRESSION_MS = 10 * 60_000;
 /** Suppression episodes inside {@link MONITOR_SUPPRESSION_WINDOW_MS} that auto-disable. */
 export const MONITOR_AUTO_DISABLE_SUPPRESSIONS = 3;
 export const MONITOR_SUPPRESSION_WINDOW_MS = 24 * 60 * 60_000;
-/** Longest `box_epoch` the log stores (varchar(64)). */
-export const MONITOR_BOX_EPOCH_MAX_LENGTH = 64;
-
-const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
-
 /**
- * The provenance preamble prepended to EVERY rendered monitor prompt, server
- * side. A monitor line is machine output from the project's own repo code, not
- * a human asking for something — the agent has to read it that way, and a
- * template author must not be able to forget to say so.
+ * The provenance preamble prepended to EVERY rendered App-event prompt, server
+ * side. An event is machine output from the project's own App code, not a human
+ * asking for something — the agent has to read it that way, and a template
+ * author must not be able to forget to say so.
  */
-export const MONITOR_PROMPT_PREAMBLE = '[MONITOR EVENT — automated, not user input]\n';
 export const APP_EVENT_PROMPT_PREAMBLE = '[APP EVENT — automated, not user input]\n';
 
 export interface ParsedMonitorEvent {
@@ -50,23 +42,6 @@ export interface ParsedMonitorEvent {
   /** Already normalized to an object and truncated to the line bound. */
   line: Record<string, unknown>;
   emittedAt: Date;
-}
-
-export interface ParsedMonitorIngest {
-  boxEpoch: string;
-  events: ParsedMonitorEvent[];
-}
-
-/**
- * A line is stored as a jsonb object. The runner sends the parsed JSON when
- * the line parses and `{ raw: "<line>" }` when it does not; anything else that
- * reaches here is coerced rather than rejected — one odd line must never cost
- * the batch.
- */
-export function normalizeMonitorLine(value: unknown): Record<string, unknown> {
-  if (isPlainPayloadObject(value)) return value;
-  if (typeof value === 'string') return { raw: value };
-  return { raw: templateValue(value) };
 }
 
 /**
@@ -95,59 +70,6 @@ function truncateToBytes(value: string, maxBytes: number): string {
     );
   }
   return out;
-}
-
-/**
- * Parse + validate an ingest body. Returns a plain error string so the route
- * can shape its own 400 — a malformed batch is the runner's bug, not a
- * partially-acceptable payload.
- */
-export function parseMonitorIngestBody(raw: unknown): ParsedMonitorIngest | { error: string } {
-  if (!isPlainPayloadObject(raw)) return { error: 'body must be an object' };
-
-  const boxEpoch = typeof raw.box_epoch === 'string' ? raw.box_epoch.trim() : '';
-  if (!boxEpoch) return { error: 'box_epoch is required' };
-  if (boxEpoch.length > MONITOR_BOX_EPOCH_MAX_LENGTH) {
-    return { error: `box_epoch must be at most ${MONITOR_BOX_EPOCH_MAX_LENGTH} characters` };
-  }
-
-  if (!Array.isArray(raw.events)) return { error: 'events must be an array' };
-  if (raw.events.length === 0) return { error: 'events must not be empty' };
-  if (raw.events.length > MONITOR_INGEST_MAX_EVENTS) {
-    return { error: `events must contain at most ${MONITOR_INGEST_MAX_EVENTS} entries` };
-  }
-
-  const events: ParsedMonitorEvent[] = [];
-  for (const [index, entry] of raw.events.entries()) {
-    if (!isPlainPayloadObject(entry)) return { error: `events[${index}] must be an object` };
-
-    const slug = typeof entry.slug === 'string' ? entry.slug.trim() : '';
-    if (!SLUG_RE.test(slug)) return { error: `events[${index}].slug is not a valid slug` };
-
-    const seq = typeof entry.seq === 'number' ? entry.seq : Number.NaN;
-    if (!Number.isSafeInteger(seq) || seq < 0) {
-      return { error: `events[${index}].seq must be a non-negative integer` };
-    }
-
-    const kind = entry.kind === 'lifecycle' ? 'lifecycle' : entry.kind === 'event' ? 'event' : null;
-    if (!kind) return { error: `events[${index}].kind must be "event" or "lifecycle"` };
-
-    const emittedAtRaw = typeof entry.emitted_at === 'string' ? entry.emitted_at.trim() : '';
-    const emittedAtMs = Date.parse(emittedAtRaw);
-    if (!emittedAtRaw || Number.isNaN(emittedAtMs)) {
-      return { error: `events[${index}].emitted_at must be an ISO-8601 datetime` };
-    }
-    if (entry.line === undefined) return { error: `events[${index}].line is required` };
-
-    events.push({
-      slug,
-      seq,
-      kind,
-      line: truncateMonitorLine(normalizeMonitorLine(entry.line)),
-      emittedAt: new Date(emittedAtMs),
-    });
-  }
-  return { boxEpoch, events };
 }
 
 export interface MonitorRateWindow {
@@ -220,29 +142,6 @@ export function nextMonitorSuppression(input: {
 }
 
 /**
- * The delivery payload a monitor fire renders against — the same shape the
- * `filter` and the prompt template both read.
- */
-export function buildMonitorPayload(event: {
-  slug: string;
-  seq: number;
-  kind: MonitorEventKind;
-  line: Record<string, unknown>;
-  emittedAt: Date;
-}): Record<string, unknown> {
-  return {
-    line: event.line,
-    monitor: {
-      slug: event.slug,
-      seq: event.seq,
-      emitted_at: event.emittedAt.toISOString(),
-      kind: event.kind,
-    },
-    trigger: { slug: event.slug, type: 'monitor', kind: 'git' },
-  };
-}
-
-/**
  * The delivery payload of an App event (`type: app`): `event.name`,
  * `event.data`, `event.id` as the App sent them. The `filter` and the prompt
  * template read this shape.
@@ -258,37 +157,4 @@ export function buildAppEventPayload(event: {
     app: { slug: event.app },
     trigger: { slug: event.slug, type: 'app', kind: 'git' },
   };
-}
-
-/**
- * The platform-rendered prompt for a `lifecycle` event.
- *
- * Lifecycle events do NOT use the author's template: a monitor that died must
- * produce a legible "your monitor died" turn even when the template only knows
- * how to format a healthy line. They also bypass the author's `filter` —
- * silence must not be filterable by accident.
- */
-export function renderMonitorLifecyclePrompt(
-  spec: Pick<GitTriggerSpec, 'slug' | 'name' | 'run'>,
-  line: Record<string, unknown>,
-): string {
-  const event = typeof line.event === 'string' ? line.event : 'unknown';
-  const detail = typeof line.detail === 'string' && line.detail.trim() ? line.detail.trim() : null;
-  const command = spec.run ? `\`${spec.run}\`` : 'its command';
-  const what: Record<string, string> = {
-    exited: `The monitor process exited. ${command} is no longer running, so this monitor is producing no events.`,
-    restart_budget_exhausted: `The monitor exhausted its restart budget: ${command} kept failing on restart, so the platform stopped restarting it and moved to slow retries.`,
-    silent: `The monitor produced no event inside its \`expect_event_within\` window. ${command} is running but silent, which usually means the source it watches is stalled — or the monitor is.`,
-    suppressed: `The monitor breached its event-rate bound and is suppressed. Events are still logged but no longer fire sessions until the suppression window ends.`,
-    budget_exceeded: `The project's monitor box was STOPPED because this month's monitor compute budget is spent. No monitor in this project is running until the budget is raised or the billing month rolls over.`,
-  };
-  const lines = [
-    `Monitor "${spec.name}" (${spec.slug}) reported a lifecycle event: ${event}.`,
-    what[event] ?? `The platform reported "${event}" for this monitor.`,
-  ];
-  if (detail) lines.push(`Detail: ${detail}`);
-  lines.push(
-    'Investigate the monitor command in the repo, fix the cause, and ship the fix. Do not assume the source it watches is healthy — nothing is watching it right now.',
-  );
-  return lines.join('\n\n');
 }

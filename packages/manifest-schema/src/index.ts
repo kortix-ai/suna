@@ -37,10 +37,6 @@ import {
   LEGACY_TOLERATED_KORTIX_PERMISSIONS,
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
   reservedEnvNameReason,
-  MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
-  MONITOR_MIN_INTERVAL_SECONDS,
-  MONITOR_MODES,
-  MONITOR_RUN_MAX_LENGTH,
   TRIGGER_MIN_MAX_LATENESS_SECONDS,
   DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR,
   EVENT_FORBIDDEN_KEYS,
@@ -51,6 +47,7 @@ import {
   SANDBOX_MEMORY_BOUNDS,
   SLUG_RE,
   TRIGGER_TYPES,
+  MONITOR_REMOVED_MESSAGE,
   parseDurationSeconds,
 } from './constants';
 // The 7 below (v2-only enums/regex) are no longer consumed directly in this
@@ -202,10 +199,6 @@ export {
   reservedEnvNameReason,
   RESERVED_SANDBOX_SLUG,
   RESERVED_SLUG_PROVIDERS,
-  MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
-  MONITOR_MIN_INTERVAL_SECONDS,
-  MONITOR_MODES,
-  MONITOR_RUN_MAX_LENGTH,
   TRIGGER_MIN_MAX_LATENESS_SECONDS,
   DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR,
   EVENT_FORBIDDEN_KEYS,
@@ -223,6 +216,7 @@ export {
   selectedKortixTools,
   TOOL_NAME_RE,
   TRIGGER_TYPES,
+  MONITOR_REMOVED_MESSAGE,
   V2_RUNTIME_VALUES,
   WORKSPACE_MODES_V2,
   CODEMODE_VALUES,
@@ -1230,93 +1224,6 @@ function validateMonitorDuration(
 }
 
 /**
- * `type: monitor` — the third trigger type.
- * A monitor names a repo command (`run`) that the platform supervises 24/7 in
- * the project's monitor box; its stdout lines are the events. `cron`/`run_at`/
- * `timezone`/`secret_env` are cron/webhook wiring and are hard-rejected here —
- * silently ignoring them would let a manifest claim a schedule the monitor
- * runner never reads.
- *
- * MUST stay in sync with the runtime parser (apps/api/.../triggers.ts
- * `parseTriggerEntry`'s monitor branch) and with `triggerSchema` in
- * ./json-schema.ts — the conformance suite fails CI if the two validators
- * disagree on a fixture.
- */
-function validateMonitorTrigger(
-  entry: Record<string, unknown>,
-  where: string,
-  issues: ManifestIssue[],
-): void {
-  const run = typeof entry.run === 'string' ? entry.run.trim() : '';
-  if (!run) {
-    issues.push({
-      path: `${where}.run`,
-      message: 'monitor triggers must declare a `run` command (repo-relative).',
-      severity: 'error',
-    });
-  } else if (run.length > MONITOR_RUN_MAX_LENGTH) {
-    issues.push({
-      path: `${where}.run`,
-      message: `must be at most ${MONITOR_RUN_MAX_LENGTH} characters.`,
-      severity: 'error',
-    });
-  } else if (/[\r\n]/.test(run)) {
-    issues.push({
-      path: `${where}.run`,
-      message: 'must be a single command line — no newlines.',
-      severity: 'error',
-    });
-  }
-
-  const mode = typeof entry.mode === 'string' ? entry.mode.trim() : '';
-  if (!(MONITOR_MODES as readonly string[]).includes(mode)) {
-    issues.push({
-      path: `${where}.mode`,
-      message: `mode must be one of: ${MONITOR_MODES.join(', ')} (got "${mode || 'unset'}").`,
-      severity: 'error',
-    });
-  }
-
-  // `interval` is the poll period, so it is required iff mode=poll and
-  // meaningless on a long-running stream.
-  if (mode === 'poll') {
-    validateMonitorDuration(
-      entry.interval,
-      `${where}.interval`,
-      MONITOR_MIN_INTERVAL_SECONDS,
-      issues,
-    );
-  } else if (entry.interval !== undefined) {
-    issues.push({
-      path: `${where}.interval`,
-      message: 'is only valid on a `mode: poll` monitor — a stream runs continuously.',
-      severity: 'error',
-    });
-  }
-
-  // Optional silence watchdog: no event within this window synthesizes a
-  // `silent` lifecycle event so a wedged monitor can never fail silently.
-  if (entry.expect_event_within !== undefined) {
-    validateMonitorDuration(
-      entry.expect_event_within,
-      `${where}.expect_event_within`,
-      MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
-      issues,
-    );
-  }
-
-  for (const key of ['cron', 'schedule', 'run_at', 'runAt', 'timezone', 'secret_env', 'secretEnv']) {
-    if (entry[key] !== undefined) {
-      issues.push({
-        path: `${where}.${key}`,
-        message: 'is not valid on a monitor trigger — monitors are driven by their `run` process.',
-        severity: 'error',
-      });
-    }
-  }
-}
-
-/**
  * `type: event` — the fourth trigger type: "when <app event> happens on
  * <connected app>, run the agent". `connector` names a declared connector,
  * `event` is the provider's event type id, `config` is the provider event
@@ -1411,7 +1318,7 @@ function validateAppTrigger(
 
 /**
  * `target: { app, path?, method? }` — a fire calls an App of this project
- * instead of running an agent; `prompt` is then optional. Any type but monitor.
+ * instead of running an agent; `prompt` is then optional.
  * MUST stay in sync with `parseTargetField` (apps/api).
  */
 function validateTriggerTarget(entry: Record<string, unknown>, where: string, type: string, issues: ManifestIssue[]): void {
@@ -1420,7 +1327,6 @@ function validateTriggerTarget(entry: Record<string, unknown>, where: string, ty
   const push = (path: string, message: string): void => {
     issues.push({ path: `${where}.target${path}`, message, severity: 'error' });
   };
-  if (type === 'monitor') return push('', 'is not valid on a monitor trigger.');
   if (!isTable(target)) return push('', 'must be a table: { app, path, method }.');
   for (const key of Object.keys(target)) if (!['app', 'path', 'method', 'payload'].includes(key)) push(`.${key}`, 'is not a target field (app, path, method, payload).');
   if (target.payload !== undefined && !isTable(target.payload)) push('.payload', 'must be a table.');
@@ -1465,7 +1371,9 @@ export function validateTriggers(node: unknown, path: string, issues: ManifestIs
       seenSlugs.add(slug);
     }
     const type = typeof entry.type === 'string' ? entry.type.trim() : '';
-    if (!(TRIGGER_TYPES as readonly string[]).includes(type)) {
+    if (type === 'monitor') {
+      issues.push({ path: `${where}.type`, message: MONITOR_REMOVED_MESSAGE, severity: 'error' });
+    } else if (!(TRIGGER_TYPES as readonly string[]).includes(type)) {
       issues.push({
         path: `${where}.type`,
         message: `type must be one of: ${TRIGGER_TYPES.join(', ')} (got "${type || 'unset'}").`,
@@ -1606,8 +1514,6 @@ export function validateTriggers(node: unknown, path: string, issues: ManifestIs
           severity: 'error',
         });
       }
-    } else if (type === 'monitor') {
-      validateMonitorTrigger(entry, where, issues);
     } else if (type === 'event') {
       validateEventTrigger(entry, where, issues);
     } else if (type === 'app') {

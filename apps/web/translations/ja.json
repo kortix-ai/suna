@@ -20357,7 +20357,11 @@
       "cliDeviceWarning": "自分で開始したログインのみ承認してください。ターミナルに表示されたコードを入力してください。",
       "cliDeviceCode": "ログインコード",
       "cliDeviceApproved": "ログインを承認しました。ターミナルに戻ってください。",
-      "cliDeviceAction": "CLI を認証"
+      "cliDeviceAction": "CLI を認証",
+      "text705a7e325b66": "Kortix アプリがイベントを送信しました",
+      "text4b80152fb96b": "Kortix アプリのイベント認証情報を読み取りました",
+      "text59374c1f1acd": "Kortix アプリが実行を予約しました",
+      "text32f35e849409": "Kortix アプリが実行を取り消しました"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

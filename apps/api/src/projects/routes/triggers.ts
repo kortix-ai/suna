@@ -58,7 +58,7 @@ import {
   triggerRunApiStatus,
   loadTriggerRunForReplay,
 } from '../trigger-runs';
-import { APP_EVENT_PROMPT_PREAMBLE, MONITOR_PROMPT_PREAMBLE } from '../lib/monitor-events';
+import { APP_EVENT_PROMPT_PREAMBLE } from '../lib/monitor-events';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { annotateAuditEvent } from '../../shared/audit-scope';
 import { deleteTriggerWatchers, triggerWatcherOf, upsertTriggerWatcher } from '../lib/trigger-watchers';
@@ -991,7 +991,6 @@ export function registerTriggersRoutes(): void {
       const template = renderPromptTemplate(target.spec.promptTemplate, run.payload);
       const renderedPrompt =
         source === 'event' ? `${eventPromptPreamble(target.spec)}${template}`
-          : source === 'monitor' ? `${MONITOR_PROMPT_PREAMBLE}${template}`
           : source === 'app' ? `${APP_EVENT_PROMPT_PREAMBLE}${template}`
             : template;
       return fireAndAnswer(c, target, {

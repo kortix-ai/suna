@@ -20357,7 +20357,11 @@
       "cliDeviceWarning": "Approva solo un accesso avviato da te. Digita il codice mostrato dal terminale.",
       "cliDeviceCode": "Codice di accesso",
       "cliDeviceApproved": "Accesso approvato. Torna al terminale.",
-      "cliDeviceAction": "Autorizza CLI"
+      "cliDeviceAction": "Autorizza CLI",
+      "text705a7e325b66": "L’app Kortix ha emesso eventi",
+      "text4b80152fb96b": "Lette le credenziali degli eventi dell’app Kortix",
+      "text59374c1f1acd": "L’app Kortix ha pianificato un’esecuzione",
+      "text32f35e849409": "L’app Kortix ha annullato un’esecuzione"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

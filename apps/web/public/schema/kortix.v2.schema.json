@@ -1054,8 +1054,8 @@
             "enum": [
               "cron",
               "webhook",
-              "monitor",
-              "event"
+              "event",
+              "app"
             ]
           },
           "name": {
@@ -1295,25 +1295,6 @@
             "type": "string",
             "pattern": "^[A-Z_][A-Z0-9_]*$"
           },
-          "run": {
-            "type": "string",
-            "maxLength": 1024
-          },
-          "mode": {
-            "type": "string",
-            "enum": [
-              "poll",
-              "stream"
-            ]
-          },
-          "interval": {
-            "type": "string",
-            "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
-          },
-          "expect_event_within": {
-            "type": "string",
-            "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
-          },
           "connector": {
             "type": "string",
             "pattern": "\\S"
@@ -1332,6 +1313,41 @@
           },
           "config": {
             "type": "object"
+          },
+          "app": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+          },
+          "target": {
+            "type": "object",
+            "required": [
+              "app"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "app": {
+                "type": "string",
+                "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+              },
+              "path": {
+                "type": "string",
+                "pattern": "^/"
+              },
+              "method": {
+                "type": "string",
+                "enum": [
+                  "POST",
+                  "GET"
+                ]
+              },
+              "payload": {
+                "type": "object"
+              }
+            }
+          },
+          "every": {
+            "type": "string",
+            "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
           }
         },
         "additionalProperties": true,
@@ -1415,26 +1431,35 @@
           },
           {
             "if": {
-              "required": [
-                "prompt"
-              ]
-            },
-            "then": {
-              "properties": {
-                "prompt": {
-                  "type": "string",
-                  "pattern": "\\S"
-                }
+              "not": {
+                "required": [
+                  "target"
+                ]
               }
             },
-            "else": {
-              "required": [
-                "prompt_template"
-              ],
-              "properties": {
-                "prompt_template": {
-                  "type": "string",
-                  "pattern": "\\S"
+            "then": {
+              "if": {
+                "required": [
+                  "prompt"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "prompt": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  }
+                }
+              },
+              "else": {
+                "required": [
+                  "prompt_template"
+                ],
+                "properties": {
+                  "prompt_template": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  }
                 }
               }
             }
@@ -1457,6 +1482,11 @@
                 {
                   "required": [
                     "schedule"
+                  ]
+                },
+                {
+                  "required": [
+                    "every"
                   ]
                 },
                 {
@@ -1499,34 +1529,6 @@
             "if": {
               "properties": {
                 "type": {
-                  "const": "monitor"
-                }
-              }
-            },
-            "then": {
-              "required": [
-                "run",
-                "mode"
-              ],
-              "properties": {
-                "run": {
-                  "type": "string",
-                  "pattern": "\\S"
-                },
-                "cron": false,
-                "schedule": false,
-                "run_at": false,
-                "runAt": false,
-                "timezone": false,
-                "secret_env": false,
-                "secretEnv": false
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "type": {
                   "const": "event"
                 }
               }
@@ -1543,11 +1545,35 @@
                 "runAt": false,
                 "timezone": false,
                 "secret_env": false,
+                "secretEnv": false
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "app"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "app"
+              ],
+              "properties": {
+                "cron": false,
+                "schedule": false,
+                "run_at": false,
+                "runAt": false,
+                "timezone": false,
+                "secret_env": false,
                 "secretEnv": false,
-                "run": false,
-                "mode": false,
-                "interval": false,
-                "expect_event_within": false
+                "connector": false,
+                "account": false,
+                "source": false,
+                "event": false,
+                "config": false
               }
             }
           },
@@ -1558,7 +1584,28 @@
                   "enum": [
                     "cron",
                     "webhook",
-                    "monitor"
+                    "event"
+                  ]
+                }
+              },
+              "required": [
+                "type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "app": false
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "enum": [
+                    "cron",
+                    "webhook",
+                    "app"
                   ]
                 }
               },
@@ -1582,8 +1629,8 @@
                 "type": {
                   "enum": [
                     "webhook",
-                    "monitor",
-                    "event"
+                    "event",
+                    "app"
                   ]
                 }
               },
@@ -1593,47 +1640,8 @@
             },
             "then": {
               "properties": {
-                "max_lateness": false
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "type": {
-                  "const": "monitor"
-                },
-                "mode": {
-                  "const": "poll"
-                }
-              },
-              "required": [
-                "mode"
-              ]
-            },
-            "then": {
-              "required": [
-                "interval"
-              ]
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "type": {
-                  "const": "monitor"
-                },
-                "mode": {
-                  "const": "stream"
-                }
-              },
-              "required": [
-                "mode"
-              ]
-            },
-            "then": {
-              "properties": {
-                "interval": false
+                "max_lateness": false,
+                "every": false
               }
             }
           }

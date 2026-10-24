@@ -245,11 +245,6 @@ function sandboxTokenPathAllowed(path: string) {
     // The runtime relay sends redacted OpenCode lifecycle events for its own
     // session. The handler re-checks sandbox, account, project, and session.
     path.endsWith('/audit/events') ||
-    // The monitor runner POSTs its own box's stdout lines here. The handler
-    // re-checks the token against `project_monitor_boxes` (sandbox id ∧
-    // project ∧ account ∧ live status) — a monitor box has no
-    // `session_sandboxes` row, so it authenticates against that table only.
-    path.endsWith('/monitors/ingest') ||
     // The daemon pushes its OWN session's runtime projection (the
     // `/kortix/opencode/state` document) so the control plane can serve it
     // without a sandbox hop. Write-only, about the caller's own session, and

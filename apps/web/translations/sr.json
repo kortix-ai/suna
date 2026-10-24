@@ -20357,7 +20357,11 @@
       "cliDeviceWarning": "Odobrite samo prijavu koju ste sami pokrenuli. Unesite kod koji prikazuje vaš terminal.",
       "cliDeviceCode": "Kod za prijavu",
       "cliDeviceApproved": "Prijava je odobrena. Vratite se u terminal.",
-      "cliDeviceAction": "Ovlasti CLI"
+      "cliDeviceAction": "Ovlasti CLI",
+      "text705a7e325b66": "Kortix апликација је послала догађаје",
+      "text4b80152fb96b": "Прочитани акредитиви за догађаје Kortix апликације",
+      "text59374c1f1acd": "Kortix апликација је заказала покретање",
+      "text32f35e849409": "Kortix апликација је отказала покретање"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

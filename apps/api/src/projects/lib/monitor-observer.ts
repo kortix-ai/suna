@@ -1,5 +1,5 @@
 /**
- * The monitor observer — the drain half of the event log.
+ * The event-log observer — the drain half of the log App events write.
  *
  * `project_monitor_events` IS the fire queue (spec D2): the ingest route
  * appends `pending` rows, and this drain claims them on the leader's scheduler
@@ -14,17 +14,9 @@
  */
 import { projectMonitorEvents, projectTriggerRuntime, projects } from '@kortix/db';
 import { and, asc, eq, lt } from 'drizzle-orm';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { db } from '../../shared/db';
 import type { GitTriggerSpec } from '../triggers';
-import {
-  APP_EVENT_PROMPT_PREAMBLE,
-  MONITOR_PROMPT_PREAMBLE,
-  type MonitorEventKind,
-  buildAppEventPayload,
-  buildMonitorPayload,
-  renderMonitorLifecyclePrompt,
-} from './monitor-events';
+import { APP_EVENT_PROMPT_PREAMBLE, buildAppEventPayload } from './monitor-events';
 import { renderPromptTemplate, triggerFilterMatches } from './trigger-payload';
 import { fireGitTrigger, markGitTriggerAttemptFailed, markGitTriggerFired } from './trigger-fire';
 import { takeThrottledRunSlot } from './trigger-run-caps';
@@ -147,46 +139,25 @@ export async function processMonitorEvent(
       ),
     )
     .limit(1);
-  // The same log carries two sources: a monitor box's lines, and the events an
-  // App emits for a `type: app` trigger (../../apps/event-routes.ts).
-  const source = runtime?.triggerType === 'app' ? 'app' : 'monitor';
-  if (!runtime?.scheduleSpec || (runtime.triggerType !== 'monitor' && runtime.triggerType !== 'app')) {
-    return skip(`${source} trigger is not declared in the project manifest`);
+  // The log carries the events an App emits for a `type: app` trigger
+  // (../../apps/event-routes.ts). A row of a removed monitor fires nothing.
+  const source = 'app' as const;
+  if (!runtime?.scheduleSpec || runtime.triggerType !== 'app') {
+    return skip('app trigger is not declared in the project manifest');
   }
   if (runtime.enabled === false) {
-    return skip(`${source} trigger is disabled`);
-  }
-  // Behavioral half of the flag (spec §"Feature flag"): turning `monitors` off
-  // stops firing even if the ingest route were somehow bypassed. Apps have no flag.
-  if (source === 'monitor' && !resolveFeatureFlag(project.metadata, 'monitors')) {
-    return skip('monitors is not enabled for this project');
+    return skip('app trigger is disabled');
   }
 
   const spec = runtime.scheduleSpec as unknown as GitTriggerSpec;
-  const kind = row.kind as MonitorEventKind;
-  const payload =
-    source === 'app'
-      ? buildAppEventPayload({ slug: row.slug, app: spec.app ?? '', line: row.line, emittedAt: row.emittedAt })
-      : buildMonitorPayload({
-          slug: row.slug,
-          seq: Number(row.seq),
-          kind,
-          line: row.line,
-          emittedAt: row.emittedAt,
-        });
+  const payload = buildAppEventPayload({ slug: row.slug, app: spec.app ?? '', line: row.line, emittedAt: row.emittedAt });
 
-  let body: string;
-  if (kind === 'lifecycle') {
-    body = renderMonitorLifecyclePrompt(spec, row.line);
-  } else {
-    if (!triggerFilterMatches(spec, payload)) {
-      await skip('filter did not match');
-      await touchMonitorLastEvent(row.projectId, row.slug, row.emittedAt, now);
-      return 'skipped';
-    }
-    body = renderPromptTemplate(spec.promptTemplate, payload);
+  if (!triggerFilterMatches(spec, payload)) {
+    await skip('filter did not match');
+    await touchMonitorLastEvent(row.projectId, row.slug, row.emittedAt, now);
+    return 'skipped';
   }
-  const renderedPrompt = `${source === 'app' ? APP_EVENT_PROMPT_PREAMBLE : MONITOR_PROMPT_PREAMBLE}${body}`;
+  const renderedPrompt = `${APP_EVENT_PROMPT_PREAMBLE}${renderPromptTemplate(spec.promptTemplate, payload)}`;
 
   // Per (project, slug, epoch, seq) — the same key the log dedups on, so a
   // re-claimed event can never mint a second session.
@@ -235,7 +206,7 @@ async function failMonitorEvent(
   row: MonitorEventRow,
   now: Date,
   error: string,
-  run: { spec: GitTriggerSpec; payload: Record<string, unknown>; source: 'monitor' | 'app' },
+  run: { spec: GitTriggerSpec; payload: Record<string, unknown>; source: 'app' },
 ): Promise<'failed'> {
   const terminal = row.attempts >= MONITOR_EVENT_MAX_ATTEMPTS;
   await db

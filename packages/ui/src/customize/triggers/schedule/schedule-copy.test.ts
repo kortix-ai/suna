@@ -69,7 +69,7 @@ describe('customer trigger list', () => {
     expect(schedules.filter(isCustomerTrigger)).toEqual(schedules);
     // The view's filter: kind first (monitors are not this screen), then owner.
     const visible = (t: ProjectTrigger) => isTriggerKind(t.type) && isCustomerTrigger(t);
-    expect([trigger({ type: 'monitor' })].filter(visible)).toEqual([]);
+    expect([trigger({ type: 'app' })].filter(visible)).toEqual([]);
     // A customer's own trigger named the same stays visible: agent must match too.
     expect([trigger({ slug: 'harness-reflector' }), trigger()].filter(visible)).toHaveLength(2);
   });

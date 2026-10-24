@@ -12,7 +12,7 @@ import { streamSchedules } from '../trigger-events/poll-store';
 import { eventSourceAvailable } from '../trigger-events/registry';
 import { ensureProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { nextTriggerScheduleSlot, validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';
-import { GIT_TRIGGER_SESSION_MODES, type GitMonitorMode, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseMaxLateness, parseOverlap, parseRunCaps, parseAppField, parseEventFields, parseEvery, parseTargetField, parseMonitorFields, readManifest, triggerSpecToTomlEntry } from '../triggers';
+import { GIT_TRIGGER_SESSION_MODES, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseMaxLateness, parseOverlap, parseRunCaps, parseAppField, parseEventFields, parseEvery, parseTargetField, readManifest, triggerSpecToTomlEntry, MONITOR_REMOVED } from '../triggers';
 import { PRIVATE_TRIGGER_SESSION_ACCESS, loadTriggerSessionAccessMap } from '../trigger-session-access';
 import { withProjectGitAuth } from './git';
 import { type ProjectRow, deriveKortixApiRoot, normalizeBoolean, normalizeString } from './serializers';
@@ -107,10 +107,12 @@ export async function loadTriggersForResponse(
       every_seconds: spec.everySeconds ?? null,
       timezone: spec.timezone,
       secret_env: spec.secretEnv,
-      run: spec.run,
-      mode: spec.monitorMode,
-      interval_seconds: spec.intervalSeconds,
-      expect_event_within_seconds: spec.expectEventWithinSeconds,
+      // Monitor fields: the monitor box was removed. Always null; kept in the
+      // response for clients built against it.
+      run: null,
+      mode: null,
+      interval_seconds: null,
+      expect_event_within_seconds: null,
       app: spec.app ?? null,
       target: spec.target ?? null,
       event: spec.event
@@ -241,14 +243,6 @@ export interface TriggerDraft {
   runAt: string | null;
   timezone: string;
   secretEnv: string | null;
-  /** For type=monitor only — the repo-relative command the box supervises. */
-  run: string | null;
-  /** For type=monitor only — `poll` (run on interval) or `stream` (long-running). */
-  monitorMode: GitMonitorMode | null;
-  /** For `monitorMode === 'poll'` only — the poll period, in whole seconds. */
-  intervalSeconds: number | null;
-  /** For type=monitor only — the silence watchdog, in whole seconds. */
-  expectEventWithinSeconds: number | null;
   /** For type=cron only — the misfire bound (`max_lateness`), in whole seconds. */
   maxLatenessSeconds?: number;
   /** Any type — the run caps (`max_runs_per_hour`, `max_runs_per_day`, KRTX-1721). Omitted when unset. */
@@ -288,10 +282,11 @@ export function parseTriggerDraft(
 
   const typeRaw = normalizeString(body.type);
   const type: GitTriggerType | null =
-    typeRaw === 'webhook' || typeRaw === 'cron' || typeRaw === 'monitor' || typeRaw === 'event' || typeRaw === 'app'
+    typeRaw === 'webhook' || typeRaw === 'cron' || typeRaw === 'event' || typeRaw === 'app'
       ? typeRaw
       : null;
-  if (!type) return { error: 'type must be "cron", "webhook", "monitor", "event", or "app"' };
+  if (typeRaw === 'monitor') return { error: MONITOR_REMOVED };
+  if (!type) return { error: 'type must be "cron", "webhook", "event", or "app"' };
   if (type !== 'event') {
     const bad = eventOnlyKeyError(body, 'event_config', type);
     if (bad) return { error: bad };
@@ -333,8 +328,6 @@ export function parseTriggerDraft(
       ? parseEventDraft(body, common)
       : type === 'app'
         ? parseAppDraft(body, common)
-      : type === 'monitor'
-        ? parseMonitorDraft(body, common)
         : type === 'cron'
           ? parseCronDraft(body, common)
           : parseWebhookDraft(body, common);
@@ -393,10 +386,6 @@ function parseEventDraft(body: Record<string, unknown>, common: DraftCommon): Tr
     runAt: null,
     timezone: 'UTC',
     secretEnv: null,
-    run: null,
-    monitorMode: null,
-    intervalSeconds: null,
-    expectEventWithinSeconds: null,
     event,
   };
 }
@@ -411,29 +400,8 @@ function parseAppDraft(body: Record<string, unknown>, common: DraftCommon): Trig
     runAt: null,
     timezone: 'UTC',
     secretEnv: null,
-    run: null,
-    monitorMode: null,
-    intervalSeconds: null,
-    expectEventWithinSeconds: null,
     app: parsed.app,
   };
-}
-
-function parseMonitorDraft(body: Record<string, unknown>, common: DraftCommon): TriggerDraft | { error: string } {
-    const monitor = parseMonitorFields(body);
-    if ('error' in monitor) return { error: monitor.error };
-    return {
-      ...common,
-      type: 'monitor',
-      cron: null,
-      runAt: null,
-      timezone: 'UTC',
-      secretEnv: null,
-      run: monitor.run,
-      monitorMode: monitor.monitorMode,
-      intervalSeconds: monitor.intervalSeconds,
-      expectEventWithinSeconds: monitor.expectEventWithinSeconds,
-    };
 }
 
 function parseCronDraft(body: Record<string, unknown>, common: DraftCommon): TriggerDraft | { error: string } {
@@ -446,8 +414,8 @@ function parseCronDraft(body: Record<string, unknown>, common: DraftCommon): Tri
     if (every.everySeconds !== undefined) {
       if (runAtRaw || normalizeString(body.cron ?? body.schedule)) return { error: 'declare one of cron, run_at or every' };
       return {
-        ...common, type: 'cron', cron: null, runAt: null, timezone, secretEnv: null, run: null,
-        monitorMode: null, intervalSeconds: null, expectEventWithinSeconds: null, everySeconds: every.everySeconds,
+        ...common, type: 'cron', cron: null, runAt: null, timezone, secretEnv: null,
+        everySeconds: every.everySeconds,
       };
     }
     // One-off ("run once") schedules carry `run_at` instead of `cron`.
@@ -463,10 +431,6 @@ function parseCronDraft(body: Record<string, unknown>, common: DraftCommon): Tri
         runAt: new Date(parsed).toISOString(),
         timezone,
         secretEnv: null,
-        run: null,
-        monitorMode: null,
-        intervalSeconds: null,
-        expectEventWithinSeconds: null,
       };
     }
     const cron = normalizeString(body.cron ?? body.schedule);
@@ -481,10 +445,6 @@ function parseCronDraft(body: Record<string, unknown>, common: DraftCommon): Tri
       runAt: null,
       timezone,
       secretEnv: null,
-      run: null,
-      monitorMode: null,
-      intervalSeconds: null,
-      expectEventWithinSeconds: null,
     };
 }
 
@@ -501,10 +461,6 @@ function parseWebhookDraft(body: Record<string, unknown>, common: DraftCommon): 
     runAt: null,
     timezone: 'UTC',
     secretEnv,
-    run: null,
-    monitorMode: null,
-    intervalSeconds: null,
-    expectEventWithinSeconds: null,
   };
 }
 
@@ -512,8 +468,8 @@ function parseWebhookDraft(body: Record<string, unknown>, common: DraftCommon): 
  * PATCH merge before re-parsing. */
 
 export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
-  // Monitor and event triggers reject cron wiring outright.
-  const noCronWiring = spec.type === 'monitor' || spec.type === 'event' || spec.type === 'app';
+  // Event and app triggers reject cron wiring outright.
+  const noCronWiring = spec.type === 'event' || spec.type === 'app';
   return {
     slug: spec.slug,
     name: spec.name,
@@ -528,19 +484,11 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
     // triggers must declare a `cron` expression or a one-off `run_at`").
     run_at: spec.runAt,
     every: spec.everySeconds ? formatDurationSeconds(spec.everySeconds) : null,
-    // A monitor/event rejects cron wiring outright, so its merge body must carry the
+    // An event/app trigger rejects cron wiring outright, so its merge body must carry the
     // implicit 'UTC' as null — re-parsing the splat would otherwise fail on the
     // timezone the spec only holds as a placeholder.
     timezone: noCronWiring ? null : spec.timezone,
     secret_env: spec.secretEnv,
-    run: spec.run,
-    mode: spec.monitorMode,
-    interval:
-      spec.intervalSeconds === null ? null : formatDurationSeconds(spec.intervalSeconds),
-    expect_event_within:
-      spec.expectEventWithinSeconds === null
-        ? null
-        : formatDurationSeconds(spec.expectEventWithinSeconds),
     max_lateness: spec.maxLatenessSeconds ? formatDurationSeconds(spec.maxLatenessSeconds) : null,
     // Kept on PATCH, like max_lateness: an edit of any other field keeps the caps.
     max_runs_per_hour: spec.maxRunsPerHour ?? null,
@@ -590,10 +538,6 @@ export function draftToSpec(
     runAt: draft.runAt,
     timezone: draft.timezone,
     secretEnv: draft.secretEnv,
-    run: draft.run,
-    monitorMode: draft.monitorMode,
-    intervalSeconds: draft.intervalSeconds,
-    expectEventWithinSeconds: draft.expectEventWithinSeconds,
     ...(draft.maxLatenessSeconds ? { maxLatenessSeconds: draft.maxLatenessSeconds } : {}),
     ...(draft.maxRunsPerHour ? { maxRunsPerHour: draft.maxRunsPerHour } : {}),
     ...(draft.maxRunsPerDay ? { maxRunsPerDay: draft.maxRunsPerDay } : {}),

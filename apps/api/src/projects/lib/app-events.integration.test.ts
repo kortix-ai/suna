@@ -37,7 +37,7 @@ function spec(slug: string, app: string, enabled = true) {
   return {
     slug, path: `kortix.yaml#triggers.${slug}`, name: slug, type: 'app', agent: 'default', model: null, enabled,
     promptTemplate: 'Reply: {{ event.data.subject }} ({{ event.name }})', cron: null, runAt: null, timezone: 'UTC',
-    secretEnv: null, run: null, monitorMode: null, intervalSeconds: null, expectEventWithinSeconds: null,
+    secretEnv: null,
     sessionMode: 'fresh', pinnedSessionId: null, sessionKey: null, filter: null, app,
   };
 }

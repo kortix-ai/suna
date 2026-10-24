@@ -20357,7 +20357,11 @@
       "cliDeviceWarning": "仅批准您自己发起的登录。请输入终端中显示的代码。",
       "cliDeviceCode": "登录代码",
       "cliDeviceApproved": "登录已批准。请返回终端。",
-      "cliDeviceAction": "授权 CLI"
+      "cliDeviceAction": "授权 CLI",
+      "text705a7e325b66": "Kortix 应用发出了事件",
+      "text4b80152fb96b": "读取了 Kortix 应用的事件凭据",
+      "text59374c1f1acd": "Kortix 应用安排了一次运行",
+      "text32f35e849409": "Kortix 应用取消了一次运行"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
