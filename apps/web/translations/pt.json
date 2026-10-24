@@ -22637,6 +22637,8 @@
     "mediaTooLarge": "Este arquivo tem mais de 16 MB.",
     "refresh": "Recarregar",
     "diagramEdit": "Editar diagrama",
-    "diagramDone": "Concluído"
+    "diagramDone": "Concluído",
+    "codeLanguage": "Linguagem do código",
+    "editedAgo": "Editado {time}"
   }
 }

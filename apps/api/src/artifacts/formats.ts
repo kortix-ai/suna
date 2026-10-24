@@ -6,7 +6,8 @@
 //         assets) — a deck, a dashboard, a mockup, a tool — served as written
 // `format` is the contract agents follow (the kortix-artifacts skill and
 // `kortix artifacts types`); `starter` is a complete example.
-import { ARTIFACT_DOC_CSS } from '@kortix/shared/artifact-doc';
+import { ARTIFACT_DOC_CSS, ARTIFACT_PAGE_CSS } from '@kortix/shared/artifact-doc';
+import { BRAND_FONTS_CSS, BRAND_TOKENS_CSS } from '@kortix/shared/brand-css';
 import { marked } from 'marked';
 
 export const ARTIFACT_TYPE_KEYS = ['doc', 'html'] as const;
@@ -95,14 +96,19 @@ export function renderDoc(markdown: string, opts: { print: boolean }): string {
   const escaped = title.replace(/[<>&"]/g, (c) => `&#${c.charCodeAt(0)};`);
   // ```mermaid blocks render as diagrams (the CDN build, pinned); print waits for them.
   const diagrams = body.includes('class="language-mermaid"');
-  const html = diagrams ? body.replace(/<pre><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/g, '<pre class="mermaid">$1</pre>') : body;
+  const html = (diagrams ? body.replace(/<pre><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/g, '<pre class="mermaid">$1</pre>') : body)
+    // The chrome UnifiedMarkdown gives code and tables: a captioned code figure, a bordered table box.
+    .replace(/<pre><code(?: class="language-([\w+#-]+)")?>/g, (_m, lang?: string) => `<figure class="kx-code"><figcaption>${lang ?? 'text'}</figcaption><pre><code>`)
+    .replace(/<\/code><\/pre>/g, '</code></pre></figure>')
+    .replace(/<table>/g, '<div class="kx-table"><table>')
+    .replace(/<\/table>/g, '</table></div>');
   const mermaid = diagrams
-    ? `<script type="module">import m from "${MERMAID_CDN}";m.initialize({startOnLoad:false,securityLevel:"strict",theme:matchMedia("(prefers-color-scheme: dark)").matches?"dark":"neutral"});await m.run();window.__kxDiagrams=true;</script>`
+    ? `<script type="module">import m from "${MERMAID_CDN}";m.initialize({startOnLoad:false,securityLevel:"strict",theme:matchMedia("(prefers-color-scheme: dark)").matches?"dark":"neutral",fontFamily:getComputedStyle(document.body).fontFamily});await m.run();window.__kxDiagrams=true;</script>`
     : '';
   const print = opts.print
     ? `<script>addEventListener("load",function(){var t=Date.now();(function go(){if(${diagrams ? '!window.__kxDiagrams&&' : ''}Date.now()-t<8000)return setTimeout(go,150);setTimeout(function(){print()},300)})()})</script>`
     : '';
-  return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escaped}</title><style>${ARTIFACT_DOC_CSS}</style>${mermaid}${print}</head>\n<body class="kx-doc">\n${html}</body></html>\n`;
+  return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escaped}</title><style>${BRAND_FONTS_CSS}${BRAND_TOKENS_CSS}${ARTIFACT_PAGE_CSS}${ARTIFACT_DOC_CSS}</style>${mermaid}${print}</head>\n<body><main class="kx-doc">\n${html}</main></body></html>\n`;
 }
 
 /** A doc's title: its first `# ` heading. */

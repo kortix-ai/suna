@@ -22637,6 +22637,8 @@
     "mediaTooLarge": "このファイルは 16 MB を超えています。",
     "refresh": "再読み込み",
     "diagramEdit": "図を編集",
-    "diagramDone": "完了"
+    "diagramDone": "完了",
+    "codeLanguage": "コードの言語",
+    "editedAgo": "{time}に編集"
   }
 }
