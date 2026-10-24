@@ -1228,7 +1228,7 @@
           "description": "Atribua caixas do AgentMail para que e-mails recebidos possam iniciar e continuar sessões da Kortix."
         },
         "meta_agent": {
-          "name": "Meta-agente",
+          "name": "My Kortix",
           "description": "Adicione um coordenador que gerencia sessões especializadas e trabalhos de várias etapas no projeto."
         },
         "monitors": {
@@ -1585,7 +1585,7 @@
     "sessionViewOptions": "Opções de visualização das sessões",
     "sectionOptions": "Opções da secção",
     "allSectionsHidden": "Todas as secções estão ocultas.",
-    "metaCoordinator": "Coordenador Meta",
+    "metaCoordinator": "My Kortix",
     "files": "Arquivos",
     "retry": "Tentar de novo",
     "review": "Rever",
@@ -19812,7 +19812,7 @@
       "text0e5f7f6732e0": "Bifurcar conversa",
       "text32ad3abe4479": "Falha ao bifurcar a conversa",
       "text95de71e25038": "Conversa bifurcada",
-      "text85b7a59cdbd5": "Agente da plataforma",
+      "text85b7a59cdbd5": "Integrado",
       "textd9c0c74b514b": "Meta é um agente da plataforma que coordena o seu trabalho. A configuração dele é fixa: você pode iniciar uma sessão com ele, mas ele não pode ser configurado aqui.",
       "text6c4af31cd4ab": "Sessão encerrada neste dispositivo, mas o servidor não pôde confirmar o término da sessão.",
       "text228359b08506": "Fale com vendas e agende uma demo",

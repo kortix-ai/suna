@@ -1228,7 +1228,7 @@
           "description": "Weisen Sie AgentMail-Postfächer zu, damit eingehende E-Mail-Threads Kortix-Sitzungen starten und fortsetzen können."
         },
         "meta_agent": {
-          "name": "Meta-Agent",
+          "name": "My Kortix",
           "description": "Fügen Sie einen Koordinator hinzu, der spezialisierte Sitzungen und mehrstufige Arbeiten im Projekt verwaltet."
         },
         "monitors": {
@@ -1585,7 +1585,7 @@
     "sessionViewOptions": "Optionen der Sitzungsansicht",
     "sectionOptions": "Abschnittsoptionen",
     "allSectionsHidden": "Alle Abschnitte sind ausgeblendet.",
-    "metaCoordinator": "Meta-Koordinator",
+    "metaCoordinator": "My Kortix",
     "files": "Dateien",
     "retry": "Nochmal versuchen",
     "review": "Prüfen",
@@ -19812,7 +19812,7 @@
       "text0e5f7f6732e0": "Unterhaltung abspalten",
       "text32ad3abe4479": "Unterhaltung konnte nicht abgespalten werden",
       "text95de71e25038": "Unterhaltung abgespalten",
-      "text85b7a59cdbd5": "Plattform-Agent",
+      "text85b7a59cdbd5": "Integriert",
       "textd9c0c74b514b": "Meta ist ein Plattform-Agent, der deine Arbeit koordiniert. Seine Einrichtung ist fest: Du kannst eine Sitzung mit ihm starten, ihn hier aber nicht konfigurieren.",
       "text6c4af31cd4ab": "Auf diesem Gerät abgemeldet, aber der Server konnte die Abmeldung nicht bestätigen.",
       "text228359b08506": "Vertrieb kontaktieren und Demo buchen",

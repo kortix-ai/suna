@@ -769,8 +769,8 @@ const catalog = {
           "description": "Assign AgentMail inboxes so incoming email threads can start and continue Kortix sessions."
         },
         "meta_agent": {
-          "name": "Meta Agent",
-          "description": "Add a coordinator agent that manages specialized sessions and multi-step work across the project."
+          "name": "My Kortix",
+          "description": "My Kortix, the one agent you talk to. It runs your agents, goals and spaces for you, with your permissions. kortix.yaml `builtin_agents.my_kortix` overrides this switch when it is set."
         },
         "monitors": {
           "name": "Monitors",
@@ -1094,7 +1094,7 @@ const catalog = {
     "sessionViewOptions": "Session view options",
     "sectionOptions": "Section options",
     "allSectionsHidden": "All sections are hidden.",
-    "metaCoordinator": "Meta",
+    "metaCoordinator": "My Kortix",
     "files": "Files",
     "retry": "Try again",
     "review": "Review",
@@ -5686,7 +5686,7 @@ const catalog = {
       "text0e5f7f6732e0": "Fork conversation",
       "text32ad3abe4479": "Failed to fork conversation",
       "text95de71e25038": "Conversation forked",
-      "text85b7a59cdbd5": "Platform agent",
+      "text85b7a59cdbd5": "Built-in",
       "textd9c0c74b514b": "Meta is a platform agent that orchestrates your work. Its setup is fixed: start a session with it, but it can't be configured here.",
       "textd919fde889e9": "Needs connection",
       "textd7b77185afd1": "Activating",

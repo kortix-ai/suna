@@ -3,9 +3,15 @@ import { describe, expect, test } from 'bun:test';
 import {
   addPlatformMetaAgent,
   buildPlatformMetaOpenCodeConfig,
+  builtinAgentConfigView,
+  declaredBuiltinAgents,
+  enabledBuiltinAgentKey,
+  MY_KORTIX_DESCRIPTION,
   platformMetaAgentGrant,
+  resolveBuiltinAgents,
   resolvePlatformMetaSandbox,
 } from '../projects/lib/platform-meta-agent';
+import { grantFromLoadedAgents } from '../projects/agents';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { resolveManifestVerdict } from '../projects/lib/manifest-verdict';
 
@@ -55,17 +61,20 @@ describe('platform meta agent', () => {
     expect(config.default_agent).toBe('meta');
   });
 
-  test('defines an OpenCode agent that follows the platform guide', () => {
+  test('defines the My Kortix agent that follows the platform guide', () => {
     expect(JSON.parse(buildPlatformMetaOpenCodeConfig())).toEqual({
       agent: {
         meta: {
-          description: 'Runs your other agents for you. Hands every task to the right session.',
+          description: MY_KORTIX_DESCRIPTION,
           mode: 'primary',
           prompt:
-            'Follow /workspace/AGENTS.md. Coordinate work through the Kortix CLI. You are the only coordinator: spawn specialized sessions to do the work, give each one bounded task via --prompt, and never ask a session to spawn further sessions.',
+            "You are My Kortix. Follow /workspace/AGENTS.md. Run the project through the Kortix CLI with the user's own permissions: answer and configure yourself, delegate every production task to a session of the narrowest project agent via --prompt, and report the verified result.",
         },
       },
     });
+    expect(MY_KORTIX_DESCRIPTION).toBe(
+      'The one agent you talk to. It runs your agents, goals and spaces for you, with your permissions.',
+    );
   });
 
   test('forces the meta sandbox and rejects an explicit alternate sandbox', () => {
@@ -78,6 +87,46 @@ describe('platform meta agent', () => {
     expect(platformMetaAgentGrant()).toEqual({
       agent: 'meta',
       permissions: 'all',
+      connectors: [],
+      env: [],
+    });
+  });
+
+  test('builtin_agents: the manifest boolean wins, else the legacy switch, else on', () => {
+    expect(declaredBuiltinAgents({})).toEqual({});
+    expect(declaredBuiltinAgents({ builtin_agents: { my_kortix: false } })).toEqual({ my_kortix: false });
+    expect(declaredBuiltinAgents({ builtin_agents: { my_kortix: 'no' } })).toEqual({});
+    expect(declaredBuiltinAgents({ builtin_agents: ['my_kortix'] })).toEqual({});
+    // absent → legacy switch (default on)
+    expect(resolveBuiltinAgents({}, true)).toEqual({ my_kortix: true });
+    expect(resolveBuiltinAgents({}, false)).toEqual({ my_kortix: false });
+    // present → the manifest decides, whatever the legacy switch says
+    expect(resolveBuiltinAgents({ my_kortix: false }, true)).toEqual({ my_kortix: false });
+    expect(resolveBuiltinAgents({ my_kortix: true }, false)).toEqual({ my_kortix: true });
+  });
+
+  test('`meta` is a built-in only while My Kortix is on', () => {
+    expect(enabledBuiltinAgentKey('meta', { my_kortix: true })).toBe('my_kortix');
+    expect(enabledBuiltinAgentKey('meta', { my_kortix: false })).toBeNull();
+    expect(enabledBuiltinAgentKey('kortix', { my_kortix: true })).toBeNull();
+    expect(builtinAgentConfigView('my_kortix', 3, 'kortix')).toMatchObject({
+      agent: 'meta',
+      builtin: 'my_kortix',
+      editable: false,
+      block: null,
+      default_agent: 'kortix',
+    });
+  });
+
+  test('a kortix.yaml that turns My Kortix off strips a meta session to no project action', () => {
+    const governed = { specs: [], errors: [], defaultAgent: 'kortix', schemaVersion: 3 };
+    expect(grantFromLoadedAgents('meta', governed)).toEqual(platformMetaAgentGrant());
+    expect(grantFromLoadedAgents('meta', { ...governed, builtinAgents: { my_kortix: true } })).toEqual(
+      platformMetaAgentGrant(),
+    );
+    expect(grantFromLoadedAgents('meta', { ...governed, builtinAgents: { my_kortix: false } })).toEqual({
+      agent: 'meta',
+      permissions: [],
       connectors: [],
       env: [],
     });

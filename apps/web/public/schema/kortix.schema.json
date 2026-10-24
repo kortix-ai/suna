@@ -7594,6 +7594,18 @@
               "additionalProperties": false
             }
           },
+          "builtin_agents": {
+            "type": "object",
+            "description": "Built-in agents the platform adds to this project. Absent = on.",
+            "properties": {
+              "my_kortix": {
+                "type": "boolean",
+                "default": true,
+                "description": "My Kortix, the built-in agent you talk to. false removes it from this project."
+              }
+            },
+            "additionalProperties": false
+          },
           "agents": {
             "type": "object",
             "minProperties": 1,

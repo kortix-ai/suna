@@ -420,7 +420,7 @@ kortix sessions ls --children "$KORTIX_SESSION_ID"
 - A child's turn end notifies nobody. The parent reports.
 - The API lists one session's children with `GET /v1/projects/<project_id>/sessions?parent=<session_id>`, and top-level sessions with `?parent=root`. Each top-level row carries `child_count`.
 
-The `meta_agent` project flag, off by default, adds a coordinator agent that Kortix maintains and makes it the default agent for new sessions. See [Feature flags](/docs/project#feature-flags).
+My Kortix, the built-in agent Kortix maintains, is the default agent for new sessions. `builtin_agents.my_kortix: false` in `kortix.yaml` turns it off. See [Which agent runs](/docs/project/agents#which-agent-runs).
 
 ## Warm sessions
 

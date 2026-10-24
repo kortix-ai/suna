@@ -31,8 +31,15 @@ describe('buildMetaSandboxDockerfile', () => {
     expect(dockerfile).toContain('/usr/local/bin/kortix-agent');
     expect(dockerfile).toContain('/usr/local/bin/kortix');
     expect(dockerfile).toContain('/workspace/AGENTS.md');
-    expect(dockerfile).toContain('# Meta\n');
-    expect(dockerfile).toContain('NEVER do project work in this sandbox.');
+    expect(dockerfile).toContain('# My Kortix\n');
+    expect(dockerfile).toContain('You are My Kortix: the one agent this person talks to in this project.');
+    expect(dockerfile).toContain('NEVER do project work in this sandbox');
+    expect(dockerfile).toContain('`kortix sessions new --agent <name> --prompt "<task>"`');
+    expect(dockerfile).toContain('`kortix agents config <name> --file -`');
+    expect(dockerfile).toContain('show the user the before and after, and ask once.');
+    expect(dockerfile).toContain('Load the `kortix-goals` skill.');
+    expect(dockerfile).toContain('Every App, Artifact or Goal you create names the agent or the space it belongs to.');
+    expect(dockerfile).toContain('It cannot mint tokens. You never hold more than the user does in this project.');
     expect(dockerfile).toContain(
       'Move files between sessions with `kortix sessions cp <session-id>:<path> <session-id>:<path>`.',
     );
@@ -46,7 +53,7 @@ describe('buildMetaSandboxDockerfile', () => {
     expect(dockerfile).toContain(
       'Specialized sessions run full sandboxes with Python (via `uv` — tell them to use `uv run`/`uvx`/`uv pip`,',
     );
-    expect(dockerfile).toContain('Read the `kortix-cli` skill before coordinating');
+    expect(dockerfile).toContain('Read the `kortix-system` skill before you coordinate');
     expect(dockerfile).toContain(
       'Wait for a session with `kortix sessions wait-for <session-id> --timeout 120`',
     );

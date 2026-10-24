@@ -253,6 +253,10 @@ export interface ProjectConfigSummary {
   default_agent?: string | null;
   /** @deprecated Use `default_agent`. */
   open_code_default_agent: string | null;
+  /** Which built-in agents the project runs (`builtin_agents` in kortix.yaml;
+   *  absent there = on). `my_kortix` is My Kortix, the agent named `meta`.
+   *  Absent from an older API. */
+  builtin_agents?: { my_kortix: boolean };
   agent_discovery: 'opencode' | 'declarative';
   agents: Array<{
     name: string;

@@ -1228,7 +1228,7 @@
           "description": "Доделите AgentMail сандучиће да би долазне поруке могле да покрену и наставе Kortix сесије."
         },
         "meta_agent": {
-          "name": "Мета агент",
+          "name": "My Kortix",
           "description": "Додајте координатора који управља специјализованим сесијама и пословима у више корака у оквиру пројекта."
         },
         "monitors": {
@@ -1585,7 +1585,7 @@
     "sessionViewOptions": "Опције приказа сесија",
     "sectionOptions": "Опције одељка",
     "allSectionsHidden": "Сви одељци су сакривени.",
-    "metaCoordinator": "Meta координатор",
+    "metaCoordinator": "My Kortix",
     "files": "Датотеке",
     "retry": "Покушај поново",
     "review": "Преглед",
@@ -19812,7 +19812,7 @@
       "text0e5f7f6732e0": "Разграни разговор",
       "text32ad3abe4479": "Разгранање разговора није успело",
       "text95de71e25038": "Разговор је разгранат",
-      "text85b7a59cdbd5": "Agent platforme",
+      "text85b7a59cdbd5": "Уграђени",
       "textd9c0c74b514b": "Meta je agent platforme koji koordiniše vaš rad. Njegova podešavanja su fiksna: možete pokrenuti sesiju s njim, ali ga ovde ne možete podesiti.",
       "text6c4af31cd4ab": "Odjavljeni ste na ovom uređaju, ali server nije potvrdio odjavu.",
       "text228359b08506": "Контактирајте продају и закажите демо",

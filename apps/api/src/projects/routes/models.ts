@@ -31,6 +31,8 @@ import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { requestPersonalOwner } from '../lib/personal-resources';
 import { agentNotDeclaredError } from '../agents';
+import { projectBuiltinAgents } from '../lib/builtin-agents';
+import { builtinAgentWriteRefusal, enabledBuiltinAgentKey } from '../lib/platform-meta-agent';
 import { readAgentBlockV2 } from '../lib/agent-config-v2';
 import { loadManifestForEdit } from '../lib/triggers';
 import type { ProjectRow } from '../lib/serializers';
@@ -477,6 +479,8 @@ export function registerModelsRoutes(): void {
         if (!read.ok) {
           return c.json({ error: read.error, code: 'manifest_malformed' }, 400);
         }
+        const builtinKey = enabledBuiltinAgentKey(agentName, projectBuiltinAgents(manifest.raw, writer.row.metadata));
+        if (builtinKey) return c.json(builtinAgentWriteRefusal(builtinKey), 409);
         const notDeclared = agentNotDeclaredError(manifest, agentName!);
         if (notDeclared) return c.json(notDeclared, 409);
       }

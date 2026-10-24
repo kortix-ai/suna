@@ -1,3 +1,5 @@
+import type { BuiltinAgentKey } from '@kortix/shared';
+
 
 export const MANIFEST_FILENAME = 'kortix.toml';
 
@@ -72,4 +74,7 @@ export interface LoadedAgents {
   defaultAgent?: string | null;
   /** The manifest's `kortix_version` (2 or 3) for a map-shaped roster; absent for v1. */
   schemaVersion?: number;
+  /** The manifest's explicit `builtin_agents` booleans (v3). Absent key = not
+   *  set; `resolveBuiltinAgents` (lib/platform-meta-agent.ts) adds the fallback. */
+  builtinAgents?: Partial<Record<BuiltinAgentKey, boolean>>;
 }

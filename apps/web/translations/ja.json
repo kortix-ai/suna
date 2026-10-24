@@ -1228,7 +1228,7 @@
           "description": "AgentMail の受信箱を割り当て、受信メールから Kortix セッションを開始・継続できるようにします。"
         },
         "meta_agent": {
-          "name": "メタエージェント",
+          "name": "My Kortix",
           "description": "専門セッションとプロジェクト内の複数手順の作業を管理するコーディネーターを追加します。"
         },
         "monitors": {
@@ -1585,7 +1585,7 @@
     "sessionViewOptions": "セッション表示オプション",
     "sectionOptions": "セクションオプション",
     "allSectionsHidden": "すべてのセクションが非表示です。",
-    "metaCoordinator": "Meta コーディネーター",
+    "metaCoordinator": "My Kortix",
     "files": "ファイル",
     "retry": "もう一度",
     "review": "確認",
@@ -19812,7 +19812,7 @@
       "text0e5f7f6732e0": "会話をフォーク",
       "text32ad3abe4479": "会話のフォークに失敗しました",
       "text95de71e25038": "会話をフォークしました",
-      "text85b7a59cdbd5": "プラットフォームエージェント",
+      "text85b7a59cdbd5": "組み込み",
       "textd9c0c74b514b": "Meta は作業を統括するプラットフォームエージェントです。設定は固定されています。Meta とのセッションは開始できますが、ここでは設定できません。",
       "text6c4af31cd4ab": "このデバイスではサインアウトしましたが、サーバーがサインアウトを確認できませんでした。",
       "text228359b08506": "営業に問い合わせてデモを予約",

@@ -1228,7 +1228,7 @@
           "description": "Assegna caselle AgentMail affinché le email in arrivo possano avviare e continuare sessioni Kortix."
         },
         "meta_agent": {
-          "name": "Meta-agente",
+          "name": "My Kortix",
           "description": "Aggiungi un coordinatore che gestisce sessioni specializzate e attività in più passaggi nel progetto."
         },
         "monitors": {
@@ -1585,7 +1585,7 @@
     "sessionViewOptions": "Opzioni di visualizzazione delle sessioni",
     "sectionOptions": "Opzioni della sezione",
     "allSectionsHidden": "Tutte le sezioni sono nascoste.",
-    "metaCoordinator": "Coordinatore Meta",
+    "metaCoordinator": "My Kortix",
     "files": "File",
     "retry": "Riprova",
     "review": "Rivedi",
@@ -19812,7 +19812,7 @@
       "text0e5f7f6732e0": "Biforca conversazione",
       "text32ad3abe4479": "Impossibile biforcare la conversazione",
       "text95de71e25038": "Conversazione biforcata",
-      "text85b7a59cdbd5": "Agente della piattaforma",
+      "text85b7a59cdbd5": "Integrato",
       "textd9c0c74b514b": "Meta è un agente della piattaforma che coordina il tuo lavoro. La sua configurazione è fissa: puoi avviare una sessione con lui, ma non si può configurare qui.",
       "text6c4af31cd4ab": "Disconnesso su questo dispositivo, ma il server non ha potuto confermare la disconnessione.",
       "text228359b08506": "Contatta le vendite e prenota una demo",

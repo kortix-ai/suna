@@ -1228,7 +1228,7 @@
           "description": "分配 AgentMail 收件箱，让传入的邮件会话能够启动和继续 Kortix 会话。"
         },
         "meta_agent": {
-          "name": "元智能体",
+          "name": "My Kortix",
           "description": "添加一个协调智能体，用于管理项目中的专业会话和多步骤工作。"
         },
         "monitors": {
@@ -1585,7 +1585,7 @@
     "sessionViewOptions": "会话视图选项",
     "sectionOptions": "分组选项",
     "allSectionsHidden": "所有分组均已隐藏。",
-    "metaCoordinator": "Meta 协调器",
+    "metaCoordinator": "My Kortix",
     "files": "文件",
     "retry": "重试",
     "review": "审阅",
@@ -19812,7 +19812,7 @@
       "text0e5f7f6732e0": "分叉对话",
       "text32ad3abe4479": "分叉对话失败",
       "text95de71e25038": "对话已分叉",
-      "text85b7a59cdbd5": "平台智能体",
+      "text85b7a59cdbd5": "内置",
       "textd9c0c74b514b": "Meta 是协调你工作的平台智能体。它的设置是固定的：你可以与它开始会话，但无法在这里配置它。",
       "text6c4af31cd4ab": "已在此设备上退出登录，但服务器未能确认退出操作。",
       "text228359b08506": "联系销售并预约演示",

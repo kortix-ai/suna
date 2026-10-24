@@ -216,7 +216,7 @@ export function AgentSelector({
             </span>
             {meta && (
               <Badge variant="outline" size="xs" className="shrink-0 font-normal">
-                {tHardcodedUi.raw('i18nComplete.textc78ffe195710')}
+                {tHardcodedUi.raw('i18nComplete.text85b7a59cdbd5')}
               </Badge>
             )}
           </div>
@@ -306,13 +306,13 @@ export function AgentSelector({
           variant="ghost"
           size="sm"
           aria-label={t('selectAgent')}
-          className="text-foreground/70 rounded-lg hit-area-y-3"
+          className="text-muted-foreground rounded-lg hit-area-y-3"
         >
           {triggerMark}
           <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
           <CaretDownIcon
             className={cn(
-              'size-3 transition-transform duration-200 ease-out',
+              'size-3 transition-transform duration-moderate ease-out',
               open && 'rotate-180',
             )}
           />
@@ -388,7 +388,7 @@ export function AgentSelector({
 
           {/* No results */}
           {filteredPrimary.length === 0 && search.trim() && (
-            <div className="text-muted-foreground/50 py-8 text-center text-xs">
+            <div className="text-muted-foreground py-8 text-center text-xs">
               {tHardcodedUi.raw(
                 'componentsSessionSessionChatInput.line273JsxTextNoAgentsMatchLdquo',
               )}

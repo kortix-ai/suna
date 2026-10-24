@@ -271,7 +271,7 @@ A change to an agent's secrets reaches its running sessions at once, or at the l
 
 ## Which agent runs
 
-A session runs one agent. The request picks it, else the project's `default_agent` runs:
+A session runs one agent. The request picks it. Else My Kortix runs, when the project has it on. Else the project's `default_agent` runs:
 
 | Where | How to pick |
 | --- | --- |
@@ -281,6 +281,15 @@ A session runs one agent. The request picks it, else the project's `default_agen
 | Trigger | The trigger's `agent` field. See [Triggers](/docs/connect/triggers). |
 | Slack, Teams, email | The channel binding's agent. See [Manage bindings](/docs/connect/channels#manage-bindings). |
 | Subagent | A running agent starts any agent with `mode: subagent` or `all` through the `task` tool. See [Child sessions](/docs/work/sessions#child-sessions). |
+
+**My Kortix.** My Kortix is the built-in agent you talk to. Kortix adds it to every project as the agent `meta`, lists it first, and starts every new session that names no agent with it. It acts with the permissions of the person who started the session, in that project only. It cannot read project secrets, call connectors, mint tokens or reach account settings. It runs your other agents for you: it configures them with `kortix agents config`, starts their sessions, drives goals and builds spaces. Its prompt, tools and model are built in, so `PUT /agents/meta/config` answers `409 builtin_agent_managed`. A session started by My Kortix, a trigger or a channel runs `default_agent`. Turn it off per project in `kortix.yaml` (v3):
+
+```yaml
+builtin_agents:
+  my_kortix: false   # absent = on
+```
+
+With the key absent, the project's `meta_agent` flag decides (on by default). Off: new sessions start with `default_agent`, `meta` is an unknown agent name, and a running My Kortix session keeps only read access.
 
 **Default agent.** `default_agent` must name a declared agent that is enabled. Set it in the dashboard, with `kortix agents default <agent>`, or with `PUT /v1/projects/{projectId}/default-agent`. Each one commits `kortix.yaml` and needs a `kortix_version: 2` manifest. On v3, set `default_agent` in `kortix.yaml`. `kortix agents default --show` prints it.
 

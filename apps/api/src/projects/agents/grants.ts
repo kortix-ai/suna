@@ -2,7 +2,7 @@ import type { AgentGrant } from '@kortix/db';
 import { isMetaAgentName } from '@kortix/shared';
 import { canonicalizeGrantActions, canonicalizeGrantConnectors } from '../../iam/agent-scope';
 import type { GitBackedProject } from '../git';
-import { platformMetaAgentGrant } from '../lib/platform-meta-agent';
+import { disabledPlatformMetaAgentGrant, platformMetaAgentGrant } from '../lib/platform-meta-agent';
 import { type ManifestFormat, OPENCODE_BUILTIN_AGENTS_V3 } from '@kortix/manifest-schema';
 import { parseManifestString } from '../manifest-io';
 import { extractAgents, loadProjectAgents } from './parse';
@@ -167,7 +167,11 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
   // token, so the deny-all overwrote the coordinator's real grant on its first
   // turn (every later `kortix` call then 403'd) and the null made the re-mint
   // refuse the prompt outright. Its grant is platform-owned, at mint and here.
-  if (isMetaAgentName(agentName)) return platformMetaAgentGrant();
+  // A kortix.yaml that turned My Kortix off (`builtin_agents.my_kortix: false`)
+  // strips an existing `meta` session of every project action on its next prompt.
+  if (isMetaAgentName(agentName)) {
+    return loaded.builtinAgents?.my_kortix === false ? disabledPlatformMetaAgentGrant() : platformMetaAgentGrant();
+  }
 
   // No [[agents]] section parsed and no errors → project hasn't adopted
   // per-agent governance → no restriction (today's behavior).

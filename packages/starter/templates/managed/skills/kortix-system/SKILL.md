@@ -1,6 +1,6 @@
 ---
 name: kortix-system
-description: "Canonical reference for Kortix projects, Apps (sites, servers, backends with volumes) and internal business apps, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and the session harness: pi runs every new session; OpenCode is deprecated. Covers `kortix.yaml` versions 1 and 2, App deployments, harness configuration (`harnesses/pi/`, `harnesses/opencode/`), session identity, credential boundaries, and the complete pi and OpenCode references. Load when the user asks how Kortix works, what Kortix can do, how to deploy an App, how an agent discovers platform instructions, how to customize or configure this project's agents (create or fix an agent, subagent, skill, tool, plugin, extension, pi package, command, MCP server, model or permission rule; edit `opencode.jsonc`), how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
+description: "Canonical reference for Kortix projects, Apps (sites, servers, backends with volumes) and internal business apps, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and the session harness: pi runs every new session; OpenCode is deprecated. Covers `kortix.yaml` versions 1, 2 and 3 (agent blocks, `builtin_agents`, My Kortix), App deployments, harness configuration (`harnesses/pi/`, `harnesses/opencode/`), session identity, credential boundaries, and the complete pi and OpenCode references. Load when the user asks how Kortix works, what Kortix can do, how to deploy an App, how an agent discovers platform instructions, how to customize or configure this project's agents (create or fix an agent, subagent, skill, tool, plugin, extension, pi package, command, MCP server, model or permission rule; edit `opencode.jsonc`), how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
 ---
 
 <skill name="kortix-system">
@@ -834,6 +834,55 @@ project.review.read  project.review.submit  project.review.act
 account-scoped actions — and prints each agent's resolved scope. Use `kortix validate --scopes`
 to see the full enum.
 </agent-authorization>
+
+<configure-agent-v3>
+## Configure an agent — `kortix_version: 3`
+
+In v3 one kortix.yaml block is the whole agent: behavior, prompt and grants.
+The project registers what exists (`skills`, `tools`, `commands`,
+`extensions`, `connectors`, `apps`, `env`); an agent enables registered
+things by name. Every grant is deny-by-default.
+
+```yaml
+kortix_version: 3
+default_agent: kortix          # required: the fallback for triggers, channels and delegated sessions
+builtin_agents:
+  my_kortix: true              # My Kortix, the built-in agent (slug `meta`). Absent = on; false removes it.
+skills:
+  pdf: skills/pdf              # registered once; agents enable it by name
+agents:
+  researcher:
+    description: Finds and summarizes sources.
+    prompt: You research one question and write the answer to /workspace/out/answer.md.
+    model: kimi-k2.6
+    tools: [read, grep, glob, webfetch]
+    skills: [pdf]
+    extensions: []
+    connectors: []
+    secrets: []
+    kortix_permissions: [project.session.read]
+    domain: research           # the Space (`domains.research`) it belongs to
+```
+
+Least privilege, in order: start from nothing, add each tool, skill,
+extension, connector, secret and `kortix_permissions` item the task needs,
+and stop. A narrower agent is a cheaper mistake.
+
+**Write path.** `kortix agents config <name> --json` prints the block.
+`kortix agents config <name> --file -` replaces it from JSON on stdin and
+creates the agent when it does not exist; `--set key=value` changes one key.
+Each write is one commit on the default branch and needs
+`project.agent.write`. A branch-protection 409 means: open a change request.
+
+**My Kortix** (slug `meta`) is built in. It is not declared in kortix.yaml,
+its prompt, tools and model are maintained by Kortix, and a write to
+`agents/meta/config` answers `409 builtin_agent_managed`. It acts with the
+permissions of the person who started the session, in this project only. It
+runs every other agent: it starts their sessions, configures them, drives
+Goals and builds Spaces. `builtin_agents: { my_kortix: false }` turns it off;
+new sessions then start with `default_agent`, and a running My Kortix session
+keeps only read access.
+</configure-agent-v3>
 
 <references>
 

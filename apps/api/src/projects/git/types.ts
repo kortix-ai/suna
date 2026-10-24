@@ -36,6 +36,9 @@ export interface ProjectConfigSummary {
   open_code_raw: string | null;
   /** The project's default agent. */
   default_agent: string | null;
+  /** Which built-in agents the project runs (`builtin_agents` in kortix.yaml,
+   *  absent = on). Set by GET /detail; `my_kortix` is the `meta` agent. */
+  builtin_agents?: { my_kortix: boolean };
   /** @deprecated The pre-W4 name of `default_agent`. Same value. */
   open_code_default_agent: string | null;
   agent_discovery: 'opencode' | 'declarative';
