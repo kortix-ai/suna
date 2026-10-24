@@ -104,12 +104,15 @@ export function renderDoc(markdown: string, opts: { print: boolean }): string {
     .replace(/<table>/g, '<div class="kx-table"><table>')
     .replace(/<\/table>/g, '</table></div>');
   const mermaid = diagrams
-    ? `<script type="module">import m from "${MERMAID_CDN}";m.initialize({startOnLoad:false,securityLevel:"strict",theme:matchMedia("(prefers-color-scheme: dark)").matches?"dark":"neutral",fontFamily:getComputedStyle(document.body).fontFamily});await m.run();window.__kxDiagrams=true;</script>`
+    ? `<script type="module">import m from "${MERMAID_CDN}";m.initialize({startOnLoad:false,securityLevel:"strict",theme:${opts.print ? '"neutral"' : 'matchMedia("(prefers-color-scheme: dark)").matches?"dark":"neutral"'},fontFamily:getComputedStyle(document.querySelector(".kx-doc")).fontFamily});await m.run();window.__kxDiagrams=true;</script>`
     : '';
+  // Print once the fonts and diagrams are in (at most 8 s); afterwards tell the app (it prints from a
+  // hidden frame) so it can remove the frame.
   const print = opts.print
-    ? `<script>addEventListener("load",function(){var t=Date.now();(function go(){if(${diagrams ? '!window.__kxDiagrams&&' : ''}Date.now()-t<8000)return setTimeout(go,150);setTimeout(function(){print()},300)})()})</script>`
+    ? `<script>addEventListener("load",function(){var t=Date.now();(function go(){if(${diagrams ? '!window.__kxDiagrams&&' : ''}Date.now()-t<8000)return setTimeout(go,150);document.fonts.ready.then(function(){addEventListener("afterprint",function(){parent!==window&&parent.postMessage({kortix:"artifact-printed"},"*")});print()})})()})</script>`
     : '';
-  return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escaped}</title><style>${BRAND_FONTS_CSS}${BRAND_TOKENS_CSS}${ARTIFACT_PAGE_CSS}${ARTIFACT_DOC_CSS}</style>${mermaid}${print}</head>\n<body><main class="kx-doc">\n${html}</main></body></html>\n`;
+  // A PDF is always light, whatever the reader's system theme (the kit honours data-theme).
+  return `<!doctype html>\n<html lang="en"${opts.print ? ' data-theme="light"' : ''}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escaped}</title><style>${BRAND_FONTS_CSS}${BRAND_TOKENS_CSS}${ARTIFACT_PAGE_CSS}${ARTIFACT_DOC_CSS}</style>${mermaid}${print}</head>\n<body><main class="kx-doc">\n${html}</main></body></html>\n`;
 }
 
 /** A doc's title: its first `# ` heading. */
