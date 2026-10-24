@@ -223,7 +223,9 @@ public pages. Combine name and company in the query, so you find this person
 and not a namesake. Then:
 
 - Show what you found as the **Research** block (**The look**). Get the
-  company logo in one `image_search` call ("<company> logo").
+  company logo in one `image_search` call ("<company> logo icon"): pick a
+  square mark or app icon, never a wide wordmark (the thumbnail is square and
+  crops it). No square mark found: leave the image empty.
 - Confirm with one `question`: "Is this you and your company?" (Yes / Partly,
   let me correct it / Not me). Nothing found, or a common name with no match:
   say so in one line and ask their role instead.
