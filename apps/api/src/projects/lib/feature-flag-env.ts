@@ -1,7 +1,7 @@
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 
-import { resolveFeatureFlags } from '../../feature-flags/registry';
+import { resolveFeatureFlag, resolveFeatureFlags } from '../../feature-flags/registry';
 import { db } from '../../shared/db';
 
 /**
@@ -18,6 +18,13 @@ export const FEATURE_FLAGS_ENV_NAME = 'KORTIX_FEATURE_FLAGS';
  */
 const LEGACY_IMAGE_FLAGS = ['genui'];
 
+/**
+ * Read by kortixd (harness/pi/config.ts): `1` routes the pi `agent` tool to a real cloud child
+ * session (harness/pi/cloud-subagent.ts). Set only while the `cloud_subagents` flag is on; absent,
+ * the box keeps the in-process child. Boot-only.
+ */
+export const CLOUD_SUBAGENTS_ENV_NAME = 'KORTIX_PI_CLOUD_SUBAGENTS';
+
 /** The enabled flags, sorted. */
 export function featureFlagsEnvValue(metadata: unknown): string {
   const flags = Object.entries(resolveFeatureFlags(metadata))
@@ -26,11 +33,19 @@ export function featureFlagsEnvValue(metadata: unknown): string {
   return [...flags, ...LEGACY_IMAGE_FLAGS].sort().join(',');
 }
 
+/** `{ KORTIX_PI_CLOUD_SUBAGENTS: '1' }` while the project flag is on, else no key. */
+export function cloudSubagentsEnv(metadata: unknown): Record<string, string> {
+  return resolveFeatureFlag(metadata, 'cloud_subagents') ? { [CLOUD_SUBAGENTS_ENV_NAME]: '1' } : {};
+}
+
 export async function buildFeatureFlagSandboxEnv(projectId: string): Promise<Record<string, string>> {
   const [row] = await db
     .select({ metadata: projects.metadata })
     .from(projects)
     .where(eq(projects.projectId, projectId))
     .limit(1);
-  return { [FEATURE_FLAGS_ENV_NAME]: featureFlagsEnvValue(row?.metadata) };
+  return {
+    [FEATURE_FLAGS_ENV_NAME]: featureFlagsEnvValue(row?.metadata),
+    ...cloudSubagentsEnv(row?.metadata),
+  };
 }

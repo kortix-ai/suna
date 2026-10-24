@@ -2,46 +2,107 @@
  * Cloud subagent spawn: the `agent` tool as a REAL Kortix child session.
  *
  * RFC `.agents/skills/learnings/work/claude-code-harness-parity/README.md`,
- * Pillar 1 (the keystone). Behind `KORTIX_PI_CLOUD_SUBAGENTS` (default OFF),
- * `runtime.kortixHost()` routes `spawnSession` here instead of the in-process
- * `PiRuntime.spawnSession`. A spawn becomes one `POST /v1/projects/:id/sessions`
- * from this box, which provisions the child its own sandbox + pi and runs the
- * prompt. The child auto-links to this session as its parent, because the box's
- * `KORTIX_TOKEN` is session-bound and the API reads the caller session from it
- * (`middleware/caller-session.ts` → `session-create.ts` `parentSessionId`).
+ * Pillar 1 (the keystone). Behind the project flag `cloud_subagents` (the API
+ * sets `KORTIX_PI_CLOUD_SUBAGENTS=1`, default OFF), `runtime.kortixHost()`
+ * routes `spawnSession` here instead of the in-process `PiRuntime.spawnSession`.
+ * A spawn is one `POST /v1/projects/:id/sessions` from this box, which
+ * provisions the child its own sandbox + pi and runs the prompt. The child
+ * auto-links to this session as its parent: the box's `KORTIX_TOKEN` is
+ * session-bound, and the API reads the caller session from it
+ * (`middleware/caller-session.ts` → `session-create.ts` `parentSessionId` and
+ * `metadata.spawned_by_session`). That same link authorizes every later read
+ * of the child from this box (`agentSessionStanding`, connectors/share.ts):
+ * the session row, its transcript, a follow-up prompt, a stop.
  *
  * The return shape is `SpawnSessionResult`, identical to the in-process path,
- * so `extensions/subagents.ts` is unchanged: the tool part still carries the
- * child id in `metadata.sessionId` and the output still starts `task_id: <id>`.
- * The id now names a real session, so the web client renders the child as a
- * normal session (its own event stream), not a part of this box's wire.
+ * so `extensions/subagents.ts` is unchanged: the tool part carries the child id
+ * in `metadata.sessionId` and the output starts `task_id: <id>`.
  *
- * FIRST CUT — pieces that are stubbed, each listed in the PR/report:
- *  1. Reading the child's final report back (the `<task_result>` body) is a
- *     STUB: it needs a cross-session transcript read from this box, which is
- *     unverified here (no real sandbox). `readFinalText` returns a pointer to
- *     the child session instead. The child's full transcript is visible in the
- *     UI via `metadata.sessionId` regardless.
- *  2. Inline ephemeral agents (`agent` spec: systemPrompt/tools overrides) do
- *     not map to a cloud agent (no yaml). The child runs the project default
- *     agent; the overrides are dropped.
- *  3. `task_id` resume is not supported in cloud mode (a resume = a new prompt
- *     to the existing child session, a follow-up). It throws a clear error.
- *  4. Guardrails from the RFC (per-parent concurrency cap, idle-reap, nesting
- *     gate, billing roll-up) are NOT added here — the in-process path's gates
- *     still apply; the cloud cap is a follow-up.
+ * What a child gets, and why it never has more than its parent:
+ *  - A named project agent (`subagent_type: reviewer`) runs as that agent. The
+ *    API authorizes the agent exactly as for any session the caller starts.
+ *  - A built-in (`general`, `explore`) or an inline spec runs as the PARENT's
+ *    own resolved agent (runtime.ts `cloudParent`), so its connectors, secrets
+ *    and permissions are the parent's. The platform coordinator omits
+ *    `agent_name`: the API then picks the project default (session-create.ts,
+ *    the coordinator recursion stop).
+ *  - The spec's instructions ride in `initial_context` (a model-only part).
+ *  - The parent's effective tool list, intersected with the spec's list, rides
+ *    in `runtime_context` (`kortix.subagent.tools`) for EVERY child, named
+ *    agents included. The child's runtime narrows its own tools to it
+ *    (runtime.ts `rootToolAllowed`), so a child never has a tool its parent
+ *    lacks, the same rule as the in-process path.
+ *  - Not forwarded: `variant` (a named child applies its own agent's variant;
+ *    a built-in or inline spec has none) and the spec `permission` (the child
+ *    runs under its agent's permission policy, never a wider one).
+ *
+ * Guardrails: at most `maxLive` children wait at once per parent box, and a
+ * child at depth `maxDepth` cannot start another cloud child (depth rides in
+ * `runtime_context` as `kortix.subagent.depth`). An aborted parent call stops
+ * its child.
  */
 import { logger } from '@/lib/log/logger'
 import type { SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
 
-/** The API callback target, from the box env (`cfg.apiUrl` / `projectId` / `sandboxToken`, `KORTIX_SESSION_ID`). */
+/** `runtime_context` key: this session's subagent depth (a root session has none = 0). */
+export const SUBAGENT_DEPTH_KEY = 'kortix.subagent.depth'
+/** `runtime_context` key: comma-separated tool names this session may use (absent = no narrowing). */
+export const SUBAGENT_TOOLS_KEY = 'kortix.subagent.tools'
+
+/** Defaults for the two guardrails; the box env can override both (config.ts). */
+export const DEFAULT_MAX_LIVE_CLOUD_SUBAGENTS = 4
+export const DEFAULT_MAX_CLOUD_SUBAGENT_DEPTH = 2
+
+/** The API's caps on the two create fields this module fills (`@kortix/api-contract`). */
+const INITIAL_CONTEXT_MAX_CHARS = 8_192
+const RUNTIME_CONTEXT_STRING_MAX = 4_096
+const TOOL_NAME = /^[A-Za-z0-9_.:-]{1,128}$/
+
+/** The API callback target and this parent's limits, from the box env. */
 export interface CloudSubagentApi {
   /** `KORTIX_API_URL`, with or without the `/v1` suffix. */
   apiUrl: string
   projectId: string
   /** The session's sandbox token (`KORTIX_TOKEN`); its bearer identifies this session as the parent. */
   token: string
+  /** This box's own session id (`KORTIX_SESSION_ID`): a resumed `task_id` must name one of its children. */
+  sessionId?: string
+  /** The parent's resolved agent, set per call. Built-in and inline children run as it. Absent: the API picks. */
+  parentAgent?: string
+  /** This session's own subagent depth (0 for a root session). */
+  depth: number
+  maxDepth: number
+  maxLive: number
+  /** Every tool the parent agent may use, set per call. A child gets at most these. Absent: the parent is not narrowed. */
+  toolAllowlist?: string[]
+  /** Children this parent is waiting on right now. One counter per box, shared by every call. */
+  live: { count: number }
   fetchImpl?: typeof fetch
+}
+
+/** What a session's own `runtime_context` says about it as a subagent. */
+export interface SubagentContext {
+  depth: number
+  tools?: string[]
+}
+
+/** Parse `KORTIX_SESSION_CONTEXT` (the API's JSON envelope of `runtime_context`). Malformed = a root session. */
+export function subagentContextFrom(raw: string | undefined): SubagentContext {
+  if (!raw?.trim()) return { depth: 0 }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return { depth: 0 }
+  }
+  if (!parsed || typeof parsed !== 'object') return { depth: 0 }
+  const record = parsed as Record<string, unknown>
+  const rawDepth = record[SUBAGENT_DEPTH_KEY]
+  const depth = typeof rawDepth === 'number' && Number.isInteger(rawDepth) && rawDepth > 0 ? rawDepth : 0
+  const rawTools = record[SUBAGENT_TOOLS_KEY]
+  if (typeof rawTools !== 'string') return { depth }
+  // A present key always narrows: an empty or all-invalid list means no tools, never all tools.
+  return { depth, tools: rawTools.split(',').map((name) => name.trim()).filter((name) => TOOL_NAME.test(name)) }
 }
 
 /** Resolve the callback target, or null when the box has no control plane (a local/offline box). */
@@ -49,12 +110,26 @@ export function cloudSubagentApiFrom(input: {
   apiUrl?: string
   projectId?: string
   sandboxToken?: string
+  sessionId?: string
+  context?: SubagentContext
+  maxLive?: number
+  maxDepth?: number
 }): CloudSubagentApi | null {
   const apiUrl = input.apiUrl?.trim()
   const projectId = input.projectId?.trim()
   const token = input.sandboxToken?.trim()
   if (!apiUrl || !projectId || !token) return null
-  return { apiUrl, projectId, token }
+  return {
+    apiUrl,
+    projectId,
+    token,
+    ...(input.sessionId?.trim() ? { sessionId: input.sessionId.trim() } : {}),
+    depth: input.context?.depth ?? 0,
+    maxDepth: input.maxDepth ?? DEFAULT_MAX_CLOUD_SUBAGENT_DEPTH,
+    maxLive: input.maxLive ?? DEFAULT_MAX_LIVE_CLOUD_SUBAGENTS,
+    ...(input.context?.tools ? { toolAllowlist: input.context.tools } : {}),
+    live: { count: 0 },
+  }
 }
 
 /** `https://api.example.com/v1` → `https://api.example.com`. `/v1` is part of every path below. */
@@ -70,13 +145,15 @@ function splitModel(ref: string | undefined): { providerID: string; modelID: str
   return slash < 0 ? { providerID: 'kortix', modelID: ref } : { providerID: ref.slice(0, slash), modelID: ref.slice(slash + 1) }
 }
 
-/** Built-in subagent names and the inline label: none is a real project agent, so the child runs the default. */
+/** Built-in subagent names and the inline label: none is a real project agent, so the child runs as the parent's agent. */
 const CLOUD_UNMAPPABLE_AGENTS = new Set(['general', 'explore', 'inline'])
 
 /** Poll the child session until it goes idle, at most this long. */
 // ponytail: fixed 30 min ceiling + 2 s poll; make it env-tunable if a real subagent run needs longer.
 const WAIT_CEILING_MS = 30 * 60_000
 const POLL_INTERVAL_MS = 2_000
+/** Messages read back from the child's transcript to find its last report. */
+const READ_BACK_MESSAGES = 20
 
 export interface CloudSubagentOptions {
   waitCeilingMs?: number
@@ -84,9 +161,36 @@ export interface CloudSubagentOptions {
   now?: () => number
 }
 
+interface Http {
+  fetchImpl: typeof fetch
+  origin: string
+  headers: Record<string, string>
+  projectId: string
+}
+
+interface SessionRow {
+  session_id?: string
+  status?: string
+  parent_session_id?: string | null
+  working?: { state?: string; since?: string | null; pending_delivery?: boolean }
+}
+
+function sessionUrl(http: Http, childId: string, suffix = ''): string {
+  return `${http.origin}/v1/projects/${encodeURIComponent(http.projectId)}/sessions/${encodeURIComponent(childId)}${suffix}`
+}
+
+/** The tools a child may use: the spec's list, inside this session's own list. Undefined = no narrowing. */
+export function childToolAllowlist(own: string[] | undefined, requested: string[] | undefined): string[] | undefined {
+  if (!own) return requested
+  if (!requested) return own
+  return requested.filter((name) => own.includes(name))
+}
+
 /**
- * Spawn one real cloud child session for an `agent`-tool call and wait for its
- * first turn to settle. Returns the same shape as the in-process spawn.
+ * Spawn one real cloud child session for an `agent`-tool call (or send a
+ * follow-up to an existing one for `task_id`) and wait for its turn to
+ * settle. Returns the same shape as the in-process spawn. A refused call
+ * throws, like the in-process gates do.
  */
 export async function cloudSpawnSession(
   api: CloudSubagentApi,
@@ -94,69 +198,177 @@ export async function cloudSpawnSession(
   opts: CloudSubagentOptions = {},
 ): Promise<SpawnSessionResult> {
   const model = splitModel(input.model)
-  if (input.sessionId) {
-    // STUB (3): resume is a new prompt to the existing child. Not in the first cut.
-    throw new Error('cloud subagents do not support task_id resume yet; start a new task')
+  const http: Http = {
+    fetchImpl: api.fetchImpl ?? fetch,
+    origin: apiOrigin(api.apiUrl),
+    headers: { authorization: `Bearer ${api.token}`, 'content-type': 'application/json' },
+    projectId: api.projectId,
   }
-  const fetchImpl = api.fetchImpl ?? fetch
-  const origin = apiOrigin(api.apiUrl)
-  const headers = { authorization: `Bearer ${api.token}`, 'content-type': 'application/json' }
+  if (input.sessionId) return resumeChild(api, http, input, model, opts)
 
-  // The named project agent, when the call names one; built-ins and inline run the project default.
-  const agentName = input.agent && !CLOUD_UNMAPPABLE_AGENTS.has(input.agent) ? input.agent : undefined
+  if (api.depth >= api.maxDepth) {
+    throw new Error(
+      `Cloud subagents nest at most ${api.maxDepth} levels and this session is level ${api.depth}. Do this task here instead of delegating it.`,
+    )
+  }
+  const createBody = buildCreateBody(api, input)
+  if (api.live.count >= api.maxLive) {
+    throw new Error(
+      `At most ${api.maxLive} cloud subagents run at once for one session, and ${api.live.count} are running. Wait for one to return, then start the next.`,
+    )
+  }
+  // Reserved before the first await: parallel `agent` calls in one message all pass through here.
+  api.live.count += 1
+  try {
+    let created: Response
+    try {
+      created = await http.fetchImpl(`${http.origin}/v1/projects/${encodeURIComponent(api.projectId)}/sessions`, {
+        method: 'POST',
+        headers: http.headers,
+        body: JSON.stringify(createBody),
+      })
+    } catch (err) {
+      return { sessionId: '', status: 'error', text: '', error: `child session create failed: ${errorText(err)}`, model }
+    }
+    if (created.status !== 201 && created.status !== 202) {
+      const body = (await created.text().catch(() => '')).slice(0, 500)
+      return { sessionId: '', status: 'error', text: '', error: `child session create answered ${created.status}: ${body}`, model }
+    }
+    const createdJson = (await created.json().catch(() => null)) as { session_id?: string; sessionId?: string } | null
+    const childId = createdJson?.session_id ?? createdJson?.sessionId ?? ''
+    if (!childId) {
+      return { sessionId: '', status: 'error', text: '', error: 'child session create returned no session_id', model }
+    }
+    // Publish the child id to the tool part NOW, so the UI links the real child while it works.
+    input.onSession?.({ sessionId: childId, model })
+    return await settleAndRead(http, childId, null, input.signal, model, opts)
+  } finally {
+    api.live.count -= 1
+  }
+}
 
-  const createBody: Record<string, unknown> = {
+/** The create body. Throws on a spec the API would refuse, before any session exists. */
+function buildCreateBody(api: CloudSubagentApi, input: SpawnSessionInput): Record<string, unknown> {
+  const named = input.agent && !CLOUD_UNMAPPABLE_AGENTS.has(input.agent) ? input.agent : undefined
+  const agentName = named ?? api.parentAgent
+  // A named agent brings its own prompt. A built-in or inline spec has only this one.
+  const instructions = named ? '' : input.systemPrompt.trim()
+  if (instructions.length > INITIAL_CONTEXT_MAX_CHARS) {
+    throw new Error(`Inline agent instructions are ${instructions.length} characters; a cloud subagent takes at most ${INITIAL_CONTEXT_MAX_CHARS}.`)
+  }
+  // Every child, named or not, is narrowed to the parent's tools (the in-process path's `rootToolAllowed`).
+  const tools = childToolAllowlist(api.toolAllowlist, input.tools)
+  const invalid = (tools ?? []).filter((name) => !TOOL_NAME.test(name))
+  if (invalid.length > 0) throw new Error(`Invalid tool names for a cloud subagent: ${invalid.join(', ')}.`)
+  const toolsValue = tools?.join(',')
+  if (toolsValue && toolsValue.length > RUNTIME_CONTEXT_STRING_MAX) {
+    throw new Error(`The tool list for a cloud subagent is longer than ${RUNTIME_CONTEXT_STRING_MAX} characters.`)
+  }
+  return {
     initial_prompt: input.prompt,
     name: input.title,
     ...(agentName ? { agent_name: agentName } : {}),
     ...(input.model ? { model: input.model } : {}),
+    ...(instructions ? { initial_context: instructions } : {}),
+    runtime_context: {
+      [SUBAGENT_DEPTH_KEY]: api.depth + 1,
+      ...(tools ? { [SUBAGENT_TOOLS_KEY]: toolsValue ?? '' } : {}),
+    },
   }
-
-  let created: Response
-  try {
-    created = await fetchImpl(`${origin}/v1/projects/${encodeURIComponent(api.projectId)}/sessions`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(createBody),
-    })
-  } catch (err) {
-    return { sessionId: '', status: 'error', text: '', error: `child session create failed: ${err instanceof Error ? err.message : String(err)}`, model }
-  }
-  if (created.status !== 201 && created.status !== 202) {
-    const body = (await created.text().catch(() => '')).slice(0, 500)
-    return { sessionId: '', status: 'error', text: '', error: `child session create answered ${created.status}: ${body}`, model }
-  }
-  const createdJson = (await created.json().catch(() => null)) as { session_id?: string; sessionId?: string } | null
-  const childId = createdJson?.session_id ?? createdJson?.sessionId ?? ''
-  if (!childId) {
-    return { sessionId: '', status: 'error', text: '', error: 'child session create returned no session_id', model }
-  }
-  // Publish the child id to the tool part NOW, so the UI links the real child while it works.
-  input.onSession?.({ sessionId: childId, model })
-
-  const settled = await waitForIdle(fetchImpl, origin, headers, api.projectId, childId, input.signal, opts)
-  if (settled.status === 'aborted') return { sessionId: childId, status: 'aborted', text: '', model }
-  if (settled.status === 'error') return { sessionId: childId, status: 'error', text: '', error: settled.error, model }
-
-  const text = readFinalText(childId)
-  return { sessionId: childId, status: 'completed', text, model }
 }
 
-type Settled = { status: 'completed' | 'error' | 'aborted'; error?: string }
+/** `task_id` resume: a follow-up prompt to an existing child of THIS session, then the same wait + read-back. */
+async function resumeChild(
+  api: CloudSubagentApi,
+  http: Http,
+  input: SpawnSessionInput,
+  model: { providerID: string; modelID: string },
+  opts: CloudSubagentOptions,
+): Promise<SpawnSessionResult> {
+  const childId = input.sessionId!
+  const notChild = new Error(`task_id ${childId} is not a subagent session of this session`)
+  let res: Response
+  try {
+    res = await http.fetchImpl(sessionUrl(http, childId), { headers: http.headers })
+  } catch (err) {
+    throw new Error(`task_id ${childId} could not be read: ${errorText(err)}`)
+  }
+  if (res.status === 404 || res.status === 403 || res.status === 400) throw notChild
+  if (res.status !== 200) throw new Error(`task_id ${childId} could not be read: the API answered ${res.status}`)
+  const row = (await res.json().catch(() => null)) as SessionRow | null
+  if (!row || (api.sessionId && row.parent_session_id !== api.sessionId)) throw notChild
+  if (row.working?.state === 'working') throw new Error(`task_id ${childId} is already running`)
+  const baseline = row.working?.since ?? null
+
+  if (api.live.count >= api.maxLive) {
+    throw new Error(
+      `At most ${api.maxLive} cloud subagents run at once for one session, and ${api.live.count} are running. Wait for one to return, then start the next.`,
+    )
+  }
+  api.live.count += 1
+  try {
+    let sent: Response
+    try {
+      sent = await http.fetchImpl(sessionUrl(http, childId, '/prompts'), {
+        method: 'POST',
+        headers: http.headers,
+        body: JSON.stringify({
+          client_message_id: crypto.randomUUID(),
+          parts: [{ type: 'text', text: input.prompt }],
+          client_sent_at_ms: (opts.now ?? Date.now)(),
+        }),
+      })
+    } catch (err) {
+      return { sessionId: childId, status: 'error', text: '', error: `follow-up prompt failed: ${errorText(err)}`, model }
+    }
+    if (sent.status !== 200 && sent.status !== 202) {
+      const body = (await sent.text().catch(() => '')).slice(0, 500)
+      return { sessionId: childId, status: 'error', text: '', error: `follow-up prompt answered ${sent.status}: ${body}`, model }
+    }
+    input.onSession?.({ sessionId: childId, model })
+    return await settleAndRead(http, childId, baseline, input.signal, model, opts)
+  } finally {
+    api.live.count -= 1
+  }
+}
+
+async function settleAndRead(
+  http: Http,
+  childId: string,
+  baseline: string | null,
+  signal: AbortSignal | undefined,
+  model: { providerID: string; modelID: string },
+  opts: CloudSubagentOptions,
+): Promise<SpawnSessionResult> {
+  const settled = await waitForIdle(http, childId, baseline, signal, opts)
+  if (settled.status === 'aborted') {
+    // The parent gave up on the call: do not leave the child working (and billing) on its own.
+    if (signal?.aborted) await stopChild(http, childId)
+    return { sessionId: childId, status: 'aborted', text: '', model }
+  }
+  if (settled.status === 'timeout') {
+    // Stop it: a child nobody waits on would keep using compute, and its freed slot would let the cap be exceeded.
+    await stopChild(http, childId)
+    return { sessionId: childId, status: 'error', text: '', error: `${settled.error}; the child session was stopped`, model }
+  }
+  if (settled.status === 'error') return { sessionId: childId, status: 'error', text: '', error: settled.error, model }
+  const report = await readFinalText(http, childId)
+  if (report.error) return { sessionId: childId, status: 'error', text: '', error: report.error, model }
+  return { sessionId: childId, status: 'completed', text: report.text, model }
+}
+
+type Settled = { status: 'completed' | 'error' | 'aborted' | 'timeout'; error?: string }
 
 /**
- * Poll `GET /v1/projects/:projectId/sessions/:childId` until the child's
- * `working.state` is `idle` (after it has begun) or its lifecycle `status` is
- * terminal. A session-bound parent token may read its own child (the same
- * visibility the factory workers rely on). LIVE-VERIFY: the exact field
- * timing and the parent→child read authorization need a real sandbox.
+ * Poll `GET /v1/projects/:projectId/sessions/:childId` until the child's turn
+ * settles: `working.state` is `idle` after it was seen working, or idle with a
+ * `since` newer than `baseline` (a turn that started and ended between two
+ * polls), or the lifecycle `status` is terminal.
  */
 async function waitForIdle(
-  fetchImpl: typeof fetch,
-  origin: string,
-  headers: Record<string, string>,
-  projectId: string,
+  http: Http,
   childId: string,
+  baseline: string | null,
   signal: AbortSignal | undefined,
   opts: CloudSubagentOptions,
 ): Promise<Settled> {
@@ -167,28 +379,25 @@ async function waitForIdle(
   let everWorked = false
   for (;;) {
     if (signal?.aborted) return { status: 'aborted' }
-    if (now() > deadline) return { status: 'error', error: `child session did not settle within ${Math.round(ceiling / 60_000)} min` }
+    if (now() > deadline) return { status: 'timeout', error: `child session did not settle within ${Math.round(ceiling / 60_000)} min` }
     let res: Response
     try {
-      res = await fetchImpl(`${origin}/v1/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(childId)}`, { headers })
+      res = await http.fetchImpl(sessionUrl(http, childId), { headers: http.headers })
     } catch (err) {
-      logger.warn('[pi] cloud subagent poll failed, retrying', { childId, err: err instanceof Error ? err.message : String(err) })
+      logger.warn('[pi] cloud subagent poll failed, retrying', { childId, err: errorText(err) })
       await delay(interval, signal)
       continue
     }
     if (res.status === 200) {
-      const row = (await res.json().catch(() => null)) as
-        | { status?: string; working?: { state?: string; pending_delivery?: boolean } }
-        | null
+      const row = (await res.json().catch(() => null)) as SessionRow | null
       if (row) {
         if (row.status === 'failed') return { status: 'error', error: 'child session failed' }
         if (row.status === 'stopped') return { status: 'aborted' }
         const working = row.working
         if (working?.state === 'working' || working?.pending_delivery) everWorked = true
-        // Settled: it worked and is now idle, or the lifecycle already marked it completed.
-        if ((everWorked && working?.state === 'idle' && !working.pending_delivery) || row.status === 'completed') {
-          return { status: 'completed' }
-        }
+        const idle = working?.state === 'idle' && !working.pending_delivery
+        const newTurnEnded = idle && !!working?.since && working.since !== baseline
+        if ((idle && (everWorked || newTurnEnded)) || row.status === 'completed') return { status: 'completed' }
       }
     } else if (res.status === 404) {
       return { status: 'error', error: 'child session disappeared' }
@@ -199,21 +408,69 @@ async function waitForIdle(
 
 function delay(ms: number, signal: AbortSignal | undefined): Promise<void> {
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms)
-    signal?.addEventListener('abort', () => { clearTimeout(timer); resolve() }, { once: true })
+    const onAbort = () => { clearTimeout(timer); resolve() }
+    // The listener goes when the timer fires: one wait polls up to ~900 times on the same signal.
+    const timer = setTimeout(() => { signal?.removeEventListener('abort', onAbort); resolve() }, ms)
+    signal?.addEventListener('abort', onAbort, { once: true })
   })
 }
 
+/** Best effort: `POST …/sessions/:childId/stop`. The parent box token owns the child, so it may stop it. */
+async function stopChild(http: Http, childId: string): Promise<void> {
+  try {
+    await http.fetchImpl(sessionUrl(http, childId, '/stop'), { method: 'POST', headers: http.headers, body: '{}' })
+  } catch (err) {
+    logger.warn('[pi] cloud subagent stop failed', { childId, err: errorText(err) })
+  }
+}
+
+interface CompactMessage {
+  role?: string
+  text?: string
+  error?: unknown
+}
+
 /**
- * STUB (1): the child's final assistant report, read back cross-session.
+ * The child's final assistant report, read back through the platform
+ * transcript route (`GET …/sessions/:childId/transcript?detail=full`): the
+ * route project automation reads, live from the child's box or from its saved
+ * mirror. `detail=full` keeps the answer whole up to 16,000 characters.
  *
- * Reading it means proxying to the child's own box
- * (`GET /v1/p/<child_sandbox_id>/8000/session/<runtime_session_id>/message?limit=1`)
- * with this box's token, which is unverified without a real sandbox. Until the
- * live-verify pass confirms that read + its authorization, return a pointer to
- * the child session. The model still gets `task_id: <childId>` from the tool
- * wrapper, and the human sees the full child transcript in the UI.
+ * Only the turn this call started counts: the messages after the last user
+ * message (the prompt just sent). An earlier turn's report is never returned
+ * as this turn's result. If the newest assistant message of the turn failed,
+ * the result is an error, even when an earlier message of the turn has text.
  */
-function readFinalText(childId: string): string {
-  return `The subagent ran as the real Kortix child session ${childId}. Its full transcript is that session; reading its final report back into this task is not wired yet (cloud-subagent.ts readFinalText stub).`
+async function readFinalText(http: Http, childId: string): Promise<{ text: string; error?: string }> {
+  const pointer = `The subagent ran as the Kortix child session ${childId}; its transcript is that session.`
+  let res: Response
+  try {
+    res = await http.fetchImpl(sessionUrl(http, childId, `/transcript?limit=${READ_BACK_MESSAGES}&detail=full`), { headers: http.headers })
+  } catch (err) {
+    logger.warn('[pi] cloud subagent read-back failed', { childId, err: errorText(err) })
+    return { text: `${pointer} Its final report could not be read back: ${errorText(err)}.` }
+  }
+  if (res.status !== 200) return { text: `${pointer} Its final report could not be read back: the API answered ${res.status}.` }
+  const body = (await res.json().catch(() => null)) as { messages?: CompactMessage[] } | null
+  const messages = body?.messages ?? []
+  // No user message in the window: the turn is longer than the window, so the whole window is this turn.
+  const turn = messages.slice(messages.findLastIndex((m) => m.role === 'user') + 1)
+  const assistants = turn.filter((m) => m.role === 'assistant')
+  const last = assistants.at(-1)
+  if (last?.error) return { text: '', error: `the subagent's last turn failed: ${errorText(last.error)}` }
+  const report = [...assistants].reverse().find((m) => typeof m.text === 'string' && m.text.trim())
+  if (report) return { text: report.text!.trim() }
+  return { text: `${pointer} It finished without a text report.` }
+}
+
+function errorText(err: unknown): string {
+  if (err instanceof Error) return err.message
+  if (err && typeof err === 'object') {
+    const record = err as Record<string, unknown>
+    const data = record.data as Record<string, unknown> | undefined
+    const message = data?.message ?? record.message ?? record.name
+    if (typeof message === 'string') return message
+    return JSON.stringify(err).slice(0, 300)
+  }
+  return String(err)
 }

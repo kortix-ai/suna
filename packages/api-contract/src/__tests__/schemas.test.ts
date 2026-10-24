@@ -153,6 +153,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       goals: false,
       workspace_volume: false,
       artifacts: false,
+      cloud_subagents: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -841,6 +842,7 @@ describe('envelopes', () => {
       'goals',
       'workspace_volume',
       'artifacts',
+      'cloud_subagents',
     ]);
   });
 

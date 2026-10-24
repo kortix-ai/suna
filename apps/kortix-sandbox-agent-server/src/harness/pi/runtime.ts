@@ -36,7 +36,7 @@ import type { PiConfigReleases } from './config-release'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import { CODEMODE_TOOL, type CodemodeMode } from './codemode'
 import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
-import { cloudSpawnSession, cloudSubagentApiFrom } from './cloud-subagent'
+import { cloudSpawnSession, cloudSubagentApiFrom, subagentContextFrom, type CloudSubagentApi, type SubagentContext } from './cloud-subagent'
 import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule } from './interactions'
 import type { PiModels, SelectedModel } from './model'
 import { compactionSettings, nativeModelId } from './model'
@@ -343,6 +343,10 @@ export class PiRuntime {
 
   private readonly cfg: PiConfig
   private readonly env: NodeJS.ProcessEnv
+  /** This session as a cloud subagent: its depth and tool narrowing (KORTIX_SESSION_CONTEXT). A root session: depth 0, no narrowing. */
+  private readonly subagentContext: SubagentContext
+  /** The cloud-subagent target, built on the first cloud spawn. */
+  private cloudSubagents: CloudSubagentApi | null = null
   private readonly now: () => number
   private readonly hooks: PiRuntimeHooks
   private readonly releases: Pick<PiConfigReleases, 'skillDirs' | 'piConfigDir' | 'projectRoot' | 'notice'> | null
@@ -440,6 +444,7 @@ export class PiRuntime {
   constructor(opts: PiRuntimeOptions) {
     this.cfg = opts.cfg
     this.env = opts.env ?? process.env
+    this.subagentContext = subagentContextFrom(this.env.KORTIX_SESSION_CONTEXT)
     this.now = () => Date.now()
     this.hooks = opts.hooks ?? {}
     this.releases = opts.releases ?? null
@@ -1342,7 +1347,7 @@ export class PiRuntime {
 
   /** The root agent's rule for a call: its tool access, then the permission policy. */
   private rootRule(tool: string, args: unknown): PermissionRule {
-    return toolAllowed(this.compiledAgent()?.tools, tool) ? this.permissions.rule(tool, args) : 'deny'
+    return this.rootToolAllowed(tool) ? this.permissions.rule(tool, args) : 'deny'
   }
 
   /** Permission policy first, then extension `tool_call` handlers (`next`). Root and child agents share it. */
@@ -1458,7 +1463,7 @@ export class PiRuntime {
   private rebuildSystemPrompt(): void {
     const session = this.pi?.session
     if (!session) return
-    const allowed = (name: string) => toolAllowed(this.compiledAgent()?.tools, name)
+    const allowed = (name: string) => this.rootToolAllowed(name)
     // ponytail: a pi package that deactivates a built-in gets it back on the next rebuild; remember package choices if one ever does.
     // pi registers codemode inactive: it is a built-in here, switched like the rest.
     const builtIn = [...this.baseTools.map((tool) => tool.name), ...(this.codemodeMode === 'off' ? [] : [CODEMODE_TOOL])]
@@ -1487,11 +1492,58 @@ export class PiRuntime {
    */
   private resolveSpawn(input: SpawnSessionInput): Promise<SpawnSessionResult> {
     if (this.cfg.piCloudSubagents) {
-      const api = cloudSubagentApiFrom({ apiUrl: this.cfg.apiUrl, projectId: this.cfg.projectId, sandboxToken: this.cfg.sandboxToken })
-      if (api) return cloudSpawnSession(api, input)
+      // One target per box: its live-child counter is the per-parent cap.
+      this.cloudSubagents ??= cloudSubagentApiFrom({
+        apiUrl: this.cfg.apiUrl,
+        projectId: this.cfg.projectId,
+        sandboxToken: this.cfg.sandboxToken,
+        sessionId: this.env.KORTIX_SESSION_ID,
+        context: this.subagentContext,
+        maxLive: this.cfg.piCloudSubagentsMax,
+        maxDepth: this.cfg.piCloudSubagentsMaxDepth,
+      })
+      // The agent and its tools are read per call: a prompt may switch the agent (applyAgent).
+      // The spread keeps the shared `live` counter.
+      if (this.cloudSubagents) return cloudSpawnSession({ ...this.cloudSubagents, ...this.cloudParent() }, input)
       logger.warn('[pi] KORTIX_PI_CLOUD_SUBAGENTS is on but the box has no control plane; using the in-process child')
     }
     return this.spawnSession(input)
+  }
+
+  /**
+   * What a cloud child inherits from the agent running now. `parentAgent` is
+   * the RESOLVED agent (never the `default` sentinel, which the API could
+   * resolve to the platform coordinator), left out for the coordinator itself
+   * so the API picks the project default. `toolAllowlist` is every tool this
+   * agent may use (`rootToolAllowed`), sent for every child, named ones
+   * included, so the child runs with intersection(its own tools, these).
+   * Undefined = this agent is not narrowed at all.
+   */
+  private cloudParent(): Pick<CloudSubagentApi, 'parentAgent' | 'toolAllowlist'> {
+    const coordinator = this.env.KORTIX_META_AGENT === '1'
+    const declared = Object.prototype.hasOwnProperty.call(this.compiled?.agent ?? {}, this.agentName)
+    const narrowed = this.compiledAgent()?.tools !== undefined || this.subagentContext.tools !== undefined
+    const session = this.pi?.session
+    const names = [
+      ...this.baseTools.map((tool) => tool.name),
+      ...(this.codemodeMode === 'off' ? [] : [CODEMODE_TOOL]),
+      ...(session?.getActiveToolNames() ?? []),
+      ...this.hiddenTools,
+    ]
+    return {
+      parentAgent: !coordinator && declared ? this.agentName : undefined,
+      toolAllowlist: narrowed ? [...new Set(names)].filter((name) => this.rootToolAllowed(name)) : undefined,
+    }
+  }
+
+  /**
+   * The root agent's tool access: its compiled `tools`, narrowed by the tool
+   * list a parent gave this session when it started it as a cloud subagent
+   * (`kortix.subagent.tools` in KORTIX_SESSION_CONTEXT). Only ever narrows.
+   */
+  private rootToolAllowed(name: string): boolean {
+    const narrowed = this.subagentContext.tools
+    return toolAllowed(this.compiledAgent()?.tools, name) && (!narrowed || narrowed.includes(name))
   }
 
   /**
@@ -1525,7 +1577,7 @@ export class PiRuntime {
     }
     const selected = input.model ? this.models.select(nativeModelId(input.model)) : this.selected
     const model = { providerID: selected.providerID, modelID: selected.modelID }
-    const allowed = (tool: string) => toolAllowed(this.compiledAgent()?.tools, tool) && toolAllowed(this.compiled?.agent?.[input.agent]?.tools, tool)
+    const allowed = (tool: string) => this.rootToolAllowed(tool) && toolAllowed(this.compiled?.agent?.[input.agent]?.tools, tool)
     const tools = (input.tools ? this.workspaceTools.filter((tool) => input.tools!.includes(tool.name)) : this.workspaceTools).filter((tool) => allowed(tool.name))
     const policy = compilePermissionPolicy(input.permission)
     const messageId = this.clock.mint(this.now())

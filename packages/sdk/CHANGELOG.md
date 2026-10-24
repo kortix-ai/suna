@@ -5,6 +5,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (cloud subagents flag)
+- `FeatureFlagKey` `'cloud_subagents'`, listed in `FEATURE_FLAG_KEYS`: on, the pi `agent` tool runs each
+  subagent as a real child session on its own sandbox. Off by default.
+
 ### Added (share one assistant response)
 - `getTurnShare`, `shareTurn`, `unshareTurn` and the `TurnShare` type: the public share of one
   turn's response (`/projects/:id/sessions/:sid/turns/:turnId/share`, GET / PUT / DELETE). The

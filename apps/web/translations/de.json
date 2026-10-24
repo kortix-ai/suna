@@ -1294,6 +1294,10 @@
         "artifacts": {
           "name": "Artefakte",
           "description": "Teile Dokumente (Markdown) und HTML-Seiten (Präsentationen, Dashboards, Mockups, Tools) aus Dateien mit dem Projekt, ausgewählten Personen oder allen mit einem Link. Dokumente werden direkt bearbeitet, jedes Speichern ist eine Version aus dem Dateien-Verlauf, und Dokumente lassen sich als PDF exportieren. Fügt die Seite „Artefakte“ und `kortix artifacts` hinzu."
+        },
+        "cloud_subagents": {
+          "name": "Cloud-Subagenten",
+          "description": "Führt jeden Subagenten als eigene Sitzung auf einem eigenen Cloud-Computer aus, nicht in der Elternsitzung. Der Subagent öffnet sich als Untersitzung und gibt seinen Abschlussbericht an die Elternsitzung zurück. Jeder Subagent nutzt eigene Rechenleistung. Neue Sitzungen nutzen es. Eine laufende Sitzung behält ihre internen Subagenten bis zum Neustart."
         }
       }
     },

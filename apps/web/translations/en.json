@@ -1116,6 +1116,10 @@
         "artifacts": {
           "name": "Artifacts",
           "description": "Share docs (Markdown) and HTML pages (decks, dashboards, mockups, tools) from Files with the project, chosen people or anyone with a link. Docs edit in place, every save is a version from the Files history, and docs export to PDF. Adds the Artifacts page and `kortix artifacts`."
+        },
+        "cloud_subagents": {
+          "name": "Cloud subagents",
+          "description": "Runs each subagent as its own session on its own cloud computer, not inside the parent session. The subagent opens as a child session and returns its final report to the parent. Each subagent uses its own compute. New sessions use it. A running session keeps its in-process subagents until it restarts."
         }
       }
     },

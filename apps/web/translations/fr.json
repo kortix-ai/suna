@@ -1294,6 +1294,10 @@
         "artifacts": {
           "name": "Artefacts",
           "description": "Partagez des documents (Markdown) et des pages HTML (présentations, tableaux de bord, maquettes, outils) depuis Fichiers avec le projet, des personnes choisies ou toute personne disposant d’un lien. Les documents se modifient directement, chaque enregistrement est une version de l’historique de Fichiers et les documents s’exportent en PDF. Ajoute la page Artefacts et `kortix artifacts`."
+        },
+        "cloud_subagents": {
+          "name": "Sous-agents cloud",
+          "description": "Exécute chaque sous-agent comme sa propre session sur son propre ordinateur cloud, et non dans la session parente. Le sous-agent s'ouvre comme session enfant et renvoie son rapport final à la session parente. Chaque sous-agent utilise sa propre puissance de calcul. Les nouvelles sessions l'utilisent. Une session en cours garde ses sous-agents internes jusqu'à son redémarrage."
         }
       }
     },

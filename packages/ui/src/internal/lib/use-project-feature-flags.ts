@@ -45,6 +45,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const connectorsV2 = useFeatureFlag(projectId, 'connectors_v2');
   const agentRooms = useFeatureFlag(projectId, 'agent_rooms');
   const goals = useFeatureFlag(projectId, 'goals');
+  const cloudSubagents = useFeatureFlag(projectId, 'cloud_subagents');
   const artifacts = useFeatureFlag(projectId, 'artifacts');
   const workspaceVolume = useFeatureFlag(projectId, 'workspace_volume');
 
@@ -68,6 +69,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       connectors_v2: connectorsV2.enabled,
       agent_rooms: agentRooms.enabled,
       goals: goals.enabled,
+      cloud_subagents: cloudSubagents.enabled,
       artifacts: artifacts.enabled,
       workspace_volume: workspaceVolume.enabled,
     },
