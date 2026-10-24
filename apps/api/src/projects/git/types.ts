@@ -84,13 +84,15 @@ export interface ProjectConfigSummary {
     label?: string;
     description?: string;
     order?: number;
-    /** The Space's configurable tabs (chat/artifact/app), in order. */
-    tabs?: Array<{
-      type: 'chat' | 'artifact' | 'app';
+    /** The Space's agent-configurable blocks (chat/artifact/app/iframe/text). */
+    blocks?: Array<{
+      type: 'chat' | 'artifact' | 'app' | 'iframe' | 'text';
       label?: string;
       room?: string;
       path?: string;
       app?: string;
+      url?: string;
+      text?: string;
     }>;
   }>;
 }

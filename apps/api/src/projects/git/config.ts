@@ -478,18 +478,21 @@ function domainsFromManifest(manifest: Record<string, unknown>): ProjectConfigSu
   return Object.entries(manifestMap(manifest.domains))
     .map(([name, meta]) => {
       const m = manifestMap(meta);
-      const tabs = Array.isArray(m.tabs)
-        ? m.tabs
-            .map((t) => manifestMap(t))
-            .filter((t): t is Record<string, unknown> & { type: 'chat' | 'artifact' | 'app' } =>
-              t.type === 'chat' || t.type === 'artifact' || t.type === 'app',
+      const BLOCK_TYPES = ['chat', 'artifact', 'app', 'iframe', 'text'] as const;
+      const blocks = Array.isArray(m.blocks)
+        ? m.blocks
+            .map((b) => manifestMap(b))
+            .filter((b): b is Record<string, unknown> & { type: (typeof BLOCK_TYPES)[number] } =>
+              (BLOCK_TYPES as readonly string[]).includes(b.type as string),
             )
-            .map((t) => ({
-              type: t.type,
-              label: manifestText(t.label) ?? undefined,
-              room: manifestText(t.room) ?? undefined,
-              path: manifestText(t.path) ?? undefined,
-              app: manifestText(t.app) ?? undefined,
+            .map((b) => ({
+              type: b.type,
+              label: manifestText(b.label) ?? undefined,
+              room: manifestText(b.room) ?? undefined,
+              path: manifestText(b.path) ?? undefined,
+              app: manifestText(b.app) ?? undefined,
+              url: manifestText(b.url) ?? undefined,
+              text: manifestText(b.text) ?? undefined,
             }))
         : undefined;
       return {
@@ -497,7 +500,7 @@ function domainsFromManifest(manifest: Record<string, unknown>): ProjectConfigSu
         label: manifestText(m.label) ?? undefined,
         description: manifestText(m.description) ?? undefined,
         order: typeof m.order === 'number' ? m.order : undefined,
-        ...(tabs && tabs.length ? { tabs } : {}),
+        ...(blocks && blocks.length ? { blocks } : {}),
       };
     })
     .sort(

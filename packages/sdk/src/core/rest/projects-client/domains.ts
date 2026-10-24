@@ -11,11 +11,13 @@
 /** The group an entity falls into when it declares no `domain`. */
 export const DEFAULT_PROJECT_DOMAIN = 'general';
 
-/** One tab of a Space (a configurable channel): a chat room (shared durable
- *  session), an artifact (a Files/Drive path), or an app (a Kortix App slug).
- *  Display/config only; the running instance is resolved at render. */
-export interface SpaceTab {
-  type: 'chat' | 'artifact' | 'app';
+/** One block of a Space's agent-configurable surface: a chat room (shared
+ *  durable session), an artifact (a Files/Drive path), an app (a Kortix App
+ *  slug), an iframe (a url), or text (markdown). The inside of a Space is not
+ *  rigid UI — an agent lays it out as blocks (v1: a simple grid). Display/config
+ *  only; the running instance is resolved at render. */
+export interface SpaceBlock {
+  type: 'chat' | 'artifact' | 'app' | 'iframe' | 'text';
   label?: string;
   /** chat: a stable room/channel key → a shared durable session. */
   room?: string;
@@ -23,6 +25,10 @@ export interface SpaceTab {
   path?: string;
   /** app: a Kortix App slug. */
   app?: string;
+  /** iframe: a url to embed in a sandboxed frame. */
+  url?: string;
+  /** text: markdown content. */
+  text?: string;
 }
 
 /** A declared domain (Space) from the manifest's top-level `domains:` map. */
@@ -34,8 +40,8 @@ export interface ProjectDomain {
   description?: string;
   /** Sort position among declared domains; lower first. */
   order?: number;
-  /** The Space's configurable tabs (chat/artifact/app), in order. */
-  tabs?: SpaceTab[];
+  /** The Space's agent-configurable blocks, in order. */
+  blocks?: SpaceBlock[];
 }
 
 /** One rendered group: a domain and the entities in it, in declaration order. */
