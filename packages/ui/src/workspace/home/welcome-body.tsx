@@ -6,6 +6,7 @@ import { SessionWelcome } from '../../session/thread/session-welcome';
 import { useProjectConfig, useProjectName } from '@kortix/sdk/react';
 
 import { useActiveDomain } from '../../internal/stores/active-domain-store';
+import { SpaceBlocks } from '../space/space-blocks';
 import {
   HOME_GREETINGS,
   HOME_GREETING_STORAGE_KEY,
@@ -153,6 +154,13 @@ export function ProjectHomeWelcomeBody({
             <p className="text-muted-foreground w-full px-4 text-sm text-pretty">
               {space.description}
             </p>
+          ) : null}
+
+          {/* A Space declares its own surface as blocks; render them as a
+              simple grid below the brief. With no blocks the home keeps its
+              plain composer-only column. */}
+          {space?.blocks?.length && !sentTurn ? (
+            <SpaceBlocks projectId={projectId} blocks={space.blocks} />
           ) : null}
 
           {/* The sent message takes the heading's slot — same column, same rail,

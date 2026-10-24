@@ -49,6 +49,7 @@ export { ProjectFilesView } from './layout/project-files-view';
 export { ProjectHome, type ProjectHomeSendOptions } from './layout/project-home';
 export { useProjectHomeSend, type UseProjectHomeSendOptions } from './layout/use-project-home-send';
 export { SavedSessionSkeleton } from './saved-session-skeleton';
+export { SpaceBlocks } from './space/space-blocks';
 export {
   SessionLayout,
   SessionWorkspace,
