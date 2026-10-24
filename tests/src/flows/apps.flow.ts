@@ -1961,6 +1961,16 @@ flow(
         if (!/listed: true/.test(m.content)) throw new Error(`kortix.yaml lacks listed: true:\n${m.content}`);
       });
 
+      await ctx.step("a create at a taken slug, or with a link the caller may not make, is refused before anything reaches kortix.yaml", async () => {
+        const before = (await manifest()).content;
+        (await owner.post("/v1/projects/:projectId/apps", { slug, name: "Takeover", cpu: 4, always_on: true }, { params })).status(409);
+        const other = `${slug.slice(0, 30)}-b`;
+        (await owner.post("/v1/projects/:projectId/apps", { slug: other, name: "Linker", uses: ["no-such-app"] }, { params }))
+          .status(400).body().has("$.code", "app_not_found");
+        const after = (await manifest()).content;
+        if (after !== before) throw new Error(`kortix.yaml changed after refused creates:\n${after}`);
+      });
+
       await ctx.step("PATCH labels commits them to the App block before the row changes", async () => {
         (await owner.patch("/v1/projects/:projectId/apps/:appId", { labels: ["ops"] }, { params: { ...params, appId } }))
           .status(200).body().has("$.labels", ["ops"]);

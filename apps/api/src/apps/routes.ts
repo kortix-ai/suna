@@ -514,6 +514,21 @@ export function registerAppsRoutes(): void {
       // kortix.yaml owns the declarable fields: what the request sets explicitly
       // is committed to apps.<slug> before the row exists. An external App is
       // declared listed, so the file says it is on the Apps page.
+      // Nothing reaches kortix.yaml before the request is known to be allowed:
+      // a slug another App holds is a 409 here (or the commit would rewrite that
+      // App's declared settings), and every `uses` link passes the visibility
+      // check first (or the next sync would apply a link the caller may not make).
+      const [taken] = await db.select({ appId: apps.appId }).from(apps)
+        .where(and(eq(apps.projectId, projectId), eq(apps.slug, slug), isNull(apps.deletedAt))).limit(1);
+      if (taken) return c.json({ error: 'An App with this slug already exists' }, 409);
+      if (body.uses.length) {
+        try {
+          await resolveAppLinks({ projectId, slug }, body.uses, loaded.userId);
+        } catch (error) {
+          if (!(error instanceof UnknownLinkedAppError)) throw error;
+          return c.json({ error: error.message, code: 'app_not_found', slugs: error.slugs }, 400);
+        }
+      }
       const declared = await commitAppFields(projectId, slug, {
         ...manifestFieldsOf({ cpu: body.cpu, memory_gb: body.memory_gb, disk_gb: body.disk_gb, always_on: body.always_on }),
         ...(body.uses.length ? { uses: body.uses } : {}),

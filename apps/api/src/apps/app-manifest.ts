@@ -17,6 +17,8 @@ import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { mutateManifestWithRetry, type ManifestCommitResult } from '../connectors/manifest-mutation';
 import { withProjectGitAuth } from '../projects/surface';
 import { db } from '../shared/db';
+import { AppLimitError, assertAppMachineWithinLimits } from './limits';
+import { UnknownLinkedAppError, resolveAppLinks } from './links';
 
 export interface AppManifestFields {
   cpu?: number;
@@ -146,6 +148,16 @@ export async function syncDeclaredApps(projectId: string, appsNode: unknown): Pr
     const row = rows.find((candidate) => candidate.slug === slug);
     if (!row) continue; // Declared, not created yet: the first deploy creates it.
     const fields = declaredAppFields(block);
+    // The App routes refuse a machine above APP_MACHINE_LIMITS; the file must not
+    // be a way around that ceiling. An out-of-range size is reported and leaves
+    // the row as it is.
+    try {
+      assertAppMachineWithinLimits({ cpu: fields.cpu, memoryGb: fields.memory_gb, diskGb: fields.disk_gb });
+    } catch (error) {
+      if (!(error instanceof AppLimitError)) throw error;
+      result.errors.push({ slug, error: error.message });
+      continue;
+    }
     const update = {
       ...(fields.cpu !== undefined && fields.cpu !== row.cpuCores ? { cpuCores: fields.cpu } : {}),
       ...(fields.memory_gb !== undefined && fields.memory_gb !== row.memoryGb ? { memoryGb: fields.memory_gb } : {}),
@@ -157,17 +169,18 @@ export async function syncDeclaredApps(projectId: string, appsNode: unknown): Pr
     };
     let links: Array<{ appId: string }> | null = null;
     if (fields.uses !== undefined) {
-      const wanted = [...new Set(fields.uses)];
-      const found = wanted.length
-        ? await db.select({ appId: apps.appId, slug: apps.slug }).from(apps)
-          .where(and(eq(apps.projectId, projectId), inArray(apps.slug, wanted), isNull(apps.deletedAt)))
-        : [];
-      const missing = wanted.filter((name) => name === slug || !found.some((candidate) => candidate.slug === name));
-      if (missing.length) result.errors.push({ slug, error: `apps.${slug}.uses names no App of this project: ${missing.join(', ')}` });
-      else {
+      // A link acts as the App, so it resolves with the same visibility check the
+      // API makes, for the App's creator: the file cannot link an App they may not see.
+      try {
+        // No creator to check visibility for: change no links.
+        if (!row.createdBy) throw new UnknownLinkedAppError(fields.uses);
+        const found = await resolveAppLinks(row, fields.uses, row.createdBy);
         const current = await db.select({ usesAppId: appLinks.usesAppId }).from(appLinks).where(eq(appLinks.appId, row.appId));
         const same = current.length === found.length && found.every((candidate) => current.some((link) => link.usesAppId === candidate.appId));
         if (!same) links = found;
+      } catch (error) {
+        if (!(error instanceof UnknownLinkedAppError)) throw error;
+        result.errors.push({ slug, error: `apps.${slug}.uses names no App of this project its creator can open: ${error.slugs.join(', ')}` });
       }
     }
     if (Object.keys(update).length === 0 && !links) continue;

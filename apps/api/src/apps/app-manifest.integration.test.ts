@@ -34,7 +34,11 @@ const read = async (slug: string) => (await db.select().from(apps).where(eq(apps
 
 beforeAll(async () => {
   project = await seedProject('app-manifest');
-  await db.insert(apps).values([row('web'), row('db', { labels: ['old'] }), row('plain', { alwaysOn: true })]);
+  await db.insert(apps).values([
+    row('web'), row('db', { labels: ['old'] }), row('plain', { alwaysOn: true }),
+    // Another member's private App: its creator alone may open it.
+    row('secret', { createdBy: crypto.randomUUID(), accessMode: 'private' }),
+  ]);
 });
 
 afterAll(async () => {
@@ -60,10 +64,20 @@ test('a sync applies every declared field, resolves uses by slug, leaves undecla
   expect(await syncDeclaredApps(project.project_id, declared)).toEqual({ updated: [], errors: [] });
 });
 
-test('uses naming an unknown App is reported and keeps the links', async () => {
+test('uses naming an unknown App, or one the App\'s creator may not open, is reported and keeps the links', async () => {
   const result = await syncDeclaredApps(project.project_id, { web: { uses: ['nope'] } });
-  expect(result.errors).toEqual([{ slug: 'web', error: 'apps.web.uses names no App of this project: nope' }]);
+  expect(result.errors).toEqual([{ slug: 'web', error: 'apps.web.uses names no App of this project its creator can open: nope' }]);
+  const hidden = await syncDeclaredApps(project.project_id, { web: { uses: ['secret'] } });
+  expect(hidden.errors).toEqual([{ slug: 'web', error: 'apps.web.uses names no App of this project its creator can open: secret' }]);
   expect((await db.select().from(appLinks).where(eq(appLinks.appId, (await read('web')).appId)))).toHaveLength(1);
+});
+
+test('a declared machine above the App limits is reported and leaves the row as it is', async () => {
+  const result = await syncDeclaredApps(project.project_id, { plain: { resources: { cpu: 64 } } });
+  expect(result.updated).toEqual([]);
+  expect(result.errors).toHaveLength(1);
+  expect(result.errors[0]!.slug).toBe('plain');
+  expect((await read('plain')).cpuCores).toBe(1);
 });
 
 test('a write commits the fields into apps.<slug>, adding the block when needed; an invalid value commits nothing', async () => {
