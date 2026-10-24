@@ -112,6 +112,52 @@
       "slack": {
         "status": "skipped"
       }
+    },
+    "2026-W41": {
+      "week": "2026-W41",
+      "start": "2026-10-05T00:00:00.000Z",
+      "end": "2026-10-12T00:00:00.000Z",
+      "releases": [
+        "v0.13.53",
+        "v0.13.52",
+        "v0.13.51"
+      ],
+      "highlights": [
+        {
+          "text": "Send a message with Enter to steer a running turn at its next step without stopping it.",
+          "tags": [
+            "v0.13.52"
+          ]
+        },
+        {
+          "text": "Each answer shows which model responded and what it cost.",
+          "tags": [
+            "v0.13.51"
+          ]
+        },
+        {
+          "text": "Credit usage shows which trigger, member or caller spent it.",
+          "tags": [
+            "v0.13.52"
+          ]
+        },
+        {
+          "text": "Security settings list every signed-in device, and signing a device out stops its access immediately.",
+          "tags": [
+            "v0.13.51"
+          ]
+        },
+        {
+          "text": "Create a skill from a form without using a model.",
+          "tags": [
+            "v0.13.52"
+          ]
+        }
+      ],
+      "generated_at": "2026-10-24T10:21:20.385Z",
+      "slack": {
+        "status": "skipped"
+      }
     }
   }
 }
