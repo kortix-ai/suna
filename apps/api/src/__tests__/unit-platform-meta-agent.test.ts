@@ -85,10 +85,12 @@ describe('platform meta agent', () => {
 
   // Read through the canonical registry helper at every call site — the module
   // above must stay free of runtime imports, see its header comment.
-  test('is gated on the meta_agent feature flag, default off', () => {
-    expect(resolveFeatureFlag(null, 'meta_agent')).toBe(false);
-    expect(resolveFeatureFlag({}, 'meta_agent')).toBe(false);
-    expect(resolveFeatureFlag({ experimental: {} }, 'meta_agent')).toBe(false);
+  test('is gated on the meta_agent feature flag, default on', () => {
+    // Default-on (Marko, 2026-10-24): the meta agent is the default cloud
+    // orchestrator for every project. Only an explicit project opt-out hides it.
+    expect(resolveFeatureFlag(null, 'meta_agent')).toBe(true);
+    expect(resolveFeatureFlag({}, 'meta_agent')).toBe(true);
+    expect(resolveFeatureFlag({ experimental: {} }, 'meta_agent')).toBe(true);
     expect(resolveFeatureFlag({ experimental: { meta_agent: false } }, 'meta_agent')).toBe(false);
     expect(resolveFeatureFlag({ experimental: { meta_agent: true } }, 'meta_agent')).toBe(true);
   });

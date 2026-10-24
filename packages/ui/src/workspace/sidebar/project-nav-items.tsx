@@ -5,27 +5,30 @@ import { ProjectGoalsNavItem } from './footer/project-goals-nav';
 import { ProjectArtifactsNavItem } from './footer/project-artifacts-nav';
 import { ProjectRoomsNavItem } from './footer/project-rooms-nav';
 import { ProjectFilesNavItem } from './footer/project-files-nav';
-import { ProjectCustomizeNavItem } from '../../internal/layout/project-settings-nav';
+import {
+  CustomizeGlyph,
+  useCapabilityAccess,
+} from '../../internal/layout/project-settings-nav';
+import { ProjectCapabilityNav } from '../../internal/layout/project-capability-nav';
+import { ProjectSpacesNav } from './project-spaces-nav';
+import { cn } from '../../lib/utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../../primitives/dropdown-menu';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '../../primitives/sidebar';
-import { SidebarGlyph } from '../../icons/sidebar-toggle';
 import { useNavRowMeta } from './nav-row-meta';
 import { useIsMobile } from '../../internal/hooks';
 import { useTranslations } from '../../i18n';
 import {
   SIDEBAR_NAV_DEFAULTS,
-  openCustomizeSidebar,
   useSidebarNavStore,
   type SidebarNavEntry,
 } from '../../internal/stores/sidebar-nav-store';
-import { DotsThreeOutlineIcon } from '@phosphor-icons/react';
-import { UiLink as Link } from '../../providers/ui-provider';
+import { CaretRightIcon, DotsThreeOutlineIcon } from '@phosphor-icons/react';
+import { UiLink as Link, useUiPathname } from '../../providers/ui-provider';
 import { useEffect, useRef, useState, useSyncExternalStore, type PointerEvent } from 'react';
 
 const subscribeNoop = () => () => {};
@@ -51,6 +54,7 @@ export function ProjectNavItems({ projectId }: { projectId: string }) {
       {items.map((entry) => (
         <NavItem key={entry.id} entry={entry} projectId={projectId} />
       ))}
+      <ProjectSpacesNav projectId={projectId} />
       <MoreNavItem projectId={projectId} items={items} />
     </>
   );
@@ -95,9 +99,9 @@ function MoreNavItem({
   };
   useEffect(() => cancelClose, []);
 
-  // No row this project offers the caller: nothing to arrange and nothing
-  // hidden to reach, so the row would open a menu with nothing in it.
-  if (Object.keys(meta).length === 0) return null;
+  // The More menu now holds only the rows set to "Show in More". With none
+  // hidden, it would open empty, so the row does not render.
+  if (hidden.length === 0) return null;
 
   return (
     <SidebarMenuItem>
@@ -141,22 +145,59 @@ function MoreNavItem({
               </DropdownMenuItem>
             );
           })}
-          {hidden.length > 0 ? <DropdownMenuSeparator /> : null}
-          {/* Opens a modal from a menu: let the menu close and return focus
-              first, the same deferral as the workspace menu rows. */}
-          <DropdownMenuItem
-            size="sm"
-            onSelect={() => {
-              setOpen(false);
-              requestAnimationFrame(openCustomizeSidebar);
-            }}
-          >
-            <SidebarGlyph />
-            {t('customizeSidebar')}
-          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </SidebarMenuItem>
+  );
+}
+
+/**
+ * Customize — one collapsible parent that holds every capability point (Agents,
+ * Skills, Connectors, Triggers, Reminders, Models, Secrets, Repo, Review,
+ * Settings) as nested sub-rows, so the config surfaces live under one row
+ * instead of a scatter of standalone menu items. Clicking the row toggles the
+ * submenu; the sub-rows navigate. The submenu auto-opens while you are on a
+ * capability page so the active point is always visible. Absent when the caller
+ * may open no capability page (same gate as the tab bar).
+ */
+function CustomizeNavEntry({ projectId }: { projectId: string }) {
+  const t = useTranslations('sidebar');
+  const pathname = useUiPathname();
+  const access = useCapabilityAccess(projectId);
+  // Follow the page: the submenu is open on a Customize page and closed off it,
+  // so it does not sit expanded while you are in a session. A manual click
+  // overrides that until you cross between those contexts, then it follows the
+  // page again. `includes` tolerates the locale prefix the host may not strip.
+  const onCustomizePage = !!pathname && pathname.includes('/customize');
+  const [override, setOverride] = useState<boolean | null>(null);
+  useEffect(() => setOverride(null), [onCustomizePage]);
+  const open = override ?? onCustomizePage;
+
+  if (!access.settled || access.tabs.length === 0) return null;
+
+  return (
+    <>
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          onClick={() => setOverride(!open)}
+          aria-expanded={open}
+          className="group/menu-button text-sidebar-foreground"
+        >
+          <span className="shrink-0">
+            <CustomizeGlyph />
+          </span>
+          <span className="truncate">{t('customize')}</span>
+          <CaretRightIcon
+            weight="bold"
+            className={cn(
+              'text-muted-foreground ml-auto size-3.5 shrink-0 transition-transform',
+              open && 'rotate-90',
+            )}
+          />
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+      {open ? <ProjectCapabilityNav projectId={projectId} /> : null}
+    </>
   );
 }
 
@@ -164,7 +205,7 @@ function NavItem({ entry, projectId }: { entry: SidebarNavEntry; projectId: stri
   if (entry.visibility === 'never') return null;
   switch (entry.id) {
     case 'customize':
-      return <ProjectCustomizeNavItem projectId={projectId} />;
+      return <CustomizeNavEntry projectId={projectId} />;
     case 'apps':
       return <ProjectAppsNavItem projectId={projectId} />;
     case 'files':

@@ -7,6 +7,7 @@
  */
 import { afterEach, expect, mock, test } from 'bun:test';
 import React, { act } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
 
@@ -68,9 +69,6 @@ mock.module('@kortix/ui/workspace/sidebar/project-session-list', () => ({
 mock.module('@/features/workspace/project-sidebar/workspace-switcher', () => ({
   WorkspaceSwitcher: () => React.createElement('div', { 'data-testid': 'switcher' }),
 }));
-mock.module('@kortix/ui/workspace/sidebar/customize-sidebar-modal', () => ({
-  CustomizeSidebarModal: () => null,
-}));
 mock.module('@kortix/ui/internal/tunnel/computer-connect', () => ({
   ComputerConnectModal: () => null,
 }));
@@ -130,14 +128,19 @@ async function mountSidebar(width: number) {
   win.document.body.appendChild(raw);
   root = createRoot(raw as unknown as Parameters<typeof createRoot>[0]);
   const mobile = width < 768;
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   await act(async () => {
     root!.render(
       React.createElement(
-        SidebarProvider,
-        null,
-        mobile
-          ? React.createElement(MobileOpenHarness, { projectId: 'synthetic-project' })
-          : React.createElement(ProjectSidebar, { projectId: 'synthetic-project' }),
+        QueryClientProvider,
+        { client: queryClient },
+        React.createElement(
+          SidebarProvider,
+          null,
+          mobile
+            ? React.createElement(MobileOpenHarness, { projectId: 'synthetic-project' })
+            : React.createElement(ProjectSidebar, { projectId: 'synthetic-project' }),
+        ),
       ),
     );
   });

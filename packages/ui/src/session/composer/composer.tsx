@@ -12,7 +12,8 @@ import type {
   ProviderListResponse,
   UsePromptAttachmentsResult,
 } from '@kortix/sdk/react';
-import { usePromptAttachments, useRuntimeSessions } from '@kortix/sdk/react';
+import { useProjectConfig, usePromptAttachments, useRuntimeSessions } from '@kortix/sdk/react';
+import { useActiveDomain } from '../../internal/stores/active-domain-store';
 import { MoonIcon, WarningIcon } from '@phosphor-icons/react';
 import { SESSION_NOTICE, type SessionLogMessage } from '@kortix/sdk';
 import { newPastedContentId, type PastedContent, splitPastedContent, trimPastedText } from '@kortix/shared';
@@ -812,10 +813,20 @@ function ComposerImpl(props: SessionChatInputProps) {
 
   const { data: allSessions } = useRuntimeSessions();
 
-  const primaryAgents = useMemo(
-    () => agents.filter((a) => !a.hidden && a.mode !== 'subagent'),
-    [agents],
-  );
+  // Scope the startable agents to the active space (the sidebar's Spaces
+  // selection): in a space you start only that space's agents. The current
+  // agent is always kept so a session's own agent never disappears while you
+  // are viewing another space. No space selected = every agent, as before.
+  const [activeDomain] = useActiveDomain(projectId ?? '');
+  const scopeConfig = useProjectConfig(projectId);
+  const primaryAgents = useMemo(() => {
+    const base = agents.filter((a) => !a.hidden && a.mode !== 'subagent');
+    if (!activeDomain || !scopeConfig) return base;
+    const domainByName = new Map(scopeConfig.agents.map((a) => [a.name, a.domain ?? null]));
+    return base.filter(
+      (a) => domainByName.get(a.name) === activeDomain || a.name === selectedAgent,
+    );
+  }, [agents, activeDomain, scopeConfig, selectedAgent]);
 
   const editorDisabled = disabled || lockForApproval;
 

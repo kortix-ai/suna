@@ -149,7 +149,7 @@ const V = { schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR } as const
 /** What pi-ai sends for a call whose result is missing. */
 export const PI_NO_RESULT = 'No result provided'
 const DIALECT: Record<string, string> = { 'openai-completions': 'openai-chat', 'openai-responses': 'openai-responses', 'anthropic-messages': 'anthropic-messages' }
-const KIND: Record<string, string> = { bash: 'shell', read: 'read', write: 'write', edit: 'edit', glob: 'glob', grep: 'grep', task: 'task', question: 'question', web_search: 'web_search', codemode: 'code' }
+const KIND: Record<string, string> = { bash: 'shell', read: 'read', write: 'write', edit: 'edit', glob: 'glob', grep: 'grep', agent: 'task', task: 'task', question: 'question', web_search: 'web_search', codemode: 'code' }
 const toolKind = (name: string) => KIND[name] ?? (name.includes('__') || name.startsWith('mcp_') ? 'mcp' : 'other')
 
 /**

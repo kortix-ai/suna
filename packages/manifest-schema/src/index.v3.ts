@@ -114,7 +114,41 @@ export interface AgentBlockV3 {
   kortix_permissions?: GrantSetV2;
   workspace?: AgentWorkspaceV2;
   sandbox?: string;
+  /** Classification group for the dashboard (Engineering, Marketing…). Display-only, optional; a slug matching a key in the top-level `domains` map, or a bare name. Agents with no domain fall into a default group in the consumer. */
+  domain?: string;
   network_egress?: { version: 1; default: 'deny'; rules: [] };
+}
+
+/** One block of a Space's agent-configurable surface. The inside of a Space is
+ *  not rigid UI — an agent lays it out as a set of blocks (v1 renders them as a
+ *  simple responsive grid; richer layouts come later). A block surfaces one
+ *  thing: a chat room (a shared durable session), an artifact (a Files/Drive
+ *  path), an app (a Kortix App slug), an arbitrary iframe (a url), or text
+ *  (markdown). Display/config only; the running instance is resolved at render. */
+export interface SpaceBlockV3 {
+  type: 'chat' | 'artifact' | 'app' | 'iframe' | 'text';
+  label?: string;
+  /** chat: a stable room/channel key → a shared durable session. */
+  room?: string;
+  /** artifact: a Files/Drive path (doc or html page). */
+  path?: string;
+  /** app: a Kortix App slug. */
+  app?: string;
+  /** iframe: a url to embed in a sandboxed frame. */
+  url?: string;
+  /** text: markdown content. */
+  text?: string;
+}
+
+/** A domain is a Space: it groups agents and, optionally, carries an
+ *  agent-configurable surface (`blocks`). Display + config metadata only — no
+ *  behavior, no grants. */
+export interface DomainV3 {
+  label?: string;
+  description?: string;
+  order?: number;
+  /** The Space's agent-configurable blocks, in order. Agent-writable. */
+  blocks?: SpaceBlockV3[];
 }
 
 /** The v3 manifest after `imports:` are merged. */
@@ -138,6 +172,8 @@ export interface ManifestV3 {
   policies?: Array<Record<string, unknown>>;
   /** `ttl`: how long a held connector call waits for a decision (`30m`, `4h`, `7d`). */
   approvals?: { ttl?: string };
+  /** Optional display groups for the dashboard: slug → label/description/order. Data-only. */
+  domains?: Record<string, DomainV3>;
   agents: Record<string, AgentBlockV3>;
 }
 
@@ -161,6 +197,7 @@ const TOP_LEVEL_KEYS_V3 = [
   'policy',
   'policies',
   'approvals',
+  'domains',
   'agents',
 ] as const;
 
@@ -206,6 +243,7 @@ const AGENT_KEYS_V3 = new Set<string>([
   'kortix_permissions',
   'workspace',
   'sandbox',
+  'domain',
   'network_egress',
 ]);
 
@@ -260,6 +298,7 @@ export function validateManifestBodyV3(
   validateTriggers(parsed.triggers, 'triggers', issues, format);
   validateConnectors(parsed.connectors, 'connectors', issues, 2, format);
   validateAppsV2(parsed.apps, 'apps', issues);
+  validateDomainsV3(parsed.domains, 'domains', issues);
 
   const registry: RegistryV3 = {
     skills: validateSkillsV3(parsed.skills, 'skills', issues),
@@ -270,6 +309,68 @@ export function validateManifestBodyV3(
   const agents = validateAgentsV3(parsed.agents, 'agents', registry, issues);
   validateDefaultAgentV3(parsed.default_agent, 'default_agent', agents, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', [...agents.keys()], issues);
+}
+
+/**
+ * `domains`: slug → display metadata (label, description, order). Optional,
+ * data-only — it groups agents in the dashboard and carries no behavior. A
+ * domain an agent references but does not declare here is allowed (the consumer
+ * uses the name as its own label); this only validates the declared map.
+ */
+function validateDomainsV3(node: unknown, path: string, issues: ManifestIssue[]): void {
+  if (node === undefined || node === null) return;
+  if (!isTable(node)) {
+    issues.push({ path, message: `\`${path}\` must be a map of domain slug to display metadata.`, severity: 'error' });
+    return;
+  }
+  const DOMAIN_KEYS = new Set(['label', 'description', 'order', 'blocks']);
+  const BLOCK_TYPES = new Set(['chat', 'artifact', 'app', 'iframe', 'text']);
+  const BLOCK_KEYS = new Set(['type', 'label', 'room', 'path', 'app', 'url', 'text']);
+  for (const [slug, value] of Object.entries(node)) {
+    const where = `${path}.${slug}`;
+    if (!SLUG_RE.test(slug)) {
+      issues.push({ path: where, message: 'domain name must be a slug (lowercase letters, digits, "-" or "_").', severity: 'error' });
+    }
+    if (!isTable(value)) {
+      issues.push({ path: where, message: 'must be a map with optional `label`, `description`, `order` and `blocks`.', severity: 'error' });
+      continue;
+    }
+    for (const key of Object.keys(value)) {
+      if (!DOMAIN_KEYS.has(key)) {
+        issues.push({ path: `${where}.${key}`, message: `unknown domain key "${key}". Allowed: label, description, order, blocks.`, severity: 'error' });
+      }
+    }
+    if (value.blocks !== undefined) {
+      if (!Array.isArray(value.blocks)) {
+        issues.push({ path: `${where}.blocks`, message: '`blocks` must be a list.', severity: 'error' });
+      } else {
+        value.blocks.forEach((block, i) => {
+          const at = `${where}.blocks[${i}]`;
+          if (!isTable(block)) {
+            issues.push({ path: at, message: 'a block must be a map with a `type`.', severity: 'error' });
+            return;
+          }
+          if (typeof block.type !== 'string' || !BLOCK_TYPES.has(block.type)) {
+            issues.push({ path: `${at}.type`, message: 'block `type` must be one of: chat, artifact, app, iframe, text.', severity: 'error' });
+          }
+          for (const key of Object.keys(block)) {
+            if (!BLOCK_KEYS.has(key)) {
+              issues.push({ path: `${at}.${key}`, message: `unknown block key "${key}". Allowed: type, label, room, path, app, url, text.`, severity: 'error' });
+            }
+          }
+        });
+      }
+    }
+    if (value.label !== undefined && typeof value.label !== 'string') {
+      issues.push({ path: `${where}.label`, message: 'must be a string.', severity: 'error' });
+    }
+    if (value.description !== undefined && typeof value.description !== 'string') {
+      issues.push({ path: `${where}.description`, message: 'must be a string.', severity: 'error' });
+    }
+    if (value.order !== undefined && typeof value.order !== 'number') {
+      issues.push({ path: `${where}.order`, message: 'must be a number.', severity: 'error' });
+    }
+  }
 }
 
 // ─── Registries ────────────────────────────────────────────────────────────
@@ -507,6 +608,9 @@ function validateAgentBlockV3(
   }
   if (entry.sandbox !== undefined && !(typeof entry.sandbox === 'string' && SLUG_RE.test(entry.sandbox.trim()))) {
     issues.push({ path: `${where}.sandbox`, message: 'must be a sandbox template slug.', severity: 'error' });
+  }
+  if (entry.domain !== undefined && !(typeof entry.domain === 'string' && SLUG_RE.test(entry.domain.trim()))) {
+    issues.push({ path: `${where}.domain`, message: 'must be a domain slug (lowercase letters, digits, "-" or "_").', severity: 'error' });
   }
   validateNetworkEgressV3(entry.network_egress, `${where}.network_egress`, issues);
 

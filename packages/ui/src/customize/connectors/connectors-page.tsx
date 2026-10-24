@@ -72,6 +72,7 @@ import {
   useCatalog,
   useConnectProviderStatus,
 } from './catalog/use-catalog';
+import { type AgentGrant, GrantModeTabs, type ResourceScope } from '../shared/agent-resource-scope';
 import { CapabilityPageShell } from '../shared/capability-page-shell';
 import { CatalogCard } from '../shared/catalog/catalog-card';
 import { catalogEmptyKind } from '../shared/catalog/catalog-empty';
@@ -257,8 +258,21 @@ type Panel = 'custom' | 'mcp';
  * `legacyDetailRedirect` forwards it, so an OAuth grant that started before
  * the change still lands on the right connector.
  */
-export function ConnectorsPage({ projectId }: { projectId: string }) {
+export function ConnectorsPage({
+  projectId,
+  surface = { kind: 'global' },
+  grant,
+}: {
+  projectId: string;
+  /** `global` (default) is the project catalogue; `agent` scopes the same page
+   *  to one agent and turns each connector card into a grant control. */
+  surface?: ResourceScope;
+  /** Required in `agent` scope: the agent's `connectors` grant, driven by the
+   *  page's draft. Ignored in `global` scope. */
+  grant?: AgentGrant;
+}) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const agentScoped = surface.kind === 'agent' && grant !== undefined;
   // `accountId` comes off the detail this page already loads. Without it
   // `useProjectCan` fetches the project a second time under its own key AND
   // holds the IAM probe disabled until that lands — so Add and every write
@@ -398,13 +412,17 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // form. Channels has its own primary action already — the Slack hero owns
   // it — so it needs neither, and leaving them on screen would offer to search
   // a list that is not there.
-  const channelsActive = scope === 'channels';
+  // Channels is the inbound side (who can reach the agent), not a connector
+  // the agent is granted — so it is not part of the agent-scoped view.
+  const channelsActive = scope === 'channels' && !agentScoped;
 
   // The scopes the strip actually offers. Filters out All when
   // there is no catalogue to browse — see `catalogueAvailable` above and this
   // component's header comment. Connected and Channels are never filtered:
   // every deployment has its own connectors and its own inbound channels.
-  const visibleScopes = catalogueAvailable ? SCOPES : SCOPES.filter((s) => s !== 'all');
+  const visibleScopes = (catalogueAvailable ? SCOPES : SCOPES.filter((s) => s !== 'all')).filter(
+    (s) => !agentScoped || s !== 'channels',
+  );
 
   // The machine list answers 503 on a deployment with computers disabled, so
   // the Computer card shows only where a computer can be connected.
@@ -435,22 +453,38 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
 
   // One card shape for the project's own connectors: the Connected tab's grid
   // and the All tab's "Your connectors" section (KRTX-2531) render it alike.
-  const ownConnectorCard = (connector: (typeof connectors)[number]) => (
-    <CatalogCard
-      key={connector.slug}
-      variant="plain"
-      leading={<ConnectorAppIcon connector={connector} size="lg" />}
-      title={connectorDisplayName(connector)}
-      subtitle={
+  const ownConnectorCard = (connector: (typeof connectors)[number]) => {
+    const connected = connectorSetupStatus(connector) === 'connected';
+    const shared = {
+      variant: 'plain' as const,
+      leading: <ConnectorAppIcon connector={connector} size="lg" />,
+      title: connectorDisplayName(connector),
+      subtitle: (
         <span className="text-muted-foreground text-xs">{describeConnector(connector)}</span>
-      }
-      badges={<ConnectorStatusBadge connector={connector} />}
-      trailing={
-        connectorSetupStatus(connector) === 'connected' ? <ConnectorConnectedMark /> : undefined
-      }
-      href={connectorHref(projectId, connector.slug)}
-    />
-  );
+      ),
+      badges: <ConnectorStatusBadge connector={connector} />,
+      trailing: connected ? <ConnectorConnectedMark /> : undefined,
+    };
+    // In agent scope the checkbox grants this connector to the agent; the body
+    // still opens the connector's detail. In global scope the whole card
+    // navigates, prefetched, as before.
+    if (agentScoped && grant) {
+      return (
+        <CatalogCard
+          key={connector.slug}
+          {...shared}
+          onClick={() => router.push(connectorHref(projectId, connector.slug))}
+          select={{
+            checked: grant.isGranted(connector.slug),
+            disabled: grant.mode !== 'specific',
+            onCheckedChange: () => grant.toggle(connector.slug),
+            label: `Grant ${connectorDisplayName(connector)} to this agent`,
+          }}
+        />
+      );
+    }
+    return <CatalogCard key={connector.slug} {...shared} href={connectorHref(projectId, connector.slug)} />;
+  };
 
   // The Computer card opens the existing computer connector once there is
   // one: adding a computer is adding an account to it.
@@ -480,7 +514,9 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
       <SplitSheetMain>
         <CapabilityPageShell
           title={tI18nComplete.raw('textc3d2e79ebdd0')}
-          description={SCOPE_DESCRIPTION[scope]}
+          description={
+            agentScoped ? 'Choose which connectors this agent can use.' : SCOPE_DESCRIPTION[scope]
+          }
           search={
             channelsActive ? undefined : (
               <InputGroupSearch>
@@ -536,14 +572,22 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
             // deployment still has two real destinations (Connected, Channels),
             // so the strip survives losing All; it only disappears
             // entirely for the narrower case of neither existing.
-            visibleScopes.length > 1 ? (
+            agentScoped || visibleScopes.length > 1 ? (
               <>
+                {/* Agent scope's primary control: All · Specific · None for what
+                this agent may reach. It sits left of the catalogue scope strip
+                — the grant is the decision, the scope strip only narrows the
+                list you decide over. */}
+                {agentScoped && grant ? (
+                  <GrantModeTabs grant={grant} label="Connector access for this agent" />
+                ) : null}
                 {/* Rendered immediately, not behind `settled`. The strip used to
                 wait for both queries because the landing tab was derived from
                 one of them and Connected carried a count off the other; neither
                 is true now, so waiting only meant an empty 28px slot on every
                 load followed by the tabs popping in. Static labels over a
                 scope read out of the URL have nothing to wait for. */}
+                {visibleScopes.length > 1 ? (
                 <Tabs value={scope} onValueChange={(value) => setScope(value as ConnectorScope)}>
                   <TabsList>
                     {visibleScopes.map((value) => (
@@ -553,6 +597,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                     ))}
                   </TabsList>
                 </Tabs>
+                ) : null}
                 {/* Global rules — connector approval policy, so it belongs on this
                 page and not on the shared capability bar, which also rides over
                 Agents, Skills and Triggers.

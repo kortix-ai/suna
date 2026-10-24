@@ -217,6 +217,7 @@ export function resolveConfigAgents(
           mode: native?.mode ?? null,
           ...(native?.hidden === true ? { hidden: true } : {}),
           model: native?.model ?? null,
+          domain: native?.domain ?? null,
           source: 'kortix.yaml' as const,
           enabled: spec.enabled,
           sandbox: spec.sandbox ?? null,
@@ -464,6 +465,51 @@ export function disconnectedProjectConfig(): ProjectConfigSummary {
   };
 }
 
+function manifestMap(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+function manifestText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+/** The top-level `domains:` map as a sorted array. Version-agnostic display
+ *  metadata (v2 and v3 read it the same way); empty when none are declared. */
+function domainsFromManifest(manifest: Record<string, unknown>): ProjectConfigSummary['domains'] {
+  return Object.entries(manifestMap(manifest.domains))
+    .map(([name, meta]) => {
+      const m = manifestMap(meta);
+      const BLOCK_TYPES = ['chat', 'artifact', 'app', 'iframe', 'text'] as const;
+      const blocks = Array.isArray(m.blocks)
+        ? m.blocks
+            .map((b) => manifestMap(b))
+            .filter((b): b is Record<string, unknown> & { type: (typeof BLOCK_TYPES)[number] } =>
+              (BLOCK_TYPES as readonly string[]).includes(b.type as string),
+            )
+            .map((b) => ({
+              type: b.type,
+              label: manifestText(b.label) ?? undefined,
+              room: manifestText(b.room) ?? undefined,
+              path: manifestText(b.path) ?? undefined,
+              app: manifestText(b.app) ?? undefined,
+              url: manifestText(b.url) ?? undefined,
+              text: manifestText(b.text) ?? undefined,
+            }))
+        : undefined;
+      return {
+        name,
+        label: manifestText(m.label) ?? undefined,
+        description: manifestText(m.description) ?? undefined,
+        order: typeof m.order === 'number' ? m.order : undefined,
+        ...(blocks && blocks.length ? { blocks } : {}),
+      };
+    })
+    .sort(
+      (a, b) =>
+        (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER) ||
+        a.name.localeCompare(b.name),
+    );
+}
+
 export async function loadProjectConfig(
   project: GitBackedProject,
   files?: ProjectFileEntry[],
@@ -510,11 +556,21 @@ export async function loadProjectConfig(
   );
 
   const nativeAgents = await scanAgents(project, repoFiles, agentRe, declaredAgentPaths);
-  const { agent_discovery, agents } = resolveConfigAgents(
+  const { agent_discovery, agents: baseAgents } = resolveConfigAgents(
     nativeAgents,
     loadedAgents,
     declaredAgentFile,
   );
+  // `domain` is declared on the manifest's `agents.<name>` block (kortix.yaml),
+  // but the v2 listing builds agents from the scanned `.md` files, which carry
+  // no domain. Merge it from the manifest block here so a v2 project groups the
+  // same way a v3 one does. The `domains:` map is read version-agnostically.
+  const manifestAgentBlocks = manifestMap(manifest.agents);
+  const agents = baseAgents.map((agent) => ({
+    ...agent,
+    domain: agent.domain ?? manifestText(manifestMap(manifestAgentBlocks[agent.name]).domain),
+  }));
+  const domains = domainsFromManifest(manifest);
   const skills = await scanSkills(project, repoFiles, skillDirs(manifest));
   const commands = await scanCommands(project, repoFiles, commandRe);
   // v2 makes the manifest's declared default authoritative. Legacy projects
@@ -550,6 +606,7 @@ export async function loadProjectConfig(
     agents,
     skills,
     commands,
+    domains,
   };
 }
 
@@ -564,7 +621,7 @@ async function loadProjectConfigV3(
   manifest: Record<string, unknown>,
   loadedAgents: LoadedAgents,
   repoPaths: ReadonlySet<string>,
-): Promise<Pick<ProjectConfigSummary, 'agent_discovery' | 'agents' | 'skills' | 'commands'>> {
+): Promise<Pick<ProjectConfigSummary, 'agent_discovery' | 'agents' | 'skills' | 'commands' | 'domains'>> {
   const map = (value: unknown) =>
     value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
   const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value : null);
@@ -578,6 +635,7 @@ async function loadProjectConfigV3(
       mode: text(block.mode),
       ...(block.hidden === true ? { hidden: true } : {}),
       model: text(block.model),
+      domain: text(block.domain),
     };
   });
   const { agents } = resolveConfigAgents(natives, loadedAgents, (spec) => text(map(blocks[spec.name]).prompt_file) ?? undefined);
@@ -605,7 +663,7 @@ async function loadProjectConfigV3(
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  return { agent_discovery: 'declarative', agents, skills, commands };
+  return { agent_discovery: 'declarative', agents, skills, commands, domains: domainsFromManifest(manifest) };
 }
 
 function escapeRegExp(input: string): string {

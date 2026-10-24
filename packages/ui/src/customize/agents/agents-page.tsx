@@ -35,6 +35,7 @@ import { useProjectCan } from '../../internal/lib/use-project-can';
 import { cn } from '../../internal/lib/utils';
 import {
   getProjectDetail,
+  groupByDomain,
   listProjectResourceGrants,
   listProjectTriggers,
   type ProjectConfigSummary,
@@ -50,6 +51,9 @@ import { agentHref } from '../../internal/lib/capability-tab-routes';
 import { prefetchAgentConfig } from '../../internal/hooks/projects/use-agent-config';
 import { catalogEmptyKind } from '../shared/catalog/catalog-empty';
 import { CatalogNoMatch } from '../shared/catalog/catalog-empty-state';
+import { CatalogDomainSections } from '../shared/catalog/catalog-domain-sections';
+import { ALL_DOMAINS, DomainFilterTabs } from '../shared/catalog/domain-filter-tabs';
+import { useActiveDomain } from '../../internal/stores/active-domain-store';
 import { CatalogGrid } from '../shared/catalog/catalog-grid';
 import { GRID_CLASSNAME } from '../shared/catalog/catalog-grid-tokens';
 
@@ -172,6 +176,27 @@ export function AgentsPage({ projectId }: { projectId: string }) {
     () => filtered.filter((agent) => !agentInMode(agent, 'primary')),
     [filtered],
   );
+  // Domain grouping: when the project declares domains (top-level `domains:` or
+  // any agent's `domain`), the primary agents render in domain sections
+  // (`groupByDomain`, the default bucket last). With no domains it stays one
+  // flat grid — an existing project sees no change.
+  const primaryDomainGroups = useMemo(
+    () => groupByDomain(primaryAgents, config?.domains),
+    [primaryAgents, config?.domains],
+  );
+  const useDomainGrouping =
+    (config?.domains?.length ?? 0) > 0 || primaryAgents.some((agent) => Boolean(agent.domain));
+  // The active domain is the sidebar switcher's choice (shared source of
+  // truth): null = All. The page's own filter tabs read and write the same
+  // store, so switching in either place stays in sync.
+  const [activeDomain, setActiveDomain] = useActiveDomain(projectId);
+  const domainFilter = activeDomain ?? ALL_DOMAINS;
+  const setDomainFilter = (value: string) => setActiveDomain(value === ALL_DOMAINS ? null : value);
+  // The agents of the selected domain (when a specific one is picked), flat.
+  const filteredDomainAgents = useMemo(
+    () => (domainFilter === ALL_DOMAINS ? [] : (primaryDomainGroups.find((g) => g.name === domainFilter)?.items ?? [])),
+    [domainFilter, primaryDomainGroups],
+  );
   // `null` = render the grid. Otherwise which "nothing to show" copy applies:
   // genuinely zero agents vs. agents exist but this filter/search hid all of
   // them. Telling the user "No agents yet" in the second case is false and
@@ -197,6 +222,20 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         }}
       />
     ) : null;
+
+  const renderPrimaryAgentCard = (agent: ProjectConfigSummary['agents'][number]) => (
+    <AgentCoverCard
+      key={agent.path}
+      slug={agent.name}
+      href={agentHref(projectId, agent.name)}
+      onIntent={() => prefetchAgentConfig(queryClient, projectId, agent.name)}
+      title={agentTitle(agent.name)}
+      description={agent.description}
+      badges={<AgentCardBadges agent={agent} />}
+      coverLabel={defaultAgent === agent.name ? tI18nComplete.raw('text21b111cbfe6e') : undefined}
+      meta={facts(agent)}
+    />
+  );
 
   return (
     <CapabilityPageShell
@@ -228,54 +267,53 @@ export function AgentsPage({ projectId }: { projectId: string }) {
           <InputGroupSearchClear onClick={() => setQuery('')} />
         </InputGroupSearch>
       }
+      filters={
+        useDomainGrouping ? (
+          <DomainFilterTabs groups={primaryDomainGroups} value={domainFilter} onValueChange={setDomainFilter} />
+        ) : undefined
+      }
     >
-      <CatalogGrid
-        isLoading={detailQuery.isLoading}
-        isError={detailQuery.isError}
-        error={detailQuery.error}
-        onRetry={() => detailQuery.refetch()}
-        isEmpty={emptyKind !== null}
-        empty={
-          emptyKind === 'no-match' ? (
-            <CatalogNoMatch query={query} />
-          ) : (
-            <EmptyState
-              icon={RobotIcon}
-              size="sm"
-              title={tI18nComplete.raw('text971b61f8cb4d')}
-              description={tI18nComplete.raw('textc4e4294c6777')}
-              action={createButton('Create an agent', 'sm')}
-              secondaryAction={
-                <Button asChild variant="ghost" size="sm" className="gap-1.5">
-                  <a
-                    href="/docs/project/agents"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {tI18nComplete.raw('text7af023c43013')}
-                  </a>
-                </Button>
-              }
-            />
-          )
-        }
-      >
-        {primaryAgents.map((agent) => (
-          <AgentCoverCard
-            key={agent.path}
-            slug={agent.name}
-            href={agentHref(projectId, agent.name)}
-            onIntent={() => prefetchAgentConfig(queryClient, projectId, agent.name)}
-            title={agentTitle(agent.name)}
-            description={agent.description}
-            badges={<AgentCardBadges agent={agent} />}
-            coverLabel={
-              defaultAgent === agent.name ? tI18nComplete.raw('text21b111cbfe6e') : undefined
-            }
-            meta={facts(agent)}
-          />
-        ))}
-      </CatalogGrid>
+      {useDomainGrouping && !detailQuery.isLoading && !detailQuery.isError && emptyKind === null ? (
+        domainFilter === ALL_DOMAINS ? (
+          <CatalogDomainSections groups={primaryDomainGroups} renderCard={renderPrimaryAgentCard} />
+        ) : (
+          <div className={GRID_CLASSNAME}>{filteredDomainAgents.map(renderPrimaryAgentCard)}</div>
+        )
+      ) : (
+        <CatalogGrid
+          isLoading={detailQuery.isLoading}
+          isError={detailQuery.isError}
+          error={detailQuery.error}
+          onRetry={() => detailQuery.refetch()}
+          isEmpty={emptyKind !== null}
+          empty={
+            emptyKind === 'no-match' ? (
+              <CatalogNoMatch query={query} />
+            ) : (
+              <EmptyState
+                icon={RobotIcon}
+                size="sm"
+                title={tI18nComplete.raw('text971b61f8cb4d')}
+                description={tI18nComplete.raw('textc4e4294c6777')}
+                action={createButton('Create an agent', 'sm')}
+                secondaryAction={
+                  <Button asChild variant="ghost" size="sm" className="gap-1.5">
+                    <a
+                      href="/docs/project/agents"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {tI18nComplete.raw('text7af023c43013')}
+                    </a>
+                  </Button>
+                }
+              />
+            )
+          }
+        >
+          {primaryAgents.map(renderPrimaryAgentCard)}
+        </CatalogGrid>
+      )}
       {!detailQuery.isLoading && !detailQuery.isError && subagents.length > 0 ? (
         <section
           aria-labelledby="subagents-heading"

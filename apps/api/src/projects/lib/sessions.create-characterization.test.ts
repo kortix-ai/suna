@@ -57,10 +57,14 @@ mock.module('../../llm-gateway/models/served-managed-models', () => ({
 
 import { createProjectSession } from './sessions';
 
+// meta_agent is default-on (2026-10-24). This suite characterizes the ordinary
+// (non-meta) session-create path — model pin, metadata fields, sandbox slug —
+// so it opts out of the meta coordinator explicitly to stay isolated from the
+// default. The meta path has its own coverage in unit-platform-meta-agent.test.ts.
 const project = {
   projectId: 'synthetic-project', accountId: 'synthetic-account', defaultBranch: 'main',
-  metadata: {}, repoUrl: 'https://example.test/repo', manifestPath: 'kortix.yaml',
-} as Parameters<typeof createProjectSession>[0]['project'];
+  metadata: { experimental: { meta_agent: false } }, repoUrl: 'https://example.test/repo', manifestPath: 'kortix.yaml',
+} as unknown as Parameters<typeof createProjectSession>[0]['project'];
 
 const originalKortixUrl = config.KORTIX_URL;
 const originalDefaultModel = config.LLM_GATEWAY_DEFAULT_MODEL;

@@ -55,6 +55,9 @@ export interface ProjectConfigSummary {
     platform?: boolean;
     enabled?: boolean;
     sandbox?: string | null;
+    /** Classification group from `agents.<name>.domain` (v3). Display-only;
+     *  null/absent folds into the default group in the consumer. */
+    domain?: string | null;
     /** Per-agent governance from the manifest's `agents` declarations (v2
      *  `agents:` map, or legacy v1 `[[agents]]`; declarative agents only).
      *  Read-only mirror of the allowlists the parser resolved — `'all'`
@@ -74,6 +77,24 @@ export interface ProjectConfigSummary {
   }>;
   skills: Array<{ name: string; path: string; description: string | null }>;
   commands: Array<{ name: string; path: string; description: string | null }>;
+  /** Declared display groups from the manifest's top-level `domains:` map (v3).
+   *  Data-only; paired with each agent's `domain` to group the dashboard. */
+  domains?: Array<{
+    name: string;
+    label?: string;
+    description?: string;
+    order?: number;
+    /** The Space's agent-configurable blocks (chat/artifact/app/iframe/text). */
+    blocks?: Array<{
+      type: 'chat' | 'artifact' | 'app' | 'iframe' | 'text';
+      label?: string;
+      room?: string;
+      path?: string;
+      app?: string;
+      url?: string;
+      text?: string;
+    }>;
+  }>;
 }
 
 export interface RepoGrepMatch {

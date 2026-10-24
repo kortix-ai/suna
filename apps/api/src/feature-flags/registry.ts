@@ -217,7 +217,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'A reserved coordinator agent that spawns and manages specialized sessions, transfers files between them, and orchestrates multi-step work across the project. Adds a platform-owned meta agent to the project and changes the default agent for new sessions without an explicit --agent flag.',
     stability: 'experimental',
     available: () => true,
-    platformDefault: () => false,
+    // On by default (Marko, 2026-10-24): the meta agent is the default cloud
+    // orchestrator for every project. A project can still turn it off.
+    platformDefault: () => true,
     enforcement: 'behavioral',
     enforcementNote:
       'Off ⇒ the platform meta agent is not added to the agent list and is not ' +
@@ -231,9 +233,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
   // `experimental.monitors` override is inert.
   {
     key: 'reminders',
-    name: 'Reminders',
+    name: 'Loops',
     description:
-      'Let agents and people schedule check-ins on a session — "in 24 hours, check whether the vendor replied", once or on repeat. Each fire re-prompts that session. Adds the Reminders page, the session reminder chip, and `kortix remind` in the CLI.',
+      'Let agents and people schedule a Loop on a session — "in 24 hours, check whether the vendor replied", once or on repeat. Each fire re-prompts that session. Adds the Loops page, the session loop chip, and `kortix loop` in the CLI.',
     stability: 'beta',
     available: () => true,
     // On by default (2026-10-19): goals wake on a heartbeat reminder (kortix-goals).
@@ -373,8 +375,10 @@ const FLAGS: readonly FeatureFlagDef[] = [
     stability: 'experimental',
     // Every volume is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
-    // Explicit opt-in. A project with `goals` needs it on.
-    platformDefault: () => false,
+    // On by default wherever Platinum is configured (Marko, 2026-10-24): Drive
+    // is the project's shared Files surface, so a new project gets it without a
+    // toggle. A project can still turn it off explicitly.
+    platformDefault: () => Boolean(config.PLATINUM_API_KEY),
     enforcement: 'behavioral',
     enforcementNote:
       'BEHAVIORAL only, through the flag derived from it: drives (Files routes and ' +
@@ -409,7 +413,10 @@ const FLAGS: readonly FeatureFlagDef[] = [
     stability: 'experimental',
     // A goal keeps its state in Files, and every drive is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
-    platformDefault: () => false,
+    // On by default wherever Platinum is configured (Marko, 2026-10-24),
+    // matching `volumes`: Goals needs Volumes and Reminders, both default-on.
+    // A project can still turn it off.
+    platformDefault: () => Boolean(config.PLATINUM_API_KEY),
     enforcement: 'ui-only',
     enforcementNote:
       'BOX: off, a session box has no kortix-goals skill and its CLI hides and refuses `kortix goals` ' +
@@ -425,9 +432,10 @@ const FLAGS: readonly FeatureFlagDef[] = [
     description:
       'Share docs (Markdown) and HTML pages from Files: a gallery per project, a doc editor, versions from the Files history, PDF export for docs, and share links that are private, for the project, for chosen people, or public.',
     stability: 'beta',
-    // Artifacts are paths in Files, a Platinum volume.
+    // Artifacts are paths in Files, a Platinum volume. Default-on wherever
+    // Platinum is configured (Marko, 2026-10-24) — matches the `available` gate.
     available: () => Boolean(config.PLATINUM_API_KEY),
-    platformDefault: () => false,
+    platformDefault: () => Boolean(config.PLATINUM_API_KEY),
     enforcement: 'routes',
     enforcementNote:
       'ROUTES: every /v1/projects/:id/artifacts* route answers 403 `feature_disabled` when off, and ' +
@@ -486,7 +494,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'Named chat rooms per goal or topic where agent sessions and people post (`kortix rooms`, `kortix peers`). Every message is stored in its room. A member session gets a message addressed to it (an @-mention, a reply in its thread) between its steps; other room traffic arrives as one batched notice when its turn ends; a thread reply reaches only the thread participants. A stopped session wakes. A member person gets every message as unread and, with the notification center on, a notification for one addressed to them.',
     stability: 'experimental',
     available: () => true,
-    platformDefault: () => false,
+    // On by default (Marko, 2026-10-24): Rooms is the p2p substrate every
+    // project ships with. A project can still turn it off.
+    platformDefault: () => true,
     enforcement: 'routes',
     enforcementNote:
       'Off ⇒ nothing of Rooms exists in the project. ROUTES: every /projects/:id/rooms* route and POST /projects/:id/sessions/:sid/idle-notice answer 403 `feature_disabled` (projects/routes/rooms.ts); a post fans out only to members whose own project still has the flag on (projects/rooms/service.ts); room notifications leave the inbox (notifications/inbox-read.ts). BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-rooms skill and the CLI hides and refuses `kortix rooms` / `kortix peers`; a change reaches the next new box, and retires warm sessions (feature-flags/toggle-effects.ts). CLI outside a box: hidden and refused unless the linked project has the flag on. IAM: project.room.* leave the account permission catalog until a project of the account has it on. NOTIFICATIONS: the `message` kind is in `hidden_kinds` (no settings row) unless the person is in a room of a flag-on project. WEB: no sidebar row, no More entry, no Rooms permission group; a deep link shows the flag-off screen. DOCS: the reference is the kortix-rooms skill (references/rooms.md), not the public docs.',

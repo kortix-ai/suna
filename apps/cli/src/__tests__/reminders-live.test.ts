@@ -126,9 +126,9 @@ describe('kortix reminders — inside a session', () => {
         auth: 'Bearer kortix_pat_session_token',
       },
     ]);
-    expect(r.stdout).toContain('Reminder set reminder.0123456789ab');
+    expect(r.stdout).toContain('Loop set reminder.0123456789ab');
     expect(r.stdout).toContain('every 1h');
-    expect(r.stdout).toContain('kortix reminders rm reminder.0123456789ab');
+    expect(r.stdout).toContain('kortix loops rm reminder.0123456789ab');
   }, 60_000);
 
   test('reminders add --cron --timezone --name --json maps every flag', async () => {

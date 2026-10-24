@@ -128,21 +128,17 @@ const STORAGE_KEY = 'kortix.sidebarNav';
 
 interface SidebarNavState {
   items: SidebarNavEntry[];
-  /** The Customize sidebar modal. Not persisted. */
-  customizeOpen: boolean;
   /** Replaces the whole layout; normalized, so a partial or bad list is safe. */
   setItems: (items: SidebarNavEntry[]) => void;
   move: (id: SidebarNavItemId, delta: -1 | 1) => void;
   setVisibility: (id: SidebarNavItemId, visibility: SidebarNavVisibility) => void;
   reset: () => void;
-  setCustomizeOpen: (open: boolean) => void;
 }
 
 export const useSidebarNavStore = create<SidebarNavState>()(
   persist(
     (set) => ({
       items: normalizeSidebarNav(null),
-      customizeOpen: false,
       setItems: (items) => set({ items: normalizeSidebarNav(items) }),
       move: (id, delta) => set((state) => ({ items: moveSidebarNavItem(state.items, id, delta) })),
       setVisibility: (id, visibility) =>
@@ -152,7 +148,6 @@ export const useSidebarNavStore = create<SidebarNavState>()(
           ),
         })),
       reset: () => set({ items: normalizeSidebarNav(null) }),
-      setCustomizeOpen: (customizeOpen) => set({ customizeOpen }),
     }),
     {
       name: STORAGE_KEY,
@@ -169,7 +164,3 @@ export const useSidebarNavStore = create<SidebarNavState>()(
 );
 
 registerPersistedStore(STORAGE_KEY, () => resetPersistedStore(useSidebarNavStore));
-
-export function openCustomizeSidebar() {
-  useSidebarNavStore.getState().setCustomizeOpen(true);
-}

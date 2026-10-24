@@ -14,14 +14,14 @@ describe('defaultAgentFromSeedFiles', () => {
     const files = [
       {
         path: 'kortix.yaml',
-        content: 'kortix_version: 2\ndefault_agent: kortix\nagents:\n  kortix: {}\n',
+        content: 'kortix_version: 3\ndefault_agent: kortix\nagents:\n  kortix: {}\n',
       },
     ];
     expect(defaultAgentFromSeedFiles(files, 'kortix.yaml')).toBe('kortix');
   });
 
   test('no default_agent declared → null (not every project needs one)', () => {
-    const files = [{ path: 'kortix.yaml', content: 'kortix_version: 2\nagents:\n  kortix: {}\n' }];
+    const files = [{ path: 'kortix.yaml', content: 'kortix_version: 3\nagents:\n  kortix: {}\n' }];
     expect(defaultAgentFromSeedFiles(files, 'kortix.yaml')).toBeNull();
   });
 

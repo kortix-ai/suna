@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  ADMIN_MANAGED_TABS,
   CAPABILITY_TABS,
   PRIMARY_TABS,
   activeCapabilityTab,
   agentHref,
   capabilityTabHref,
   channelsHref,
+  customizeNavTabs,
   reviewHref,
 } from './capability-tab-routes';
 
@@ -61,6 +63,33 @@ describe('CAPABILITY_TABS', () => {
     // would 404 the route while the tab still rendered.
     const agents = CAPABILITY_TABS.find((t) => t.label === 'Agents');
     expect(agents?.key).toBe('agent');
+  });
+});
+
+describe('customizeNavTabs', () => {
+  // Agent-centric Customize (Marko, 2026-10-24): the libraries moved to
+  // `/admin` and Repo moved into Settings, so the nav keeps Agents, Review
+  // (its own standalone row) and Settings. The pages still resolve by URL —
+  // the gate reads the full access set — so the keys stay in CAPABILITY_TABS
+  // and only the nav drops them.
+  test('drops the admin-managed libraries and the settings-managed tabs', () => {
+    const all = CAPABILITY_TABS.map((t) => t.key);
+    expect(customizeNavTabs(all)).toEqual(['agent', 'review', 'config']);
+  });
+
+  test('the admin-managed set is exactly the six libraries', () => {
+    expect([...ADMIN_MANAGED_TABS]).toEqual([
+      'skills',
+      'connectors',
+      'triggers',
+      'reminders',
+      'models',
+      'secrets',
+    ]);
+  });
+
+  test('is a no-op when no admin-managed tab is present', () => {
+    expect(customizeNavTabs(['agent', 'config'])).toEqual(['agent', 'config']);
   });
 });
 
@@ -127,6 +156,11 @@ describe('activeCapabilityTab', () => {
     expect(activeCapabilityTab('/projects/p1/customize/connectors')).toBe('connectors');
     expect(activeCapabilityTab('/projects/p1/customize/skills')).toBe('skills');
     expect(activeCapabilityTab('/projects/p1/customize/triggers')).toBe('triggers');
+  });
+  test('tolerates a leading locale segment the host may not strip', () => {
+    expect(activeCapabilityTab('/en/projects/p1/customize/agents')).toBe('agent');
+    expect(activeCapabilityTab('/de/projects/p1/customize/connectors/resend')).toBe('connectors');
+    expect(activeCapabilityTab('/en/projects/p1/customize/agents/churn')).toBe('agent');
   });
   test('ignores a trailing slash', () => {
     expect(activeCapabilityTab('/projects/p1/customize/skills/')).toBe('skills');

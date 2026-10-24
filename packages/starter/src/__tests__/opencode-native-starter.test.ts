@@ -56,9 +56,10 @@ describe('one starter', () => {
   });
 });
 
-describe('the starter is OpenCode-native', () => {
-  test('scaffolds a kortix_version 2 manifest', () => {
-    expect(manifestFor()).toContain('kortix_version: 2');
+describe('the starter is a kortix_version 3 manifest', () => {
+  test('scaffolds a kortix_version 3 manifest', () => {
+    expect(manifestFor()).toContain('kortix_version: 3');
+    expect(manifestFor()).not.toContain('kortix_version: 2');
   });
 
   test('declares no runtimes block and no non-opencode harness', () => {
@@ -70,11 +71,13 @@ describe('the starter is OpenCode-native', () => {
     }
   });
 
-  test('configures OpenCode without a runtime selector', () => {
+  test('retires the opencode config block and the runtime selector', () => {
     const manifest = manifestFor();
 
-    expect(manifest).toContain('opencode:');
-    expect(manifest).toContain('config_dir: harnesses/opencode');
+    // v3 reads no harness config folder: no top-level `opencode:` block and
+    // no deprecated `runtime:` selector.
+    expect(manifest).not.toContain('opencode:');
+    expect(manifest).not.toContain('config_dir:');
     expect(manifest).not.toContain('runtime:');
   });
 
@@ -178,10 +181,10 @@ describe('starter catalog source map', () => {
 });
 
 describe('internal minimal build', () => {
-  test('lays down the same OpenCode-native v2 floor', () => {
+  test('lays down the same kortix_version 3 floor', () => {
     const manifest = manifestFor('minimal');
 
-    expect(manifest).toContain('kortix_version: 2');
+    expect(manifest).toContain('kortix_version: 3');
     expect(manifest).not.toContain('harness: claude');
   });
 

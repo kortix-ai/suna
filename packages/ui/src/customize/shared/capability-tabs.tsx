@@ -6,7 +6,6 @@ import { useTranslations } from '../../i18n';
 import { ArrowUpRightIcon } from '@phosphor-icons/react';
 import { UiLink as Link, useUiPathname } from '../../providers/ui-provider';
 
-import { FadedScrollArea } from '../../primitives/faded-scroll-area';
 import { useOptionalSidebar } from '../../primitives/sidebar';
 import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
 import { HubLink } from '../../internal/account-hub/account-hub-location';
@@ -21,8 +20,8 @@ import { useQuery } from '@tanstack/react-query';
 
 import { receivedDenial } from './capability-access-gate';
 import {
+  ADMIN_MANAGED_TABS,
   CAPABILITY_TABS,
-  PRIMARY_TABS,
   activeCapabilityTab,
   capabilityTabHref,
   type CapabilityTab,
@@ -118,11 +117,11 @@ function MembersLaunchLink({ projectId }: { projectId: string }) {
  * opened onto "You don't have access" (KRTX-2144).
  */
 /**
- * The hairline between Agents and everything an agent draws on (Skills
- * through Secrets). One `TabsList` still —
- * this is a `span`, not a second list, so the underline indicator and the
- * keyboard roving stay unified. It is `aria-hidden` because the grouping is
- * visual: a screen reader walks seven tabs either way.
+ * The hairline between the Agents group and the governance group (Repo,
+ * Review). One `TabsList` still — this is a `span`, not a second list, so the
+ * underline indicator and the keyboard roving stay unified. It is
+ * `aria-hidden` because the grouping is visual: a screen reader walks the tabs
+ * either way.
  */
 /**
  * Settings trails the row, on the right, after the Members link — one
@@ -133,11 +132,25 @@ function MembersLaunchLink({ projectId }: { projectId: string }) {
  */
 const TRAILING_TABS: readonly CapabilityTab['key'][] = ['config'];
 
-/** Tabs that need a project flag: left out of the bar until access settles. */
-const FLAG_GATED_TABS: readonly CapabilityTab['key'][] = ['files', 'reminders'];
+/**
+ * Governance (Marko, 2026-10-24): Repo and Review read as a different register
+ * from the build-the-agent library to their left — what the project IS versus
+ * what an agent draws on — so a seam sets them apart, the same hairline that
+ * already follows Agents.
+ */
+const GOVERNANCE_TABS: readonly CapabilityTab['key'][] = ['files', 'review'];
+
+/** Tabs that need a project flag: left out of the bar until access settles.
+ *  Reminders was flag-gated too, but it moved to `/admin` (`ADMIN_MANAGED_TABS`)
+ *  and the bar filters it out before this stage, so only Repo remains. */
+const FLAG_GATED_TABS: readonly CapabilityTab['key'][] = ['files'];
 
 function GroupSeam() {
-  return <span aria-hidden className="bg-border mx-1 h-4 w-px shrink-0 self-center" />;
+  // The row sets `gap-5` between every item, so a seam with its own margin
+  // double-counts and the grouped gap balloons. Pull the seam in with a
+  // negative margin so the group boundary reads as one slightly-wider gap with
+  // a hairline, not a chasm.
+  return <span aria-hidden className="bg-border -mx-1.5 h-4 w-px shrink-0 self-center" />;
 }
 
 export function CapabilityTabs({ projectId }: { projectId: string }) {
@@ -148,19 +161,26 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
   // shell it starts at y=0 and shares the band with the OS window controls.
   // Without the indent the first tab renders under the macOS traffic lights.
   const sidebar = useOptionalSidebar();
-  const allTabs = useLocalizedUiCatalog(CAPABILITY_TABS);
-  // Repo (key `files`) and Reminders are the flag-gated tabs: each exists only
-  // once the project turns its flag on. `capabilityAccess()` applies the flags
-  // and the leaves; before it settles the bar is invisible and both are left out.
+  // Agent-centric Customize: Skills/Connectors/Triggers/Reminders/Models/
+  // Secrets moved to `/admin` (`ADMIN_MANAGED_TABS`), so the bar never lists
+  // them — settled or not. Their pages still resolve by URL; the gate reads
+  // the full `capabilityAccess()` set, not this one.
+  const allTabs = useLocalizedUiCatalog(CAPABILITY_TABS).filter(
+    (tab) => !ADMIN_MANAGED_TABS.includes(tab.key),
+  );
+  // Repo (key `files`) is the flag-gated tab: it exists only once the project
+  // turns the `drives` flag on. `capabilityAccess()` applies the flag and the
+  // leaves; before it settles the bar is invisible and Repo is left out.
   const access = useCapabilityAccess(projectId);
   const allowedTabs = new Set(access.tabs);
   const tabs = allTabs.filter((tab) =>
     access.settled ? allowedTabs.has(tab.key) : !FLAG_GATED_TABS.includes(tab.key),
   );
 
-  const leading = tabs.filter((tab) => !TRAILING_TABS.includes(tab.key));
-  const primary = leading.filter((tab) => PRIMARY_TABS.includes(tab.key));
-  const library = leading.filter((tab) => !PRIMARY_TABS.includes(tab.key));
+  // Agent-first Customize (Marko, 2026-10-24): the top bar no longer carries the
+  // Agents / Repo / Review tab navigation — that lives in the sidebar now
+  // (agents + Review + Settings). The bar keeps only the sidebar toggle, the
+  // Members launch link, and Settings.
   const trailing = tabs.filter((tab) => TRAILING_TABS.includes(tab.key));
   const renderTab = (tab: CapabilityTab) => (
     <TabsTrigger key={tab.key} value={tab.key} asChild className="w-fit flex-none px-1 py-3">
@@ -176,30 +196,22 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
       data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
     >
       <SidebarToggle />
-      <FadedScrollArea
-        orientation="horizontal"
-        fadeColor="from-background"
-        rootClassName="min-w-0 flex-1"
-      >
-        <Tabs value={activeKey ?? ''} className="w-max min-w-full">
-          <TabsList
-            type="underline"
-            underlineSize="md"
-            size="lg"
-            className={cn(
-              'kx-titlebar-tabs h-auto w-full justify-start gap-5 border-b-0 px-2',
-              !access.settled && 'invisible',
-            )}
-            aria-busy={!access.settled || undefined}
-          >
-            {primary.map(renderTab)}
-            {primary.length > 0 && library.length > 0 ? <GroupSeam /> : null}
-            {library.map(renderTab)}
-            <MembersLaunchLink projectId={projectId} />
-            {trailing.map(renderTab)}
-          </TabsList>
-        </Tabs>
-      </FadedScrollArea>
+      <div className="min-w-0 flex-1" />
+      <Tabs value={activeKey ?? ''} className="w-max">
+        <TabsList
+          type="underline"
+          underlineSize="md"
+          size="lg"
+          className={cn(
+            'kx-titlebar-tabs h-auto justify-end gap-5 border-b-0 px-2',
+            !access.settled && 'invisible',
+          )}
+          aria-busy={!access.settled || undefined}
+        >
+          <MembersLaunchLink projectId={projectId} />
+          {trailing.map(renderTab)}
+        </TabsList>
+      </Tabs>
     </div>
   );
 }

@@ -95,7 +95,7 @@ export const CAPABILITY_TABS: readonly CapabilityTab[] = [
   { key: 'skills', label: 'Skills' },
   { key: 'connectors', label: 'Connectors' },
   { key: 'triggers', label: 'Triggers' },
-  { key: 'reminders', label: 'Reminders' },
+  { key: 'reminders', label: 'Loops' },
   { key: 'models', label: 'Models' },
   { key: 'secrets', label: 'Secrets' },
   { key: 'files', label: 'Repo' },
@@ -110,6 +110,46 @@ export const CAPABILITY_TABS: readonly CapabilityTab[] = [
  * hairline seam after it, and it is the landing tab.
  */
 export const PRIMARY_TABS: readonly CapabilityTab['key'][] = ['agent'];
+
+/**
+ * The capability libraries that moved to the account-level `/admin` dashboard
+ * (Marko, 2026-10-24: authorization is per-agent, so Customize is agent-
+ * centric — you add a connector, skill, trigger, reminder, model or secret TO
+ * an agent, never standalone). Customize no longer lists these as tabs or
+ * sidebar rows. It keeps Agents (the primary surface), Repo, Review and
+ * Settings; what an agent draws on is configured per agent, on the agent's own
+ * page.
+ *
+ * Their standalone pages still RESOLVE by URL — `capabilityAccess()` keeps the
+ * keys, so `CapabilityAccessGate` renders them and the `/customize` redirect
+ * still works. Only the two nav surfaces (`CapabilityTabs`,
+ * `ProjectCapabilityNav`) drop them, through `customizeNavTabs`.
+ */
+export const ADMIN_MANAGED_TABS: readonly CapabilityTab['key'][] = [
+  'skills',
+  'connectors',
+  'triggers',
+  'reminders',
+  'models',
+  'secrets',
+];
+
+/** Tabs that moved INTO Settings (Marko, 2026-10-24): Repo lives in the
+ *  Settings rail (Repositories). Review is NOT here — it is its own standalone
+ *  row in the Customize sidebar (Marko, 2026-10-24). */
+export const SETTINGS_MANAGED_TABS: readonly CapabilityTab['key'][] = ['files'];
+
+/** The capability tabs Customize still lists, in bar order: the caller's
+ *  allowed tabs minus the libraries that moved to `/admin` and the ones that
+ *  moved into Settings. Customize is agent-centric, so the bar leads with
+ *  Agents; the rest is configured per agent or under `/admin` / Settings. */
+export function customizeNavTabs(
+  tabs: readonly CapabilityTab['key'][],
+): CapabilityTab['key'][] {
+  return tabs.filter(
+    (key) => !ADMIN_MANAGED_TABS.includes(key) && !SETTINGS_MANAGED_TABS.includes(key),
+  );
+}
 
 /**
  * A tab's URL segment. Keys are stable identifiers used across the app
@@ -217,7 +257,14 @@ export function channelsHref(projectId: string): string {
  * `agent`, never on the last one.
  */
 export function activeCapabilityTab(pathname: string): CapabilityTab['key'] | null {
-  const segments = pathname.split('/').filter(Boolean);
+  const all = pathname.split('/').filter(Boolean);
+  // Tolerate a leading locale segment (`/en/projects/…`): anchor on `projects`
+  // wherever it sits, so the match works whether the host strips the locale or
+  // not. A project id is never the literal `projects`, so the first hit is the
+  // route segment.
+  const start = all.indexOf('projects');
+  if (start === -1) return null;
+  const segments = all.slice(start);
   if (segments[0] !== 'projects' || segments[2] !== 'customize') return null;
   if (segments.length === 5 && segments[3] === CAPABILITY_SEGMENT.agent) return 'agent';
   // An app's page (`/connectors/<app>`) and a connector's page
