@@ -188,6 +188,10 @@ app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/ve
 // supabaseAuth would otherwise 401 an anonymous verifier.
 import { tokenIssuerApp } from './apps/token-issuer-routes';
 app.route('/v1/projects', tokenIssuerApp); // /v1/projects/:projectId/{.well-known/openid-configuration,jwks.json}
+// App events: authenticated by the App's own token, so also before projectsApp.
+import { appEventsApp, registerAppEventRoutes } from './apps/event-routes';
+registerAppEventRoutes();
+app.route('/v1/projects', appEventsApp); // POST /v1/projects/:projectId/apps/:appId/events
 registerAllProjectRoutes();
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 registerSessionLookupRoutes();

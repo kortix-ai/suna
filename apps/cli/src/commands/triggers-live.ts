@@ -12,7 +12,7 @@ import {
 } from '../command-helpers.ts';
 import { C, status } from '../style.ts';
 import { checkEventConfig, eventNextStep, surfaceEventTriggerError } from './triggers-events.ts';
-import { parseEventFlags, parseFilterFlags, parseMonitorFlags, parseRunCapFlags, strayEventFlag } from './triggers-manifest.ts';
+import { appFlagProblem, parseEventFlags, parseFilterFlags, parseMonitorFlags, parseRunCapFlags, strayEventFlag } from './triggers-manifest.ts';
 
 // ── The LIVE path (--apply, and every `set`) ───────────────────────────────
 //
@@ -73,14 +73,16 @@ export async function triggersAddLive(
 ): Promise<number> {
   if (!slug) return missing('a trigger slug');
   const type = (tf.type ?? 'cron').toLowerCase();
-  if (type !== 'cron' && type !== 'webhook' && type !== 'monitor' && type !== 'event') {
-    return fail('--type must be cron, webhook, monitor, or event.');
+  if (type !== 'cron' && type !== 'webhook' && type !== 'monitor' && type !== 'event' && type !== 'app') {
+    return fail('--type must be cron, webhook, monitor, event, or app.');
   }
   if (!tf.prompt) return fail('--prompt is required.');
   if (type !== 'event') {
     const stray = strayEventFlag(tf);
     if (stray) return fail(stray);
   }
+  const appProblem = appFlagProblem(type, tf);
+  if (appProblem) return fail(appProblem);
   if (tf.cron && tf.runAt) return fail('--cron and --run-at are exclusive — pass one.');
   if (type === 'cron' && !tf.cron && !tf.runAt) {
     return fail('cron triggers need --cron "<6-field expr>" or --run-at <iso>.');
@@ -118,6 +120,8 @@ export async function triggersAddLive(
     body.timezone = tf.timezone ?? 'UTC';
   } else if (type === 'webhook') {
     body.secret_env = tf.secretEnv;
+  } else if (type === 'app') {
+    body.app = tf.app;
   } else if (type === 'event') {
     const parsed = parseEventFlags(tf);
     if ('error' in parsed) return fail(parsed.error);

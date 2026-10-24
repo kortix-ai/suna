@@ -523,6 +523,8 @@ function triggerSchema(version: 1 | 2): JsonSchemaFragment {
       source: NON_BLANK_STRING,
       event: NON_BLANK_STRING,
       config: { type: 'object' },
+      // `type: app` only — the slug of the App whose events fire the trigger.
+      app: { type: 'string', pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$' },
     },
     additionalProperties: true,
     allOf: [
@@ -589,13 +591,28 @@ function triggerSchema(version: 1 | 2): JsonSchemaFragment {
         },
       },
       {
+        // An app trigger names its App and carries no other type's wiring.
+        if: { properties: { type: { const: 'app' } } },
+        then: {
+          required: ['app'],
+          properties: Object.fromEntries(
+            [...EVENT_FORBIDDEN_KEYS, 'connector', 'account', 'source', 'event', 'config'].map((k) => [k, false]),
+          ),
+        },
+      },
+      {
+        // `app` exists only on an app trigger.
+        if: { properties: { type: { enum: ['cron', 'webhook', 'monitor', 'event'] } }, required: ['type'] },
+        then: { properties: { app: false } },
+      },
+      {
         // The event fields exist only on an event trigger.
-        if: { properties: { type: { enum: ['cron', 'webhook', 'monitor'] } }, required: ['type'] },
+        if: { properties: { type: { enum: ['cron', 'webhook', 'monitor', 'app'] } }, required: ['type'] },
         then: { properties: { connector: false, account: false, source: false, event: false, config: false } },
       },
       {
         // The misfire bound exists only on a cron trigger.
-        if: { properties: { type: { enum: ['webhook', 'monitor', 'event'] } }, required: ['type'] },
+        if: { properties: { type: { enum: ['webhook', 'monitor', 'event', 'app'] } }, required: ['type'] },
         then: { properties: { max_lateness: false } },
       },
       {

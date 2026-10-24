@@ -1377,6 +1377,38 @@ function validateEventTrigger(
   }
 }
 
+/**
+ * `type: app` — "when App <app> emits an event, run the agent". The App decides
+ * when and why it emits (a poll, a webhook it received, a timer); Kortix only
+ * delivers. `app` names an App slug of this project. Narrow by event name with
+ * the generic `filter` (`event.name`).
+ *
+ * MUST stay in sync with `parseTriggerEntry`'s app branch (apps/api) and
+ * `triggerSchema` in ./json-schema.ts.
+ */
+function validateAppTrigger(
+  entry: Record<string, unknown>,
+  where: string,
+  issues: ManifestIssue[],
+): void {
+  if (typeof entry.app !== 'string' || !APP_SLUG_RE.test(entry.app.trim())) {
+    issues.push({
+      path: `${where}.app`,
+      message: 'app triggers must declare `app`: the slug of an App in this project.',
+      severity: 'error',
+    });
+  }
+  for (const key of EVENT_FORBIDDEN_KEYS) {
+    if (entry[key] !== undefined) {
+      issues.push({
+        path: `${where}.${key}`,
+        message: 'is not valid on an app trigger — the App decides when to emit.',
+        severity: 'error',
+      });
+    }
+  }
+}
+
 export function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
@@ -1555,6 +1587,15 @@ export function validateTriggers(node: unknown, path: string, issues: ManifestIs
       validateMonitorTrigger(entry, where, issues);
     } else if (type === 'event') {
       validateEventTrigger(entry, where, issues);
+    } else if (type === 'app') {
+      validateAppTrigger(entry, where, issues);
+    }
+    if (type && type !== 'app' && entry.app !== undefined) {
+      issues.push({
+        path: `${where}.app`,
+        message: `is only valid on an app trigger (type is "${type}").`,
+        severity: 'error',
+      });
     }
     if (type && type !== 'event' && (TRIGGER_TYPES as readonly string[]).includes(type)) {
       for (const key of ['connector', 'account', 'source', 'event', 'config']) {

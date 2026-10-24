@@ -432,6 +432,44 @@ channels:
     input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: HOOK_SECRET\n    prompt: go\n    filter:\n      body.pr: { exists: yes please }\n',
   },
 
+  // ─── shared sections: triggers type = "app" ───────────────────────────
+  {
+    name: 'app: an App slug is valid',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: app\n    app: bank-replies\n    filter: { event.name: reply.received }\n    prompt: go\n',
+  },
+  {
+    name: 'app: missing app is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: app\n    prompt: go\n',
+  },
+  {
+    name: 'app: an invalid App slug is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: app\n    app: Bank_Replies\n    prompt: go\n',
+  },
+  {
+    name: 'app: cron key on app is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: app\n    app: bank-replies\n    cron: \"0 9 * * *\"\n    prompt: go\n',
+  },
+  {
+    name: 'app: event key on app is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: app\n    app: bank-replies\n    event: X\n    prompt: go\n',
+  },
+  {
+    name: 'app: app key on a cron trigger is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: \"0 0 9 * * *\"\n    app: bank-replies\n    prompt: go\n',
+  },
+
   // ─── shared sections: triggers type = "event" ─────────────────────────
   {
     name: 'event: connector + event + config object is valid',

@@ -1,7 +1,7 @@
 import type { TriggerList } from '@kortix/api-contract';
-import { connectorConnections, connectors, projectTriggerRuntime } from '@kortix/db';
+import { apps, connectorConnections, connectors, projectTriggerRuntime } from '@kortix/db';
 import { type TriggerFilter, cronIntervalError, formatDurationSeconds, parseTriggerFilter } from '@kortix/manifest-schema';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { config } from '../../config';
 import { db } from '../../shared/db';
 import * as store from '../trigger-events/store';
@@ -12,7 +12,7 @@ import { streamSchedules } from '../trigger-events/poll-store';
 import { eventSourceAvailable } from '../trigger-events/registry';
 import { ensureProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { nextTriggerScheduleSlot, validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';
-import { GIT_TRIGGER_SESSION_MODES, type GitMonitorMode, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseMaxLateness, parseOverlap, parseRunCaps, parseEventFields, parseMonitorFields, readManifest, triggerSpecToTomlEntry } from '../triggers';
+import { GIT_TRIGGER_SESSION_MODES, type GitMonitorMode, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseMaxLateness, parseOverlap, parseRunCaps, parseAppField, parseEventFields, parseMonitorFields, readManifest, triggerSpecToTomlEntry } from '../triggers';
 import { PRIVATE_TRIGGER_SESSION_ACCESS, loadTriggerSessionAccessMap } from '../trigger-session-access';
 import { withProjectGitAuth } from './git';
 import { type ProjectRow, deriveKortixApiRoot, normalizeBoolean, normalizeString } from './serializers';
@@ -29,6 +29,16 @@ export function buildPublicWebhookUrl(projectId: string, slug: string): string {
 // ── Git-backed trigger CRUD helpers ─────────────────────────────────────────
 
 /** Builds the GET-listing response shape (specs + runtime + errors). */
+
+/** An app trigger's `app` must name a live App of the project, or the error to answer. */
+export async function validateAppTriggerTarget(projectId: string, app: string): Promise<string | null> {
+  const [row] = await db
+    .select({ appId: apps.appId })
+    .from(apps)
+    .where(and(eq(apps.projectId, projectId), eq(apps.slug, app), isNull(apps.deletedAt)))
+    .limit(1);
+  return row ? null : `No App "${app}" in this project. Create or deploy it first: kortix apps deploy ${app}`;
+}
 
 export async function loadTriggersForResponse(
   projectId: string,
@@ -100,6 +110,7 @@ export async function loadTriggersForResponse(
       mode: spec.monitorMode,
       interval_seconds: spec.intervalSeconds,
       expect_event_within_seconds: spec.expectEventWithinSeconds,
+      app: spec.app ?? null,
       event: spec.event
         ? {
             connector: spec.event.connector,
@@ -245,6 +256,8 @@ export interface TriggerDraft {
   overlap?: 'skip' | 'allow';
   /** For type=event only — connector, optional source adapter, the adapter's event type and event config. */
   event?: GitTriggerEventFields | null;
+  /** For type=app only — the slug of the App whose events fire the trigger. */
+  app?: string | null;
   sessionMode: GitTriggerSessionMode;
   /** For sessionMode === 'pinned' only: the exact session id to loop. */
   pinnedSessionId: string | null;
@@ -269,13 +282,16 @@ export function parseTriggerDraft(
 
   const typeRaw = normalizeString(body.type);
   const type: GitTriggerType | null =
-    typeRaw === 'webhook' || typeRaw === 'cron' || typeRaw === 'monitor' || typeRaw === 'event'
+    typeRaw === 'webhook' || typeRaw === 'cron' || typeRaw === 'monitor' || typeRaw === 'event' || typeRaw === 'app'
       ? typeRaw
       : null;
-  if (!type) return { error: 'type must be "cron", "webhook", "monitor", or "event"' };
+  if (!type) return { error: 'type must be "cron", "webhook", "monitor", "event", or "app"' };
   if (type !== 'event') {
     const bad = eventOnlyKeyError(body, 'event_config', type);
     if (bad) return { error: bad };
+  }
+  if (type !== 'app' && body.app !== undefined && body.app !== null) {
+    return { error: `app is only valid on an app trigger (type is "${type}")` };
   }
 
   const promptTemplate = normalizeString(
@@ -305,6 +321,8 @@ export function parseTriggerDraft(
   const draft =
     type === 'event'
       ? parseEventDraft(body, common)
+      : type === 'app'
+        ? parseAppDraft(body, common)
       : type === 'monitor'
         ? parseMonitorDraft(body, common)
         : type === 'cron'
@@ -370,6 +388,24 @@ function parseEventDraft(body: Record<string, unknown>, common: DraftCommon): Tr
     intervalSeconds: null,
     expectEventWithinSeconds: null,
     event,
+  };
+}
+
+function parseAppDraft(body: Record<string, unknown>, common: DraftCommon): TriggerDraft | { error: string } {
+  const parsed = parseAppField(body);
+  if ('error' in parsed) return parsed;
+  return {
+    ...common,
+    type: 'app',
+    cron: null,
+    runAt: null,
+    timezone: 'UTC',
+    secretEnv: null,
+    run: null,
+    monitorMode: null,
+    intervalSeconds: null,
+    expectEventWithinSeconds: null,
+    app: parsed.app,
   };
 }
 
@@ -458,7 +494,7 @@ function parseWebhookDraft(body: Record<string, unknown>, common: DraftCommon): 
 
 export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
   // Monitor and event triggers reject cron wiring outright.
-  const noCronWiring = spec.type === 'monitor' || spec.type === 'event';
+  const noCronWiring = spec.type === 'monitor' || spec.type === 'event' || spec.type === 'app';
   return {
     slug: spec.slug,
     name: spec.name,
@@ -498,6 +534,7 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
     ...(spec.event
       ? { connector: spec.event.connector, event_account: spec.event.account ?? null, event_source: spec.event.source ?? null, event: spec.event.type, event_config: spec.event.config }
       : {}),
+    ...(spec.type === 'app' ? { app: spec.app ?? null } : {}),
   };
 }
 
@@ -540,6 +577,7 @@ export function draftToSpec(
     ...(draft.maxRunsPerDay ? { maxRunsPerDay: draft.maxRunsPerDay } : {}),
     ...(draft.overlap ? { overlap: draft.overlap } : {}),
     event: draft.event,
+    ...(draft.type === 'app' ? { app: draft.app ?? null } : {}),
     sessionMode: draft.sessionMode,
     pinnedSessionId: draft.pinnedSessionId,
     sessionKey: draft.sessionKey,

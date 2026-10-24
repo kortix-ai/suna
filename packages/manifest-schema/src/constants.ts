@@ -89,7 +89,7 @@ export function reservedEnvNameReason(name: string): string | null {
   return null;
 }
 
-export const TRIGGER_TYPES = ['cron', 'webhook', 'monitor', 'event'] as const;
+export const TRIGGER_TYPES = ['cron', 'webhook', 'monitor', 'event', 'app'] as const;
 
 /** Cron/webhook/monitor-only keys: hard-rejected on a `type: event` trigger. */
 export const EVENT_FORBIDDEN_KEYS = [

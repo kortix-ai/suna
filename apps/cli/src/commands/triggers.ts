@@ -43,7 +43,7 @@ import { parsePayloadFlag, triggersDryRun, triggersReplay, triggersRuns } from '
 const HELP = help`Usage: kortix triggers <subcommand> [options]
 
 Manage the [[triggers]] declared in your project's kortix.yaml — cron
-schedules, webhooks, monitors, and app events. add/rm/enable/disable edit the LOCAL
+schedules, webhooks, monitors, connector events, and App events. add/rm/enable/disable edit the LOCAL
 manifest (the source of truth); \`kortix ship\` applies them. When kortix.yaml
 lists \`imports:\`, rm/enable/disable edit the file that declares the trigger;
 add writes to kortix.yaml. ls/fire/info
@@ -51,13 +51,13 @@ read live state from the cloud. pause/resume are a SERVER-SIDE activation
 switch (cloud state, not the manifest).
 
 Subcommands:
-  ls [--type <cron|webhook|event|monitor>] [--connector <slug>] [--json]
+  ls [--type <cron|webhook|event|monitor|app>] [--connector <slug>] [--json]
                            List triggers + runtime state. --type keeps one
                            kind; --type event groups the rows by app.
                            --connector keeps the app events on one connector
                            (profile). The two combine. --json respects both.
                            All app events: \`kortix triggers ls --type event\`.
-  add <slug> [options]     Append a [[triggers]] block (cron, webhook, monitor, event).
+  add <slug> [options]     Append a [[triggers]] block (cron, webhook, monitor, event, app).
              [--apply]     Create it on the cloud project now instead (commit
                            to kortix.yaml on main + reconcile).
   set <slug> [options]     Change a LIVE trigger. Only the flags you pass are
@@ -203,6 +203,15 @@ A manual \`fire\` is never held, but it counts.
                            cron, allow for the others. On \`set\`, \`default\`
                            resets it.
 
+App options (--type app). The App decides when to fire: it POSTs events to
+$KORTIX_APP_EVENTS_URL with $KORTIX_APP_TOKEN (every App machine has both).
+  --app <slug>             The App whose events fire the trigger (required).
+                           The prompt reads {{ event.name }} and
+                           {{ event.data.<field> }}; narrow with
+                           --filter event.name=<name> (live add).
+App triggers take none of --cron, --run-at, --timezone, --secret-env, the
+monitor options, or the event options.
+
 Monitor options (--type monitor). A monitor is a repo command the platform
 runs 24/7; each stdout line fires the trigger. EXPERIMENTAL — the platform
 runs monitors only where the \`monitors\` feature flag is on.
@@ -273,6 +282,8 @@ export async function runTriggers(argv: string[]): Promise<number> {
     apps = takeFlagBool(rest, ['--apps']);
     tf.connector = takeFlagValue(rest, ['--connector']);
     eventsApp = takeFlagValue(rest, ['--app']);
+    // `--app` names the App of a `--type app` trigger, and the app of `triggers events --app`.
+    tf.app = eventsApp;
     tf.account = takeFlagValue(rest, ['--account']);
     tf.source = takeFlagValue(rest, ['--source']);
     if (takeFlagBool(rest, ['--default-account'])) tf.defaultAccount = '1';
@@ -749,6 +760,8 @@ async function triggersInfo(
     if (t.expect_event_within_seconds !== null && t.expect_event_within_seconds !== undefined) {
       rows.push(['expect_event_within', formatDurationSeconds(t.expect_event_within_seconds)]);
     }
+  } else if (t.type === 'app') {
+    rows.push(['app', t.app ?? '—']);
   } else if (t.type === 'event') {
     const e = t.event;
     rows.push(['connector', e ? `${e.connector}${e.app ? ` (${e.app})` : ''}` : '—']);
@@ -818,6 +831,7 @@ function triggerDetail(t: ProjectTrigger): string {
       ? `${mode} ${formatDurationSeconds(t.interval_seconds)}`
       : mode;
   }
+  if (t.type === 'app') return `app=${t.app ?? '?'}`;
   if (t.type === 'event') {
     if (!t.event) return '?';
     // The source shows only when it is not the connector's own provider (a mismatch).

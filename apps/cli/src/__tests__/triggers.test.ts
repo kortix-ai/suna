@@ -950,7 +950,7 @@ describe('kortix triggers — events', () => {
 
   test('help documents the event type and its flags', async () => {
     const result = await runCli(['triggers', '--help']);
-    for (const fragment of ['monitors, and app events', '--connector <slug>', '--account <label>', '--source <adapter>', '--default-account', '--event <TYPE>', '--config <key=value>', '--config-json <json>', 'events --connector <slug>', 'event.data.<field>']) {
+    for (const fragment of ['monitors, connector events, and App events', '--connector <slug>', '--account <label>', '--source <adapter>', '--default-account', '--event <TYPE>', '--config <key=value>', '--config-json <json>', 'events --connector <slug>', 'event.data.<field>']) {
       expect(result.stdout).toContain(fragment);
     }
   });
@@ -1033,10 +1033,10 @@ describe('kortix triggers — events', () => {
     expect(json.stderr).toContain('JSON object');
   });
 
-  test('unknown --type names all four types', async () => {
+  test('unknown --type names all five types', async () => {
     const result = await runCli(['triggers', 'add', 'x', '--type', 'bogus', '--prompt', 'x']);
     expect(result.code).toBe(2);
-    expect(result.stderr).toContain('cron, webhook, monitor, or event');
+    expect(result.stderr).toContain('cron, webhook, monitor, event, or app');
   });
 
   test('events prints the table and config fields; --json prints the raw response', async () => {
@@ -1784,5 +1784,46 @@ describe('kortix triggers add --apply — the webhook-secret 409 and the signing
     expect(result.stdout).toContain(WEBHOOK_URL);
     expect(result.stdout).toContain('X-Kortix-Signature');
     expect(result.stdout).toContain('triggers info dogfood-hook');
+  });
+});
+
+describe('kortix triggers — app triggers', () => {
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'kortix-triggers-'));
+    process.env = { ...ORIGINAL_ENV };
+    writeManifest();
+    config = writeConfig('http://127.0.0.1:1');
+  });
+
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  test('help documents the app type and --app', async () => {
+    const result = await runCli(['triggers', '--help']);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('App options (--type app)');
+    expect(result.stdout).toContain('$KORTIX_APP_EVENTS_URL');
+  });
+
+  test('add writes an app trigger block to kortix.yaml', async () => {
+    const result = await runCli(['triggers', 'add', 'bank-reply', '--type', 'app', '--app', 'bank-replies', '--prompt', 'Reply: {{ event.data.subject }}']);
+    expect(result.code).toBe(0);
+    const text = manifestText();
+    expect(text).toContain('type: app');
+    expect(text).toContain('app: bank-replies');
+    expect(text).not.toContain('cron:');
+    expect(text).not.toContain('timezone:');
+  });
+
+  test('add refuses an app trigger without --app, with --cron, and --app on a cron trigger', async () => {
+    const noApp = await runCli(['triggers', 'add', 'a', '--type', 'app', '--prompt', 'x']);
+    expect([noApp.code, noApp.stderr.includes('app triggers need --app <slug>')]).toEqual([2, true]);
+    const withCron = await runCli(['triggers', 'add', 'b', '--type', 'app', '--app', 'w', '--cron', '0 0 9 * * *', '--prompt', 'x']);
+    expect([withCron.code, withCron.stderr.includes('--cron is not valid on an app trigger')]).toEqual([2, true]);
+    const cronWithApp = await runCli(['triggers', 'add', 'c', '--type', 'cron', '--cron', '0 0 9 * * *', '--app', 'w', '--prompt', 'x']);
+    expect([cronWithApp.code, cronWithApp.stderr.includes('--app is only valid on an app trigger')]).toEqual([2, true]);
+    expect(manifestText()).not.toContain('slug: a');
   });
 });

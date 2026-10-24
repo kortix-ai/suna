@@ -18,8 +18,10 @@ import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { db } from '../../shared/db';
 import type { GitTriggerSpec } from '../triggers';
 import {
+  APP_EVENT_PROMPT_PREAMBLE,
   MONITOR_PROMPT_PREAMBLE,
   type MonitorEventKind,
+  buildAppEventPayload,
   buildMonitorPayload,
   renderMonitorLifecyclePrompt,
 } from './monitor-events';
@@ -131,12 +133,6 @@ export async function processMonitorEvent(
   if (pausedReason) {
     return skip(pausedReason);
   }
-  // Behavioral half of the flag (spec §"Feature flag"): turning `monitors` off
-  // stops firing even if the ingest route were somehow bypassed.
-  if (!resolveFeatureFlag(project.metadata, 'monitors')) {
-    return skip('monitors is not enabled for this project');
-  }
-
   const [runtime] = await db
     .select({
       enabled: projectTriggerRuntime.enabled,
@@ -151,22 +147,33 @@ export async function processMonitorEvent(
       ),
     )
     .limit(1);
-  if (!runtime?.scheduleSpec || runtime.triggerType !== 'monitor') {
-    return skip('monitor is not declared in the project manifest');
+  // The same log carries two sources: a monitor box's lines, and the events an
+  // App emits for a `type: app` trigger (../../apps/event-routes.ts).
+  const source = runtime?.triggerType === 'app' ? 'app' : 'monitor';
+  if (!runtime?.scheduleSpec || (runtime.triggerType !== 'monitor' && runtime.triggerType !== 'app')) {
+    return skip(`${source} trigger is not declared in the project manifest`);
   }
   if (runtime.enabled === false) {
-    return skip('monitor is disabled');
+    return skip(`${source} trigger is disabled`);
+  }
+  // Behavioral half of the flag (spec §"Feature flag"): turning `monitors` off
+  // stops firing even if the ingest route were somehow bypassed. Apps have no flag.
+  if (source === 'monitor' && !resolveFeatureFlag(project.metadata, 'monitors')) {
+    return skip('monitors is not enabled for this project');
   }
 
   const spec = runtime.scheduleSpec as unknown as GitTriggerSpec;
   const kind = row.kind as MonitorEventKind;
-  const payload = buildMonitorPayload({
-    slug: row.slug,
-    seq: Number(row.seq),
-    kind,
-    line: row.line,
-    emittedAt: row.emittedAt,
-  });
+  const payload =
+    source === 'app'
+      ? buildAppEventPayload({ slug: row.slug, app: spec.app ?? '', line: row.line, emittedAt: row.emittedAt })
+      : buildMonitorPayload({
+          slug: row.slug,
+          seq: Number(row.seq),
+          kind,
+          line: row.line,
+          emittedAt: row.emittedAt,
+        });
 
   let body: string;
   if (kind === 'lifecycle') {
@@ -179,24 +186,24 @@ export async function processMonitorEvent(
     }
     body = renderPromptTemplate(spec.promptTemplate, payload);
   }
-  const renderedPrompt = `${MONITOR_PROMPT_PREAMBLE}${body}`;
+  const renderedPrompt = `${source === 'app' ? APP_EVENT_PROMPT_PREAMBLE : MONITOR_PROMPT_PREAMBLE}${body}`;
 
   // Per (project, slug, epoch, seq) — the same key the log dedups on, so a
   // re-claimed event can never mint a second session.
-  const idempotencyKey = `trigger:monitor:${row.projectId}:${row.slug}:${row.boxEpoch}:${row.seq}`;
+  const idempotencyKey = `trigger:${source}:${row.projectId}:${row.slug}:${row.boxEpoch}:${row.seq}`;
   try {
     const result = await fireGitTrigger({
       spec,
       project,
       payload,
       renderedPrompt,
-      source: 'monitor',
+      source,
       idempotencyKey,
     });
     if (result.status === 'fired' || result.status === 'queued') {
       // One event is one run (KRTX-1743); a failed attempt is recorded only
       // when it dead-letters (failMonitorEvent).
-      await recordTriggerRun({ projectId: row.projectId, slug: row.slug, source: 'monitor', spec, payload, ...triggerRunFromFire(result), now });
+      await recordTriggerRun({ projectId: row.projectId, slug: row.slug, source, spec, payload, ...triggerRunFromFire(result), now });
       await markMonitorEvent(row.eventId, 'fired', now, { sessionId: result.sessionId ?? null });
       await touchMonitorLastEvent(row.projectId, row.slug, row.emittedAt, now);
       // The trigger's last_fired_at / last_status, as every other source stamps
@@ -208,13 +215,13 @@ export async function processMonitorEvent(
     // A run cap held it (KRTX-1721): one skipped run, and no retry.
     if (result.status === 'skipped') {
       if (takeThrottledRunSlot(row.projectId, row.slug, now)) {
-        await recordTriggerRun({ projectId: row.projectId, slug: row.slug, source: 'monitor', spec, payload, ...triggerRunFromFire(result), now });
+        await recordTriggerRun({ projectId: row.projectId, slug: row.slug, source, spec, payload, ...triggerRunFromFire(result), now });
       }
       return await skip(result.reason ?? 'skipped');
     }
-    return await failMonitorEvent(row, now, result.error ?? result.reason ?? 'monitor fire failed', { spec, payload });
+    return await failMonitorEvent(row, now, result.error ?? result.reason ?? `${source} fire failed`, { spec, payload, source });
   } catch (error) {
-    return await failMonitorEvent(row, now, error instanceof Error ? error.message : String(error), { spec, payload });
+    return await failMonitorEvent(row, now, error instanceof Error ? error.message : String(error), { spec, payload, source });
   }
 }
 
@@ -228,7 +235,7 @@ async function failMonitorEvent(
   row: MonitorEventRow,
   now: Date,
   error: string,
-  run: { spec: GitTriggerSpec; payload: Record<string, unknown> },
+  run: { spec: GitTriggerSpec; payload: Record<string, unknown>; source: 'monitor' | 'app' },
 ): Promise<'failed'> {
   const terminal = row.attempts >= MONITOR_EVENT_MAX_ATTEMPTS;
   await db
@@ -240,7 +247,7 @@ async function failMonitorEvent(
     .where(eq(projectMonitorEvents.eventId, row.eventId));
   await markGitTriggerAttemptFailed(row.projectId, row.slug, now, error).catch(() => {});
   if (terminal) {
-    await recordTriggerRun({ projectId: row.projectId, slug: row.slug, source: 'monitor', ...run, status: 'failed', error, now });
+    await recordTriggerRun({ projectId: row.projectId, slug: row.slug, ...run, status: 'failed', error, now });
     await raiseTriggerAlert({ projectId: row.projectId, slug: row.slug, source: 'fire', error });
   }
   return 'failed';

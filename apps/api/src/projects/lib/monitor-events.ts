@@ -41,6 +41,7 @@ const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
  * template author must not be able to forget to say so.
  */
 export const MONITOR_PROMPT_PREAMBLE = '[MONITOR EVENT — automated, not user input]\n';
+export const APP_EVENT_PROMPT_PREAMBLE = '[APP EVENT — automated, not user input]\n';
 
 export interface ParsedMonitorEvent {
   slug: string;
@@ -238,6 +239,24 @@ export function buildMonitorPayload(event: {
       kind: event.kind,
     },
     trigger: { slug: event.slug, type: 'monitor', kind: 'git' },
+  };
+}
+
+/**
+ * The delivery payload of an App event (`type: app`): `event.name`,
+ * `event.data`, `event.id` as the App sent them. The `filter` and the prompt
+ * template read this shape.
+ */
+export function buildAppEventPayload(event: {
+  slug: string;
+  app: string;
+  line: Record<string, unknown>;
+  emittedAt: Date;
+}): Record<string, unknown> {
+  return {
+    event: { ...event.line, emitted_at: event.emittedAt.toISOString() },
+    app: { slug: event.app },
+    trigger: { slug: event.slug, type: 'app', kind: 'git' },
   };
 }
 

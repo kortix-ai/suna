@@ -685,3 +685,15 @@ test('list preserves the exact cron occurrence separately from scheduled executi
   expect(result.triggers[0]?.next_cron_at).toBe('2026-10-10T09:00:00.000Z');
   expect(result.triggers[0]?.next_fire_at).toBe('2026-10-10T09:15:00.000Z');
 });
+
+test('createProjectTrigger sends a type app trigger; the listing reads its app', async () => {
+  const input: CreateProjectTriggerInput = { name: 'Bank reply', type: 'app', app: 'bank-replies', prompt_template: 'Reply: {{ event.data.subject }}' };
+  await createProjectTrigger('P1', input);
+  expect(last()).toMatchObject({ url: 'http://test.local/projects/P1/triggers', method: 'POST', body: { type: 'app', app: 'bank-replies' } });
+
+  nextResponse = { status: 200, body: { triggers: [{ ...MONITOR_WIRE_ENTRY, type: 'app', run: null, mode: null, app: 'bank-replies' }], errors: [] } };
+  const listing = await listProjectTriggers('P1');
+  const trigger: ProjectTrigger = listing.triggers[0]!;
+  const type: ProjectTriggerType = trigger.type;
+  expect([type, trigger.app]).toEqual(['app', 'bank-replies']);
+});

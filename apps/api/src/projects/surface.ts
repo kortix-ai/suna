@@ -64,6 +64,8 @@ export { approvalTargetSession, expireDueApprovals } from './lib/connector-appro
 export { projectsApp } from './lib/app';
 export { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
 export { listResolvedProjectSecrets } from './secrets';
+// App events (`type: app` triggers): apps/event-routes.ts appends through these.
+export { ingestAppEvents, parseAppEventsBody, type AppEventInput } from './lib/app-events';
 export { currentInstanceId } from './instance-scope';
 
 // What account erasure deletes outside the database (consumed by

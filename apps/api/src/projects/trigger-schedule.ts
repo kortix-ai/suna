@@ -6,7 +6,7 @@ export interface TriggerScheduleSpec {
   slug: string;
   /** `monitor` never schedules — `nextTriggerScheduleSlot` returns null for it,
    *  so the cron sweep's `trigger_type = 'cron'` claim can never see one. */
-  type: 'cron' | 'webhook' | 'monitor' | 'event';
+  type: 'cron' | 'webhook' | 'monitor' | 'event' | 'app';
   enabled: boolean;
   cron: string | null;
   runAt: string | null;
@@ -25,6 +25,8 @@ export interface TriggerScheduleSpec {
   expectEventWithinSeconds?: number | null;
   /** type=event only — see GitTriggerSpec. Absent for every other type. */
   event?: { connector: string; account?: string | null; source?: string | null; type: string; config: Record<string, unknown> } | null;
+  /** type=app only — see GitTriggerSpec.app. */
+  app?: string | null;
   /** Session reminder only — see GitTriggerSpec.reminder. */
   reminder?: { everySeconds: number | null } | null;
   /** type=cron only — see GitTriggerSpec.maxLatenessSeconds. */
@@ -98,6 +100,7 @@ export function triggerScheduleRevision(spec: TriggerScheduleSpec): string {
     // Same rule again: event fields join the hash only for an event trigger.
     // `source` joins the event only when set, so earlier event revisions stay put.
     ...(spec.type === 'event' ? { event: spec.event ? withSourceIfSet(spec.event) : null } : {}),
+    ...(spec.type === 'app' ? { app: spec.app ?? null } : {}),
     // Same rule as the monitor fields: absent for every manifest trigger.
     ...(spec.reminder ? { reminderEverySeconds: spec.reminder.everySeconds } : {}),
     // Joins only when set: the claim reads it from the stored spec, which is

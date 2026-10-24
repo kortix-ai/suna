@@ -138,6 +138,24 @@ export function eventOnlyKeyError(
   return null;
 }
 
+const APP_SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+/**
+ * The `type: app` field: the slug of the App whose events fire the trigger.
+ * Every other type's wiring is a hard error. Mirrors `@kortix/manifest-schema`'s
+ * `validateAppTrigger`.
+ */
+export function parseAppField(row: Record<string, unknown>): { app: string } | { error: string } {
+  const app = typeof row.app === 'string' ? row.app.trim() : '';
+  if (!APP_SLUG_RE.test(app)) return { error: 'app triggers must declare `app`: the slug of an App in this project' };
+  for (const key of EVENT_FORBIDDEN_KEYS) {
+    if (row[key] !== undefined && row[key] !== null) {
+      return { error: `${key} is not valid on an app trigger — the App decides when to emit` };
+    }
+  }
+  return { app };
+}
+
 /**
  * A cron trigger's `max_lateness` (KRTX-1743): the misfire bound. Absent → `{}`,
  * so a spec without it keeps its shape and schedule revision. Mirrors
@@ -399,6 +417,8 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
     if (spec.event.source) entry.source = spec.event.source;
     entry.event = spec.event.type;
     if (Object.keys(spec.event.config).length > 0) entry.config = spec.event.config;
+  } else if (spec.type === 'app' && spec.app) {
+    entry.app = spec.app;
   } else if (spec.secretEnv) {
     entry.secret_env = spec.secretEnv;
   }
@@ -442,11 +462,12 @@ function parseTriggerEntry(
     typeRaw !== 'cron' &&
     typeRaw !== 'webhook' &&
     typeRaw !== 'monitor' &&
-    typeRaw !== 'event'
+    typeRaw !== 'event' &&
+    typeRaw !== 'app'
   ) {
     return err(
       slug,
-      `type must be "cron", "webhook", "monitor", or "event" (got "${typeRaw || 'unset'}")`,
+      `type must be "cron", "webhook", "monitor", "event", or "app" (got "${typeRaw || 'unset'}")`,
     );
   }
   const type = typeRaw as GitTriggerType;
@@ -459,6 +480,9 @@ function parseTriggerEntry(
   if (type !== 'event') {
     const bad = eventOnlyKeyError(row, 'config', type);
     if (bad) return err(slug, bad);
+  }
+  if (type !== 'app' && row.app !== undefined && row.app !== null) {
+    return err(slug, `app is only valid on an app trigger (type is "${type}")`);
   }
 
   const prompt =
@@ -562,6 +586,27 @@ function parseTriggerEntry(
     ...caps,
     ...overlap,
   };
+
+  if (type === 'app') {
+    const parsed = parseAppField(row);
+    if ('error' in parsed) return err(slug, parsed.error);
+    return {
+      ok: true,
+      spec: {
+        ...base,
+        type: 'app',
+        cron: null,
+        runAt: null,
+        timezone: 'UTC',
+        secretEnv: null,
+        run: null,
+        monitorMode: null,
+        intervalSeconds: null,
+        expectEventWithinSeconds: null,
+        app: parsed.app,
+      },
+    };
+  }
 
   if (type === 'event') {
     const event = parseEventFields(row, 'config');

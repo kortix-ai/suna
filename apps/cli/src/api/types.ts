@@ -311,7 +311,7 @@ export interface ProjectTrigger {
   slug: string;
   path: string;
   name: string;
-  type: 'cron' | 'webhook' | 'monitor' | 'event';
+  type: 'cron' | 'webhook' | 'monitor' | 'event' | 'app';
   agent: string;
   enabled: boolean;
   cron: string | null;
@@ -327,6 +327,8 @@ export interface ProjectTrigger {
   interval_seconds: number | null;
   /** monitor only — the silence watchdog in whole seconds. */
   expect_event_within_seconds: number | null;
+  /** type=app only: the App whose events fire the trigger. */
+  app?: string | null;
   /** type=event only; null for every other type. */
   event?: ProjectTriggerEvent | null;
   prompt_template: string;

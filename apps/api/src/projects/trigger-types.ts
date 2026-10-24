@@ -1,6 +1,6 @@
 import type { ManifestFormat, ResolvedManifest, TriggerFilter } from '@kortix/manifest-schema';
 
-export type GitTriggerType = 'cron' | 'webhook' | 'monitor' | 'event';
+export type GitTriggerType = 'cron' | 'webhook' | 'monitor' | 'event' | 'app';
 
 /** For type=monitor only — how the platform runs `run`. */
 export type GitMonitorMode = 'poll' | 'stream';
@@ -102,6 +102,8 @@ export interface GitTriggerSpec {
   expectEventWithinSeconds: number | null;
   /** For type=event only. Absent (or null) for every other type — parsed non-event specs omit it so existing spec shapes are unchanged. */
   event?: GitTriggerEventFields | null;
+  /** For type=app only: the slug of the App whose emitted events fire this trigger. Absent for every other type. */
+  app?: string | null;
   /**
    * Session reuse policy.
    * - `'fresh'` (default): every fire mints a brand-new session (new sandbox +

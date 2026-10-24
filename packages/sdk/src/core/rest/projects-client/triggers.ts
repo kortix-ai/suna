@@ -1,4 +1,4 @@
-// Triggers — cron/webhook/monitor triggers defined in the project manifest.
+// Triggers — cron/webhook/monitor/event/app triggers defined in the project manifest.
 
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
@@ -11,7 +11,7 @@ import { unwrap } from './shared';
 // in `project_trigger_runtime` so a fire doesn't amplify into a git commit.
 // ---------------------------------------------------------------------------
 
-export type ProjectTriggerType = 'cron' | 'webhook' | 'monitor' | 'event';
+export type ProjectTriggerType = 'cron' | 'webhook' | 'monitor' | 'event' | 'app';
 
 /**
  * How the platform runs a `type: monitor` trigger's `run` command:
@@ -126,6 +126,8 @@ export interface ProjectTrigger {
   expect_event_within_seconds: number | null;
   /** For type='event' only — see {@link ProjectTriggerEvent}. Null otherwise. */
   event: ProjectTriggerEvent | null;
+  /** For type='app' only — the slug of the App whose emitted events fire this trigger. Null or absent otherwise. */
+  app?: string | null;
   prompt_template: string;
   /** Session strategy — see {@link ProjectTriggerSessionMode}. */
   session_mode: ProjectTriggerSessionMode;
@@ -255,6 +257,8 @@ export interface CreateProjectTriggerInput {
   interval?: string;
   /** For type='monitor'. Silence watchdog as a duration literal; floor 5m. */
   expect_event_within?: string;
+  /** Required for type='app'. Slug of the App whose events fire the trigger; the App must exist. */
+  app?: string;
   /** Required for type='event'. Connector slug the event happens on. */
   connector?: string;
   /** For type='event'. Label of one shared account of the connector; omit or null for the connector default. */
@@ -314,6 +318,8 @@ export interface UpdateProjectTriggerInput {
   interval?: string | null;
   /** For type='monitor'. Duration literal, floor 5m. null clears the watchdog. */
   expect_event_within?: string | null;
+  /** For type='app'. Slug of the App whose events fire the trigger. */
+  app?: string;
   /** For type='event'. Connector slug. Changing it clears the account unless `event_account` is sent. */
   connector?: string;
   /** For type='event'. Label of one shared account of the connector; null clears it to the connector default. */
@@ -458,7 +464,7 @@ export interface ProjectTriggerDryRunResult {
 }
 
 /** What fired a run. */
-export type ProjectTriggerRunSource = 'cron' | 'webhook' | 'manual' | 'monitor' | 'reminder' | 'event';
+export type ProjectTriggerRunSource = 'cron' | 'webhook' | 'manual' | 'monitor' | 'reminder' | 'event' | 'app';
 
 /**
  * A run's fire outcome. `fired` = a session was started or prompted;

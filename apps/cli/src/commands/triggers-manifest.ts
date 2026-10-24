@@ -300,6 +300,17 @@ function parseFlagDuration(
   return { seconds };
 }
 
+/**
+ * `--app` belongs to a `--type app` trigger, which needs it and takes no
+ * schedule or webhook wiring. Monitor and event flags are refused by their own checks.
+ */
+export function appFlagProblem(type: string, tf: Record<string, string | undefined>): string | null {
+  if (type !== 'app') return tf.app ? '--app is only valid on an app trigger (--type app).' : null;
+  if (!tf.app) return 'app triggers need --app <slug>: the App whose events fire the trigger.';
+  const stray = [['--cron', tf.cron], ['--run-at', tf.runAt], ['--timezone', tf.timezone], ['--secret-env', tf.secretEnv]].find(([, v]) => v !== undefined);
+  return stray ? `${stray[0]} is not valid on an app trigger: the App decides when to fire.` : null;
+}
+
 export async function triggersAddLocal(
   slug: string | undefined,
   tf: Record<string, string | undefined>,
@@ -308,14 +319,16 @@ export async function triggersAddLocal(
 ): Promise<number> {
   if (!slug) return missing('a trigger slug');
   const type = (tf.type ?? 'cron').toLowerCase();
-  if (type !== 'cron' && type !== 'webhook' && type !== 'monitor' && type !== 'event') {
-    return fail('--type must be cron, webhook, monitor, or event.');
+  if (type !== 'cron' && type !== 'webhook' && type !== 'monitor' && type !== 'event' && type !== 'app') {
+    return fail('--type must be cron, webhook, monitor, event, or app.');
   }
   if (!tf.prompt) return fail('--prompt is required.');
   if (type !== 'event') {
     const stray = strayEventFlag(tf);
     if (stray) return fail(stray);
   }
+  const appProblem = appFlagProblem(type, tf);
+  if (appProblem) return fail(appProblem);
   if (type === 'cron' && !tf.cron) {
     return fail('cron triggers need --cron "<6-field expr>".');
   }
@@ -379,6 +392,8 @@ export async function triggersAddLocal(
       if (monitor.expectEventWithinSeconds !== null) {
         fields.expect_event_within = formatDurationSeconds(monitor.expectEventWithinSeconds);
       }
+    } else if (type === 'app') {
+      fields.app = tf.app;
     } else if (type === 'event' && event) {
       fields.connector = event.connector;
       if (event.account) fields.account = event.account;
