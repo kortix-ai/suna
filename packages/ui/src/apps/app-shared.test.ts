@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import type { App } from '@kortix/sdk';
 import type { UiTranslator } from '../i18n';
-import { appStatus, appTabLabel, cardPreviewApp, childApps, gridApps, hiddenApps } from './app-shared';
+import { appStatus, appTabLabel, appTriggers, backgroundSummary, cardPreviewApp, childApps, gridApps, hiddenApps } from './app-shared';
 
 const t = { raw: (key: string) => key } as unknown as UiTranslator;
 const app = (overrides: Partial<App>): App => ({
@@ -65,4 +65,28 @@ test('a card shows its own preview, else its first tab the viewer may open, else
   expect(cardPreviewApp([backend, { ...dashboard, viewer_can_access: false }], backend)).toBeNull();
   expect(cardPreviewApp([backend, { ...dashboard, capabilities: [] }], backend)).toBeNull();
   expect(cardPreviewApp([backend], backend)).toBeNull();
+});
+
+test('appTriggers: the triggers that call an App (a target) and the ones its events start (type app)', () => {
+  const worker = app({ app_id: 'w', slug: 'inbox-poller' });
+  const t = (slug: string, extra: Record<string, unknown>) => ({ slug, name: slug, type: 'cron', enabled: true, ...extra }) as never;
+  const triggers = [
+    t('poll-inbox', { target: { app: 'inbox-poller', path: '/tick' } }),
+    t('handle-reply', { type: 'app', app: 'inbox-poller' }),
+    t('other', { target: { app: 'crm', path: '/' } }),
+    t('digest', {}),
+  ];
+  const links = appTriggers(worker, triggers);
+  expect(links.calledBy.map((row) => row.slug)).toEqual(['poll-inbox']);
+  expect(links.startsOn.map((row) => row.slug)).toEqual(['handle-reply']);
+});
+
+test('backgroundSummary counts running, asleep and not deployed Apps', () => {
+  const rows = [
+    app({ app_id: 'a', hosting_type: 'sandbox', desired_state: 'running' }),
+    app({ app_id: 'b', hosting_type: 'sandbox', desired_state: 'stopped' }),
+    app({ app_id: 'c', active_deployment_id: null, hosting_type: null }),
+    app({ app_id: 'd', active_deployment_id: null, hosting_type: null }),
+  ];
+  expect(backgroundSummary(rows)).toEqual({ running: 1, asleep: 1, undeployed: 2, external: 0 });
 });
