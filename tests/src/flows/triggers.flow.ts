@@ -2083,7 +2083,7 @@ flow(
       await setFlag(false);
       const listed = (await owner.get('/v1/projects/:projectId/triggers', { params })).json<{ triggers: EventTriggerRow[] }>();
       const row = listed.triggers.find((t) => t.slug === 'gated-mail');
-      if (row?.event?.status !== 'error' || !/Connector event triggers are off for this project/.test(row.event.error ?? '')) {
+      if (row?.event?.status !== 'error' || !/Composio event triggers are off for this project/.test(row.event.error ?? '')) {
         throw new Error(`expected status error with the off text — got ${JSON.stringify(row?.event)}`);
       }
       denied(await owner.patch('/v1/projects/:projectId/triggers/:slug', { name: 'Renamed' }, { params: { ...params, slug: 'gated-mail' } }));

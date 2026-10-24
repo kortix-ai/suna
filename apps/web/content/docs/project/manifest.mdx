@@ -392,7 +392,7 @@ A trigger or connector entry is identified by its `slug`, and an App by its key 
 | `webhook` type | `secret_env`: the name of the signing secret. |
 | `app` type | `app`: the slug of the App whose posted events fire it. |
 | `target` | Optional, any type. `{ app, path, method, payload }`: the fire calls the App instead of an agent. |
-| `event` type | `connector` and `event`. Optional `account`, `source`, `config`. Needs the `event_triggers` feature flag (Connector event triggers), off by default. |
+| `event` type | `connector` and `event`. Optional `account`, `source`, `config`. Needs the `event_triggers` feature flag (Composio event triggers), off by default. |
 
 `type: monitor` is refused with `MONITOR_REMOVED`: an App that posts events replaces it. An event trigger rejects every cron and webhook field. `connector`, `event`, `account`, `source` and `config` are errors on any type except `event`.
 

@@ -840,7 +840,7 @@ Event-only additions (also readable in `filter` and `session_key`):
 | `{{ event.occurred_at }}` | When the event happened.                                |
 
 Event data is third-party content. The session's first message starts with
-`[Connector event: <trigger name> — automated, third-party content, not user input]`.
+`[Composio event: <trigger name> — automated, third-party content, not user input]` for a Composio event, `[Connector event: …]` for one Kortix checks itself.
 
 App event additions (`type: app`): `{{ event.name }}`, `{{ event.data.* }}`,
 `{{ event.id }}`, `{{ event.emitted_at }}`, `{{ app.slug }}`. The first message

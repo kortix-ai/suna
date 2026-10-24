@@ -1252,7 +1252,7 @@
           "description": "Avvisa le persone a cui una sessione interessa (chi ha inviato il prompt, chi l’ha creata e chi la segue) con una casella con campanella, notifiche push del browser ed email, e segnala trigger e promemoria che falliscono. Disattivato: solo il telefono di chi ha creato la sessione riceve il suo push, e il telefono di un proprietario dell’account ne riceve uno quando un trigger inizia a fallire."
         },
         "event_triggers": {
-          "name": "Trigger di eventi dei connettori",
+          "name": "Trigger di eventi Composio",
           "description": "Avvia un agente quando succede qualcosa in un'app collegata: una nuova email, una pull request, un evento del calendario. Gli eventi arrivano da Composio. Kortix controlla anche da solo le tue app collegate."
         },
         "volumes": {
