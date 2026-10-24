@@ -79,7 +79,7 @@ export async function triggersAddLive(
   }
   if (!tf.prompt && !tf.targetApp) return fail('--prompt is required (or --target-app).');
   if (type !== 'event') {
-    const stray = strayEventFlag(tf);
+    const stray = strayEventFlag(tf, type);
     if (stray) return fail(stray);
   }
   const appProblem = appFlagProblem(type, tf) ?? scheduleFlagProblem(type, tf);
@@ -126,6 +126,7 @@ export async function triggersAddLive(
     body.secret_env = tf.secretEnv;
   } else if (type === 'app') {
     body.app = tf.app;
+    if (tf.event && tf.event !== '*') body.filter = { ...(filter ?? {}), 'event.name': tf.event };
   } else if (type === 'event') {
     const parsed = parseEventFlags(tf);
     if ('error' in parsed) return fail(parsed.error);
