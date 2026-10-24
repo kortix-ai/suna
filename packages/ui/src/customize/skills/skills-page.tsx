@@ -24,6 +24,7 @@ import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { MagnifyingGlassIcon, SparkleIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 
+import { type AgentGrant, GrantModeTabs, type ResourceScope } from '../shared/agent-resource-scope';
 import { CapabilityPageShell } from '../shared/capability-page-shell';
 import { CatalogCard } from '../shared/catalog/catalog-card';
 import { catalogEmptyKind } from '../shared/catalog/catalog-empty';
@@ -65,8 +66,20 @@ const SCOPE_FILTERS: ReadonlyArray<{ value: ScopeFilter; label: string }> = [
  * plan", no model to pick). The empty state adds Docs as its secondary,
  * which is all a reader without write permission gets.
  */
-export function SkillsPage({ projectId }: { projectId: string }) {
+export function SkillsPage({
+  projectId,
+  surface = { kind: 'global' },
+  grant,
+}: {
+  projectId: string;
+  /** `global` (default) is the project catalogue; `agent` scopes the same page
+   *  to one agent and turns each skill card into a grant control. */
+  surface?: ResourceScope;
+  /** Required in `agent` scope: the agent's `skills` grant. */
+  grant?: AgentGrant;
+}) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const agentScoped = surface.kind === 'agent' && grant !== undefined;
   // `accountId` skips useProjectCan's own getProject and lets the IAM probe
   // run on the first render instead of waiting a round-trip for it.
   const accountId = useProjectAccountId(projectId);
@@ -144,7 +157,9 @@ export function SkillsPage({ projectId }: { projectId: string }) {
   return (
     <CapabilityPageShell
       title={tI18nComplete.raw('text66d0f523a379')}
-      description={tI18nComplete.raw('text000c02c11c7a')}
+      description={
+        agentScoped ? 'Choose which skills this agent can use.' : tI18nComplete.raw('text000c02c11c7a')
+      }
       action={createButton('New')}
       search={
         <InputGroupSearch>
@@ -163,15 +178,20 @@ export function SkillsPage({ projectId }: { projectId: string }) {
         </InputGroupSearch>
       }
       filters={
-        <Tabs value={scope} onValueChange={(value) => setScope(value as ScopeFilter)}>
-          <TabsList>
-            {SCOPE_FILTERS.map((filter) => (
-              <TabsTrigger key={filter.value} value={filter.value}>
-                {filter.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+        <>
+          {agentScoped && grant ? (
+            <GrantModeTabs grant={grant} label="Skill access for this agent" />
+          ) : null}
+          <Tabs value={scope} onValueChange={(value) => setScope(value as ScopeFilter)}>
+            <TabsList>
+              {SCOPE_FILTERS.map((filter) => (
+                <TabsTrigger key={filter.value} value={filter.value}>
+                  {filter.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        </>
       }
     >
       <CatalogGrid
@@ -220,6 +240,16 @@ export function SkillsPage({ projectId }: { projectId: string }) {
             title={skill.name}
             description={skill.description}
             onClick={() => setSelectedPath(skill.path)}
+            select={
+              agentScoped && grant
+                ? {
+                    checked: grant.isGranted(skill.name),
+                    disabled: grant.mode !== 'specific',
+                    onCheckedChange: () => grant.toggle(skill.name),
+                    label: `Grant ${skill.name} to this agent`,
+                  }
+                : undefined
+            }
           />
         ))}
       </CatalogGrid>

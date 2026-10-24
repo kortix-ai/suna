@@ -158,6 +158,9 @@ import {
 import { AgentPeopleSection } from './agent-people-section';
 import { AgentShareControl } from './agent-share-control';
 import { AgentTriggersSection } from './agent-triggers-section';
+import { ConnectorsPage } from '../connectors/connectors-page';
+import { SkillsPage } from '../skills/skills-page';
+import { useAgentGrant } from '../shared/agent-resource-scope';
 
 type Agent = ProjectConfigSummary['agents'][number];
 
@@ -292,6 +295,7 @@ function AgentPageFrame({
   sectionHref,
   pane,
   footer,
+  full = false,
 }: {
   header: ReactNode;
   section: AgentConfigSectionKey;
@@ -299,6 +303,11 @@ function AgentPageFrame({
   sectionHref: (key: AgentConfigSectionKey) => string;
   pane: ReactNode;
   footer?: ReactNode;
+  /** A catalog section (Connectors, Skills) renders the full resource page,
+   *  which brings its own `CapabilityPageShell` heading and scroll container.
+   *  The frame then hands it the whole area — no centred column, no second
+   *  scroller — the same context the standalone route gives that page. */
+  full?: boolean;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const isMobile = useIsMobile();
@@ -391,9 +400,13 @@ function AgentPageFrame({
             </nav>
           </aside>
         )}
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
-          <div className="mx-auto w-full max-w-2xl px-4 py-10 pb-32 lg:py-14 lg:pb-32">{pane}</div>
-        </main>
+        {full ? (
+          <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{pane}</main>
+        ) : (
+          <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
+            <div className="mx-auto w-full max-w-2xl px-4 py-10 pb-32 lg:py-14 lg:pb-32">{pane}</div>
+          </main>
+        )}
       </div>
       {footer}
     </div>
@@ -701,6 +714,28 @@ function EditableAgentPage({
   );
   const section = useAgentSection(sections);
 
+  // The agent's grants over the two resource catalogs that now render as the
+  // full `global`/`agent` resource page (Marko, 2026-10-24). One component per
+  // resource, two variants; the agent variant drives these grants.
+  const connectorsGrant = useAgentGrant(editor.draft.connectors, (v) => {
+    editor.set('connectors', v);
+    // A connector can be required only while it is granted — mirror the prune
+    // the old grant page did, so dropping a connector drops its Required flag.
+    const required = editor.draft.connectors_required ?? [];
+    const picked = new Set(Array.isArray(v) ? v : []);
+    const kept =
+      v === 'all' || v === 'none' || !Array.isArray(v)
+        ? []
+        : required.filter((slug) => picked.has(slug));
+    if (kept.length !== required.length) {
+      editor.set('connectors_required', kept.length ? kept : undefined);
+    }
+  });
+  const skillsGrant = useAgentGrant(editor.draft.skills, (v) => editor.set('skills', v));
+  // These sections render the whole resource page (its own heading, search and
+  // scroll); the frame hands them the full area instead of the centred column.
+  const full = section === 'connectors' || section === 'skills';
+
   const onSave = useCallback(async () => {
     if (!editor.isDirty || update.isPending) return;
     try {
@@ -724,7 +759,23 @@ function EditableAgentPage({
       section={section}
       sections={sections}
       sectionHref={sectionHrefFor(pathname)}
+      full={full}
       pane={
+        full ? (
+          section === 'connectors' ? (
+            <ConnectorsPage
+              projectId={projectId}
+              surface={{ kind: 'agent', agentName: agent.name }}
+              grant={connectorsGrant}
+            />
+          ) : (
+            <SkillsPage
+              projectId={projectId}
+              surface={{ kind: 'agent', agentName: agent.name }}
+              grant={skillsGrant}
+            />
+          )
+        ) : (
         <AgentConfigSections
           section={section}
           editor={editor}
@@ -765,6 +816,7 @@ function EditableAgentPage({
             />
           }
         />
+        )
       }
       footer={
         <>
