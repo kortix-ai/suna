@@ -442,6 +442,23 @@ const FLAGS: readonly FeatureFlagDef[] = [
       '/v1/artifacts/* (the content server) answers 404 for an artifact of a flag-off project. BOX: off, ' +
       'a session box has no kortix-artifacts skill and its CLI hides and refuses `kortix artifacts`.',
   },
+  {
+    key: 'cloud_subagents',
+    name: 'Cloud subagents',
+    description:
+      'Run each subagent an agent starts as its own Kortix session on its own cloud computer, not inside the parent session. The subagent opens as a child session and returns its final report to the parent. Each subagent uses its own compute.',
+    stability: 'experimental',
+    available: () => true,
+    // Off by default (RFC claude-code-harness-parity, Pillar 1): a subagent
+    // becomes a billed sandbox per `agent` call. A project opts in.
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'BEHAVIORAL only. On, session provisioning sets KORTIX_PI_CLOUD_SUBAGENTS=1 in the box env ' +
+      '(projects/lib/feature-flag-env.ts) and the pi `agent` tool creates a child session through ' +
+      'POST /v1/projects/:id/sessions (kortixd harness/pi/cloud-subagent.ts) instead of an in-process ' +
+      'child. Off, the key is absent and the in-process child runs. Boot-only: a change reaches the next new box.',
+  },
   // `session_log` graduated (2026-10-22, P8.2): the session log is every session's
   // saved history and the v1 transcript mirror is no longer read. No flag and no
   // operator lever. A stored `experimental.session_log` override is inert.

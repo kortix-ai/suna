@@ -15,6 +15,13 @@ export const GENUI_ENV_NAME = 'KORTIX_GENUI';
  */
 export const FEATURE_FLAGS_ENV_NAME = 'KORTIX_FEATURE_FLAGS';
 
+/**
+ * Read by kortixd (harness/pi/config.ts): `1` routes the pi `agent` tool to a real cloud child
+ * session (harness/pi/cloud-subagent.ts). Set only while the `cloud_subagents` flag is on; absent,
+ * the box keeps the in-process child. Boot-only.
+ */
+export const CLOUD_SUBAGENTS_ENV_NAME = 'KORTIX_PI_CLOUD_SUBAGENTS';
+
 /** '1' only when the kill switch is open and the project flag is on. */
 export function genuiEnvValue(metadata: unknown, enabled: boolean = config.GENUI_ENABLED): '1' | '0' {
   return enabled && resolveFeatureFlag(metadata, 'genui') ? '1' : '0';
@@ -31,6 +38,11 @@ export function featureFlagsEnvValue(metadata: unknown, genuiKillSwitchOpen: boo
     .join(',');
 }
 
+/** `{ KORTIX_PI_CLOUD_SUBAGENTS: '1' }` while the project flag is on, else no key. */
+export function cloudSubagentsEnv(metadata: unknown): Record<string, string> {
+  return resolveFeatureFlag(metadata, 'cloud_subagents') ? { [CLOUD_SUBAGENTS_ENV_NAME]: '1' } : {};
+}
+
 export async function buildFeatureFlagSandboxEnv(projectId: string): Promise<Record<string, string>> {
   const [row] = await db
     .select({ metadata: projects.metadata })
@@ -40,5 +52,6 @@ export async function buildFeatureFlagSandboxEnv(projectId: string): Promise<Rec
   return {
     [GENUI_ENV_NAME]: genuiEnvValue(row?.metadata),
     [FEATURE_FLAGS_ENV_NAME]: featureFlagsEnvValue(row?.metadata),
+    ...cloudSubagentsEnv(row?.metadata),
   };
 }

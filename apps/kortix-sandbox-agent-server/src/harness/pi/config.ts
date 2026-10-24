@@ -7,6 +7,7 @@ import type { Config as HostConfig } from '@/lib/config/config'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
 import { logger } from '@/lib/log/logger'
 import { managedSkillsDir } from '@/lib/config/managed-skills-dir'
+import { DEFAULT_MAX_CLOUD_SUBAGENT_DEPTH, DEFAULT_MAX_LIVE_CLOUD_SUBAGENTS } from './cloud-subagent'
 
 /** First backoff of a transient model-error retry (transient-retry.ts): 2, 4, 8, 16, 30 s. */
 const TURN_RETRY_DEFAULT_BASE_MS = 2_000
@@ -47,13 +48,17 @@ const EnvironmentSchema = z.object({
   // Keystone flag (RFC claude-code-harness-parity, Pillar 1), default OFF. When
   // `1`/`true`, the `agent` tool spawns a REAL cloud Kortix child session
   // (its own sandbox, auto-linked as a child via the box token) instead of the
-  // in-process child. Off: the in-process child, unchanged. The API wires this
-  // from a feature flag (stubbed — see cloud-subagent.ts); a box can set it
-  // directly for live verification.
+  // in-process child. Off: the in-process child, unchanged. The API sets it
+  // from the project flag `cloud_subagents` (apps/api projects/lib/feature-flag-env.ts);
+  // a box can set it directly for live verification.
   KORTIX_PI_CLOUD_SUBAGENTS: z
     .enum(['0', '1', 'false', 'true'])
     .optional()
     .catch(undefined),
+  // Cloud subagent guardrails (cloud-subagent.ts): children one parent waits on at
+  // once, and the depth a cloud child may still delegate from. Invalid: the default.
+  KORTIX_PI_CLOUD_SUBAGENTS_MAX: z.coerce.number().int().positive().optional().catch(undefined),
+  KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH: z.coerce.number().int().nonnegative().optional().catch(undefined),
 })
 
 export interface PiEnvironment {
@@ -69,6 +74,10 @@ export interface PiEnvironment {
   piCodemode?: 'off' | 'on' | 'only'
   /** The `agent` tool spawns a real cloud child session, not an in-process one. Default false. */
   piCloudSubagents: boolean
+  /** Cloud children one parent waits on at once. */
+  piCloudSubagentsMax: number
+  /** A session at this subagent depth starts no cloud child. */
+  piCloudSubagentsMaxDepth: number
 }
 
 export const DEFAULT_PI_AGENT_DIR = '/opt/kortix/pi-agent'
@@ -86,6 +95,8 @@ export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
     KORTIX_PI_NO_PROGRESS_MS: env.KORTIX_PI_NO_PROGRESS_MS?.trim() || undefined,
     KORTIX_PI_CODEMODE: env.KORTIX_PI_CODEMODE?.trim() || undefined,
     KORTIX_PI_CLOUD_SUBAGENTS: env.KORTIX_PI_CLOUD_SUBAGENTS?.trim() || undefined,
+    KORTIX_PI_CLOUD_SUBAGENTS_MAX: env.KORTIX_PI_CLOUD_SUBAGENTS_MAX?.trim() || undefined,
+    KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH: env.KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH?.trim() || undefined,
   })
   return {
     piStateDir: parsed.KORTIX_PI_STATE_DIR?.trim() || join(resolveKortixRuntimeStateDirectory(env), 'pi'),
@@ -99,6 +110,8 @@ export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
     piNoProgressMs: parsed.KORTIX_PI_NO_PROGRESS_MS ?? 10 * 60_000,
     piCodemode: parsed.KORTIX_PI_CODEMODE,
     piCloudSubagents: parsed.KORTIX_PI_CLOUD_SUBAGENTS === '1' || parsed.KORTIX_PI_CLOUD_SUBAGENTS === 'true',
+    piCloudSubagentsMax: parsed.KORTIX_PI_CLOUD_SUBAGENTS_MAX ?? DEFAULT_MAX_LIVE_CLOUD_SUBAGENTS,
+    piCloudSubagentsMaxDepth: parsed.KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH ?? DEFAULT_MAX_CLOUD_SUBAGENT_DEPTH,
   }
 }
 

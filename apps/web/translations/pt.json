@@ -1298,6 +1298,10 @@
         "artifacts": {
           "name": "Artefatos",
           "description": "Compartilhe documentos (Markdown) e páginas HTML (apresentações, painéis, mockups, ferramentas) de Arquivos com o projeto, pessoas escolhidas ou qualquer pessoa com um link. Os documentos são editados no próprio lugar, cada salvamento é uma versão do histórico de Arquivos e os documentos podem ser exportados em PDF. Adiciona a página Artefatos e `kortix artifacts`."
+        },
+        "cloud_subagents": {
+          "name": "Subagentes na nuvem",
+          "description": "Executa cada subagente como uma sessão própria em seu próprio computador na nuvem, não dentro da sessão principal. O subagente abre como sessão filha e devolve seu relatório final à sessão principal. Cada subagente usa sua própria capacidade de computação."
         }
       }
     },

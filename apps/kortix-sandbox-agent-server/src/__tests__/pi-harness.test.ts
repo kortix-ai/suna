@@ -1559,6 +1559,21 @@ describe('project tools on pi', () => {
     expect(toolParts(await page(r), 'bash')[0]!.state.status).toBe('error')
     expect(existsSync(join(r.workspace, 'ran.txt'))).toBe(false)
   })
+
+  test('a cloud subagent session narrows to the tools its parent gave it (kortix.subagent.tools); other calls are denied', async () => {
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'touch ran.txt' } }, { text: 'done' }],
+      env: {
+        KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: {} } }),
+        KORTIX_SESSION_CONTEXT: JSON.stringify({ 'kortix.subagent.depth': 1, 'kortix.subagent.tools': 'read,grep' }),
+      },
+    })
+    // No `agent`/`task` either: the narrowed child cannot delegate further.
+    expect(await ids(r)).toEqual(['read', 'grep'])
+    await promptAndSettle(r, 'run a command')
+    expect(toolParts(await page(r), 'bash')[0]!.state.status).toBe('error')
+    expect(existsSync(join(r.workspace, 'ran.txt'))).toBe(false)
+  })
 })
 
 describe('pi extensions', () => {

@@ -1068,6 +1068,24 @@ stays sequential. A child session is read-only (prompts to it answer 501).
 A child's calls are checked against the subagent's own rules and the session's
 rules; a `deny` from either wins, so delegating never unlocks a denied call.
 
+**Cloud subagents** (project flag `cloud_subagents`, default off; the API sets
+`KORTIX_PI_CLOUD_SUBAGENTS=1`). Each call is a real child session instead
+(`harness/pi/cloud-subagent.ts`): `POST /v1/projects/:id/sessions` with the
+box token, which links the child to this session and authorizes every later
+read of it. A named agent runs as itself; `general`, `explore` and an inline
+spec run as the parent's own agent (`KORTIX_AGENT_NAME`; the platform
+coordinator sends none), with the spec's instructions in `initial_context`
+and its tools in `runtime_context` `kortix.subagent.tools`, intersected with
+the parent's own list. The child's runtime narrows its tools to that list
+(`rootToolAllowed`). The result text is the newest assistant message of
+`GET …/sessions/:child/transcript?detail=full`. `task_id` sends a follow-up
+through `POST …/sessions/:child/prompts` to a child of this session only. An
+aborted call stops the child. Guardrails: at most
+`KORTIX_PI_CLOUD_SUBAGENTS_MAX` (4) children wait at once per parent, and a
+session at depth `KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH` (2, from
+`kortix.subagent.depth`) starts no cloud child. A box with no control plane
+uses the in-process child.
+
 ### Images
 
 - **Prompt images.** apps/api writes every prompt attachment to
