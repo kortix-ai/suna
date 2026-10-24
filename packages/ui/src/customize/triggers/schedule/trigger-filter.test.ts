@@ -8,6 +8,7 @@ import {
   groupTriggersByApp,
   parseTriggerFilter,
   TRIGGER_FILTERS,
+  triggersForAgent,
 } from './trigger-filter';
 
 const trigger = (slug: string, type: string, app?: string, connector = app): ProjectTrigger =>
@@ -82,5 +83,19 @@ describe('eventAppStrip', () => {
       app('gmail'),
     ]);
     expect(strip.map((a) => a.app)).toEqual(['github', 'gmail', 'asana']);
+  });
+});
+
+describe('triggersForAgent', () => {
+  const rows = [{ agent: 'writer' }, { agent: 'default' }, { agent: 'reviewer' }];
+
+  test('keeps the triggers that name the agent', () => {
+    expect(triggersForAgent(rows, 'reviewer')).toEqual([{ agent: 'reviewer' }]);
+  });
+
+  test('gives `default` triggers to the default agent only', () => {
+    expect(triggersForAgent(rows, 'writer', 'writer')).toEqual([{ agent: 'writer' }, { agent: 'default' }]);
+    expect(triggersForAgent(rows, 'reviewer', 'writer')).toEqual([{ agent: 'reviewer' }]);
+    expect(triggersForAgent(rows, 'writer', null)).toEqual([{ agent: 'writer' }]);
   });
 });

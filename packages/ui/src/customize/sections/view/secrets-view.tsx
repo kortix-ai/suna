@@ -85,6 +85,11 @@ import { errorToast, infoToast, successToast, warningToast } from '../../../prim
 import { EmptyState } from '../../../primitives/empty-state';
 import { ErrorState } from '../../../primitives/error-state';
 import { CapabilityPageShell } from '../../shared/capability-page-shell';
+import {
+  type AgentGrant,
+  GrantModeTabs,
+  type ResourceScope,
+} from '../../shared/agent-resource-scope';
 import { AudienceFields } from '../add-account-fields';
 import { NewEntityMenu } from '../../shared/new-entity-menu';
 import {
@@ -234,7 +239,19 @@ type SecretSavePlan = {
   optimistic: OptimisticProjectSecretInput;
 };
 
-export function SecretsView({ projectId }: { projectId: string }) {
+export function SecretsView({
+  projectId,
+  surface = { kind: 'global' },
+  grant,
+}: {
+  projectId: string;
+  /** `global` (default) is the project's secrets; `agent` is the same screen
+   *  for one agent, with a grant checkbox on every row. */
+  surface?: ResourceScope;
+  /** Required in `agent` scope: the agent's `secrets` grant, by identifier. */
+  grant?: AgentGrant;
+}) {
+  const agentGrant = surface.kind === 'agent' ? grant : undefined;
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -342,7 +359,12 @@ export function SecretsView({ projectId }: { projectId: string }) {
     <SplitSheetMain>
     <CapabilityPageShell
       title={tI18nComplete.raw('textd8707d411d99')}
-      description={tI18nComplete.raw('texteca47e3afa10')}
+      description={
+        agentGrant ? 'Choose which secrets this agent receives.' : tI18nComplete.raw('texteca47e3afa10')
+      }
+      filters={
+        agentGrant ? <GrantModeTabs grant={agentGrant} label="Secret access for this agent" /> : undefined
+      }
       search={
         /* Hidden until there is a list to search, the same rule Triggers
            uses: a filter over nothing is a control that cannot do anything. */
@@ -441,6 +463,11 @@ export function SecretsView({ projectId }: { projectId: string }) {
               <Table className="overflow-hidden rounded-md">
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
+                    {agentGrant ? (
+                      <TableHead className="w-10">
+                        <span className="sr-only">Granted to this agent</span>
+                      </TableHead>
+                    ) : null}
                     <TableHead>{tI18nComplete.raw('text9b10587f84a2')}</TableHead>
                     <TableHead>{tI18nComplete.raw('text8e37953d23da')}</TableHead>
                     <TableHead>{tI18nComplete.raw('textec5ba0abb717')}</TableHead>
@@ -455,6 +482,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
                     <SecretTableRow
                       key={row.identifier}
                       row={row}
+                      grant={agentGrant}
                       canManage={canManage}
                       viewerId={viewerId}
                       busy={removeShared.isPending && removeShared.variables === row.identifier}
@@ -774,6 +802,7 @@ function SecretMarks({ row }: { row: SecretRow }) {
 
 function SecretTableRow({
   row,
+  grant,
   canManage,
   viewerId,
   busy,
@@ -783,6 +812,8 @@ function SecretTableRow({
   onDeleteMine,
 }: {
   row: SecretRow;
+  /** Agent scope: the row's grant checkbox leads the row. */
+  grant?: AgentGrant;
   canManage: boolean;
   viewerId: string | null;
   busy: boolean;
@@ -803,6 +834,16 @@ function SecretTableRow({
   // state, and a status hue belongs on the mark (color.md, Accents and status).
   return (
     <TableRow>
+      {grant ? (
+        <TableCell className="w-10 align-middle">
+          <Checkbox
+            checked={grant.isGranted(row.identifier)}
+            disabled={grant.mode !== 'specific'}
+            onCheckedChange={() => grant.toggle(row.identifier)}
+            aria-label={`Grant ${row.identifier} to this agent`}
+          />
+        </TableCell>
+      ) : null}
       {/* The identifier and its marks share one line — the cell used to stack
           three blocks (identifier, → key, a badge row), so a five-row table
           read as fifteen. `→ key` still gets its own muted line, but only on

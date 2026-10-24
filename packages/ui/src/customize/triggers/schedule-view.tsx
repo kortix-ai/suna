@@ -110,6 +110,7 @@ import {
   parseTriggerFilter,
   readTriggerSheet,
   triggerSheetHref,
+  triggersForAgent,
 } from './schedule/trigger-filter';
 import { TriggerList } from './schedule/trigger-list';
 import { runsInFlight } from './schedule/trigger-runs-logic';
@@ -124,6 +125,7 @@ import {
 } from './schedule/trigger-selection';
 import { type BulkVerb, TriggerSelectionBar } from './schedule/trigger-selection-bar';
 import { useEventTitles } from './schedule/use-event-titles';
+import type { ResourceScope } from '../shared/agent-resource-scope';
 
 /** Tab label per filter: the three kinds reuse the page's existing words. */
 const FILTER_LABEL_KEY: Record<TriggerFilter, string> = {
@@ -291,7 +293,21 @@ export function TriggerActivationMenu({
   );
 }
 
-export function ScheduleView({ projectId }: { projectId: string }) {
+export function ScheduleView({
+  projectId,
+  surface = { kind: 'global' },
+  defaultAgent,
+}: {
+  projectId: string;
+  /** `global` (default) lists every trigger in the project. `agent` is the same
+   *  screen on one agent's page (`agent-page.tsx`): only the triggers that
+   *  start that agent, and New trigger opens with the agent picked. */
+  surface?: ResourceScope;
+  /** The project's default agent, in `agent` scope: a trigger stored as
+   *  `default` starts it (`triggerStartsAgent`). */
+  defaultAgent?: string | null;
+}) {
+  const agentName = surface.kind === 'agent' ? surface.agentName : null;
   const router = useUiRouter();
   const pathname = useUiPathname();
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -417,13 +433,12 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   // every new project: hiding it keeps the empty state reachable on a fresh
   // project without making the customer delete a trigger they never created.
   // It still schedules and fires — this is display only.
-  const triggers = useMemo(
-    () =>
-      (triggersQuery.data?.triggers ?? []).filter(
-        (t) => isTriggerKind(t.type) && isCustomerTrigger(t),
-      ),
-    [triggersQuery.data],
-  );
+  const triggers = useMemo(() => {
+    const shown = (triggersQuery.data?.triggers ?? []).filter(
+      (t) => isTriggerKind(t.type) && isCustomerTrigger(t),
+    );
+    return agentName ? triggersForAgent(shown, agentName, defaultAgent) : shown;
+  }, [triggersQuery.data, agentName, defaultAgent]);
   // The search only renders over a non-empty list; focus it once it does.
   const searchRef = useRef<HTMLInputElement>(null);
   useSlashFocus(searchRef, showContent && triggers.length > 0);
@@ -585,7 +600,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
          Schedules/Webhooks were overlay panes; a capability page has no rail
          entry, and a rail lookup that misses renders no heading at all. */
           title={copy.title}
-          description={copy.description}
+          description={agentName ? 'When this agent starts on its own.' : copy.description}
           // Beside an open trigger the list is a 40% column: stack the header so
           // search, Pause all and New trigger share one full-width row.
           stacked={!!selected}
@@ -809,6 +824,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
             onOpenChange={setCreateOpen}
             initialKind={createKind}
             initialApp={createApp}
+            initialAgent={agentName}
             onCreated={(slug) => {
               setCreateOpen(false);
               invalidate();

@@ -4,6 +4,8 @@ import { useParams } from 'next/navigation';
 
 import { AgentPage } from '@kortix/ui/customize/agents/agent-page';
 
+import { AppsView } from '@/features/apps/apps-view';
+
 /**
  * /projects/[id]/agent/[name] — one agent, as a page. The Agents tab opened on
  * a single agent: its instructions, model, triggers, grants, and who may use
@@ -24,7 +26,15 @@ export default function ProjectAgentDetailPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <AgentPage key={agentName} projectId={projectId} agentName={agentName} />
+      <AgentPage
+        key={agentName}
+        projectId={projectId}
+        agentName={agentName}
+        // The Apps screen lives in this app, so the page takes it as a slot.
+        renderApps={({ agentName: name, grant }) => (
+          <AppsView projectId={projectId} surface={{ kind: 'agent', agentName: name }} grant={grant} />
+        )}
+      />
     </div>
   );
 }

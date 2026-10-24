@@ -1,6 +1,15 @@
 'use client';
 
 import { Button } from '@kortix/ui/button';
+import { Checkbox } from '@kortix/ui/checkbox';
+import { Badge } from '@kortix/ui/badge';
+import {
+  type AgentGrant,
+  appGrantRows,
+  CapabilityPageShell,
+  GrantModeTabs,
+  type ResourceScope,
+} from '@kortix/ui/customize/agents/agent-page';
 
 import { Skeleton } from '@kortix/ui/skeleton';
 import { errorToast } from '@kortix/ui/toast';
@@ -36,14 +45,12 @@ export { DEPLOYMENT_COPY, deployNotice, appHost } from '@kortix/ui/apps';
 export { AppPreview, AppPreviewOverlay, PREVIEW_SPINNER_DELAY_MS, scheduleSlowPreview, PREVIEW_VIEWPORT_WIDTH, PREVIEW_VIEWPORT_HEIGHT, PREVIEW_TILE_ASPECT, previewScale } from '@kortix/ui/apps';
 export { APP_GRID_CONTAINER, APP_GRID_DEFAULT_COLUMNS, APP_GRID_COLUMN_OPTIONS, APP_GRID_COLUMN_ORDER, APP_GRID_COLUMNS_STORAGE_KEY, parseAppGridColumns, type AppGridColumns } from './app-density';
 
-function AppsHeader({
-  projectId,
+function AppsControls({
   columns,
   onColumnsChange,
   showColumns,
   onAdd,
 }: {
-  projectId: string;
   columns: AppGridColumns;
   onColumnsChange: (next: AppGridColumns) => void;
   /** Absent: the viewer may not add Apps, and the control is not shown. */
@@ -60,7 +67,7 @@ function AppsHeader({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
 
   return (
-    <ProjectPageHeader title={tI18nComplete.raw('text89dd748442c1')}>
+    <>
       {showColumns ? (
         <div className="flex shrink-0 items-center pr-1">
           <AppGridColumnsControl value={columns} onChange={onColumnsChange} />
@@ -82,12 +89,34 @@ function AppsHeader({
           {tI18nComplete.raw('text3dd46a7b552c')}
         </Button>
       ) : null}
-    </ProjectPageHeader>
+    </>
   );
 }
 
-export function AppsView({ projectId }: { projectId: string }) {
+/**
+ * The Apps screen in two variants (the agent editor's resource-page contract,
+ * `packages/ui/src/customize/shared/agent-resource-scope.tsx`):
+ *
+ *  - `global` (default): `/projects/<id>/apps`, every App in the project.
+ *  - `agent`: the same screen on one agent's page, inside the agent editor's
+ *    pane. Every App carries a checkbox that grants it to the agent
+ *    (`agents.<name>.apps`, by slug), driven by `grant`; the page's All ·
+ *    Specific · None tabs set the mode. Everything else — the grid, the
+ *    background list, Add, the detail modal — is the global screen.
+ */
+export function AppsView({
+  projectId,
+  surface = { kind: 'global' },
+  grant,
+}: {
+  projectId: string;
+  surface?: ResourceScope;
+  /** Required in `agent` scope: the agent's `apps` grant. */
+  grant?: AgentGrant;
+}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tAgentApps = useTranslations('agentApps');
+  const agentGrant = surface.kind === 'agent' ? grant : undefined;
   const apps = useProjectApps(projectId);
   const searchParams = useSearchParams();
   // Apps own their leaves — the routes assert project.app.write for policy and
@@ -134,6 +163,20 @@ export function AppsView({ projectId }: { projectId: string }) {
     }
   };
   const openApp = apps.data?.find((item) => item.app_id === openAppId) ?? null;
+  // Agent scope: the per-App grant control. The grant stores slugs
+  // (`appGrantRows`). An App whose access mode admits agents without it is
+  // still grantable, and its card says so.
+  const grantNeeded = new Set(appGrantRows(apps.data).filter((r) => r.needsGrant).map((r) => r.id));
+  const selectFor = (app: App): AppSelect | undefined =>
+    agentGrant
+      ? {
+          checked: agentGrant.isGranted(app.slug),
+          disabled: agentGrant.mode !== 'specific',
+          onToggle: () => agentGrant.toggle(app.slug),
+          label: `Grant ${app.name} to this agent`,
+          note: grantNeeded.has(app.slug) ? null : tAgentApps('openWithoutGrant'),
+        }
+      : undefined;
   // Mirror the open App into `?app=` so a reload or a copied link reopens it.
   // Debounced so a fast open/close writes one history entry, not two.
   // `replaceState` touches only the `app` key and does not re-run the route.
@@ -158,47 +201,16 @@ export function AppsView({ projectId }: { projectId: string }) {
       );
   }, [apps.data, projectId, searchParams, tI18nComplete]);
 
-  return (
-    // `h-svh`, for the same reason the `(capabilities)` layout carries it:
-    // nothing above this box has a definite height (every ancestor from
-    // `<body>` down is `min-h-*` or `flex-1 overflow-hidden`), so without one
-    // the body below would never have a bound to scroll within and the WINDOW
-    // would scroll — taking the header bar with it. Bounded here, the bar needs
-    // no `sticky` and no `fixed`: it is a sibling above the only scrolling
-    // element on the page, so it structurally cannot move. `svh` (not `dvh`)
-    // assumes mobile browser chrome is visible, so the bar can never be pushed
-    // under a toolbar that reappears.
-    <div className="flex h-svh flex-col overflow-hidden">
-      <AppsHeader
-        projectId={projectId}
-        columns={gridColumns}
-        onColumnsChange={setGridColumns}
-        showColumns={apps.isLoading || grid.length > 0}
-        onAdd={canWrite ? () => setAdding(true) : undefined}
-      />
-      <AddExternalAppDialog projectId={projectId} open={adding} onOpenChange={setAdding} onAdded={setOpenAppId} />
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {/* `max-w-7xl px-4` — the gallery's column, and the CONTAINER the grid
-            measures itself against (`@container/apps`). Putting the container
-            here and not on the scroll box is the point: this is the element
-            whose width the tiles actually divide, so it already accounts for
-            the cap, the gutter, and the sidebar. `px-4` matches
-            `CapabilityPageShell`'s gutter so the grid never presses flush
-            against the browser edge.
-
-            `flex min-h-full flex-col` so the one child that asks for height
-            gets it: `EmptyState`/`ErrorState` are built on `Empty`, which is
-            `flex-1 … justify-center`, and with no bound to grow into they
-            collapsed to their own content and clung to the top of a tall,
-            otherwise blank page. The grid, the skeleton and the feature gate
-            take their natural height and stay at the top, unaffected. */}
-        <div
-          className={cn(
-            'mx-auto flex min-h-full w-full max-w-7xl flex-col px-4 py-6 pb-20 md:px-8',
-            APP_GRID_CONTAINER,
-          )}
-        >
+  const controls = (
+    <AppsControls
+      columns={gridColumns}
+      onColumnsChange={setGridColumns}
+      showColumns={apps.isLoading || grid.length > 0}
+      onAdd={canWrite ? () => setAdding(true) : undefined}
+    />
+  );
+  const body = (
+    <>
           {apps.isLoading ? (
             <AppGridSkeleton columns={gridColumns} />
           ) : apps.isError ? (
@@ -226,6 +238,7 @@ export function AppsView({ projectId }: { projectId: string }) {
                   app={app}
                   shown={cardPreviewApp(apps.data!, app, canAdmin)}
                   onOpen={() => setOpenAppId(app.app_id)}
+                  select={selectFor(app)}
                 />
               ))}
             </ul>
@@ -242,12 +255,15 @@ export function AppsView({ projectId }: { projectId: string }) {
                 open={backgroundOpen}
                 onOpenChange={setBackgroundOpen}
                 onOpen={setOpenAppId}
+                select={agentGrant ? selectFor : undefined}
               />
             </section>
           ) : null}
-        </div>
-      </div>
-
+    </>
+  );
+  const overlays = (
+    <>
+      <AddExternalAppDialog projectId={projectId} open={adding} onOpenChange={setAdding} onAdded={setOpenAppId} />
       {openApp ? (
         <AppDetailModal
           key={openApp.app_id}
@@ -262,6 +278,65 @@ export function AppsView({ projectId }: { projectId: string }) {
           }}
         />
       ) : null}
+    </>
+  );
+
+  if (agentGrant) {
+    // Inside the agent editor's pane: the capability shell is the scroller and
+    // the heading, the grant mode its filter row. The grid measures the shell's
+    // column (`@container/apps`), as it measures the page's column below.
+    return (
+      <CapabilityPageShell
+        wide
+        title={tI18nComplete.raw('text89dd748442c1')}
+        description="Choose which Apps this agent can open."
+        action={<div className="flex shrink-0 items-center">{controls}</div>}
+        filters={<GrantModeTabs grant={agentGrant} label="App access for this agent" />}
+      >
+        <div className={cn('flex flex-col', APP_GRID_CONTAINER)}>{body}</div>
+        {overlays}
+      </CapabilityPageShell>
+    );
+  }
+
+  return (
+    // `h-svh`, for the same reason the `(capabilities)` layout carries it:
+    // nothing above this box has a definite height (every ancestor from
+    // `<body>` down is `min-h-*` or `flex-1 overflow-hidden`), so without one
+    // the body below would never have a bound to scroll within and the WINDOW
+    // would scroll — taking the header bar with it. Bounded here, the bar needs
+    // no `sticky` and no `fixed`: it is a sibling above the only scrolling
+    // element on the page, so it structurally cannot move. `svh` (not `dvh`)
+    // assumes mobile browser chrome is visible, so the bar can never be pushed
+    // under a toolbar that reappears.
+    <div className="flex h-svh flex-col overflow-hidden">
+      <ProjectPageHeader title={tI18nComplete.raw('text89dd748442c1')}>{controls}</ProjectPageHeader>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* `max-w-7xl px-4` — the gallery's column, and the CONTAINER the grid
+            measures itself against (`@container/apps`). Putting the container
+            here and not on the scroll box is the point: this is the element
+            whose width the tiles actually divide, so it already accounts for
+            the cap, the gutter, and the sidebar. `px-4` matches
+            `CapabilityPageShell`'s gutter so the grid never presses flush
+            against the browser edge.
+
+            `flex min-h-full flex-col` so the one child that asks for height
+            gets it: `EmptyState`/`ErrorState` are built on `Empty`, which is
+            `flex-1 … justify-center`, and with no bound to grow into they
+            collapsed to their own content and clung to the top of a tall,
+            otherwise blank page. The grid, the skeleton and the feature gate
+            take their natural height and stay at the top, unaffected. */}
+        <div
+          className={cn(
+            'mx-auto flex min-h-full w-full max-w-7xl flex-col px-4 py-6 pb-20 md:px-8',
+            APP_GRID_CONTAINER,
+          )}
+        >
+          {body}
+        </div>
+      </div>
+      {overlays}
     </div>
   );
 }
@@ -313,7 +388,29 @@ function AppsEmptyState() {
   );
 }
 
-function AppCard({ projectId, app, shown, onOpen }: { projectId: string; app: App; shown: App | null; onOpen: () => void }) {
+/** Agent scope: one App's grant checkbox, and the note for an App that
+ *  admits agents without a grant. */
+export interface AppSelect {
+  checked: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+  label: string;
+  note: string | null;
+}
+
+function AppCard({
+  projectId,
+  app,
+  shown,
+  onOpen,
+  select,
+}: {
+  projectId: string;
+  app: App;
+  shown: App | null;
+  onOpen: () => void;
+  select?: AppSelect;
+}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // `shown` is the App whose live preview the card frames: the App itself, or
   // the first tab of one that hides its own (a backend shows its dashboard).
@@ -329,6 +426,15 @@ function AppCard({ projectId, app, shown, onOpen }: { projectId: string; app: Ap
   const canAccess = shown?.viewer_can_access !== false;
   const access = useAppAccess(projectId, shown?.app_id ?? app.app_id, { policy: false, session: canAccess && preview });
   const status = appStatus(app, tI18nComplete);
+  const captionText = (
+    <>
+      <h3 className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">{app.name}</h3>
+      <span className="text-muted-foreground flex shrink-0 items-center gap-1.5 text-xs">
+        {app.external_url ? null : <span aria-hidden className={cn('size-1.5 rounded-full', status.dot)} />}
+        {status.label}
+      </span>
+    </>
+  );
 
   return (
     <li>
@@ -377,16 +483,27 @@ function AppCard({ projectId, app, shown, onOpen }: { projectId: string; app: Ap
             App. The full URL is still one click away in the detail layer,
             beside the control that opens it, which is where someone who wants
             to copy it is already going. */}
-        <div className="mt-3 flex items-center gap-2">
-          <h3 className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
-            {app.name}
-          </h3>
-          <span className="text-muted-foreground flex shrink-0 items-center gap-1.5 text-xs">
-            {app.external_url ? null : <span aria-hidden className={cn('size-1.5 rounded-full', status.dot)} />}
-            {status.label}
-          </span>
-        </div>
+        {select ? null : <div className="mt-3 flex items-center gap-2">{captionText}</div>}
       </button>
+      {/* Agent scope: the checkbox is a sibling of the card's button, never
+          inside it, so the caption moves out beside it. The thumbnail still
+          opens the App. */}
+      {select ? (
+        <div className="mt-3 flex items-center gap-2">
+          <Checkbox
+            checked={select.checked}
+            disabled={select.disabled}
+            onCheckedChange={select.onToggle}
+            aria-label={select.label}
+          />
+          {captionText}
+          {select.note ? (
+            <Badge variant="muted" size="xs">
+              {select.note}
+            </Badge>
+          ) : null}
+        </div>
+      ) : null}
     </li>
   );
 }

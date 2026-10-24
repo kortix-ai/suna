@@ -170,12 +170,16 @@ export function ModelSection({
   oc,
   setOc,
   showPrompt = true,
+  lead = true,
 }: {
   oc: RuntimeAgentConfig;
   setOc: SetRuntime;
   /** The agent page gives the system prompt the whole left column — pass
    *  `false` there so the collapsed copy of it does not sit in this section. */
   showPrompt?: boolean;
+  /** `false` under a host that already titles the pane (the Models page's
+   *  "This agent" tab): the first section then takes a subsection header. */
+  lead?: boolean;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const { data: providers } = useRuntimeProviders();
@@ -198,7 +202,7 @@ export function ModelSection({
       <EditorSection
         title={tI18nComplete.raw('text5e2c614c23f0')}
         description={tI18nComplete.raw('text32398dbb68e2')}
-        lead
+        lead={lead}
       >
         {/* "Provider model", not "Model": the section is already titled Model,
           and a row that repeats its section's name reads as a typo. */}

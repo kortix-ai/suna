@@ -73,6 +73,7 @@ import {
   useConnectProviderStatus,
 } from './catalog/use-catalog';
 import { type AgentGrant, GrantModeTabs, type ResourceScope } from '../shared/agent-resource-scope';
+import { RequiredConnectorToggle } from '../sections/view/agent-editor-access-fields';
 import { CapabilityPageShell } from '../shared/capability-page-shell';
 import { CatalogCard } from '../shared/catalog/catalog-card';
 import { catalogEmptyKind } from '../shared/catalog/catalog-empty';
@@ -262,6 +263,7 @@ export function ConnectorsPage({
   projectId,
   surface = { kind: 'global' },
   grant,
+  required,
 }: {
   projectId: string;
   /** `global` (default) is the project catalogue; `agent` scopes the same page
@@ -270,6 +272,10 @@ export function ConnectorsPage({
   /** Required in `agent` scope: the agent's `connectors` grant, driven by the
    *  page's draft. Ignored in `global` scope. */
   grant?: AgentGrant;
+  /** Agent scope only: `connectors_required`, the connectors a session needs
+   *  connected before it starts. Offered on a card the agent is granted by name
+   *  (Specific), because under All or None no single connector is picked. */
+  required?: { isRequired: (slug: string) => boolean; toggle: (slug: string) => void };
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const agentScoped = surface.kind === 'agent' && grant !== undefined;
@@ -480,6 +486,16 @@ export function ConnectorsPage({
             onCheckedChange: () => grant.toggle(connector.slug),
             label: `Grant ${connectorDisplayName(connector)} to this agent`,
           }}
+          trailing={
+            required && grant.mode === 'specific' && grant.isGranted(connector.slug) ? (
+              <RequiredConnectorToggle
+                active={required.isRequired(connector.slug)}
+                onToggle={() => required.toggle(connector.slug)}
+              />
+            ) : (
+              shared.trailing
+            )
+          }
         />
       );
     }

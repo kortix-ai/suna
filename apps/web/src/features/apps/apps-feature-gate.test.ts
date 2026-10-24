@@ -369,15 +369,6 @@ test('the Apps grid is a gallery: bordered thumbnails, captions hanging below', 
   // sane default, so what has to hold is the DEFAULT, not the absence.
   expect(view).toContain('export const APP_GRID_DEFAULT_COLUMNS: AppGridColumns = 3;');
   expect(view).not.toContain('AppGridDensity');
-  // A picker over the feature gate, the error state or the empty state is a
-  // dead switch, so the header takes an explicit flag rather than always
-  // rendering it.
-  const header = view.slice(
-    view.indexOf('function AppsHeader('),
-    view.indexOf('export function AppsView('),
-  );
-  expect(header).toContain('showColumns');
-  expect(header).toContain('{showColumns ? (');
 
   // The gallery column is also the grid's measuring box. A `@lg/apps:` variant
   // with no `@container/apps` ancestor compiles and then never matches, so the

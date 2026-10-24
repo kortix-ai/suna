@@ -4,6 +4,8 @@ import { useStandaloneCapabilityNav } from '../shared/standalone-settings-nav';
 import { LlmManagementView } from '../sections/gateway-view';
 import { SettingsNavProvider } from '../../internal/layout/settings-nav-context';
 import { AppReturnBar } from './app-return-bar';
+import type { ResourceScope } from '../shared/agent-resource-scope';
+import type { ReactNode } from 'react';
 
 /**
  * The page body for /projects/[id]/models — Models graduated out of the
@@ -30,12 +32,22 @@ import { AppReturnBar } from './app-return-bar';
  * `useStandaloneCapabilityNav` is that provider's value for a page that is
  * not the overlay or `/config`.
  */
-export function ModelsPage({ projectId }: { projectId: string }) {
+export function ModelsPage({
+  projectId,
+  surface,
+  agentSettings,
+}: {
+  projectId: string;
+  /** `agent` renders the same page on one agent's editor (`agent-page.tsx`),
+   *  with `agentSettings` as its leading "This agent" tab. */
+  surface?: ResourceScope;
+  agentSettings?: ReactNode;
+}) {
   const settingsNav = useStandaloneCapabilityNav(projectId, 'models');
 
   return (
     <SettingsNavProvider value={settingsNav}>
-      <LlmManagementView projectId={projectId} />
+      <LlmManagementView projectId={projectId} surface={surface} agentSettings={agentSettings} />
       {/* Mobile's "connect a model provider" hand-off; nothing without ?return_to. */}
       <AppReturnBar projectId={projectId} />
     </SettingsNavProvider>
