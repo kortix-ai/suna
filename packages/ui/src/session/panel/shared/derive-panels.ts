@@ -13,6 +13,7 @@
  * for the same call.
  */
 
+import { parseArtifactUrl } from '../../../artifacts/frame-policy';
 import { toWorkspaceRelative } from '../../../internal/files/runtime-files';
 import { parseImageOutput } from '../../media/image-output-path';
 import type { PatchFileLite } from '../../tool/shared/patch-helpers';
@@ -75,7 +76,15 @@ type AppOutputItem = OutputItemBase & {
   presentationName?: never;
 };
 
-export type OutputItem = ArtifactOutputItem | AppOutputItem;
+/** A Kortix artifact the agent handed over (its app link): opens as the artifact, not as a website. */
+type ArtifactLinkOutputItem = OutputItemBase & {
+  kind: 'artifact';
+  path?: never;
+  url: string;
+  presentationName?: never;
+};
+
+export type OutputItem = ArtifactOutputItem | AppOutputItem | ArtifactLinkOutputItem;
 
 export interface ContextItem {
   callID: string;
@@ -318,6 +327,7 @@ interface ShowPayload {
 function showPayloadToOutput(payload: ShowPayload, callID: string): OutputItem | null {
   const url = typeof payload.url === 'string' ? payload.url.trim() : '';
   if (url && /^https?:\/\//i.test(url)) {
+    if (parseArtifactUrl(url)) return { ...appOutput(url, payload.title, payload.description, callID), kind: 'artifact', shown: true };
     return { ...appOutput(url, payload.title, payload.description, callID), shown: true };
   }
 

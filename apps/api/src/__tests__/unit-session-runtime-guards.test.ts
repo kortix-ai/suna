@@ -1458,6 +1458,33 @@ describe('project session runtime guards', () => {
     expect(lastSessionInsertValues?.createdBy).toBe(sessionRow!.createdBy);
   });
 
+  test('a human explicit parent groups the session without inheriting sharing or automation identity', async () => {
+    const parentId = SESSION_ID;
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main', parent_session_id: parentId }),
+    });
+    expect(response.status).toBe(201);
+    const created = await response.json();
+    expect(created.parent_session_id).toBe(parentId);
+    expect(created.visibility).toBe('private');
+    expect(created.metadata?.spawned_by_session).toBeUndefined();
+    expect(created.initiator).toMatchObject({ type: 'member' });
+  });
+
+  test('a bound session ignores a body-selected parent', async () => {
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SESSION_BOUND_PAT}` },
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main', parent_session_id: '00000000-0000-4000-a000-000000000999' }),
+    });
+    expect(response.status).toBe(201);
+    expect((await response.json()).parent_session_id).toBe(SESSION_ID);
+  });
+
   test('a browser create is its member’s, from the web; the CLI names itself (KRTX-639)', async () => {
     const app = createApp();
     const web = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {

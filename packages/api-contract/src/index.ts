@@ -1001,6 +1001,7 @@ export const SessionCreateInputSchema = z
   .object({
     /** Copy the authorized platform session history into a new independent session. */
     fork_from_session_id: z.string().min(1).max(255).optional(),
+    parent_session_id: z.string().uuid().optional(),
     base_ref: z.string().min(1).optional(),
     agent_name: z.string().min(1).optional(),
     sandbox_slug: z.string().min(1).optional(),

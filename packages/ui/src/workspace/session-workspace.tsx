@@ -4,6 +4,7 @@ import { Drawer, DrawerContent } from '../primitives/drawer';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '../primitives/resizable';
 import { BrowserPanel } from '../browser/browser-panel';
 import { SessionDetailPanel } from '../session/panel/session-detail-panel';
+import { SessionOutcomesBridge } from '../session/outcomes/session-outcomes-bridge';
 import { SessionPanelProvider } from '../session/panel/session-panel-provider';
 import { MobileToolDrawer } from '../session/panel/mobile-tool-drawer';
 import { ProviderPoolDraftBoundary } from '../session/overrides/provider-pool-draft-context';
@@ -308,7 +309,7 @@ const withPanelProvider = (
       projectId={projectId}
       projectSessionId={projectSessionId}
     >
-      {node}
+      <SessionOutcomesBridge key={`${projectId}/${projectSessionId ?? sessionId}`}>{node}</SessionOutcomesBridge>
     </SessionPanelProvider>
   </ProviderPoolDraftBoundary>
 );

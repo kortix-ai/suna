@@ -15,6 +15,9 @@ import React from 'react';
  */
 const LOGO_TILE_BACKGROUND = 'bg-white';
 
+/** The Kortix tile is the light variant in both themes: white ground, black mark, no edge. */
+const KORTIX_TILE_COLORS = 'bg-white text-black';
+
 const TILE_SIZE = {
   xl: 'size-14 rounded-xl',
   lg: 'size-10 rounded-md',
@@ -134,7 +137,7 @@ export function ConnectorHandshake({
       <HandshakeTile
         size={size}
         className={cn(
-          'bg-background text-foreground ring-border ring-1 ring-inset',
+          KORTIX_TILE_COLORS,
           collapsible && 'hidden @md/connect:flex',
         )}
       >
@@ -168,7 +171,11 @@ export function ConnectorHandshake({
             {mark}
           </HandshakeTile>
         ) : (
-          <ConnectorAppMark name={name} iconUrl={iconUrl} size={size} />
+          // A white ground behind the bare logo, so a black glyph (GitHub,
+          // Notion) stays visible on a dark surface.
+          <span className={cn(iconUrl !== undefined && LOGO_TILE_BACKGROUND, 'flex', TILE_SIZE[size])}>
+            <ConnectorAppMark name={name} iconUrl={iconUrl} size={size} />
+          </span>
         )}
         {connected ? (
           <span className="bg-kortix-green ring-background absolute -right-1 -bottom-1 flex size-3.5 items-center justify-center rounded-full ring-2">

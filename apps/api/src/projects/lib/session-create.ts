@@ -104,6 +104,8 @@ import {
 
 import { buildSessionSandboxEnvVars } from './session-sandbox-env-build';
 import { sandboxCallbackUnreachableReason, sandboxCallbackDeadTunnelReason } from './session-callback-probe';
+import type { Actor } from '../../iam/actor';
+import { loadVisibleSession, sessionIsTombstoned } from './session-visibility';
 import { HUMAN_SESSION_SURFACES } from './session-surface';
 import type { SessionInvocationSource } from '../session-lifecycle/types';
 /** Every status a failed create answers with. Routes that create a session
@@ -1147,7 +1149,7 @@ async function insertSessionAndBindings(
       createdBy: userId,
       visibility,
       origin,
-      parentSessionId: parentSession?.sessionId ?? null,
+      parentSessionId: parentSession?.sessionId ?? SessionCreateInputSchema.shape.parent_session_id.parse(body.parent_session_id) ?? null,
       initiatorType: initiator.type,
       initiatorId: initiator.id,
       secretsAllowlist,
@@ -1559,6 +1561,7 @@ export async function createProjectSession(input: {
    *  connector PAT injected into a sandbox). Used only to stop meta→meta
    *  recursion — a meta coordinator must spawn project agents, not itself. */
   callerSessionId?: string | null;
+  parentActor?: Actor;
   /** The request-time capability verdict for operator-managed (non-member)
    * connections. Personal connections ignore this and remain owner-only. */
   mayManageSystemConnections?: boolean;
@@ -1570,6 +1573,13 @@ export async function createProjectSession(input: {
   const { project, userId, body } = input;
   const projectId = project.projectId;
   const accountId = project.accountId;
+  if (!input.callerSessionId && body.parent_session_id !== undefined) {
+    const parentId = SessionCreateInputSchema.shape.parent_session_id.safeParse(body.parent_session_id);
+    if (!parentId.success || !parentId.data) return { error: { status: 400, body: { error: 'Invalid parent session' } } };
+    const parent = await loadVisibleSession({ row: project, userId, actor: input.parentActor }, parentId.data, null, null);
+    if (!parent || sessionIsTombstoned(parent.row)) return { error: { status: 404, body: { error: 'Not found' } } };
+  }
+
   // The id first: a /workspace-volume session starts opening its volume now,
   // so the open runs alongside the checks below instead of before the box create.
   const identity = resolveSessionIdentity({ input, projectId, accountId });

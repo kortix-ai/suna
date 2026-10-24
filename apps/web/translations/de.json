@@ -22776,5 +22776,12 @@
     "auditSet": "Regelset {set}",
     "bulkInheritTitle": "{count, plural, one {# Tool} other {# Tools}} auf die Basisregeln zurücksetzen?",
     "bulkInheritBody": "Löscht die Regel dieses Regelsets für jedes Tool unter {group}, damit jedes wieder den Basisregeln folgt. Musterregeln bleiben unverändert."
+  },
+  "sessionChangeRequests": {
+    "title": "Änderungsanfragen",
+    "open": "Offen",
+    "jump": "Zur Antwort für #{number} springen",
+    "unavailable": "Diese Antwort ist im geladenen Verlauf nicht verfügbar.",
+    "loadError": "Die Antwort konnte nicht geladen werden. Versuche es erneut."
   }
 }
