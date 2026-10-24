@@ -1,12 +1,13 @@
 import type { AdminConnector } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import {
   compareConnectors,
   connectorNeedsAttention,
   connectorSummary,
   filterConnectors,
-  parseConnectorScope,
 } from './connector-filter';
 
 const conn = (over: Partial<AdminConnector> = {}): AdminConnector =>
@@ -38,6 +39,41 @@ describe('connectorNeedsAttention', () => {
   });
   test('a connector that needs no credential is fine without one', () => {
     expect(connectorNeedsAttention(conn({ authSecret: null, secretSet: false }))).toBe(false);
+  });
+});
+
+describe('the landing tab is All, unconditionally', () => {
+  const page = readFileSync(join(import.meta.dir, 'connectors-page.tsx'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^[ \t]*\/\/.*$/gm, '');
+
+  // `defaultConnectorScope(connectors)` opened a project that already had
+  // connectors on its own list, which put the least useful tab in front of the
+  // user most often — someone opening this page is usually here to ADD a
+  // connector, and the ones they have are one click away. It also made the
+  // landing tab depend on a query, so the page could settle onto a different
+  // tab than it first rendered.
+
+  test('the default scope is a constant, not derived from the project', () => {
+    // The scope moved into `?scope=` so Channels could be linked to. The
+    // landing tab is constant: an absent or unrecognised param is All, for
+    // every project, before any query resolves.
+    expect(page).toContain(
+      "const scope: ConnectorScope = parseScope(search?.get('scope') ?? null) ?? 'all';",
+    );
+    expect(page).not.toContain('defaultConnectorScope');
+    expect(page).not.toContain('connectors.length ?');
+  });
+
+  test('All writes no param, so the bare page URL stays bare', () => {
+    expect(page).toContain(
+      "next === 'all' ? params.delete('scope') : params.set('scope', next),",
+    );
+  });
+
+  test('the helper is gone rather than left unused', () => {
+    const filter = readFileSync(join(import.meta.dir, 'connector-filter.ts'), 'utf8');
+    expect(filter).not.toContain('defaultConnectorScope');
   });
 });
 
@@ -104,26 +140,4 @@ describe('filterConnectors', () => {
     filterConnectors(input, { query: '' });
     expect(input.map((c) => c.slug)).toEqual(['linear', 'gmail']);
   });
-});
-
-describe('parseConnectorScope', () => {
-  const parse = (query: string) => parseConnectorScope(new URLSearchParams(query));
-  test('no param lands on the project connectors', () => {
-    expect(parse('')).toBe('connectors');
-    expect(parse('scope=nonsense')).toBe('connectors');
-  });
-  test('each tab is its own value', () => {
-    expect(parse('scope=browse')).toBe('browse');
-    expect(parse('scope=channels')).toBe('channels');
-    expect(parse('scope=rules')).toBe('rules');
-  });
-  test('old links still land on the right tab', () => {
-    expect(parse('scope=all')).toBe('browse');
-    expect(parse('scope=connected')).toBe('connectors');
-    expect(parse('rules=1')).toBe('rules');
-  });
-});
-
-test('an API setup_url names the tab as tab=', () => {
-  expect(parseConnectorScope(new URLSearchParams('tab=browse&custom=1'))).toBe('browse');
 });

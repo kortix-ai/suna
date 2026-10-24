@@ -6507,7 +6507,7 @@ const catalog = {
     "toolsNoneChangedBase": "No tool has its own rule yet. Every tool follows the connector default.",
     "toolsChanged": "Changed",
     "statusNeedsAccount": "Needs account",
-    "toolsLockedByProject": "A project rule already decides this tool. Change it on the Rules tab.",
+    "toolsLockedByProject": "A project rule already decides this tool. Change it in Approval rules.",
     "toolsProjectLockedBody": "Project rules apply to every connector first, so these tools cannot be changed here.",
     "toolsOpenRules": "Open Rules",
     "scopeConnectors": "Connectors",
@@ -6558,7 +6558,8 @@ const catalog = {
     "cardRuleSet": "{name} ({count, plural, one {# agent} other {# agents}})",
     "areaDescription": "Connect apps and channels to your agents, and decide what they may do.",
     "wayMoreNamed": "More for {name}",
-    "otherWaysLead": "Other ways:"
+    "otherWaysLead": "Other ways:",
+    "typeFilterKortix": "Kortix"
   },
   "connectMcp": {
     "title": "Connect Kortix over MCP",

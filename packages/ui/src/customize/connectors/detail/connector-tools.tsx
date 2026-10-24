@@ -75,7 +75,7 @@ import {
 } from '../tools/tool-policy-labels';
 import { CatalogNoMatch } from '../../shared/catalog/catalog-empty-state';
 import { UiLink as Link } from '../../../providers/ui-provider';
-import { connectorsHref } from '../connector-routes';
+import { rulesHref } from '../connector-routes';
 
 /** Below this many tools the search field is clutter; above it the list is
  *  unusable without one. */
@@ -411,7 +411,7 @@ export function ConnectorTools({
         >
           {t('toolsProjectLockedBody')}{' '}
           <Link
-            href={connectorsHref(projectId, 'rules')}
+            href={rulesHref(projectId)}
             className="text-foreground underline underline-offset-4"
           >
             {t('toolsOpenRules')}

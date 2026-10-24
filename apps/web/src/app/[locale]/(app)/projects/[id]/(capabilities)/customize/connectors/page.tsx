@@ -13,7 +13,7 @@ import { CapabilitiesSkeleton } from '@kortix/ui/customize/shared/capability-ske
  * page body.
  *
  * The `Suspense` boundary is required, not decorative: `ConnectorsPage` reads
- * `useSearchParams()` (the `?scope=` tab and the legacy `?rules=1` and `?c=`
+ * `useSearchParams()` (the `?scope=` tab, `?rules=1`, and the legacy `?c=`
  * redirect), and Next refuses to prerender a route that does so unbounded. Same
  * pattern as `app/(app)/connectors/page.tsx`. The fallback is the route
  * group's own skeleton, so the boundary cannot introduce a layout jump.

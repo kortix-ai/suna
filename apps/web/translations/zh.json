@@ -21172,7 +21172,7 @@
     "toolsNoneChangedBase": "还没有工具有自己的规则。所有工具都遵循连接器默认值。",
     "toolsChanged": "已更改",
     "statusNeedsAccount": "需要账户",
-    "toolsLockedByProject": "项目规则已决定此工具。请在“规则”标签页中修改。",
+    "toolsLockedByProject": "项目规则已决定此工具。请在审批规则中修改。",
     "toolsProjectLockedBody": "项目规则优先适用于每个连接器，因此无法在此修改这些工具。",
     "toolsOpenRules": "打开规则",
     "scopeConnectors": "连接器",
@@ -21223,7 +21223,8 @@
     "cardRuleSet": "{name}（{count, plural, other {# 个智能体}}）",
     "areaDescription": "将应用和渠道连接到智能体，并决定它们可以做什么。",
     "wayMoreNamed": "{name} 的更多操作",
-    "otherWaysLead": "其他方式："
+    "otherWaysLead": "其他方式：",
+    "typeFilterKortix": "Kortix"
   },
   "connectMcp": {
     "title": "通过 MCP 连接 Kortix",

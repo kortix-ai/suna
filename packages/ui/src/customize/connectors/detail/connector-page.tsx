@@ -550,7 +550,8 @@ export function ConnectorDetailView({
               ))}
             </dl>
 
-            {notice.kind !== 'none' ? (
+            {/* The Accounts tab has its own Add account; one call to action, not two. */}
+            {notice.kind !== 'none' && !(notice.kind === 'no_account' && tab === 'accounts') ? (
               <ConnectorNoticeRow
                 title={t(NOTICE_TITLE[notice.kind], { name: displayName })}
                 detail={

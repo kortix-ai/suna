@@ -21172,7 +21172,7 @@
     "toolsNoneChangedBase": "Nijedan alat još nema svoje pravilo. Svaki alat prati podrazumevano ponašanje konektora.",
     "toolsChanged": "Izmenjeno",
     "statusNeedsAccount": "Потребан налог",
-    "toolsLockedByProject": "Правило пројекта већ одлучује о овом алату. Промените га на картици Правила.",
+    "toolsLockedByProject": "Правило пројекта већ одлучује о овом алату. Промените га у правилима одобравања.",
     "toolsProjectLockedBody": "Правила пројекта се прва примењују на сваки конектор, па се ови алати овде не могу мењати.",
     "toolsOpenRules": "Отвори Правила",
     "scopeConnectors": "Конектори",
@@ -21223,7 +21223,8 @@
     "cardRuleSet": "{name} ({count, plural, one {# агент} few {# агента} other {# агената}})",
     "areaDescription": "Повежите апликације и канале са агентима и одредите шта смеју да раде.",
     "wayMoreNamed": "Још за {name}",
-    "otherWaysLead": "Други начини:"
+    "otherWaysLead": "Други начини:",
+    "typeFilterKortix": "Kortix"
   },
   "connectMcp": {
     "title": "Povežite Kortix preko MCP-a",

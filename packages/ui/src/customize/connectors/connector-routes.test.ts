@@ -11,6 +11,7 @@ import {
   connectorSearchFromParams,
   withConnectorSearch,
   browseForAnotherProfileHref,
+  rulesHref,
   waysFromParams,
 } from './connector-routes';
 
@@ -34,8 +35,8 @@ describe('connectorsHref', () => {
     expect(connectorsHref('p1')).toBe(BASE);
   });
   test('a scope rides as ?scope=', () => {
-    expect(connectorsHref('p1', 'connectors')).toBe(BASE);
-    expect(connectorsHref('p1', 'browse')).toBe(`${BASE}?scope=browse`);
+    expect(connectorsHref('p1', 'connected')).toBe(`${BASE}?scope=connected`);
+    expect(rulesHref('p1')).toBe(`${BASE}?rules=1`);
   });
 });
 
@@ -132,6 +133,6 @@ describe('another profile', () => {
     expect(waysFromParams(new URLSearchParams(''))).toBe(false);
   });
   test('Browse searches for the app and links its cards to the app page', () => {
-    expect(browseForAnotherProfileHref('p1', 'Gmail')).toBe(`${BASE}?scope=browse&ways=1&q=Gmail`);
+    expect(browseForAnotherProfileHref('p1', 'Gmail')).toBe(`${BASE}?scope=all&ways=1&q=Gmail`);
   });
 });

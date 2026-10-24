@@ -21172,7 +21172,7 @@
     "toolsNoneChangedBase": "独自のルールを持つツールはまだありません。すべてのツールはコネクタの既定に従います。",
     "toolsChanged": "変更あり",
     "statusNeedsAccount": "アカウントが必要",
-    "toolsLockedByProject": "プロジェクトルールがこのツールを決めています。「ルール」タブで変更してください。",
+    "toolsLockedByProject": "プロジェクトルールがこのツールを決めています。承認ルールで変更してください。",
     "toolsProjectLockedBody": "プロジェクトルールはすべてのコネクタに先に適用されるため、これらのツールはここでは変更できません。",
     "toolsOpenRules": "ルールを開く",
     "scopeConnectors": "コネクタ",
@@ -21223,7 +21223,8 @@
     "cardRuleSet": "{name}（{count, plural, other {# エージェント}}）",
     "areaDescription": "アプリとチャネルをエージェントに接続し、できることを決めます。",
     "wayMoreNamed": "{name} のその他",
-    "otherWaysLead": "その他の方法："
+    "otherWaysLead": "その他の方法：",
+    "typeFilterKortix": "Kortix"
   },
   "connectMcp": {
     "title": "MCP で Kortix に接続",

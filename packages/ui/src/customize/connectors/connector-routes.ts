@@ -30,9 +30,14 @@ function appParams(app: AppRef): URLSearchParams {
   return new URLSearchParams({ id: app.id });
 }
 
-/** The Connectors page on one tab. Connectors, the landing tab, writes no param. */
+/** The Connectors page on one tab. */
 export function connectorsHref(projectId: string, scope?: ConnectorScope): string {
-  return scope && scope !== 'connectors' ? `${base(projectId)}?scope=${scope}` : base(projectId);
+  return scope ? `${base(projectId)}?scope=${scope}` : base(projectId);
+}
+
+/** The Connectors page with the project's approval rules open (`?rules=1`). */
+export function rulesHref(projectId: string): string {
+  return `${base(projectId)}?rules=1`;
 }
 
 /**
@@ -77,7 +82,7 @@ export function waysFromParams(search: Pick<URLSearchParams, 'get'> | null | und
 
 /** Browse, searching for one app, with its cards opening the app page (`ways`). */
 export function browseForAnotherProfileHref(projectId: string, name: string): string {
-  const params = withConnectorSearch(new URLSearchParams({ scope: 'browse', [WAYS_PARAM]: '1' }), name);
+  const params = withConnectorSearch(new URLSearchParams({ scope: 'all', [WAYS_PARAM]: '1' }), name);
   return withQuery(base(projectId), params);
 }
 

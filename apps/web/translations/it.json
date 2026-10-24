@@ -21172,7 +21172,7 @@
     "toolsNoneChangedBase": "Nessuno strumento ha ancora una regola propria. Ogni strumento segue il comportamento predefinito del connettore.",
     "toolsChanged": "Modificato",
     "statusNeedsAccount": "Serve un account",
-    "toolsLockedByProject": "Una regola di progetto decide già questo strumento. Modificala nella scheda Regole.",
+    "toolsLockedByProject": "Una regola di progetto decide già questo strumento. Modificala nelle regole di approvazione.",
     "toolsProjectLockedBody": "Le regole di progetto si applicano prima a ogni connettore, quindi questi strumenti non si possono modificare qui.",
     "toolsOpenRules": "Apri Regole",
     "scopeConnectors": "Connettori",
@@ -21223,7 +21223,8 @@
     "cardRuleSet": "{name} ({count, plural, one {# agente} other {# agenti}})",
     "areaDescription": "Collega app e canali ai tuoi agenti e decidi cosa possono fare.",
     "wayMoreNamed": "Altro per {name}",
-    "otherWaysLead": "Altri modi:"
+    "otherWaysLead": "Altri modi:",
+    "typeFilterKortix": "Kortix"
   },
   "connectMcp": {
     "title": "Collega Kortix tramite MCP",
