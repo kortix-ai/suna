@@ -41,6 +41,7 @@ import {
   InputGroupSearchInput,
 } from '../../../primitives/input-group';
 import { Skeleton } from '../../../primitives/skeleton';
+import { cn } from '../../../internal/lib/utils';
 import { errorToast, successToast } from '../../../primitives/toast';
 import { EmptyState } from '../../../primitives/empty-state';
 import { ErrorState } from '../../../primitives/error-state';
@@ -489,29 +490,35 @@ export function ConnectorTools({
                         key={action.path}
                         className="flex flex-wrap items-center gap-x-4 gap-y-2 py-2.5"
                       >
-                        <div className="min-w-0 flex-1 basis-56">
-                          <div className="flex min-w-0 items-center gap-2">
-                            {changed ? (
-                              <span className="bg-foreground size-1.5 shrink-0 rounded-full">
-                                <span className="sr-only">{t('toolsChanged')}</span>
-                              </span>
-                            ) : null}
-                            <p className="text-foreground truncate text-sm font-medium">
-                              {row.title}
-                            </p>
-                            {row.path ? (
-                              <code className="text-muted-foreground min-w-0 truncate font-mono text-xs">
-                                {row.path}
-                              </code>
+                        <div className="flex min-w-0 flex-1 basis-56 items-start gap-2">
+                          {/* Every row keeps the marker's slot, so titles share one x. */}
+                          <span className="flex h-5 shrink-0 items-center">
+                            <span
+                              className={cn('size-1.5 rounded-full', changed && 'bg-foreground')}
+                            >
+                              {changed ? <span className="sr-only">{t('toolsChanged')}</span> : null}
+                            </span>
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            {/* Narrow: the id moves under the title instead of cutting it. */}
+                            <div className="flex flex-wrap items-baseline gap-x-2">
+                              <p className="text-foreground min-w-0 text-sm font-medium wrap-break-word">
+                                {row.title}
+                              </p>
+                              {row.path ? (
+                                <code className="text-muted-foreground max-w-full truncate font-mono text-xs">
+                                  {row.path}
+                                </code>
+                              ) : null}
+                            </div>
+                            {row.description ? (
+                              <Hint label={row.description} side="bottom">
+                                <p className="text-muted-foreground truncate text-xs">
+                                  {row.description}
+                                </p>
+                              </Hint>
                             ) : null}
                           </div>
-                          {row.description ? (
-                            <Hint label={row.description} side="bottom">
-                              <p className="text-muted-foreground truncate text-xs">
-                                {row.description}
-                              </p>
-                            </Hint>
-                          ) : null}
                         </div>
                         <ToolPolicyControl
                           label={tI18nComplete('textb34f1e3c1569', {
