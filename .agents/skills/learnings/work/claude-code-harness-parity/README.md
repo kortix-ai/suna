@@ -294,6 +294,137 @@ the user's permissions, work is local). Its strong ideas and our stance:
 multi-tenant substrate (isolated sandboxes, IAM, UI, connectors, billing).
 Durable + cloud-first is the differentiator, not a feature.
 
+## Reference: prime-agent (PrimeIntellect) RLM — full map
+
+MIT, Rust workspace (`pa-*` crates), a persistent **IPython kernel** as the
+model's control surface. arXiv:2608.23552 ("self-improving RLM harness").
+
+- **RLM:** model output is **Python**; context is held as **variables**
+  ("prompt-as-a-variable"); every tool/subagent/harness op is a **function call
+  in code** (`rlm.spawn`, `goal`, `refine`, `agent_message.send`, `compact`,
+  harness CRUD). Raw tools under it: `bash`, `edit`, `python_repl`. A GC
+  subagent compacts kernel memory.
+- **Continual Harness `H=(ρ,G,K,M)`** = prompt / subagents / skills / memory,
+  written to disk on every change (durable across restarts/sessions). CRUD:
+  `create_/update_/delete_{prompt_note,memory,skill,subagent}`. **`/refine`**
+  applies the smallest CRUD edit (plan in background, apply at turn boundary),
+  never edits the immutable base prompt, **rollback by refinement ID**, local to
+  the session by default.
+- **Subagents:** `rlm.spawn` = a full prime-agent instance (own model/kernel/
+  session), **async, returns a handle at admission**. **Retained** subagents
+  persist (recover via `list_subagents`, `mode="follow_up"`, address by session
+  id); **Inactive unloads after 30 min, reloads from disk**. Steer a live child
+  via `agent_message.send(receiver_role="child")`.
+- **Continuation:** `/goal` (persistent objective + token budget, ends on
+  `goal.complete()`, priority over queue/compaction); `/heartbeat` +
+  `rlm_heartbeat` (fixed-interval re-entry); `prime-agent schedule` (specific
+  time, file-backed, re-armed at boot); `/autonomous` (AutonomousDriver after
+  every settled turn; `--autonomous-max-turns/-tokens/-timeout-ms`;
+  `--autonomous-gate` must pass, bounded failure fed back, not rerun if
+  workspace unchanged).
+- **A2A / p2p:** all messaging via the daemon over a local socket; any session
+  → any session, **scoped to the "nuclear family" (parent/sibling/child)**.
+  `agent_message.send` / `agent_observe`. **Agents View** (Left Arrow on empty
+  prompt): Running/Idle/Inactive sessions, steer or queue into any.
+- **Skills** = importable Python packages (+ md), skill creator. **MCP**
+  kernel-side (`/mcp login`, `mcp.list_tools`). Slack = hosted MCP over HTTP.
+- **Process:** `pa-daemon` supervisor (owns sessions, failover, A2A routing,
+  survives client detach), one worker/session (crash-recovers from JSONL +
+  kernel snapshot), kernel process, append-only JSONL storage, CLI lifecycle
+  (`attach/status/doctor/shutdown/schedule/incident`). **Not a sandbox** — runs
+  model Python with user permissions.
+- **Config:** `models.json` (`modelOverrides.<id>.contextWindow`), `/settings`
+  (compaction `thresholdPercent`, default 95%, project overrides global),
+  `/login` providers.
+
+**Cloud-first implications for us:**
+1. **Kernel-as-surface → `codemode` as the primary control surface** (decision):
+   `agent()/goal()/loop()` as in-sandbox functions, not just tool calls.
+2. **Refine loop is a reward-hacking risk** when self-edits are unreviewed — our
+   **CR/git-reviewed** `harness-reflector` is the safer design; keep the gate.
+3. **A2A family+membership scoping** for the p2p on `agent_rooms`, routable
+   server-side transport (not a local socket).
+4. **Retained-subagent 30-min unload = Kortix idle-volume hibernation** — parity
+   for free.
+5. **Whole-session snapshots:** prime has none (only per-refine revert) — a
+   cloud design may want true session snapshots (we have git checkpoints).
+
+## Reference: Claude Code harness — full map
+
+Source: `code.claude.com/docs/en`, fetched 2026-10-24.
+
+- **Everything is a session** (one context window, owns tool-permissions +
+  memory + spawns workers). A **turn** ends when the model stops calling tools;
+  hooks fire at turn/tool boundaries.
+- **Subagent** = the **`Agent` tool** (**renamed from `Task` in v2.1.63**; Task
+  is an alias). A delegated worker, own context + system prompt, returns only a
+  summary. Defined as **md + YAML frontmatter** (`name`, `description`, `tools`,
+  `disallowedTools`, `model`, `permissionMode`, `maxTurns`, `skills`,
+  `mcpServers`, `hooks`, `memory`, `isolation: worktree`, `effort`,
+  `background`). Spawn: auto-delegation on `description`, or explicit. **Cap 20
+  concurrent, nesting depth 3.** Built-ins: Explore, Plan, general-purpose.
+  `/subtask` + `/fork` = forked subagent inheriting the full parent context.
+- **Five parallel-work approaches** on two axes — *who coordinates* × *where it
+  runs*: Subagents (in-session, ephemeral), **Agent view** (`claude agents`,
+  supervised background, survives shell close, 48h resume, research preview),
+  **Agent teams** (lead + teammates + **shared task list + mailbox
+  SendMessage**; experimental, off by default; a teammate = the Agent tool with
+  a `name`), **Projects** (cloud threads, project instructions ≤16k, MEMORY.md,
+  overview pane, 200 threads/day; public beta), **Dynamic workflows** (JS script
+  via the **Workflow** tool: `agent()/pipeline()/parallel()/phase()`, 16
+  concurrent, 1000/run).
+- **Continuation:** **`/goal`** = a **session-scoped prompt Stop-hook** + a
+  fresh **haiku** evaluator returning met/not-met/impossible after each turn;
+  check-ins after 30 min idle. **`/loop`** = cron interval (CronCreate/
+  CronList/CronDelete, or self-paced via ScheduleWakeup), 7-day expiry.
+  **Stop hook** = the deterministic primitive `/goal` wraps (exit 2 = don't
+  stop).
+- **Built-in tools** (identity strings used everywhere): `Agent`, `Bash`,
+  `Read/Edit/Write/NotebookEdit`, `Glob/Grep/LSP`, `WebFetch/WebSearch`,
+  `Monitor`, `Task*` (shared task list), `SendMessage/ListAgents`, `Skill`,
+  `Workflow`, plan/worktree tools, `Cron*`, `ScheduleWakeup`, `RemoteTrigger`,
+  `Artifact`, MCP plumbing. **Permissioning:** `ToolName(specifier)` in
+  allow/deny (`Bash(npm run *)`, `Read(~/secrets/**)`, `Agent(Explore)`,
+  `WebFetch(domain:…)`); **modes** default/acceptEdits/auto/dontAsk/
+  bypassPermissions/plan.
+- **Hooks** (33 events incl. `Stop`, `SubagentStop`, `PreToolUse`,
+  `TeammateIdle`, `PreCompact`…), **slash commands** (built-in + bundled skills
+  + custom `.claude/skills/*`), **output styles**, **skills** (SKILL.md, the
+  Agent Skills standard), **MCP** (`mcp__server__tool`), **settings.json**
+  (precedence user→project→local→managed), **Agent SDK** (TS/Python) + headless
+  `claude -p`.
+
+**Takeaways:** two axes = *who coordinates* × *where it runs*; cloud-first =
+coordinator is the Meta Agent/service, runtime is always cloud sandboxes.
+Continuation = an evaluator separate from the doer, after every turn. Isolation
+= worktree (cloud = per-thread clone). Non-Claude tools = MCP.
+
+## Three-system synthesis (the money table)
+
+| Concept | Claude Code | prime-agent | Kortix today | Kortix target |
+|---|---|---|---|---|
+| spawn worker | `Agent` tool (md+frontmatter) | `rlm.spawn` (code) | pi `task` (in-process) | **`agent` tool → real session**, inline or declared |
+| control surface | tool-call protocol | **Python kernel (code)** | tool calls + `codemode` | adopt codemode as 1st-class |
+| outcome loop | `/goal` (Stop-hook + evaluator) | `/goal` + `goal.complete()` | Goals (Files + on-idle) | **Goal** primitive, daemon-armed |
+| interval loop | `/loop` (cron) | `/heartbeat` + `schedule` | **Reminders (= Loop)** + Triggers | **Loop** (durable) |
+| event | — | — | Triggers (cron/webhook) | **Trigger** |
+| autonomous | `/effort ultracode` | `/autonomous` + gates | Workflow budgets | Goal + budgets/gates |
+| monitor board | Agent view | Agents View | sidebar child sessions | **Agent view** (free) |
+| teams | Agent teams (lead+tasklist+mailbox) | A2A (family-scoped) | `agent_rooms` | **p2p on rooms + steer** |
+| projects/threads | Projects (cloud) | sessions | **projects + sessions** | = (already cloud) |
+| workflows | Dynamic workflows | GC subagent / code | **Workflow tool** | = |
+| self-improve | — | Continual Harness `/refine` | harness-reflector (CR) | keep CR-gated (safer) |
+| persisted vs ephemeral | files vs inline | retained vs spawn | **yaml vs DB (triggers)** | **generalize to all** |
+| tools on/off | `ToolName()` perms | kernel imports | AgentToolsV2 grant | **builtin toggles + UI** |
+| default agent | main session | the agent | `kortix` agent | **Meta Agent (user rights)** |
+| non-native tools | MCP | MCP (kernel) | MCP | MCP |
+| isolation | worktree | session dir | sandbox/session | sandbox (already) |
+
+**The headline:** on nearly every row Kortix is already at parity or ahead —
+because our sessions are already cloud, durable, isolated, and permissioned.
+The net-new is small and concentrated: `agent`-tool reroute + inline specs,
+Loop/Goal consolidation, p2p-on-rooms, and the Meta Agent as default.
+
 ## Decisions needed from Marko before building
 
 1. **Subagent cost:** accept sandbox-per-subagent + a concurrency cap, with a
