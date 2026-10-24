@@ -3411,9 +3411,21 @@
       }
     }
   },
-  "onboardingChat": {
+  "firstChat": {
+    "title": "Твоје прво ћаскање са Kortix-ом",
+    "greeting": "Добро дошли, {name}. Ја сам Kortix.",
+    "greetingNoName": "Добро дошли. Ја сам Kortix.",
+    "intro": "Донеси ми било шта: задатак, ток рада или идеју која још није сасвим јасна. Смислићемо то заједно.",
+    "question": "Одакле желиш да почнеш?",
+    "recommendTools": "Preporuči alate",
+    "updateMemory": "Ажурирај меморију пројекта",
+    "placeholder": "Реци Kortix-у на чему радиш",
     "kickoff": "Уведи ме у Kortix",
-    "placeholder": "Реци Kortix-у на чему радиш"
+    "toolsPrompt": "Препоручи ми алате и конекторе који одговарају мом току рада. Ако ти затреба, прво ме питај на чему радим.",
+    "memoryPrompt": "Упознај се са тим како радим. Постављај ми по једно кратко питање о мојој улози, на чему радим, алатима које користим и како волим да радим. Сачувај моје одговоре у меморију пројекта да будуће сесије крену са тим информацијама.",
+    "inviteTeammate": "Pozovi kolegu",
+    "connectSlack": "Poveži Slack",
+    "slackConnected": "Slack povezan"
   },
   "announcements": {
     "memories": {

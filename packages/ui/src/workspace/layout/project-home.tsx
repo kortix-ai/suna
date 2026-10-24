@@ -14,8 +14,14 @@ import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
 import { useIsMobile } from '../../internal/hooks';
 import { useProjectCan } from '../../internal/lib/use-project-can';
 import { useComposerPrefillStore } from '../../internal/stores/composer-prefill-store';
+import {
+  firstChatHref,
+  isFirstChatRequested,
+  useFirstChatPending,
+  useFirstChatStore,
+} from '../../internal/stores/first-chat-store';
 import { ProjectScope } from '../../internal/project-scope';
-import { useUiComponents } from '../../providers/ui-provider';
+import { useUiComponents, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
 import {
   getProjectDetail,
   listProjectAccessRequests,
@@ -29,6 +35,7 @@ import { contract, invalidateProject, qk, type Command } from '@kortix/sdk/react
 import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
 import { AccessRequestsBell } from '../home/access-requests-bell';
 import { notificationCenterOn } from '../../internal/hooks/use-notification-center';
+import { FirstChat } from '../home/first-chat';
 import { SandboxPicker } from '../home/sandbox-picker';
 import { ProjectHomeWallpaper, ProjectHomeWelcomeBody } from '../home/welcome-body';
 import { useProjectHomeSend } from './use-project-home-send';
@@ -46,11 +53,15 @@ export interface ProjectHomeSendOptions extends ComposerOptions {
  * access-requests bell, and the centred column holding the composer and the
  * setup checklist.
  *
- * Until a new project is onboarded, the page is the onboarding chat instead:
- * an empty transcript with the composer docked at the bottom, holding
- * "Onboard me". It sends itself as soon as a model is usable, and the agent
- * runs the onboarding from there (the `kortix-onboarding` skill). Without a
- * model the composer's tray offers Upgrade and Connect model.
+ * Until a new project's first message is sent, the column is the first chat
+ * instead (`home/first-chat.tsx`): the same composer, docked at the bottom
+ * under a welcome from Kortix.
+ *
+ * With `onboarding`, a project that is not onboarded yet redirects here, and
+ * the first chat's composer holds "Onboard me". It sends itself as soon as a
+ * model is usable; the agent runs the onboarding from there (the
+ * `kortix-onboarding` skill). Without a model the composer's tray offers
+ * Upgrade and Connect model.
  *
  * This component owns the composer's WIRING — which sandbox, which agent, what
  * a send carries, what a prefill does. Everything it renders is a component of
@@ -75,9 +86,9 @@ export type ProjectHomeProps = {
   /** With the default send: runs first; throw to refuse the send (the draft stays). */
   beforeSend?: () => Promise<void>;
   /**
-   * Open the onboarding chat while the project is not onboarded, and send
-   * "Onboard me" once a model is usable. Off by default: a white-label or SDK
-   * host decides its own first run. Kortix web turns it on.
+   * A project that is not onboarded yet opens on the first chat, whose
+   * composer sends "Onboard me" once a model is usable. Off by default: a
+   * white-label or SDK host decides its own first run. Kortix web turns it on.
    */
   onboarding?: boolean;
 };
@@ -106,7 +117,14 @@ function ProjectHomeView({
   const send = onSend ?? defaultSend.send;
   const creating = onSend ? !!busy : defaultSend.sending;
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const tOnboarding = useTranslations('onboardingChat');
+  const tFirstChat = useTranslations('firstChat');
+  // The first chat never ends, but it opens only when asked for
+  // (`firstChatHref`: the sidebar row or the onboarding exit). Plain project
+  // home, which "New session" opens, stays the normal home.
+  const searchParams = useUiSearchParams();
+  const firstChatPending = useFirstChatPending(projectId);
+  const firstChatRequested = isFirstChatRequested(searchParams);
+  const router = useUiRouter();
   const queryClient = useQueryClient();
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
@@ -114,9 +132,9 @@ function ProjectHomeView({
   const [prefill, setPrefill] = useState<{
     text: string;
     id: number;
+    submit?: boolean | 'when-ready';
     files?: AttachedFile[];
     options?: SessionPromptOverrides;
-    submit?: boolean | 'when-ready';
   } | null>(null);
 
   // The sandbox TEMPLATE catalog, not live sandbox health (that is
@@ -170,32 +188,36 @@ function ProjectHomeView({
     ...contract('config'),
   });
   const accountId = projectDetailQuery.data?.project?.account_id;
+  // The promo waits for the onboarding stamp (KRTX-2378).
   const onboarded = Boolean(
     (projectDetailQuery.data?.project?.metadata as { onboarding_completed_at?: string } | undefined)
       ?.onboarding_completed_at,
   );
-  // Only someone who can set the project up is onboarded here: the stamp is a
+  // Only someone who can set the project up is onboarded: the stamp is a
   // project write (`PATCH /projects/:id/onboarding`). A member who cannot
-  // write sees the normal home. `=== true`: an unresolved probe or detail
-  // query never flashes the onboarding chat at someone it is not for.
+  // write sees the usual home. `=== true`: an unresolved probe never
+  // redirects someone the onboarding is not for.
   const canSetUpProject =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_WRITE).allowed === true;
   const onboarding =
     onboardingEnabled && projectDetailQuery.isSuccess && !onboarded && canSetUpProject;
-
-  // The chat layout holds once shown: the stamp lands after the kickoff's
-  // create and before the route change, and without the latch the usual home
-  // flashed in between.
-  const [onboardingView, setOnboardingView] = useState(false);
-  if (onboarding && !onboardingView) setOnboardingView(true);
+  // The onboarding lands on the first chat: it starts the chat (the sidebar
+  // row) and moves the address to it. Rendered as the first chat from this
+  // render on, so the usual home never paints in between.
+  useEffect(() => {
+    if (!onboarding) return;
+    useFirstChatStore.getState().start(projectId);
+    if (!firstChatRequested) router.replace(firstChatHref(projectId));
+  }, [onboarding, firstChatRequested, projectId, router]);
+  const firstChat = (firstChatPending && firstChatRequested) || onboarding;
 
   // Once per mount: a second prefill id would send a second kickoff.
   const kickoffQueuedRef = useRef(false);
   useEffect(() => {
     if (!onboarding || kickoffQueuedRef.current) return;
     kickoffQueuedRef.current = true;
-    setPrefill({ text: tOnboarding('kickoff'), id: Date.now(), submit: 'when-ready' });
-  }, [onboarding, tOnboarding]);
+    setPrefill({ text: tFirstChat('kickoff'), id: Date.now(), submit: 'when-ready' });
+  }, [onboarding, tFirstChat]);
   // Resolved during render so the bell is an anchor and Next holds its payload
   // in the segment cache. `account_id` arrives on a different query than the
   // count, so the bell can paint before the destination exists.
@@ -212,22 +234,22 @@ function ProjectHomeView({
     ) => {
       const sent = Promise.resolve(
         send(
-        text,
-        files,
-        {
-          ...options,
-          ...(metaSelected
-            ? { sandbox_slug: META_SANDBOX_SLUG }
-            : selectedSlug
-              ? { sandbox_slug: selectedSlug }
-              : {}),
-        },
+          text,
+          files,
+          {
+            ...options,
+            ...(metaSelected
+              ? { sandbox_slug: META_SANDBOX_SLUG }
+              : selectedSlug
+                ? { sandbox_slug: selectedSlug }
+                : {}),
+          },
           attachments,
         ),
       );
-      // The kickoff opened the onboarding session: the project is onboarded.
-      // Stamped only after the create resolves, so a refused send keeps the
-      // onboarding chat for the next visit.
+      // The first send opened a session: the project is onboarded. Stamped
+      // only after the create resolves, so a refused send keeps the
+      // onboarding for the next visit.
       if (onboarding) {
         // Spent: a composer mounted later must not apply it again.
         setPrefill(null);
@@ -330,11 +352,11 @@ function ProjectHomeView({
       // row beneath the card. The first chat docks the composer at the bottom
       // like a session does, so it keeps a session's defaults: the row
       // beneath, the menu above.
-      underbarPlacement={onboardingView || isMobile ? 'below' : 'inline'}
-      slashMenuPlacement={onboardingView ? 'above' : 'below'}
+      underbarPlacement={firstChat || isMobile ? 'below' : 'inline'}
+      slashMenuPlacement={firstChat ? 'above' : 'below'}
       placeholder={
-        onboardingView
-          ? tOnboarding('placeholder')
+        firstChat
+          ? tFirstChat('placeholder')
           : tI18nHardcoded.raw(
               'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrPlaceholder115e6c2d',
             )
@@ -356,20 +378,39 @@ function ProjectHomeView({
         to={accessRequestsTo}
         notificationCenter={notificationCenterOn(projectDetailQuery.data?.project)}
       />
-      {/* Onboarding owns the screen until the project is stamped (KRTX-2378). */}
-      {!onboarded || !HomeAnnouncement ? null : <HomeAnnouncement />}
+      {/* Not while the project is in its first-chat era, and not over the
+          onboarding wizard: onboarding owns those screens. The era starts when
+          the wizard's exit starts the first chat and then stays for the
+          browser's lifetime (`first-chat-store.ts`: "Onboarding starts it, and
+          it stays" — `finish` runs only on sign-out), so a wizard exit (which
+          stamps the project) can never be followed by the promo popping over
+          the project page the user just asked for (KRTX-2635). On later
+          projects, which the create flow stamps without a wizard, the era
+          never starts and the promo shows as before. */}
+      {firstChatPending || !onboarded || !HomeAnnouncement ? null : <HomeAnnouncement />}
 
       {/* No bubble or "Thinking" row is painted here on send. The page stays
           the welcome screen with the sentence held in the composer until the
           create resolves and the session route opens; the instant shell draws
           the first turn there (`useFirstPromptPreviewStore`). Painting the turn
           here left a slow or stuck create looking like a live session. */}
-      {onboardingView ? (
-        // A chat with nothing in it yet: the agent's first reply is the welcome.
-        <div className="relative z-10 flex min-h-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1" />
-          {composer}
-        </div>
+      {firstChat ? (
+        <FirstChat
+          projectId={projectId}
+          inviteTo={canManageMembers ? accessRequestsTo : null}
+          composer={composer}
+          busy={creating}
+          // Both starters send at once, each into a new session. Through the
+          // composer's own submit, not `sendOutsideComposer`: the send carries
+          // the agent and model the composer shows, and a missing model refuses
+          // it the same way a typed message is refused.
+          onRecommendTools={() =>
+            setPrefill({ text: tFirstChat('toolsPrompt'), id: Date.now(), submit: true })
+          }
+          onUpdateMemory={() =>
+            setPrefill({ text: tFirstChat('memoryPrompt'), id: Date.now(), submit: true })
+          }
+        />
       ) : (
         <ProjectHomeWelcomeBody
           projectId={projectId}

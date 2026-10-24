@@ -3411,9 +3411,21 @@
       }
     }
   },
-  "onboardingChat": {
+  "firstChat": {
+    "title": "Kortix との最初のチャット",
+    "greeting": "ようこそ、{name}さん。Kortix です。",
+    "greetingNoName": "ようこそ。Kortix です。",
+    "intro": "タスクでも、ワークフローでも、まだ形になっていないアイデアでも、何でも聞かせてください。一緒に整理していきましょう。",
+    "question": "どこから始めますか？",
+    "recommendTools": "ツールを提案",
+    "updateMemory": "プロジェクトメモリを更新",
+    "placeholder": "取り組んでいることを Kortix に伝えてください",
     "kickoff": "Kortixの使い方を案内して",
-    "placeholder": "取り組んでいることを Kortix に伝えてください"
+    "toolsPrompt": "私のワークフローに合うツールとコネクターを提案してください。必要であれば、まず私が何に取り組んでいるか聞いてください。",
+    "memoryPrompt": "私の働き方を知ってください。役割、取り組んでいること、使っているツール、好みの働き方について、一度に一つずつ短い質問をしてください。次のセッションがそこから始められるように、回答をプロジェクトメモリに保存してください。",
+    "inviteTeammate": "メンバーを招待",
+    "connectSlack": "Slack を接続",
+    "slackConnected": "Slack 接続済み"
   },
   "announcements": {
     "memories": {

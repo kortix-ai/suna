@@ -3411,9 +3411,21 @@
       }
     }
   },
-  "onboardingChat": {
+  "firstChat": {
+    "title": "La tua prima chat con Kortix",
+    "greeting": "Ti diamo il benvenuto, {name}. Sono Kortix.",
+    "greetingNoName": "Ti diamo il benvenuto. Sono Kortix.",
+    "intro": "Portami qualsiasi cosa: un'attività, un workflow o un'idea non ancora definita. La risolviamo insieme.",
+    "question": "Da dove vuoi iniziare?",
+    "recommendTools": "Strumenti consigliati",
+    "updateMemory": "Aggiorna la memoria del progetto",
+    "placeholder": "Dì a Kortix su cosa stai lavorando",
     "kickoff": "Guidami alla scoperta di Kortix",
-    "placeholder": "Dì a Kortix su cosa stai lavorando"
+    "toolsPrompt": "Consigliami strumenti e connettori adatti al mio workflow. Se ti serve, chiedimi prima su cosa lavoro.",
+    "memoryPrompt": "Scopri come lavoro. Fammi una domanda breve alla volta sul mio ruolo, su cosa lavoro, gli strumenti che uso e come mi piace lavorare. Salva le mie risposte nella memoria del progetto così le prossime sessioni partono già con queste informazioni.",
+    "inviteTeammate": "Invita collega",
+    "connectSlack": "Collega Slack",
+    "slackConnected": "Slack collegato"
   },
   "announcements": {
     "memories": {

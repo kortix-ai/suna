@@ -101,7 +101,7 @@ async function cleanup(user: Provisioned) {
   ).toEqual([]);
 }
 
-test.describe('50 — a new project opens on the onboarding chat', () => {
+test.describe('50 — a new project opens on the first chat, which runs the onboarding', () => {
   // A Free account has no model, so nothing can be sent: the chat holds the
   // kickoff in the composer and the tray offers the two ways to get a model.
   test('without a model: "Onboard me" waits in the composer, nothing is sent', async ({
@@ -124,6 +124,11 @@ test.describe('50 — a new project opens on the onboarding chat', () => {
         showMobileAppPromo: true,
       });
       await expect(composerEditor(page)).toHaveText('Onboard me', { timeout: 60_000 });
+      // The landing is the first chat: its welcome, its starters, its sidebar row.
+      await expect(page.getByRole('heading', { level: 1, name: /I'm Kortix\./ })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Recommend tools' })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Your first chat with Kortix' })).toBeVisible();
+      expect(new URL(page.url()).searchParams.get('chat')).toBe('first');
       await expect(page.getByText('No model connected')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByRole('button', { name: 'Connect model' })).toBeVisible();
       await expect(page.getByRole('progressbar', { name: 'Setup progress' })).toHaveCount(0);

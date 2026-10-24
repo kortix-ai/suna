@@ -3411,9 +3411,21 @@
       }
     }
   },
-  "onboardingChat": {
+  "firstChat": {
+    "title": "与 Kortix 的第一次聊天",
+    "greeting": "欢迎，{name}。我是 Kortix。",
+    "greetingNoName": "欢迎。我是 Kortix。",
+    "intro": "无论是任务、工作流，还是还没想清楚的点子，都可以带给我。我们一起理清楚。",
+    "question": "您想从哪里开始？",
+    "recommendTools": "推荐工具",
+    "updateMemory": "更新项目记忆",
+    "placeholder": "告诉 Kortix 您在做什么",
     "kickoff": "带我上手 Kortix",
-    "placeholder": "告诉 Kortix 您在做什么"
+    "toolsPrompt": "推荐适合我工作流的工具和连接器。如果需要，先问我在做什么。",
+    "memoryPrompt": "了解我的工作方式。每次只问我一个简短的问题，内容关于我的角色、我在做什么、我使用的工具，以及我喜欢的工作方式。把我的回答保存到项目记忆中，让以后的会话直接从这些信息开始。",
+    "inviteTeammate": "邀请成员",
+    "connectSlack": "连接 Slack",
+    "slackConnected": "Slack 已连接"
   },
   "announcements": {
     "memories": {

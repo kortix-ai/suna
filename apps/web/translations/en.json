@@ -3422,9 +3422,21 @@
       }
     }
   },
-  "onboardingChat": {
+  "firstChat": {
+    "title": "Your first chat with Kortix",
+    "greeting": "Welcome, {name}. I'm Kortix.",
+    "greetingNoName": "Welcome. I'm Kortix.",
+    "intro": "Bring me anything: a task, a workflow, or a half-formed idea. We'll figure it out together.",
+    "question": "Where do you want to start?",
+    "recommendTools": "Recommend tools",
+    "updateMemory": "Update memory",
+    "placeholder": "Tell Kortix what you're working on",
     "kickoff": "Onboard me",
-    "placeholder": "Tell Kortix what you're working on"
+    "toolsPrompt": "Recommend tools and connectors that fit my workflow. Ask me what I work on first if you need to.",
+    "memoryPrompt": "Get to know how I work. Ask me one short question at a time about my role, what I work on, the tools I use, and how I like to work. Save my answers to project memory so future sessions start with them.",
+    "inviteTeammate": "Invite teammate",
+    "connectSlack": "Connect Slack",
+    "slackConnected": "Slack connected"
   },
   "announcements": {
     "memories": {

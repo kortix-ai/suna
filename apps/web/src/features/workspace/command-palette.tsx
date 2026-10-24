@@ -117,6 +117,7 @@ import { DEFAULT_WALLPAPER_ID } from '@kortix/ui/theme';
 import { openCustomizeSidebar } from '@kortix/ui/internal/stores/sidebar-nav-store';
 import { hubTarget, openAccountPanel } from '@kortix/ui/internal/stores/account-panel-store';
 import { useChatSendStore } from '@kortix/ui/internal/stores/chat-send-store';
+import { firstChatHref, useFirstChatPending } from '@kortix/ui/internal/stores/first-chat-store';
 import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { useProjectSwitchStore } from '@kortix/ui/internal/stores/project-switch-store';
@@ -865,6 +866,15 @@ export function sessionMatchesPaletteQuery(session: ProjectSession, query: strin
   );
 }
 
+/**
+ * The welcome chat (KRTX-2476). The sidebar lists "Your first chat with
+ * Kortix" under Sessions while it is pending, but it is not a session yet, so
+ * the server search never returns it. Search finds it by its title instead.
+ */
+export function firstChatMatchesPaletteQuery(pending: boolean, title: string, query: string): boolean {
+  return pending && query.length > 0 && title.toLowerCase().includes(query);
+}
+
 export function CommandPalette() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -1578,6 +1588,13 @@ export function CommandPalette() {
     return filteredProjectSessionsList.slice(0, 8);
   }, [hasQuery, projectId, filteredProjectSessionsList]);
 
+  const tFirstChat = useTranslations('firstChat');
+  const firstChatPending = useFirstChatPending(projectId ?? '');
+  const firstChatTitle = tFirstChat('title');
+  const firstChatResult =
+    !!projectId &&
+    firstChatMatchesPaletteQuery(firstChatPending, firstChatTitle, query.trim().toLowerCase());
+
   /**
    * Workspaces matching a ROOT query.
    *
@@ -1783,7 +1800,7 @@ export function CommandPalette() {
     [tPalette, close],
   );
 
-  const hasSessionResults = rootSessionResults.length > 0;
+  const hasSessionResults = rootSessionResults.length > 0 || firstChatResult;
   const hasWorkspaceResults = rootWorkspaceRows.length > 0;
   const hasSettingsResults = settingsResultCount > 0;
   const hasAnyResults =
@@ -2342,6 +2359,7 @@ export function CommandPalette() {
     return (
       filteredNavItems.length +
       rootSessionResults.length +
+      (firstChatResult ? 1 : 0) +
       rootWorkspaceRows.length +
       sessionActionItems.length +
       settingsResultCount +
@@ -2352,6 +2370,7 @@ export function CommandPalette() {
     hasQuery,
     filteredNavItems,
     rootSessionResults,
+    firstChatResult,
     rootWorkspaceRows,
     sessionActionItems,
     settingsResultCount,
@@ -2820,6 +2839,19 @@ export function CommandPalette() {
                             </span>
                           </CommandItem>
                         ))}
+                        {firstChatResult && projectId && (
+                          <CommandItem
+                            value={sanitizeCmdkValue(`session ${firstChatTitle}`)}
+                            onSelect={() => {
+                              // nav-contract: prefetch-only — a cmdk row activated by keyboard.
+                              router.push(firstChatHref(projectId));
+                              close();
+                            }}
+                          >
+                            <MessageCircle className="size-4 shrink-0" />
+                            <span className="flex-1 truncate">{firstChatTitle}</span>
+                          </CommandItem>
+                        )}
                       </CommandGroup>
                     )}
 
