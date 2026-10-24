@@ -118,10 +118,13 @@ e = Step("Your first result", "One real task, finished end to end.", null, "5 mi
 ```
 
 **Research** (stage 1): a person card, a company card, and the key numbers
-the sources state (2 to 4; leave the StatRow out when they state none).
+the sources state (2 to 4; leave the StatRow out when they state none). The
+cards sit in a `"list"` Stack so the logo shows as a small thumbnail, never as
+a cover photo.
 
 ```openui
-root = Stack([p, co, k])
+root = Stack([cards, k])
+cards = Stack([p, co], "col", "list")
 p = Card("<Full name>", "<role and background, one sentence>", "<role · company>", null, "<public profile URL>")
 co = Card("<Company>", "<what it does and for whom, one sentence>", "<industry · headquarters>", "<logo URL>", "<website>")
 k = StatRow([Stat("<label>", "<value>"), Stat("<label>", "<value>")])
