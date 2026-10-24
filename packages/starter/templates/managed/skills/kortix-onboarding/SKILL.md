@@ -58,7 +58,9 @@ until you approve it."), then one `question` call:
    reporting, building internal tools, monitoring something).
 
 **Done when** `/drives/me/Memory/profile.md` and `work.md` hold the answers and
-`MEMORY.md` indexes them.
+`MEMORY.md` indexes them. When `/drives/me` does not exist (Files is off for this
+project), the project brain `memory/` holds them instead; the platform creates
+`/drives/me`, so leave it to the platform.
 
 ## Stage 2: the workspace and the team
 
