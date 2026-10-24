@@ -34,7 +34,7 @@ import {
   manifestHashForConnector,
 } from '../projects/connectors';
 import { type GitBackedProject, isRepoFileNotFoundError, readRepoFile } from '../projects/git';
-import { withProjectGitAuth } from '../projects/surface';
+import { MANIFEST_PROJECT_NAME_KEY, metadataMerge, projectNameAction, withProjectGitAuth } from '../projects/surface';
 import { extractProjectPolicies } from '../projects/policies';
 import { hideSupersededSlack } from './channel-rules';
 import {
@@ -43,6 +43,7 @@ import {
 } from '../projects/secrets';
 import { SecretUndecryptableError } from '../secrets/undecryptable';
 import { type GitTriggerSpec, extractTriggers, readManifest } from '../projects/triggers';
+import { syncDeclaredApps } from '../apps/app-manifest';
 import { reconcileProjectTriggerRuntime } from '../projects/trigger-runtime-catalog';
 import { reconcileEventSubscriptions } from '../projects/surface';
 import { db } from '../shared/db';
@@ -737,6 +738,35 @@ async function syncProjectConnectorsFenced(
   // The periodic sweep also retries `error` / `needs_connection` subscriptions here.
   if (triggerSpecs) await reconcileEventSubscriptions(projectId, accountId, triggerSpecs);
 
+  // kortix.yaml owns default_agent. The metadata copy (read by channel bindings
+  // and the marketplace gate) follows every push, not only PUT /default-agent.
+  const declaredDefaultAgent = typeof manifest?.raw.default_agent === 'string' ? manifest.raw.default_agent.trim() : '';
+  if (declaredDefaultAgent) {
+    await db.update(projects)
+      .set({ metadata: metadataMerge({ default_agent: declaredDefaultAgent }) })
+      .where(and(eq(projects.projectId, projectId), sql`coalesce(${projects.metadata}->>'default_agent', '') <> ${declaredDefaultAgent}`));
+  }
+
+  // kortix.yaml owns project.name: a push that changes it renames the project.
+  if (manifest) {
+    const [current] = await db.select({ name: projects.name, metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
+    const project = manifest.raw.project as { name?: unknown } | undefined;
+    const marker = (current?.metadata as Record<string, unknown> | null)?.[MANIFEST_PROJECT_NAME_KEY];
+    const action = current ? projectNameAction(project?.name, marker, current.name) : 'none';
+    if (action !== 'none') {
+      const declaredName = String(project!.name).trim();
+      await db.update(projects)
+        .set({ ...(action === 'apply' ? { name: declaredName } : {}), metadata: metadataMerge({ [MANIFEST_PROJECT_NAME_KEY]: declaredName }) })
+        .where(eq(projects.projectId, projectId));
+    }
+  }
+
+  // kortix.yaml owns the App fields it declares: a push applies them without a deploy.
+  if (manifest) {
+    const appSync = await syncDeclaredApps(projectId, manifest.raw.apps);
+    for (const failure of appSync.errors) errors.push({ slug: failure.slug, error: failure.error });
+  }
+
   return { synced, errors };
 }
 
@@ -931,6 +961,9 @@ async function upsertConnector(
   // Cheap fields reconciled on every sync. `config` (which folds in the
   // discovered server) only changes when we actually re-resolved the catalog.
   const common = {
+    // kortix.yaml owns a declared auth.secret. An omitted one keeps the stored
+    // binding: bindings made before they were committed to the file live only here.
+    ...(spec.auth.secret ? { authSecret: spec.auth.secret } : {}),
     name: spec.name,
     providerType: spec.provider,
     enabled: spec.enabled,
