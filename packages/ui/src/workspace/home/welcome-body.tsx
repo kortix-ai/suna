@@ -3,9 +3,14 @@
 import { lazy, Suspense, useLayoutEffect, useState, type ReactNode } from 'react';
 
 import { SessionWelcome } from '../../session/thread/session-welcome';
+import { agentsInSpace, listSpaces } from '@kortix/sdk';
 import { useProjectConfig, useProjectName } from '@kortix/sdk/react';
 
+import { useTranslations } from '../../i18n';
+import { AgentMark } from '../../internal/components/agent-mark';
+import { agentHref } from '../../internal/lib/capability-tab-routes';
 import { useActiveDomain } from '../../internal/stores/active-domain-store';
+import { useUiLink } from '../../providers/ui-provider';
 import {
   HOME_GREETINGS,
   HOME_GREETING_STORAGE_KEY,
@@ -13,12 +18,12 @@ import {
   spaceBefore,
 } from './home-greeting';
 
-// Lazy: keeps SpaceBlocks' heavy embeds (App preview, Files viewer, SessionThread)
-// out of the project-home compile graph until a space actually declares blocks.
+// Lazy: keeps the space home's heavy embeds (App preview, Files viewer, the
+// room panel) out of the project-home compile graph until a space is active.
 // Dev-mode Turbopack compiles everything a route imports eagerly, and this
 // component is reachable from the barrel that ~44 routes import.
-const SpaceBlocks = lazy(() =>
-  import('../space/space-blocks').then((m) => ({ default: m.SpaceBlocks })),
+const SpaceHome = lazy(() =>
+  import('../space/space-home').then((m) => ({ default: m.SpaceHome })),
 );
 
 /**
@@ -84,10 +89,15 @@ export function ProjectHomeWelcomeBody({
   // space's agents.
   const [activeDomain] = useActiveDomain(projectId);
   const config = useProjectConfig(projectId);
+  // Declared or only referenced by an agent; a stale selection (the space was
+  // removed) is no space.
   const space = activeDomain
-    ? config?.domains?.find((domain) => domain.name === activeDomain)
+    ? listSpaces(config).find((candidate) => candidate.name === activeDomain)
     : undefined;
-  const spaceLabel = space?.label || activeDomain || null;
+  const spaceLabel = space ? space.label || space.name : null;
+  const spaceAgents = space ? agentsInSpace(space.name, config?.agents ?? []) : [];
+  const Link = useUiLink();
+  const tSpaces = useTranslations('spaces');
   // One word, not two. The name sits inside the sentence in `text-foreground`
   // while the rest is muted, so the fallback has to read as a NAME in that
   // slot — "this project" is a description wearing a name's highlight, and it
@@ -146,10 +156,24 @@ export function ProjectHomeWelcomeBody({
               <span className="text-muted-foreground text-sm">
                 In <span className="text-foreground font-medium">{spaceLabel}</span> space
               </span>
+              {spaceAgents.length ? (
+                <span role="group" className="ml-auto flex items-center gap-1" aria-label={tSpaces('agents')}>
+                  {spaceAgents.map((name) => (
+                    <Link
+                      key={name}
+                      href={agentHref(projectId, name)}
+                      className="rounded-sm"
+                      aria-label={tSpaces('openAgent', { name })}
+                    >
+                      <AgentMark slug={name} />
+                    </Link>
+                  ))}
+                </span>
+              ) : null}
             </div>
           ) : null}
           <h1
-            className="text-muted-foreground w-full px-4 text-3xl leading-[1.2] tracking-tight text-balance max-sm:text-2xl"
+            className="text-muted-foreground w-full px-4 text-2xl tracking-tight text-balance"
             hidden={!!sentTurn}
           >
             {greeting.before}{' '}
@@ -163,26 +187,27 @@ export function ProjectHomeWelcomeBody({
             </p>
           ) : null}
 
-          {/* A Space declares its own surface as blocks; render them as a
-              simple grid below the brief. With no blocks the home keeps its
-              plain composer-only column. */}
-          {space?.blocks?.length && !sentTurn ? (
-            <Suspense fallback={null}>
-              <SpaceBlocks projectId={projectId} blocks={space.blocks} />
-            </Suspense>
-          ) : null}
-
           {/* The sent message takes the heading's slot — same column, same rail,
               so the bubble the instant shell paints a moment later is already
               the width it will be there. */}
           {sentTurn ? <div className="w-full px-4">{sentTurn}</div> : null}
 
           {composer ? <div className="flex w-full flex-col gap-4">{composer}</div> : null}
+
+          {/* A space's home is a channel: its room beside what is bound to
+              it, then the blocks it declares. Without a space the home keeps
+              its plain composer-only column. */}
+          {space && !sentTurn ? (
+            <Suspense fallback={null}>
+              <SpaceHome projectId={projectId} space={space} />
+            </Suspense>
+          ) : null}
         </div>
 
-        {/* Nothing under the composer, on purpose (Marko, 2026-09-02: "just
-            have the chat input there & that's it"). The setup steps stay
-            reachable from Customize. */}
+        {/* Nothing under the composer unless a space is active (Marko,
+            2026-09-02: "just have the chat input there & that's it"). An
+            active space renders its home there: its room, what is bound to
+            it, its blocks. The setup steps stay reachable from Customize. */}
       </div>
     </div>
   );

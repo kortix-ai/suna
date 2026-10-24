@@ -68,6 +68,7 @@ import {
   SANDBOX_DISK_BOUNDS,
   SANDBOX_MEMORY_BOUNDS,
   SLUG_RE,
+  SPACE_SLUG_RE,
   KORTIX_TOOL_NAMES,
   KORTIX_TOOL_PREFIX,
   TOOL_NAME_RE,
@@ -1063,6 +1064,8 @@ function appBlockV2Schema(): JsonSchemaFragment {
           listed: { type: 'boolean' },
           preview: { type: 'string', enum: ['live', 'none'] },
           parent: { type: 'string', pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$' },
+          space: { type: ['string', 'null'], pattern: SPACE_SLUG_RE.source, description: 'The space the App is grouped in. Grouping only.' },
+          agent: { type: ['string', 'null'], pattern: SLUG_RE.source, description: 'The agent that owns the App. Grouping only.' },
         },
         additionalProperties: false,
       },
@@ -1261,7 +1264,7 @@ function agentBlockV3Schema(): JsonSchemaFragment {
       sandbox: v2.properties.sandbox,
       domain: {
         type: 'string',
-        pattern: SLUG_RE.source,
+        pattern: SPACE_SLUG_RE.source,
         description: 'Classification group for the dashboard (a key in the top-level `domains` map, or a bare name). Display-only.',
       },
       network_egress: v2.properties.network_egress,
@@ -1351,13 +1354,30 @@ export function buildManifestV3Schema(): JsonSchemaFragment {
       domains: {
         type: ['object', 'null'],
         description: 'Optional display groups for the dashboard: slug → { label, description, order }. Data-only; groups agents by their `domain`.',
-        propertyNames: { pattern: SLUG_RE.source },
+        propertyNames: { pattern: SPACE_SLUG_RE.source },
         additionalProperties: {
           type: 'object',
           properties: {
             label: { type: 'string' },
             description: { type: 'string' },
             order: { type: 'number' },
+            blocks: {
+              type: 'array',
+              items: {
+                type: 'object',
+                required: ['type'],
+                properties: {
+                  type: { type: 'string', enum: ['chat', 'artifact', 'app', 'iframe', 'text'] },
+                  label: { type: 'string' },
+                  room: { type: 'string' },
+                  path: { type: 'string' },
+                  app: { type: 'string' },
+                  url: { type: 'string' },
+                  text: { type: 'string' },
+                },
+                additionalProperties: false,
+              },
+            },
           },
           additionalProperties: false,
         },

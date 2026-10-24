@@ -812,10 +812,24 @@ describe('apps: release config (processes, services, mounts, vm, deploy, labels)
   dash:
     type: static
     display: { parent: nope }`)).toEqual([
-      'apps.db.display.hidden: is not a display field (listed, preview, parent).',
+      'apps.db.display.hidden: is not a display field (listed, preview, parent, space, agent).',
       'apps.db.display.preview: must be live or none.',
       'apps.db.display.parent: an App cannot be its own parent.',
       'apps.dash.display.parent: names no App in this file.',
+    ]);
+  });
+  test('display.space and display.agent bind an App to a space or an agent (grouping only)', () => {
+    expect(issues(`  db:
+    type: static
+    display: { space: ops, agent: builder }
+  web:
+    type: static
+    display: { space: null, agent: null }`)).toEqual([]);
+    expect(issues(`  db:
+    type: static
+    display: { space: "Not A Slug", agent: 42 }`)).toEqual([
+      'apps.db.display.space: must be a space slug (lowercase letters, digits, "-" or "_", at most 63 characters).',
+      'apps.db.display.agent: must be an agent name.',
     ]);
   });
 });

@@ -537,6 +537,8 @@ export const qk = {
     roomList: (id: string) => [...qk.project.rooms(id), 'list'] as const,
     /** `listRooms({ mine: true })` — the caller's conversations with unread counts. */
     roomConversations: (id: string) => [...qk.project.rooms(id), 'mine'] as const,
+    /** `findRoomByName` — the room of a space (named like its slug), or null. */
+    spaceRoom: (id: string, name: string) => [...qk.project.rooms(id), 'name', name] as const,
     /** `getRoom` — one conversation and its members. */
     room: (id: string, roomId: string) => [...qk.project.rooms(id), 'room', roomId] as const,
     /** `listRoomMessages` — the newest messages of one conversation. */

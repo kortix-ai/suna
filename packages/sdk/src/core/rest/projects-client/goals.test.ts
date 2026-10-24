@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { getProjectGoalFiles, goalHealth, listProjectGoals, type ProjectGoalDocument } from './goals';
+import { getProjectGoalFiles, goalHealth, listProjectGoals, setProjectGoalBinding, type ProjectGoalDocument } from './goals';
 import type { ProjectReminder } from './session-reminders';
 
 configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
@@ -183,5 +183,49 @@ describe('listProjectGoals', () => {
       notes: '# Notes\n',
       verification: null,
     });
+  });
+});
+
+describe('setProjectGoalBinding', () => {
+  const folder = '/Company/Goals/bank-close';
+  const target = { driveId: 'd1', folder };
+  let writes: Array<{ path: string | null; ifMatch: string | null; body: Record<string, unknown> }> = [];
+  let putStatus = 200;
+
+  beforeEach(() => {
+    writes = [];
+    putStatus = 200;
+    globalThis.fetch = mock(async (input: unknown, init: RequestInit = {}) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      if ((init.method ?? 'GET') === 'PUT') {
+        const headers = new Headers(init.headers);
+        const text = await new Response(init.body as BodyInit).text();
+        writes.push({ path: url.searchParams.get('path'), ifMatch: headers.get('if-match'), body: JSON.parse(text) });
+        const body = putStatus === 200 ? { path: url.searchParams.get('path'), size: 1, version: 'v2' } : { message: 'file_changed' };
+        return new Response(JSON.stringify(body), { status: putStatus, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ ...GOAL, space: 'finance' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json', etag: 'v1' },
+      });
+    }) as unknown as typeof fetch;
+  });
+
+  test('merges space and agent into goal.json and writes it back on the version it read', async () => {
+    const doc = await setProjectGoalBinding(target, { agent: 'builder' });
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({ path: `${folder}/goal.json`, ifMatch: 'v1' });
+    expect(writes[0]!.body).toMatchObject({ objective: GOAL.objective, space: 'finance', agent: 'builder' });
+    expect(doc).toMatchObject({ space: 'finance', agent: 'builder' });
+  });
+
+  test('null clears a field: the goal goes back to project-wide', async () => {
+    await setProjectGoalBinding(target, { space: null, agent: null });
+    expect(writes[0]!.body).toMatchObject({ space: null, agent: null });
+  });
+
+  test('a concurrent write surfaces as an ApiError 409', async () => {
+    putStatus = 409;
+    await expect(setProjectGoalBinding(target, { space: 'ops' })).rejects.toMatchObject({ status: 409 });
   });
 });

@@ -432,6 +432,18 @@ export interface UiHostComponents {
    * (apps/web: its mobile app). Without it, nothing is shown.
    */
   HomeAnnouncement?: React.ComponentType;
+  /**
+   * One room's conversation (flag `agent_rooms`): its messages and a composer,
+   * by room NAME. A room that does not exist yet shows an empty state, and the
+   * first post creates it with `emptyTopic`. A space home renders its own room
+   * (the room named like the space's slug) through it. Without it, a link to
+   * the rooms page.
+   */
+  RoomPanel?: React.ComponentType<{
+    projectId: string;
+    roomName: string;
+    emptyTopic?: string;
+  }>;
   /** Who can open a session, and its public link. Without it, the header has no Share button. */
   ShareSessionModal?: React.ComponentType<{
     projectId: string;

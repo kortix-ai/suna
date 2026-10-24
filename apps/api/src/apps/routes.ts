@@ -1,5 +1,6 @@
 import { revokeAppViewerTokens } from './viewer';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { BINDING_AGENT_RE, SPACE_SLUG_RE } from '@kortix/shared/app-config';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import type { AppEnv } from '../types';
@@ -105,6 +106,9 @@ const DisplaySchema = z.object({
   listed: z.boolean().optional(),
   preview: z.enum(['live', 'none']).optional(),
   parent: z.string().regex(APP_SLUG, 'an App slug').optional(),
+  // Grouping only, never a grant: the space and the owning agent the App is shown under.
+  space: z.string().regex(SPACE_SLUG_RE, 'a space slug').nullable().optional(),
+  agent: z.string().regex(BINDING_AGENT_RE, 'an agent name').nullable().optional(),
 }).strict();
 /** An external App's site: https only, no credentials in the URL. */
 const ExternalUrlSchema = z.string().url().max(2048).refine((value) => {
@@ -639,7 +643,7 @@ export function registerAppsRoutes(): void {
     createRoute({
       method: 'patch', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Update an App', ...auth,
       description:
-        '`external_url` moves an external App to another https URL (409 for an App Kortix runs). `display` replaces where Kortix shows the App (`listed`, `preview`: live | none, `parent`: the App whose detail shows it as a tab); presentation only. `uses` replaces the Apps (by slug) this App uses; each must be a live App of the project the caller can see (400 `app_not_found` otherwise, the same for a missing App and a hidden one). A refused PATCH changes nothing. ',
+        '`external_url` moves an external App to another https URL (409 for an App Kortix runs). `display` replaces where Kortix shows the App (`listed`, `preview`: live | none, `parent`: the App whose detail shows it as a tab, `space` and `agent`: where it is grouped); presentation only, never a grant. `uses` replaces the Apps (by slug) this App uses; each must be a live App of the project the caller can see (400 `app_not_found` otherwise, the same for a missing App and a hidden one). A refused PATCH changes nothing. ',
       request: {
         params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({

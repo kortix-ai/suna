@@ -48,7 +48,9 @@ Subcommands:
                              goes up in several saves. Prints the link.
                              --title "<title>" (default: the doc's # heading or
                              the page's <title>), --description "<sentence>",
-                             --visibility private|project|public (default private)
+                             --visibility private|project|public (default private),
+                             --space <slug>, --agent <name> (where it is grouped;
+                             default agent: this session's agent)
   add <path>                 Share a folder already in Files (it holds an
                              index.md or index.html; an index file stands for
                              its folder). Same options.
@@ -59,7 +61,8 @@ Subcommands:
                              (the entry_version from \`info\` or \`pull\`).
   ls                         Artifacts you may view, newest first.
                              --mine, --shared (others shared), --pinned,
-                             --type doc|html, --search "<text>"
+                             --type doc|html, --search "<text>",
+                             --space <slug> (bound to that space)
   info <artifact>            Title, type, path in Files, files, links.
   cat <artifact> [<path>]    Print one file (default the entry).
                              --version <id> reads an old version.
@@ -69,6 +72,9 @@ Subcommands:
                              --with <email|user-id> (repeat) shares a private
                              artifact with those people; --with "" clears.
   rename <artifact> "<title>"
+  bind <artifact>            Group it: --space <slug>, --agent <name>, or
+                             --clear (project-wide). Grouping only: it grants
+                             nothing.
   versions <artifact>        Every save, newest first (from the Files history).
   restore <artifact> <version-id>
                              Write that version back, as a new save.
@@ -99,7 +105,7 @@ Examples:
 
 const TYPES = ['doc', 'html'];
 const VISIBILITIES = ['private', 'project', 'public'];
-const KNOWN = ['types', 'publish', 'add', 'ls', 'list', 'info', 'cat', 'pull', 'open', 'share', 'rename', 'versions', 'restore', 'pin', 'unpin', 'rm', 'delete'];
+const KNOWN = ['types', 'publish', 'add', 'ls', 'list', 'info', 'cat', 'pull', 'open', 'share', 'rename', 'bind', 'versions', 'restore', 'pin', 'unpin', 'rm', 'delete'];
 
 /** The files to publish: a folder's tree, or one file as `index.md` / `index.html`. */
 async function collectFiles(path: string): Promise<Record<string, ArtifactFileInput>> {
@@ -170,6 +176,7 @@ export async function runArtifacts(argv: string[]): Promise<number> {
     json: boolean; projectArg?: string; hostArg?: string; type?: string; title?: string; description?: string;
     visibility?: string; id?: string; baseVersion?: string; version?: string; search?: string;
     with: string[]; mine: boolean; shared: boolean; pinned: boolean; starter: boolean;
+    space?: string; agent?: string; clear: boolean;
   };
   try {
     f = {
@@ -189,6 +196,9 @@ export async function runArtifacts(argv: string[]): Promise<number> {
       shared: takeFlagBool(rest, ['--shared']),
       pinned: takeFlagBool(rest, ['--pinned']),
       starter: takeFlagBool(rest, ['--starter']),
+      space: takeFlagValue(rest, ['--space']),
+      agent: takeFlagValue(rest, ['--agent']),
+      clear: takeFlagBool(rest, ['--clear']),
     };
   } catch (err) {
     return fail((err as Error).message);
@@ -198,6 +208,8 @@ export async function runArtifacts(argv: string[]): Promise<number> {
   if (!KNOWN.includes(sub)) return fail(`unknown subcommand "${sub}". Run \`kortix artifacts --help\`.`);
   if (f.type && !TYPES.includes(f.type)) return fail(`--type must be doc or html.`);
   if (f.visibility && !VISIBILITIES.includes(f.visibility)) return fail(`--visibility must be private, project or public.`);
+  if (f.space !== undefined && !/^[a-z0-9][a-z0-9_-]{0,62}$/.test(f.space)) return fail(`--space "${f.space}" is not a space slug (lowercase letters, digits, "-" or "_", at most 63 characters).`);
+  if (f.agent !== undefined && !/^[a-z0-9][a-z0-9_-]{0,127}$/.test(f.agent)) return fail(`--agent "${f.agent}" is not an agent name.`);
 
   const ctx = await resolveProjectContext({ projectArg: f.projectArg, hostArg: f.hostArg });
   if (!ctx) return 1;
@@ -211,6 +223,8 @@ export async function runArtifacts(argv: string[]): Promise<number> {
     ...(f.title ? { title: f.title } : {}),
     ...(f.description ? { description: f.description } : {}),
     ...(f.visibility ? { visibility: f.visibility as ArtifactVisibility } : {}),
+    ...(f.space ? { space: f.space } : {}),
+    ...(f.agent ? { agent: f.agent } : {}),
   };
 
   try {
@@ -288,7 +302,7 @@ export async function runArtifacts(argv: string[]): Promise<number> {
         case 'ls':
         case 'list': {
           const scope: ArtifactListScope = f.pinned ? 'pinned' : f.mine ? 'mine' : f.shared ? 'shared' : 'all';
-          const list = await listArtifacts(pid, { scope, type: f.type as ArtifactType | undefined, q: f.search });
+          const list = await listArtifacts(pid, { scope, type: f.type as ArtifactType | undefined, q: f.search, space: f.space });
           if (f.json) return out(list, '');
           if (!list.length) return out(null, 'No artifacts yet. Publish one with `kortix artifacts publish <file>`.');
           for (const a of list) {
@@ -368,6 +382,13 @@ export async function runArtifacts(argv: string[]): Promise<number> {
           if (!a1) return missing('a title');
           const a = await updateArtifact(pid, id, { title: a1 });
           return out(a, status.ok(`Renamed to "${a.title}"`));
+        }
+        case 'bind': {
+          const id = await resolve(a0);
+          if (!id) return a0 ? 1 : missing('an artifact id');
+          if (!f.clear && f.space === undefined && f.agent === undefined) return missing('--space <slug>, --agent <name> or --clear');
+          const a = await updateArtifact(pid, id, f.clear ? { space: null, agent: null } : { ...(f.space ? { space: f.space } : {}), ...(f.agent ? { agent: f.agent } : {}) });
+          return out(a, status.ok(`"${a.title}" is in ${a.space ?? (a.agent ? `${a.agent}'s space` : 'no space (project-wide)')}`));
         }
         case 'versions': {
           const id = await resolve(a0);

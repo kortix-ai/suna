@@ -7195,13 +7195,15 @@ const catalog = {
     "threadLoadError": "Could not load this thread. Try again.",
     "join": "Join",
     "openRoom": "Open",
-    "gateDescription": "Turn on Rooms to let agent sessions and people of this project talk in named chat rooms."
+    "gateDescription": "Turn on Rooms to let agent sessions and people of this project talk in named chat rooms.",
+    "archivedNotice": "This room is archived. It keeps its messages and takes no new ones."
   },
   "goals": {
     "title": "Goals",
     "gateDescription": "Agents own an objective until it is verifiably done: the goal lives in Files, a daily heartbeat wakes it, the agent chases people for what it needs, and an independent check closes it.",
     "empty": "No goals yet",
     "emptyHint": "Start one in a session: describe the outcome, for example \"make sure our old bank account is closed\". The agent creates the goal and it shows here.",
+    "spaceEmpty": "No goals in {space} yet",
     "loadError": "Could not load goals. Try again.",
     "retry": "Try again",
     "needsYou": "Needs you",
@@ -7281,7 +7283,9 @@ const catalog = {
     "verification": "Verification",
     "notes": "Notes",
     "log": "Log",
-    "notFound": "This goal no longer exists."
+    "notFound": "This goal no longer exists.",
+    "showAll": "Show all",
+    "spaceScope": "{space} · {scope}"
   },
   "agentEditor": {
     "manage": "Manage",
@@ -7342,6 +7346,23 @@ const catalog = {
     "busyHint": "Refresh in a moment.",
     "fallbackTitle": "Shared response",
     "stopNote": "The link will stop working."
+  },
+  "spaces": {
+    "inThisSpace": "In this space",
+    "goals": "Goals",
+    "apps": "Apps",
+    "artifacts": "Artifacts",
+    "viewAll": "View all",
+    "doc": "Doc",
+    "page": "Page",
+    "openRooms": "Open rooms",
+    "roomHint": "Agents and people post updates here.",
+    "noRoom": "No room yet.",
+    "agents": "Agents in this space",
+    "openAgent": "Open {name}",
+    "filter": "Filter by space",
+    "all": "All",
+    "projectWide": "Project-wide"
   }
 };
 

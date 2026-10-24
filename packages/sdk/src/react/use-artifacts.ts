@@ -15,8 +15,7 @@ import {
   setArtifactPinned,
   updateArtifact,
   type ArtifactDetail,
-  type ArtifactListScope,
-  type ArtifactType,
+  type ListArtifactsOptions,
   type PublishArtifactInput,
   type SaveArtifactInput,
   type ShareArtifactPathInput,
@@ -28,7 +27,7 @@ import { qk } from './query-keys';
 /** The project's artifacts the caller may view (flag `artifacts`), newest change first. */
 export function useArtifacts(
   projectId: string | null | undefined,
-  filter: { scope?: ArtifactListScope; type?: ArtifactType; q?: string } = {},
+  filter: ListArtifactsOptions = {},
 ) {
   return useQuery({
     queryKey: qk.project.artifactList(projectId ?? '', JSON.stringify(filter)),

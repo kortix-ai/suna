@@ -13,11 +13,13 @@ import {
 } from '@phosphor-icons/react';
 
 import { AppPreview } from '../../apps/app-preview';
+import { useTranslations } from '../../i18n';
 import { appCan } from '../../apps/app-shared';
 import { UnifiedMarkdown } from '../../markdown';
 import Loading from '../../primitives/loading';
 import { useFilePreviewStore } from '../../internal/stores/file-preview-store';
 import { cn } from '../../lib/utils';
+import { SpaceRoom } from './space-room';
 
 /**
  * The inside of a Space, rendered as a simple responsive grid of blocks.
@@ -37,7 +39,7 @@ import { cn } from '../../lib/utils';
  *
  * Block renderers: `text` is markdown, `iframe` a sandboxed frame, `artifact`
  * opens the Files viewer, `app` the live pooled `AppPreview` for the resolved
- * slug. `chat` is an intentional placeholder — see `ChatPlaceholder`.
+ * slug, `chat` the project room named `room` (`SpaceRoom`, flag `agent_rooms`).
  */
 export function SpaceBlocks({
   projectId,
@@ -78,6 +80,21 @@ function SpaceBlockCard({ projectId, block }: { projectId: string; block: SpaceB
   const openPreview = useFilePreviewStore((state) => state.openPreview);
   const Icon = TYPE_ICON[block.type];
   const label = block.label?.trim() || TYPE_FALLBACK_LABEL[block.type];
+  const t = useTranslations('spaces');
+
+  // A chat block is a room: the host's room panel draws its own frame.
+  if (block.type === 'chat') {
+    return block.room?.trim() ? (
+      <SpaceRoom projectId={projectId} roomName={block.room.trim()} className="min-w-0" />
+    ) : (
+      <div className={PANEL}>
+        <div className="flex items-center gap-2 px-4 py-2.5">
+          <BlockTitle icon={Icon} label={label} />
+        </div>
+        <EmptyLine>{t('noRoom')}</EmptyLine>
+      </div>
+    );
+  }
 
   // A clickable artifact is its own `<button>` (whole card opens the file), so
   // the header is shared by the rest and skipped there.
@@ -155,14 +172,6 @@ function BlockBody({ projectId, block }: { projectId: string; block: SpaceBlock 
         <EmptyLine>No app selected yet.</EmptyLine>
       );
 
-    // `chat` is an intentional v1 placeholder: a Space's `room` is a logical
-    // channel key, and the backend has no resolver that turns one into a
-    // durable shared `session_id` (and no SessionThread without one). Rather
-    // than fake a chat or provision a sandbox on render, name the channel and
-    // say what it will hold. Wire the real thread when the resolver lands.
-    case 'chat':
-      return <ChatPlaceholder room={block.room} />;
-
     default:
       return null;
   }
@@ -208,19 +217,6 @@ function SpaceAppBlock({ projectId, slug }: { projectId: string; slug: string })
         accessError={access.session.isError}
         interactive={false}
       />
-    </div>
-  );
-}
-
-/** The labelled placeholder a `chat` block renders until the shared-session
- *  resolver exists. Names the channel; never looks broken or empty. */
-function ChatPlaceholder({ room }: { room?: string }) {
-  return (
-    <div className="border-border flex flex-col gap-1.5 border-t px-4 py-3">
-      {room ? (
-        <span className="text-muted-foreground font-mono text-xs break-all">#{room}</span>
-      ) : null}
-      <span className="text-muted-foreground text-xs">A shared chat for this space.</span>
     </div>
   );
 }

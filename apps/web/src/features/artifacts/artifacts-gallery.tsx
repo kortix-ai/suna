@@ -1,7 +1,15 @@
 'use client';
 
-import type { Artifact, ArtifactListScope } from '@kortix/sdk';
-import { prefetchArtifact, useArtifactMutations, useArtifacts } from '@kortix/sdk/react';
+import {
+  bindingSpace,
+  DEFAULT_PROJECT_DOMAIN,
+  groupBySpace,
+  listSpaces,
+  type Artifact,
+  type ArtifactListScope,
+  type ProjectDomain,
+} from '@kortix/sdk';
+import { prefetchArtifact, useArtifactMutations, useArtifacts, useProjectConfig } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@kortix/ui/button';
 import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
@@ -9,7 +17,12 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@kortix/ui/dropdown-menu';
 import { EmptyState } from '@kortix/ui/empty-state';
@@ -17,8 +30,8 @@ import { ErrorState } from '@kortix/ui/error-state';
 import { Input } from '@kortix/ui/input';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@kortix/ui/tabs';
-import { successToast } from '@kortix/ui/toast';
-import { ProjectPageHeader } from '@kortix/ui/workspace';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { ALL_DOMAINS, ProjectPageHeader, SpaceFilterTabs, spaceFilterLabel, useSpaceFilter } from '@kortix/ui/workspace';
 import {
   ArrowSquareOutIcon,
   DotsThreeIcon,
@@ -27,6 +40,7 @@ import {
   PushPinIcon,
   PushPinSlashIcon,
   ShareNetworkIcon,
+  StackSimpleIcon,
   XCircleIcon,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
@@ -63,7 +77,15 @@ export function ArtifactsGallery({ projectId }: { projectId: string }) {
     router.push(artifactHref(projectId, a.artifact_id));
   };
   const list = useArtifacts(projectId, { scope, q: q.trim() || undefined });
-  const items = list.data ?? [];
+  // An artifact sits in its bound space, else its agent's space, else Project-wide.
+  const config = useProjectConfig(projectId);
+  const agents = config?.agents ?? [];
+  const spaceOf = (artifact: Artifact) => bindingSpace(artifact, agents) ?? DEFAULT_PROJECT_DOMAIN;
+  const groups = groupBySpace(list.data ?? [], config?.domains, spaceOf);
+  const labels = new Map(groups.map((group) => [group.name, group.label]));
+  const [space, setSpace] = useSpaceFilter(projectId);
+  const spaces = listSpaces(config);
+  const items = (list.data ?? []).filter((artifact) => space === ALL_DOMAINS || spaceOf(artifact) === space);
 
   return (
     <div className="flex h-svh flex-col overflow-hidden">
@@ -75,20 +97,23 @@ export function ArtifactsGallery({ projectId }: { projectId: string }) {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-8 pb-20 md:px-8">
           <section className="flex flex-col gap-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <Tabs value={scope} onValueChange={(v) => setScope(v as ArtifactListScope)}>
-                <TabsList variant="segmented">
-                  {SCOPES.map((s) => (
-                    <TabsTrigger key={s} value={s}>
-                      {t(`scope.${s}`)}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
-              <div className="relative w-full sm:w-64">
-                <MagnifyingGlassIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
-                <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('search')} aria-label={t('search')} className="h-8 pl-8" />
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <Tabs value={scope} onValueChange={(v) => setScope(v as ArtifactListScope)}>
+                  <TabsList variant="segmented">
+                    {SCOPES.map((s) => (
+                      <TabsTrigger key={s} value={s}>
+                        {t(`scope.${s}`)}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+                <div className="relative w-full sm:w-64">
+                  <MagnifyingGlassIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+                  <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('search')} aria-label={t('search')} className="h-8 pl-8" />
+                </div>
               </div>
+              <SpaceFilterTabs spaces={spaces} groups={groups} value={space} onValueChange={setSpace} />
             </div>
 
             {list.isError ? (
@@ -108,13 +133,33 @@ export function ArtifactsGallery({ projectId }: { projectId: string }) {
               </div>
             ) : items.length === 0 ? (
               <EmptyState
-                title={q || scope !== 'all' ? t('emptyFiltered') : t('empty')}
-                description={q || scope !== 'all' ? undefined : t('emptyHint')}
+                title={
+                  q || scope !== 'all'
+                    ? t('emptyFiltered')
+                    : space !== ALL_DOMAINS
+                      ? t('spaceEmpty', { space: spaceFilterLabel(space, spaces, t('projectWide')) })
+                      : t('empty')
+                }
+                description={q || scope !== 'all' || space !== ALL_DOMAINS ? undefined : t('emptyHint')}
+                action={
+                  space !== ALL_DOMAINS ? (
+                    <Button size="sm" variant="outline" onClick={() => setSpace(ALL_DOMAINS)}>
+                      {t('showAll')}
+                    </Button>
+                  ) : undefined
+                }
               />
             ) : (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {items.map((artifact) => (
-                  <ArtifactCard key={artifact.artifact_id} projectId={projectId} artifact={artifact} />
+                  <ArtifactCard
+                    key={artifact.artifact_id}
+                    projectId={projectId}
+                    artifact={artifact}
+                    space={space === ALL_DOMAINS ? labels.get(spaceOf(artifact)) : undefined}
+                    current={spaceOf(artifact)}
+                    spaces={spaces}
+                  />
                 ))}
               </div>
             )}
@@ -125,7 +170,22 @@ export function ArtifactsGallery({ projectId }: { projectId: string }) {
   );
 }
 
-function ArtifactCard({ projectId, artifact }: { projectId: string; artifact: Artifact }) {
+function ArtifactCard({
+  projectId,
+  artifact,
+  space,
+  current,
+  spaces,
+}: {
+  projectId: string;
+  artifact: Artifact;
+  /** The space chip: only while every space is shown. */
+  space?: string;
+  /** The space the artifact resolves to now (`DEFAULT_PROJECT_DOMAIN`: project-wide). */
+  current: string;
+  /** Where "Move to space" can bind it. */
+  spaces: ProjectDomain[];
+}) {
   const t = useTranslations('artifacts');
   const locale = useLocale();
   const mutations = useArtifactMutations(projectId);
@@ -136,6 +196,13 @@ function ArtifactCard({ projectId, artifact }: { projectId: string; artifact: Ar
   const href = artifactHref(projectId, artifact.artifact_id);
   const queryClient = useQueryClient();
   const warm = () => void prefetchArtifact(queryClient, projectId, artifact.artifact_id).catch(() => {});
+  // Grouping only. A space keeps the owning agent; Project-wide clears both,
+  // or the agent's own space would still claim the artifact.
+  const moveTo = (target: string | null) =>
+    mutations.update.mutate(
+      { artifactId: artifact.artifact_id, space: target, ...(target === null ? { agent: null } : {}) },
+      { onSuccess: () => successToast(t('moved')), onError: () => errorToast(t('moveFailed')) },
+    );
 
   return (
     <div className="group bg-card hover:border-foreground/20 relative flex flex-col overflow-hidden rounded-lg border transition-colors">
@@ -166,6 +233,7 @@ function ArtifactCard({ projectId, artifact }: { projectId: string; artifact: Ar
             <span className="truncate text-sm font-medium">{artifact.title}</span>
             <span className="text-muted-foreground truncate text-xs">
               {t('updated', { time: relativeTime(artifact.updated_at, locale) })}
+              {space ? ` · ${space}` : null}
             </span>
           </span>
           {artifact.pinned ? <PushPinIcon className="text-muted-foreground size-3.5 shrink-0" aria-label={t('pinned')} /> : null}
@@ -191,6 +259,29 @@ function ArtifactCard({ projectId, artifact }: { projectId: string; artifact: Ar
                 <DropdownMenuItem onSelect={() => setSharing(true)}>
                   <ShareNetworkIcon /> {t('share')}
                 </DropdownMenuItem>
+                {spaces.length ? (
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <StackSimpleIcon /> {t('moveTo')}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      <DropdownMenuRadioGroup
+                        value={current}
+                        onValueChange={(next) => {
+                          if (next !== current) moveTo(next === DEFAULT_PROJECT_DOMAIN ? null : next);
+                        }}
+                      >
+                        {spaces.map((target) => (
+                          <DropdownMenuRadioItem key={target.name} value={target.name}>
+                            {target.label || target.name}
+                          </DropdownMenuRadioItem>
+                        ))}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuRadioItem value={DEFAULT_PROJECT_DOMAIN}>{t('projectWide')}</DropdownMenuRadioItem>
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                ) : null}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}>
                   <XCircleIcon /> {t('remove')}

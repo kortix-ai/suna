@@ -9,6 +9,14 @@ test('slugifySpace produces a manifest-safe key and falls back', () => {
   expect(slugifySpace('***')).toBe('space');
 });
 
+test('slugifySpace always yields a valid room name: starts alphanumeric, at most 63 characters', () => {
+  expect(slugifySpace('_ops_')).toBe('ops');
+  const long = slugifySpace(`${'a'.repeat(62)} b`);
+  expect(long.length).toBeLessThanOrEqual(63);
+  expect(long).toMatch(/^[a-z0-9][a-z0-9_-]{0,62}$/);
+  expect(long.endsWith('-')).toBe(false);
+});
+
 test('spaceBlocks defaults an empty chat room to the slug', () => {
   const channel = SPACE_TEMPLATES.find((t) => t.id === 'channel')!;
   expect(spaceBlocks(channel, 'sales')).toEqual([{ type: 'chat', label: 'Chat', room: 'sales' }]);

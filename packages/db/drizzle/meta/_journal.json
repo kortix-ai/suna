@@ -1275,6 +1275,13 @@
       "when": 1792772352519,
       "tag": "20261023161912_artifacts",
       "breakpoints": true
+    },
+    {
+      "idx": 182,
+      "version": "7",
+      "when": 1792823035358,
+      "tag": "20261024062355_artifact_bindings",
+      "breakpoints": true
     }
   ]
 }

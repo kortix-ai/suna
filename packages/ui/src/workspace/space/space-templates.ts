@@ -51,15 +51,20 @@ export const SPACE_TEMPLATES: SpaceTemplate[] = [
   },
 ];
 
-/** Turn a space name into a manifest-safe `domains:` key. */
+/** Turn a space name into a `domains:` key. The result is also a valid room
+ *  name (the space's room is the room with its slug): at most 63 characters,
+ *  starting with a letter or a digit. */
 export function slugifySpace(name: string): string {
+  const trim = (value: string) => value.replace(/^[-_]+|[-_]+$/g, '');
   return (
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9_-]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .replace(/-{2,}/g, '-')
-      .slice(0, 64) || 'space'
+    trim(
+      trim(
+        name
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, '-')
+          .replace(/-{2,}/g, '-'),
+      ).slice(0, 63),
+    ) || 'space'
   );
 }
 

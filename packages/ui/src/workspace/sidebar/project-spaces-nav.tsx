@@ -5,10 +5,12 @@ import { type FormEvent, useState } from 'react';
 import { CaretRightIcon, PlusIcon, StackSimpleIcon } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { groupByDomain, readProjectFile, writeProjectFile } from '@kortix/sdk';
+import { agentsInSpace, listSpaces, readProjectFile, writeProjectFile } from '@kortix/sdk';
 import { qk, useProjectConfig } from '@kortix/sdk/react';
 
+import { customizePath, uiRoutes } from '../../lib/routes';
 import { cn } from '../../lib/utils';
+import { useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
 import { Button } from '../../primitives/button';
 import { Field, FieldLabel } from '../../primitives/field';
 import { Input } from '../../primitives/input';
@@ -60,12 +62,32 @@ const MANIFEST_PATH = 'kortix.yaml';
 export function ProjectSpacesNav({ projectId }: { projectId: string }) {
   const config = useProjectConfig(projectId);
   const [active, setActive] = useActiveDomain(projectId);
+  const router = useUiRouter();
+  const pathname = useUiPathname();
+  const spaceParam = useUiSearchParams().get('space');
+  // Pages that read the active space (Customize, Goals, Artifacts) stay put
+  // and rescope; from any other page, choosing a space opens its home.
+  const here = pathname.replace(/\/$/, '');
+  const routes = uiRoutes();
+  const under = (root: string | null) => !!root && (here === root || here.startsWith(`${root}/`));
+  const readsActiveSpace =
+    here === routes.project(projectId).replace(/\/$/, '') ||
+    [customizePath(projectId), routes.goals(projectId), routes.artifacts(projectId)].some(under);
   const [open, setOpen] = useState(true);
   const [creating, setCreating] = useState(false);
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_FILE_WRITE).allowed === true;
 
-  const groups = groupByDomain(config?.agents ?? [], config?.domains);
-  const spaces = groups.filter((group) => !group.isDefault);
+  // Declared spaces (an empty one included) plus the ones agents reference:
+  // a space someone just created, before any agent joins it, is listed.
+  const agents = config?.agents ?? [];
+  const spaces = listSpaces(config);
+  const select = (slug: string | null) => {
+    setActive(slug);
+    // The space home is the project home with the space active.
+    if (!readsActiveSpace) router.push(routes.project(projectId));
+    // A list page's ?space= wins over the active space: drop it.
+    else if (spaceParam) router.replace(pathname);
+  };
 
   // Nothing to show and nothing to do: keep a plain project unchanged.
   if (spaces.length === 0 && !canWrite) return null;
@@ -97,16 +119,16 @@ export function ProjectSpacesNav({ projectId }: { projectId: string }) {
             <SpaceRow
               label="All spaces"
               selected={active === null}
-              onSelect={() => setActive(null)}
+              onSelect={() => select(null)}
             />
           ) : null}
           {spaces.map((space) => (
             <SpaceRow
               key={space.name}
-              label={space.label}
-              count={space.items.length}
+              label={space.label || space.name}
+              count={agentsInSpace(space.name, agents).length}
               selected={active === space.name}
-              onSelect={() => setActive(space.name)}
+              onSelect={() => select(space.name)}
             />
           ))}
           {canWrite ? (

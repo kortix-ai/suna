@@ -2968,6 +2968,22 @@
               "parent": {
                 "type": "string",
                 "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+              },
+              "space": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$",
+                "description": "The space the App is grouped in. Grouping only."
+              },
+              "agent": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
+                "description": "The agent that owns the App. Grouping only."
               }
             },
             "additionalProperties": false

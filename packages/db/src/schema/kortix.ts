@@ -8333,6 +8333,10 @@ export const artifacts = kortixSchema.table('artifacts', {
   pinnedByUserIds: uuid('pinned_by_user_ids').array().default(sql`'{}'::uuid[]`).notNull(),
   createdByUserId: uuid('created_by_user_id').notNull(),
   createdBySessionId: text('created_by_session_id'),
+  /** Grouping only, never a grant: the space slug it is shown in. Null: through `agent`, else project-wide. */
+  space: text('space'),
+  /** Grouping only, never a grant: the owning agent (default: the publishing session's agent). */
+  agent: text('agent'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [

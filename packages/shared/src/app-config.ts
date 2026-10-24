@@ -318,10 +318,18 @@ export interface AppDisplay {
   preview?: 'live' | 'none';
   /** The App, by slug, whose detail shows this one as a tab (a backend's admin dashboard). */
   parent?: string;
+  /** The space (a `domains.<slug>` key) the App is grouped in. Grouping only, never a grant. Null or absent: project-wide. */
+  space?: string | null;
+  /** The agent that owns the App. Grouping only, never a grant. With no `space`, the App sits in this agent's space. */
+  agent?: string | null;
 }
 
-const DISPLAY_KEYS = new Set(['listed', 'preview', 'parent']);
+const DISPLAY_KEYS = new Set(['listed', 'preview', 'parent', 'space', 'agent']);
 const APP_SLUG = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+/** A space slug is also a valid room name (the space's room is the room with its slug). */
+export const SPACE_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,62}$/;
+/** An agent name in a binding: the manifest's agent-name rule. */
+export const BINDING_AGENT_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
 /** What is wrong with an authored `display` block of the App `slug`. Paths are relative to the block. */
 export function appDisplayIssues(display: unknown, slug: string): AppConfigIssue[] {
@@ -329,13 +337,19 @@ export function appDisplayIssues(display: unknown, slug: string): AppConfigIssue
   const issues: AppConfigIssue[] = [];
   const value = display as Record<string, unknown>;
   for (const key of Object.keys(value)) {
-    if (!DISPLAY_KEYS.has(key)) issues.push({ path: key, message: 'is not a display field (listed, preview, parent).' });
+    if (!DISPLAY_KEYS.has(key)) issues.push({ path: key, message: 'is not a display field (listed, preview, parent, space, agent).' });
   }
   if (value.listed !== undefined && typeof value.listed !== 'boolean') issues.push({ path: 'listed', message: 'must be true or false.' });
   if (value.preview !== undefined && value.preview !== 'live' && value.preview !== 'none') issues.push({ path: 'preview', message: 'must be live or none.' });
   if (value.parent !== undefined) {
     if (typeof value.parent !== 'string' || !APP_SLUG.test(value.parent)) issues.push({ path: 'parent', message: 'must be an App slug.' });
     else if (value.parent === slug) issues.push({ path: 'parent', message: 'an App cannot be its own parent.' });
+  }
+  if (value.space != null && (typeof value.space !== 'string' || !SPACE_SLUG_RE.test(value.space))) {
+    issues.push({ path: 'space', message: 'must be a space slug (lowercase letters, digits, "-" or "_", at most 63 characters).' });
+  }
+  if (value.agent != null && (typeof value.agent !== 'string' || !BINDING_AGENT_RE.test(value.agent))) {
+    issues.push({ path: 'agent', message: 'must be an agent name.' });
   }
   return issues;
 }
