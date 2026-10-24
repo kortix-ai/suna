@@ -1725,7 +1725,7 @@ flow(
   },
 );
 
-/** App event triggers sit behind the per-project `event_triggers` flag (off by default): turn it on. */
+/** Connector event triggers sit behind the per-project `event_triggers` flag (on by default; a project can turn it off): make sure it is on. */
 async function enableEventTriggers(
   ctx: { step: (name: string, fn: () => Promise<void>) => Promise<void> },
   owner: { patch: (path: string, body: unknown, opts: { params: Record<string, string> }) => Promise<any> },
@@ -2059,7 +2059,8 @@ flow(
       (await owner.patch('/v1/projects/:projectId/features', { feature: 'event_triggers', enabled }, { params })).status(200);
     };
 
-    await ctx.step('flag off (the default): event-types by connector and by app, and event-apps → 403 feature_disabled', async () => {
+    await ctx.step('flag turned off (the default is on): event-types by connector and by app, and event-apps → 403 feature_disabled', async () => {
+      await setFlag(false);
       denied(await owner.get(types, { params, query: { connector: 'inbox' } }));
       denied(await owner.get(types, { params, query: { app: 'github' } }));
       const r = await owner.get(apps, { params });
@@ -2083,7 +2084,7 @@ flow(
       await setFlag(false);
       const listed = (await owner.get('/v1/projects/:projectId/triggers', { params })).json<{ triggers: EventTriggerRow[] }>();
       const row = listed.triggers.find((t) => t.slug === 'gated-mail');
-      if (row?.event?.status !== 'error' || !/App event triggers are off for this project/.test(row.event.error ?? '')) {
+      if (row?.event?.status !== 'error' || !/Connector event triggers are off for this project/.test(row.event.error ?? '')) {
         throw new Error(`expected status error with the off text — got ${JSON.stringify(row?.event)}`);
       }
       denied(await owner.patch('/v1/projects/:projectId/triggers/:slug', { name: 'Renamed' }, { params: { ...params, slug: 'gated-mail' } }));
