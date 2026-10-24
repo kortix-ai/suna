@@ -183,6 +183,12 @@ function ProjectHomeView({
   const onboarding =
     onboardingEnabled && projectDetailQuery.isSuccess && !onboarded && canSetUpProject;
 
+  // The chat layout holds once shown: the stamp lands after the kickoff's
+  // create and before the route change, and without the latch the usual home
+  // flashed in between.
+  const [onboardingView, setOnboardingView] = useState(false);
+  if (onboarding && !onboardingView) setOnboardingView(true);
+
   // Once per mount: a second prefill id would send a second kickoff.
   const kickoffQueuedRef = useRef(false);
   useEffect(() => {
@@ -223,6 +229,8 @@ function ProjectHomeView({
       // Stamped only after the create resolves, so a refused send keeps the
       // onboarding chat for the next visit.
       if (onboarding) {
+        // Spent: a composer mounted later must not apply it again.
+        setPrefill(null);
         void sent
           .then(() => setProjectOnboardingComplete(projectId, true))
           .then(() => invalidateProject(queryClient, projectId))
@@ -322,10 +330,10 @@ function ProjectHomeView({
       // row beneath the card. The first chat docks the composer at the bottom
       // like a session does, so it keeps a session's defaults: the row
       // beneath, the menu above.
-      underbarPlacement={onboarding || isMobile ? 'below' : 'inline'}
-      slashMenuPlacement={onboarding ? 'above' : 'below'}
+      underbarPlacement={onboardingView || isMobile ? 'below' : 'inline'}
+      slashMenuPlacement={onboardingView ? 'above' : 'below'}
       placeholder={
-        onboarding
+        onboardingView
           ? tOnboarding('placeholder')
           : tI18nHardcoded.raw(
               'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrPlaceholder115e6c2d',
@@ -356,7 +364,7 @@ function ProjectHomeView({
           create resolves and the session route opens; the instant shell draws
           the first turn there (`useFirstPromptPreviewStore`). Painting the turn
           here left a slow or stuck create looking like a live session. */}
-      {onboarding ? (
+      {onboardingView ? (
         // A chat with nothing in it yet: the agent's first reply is the welcome.
         <div className="relative z-10 flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1" />
