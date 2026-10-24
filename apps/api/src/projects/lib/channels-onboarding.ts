@@ -4,8 +4,8 @@
  * `kortix.project_user_marks`; the routes are in `routes/project-spaces.ts`.
  */
 import type { ChannelsOnboarding, ChannelsOnboardingMark, SpaceGeneralNotice } from '@kortix/api-contract';
-import { memoryLayers, memoryPageVersions, projectSpaces, projectUserMarks, projects } from '@kortix/db';
-import { and, eq, or, sql } from 'drizzle-orm';
+import { projectSpaces, projectUserMarks, projects } from '@kortix/db';
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { isPlainObject } from '../../shared/json';
 import { loadProjectRosterIds } from './project-access-view';
@@ -20,7 +20,8 @@ export async function addChannelsMark(projectId: string, userId: string, mark: C
 
 /** A row is done when its mark is present or its fact is true. */
 export async function channelsOnboarding(projectId: string, userId: string): Promise<ChannelsOnboarding> {
-  const [marks, channel, remember, dm] = await Promise.all([
+  // "Tell #general something": the memory routes set `get_started.remember` when the caller writes `#general`'s memory.
+  const [marks, channel, dm] = await Promise.all([
     db
       .select({ mark: projectUserMarks.mark })
       .from(projectUserMarks)
@@ -31,21 +32,6 @@ export async function channelsOnboarding(projectId: string, userId: string): Pro
       .from(projectSpaces)
       .where(and(eq(projectSpaces.projectId, projectId), eq(projectSpaces.kind, 'channel'), eq(projectSpaces.createdBy, userId), eq(projectSpaces.isDefault, false)))
       .limit(1),
-    // A page change in `#general`'s layer by the caller, or by an agent on the caller's behalf.
-    // An unconfirmed proposal counts too: the step is "tell #general something", done once tried.
-    db
-      .select({ id: memoryPageVersions.versionId })
-      .from(memoryPageVersions)
-      .innerJoin(memoryLayers, eq(memoryLayers.layerId, memoryPageVersions.layerId))
-      .innerJoin(projectSpaces, eq(projectSpaces.spaceId, memoryLayers.spaceId))
-      .where(
-        and(
-          eq(projectSpaces.projectId, projectId),
-          eq(projectSpaces.isDefault, true),
-          or(eq(memoryPageVersions.authorUserId, userId), eq(memoryPageVersions.onBehalfUserId, userId)),
-        ),
-      )
-      .limit(1),
     db
       .select({ id: projectSpaces.spaceId })
       .from(projectSpaces)
@@ -54,7 +40,7 @@ export async function channelsOnboarding(projectId: string, userId: string): Pro
   ]);
   const has = new Set(marks.map((row) => row.mark));
   const createChannel = has.has('get_started.channel') || channel.length > 0;
-  const rememberDone = has.has('get_started.remember') || remember.length > 0;
+  const rememberDone = has.has('get_started.remember');
   const openDm = has.has('get_started.dm') || dm.length > 0;
   return {
     intro_seen: has.has('channels_intro'),

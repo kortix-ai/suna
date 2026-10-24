@@ -42,13 +42,14 @@ async function makeFolders(drive: DriveRow, folders: readonly string[]): Promise
 }
 
 /**
- * A new channel's folder; the Files tab makes it on open when this fails. No
- * Memory folder: memory is database pages. A channel made before keeps its folder.
+ * A new channel's folder and its empty `Memory` folder (the channel's memory
+ * layer); the Files tab makes the folder on open when this fails.
  */
 export async function makeChannelFolders(accountId: string, projectId: string, slug: string): Promise<void> {
   try {
     const drive = await driveWhenOn(accountId, projectId);
-    if (drive) await makeFolders(drive, [spaceDriveFolders('channel', slug, null)!.files]);
+    const folders = spaceDriveFolders('channel', slug, null)!;
+    if (drive) await makeFolders(drive, [folders.files, folders.memory]);
   } catch (err) {
     logger.warn(`[drives] the folders of channel #${slug} in project ${projectId} were not made`, {
       error: err instanceof Error ? err.message : String(err),
@@ -57,17 +58,17 @@ export async function makeChannelFolders(accountId: string, projectId: string, s
 }
 
 /**
- * A DM's files folder `<personal>/Agents/<agent>`, in the member's own folder
- * (made first when they have none). No Memory folder: memory is database
- * pages; a DM opened before keeps its folder. Nothing for an agent name that
- * is not one plain path segment. Idempotent, so every open of the DM may call it.
+ * A DM's files folder `<personal>/Agents/<agent>` and its agent memory folder
+ * `<personal>/Memory/<agent>`, in the member's own folder (made first when they
+ * have none). Nothing for an agent name that is not one plain path segment.
+ * Idempotent, so every open of the DM may call it.
  */
 export async function makeDmFolders(accountId: string, projectId: string, userId: string, agentName: string): Promise<void> {
   try {
     const drive = await driveWhenOn(accountId, projectId);
     if (!drive) return;
     const folders = spaceDriveFolders('dm', agentName, await ensurePersonalFolder(drive, userId));
-    if (folders) await makeFolders(drive, [folders.files]);
+    if (folders) await makeFolders(drive, [folders.files, folders.memory]);
   } catch (err) {
     logger.warn(`[drives] the folders of a DM with ${agentName} in project ${projectId} were not made`, {
       error: err instanceof Error ? err.message : String(err),

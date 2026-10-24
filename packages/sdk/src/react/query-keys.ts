@@ -572,10 +572,10 @@ export const qk = {
     memory: (id: string) => [...qk.project.scope(id), 'memory'] as const,
     /** `getProjectMemoryLayer` — one layer (`company` or a space id) and its counts. */
     memoryLayer: (id: string, layerKey: string) => [...qk.project.memory(id), 'layer', layerKey] as const,
-    /** `listProjectMemoryPages` — the layer's live pages; with a filter, its trash or Needs confirming list. */
+    /** `listProjectMemoryPages` — the layer's pages; with a filter, one type of them. */
     memoryPages: (id: string, layerKey: string, filter?: ProjectMemoryPageListOptions) =>
       // The filter only when set, so the live list's key stays byte-identical.
-      filter && (filter.type || filter.status || filter.deleted)
+      filter && (filter.type || filter.status)
         ? ([...qk.project.memoryLayer(id, layerKey), 'pages', filter] as const)
         : ([...qk.project.memoryLayer(id, layerKey), 'pages'] as const),
     /** `listProjectMemoryChanges` — the layer's Recent changes (an infinite query). */

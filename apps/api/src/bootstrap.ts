@@ -41,7 +41,6 @@ import { startProjectSnapshotWorker, stopProjectSnapshotWorker } from './workers
 import { startProviderTransitionWorker, stopProviderTransitionWorker } from './workers/provider-transition-worker';
 import { startSessionLifecycleWorker, stopSessionLifecycleWorker } from './workers/session-lifecycle-worker';
 import { startSessionLogBackfillWorker, stopSessionLogBackfillWorker } from './workers/session-log-backfill-worker';
-import { startMemoryMaintenanceWorker, stopMemoryMaintenanceWorker } from './workers/memory-maintenance-worker';
 import { startSessionLogPurgeWorker, stopSessionLogPurgeWorker } from './workers/session-log-purge-worker';
 import { startSessionModelFallbackWorker, stopSessionModelFallbackWorker } from './workers/session-model-fallback-worker';
 import { handBackClaims } from './projects/surface';
@@ -279,8 +278,6 @@ async function startSingletonWorkers() {
   startNotificationWorker();
   // Retention purge of session content: rows after the D6 windows, files 7 days later.
   startSessionLogPurgeWorker();
-  // Memory pages: the 30-day trash and the newest 100 versions per page.
-  startMemoryMaintenanceWorker();
   // Idle sessions off a fallback model once their own model serves again.
   startSessionModelFallbackWorker();
   // Old sessions into the session log (P3.1); SESSION_LOG_BACKFILL=write (default) converts them.
@@ -314,7 +311,6 @@ async function stopSingletonWorkers() {
   drains.push(stopAccountDeletionSchedule());
   stopNotificationWorker();
   stopSessionLogPurgeWorker();
-  stopMemoryMaintenanceWorker();
   stopSessionModelFallbackWorker();
   stopSessionLogBackfillWorker();
   stopGatewaySpendBackfillWorker();

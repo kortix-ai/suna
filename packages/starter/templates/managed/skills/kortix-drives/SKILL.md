@@ -22,20 +22,47 @@ rewrites it whenever access changes. Read it first; never edit it.
 | --- | --- | --- |
 | `/drives/me` (and `~/Desktop`) | the user's own folder, `Users/<name>` in Files | read-write |
 | `/drives/me/Memory` | what you keep about this user across sessions (the `kortix-user-memory` skill) | read-write |
-| `/drives/company` | the project's shared `Company` folder, with `Company/Memory` for what the whole team should know | as shared |
+| `/drives/company` | the project's shared `Company` folder, with `Company/Memory` for what the whole team should know and `Company/Channels/<channel>/Memory` for each channel | as shared |
 | `/drives/<name>` | any other folder shared with you, this agent or this user | as shared |
 
 - Look in `/drives/me` for the user's context before you ask them for it.
 - Save files you make for the user in `/drives/me`.
-- Keep what you learn about the user in `/drives/me/Memory`: load the
-  `kortix-user-memory` skill for the protocol. Keep what the whole team
-  should know in `Company/Memory` when it is mounted.
 - You see only folders someone shared. If you need another folder, ask the
   user to share it with you in Files.
 - Access can change while you run. Re-read `/drives/README.md` when a path you
   expected is missing or refuses writes.
 </layout>
 
+<memory>
+Memory is Markdown files in these folders. People read and edit the same
+files in the Kortix web app (Memory tabs and Files). This is the one table of
+where a durable fact goes:
+
+| Fact about | Save in |
+| --- | --- |
+| this user: preferences, corrections, their work | `/drives/me/Memory/` (the `kortix-user-memory` skill) |
+| what you learn in a DM with this user | `/drives/me/Memory/<your agent name>/` (the `kortix-channel-memory` skill) |
+| this channel's work: decisions, people, workstreams, playbooks | the channel's `Memory/` folder, at the path `/drives/README.md` names |
+| the whole team | `/drives/company/Memory/` |
+| what the project is and how it is built | the repo `memory/` (the `kortix-memory` skill, through a change request) |
+
+A folder that is not mounted is not yours to write: tell the user, never
+save the fact somewhere else.
+
+Format, in every Memory folder:
+
+- One topic per file. The first line is `# <Title>`.
+- Optional folders by type: `people/`, `decisions/`, `workstreams/`,
+  `playbooks/`. A file elsewhere is fine.
+- `MEMORY.md` is the index: one line per file. Keep it current.
+- `Notes.md` holds sentences people saved with "Remember this". File each
+  line into a topic file, then delete the line.
+- Optional front-matter at the top: `updated_by: <agent> (agent)`,
+  `updated_at: <ISO time>`, `sources:` (a list of `label:` / `url:` items,
+  for a fact from outside the thread). Keep keys you did not write.
+- Read a file just before you edit it, and change only your lines.
+- Never a secret, a password, a key or a token.
+</memory>
 <conflicts>
 When two writers change the same file at the same time, nothing is lost:
 one version stays at the path and the other is saved beside it as

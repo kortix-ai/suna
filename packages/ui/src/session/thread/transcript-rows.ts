@@ -12,6 +12,8 @@ import { createContext } from 'react';
 export interface TranscriptRows {
   /** The agent's display name, on every answer row. */
   agent: string;
+  /** The agent's raw name, the slug of its pixel mark. Unset: the default agent (`kortix`). */
+  agentSlug?: string;
   /** The thread's starter: the author of a prompt with no recorded author. */
   owner: { name: string | null; email: string | null; avatarUrl: string | null } | null;
   /** The name of a prompt whose author nobody recorded and with no owner ("Someone"). */

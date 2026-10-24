@@ -1,165 +1,179 @@
 /**
- * Integration test (real local DB): the memory page list a turn carries
- * (`system`), the "Used memory" record written once per thread, and the one
- * search: which layers each caller searches, confirmed-only for agents, the
- * title fallback with a literal `%`.
+ * Integration test (real local DB, fake Drive volume): who may open which
+ * memory layer (Drive folder rights, DMs private to their owner), the file
+ * list a turn carries (`system`, at the thread's mount paths), the "Used
+ * memory" record written once per thread, and search over files.
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { accounts, memoryLayers, memoryPages, projectSessions, projectSpaces, projects } from '@kortix/db';
-import { eq } from 'drizzle-orm';
-import { type Viewer } from '../memory/layers';
+import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
+import { accounts, memoryThreadLoads, projectSessions, projectSpaces, projects, sessionSandboxes } from '@kortix/db';
+import { eq, sql } from 'drizzle-orm';
+import { ensurePersonalFolder, ensureProjectDrive } from '../drives/service';
+import { pageIdOf } from '../memory/files';
+import { resolveLayer, type Viewer } from '../memory/layers';
 import { searchMemory } from '../memory/search';
 import { recordThreadLoad, threadUsage } from '../memory/thread-loads';
 import { memoryTurnContext } from '../memory/turn-context';
-import { titleKey } from '../memory/limits';
+import { setVolumeOpsForTests } from '../memory/volume-ops';
 import { db } from '../shared/db';
+import { FakeVolume } from './helpers/memory-fake-volume';
+import * as registry from '../feature-flags/registry';
+
+// This lane has no Platinum key, so `drives` is never available here; the fake volume stands in for it.
+const resolveFeatureFlag = registry.resolveFeatureFlag;
+mock.module('../feature-flags/registry', () => ({
+  ...registry,
+  resolveFeatureFlag: (metadata: unknown, key: string) =>
+    key === 'drives' ? Boolean((metadata as { experimental?: { drives?: boolean } } | null)?.experimental?.drives) : resolveFeatureFlag(metadata, key as never),
+}));
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
 const PRIYA = crypto.randomUUID();
 const SAM = crypto.randomUUID();
+const OUTSIDER = crypto.randomUUID();
 const MARKETING = crypto.randomUUID();
 const OLD = crypto.randomUUID();
 const PRIYA_DM = crypto.randomUUID();
-const SAM_DM = crypto.randomUUID();
+const PRIYA_DM2 = crypto.randomUUID();
 const THREAD = crypto.randomUUID();
 const PRIVATE_THREAD = crypto.randomUUID();
-const L = { company: crypto.randomUUID(), marketing: crypto.randomUUID(), old: crypto.randomUUID(), priya: crypto.randomUUID(), sam: crypto.randomUUID() };
-const project = { projectId: PROJECT, metadata: { experimental: { project_channels: true, drives: false } } };
-const person = (userId: string): Viewer => ({ userId, sessionId: null, isManager: async () => false });
-const agent = (sessionId: string): Viewer => ({ userId: PRIYA, sessionId, isManager: async () => false });
-const pageIds: Record<string, string> = {};
-
-async function page(layerId: string, title: string, over: Partial<typeof memoryPages.$inferInsert> = {}) {
-  const [row] = await db
-    .insert(memoryPages)
-    .values({ layerId, projectId: PROJECT, type: 'decisions', title, titleKey: titleKey(title), summary: `About ${title}`, body: '', ...over })
-    .returning({ pageId: memoryPages.pageId });
-  pageIds[title] = row!.pageId;
-}
+const project = { projectId: PROJECT, accountId: ACCOUNT, metadata: { experimental: { project_channels: true, drives: true } } };
+/** A project member; `admin` may change the project. */
+const person = (userId: string, admin = false, member = true): Viewer => ({ userId, may: async (action) => (action === 'write' ? admin : member) });
+const volume = new FakeVolume();
+let priyaFolder = '';
 
 beforeAll(async () => {
-  await db.insert(accounts).values({ accountId: ACCOUNT, name: 'memory-turn-search' });
-  await db.insert(projects).values({ projectId: PROJECT, accountId: ACCOUNT, name: 'memory-turn-search', repoUrl: 'https://example.test/m.git', metadata: project.metadata });
+  setVolumeOpsForTests(volume);
+  // Folder grants name known users: every viewer here gets their own folder on first use.
+  const user = (id: string) => sql`(${id}::uuid, ${`memory-${id.slice(0, 8)}@example.test`}, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated')`;
+  await db.execute(sql`INSERT INTO auth.users (id, email, instance_id, aud, role) VALUES ${sql.join([PRIYA, SAM, OUTSIDER].map(user), sql`, `)}`);
+  await db.insert(accounts).values({ accountId: ACCOUNT, name: 'memory-files' });
+  await db.insert(projects).values({ projectId: PROJECT, accountId: ACCOUNT, name: 'memory-files', repoUrl: 'https://example.test/m.git', metadata: project.metadata });
   await db.insert(projectSpaces).values([
     { spaceId: MARKETING, accountId: ACCOUNT, projectId: PROJECT, kind: 'channel', slug: 'marketing', name: 'marketing' },
     { spaceId: OLD, accountId: ACCOUNT, projectId: PROJECT, kind: 'channel', slug: 'old', name: 'old', archivedAt: new Date() },
     { spaceId: PRIYA_DM, accountId: ACCOUNT, projectId: PROJECT, kind: 'dm', name: 'writer', dmUserId: PRIYA, dmAgentName: 'writer' },
-    { spaceId: SAM_DM, accountId: ACCOUNT, projectId: PROJECT, kind: 'dm', name: 'writer', dmUserId: SAM, dmAgentName: 'writer' },
+    { spaceId: PRIYA_DM2, accountId: ACCOUNT, projectId: PROJECT, kind: 'dm', name: 'researcher', dmUserId: PRIYA, dmAgentName: 'researcher' },
   ]);
   await db.insert(projectSessions).values([
     { sessionId: THREAD, accountId: ACCOUNT, projectId: PROJECT, branchName: 't', createdBy: PRIYA, agentName: 'writer', spaceId: MARKETING, visibility: 'project' },
     { sessionId: PRIVATE_THREAD, accountId: ACCOUNT, projectId: PROJECT, branchName: 'p', createdBy: PRIYA, agentName: 'writer', spaceId: MARKETING, visibility: 'private' },
   ]);
-  await db.insert(memoryLayers).values([
-    { layerId: L.company, projectId: PROJECT, scope: 'company', importedAt: new Date() },
-    { layerId: L.marketing, projectId: PROJECT, scope: 'channel', spaceId: MARKETING, importedAt: new Date() },
-    { layerId: L.old, projectId: PROJECT, scope: 'channel', spaceId: OLD, importedAt: new Date() },
-    { layerId: L.priya, projectId: PROJECT, scope: 'dm', spaceId: PRIYA_DM, importedAt: new Date() },
-    { layerId: L.sam, projectId: PROJECT, scope: 'dm', spaceId: SAM_DM, importedAt: new Date() },
-  ]);
-  await page(L.company, 'Northwind contact', { type: 'people', body: 'Main contact is Sam; renews in March.' });
-  await page(L.marketing, 'Launch pricing', { body: 'Pricing stays at $49 per seat for the launch.' });
-  await page(L.marketing, '50% discount rule', { type: 'playbooks', body: 'Never more than half off.' });
-  await page(L.marketing, 'q4_launch', { type: 'workstreams' });
-  await page(L.marketing, 'q4xlaunch', { type: 'workstreams' });
-  await page(L.marketing, 'Pricing rumor', { status: 'unconfirmed', body: 'Pricing may go to $59.' });
-  await page(L.old, 'Old pricing', { body: 'Pricing was $39.' });
-  await page(L.priya, 'Priya pricing notes', { type: 'playbooks', body: 'Priya prefers pricing in euros.' });
-  await page(L.sam, 'Sam pricing notes', { type: 'playbooks', body: 'Sam keeps pricing private.' });
+  const drive = await ensureProjectDrive(ACCOUNT, PROJECT);
+  priyaFolder = await ensurePersonalFolder(drive, PRIYA);
+  await db.insert(sessionSandboxes).values({
+    sandboxId: crypto.randomUUID(),
+    sessionId: PRIVATE_THREAD,
+    accountId: ACCOUNT,
+    projectId: PROJECT,
+    externalId: 'sandbox-memory-files',
+    status: 'active',
+    metadata: {
+      driveMounts: [
+        { driveId: drive.driveId, kind: 'project', mountPath: '/drives/company', readOnly: false, subdir: '/Company', role: 'drive' },
+        { driveId: drive.driveId, kind: 'project', mountPath: '/drives/me', readOnly: false, subdir: priyaFolder, role: 'me' },
+      ],
+    },
+  });
+  // Files already in Drive before Channels: read in place, nothing copied.
+  volume.put('/Company/Memory/launch-plan.md', '# Launch plan\n\nShip on 2026-11-02, pricing at $49.\n');
+  // The folder index agents keep: never a page, never listed to a turn, never a search hit.
+  volume.put('/Company/Memory/MEMORY.md', '- [Launch plan](launch-plan.md) — pricing dates\n');
+  volume.put('/Company/Channels/marketing/Memory/decisions/pricing.md', '# Pricing\n\nStays at $49 per seat.\n');
+  volume.put('/Company/Channels/old/Memory/old-pricing.md', '# Old pricing\n');
+  volume.put(`${priyaFolder}/Memory/writer/tone.md`, '# Tone\n\nPlain words; pricing in euros.\n');
+  volume.put(`${priyaFolder}/Memory/researcher/sources.md`, '# Sources\n');
 });
 
 afterAll(async () => {
+  setVolumeOpsForTests(null);
   await db.delete(projects).where(eq(projects.projectId, PROJECT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
+  await db.execute(sql`DELETE FROM auth.users WHERE id = ANY(${`{${[PRIYA, SAM, OUTSIDER].join(',')}}`}::uuid[])`);
 });
 
-describe('the memory a turn carries', () => {
-  test('a channel thread: memory_layers for company and channel, and a system list of their confirmed pages', async () => {
-    const turn = (await memoryTurnContext(PROJECT, THREAD, PRIYA))!;
-    expect(turn.layers.map((layer) => layer.dir)).toEqual(['company', 'channel']);
-    expect(turn.system).toContain('### Company\n#### People\n- Northwind contact — About Northwind contact (/opt/kortix/memory/company/people/northwind-contact.md)');
-    expect(turn.system).toContain('### #marketing');
-    expect(turn.system).toContain('- Launch pricing — About Launch pricing (/opt/kortix/memory/channel/decisions/launch-pricing.md)');
-    expect(turn.system).not.toContain('Pricing rumor');
-    expect(turn.system).not.toContain('Priya pricing notes');
-    expect(turn.loaded.map((layer) => layer.page_ids.length)).toEqual([1, 4]);
-    // Unchanged layers: the second turn renders from the cache, same text.
-    expect((await memoryTurnContext(PROJECT, THREAD, PRIYA))!.system).toBe(turn.system);
+describe('who opens a layer', () => {
+  test('the DM owner opens it: their Memory folder, the agent folder first, another agent’s folder left out', async () => {
+    const layer = await resolveLayer(project, PRIYA_DM, person(PRIYA));
+    expect(layer).toMatchObject({ scope: 'dm', root: `${priyaFolder}/Memory`, agentFolder: `${priyaFolder}/Memory/writer`, skip: [`${priyaFolder}/Memory/researcher`], canWrite: true });
   });
 
-  test('a private channel thread of the DM owner (D3) also lists "Your memory with writer"', async () => {
+  test('another member, and a project admin, get 404 on someone’s DM', async () => {
+    await expect(resolveLayer(project, PRIYA_DM, person(SAM))).rejects.toMatchObject({ status: 404, code: 'memory_not_found' });
+    await expect(resolveLayer(project, PRIYA_DM, person(SAM, true))).rejects.toMatchObject({ status: 404, code: 'memory_not_found' });
+  });
+
+  test('Company and channels: every member writes, an archived channel is read-only, a caller outside the project gets 404', async () => {
+    expect(await resolveLayer(project, 'company', person(SAM))).toMatchObject({ root: '/Company/Memory', canWrite: true });
+    expect(await resolveLayer(project, OLD, person(SAM))).toMatchObject({ readOnly: true, canWrite: false });
+    await expect(resolveLayer(project, 'company', person(OUTSIDER, false, false))).rejects.toMatchObject({ status: 404 });
+    await expect(resolveLayer(project, 'not-a-key', person(SAM))).rejects.toMatchObject({ status: 404 });
+  });
+
+  test('Drive off: 403 feature_disabled', async () => {
+    const off = { ...project, metadata: { experimental: { project_channels: true, drives: false } } };
+    await expect(resolveLayer(off, 'company', person(SAM))).rejects.toMatchObject({ status: 403, code: 'feature_disabled' });
+  });
+});
+
+describe('the turn list and "Used memory"', () => {
+  test('a private channel thread lists Company, the channel and the owner’s DM at their mount paths', async () => {
     const turn = (await memoryTurnContext(PROJECT, PRIVATE_THREAD, PRIYA))!;
-    expect(turn.layers.map((layer) => layer.dir)).toEqual(['company', 'channel', 'personal']);
-    expect(turn.system).toContain('### Your memory with writer (read-only in this thread)\n#### Playbooks\n- Priya pricing notes');
-    expect(turn.system).not.toContain('Sam pricing notes');
+    expect(turn.firstTurn).toBe(true);
+    expect(turn.system).toContain('### Company: /drives/company/Memory/\n- launch plan (launch-plan.md)');
+    expect(turn.system).toContain('### #marketing: /drives/company/Channels/marketing/Memory/\n- pricing (decisions/pricing.md)');
+    expect(turn.system).toContain('### Your memory with writer: /drives/me/Memory/ (save here only from the DM)\n- tone (writer/tone.md)');
+    expect(turn.system).not.toContain('researcher/');
+    expect(turn.system).not.toContain('MEMORY.md');
+    // Another prompter (a manager) never gets the owner's DM.
+    expect((await memoryTurnContext(PROJECT, PRIVATE_THREAD, SAM))!.system).not.toContain('Your memory with');
   });
 
-  test('anyone but the DM owner prompting the private thread gets no personal section or copy', async () => {
-    const turn = (await memoryTurnContext(PROJECT, PRIVATE_THREAD, SAM))!;
-    expect(turn.layers.map((layer) => layer.dir)).toEqual(['company', 'channel']);
-    expect(turn.system).not.toContain('Your memory with');
-    expect(turn.system).not.toContain('Priya pricing notes');
+  test('a thread with no recorded mounts is told the folders are not mounted', async () => {
+    const turn = (await memoryTurnContext(PROJECT, THREAD, PRIYA))!;
+    expect(turn.system).toContain('### Company: not mounted in this thread');
+    expect(turn.loaded.every((layer) => layer.page_ids.length === 0)).toBe(true);
   });
 
-  test('the first turn is recorded once; usage drops pages deleted since', async () => {
-    const first = (await memoryTurnContext(PROJECT, THREAD, PRIYA))!;
-    expect(first.firstTurn).toBe(true);
-    await recordThreadLoad(THREAD, first.loaded);
-    expect((await memoryTurnContext(PROJECT, THREAD, PRIYA))!.firstTurn).toBe(false);
-    await recordThreadLoad(THREAD, [{ layer_id: L.company, scope: 'company', name: 'Company', version: 99, page_ids: [] }]);
-    const before = await threadUsage(THREAD, SAM);
-    expect(before.loaded_at).not.toBeNull();
-    expect(before.layers.map((layer) => [layer.layer_key, layer.pages.map((p) => p.title)])).toEqual([
-      ['company', ['Northwind contact']],
-      [MARKETING, expect.arrayContaining(['Launch pricing', '50% discount rule'])],
-    ]);
-    await db.update(memoryPages).set({ deletedAt: new Date() }).where(eq(memoryPages.pageId, pageIds['Launch pricing']!));
-    const after = await threadUsage(THREAD, SAM);
-    expect(after.loaded_at).toBe(before.loaded_at);
-    expect(after.layers[1]!.pages.map((p) => p.title)).not.toContain('Launch pricing');
-    expect(after.layers[1]!.pages.map((p) => p.title)).toContain('50% discount rule');
-    await db.update(memoryPages).set({ deletedAt: null }).where(eq(memoryPages.pageId, pageIds['Launch pricing']!));
+  test('the first turn is recorded once; usage drops files deleted since and hides the DM from others', async () => {
     expect(await threadUsage(PRIVATE_THREAD, PRIYA)).toEqual({ loaded_at: null, layers: [] });
-  });
-
-  test('a private thread’s DM layer shows in usage for its owner only', async () => {
-    await recordThreadLoad(PRIVATE_THREAD, (await memoryTurnContext(PROJECT, PRIVATE_THREAD, PRIYA))!.loaded);
-    expect((await threadUsage(PRIVATE_THREAD, PRIYA)).layers.map((layer) => layer.scope)).toEqual(['company', 'channel', 'dm']);
+    const first = (await memoryTurnContext(PROJECT, PRIVATE_THREAD, PRIYA))!;
+    await recordThreadLoad(PRIVATE_THREAD, first.loaded);
+    await recordThreadLoad(PRIVATE_THREAD, []);
+    expect((await db.select().from(memoryThreadLoads).where(eq(memoryThreadLoads.sessionId, PRIVATE_THREAD)))[0]!.layers).toHaveLength(3);
+    expect((await memoryTurnContext(PROJECT, PRIVATE_THREAD, PRIYA))!.firstTurn).toBe(false);
+    const owner = await threadUsage(PRIVATE_THREAD, PRIYA);
+    expect(owner.layers.map((layer) => [layer.layer_key, layer.pages.map((p) => [p.page_id, p.type])])).toEqual([
+      ['company', [[pageIdOf('company', 'launch-plan.md'), 'other']]],
+      [MARKETING, [[pageIdOf(MARKETING, 'decisions/pricing.md'), 'decisions']]],
+      [PRIYA_DM, [[pageIdOf(PRIYA_DM, 'writer/tone.md'), 'other']]],
+    ]);
     expect((await threadUsage(PRIVATE_THREAD, SAM)).layers.map((layer) => layer.scope)).toEqual(['company', 'channel']);
+    volume.files.delete('/Company/Memory/launch-plan.md');
+    try {
+      expect((await threadUsage(PRIVATE_THREAD, PRIYA)).layers.map((layer) => layer.scope)).toEqual(['channel', 'dm']);
+    } finally {
+      volume.put('/Company/Memory/launch-plan.md', '# Launch plan\n\nShip on 2026-11-02, pricing at $49.\n');
+    }
   });
 });
 
-describe('memory search', () => {
+describe('search over files', () => {
   const titles = (result: { hits: { title: string }[] }) => result.hits.map((hit) => hit.title).sort();
 
-  test('a person searches company, live channels and their own DM, unconfirmed included; never another member’s DM', async () => {
-    const result = await searchMemory(project, person(PRIYA), { q: 'pricing', limit: 20 });
-    expect(titles(result)).toEqual(['Launch pricing', 'Pricing rumor', 'Priya pricing notes'].sort());
-    const dm = result.hits.find((hit) => hit.title === 'Priya pricing notes')!;
-    expect(dm).toMatchObject({ layer_key: PRIYA_DM, layer_name: 'writer', scope: 'dm', type: 'playbooks', status: 'confirmed' });
-    expect(dm.snippet).toContain('pricing in euros');
-    expect(titles(await searchMemory(project, person(SAM), { q: 'pricing', limit: 20 }))).toContain('Sam pricing notes');
+  test('a person searches Company, live channels and their own Memory folder; never another member’s', async () => {
+    const priya = await searchMemory(project, person(PRIYA), { q: 'pricing', limit: 20 });
+    expect(titles(priya)).toEqual(['Launch plan', 'Pricing', 'Tone']);
+    expect(priya.hits.find((hit) => hit.title === 'Tone')).toMatchObject({ layer_key: PRIYA_DM, scope: 'dm', layer_name: 'writer' });
+    expect(priya.hits[0]!.title).toBe('Pricing'); // a title hit ranks first
+    expect(titles(await searchMemory(project, person(SAM), { q: 'pricing', limit: 20 }))).toEqual(['Launch plan', 'Pricing']);
   });
 
-  test('an archived channel is searched only when named; another member’s DM by name is 404', async () => {
-    expect(titles(await searchMemory(project, person(PRIYA), { q: 'pricing', layer: OLD, limit: 20 }))).toEqual(['Old pricing']);
-    await expect(searchMemory(project, person(PRIYA), { q: 'pricing', layer: SAM_DM, limit: 20 })).rejects.toMatchObject({ status: 404 });
-  });
-
-  test('a session token: its thread’s layers, confirmed pages only', async () => {
-    expect(titles(await searchMemory(project, agent(THREAD), { q: 'pricing', limit: 20 }))).toEqual(['Launch pricing']);
-    expect(titles(await searchMemory(project, agent(PRIVATE_THREAD), { q: 'pricing', limit: 20 }))).toEqual(['Launch pricing', 'Priya pricing notes']);
-    await expect(searchMemory(project, agent(THREAD), { q: 'pricing', layer: PRIYA_DM, limit: 20 })).rejects.toMatchObject({ status: 404 });
-  });
-
-  test('the title fallback matches `%` and `_` literally; type and limit narrow', async () => {
-    // Full text finds this one ('50'); only the fallback could match '5%', and it must not.
-    expect(titles(await searchMemory(project, person(PRIYA), { q: '50%', limit: 20 }))).toEqual(['50% discount rule']);
-    expect(titles(await searchMemory(project, person(PRIYA), { q: '5%', limit: 20 }))).toEqual([]);
-    // Full text cannot match 'q4_l' (no token 'l'); the fallback must match '_' literally, not as any character.
-    expect(titles(await searchMemory(project, person(PRIYA), { q: 'q4_l', limit: 20 }))).toEqual(['q4_launch']);
-    expect(titles(await searchMemory(project, person(PRIYA), { q: 'pricing', type: 'playbooks', limit: 20 }))).toEqual(['Priya pricing notes']);
+  test('an archived channel only when named; another member’s DM by name is 404; type and limit narrow', async () => {
+    expect(titles(await searchMemory(project, person(SAM), { q: 'pricing', layer: OLD, limit: 20 }))).toEqual(['Old pricing']);
+    await expect(searchMemory(project, person(SAM), { q: 'pricing', layer: PRIYA_DM, limit: 20 })).rejects.toMatchObject({ status: 404 });
+    expect(titles(await searchMemory(project, person(PRIYA), { q: 'pricing', type: 'decisions', limit: 20 }))).toEqual(['Pricing']);
     expect((await searchMemory(project, person(PRIYA), { q: 'pricing', limit: 1 })).hits).toHaveLength(1);
   });
 });

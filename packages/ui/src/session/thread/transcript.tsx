@@ -46,17 +46,17 @@ import {
   CheckIcon,
   CaretDownIcon as ChevronDown,
   ArrowSquareOutIcon as ExternalLink,
-  RobotIcon,
   StopCircleIcon,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
 import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AfterFirstPromptContext } from './after-first-prompt';
 import { TranscriptRowsContext } from './transcript-rows';
+import { AgentBusyRow } from './thread-boot-rows';
 import { MessageRow } from '../turn/message-row';
 import { agentDisplayLabel } from '../composer/agent-selector';
 import { participantLabel } from '../participants/session-participants';
-import { EntityAvatar } from '../../primitives/entity-avatar';
+import { AgentMark } from '../../internal/components/agent-mark';
 import { UserAvatar } from '../../primitives/user-avatar';
 import {
   SystemNotificationCard,
@@ -142,6 +142,9 @@ import { isOptimisticSessionPrompt, useSessionWorking } from '@kortix/sdk/react'
 import { CodeBlockEndpoints, SandboxUrlDetector } from '../media/sandbox-url-detector';
 import { resolveLastTurnWorking } from '../composer/session-composer-readiness';
 import { HarnessSwitchMarker, RestoreNoteMarker, TurnFullText, type FullTextState } from './session-history';
+
+/** The agent whose mark stands in when a row does not name its agent. */
+const DEFAULT_AGENT_SLUG = 'kortix';
 
 // ============================================================================
 // Optimistic answers cache
@@ -2199,7 +2202,7 @@ const handleCopy = async () => {
       {response ? (
           <Button
             variant="ghost"
-            size={inToolbar ? 'icon-md' : 'icon-sm'}
+            size="icon-sm"
             onClick={handleCopy}
             aria-label={copied ? 'Copied' : tHardcodedUi.raw('i18nComplete.textf0f755afea88')}
             className="hit-area-3"
@@ -2215,9 +2218,9 @@ const handleCopy = async () => {
                   className="absolute inset-0 inline-flex items-center justify-center"
                 >
                   {copied ? (
-                    <CheckIcon className="text-muted-foreground size-[1.05rem]" />
+                    <CheckIcon className={cn('text-muted-foreground', inToolbar ? 'size-3.5' : 'size-[1.05rem]')} />
                   ) : (
-                    <Copy className="text-muted-foreground size-[1.05rem]" />
+                    <Copy className={cn('text-muted-foreground', inToolbar ? 'size-3.5' : 'size-[1.05rem]')} />
                   )}
                 </m.span>
               </AnimatePresence>
@@ -2232,8 +2235,9 @@ const handleCopy = async () => {
           durationMs={turnDurationMs}
           cost={costInfo}
           served={servedModel}
-          // A toolbar button is 33px (`icon-md`), the same as its neighbours.
-          className={cn('flex items-center justify-center', inToolbar && 'size-9')}
+          // `icon-sm`, the same as the copy button beside it; in a row's
+          // toolbar its dots match the 14px icons of the toolbar.
+          className={cn('flex items-center justify-center', inToolbar && '[&_svg]:size-4!')}
         />
     </div>
   );
@@ -2346,7 +2350,13 @@ function SessionTurnImpl(props: SessionTurnProps) {
             className="group/turn"
             avatar={
               sender ? (
-                <EntityAvatar icon={RobotIcon} label={sender} size="lg" />
+                // 36px, the `lg` avatar column (`w-10`).
+                <AgentMark
+                  slug={author?.kind === 'session' && author.agent ? author.agent : DEFAULT_AGENT_SLUG}
+                  size={28}
+                  tile={36}
+                  label={sender}
+                />
               ) : (
                 <UserAvatar email={person?.email ?? ''} name={personName} avatarUrl={person?.avatarUrl} size="lg" />
               )
@@ -2361,7 +2371,7 @@ function SessionTurnImpl(props: SessionTurnProps) {
         {showAnswer ? (
           <MessageRow
             className="group/turn"
-            avatar={<EntityAvatar icon={RobotIcon} label={rows.agent} size="lg" />}
+            avatar={<AgentMark slug={rows.agentSlug ?? DEFAULT_AGENT_SLUG} size={28} tile={36} label={rows.agent} />}
             name={rows.agent}
             time={rowTime(answerAt, locale)}
             toolbar={
@@ -2471,6 +2481,12 @@ interface TranscriptTurnRowProps extends SessionTurnProps {
  * settled `SessionTurn` bailed out. Every prop here is a primitive or a
  * reference that holds while another turn streams.
  */
+/** The fallback waiting row: a channel thread's agent row, or the bare line under a bubble. */
+function TurnFallbackBusyRow({ sessionId }: { sessionId: string }) {
+  const rows = useContext(TranscriptRowsContext);
+  return rows ? <AgentBusyRow sessionId={sessionId} /> : <SessionBusyIndicator sessionId={sessionId} className="mt-2.5" />;
+}
+
 export const TranscriptTurnRow = memo(function TranscriptTurnRow({
   turnId,
   viewportClassName,
@@ -2500,7 +2516,7 @@ export const TranscriptTurnRow = memo(function TranscriptTurnRow({
       {/* Queued bubbles follow this turn. The waiting
           row stays above them, where the working turn
           draws its own, so it never jumps. */}
-      {showBusyRow && <SessionBusyIndicator sessionId={turnProps.sessionId} className="mt-2.5" />}
+      {showBusyRow && <TurnFallbackBusyRow sessionId={turnProps.sessionId} />}
     </TurnViewport>
   );
 });

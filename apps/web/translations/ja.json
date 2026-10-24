@@ -1291,6 +1291,16 @@
           "name": "チャンネル",
           "description": "作業をチャンネルで整理します。チャンネルでの新しいメッセージや、エージェントとのダイレクトメッセージはそれぞれスレッドを開始します。サイドバーのセッション一覧を置き換えます。"
         }
+      },
+      "channelsSwitch": {
+        "onTitle": "{project} でチャンネルをオンにしますか？",
+        "onBody": "このプロジェクトの全員に、セッション一覧の代わりにチャンネルとダイレクトメッセージが表示されます。既存のセッションはすべて #general に移動します。いつでもオフにでき、何も削除されません。",
+        "drive": "ドライブもオンにして、チャンネルでファイルを使えるようにする。",
+        "turnOn": "オンにする",
+        "cancel": "キャンセル",
+        "offTitle": "チャンネルをオフにしますか？",
+        "offBody": "チャンネル、メモリ、ファイル、リンクは保存されたままです。全員にセッション一覧が戻ります。",
+        "turnOff": "オフにする"
       }
     },
     "upgrades": {
@@ -1786,7 +1796,8 @@
       "channels": "チャンネル",
       "directMessages": "ダイレクトメッセージ",
       "addChannel": "チャンネルを追加",
-      "loadError": "チャンネルを読み込めませんでした。"
+      "loadError": "チャンネルを読み込めませんでした。",
+      "newAgent": "新しいエージェント"
     }
   },
   "dashboard": {
@@ -22798,34 +22809,21 @@
       "search": "メモリを検索",
       "pagesLabel": "メモリのページ",
       "allPages": "すべてのページ",
-      "type": {
-        "people": "人物",
-        "decisions": "決定事項",
-        "workstreams": "ワークストリーム",
-        "playbooks": "プレイブック",
-        "note": "メモ"
-      },
-      "needsConfirming": "確認が必要",
       "noMatches": "「{query}」に一致するページはありません。",
       "loadError": "このメモリを読み込めませんでした。",
       "pageLoadError": "このページを読み込めませんでした。",
       "retry": "再試行",
       "close": "閉じる",
       "loadOlder": "以前の項目を表示",
-      "updatedBy": "{author} が更新",
       "fromThread": "「{thread}」から",
       "author": {
         "system": "Kortix",
         "unknown": "メンバー"
       },
       "edit": "編集",
-      "more": "その他の操作",
-      "copyLink": "リンクをコピー",
-      "linkCopied": "リンクをコピーしました",
-      "copyFailed": "リンクをコピーできませんでした。",
       "delete": "削除",
-      "deleteTitle": "このページを削除しますか？",
-      "deleteDescription": "エージェントは次のターンから「{title}」を参照しなくなります。「最近の変更」から元に戻せます。",
+      "deleteTitle": "「{title}」を削除しますか？",
+      "deleteDescription": "元に戻せません。",
       "deleted": "ページを削除しました",
       "deleteFailed": "ページを削除できませんでした。もう一度お試しください。",
       "undo": "元に戻す",
@@ -22833,35 +22831,8 @@
       "undoFailed": "変更を元に戻せませんでした。もう一度お試しください。",
       "superseded": "この後にページが変更されています。以前のバージョンに戻すには履歴を開いてください。",
       "alreadyUndone": "この変更はすでに元に戻されています。",
-      "undoUnavailable": "この後にページが変更されたため、この変更は元に戻せません。",
-      "view": "表示",
       "relatedPages": "関連ページ",
-      "pageLimit": "このメモリは上限の 200 ページに達しています。先にページを 1 つ削除してください。",
       "emptyPage": "このページにはまだ内容がありません。",
-      "recent": {
-        "added": "{author} が {time}にこのページを更新：「{fact}」を追加",
-        "updated": "{author} が {time}にこのページを更新",
-        "created": "{author} が {time}にこのページを作成",
-        "viewChange": "変更を表示"
-      },
-      "changes": {
-        "title": "最近の変更",
-        "empty": "まだ変更はありません。",
-        "loadError": "最近の変更を読み込めませんでした。",
-        "viewPage": "{title} を表示",
-        "undoPage": "{title} への変更を元に戻す",
-        "op": {
-          "create": "{author} が <page>{title}</page> を作成",
-          "update": "{author} が <page>{title}</page> を編集",
-          "append": "{author} が <page>{title}</page> に追記",
-          "delete": "{author} が <page>{title}</page> を削除",
-          "restore": "{author} が <page>{title}</page> を復元",
-          "undo": "{author} が <page>{title}</page> への変更を取り消し",
-          "confirm": "{author} が <page>{title}</page> を確認",
-          "file_note": "{author} がメモを <page>{title}</page> に整理",
-          "import": "{author} が <page>{title}</page> をインポート"
-        }
-      },
       "history": {
         "title": "履歴",
         "description": "「{title}」へのすべての変更（新しい順）。",
@@ -22884,12 +22855,7 @@
         }
       },
       "editor": {
-        "title": "タイトル",
-        "type": "種類",
-        "summary": "概要",
-        "summaryPlaceholder": "エージェントがページ一覧で見る 1 行",
         "body": "ページ",
-        "bodyHint": "Markdown。## で始まる行がセクションになります。⟦1⟧ は出典 1 を示します。",
         "save": "保存",
         "cancel": "キャンセル",
         "saved": "ページを保存しました",
@@ -22897,7 +22863,6 @@
         "reload": "再読み込み",
         "error": {
           "tooLarge": "このページは 8 KB を超えています。短くしてください。",
-          "titleTaken": "同じタイトルのページがすでにあります。",
           "secret": "シークレットのようです。シークレットは「シークレット」に保管してください。",
           "readOnly": "このメモリは読み取り専用です。",
           "failed": "ページを保存できませんでした。もう一度お試しください。"
@@ -22909,32 +22874,17 @@
         "hint": "あなたの名前でメモとして保存されます",
         "send": "メモリに保存",
         "status": {
-          "saved": "メモに保存しました",
           "secret": "シークレットのようです。シークレットは「シークレット」に保管してください。",
-          "limit": "このメモリは上限の 200 ページに達しています。先にページを 1 つ削除してください。",
           "readOnly": "このメモリは読み取り専用です。",
           "failed": "保存できませんでした。もう一度お試しください。"
-        }
+        },
+        "open": "これを覚える…"
       },
       "empty": {
-        "title": "{place} にはまだメモリがありません",
-        "titleDm": "{place} とのメモリはまだありません",
-        "description": "エージェントはこのチャンネルで合意したことを保存するので、新しいスレッドはそこから始まります。各事実は元のスレッドにリンクされ、どの変更も編集や取り消しができます。",
-        "descriptionDm": "{place} はこの会話で合意したことを保存するので、新しいスレッドはそこから始まります。各事実は元のスレッドにリンクされ、どの変更も編集や取り消しができます。",
-        "example": {
-          "people": "Northwind — 主な担当者は Sam、3 月に更新",
-          "decisions": "価格は 1 席あたり 49 ドルのまま",
-          "workstreams": "Q4 ローンチ — 状況、担当者、次のステップ",
-          "playbooks": "リリースノートの書き方"
-        },
-        "tryOne": "試してみる",
-        "try": {
-          "one": "ローンチ日は 11 月 12 日",
-          "two": "ローンチの文章はすべて Priya が承認する",
-          "three": "平易な言葉で、誇張しない"
-        },
-        "titleCompany": "会社のメモリはまだ空です",
-        "descriptionCompany": "エージェントはプロジェクト全体で合意したことを保存し、すべてのチャンネルの新しいスレッドはそれを持って始まります。各事実は元のスレッドにリンクし、どの変更も編集や取り消しができます。"
+        "title": "このチャンネルについて Kortix が覚えていること。",
+        "titleDm": "この会話について Kortix が覚えていること。",
+        "description": "返信の前に毎回これらのページを読みます。",
+        "titleCompany": "このプロジェクトについて Kortix が覚えていること。"
       },
       "source": {
         "thread": "スレッド「{label}」を開く",
@@ -22944,20 +22894,6 @@
         "person": "{label} が追加",
         "import": "{label} からインポート"
       },
-      "saved": {
-        "running": "メモリに保存中…",
-        "channel": "{place} のメモリに保存：<page>{title}</page>",
-        "dm": "{place} とのあなたのメモリに保存：<page>{title}</page>",
-        "company": "会社のメモリに保存：<page>{title}</page>",
-        "failed": "メモリに保存されませんでした：{reason}",
-        "view": "表示",
-        "undo": "元に戻す",
-        "undone": "元に戻しました",
-        "superseded": "その後に変更されました —",
-        "openHistory": "履歴を開く",
-        "undoFailed": "元に戻せませんでした。",
-        "failedGeneric": "メモリに保存されませんでした。"
-      },
       "used": {
         "label": "{places} のメモリを使用 · {count, plural, other {# ページ}}",
         "title": "このスレッドの開始時に読み込んだページ",
@@ -22966,14 +22902,6 @@
       },
       "searchError": "このメモリを検索できませんでした。",
       "searchResults": "検索結果",
-      "searchTool": {
-        "title": "メモリを検索しました",
-        "count": "{count, plural, other {# ページ}}",
-        "running": "メモリを検索中…",
-        "failed": "メモリの検索に失敗しました：{reason}",
-        "failedGeneric": "メモリの検索に失敗しました。",
-        "none": "「{query}」に一致するページはありません。"
-      },
       "palette": {
         "heading": "メモリ"
       },
@@ -22989,34 +22917,15 @@
         "saveTo": "保存先",
         "dm": "{agent} とのあなたのメモリ"
       },
-      "archivedReadOnly": "{place} はアーカイブ済みです。メモリは読み取り専用です。",
-      "pending": {
-        "note": "誰かが確認するまで、エージェントはこれらのページを使いません。",
-        "from": "{host} から",
-        "banner": "{host} から。誰かが確認するまで、エージェントはこれを使いません。",
-        "bannerNoHost": "スレッドの外から。誰かが確認するまで、エージェントはこれを使いません。",
-        "confirm": "確認",
-        "confirmPage": "{title} を確認",
-        "discard": "破棄",
-        "discardPage": "{title} を破棄",
-        "cancel": "キャンセル",
-        "confirmed": "ページを確認しました。エージェントが使えるようになりました。",
-        "alreadyConfirmed": "このページはすでに確認されています。",
-        "confirmFailed": "ページを確認できませんでした。もう一度お試しください。",
-        "discarded": "ページを破棄しました",
-        "discardFailed": "ページを破棄できませんでした。もう一度お試しください。"
+      "updated": "{time}に{author}が更新",
+      "updatedAt": "{time}に更新",
+      "sourceKind": {
+        "thread": "スレッド",
+        "person": "メッセージ",
+        "outside": "リンク",
+        "import": "ファイル"
       },
-      "trash": {
-        "title": "ゴミ箱",
-        "note": "削除したページは 30 日間ここに残り、その後完全に削除されます。",
-        "loadError": "ゴミ箱を読み込めませんでした。",
-        "restore": "復元",
-        "restorePage": "{title} を復元",
-        "restored": "ページを復元しました",
-        "titleTaken": "同じタイトルのページがあります。そのページの名前を変えてから、このページを復元してください。",
-        "restoreFailed": "ページを復元できませんでした。もう一度お試しください。",
-        "allTrashed": "すべてのページがゴミ箱にあります。"
-      }
+      "pageCount": "{count, plural, other {# ページ}}"
     },
     "create": {
       "title": "チャンネルを作成",
@@ -23116,10 +23025,8 @@
       "roster": "{people} · {agents}",
       "rosterPeople": "{count, plural, other {#人}}",
       "rosterAgents": "{count, plural, other {#件のエージェント}}",
-      "rosterHint": "このチャンネルのスレッドにいる人とエージェント",
       "copyLink": "スレッドへのリンクをコピー",
       "linkCopied": "リンクをコピーしました",
-      "started": "{time}に開始",
       "notice": {
         "unreachable": "このスレッドのコンピューターとの接続が切れました。送信したメッセージは再接続までキューに入ります。",
         "unreachableMidTurn": "ターンが開いたまま、このスレッドのコンピューターとの接続が切れました。送信したメッセージは応答があるまでキューに残ります。",
@@ -23166,7 +23073,12 @@
       "appsLoadError": "アプリを読み込めませんでした。",
       "triggers": {
         "loadError": "トリガーを読み込めませんでした。"
-      }
+      },
+      "reply": "返信",
+      "rosterTitlePeople": "メンバー",
+      "rosterTitleAgents": "エージェント",
+      "viewAllMembers": "すべてのメンバーを表示",
+      "agentThreads": "{count}件のスレッド"
     },
     "details": {
       "about": "概要",
@@ -23175,14 +23087,23 @@
       "description": "説明",
       "noDescription": "説明を追加",
       "created": "作成日",
-      "edit": "編集",
       "editField": "{field}を編集",
       "archiveTitle": "このチャンネルをアーカイブ",
       "archiveHint": "すべてのメンバーのサイドバーから消えます。スレッドは残ります。",
       "archive": "アーカイブ",
       "people": "人",
       "agents": "エージェント",
-      "membersHint": "これまでに読み込んだスレッドで、ここでスレッドを始めた人と、返信したエージェントです。"
+      "membersHint": "これまでに読み込んだスレッドで、ここでスレッドを始めた人と、返信したエージェントです。",
+      "threads": "{count}件のスレッド",
+      "find": "メンバーやエージェントを検索",
+      "addPeople": "メンバーを追加",
+      "you": "（あなた）",
+      "groupCount": "{label} · {count}",
+      "noMatches": "「{query}」に一致するメンバーはいません。",
+      "defaultAgent": "デフォルトのエージェント",
+      "defaultAgentHint": "エージェントを指定していないメッセージに応答します。プロジェクト全体の設定はカスタマイズ › エージェントで行います。",
+      "visibility": "閲覧できる人",
+      "visibilityProject": "プロジェクトの全員"
     },
     "folder": {
       "memory": "メモリ",
@@ -23194,6 +23115,26 @@
         "description": "{place} のファイルとメモリは Drive にあります。使うには Feature flags で Volumes をオンにしてください。",
         "descriptionMember": "{place} のファイルとメモリは Drive にあります。プロジェクト管理者にオンにするよう依頼してください。",
         "action": "Feature flags を開く"
+      }
+    },
+    "onboarding": {
+      "reenabled": "チャンネルがオフの間に始まったセッションはここにあります。",
+      "intro": {
+        "title": "あなたのセッションは #general のスレッドになりました。",
+        "channels": "チャンネルはチームごとに作業をまとめます。",
+        "threads": "新しいメッセージごとにスレッドが始まります。",
+        "memory": "エージェントは各チャンネルで決まったことを覚えます。",
+        "gotIt": "OK"
+      },
+      "getStarted": {
+        "title": "はじめに",
+        "dismiss": "閉じる",
+        "channel": "チーム用のチャンネルを作成する",
+        "remember": "{place} に覚えてほしいことを伝える",
+        "dm": "エージェントとのダイレクトメッセージを開く",
+        "pickAgent": "エージェントにメッセージ",
+        "noAgents": "このプロジェクトにはまだエージェントがいません。",
+        "done": "完了"
       }
     }
   }

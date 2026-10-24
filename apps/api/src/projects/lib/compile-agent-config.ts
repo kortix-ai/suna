@@ -405,12 +405,11 @@ function isBlanketDeny(rule: unknown): boolean {
  * The starter's custom tools are not covered by the built-in permission keys:
  * `pty_*` runs a shell and `memory` writes files, yet OpenCode matches them by
  * their own name, so `bash: deny` / `edit: deny` left both callable (RUN-10).
- * The `remember` platform tool writes memory pages: an edit too.
  * A blanket deny of `bash` or `edit` carries over to the tools that do the
  * same thing. An explicit rule on the tool itself wins.
  */
 const SHELL_TOOLS = ['pty_spawn', 'pty_write', 'pty_read', 'pty_kill', 'pty_list'];
-const FILE_WRITE_TOOLS = ['memory', 'remember'];
+const FILE_WRITE_TOOLS = ['memory'];
 
 function denyToolsBehindDeniedPermission(permission: PermissionConfigV2 | undefined): PermissionConfigV2 | undefined {
   if (!permission || typeof permission !== 'object') return permission;

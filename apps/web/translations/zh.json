@@ -1291,6 +1291,16 @@
           "name": "频道",
           "description": "在频道中组织工作。频道中的每条新消息或与智能体的私信都会开启一个话题。取代侧边栏中的会话列表。"
         }
+      },
+      "channelsSwitch": {
+        "onTitle": "为 {project} 开启频道？",
+        "onBody": "此项目中的所有人将看到频道和私信，而不是会话列表。所有现有会话都会移入 #general。你可以随时关闭；不会删除任何内容。",
+        "drive": "同时开启云盘，让频道拥有文件。",
+        "turnOn": "开启",
+        "cancel": "取消",
+        "offTitle": "关闭频道？",
+        "offBody": "频道、记忆、文件和链接都会保留。所有人都会重新看到会话列表。",
+        "turnOff": "关闭"
       }
     },
     "upgrades": {
@@ -1786,7 +1796,8 @@
       "channels": "频道",
       "directMessages": "私信",
       "addChannel": "添加频道",
-      "loadError": "无法加载频道。"
+      "loadError": "无法加载频道。",
+      "newAgent": "新建智能体"
     }
   },
   "dashboard": {
@@ -22798,34 +22809,21 @@
       "search": "搜索记忆",
       "pagesLabel": "记忆页面",
       "allPages": "所有页面",
-      "type": {
-        "people": "人员",
-        "decisions": "决策",
-        "workstreams": "工作流",
-        "playbooks": "操作手册",
-        "note": "笔记"
-      },
-      "needsConfirming": "待确认",
       "noMatches": "没有与“{query}”匹配的页面。",
       "loadError": "无法加载此记忆。",
       "pageLoadError": "无法加载此页面。",
       "retry": "重试",
       "close": "关闭",
       "loadOlder": "显示更早的",
-      "updatedBy": "由 {author} 更新",
       "fromThread": "来自“{thread}”",
       "author": {
         "system": "Kortix",
         "unknown": "一位成员"
       },
       "edit": "编辑",
-      "more": "更多操作",
-      "copyLink": "复制链接",
-      "linkCopied": "链接已复制",
-      "copyFailed": "无法复制链接。",
       "delete": "删除",
-      "deleteTitle": "删除此页面？",
-      "deleteDescription": "智能体将从下一轮起不再看到“{title}”。你可以在“最近更改”中撤销。",
+      "deleteTitle": "删除“{title}”？",
+      "deleteDescription": "此操作无法撤销。",
       "deleted": "页面已删除",
       "deleteFailed": "无法删除页面，请重试。",
       "undo": "撤销",
@@ -22833,35 +22831,8 @@
       "undoFailed": "无法撤销更改，请重试。",
       "superseded": "此后页面又有更改。打开历史记录以恢复更早的版本。",
       "alreadyUndone": "此更改已撤销。",
-      "undoUnavailable": "此后页面又有更改，因此无法撤销此更改。",
-      "view": "查看",
       "relatedPages": "相关页面",
-      "pageLimit": "此记忆已有 200 个页面，达到上限。请先删除一个页面。",
       "emptyPage": "此页面还没有内容。",
-      "recent": {
-        "added": "{author} {time}更新了此页面：添加了“{fact}”",
-        "updated": "{author} {time}更新了此页面",
-        "created": "{author} {time}创建了此页面",
-        "viewChange": "查看更改"
-      },
-      "changes": {
-        "title": "最近更改",
-        "empty": "暂无更改。",
-        "loadError": "无法加载最近更改。",
-        "viewPage": "查看 {title}",
-        "undoPage": "撤销对 {title} 的更改",
-        "op": {
-          "create": "{author} 创建了 <page>{title}</page>",
-          "update": "{author} 编辑了 <page>{title}</page>",
-          "append": "{author} 补充了 <page>{title}</page>",
-          "delete": "{author} 删除了 <page>{title}</page>",
-          "restore": "{author} 恢复了 <page>{title}</page>",
-          "undo": "{author} 撤销了对 <page>{title}</page> 的更改",
-          "confirm": "{author} 确认了 <page>{title}</page>",
-          "file_note": "{author} 将一条笔记归入 <page>{title}</page>",
-          "import": "{author} 导入了 <page>{title}</page>"
-        }
-      },
       "history": {
         "title": "历史记录",
         "description": "“{title}”的所有更改，最新的在前。",
@@ -22884,12 +22855,7 @@
         }
       },
       "editor": {
-        "title": "标题",
-        "type": "类型",
-        "summary": "摘要",
-        "summaryPlaceholder": "智能体在页面列表中看到的一行",
         "body": "页面",
-        "bodyHint": "Markdown。以 ## 开头的行开始一个小节；⟦1⟧ 引用来源 1。",
         "save": "保存",
         "cancel": "取消",
         "saved": "页面已保存",
@@ -22897,7 +22863,6 @@
         "reload": "重新加载",
         "error": {
           "tooLarge": "此页面超过 8 KB，请缩短。",
-          "titleTaken": "已有其他页面使用此标题。",
           "secret": "这看起来像密钥。请将密钥保存在“密钥”中。",
           "readOnly": "此记忆为只读。",
           "failed": "无法保存页面，请重试。"
@@ -22909,32 +22874,17 @@
         "hint": "以你的名字保存为笔记",
         "send": "保存到记忆",
         "status": {
-          "saved": "已保存到笔记",
           "secret": "这看起来像密钥。请将密钥保存在“密钥”中。",
-          "limit": "此记忆已有 200 个页面，达到上限。请先删除一个页面。",
           "readOnly": "此记忆为只读。",
           "failed": "无法保存，请重试。"
-        }
+        },
+        "open": "记住这个…"
       },
       "empty": {
-        "title": "{place} 还没有记忆",
-        "titleDm": "与 {place} 还没有记忆",
-        "description": "智能体会保存此频道达成的共识，每个新话题都从这里开始。每条事实都链接到它的来源话题；任何更改都可以编辑或撤销。",
-        "descriptionDm": "{place} 会保存你们在此对话中达成的共识，每个新话题都从这里开始。每条事实都链接到它的来源话题；任何更改都可以编辑或撤销。",
-        "example": {
-          "people": "Northwind — 主要联系人是 Sam，3 月续约",
-          "decisions": "价格保持每席位 49 美元",
-          "workstreams": "Q4 发布 — 状态、负责人、后续步骤",
-          "playbooks": "我们如何撰写发布说明"
-        },
-        "tryOne": "试试看",
-        "try": {
-          "one": "我们的发布日期是 11 月 12 日",
-          "two": "所有发布文案由 Priya 审批",
-          "three": "用平实的语言写作，不夸大"
-        },
-        "titleCompany": "公司记忆中还没有内容",
-        "descriptionCompany": "智能体会保存整个项目达成一致的内容，让每个频道的每个新线程都从这里开始。每条事实都链接到其来源线程；任何更改都可以编辑或撤销。"
+        "title": "Kortix 记住的关于此频道的内容。",
+        "titleDm": "Kortix 记住的关于此对话的内容。",
+        "description": "每次回复前，它都会阅读这些页面。",
+        "titleCompany": "Kortix 记住的关于此项目的内容。"
       },
       "source": {
         "thread": "打开话题“{label}”",
@@ -22944,20 +22894,6 @@
         "person": "由 {label} 添加",
         "import": "从 {label} 导入"
       },
-      "saved": {
-        "running": "正在保存到记忆…",
-        "channel": "已保存到 {place} 的记忆：<page>{title}</page>",
-        "dm": "已保存到你与 {place} 的记忆：<page>{title}</page>",
-        "company": "已保存到公司记忆：<page>{title}</page>",
-        "failed": "未保存到记忆：{reason}",
-        "view": "查看",
-        "undo": "撤销",
-        "undone": "已撤销",
-        "superseded": "此后已有更改 —",
-        "openHistory": "打开历史记录",
-        "undoFailed": "无法撤销。",
-        "failedGeneric": "未保存到记忆。"
-      },
       "used": {
         "label": "使用了 {places} 的记忆 · {count, plural, other {# 个页面}}",
         "title": "此线程开始时使用的页面",
@@ -22966,14 +22902,6 @@
       },
       "searchError": "无法搜索此记忆。",
       "searchResults": "搜索结果",
-      "searchTool": {
-        "title": "已搜索记忆",
-        "count": "{count, plural, other {# 个页面}}",
-        "running": "正在搜索记忆…",
-        "failed": "记忆搜索失败：{reason}",
-        "failedGeneric": "记忆搜索失败。",
-        "none": "没有与“{query}”匹配的页面。"
-      },
       "palette": {
         "heading": "记忆"
       },
@@ -22989,34 +22917,15 @@
         "saveTo": "保存到",
         "dm": "你与 {agent} 的记忆"
       },
-      "archivedReadOnly": "{place} 已归档。它的记忆为只读。",
-      "pending": {
-        "note": "在有人确认之前，智能体不会使用这些页面。",
-        "from": "来自 {host}",
-        "banner": "来自 {host}。在有人确认之前，智能体不会使用它。",
-        "bannerNoHost": "来自对话串之外。在有人确认之前，智能体不会使用它。",
-        "confirm": "确认",
-        "confirmPage": "确认 {title}",
-        "discard": "丢弃",
-        "discardPage": "丢弃 {title}",
-        "cancel": "取消",
-        "confirmed": "页面已确认。智能体现在可以使用它。",
-        "alreadyConfirmed": "已有人确认此页面。",
-        "confirmFailed": "无法确认页面。请重试。",
-        "discarded": "页面已丢弃",
-        "discardFailed": "无法丢弃页面。请重试。"
+      "updated": "{author} 更新于 {time}",
+      "updatedAt": "更新于 {time}",
+      "sourceKind": {
+        "thread": "话题",
+        "person": "消息",
+        "outside": "链接",
+        "import": "文件"
       },
-      "trash": {
-        "title": "回收站",
-        "note": "已删除的页面会在这里保留 30 天，然后被永久删除。",
-        "loadError": "无法加载回收站。",
-        "restore": "恢复",
-        "restorePage": "恢复 {title}",
-        "restored": "页面已恢复",
-        "titleTaken": "已有同名页面。请先重命名该页面，再恢复此页面。",
-        "restoreFailed": "无法恢复页面。请重试。",
-        "allTrashed": "所有页面都在回收站中。"
-      }
+      "pageCount": "{count, plural, other {# 个页面}}"
     },
     "create": {
       "title": "创建频道",
@@ -23116,10 +23025,8 @@
       "roster": "{people} · {agents}",
       "rosterPeople": "{count, plural, other {# 人}}",
       "rosterAgents": "{count, plural, other {# 个智能体}}",
-      "rosterHint": "此频道话题中的人和智能体",
       "copyLink": "复制话题链接",
       "linkCopied": "链接已复制",
-      "started": "{time}开始",
       "notice": {
         "unreachable": "与此话题的计算机失去连接。你发送的消息会排队，直到重新连接。",
         "unreachableMidTurn": "在一轮对话仍未结束时与此话题的计算机失去连接。你发送的消息会继续排队，直到它响应。",
@@ -23166,7 +23073,12 @@
       "appsLoadError": "无法加载应用。",
       "triggers": {
         "loadError": "无法加载触发器。"
-      }
+      },
+      "reply": "回复",
+      "rosterTitlePeople": "成员",
+      "rosterTitleAgents": "智能体",
+      "viewAllMembers": "查看全部成员",
+      "agentThreads": "{count} 个话题"
     },
     "details": {
       "about": "关于",
@@ -23175,14 +23087,23 @@
       "description": "描述",
       "noDescription": "添加描述",
       "created": "创建于",
-      "edit": "编辑",
       "editField": "编辑{field}",
       "archiveTitle": "归档此频道",
       "archiveHint": "它会从所有成员的侧边栏中移除。其中的话题会保留。",
       "archive": "归档",
       "people": "人",
       "agents": "智能体",
-      "membersHint": "在目前已加载的话题中，在这里发起话题的人以及回复过话题的智能体。"
+      "membersHint": "在目前已加载的话题中，在这里发起话题的人以及回复过话题的智能体。",
+      "threads": "{count} 个话题",
+      "find": "查找成员或智能体",
+      "addPeople": "添加成员",
+      "you": "（你）",
+      "groupCount": "{label} · {count}",
+      "noMatches": "没有与“{query}”匹配的结果。",
+      "defaultAgent": "默认智能体",
+      "defaultAgentHint": "回复未指定智能体的消息。在“自定义 › 智能体”中为整个项目设置。",
+      "visibility": "可见范围",
+      "visibilityProject": "项目中的所有人"
     },
     "folder": {
       "memory": "记忆",
@@ -23194,6 +23115,26 @@
         "description": "{place} 的文件和记忆保存在 Drive 中。在 Feature flags 中开启 Volumes 即可使用。",
         "descriptionMember": "{place} 的文件和记忆保存在 Drive 中。请项目管理员开启它。",
         "action": "打开 Feature flags"
+      }
+    },
+    "onboarding": {
+      "reenabled": "频道关闭期间开始的会话都在这里。",
+      "intro": {
+        "title": "你的会话现在是 #general 中的话题。",
+        "channels": "频道按团队组织工作。",
+        "threads": "每条新消息都会开始一个话题。",
+        "memory": "智能体会记住每个频道达成的共识。",
+        "gotIt": "知道了"
+      },
+      "getStarted": {
+        "title": "开始使用",
+        "dismiss": "关闭",
+        "channel": "为团队创建一个频道",
+        "remember": "告诉 {place} 需要记住的事",
+        "dm": "与智能体开启私信",
+        "pickAgent": "给智能体发消息",
+        "noAgents": "此项目还没有智能体。",
+        "done": "已完成"
       }
     }
   }

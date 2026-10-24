@@ -6,6 +6,7 @@ import {
   dayKind,
   gutterTime,
   lastReplyLabel,
+  liveReplyCount,
   spaceRoster,
   spaceTabFromParam,
   threadIsWorking,
@@ -38,29 +39,22 @@ describe('buildSpaceTimeline', () => {
       thread('a', 'u1', at(19, 23, 50)),
       thread('b', 'u2', at(20, 0, 5)),
     ]);
-    expect(days.map((day) => day.threads.map((item) => item.session.session_id))).toEqual([['a'], ['b', 'c']]);
+    expect(days.map((day) => day.threads.map((item) => item.session_id))).toEqual([['a'], ['b', 'c']]);
     expect(days[1]!.date.getDate()).toBe(20);
   });
+});
 
-  test('collapses a thread from the same author within 5 minutes of the previous one', () => {
-    const [day] = buildSpaceTimeline([
-      thread('a', 'u1', at(20, 10, 0)),
-      thread('b', 'u1', at(20, 10, 4)),
-      thread('c', 'u1', at(20, 10, 9)),
-      thread('d', 'u2', at(20, 10, 10)),
-      thread('e', 'u1', at(20, 10, 11)),
-    ]);
-    expect(day!.threads.map((item) => item.compact)).toEqual([false, true, false, false, false]);
-  });
-
-  test('never collapses across a day boundary or for an unknown author', () => {
-    const days = buildSpaceTimeline([
-      thread('a', 'u1', at(19, 23, 58)),
-      thread('b', 'u1', at(20, 0, 1)),
-      thread('c', '', at(20, 0, 2)),
-      thread('d', '', at(20, 0, 3)),
-    ]);
-    expect(days.flatMap((day) => day.threads.map((item) => item.compact))).toEqual([false, false, false, false]);
+describe('liveReplyCount', () => {
+  test('counts person messages after the first plus one per answered person message', () => {
+    expect(liveReplyCount([])).toBe(0);
+    expect(liveReplyCount(['user'])).toBe(0);
+    // Several assistant steps answer one message: one reply.
+    expect(liveReplyCount(['user', 'assistant', 'assistant'])).toBe(1);
+    // A reply sent, not answered yet.
+    expect(liveReplyCount(['user', 'assistant', 'user'])).toBe(2);
+    expect(liveReplyCount(['user', 'assistant', 'user', 'assistant'])).toBe(3);
+    // A steer before the answer: two people messages, one answer.
+    expect(liveReplyCount(['user', 'user', 'assistant'])).toBe(2);
   });
 });
 
@@ -123,10 +117,13 @@ describe('spaceRoster', () => {
     ]);
     expect(roster.people.map((person) => person.id)).toEqual(['u1', 'u2']);
     expect(roster.agents).toEqual(['kortix', 'writer']);
+    // How many loaded threads each started or answered: the Members row's count.
+    expect(roster.people.map((person) => person.threads)).toEqual([2, 1]);
+    expect(roster.agentThreads).toEqual({ kortix: 2, writer: 1 });
   });
 
   test("a DM counts its agent before any thread exists", () => {
-    expect(spaceRoster([], 'writer')).toEqual({ people: [], agents: ['writer'] });
+    expect(spaceRoster([], 'writer')).toEqual({ people: [], agents: ['writer'], agentThreads: { writer: 0 } });
   });
 });
 

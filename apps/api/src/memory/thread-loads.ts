@@ -1,11 +1,14 @@
 /**
- * "Used memory": the pages a thread's agent was given at its first turn
- * (`memory_thread_loads`, one row per session, written once).
+ * "Used memory": the files a thread's agent was listed at its first turn
+ * (`memory_thread_loads`, one row per session, written once; `layer_id` is
+ * the layer key, `page_ids` are file page ids).
  */
 import type { MemoryLayerScope, MemoryPageType, MemoryUsage } from '@kortix/api-contract';
-import { type MemoryThreadLoadLayer, memoryLayers, memoryPages, memoryThreadLoads, projectSpaces } from '@kortix/db';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { type MemoryThreadLoadLayer, memoryThreadLoads } from '@kortix/db';
+import { eq } from 'drizzle-orm';
 import { db } from '../shared/db';
+import { pageIdOf } from './files';
+import { threadTurnLayers } from './turn-context';
 
 /** Record the layers and pages of a thread's first turn; later turns change nothing. */
 export async function recordThreadLoad(sessionId: string, layers: MemoryThreadLoadLayer[]): Promise<void> {
@@ -55,26 +58,20 @@ export function usageOf(
   };
 }
 
-/** The usage of `sessionId`; `loaded_at: null` before its first turn. The caller checked the viewer may open the thread. */
+/**
+ * The usage of `sessionId`; `loaded_at: null` before its first turn. Titles
+ * and types come from the files as they are now (one listing per layer); a
+ * file deleted since is left out. The caller checked the viewer may open the thread.
+ */
 export async function threadUsage(sessionId: string, viewerUserId: string): Promise<MemoryUsage> {
   const [load] = await db.select().from(memoryThreadLoads).where(eq(memoryThreadLoads.sessionId, sessionId)).limit(1);
   if (!load) return { loaded_at: null, layers: [] };
-  const layerIds = load.layers.map((layer) => layer.layer_id);
-  const pageIds = load.layers.flatMap((layer) => layer.page_ids);
-  const [layers, pages] = await Promise.all([
-    layerIds.length === 0
-      ? []
-      : db
-          .select({ layerId: memoryLayers.layerId, spaceId: memoryLayers.spaceId, dmUserId: projectSpaces.dmUserId })
-          .from(memoryLayers)
-          .leftJoin(projectSpaces, eq(projectSpaces.spaceId, memoryLayers.spaceId))
-          .where(inArray(memoryLayers.layerId, layerIds)),
-    pageIds.length === 0
-      ? []
-      : db
-          .select({ pageId: memoryPages.pageId, layerId: memoryPages.layerId, type: memoryPages.type, title: memoryPages.title })
-          .from(memoryPages)
-          .where(and(inArray(memoryPages.pageId, pageIds), isNull(memoryPages.deletedAt))),
-  ]);
-  return usageOf(load, layers, pages, viewerUserId);
+  const thread = await threadTurnLayers(sessionId, null);
+  const layers = thread?.layers ?? [];
+  return usageOf(
+    load,
+    layers.map((layer) => ({ layerId: layer.key, spaceId: layer.key === 'company' ? null : layer.key, dmUserId: layer.dmUserId })),
+    layers.flatMap((layer) => layer.files.map((file) => ({ pageId: pageIdOf(layer.key, file.rel), layerId: layer.key, type: file.type, title: file.title }))),
+    viewerUserId,
+  );
 }

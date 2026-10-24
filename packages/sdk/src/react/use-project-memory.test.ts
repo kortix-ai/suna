@@ -22,7 +22,6 @@ mock.module('@tanstack/react-query', () => ({
 
 const {
   useAddProjectMemoryNote,
-  useConfirmProjectMemoryPage,
   useCreateProjectMemoryPage,
   useDeleteProjectMemoryPage,
   useProjectMemoryChanges,
@@ -31,7 +30,6 @@ const {
   useProjectMemoryPage,
   useProjectMemoryPages,
   useProjectMemorySearch,
-  useRestoreProjectMemoryPage,
   useSessionMemoryUsage,
   useUndoProjectMemoryVersion,
   useUpdateProjectMemoryPage,
@@ -109,23 +107,20 @@ describe('memory reads', () => {
     }
   });
 
-  test('the trash and a filtered list get their own slot under the layer pages key, and read with the filter', async () => {
-    response = { pages: [] };
+  test('a filtered list gets its own slot under the layer pages key, and reads with the filter', async () => {
+    response = { pages: [], truncated: false };
     const live = useProjectMemoryPages('P1', 'S1') as any;
-    const trash = useProjectMemoryPages('P1', 'S1', { deleted: true }) as any;
-    const unconfirmed = useProjectMemoryPages('P1', 'S1', { status: 'unconfirmed' }) as any;
+    const other = useProjectMemoryPages('P1', 'S1', { type: 'other' }) as any;
     expect(live.queryKey).toEqual(qk.project.memoryPages('P1', 'S1'));
-    expect(trash.queryKey).toEqual(qk.project.memoryPages('P1', 'S1', { deleted: true }));
-    expect(trash.queryKey).not.toEqual(live.queryKey);
-    expect(unconfirmed.queryKey).not.toEqual(trash.queryKey);
-    // A write invalidates the layer pages prefix, so the trash refreshes with the live list.
+    expect(other.queryKey).toEqual(qk.project.memoryPages('P1', 'S1', { type: 'other' }));
+    expect(other.queryKey).not.toEqual(live.queryKey);
+    // A write invalidates the layer pages prefix, so a filtered list refreshes with the whole list.
     const prefix = qk.project.memoryPages('P1', 'S1');
-    expect(trash.queryKey.slice(0, prefix.length)).toEqual([...prefix]);
+    expect(other.queryKey.slice(0, prefix.length)).toEqual([...prefix]);
     // `enabled` is not a filter: it never changes the key.
     expect((useProjectMemoryPages('P1', 'S1', { enabled: false }) as any).queryKey).toEqual(live.queryKey);
-    await trash.queryFn();
-    await unconfirmed.queryFn();
-    expect(calls.map((c) => c.url)).toEqual([`${base}/layers/S1/pages?deleted=1`, `${base}/layers/S1/pages?status=unconfirmed`]);
+    await other.queryFn();
+    expect(calls.map((c) => c.url)).toEqual([`${base}/layers/S1/pages?type=other`]);
   });
 
   test('a read is disabled without its ids or when the caller disables it', () => {
@@ -241,21 +236,10 @@ describe('memory mutations', () => {
     const update = useUpdateProjectMemoryPage('P1') as any;
     const saved = { page_id: 'PG1', version_no: 4 };
     response = saved;
-    await update.mutationFn({ pageId: 'PG1', input: { base_version: 3, title: 'Priya S.' } });
-    expect(calls).toEqual([{ method: 'PATCH', url: `${base}/pages/PG1`, body: { base_version: 3, title: 'Priya S.' } }]);
+    await update.mutationFn({ pageId: 'PG1', input: { base_version: 3, body: 'Runs marketing.' } });
+    expect(calls).toEqual([{ method: 'PATCH', url: `${base}/pages/PG1`, body: { base_version: 3, body: 'Runs marketing.' } }]);
     await update.onSuccess(saved);
     expect(cached).toEqual([{ key: [...qk.project.memoryPage('P1', 'PG1')], data: saved }]);
-    expect(invalidated).toEqual(everyMemoryKey());
-  });
-
-  test('restore POSTs the version, writes the result into the page slot and invalidates memory', async () => {
-    const restore = useRestoreProjectMemoryPage('P1') as any;
-    const restored = { page_id: 'PG1', version_no: 5 };
-    response = restored;
-    await restore.mutationFn({ pageId: 'PG1', versionId: 'V1' });
-    expect(calls).toEqual([{ method: 'POST', url: `${base}/pages/PG1/restore`, body: { version_id: 'V1' } }]);
-    await restore.onSuccess(restored);
-    expect(cached).toEqual([{ key: [...qk.project.memoryPage('P1', 'PG1')], data: restored }]);
     expect(invalidated).toEqual(everyMemoryKey());
   });
 
@@ -290,23 +274,6 @@ describe('memory mutations', () => {
     expect(qk.project.memoryPage('P1', 'PG1').slice(0, prefix.length)).toEqual([...prefix]);
   });
 
-  test('confirm POSTs the page confirm route, writes the returned page into its slot and invalidates memory', async () => {
-    const confirm = useConfirmProjectMemoryPage('P1') as any;
-    // A "(to confirm)" page merges into the page it names: the response is that page.
-    const merged = { page_id: 'PG1', version_no: 8 };
-    response = merged;
-    await confirm.mutationFn('PG9');
-    expect(calls).toEqual([{ method: 'POST', url: `${base}/pages/PG9/confirm`, body: undefined }]);
-    await confirm.onSuccess(merged);
-    expect(cached).toEqual([{ key: [...qk.project.memoryPage('P1', 'PG1')], data: merged }]);
-    expect(invalidated).toEqual(everyMemoryKey());
-    // The confirmed "(to confirm)" page went to the trash: its slot sits under the
-    // invalidated memory prefix, so it refetches and is never written with the merged page.
-    const prefix = qk.project.memory('P1');
-    expect(qk.project.memoryPage('P1', 'PG9').slice(0, prefix.length)).toEqual([...prefix]);
-    expect(cached.some((c) => JSON.stringify(c.key) === JSON.stringify(qk.project.memoryPage('P1', 'PG9')))).toBe(false);
-  });
-
   test('every mutation handles its own error, so the app-wide default error toast does not fire as well', () => {
     // Each caller shows a specific message for 409/413/422. Without a hook-level
     // onError, TanStack also runs the QueryClient's default mutation onError.
@@ -315,9 +282,7 @@ describe('memory mutations', () => {
       useAddProjectMemoryNote('P1', 'company'),
       useUpdateProjectMemoryPage('P1'),
       useDeleteProjectMemoryPage('P1'),
-      useRestoreProjectMemoryPage('P1'),
       useUndoProjectMemoryVersion('P1'),
-      useConfirmProjectMemoryPage('P1'),
     ] as any[]) {
       expect(typeof hook.onError).toBe('function');
     }

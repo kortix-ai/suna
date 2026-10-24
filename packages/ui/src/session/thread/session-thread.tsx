@@ -16,6 +16,7 @@
  */
 
 import type { UseSessionResult } from '@kortix/sdk/react';
+import { useContext } from 'react';
 
 import { cn } from '../../lib/utils';
 import { ProjectScope } from '../../internal/project-scope';
@@ -23,6 +24,8 @@ import { ProviderPoolDraftBoundary } from '../overrides/provider-pool-draft-cont
 import { SessionPanelFallback } from '../panel/panel-fallback';
 import { SessionChat } from './session-chat';
 import { SessionStartingLoader } from '../status/session-starting-loader';
+import { ThreadBootRows } from './thread-boot-rows';
+import { TranscriptRowsContext } from './transcript-rows';
 import '../tool/tools/register';
 
 export interface SessionThreadProps {
@@ -52,6 +55,7 @@ export function SessionThread({
   className,
 }: SessionThreadProps) {
   const { projectId, sessionId, runtimeSessionId } = session;
+  const rows = useContext(TranscriptRowsContext) !== null;
   return (
     <ProjectScope projectId={projectId} sessionId={sessionId}>
       <ProviderPoolDraftBoundary identity={`${projectId}/${sessionId}`}>
@@ -67,6 +71,15 @@ export function SessionThread({
               readOnly={readOnly}
               composerPlaceholder={composerPlaceholder}
               hostQuote={quote}
+            />
+          ) : rows ? (
+            // A channel thread: its prompt, the agent's busy row and the reply
+            // box from the first frame, while the computer comes up.
+            <ThreadBootRows
+              projectId={projectId}
+              sessionId={sessionId}
+              composerPlaceholder={composerPlaceholder}
+              readOnly={readOnly}
             />
           ) : (
             <SessionStartingLoader

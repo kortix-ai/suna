@@ -58,6 +58,7 @@ import {
 } from '../../providers/ui-provider';
 import { memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { TranscriptRowsContext, type TranscriptRows } from './transcript-rows';
+import { AgentBusyRow, PendingPromptRows } from './thread-boot-rows';
 import { useIsMobile } from '../../internal/hooks';
 import { createPortal } from 'react-dom';
 import {
@@ -4397,7 +4398,24 @@ export function SessionChat({
                         only when a turn is already drawing its own. */}
                         {showFirstPromptPreview &&
                           firstPromptSource &&
-                          queuedSyntheticMessages.length === 0 && (
+                          queuedSyntheticMessages.length === 0 &&
+                          rowsContext && (
+                            // A channel thread draws the stand-in as rows, the same
+                            // rows its boot body drew (`ThreadBootRows`).
+                            <PendingPromptRows
+                              text={buildOptimisticPromptTextWithUploads(
+                                firstPromptSource.text,
+                                firstPromptSource.files,
+                              )}
+                              author={rowsContext.owner}
+                              sessionId={sessionId}
+                              busy={turns.length === 0 && (lastTurnWorking || promptInbox.prompts.some(isFirstPromptRow))}
+                            />
+                          )}
+                        {showFirstPromptPreview &&
+                          firstPromptSource &&
+                          queuedSyntheticMessages.length === 0 &&
+                          !rowsContext && (
                             <OptimisticTurn
                               text={buildOptimisticPromptTextWithUploads(
                                 firstPromptSource.text,
@@ -4566,13 +4584,21 @@ export function SessionChat({
                               // An idle send stays in the inbox until delivery,
                               // but nothing runs ahead of it: queued only while
                               // it waits behind a turn (`turnRendersQueued`).
-                              pending={turnRendersQueued({
-                                turnId: turn.id,
-                                resolution: workingTurn,
-                                sessionWorking: lastTurnWorking,
-                                confirmedActive,
-                                inboxPrompt: pendingPrompt,
-                              })}
+                              // The first turn, with no turn working, has
+                              // nothing ahead of it: a session's first prompt is
+                              // starting, not queued, while the computer comes up
+                              // and before the turn layer marks it queued or live.
+                              pending={
+                                turnIndex === 0 && workingTurn.workingTurnId === null && !confirmedActive
+                                  ? pendingPrompt?.state === 'waiting' || pendingPrompt?.state === 'failed'
+                                  : turnRendersQueued({
+                                      turnId: turn.id,
+                                      resolution: workingTurn,
+                                      sessionWorking: lastTurnWorking,
+                                      confirmedActive,
+                                      inboxPrompt: pendingPrompt,
+                                    })
+                              }
                               pendingPrompt={pendingPrompt}
                               onRetryQueued={stableRetryQueued}
                               onRemoveQueued={stableRemoveQueued}
@@ -4674,6 +4700,10 @@ export function SessionChat({
                     {/* Active runtime work can precede its transcript turn. Pending
                         delivery already has a queued status and shows no thinking row. */}
                     {showFallbackBusyRow && fallbackBusyRowTurnId === null && (
+                      rowsContext ? (
+                        // A channel thread waits in the agent's answer row.
+                        <AgentBusyRow sessionId={sessionId} />
+                      ) : (
                         <SessionBusyIndicator
                           sessionId={sessionId}
                           // Matches the stand-in's row spacing under a bubble
@@ -4682,7 +4712,8 @@ export function SessionChat({
                           // the transcript is empty, so no margin there.
                           className={turns.length === 0 ? undefined : 'mt-6'}
                         />
-                      )}
+                      )
+                    )}
                   </div>
                   {/* Spacer — the transcript's anchor space. It is sized from
                       the scroll container so the newest turn
@@ -4866,6 +4897,10 @@ export function SessionChat({
                 underbarPlacement={transcriptRows && !isMobile ? 'inline' : undefined}
                 // The panel's toolbar is narrow: the agent is its tile, the model keeps its name.
                 agentPickerCompact={transcriptRows && !isMobile}
+                // A thread panel's rows run `px-5`, and the channel composer
+                // beside it sits `pb-4` off the window's bottom edge: the same
+                // margins, so the two boxes line up.
+                parentClassName={transcriptRows ? 'max-w-none px-5 pb-4' : undefined}
                 onNoticeRetry={
                   composerReadiness.notice && composerReadiness.retryable
                     ? requestRuntimeReconnect

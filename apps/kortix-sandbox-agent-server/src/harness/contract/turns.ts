@@ -4,7 +4,6 @@
  * implements them its own way (OpenCode through its REST API, pi in-process),
  * so the host speaks only Kortix names.
  */
-import type { MemoryLayerRef } from '@/services/tools/memory-copy'
 
 /** A validated `POST /kortix/runtime/sessions/:id/prompt` body. */
 export interface RuntimePromptInput {
@@ -20,15 +19,8 @@ export interface RuntimePromptInput {
   /** Persist the message and start no turn. */
   noReply?: boolean
   /**
-   * The thread's memory layers (`project_channels`): the route brings the
-   * read-only copy (`services/tools/memory-copy.ts`) to these versions, and
-   * removes the copy of any layer not listed, before the turn starts. A
-   * harness reads nothing from it.
-   */
-  memoryLayers?: MemoryLayerRef[]
-  /**
    * Text added to this turn's system prompt only (`project_channels`: the
-   * thread's memory page list). The next turn without it runs without it.
+   * thread's memory file list). The next turn without it runs without it.
    */
   system?: string
 }

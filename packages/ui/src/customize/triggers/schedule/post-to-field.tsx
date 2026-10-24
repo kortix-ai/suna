@@ -1,9 +1,10 @@
 'use client';
 
 import { useFeatureFlag, useProjectSpaces } from '@kortix/sdk/react';
-import { HashIcon, RobotIcon } from '@phosphor-icons/react';
+import { HashIcon } from '@phosphor-icons/react';
 
 import { useTranslations } from '../../../i18n';
+import { AgentMark } from '../../../internal/components/agent-mark';
 import { Label } from '../../../primitives/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../primitives/select';
 import { useUiViewerId } from '../../../providers/ui-provider';
@@ -81,7 +82,7 @@ export function PostToField({
                 {space.kind === 'channel' ? (
                   <HashIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
                 ) : (
-                  <RobotIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
+                  <AgentMark slug={space.dm_agent_name ?? 'kortix'} size={14} tile={18} />
                 )}
                 {space.kind === 'channel' ? space.slug : agentLabel(space.dm_agent_name ?? '')}
               </span>

@@ -14,7 +14,7 @@ const me = {
 };
 
 describe('spaceNotesLines', () => {
-  test('a channel thread: the channel folder as mounted, and memory pages saved with remember', () => {
+  test('a channel thread: the channel files and memory folders as mounted', () => {
     const text = spaceNotesLines({ kind: 'channel', name: 'launch' }, [
       me,
       company,
@@ -22,11 +22,10 @@ describe('spaceNotesLines', () => {
     expect(text).toContain('## This thread’s channel: #launch');
     expect(text).toContain('- Files of #launch: /drives/company/Channels/launch/');
     expect(text).toContain(
-      '- Memory of #launch: pages at /opt/kortix/memory/ (read-only); save with the `remember` tool (load the kortix-channel-memory skill).',
+      '- Memory of #launch: /drives/company/Channels/launch/Memory/ (read-write; one topic per file, MEMORY.md is the index; load the kortix-channel-memory skill)',
     );
-    // Memory is database pages now: no Drive Memory folder, no rule to write files there.
-    expect(text).not.toContain('Channels/launch/Memory');
-    expect(text).not.toContain('write durable facts there');
+    expect(text).not.toContain('/opt/kortix/memory');
+    expect(text).not.toContain('`remember`');
     // A rename keeps the thread's env slug; the notes path is the one to use.
     expect(text).toContain('win over `KORTIX_SPACE_SLUG`');
     expect(text).toContain('Create a missing folder only at a path named here');
@@ -40,7 +39,9 @@ describe('spaceNotesLines', () => {
     ]).join('\n');
     expect(text).toContain('## This thread’s DM with researcher');
     expect(text).toContain('/drives/me/Agents/researcher/');
-    expect(text).toContain('- Memory of your DM with researcher: pages at /opt/kortix/memory/ (read-only)');
+    expect(text).toContain(
+      "- Memory of your DM with researcher: /drives/me/Memory/researcher/ for what you learn in this DM, beside the user's memory in /drives/me/Memory/",
+    );
     expect(text).not.toContain('/drives/me/Memory/agents/');
   });
 
@@ -64,8 +65,7 @@ describe('spaceNotesLines', () => {
     ]).join('\n');
     expect(channel).toContain('not mounted in this thread');
     expect(channel).not.toContain('/drives/company');
-    // Memory is not a Drive folder: it is named even when no folder is mounted.
-    expect(channel).toContain('- Memory of #launch: pages at /opt/kortix/memory/');
+    expect(channel).toContain('The memory folder of #launch is not mounted in this thread.');
     // A DM thread without the person's folder has no DM folders at all.
     const dm = spaceNotesLines({ kind: 'dm', name: 'researcher' }, [
       company,
@@ -111,10 +111,10 @@ describe('spaceNotesLines', () => {
 describe('renderDriveNotes', () => {
   const own = { mountPath: '/drives/me', subdir: '/Users/ana', role: 'me', readOnly: false } as SessionDriveView;
 
-  test('a channel or DM thread saves team facts with remember, not in Company/Memory', () => {
+  test('a channel or DM thread keeps team facts in Company/Memory, like every thread', () => {
     const text = renderDriveNotes([own], [], null, spaceNotesLines({ kind: 'channel', name: 'launch' }, [own]));
-    expect(text).toContain('what the whole team should know: `remember` with `layer: company`.');
-    expect(text).not.toContain('goes in Company/Memory/');
+    expect(text).toContain('what the whole team should know goes in Company/Memory/ when that folder is mounted.');
+    expect(text).not.toContain('`remember`');
     expect(text).toContain('/drives/me/Memory/ (load the kortix-user-memory skill)');
   });
 

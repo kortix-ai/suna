@@ -1,157 +1,126 @@
 /**
- * Memory layers: the project's Company layer, one per channel, one per DM.
- * A layer row is made on first use. Who reads one: every member reads Company
- * and every channel (archived ones too, read-only); only its owner reads a DM.
- * A session-bound caller (an agent's token) reads only its thread's layers.
+ * Memory layers: one Drive folder each. No row is stored.
+ *
+ * | Key          | Folder                               | Who reads it        |
+ * |--------------|--------------------------------------|---------------------|
+ * | `company`    | `/Company/Memory`                    | every project member |
+ * | a channel id | `/Company/Channels/<slug>/Memory`    | every project member |
+ * | a DM id      | `/Users/<owner>/Memory`, agent folder `Memory/<agent>` first | the DM owner only |
+ *
+ * Read and write rights are the Drive folder rights (`driveSubjectFor`), so a
+ * narrower grant made in Files holds here too. An archived channel is read-only.
  */
-import type { MemoryLayerKey, MemoryLayerScope } from '@kortix/api-contract';
-import { memoryLayers, memoryPages, projectSpaces } from '@kortix/db';
-import { and, eq, isNull, or, sql } from 'drizzle-orm';
+import { COMPANY_MEMORY_DIR, MEMORY_DIR_NAME } from '../drives/folders';
+import { folderAccess, folderAccessAtLeast } from '../drives/folders';
+import { type DriveCaller, type DriveRow, driveSubjectFor, ensureProjectDrive, personalFolderFor } from '../drives/service';
 import { resolveFeatureFlag } from '../feature-flags/registry';
-import { logger } from '../lib/logger';
+import { projectSessions, projectSpaces } from '@kortix/db';
+import { resolveUserIdentities } from '../projects/surface';
+import { spaceDriveFolders } from '@kortix/shared';
+import { and, eq, or, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
-import { enqueueJob } from '../shared/job-queue';
 import { isUuid } from '../shared/validate';
-import { notFound } from './limits';
-import { threadLayers } from './thread-layers';
+import type { MemoryLayerScope } from '@kortix/api-contract';
+import { volumeOps } from './volume-ops';
 
-export type LayerRow = typeof memoryLayers.$inferSelect;
+/** A refusal with its HTTP status and machine code; the route answers `{error, code, ...extra}`. */
+export class MemoryError extends Error {
+  constructor(
+    readonly status: 400 | 403 | 404 | 409 | 413 | 422 | 503,
+    readonly code: string,
+    message: string,
+    readonly extra: Record<string, unknown> = {},
+  ) {
+    super(message);
+  }
 
-/** The space a layer belongs to, as far as memory reads it. */
-export interface SpaceInfo {
-  kind: 'channel' | 'dm';
-  slug: string | null;
-  dmUserId: string | null;
-  dmAgentName: string | null;
-  archivedAt: Date | null;
+  get body(): { error: string; code: string } & Record<string, unknown> {
+    return { ...this.extra, error: this.message, code: this.code };
+  }
 }
 
-export interface LayerRef {
-  layerId: string;
-  projectId: string;
-  scope: MemoryLayerScope;
-  spaceId: string | null;
-  version: number;
-  /** "Company", "#marketing", or the DM's agent. */
-  name: string;
-  /** An archived space's layer. */
-  readOnly: boolean;
-  /** The DM owner; null for Company and channels. */
-  dmUserId: string | null;
-}
+export const notFound = () => new MemoryError(404, 'memory_not_found', 'Memory not found.');
 
-/**
- * Who asks. `isManager`: may delete any page (asked only when it matters).
- * `sessionId`: the caller is an agent's session token, so it reads only its
- * thread's layers and never writes through the people routes.
- * `canOpenThreads`: the threads among `ids` this person may open (the session
- * read rule); a source in any other thread renders as "a private thread".
- */
+/** Who asks: a person, and their project rights (`session`: a member; `write`: an admin). */
 export interface Viewer {
   userId: string;
-  isManager: () => Promise<boolean>;
-  sessionId: string | null;
-  canOpenThreads?: (ids: string[]) => Promise<Set<string>>;
+  may: (action: 'session' | 'write') => Promise<boolean>;
 }
 
-export const MEMORY_IMPORT_QUEUE = 'memory-import';
-
-export const layerKeyOf = (ref: LayerRef): MemoryLayerKey => ref.spaceId ?? 'company';
-
-export function layerRef(row: LayerRow, space: SpaceInfo | null): LayerRef {
-  let name = 'Company';
-  if (space?.kind === 'channel') name = `#${space.slug}`;
-  else if (space?.kind === 'dm') name = space.dmAgentName ?? 'Direct message';
-  return {
-    layerId: row.layerId,
-    projectId: row.projectId,
-    scope: row.scope,
-    spaceId: row.spaceId,
-    version: row.version,
-    name,
-    readOnly: (space?.archivedAt ?? null) !== null,
-    dmUserId: space?.kind === 'dm' ? space.dmUserId : null,
-  };
+export interface Project {
+  projectId: string;
+  accountId: string;
+  metadata: unknown;
 }
 
-/**
- * The layer row of `(scope, spaceId)`, made on first call (idempotent under
- * concurrency). A new layer queues the Drive memory import when the project
- * has Drive on, else it is marked imported.
- */
-export async function ensureLayerRow(
-  project: { projectId: string; metadata: unknown },
-  scope: MemoryLayerScope,
-  spaceId: string | null,
-): Promise<LayerRow> {
-  const [inserted] = await db
-    .insert(memoryLayers)
-    .values({ projectId: project.projectId, scope, spaceId })
-    .onConflictDoNothing()
-    .returning();
-  if (inserted) {
-    await afterLayerCreated(inserted, resolveFeatureFlag(project.metadata, 'drives'));
-    return inserted;
+export interface Layer {
+  /** `company` or the space id. */
+  key: string;
+  scope: MemoryLayerScope;
+  spaceId: string | null;
+  /** "Company", "#marketing", or the DM's agent. */
+  name: string;
+  projectId: string;
+  drive: DriveRow;
+  /** The layer folder, a Drive path. */
+  root: string;
+  /** A DM's agent folder (inside `root`); null for others. */
+  agentFolder: string | null;
+  /** Folders inside `root` that belong to another layer (the owner's other DM agents). */
+  skip: string[];
+  readOnly: boolean;
+  canWrite: boolean;
+  /** The project's `#general`: a write there completes a Get started row. */
+  isDefault: boolean;
+}
+
+// One driveSubjectFor per request and viewer: a search resolves several layers.
+const callers = new WeakMap<Viewer, Promise<{ drive: DriveRow; caller: DriveCaller }>>();
+
+/** The project drive and the viewer's folder rights on it. 403 with Drive off, 503 without storage. */
+export function driveCallerOf(project: Project, viewer: Viewer): Promise<{ drive: DriveRow; caller: DriveCaller }> {
+  let memo = callers.get(viewer);
+  if (!memo) {
+    memo = (async () => {
+      if (!resolveFeatureFlag(project.metadata, 'drives')) {
+        throw new MemoryError(403, 'feature_disabled', 'Memory lives in Files. Turn on Files for this project first.', { feature: 'drives' });
+      }
+      if (!volumeOps().available()) throw new MemoryError(503, 'drive_storage_unavailable', 'Drive storage is not available.');
+      const drive = await ensureProjectDrive(project.accountId, project.projectId);
+      return { drive, caller: await driveSubjectFor(drive, viewer.userId, viewer.may) };
+    })();
+    callers.set(viewer, memo);
   }
-  const where =
-    spaceId === null
-      ? and(eq(memoryLayers.projectId, project.projectId), eq(memoryLayers.scope, 'company'))
-      : eq(memoryLayers.spaceId, spaceId);
-  const [row] = await db.select().from(memoryLayers).where(where).limit(1);
-  if (!row) throw new Error(`memory layer ${scope}/${spaceId ?? 'company'} is neither inserted nor found`);
-  return row;
-}
-
-async function afterLayerCreated(row: LayerRow, drives: boolean): Promise<void> {
-  try {
-    if (drives) await enqueueJob(MEMORY_IMPORT_QUEUE, row.layerId, { layer_id: row.layerId });
-    else await db.update(memoryLayers).set({ importedAt: new Date() }).where(eq(memoryLayers.layerId, row.layerId));
-  } catch (error) {
-    // The layer works without its import; the import runs when the next one is queued.
-    logger.warn('[memory] the Drive import of a new layer was not queued', {
-      layer_id: row.layerId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
+  return memo;
 }
 
 const SPACE_COLUMNS = {
+  spaceId: projectSpaces.spaceId,
   kind: projectSpaces.kind,
   slug: projectSpaces.slug,
   dmUserId: projectSpaces.dmUserId,
   dmAgentName: projectSpaces.dmAgentName,
   archivedAt: projectSpaces.archivedAt,
+  isDefault: projectSpaces.isDefault,
 };
 
-/** May `viewer` read this layer? Company and channels: every member. A DM: its owner. A session token: its thread's layers. */
-export async function viewerReads(ref: LayerRef, viewer: Viewer): Promise<boolean> {
-  if (ref.scope === 'dm' && ref.dmUserId !== viewer.userId) return false;
-  if (!viewer.sessionId) return true;
-  const thread = await threadLayers(viewer.sessionId);
-  return thread !== null && thread.projectId === ref.projectId && thread.read.some((layer) => layer.layerId === ref.layerId);
+/** The DM agents of `userId` in the project, by space id. */
+export async function dmAgentsOf(projectId: string, userId: string) {
+  return db
+    .select({ spaceId: projectSpaces.spaceId, agent: projectSpaces.dmAgentName, createdAt: projectSpaces.createdAt })
+    .from(projectSpaces)
+    .where(and(eq(projectSpaces.projectId, projectId), eq(projectSpaces.kind, 'dm'), eq(projectSpaces.dmUserId, userId)));
 }
 
-/** People write a layer they read unless it is read-only; a session token never writes here (agents use `remember`). */
-export const viewerWrites = (ref: LayerRef, viewer: Viewer) => !ref.readOnly && viewer.sessionId === null;
-
-/** The layer of a route key (`company` or a space id), made on first read. 404 for anything the viewer may not read. */
-export async function resolveLayerKey(
-  project: { projectId: string; metadata: unknown },
-  key: string,
-  viewer: Viewer,
-): Promise<LayerRef> {
-  // A session token reads its thread's layers only: resolved from the thread, so nothing is made for a refused key.
-  if (viewer.sessionId) {
-    const thread = await threadLayers(viewer.sessionId);
-    const ref = thread?.projectId === project.projectId ? thread.read.find((layer) => layerKeyOf(layer) === key) : undefined;
-    if (!ref) throw notFound();
-    return ref;
-  }
-  let ref: LayerRef;
+/** The layer of a route key; 404 for anything the viewer may not read. */
+export async function resolveLayer(project: Project, key: string, viewer: Viewer): Promise<Layer> {
+  if (key !== 'company' && !isUuid(key)) throw notFound();
+  const { drive, caller } = await driveCallerOf(project, viewer);
+  const base = { key, projectId: project.projectId, drive, agentFolder: null as string | null, skip: [] as string[], isDefault: false };
+  let layer: Omit<Layer, 'canWrite'>;
   if (key === 'company') {
-    ref = layerRef(await ensureLayerRow(project, 'company', null), null);
+    layer = { ...base, scope: 'company', spaceId: null, name: 'Company', root: COMPANY_MEMORY_DIR, readOnly: false };
   } else {
-    if (!isUuid(key)) throw notFound();
     const [space] = await db
       .select(SPACE_COLUMNS)
       .from(projectSpaces)
@@ -164,53 +133,60 @@ export async function resolveLayerKey(
       )
       .limit(1);
     if (!space) throw notFound();
-    ref = layerRef(await ensureLayerRow(project, space.kind, key), space);
+    const readOnly = space.archivedAt !== null;
+    if (space.kind === 'channel') {
+      const folders = space.slug ? spaceDriveFolders('channel', space.slug, null) : null;
+      if (!folders) throw notFound();
+      layer = { ...base, scope: 'channel', spaceId: key, name: `#${space.slug}`, root: folders.memory, readOnly, isDefault: space.isDefault };
+    } else {
+      const personal = personalFolderFor(caller.grants, viewer.userId) ?? caller.personalFolder;
+      const agent = space.dmAgentName ?? '';
+      const others = (await dmAgentsOf(project.projectId, viewer.userId)).filter((dm) => dm.spaceId !== key && dm.agent);
+      layer = {
+        ...base,
+        scope: 'dm',
+        spaceId: key,
+        name: agent || 'Direct message',
+        root: `${personal}/${MEMORY_DIR_NAME}`,
+        agentFolder: spaceDriveFolders('dm', agent, personal)?.memory ?? null,
+        skip: others.flatMap((dm) => spaceDriveFolders('dm', dm.agent!, personal)?.memory ?? []),
+        readOnly,
+      };
+    }
   }
-  if (!(await viewerReads(ref, viewer))) throw notFound();
-  return ref;
+  const access = folderAccess(layer.root, caller.grants, caller.subject);
+  if (!folderAccessAtLeast(access, 'read')) throw notFound();
+  return { ...layer, canWrite: !layer.readOnly && folderAccessAtLeast(access, 'write') };
 }
 
-/** A layer of the project by id, when the viewer reads it; else 404. */
-export async function layerById(projectId: string, layerId: string, viewer: Viewer): Promise<LayerRef> {
-  if (!isUuid(layerId)) throw notFound();
+/** The viewer's newest DM layer key, for a hit in their shared Memory folder; null without a DM. */
+export async function newestDmKey(projectId: string, userId: string): Promise<string | null> {
+  const dms = await dmAgentsOf(projectId, userId);
+  return dms.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0]?.spaceId ?? null;
+}
+
+/** 409 for a read-only layer, 403 without write access. */
+export function assertWrites(layer: Layer): void {
+  if (layer.readOnly) throw new MemoryError(409, 'layer_read_only', 'This channel is archived. Its memory is read-only.');
+  if (!layer.canWrite) throw new MemoryError(403, 'forbidden', 'You can only read this memory.');
+}
+
+/** A person as memory files name them: the profile display name, never an email; "A member" when there is none. */
+export async function authorName(userId: string): Promise<string> {
+  const name = (await resolveUserIdentities([userId])).get(userId)?.displayName?.trim();
+  return name && !name.includes('@') ? name : 'A member';
+}
+
+const LABEL_CHARS = 80;
+
+/** A thread's label: its first prompt on one line, at most 80 characters; "a thread" when it has none. The caller checked the viewer may open it. */
+export async function threadLabelOf(projectId: string, sessionId: string): Promise<string> {
   const [row] = await db
-    .select({ layer: memoryLayers, space: SPACE_COLUMNS })
-    .from(memoryLayers)
-    .leftJoin(projectSpaces, eq(projectSpaces.spaceId, memoryLayers.spaceId))
-    .where(and(eq(memoryLayers.projectId, projectId), eq(memoryLayers.layerId, layerId)))
+    .select({ firstPrompt: sql<string | null>`${projectSessions.metadata}->>'first_prompt'` })
+    .from(projectSessions)
+    .where(and(eq(projectSessions.projectId, projectId), eq(projectSessions.sessionId, sessionId)))
     .limit(1);
-  if (!row) throw notFound();
-  const ref = layerRef(row.layer, row.space?.kind ? (row.space as SpaceInfo) : null);
-  if (!(await viewerReads(ref, viewer))) throw notFound();
-  return ref;
-}
-
-/** Live pages per type, plus unconfirmed and trash across types. */
-export async function layerCounts(layerId: string) {
-  const rows = await db
-    .select({
-      type: memoryPages.type,
-      unconfirmed: sql<number>`count(*) filter (where ${memoryPages.status} = 'unconfirmed' and ${memoryPages.deletedAt} is null)`.mapWith(Number),
-      live: sql<number>`count(*) filter (where ${memoryPages.deletedAt} is null)`.mapWith(Number),
-      trash: sql<number>`count(*) filter (where ${memoryPages.deletedAt} is not null)`.mapWith(Number),
-    })
-    .from(memoryPages)
-    .where(eq(memoryPages.layerId, layerId))
-    .groupBy(memoryPages.type);
-  const counts = { people: 0, decisions: 0, workstreams: 0, playbooks: 0, note: 0, unconfirmed: 0, trash: 0 };
-  for (const row of rows) {
-    counts[row.type] = row.live;
-    counts.unconfirmed += row.unconfirmed;
-    counts.trash += row.trash;
-  }
-  return counts;
-}
-
-/** Live pages of a layer: the 200-page cap counts these. */
-export async function livePageCount(executor: Pick<typeof db, 'select'>, layerId: string): Promise<number> {
-  const [row] = await executor
-    .select({ n: sql<number>`count(*)`.mapWith(Number) })
-    .from(memoryPages)
-    .where(and(eq(memoryPages.layerId, layerId), isNull(memoryPages.deletedAt)));
-  return row?.n ?? 0;
+  const text = row?.firstPrompt?.replace(/\s+/g, ' ').trim() ?? '';
+  if (!text) return 'a thread';
+  return text.length > LABEL_CHARS ? `${text.slice(0, LABEL_CHARS - 1).trimEnd()}…` : text;
 }

@@ -1,22 +1,19 @@
 /**
- * Memory pages (`project_channels`): `/v1/projects/:projectId/memory/*`.
- * Every rule lives in `../../memory`; these handlers read the request, build
- * the viewer and map a `MemoryError` to its status and `{error, code}` body.
+ * Memory: `/v1/projects/:projectId/memory/*`. Memory is the Markdown files of
+ * the project's Drive (`../../memory`); these handlers read the request,
+ * build the viewer and map a `MemoryError` (or a Drive storage failure) to its
+ * status and `{error, code}` body.
  *
- * Every route needs `session` project access and the flag. People read and
- * write the layers they see. A session-bound caller (an agent's token) reads
- * only its thread's layers, and there only confirmed, live pages: an
- * unconfirmed or trashed page is 404 on every page route (read, history,
- * write, confirm), `deleted=1` lists nothing, and history and changes leave
- * unconfirmed versions out. A write to a page it sees is 403 `use_remember`. Agents
- * write with `POST …/memory/remember` and read their copy with the layer
- * export; both answer 403 `session_token_required` to anyone else.
+ * Every route needs `session` project access and the `drives` flag (Memory
+ * lives in Files), never `project_channels`: with Channels off the files are
+ * the same and the routes keep working; only the Channels UI is hidden.
+ * Read and write rights are the Drive folder rights. A session token (an
+ * agent) gets 403 `use_files` on every route: agents use their `/drives` mounts.
  */
 import { createRoute, z } from '@hono/zod-openapi';
 import {
   MemoryChangeListSchema,
   MemoryDeleteResultSchema,
-  MemoryLayerExportSchema,
   MemoryLayerSchema,
   MemoryNoteInputSchema,
   MemoryPageCreateInputSchema,
@@ -25,9 +22,6 @@ import {
   MemoryPageStatusSchema,
   MemoryPageTypeSchema,
   MemoryPageUpdateInputSchema,
-  MemoryRememberInputSchema,
-  MemoryRememberResultSchema,
-  MemoryRestoreInputSchema,
   MEMORY_SEARCH_LIMITS,
   MemorySearchResultSchema,
   MemoryUndoResultSchema,
@@ -35,24 +29,26 @@ import {
   MemoryVersionListSchema,
 } from '@kortix/api-contract';
 import type { Context } from 'hono';
-import { requireFeatureFlag } from '../../feature-flags/gate';
-import { PROJECT_ACTIONS } from '../../iam';
+import { HTTPException } from 'hono/http-exception';
+import { DriveStorageError } from '../../drives/volumes';
 import {
   addNote,
-  confirmPage,
+  authorName,
   createPage,
+  decodePageId,
+  decodeVersionId,
   deletePage,
-  exportLayer,
   getPage,
   layerChanges,
   layerView,
   listPages,
   MemoryError,
+  notFound,
   pageHistory,
-  remember,
-  resolveLayerKey,
-  restorePage,
+  type Project,
+  resolveLayer,
   searchMemory,
+  threadLabelOf,
   threadUsage,
   undoVersion,
   updatePage,
@@ -61,53 +57,52 @@ import {
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { auth, errors, json } from '../../openapi';
 import type { AppEnv } from '../../types';
-import { loadProjectForUser, loadVisibleSession, loadVisibleSessionsForList, projectCapabilityAllowed } from '../lib/access';
+import { loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { projectsApp } from '../lib/app';
+import { addChannelsMark } from '../lib/channels-onboarding';
 
 const projectParams = z.object({ projectId: z.string() });
 const layerParams = projectParams.extend({ layerKey: z.string() });
 const pageParams = projectParams.extend({ pageId: z.string() });
 const versionParams = projectParams.extend({ versionId: z.string() });
-const cursorQuery = (max: number) =>
-  z.object({
-    limit: z.coerce.number().int().min(1).max(max).optional(),
-    before: z.string().optional(),
-  });
 
 type Caller = {
-  project: { projectId: string; metadata: unknown };
+  project: Project;
   viewer: Viewer;
   /** The session read rule for one thread of this project. */
   canOpenSession: (sessionId: string) => Promise<boolean>;
 };
 
 /**
- * The project (`session` access), the `project_channels` flag and the viewer,
- * then `run`; a `MemoryError` becomes its status and `{error, code}` body.
+ * The project (`session` access), the viewer, then `run`; a `MemoryError` or
+ * a Drive storage failure becomes its status and `{error, code}` body.
  */
 export async function withMemoryCaller<R>(c: Context<AppEnv>, run: (caller: Caller) => Promise<R>) {
   const loaded = await loadProjectForUser(c, c.req.param('projectId')!, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  const gate = requireFeatureFlag(c, loaded.row.metadata, 'project_channels');
-  if (gate) return gate;
+  if (callerKortixSessionId(c)) {
+    return c.json({ error: 'Agents read and write memory as files in their /drives mounts.', code: 'use_files' }, 403);
+  }
   const { row, userId } = loaded;
-  let manager: Promise<boolean> | undefined;
-  const viewer: Viewer = {
-    userId,
-    sessionId: callerKortixSessionId(c),
-    // Asked only by page delete rights, once per request.
-    isManager: () => (manager ??= projectCapabilityAllowed(c, userId, row.accountId, row.projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)),
-    // The session read rule: a source in a thread the caller cannot open shows as "a private thread".
-    canOpenThreads: async (ids) => new Set((await loadVisibleSessionsForList(loaded, ids, null, null)).keys()),
+  const may = async (action: 'session' | 'write') => {
+    try {
+      return !!(await loadProjectForUser(c, row.projectId, action));
+    } catch (error) {
+      if (error instanceof HTTPException && (error.status === 403 || error.status === 404)) return false;
+      throw error;
+    }
   };
   try {
     return await run({
-      project: { projectId: row.projectId, metadata: row.metadata },
-      viewer,
-      canOpenSession: async (sessionId) => (await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, viewer.sessionId)) !== null,
+      project: { projectId: row.projectId, accountId: row.accountId, metadata: row.metadata },
+      viewer: { userId, may },
+      canOpenSession: async (sessionId) => (await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, null)) !== null,
     });
   } catch (error) {
     if (error instanceof MemoryError) return c.json(error.body, error.status);
+    if (error instanceof DriveStorageError) {
+      return c.json({ error: error.message, code: error.code ?? 'drive_storage_error' }, error.status === 404 ? 404 : error.status);
+    }
     throw error;
   }
 }
@@ -123,36 +118,37 @@ export function memoryValidationHook(
   return c.json({ error: `${where}${issue?.message ?? 'Invalid input'}`, code: 'invalid_input', issues: result.error?.issues }, 400);
 }
 
-/** The session of an agent's token; a browser or personal token is 403 `session_token_required`. */
-function sessionOf(viewer: Viewer): string {
-  if (!viewer.sessionId) {
-    throw new MemoryError(403, 'session_token_required', 'Only an agent’s session token can call this route.');
-  }
-  return viewer.sessionId;
+/** The page of a page id: its layer (the viewer must read it) and its path in it. */
+async function pageRef(project: Project, viewer: Viewer, pageId: string) {
+  const ref = decodePageId(pageId);
+  if (!ref) throw notFound();
+  return { layer: await resolveLayer(project, ref.key, viewer), rel: ref.rel };
 }
 
-// Every status a MemoryError can carry; a read answers only 400, 403 and 404.
-const READ_ERRORS = errors(400, 403, 404, 409, 413, 422);
-const WRITE_ERRORS = READ_ERRORS;
+/** Writing in `#general` completes the "tell #general something" row of Get started. */
+async function markGeneral(project: Project, viewer: Viewer, layer: { isDefault: boolean }) {
+  if (layer.isDefault) await addChannelsMark(project.projectId, viewer.userId, 'get_started.remember');
+}
+
+const ERRORS = errors(400, 403, 404, 409, 413, 422, 503);
 
 export function registerProjectMemoryRoutes(): void {
-  // GET /v1/projects/:projectId/memory/layers/:layerKey — made on first read.
+  // GET /v1/projects/:projectId/memory/layers/:layerKey
   projectsApp.openapi(
     createRoute({
       method: 'get',
       path: '/{projectId}/memory/layers/{layerKey}',
       tags: ['memory'],
-      summary: 'Read a memory layer and its page counts',
+      summary: 'Read a memory layer: its Drive folder and page counts',
       description: '`layerKey` is `company` or the space id of a channel or the caller’s DM. Another member’s DM is 404 `memory_not_found`.',
       ...auth,
       request: { params: layerParams },
-      responses: { 200: json(MemoryLayerSchema, 'The layer'), ...READ_ERRORS },
+      responses: { 200: json(MemoryLayerSchema, 'The layer'), ...ERRORS },
     }),
     (c) =>
-      withMemoryCaller(c, async ({ project, viewer }) => {
-        const layer = await resolveLayerKey(project, c.req.valid('param').layerKey, viewer);
-        return c.json(await layerView(layer, viewer), 200);
-      }),
+      withMemoryCaller(c, async ({ project, viewer }) =>
+        c.json(await layerView(await resolveLayer(project, c.req.valid('param').layerKey, viewer)), 200),
+      ),
     memoryValidationHook,
   );
 
@@ -163,24 +159,20 @@ export function registerProjectMemoryRoutes(): void {
       path: '/{projectId}/memory/layers/{layerKey}/pages',
       tags: ['memory'],
       summary: 'List the pages of a memory layer',
-      description: 'At most 200 summaries, newest first, without bodies. `deleted=1` lists the trash instead.',
+      description: 'One summary per Markdown file, newest first (a DM’s agent folder first), at most 500 (`truncated` past it). `status=unconfirmed` lists nothing.',
       ...auth,
       request: {
         params: layerParams,
-        query: z.object({
-          type: MemoryPageTypeSchema.optional(),
-          status: MemoryPageStatusSchema.optional(),
-          deleted: z.enum(['0', '1']).optional(),
-        }),
+        query: z.object({ type: MemoryPageTypeSchema.optional(), status: MemoryPageStatusSchema.optional() }),
       },
-      responses: { 200: json(MemoryPageListSchema, 'The pages'), ...READ_ERRORS },
+      responses: { 200: json(MemoryPageListSchema, 'The pages'), ...ERRORS },
     }),
     (c) =>
       withMemoryCaller(c, async ({ project, viewer }) => {
-        const layer = await resolveLayerKey(project, c.req.valid('param').layerKey, viewer);
+        const layer = await resolveLayer(project, c.req.valid('param').layerKey, viewer);
         const query = c.req.valid('query');
-        const pages = await listPages(layer, viewer, { type: query.type, status: query.status, deleted: query.deleted === '1' });
-        return c.json({ pages }, 200);
+        if (query.status === 'unconfirmed') return c.json({ pages: [], truncated: false }, 200);
+        return c.json(await listPages(layer, { type: query.type }), 200);
       }),
     memoryValidationHook,
   );
@@ -193,17 +185,18 @@ export function registerProjectMemoryRoutes(): void {
       tags: ['memory'],
       summary: 'Create a memory page',
       description:
-        '409 `title_taken` (with `page_id`) when a live page of the layer has the title, `page_limit` at 200 live pages, ' +
-        '`layer_read_only` for an archived channel; 413 `page_too_large` over 8,192 bytes; 422 `secret_detected`.',
+        'Writes `<folder>/<type>/<slug>.md` (`other`: `<folder>/<slug>.md`; a DM page in the agent folder unless `agent_folder: false`). ' +
+        '409 `title_taken` (with `page_id`) when the file exists, `layer_read_only` for an archived channel; 413 `page_too_large` over 262,144 bytes; 422 `secret_detected`.',
       ...auth,
       request: { params: layerParams, body: { content: { 'application/json': { schema: MemoryPageCreateInputSchema } } } },
-      responses: { 201: json(MemoryPageSchema, 'The created page'), ...WRITE_ERRORS },
+      responses: { 201: json(MemoryPageSchema, 'The created page'), ...ERRORS },
     }),
     (c) =>
       withMemoryCaller(c, async ({ project, viewer }) => {
-        const layer = await resolveLayerKey(project, c.req.valid('param').layerKey, viewer);
-        const pageId = await createPage(layer, viewer, c.req.valid('json'));
-        return c.json(await getPage(project.projectId, pageId, viewer), 201);
+        const layer = await resolveLayer(project, c.req.valid('param').layerKey, viewer);
+        const rel = await createPage(layer, await authorName(viewer.userId), c.req.valid('json'));
+        await markGeneral(project, viewer, layer);
+        return c.json(await getPage(layer, rel), 201);
       }),
     memoryValidationHook,
   );
@@ -216,17 +209,23 @@ export function registerProjectMemoryRoutes(): void {
       tags: ['memory'],
       summary: 'Save a note to a memory layer',
       description:
-        'Saves the sentence as a `note` page with the caller as its source, for an agent to file into a page. ' +
+        'Appends `- <text> — <name>, <date>[ (from <thread>)]` to the layer’s `Notes.md` (a DM’s: in the agent folder), for an agent to file into a topic file. ' +
         'A `source_session_id` the caller cannot open is 404 `session_not_found`.',
       ...auth,
       request: { params: layerParams, body: { content: { 'application/json': { schema: MemoryNoteInputSchema } } } },
-      responses: { 201: json(MemoryPageSchema, 'The note'), ...WRITE_ERRORS },
+      responses: { 201: json(MemoryPageSchema, 'The notes page'), ...ERRORS },
     }),
     (c) =>
-      withMemoryCaller(c, async ({ project, viewer }) => {
-        const layer = await resolveLayerKey(project, c.req.valid('param').layerKey, viewer);
-        const pageId = await addNote(layer, viewer, c.req.valid('json'));
-        return c.json(await getPage(project.projectId, pageId, viewer), 201);
+      withMemoryCaller(c, async ({ project, viewer, canOpenSession }) => {
+        const layer = await resolveLayer(project, c.req.valid('param').layerKey, viewer);
+        const input = c.req.valid('json');
+        if (input.source_session_id && !(await canOpenSession(input.source_session_id))) {
+          throw new MemoryError(404, 'session_not_found', 'Thread not found.');
+        }
+        const label = input.source_session_id ? await threadLabelOf(project.projectId, input.source_session_id) : null;
+        const rel = await addNote(layer, await authorName(viewer.userId), input, label);
+        await markGeneral(project, viewer, layer);
+        return c.json(await getPage(layer, rel), 201);
       }),
     memoryValidationHook,
   );
@@ -237,18 +236,16 @@ export function registerProjectMemoryRoutes(): void {
       method: 'get',
       path: '/{projectId}/memory/layers/{layerKey}/changes',
       tags: ['memory'],
-      summary: 'List the recent changes of a memory layer',
-      description: 'Newest first. Pass `next` back as `before` for the following page.',
+      summary: 'List the recently changed pages of a memory layer',
+      description: 'The 20 most recently changed files, newest first. `next` is always null.',
       ...auth,
-      request: { params: layerParams, query: cursorQuery(100) },
-      responses: { 200: json(MemoryChangeListSchema, 'The changes'), ...READ_ERRORS },
+      request: { params: layerParams },
+      responses: { 200: json(MemoryChangeListSchema, 'The changes'), ...ERRORS },
     }),
     (c) =>
-      withMemoryCaller(c, async ({ project, viewer }) => {
-        const layer = await resolveLayerKey(project, c.req.valid('param').layerKey, viewer);
-        const query = c.req.valid('query');
-        return c.json(await layerChanges(layer, viewer, { limit: query.limit ?? 20, before: query.before }), 200);
-      }),
+      withMemoryCaller(c, async ({ project, viewer }) =>
+        c.json(await layerChanges(await resolveLayer(project, c.req.valid('param').layerKey, viewer)), 200),
+      ),
     memoryValidationHook,
   );
 
@@ -259,12 +256,16 @@ export function registerProjectMemoryRoutes(): void {
       path: '/{projectId}/memory/pages/{pageId}',
       tags: ['memory'],
       summary: 'Read a memory page',
+      description: '413 `page_too_large` (with `path`) for a file over 256 KiB: open it in Files.',
       ...auth,
       request: { params: pageParams },
-      responses: { 200: json(MemoryPageSchema, 'The page'), ...READ_ERRORS },
+      responses: { 200: json(MemoryPageSchema, 'The page'), ...ERRORS },
     }),
     (c) =>
-      withMemoryCaller(c, async ({ project, viewer }) => c.json(await getPage(project.projectId, c.req.valid('param').pageId, viewer), 200)),
+      withMemoryCaller(c, async ({ project, viewer }) => {
+        const { layer, rel } = await pageRef(project, viewer, c.req.valid('param').pageId);
+        return c.json(await getPage(layer, rel), 200);
+      }),
     memoryValidationHook,
   );
 
@@ -274,39 +275,39 @@ export function registerProjectMemoryRoutes(): void {
       method: 'patch',
       path: '/{projectId}/memory/pages/{pageId}',
       tags: ['memory'],
-      summary: 'Edit a memory page',
-      description: '409 `version_conflict` when the page changed since `base_version`.',
+      summary: 'Edit the body of a memory page',
+      description: 'The body only: front-matter and the `# ` title line are kept. 409 `version_conflict` when the file changed since `base_version`.',
       ...auth,
       request: { params: pageParams, body: { content: { 'application/json': { schema: MemoryPageUpdateInputSchema } } } },
-      responses: { 200: json(MemoryPageSchema, 'The page after the edit'), ...WRITE_ERRORS },
+      responses: { 200: json(MemoryPageSchema, 'The page after the edit'), ...ERRORS },
     }),
     (c) =>
       withMemoryCaller(c, async ({ project, viewer }) => {
-        const pageId = c.req.valid('param').pageId;
-        await updatePage(project.projectId, pageId, viewer, c.req.valid('json'));
-        return c.json(await getPage(project.projectId, pageId, viewer), 200);
+        const { layer, rel } = await pageRef(project, viewer, c.req.valid('param').pageId);
+        await updatePage(layer, rel, await authorName(viewer.userId), c.req.valid('json'));
+        return c.json(await getPage(layer, rel), 200);
       }),
     memoryValidationHook,
   );
 
-  // DELETE /v1/projects/:projectId/memory/pages/:pageId — to the trash.
+  // DELETE /v1/projects/:projectId/memory/pages/:pageId
   projectsApp.openapi(
     createRoute({
       method: 'delete',
       path: '/{projectId}/memory/pages/{pageId}',
       tags: ['memory'],
-      summary: 'Move a memory page to the trash',
-      description:
-        'Only the page’s creator or a project manager (`project.members.manage`); anyone else gets 403 `forbidden`. ' +
-        'An unconfirmed page (Discard in Needs confirming) is open to anyone who writes the layer.',
+      summary: 'Delete a memory page',
+      description: 'Deletes the file for good (a Drive delete). Anyone who may write the layer.',
       ...auth,
       request: { params: pageParams },
-      responses: { 200: json(MemoryDeleteResultSchema, 'Deleted'), ...WRITE_ERRORS },
+      responses: { 200: json(MemoryDeleteResultSchema, 'Deleted'), ...ERRORS },
     }),
     (c) =>
       withMemoryCaller(c, async ({ project, viewer }) => {
-        const versionId = await deletePage(project.projectId, c.req.valid('param').pageId, viewer);
-        return c.json({ ok: true as const, version_id: versionId }, 200);
+        const pageId = c.req.valid('param').pageId;
+        const { layer, rel } = await pageRef(project, viewer, pageId);
+        await deletePage(layer, rel);
+        return c.json({ ok: true as const, version_id: pageId }, 200);
       }),
     memoryValidationHook,
   );
@@ -318,60 +319,15 @@ export function registerProjectMemoryRoutes(): void {
       path: '/{projectId}/memory/pages/{pageId}/history',
       tags: ['memory'],
       summary: 'List the versions of a memory page',
-      description: 'Newest first. Pass `next` back as `before` for the following page.',
-      ...auth,
-      request: { params: pageParams, query: cursorQuery(100) },
-      responses: { 200: json(MemoryVersionListSchema, 'The versions'), ...READ_ERRORS },
-    }),
-    (c) =>
-      withMemoryCaller(c, async ({ project, viewer }) => {
-        const query = c.req.valid('query');
-        const history = await pageHistory(project.projectId, c.req.valid('param').pageId, viewer, { limit: query.limit ?? 50, before: query.before });
-        return c.json(history, 200);
-      }),
-    memoryValidationHook,
-  );
-
-  // POST /v1/projects/:projectId/memory/pages/:pageId/restore
-  projectsApp.openapi(
-    createRoute({
-      method: 'post',
-      path: '/{projectId}/memory/pages/{pageId}/restore',
-      tags: ['memory'],
-      summary: 'Restore a memory page to one of its versions',
-      description: 'Also brings a page back from the trash.',
-      ...auth,
-      request: { params: pageParams, body: { content: { 'application/json': { schema: MemoryRestoreInputSchema } } } },
-      responses: { 200: json(MemoryPageSchema, 'The restored page'), ...WRITE_ERRORS },
-    }),
-    (c) =>
-      withMemoryCaller(c, async ({ project, viewer }) => {
-        const pageId = c.req.valid('param').pageId;
-        await restorePage(project.projectId, pageId, c.req.valid('json').version_id, viewer);
-        return c.json(await getPage(project.projectId, pageId, viewer), 200);
-      }),
-    memoryValidationHook,
-  );
-
-  // POST /v1/projects/:projectId/memory/pages/:pageId/confirm — Needs confirming.
-  projectsApp.openapi(
-    createRoute({
-      method: 'post',
-      path: '/{projectId}/memory/pages/{pageId}/confirm',
-      tags: ['memory'],
-      summary: 'Confirm an unconfirmed memory page',
-      description:
-        'Agents get an unconfirmed page (outside content) only after a person confirms it. A "(to confirm)" page merges into the page it names ' +
-        'and goes to the trash; the response is that page. Discard is `DELETE`. 409 `not_unconfirmed` for a confirmed page. ' +
-        'An agent’s session token never sees an unconfirmed page: 404.',
+      description: 'From the drive’s newest 100 Drive commits, one entry per distinct file version, newest first, at most 20. Older versions: Files → Versions.',
       ...auth,
       request: { params: pageParams },
-      responses: { 200: json(MemoryPageSchema, 'The confirmed page'), ...WRITE_ERRORS },
+      responses: { 200: json(MemoryVersionListSchema, 'The versions'), ...ERRORS },
     }),
     (c) =>
       withMemoryCaller(c, async ({ project, viewer }) => {
-        const pageId = await confirmPage(project.projectId, c.req.valid('param').pageId, viewer);
-        return c.json(await getPage(project.projectId, pageId, viewer), 200);
+        const { layer, rel } = await pageRef(project, viewer, c.req.valid('param').pageId);
+        return c.json(await pageHistory(layer, rel), 200);
       }),
     memoryValidationHook,
   );
@@ -382,18 +338,20 @@ export function registerProjectMemoryRoutes(): void {
       method: 'post',
       path: '/{projectId}/memory/versions/{versionId}/undo',
       tags: ['memory'],
-      summary: 'Undo a memory change',
+      summary: 'Undo the newest change of a memory page',
       description:
-        'Reverts every page the change wrote (both pages of a filed note). 409 `already_undone`, or `superseded` when a page changed since.',
+        'Writes the version before it back, or deletes the file when the change created it. 409 `superseded` for an older version; ' +
+        '404 `version_gone` when the newest 100 Drive commits do not reach it.',
       ...auth,
       request: { params: versionParams },
-      responses: { 200: json(MemoryUndoResultSchema, 'The pages live after the undo'), ...WRITE_ERRORS },
+      responses: { 200: json(MemoryUndoResultSchema, 'The page after the undo'), ...ERRORS },
     }),
     (c) =>
       withMemoryCaller(c, async ({ project, viewer }) => {
-        const live = await undoVersion(project.projectId, c.req.valid('param').versionId, viewer);
-        const pages = await Promise.all(live.map((pageId) => getPage(project.projectId, pageId, viewer)));
-        return c.json({ pages }, 200);
+        const ref = decodeVersionId(c.req.valid('param').versionId);
+        if (!ref) throw notFound();
+        const layer = await resolveLayer(project, ref.key, viewer);
+        return c.json({ pages: await undoVersion(layer, ref.rel, ref.commit) }, 200);
       }),
     memoryValidationHook,
   );
@@ -406,8 +364,8 @@ export function registerProjectMemoryRoutes(): void {
       tags: ['memory'],
       summary: 'Search memory pages',
       description:
-        'Full text over title, summary and body, then titles containing `q`. A person searches Company, every live channel and their own DMs, ' +
-        'or the one layer `layer` names. A session token searches its thread’s layers, confirmed pages only.',
+        'Case-insensitive text match over title and body, title hits first. A person searches Company, every live channel and their own Memory folder, ' +
+        'or the one layer `layer` names.',
       ...auth,
       request: {
         params: projectParams,
@@ -417,20 +375,18 @@ export function registerProjectMemoryRoutes(): void {
             .trim()
             .min(MEMORY_SEARCH_LIMITS.q_min)
             .max(MEMORY_SEARCH_LIMITS.q_max)
-            // Postgres refuses NUL in a text parameter: 400 here, not a 500 from the query.
             .refine((q) => !q.includes('\u0000'), 'q must not contain NUL'),
           layer: z.string().optional(),
           type: MemoryPageTypeSchema.optional(),
           limit: z.coerce.number().int().min(1).max(MEMORY_SEARCH_LIMITS.limit).optional(),
         }),
       },
-      responses: { 200: json(MemorySearchResultSchema, 'The hits, best first'), ...READ_ERRORS },
+      responses: { 200: json(MemorySearchResultSchema, 'The hits, best first'), ...ERRORS },
     }),
     (c) =>
       withMemoryCaller(c, async ({ project, viewer }) => {
         const query = c.req.valid('query');
-        const result = await searchMemory(project, viewer, { ...query, limit: query.limit ?? MEMORY_SEARCH_LIMITS.limit });
-        return c.json(result, 200);
+        return c.json(await searchMemory(project, viewer, { ...query, limit: query.limit ?? MEMORY_SEARCH_LIMITS.limit }), 200);
       }),
     memoryValidationHook,
   );
@@ -441,13 +397,13 @@ export function registerProjectMemoryRoutes(): void {
       method: 'get',
       path: '/{projectId}/sessions/{sessionId}/memory-usage',
       tags: ['memory'],
-      summary: 'List the memory pages a thread’s agent was given',
+      summary: 'List the memory files a thread’s agent was listed',
       description:
-        'The pages listed to the agent at the thread’s first turn, by layer; pages deleted since are left out. `loaded_at` is null before the first turn. ' +
+        'The files listed to the agent at the thread’s first turn, by layer; files deleted since are left out. `loaded_at` is null before the first turn. ' +
         'A thread the caller cannot open is 404 `session_not_found`.',
       ...auth,
       request: { params: projectParams.extend({ sessionId: z.string() }) },
-      responses: { 200: json(MemoryUsageSchema, 'The pages, by layer'), ...READ_ERRORS },
+      responses: { 200: json(MemoryUsageSchema, 'The pages, by layer'), ...ERRORS },
     }),
     (c) =>
       withMemoryCaller(c, async ({ viewer, canOpenSession }) => {
@@ -455,54 +411,6 @@ export function registerProjectMemoryRoutes(): void {
         if (!(await canOpenSession(sessionId))) throw new MemoryError(404, 'session_not_found', 'Thread not found.');
         return c.json(await threadUsage(sessionId, viewer.userId), 200);
       }),
-    memoryValidationHook,
-  );
-
-  registerAgentMemoryRoutes();
-}
-
-/** The agent section: `remember` and the layer export (session token only). */
-function registerAgentMemoryRoutes(): void {
-  // POST /v1/projects/:projectId/memory/remember — kortixd's `remember` tool.
-  projectsApp.openapi(
-    createRoute({
-      method: 'post',
-      path: '/{projectId}/memory/remember',
-      tags: ['memory'],
-      summary: 'Save a fact to the calling thread’s memory',
-      description:
-        'Session token only. `layer` defaults to the thread’s channel or DM; `dm` outside a DM thread or `channel` outside a channel ' +
-        'thread is 403 `memory_layer_forbidden`. A live page of the title gets the fact or body; else a page of `type` is made. ' +
-        '409 `layer_read_only` / `page_limit`, 413 `page_too_large`, 422 `secret_detected`.',
-      ...auth,
-      request: { params: projectParams, body: { content: { 'application/json': { schema: MemoryRememberInputSchema } } } },
-      responses: { 200: json(MemoryRememberResultSchema, 'Saved'), ...WRITE_ERRORS },
-    }),
-    (c) =>
-      withMemoryCaller(c, async ({ project, viewer }) =>
-        c.json(await remember(project.projectId, sessionOf(viewer), c.req.valid('json')), 200),
-      ),
-    memoryValidationHook,
-  );
-
-  // GET /v1/projects/:projectId/memory/layers/:layerId/export — kortixd's copy sync.
-  projectsApp.openapi(
-    createRoute({
-      method: 'get',
-      path: '/{projectId}/memory/layers/{layerId}/export',
-      tags: ['memory'],
-      summary: 'Export a memory layer as the files of the read-only copy',
-      description:
-        'Session token only, for a layer the calling thread reads (else 403 `memory_layer_forbidden`). INDEX.md and one markdown file per confirmed page, ' +
-        'source tokens resolved to `[label]`.',
-      ...auth,
-      request: { params: projectParams.extend({ layerId: z.string() }) },
-      responses: { 200: json(MemoryLayerExportSchema, 'The layer’s files'), ...READ_ERRORS },
-    }),
-    (c) =>
-      withMemoryCaller(c, async ({ project, viewer }) =>
-        c.json(await exportLayer(project.projectId, sessionOf(viewer), c.req.valid('param').layerId), 200),
-      ),
     memoryValidationHook,
   );
 }

@@ -816,10 +816,6 @@ const catalog = {
           "name": "Goals",
           "description": "Give an agent an objective it owns until an independent check confirms the outcome. It plans, works, waits, follows up with people, and keeps its state in a Goals folder in Files. Needs Volumes and Reminders on."
         },
-        "project_channels": {
-          "name": "Channels",
-          "description": "Organize work in channels. Each new message in a channel or a direct message with an agent starts a thread. Replaces the session list in the sidebar."
-        },
         "workspace_volume": {
           "name": "Workspace volume",
           "description": "Keeps each new session's /workspace on its own volume, so a stopped sandbox can be deleted and the next open boots a new one on the same files and conversation. Kortix enables it per project."
@@ -831,7 +827,21 @@ const catalog = {
         "email_channel": {
           "name": "Email channel",
           "description": "Give the agent an email inbox on Resend: inbound mail starts and continues sessions, and the agent reads, replies and sends from the inbox. Bring your own Resend API key and domain."
+        },
+        "project_channels": {
+          "name": "Channels",
+          "description": "Organize work in channels. Each new message in a channel or a direct message with an agent starts a thread. Replaces the session list in the sidebar."
         }
+      },
+      "channelsSwitch": {
+        "onTitle": "Turn on Channels for {project}?",
+        "onBody": "Everyone in this project gets Channels and Direct messages instead of the session list. All existing sessions move into #general. You can turn it off any time; nothing is deleted.",
+        "drive": "Turn on Drive too, so channels get Files.",
+        "turnOn": "Turn on",
+        "cancel": "Cancel",
+        "offTitle": "Turn off Channels?",
+        "offBody": "Channels, memory, files and links stay saved. The session list comes back for everyone.",
+        "turnOff": "Turn off"
       }
     },
     "upgrades": {
@@ -1295,7 +1305,8 @@ const catalog = {
       "channels": "Channels",
       "directMessages": "Direct messages",
       "addChannel": "Add channel",
-      "loadError": "Could not load channels."
+      "loadError": "Could not load channels.",
+      "newAgent": "New agent"
     }
   },
   "sessionPage": {
@@ -7326,398 +7337,6 @@ const catalog = {
     "manage": "Manage",
     "overviewTitle": "Overview"
   },
-  "spaces": {
-    "memory": {
-      "search": "Search memory",
-      "pagesLabel": "Memory pages",
-      "allPages": "All pages",
-      "type": {
-        "people": "People",
-        "decisions": "Decisions",
-        "workstreams": "Workstreams",
-        "playbooks": "Playbooks",
-        "note": "Notes"
-      },
-      "needsConfirming": "Needs confirming",
-      "noMatches": "No page matches “{query}”.",
-      "loadError": "Could not load this memory.",
-      "pageLoadError": "Could not load this page.",
-      "retry": "Try again",
-      "close": "Close",
-      "loadOlder": "Show older",
-      "updatedBy": "Updated by {author}",
-      "fromThread": "from “{thread}”",
-      "author": {
-        "system": "Kortix",
-        "unknown": "A member"
-      },
-      "edit": "Edit",
-      "more": "More actions",
-      "copyLink": "Copy link",
-      "linkCopied": "Link copied",
-      "copyFailed": "Could not copy the link.",
-      "delete": "Delete",
-      "deleteTitle": "Delete this page?",
-      "deleteDescription": "Agents stop seeing “{title}” at their next turn. You can undo this from Recent changes.",
-      "deleted": "Page deleted",
-      "deleteFailed": "Could not delete the page. Try again.",
-      "undo": "Undo",
-      "undone": "Change undone",
-      "undoFailed": "Could not undo the change. Try again.",
-      "superseded": "The page changed after this. Open History to restore an earlier version.",
-      "alreadyUndone": "This change is already undone.",
-      "undoUnavailable": "The page changed after this, so this change cannot be undone.",
-      "view": "View",
-      "relatedPages": "Related pages",
-      "pageLimit": "This memory holds 200 pages, its limit. Delete a page first.",
-      "emptyPage": "Nothing on this page yet.",
-      "recent": {
-        "added": "{author} updated this page {time}: added “{fact}”",
-        "updated": "{author} updated this page {time}",
-        "created": "{author} created this page {time}",
-        "viewChange": "View change"
-      },
-      "changes": {
-        "title": "Recent changes",
-        "empty": "No changes yet.",
-        "loadError": "Could not load the recent changes.",
-        "viewPage": "View {title}",
-        "undoPage": "Undo the change to {title}",
-        "op": {
-          "create": "{author} created <page>{title}</page>",
-          "update": "{author} edited <page>{title}</page>",
-          "append": "{author} added to <page>{title}</page>",
-          "delete": "{author} deleted <page>{title}</page>",
-          "restore": "{author} restored <page>{title}</page>",
-          "undo": "{author} undid a change to <page>{title}</page>",
-          "confirm": "{author} confirmed <page>{title}</page>",
-          "file_note": "{author} filed a note into <page>{title}</page>",
-          "import": "{author} imported <page>{title}</page>"
-        }
-      },
-      "history": {
-        "title": "History",
-        "description": "Every change to “{title}”, newest first.",
-        "loadError": "Could not load the history.",
-        "current": "Current",
-        "undone": "Undone",
-        "restore": "Restore this version",
-        "restored": "Version restored",
-        "restoreFailed": "Could not restore this version. Try again.",
-        "op": {
-          "create": "{author} created the page",
-          "update": "{author} edited the page",
-          "append": "{author} added a fact",
-          "delete": "{author} deleted the page",
-          "restore": "{author} restored a version",
-          "undo": "{author} undid a change",
-          "confirm": "{author} confirmed the page",
-          "file_note": "{author} filed a note",
-          "import": "{author} imported the page"
-        }
-      },
-      "editor": {
-        "title": "Title",
-        "type": "Type",
-        "summary": "Summary",
-        "summaryPlaceholder": "One line agents see in the page list",
-        "body": "Page",
-        "bodyHint": "Markdown. A line that starts with ## starts a section; ⟦1⟧ cites source 1.",
-        "save": "Save",
-        "cancel": "Cancel",
-        "saved": "Page saved",
-        "conflict": "Someone changed this page. Reload to see it.",
-        "reload": "Reload",
-        "error": {
-          "tooLarge": "This page is over 8 KB. Make it shorter.",
-          "titleTaken": "Another page already has this title.",
-          "secret": "That looks like a secret. Keep secrets in Secrets.",
-          "readOnly": "This memory is read-only.",
-          "failed": "Could not save the page. Try again."
-        }
-      },
-      "remember": {
-        "label": "Something for {place} to remember",
-        "placeholder": "Tell {place} something to remember…",
-        "hint": "Saved as a note with your name",
-        "send": "Save to memory",
-        "status": {
-          "saved": "Saved to Notes",
-          "secret": "That looks like a secret. Keep secrets in Secrets.",
-          "limit": "This memory holds 200 pages, its limit. Delete a page first.",
-          "readOnly": "This memory is read-only.",
-          "failed": "Could not save. Try again."
-        }
-      },
-      "empty": {
-        "title": "{place} has no memory yet",
-        "titleDm": "No memory with {place} yet",
-        "description": "Agents save what this channel agrees on, so every new thread starts with it. Each fact links to the thread it came from; edit or undo any change.",
-        "descriptionDm": "{place} saves what you agree on in this conversation, so every new thread starts with it. Each fact links to the thread it came from; edit or undo any change.",
-        "example": {
-          "people": "Northwind — main contact is Sam, renews in March",
-          "decisions": "Pricing stays at $49 per seat",
-          "workstreams": "Q4 launch — status, owner, next steps",
-          "playbooks": "How we write release notes"
-        },
-        "tryOne": "Try one",
-        "try": {
-          "one": "Our launch date is Nov 12",
-          "two": "Priya approves all launch copy",
-          "three": "Write in plain words, no hype"
-        },
-        "titleCompany": "Nothing in Company memory yet",
-        "descriptionCompany": "Agents save what the whole project agrees on, so every new thread in every channel starts with it. Each fact links to the thread it came from; edit or undo any change."
-      },
-      "source": {
-        "thread": "Open the thread “{label}”",
-        "threadGone": "From the thread “{label}”",
-        "outside": "Open {label} in a new tab",
-        "outsideText": "From {label}",
-        "person": "Added by {label}",
-        "import": "Imported from {label}"
-      },
-      "saved": {
-        "running": "Saving to memory…",
-        "channel": "Saved to {place} memory: <page>{title}</page>",
-        "dm": "Saved to your memory with {place}: <page>{title}</page>",
-        "company": "Saved to Company memory: <page>{title}</page>",
-        "failed": "Not saved to memory: {reason}",
-        "view": "View",
-        "undo": "Undo",
-        "undone": "Undone",
-        "superseded": "Changed since —",
-        "openHistory": "open History",
-        "undoFailed": "Could not undo.",
-        "failedGeneric": "Not saved to memory."
-      },
-      "used": {
-        "label": "Used {places} memory · {count, plural, one {# page} other {# pages}}",
-        "title": "Pages this thread started with",
-        "company": "Company",
-        "removed": "Removed"
-      },
-      "searchError": "Could not search this memory.",
-      "searchResults": "Search results",
-      "searchTool": {
-        "title": "Searched memory",
-        "count": "{count, plural, one {# page} other {# pages}}",
-        "running": "Searching memory…",
-        "failed": "Memory search failed: {reason}",
-        "failedGeneric": "Memory search failed.",
-        "none": "No page matches “{query}”."
-      },
-      "palette": {
-        "heading": "Memory"
-      },
-      "company": {
-        "subtitle": "What every agent in this project knows.",
-        "gateDescription": "Company memory comes with Channels: every agent in this project starts each thread with what the team saved here.",
-        "title": "Memory",
-        "place": "Company"
-      },
-      "rememberThis": {
-        "label": "Remember this",
-        "saved": "Saved to memory",
-        "saveTo": "Save to",
-        "dm": "Your memory with {agent}"
-      },
-      "archivedReadOnly": "{place} is archived. Its memory is read-only.",
-      "pending": {
-        "note": "Agents do not use these pages until someone confirms them.",
-        "from": "From {host}",
-        "banner": "From {host}. Agents do not use this until someone confirms it.",
-        "bannerNoHost": "From outside the thread. Agents do not use this until someone confirms it.",
-        "confirm": "Confirm",
-        "confirmPage": "Confirm {title}",
-        "discard": "Discard",
-        "discardPage": "Discard {title}",
-        "cancel": "Cancel",
-        "confirmed": "Page confirmed. Agents can use it now.",
-        "alreadyConfirmed": "Someone confirmed this page already.",
-        "confirmFailed": "Could not confirm the page. Try again.",
-        "discarded": "Page discarded",
-        "discardFailed": "Could not discard the page. Try again."
-      },
-      "trash": {
-        "title": "Trash",
-        "note": "Deleted pages stay here for 30 days, then they are deleted for good.",
-        "loadError": "Could not load the trash.",
-        "restore": "Restore",
-        "restorePage": "Restore {title}",
-        "restored": "Page restored",
-        "titleTaken": "A page with this title exists. Rename that page, then restore this one.",
-        "restoreFailed": "Could not restore the page. Try again.",
-        "allTrashed": "Every page is in the trash."
-      }
-    },
-    "create": {
-      "title": "Create a channel",
-      "description": "Everyone in this project can see and use the channel.",
-      "nameLabel": "Name",
-      "namePlaceholder": "marketing",
-      "slugPlaceholder": "channel-name",
-      "descriptionLabel": "Description (optional)",
-      "descriptionPlaceholder": "What this channel is for",
-      "submit": "Create channel",
-      "created": "Channel created",
-      "nameRequired": "Add a name.",
-      "invalidName": "Use at least one letter or number in the name.",
-      "slugTaken": "<link>#{slug}</link> already exists.",
-      "failed": "Could not create the channel. Try again.",
-      "renameTitle": "Rename channel",
-      "renameDescription": "The channel's link changes with its name.",
-      "save": "Save",
-      "renamed": "Channel renamed",
-      "renameFailed": "Could not rename the channel. Try again."
-    },
-    "view": {
-      "welcomeTitle": "Welcome to #{name}",
-      "welcomeEmpty": "Start the first thread in #{name}. Every message starts a new thread.",
-      "welcomeStart": "This is the start of #{name}.",
-      "dmIntro": "This conversation is just between you and {agent}.",
-      "today": "Today",
-      "yesterday": "Yesterday",
-      "openThread": "Open thread",
-      "replyInThread": "Reply in thread",
-      "lastReply": "Last reply {time}",
-      "working": "{agent} is working…",
-      "agentFallback": "Agent",
-      "authorFallback": "Someone",
-      "loadEarlier": "Load earlier threads",
-      "messageChannel": "Message #{name}",
-      "messageAgent": "Message {agent}",
-      "threadsEmpty": "Threads you start will show up here.",
-      "loadError": "Could not load this channel.",
-      "threadsLoadError": "Could not load the threads.",
-      "retry": "Try again",
-      "notFound": "This channel doesn't exist.",
-      "notFoundHint": "The link may be wrong, or someone renamed the channel.",
-      "openDefault": "Open #{name}",
-      "archivedTitle": "#{name} is archived.",
-      "archivedHint": "Unarchive it to read and start threads here again.",
-      "archivedLocked": "Only its creator or a project manager can unarchive it.",
-      "unarchive": "Unarchive channel",
-      "unarchived": "Channel unarchived",
-      "unarchiveFailed": "Could not unarchive the channel. Try again.",
-      "dmFailed": "Could not open this conversation.",
-      "archive": "Archive channel",
-      "archiveTitle": "Archive #{name}?",
-      "archiveDescription": "The channel leaves the sidebar for every member. Its threads stay, and its creator or a project manager can unarchive it.",
-      "archived": "Channel archived",
-      "archiveFailed": "Could not archive the channel. Try again.",
-      "threadTitle": "Thread",
-      "closeThread": "Close thread",
-      "sendFailed": "Could not start the thread. Try again.",
-      "replies": "{count, plural, one {# reply} other {# replies}}",
-      "replyPlaceholder": "Reply…",
-      "tab": {
-        "chat": "Chat",
-        "threads": "Threads",
-        "files": "Files",
-        "memory": "Memory",
-        "apps": "Apps",
-        "links": "Links",
-        "triggers": "Triggers"
-      },
-      "empty": {
-        "files": {
-          "title": "No files yet",
-          "description": "Files shared in {place} show up here.",
-          "action": "Upload a file"
-        },
-        "memory": {
-          "title": "No memory yet",
-          "description": "What the agents remember for {place} shows up here.",
-          "action": "Add memory"
-        },
-        "apps": {
-          "title": "No apps yet",
-          "description": "Apps built in {place} show up here."
-        },
-        "links": {
-          "title": "No links yet",
-          "description": "Links people share in {place} threads show up here. Pin one to give it to every agent in the channel."
-        },
-        "triggers": {
-          "title": "No triggers yet",
-          "description": "Triggers start a thread in {place} on a schedule or an event.",
-          "action": "New trigger"
-        }
-      },
-      "channelDetails": "#{name} details",
-      "roster": "{people} · {agents}",
-      "rosterPeople": "{count, plural, one {# person} other {# people}}",
-      "rosterAgents": "{count, plural, one {# agent} other {# agents}}",
-      "rosterHint": "People and agents in this channel's threads",
-      "copyLink": "Copy link to thread",
-      "linkCopied": "Link copied",
-      "started": "Started {time}",
-      "notice": {
-        "unreachable": "Lost contact with this thread's computer. Messages you send are queued until it reconnects.",
-        "unreachableMidTurn": "Lost contact with this thread's computer while a turn is still open. Messages you send stay queued until it answers.",
-        "stalled": "Waking this thread's computer is taking longer than usual. Messages you send are queued.",
-        "starting": "Starting this thread's computer. Your message sends automatically.",
-        "idle": "This thread's computer is asleep. Your next message wakes it up and is delivered.",
-        "waking": "Waking this thread's computer. Messages you send are queued and go out automatically."
-      },
-      "boot": {
-        "restart": "Restart thread"
-      },
-      "links": {
-        "add": "Add link",
-        "addDescription": "Pin a link to {place}. Every agent in the channel gets its pinned links.",
-        "urlLabel": "URL",
-        "titleLabel": "Title (optional)",
-        "titlePlaceholder": "What it is",
-        "invalidUrl": "Enter a link that starts with http:// or https://.",
-        "addFailed": "Could not add the link. Try again.",
-        "limit": "This channel already pins 200 links. Unpin one first.",
-        "added": "Link added",
-        "remove": "Remove link",
-        "removeTitle": "Remove this link?",
-        "removeDescription": "{link} is removed from {place} for everyone.",
-        "removed": "Link removed",
-        "removeFailed": "Could not remove the link. Try again.",
-        "loadError": "Could not load the links.",
-        "intro": "Links people shared in {place} threads. Pin a link to give it to every agent in the channel.",
-        "pinnedTitle": "Pinned · agents read these",
-        "sharedTitle": "Shared in threads",
-        "sharedNote": "Collected automatically from people’s messages",
-        "pinnedBy": "Pinned by {name}",
-        "pinnedLabel": "Pinned",
-        "fromThread": "from “{thread}”",
-        "inThread": "in “{thread}”",
-        "sharedTimes": "shared {count}×",
-        "pin": "Pin",
-        "unpin": "Unpin",
-        "pinnedToast": "Link pinned",
-        "unpinnedToast": "Link unpinned",
-        "pinFailed": "Could not pin the link. Try again.",
-        "unpinFailed": "Could not unpin the link. Try again."
-      },
-      "appsLoadError": "Could not load the apps.",
-      "triggers": {
-        "loadError": "Could not load the triggers."
-      }
-    },
-    "details": {
-      "about": "About",
-      "members": "Members",
-      "name": "Channel name",
-      "description": "Description",
-      "noDescription": "Add a description",
-      "created": "Created",
-      "edit": "Edit",
-      "editField": "Edit {field}",
-      "archiveTitle": "Archive this channel",
-      "archiveHint": "It leaves the sidebar for every member. Its threads stay.",
-      "archive": "Archive",
-      "people": "People",
-      "agents": "Agents",
-      "membersHint": "Everyone who started a thread here, and every agent that answered one, in the threads loaded so far."
-    }
-  },
   "connectAppForm": {
     "title": "Connect Shopify",
     "description": "Kortix reaches your store through a Shopify app in your organization. Enter its credentials once.",
@@ -7889,6 +7508,328 @@ const catalog = {
     "auditSet": "rule set {set}",
     "bulkInheritTitle": "Return {count, plural, one {# tool} other {# tools}} to the base rules?",
     "bulkInheritBody": "Deletes this rule set's rule for every tool listed under {group}, so each one follows the base rules again. Pattern rules are left alone."
+  },
+  "spaces": {
+    "memory": {
+      "search": "Search memory",
+      "pagesLabel": "Memory pages",
+      "allPages": "All pages",
+      "noMatches": "No page matches “{query}”.",
+      "loadError": "Could not load this memory.",
+      "pageLoadError": "Could not load this page.",
+      "retry": "Try again",
+      "close": "Close",
+      "loadOlder": "Show older",
+      "fromThread": "from “{thread}”",
+      "author": {
+        "system": "Kortix",
+        "unknown": "A member"
+      },
+      "edit": "Edit",
+      "delete": "Delete",
+      "deleteTitle": "Delete “{title}”?",
+      "deleteDescription": "This can't be undone.",
+      "deleted": "Page deleted",
+      "deleteFailed": "Could not delete the page. Try again.",
+      "undo": "Undo",
+      "undone": "Change undone",
+      "undoFailed": "Could not undo the change. Try again.",
+      "superseded": "The page changed after this. Open History to restore an earlier version.",
+      "alreadyUndone": "This change is already undone.",
+      "relatedPages": "Related pages",
+      "emptyPage": "Nothing on this page yet.",
+      "history": {
+        "title": "History",
+        "description": "Every change to “{title}”, newest first.",
+        "loadError": "Could not load the history.",
+        "current": "Current",
+        "undone": "Undone",
+        "restore": "Restore this version",
+        "restored": "Version restored",
+        "restoreFailed": "Could not restore this version. Try again.",
+        "op": {
+          "create": "{author} created the page",
+          "update": "{author} edited the page",
+          "append": "{author} added a fact",
+          "delete": "{author} deleted the page",
+          "restore": "{author} restored a version",
+          "undo": "{author} undid a change",
+          "confirm": "{author} confirmed the page",
+          "file_note": "{author} filed a note",
+          "import": "{author} imported the page"
+        }
+      },
+      "editor": {
+        "body": "Page",
+        "save": "Save",
+        "cancel": "Cancel",
+        "saved": "Page saved",
+        "conflict": "Someone changed this page. Reload to see it.",
+        "reload": "Reload",
+        "error": {
+          "tooLarge": "This page is over 8 KB. Make it shorter.",
+          "secret": "That looks like a secret. Keep secrets in Secrets.",
+          "readOnly": "This memory is read-only.",
+          "failed": "Could not save the page. Try again."
+        }
+      },
+      "remember": {
+        "label": "Something for {place} to remember",
+        "placeholder": "Tell {place} something to remember…",
+        "hint": "Saved as a note with your name",
+        "send": "Save to memory",
+        "status": {
+          "secret": "That looks like a secret. Keep secrets in Secrets.",
+          "readOnly": "This memory is read-only.",
+          "failed": "Could not save. Try again."
+        },
+        "open": "Remember this…"
+      },
+      "empty": {
+        "title": "What Kortix remembers about this channel.",
+        "titleDm": "What Kortix remembers about this conversation.",
+        "description": "It reads these pages before every reply.",
+        "titleCompany": "What Kortix remembers about this project."
+      },
+      "source": {
+        "thread": "Open the thread “{label}”",
+        "threadGone": "From the thread “{label}”",
+        "outside": "Open {label} in a new tab",
+        "outsideText": "From {label}",
+        "person": "Added by {label}",
+        "import": "Imported from {label}"
+      },
+      "used": {
+        "label": "Used {places} memory · {count, plural, one {# page} other {# pages}}",
+        "title": "Pages this thread started with",
+        "company": "Company",
+        "removed": "Removed"
+      },
+      "searchError": "Could not search this memory.",
+      "searchResults": "Search results",
+      "palette": {
+        "heading": "Memory"
+      },
+      "company": {
+        "subtitle": "What every agent in this project knows.",
+        "gateDescription": "Company memory comes with Channels: every agent in this project starts each thread with what the team saved here.",
+        "title": "Memory",
+        "place": "Company"
+      },
+      "rememberThis": {
+        "label": "Remember this",
+        "saved": "Saved to memory",
+        "saveTo": "Save to",
+        "dm": "Your memory with {agent}"
+      },
+      "updated": "Updated {time} by {author}",
+      "updatedAt": "Updated {time}",
+      "sourceKind": {
+        "thread": "thread",
+        "person": "message",
+        "outside": "link",
+        "import": "file"
+      },
+      "pageCount": "{count, plural, one {# page} other {# pages}}"
+    },
+    "create": {
+      "title": "Create a channel",
+      "description": "Everyone in this project can see and use the channel.",
+      "nameLabel": "Name",
+      "namePlaceholder": "marketing",
+      "slugPlaceholder": "channel-name",
+      "descriptionLabel": "Description (optional)",
+      "descriptionPlaceholder": "What this channel is for",
+      "submit": "Create channel",
+      "created": "Channel created",
+      "nameRequired": "Add a name.",
+      "invalidName": "Use at least one letter or number in the name.",
+      "slugTaken": "<link>#{slug}</link> already exists.",
+      "failed": "Could not create the channel. Try again.",
+      "renameTitle": "Rename channel",
+      "renameDescription": "The channel's link changes with its name.",
+      "save": "Save",
+      "renamed": "Channel renamed",
+      "renameFailed": "Could not rename the channel. Try again."
+    },
+    "view": {
+      "welcomeTitle": "Welcome to #{name}",
+      "welcomeEmpty": "Start the first thread in #{name}. Every message starts a new thread.",
+      "welcomeStart": "This is the start of #{name}.",
+      "dmIntro": "This conversation is just between you and {agent}.",
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "openThread": "Open thread",
+      "replyInThread": "Reply in thread",
+      "lastReply": "Last reply {time}",
+      "working": "{agent} is working…",
+      "agentFallback": "Agent",
+      "authorFallback": "Someone",
+      "loadEarlier": "Load earlier threads",
+      "messageChannel": "Message #{name}",
+      "messageAgent": "Message {agent}",
+      "threadsEmpty": "Threads you start will show up here.",
+      "loadError": "Could not load this channel.",
+      "threadsLoadError": "Could not load the threads.",
+      "retry": "Try again",
+      "notFound": "This channel doesn't exist.",
+      "notFoundHint": "The link may be wrong, or someone renamed the channel.",
+      "openDefault": "Open #{name}",
+      "archivedTitle": "#{name} is archived.",
+      "archivedHint": "Unarchive it to read and start threads here again.",
+      "archivedLocked": "Only its creator or a project manager can unarchive it.",
+      "unarchive": "Unarchive channel",
+      "unarchived": "Channel unarchived",
+      "unarchiveFailed": "Could not unarchive the channel. Try again.",
+      "dmFailed": "Could not open this conversation.",
+      "archive": "Archive channel",
+      "archiveTitle": "Archive #{name}?",
+      "archiveDescription": "The channel leaves the sidebar for every member. Its threads stay, and its creator or a project manager can unarchive it.",
+      "archived": "Channel archived",
+      "archiveFailed": "Could not archive the channel. Try again.",
+      "threadTitle": "Thread",
+      "closeThread": "Close thread",
+      "sendFailed": "Could not start the thread. Try again.",
+      "replies": "{count, plural, one {# reply} other {# replies}}",
+      "replyPlaceholder": "Reply…",
+      "tab": {
+        "chat": "Chat",
+        "threads": "Threads",
+        "files": "Files",
+        "memory": "Memory",
+        "apps": "Apps",
+        "links": "Links",
+        "triggers": "Triggers"
+      },
+      "empty": {
+        "files": {
+          "title": "No files yet",
+          "description": "Files shared in {place} show up here.",
+          "action": "Upload a file"
+        },
+        "memory": {
+          "title": "No memory yet",
+          "description": "What the agents remember for {place} shows up here.",
+          "action": "Add memory"
+        },
+        "apps": {
+          "title": "No apps yet",
+          "description": "Apps built in {place} show up here."
+        },
+        "links": {
+          "title": "No links yet",
+          "description": "Links people share in {place} threads show up here. Pin one to give it to every agent in the channel."
+        },
+        "triggers": {
+          "title": "No triggers yet",
+          "description": "Triggers start a thread in {place} on a schedule or an event.",
+          "action": "New trigger"
+        }
+      },
+      "channelDetails": "#{name} details",
+      "roster": "{people} · {agents}",
+      "rosterPeople": "{count, plural, one {# person} other {# people}}",
+      "rosterAgents": "{count, plural, one {# agent} other {# agents}}",
+      "copyLink": "Copy link to thread",
+      "linkCopied": "Link copied",
+      "notice": {
+        "unreachable": "Lost contact with this thread's computer. Messages you send are queued until it reconnects.",
+        "unreachableMidTurn": "Lost contact with this thread's computer while a turn is still open. Messages you send stay queued until it answers.",
+        "stalled": "Waking this thread's computer is taking longer than usual. Messages you send are queued.",
+        "starting": "Starting this thread's computer. Your message sends automatically.",
+        "idle": "This thread's computer is asleep. Your next message wakes it up and is delivered.",
+        "waking": "Waking this thread's computer. Messages you send are queued and go out automatically."
+      },
+      "boot": {
+        "restart": "Restart thread"
+      },
+      "links": {
+        "add": "Add link",
+        "addDescription": "Pin a link to {place}. Every agent in the channel gets its pinned links.",
+        "urlLabel": "URL",
+        "titleLabel": "Title (optional)",
+        "titlePlaceholder": "What it is",
+        "invalidUrl": "Enter a link that starts with http:// or https://.",
+        "addFailed": "Could not add the link. Try again.",
+        "limit": "This channel already pins 200 links. Unpin one first.",
+        "added": "Link added",
+        "remove": "Remove link",
+        "removeTitle": "Remove this link?",
+        "removeDescription": "{link} is removed from {place} for everyone.",
+        "removed": "Link removed",
+        "removeFailed": "Could not remove the link. Try again.",
+        "loadError": "Could not load the links.",
+        "intro": "Links people shared in {place} threads. Pin a link to give it to every agent in the channel.",
+        "pinnedTitle": "Pinned · agents read these",
+        "sharedTitle": "Shared in threads",
+        "sharedNote": "Collected automatically from people’s messages",
+        "pinnedBy": "Pinned by {name}",
+        "pinnedLabel": "Pinned",
+        "fromThread": "from “{thread}”",
+        "inThread": "in “{thread}”",
+        "sharedTimes": "shared {count}×",
+        "pin": "Pin",
+        "unpin": "Unpin",
+        "pinnedToast": "Link pinned",
+        "unpinnedToast": "Link unpinned",
+        "pinFailed": "Could not pin the link. Try again.",
+        "unpinFailed": "Could not unpin the link. Try again."
+      },
+      "appsLoadError": "Could not load the apps.",
+      "triggers": {
+        "loadError": "Could not load the triggers."
+      },
+      "reply": "Reply",
+      "rosterTitlePeople": "People",
+      "rosterTitleAgents": "Agents",
+      "viewAllMembers": "View all members",
+      "agentThreads": "{count, plural, one {# thread} other {# threads}}"
+    },
+    "details": {
+      "about": "About",
+      "members": "Members",
+      "name": "Channel name",
+      "description": "Description",
+      "noDescription": "Add a description",
+      "created": "Created",
+      "editField": "Edit {field}",
+      "archiveTitle": "Archive this channel",
+      "archiveHint": "It leaves the sidebar for every member. Its threads stay.",
+      "archive": "Archive",
+      "people": "People",
+      "agents": "Agents",
+      "membersHint": "Everyone who started a thread here, and every agent that answered one, in the threads loaded so far.",
+      "threads": "{count, plural, one {# thread} other {# threads}}",
+      "find": "Find people or agents",
+      "addPeople": "Add people",
+      "you": "(you)",
+      "groupCount": "{label} · {count}",
+      "noMatches": "No one matches “{query}”.",
+      "defaultAgent": "Default agent",
+      "defaultAgentHint": "Answers a message that names no agent. Set for the whole project in Customize › Agents.",
+      "visibility": "Who can see it",
+      "visibilityProject": "Everyone in the project"
+    },
+    "onboarding": {
+      "reenabled": "Sessions started while Channels was off are here.",
+      "intro": {
+        "title": "Your sessions are now threads in #general.",
+        "channels": "Channels group work by team.",
+        "threads": "Every new message starts a thread.",
+        "memory": "Agents remember what each channel agrees on.",
+        "gotIt": "Got it"
+      },
+      "getStarted": {
+        "title": "Get started",
+        "dismiss": "Dismiss",
+        "channel": "Create a channel for a team",
+        "remember": "Tell {place} something to remember",
+        "dm": "Open a direct message with an agent",
+        "pickAgent": "Message an agent",
+        "noAgents": "This project has no agents yet.",
+        "done": "Done"
+      }
+    }
   }
 };
 

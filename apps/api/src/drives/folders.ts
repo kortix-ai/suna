@@ -11,7 +11,6 @@
 //   its owner shares it.
 // - `/` and `/Users` hold the tree together and cannot be granted.
 
-import { MEMORY_COPY_DIR } from '@kortix/api-contract/sandbox-layout';
 import { spaceDriveFolders } from '@kortix/shared';
 
 export type FolderLevel = 'read' | 'write' | 'manage';
@@ -281,7 +280,7 @@ export interface NotesMount {
 }
 
 /** Where `path` shows in the sandbox, through the deepest mount that holds it; null when none does. */
-function mountedAt(path: string, mounts: readonly NotesMount[]): string | null {
+export function mountedAt(path: string, mounts: readonly NotesMount[]): string | null {
   const m = mounts
     .filter((x) => pathWithinFolder(path, x.subdir || '/'))
     .sort((a, b) => (b.subdir ?? '').length - (a.subdir ?? '').length)[0];
@@ -292,10 +291,11 @@ function mountedAt(path: string, mounts: readonly NotesMount[]): string | null {
 
 /**
  * The "This thread's channel" (or DM) section of /drives/README.md: the
- * space's files folder as this sandbox mounts it, and where its memory is
- * (database pages, read from the read-only copy, saved with `remember`).
- * `name` is the channel slug or the DM's agent. A channel's pinned links
- * follow, newest pin first, at most `SPACE_NOTES_LINKS`.
+ * space's files and memory folders as this sandbox mounts them. A channel's
+ * memory is `<channel>/Memory`; a DM's is the agent folder `Memory/<agent>`
+ * inside the user's Memory folder. `name` is the channel slug or the DM's
+ * agent. A channel's pinned links follow, newest pin first, at most
+ * `SPACE_NOTES_LINKS`.
  */
 export function spaceNotesLines(
   space: { kind: 'channel' | 'dm'; name: string; links?: readonly SpaceNotesLink[] },
@@ -304,10 +304,16 @@ export function spaceNotesLines(
   const me = mounts.find((m) => m.role === 'me');
   const folders = spaceDriveFolders(space.kind, space.name, me?.subdir ?? null);
   const files = folders && mountedAt(folders.files, mounts);
+  const memoryAt = folders && mountedAt(folders.memory, mounts);
   // A DM's agent name is member text: one line, so it cannot start a heading.
   const name = oneLine(space.name);
   const place = space.kind === 'channel' ? `#${name}` : `your DM with ${name}`;
-  const memory = `- Memory of ${place}: pages at ${MEMORY_COPY_DIR}/ (read-only); save with the \`remember\` tool (load the kortix-channel-memory skill).`;
+  const skill = 'one topic per file, MEMORY.md is the index; load the kortix-channel-memory skill';
+  const memory = !memoryAt
+    ? `The memory folder of ${place} is not mounted in this thread.`
+    : space.kind === 'channel'
+      ? `- Memory of ${place}: ${memoryAt}/ (read-write; ${skill})`
+      : `- Memory of ${place}: ${memoryAt}/ for what you learn in this DM, beside the user's memory in ${memoryAt.slice(0, memoryAt.lastIndexOf('/'))}/ (read-write; ${skill})`;
   const lines = [
     space.kind === 'channel' ? `## This thread’s channel: #${name}` : `## This thread’s DM with ${name}`,
     '',

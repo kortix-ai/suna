@@ -3,18 +3,19 @@
 import type { ProjectSession, ProjectSpace } from '@kortix/sdk';
 import { useProjectSessions } from '@kortix/sdk/react';
 import {
+  CaretRightIcon,
   ChatTeardropTextIcon,
   type Icon,
   LightningIcon,
   LinkSimpleIcon,
   PulseIcon,
-  RobotIcon,
   TimerIcon,
   WebhooksLogoIcon,
 } from '@phosphor-icons/react';
 import { useMemo } from 'react';
 
 import { useLocale, useTranslations } from '../../i18n';
+import { AgentMark } from '../../internal/components/agent-mark';
 import { useCopy } from '../../internal/hooks/use-copy';
 import { relativeTime } from '../../internal/lib/relative-time';
 import { cn } from '../../lib/utils';
@@ -34,10 +35,10 @@ import { SessionStatusMark } from '../sidebar/session-status-mark';
 import {
   agentLabel,
   buildSpaceTimeline,
+  DEFAULT_AGENT_SLUG,
   dayKind,
   gutterTime,
   lastReplyLabel,
-  startedLabel,
   threadIsWorking,
   threadMessageText,
   type TimelineDay,
@@ -141,11 +142,10 @@ export function SpaceTimeline({
             {days.map((day) => (
               <section key={day.date.getTime()} aria-label={dayLabel(day)}>
                 <DayDivider label={dayLabel(day)} />
-                {day.threads.map(({ session, compact }) => (
+                {day.threads.map((session) => (
                   <ThreadRow
                     key={session.session_id}
                     session={session}
-                    compact={compact}
                     space={space}
                     selected={session.session_id === selectedId}
                     onOpen={() => onOpenThread(session.session_id)}
@@ -167,7 +167,7 @@ function SpaceWelcome({ space, empty }: { space: ProjectSpace; empty: boolean })
     const agent = agentLabel(space.dm_agent_name);
     return (
       <div className="space-y-3 px-5 pt-16 pb-6">
-        <EntityAvatar icon={RobotIcon} label={agent} size="xl" />
+        <AgentMark slug={space.dm_agent_name} size={42} label={agent} />
         <div className="space-y-1.5">
           <h2 className="text-2xl font-semibold tracking-tight text-balance">{agent}</h2>
           <p className="text-muted-foreground text-sm text-pretty">{t('dmIntro', { agent })}</p>
@@ -221,18 +221,16 @@ function triggerAuthor(session: ProjectSession): { name: string; icon: Icon } | 
 
 /**
  * One thread as a message: the author's avatar and name, the time, the first
- * prompt, and the "N replies" line that opens the thread. A thread from the
- * same author within 5 minutes drops the avatar and name.
+ * prompt, and the "N replies" line that opens the thread. Every thread shows
+ * its author: a new thread is a new top-level message.
  */
 function ThreadRow({
   session,
-  compact,
   space,
   selected,
   onOpen,
 }: {
   session: ProjectSession;
-  compact: boolean;
   space: ProjectSpace;
   selected: boolean;
   onOpen: () => void;
@@ -254,11 +252,20 @@ function ThreadRow({
 
   return (
     <MessageRow
-      compact={compact}
       selected={selected}
       avatar={
         machine ? (
-          <EntityAvatar icon={trigger?.icon ?? RobotIcon} label={name} size="lg" />
+          trigger ? (
+            <EntityAvatar icon={trigger.icon} label={name} size="lg" />
+          ) : (
+            <AgentMark
+              slug={session.agent_name ?? space.dm_agent_name ?? DEFAULT_AGENT_SLUG}
+              size={28}
+              // 36px, the `lg` avatar column (`w-10`): the 40px tile would overflow it.
+              tile={36}
+              label={name}
+            />
+          )
         ) : (
           <UserAvatar email={session.owner_email ?? ''} name={name} avatarUrl={session.owner_avatar_url} size="lg" />
         )
@@ -286,8 +293,11 @@ function ThreadRow({
 }
 
 /**
- * "3 replies  Last reply 2 hours ago" under the message, or "<Agent> is
- * working…" while a turn runs. The whole line opens the thread.
+ * The line under a message: the answering agent's tile, then "3 replies  Last
+ * reply 2 hours ago", or "<Agent> is working…" while a turn runs. Hovering the
+ * line fills it and swaps the time for "View thread ›", so the whole line reads
+ * as the way in. A thread with no counted reply shows the tile and "View
+ * thread" only: the row's own time already says when it started.
  */
 function ThreadSummary({
   session,
@@ -302,37 +312,57 @@ function ThreadSummary({
   const locale = useLocale();
   const agentName = session.agent_name ?? space.dm_agent_name;
   const agent = agentName ? agentLabel(agentName) : t('agentFallback');
+  const working = threadIsWorking(session);
+  const replies = session.reply_count ?? 0;
   return (
     <button
       type="button"
       onClick={onOpen}
-      // No top margin, `py-0.5`, and a hover ring instead of a border (a ring
-      // takes no space): the line sits as far under the body as the body
-      // sits under the name, 8px of visible gap both ways.
-      // `hit-area-y-1` keeps the click target its old height.
-      className="group/summary hover:bg-popover hover:ring-border focus-visible:ring-ring hit-area-y-1 -mx-1.5 flex max-w-full items-center gap-2 rounded-md px-1.5 py-0.5 text-xs outline-none hover:ring-1 focus-visible:ring-2"
+      // `-mx-1` with `px-1`: the tile lines up with the body text above, and
+      // the fill extends past it. `w-full max-w-md`: the target is the line,
+      // not only its words, and stops before the line runs the width of a
+      // wide window. The fill is instant, like the row's.
+      className="group/summary hover:bg-hover focus-visible:ring-ring -mx-1 mt-1 flex w-full max-w-md items-center gap-2 rounded-md px-1 py-1 text-left text-xs outline-none focus-visible:ring-2"
     >
-      {/* The link recipe of the markdown renderer: blue, underlined on hover. */}
-      <span className="text-kortix-blue shrink-0 font-semibold tabular-nums underline-offset-2 group-hover/summary:underline">
-        {session.reply_count ? t('replies', { count: session.reply_count }) : t('openThread')}
-      </span>
-      {threadIsWorking(session) ? (
+      <AgentMark slug={agentName ?? DEFAULT_AGENT_SLUG} size={14} label={agent} />
+      {working ? (
         <span className="text-muted-foreground flex min-w-0 items-center gap-1.5">
-          <Loading className="size-3.5 shrink-0" />
+          {/* `in-[button]:` — the line is a button, where the spinner would turn
+              `text-background` (built for filled buttons) and vanish. */}
+          <Loading className="in-[button]:text-muted-foreground size-3.5 shrink-0" />
           <span className="truncate">{t('working', { agent })}</span>
         </span>
       ) : (
-        <span className="text-muted-foreground truncate">
-          {session.reply_count
-            ? t('lastReply', { time: lastReplyLabel(session, locale) })
-            : t('started', { time: startedLabel(session, locale) })}
-        </span>
+        <>
+          {replies > 0 ? (
+            <span className="text-foreground shrink-0 font-semibold tabular-nums">
+              {t('replies', { count: replies })}
+            </span>
+          ) : null}
+          <span
+            className={cn(
+              'text-muted-foreground min-w-0 truncate',
+              replies > 0 && 'group-hover/summary:hidden group-focus-visible/summary:hidden',
+            )}
+          >
+            {replies > 0 ? t('lastReply', { time: lastReplyLabel(session, locale) }) : t('openThread')}
+          </span>
+          {replies > 0 ? (
+            <span className="text-muted-foreground hidden min-w-0 truncate group-hover/summary:inline group-focus-visible/summary:inline">
+              {t('openThread')}
+            </span>
+          ) : null}
+        </>
       )}
+      <CaretRightIcon
+        aria-hidden
+        className="text-muted-foreground ml-auto size-3.5 shrink-0 opacity-0 group-hover/summary:opacity-100 group-focus-visible/summary:opacity-100"
+      />
     </button>
   );
 }
 
-/** The row's floating actions: reply in the thread, copy the thread's link. */
+/** The row's floating actions: reply in the thread (labelled), copy the thread's link. */
 function ThreadToolbar({ sessionId, onOpen }: { sessionId: string; onOpen: () => void }) {
   const t = useTranslations('spaces.view');
   const { copied, copy } = useCopy({ toast: false });
@@ -345,14 +375,20 @@ function ThreadToolbar({ sessionId, onOpen }: { sessionId: string; onOpen: () =>
   const linkLabel = copied ? t('linkCopied') : t('copyLink');
   return (
     <>
+      {/* The one action a reader came for, so it says its name: "Reply",
+          at the icon button's height. `size="xs"` (h-7, no `py-*`), not the
+          default size: the default's `py-2` and `has-[>svg]:px-3` survive a
+          className override (tailwind-merge keeps variant classes), which
+          left the icon a content box shorter than itself, off centre. */}
       <Hint label={t('replyInThread')} side="top">
-        <Button variant="ghost" size="icon-md" aria-label={t('replyInThread')} onClick={onOpen}>
-          <ChatTeardropTextIcon className="size-4 shrink-0" />
+        <Button variant="ghost" size="xs" aria-label={t('replyInThread')} onClick={onOpen} className="gap-1 rounded-md text-xs">
+          <ChatTeardropTextIcon className="size-3.5 shrink-0" />
+          {t('reply')}
         </Button>
       </Hint>
       <Hint label={linkLabel} side="top">
-        <Button variant="ghost" size="icon-md" aria-label={linkLabel} onClick={copyLink}>
-          {copied ? <SolidCheckIcon className="size-4 shrink-0" /> : <LinkSimpleIcon className="size-4 shrink-0" />}
+        <Button variant="ghost" size="icon-sm" aria-label={linkLabel} onClick={copyLink}>
+          {copied ? <SolidCheckIcon className="size-3.5 shrink-0" /> : <LinkSimpleIcon className="size-3.5 shrink-0" />}
         </Button>
       </Hint>
     </>

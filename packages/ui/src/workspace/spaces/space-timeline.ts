@@ -11,19 +11,14 @@ import {
   stripReplyContexts,
 } from '../../session/thread/message-parsing';
 
-/** A thread from the same author this soon after the previous one joins it: no avatar, no name. */
-export const THREAD_COMPACT_WINDOW_MS = 5 * 60_000;
-
-export interface TimelineThread {
-  session: ProjectSession;
-  /** Same author as the thread above, within the window: drawn without avatar and name. */
-  compact: boolean;
-}
-
 export interface TimelineDay {
   /** Local midnight of the day. */
   date: Date;
-  threads: TimelineThread[];
+  /**
+   * Every thread is a new top-level message, so each one shows its author's
+   * avatar and name: no grouping between threads, even from one author.
+   */
+  threads: ProjectSession[];
 }
 
 function localDay(time: number): Date {
@@ -38,21 +33,14 @@ function localDay(time: number): Date {
 export function buildSpaceTimeline(sessions: readonly ProjectSession[]): TimelineDay[] {
   const sorted = [...sessions].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
   const days: TimelineDay[] = [];
-  let previous: { author: string; time: number } | null = null;
   for (const session of sorted) {
-    const time = Date.parse(session.created_at);
-    const date = localDay(time);
+    const date = localDay(Date.parse(session.created_at));
     let day = days.at(-1);
     if (!day || day.date.getTime() !== date.getTime()) {
       day = { date, threads: [] };
       days.push(day);
-      previous = null;
     }
-    const author = session.created_by ?? '';
-    const compact =
-      !!author && !!previous && previous.author === author && time - previous.time < THREAD_COMPACT_WINDOW_MS;
-    day.threads.push({ session, compact });
-    previous = { author, time };
+    day.threads.push(session);
   }
   return days;
 }
@@ -86,9 +74,25 @@ export function lastReplyLabel(session: ProjectSession, locale: string, now = Da
   return relativeTime(session.updated_at, locale, now, { style: 'long' });
 }
 
-/** "22 hours ago": when a thread with no replies yet was started. */
-export function startedLabel(session: ProjectSession, locale: string, now = Date.now()): string {
-  return relativeTime(session.created_at, locale, now, { style: 'long' });
+/**
+ * `reply_count` from a thread's loaded transcript, by the server's rule
+ * (`apps/api/.../session-reply-counts.ts`): every person message after the
+ * first, plus one per person message the agent answered.
+ */
+export function liveReplyCount(roles: readonly string[]): number {
+  let people = 0;
+  let answers = 0;
+  let answered = true;
+  for (const role of roles) {
+    if (role === 'user') {
+      people += 1;
+      answered = false;
+    } else if (role === 'assistant' && !answered) {
+      answers += 1;
+      answered = true;
+    }
+  }
+  return Math.max(people - 1, 0) + answers;
 }
 
 /** The agent is on it: a turn runs, the first prompt waits for delivery, or the computer starts. */
@@ -108,6 +112,9 @@ export function threadMessageText(session: ProjectSession): string {
   return text || sessionDisplayLabel(session);
 }
 
+/** The agent whose mark stands in when a row does not name its agent. */
+export const DEFAULT_AGENT_SLUG = 'kortix';
+
 /** An agent's display name: the sidebar's DM row and the space view say it the same way. */
 export function agentLabel(name: string): string {
   return isMetaAgentName(name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(name);
@@ -119,32 +126,39 @@ export interface SpacePerson {
   name: string | null;
   email: string | null;
   avatarUrl: string | null;
+  /** How many of the loaded threads this person started. */
+  threads: number;
 }
 
 /**
  * Who is in a space, as far as its loaded threads tell: the people who
- * started a thread, and the agents that answered one. No roster API exists
- * yet, so the header says "in these threads", not "members".
+ * started a thread, and the agents that answered one, each with how many of
+ * those threads it was. No roster API exists yet, so the header says "in these
+ * threads", not "members".
  */
 export function spaceRoster(
   sessions: readonly ProjectSession[],
   dmAgentName?: string | null,
-): { people: SpacePerson[]; agents: string[] } {
+): { people: SpacePerson[]; agents: string[]; agentThreads: Record<string, number> } {
   const people = new Map<string, SpacePerson>();
-  const agents = new Set<string>();
-  if (dmAgentName) agents.add(dmAgentName);
+  const agentThreads: Record<string, number> = {};
+  if (dmAgentName) agentThreads[dmAgentName] = 0;
   for (const session of sessions) {
-    if (session.created_by && session.owner_type === 'user' && !people.has(session.created_by)) {
-      people.set(session.created_by, {
-        id: session.created_by,
-        name: session.owner_name ?? null,
-        email: session.owner_email ?? null,
-        avatarUrl: session.owner_avatar_url ?? null,
-      });
+    if (session.created_by && session.owner_type === 'user') {
+      const person = people.get(session.created_by);
+      if (person) person.threads += 1;
+      else
+        people.set(session.created_by, {
+          id: session.created_by,
+          name: session.owner_name ?? null,
+          email: session.owner_email ?? null,
+          avatarUrl: session.owner_avatar_url ?? null,
+          threads: 1,
+        });
     }
-    if (session.agent_name) agents.add(session.agent_name);
+    if (session.agent_name) agentThreads[session.agent_name] = (agentThreads[session.agent_name] ?? 0) + 1;
   }
-  return { people: [...people.values()], agents: [...agents] };
+  return { people: [...people.values()], agents: Object.keys(agentThreads), agentThreads };
 }
 
 /** A channel's tabs, in order. `?tab=` names one; Chat has no param. */

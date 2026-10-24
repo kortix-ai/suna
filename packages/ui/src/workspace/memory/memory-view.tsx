@@ -1,30 +1,28 @@
 'use client';
 
-import { LockIcon } from '@phosphor-icons/react';
 import { useProjectMemoryLayer, useProjectMemoryPage, useProjectMemoryPages } from '@kortix/sdk/react';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
 import { Button } from '../../primitives/button';
-import { EmptyState } from '../../primitives/empty-state';
 import { ErrorState } from '../../primitives/error-state';
-import { InfoBanner } from '../../primitives/info-banner';
 import { Skeleton } from '../../primitives/skeleton';
 import { SplitSheet, SplitSheetMain } from '../../primitives/split-sheet';
 import { useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
-import { MemoryEditor } from './memory-editor';
 import { MemoryEmpty } from './memory-empty';
 import { MemoryHistory } from './memory-history';
-import { MEMORY_GROUPS, memoryPageCount } from './memory-labels';
-import { groupMemoryPages, MemoryPageList } from './memory-page-list';
-import { MemoryReader } from './memory-reader';
-import { RememberBar } from './remember-bar';
+import { memoryPageCount } from './memory-labels';
+import { MemoryPageList, sortMemoryPages } from './memory-page-list';
+import { MemoryReader, MemoryReaderSkeleton } from './memory-reader';
+import { RememberPopover } from './remember-popover';
 
 /** The open page, in the URL so a page can be linked (the thread's "Saved to memory · View" uses it). */
 export const MEMORY_PAGE_PARAM = 'page';
 /** Set with `page`: the page opens with its History beside it. */
 export const MEMORY_HISTORY_PARAM = 'history';
+/** `1`: "Remember this…" opens on arrival (#general's "Get started"); the view then drops it. */
+export const MEMORY_REMEMBER_PARAM = 'remember';
 
 export interface MemoryViewProps {
   projectId: string;
@@ -35,10 +33,11 @@ export interface MemoryViewProps {
 }
 
 /**
- * A layer's memory: the page list on the left, the open page on the right
- * (its History in a sheet beside it), and the Remember bar along the bottom.
- * A layer with no pages shows what memory is and three sentences to try.
- * The same view serves a channel, a DM and the Company page.
+ * A layer's memory: the flat page list (with a small graph of the open page)
+ * on the left, the open page on the right (its History in a sheet beside
+ * it; its body edited in place). A layer with no pages says what memory is
+ * and offers "Remember this…". The same view serves a channel, a DM and the
+ * Company page.
  */
 export function MemoryView({ projectId, layerKey, place }: MemoryViewProps) {
   const t = useTranslations('spaces.memory');
@@ -47,8 +46,8 @@ export function MemoryView({ projectId, layerKey, place }: MemoryViewProps) {
   const searchParams = useUiSearchParams();
   const layer = useProjectMemoryLayer(projectId, layerKey);
   const list = useProjectMemoryPages(projectId, layerKey);
-  const [draft, setDraft] = useState('');
-  const rememberInput = useRef<HTMLTextAreaElement>(null);
+  // `?remember=1` opens "Remember this…" once its trigger mounts.
+  const [remembering, setRemembering] = useState(() => searchParams.get(MEMORY_REMEMBER_PARAM) === '1');
   const [editing, setEditing] = useState(false);
   // Bumped by the editor's Reload: a fresh form on the newest version. Not the
   // version itself: a save bumps it too, and a remount would drop the save's
@@ -65,20 +64,12 @@ export function MemoryView({ projectId, layerKey, place }: MemoryViewProps) {
   const [gone, setGone] = useState<{ pageId: string; list: unknown } | null>(null);
   const pages = useMemo(() => {
     const all = list.data ?? [];
-    return gone && gone.list === list.data ? all.filter((page) => page.page_id !== gone.pageId) : all;
+    return sortMemoryPages(gone && gone.list === list.data ? all.filter((page) => page.page_id !== gone.pageId) : all);
   }, [list.data, gone]);
   const requested = searchParams.get(MEMORY_PAGE_PARAM);
   const explicit = pages.find((page) => page.page_id === requested);
-  // No page in the URL (or one that is gone): the first page of the list.
-  const selected = useMemo(() => {
-    if (explicit) return explicit;
-    const { groups } = groupMemoryPages(pages);
-    for (const type of MEMORY_GROUPS) {
-      const first = groups.get(type)?.[0];
-      if (first) return first;
-    }
-    return pages[0];
-  }, [explicit, pages]);
+  // No page in the URL (or one that is gone): the newest page.
+  const selected = explicit ?? pages[0];
   const page = useProjectMemoryPage(projectId, selected?.page_id);
 
   const setPage = (pageId: string | null) => {
@@ -93,6 +84,18 @@ export function MemoryView({ projectId, layerKey, place }: MemoryViewProps) {
       scroll: false,
     });
   };
+
+  const focusRemember = searchParams.get(MEMORY_REMEMBER_PARAM) === '1';
+  const loaded = !!layer.data && !!list.data;
+  useEffect(() => {
+    if (!focusRemember || !loaded) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete(MEMORY_REMEMBER_PARAM);
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, {
+      scroll: false,
+    });
+  }, [focusRemember, loaded, pathname, router, searchParams]);
 
   if ((layer.isError && !layer.data) || (list.isError && !list.data)) {
     return (
@@ -117,140 +120,128 @@ export function MemoryView({ projectId, layerKey, place }: MemoryViewProps) {
     );
   }
   if (!layer.data || !list.data) {
-    // The list's shape is known: its rows load as skeletons, the page waits.
+    // First load: a ghost of the list and the reader at their real line boxes, so nothing moves when the data lands.
     return (
-      <div aria-busy className="flex min-h-0 flex-1">
-        <div className="flex w-72 shrink-0 flex-col gap-2.5 border-r px-3 py-4">
-          <Skeleton className="h-8 w-full rounded-md" />
-          {['w-3/5', 'w-2/5', 'w-3/4', 'w-1/2', 'w-2/5', 'w-2/3'].map((width, index) => (
-            <Skeleton key={index} className={cn('h-4 rounded-sm', width)} />
+      <div aria-busy className="@container/memory flex min-h-0 w-full min-w-0 flex-1">
+        <div
+          className={cn(
+            'flex w-72 shrink-0 flex-col border-r px-3.5 pt-5 pb-4 @max-md/memory:w-full',
+            requested && '@max-md/memory:hidden',
+          )}
+        >
+          <div className="mb-1 flex h-7.5 shrink-0 items-center justify-between pr-1 pl-2">
+            <div className="text-xs">
+              <Skeleton className="inline-block h-2.5 w-12 rounded-sm py-0 align-middle" />
+            </div>
+            <div className="flex size-6 items-center justify-center">
+              <Skeleton className="size-3.5 rounded-sm py-0" />
+            </div>
+          </div>
+          {['w-3/5', 'w-4/5', 'w-1/2', 'w-2/3', 'w-2/5', 'w-3/4'].map((width, index) => (
+            <div key={index} className="flex h-8 shrink-0 items-center px-2 text-sm">
+              <Skeleton className={cn('inline-block h-3 rounded-sm py-0', width)} />
+            </div>
           ))}
         </div>
+        <MemoryReaderSkeleton className={cn(!requested && '@max-md/memory:hidden')} />
       </div>
     );
   }
 
   const canWrite = layer.data.can_write && !layer.data.read_only;
-  const trashCount = layer.data.counts.trash;
   const kind = layer.data.scope;
-  const rememberBar = canWrite ? (
-    <RememberBar
-      projectId={projectId}
-      layerKey={layerKey}
-      place={place}
-      draft={draft}
-      onDraftChange={setDraft}
-      inputRef={rememberInput}
-    />
-  ) : null;
+  const rememberProps = {
+    projectId,
+    layerKey,
+    place,
+    open: remembering,
+    onOpenChange: setRemembering,
+  };
 
-  // The Remember bar stays the root's last child in both layouts, so it keeps
-  // its draft and its "Saved" line when the first note turns the empty state
-  // into the list.
-  return (
-    <div className="@container/memory flex min-h-0 flex-1 flex-col">
-      {/* An archived channel: its memory stays readable; no Edit, no Remember bar (`can_edit` / `can_write` are false). */}
-      {layer.data.read_only ? (
-        <InfoBanner tone="neutral" icon={LockIcon} className="mx-3 mt-3 shrink-0">
-          {t('archivedReadOnly', { place })}
-        </InfoBanner>
-      ) : null}
-      {!selected && trashCount === 0 ? (
+  if (!selected) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
         <MemoryEmpty
           kind={kind}
-          place={place}
-          onTry={
-            canWrite
-              ? (text) => {
-                  setDraft(text);
-                  rememberInput.current?.focus();
-                }
-              : undefined
+          action={
+            canWrite ? (
+              <RememberPopover {...rememberProps}>
+                <Button variant="outline" size="sm">
+                  {t('remember.open')}
+                </Button>
+              </RememberPopover>
+            ) : null
           }
         />
-      ) : (
-        <div className="flex min-h-0 flex-1">
-          {/* Too narrow for both: the list, until a page is opened; then the page, with a way back. */}
-          <MemoryPageList
+      </div>
+    );
+  }
+
+  return (
+    <div className="@container/memory flex min-h-0 w-full min-w-0 flex-1">
+      {/* Too narrow for both: the list, until a page is opened; then the page, with a way back. */}
+      <MemoryPageList
+        projectId={projectId}
+        layerKey={layerKey}
+        pages={pages}
+        selectedId={selected.page_id}
+        related={page.data?.page_id === selected.page_id ? page.data.related : undefined}
+        onSelect={setPage}
+        // `?remember=1` (#general's "Get started"): "Remember this…" opens under the header.
+        anchor={
+          canWrite && remembering
+            ? (header) => (
+                <RememberPopover {...rememberProps} anchor>
+                  {header}
+                </RememberPopover>
+              )
+            : undefined
+        }
+        className={cn('@max-md/memory:w-full', explicit && '@max-md/memory:hidden')}
+      />
+      <SplitSheet
+        size="lg"
+        open={history !== null && !!page.data}
+        onOpenChange={(open) => !open && setHistory(null)}
+        className={cn('min-w-0 flex-1', !explicit && '@max-md/memory:hidden')}
+      >
+        <SplitSheetMain className="flex flex-col">
+          <MemoryReader
             projectId={projectId}
-            layerKey={layerKey}
+            summary={selected}
+            page={page.data?.page_id === selected.page_id ? page.data : undefined}
+            pageError={page.isError}
             pages={pages}
-            total={memoryPageCount(layer.data.counts)}
-            trashCount={trashCount}
-            canWrite={canWrite}
-            selectedId={selected?.page_id ?? null}
-            onSelect={setPage}
-            onRemoved={(pageId) => {
-              setGone({ pageId, list: list.data });
-              if (pageId === selected?.page_id) setPage(null);
+            editing={editing && !!page.data}
+            editorRun={editorRun}
+            onRetry={() => void page.refetch()}
+            onSelectPage={setPage}
+            onBack={() => setPage(null)}
+            onEdit={() => setEditing(true)}
+            onHistory={() => setHistory({ versionId: null })}
+            onEditDone={() => setEditing(false)}
+            onReload={() => void page.refetch().then(() => setEditorRun((run) => run + 1))}
+            onRemoved={() => {
+              setGone({ pageId: selected.page_id, list: list.data });
+              setPage(null);
             }}
-            onViewChange={(pageId, versionId) => {
-              setPage(pageId);
-              setHistory({ versionId });
-            }}
-            className={cn('@max-2xl/memory:w-full', explicit && '@max-2xl/memory:hidden')}
           />
-          {!selected ? (
-            // Every page is in the trash: the list shows it, the page side says so.
-            <div className="flex min-w-0 flex-1 items-center justify-center px-5 py-16 @max-2xl/memory:hidden">
-              <EmptyState size="sm" title={t('trash.allTrashed')} />
-            </div>
-          ) : (
-          <SplitSheet
-            size="lg"
-            open={history !== null && !!page.data}
-            onOpenChange={(open) => !open && setHistory(null)}
-            className={cn('min-w-0 flex-1', !explicit && '@max-2xl/memory:hidden')}
-          >
-            <SplitSheetMain className="flex flex-col">
-              {editing && page.data ? (
-                <div className="min-h-0 flex-1 overflow-y-auto px-6 py-7 @2xl/memory:px-11">
-                  <MemoryEditor
-                    key={`${page.data.page_id}:${editorRun}`}
-                    projectId={projectId}
-                    page={page.data}
-                    onDone={() => setEditing(false)}
-                    onReload={() => void page.refetch().then(() => setEditorRun((run) => run + 1))}
-                  />
-                </div>
-              ) : (
-                <MemoryReader
-                  projectId={projectId}
-                  summary={selected}
-                  page={page.data?.page_id === selected.page_id ? page.data : undefined}
-                  pageError={page.isError}
-                  onRetry={() => void page.refetch()}
-                  pages={pages}
-                  onSelectPage={setPage}
-                  onBack={() => setPage(null)}
-                  onEdit={() => setEditing(true)}
-                  onHistory={(versionId) => setHistory({ versionId: versionId ?? null })}
-                  onRemoved={() => {
-                    setGone({ pageId: selected.page_id, list: list.data });
-                    setPage(null);
-                  }}
-                />
-              )}
-            </SplitSheetMain>
-            {history && page.data ? (
-              <MemoryHistory
-                projectId={projectId}
-                page={page.data}
-                selectedId={history.versionId}
-                onSelect={(versionId) => setHistory({ versionId })}
-                onRestored={() => setHistory({ versionId: null })}
-              />
-            ) : null}
-          </SplitSheet>
-          )}
-        </div>
-      )}
-      {rememberBar}
+        </SplitSheetMain>
+        {history && page.data ? (
+          <MemoryHistory
+            projectId={projectId}
+            page={page.data}
+            selectedId={history.versionId}
+            onSelect={(versionId) => setHistory({ versionId })}
+            onRestored={() => setHistory({ versionId: null })}
+          />
+        ) : null}
+      </SplitSheet>
     </div>
   );
 }
 
-/** The Memory tab's count: the layer's live pages, notes not included. */
+/** The Memory tab's count: the layer's live pages. */
 export function useMemoryPageCount(projectId: string, layerKey: string | null | undefined): number {
   return memoryPageCount(useProjectMemoryLayer(projectId, layerKey).data?.counts);
 }

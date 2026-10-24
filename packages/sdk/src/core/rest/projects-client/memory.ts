@@ -1,13 +1,17 @@
-// Memory pages — `/v1/projects/:id/memory/*` (apps/api/src/projects/routes/project-memory.ts).
-// A layer is the project's Company memory (key `company`), one channel's or
-// one DM's memory (key = the space id). A layer holds pages of 4 types plus
-// `note`s: Remember-box sentences an agent has not filed yet. Every route
-// answers 403 `feature_disabled` while the project's `project_channels` flag
-// is off. Every call passes `showErrors: false`: the caller shows the error,
-// and a rejection is an `ApiError` whose `code` names it (`version_conflict`,
-// `title_taken`, `page_limit`, `layer_read_only`, `page_too_large`,
-// `secret_detected`, `superseded`, `already_undone`, `memory_not_found`,
-// `invalid_input`, `session_not_found`, `not_unconfirmed`).
+// Memory — `/v1/projects/:id/memory/*` (apps/api/src/projects/routes/project-memory.ts).
+// Memory is the Markdown files of the project's Drive. A layer is one folder:
+// the project's Company memory (key `company`, `/Company/Memory`), one
+// channel's (key = the space id, `/Company/Channels/<slug>/Memory`) or one
+// DM's (key = the space id: the owner's `/Users/<person>/Memory`, its agent
+// folder `Memory/<agent>` first). A page is one file. Agents read and write
+// the same files through their mounts. Every route answers 403
+// `feature_disabled` while the project's Files (`drives`) are off, and 503
+// `drive_storage_unavailable` without Drive storage. Every call passes
+// `showErrors: false`: the caller shows the error, and a rejection is an
+// `ApiError` whose `code` names it (`version_conflict`, `title_taken`,
+// `layer_read_only`, `page_too_large`, `secret_detected`, `superseded`,
+// `version_gone`, `memory_not_found`, `invalid_input`, `session_not_found`,
+// `forbidden`).
 // The types carry the same fields as `@kortix/api-contract/memory`
 // (held equal by `src/contract-drift.test.ts`).
 
@@ -17,10 +21,11 @@ import { unwrap } from './shared';
 /** `company`, or the space id of a channel or DM. */
 export type ProjectMemoryLayerKey = string;
 export type ProjectMemoryLayerScope = 'company' | 'channel' | 'dm';
-/** The 4 types a person or agent files a page as. */
+/** The 4 typed folders a page can live in. */
 export type ProjectMemoryFiledPageType = 'people' | 'decisions' | 'workstreams' | 'playbooks';
-/** Every page type: the 4 filed types and `note`. */
-export type ProjectMemoryPageType = ProjectMemoryFiledPageType | 'note';
+/** Every page type: the 4 filed types, `note` (a `Notes.md`) and `other` (any other Markdown file). */
+export type ProjectMemoryPageType = ProjectMemoryFiledPageType | 'note' | 'other';
+/** Always `confirmed`: files have no pending state. */
 export type ProjectMemoryPageStatus = 'confirmed' | 'unconfirmed';
 export type ProjectMemoryChangeOp =
   | 'create'
@@ -34,55 +39,64 @@ export type ProjectMemoryChangeOp =
   | 'import';
 export type ProjectMemorySourceKind = 'thread' | 'person' | 'outside' | 'import';
 
+/** Who last changed a page: the file's front-matter `updated_by`, else `system`. */
 export interface ProjectMemoryAuthor {
   kind: 'person' | 'agent' | 'system';
-  /** The person, or the person an agent wrote for. */
+  /** Always null for files: front-matter names people by name. */
   user_id: string | null;
-  /** Display name or email; null when unknown. */
+  /** Display name; null when unknown. */
   name: string | null;
   /** The agent name, for `kind: agent`. */
   agent: string | null;
 }
 
-/** The thread a change came from; `label` is its title at write time. */
+/** The thread a change came from. Always null for files; kept for the shape. */
 export interface ProjectMemoryThreadRef {
   session_id: string;
   label: string;
 }
 
-/** A numbered source of a page; the body cites it as the token ⟦n⟧. */
+/** A numbered source of a page, from the file's front-matter `sources:` (1-based, in file order). */
 export interface ProjectMemorySource {
   number: number;
   kind: ProjectMemorySourceKind;
   session_id: string | null;
   message_id: string | null;
   label: string;
-  /** `outside` sources only. */
   url: string | null;
-  /** Where the source thread lives, so a host can build its link; null when the thread or its space is gone. */
+  /** Always null for files. */
   thread_href_hint: { space_kind: 'channel'; slug: string } | { space_kind: 'dm'; agent: string } | null;
 }
 
 export interface ProjectMemoryLayer {
+  /** The layer key (`company` or the space id). */
   layer_id: string;
   scope: ProjectMemoryLayerScope;
   /** Null for the Company layer. */
   space_id: string | null;
   /** "Company", "#marketing", or the DM's agent name. */
   name: string;
-  /** Live pages per type; `unconfirmed` and `trash` count across types. */
+  /** Pages per type. `unconfirmed` and `trash` are always 0 (no pending state, no trash). */
   counts: {
     people: number;
     decisions: number;
     workstreams: number;
     playbooks: number;
     note: number;
+    other: number;
     unconfirmed: number;
     trash: number;
   };
   /** An archived channel's layer: every write rejects with 409 `layer_read_only`. */
   read_only: boolean;
   can_write: boolean;
+  /** The layer's folder, a Drive path (`/Company/Memory`): "Open in Files". */
+  folder: string;
+  /** A DM layer's agent folder (`/Users/<person>/Memory/<agent>`); null for others. */
+  agent_folder: string | null;
+  drive_id: string;
+  /** Files under the folder that are not pages (images, PDFs, …). */
+  other_files: number;
 }
 
 /** A page in the layer's list: no body. */
@@ -96,20 +110,22 @@ export interface ProjectMemoryPageSummary {
   updated_at: string;
   updated_by: ProjectMemoryAuthor;
   updated_source: ProjectMemoryThreadRef | null;
+  /** The file, a Drive path. */
+  path: string;
 }
 
 export interface ProjectMemoryPage extends ProjectMemoryPageSummary {
-  /** Markdown; `## ` headings make sections, ⟦n⟧ cites `sources` number n. */
+  /** The file's Markdown without front-matter and without its first `# ` heading. */
   body: string;
   sources: ProjectMemorySource[];
   related: { page_id: string; title: string }[];
-  /** Send it back as `base_version` on update. */
+  /** The file's mtime in ms. Send it back as `base_version` on update. */
   version_no: number;
   can_edit: boolean;
   can_delete: boolean;
 }
 
-/** One row of Recent changes. */
+/** One row of Recent changes: a recently changed file. */
 export interface ProjectMemoryChange {
   version_id: string;
   /** Shared by every row one change wrote (both pages of a `file_note`); Undo reverts them all. */
@@ -164,10 +180,8 @@ export interface ProjectMemoryVersionList {
 /** Which pages `listProjectMemoryPages` lists. */
 export interface ProjectMemoryPageListOptions {
   type?: ProjectMemoryPageType;
-  /** `unconfirmed`: the layer's Needs confirming list. */
+  /** `unconfirmed` lists nothing (files have no pending state). */
   status?: ProjectMemoryPageStatus;
-  /** `true`: the layer's trash instead of its live pages. */
-  deleted?: boolean;
 }
 
 /** One page of Recent changes or of a page's history. */
@@ -179,28 +193,28 @@ export interface ProjectMemoryPageOptions {
 }
 
 export interface CreateProjectMemoryPageInput {
-  type: ProjectMemoryFiledPageType;
+  /** A typed folder, or `other` (a file at the layer's root). */
+  type: ProjectMemoryFiledPageType | 'other';
   /** 1–120 characters. */
   title: string;
   /** At most 200 characters, one line. */
   summary?: string;
-  /** Markdown, at most 8,192 UTF-8 bytes (else 413 `page_too_large`). */
+  /** Markdown, at most 262,144 UTF-8 bytes (else 413 `page_too_large`). */
   body?: string;
-  /** Page ids, at most 10. */
+  /** Page ids of the same layer, at most 10. */
   related?: string[];
+  /** DM layer only: `true` (default) writes into the agent folder, `false` into the person's shared Memory folder. */
+  agent_folder?: boolean;
 }
 
+/** The body only: front-matter and the `# ` title line are kept. */
 export interface UpdateProjectMemoryPageInput {
   /** The `version_no` the edit started from; another version rejects with 409 `version_conflict`. */
   base_version: number;
-  title?: string;
-  type?: ProjectMemoryFiledPageType;
-  summary?: string;
-  body?: string;
-  related?: string[];
+  body: string;
 }
 
-/** A Remember-box sentence, saved as a `note` page. */
+/** A Remember-box sentence, appended to the layer's `Notes.md`. */
 export interface AddProjectMemoryNoteInput {
   /** 1–1,000 characters. */
   text: string;
@@ -209,43 +223,15 @@ export interface AddProjectMemoryNoteInput {
   source_message_id?: string;
 }
 
-/** What `deleteProjectMemoryPage` resolves: `version_id` is the delete, for `undoProjectMemoryVersion`. */
+/** What `deleteProjectMemoryPage` resolves. The file is deleted for good: `version_id` is the deleted page id, not undoable. */
 export interface ProjectMemoryDeleteResult {
   ok: true;
   version_id: string;
 }
 
-/** What `undoProjectMemoryVersion` resolves: every live page the undo changed (both pages of a filed note); empty when it removed a page it had created. */
+/** What `undoProjectMemoryVersion` resolves: the page after the undo; empty when the undo deleted a file the change created. */
 export interface ProjectMemoryUndoResult {
   pages: ProjectMemoryPage[];
-}
-
-/**
- * What the agent's `remember` tool returns (the tool result a thread shows as
- * "Saved to memory"). Hosts read it from the transcript; there is no SDK call:
- * only a session token may write through `remember`.
- */
-export interface ProjectMemoryRememberResult {
-  saved: true;
-  page_id: string;
-  /** Pass it to `undoProjectMemoryVersion`. */
-  version_id: string;
-  layer: {
-    layer_id: string;
-    /** The layer version, as decimal text. */
-    version: string;
-    scope: ProjectMemoryLayerScope;
-    name: string;
-    key: ProjectMemoryLayerKey;
-  };
-  title: string;
-  status: ProjectMemoryPageStatus;
-  /** A new page was made. */
-  created: boolean;
-  /** The fact went into an existing page. */
-  merged: boolean;
-  /** The page's file in the agent's read-only copy; null when the page has none. */
-  copy_path: string | null;
 }
 
 /** One hit of `searchProjectMemory`. */
@@ -258,7 +244,7 @@ export interface ProjectMemorySearchHit {
   type: ProjectMemoryPageType;
   title: string;
   summary: string;
-  /** Up to ~160 characters of the body around the first match, source tokens removed. */
+  /** Up to ~160 characters of the body around the first match. */
   snippet: string;
   status: ProjectMemoryPageStatus;
 }
@@ -307,15 +293,14 @@ function pageQuery(options?: ProjectMemoryPageOptions): string {
   return text ? `?${text}` : '';
 }
 
-/** One layer with its page counts; the first read creates it. Another member's DM rejects with 404 `memory_not_found`. A background read. */
+/** One layer: its Drive folder and page counts. Another member's DM rejects with 404 `memory_not_found`. A background read. */
 export async function getProjectMemoryLayer(projectId: string, layerKey: ProjectMemoryLayerKey): Promise<ProjectMemoryLayer> {
   return unwrap(await backendApi.get<ProjectMemoryLayer>(layer(projectId, layerKey), quiet));
 }
 
 /**
- * The layer's live pages (at most 200), newest first, without bodies; with
- * `deleted: true` its trash (a page stays 30 days, then is deleted for good).
- * `status: 'unconfirmed'` is the Needs confirming list. A background read.
+ * The layer's pages, one per Markdown file, newest first (a DM's agent folder
+ * first), without bodies, at most 500. A background read.
  */
 export async function listProjectMemoryPages(
   projectId: string,
@@ -325,7 +310,6 @@ export async function listProjectMemoryPages(
   const query = new URLSearchParams();
   if (options?.type) query.set('type', options.type);
   if (options?.status) query.set('status', options.status);
-  if (options?.deleted) query.set('deleted', '1');
   const text = query.toString();
   const suffix = text ? `?${text}` : '';
   const body = unwrap(
@@ -335,8 +319,8 @@ export async function listProjectMemoryPages(
 }
 
 /**
- * Create a page. Rejects with 409 `title_taken` (`data.page_id` names the
- * live page with that title), 409 `page_limit` (200 live pages),
+ * Create a page: writes `<folder>/<type>/<slug>.md` (`other`: `<folder>/<slug>.md`).
+ * Rejects with 409 `title_taken` (`data.page_id` names the file that exists),
  * 409 `layer_read_only`, 413 `page_too_large` or 422 `secret_detected`.
  */
 export async function createProjectMemoryPage(
@@ -347,7 +331,7 @@ export async function createProjectMemoryPage(
   return unwrap(await backendApi.post<ProjectMemoryPage>(`${layer(projectId, layerKey)}/pages`, input, quiet));
 }
 
-/** Save a Remember-box sentence as a `note` page. Rejects as `createProjectMemoryPage` does. */
+/** Append a Remember-box sentence to the layer's `Notes.md`; resolves that page. Rejects as `createProjectMemoryPage` does. */
 export async function addProjectMemoryNote(
   projectId: string,
   layerKey: ProjectMemoryLayerKey,
@@ -356,7 +340,7 @@ export async function addProjectMemoryNote(
   return unwrap(await backendApi.post<ProjectMemoryPage>(`${layer(projectId, layerKey)}/notes`, input, quiet));
 }
 
-/** One page of the layer's Recent changes, newest first; walk older pages with `next` → `before`. A background read. */
+/** The layer's Recent changes: its 20 most recently changed files, newest first (`next` is always null). A background read. */
 export async function listProjectMemoryChanges(
   projectId: string,
   layerKey: ProjectMemoryLayerKey,
@@ -373,9 +357,10 @@ export async function getProjectMemoryPage(projectId: string, pageId: string): P
 }
 
 /**
- * Edit a page. `base_version` is the `version_no` the edit started from: a
- * newer version rejects with 409 `version_conflict`. Also 409 `title_taken`,
- * 409 `layer_read_only`, 413 `page_too_large`, 422 `secret_detected`.
+ * Replace a page's body (front-matter and the title line are kept).
+ * `base_version` is the `version_no` the edit started from: a newer version
+ * rejects with 409 `version_conflict`. Also 409 `layer_read_only`, 413
+ * `page_too_large`, 422 `secret_detected`.
  */
 export async function updateProjectMemoryPage(
   projectId: string,
@@ -385,15 +370,12 @@ export async function updateProjectMemoryPage(
   return unwrap(await backendApi.patch<ProjectMemoryPage>(page(projectId, pageId), input, quiet));
 }
 
-/**
- * Move a page to the trash. Without `can_delete` it rejects with 403
- * `forbidden`. Also Discard for an unconfirmed page, open to anyone who writes the layer.
- */
+/** Delete a page's file for good. Without `can_delete` it rejects with 403 `forbidden`. */
 export async function deleteProjectMemoryPage(projectId: string, pageId: string): Promise<ProjectMemoryDeleteResult> {
   return unwrap(await backendApi.delete<ProjectMemoryDeleteResult>(page(projectId, pageId), quiet));
 }
 
-/** One page of the page's versions, newest first; walk older ones with `next` → `before`. A background read. */
+/** The page's versions from the drive's newest 100 commits, newest first, at most 20 (`next` is always null). A background read. */
 export async function listProjectMemoryHistory(
   projectId: string,
   pageId: string,
@@ -405,34 +387,9 @@ export async function listProjectMemoryHistory(
 }
 
 /**
- * Make an older version the page's content again (a new version). Also brings
- * a page back from the trash: pass the version before its delete. Rejects with
- * 409 `page_limit` (the layer is full) or `title_taken`.
- */
-export async function restoreProjectMemoryPage(
-  projectId: string,
-  pageId: string,
-  versionId: string,
-): Promise<ProjectMemoryPage> {
-  return unwrap(
-    await backendApi.post<ProjectMemoryPage>(`${page(projectId, pageId)}/restore`, { version_id: versionId }, quiet),
-  );
-}
-
-/**
- * Confirm an unconfirmed page (outside content) from Needs confirming: agents
- * read it from now on. A "(to confirm)" page merges into the page it names and
- * goes to the trash; the result is then that page. A confirmed page rejects
- * with 409 `not_unconfirmed`. Discard is `deleteProjectMemoryPage`.
- */
-export async function confirmProjectMemoryPage(projectId: string, pageId: string): Promise<ProjectMemoryPage> {
-  return unwrap(await backendApi.post<ProjectMemoryPage>(`${page(projectId, pageId)}/confirm`, undefined, quiet));
-}
-
-/**
- * Undo one change: every version row with the same `change_id` (both pages of
- * a filed note); resolves every page it changed. A page changed again since rejects with 409 `superseded`; a
- * second undo rejects with 409 `already_undone`.
+ * Undo the newest change of a page: the version before it is written back, or
+ * the file is deleted when the change created it. An older version rejects
+ * with 409 `superseded`; one the newest 100 Drive commits do not reach with 404 `version_gone`.
  */
 export async function undoProjectMemoryVersion(projectId: string, versionId: string): Promise<ProjectMemoryUndoResult> {
   return unwrap(
@@ -442,8 +399,8 @@ export async function undoProjectMemoryVersion(projectId: string, versionId: str
 
 /**
  * Search the pages a person can read: Company, every live channel and their
- * own DMs, or the one `layer`. Full text over title, summary and body, then
- * titles containing `q`. `q` under 2 characters rejects with 400
+ * own Memory folder, or the one `layer`. Case-insensitive text over title and
+ * body, title hits first. `q` under 2 characters rejects with 400
  * `invalid_input`. A background read.
  */
 export async function searchProjectMemory(projectId: string, input: ProjectMemorySearchInput): Promise<ProjectMemorySearchResult> {
@@ -455,8 +412,8 @@ export async function searchProjectMemory(projectId: string, input: ProjectMemor
 }
 
 /**
- * A thread's "Used memory": the pages listed to its agent at the first turn,
- * by layer. Pages deleted since are left out. A thread the caller cannot open
+ * A thread's "Used memory": the files listed to its agent at the first turn,
+ * by layer. Files deleted since are left out. A thread the caller cannot open
  * rejects with 404 `session_not_found`. A background read.
  */
 export async function getSessionMemoryUsage(projectId: string, sessionId: string): Promise<SessionMemoryUsage> {

@@ -33,6 +33,9 @@ export function AgentMarkGlyph({ slug, size }: { slug: string; size: AgentMarkSi
       aria-hidden
       width={size}
       height={size}
+      // Inline, so a host's `[&_svg]:size-4` default (menu rows) cannot rescale
+      // the 7-pixel grid off whole device pixels.
+      style={{ width: size, height: size }}
       viewBox={`0 0 ${PIXEL_MARK_SIZE} ${PIXEL_MARK_SIZE}`}
       shapeRendering="crispEdges"
       className="shrink-0"
@@ -65,6 +68,7 @@ export function AgentMark({
   const mark = (
     <span
       aria-hidden
+      data-slot="agent-mark"
       style={{ ...agentMarkVars(slug), width: tile, height: tile }}
       className={cn(
         'inline-flex shrink-0 items-center justify-center bg-(--mark-tile)',

@@ -345,7 +345,14 @@ export function registerProjectSessionsRoutes(): void {
         202,
       );
     }
-    const canManageProject = await callerHasManagerStanding(loaded, callerKortixSessionId(c));
+    // The owner's identity, as the list names it: a channel's timeline draws
+    // the new thread from this row, with the sender's avatar and name.
+    const createdBy = result.row.createdBy;
+    const [canManageProject, owners] = await Promise.all([
+      callerHasManagerStanding(loaded, callerKortixSessionId(c)),
+      createdBy ? resolveSessionOwnerIdentities([createdBy], loaded.row.accountId) : undefined,
+    ]);
+    const owner = createdBy ? owners?.get(createdBy) : undefined;
     // The thread's first message: a person's links join its channel's Links tab.
     // Once: a retry with the same idempotency key (`deduped`, also while the first
     // create still runs) collects nothing. Started after every await, right before
@@ -362,7 +369,17 @@ export function registerProjectSessionsRoutes(): void {
         projectMetadata: loaded.row.metadata,
       });
     }
-    return c.json(serializeSession(result.row, { viewerId: loaded.userId, canManageProject }), 201);
+    return c.json(
+      serializeSession(result.row, {
+        viewerId: loaded.userId,
+        canManageProject,
+        ownerEmail: owner?.email ?? null,
+        ownerName: owner?.name ?? null,
+        ownerAvatarUrl: owner?.avatarUrl ?? null,
+        ownerType: owner?.type ?? (createdBy ? 'unknown' : null),
+      }),
+      201,
+    );
   },
   // The KaaB contract (apps/web/content/docs/sdk/sessions.mdx) promises coded
   // 400s for the three structured create fields. Schema validation runs before

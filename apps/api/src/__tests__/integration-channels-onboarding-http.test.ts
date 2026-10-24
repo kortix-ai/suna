@@ -19,9 +19,6 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   accountMembers,
   accounts,
-  memoryLayers,
-  memoryPages,
-  memoryPageVersions,
   projectMembers,
   projectSessions,
   projectSpaces,
@@ -252,16 +249,9 @@ describe('the onboarding state of one member', () => {
     expect((await req('POST', `${base}/spaces`, keys.sam, { name: 'launch' })).status).toBe(201);
     expect((await get()).get_started.create_channel).toBe(true);
 
-    const [general] = await db.select().from(projectSpaces).where(and(eq(projectSpaces.projectId, PROJECT), eq(projectSpaces.isDefault, true)));
-    const [layer] = await db.insert(memoryLayers).values({ projectId: PROJECT, scope: 'channel', spaceId: general!.spaceId, importedAt: new Date() }).returning();
-    const [page] = await db
-      .insert(memoryPages)
-      .values({ layerId: layer!.layerId, projectId: PROJECT, type: 'note', title: 'Launch on Monday', titleKey: 'launch on monday' })
-      .returning();
-    await db.insert(memoryPageVersions).values({
-      pageId: page!.pageId, layerId: layer!.layerId, versionNo: 1, changeId: crypto.randomUUID(), type: 'note', title: 'Launch on Monday',
-      summary: '', body: '', status: 'confirmed', op: 'create', authorKind: 'person', authorUserId: SAM,
-    });
+    // A note or page saved in `#general`'s memory (a Drive write the memory routes make) records this mark;
+    // this suite has no Drive storage, so it records the mark the route writes.
+    await db.insert(projectUserMarks).values({ projectId: PROJECT, userId: SAM, mark: 'get_started.remember' });
     expect((await get()).get_started.remember).toBe(true);
     // Another member's memory does not count for Priya.
     expect(((await (await req('GET', `${base}/onboarding/channels`, keys.priya)).json()) as any).get_started.remember).toBe(false);

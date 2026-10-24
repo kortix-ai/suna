@@ -1,19 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { likePattern, snippetOf } from './search';
+import { snippetOf } from './search';
 
 describe('memory search', () => {
-  test('the title pattern matches q literally: %, _ and \\ are escaped', () => {
-    expect(likePattern('50%')).toBe('%50\\%%');
-    expect(likePattern('q4_launch')).toBe('%q4\\_launch%');
-    expect(likePattern('a\\b')).toBe('%a\\\\b%');
-    expect(likePattern('plain words')).toBe('%plain words%');
-  });
-
-  test('the snippet sits around the first match, without source tokens, with … where it is cut', () => {
-    const body = `## Status\n${'Intro text. '.repeat(30)}Pricing stays at $49 per seat ⟦2⟧ until March. ${'More text. '.repeat(30)}`;
+  test('the snippet sits around the first match, with … where it is cut', () => {
+    const body = `## Status\n${'Intro text. '.repeat(30)}Pricing stays at $49 per seat until March. ${'More text. '.repeat(30)}`;
     const snippet = snippetOf(body, 'per seat');
     expect(snippet).toContain('per seat until March');
-    expect(snippet).not.toContain('⟦');
     expect(snippet.startsWith('…')).toBe(true);
     expect(snippet.endsWith('…')).toBe(true);
     expect(snippet.length).toBeLessThanOrEqual(162);

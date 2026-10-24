@@ -30,7 +30,6 @@ import './pty-read-tool';
 import './pty-spawn-tool';
 import './pty-write-tool';
 import './question-tool';
-import './remember-tool';
 import './read-tool';
 import './removed-connector-tool';
 import './scrape-webpage-tool';

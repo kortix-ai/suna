@@ -494,78 +494,68 @@ rows[0].reply_count; // messages after it; a space list only, null elsewhere
   and `useMarkChannelsOnboarding(pid)`; creating a channel, opening a DM and
   every memory write refresh it.
 
-### Memory pages (experimental)
+### Memory (experimental)
 
-Experimental: every call here needs the project's `project_channels` flag.
-While it is off, every `memory` route returns `403` `feature_disabled`.
+Experimental: every call here needs the project's Files (the `drives` flag).
+While Files are off, every `memory` route returns `403` `feature_disabled`;
+without Drive storage, `503` `drive_storage_unavailable`. The Memory UI is a
+Channels surface (`project_channels`), but these calls do not need that flag.
 
-Memory is a set of pages in 3 kinds of layer: the project's Company layer
-(key `"company"`), one per channel and one per DM (key = the space id). A page
-has one of 4 types (`people`, `decisions`, `workstreams`, `playbooks`); a
-`note` is a Remember-box sentence that an agent has not filed yet. Agents
-write through their `remember` tool, not through these calls. Every write
-records a version, and every change can be undone.
+Memory is the Markdown files of the project's Drive. A layer is one folder:
+the Company layer (key `"company"`, `/Company/Memory`), one per channel
+(key = the space id, `/Company/Channels/<slug>/Memory`) and one per DM
+(key = the space id: the owner's `/Users/<person>/Memory`, with the agent
+folder `Memory/<agent>` listed first). A page is one file. Its type comes
+from front-matter `type:`, else its first folder (`people/`, `decisions/`,
+`workstreams/`, `playbooks/`), else `Notes.md` is `note`, else `other`.
+Agents read and write the same files through their mounts: nothing is
+copied. Sources and "updated by" come from the file's front-matter.
 
 ```ts
 const m = kortix.project(pid).memory;
-const layer = await m.layer(ch.space_id); // counts per type, read_only, can_write; the first read creates it
-const pages = await m.pages.list("company"); // live pages, no bodies (≤ 200)
-const page = await m.pages.create(ch.space_id, { type: "people", title: "Priya", summary: "Runs the Northwind launch" });
-await m.notes.add(ch.space_id, { text: "Priya owns the launch checklist" }); // a `note` page
-const full = await m.pages.get(page.page_id); // body (markdown, ⟦n⟧ cites sources[n]), sources, related, version_no
-await m.pages.update(page.page_id, { base_version: full.version_no, body: "## Role\n- Owns QA" }); // stale base_version → 409 version_conflict
-const { version_id } = await m.pages.delete(page.page_id); // to the trash; without can_delete → 403 forbidden
-await m.undo(version_id); // { pages }: every live page the undo changed; a newer change → 409 superseded
-const { changes, next } = await m.changes(ch.space_id); // Recent changes, newest first
-await m.changes(ch.space_id, { before: next ?? undefined, limit: 20 }); // the next older page
-const { versions } = await m.pages.history(page.page_id); // each version's snapshot; same paging
-await m.pages.restore(page.page_id, versions[1].version_id); // a new version with that content
-const trash = await m.pages.list(ch.space_id, { deleted: true }); // the trash: a page stays 30 days, then is deleted for good
-// restore(pageId, <the version before its delete>) brings it back; a full layer → 409 page_limit
-const toConfirm = await m.pages.list(ch.space_id, { status: "unconfirmed" }); // Needs confirming: facts from outside content
-await m.pages.confirm(toConfirm[0].page_id); // agents read it from now on; a "(to confirm)" page merges into its page (the result); discard is pages.delete
-const { hits } = await m.search({ q: "launch date", type: "decisions" }); // best first; `layer` limits it to one layer
+const layer = await m.layer(ch.space_id); // folder, agent_folder, counts per type, other_files, read_only, can_write
+const pages = await m.pages.list("company"); // one summary per file, newest first (≤ 500), each with its Drive `path`
+const page = await m.pages.create(ch.space_id, { type: "people", title: "Priya", summary: "Runs the Northwind launch" }); // writes people/priya.md
+await m.notes.add(ch.space_id, { text: "Priya owns the launch checklist" }); // one line appended to Notes.md
+const full = await m.pages.get(page.page_id); // body (no front-matter, no title line), sources, related, version_no (mtime)
+await m.pages.update(page.page_id, { base_version: full.version_no, body: "## Role\n- Owns QA" }); // body only; stale → 409 version_conflict
+const { changes } = await m.changes(ch.space_id); // the 20 most recently changed files
+const { versions } = await m.pages.history(page.page_id); // from Drive commits, newest first, ≤ 20
+await m.undo(versions[0].version_id); // { pages }: the version before is written back; an older version → 409 superseded
+await m.pages.delete(page.page_id); // deletes the file for good
+const { hits } = await m.search({ q: "launch date", type: "decisions" }); // title hits first; `layer` limits it to one layer
 const used = await m.usage(sessionId); // a thread's "Used memory": { loaded_at, layers: [{ layer_key, scope, name, pages }] }
 ```
 
 - Errors are `ApiError` with `code`: `409` `title_taken` (`data.page_id`),
-  `page_limit` (200 live pages per layer), `layer_read_only` (archived
-  channel), `version_conflict`, `superseded`, `already_undone`; `413`
-  `page_too_large` (body over 8,192 UTF-8 bytes); `422` `secret_detected`;
-  `404` `memory_not_found` (another member's DM, an unknown id); `409`
-  `not_unconfirmed` (confirm on a confirmed page). None reaches the host
+  `layer_read_only` (archived channel), `version_conflict`, `superseded`;
+  `404` `version_gone` (older than the drive's newest 100 commits: Files →
+  Versions), `memory_not_found` (another member's DM, an unknown id); `403`
+  `forbidden` (no write access to the folder); `413` `page_too_large` (body
+  over 262,144 UTF-8 bytes); `422` `secret_detected`. None reaches the host
   error handler.
-- An agent's fact from outside content (a web page, a URL in the fact) waits
-  as an `unconfirmed` page: agents do not read it until a person confirms it.
 - `search({ q, layer?, type?, limit? })` searches Company, every live channel
-  and the caller's own DMs (or the one `layer`): full text over title, summary
-  and body, then titles that contain `q`. `q` is 2–200 characters (shorter →
-  `400` `invalid_input`), `limit` 1–20 (default 20). Each hit carries
-  `layer_key`, `layer_name`, `scope`, `type`, `title`, `summary`, `snippet`
-  (~160 characters around the first match) and `status`.
-- `usage(sessionId)` lists the pages the thread's agent was given at its first
-  turn, by layer. `loaded_at` is `null` before the first turn; pages deleted
-  since are left out; a thread the caller cannot open → `404`
+  and the caller's own Memory folder (or the one `layer`): case-insensitive
+  text over title and body, title hits first. `q` is 2–200 characters
+  (shorter → `400` `invalid_input`), `limit` 1–20 (default 20).
+- `usage(sessionId)` lists the files the thread's agent was listed at its
+  first turn, by layer. `loaded_at` is `null` before the first turn; files
+  deleted since are left out; a thread the caller cannot open → `404`
   `session_not_found`.
-- A thread's "Saved to memory" line carries `ProjectMemoryRememberResult`
-  (the agent's tool result); pass its `version_id` to `undo`.
-- React: `useProjectMemoryLayer(pid, layerKey)`, `useProjectMemoryPages(pid, layerKey)`,
+- React: `useProjectMemoryLayer(pid, layerKey)`, `useProjectMemoryPages(pid, layerKey, { type? })`,
   `useProjectMemoryChanges(pid, layerKey)` and `useProjectMemoryHistory(pid, pageId)`
-  (infinite queries: `fetchNextPage`), `useProjectMemoryPage(pid, pageId)`; every
-  read takes `{ enabled }`; `useProjectMemoryPages(pid, layerKey, { deleted: true })`
-  reads the trash and `{ status: "unconfirmed" }` Needs confirming, each in its
-  own cache slot. Mutations: `useCreateProjectMemoryPage(pid, layerKey)`,
+  (infinite queries with one page), `useProjectMemoryPage(pid, pageId)`; every
+  read takes `{ enabled }`. Mutations: `useCreateProjectMemoryPage(pid, layerKey)`,
   `useAddProjectMemoryNote(pid, layerKey)`, `useUpdateProjectMemoryPage(pid)`,
-  `useDeleteProjectMemoryPage(pid)`, `useRestoreProjectMemoryPage(pid)`,
-  `useUndoProjectMemoryVersion(pid)`, `useConfirmProjectMemoryPage(pid)`. Each
+  `useDeleteProjectMemoryPage(pid)`, `useUndoProjectMemoryVersion(pid)`. Each
   write refreshes every memory read of the project (`qk.project.memory(pid)`),
   the channel tab counts and the onboarding state.
   `useProjectMemorySearch(pid, { q, layer?, type?, limit? })` runs while `q`
   has 2–200 characters after trimming and keeps the previous hits while the
   next query loads (also when `q` drops below 2: render hits only for a valid
-  `q`); debounce the input in the host. A write refreshes its hits.
+  `q`); debounce the input in the host.
   `useSessionMemoryUsage(pid, sessionId)` reads "Used memory"; once `loaded_at`
-  is set it never goes stale, and no memory write invalidates it.
+  is set it never goes stale.
 
 ### Apps
 
@@ -785,7 +775,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.mobileClientPolicy()` | the operator's mobile release policy, `GET /v1/clients/mobile`, **no token needed** (read before login): resolves `{ minimum_version, store_url_ios, store_url_android }`, each a string or `null`; a non-200 answer throws `ApiError`. A mobile host compares its app version to `minimum_version` with `compareSemver(a, b)` (`-1 \| 0 \| 1`, or `null` when either side does not parse; ignores a leading `v` and `-pre`/`+build` suffixes) and fails open on `null`. Also exported standalone as `getMobileClientPolicy` and the `MobileClientPolicy` type. The operator sets `MOBILE_MIN_VERSION`, `MOBILE_STORE_URL_IOS`, `MOBILE_STORE_URL_ANDROID` on the API |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
-| `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events; `.fire(slug, { payload, dryRun })`; run history `.runs(slug)` / `.projectRuns({ status })`; `.replay(slug, runId)`) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.spaces.{list,create,update,dm,apps,links,summary,generalNotice,onboarding}` (channels and DMs; experimental, `project_channels` flag) · `.memory.{layer,changes,pages,notes,undo,search,usage}` (memory pages; experimental, `project_channels` flag) · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
+| `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events; `.fire(slug, { payload, dryRun })`; run history `.runs(slug)` / `.projectRuns({ status })`; `.replay(slug, runId)`) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.spaces.{list,create,update,dm,apps,links,summary,generalNotice,onboarding}` (channels and DMs; experimental, `project_channels` flag) · `.memory.{layer,changes,pages,notes,undo,search,usage}` (memory files in Drive; experimental, `drives` flag) · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`restore`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`watch`/`setWatch`/`presence`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · runtime REST escape hatches: `stream()` and the deprecated `.runtime` |
 | `kortix.runtime()` | the runtime REST client for the active sandbox (the SDK's own `RuntimeClient`, frozen at the `@opencode-ai/sdk` 1.18.23 route shapes); use a session-scoped handle in multi-tenant code |
 

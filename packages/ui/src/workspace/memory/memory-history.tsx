@@ -1,7 +1,7 @@
 'use client';
 
-import { ApiError, type ProjectMemoryPage, type ProjectMemoryVersion } from '@kortix/sdk';
-import { useProjectMemoryHistory, useRestoreProjectMemoryPage } from '@kortix/sdk/react';
+import type { ProjectMemoryPage, ProjectMemoryVersion } from '@kortix/sdk';
+import { useProjectMemoryHistory, useUpdateProjectMemoryPage } from '@kortix/sdk/react';
 
 import { DiffView } from '../../diff/diff-view';
 import { useLocale, useTranslations } from '../../i18n';
@@ -49,27 +49,19 @@ export function MemoryHistory({
   const t = useTranslations('spaces.memory');
   const history = useProjectMemoryHistory(projectId, page.page_id);
   const versions = history.data?.pages.flatMap((p) => p.versions) ?? [];
-  const restore = useRestoreProjectMemoryPage(projectId);
+  const restore = useUpdateProjectMemoryPage(projectId);
   const selected = selectedId ?? versions[0]?.version_id ?? null;
 
+  // A version comes back as a new edit of the body (the title is the file's and does not change).
   const restoreVersion = (version: ProjectMemoryVersion) =>
     restore.mutate(
-      { pageId: page.page_id, versionId: version.version_id },
+      { pageId: page.page_id, input: { base_version: page.version_no, body: version.snapshot.body } },
       {
         onSuccess: () => {
           successToast(t('history.restored'));
           onRestored();
         },
-        onError: (err) => {
-          const code = err instanceof ApiError ? err.code : null;
-          errorToast(
-            code === 'page_limit'
-              ? t('pageLimit')
-              : code === 'title_taken'
-                ? t('editor.error.titleTaken')
-                : t('history.restoreFailed'),
-          );
-        },
+        onError: () => errorToast(t('history.restoreFailed')),
       },
     );
 

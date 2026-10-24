@@ -27,8 +27,9 @@ const FOLDER_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 /**
  * A space's two folders in the project's Files (drive paths). A channel's are
  * shared with the project: `/Company/Channels/<slug>` and its `Memory`. A DM's
- * are in the member's own folder: `<personal>/Agents/<agent>` and
- * `<personal>/Memory/agents/<agent>`. Null for a DM without a personal folder,
+ * are in the member's own folder: `<personal>/Agents/<agent>` and its
+ * memory `<personal>/Memory/<agent>` (the agent folder of the DM's Memory
+ * tab, which also lists the rest of `<personal>/Memory`). Null for a DM without a personal folder,
  * and for a name that is not one plain path segment (an agent name is not
  * validated as one when the DM is opened).
  * The API (folder create, rename, the session's /drives/README.md) and the web
@@ -45,5 +46,5 @@ export function spaceDriveFolders(
     return { files, memory: `${files}/Memory` };
   }
   if (!personalFolder) return null;
-  return { files: `${personalFolder}/Agents/${name}`, memory: `${personalFolder}/Memory/agents/${name}` };
+  return { files: `${personalFolder}/Agents/${name}`, memory: `${personalFolder}/Memory/${name}` };
 }

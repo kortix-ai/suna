@@ -1291,6 +1291,16 @@
           "name": "Canali",
           "description": "Organizza il lavoro in canali. Ogni nuovo messaggio in un canale o in un messaggio diretto con un agente avvia un thread. Sostituisce l'elenco delle sessioni nella barra laterale."
         }
+      },
+      "channelsSwitch": {
+        "onTitle": "Attivare i Canali per {project}?",
+        "onBody": "Tutti in questo progetto ottengono Canali e Messaggi diretti al posto dell’elenco delle sessioni. Tutte le sessioni esistenti passano in #general. Puoi disattivarlo in qualsiasi momento; non viene eliminato nulla.",
+        "drive": "Attiva anche Drive, così i canali hanno i File.",
+        "turnOn": "Attiva",
+        "cancel": "Annulla",
+        "offTitle": "Disattivare i Canali?",
+        "offBody": "Canali, memoria, file e link restano salvati. L’elenco delle sessioni torna per tutti.",
+        "turnOff": "Disattiva"
       }
     },
     "upgrades": {
@@ -1786,7 +1796,8 @@
       "channels": "Canali",
       "directMessages": "Messaggi diretti",
       "addChannel": "Aggiungi canale",
-      "loadError": "Impossibile caricare i canali."
+      "loadError": "Impossibile caricare i canali.",
+      "newAgent": "Nuovo agente"
     }
   },
   "dashboard": {
@@ -22798,34 +22809,21 @@
       "search": "Cerca nella memoria",
       "pagesLabel": "Pagine di memoria",
       "allPages": "Tutte le pagine",
-      "type": {
-        "people": "Persone",
-        "decisions": "Decisioni",
-        "workstreams": "Filoni di lavoro",
-        "playbooks": "Procedure",
-        "note": "Note"
-      },
-      "needsConfirming": "Da confermare",
       "noMatches": "Nessuna pagina corrisponde a “{query}”.",
       "loadError": "Impossibile caricare questa memoria.",
       "pageLoadError": "Impossibile caricare questa pagina.",
       "retry": "Riprova",
       "close": "Chiudi",
       "loadOlder": "Mostra precedenti",
-      "updatedBy": "Aggiornata da {author}",
       "fromThread": "da “{thread}”",
       "author": {
         "system": "Kortix",
         "unknown": "Un membro"
       },
       "edit": "Modifica",
-      "more": "Altre azioni",
-      "copyLink": "Copia link",
-      "linkCopied": "Link copiato",
-      "copyFailed": "Impossibile copiare il link.",
       "delete": "Elimina",
-      "deleteTitle": "Eliminare questa pagina?",
-      "deleteDescription": "Gli agenti smettono di vedere “{title}” dal turno successivo. Puoi annullare da Modifiche recenti.",
+      "deleteTitle": "Eliminare “{title}”?",
+      "deleteDescription": "L’operazione non si può annullare.",
       "deleted": "Pagina eliminata",
       "deleteFailed": "Impossibile eliminare la pagina. Riprova.",
       "undo": "Annulla",
@@ -22833,35 +22831,8 @@
       "undoFailed": "Impossibile annullare la modifica. Riprova.",
       "superseded": "La pagina è cambiata dopo questa modifica. Apri la Cronologia per ripristinare una versione precedente.",
       "alreadyUndone": "Questa modifica è già stata annullata.",
-      "undoUnavailable": "La pagina è cambiata dopo questa modifica, quindi non si può annullare.",
-      "view": "Vedi",
       "relatedPages": "Pagine correlate",
-      "pageLimit": "Questa memoria ha 200 pagine, il suo limite. Elimina prima una pagina.",
       "emptyPage": "Questa pagina è ancora vuota.",
-      "recent": {
-        "added": "{author} ha aggiornato questa pagina {time}: aggiunto “{fact}”",
-        "updated": "{author} ha aggiornato questa pagina {time}",
-        "created": "{author} ha creato questa pagina {time}",
-        "viewChange": "Vedi modifica"
-      },
-      "changes": {
-        "title": "Modifiche recenti",
-        "empty": "Ancora nessuna modifica.",
-        "loadError": "Impossibile caricare le modifiche recenti.",
-        "viewPage": "Vedi {title}",
-        "undoPage": "Annulla la modifica a {title}",
-        "op": {
-          "create": "{author} ha creato <page>{title}</page>",
-          "update": "{author} ha modificato <page>{title}</page>",
-          "append": "{author} ha aggiunto a <page>{title}</page>",
-          "delete": "{author} ha eliminato <page>{title}</page>",
-          "restore": "{author} ha ripristinato <page>{title}</page>",
-          "undo": "{author} ha annullato una modifica a <page>{title}</page>",
-          "confirm": "{author} ha confermato <page>{title}</page>",
-          "file_note": "{author} ha archiviato una nota in <page>{title}</page>",
-          "import": "{author} ha importato <page>{title}</page>"
-        }
-      },
       "history": {
         "title": "Cronologia",
         "description": "Ogni modifica a “{title}”, dalla più recente.",
@@ -22884,12 +22855,7 @@
         }
       },
       "editor": {
-        "title": "Titolo",
-        "type": "Tipo",
-        "summary": "Riepilogo",
-        "summaryPlaceholder": "Una riga che gli agenti vedono nell’elenco delle pagine",
         "body": "Pagina",
-        "bodyHint": "Markdown. Una riga che inizia con ## apre una sezione; ⟦1⟧ cita la fonte 1.",
         "save": "Salva",
         "cancel": "Annulla",
         "saved": "Pagina salvata",
@@ -22897,7 +22863,6 @@
         "reload": "Ricarica",
         "error": {
           "tooLarge": "Questa pagina supera 8 KB. Accorciala.",
-          "titleTaken": "Un’altra pagina ha già questo titolo.",
           "secret": "Sembra un segreto. Conserva i segreti in Segreti.",
           "readOnly": "Questa memoria è di sola lettura.",
           "failed": "Impossibile salvare la pagina. Riprova."
@@ -22909,32 +22874,17 @@
         "hint": "Salvato come nota con il tuo nome",
         "send": "Salva nella memoria",
         "status": {
-          "saved": "Salvato in Note",
           "secret": "Sembra un segreto. Conserva i segreti in Segreti.",
-          "limit": "Questa memoria ha 200 pagine, il suo limite. Elimina prima una pagina.",
           "readOnly": "Questa memoria è di sola lettura.",
           "failed": "Impossibile salvare. Riprova."
-        }
+        },
+        "open": "Ricorda questo…"
       },
       "empty": {
-        "title": "{place} non ha ancora memoria",
-        "titleDm": "Ancora nessuna memoria con {place}",
-        "description": "Gli agenti salvano ciò su cui questo canale si accorda, così ogni nuovo thread parte da lì. Ogni fatto rimanda al thread da cui proviene; modifica o annulla qualsiasi cambiamento.",
-        "descriptionDm": "{place} salva ciò su cui vi accordate in questa conversazione, così ogni nuovo thread parte da lì. Ogni fatto rimanda al thread da cui proviene; modifica o annulla qualsiasi cambiamento.",
-        "example": {
-          "people": "Northwind — il referente è Sam, rinnovo a marzo",
-          "decisions": "Il prezzo resta 49 $ per postazione",
-          "workstreams": "Lancio Q4 — stato, responsabile, prossimi passi",
-          "playbooks": "Come scriviamo le note di rilascio"
-        },
-        "tryOne": "Provane una",
-        "try": {
-          "one": "Il nostro lancio è il 12 nov.",
-          "two": "Priya approva tutti i testi del lancio",
-          "three": "Scrivi in parole semplici, senza enfasi"
-        },
-        "titleCompany": "Ancora niente nella memoria aziendale",
-        "descriptionCompany": "Gli agenti salvano ciò su cui tutto il progetto concorda, così ogni nuovo thread di ogni canale parte da lì. Ogni fatto rimanda al thread da cui proviene; modifica o annulla qualsiasi cambiamento."
+        "title": "Ciò che Kortix ricorda di questo canale.",
+        "titleDm": "Ciò che Kortix ricorda di questa conversazione.",
+        "description": "Legge queste pagine prima di ogni risposta.",
+        "titleCompany": "Ciò che Kortix ricorda di questo progetto."
       },
       "source": {
         "thread": "Apri il thread “{label}”",
@@ -22944,20 +22894,6 @@
         "person": "Aggiunto da {label}",
         "import": "Importato da {label}"
       },
-      "saved": {
-        "running": "Salvataggio nella memoria…",
-        "channel": "Salvato nella memoria di {place}: <page>{title}</page>",
-        "dm": "Salvato nella tua memoria con {place}: <page>{title}</page>",
-        "company": "Salvato nella memoria aziendale: <page>{title}</page>",
-        "failed": "Non salvato nella memoria: {reason}",
-        "view": "Vedi",
-        "undo": "Annulla",
-        "undone": "Annullato",
-        "superseded": "Modificato nel frattempo —",
-        "openHistory": "apri la Cronologia",
-        "undoFailed": "Impossibile annullare.",
-        "failedGeneric": "Non salvato nella memoria."
-      },
       "used": {
         "label": "Ha usato la memoria di {places} · {count, plural, one {# pagina} other {# pagine}}",
         "title": "Pagine con cui è iniziato questo thread",
@@ -22966,14 +22902,6 @@
       },
       "searchError": "Impossibile cercare in questa memoria.",
       "searchResults": "Risultati della ricerca",
-      "searchTool": {
-        "title": "Ricerca nella memoria",
-        "count": "{count, plural, one {# pagina} other {# pagine}}",
-        "running": "Ricerca nella memoria…",
-        "failed": "Ricerca nella memoria non riuscita: {reason}",
-        "failedGeneric": "Ricerca nella memoria non riuscita.",
-        "none": "Nessuna pagina corrisponde a “{query}”."
-      },
       "palette": {
         "heading": "Memoria"
       },
@@ -22989,34 +22917,15 @@
         "saveTo": "Salva in",
         "dm": "La tua memoria con {agent}"
       },
-      "archivedReadOnly": "{place} è archiviato. La sua memoria è di sola lettura.",
-      "pending": {
-        "note": "Gli agenti non usano queste pagine finché qualcuno non le conferma.",
-        "from": "Da {host}",
-        "banner": "Da {host}. Gli agenti non lo usano finché qualcuno non lo conferma.",
-        "bannerNoHost": "Da fuori dal thread. Gli agenti non lo usano finché qualcuno non lo conferma.",
-        "confirm": "Conferma",
-        "confirmPage": "Conferma {title}",
-        "discard": "Scarta",
-        "discardPage": "Scarta {title}",
-        "cancel": "Annulla",
-        "confirmed": "Pagina confermata. Gli agenti possono usarla ora.",
-        "alreadyConfirmed": "Qualcuno ha già confermato questa pagina.",
-        "confirmFailed": "Impossibile confermare la pagina. Riprova.",
-        "discarded": "Pagina scartata",
-        "discardFailed": "Impossibile scartare la pagina. Riprova."
+      "updated": "Aggiornata {time} da {author}",
+      "updatedAt": "Aggiornata {time}",
+      "sourceKind": {
+        "thread": "thread",
+        "person": "messaggio",
+        "outside": "link",
+        "import": "file"
       },
-      "trash": {
-        "title": "Cestino",
-        "note": "Le pagine eliminate restano qui 30 giorni, poi vengono eliminate per sempre.",
-        "loadError": "Impossibile caricare il cestino.",
-        "restore": "Ripristina",
-        "restorePage": "Ripristina {title}",
-        "restored": "Pagina ripristinata",
-        "titleTaken": "Esiste già una pagina con questo titolo. Rinominala, poi ripristina questa.",
-        "restoreFailed": "Impossibile ripristinare la pagina. Riprova.",
-        "allTrashed": "Tutte le pagine sono nel cestino."
-      }
+      "pageCount": "{count, plural, one {# pagina} other {# pagine}}"
     },
     "create": {
       "title": "Crea un canale",
@@ -23116,10 +23025,8 @@
       "roster": "{people} · {agents}",
       "rosterPeople": "{count, plural, one {# persona} other {# persone}}",
       "rosterAgents": "{count, plural, one {# agente} other {# agenti}}",
-      "rosterHint": "Persone e agenti nei thread di questo canale",
       "copyLink": "Copia il link al thread",
       "linkCopied": "Link copiato",
-      "started": "Avviato {time}",
       "notice": {
         "unreachable": "Contatto perso con il computer di questo thread. I messaggi inviati restano in coda finché non si riconnette.",
         "unreachableMidTurn": "Contatto perso con il computer di questo thread mentre un turno è ancora aperto. I messaggi inviati restano in coda finché non risponde.",
@@ -23166,7 +23073,12 @@
       "appsLoadError": "Impossibile caricare le app.",
       "triggers": {
         "loadError": "Impossibile caricare i trigger."
-      }
+      },
+      "reply": "Rispondi",
+      "rosterTitlePeople": "Persone",
+      "rosterTitleAgents": "Agenti",
+      "viewAllMembers": "Vedi tutti i membri",
+      "agentThreads": "{count, plural, one {# thread} other {# thread}}"
     },
     "details": {
       "about": "Informazioni",
@@ -23175,14 +23087,23 @@
       "description": "Descrizione",
       "noDescription": "Aggiungi una descrizione",
       "created": "Creato",
-      "edit": "Modifica",
       "editField": "Modifica {field}",
       "archiveTitle": "Archivia questo canale",
       "archiveHint": "Esce dalla barra laterale di tutti i membri. I suoi thread restano.",
       "archive": "Archivia",
       "people": "Persone",
       "agents": "Agenti",
-      "membersHint": "Chi ha avviato un thread qui e ogni agente che ne ha risposto uno, nei thread caricati finora."
+      "membersHint": "Chi ha avviato un thread qui e ogni agente che ne ha risposto uno, nei thread caricati finora.",
+      "threads": "{count, plural, one {# thread} other {# thread}}",
+      "find": "Cerca persone o agenti",
+      "addPeople": "Aggiungi persone",
+      "you": "(tu)",
+      "groupCount": "{label} · {count}",
+      "noMatches": "Nessuno corrisponde a «{query}».",
+      "defaultAgent": "Agente predefinito",
+      "defaultAgentHint": "Risponde ai messaggi che non nominano un agente. Si imposta per tutto il progetto in Personalizza › Agenti.",
+      "visibility": "Chi può vederlo",
+      "visibilityProject": "Tutti nel progetto"
     },
     "folder": {
       "memory": "Memoria",
@@ -23194,6 +23115,26 @@
         "description": "File e memoria di {place} sono in Drive. Attiva Volumes in Feature flags per usarli.",
         "descriptionMember": "File e memoria di {place} sono in Drive. Chiedi a un amministratore del progetto di attivarlo.",
         "action": "Apri Feature flags"
+      }
+    },
+    "onboarding": {
+      "reenabled": "Qui ci sono le sessioni avviate mentre i Canali erano disattivati.",
+      "intro": {
+        "title": "Le tue sessioni ora sono thread in #general.",
+        "channels": "I canali raggruppano il lavoro per team.",
+        "threads": "Ogni nuovo messaggio avvia un thread.",
+        "memory": "Gli agenti ricordano ciò che ogni canale decide.",
+        "gotIt": "Ho capito"
+      },
+      "getStarted": {
+        "title": "Per iniziare",
+        "dismiss": "Chiudi",
+        "channel": "Crea un canale per un team",
+        "remember": "Di’ a {place} qualcosa da ricordare",
+        "dm": "Apri un messaggio diretto con un agente",
+        "pickAgent": "Scrivi a un agente",
+        "noAgents": "Questo progetto non ha ancora agenti.",
+        "done": "Fatto"
       }
     }
   }

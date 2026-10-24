@@ -3,7 +3,6 @@ import { ApiError } from '../../http/api/errors';
 import { configureKortix } from '../../http/config';
 import {
   addProjectMemoryNote,
-  confirmProjectMemoryPage,
   createProjectMemoryPage,
   deleteProjectMemoryPage,
   getProjectMemoryLayer,
@@ -12,7 +11,6 @@ import {
   listProjectMemoryChanges,
   listProjectMemoryHistory,
   listProjectMemoryPages,
-  restoreProjectMemoryPage,
   searchProjectMemory,
   undoProjectMemoryVersion,
   updateProjectMemoryPage,
@@ -50,9 +48,13 @@ const layer: ProjectMemoryLayer = {
   scope: 'channel',
   space_id: SPACE,
   name: '#launch',
-  counts: { people: 1, decisions: 0, workstreams: 1, playbooks: 0, note: 0, unconfirmed: 0, trash: 0 },
+  counts: { people: 1, decisions: 0, workstreams: 1, playbooks: 0, note: 0, other: 2, unconfirmed: 0, trash: 0 },
   read_only: false,
   can_write: true,
+  folder: '/Company/Channels/launch/Memory',
+  agent_folder: null,
+  drive_id: '00000000-0000-4000-8000-0000000000d1',
+  other_files: 1,
 };
 
 const page: ProjectMemoryPage = {
@@ -65,7 +67,8 @@ const page: ProjectMemoryPage = {
   updated_at: '2026-10-23T00:00:00.000Z',
   updated_by: { kind: 'person', user_id: 'U1', name: 'Priya', agent: null },
   updated_source: null,
-  body: '## Role\n- Owns the launch ⟦1⟧',
+  path: '/Company/Channels/launch/Memory/people/priya.md',
+  body: '## Role\n- Owns the launch [1]',
   sources: [
     { number: 1, kind: 'person', session_id: null, message_id: null, label: 'Priya', url: null, thread_href_hint: null },
   ],
@@ -89,27 +92,16 @@ test('getProjectMemoryLayer reaches the Company layer by the key company', async
 
 test('listProjectMemoryPages GETs the layer pages and returns the array', async () => {
   const { body: _b, sources: _s, related: _r, version_no: _v, can_edit: _e, can_delete: _d, ...summary } = page;
-  nextResponse = { status: 200, body: { pages: [summary] } };
+  nextResponse = { status: 200, body: { pages: [summary], truncated: false } };
   expect(await listProjectMemoryPages('P1', 'company')).toEqual([summary]);
   expect(calls).toEqual([{ url: `${base}/layers/company/pages`, method: 'GET', body: undefined }]);
 });
 
-test('listProjectMemoryPages lists the trash with deleted: true, and filters by type and status', async () => {
-  nextResponse = { status: 200, body: { pages: [] } };
-  await listProjectMemoryPages('P1', SPACE, { deleted: true });
+test('listProjectMemoryPages filters by type and status', async () => {
+  nextResponse = { status: 200, body: { pages: [], truncated: false } };
+  await listProjectMemoryPages('P1', SPACE, { type: 'other' });
   await listProjectMemoryPages('P1', SPACE, { type: 'people', status: 'unconfirmed' });
-  await listProjectMemoryPages('P1', SPACE, { deleted: false });
-  expect(calls.map((c) => c.url)).toEqual([
-    `${base}/layers/${SPACE}/pages?deleted=1`,
-    `${base}/layers/${SPACE}/pages?type=people&status=unconfirmed`,
-    `${base}/layers/${SPACE}/pages`,
-  ]);
-});
-
-test('confirmProjectMemoryPage POSTs to the page confirm route and returns the page agents now read', async () => {
-  nextResponse = { status: 200, body: page };
-  expect(await confirmProjectMemoryPage('P1', PAGE)).toEqual(page);
-  expect(calls).toEqual([{ url: `${base}/pages/${PAGE}/confirm`, method: 'POST', body: undefined }]);
+  expect(calls.map((c) => c.url)).toEqual([`${base}/layers/${SPACE}/pages?type=other`, `${base}/layers/${SPACE}/pages?type=people&status=unconfirmed`]);
 });
 
 test('createProjectMemoryPage POSTs the input to the layer pages', async () => {
@@ -173,12 +165,6 @@ test('listProjectMemoryHistory passes the before cursor', async () => {
   expect(calls[0]!.url).toBe(`${base}/pages/${PAGE}/history?before=V9`);
 });
 
-test('restoreProjectMemoryPage POSTs the version to restore', async () => {
-  nextResponse = { status: 200, body: page };
-  expect(await restoreProjectMemoryPage('P1', PAGE, VERSION)).toEqual(page);
-  expect(calls).toEqual([{ url: `${base}/pages/${PAGE}/restore`, method: 'POST', body: { version_id: VERSION } }]);
-});
-
 test('undoProjectMemoryVersion POSTs to the version undo and returns every page the undo changed', async () => {
   nextResponse = { status: 200, body: { pages: [page] } };
   expect(await undoProjectMemoryVersion('P1', VERSION)).toEqual({ pages: [page] });
@@ -222,14 +208,14 @@ test('getSessionMemoryUsage GETs the thread memory-usage route', async () => {
 test.each([
   ['searchProjectMemory', 400, 'invalid_input', () => searchProjectMemory('P1', { q: 'x' })],
   ['getSessionMemoryUsage', 404, 'session_not_found', () => getSessionMemoryUsage('P1', 'T1')],
-  ['updateProjectMemoryPage', 409, 'version_conflict', () => updateProjectMemoryPage('P1', PAGE, { base_version: 2 })],
+  ['updateProjectMemoryPage', 409, 'version_conflict', () => updateProjectMemoryPage('P1', PAGE, { base_version: 2, body: 'x' })],
   ['createProjectMemoryPage', 409, 'title_taken', () => createProjectMemoryPage('P1', SPACE, { type: 'people', title: 'Priya' })],
   ['createProjectMemoryPage', 413, 'page_too_large', () => createProjectMemoryPage('P1', SPACE, { type: 'playbooks', title: 'Big', body: 'x' })],
   ['addProjectMemoryNote', 422, 'secret_detected', () => addProjectMemoryNote('P1', SPACE, { text: 'a key' })],
   ['undoProjectMemoryVersion', 409, 'superseded', () => undoProjectMemoryVersion('P1', VERSION)],
   ['getProjectMemoryLayer', 404, 'memory_not_found', () => getProjectMemoryLayer('P1', SPACE)],
-  ['confirmProjectMemoryPage', 409, 'not_unconfirmed', () => confirmProjectMemoryPage('P1', PAGE)],
-  ['restoreProjectMemoryPage', 409, 'page_limit', () => restoreProjectMemoryPage('P1', PAGE, VERSION)],
+  ['undoProjectMemoryVersion', 404, 'version_gone', () => undoProjectMemoryVersion('P1', VERSION)],
+  ['getProjectMemoryLayer', 503, 'drive_storage_unavailable', () => getProjectMemoryLayer('P1', 'company')],
 ] as const)('%s rejects %i with ApiError code %s and never reaches the host error handler', async (_name, status, code, call) => {
   nextResponse = { status, body: { error: 'rejected', code, page_id: PAGE } };
   const error = await call().catch((e: unknown) => e);

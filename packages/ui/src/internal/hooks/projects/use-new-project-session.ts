@@ -103,6 +103,11 @@ import { randomUUID } from '../../lib/utils/random-uuid';
  */
 export type NewProjectSessionOpts = {
   onNavigate?: (sessionId: string) => void;
+  /**
+   * Runs with the client-minted id right before the create POST (never on the
+   * warm path). A space draws its optimistic thread row here; `onError` takes it back.
+   */
+  onCreating?: (sessionId: string) => void;
   onError?: () => void;
   scope?: SessionScopeCommit;
   create?: {
@@ -170,6 +175,7 @@ function makeTakeOrCreateSession(
 
         const sessionId = randomUUID();
         markSessionFresh(sessionId);
+        opts.onCreating?.(sessionId);
         if (!opts.create?.space_id) router.prefetch(uiRoutes().session(projectId, sessionId));
         let created: ProjectSession | undefined;
         try {

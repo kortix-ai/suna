@@ -1,4 +1,4 @@
--- Migration: memory_page_versions_change_id
+-- Migration: memory_thread_loads
 --
 -- SAFETY HEADER (house rules -- see packages/db/MIGRATIONS.md#zero-downtime-rules).
 -- Tune these down further for large/hot tables; raise statement_timeout only
@@ -21,16 +21,17 @@ set statement_timeout = '30s';
 --   [ ] Any ALTER TYPE ... ADD VALUE needs:
 -- enum-value-checked: <how you verified every env, including any faked baseline, has this value>
 
--- memory_page_versions.change_id: one id shared by every version row one change
--- writes (both pages of a file_note), so one Undo restores all of them.
--- kortix.memory_page_versions was created empty by 20261024105000007 and no
--- code writes it yet, so it is still empty here: the bare NOT NULL column needs
--- no backfill, and the plain CREATE INDEX takes no lock on a populated table
--- (no .concurrent.ts needed).
+-- Memory is Markdown files in Drive; the database keeps only "Used memory":
+-- the files a thread's first turn was listed (one row per session, written
+-- once). Replaces the unshipped memory_pages migrations of this branch.
+-- A new, empty table: the FK validates no rows, and RLS on with no policy
+-- (API-only) matches kortix.project_space_links.
 
--- The table is empty (see above): no existing row needs a value.
--- squawk-ignore adding-required-field
-ALTER TABLE "kortix"."memory_page_versions" ADD COLUMN "change_id" uuid NOT NULL;--> statement-breakpoint
--- The table is empty (see above): the build blocks no real writes.
--- squawk-ignore require-concurrent-index-creation
-CREATE INDEX "idx_memory_page_versions_change" ON "kortix"."memory_page_versions" USING btree ("change_id");
+CREATE TABLE "kortix"."memory_thread_loads" (
+	"session_id" text PRIMARY KEY NOT NULL,
+	"first_loaded_at" timestamp with time zone NOT NULL,
+	"layers" jsonb NOT NULL
+);
+--> statement-breakpoint
+ALTER TABLE "kortix"."memory_thread_loads" ADD CONSTRAINT "memory_thread_loads_session_id_project_sessions_session_id_fk" FOREIGN KEY ("session_id") REFERENCES "kortix"."project_sessions"("session_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "kortix"."memory_thread_loads" ENABLE ROW LEVEL SECURITY;

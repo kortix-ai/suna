@@ -141,6 +141,6 @@ export { registerRuntimeFork } from './lib/runtime-session-snapshot';
 export { turnOnChannels } from './lib/project-spaces';
 export { recordChannelsReenabled } from './lib/channels-onboarding';
 
-// Author names of memory pages (consumed by ../memory/serialize.ts).
+// Author names written into memory files (consumed by ../memory/layers.ts).
 export { resolveUserIdentities } from './lib/user-identity';
 export { readPublicResponse } from './lib/public-response';

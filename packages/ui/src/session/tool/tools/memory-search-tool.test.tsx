@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { ToolSurfaceContext } from '../shared/infrastructure';
-import { hitPreview, MemoryPageSearchTool, MemorySearchTool, parseMemoryPageSearch } from './memory-search-tool';
+import { hitPreview, MemorySearchTool } from './memory-search-tool';
 
 // memory-search on the shared grammar: `BasicTool` shell, no bespoke chrome,
 // and each hit FOLDED behind its own identity line rather than laid out flat.
@@ -180,66 +180,5 @@ describe('hitPreview', () => {
 
   test('a short single-line memory is shown whole', () => {
     expect(hitPreview('User prefers dark mode')).toBe('User prefers dark mode');
-  });
-});
-
-// The `memory_search` platform tool's text (kortixd `formatHits`), synthetic pages.
-const PAGE_HITS = [
-  '2 memory pages match "launch". Read a page at its path before relying on details.',
-  '- [Company] Q4 launch — Status, owner, next steps (/opt/kortix/memory/company/workstreams/q4-launch.md)',
-  '  We launch on Nov 12 (Launch plan).',
-  "- [#marketing] Launch copy (not in this thread's copy yet; it is there from the next message)",
-].join('\n');
-
-describe('parseMemoryPageSearch', () => {
-  test('reads each page line and its snippet', () => {
-    expect(parseMemoryPageSearch(PAGE_HITS)).toEqual({
-      state: 'hits',
-      hits: [
-        {
-          layer: 'Company',
-          title: 'Q4 launch',
-          summary: 'Status, owner, next steps',
-          path: '/opt/kortix/memory/company/workstreams/q4-launch.md',
-          snippet: 'We launch on Nov 12 (Launch plan).',
-        },
-        { layer: '#marketing', title: 'Launch copy', summary: '', path: null, snippet: '' },
-      ],
-    });
-  });
-
-  test('no match, a refusal, and legacy output', () => {
-    expect(parseMemoryPageSearch('No memory page matches "zz". Pages you save with `remember` are found here.')).toEqual({ state: 'none' });
-    expect(parseMemoryPageSearch('Error: invalid_input: query must be 2 to 200 characters')).toEqual({
-      state: 'error',
-      reason: 'query must be 2 to 200 characters',
-    });
-    expect(parseMemoryPageSearch(SEARCH_OUTPUT)).toBeNull();
-  });
-});
-
-describe('MemoryPageSearchTool', () => {
-  const messages = {
-    ...HARDCODED_UI_MESSAGES,
-    spaces: { memory: { searchTool: { title: 'Searched memory', count: '{count, plural, one {# page} other {# pages}}' } } },
-  };
-  const render = (output: string) =>
-    renderToStaticMarkup(
-      <IntlTestProvider locale="en" messages={messages} onError={() => {}}>
-        <MemoryPageSearchTool call={toolCallBlock(makePart({ query: 'launch' }, output))} defaultOpen />
-      </IntlTestProvider>,
-    );
-
-  test('draws the pages with their layer', () => {
-    const html = render(PAGE_HITS);
-    expect(html).toContain('Searched memory');
-    expect(html).toContain('2 pages');
-    expect(html).toContain('#marketing');
-    expect(html).toContain('Q4 launch');
-    expect(html).toContain('We launch on Nov 12');
-  });
-
-  test('legacy output falls back to the legacy renderer', () => {
-    expect(render(SEARCH_OUTPUT)).toContain('mem_204');
   });
 });

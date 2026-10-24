@@ -8,14 +8,12 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
-import { toolAllowed, type CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
+import type { CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
 import { AGENT_ENV_FILE } from '@kortix/api-contract/sandbox-layout'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
 import { logger } from '@/lib/log/logger'
 import imageSearch from './kortix/image_search'
 import memory from './kortix/memory'
-import memorySearch from './platform/memory_search'
-import remember from './platform/remember'
 import scrapeWebpage from './kortix/scrape_webpage'
 import show from './kortix/show'
 import webSearch from './kortix/web_search'
@@ -37,18 +35,9 @@ export const KORTIX_TOOLS: Readonly<Record<string, KortixTool>> = {
   show,
 }
 
-/**
- * The platform tools: Kortix's own, loaded in every channel or DM thread
- * (`KORTIX_SPACE_ID`, set only with `project_channels` on), whatever
- * `kortix_tools` lists. kortix.yaml cannot list or eject them; a project tool
- * of the same name replaces one in that project. An agent's tool access keeps
- * them under an allowlist and removes one only by name (`hostedToolAllowed`).
- */
-export const PLATFORM_TOOLS: Readonly<Record<string, KortixTool>> = { remember, memory_search: memorySearch }
-
 export interface HostedTool extends KortixTool {
   name: string
-  /** `kortix` for a Kortix tool, `platform` for a platform tool, else the project module's repo-relative path. */
+  /** `kortix` for a Kortix tool, else the project module's repo-relative path. */
   source: string
 }
 
@@ -68,13 +57,11 @@ let loaded = new Map<string, HostedTool>()
  * to `root`, the checkout the runtime reads its config from); one with a
  * Kortix tool's name replaces it. A module is imported again when its file
  * changed since the last load. A module that fails to load is reported and
- * skipped; the rest still load. Last, the platform tools, in a channel or DM
- * thread only, each unless a project tool already has its name.
+ * skipped; the rest still load.
  */
 export async function loadTools(
   root: string | null,
   compiled: Pick<CompiledAgentSet, 'project_tools' | 'kortix_tools'> | null | undefined,
-  env: Record<string, string | undefined> = sessionEnv(),
 ): Promise<ToolLoad> {
   const kortix = Object.entries(KORTIX_TOOLS).filter(([name]) => !compiled?.kortix_tools || compiled.kortix_tools.includes(name))
   const tools = new Map<string, HostedTool>(kortix.map(([name, tool]) => [name, { ...tool, name, source: 'kortix' }]))
@@ -88,10 +75,6 @@ export async function loadTools(
   // release, whose agent may call none of these tools): not a load failure.
   if (failed.length > 0 && !root) logger.info('[tools] no project tree is served; project tools are not loaded', { tools: failed.map(({ name }) => name) })
   else if (failed.length > 0) logger.warn('[tools] project tools that did not load', { failed })
-  for (const [name, tool] of env.KORTIX_SPACE_ID?.trim() ? Object.entries(PLATFORM_TOOLS) : []) {
-    if (tools.has(name)) logger.warn('[tools] a project tool replaces the platform tool of its name', { tool: name, source: tools.get(name)!.source })
-    else tools.set(name, { ...tool, name, source: 'platform' })
-  }
   loaded = tools
   return { tools: [...tools.values()], failed }
 }
@@ -139,16 +122,6 @@ export function sessionEnv(file: string = AGENT_ENV_FILE): Record<string, string
 /** A tool of the last load. */
 export function hostedTool(name: string): HostedTool | undefined {
   return loaded.get(name)
-}
-
-/**
- * `toolAllowed` for a tool of the last load: an allowlist (`*: false`) keeps a
- * platform tool, so only an entry that names it removes it. A project tool of
- * a platform tool's name gets no such exception.
- */
-export function hostedToolAllowed(tools: Record<string, boolean> | undefined, name: string): boolean {
-  if (tools && !Object.hasOwn(tools, name) && loaded.get(name)?.source === 'platform') return true
-  return toolAllowed(tools, name)
 }
 
 /** Run a tool: its text, bounded. A thrown error is the tool's error. */

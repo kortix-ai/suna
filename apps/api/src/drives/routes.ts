@@ -48,12 +48,10 @@ import {
 import {
   type DriveRow,
   driveStats,
+  driveSubjectFor,
   enforceProjectMounts,
-  ensurePersonalFolder,
   ensureProjectDrive,
   getDrive,
-  groupIdsOf,
-  listFolderGrants,
   moveDriveFolder,
   openConflictRows,
   readDriveVolume,
@@ -194,12 +192,7 @@ interface Caller {
   personalFolder: string;
 }
 
-/**
- * The person behind the request, as the folder rules see them: a project
- * admin (may change the project) manages every folder but people's own; who
- * may run sessions in the project reaches grants to the whole project; and
- * grants to them or their teams.
- */
+/** The person behind the request on `drive` (`driveSubjectFor`), after the HTTP refusals. */
 async function callerOn(c: DriveContext, drive: DriveRow): Promise<Caller> {
   const userId = callerId(c);
   const projectId = drive.projectId!;
@@ -211,15 +204,7 @@ async function callerOn(c: DriveContext, drive: DriveRow): Promise<Caller> {
     const { error } = featureDisabledBody('drives');
     fail(403, error, 'feature_disabled');
   }
-  const [projectMember, admin, groupIds] = await Promise.all([
-    mayUseProject(c, projectId, 'session'),
-    mayUseProject(c, projectId, 'write'),
-    groupIdsOf(userId, drive.accountId),
-  ]);
-  let grants = await listFolderGrants(drive);
-  const personalFolder = await ensurePersonalFolder(drive, userId, grants);
-  if (!grants.some((g) => g.path === personalFolder)) grants = await listFolderGrants(drive);
-  return { drive, userId, grants, personalFolder, subject: { userId, groupIds, projectMember, admin } };
+  return { drive, ...(await driveSubjectFor(drive, userId, (action) => mayUseProject(c, projectId, action))) };
 }
 
 async function loadDrive(c: DriveContext): Promise<Caller> {

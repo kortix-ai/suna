@@ -2,17 +2,21 @@
 
 import { ApiError, type ProjectSession, type ProjectSpace } from '@kortix/sdk';
 import {
+  updateCachedProjectSessions,
   useOpenProjectDm,
   useProjectSpaces,
   useProjectSpaceSummary,
   useSession,
+  useSessionPrompts,
   useUpdateProjectSpace,
 } from '@kortix/sdk/react';
-import { CaretDownIcon, HashIcon, RobotIcon } from '@phosphor-icons/react';
+import { CaretDownIcon, HashIcon } from '@phosphor-icons/react';
+import { useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useTranslations } from '../../i18n';
 import { Close } from '../../icons/close';
+import { AgentMark } from '../../internal/components/agent-mark';
 import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
 import { MemoryView, useMemoryPageCount } from '../memory/memory-view';
 import { UsedMemoryChip } from '../memory/used-memory-chip';
@@ -23,32 +27,31 @@ import { ProjectScope } from '../../internal/project-scope';
 import { useComposerPrefillStore } from '../../internal/stores/composer-prefill-store';
 import { cn } from '../../lib/utils';
 import { uiRoutes } from '../../lib/routes';
-import { AvatarGroup } from '../../primitives/avatar';
 import { Button } from '../../primitives/button';
 import { ConfirmDialog } from '../../primitives/confirm-dialog';
 import { CountBadge } from '../../primitives/count-badge';
 import { EmptyState } from '../../primitives/empty-state';
-import { EntityAvatar } from '../../primitives/entity-avatar';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '../../primitives/resizable';
 import { ErrorState } from '../../primitives/error-state';
 import Hint from '../../primitives/hint';
 import { useOptionalSidebar } from '../../primitives/sidebar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../primitives/tabs';
 import { errorToast, successToast } from '../../primitives/toast';
-import { UserAvatar } from '../../primitives/user-avatar';
 import { UiLink as Link, useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
 import { ComposerChatInput, type ComposerOptions } from '../../session/composer/composer-chat-input';
 import { ComposerDropZone } from '../../session/composer/composer-drop-zone';
 import type { DraftScope } from '../../session/composer/draft/composer-draft';
-import { participantLabel } from '../../session/participants/session-participants';
 import { AfterFirstPromptContext } from '../../session/thread/after-first-prompt';
 import { SessionThread } from '../../session/thread/session-thread';
 import { TranscriptRowsContext } from '../../session/thread/transcript-rows';
 import { useProjectHomeSend } from '../layout/use-project-home-send';
+import { ChannelsIntro, GeneralChatHead } from './channels-onboarding';
 import { CreateChannelDialog } from './create-channel-dialog';
 import { SpaceLinks } from './space-links';
 import { SpaceTriggers } from './space-triggers';
 import { SpaceDetailsDialog, type SpaceDetailsTab } from './space-details-dialog';
-import { agentLabel, spaceRoster, spaceTabFromParam, spaceTabs, type SpaceTab } from './space-timeline';
+import { SpaceRosterButton } from './space-roster';
+import { agentLabel, liveReplyCount, spaceRoster, spaceTabFromParam, spaceTabs, type SpaceTab } from './space-timeline';
 import { SpaceThreadList, SpaceTimeline, useSpaceThreads, type SpaceThreads } from './space-timeline-view';
 
 /** A channel by slug, or the caller's DM with one agent. */
@@ -118,6 +121,7 @@ export function SpaceView(props: SpaceViewProps) {
         <div className="absolute inset-0 flex flex-col">
           <SpaceViewBody {...props} />
         </div>
+        <ChannelsIntro projectId={props.projectId} />
       </div>
     </ProjectScope>
   );
@@ -256,49 +260,74 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
 
   const place = space.kind === 'channel' ? `#${space.slug}` : title;
   return (
-    <div className="bg-background flex min-h-0 flex-1 overflow-hidden">
-      <ComposerDropZone className={cn('flex min-w-0 flex-1 flex-col', threadId && 'max-xl:hidden')}>
-        {header}
-        <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1 gap-0">
-          <TabsList type="underline" size="sm" className="w-full shrink-0 justify-start gap-4 overflow-x-auto px-5">
-            {tabs.map((value) => (
-              <TabsTrigger key={value} value={value} className="w-fit flex-none">
-                {t(`tab.${value}`)}
-                {/* Apps counts the host's cards: no host gallery, no count over the empty state. */}
-                {(value === 'links' || value === 'triggers' || (value === 'apps' && renderApps)) && summary.data?.[value] ? (
-                  <CountBadge count={summary.data[value]} />
-                ) : value === 'memory' && memoryCount ? (
-                  <CountBadge count={memoryCount} />
-                ) : null}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-          <SpaceTabs
-            projectId={projectId}
-            space={space}
-            place={place}
-            threads={threads}
-            threadId={threadId}
-            onOpenThread={openThread}
-            beforeSend={beforeSend}
-            renderFolder={renderFolder}
-            renderApps={renderApps}
-            tabs={tabs}
-          />
-        </Tabs>
-      </ComposerDropZone>
+    // One panel group, always mounted, so opening a thread never remounts the
+    // timeline (its scroll and the composer's draft stay). The thread joins
+    // the group while one is open; the divider drags, and `autoSaveId` keeps
+    // the width per browser. Below `xl` the thread takes the whole width: the
+    // timeline panel and the divider hide, and the thread panel's flex-grow
+    // fills the row.
+    <ResizablePanelGroup
+      direction="horizontal"
+      autoSaveId="kortix:space-thread-split"
+      className="bg-background min-h-0 flex-1 overflow-hidden"
+    >
+      <ResizablePanel
+        id="space-timeline"
+        order={1}
+        minSize={35}
+        defaultSize={60}
+        className={cn('flex min-w-0 flex-col', threadId && 'max-xl:hidden')}
+      >
+        <ComposerDropZone className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {header}
+          <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1 gap-0">
+            <TabsList type="underline" size="sm" className="w-full shrink-0 justify-start gap-4 overflow-x-auto px-5">
+              {tabs.map((value) => (
+                <TabsTrigger key={value} value={value} className="w-fit flex-none">
+                  {t(`tab.${value}`)}
+                  {/* Apps counts the host's cards: no host gallery, no count over the empty state. */}
+                  {(value === 'links' || value === 'triggers' || (value === 'apps' && renderApps)) && summary.data?.[value] ? (
+                    <CountBadge count={summary.data[value]} />
+                  ) : value === 'memory' && memoryCount ? (
+                    <CountBadge count={memoryCount} />
+                  ) : null}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            <SpaceTabs
+              projectId={projectId}
+              space={space}
+              place={place}
+              threads={threads}
+              threadId={threadId}
+              onOpenThread={openThread}
+              beforeSend={beforeSend}
+              renderFolder={renderFolder}
+              renderApps={renderApps}
+              tabs={tabs}
+            />
+          </Tabs>
+        </ComposerDropZone>
+      </ResizablePanel>
       {threadId ? (
-        <ThreadPanel
-          key={threadId}
-          projectId={projectId}
-          sessionId={threadId}
-          context={place}
-          thread={threads.sessions.find((session) => session.session_id === threadId)}
-          agentFallback={space.dm_agent_name}
-          onClose={closeThread}
-        />
+        <>
+          {/* A 1px hairline with a 12px hit strip (`after:`), so the panels
+              stay flush; hover and drag light the app's resize seam. */}
+          <ResizableHandle className="bg-border w-px after:absolute after:inset-y-0 after:-left-1.5 after:w-3 max-xl:hidden" />
+          <ResizablePanel id="space-thread" order={2} minSize={25} maxSize={65} defaultSize={40} className="flex min-w-0 flex-col">
+            <ThreadPanel
+              key={threadId}
+              projectId={projectId}
+              sessionId={threadId}
+              context={place}
+              thread={threads.sessions.find((session) => session.session_id === threadId)}
+              agentFallback={space.dm_agent_name}
+              onClose={closeThread}
+            />
+          </ResizablePanel>
+        </>
       ) : null}
-    </div>
+    </ResizablePanelGroup>
   );
 }
 
@@ -336,6 +365,7 @@ function SpaceTabs({
   return (
     <>
       <TabsContent value="chat" className="flex min-h-0 flex-col">
+        {space.is_default ? <GeneralChatHead projectId={projectId} place={place} /> : null}
         <SpaceTimeline space={space} threads={threads} selectedId={threadId} onOpenThread={onOpenThread} />
         <SpaceComposer projectId={projectId} space={space} onOpenThread={onOpenThread} beforeSend={beforeSend} />
       </TabsContent>
@@ -447,27 +477,32 @@ function SpaceHeader({
         {target.kind === 'channel' ? (
           <h1 className="flex min-w-0 shrink-0">
             {channel ? (
+              // `#name` reads as one token, the caret as a separate affordance:
+              // 2px between `#` and the name, 6px before the caret. The `#` is
+              // bold at `size-4.5`, so its strokes match the 600 name and its
+              // height matches the name's cap height. `has-[>svg]:px-1.5`, not
+              // `px-*`: the `sm` size's own `has-[>svg]:px-2.5` would win.
               <Button
                 variant="ghost"
                 size="sm"
-                className="max-w-60 gap-1 px-2"
+                className="max-w-60 gap-0 has-[>svg]:px-1.5"
                 aria-label={t('channelDetails', { name: title })}
                 onClick={() => setDetails('about')}
               >
-                <HashIcon className="size-4 shrink-0" />
-                <span className="truncate text-lg font-semibold">{title}</span>
-                <CaretDownIcon className="text-muted-foreground size-3 shrink-0" />
+                <HashIcon weight="bold" className="size-4.5 shrink-0" />
+                <span className="ml-0.5 truncate text-lg font-semibold">{title}</span>
+                <CaretDownIcon weight="bold" className="text-muted-foreground ml-1.5 size-3.5 shrink-0" />
               </Button>
             ) : (
-              <span className="flex h-8 items-center gap-1 px-2">
-                <HashIcon className="size-4 shrink-0" />
-                <span className="truncate text-lg font-semibold">{title}</span>
+              <span className="flex h-8 items-center px-1.5">
+                <HashIcon weight="bold" className="size-4.5 shrink-0" />
+                <span className="ml-0.5 truncate text-lg font-semibold">{title}</span>
               </span>
             )}
           </h1>
         ) : (
           <h1 className="flex min-w-0 shrink-0 items-center gap-2 px-2">
-            <EntityAvatar icon={RobotIcon} label={title} size="xs" />
+            <AgentMark slug={target.agentName} size={14} />
             <span className="truncate text-lg font-semibold">{title}</span>
           </h1>
         )}
@@ -478,7 +513,7 @@ function SpaceHeader({
         ) : null}
       </div>
       {channel && (roster.people.length > 0 || roster.agents.length > 0) ? (
-        <RosterPill roster={roster} onClick={() => setDetails('members')} />
+        <SpaceRosterButton roster={roster} onViewAll={() => setDetails('members')} />
       ) : null}
       {channel ? (
         <>
@@ -510,42 +545,6 @@ function SpaceHeader({
         </>
       ) : null}
     </div>
-  );
-}
-
-/** "3 people · 2 agents" with the first faces: the people and agents of the loaded threads. */
-function RosterPill({
-  roster,
-  onClick,
-}: {
-  roster: ReturnType<typeof spaceRoster>;
-  onClick: () => void;
-}) {
-  const t = useTranslations('spaces.view');
-  const label = t('roster', {
-    people: t('rosterPeople', { count: roster.people.length }),
-    agents: t('rosterAgents', { count: roster.agents.length }),
-  });
-  return (
-    <Hint label={t('rosterHint')} side="bottom">
-      <Button variant="outline" size="sm" className="shrink-0 gap-2 px-1.5" onClick={onClick}>
-        {roster.people.length > 0 ? (
-          <AvatarGroup className="-space-x-1">
-            {roster.people.slice(0, 3).map((person) => (
-              <UserAvatar
-                key={person.id}
-                email={person.email ?? ''}
-                name={participantLabel(person)}
-                avatarUrl={person.avatarUrl}
-                size="xs"
-                ring
-              />
-            ))}
-          </AvatarGroup>
-        ) : null}
-        <span className="text-muted-foreground text-xs tabular-nums">{label}</span>
-      </Button>
-    </Hint>
   );
 }
 
@@ -713,6 +712,7 @@ function ThreadPanel({
 }) {
   const t = useTranslations('spaces.view');
   const session = useSession(projectId, sessionId);
+  useLiveThreadRow(projectId, sessionId, session);
   // Null from an older API that does not count replies.
   const replyCount = thread?.reply_count ?? null;
   const dividerOnTop = Boolean(replyCount) && session.hasOlder;
@@ -734,6 +734,7 @@ function ThreadPanel({
   const rows = useMemo(
     () => ({
       agent: agentName ? agentLabel(agentName) : t('agentFallback'),
+      agentSlug: agentName ?? undefined,
       owner: thread
         ? { name: thread.owner_name ?? null, email: thread.owner_email ?? null, avatarUrl: thread.owner_avatar_url ?? null }
         : null,
@@ -754,7 +755,7 @@ function ThreadPanel({
     [agentName, thread, t],
   );
   return (
-    <aside aria-label={t('threadTitle')} className="bg-background flex min-h-0 w-full flex-col xl:w-125 xl:shrink-0 xl:border-l">
+    <aside aria-label={t('threadTitle')} className="bg-background flex min-h-0 w-full flex-1 flex-col">
       <div className="kx-titlebar-row relative flex shrink-0 items-center gap-2 border-b px-2">
         <div className="kx-titlebar-tabs flex h-12 min-w-0 flex-1 items-center px-3">
           <div className="flex min-w-0 items-baseline gap-2">
@@ -784,4 +785,62 @@ function ThreadPanel({
       </TranscriptRowsContext.Provider>
     </aside>
   );
+}
+
+/**
+ * The open thread's live stream, written into its row in the space's cached
+ * list: the timeline's "N replies", "Last reply" and "is working" change the
+ * frame the panel does, not at the list's next poll (5 s working, 15 s idle).
+ * The count needs the whole transcript (`hasOlder` false); with older history
+ * unloaded only the working state is written. The poll still reconciles.
+ */
+function useLiveThreadRow(projectId: string, sessionId: string, session: ReturnType<typeof useSession>) {
+  const queryClient = useQueryClient();
+  const busy = session.isBusy;
+  // A reply counts from Enter: the prompt inbox holds it (optimistically)
+  // until the transcript has its message. The same query the panel's chat reads.
+  const inbox = useSessionPrompts(projectId, sessionId);
+  const ids = new Set(session.messages.map((message) => message.info.id));
+  const waiting = inbox.prompts.filter(
+    (prompt) =>
+      prompt.state !== 'failed' && !ids.has(prompt.message_id) && !(prompt.wire_message_id && ids.has(prompt.wire_message_id)),
+  ).length;
+  const roles = [
+    ...session.messages.map((message) => message.info.role),
+    ...Array.from({ length: waiting }, () => 'user'),
+  ];
+  const replies = session.hasOlder || roles.length === 0 ? null : liveReplyCount(roles);
+  // The stream has an answer: the computer is up, so a booting status is stale.
+  const answered = roles.includes('assistant');
+  // Sent, not yet running: the thread is working from Enter.
+  const working = busy || waiting > 0;
+  // Before the runtime is up the stream knows nothing: the list's own state stands.
+  const live = !!session.runtimeSessionId;
+  useEffect(() => {
+    if (!live) return;
+    updateCachedProjectSessions(queryClient, projectId, (rows) => {
+      const index = rows.findIndex((row) => row.session_id === sessionId);
+      const row = rows[index];
+      if (!row) return rows;
+      const grew = replies !== null && replies > (row.reply_count ?? 0);
+      const booting = row.status === 'provisioning' || row.status === 'queued' || row.status === 'branching';
+      const settle = (working || answered) && booting;
+      if (!grew && !settle && (row.working?.state === 'working') === working) return rows;
+      const now = new Date().toISOString();
+      const next = rows.slice();
+      next[index] = {
+        ...row,
+        ...(grew ? { reply_count: replies, updated_at: now } : {}),
+        // `threadIsWorking` reads the status too: a thread the stream answers is up.
+        ...(settle ? { status: 'running' as const } : {}),
+        working: {
+          state: working ? 'working' : 'idle',
+          since: working ? (row.working?.since ?? now) : null,
+          turn_token: row.working?.turn_token ?? null,
+          pending_delivery: false,
+        },
+      };
+      return next;
+    });
+  }, [queryClient, projectId, sessionId, live, working, replies, answered]);
 }

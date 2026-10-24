@@ -139,10 +139,9 @@ test('project(id).memory reaches layers, pages, history and undo', async () => {
   await memory.notes.add('S1', { text: 'Priya owns the Northwind launch' });
   await memory.changes('S1', { before: 'C2' });
   await memory.pages.get('PG1');
-  await memory.pages.update('PG1', { base_version: 3, summary: 'Owns QA' });
+  await memory.pages.update('PG1', { base_version: 3, body: 'Owns QA' });
   await memory.pages.delete('PG1');
   await memory.pages.history('PG1');
-  await memory.pages.restore('PG1', 'V1');
   await memory.undo('V2');
   const base = 'http://test.local/projects/P1/memory';
   expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
@@ -155,11 +154,9 @@ test('project(id).memory reaches layers, pages, history and undo', async () => {
     `PATCH ${base}/pages/PG1`,
     `DELETE ${base}/pages/PG1`,
     `GET ${base}/pages/PG1/history`,
-    `POST ${base}/pages/PG1/restore`,
     `POST ${base}/versions/V2/undo`,
   ]);
-  expect(calls[6]!.body).toEqual({ base_version: 3, summary: 'Owns QA' });
-  expect(calls[9]!.body).toEqual({ version_id: 'V1' });
+  expect(calls[6]!.body).toEqual({ base_version: 3, body: 'Owns QA' });
 });
 
 test('project(id).memory searches pages and reads a thread’s Used memory', async () => {
@@ -172,17 +169,9 @@ test('project(id).memory searches pages and reads a thread’s Used memory', asy
   ]);
 });
 
-test('project(id).memory lists the trash and Needs confirming, and confirms a page', async () => {
-  const memory = kortix.project('P1').memory;
-  await memory.pages.list('S1', { deleted: true });
-  await memory.pages.list('S1', { status: 'unconfirmed' });
-  await memory.pages.confirm('PG1');
-  const base = 'http://test.local/projects/P1/memory';
-  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
-    `GET ${base}/layers/S1/pages?deleted=1`,
-    `GET ${base}/layers/S1/pages?status=unconfirmed`,
-    `POST ${base}/pages/PG1/confirm`,
-  ]);
+test('project(id).memory filters pages by type', async () => {
+  await kortix.project('P1').memory.pages.list('S1', { type: 'other' });
+  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual(['GET http://test.local/projects/P1/memory/layers/S1/pages?type=other']);
 });
 
 test('project(id).spaces reads #general\'s notice and the caller\'s onboarding, and records a mark', async () => {

@@ -1,7 +1,7 @@
 'use client';
 
 import type { ProjectMemoryAuthor, ProjectMemoryLayer, ProjectMemoryPageType } from '@kortix/sdk';
-import { BookOpenIcon, BriefcaseIcon, type Icon, NoteIcon, SignpostIcon, UserIcon } from '@phosphor-icons/react';
+import { BookOpenIcon, BriefcaseIcon, FileTextIcon, type Icon, NoteIcon, SignpostIcon, UserIcon } from '@phosphor-icons/react';
 
 import { useTranslations } from '../../i18n';
 import { EntityAvatar } from '../../primitives/entity-avatar';
@@ -9,23 +9,18 @@ import { UserAvatar } from '../../primitives/user-avatar';
 import { participantLabel } from '../../session/participants/session-participants';
 import { agentLabel } from '../spaces/space-timeline';
 
-/** The left list's groups, in order. Notes show only when a layer has some. */
-export const MEMORY_GROUPS: readonly ProjectMemoryPageType[] = ['people', 'decisions', 'workstreams', 'playbooks', 'note'];
-
 export const MEMORY_TYPE_ICON: Record<ProjectMemoryPageType, Icon> = {
   people: UserIcon,
   decisions: SignpostIcon,
   workstreams: BriefcaseIcon,
   playbooks: BookOpenIcon,
   note: NoteIcon,
+  other: FileTextIcon,
 };
 
-/**
- * "The pages" of a layer, one number everywhere (the tab and "All pages"):
- * the 4 filed types, notes not included.
- */
+/** The layer's live pages, notes included: the Memory tab's count, the rows its list shows. */
 export function memoryPageCount(counts: ProjectMemoryLayer['counts'] | undefined): number {
-  return counts ? counts.people + counts.decisions + counts.workstreams + counts.playbooks : 0;
+  return counts ? counts.people + counts.decisions + counts.workstreams + counts.playbooks + counts.note + counts.other : 0;
 }
 
 /** Who wrote a change, as a name: the agent, the person, or "Kortix" for an import. */

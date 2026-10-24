@@ -1,11 +1,10 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Config } from '@/lib/config/config'
-import { logger } from '@/lib/log/logger'
 import { createToolsRouter } from '@/routes/kortix/tools'
-import { KORTIX_TOOLS, hostedTool, hostedToolAllowed, loadTools, runTool, sessionEnv, toolBridgeKey } from '@/services/tools/host'
+import { KORTIX_TOOLS, hostedTool, loadTools, runTool, sessionEnv, toolBridgeKey } from '@/services/tools/host'
 import { signTestUserContext } from './helpers/open-code-harness'
 
 /**
@@ -109,42 +108,6 @@ describe('loadTools', () => {
       missing: 'tools/missing.ts does not exist',
       escapes: '../outside.ts leaves the project checkout',
     })
-  })
-
-  test('the platform tools load in a channel or DM thread only, after the rest, whatever kortix_tools lists', async () => {
-    const names = async (env: Record<string, string | undefined>, compiled: Parameters<typeof loadTools>[1] = undefined) =>
-      (await loadTools(root, compiled, env)).tools.map((tool) => [tool.name, tool.source])
-    expect((await names({})).map(([name]) => name)).not.toContain('remember')
-    expect(await names({ KORTIX_SPACE_ID: '  ' }, { kortix_tools: [] })).toEqual([])
-    expect(await names({ KORTIX_SPACE_ID: 'space-1' }, { kortix_tools: [] })).toEqual([['remember', 'platform'], ['memory_search', 'platform']])
-    expect((await names({ KORTIX_SPACE_ID: 'space-1' })).slice(-2)).toEqual([['remember', 'platform'], ['memory_search', 'platform']])
-    expect(hostedTool('remember')?.source).toBe('platform')
-    expect(hostedTool('memory_search')?.source).toBe('platform')
-  })
-
-  test('a project tool named like a platform tool replaces it in that project', async () => {
-    write('tools/remember.ts', `export default { description: 'Ours.', parameters: { type: 'object', properties: {} }, execute: () => 'ours' }\n`)
-    const warn = spyOn(logger, 'warn')
-    try {
-      const { tools } = await loadTools(root, { kortix_tools: [], project_tools: { remember: 'tools/remember.ts' } }, { KORTIX_SPACE_ID: 'space-1' })
-      expect(tools.map((tool) => [tool.name, tool.source])).toEqual([['remember', 'tools/remember.ts'], ['memory_search', 'platform']])
-      expect(warn.mock.calls).toEqual([['[tools] a project tool replaces the platform tool of its name', { tool: 'remember', source: 'tools/remember.ts' }]])
-    } finally {
-      warn.mockRestore()
-    }
-    expect(await runTool(hostedTool('remember')!, {}, ctx())).toBe('ours')
-  })
-
-  test('an allowlist keeps a loaded platform tool unless it names it; a project tool of that name gets no exception', async () => {
-    await loadTools(root, { kortix_tools: [] }, { KORTIX_SPACE_ID: 'space-1' })
-    expect(hostedToolAllowed({ '*': false, read: true }, 'remember')).toBe(true)
-    expect(hostedToolAllowed({ '*': false, remember: false }, 'remember')).toBe(false)
-    expect(hostedToolAllowed({ remember: false }, 'remember')).toBe(false)
-    expect(hostedToolAllowed({ '*': false, read: true }, 'bash')).toBe(false)
-    expect(hostedToolAllowed(undefined, 'remember')).toBe(true)
-    write('tools/remember.ts', `export default { description: 'Ours.', parameters: { type: 'object', properties: {} }, execute: () => 'ours' }\n`)
-    await loadTools(root, { kortix_tools: [], project_tools: { remember: 'tools/remember.ts' } }, { KORTIX_SPACE_ID: 'space-1' })
-    expect(hostedToolAllowed({ '*': false, read: true }, 'remember')).toBe(false)
   })
 
   test('with no project checkout only the Kortix tools load', async () => {

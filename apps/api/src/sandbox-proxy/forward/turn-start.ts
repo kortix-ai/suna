@@ -349,9 +349,8 @@ export async function syncEnvBeforeTurnStart(
 }
 
 /**
- * `memory_layers` and `system` on a Kortix prompt body (`project_channels`):
- * the thread's memory layers and versions, so kortixd refreshes its read-only
- * memory copy before the turn, and the page list for the turn's system
+ * `system` on a Kortix prompt body (`project_channels`): the list of the
+ * memory files the thread reads, at its mount paths, for the turn's system
  * prompt. The first turn records the list ("Used memory"). A `system` the
  * client sent is always dropped: only the API sets it. Flag off, no space, or
  * any failure: the body goes on without memory. `/steer` never passes here

@@ -393,6 +393,33 @@ export async function ensurePersonalFolder(drive: DriveRow, userId: string, gran
   });
 }
 
+/** A person as the folder rules see them on one drive. */
+export interface DriveCaller {
+  userId: string;
+  subject: FolderSubject;
+  grants: FolderGrant[];
+  personalFolder: string;
+}
+
+/**
+ * The person behind a request, as the folder rules see them: a project
+ * admin (`may('write')`) manages every folder but people's own; who may run
+ * sessions in the project (`may('session')`) reaches grants to the whole
+ * project; and grants to them or their teams. Makes their own folder when
+ * they have none. The Drive routes and the memory routes share it.
+ */
+export async function driveSubjectFor(
+  drive: DriveRow,
+  userId: string,
+  may: (action: 'session' | 'write') => Promise<boolean>,
+): Promise<DriveCaller> {
+  const [projectMember, admin, groupIds] = await Promise.all([may('session'), may('write'), groupIdsOf(userId, drive.accountId)]);
+  let grants = await listFolderGrants(drive);
+  const personalFolder = await ensurePersonalFolder(drive, userId, grants);
+  if (!grants.some((g) => g.path === personalFolder)) grants = await listFolderGrants(drive);
+  return { userId, grants, personalFolder, subject: { userId, groupIds, projectMember, admin } };
+}
+
 /** The agent's service account, when it has one (a grant to an agent made it). */
 export async function agentServiceAccountId(accountId: string, projectId: string, agentName: string): Promise<string | null> {
   const [row] = await db
@@ -1025,10 +1052,7 @@ export function renderDriveNotes(
   ];
   const me = mounts.find((m) => m.role === 'me');
   if (me) {
-    // Space lines exist only with `project_channels` on, in a channel or DM thread: the threads that load `remember`, unless the agent's tool access removes it.
-    const team = spaceLines.length
-      ? 'what the whole team should know: `remember` with `layer: company`.'
-      : `what the whole team should know goes in Company/${MEMORY_DIR_NAME}/ when that folder is mounted.`;
+    const team = `what the whole team should know goes in Company/${MEMORY_DIR_NAME}/ when that folder is mounted.`;
     lines.push(
       `${me.mountPath} is the user’s own folder (also at ~/Desktop). Save files you make for the user there.`,
       `Keep what you learn about the user in ${me.mountPath}/${MEMORY_DIR_NAME}/ (load the kortix-user-memory skill); ${team}`,

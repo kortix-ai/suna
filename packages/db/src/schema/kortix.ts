@@ -4,7 +4,6 @@ import {
   bigint,
   boolean,
   check,
-  customType,
   date,
   foreignKey,
   index,
@@ -1204,234 +1203,20 @@ export const projectSpaceLinks = kortixSchema.table(
   ],
 );
 
-// ─── Memory pages ────────────────────────────────────────────────────────────
-// Database-backed memory in three layers: the project's Company layer, one
-// layer per channel, one per DM (a member + an agent). Only the API reads these
-// tables (RLS on, no policy). No account_id: a project transfer moves memory
-// with project_id.
-
-/** Postgres full-text vector; only ever written by a generated column. */
-const tsvector = customType<{ data: string }>({
-  dataType() {
-    return 'tsvector';
-  },
-});
-
-export const memoryLayerScopeEnum = kortixSchema.enum('memory_layer_scope', [
-  'company',
-  'channel',
-  'dm',
-]);
-
-export const memoryPageTypeEnum = kortixSchema.enum('memory_page_type', [
-  'people',
-  'decisions',
-  'workstreams',
-  'playbooks',
-  'note',
-]);
-
-export const memoryPageStatusEnum = kortixSchema.enum('memory_page_status', [
-  'confirmed',
-  'unconfirmed',
-]);
-
-export const memoryAuthorKindEnum = kortixSchema.enum('memory_author_kind', [
-  'person',
-  'agent',
-  'system',
-]);
-
-export const memoryChangeOpEnum = kortixSchema.enum('memory_change_op', [
-  'create',
-  'update',
-  'append',
-  'delete',
-  'restore',
-  'undo',
-  'confirm',
-  'file_note',
-  'import',
-]);
-
-export const memorySourceKindEnum = kortixSchema.enum('memory_source_kind', [
-  'thread',
-  'person',
-  'outside',
-  'import',
-]);
-
-/**
- * One memory layer: the project's Company layer (`space_id` null) or the layer
- * of one channel or DM space. `version` is bumped in the same transaction as
- * any page change in the layer; the read-only file copy compares it.
- */
-export const memoryLayers = kortixSchema.table(
-  'memory_layers',
-  {
-    layerId: uuid('layer_id').defaultRandom().primaryKey(),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
-    scope: memoryLayerScopeEnum('scope').notNull(),
-    spaceId: uuid('space_id').references(() => projectSpaces.spaceId, { onDelete: 'cascade' }),
-    version: bigint('version', { mode: 'number' }).notNull().default(0),
-    /** Set when the Drive memory import finished or was not needed. */
-    importedAt: timestamp('imported_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    check(
-      'memory_layers_scope_space_check',
-      sql`(${table.scope} = 'company') = (${table.spaceId} is null)`,
-    ),
-    uniqueIndex('uniq_memory_layers_company')
-      .on(table.projectId)
-      .where(sql`${table.scope} = 'company'`),
-    // Also serves the space_id FK: `space_id = $1` implies the predicate.
-    uniqueIndex('uniq_memory_layers_space')
-      .on(table.spaceId)
-      .where(sql`${table.spaceId} is not null`),
-    index('idx_memory_layers_project').on(table.projectId),
-  ],
-);
-
-/** One memory page. `deleted_at` set = in the trash. */
-export const memoryPages = kortixSchema.table(
-  'memory_pages',
-  {
-    pageId: uuid('page_id').defaultRandom().primaryKey(),
-    layerId: uuid('layer_id')
-      .notNull()
-      .references(() => memoryLayers.layerId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
-    type: memoryPageTypeEnum('type').notNull(),
-    /** 1–120 characters (checked by the API). */
-    title: text('title').notNull(),
-    /** The title lowercased, trimmed, inner whitespace collapsed, NFKC. */
-    titleKey: text('title_key').notNull(),
-    /** One line, at most 200 characters (checked by the API). */
-    summary: text('summary').notNull().default(''),
-    /** Markdown, at most 8,192 UTF-8 bytes (checked by the API). */
-    body: text('body').notNull().default(''),
-    status: memoryPageStatusEnum('status').notNull().default('confirmed'),
-    /** Related page ids, at most 10 (checked by the API). */
-    related: uuid('related').array().notNull().default(sql`'{}'::uuid[]`),
-    versionNo: integer('version_no').notNull().default(1),
-    updatedByKind: memoryAuthorKindEnum('updated_by_kind'),
-    updatedByUserId: uuid('updated_by_user_id'),
-    updatedByAgent: text('updated_by_agent'),
-    updatedSourceSessionId: text('updated_source_session_id'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-    deletedAt: timestamp('deleted_at', { withTimezone: true }),
-    search: tsvector('search').generatedAlwaysAs(
-      sql`to_tsvector('simple'::regconfig, coalesce("title", '') || ' ' || coalesce("summary", '') || ' ' || coalesce("body", ''))`,
-    ),
-  },
-  (table) => [
-    uniqueIndex('uniq_memory_pages_layer_title')
-      .on(table.layerId, table.titleKey)
-      .where(sql`${table.deletedAt} is null`),
-    index('idx_memory_pages_layer_type')
-      .on(table.layerId, table.type, table.updatedAt.desc())
-      .where(sql`${table.deletedAt} is null`),
-    // Serves the layer_id FK: the two indexes above skip trashed pages.
-    index('idx_memory_pages_layer').on(table.layerId),
-    index('idx_memory_pages_search').using('gin', table.search),
-    index('idx_memory_pages_project').on(table.projectId),
-    index('idx_memory_pages_deleted')
-      .on(table.deletedAt)
-      .where(sql`${table.deletedAt} is not null`),
-  ],
-);
-
-/** A full snapshot of a page after each change: history, Undo and restore. */
-export const memoryPageVersions = kortixSchema.table(
-  'memory_page_versions',
-  {
-    versionId: uuid('version_id').defaultRandom().primaryKey(),
-    pageId: uuid('page_id')
-      .notNull()
-      .references(() => memoryPages.pageId, { onDelete: 'cascade' }),
-    layerId: uuid('layer_id')
-      .notNull()
-      .references(() => memoryLayers.layerId, { onDelete: 'cascade' }),
-    versionNo: integer('version_no').notNull(),
-    /** Shared by every version row one change writes (both pages of a `file_note`); Undo restores them all. */
-    changeId: uuid('change_id').notNull(),
-    type: memoryPageTypeEnum('type').notNull(),
-    title: text('title').notNull(),
-    summary: text('summary').notNull(),
-    body: text('body').notNull(),
-    status: memoryPageStatusEnum('status').notNull(),
-    related: uuid('related').array().notNull().default(sql`'{}'::uuid[]`),
-    deleted: boolean('deleted').notNull().default(false),
-    op: memoryChangeOpEnum('op').notNull(),
-    authorKind: memoryAuthorKindEnum('author_kind').notNull(),
-    authorUserId: uuid('author_user_id'),
-    authorAgent: text('author_agent'),
-    onBehalfUserId: uuid('on_behalf_user_id'),
-    sourceSessionId: text('source_session_id'),
-    sourceMessageId: text('source_message_id'),
-    undoneByVersionId: uuid('undone_by_version_id'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    // Named by hand: the generated name exceeds Postgres's 63-byte limit.
-    foreignKey({
-      columns: [table.sourceSessionId],
-      foreignColumns: [projectSessions.sessionId],
-      name: 'memory_page_versions_source_session_fk',
-    }).onDelete('set null'),
-    uniqueIndex('uniq_memory_page_versions_page_no').on(table.pageId, table.versionNo),
-    index('idx_memory_page_versions_layer_created').on(table.layerId, table.createdAt.desc()),
-    index('idx_memory_page_versions_change').on(table.changeId),
-    // Serves the source_session_id FK: a session delete sets null without a scan.
-    index('idx_memory_page_versions_session')
-      .on(table.sourceSessionId)
-      .where(sql`${table.sourceSessionId} is not null`),
-  ],
-);
-
-/** A page's numbered sources; the body cites one as the token ⟦n⟧. */
-export const memoryPageSources = kortixSchema.table(
-  'memory_page_sources',
-  {
-    sourceId: uuid('source_id').defaultRandom().primaryKey(),
-    pageId: uuid('page_id')
-      .notNull()
-      .references(() => memoryPages.pageId, { onDelete: 'cascade' }),
-    /** Page-local, 1..n. */
-    number: integer('number').notNull(),
-    kind: memorySourceKindEnum('kind').notNull(),
-    sessionId: text('session_id').references(() => projectSessions.sessionId, {
-      onDelete: 'set null',
-    }),
-    messageId: text('message_id'),
-    /** At most 80 characters: thread title, person name, host or file name. */
-    label: text('label').notNull(),
-    /** `outside` sources only, at most 2,048 characters. */
-    url: text('url'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    uniqueIndex('uniq_memory_page_sources_page_number').on(table.pageId, table.number),
-    // Serves the session_id FK: a session delete sets null without a scan.
-    index('idx_memory_page_sources_session')
-      .on(table.sessionId)
-      .where(sql`${table.sessionId} is not null`),
-  ],
-);
+// ─── Memory ──────────────────────────────────────────────────────────────────
+// Memory is Markdown files in the project's Drive; the database holds only
+// what a thread's first turn was listed ("Used memory"). Only the API reads it
+// (RLS on, no policy).
 
 /** One entry of `memory_thread_loads.layers`. */
 export interface MemoryThreadLoadLayer {
+  /** The layer key: `company` or the space id. */
   layer_id: string;
-  scope: (typeof memoryLayerScopeEnum.enumValues)[number];
+  scope: 'company' | 'channel' | 'dm';
   name: string;
+  /** Always 0 for file layers. */
   version: number;
+  /** File page ids. */
   page_ids: string[];
 }
 

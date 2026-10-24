@@ -3,7 +3,6 @@
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   addProjectMemoryNote,
-  confirmProjectMemoryPage,
   createProjectMemoryPage,
   deleteProjectMemoryPage,
   getProjectMemoryLayer,
@@ -12,7 +11,6 @@ import {
   listProjectMemoryChanges,
   listProjectMemoryHistory,
   listProjectMemoryPages,
-  restoreProjectMemoryPage,
   searchProjectMemory,
   undoProjectMemoryVersion,
   updateProjectMemoryPage,
@@ -27,9 +25,10 @@ import {
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
 
-// Memory pages (`project_channels`). People and agents both write them, so
-// every read is the `inventory` tier. Pass `enabled: false` while the
-// project's `project_channels` flag is off: every route answers 403 then.
+// Memory: the Markdown files of the project's Drive. People and agents both
+// write them, so every read is the `inventory` tier. Pass `enabled: false`
+// while the project's Files (`drives`) are off: every route answers 403 then.
+// The Memory UI is a Channels surface: hosts also gate it on `project_channels`.
 
 type Id = string | null | undefined;
 type ReadOptions = { enabled?: boolean };
@@ -47,16 +46,15 @@ export function useProjectMemoryLayer(projectId: Id, layerKey: Id, options?: Rea
 }
 
 /**
- * The layer's live pages, without bodies. `{ deleted: true }` reads its trash,
- * `{ status: 'unconfirmed' }` its Needs confirming list; each list has its own
- * cache slot, and every memory write refreshes them all.
+ * The layer's pages (one per Markdown file), without bodies. Each filter has
+ * its own cache slot, and every memory write refreshes them all.
  */
 export function useProjectMemoryPages(
   projectId: Id,
   layerKey: Id,
   options?: ReadOptions & ProjectMemoryPageListOptions,
 ) {
-  const filter: ProjectMemoryPageListOptions = { type: options?.type, status: options?.status, deleted: options?.deleted };
+  const filter: ProjectMemoryPageListOptions = { type: options?.type, status: options?.status };
   return useQuery({
     queryKey: qk.project.memoryPages(projectId ?? '', layerKey ?? '', filter),
     queryFn: () => listProjectMemoryPages(projectId as string, layerKey as string, filter),
@@ -65,7 +63,7 @@ export function useProjectMemoryPages(
   });
 }
 
-/** The layer's Recent changes, newest first. `fetchNextPage()` loads older ones while `hasNextPage`. */
+/** The layer's Recent changes (its 20 most recently changed files), newest first. `hasNextPage` is false. */
 export function useProjectMemoryChanges(projectId: Id, layerKey: Id, options?: ReadOptions) {
   return useInfiniteQuery({
     queryKey: qk.project.memoryChanges(projectId ?? '', layerKey ?? ''),
@@ -78,7 +76,7 @@ export function useProjectMemoryChanges(projectId: Id, layerKey: Id, options?: R
   });
 }
 
-/** One page with its body and sources. */
+/** One page with its body and front-matter sources. */
 export function useProjectMemoryPage(projectId: Id, pageId: Id, options?: ReadOptions) {
   return useQuery({
     queryKey: qk.project.memoryPage(projectId ?? '', pageId ?? ''),
@@ -88,7 +86,7 @@ export function useProjectMemoryPage(projectId: Id, pageId: Id, options?: ReadOp
   });
 }
 
-/** One page's versions, newest first. `fetchNextPage()` loads older ones while `hasNextPage`. */
+/** One page's versions from Drive commits, newest first, at most 20. `hasNextPage` is false: older ones are in Files → Versions. */
 export function useProjectMemoryHistory(projectId: Id, pageId: Id, options?: ReadOptions) {
   return useInfiniteQuery({
     queryKey: qk.project.memoryHistory(projectId ?? '', pageId ?? ''),
@@ -120,7 +118,7 @@ export function useProjectMemorySearch(projectId: Id, input: ProjectMemorySearch
 }
 
 /**
- * A thread's "Used memory": the pages its agent was given at the first turn.
+ * A thread's "Used memory": the files its agent was listed at the first turn.
  * Fixed once `loaded_at` is set, so it never refetches after that; while
  * `loaded_at` is null (no turn yet) the next mount reads it again.
  */
@@ -143,9 +141,8 @@ const callerShowsError = () => {};
 /**
  * After a memory write: put the pages the response returned into their slots,
  * then refetch every memory read of the project (layer counts, page lists,
- * the trash and Needs confirming, Recent changes, pages, history), the channel
- * tab counts and the onboarding state (memory saved in `#general` completes a
- * "Get started" row).
+ * Recent changes, pages, history), the channel tab counts and the onboarding
+ * state (memory saved in `#general` completes a "Get started" row).
  */
 function useMemoryWritten(projectId: string) {
   const queryClient = useQueryClient();
@@ -169,7 +166,7 @@ export function useCreateProjectMemoryPage(projectId: string, layerKey: string) 
   });
 }
 
-/** Save a Remember-box sentence as a `note` page in a layer. */
+/** Append a Remember-box sentence to a layer's `Notes.md`. */
 export function useAddProjectMemoryNote(projectId: string, layerKey: string) {
   const written = useMemoryWritten(projectId);
   return useMutation({
@@ -179,7 +176,7 @@ export function useAddProjectMemoryNote(projectId: string, layerKey: string) {
   });
 }
 
-/** Edit a page. A stale `base_version` rejects with `ApiError` code `version_conflict`. */
+/** Replace a page's body. A stale `base_version` rejects with `ApiError` code `version_conflict`. */
 export function useUpdateProjectMemoryPage(projectId: string) {
   const written = useMemoryWritten(projectId);
   return useMutation({
@@ -190,7 +187,7 @@ export function useUpdateProjectMemoryPage(projectId: string) {
   });
 }
 
-/** Move a page to the trash, or Discard an unconfirmed one. Resolves `{ ok, version_id }`: pass `version_id` to undo it. */
+/** Delete a page's file for good. Resolves `{ ok, version_id }`; the delete is not undoable. */
 export function useDeleteProjectMemoryPage(projectId: string) {
   const written = useMemoryWritten(projectId);
   return useMutation({
@@ -200,21 +197,10 @@ export function useDeleteProjectMemoryPage(projectId: string) {
   });
 }
 
-/** Make an older version the page's content again; also brings a page back from the trash (pass the version before its delete). */
-export function useRestoreProjectMemoryPage(projectId: string) {
-  const written = useMemoryWritten(projectId);
-  return useMutation({
-    mutationFn: (args: { pageId: string; versionId: string }) =>
-      restoreProjectMemoryPage(projectId, args.pageId, args.versionId),
-    onError: callerShowsError,
-    onSuccess: (page: ProjectMemoryPage) => written([page]),
-  });
-}
-
 /**
- * Undo one change by any of its versions (from Recent changes, history, or a
- * thread's "Saved to memory" line). Rejects with `ApiError` code `superseded`
- * or `already_undone`.
+ * Undo the newest change of a page, by its version (from Recent changes or
+ * history). Rejects with `ApiError` code `superseded` (an older version) or
+ * `version_gone` (older than the drive's newest 100 commits).
  */
 export function useUndoProjectMemoryVersion(projectId: string) {
   const written = useMemoryWritten(projectId);
@@ -222,19 +208,5 @@ export function useUndoProjectMemoryVersion(projectId: string) {
     mutationFn: (versionId: string) => undoProjectMemoryVersion(projectId, versionId),
     onError: callerShowsError,
     onSuccess: (result: { pages: ProjectMemoryPage[] }) => written(result.pages),
-  });
-}
-
-/**
- * Confirm an unconfirmed page from Needs confirming. Resolves the page agents
- * now read: for a "(to confirm)" page, the page it merged into. A confirmed
- * page rejects with `ApiError` code `not_unconfirmed`.
- */
-export function useConfirmProjectMemoryPage(projectId: string) {
-  const written = useMemoryWritten(projectId);
-  return useMutation({
-    mutationFn: (pageId: string) => confirmProjectMemoryPage(projectId, pageId),
-    onError: callerShowsError,
-    onSuccess: (page: ProjectMemoryPage) => written([page]),
   });
 }

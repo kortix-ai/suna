@@ -1291,6 +1291,16 @@
           "name": "Canaux",
           "description": "Organisez le travail en canaux. Chaque nouveau message dans un canal ou dans un message direct avec un agent démarre un fil. Remplace la liste des sessions dans la barre latérale."
         }
+      },
+      "channelsSwitch": {
+        "onTitle": "Activer les Canaux pour {project} ?",
+        "onBody": "Tout le monde dans ce projet obtient les Canaux et les Messages directs à la place de la liste des sessions. Toutes les sessions existantes passent dans #general. Vous pouvez désactiver à tout moment ; rien n’est supprimé.",
+        "drive": "Activer aussi Drive, pour que les canaux aient des Fichiers.",
+        "turnOn": "Activer",
+        "cancel": "Annuler",
+        "offTitle": "Désactiver les Canaux ?",
+        "offBody": "Les canaux, la mémoire, les fichiers et les liens restent enregistrés. La liste des sessions revient pour tout le monde.",
+        "turnOff": "Désactiver"
       }
     },
     "upgrades": {
@@ -1786,7 +1796,8 @@
       "channels": "Canaux",
       "directMessages": "Messages directs",
       "addChannel": "Ajouter un canal",
-      "loadError": "Impossible de charger les canaux."
+      "loadError": "Impossible de charger les canaux.",
+      "newAgent": "Nouvel agent"
     }
   },
   "dashboard": {
@@ -22798,34 +22809,21 @@
       "search": "Rechercher dans la mémoire",
       "pagesLabel": "Pages de mémoire",
       "allPages": "Toutes les pages",
-      "type": {
-        "people": "Personnes",
-        "decisions": "Décisions",
-        "workstreams": "Chantiers",
-        "playbooks": "Méthodes",
-        "note": "Notes"
-      },
-      "needsConfirming": "À confirmer",
       "noMatches": "Aucune page ne correspond à « {query} ».",
       "loadError": "Impossible de charger cette mémoire.",
       "pageLoadError": "Impossible de charger cette page.",
       "retry": "Réessayer",
       "close": "Fermer",
       "loadOlder": "Afficher plus ancien",
-      "updatedBy": "Mise à jour par {author}",
       "fromThread": "depuis « {thread} »",
       "author": {
         "system": "Kortix",
         "unknown": "Un membre"
       },
       "edit": "Modifier",
-      "more": "Plus d’actions",
-      "copyLink": "Copier le lien",
-      "linkCopied": "Lien copié",
-      "copyFailed": "Impossible de copier le lien.",
       "delete": "Supprimer",
-      "deleteTitle": "Supprimer cette page ?",
-      "deleteDescription": "Les agents ne voient plus « {title} » dès leur prochain tour. Vous pouvez annuler depuis Modifications récentes.",
+      "deleteTitle": "Supprimer « {title} » ?",
+      "deleteDescription": "Cette action est irréversible.",
       "deleted": "Page supprimée",
       "deleteFailed": "Impossible de supprimer la page. Réessayez.",
       "undo": "Annuler",
@@ -22833,35 +22831,8 @@
       "undoFailed": "Impossible d’annuler la modification. Réessayez.",
       "superseded": "La page a changé depuis. Ouvrez l’historique pour restaurer une version antérieure.",
       "alreadyUndone": "Cette modification est déjà annulée.",
-      "undoUnavailable": "La page a changé depuis, cette modification ne peut donc pas être annulée.",
-      "view": "Voir",
       "relatedPages": "Pages liées",
-      "pageLimit": "Cette mémoire contient 200 pages, sa limite. Supprimez d’abord une page.",
       "emptyPage": "Cette page est encore vide.",
-      "recent": {
-        "added": "{author} a mis à jour cette page {time} : ajout de « {fact} »",
-        "updated": "{author} a mis à jour cette page {time}",
-        "created": "{author} a créé cette page {time}",
-        "viewChange": "Voir la modification"
-      },
-      "changes": {
-        "title": "Modifications récentes",
-        "empty": "Aucune modification pour l’instant.",
-        "loadError": "Impossible de charger les modifications récentes.",
-        "viewPage": "Voir {title}",
-        "undoPage": "Annuler la modification de {title}",
-        "op": {
-          "create": "{author} a créé <page>{title}</page>",
-          "update": "{author} a modifié <page>{title}</page>",
-          "append": "{author} a complété <page>{title}</page>",
-          "delete": "{author} a supprimé <page>{title}</page>",
-          "restore": "{author} a restauré <page>{title}</page>",
-          "undo": "{author} a annulé une modification de <page>{title}</page>",
-          "confirm": "{author} a confirmé <page>{title}</page>",
-          "file_note": "{author} a classé une note dans <page>{title}</page>",
-          "import": "{author} a importé <page>{title}</page>"
-        }
-      },
       "history": {
         "title": "Historique",
         "description": "Chaque modification de « {title} », de la plus récente à la plus ancienne.",
@@ -22884,12 +22855,7 @@
         }
       },
       "editor": {
-        "title": "Titre",
-        "type": "Type",
-        "summary": "Résumé",
-        "summaryPlaceholder": "Une ligne que les agents voient dans la liste des pages",
         "body": "Page",
-        "bodyHint": "Markdown. Une ligne qui commence par ## ouvre une section ; ⟦1⟧ cite la source 1.",
         "save": "Enregistrer",
         "cancel": "Annuler",
         "saved": "Page enregistrée",
@@ -22897,7 +22863,6 @@
         "reload": "Recharger",
         "error": {
           "tooLarge": "Cette page dépasse 8 Ko. Raccourcissez-la.",
-          "titleTaken": "Une autre page porte déjà ce titre.",
           "secret": "Cela ressemble à un secret. Gardez les secrets dans Secrets.",
           "readOnly": "Cette mémoire est en lecture seule.",
           "failed": "Impossible d’enregistrer la page. Réessayez."
@@ -22909,32 +22874,17 @@
         "hint": "Enregistré comme note à votre nom",
         "send": "Enregistrer dans la mémoire",
         "status": {
-          "saved": "Enregistré dans Notes",
           "secret": "Cela ressemble à un secret. Gardez les secrets dans Secrets.",
-          "limit": "Cette mémoire contient 200 pages, sa limite. Supprimez d’abord une page.",
           "readOnly": "Cette mémoire est en lecture seule.",
           "failed": "Échec de l’enregistrement. Réessayez."
-        }
+        },
+        "open": "Mémoriser…"
       },
       "empty": {
-        "title": "{place} n’a pas encore de mémoire",
-        "titleDm": "Pas encore de mémoire avec {place}",
-        "description": "Les agents enregistrent ce sur quoi ce canal s’accorde, pour que chaque nouveau fil commence avec. Chaque fait renvoie au fil d’où il vient ; modifiez ou annulez n’importe quel changement.",
-        "descriptionDm": "{place} enregistre ce sur quoi vous vous accordez dans cette conversation, pour que chaque nouveau fil commence avec. Chaque fait renvoie au fil d’où il vient ; modifiez ou annulez n’importe quel changement.",
-        "example": {
-          "people": "Northwind — le contact principal est Sam, renouvellement en mars",
-          "decisions": "Le prix reste à 49 $ par siège",
-          "workstreams": "Lancement T4 — statut, responsable, prochaines étapes",
-          "playbooks": "Comment nous rédigeons les notes de version"
-        },
-        "tryOne": "Essayez",
-        "try": {
-          "one": "Notre lancement est le 12 nov.",
-          "two": "Priya valide tous les textes du lancement",
-          "three": "Écrire simplement, sans exagération"
-        },
-        "titleCompany": "Rien dans la mémoire de l’entreprise pour l’instant",
-        "descriptionCompany": "Les agents enregistrent ce sur quoi tout le projet s’accorde, pour que chaque nouveau fil de chaque canal commence avec. Chaque fait renvoie au fil d’origine ; modifiez ou annulez n’importe quel changement."
+        "title": "Ce dont Kortix se souvient à propos de ce canal.",
+        "titleDm": "Ce dont Kortix se souvient à propos de cette conversation.",
+        "description": "Il lit ces pages avant chaque réponse.",
+        "titleCompany": "Ce dont Kortix se souvient à propos de ce projet."
       },
       "source": {
         "thread": "Ouvrir le fil « {label} »",
@@ -22944,20 +22894,6 @@
         "person": "Ajouté par {label}",
         "import": "Importé de {label}"
       },
-      "saved": {
-        "running": "Enregistrement dans la mémoire…",
-        "channel": "Enregistré dans la mémoire de {place} : <page>{title}</page>",
-        "dm": "Enregistré dans votre mémoire avec {place} : <page>{title}</page>",
-        "company": "Enregistré dans la mémoire de l’entreprise : <page>{title}</page>",
-        "failed": "Non enregistré dans la mémoire : {reason}",
-        "view": "Voir",
-        "undo": "Annuler",
-        "undone": "Annulé",
-        "superseded": "Modifié depuis —",
-        "openHistory": "ouvrir l’historique",
-        "undoFailed": "Impossible d’annuler.",
-        "failedGeneric": "Non enregistré dans la mémoire."
-      },
       "used": {
         "label": "A utilisé la mémoire de {places} · {count, plural, one {# page} other {# pages}}",
         "title": "Pages avec lesquelles ce fil a commencé",
@@ -22966,14 +22902,6 @@
       },
       "searchError": "Impossible de rechercher dans cette mémoire.",
       "searchResults": "Résultats de recherche",
-      "searchTool": {
-        "title": "Recherche dans la mémoire",
-        "count": "{count, plural, one {# page} other {# pages}}",
-        "running": "Recherche dans la mémoire…",
-        "failed": "La recherche dans la mémoire a échoué : {reason}",
-        "failedGeneric": "La recherche dans la mémoire a échoué.",
-        "none": "Aucune page ne correspond à « {query} »."
-      },
       "palette": {
         "heading": "Mémoire"
       },
@@ -22989,34 +22917,15 @@
         "saveTo": "Enregistrer dans",
         "dm": "Votre mémoire avec {agent}"
       },
-      "archivedReadOnly": "{place} est archivé. Sa mémoire est en lecture seule.",
-      "pending": {
-        "note": "Les agents n’utilisent pas ces pages tant que personne ne les a confirmées.",
-        "from": "De {host}",
-        "banner": "De {host}. Les agents ne l’utilisent pas tant que personne ne l’a confirmé.",
-        "bannerNoHost": "D’en dehors du fil. Les agents ne l’utilisent pas tant que personne ne l’a confirmé.",
-        "confirm": "Confirmer",
-        "confirmPage": "Confirmer {title}",
-        "discard": "Rejeter",
-        "discardPage": "Rejeter {title}",
-        "cancel": "Annuler",
-        "confirmed": "Page confirmée. Les agents peuvent l’utiliser maintenant.",
-        "alreadyConfirmed": "Quelqu’un a déjà confirmé cette page.",
-        "confirmFailed": "Impossible de confirmer la page. Réessayez.",
-        "discarded": "Page rejetée",
-        "discardFailed": "Impossible de rejeter la page. Réessayez."
+      "updated": "Mise à jour {time} par {author}",
+      "updatedAt": "Mise à jour {time}",
+      "sourceKind": {
+        "thread": "fil",
+        "person": "message",
+        "outside": "lien",
+        "import": "fichier"
       },
-      "trash": {
-        "title": "Corbeille",
-        "note": "Les pages supprimées restent ici 30 jours, puis sont supprimées définitivement.",
-        "loadError": "Impossible de charger la corbeille.",
-        "restore": "Restaurer",
-        "restorePage": "Restaurer {title}",
-        "restored": "Page restaurée",
-        "titleTaken": "Une page porte déjà ce titre. Renommez-la, puis restaurez celle-ci.",
-        "restoreFailed": "Impossible de restaurer la page. Réessayez.",
-        "allTrashed": "Toutes les pages sont dans la corbeille."
-      }
+      "pageCount": "{count, plural, one {# page} other {# pages}}"
     },
     "create": {
       "title": "Créer un canal",
@@ -23116,10 +23025,8 @@
       "roster": "{people} · {agents}",
       "rosterPeople": "{count, plural, one {# personne} other {# personnes}}",
       "rosterAgents": "{count, plural, one {# agent} other {# agents}}",
-      "rosterHint": "Personnes et agents des fils de ce canal",
       "copyLink": "Copier le lien du fil",
       "linkCopied": "Lien copié",
-      "started": "Lancé {time}",
       "notice": {
         "unreachable": "Contact perdu avec l’ordinateur de ce fil. Les messages envoyés restent en file d’attente jusqu’à la reconnexion.",
         "unreachableMidTurn": "Contact perdu avec l’ordinateur de ce fil alors qu’un tour est encore ouvert. Les messages envoyés restent en file d’attente jusqu’à sa réponse.",
@@ -23166,7 +23073,12 @@
       "appsLoadError": "Impossible de charger les apps.",
       "triggers": {
         "loadError": "Impossible de charger les déclencheurs."
-      }
+      },
+      "reply": "Répondre",
+      "rosterTitlePeople": "Personnes",
+      "rosterTitleAgents": "Agents",
+      "viewAllMembers": "Voir tous les membres",
+      "agentThreads": "{count, plural, one {# fil} other {# fils}}"
     },
     "details": {
       "about": "À propos",
@@ -23175,14 +23087,23 @@
       "description": "Description",
       "noDescription": "Ajouter une description",
       "created": "Créé le",
-      "edit": "Modifier",
       "editField": "Modifier {field}",
       "archiveTitle": "Archiver ce canal",
       "archiveHint": "Il quitte la barre latérale de tous les membres. Ses fils restent.",
       "archive": "Archiver",
       "people": "Personnes",
       "agents": "Agents",
-      "membersHint": "Toutes les personnes qui ont lancé un fil ici et tous les agents qui en ont répondu un, dans les fils chargés jusqu’ici."
+      "membersHint": "Toutes les personnes qui ont lancé un fil ici et tous les agents qui en ont répondu un, dans les fils chargés jusqu’ici.",
+      "threads": "{count, plural, one {# fil} other {# fils}}",
+      "find": "Rechercher des personnes ou des agents",
+      "addPeople": "Ajouter des personnes",
+      "you": "(toi)",
+      "groupCount": "{label} · {count}",
+      "noMatches": "Personne ne correspond à « {query} ».",
+      "defaultAgent": "Agent par défaut",
+      "defaultAgentHint": "Répond aux messages qui ne nomment aucun agent. Se règle pour tout le projet dans Personnaliser › Agents.",
+      "visibility": "Qui peut le voir",
+      "visibilityProject": "Tout le monde dans le projet"
     },
     "folder": {
       "memory": "Mémoire",
@@ -23194,6 +23115,26 @@
         "description": "Les fichiers et la mémoire de {place} sont dans Drive. Activez Volumes dans Feature flags pour les utiliser.",
         "descriptionMember": "Les fichiers et la mémoire de {place} sont dans Drive. Demandez à un administrateur du projet de l'activer.",
         "action": "Ouvrir Feature flags"
+      }
+    },
+    "onboarding": {
+      "reenabled": "Les sessions démarrées pendant que les Canaux étaient désactivés sont ici.",
+      "intro": {
+        "title": "Vos sessions sont maintenant des fils dans #general.",
+        "channels": "Les canaux regroupent le travail par équipe.",
+        "threads": "Chaque nouveau message démarre un fil.",
+        "memory": "Les agents retiennent ce que chaque canal décide.",
+        "gotIt": "Compris"
+      },
+      "getStarted": {
+        "title": "Pour commencer",
+        "dismiss": "Masquer",
+        "channel": "Créer un canal pour une équipe",
+        "remember": "Dire à {place} quelque chose à retenir",
+        "dm": "Ouvrir un message direct avec un agent",
+        "pickAgent": "Écrire à un agent",
+        "noAgents": "Ce projet n’a pas encore d’agents.",
+        "done": "Fait"
       }
     }
   }

@@ -1303,22 +1303,23 @@ export function UserMessageActions({
           <Button
             type="button"
             variant="ghost"
-            size={toolbar ? 'icon-md' : 'icon-xs'}
+            size={toolbar ? 'icon-sm' : 'icon-xs'}
             // 24px visible, 40px target — grown with a pseudo-element so the
             // dense action row keeps its rhythm.
             className={toolbar ? undefined : 'hit-area-2'}
             aria-label={tI18nComplete.raw('text673d6a594efa')}
             onClick={() => onRewind?.(messageId as string, rewindPromptText ?? '')}
           >
-            <PencilSimpleIcon weight="regular" className="text-foreground size-4" />
+            <PencilSimpleIcon weight="regular" className={cn('text-foreground', toolbar ? 'size-3.5' : 'size-4')} />
           </Button>
         </Hint>
       )}
 
       <CopyButton
         code={copyText}
-        size={toolbar ? 'lg' : 'sm'}
-        className={toolbar ? 'focus-visible:ring-ring focus-visible:ring-2' : undefined}
+        size={toolbar ? 'md' : 'sm'}
+        // In a row's toolbar every glyph is 14px (`size-3.5`), the channel row's too.
+        className={toolbar ? 'focus-visible:ring-ring focus-visible:ring-2 [&_svg]:size-3.5!' : undefined}
         hintSide="top"
         label={tI18nComplete.raw('texte21f935f11d7')}
       />

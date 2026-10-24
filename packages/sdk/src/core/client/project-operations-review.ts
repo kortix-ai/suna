@@ -50,33 +50,30 @@ export function bindProjectOperationsReview(projectId: string) {
       },
     },
 
-    /** Memory pages (`project_channels` flag). A layer key is `company` or a channel's or DM's space id. */
+    /** Memory: the Markdown files of the project's Drive (`drives` flag). A layer key is `company` or a channel's or DM's space id. */
     memory: {
-      /** One layer and its page counts; the first read creates it. */
+      /** One layer: its Drive folder and page counts. */
       layer: (layerKey: string) => P.getProjectMemoryLayer(projectId, layerKey),
-      /** One page of Recent changes; walk older ones with `next` → `before`. */
+      /** Recent changes: the 20 most recently changed files. */
       changes: (...a: DropFirst<Parameters<typeof P.listProjectMemoryChanges>>) => P.listProjectMemoryChanges(projectId, ...a),
       pages: {
-        /** Live pages; `{ deleted: true }` the trash, `{ status: 'unconfirmed' }` Needs confirming. */
+        /** One page per Markdown file, newest first; `{ type }` filters. */
         list: (...a: DropFirst<Parameters<typeof P.listProjectMemoryPages>>) => P.listProjectMemoryPages(projectId, ...a),
         create: (...a: DropFirst<Parameters<typeof P.createProjectMemoryPage>>) => P.createProjectMemoryPage(projectId, ...a),
         get: (pageId: string) => P.getProjectMemoryPage(projectId, pageId),
         update: (...a: DropFirst<Parameters<typeof P.updateProjectMemoryPage>>) => P.updateProjectMemoryPage(projectId, ...a),
         delete: (pageId: string) => P.deleteProjectMemoryPage(projectId, pageId),
         history: (...a: DropFirst<Parameters<typeof P.listProjectMemoryHistory>>) => P.listProjectMemoryHistory(projectId, ...a),
-        restore: (...a: DropFirst<Parameters<typeof P.restoreProjectMemoryPage>>) => P.restoreProjectMemoryPage(projectId, ...a),
-        /** Confirm an unconfirmed page (Needs confirming). Discard is `delete`. */
-        confirm: (pageId: string) => P.confirmProjectMemoryPage(projectId, pageId),
       },
-      /** Remember-box sentences, saved as `note` pages. */
+      /** Remember-box sentences, appended to the layer's `Notes.md`. */
       notes: {
         add: (...a: DropFirst<Parameters<typeof P.addProjectMemoryNote>>) => P.addProjectMemoryNote(projectId, ...a),
       },
-      /** Undo one change by any of its versions. */
+      /** Undo the newest change of a page, by its version. */
       undo: (versionId: string) => P.undoProjectMemoryVersion(projectId, versionId),
       /** Search the pages the caller can read: `{ q, layer?, type?, limit? }`, `q` at least 2 characters. */
       search: (...a: DropFirst<Parameters<typeof P.searchProjectMemory>>) => P.searchProjectMemory(projectId, ...a),
-      /** A thread's "Used memory": the pages listed to its agent at the first turn. */
+      /** A thread's "Used memory": the files listed to its agent at the first turn. */
       usage: (sessionId: string) => P.getSessionMemoryUsage(projectId, sessionId),
     },
 
