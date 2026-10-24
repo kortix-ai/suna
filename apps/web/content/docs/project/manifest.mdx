@@ -506,6 +506,21 @@ The dashboard and the API edit the manifest in the project repository. `kortix t
 
 A manifest edit takes effect when it reaches the default branch. A dashboard, API, SDK or `--apply` edit commits there at once. Any other edit takes effect when `kortix ship`, a direct push or a change request merge brings it there. See [How a change takes effect](/docs/project#how-a-change-takes-effect).
 
+### kortix.yaml is the source of truth
+
+Everything the manifest can declare is owned by the file. The dashboard, the API, the SDK and the CLI never change a declared setting in the database alone:
+
+| You change | In the dashboard, API, SDK or CLI | After a push that edits the file |
+| --- | --- | --- |
+| A trigger, an agent's config, scope and grants, a skill, a connector, `default_agent` | Commits to kortix.yaml | Applied on the next sync |
+| An App's `resources`, `idle_timeout_seconds`, `always_on`, `labels`, `display`, `uses` | Commits to `apps.<slug>` (the block is added when the App has none), then changes the App | Applied to the App on the next sync, without a deploy |
+| Deleting an App | Removes `apps.<slug>` and every `uses` or `display.parent` that names it, then deletes the App | — |
+| A connector's `auth.secret` | Commits to `connectors[].auth.secret`, then binds it | Applied on the next sync |
+| `project.name` | Commits to `project.name`, then renames the project | A changed value renames the project on the next sync |
+| A sandbox template the file declares | Refused with `409 template_declared_in_manifest`: edit `sandbox.templates` | Applied on the next sync, `entrypoint` included |
+
+A write that cannot commit (the repository is unreachable, the value is invalid) changes nothing. Kept out of the file on purpose: runtime state (last fire, status, run history), secret values, reminders, runs an App schedules for itself, feature flags, and an App's access mode. An App's release config (`env`, `processes`, `mounts`, …) applies when you deploy: a release is the build plus the config it was deployed with, so a rollback runs an older config by design. `project.description` is informational.
+
 ## Migrate from kortix.toml
 
 Kortix reads and runs a v1 `kortix.toml`. To move it to v2, open **Customize → Settings → Upgrades** and run **Migrate manifest to v2 (kortix.yaml)**, or run:

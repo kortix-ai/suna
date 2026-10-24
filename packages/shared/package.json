@@ -9,6 +9,7 @@
     "./audit-labels": "./src/audit-labels.ts",
     "./meta-agent": "./src/meta-agent.ts",
     "./artifact-doc": "./src/artifact-doc.ts",
+    "./brand-css": "./src/brand-css.generated.ts",
     "./tools": "./src/tools/index.ts",
     "./utils": "./src/utils/index.ts",
     "./guards": "./src/utils/guards.ts",

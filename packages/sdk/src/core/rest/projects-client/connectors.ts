@@ -1559,7 +1559,7 @@ export async function checkMcpServerSignIn(projectId: string, url: string) {
   );
 }
 
-/** A Pipedream or Composio connector, and the Kortix app it moves to (`connectors_v2`). */
+/** A Pipedream or Composio connector, and the Kortix app it moves to. */
 export interface ConnectorMove {
   slug: string;
   name: string;
@@ -1865,7 +1865,19 @@ export async function listConnectSections(
   );
 }
 
-export type DiscoverConnectorKind = 'openapi' | 'mcp' | 'graphql' | 'cli';
+/** `composio`: a managed app. Install it as a
+ *  Composio toolkit from `DiscoverConnector.composio`. `cli` is kept for
+ *  compatibility: the catalogue no longer returns CLI records (2026-10-24),
+ *  and the API answers `400` to `kind=cli`. */
+export type DiscoverConnectorKind = 'openapi' | 'mcp' | 'graphql' | 'composio' | 'kortix' | 'cli';
+
+/** What a `kortix` entry is: an integration Kortix built itself — a channel
+ *  people message the agent in (`slack`, `teams`, `email`, `telegram`) or the
+ *  computer it works on (`computer`). It is set up on its own page, never
+ *  through `installDiscoverConnector`. */
+export interface DiscoverKortixApp {
+  app: 'slack' | 'teams' | 'email' | 'telegram' | 'computer';
+}
 
 export interface DiscoverConnector {
   id: string;
@@ -1879,6 +1891,17 @@ export interface DiscoverConnector {
   categories: string[];
   feeds: string[];
   popularity: number | null;
+  /** The app's hosted MCP server. MCP entries only. */
+  mcpUrl?: string;
+  /** The server signs in with OAuth. */
+  oauth?: boolean;
+  /** Connects with nothing to set up: a public or self-registering MCP server,
+   *  a Kortix catalogue app, or a managed app. */
+  oneClick?: boolean;
+  /** The managed toolkit a `composio` entry installs. */
+  composio?: ConnectToolkit;
+  /** What a `kortix` entry sets up. */
+  kortix?: DiscoverKortixApp;
 }
 
 export interface DiscoverConnectorTemplate {
@@ -1897,7 +1920,8 @@ export interface DiscoverConnectorTemplate {
 
 export interface DiscoverConnectorVariant {
   id: string;
-  kind: 'openapi' | 'postman' | 'mcp' | 'graphql' | 'http' | 'cli';
+  /** `composio`: a Composio app, installed from `composio`. */
+  kind: 'openapi' | 'postman' | 'mcp' | 'graphql' | 'http' | 'composio' | 'kortix' | 'cli';
   name: string;
   url: string | null;
   docs: string | null;
@@ -1906,6 +1930,14 @@ export interface DiscoverConnectorVariant {
   requiresAuth: boolean;
   command: string | null;
   connector: DiscoverConnectorTemplate | null;
+  /** Connects with nothing to set up. */
+  oneClick?: boolean;
+  /** The way Install uses without asking; the first variant. */
+  recommended?: boolean;
+  /** The Composio toolkit a `composio` variant installs. */
+  composio?: ConnectToolkit;
+  /** What a `kortix` variant sets up. */
+  kortix?: DiscoverKortixApp;
 }
 
 export interface DiscoverConnectorsPage {
@@ -1940,6 +1972,10 @@ export interface DiscoverConnectorsQuery {
    *  exactly the connectors that section counted, picks first. */
   category?: string;
   limit?: number;
+  /** Only the entries that connect with nothing to set up (`oneClick`). */
+  oneClick?: boolean;
+  /** Only the entries that connect these ways. */
+  kinds?: DiscoverConnectorKind[];
 }
 
 /**
@@ -1960,6 +1996,8 @@ export async function listDiscoverConnectors(
   if (query.category) params.set('category', query.category);
   if (query.cursor) params.set('cursor', query.cursor);
   if (query.limit) params.set('limit', String(query.limit));
+  if (query.oneClick) params.set('oneClick', '1');
+  if (query.kinds?.length) params.set('kind', query.kinds.join(','));
   const qs = params.toString();
   return unwrap(
     await backendApi.get<DiscoverConnectorsPage>(
@@ -2000,11 +2038,18 @@ export interface DiscoverSectionsPage {
  */
 export async function listDiscoverSections(
   projectId: string,
-  opts?: { perCategory?: number; maxCategories?: number },
+  opts?: {
+    perCategory?: number;
+    maxCategories?: number;
+    oneClick?: boolean;
+    kinds?: DiscoverConnectorKind[];
+  },
 ) {
   const params = new URLSearchParams();
   if (opts?.perCategory) params.set('perCategory', String(opts.perCategory));
   if (opts?.maxCategories) params.set('maxCategories', String(opts.maxCategories));
+  if (opts?.oneClick) params.set('oneClick', '1');
+  if (opts?.kinds?.length) params.set('kind', opts.kinds.join(','));
   const qs = params.toString();
   return unwrap(
     await backendApi.get<DiscoverSectionsPage>(
@@ -2018,6 +2063,60 @@ export async function getDiscoverConnector(projectId: string, id: string) {
   return unwrap(
     await backendApi.get<DiscoverConnectorDetail>(
       `/connectors/projects/${projectId}/discover/connectors/detail?${params.toString()}`,
+    ),
+  );
+}
+
+/** One tool a way to connect offers, read before install. */
+export interface DiscoverConnectorTool {
+  name: string;
+  description: string;
+}
+
+export interface DiscoverConnectorTools {
+  way: { id: string; kind: DiscoverConnectorVariant['kind']; name: string };
+  tools: DiscoverConnectorTool[];
+  /** Every tool the source lists; `tools` holds at most 500. */
+  total: number;
+  /** `mcp`: the server's own list; `directory`: names from a public
+   *  directory; `composio`; `spec`: the OpenAPI operations; `none`: this way
+   *  lists its tools only after install. */
+  source: 'mcp' | 'directory' | 'composio' | 'spec' | 'none';
+}
+
+/** The tools of one way to connect a Discover app (`way`: a variant id;
+ *  default the recommended way), before it is installed. */
+export async function getDiscoverConnectorTools(projectId: string, id: string, way?: string) {
+  const params = new URLSearchParams({ id });
+  if (way) params.set('way', way);
+  return unwrap(
+    await backendApi.get<DiscoverConnectorTools>(
+      `/connectors/projects/${projectId}/discover/connectors/tools?${params.toString()}`,
+    ),
+  );
+}
+
+export interface DiscoverInstallResult {
+  ok: true;
+  slug: string;
+  name: string;
+  provider: string;
+  way: { id: string; kind: DiscoverConnectorVariant['kind']; name: string; oneClick: boolean };
+  sync?: ConnectorSyncResult;
+  /** `connect`: sign in (`connectorConnect`); `credential`: set its key; `ready`. */
+  next: 'connect' | 'credential' | 'ready';
+}
+
+/** Install one way to connect a Discover app as a connector profile:
+ *  `way` by variant id, else the recommended one. */
+export async function installDiscoverConnector(
+  projectId: string,
+  input: { id: string; way?: string; name?: string; slug?: string },
+) {
+  return unwrap(
+    await backendApi.post<DiscoverInstallResult>(
+      `/connectors/projects/${projectId}/discover/install`,
+      input,
     ),
   );
 }

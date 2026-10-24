@@ -26,7 +26,7 @@ import {
  * the same list, so other packages can assert the two have not drifted.
  *
  * `review_center`, `agent_tunnel`, `session_transcript_history`, `teams`,
- * `config_releases`, `apps`, `llm_gateway`, `pi_harness` and `genui` are deprecated. `agent_tunnel` graduated like
+ * `config_releases`, `apps`, `llm_gateway`, `pi_harness`, `genui`, `agentmail_email`, `connectors_v2` and `connectors_api_discover` are deprecated. `agent_tunnel` graduated like
  * `review_center` below: a paired computer is a connector account and needs no
  * flag. So did `session_transcript_history`: every session saves its
  * transcript and shows it while its computer is off. And `teams`: every
@@ -36,6 +36,10 @@ import {
  * the LLM gateway is the only model path for every project. And `pi_harness`:
  * every new session runs pi. And `genui`: generative UI is on for every
  * project, and every session lists the kortix-genui system skill.
+ * And `agentmail_email`: every project can
+ * connect an email inbox. And `connectors_v2` with `connectors_api_discover`:
+ * the Kortix connectors catalog is the only connectors path; the API sends a
+ * constant `true` for both.
  *
  * `review_center` is deprecated. Review Center graduated out of the flag
  * system: it is on for every project, and the API no longer lists, resolves,
@@ -48,7 +52,9 @@ export type FeatureFlagKey =
   /** @deprecated Graduated — computers need no flag (the platform's `TUNNEL_ENABLED` is the only gate). Removed in the next major. */
   | 'agent_tunnel'
   | 'marketplace'
+  /** @deprecated Graduated — integrations.sh is part of the one Kortix catalog. Removed in the next major. */
   | 'connectors_api_discover'
+  /** @deprecated Graduated — every project can connect an email inbox. Removed in the next major. */
   | 'agentmail_email'
   /** @deprecated Graduated — every project can connect Microsoft Teams. Removed in the next major. */
   | 'teams'
@@ -89,12 +95,15 @@ export type FeatureFlagKey =
   /** Not a flag since P8.2 (2026-10-22): the session log is every session's saved history, and the API sends `true` for every project. Absent from {@link FEATURE_FLAG_KEYS}. */
   | 'session_log'
   | 'session_log_restore'
+  /** @deprecated Graduated — the Kortix connectors catalog is the only connectors path. Removed in the next major. */
   | 'connectors_v2'
   | 'agent_rooms'
   | 'goals'
   | 'workspace_volume'
   | 'artifacts'
   | 'cloud_subagents'
+  /** The email channel: a Resend inbox that starts and continues sessions. Experimental, off by default. */
+  | 'email_channel'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
@@ -115,7 +124,10 @@ type GraduatedFeatureFlagKey =
   | 'session_log'
   | 'pi_harness'
   | 'genui'
-  | 'monitors';
+  | 'agentmail_email'
+  | 'monitors'
+  | 'connectors_v2'
+  | 'connectors_api_discover';
 /** The keys `KortixProject.experimental` carries on every response. */
 type ServedFeatureFlagKey = Exclude<FeatureFlagKey, GraduatedFeatureFlagKey>;
 
@@ -126,8 +138,6 @@ type ServedFeatureFlagKey = Exclude<FeatureFlagKey, GraduatedFeatureFlagKey>;
  */
 export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'marketplace',
-  'connectors_api_discover',
-  'agentmail_email',
   'meta_agent',
   'reminders',
   'warm_sessions',
@@ -139,12 +149,12 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'volumes',
   'drives',
   'session_log_restore',
-  'connectors_v2',
   'agent_rooms',
   'goals',
   'workspace_volume',
   'artifacts',
   'cloud_subagents',
+  'email_channel',
 ] as const;
 
 /**

@@ -28,7 +28,10 @@ import { Button } from '../../../primitives/button';
 import Loading from '../../../primitives/loading';
 import { cn } from '../../../internal/lib/utils';
 import { XIcon } from '@phosphor-icons/react';
+import { ConnectorLogo } from '../../../internal/connector-logo/connector-logo';
+import type { NativeConnectorApp } from '../../../internal/connector-logo/connector-logo-source';
 import { useState } from 'react';
+import { ChannelHeroFrame, ChannelHeroStatus, useChannelHeroLayout } from './channel-hero-frame';
 
 /** Local, not exported — `ChannelRow` is the only sanctioned way to draw it. */
 function ChannelStatusDot({ connected }: { connected: boolean }) {
@@ -44,7 +47,7 @@ function ChannelStatusDot({ connected }: { connected: boolean }) {
 }
 
 export function ChannelRow({
-  icon,
+  app,
   name,
   connected,
   /** Shown when connected — the workspace, tenant, or address we're bound to. */
@@ -53,21 +56,46 @@ export function ChannelRow({
   pitch,
   badge,
   actions,
+  hero,
 }: {
-  icon: React.ReactNode;
+  /** Which Kortix channel: its logo is the one every surface shows. */
+  app: NativeConnectorApp;
   name: string;
   connected: boolean;
   detail?: string | null;
   pitch: string;
   badge?: React.ReactNode;
   actions?: React.ReactNode;
+  /** The channel's own page draws it as a hero (`ChannelHeroLayoutProvider`):
+   *  its pitch when not connected, a connected line when it is. */
+  hero?: { title: string; connectedTitle: string; lede?: string; preview: React.ReactNode };
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const heroLayout = useChannelHeroLayout();
+  if (heroLayout && hero) {
+    return (
+      <ChannelHeroFrame
+        app={app}
+        title={connected ? hero.connectedTitle : hero.title}
+        lede={hero.lede ?? pitch}
+        status={
+          connected ? <ChannelHeroStatus label={tI18nComplete.raw('text22965568d22a')} detail={detail} /> : undefined
+        }
+        actions={
+          badge || actions ? (
+            <>
+              {badge}
+              {actions}
+            </>
+          ) : undefined
+        }
+        preview={hero.preview}
+      />
+    );
+  }
   return (
     <li className="bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5">
-      <span className="bg-muted/60 flex size-9 shrink-0 items-center justify-center rounded-sm">
-        {icon}
-      </span>
+      <ConnectorLogo source={{ nativeApp: app }} size="lg" />
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">

@@ -8,6 +8,8 @@ const shortSleep = spyOn(Bun, 'sleep').mockImplementation(((ms: number) => realS
 afterAll(() => shortSleep.mockRestore());
 
 mock.module('../channels/install-store', () => ({
+  loadSlackBotIdForProject: async () => null,
+  ensureSlackBotId: async () => null,
   loadSlackTokenForProject: async () => 'xoxb-test',
 }));
 

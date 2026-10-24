@@ -195,7 +195,7 @@ describe('ComposerUnderbar — the denied roster looks like an ordinary picker',
     return /class="([^"]*)"/.exec(button ?? '')?.[1] ?? '';
   }
 
-  test('same chrome as the populated trigger, bar the muted text token', () => {
+  test('same chrome as the populated trigger', () => {
     // Everything Button contributes (variant ghost, size sm, radius, hit area)
     // must match; a bespoke shape here is the thing that read as "too much".
     const populated = triggerClasses(
@@ -204,7 +204,9 @@ describe('ComposerUnderbar — the denied roster looks like an ordinary picker',
     const denied = triggerClasses(render({ noAccessibleAgents: true }));
 
     expect(populated).not.toBe('');
-    expect(denied.replace('text-muted-foreground', 'text-foreground/70')).toBe(populated);
+    // Both triggers use `text-muted-foreground` since the brand pass dropped the
+    // `/70` opacity token, so the classes match exactly.
+    expect(denied).toBe(populated);
   });
 
   test('keeps the caret, so it reads as a picker and not a notice', () => {

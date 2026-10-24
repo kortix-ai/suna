@@ -447,15 +447,21 @@ const envSchema = z.object({
   // Slack messages should run as the bound project owner.
   SLACK_REQUIRE_USER_IDENTITY: optBoolTrue,
 
-  // ── Channels — AgentMail email adapter (optional) ────────────────────────
-  AGENTMAIL_API_URL: optUrl('https://api.agentmail.to/v0'),
-  AGENTMAIL_API_KEY: optStr,
-  AGENTMAIL_WEBHOOK_SECRET: optStr,
+  // ── Channels — email (Resend Inboxes) ─────────────────────────────────────
+  // The managed team key is RESEND_API_KEY (also the transactional sender).
+  RESEND_API_URL: optUrl('https://api.resend.com'),
+  // Domain for inboxes made with the managed key (verified and receiving on
+  // Kortix's Resend team). Unset: no managed inbox can be created.
+  RESEND_MANAGED_DOMAIN: optStr,
+  // Operator switch for managed inboxes on RESEND_MANAGED_DOMAIN. Each one
+  // costs Kortix a paid Resend inbox, so a project cannot turn this on: off,
+  // every connect needs the project's own Resend key.
+  RESEND_MANAGED_EMAIL_ENABLED: optBoolFalse,
 
-  // ── Channels — Telegram Bot API (connectors_v2). Overridable for tests. ──
+  // ── Channels — Telegram Bot API. Overridable for tests. ──
   TELEGRAM_API_URL: optUrl('https://api.telegram.org'),
 
-  // ── MCP apps (connectors_v2) — Kortix-owned OAuth clients ───────────────
+  // ── MCP apps — Kortix-owned OAuth clients ───────────────
   // JSON: {"google":{"client_id":"…","client_secret":"…"},"github":{…}}. One
   // client per vendor whose MCP server has no dynamic client registration
   // (connectors/mcp-apps.ts). An app whose client is absent is not listed.
@@ -1350,10 +1356,10 @@ export const config = {
   SLACK_HOME_HERO_URL: env.SLACK_HOME_HERO_URL,
   SLACK_REQUIRE_USER_IDENTITY: env.SLACK_REQUIRE_USER_IDENTITY,
 
-  // ─── Channels (AgentMail email) ──────────────────────────────────────────
-  AGENTMAIL_API_URL: env.AGENTMAIL_API_URL,
-  AGENTMAIL_API_KEY: env.AGENTMAIL_API_KEY,
-  AGENTMAIL_WEBHOOK_SECRET: env.AGENTMAIL_WEBHOOK_SECRET,
+  // ─── Channels (email, Resend Inboxes) ────────────────────────────────────
+  RESEND_API_URL: env.RESEND_API_URL,
+  RESEND_MANAGED_DOMAIN: env.RESEND_MANAGED_DOMAIN,
+  RESEND_MANAGED_EMAIL_ENABLED: env.RESEND_MANAGED_EMAIL_ENABLED,
   TELEGRAM_API_URL: env.TELEGRAM_API_URL,
   KORTIX_OAUTH_CLIENTS: env.KORTIX_OAUTH_CLIENTS,
 

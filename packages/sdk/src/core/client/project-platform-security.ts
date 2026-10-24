@@ -33,6 +33,19 @@ export function bindProjectPlatformSecurity(projectId: string) {
         disconnect: (connectorSlug?: string | null) => P.disconnectEmail(projectId, connectorSlug),
         updatePolicy: (...a: DropFirst<Parameters<typeof P.updateEmailPolicy>>) =>
           P.updateEmailPolicy(projectId, ...a),
+        /** The domains a Resend API key can create inboxes on (no key: the managed domain). */
+        domains: (input?: Parameters<typeof P.listEmailDomains>[1]) => P.listEmailDomains(projectId, input),
+        /** Add a custom domain to your Resend account; returns the DNS records to set. */
+        addDomain: (input: Parameters<typeof P.addEmailDomain>[1]) => P.addEmailDomain(projectId, input),
+        /** Check a custom domain's DNS records again. */
+        verifyDomain: (input: Parameters<typeof P.verifyEmailDomain>[1]) => P.verifyEmailDomain(projectId, input),
+        /** The inboxes: accounts of the email connector. */
+        inboxes: {
+          list: () => P.listEmailInboxes(projectId),
+          add: (input: Parameters<typeof P.addEmailInbox>[1]) => P.addEmailInbox(projectId, input),
+          update: (...a: DropFirst<Parameters<typeof P.updateEmailInbox>>) => P.updateEmailInbox(projectId, ...a),
+          remove: (connectionId: string) => P.removeEmailInbox(projectId, connectionId),
+        },
       },
     },
 

@@ -852,7 +852,9 @@ export class PiRuntime {
       }
       this.steered.push({ messageId, input, message })
       this.agent.steer(message)
-      this.dismissOpenQuestions()
+      // Harness context (a connector that just connected) is not the user's
+      // answer: the question stays open and the turn reads the steer after it.
+      if (!input.synthetic) this.dismissOpenQuestions()
       return 'steered' as const
     })
     this.steerChain = steered.catch(() => {})

@@ -1,4 +1,4 @@
-/** Telegram channel (connectors_v2): connect a bot by token, allow senders, disconnect. */
+/** Telegram channel: connect a bot by token, allow senders, disconnect. */
 import { randomBytes } from 'node:crypto';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
@@ -13,7 +13,6 @@ import {
 } from '../../channels/telegram/installs';
 import { config } from '../../config';
 import { reconcileChannelConnectors } from '../../connectors/sync';
-import { requireFeatureFlag } from '../../feature-flags/http-gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { logger } from '../../lib/logger';
 import { auth, errors, json } from '../../openapi';
@@ -28,13 +27,11 @@ function installBody(install: TelegramInstall | null) {
   return { bot_id: install.botId, username: install.username, allowed_user_ids: install.allowedUserIds };
 }
 
-/** Load the project, check connector-write (unless read-only), and gate on connectors_v2. */
+/** Load the project and check connector-write (unless read-only). */
 async function telegramContext(c: Context<AppEnv>, write: boolean) {
   const projectId = c.req.param('projectId') ?? '';
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return { response: c.json({ error: 'Not found' }, 404) };
-  const gate = requireFeatureFlag(c, loaded.row.metadata, 'connectors_v2');
-  if (gate) return { response: gate };
   if (write) {
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
   }

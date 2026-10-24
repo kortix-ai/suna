@@ -505,7 +505,7 @@ describe('genuine synonyms still answer', () => {
     ['secret', 'nav:proj-secrets'],
     ['environment', 'nav:proj-secrets'],
     ['slack', 'nav:proj-channels'],
-    ['agentmail', 'nav:proj-channels'],
+    ['telegram', 'nav:proj-channels'],
     ['roster', 'nav:proj-members'],
     ['collaborators', 'nav:proj-members'],
     // The config page's four rows became overlay rows (derived from the rail)

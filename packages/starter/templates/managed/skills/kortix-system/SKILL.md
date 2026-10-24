@@ -341,8 +341,9 @@ MCP tools: `list_connectors` → `search_connector_actions` →
 args are only ids; a `pending_approval` result carries a link the person
 opens, then call again with the same args). `connect_connector` returns the
 link that connects an account. `upload_connector_attachment` stages a file.
-`search_connector_apps`, `add_connector` and `remove_connector` change which
-connectors the project has.
+`search_connector_apps` finds an app in the catalogue, `get_connector_app`
+lists its ways to connect and their tools, and `add_connector` and
+`remove_connector` change which connectors the project has.
 
 The `kortix` MCP tool runs the real CLI as the person: `args` is the argv after
 `kortix` (`["secrets", "ls", "--json"]`), `project_id` and `session_id` set the

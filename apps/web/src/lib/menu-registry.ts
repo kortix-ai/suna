@@ -612,11 +612,8 @@ export const menuRegistry: MenuItemDef[] = [
   },
   // Agents and Skills are declared BEFORE Connectors here, unlike the tab bar
   // order in `CAPABILITY_TABS`. Declaration order is the palette's tie-break
-  // (`filteredNavItems` maps in registry order), and the Channels row carries
-  // the keyword `agentmail` — a product name it genuinely owns, but one that
-  // contains the substring "agent". With Channels declared first, the query
-  // "agent" listed it above the row that IS the Agents page. Ordering is free;
-  // dropping a real synonym is not.
+  // (`filteredNavItems` maps in registry order): the query "agent" must list
+  // the row that IS the Agents page first.
   {
     id: 'proj-connectors',
     label: 'Connectors',
@@ -645,7 +642,7 @@ export const menuRegistry: MenuItemDef[] = [
     // 'connections' stays off this bag — it names `proj-connectors`.
     href: '/projects/{projectId}/customize/connectors?scope=channels',
     requiresProject: true,
-    keywords: 'channels channel slack teams discord email agentmail inbox inbound messaging',
+    keywords: 'channels channel slack teams discord email telegram inbox inbound messaging',
   },
   {
     id: 'proj-connectors-policies',

@@ -122,5 +122,5 @@ export default function ProjectIndexPage() {
     }
   }, [billing, openUpgradeDialog, tI18nComplete]);
 
-  return <ProjectHome projectId={projectId} beforeSend={beforeSend} />;
+  return <ProjectHome projectId={projectId} beforeSend={beforeSend} onboarding />;
 }

@@ -134,8 +134,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
     dashboard_url: 'https://kortix.com/projects/11111111-2222-4333-8444-555555555555',
     experimental: {
       marketplace: false,
-      connectors_api_discover: false,
-      agentmail_email: false,
       meta_agent: false,
       monitors: false,
       reminders: false,
@@ -148,12 +146,12 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       volumes: false,
       drives: false,
       session_log_restore: false,
-      connectors_v2: false,
       agent_rooms: false,
       goals: false,
       workspace_volume: false,
       artifacts: false,
       cloud_subagents: false,
+      email_channel: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -362,6 +360,14 @@ describe('ProjectSchema', () => {
     const experimental = projectFixture().experimental as Record<string, boolean>;
     expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, genui: true } })).experimental.genui).toBe(true);
     expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, genui: false } }))).toThrow();
+  });
+
+  test('experimental carries the graduated connectors_v2 and connectors_api_discover keys only as a constant true', () => {
+    // Wire compat: the API still sends both as `true` for older SDK and hosts.
+    const experimental = projectFixture().experimental as Record<string, boolean>;
+    expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, connectors_v2: true } })).experimental.connectors_v2).toBe(true);
+    expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, connectors_api_discover: true } })).experimental.connectors_api_discover).toBe(true);
+    expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, connectors_v2: false } }))).toThrow();
   });
 
   test('accepts a null icon', () => {
@@ -824,8 +830,6 @@ describe('envelopes', () => {
     // (TypeScript 7) sorts differently from tsc 5; the runtime order is the contract.
     expect(FEATURE_FLAG_KEYS as readonly string[]).toEqual([
       'marketplace',
-      'connectors_api_discover',
-      'agentmail_email',
       'meta_agent',
       'reminders',
       'warm_sessions',
@@ -837,12 +841,12 @@ describe('envelopes', () => {
       'volumes',
       'drives',
       'session_log_restore',
-      'connectors_v2',
       'agent_rooms',
       'goals',
       'workspace_volume',
       'artifacts',
       'cloud_subagents',
+      'email_channel',
     ]);
   });
 

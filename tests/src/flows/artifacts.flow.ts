@@ -6,6 +6,7 @@
  */
 import { flow } from '../core/flow';
 import type { FlowContext } from '../core/types';
+import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
 import { CliSandbox, type CliResult } from '../fixtures/cli';
 import { bindDatabaseSessionCredential, createDatabaseSession } from '../fixtures/database-project';
 
@@ -337,6 +338,78 @@ flow(
       });
     } finally {
       await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:projectId/cli-token/:tokenId', { params: { projectId: project.id, tokenId: minted.token_id } }).catch(() => {});
+    }
+  },
+);
+
+const GOVERNED_ARTIFACT_MANIFEST = [
+  'kortix_version: 2',
+  'project:',
+  '  name: ke2e-artifacts',
+  'default_agent: writer',
+  'agents:',
+  '  writer:',
+  '    kortix_permissions: [project.session.read, project.artifact.read, project.artifact.write]',
+  '  publisher:',
+  '    kortix_permissions: [project.session.read, project.artifact.read, project.artifact.write, project.artifact.public]',
+  '  reader:',
+  '    kortix_permissions: [project.session.read, project.artifact.read]',
+  '  mute:',
+  '    kortix_permissions: [project.session.read]',
+  '',
+].join('\n');
+
+flow(
+  'ART-3',
+  {
+    domain: 'artifacts',
+    requires: ['database'],
+    timeoutMs: 180_000,
+    routes: [],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project({ managedGit: true });
+    const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: project.id });
+    try {
+      if (!(await enableArtifacts(ctx, project.id))) {
+        await ctx.step('no volume storage on this target: the flag stays off', async () => {});
+        return;
+      }
+      await world.writeManifest(GOVERNED_ARTIFACT_MANIFEST, 'ke2e: artifact agents');
+      const writer = await world.mintAgentSession({ agent: 'writer', launcher: ctx.P.OWNER, visibility: 'project' });
+      const publisher = await world.mintAgentSession({ agent: 'publisher', launcher: ctx.P.OWNER, visibility: 'project' });
+      const reader = await world.mintAgentSession({ agent: 'reader', launcher: ctx.P.OWNER, visibility: 'project' });
+      const mute = await world.mintAgentSession({ agent: 'mute', launcher: ctx.P.OWNER, visibility: 'project' });
+      const p = { projectId: project.id };
+      const doc = { files: { 'index.md': { content: '# Agent notes\n\nDraft.\n' } } };
+      let written = '';
+
+      await ctx.step('an agent granted read + write publishes and shares with the project → 201, 200', async () => {
+        const a = (await writer.client.post(LIST, doc, { params: p })).status(201).json<Detail>();
+        written = a.artifact_id;
+        (await writer.client.patch(ONE, { visibility: 'project' }, { params: { ...p, artifactId: written } })).status(200);
+      });
+      await ctx.step('without project.artifact.public it cannot make a public link: on publish or on update → 403 public_link_forbidden', async () => {
+        (await writer.client.post(LIST, { ...doc, visibility: 'public' }, { params: p })).status(403).body().has('$.code', 'public_link_forbidden');
+        (await writer.client.patch(ONE, { visibility: 'public' }, { params: { ...p, artifactId: written } })).status(403).body().has('$.code', 'public_link_forbidden');
+      });
+      await ctx.step('an agent granted project.artifact.public publishes a public artifact → 201 with a public_url', async () => {
+        const a = (await publisher.client.post(LIST, { ...doc, visibility: 'public' }, { params: p })).status(201).json<Detail>();
+        if (a.visibility !== 'public' || !a.public_url) throw new Error(JSON.stringify(a));
+      });
+      await ctx.step('an agent granted only read lists and opens the project artifact but cannot publish → 200, 200, 403', async () => {
+        const list = (await reader.client.get(LIST, { params: p })).status(200).json<{ artifacts: Detail[] }>().artifacts;
+        if (!list.some((x) => x.artifact_id === written)) throw new Error('the reader does not see the project artifact');
+        (await reader.client.get(ONE, { params: { ...p, artifactId: written } })).status(200);
+        (await reader.client.post(LIST, doc, { params: p })).status(403);
+      });
+      await ctx.step('an agent with no artifact permission cannot list or open → 403', async () => {
+        (await mute.client.get(LIST, { params: p })).status(403);
+        (await mute.client.get(ONE, { params: { ...p, artifactId: written } })).status(403);
+      });
+    } finally {
+      await world.close();
     }
   },
 );

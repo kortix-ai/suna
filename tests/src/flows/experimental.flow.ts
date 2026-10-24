@@ -2,7 +2,7 @@
  * Feature flags — the unified per-project flag surface. Maps to spec §EXP-*.
  *
  * `PATCH /v1/projects/:projectId/features {feature, enabled}` is the canonical
- * write path for opting a project into a flag (connectors_api_discover, apps, …);
+ * write path for opting a project into a flag (marketplace, genui, …);
  * `PATCH /v1/projects/:projectId/experimental` is the deprecated alias published
  * SDKs still call, registered on the SAME handler. State is DB-only
  * (projects.metadata.experimental — a stable storage detail). The response is
@@ -28,12 +28,12 @@ flow(
   async (ctx) => {
     const p = await ctx.fixtures.project();
 
-    await ctx.step('OWNER enables connectors_api_discover via /features → 200 + catalog in body', async () => {
+    await ctx.step('OWNER sets marketplace via /features → 200 + catalog in body', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
           '/v1/projects/:projectId/features',
-          { feature: 'connectors_api_discover', enabled: true },
+          { feature: 'marketplace', enabled: false },
           { params: { projectId: p.id } },
         );
       r.status(200).body().exists('$.experimental_features').exists('$.experimental');
@@ -44,7 +44,7 @@ flow(
         .as(ctx.P.OWNER)
         .patch(
           '/v1/projects/:projectId/experimental',
-          { feature: 'connectors_api_discover', enabled: false },
+          { feature: 'marketplace', enabled: true },
           { params: { projectId: p.id } },
         );
       r.status(200).body().exists('$.experimental_features').exists('$.experimental');
@@ -55,10 +55,19 @@ flow(
         .as(ctx.P.OWNER)
         .patch(
           '/v1/projects/:projectId/features',
-          { feature: 'connectors_api_discover', enabled: null },
+          { feature: 'marketplace', enabled: null },
           { params: { projectId: p.id } },
         );
       r.status(200);
+    });
+
+    await ctx.step('connectors_v2 and connectors_api_discover graduated (one catalog for every project) → 400 unknown feature', async () => {
+      for (const feature of ['connectors_v2', 'connectors_api_discover']) {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .patch('/v1/projects/:projectId/features', { feature, enabled: true }, { params: { projectId: p.id } });
+        r.status(400);
+      }
     });
 
     await ctx.step('agent_tunnel graduated (computers need no flag) → 400 unknown feature', async () => {

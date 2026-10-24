@@ -1000,8 +1000,6 @@ describe('provisionProjectStream', () => {
 
 test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
   const expected: FeatureFlagKey[] = [
-    'agentmail_email',
-    'connectors_api_discover',
     'drives',
     'marketplace',
     'meta_agent',
@@ -1015,11 +1013,11 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'session_log_restore',
     'workspace_volume',
     'volumes',
-    'connectors_v2',
     'agent_rooms',
     'goals',
     'artifacts',
     'cloud_subagents',
+    'email_channel',
   ];
   expect([...FEATURE_FLAG_KEYS].sort()).toEqual(expected.sort());
   expect(new Set(FEATURE_FLAG_KEYS).size).toBe(FEATURE_FLAG_KEYS.length);

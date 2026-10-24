@@ -55,6 +55,7 @@ import {
 } from './access';
 import { authorizedProject, capabilityRefusal, visibleApp } from './route-access';
 import { AppObject, appJson, appsJson } from './serialize';
+import { commitAppFields, commitAppRemoval, manifestFieldsOf } from './app-manifest';
 import { probeFrameable } from './external';
 import { UnknownLinkedAppError, resolveAppLinks, writeAppLinks } from './links';
 import { registerAppCapabilityRoutes } from './capability-routes';
@@ -514,6 +515,30 @@ export function registerAppsRoutes(): void {
         }
       }
       const externalFrameable = externalUrl ? await probeFrameable(externalUrl, config.FRONTEND_URL) : false;
+      // kortix.yaml owns the declarable fields: what the request sets explicitly
+      // is committed to apps.<slug> before the row exists. An external App is
+      // declared listed, so the file says it is on the Apps page.
+      // Nothing reaches kortix.yaml before the request is known to be allowed:
+      // a slug another App holds is a 409 here (or the commit would rewrite that
+      // App's declared settings), and every `uses` link passes the visibility
+      // check first (or the next sync would apply a link the caller may not make).
+      const [taken] = await db.select({ appId: apps.appId }).from(apps)
+        .where(and(eq(apps.projectId, projectId), eq(apps.slug, slug), isNull(apps.deletedAt))).limit(1);
+      if (taken) return c.json({ error: 'An App with this slug already exists' }, 409);
+      if (body.uses.length) {
+        try {
+          await resolveAppLinks({ projectId, slug }, body.uses, loaded.userId);
+        } catch (error) {
+          if (!(error instanceof UnknownLinkedAppError)) throw error;
+          return c.json({ error: error.message, code: 'app_not_found', slugs: error.slugs }, 400);
+        }
+      }
+      const declared = await commitAppFields(projectId, slug, {
+        ...manifestFieldsOf({ cpu: body.cpu, memory_gb: body.memory_gb, disk_gb: body.disk_gb, always_on: body.always_on }),
+        ...(body.uses.length ? { uses: body.uses } : {}),
+        ...(externalUrl ? { display: { listed: true } } : {}),
+      });
+      if (!declared.ok) return c.json({ error: declared.error, code: declared.code ?? 'manifest_write_failed' }, declared.status);
       let row: typeof apps.$inferSelect;
       try {
         const alwaysOn = body.always_on ?? config.KORTIX_APPS_DEFAULT_ALWAYS_ON;
@@ -693,6 +718,10 @@ export function registerAppsRoutes(): void {
       // links and the row, so a refused PATCH changes nothing.
       const links = body.uses === undefined ? undefined : await resolveLinksOrRefuse(c, current, body.uses, loaded.userId);
       if (links instanceof Response) return links;
+      // kortix.yaml owns these fields: commit them to apps.<slug> first; a
+      // refused commit writes nothing, so the row never disagrees with the file.
+      const declared = await commitAppFields(projectId, current.slug, manifestFieldsOf(body));
+      if (!declared.ok) return c.json({ error: declared.error, code: declared.code ?? 'manifest_write_failed' }, declared.status);
       const [row] = await db.transaction(async (tx) => {
         if (links) await writeAppLinks(tx, appId, links);
         return tx.update(apps).set({
@@ -739,6 +768,10 @@ export function registerAppsRoutes(): void {
         const admin = await authorizedProject(c, projectId, 'admin');
         if (admin instanceof Response) return admin;
       }
+      // kortix.yaml owns the App's block: remove it (and references to it) first,
+      // or the next `kortix apps deploy` would recreate the App from it.
+      const undeclared = await commitAppRemoval(projectId, row.slug);
+      if (!undeclared.ok) return c.json({ error: undeclared.error, code: undeclared.code ?? 'manifest_write_failed' }, undeclared.status);
       // Delete first, tear down second. A deleted App stops routing and leaves
       // the idle reaper at once; if this request dies mid-teardown, project
       // maintenance (`reclaimAppDeploymentImages`) removes what it left behind.

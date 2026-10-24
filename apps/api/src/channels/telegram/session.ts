@@ -1,5 +1,5 @@
 /**
- * Telegram as a channel connector (connectors_v2). The webhook stores each
+ * Telegram as a channel connector. The webhook stores each
  * update in the integration event inbox; this consumer turns a stored message
  * into a session turn:
  *
@@ -14,7 +14,6 @@
  */
 import { chatEventDedup, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { type IntegrationEvent, registerEventConsumer } from '../../integrations/event-inbox';
 import { logger } from '../../lib/logger';
 import {
@@ -91,7 +90,7 @@ export async function handleTelegramEvent(
 ): Promise<void> {
   const message = event.data.message as unknown as TelegramMessage;
   const [project] = await db.select().from(projects).where(eq(projects.projectId, event.projectId)).limit(1);
-  if (!project || !resolveFeatureFlag(project.metadata, 'connectors_v2')) return;
+  if (!project) return;
   const [install, token] = await Promise.all([
     loadTelegramInstall(event.projectId),
     loadTelegramBotToken(event.projectId),

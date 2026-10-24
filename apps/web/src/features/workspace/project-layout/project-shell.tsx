@@ -11,7 +11,6 @@ import { Suspense, lazy, useCallback, useEffect, useLayoutEffect } from 'react';
 
 import { TITLEBAR_CONTROL_CLASS } from '@kortix/ui/internal/desktop/titlebar-control';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
-import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
 import { Button } from '@kortix/ui/button';
 import Hint from '@kortix/ui/hint';
@@ -286,21 +285,6 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
         <Suspense fallback={null}>
           <PresentationViewerWrapper />
         </Suspense>
-
-        {/* A fresh account's first project arrives unstamped (the create flow
-            stamps only later projects — KRTX-2092), so this wizard opens on
-            the landing. It must carry the skip control: in the browser there
-            is no other exit — the close button is desktop-shell-only, outside
-            clicks are dead and Escape is intercepted. The wizard's own skip
-            already opens the first chat and stamps the project, so the shell
-            adds no navigation of its own. */}
-        <ProjectOnboardingWizard
-          projectId={projectId}
-          onSkip={() => {
-            /* the wizard's skip closes it in place; nothing to navigate to */
-          }}
-        />
-
 
         <PersonalOnboardingWelcome projectId={projectId} />
       </AppProviders>
