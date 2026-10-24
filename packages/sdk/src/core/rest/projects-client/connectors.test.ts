@@ -1017,6 +1017,8 @@ test('the Discover catalogue filters by kind, lists a way\'s tools and installs 
   nextResponse = { status: 200, body: { popular: [], sections: [], categories: [] } };
   await listDiscoverSections('P1', { kinds: ['openapi'] });
   expect(last().url).toContain('kind=openapi');
+  await listDiscoverConnectors('P1', { kinds: ['channel'] });
+  expect(last().url).toContain('kind=channel');
 
   nextResponse = { status: 200, body: { way: { id: 'composio:stripe', kind: 'composio', name: 'Stripe' }, tools: [{ name: 'STRIPE_LIST', description: 'List' }], total: 1, source: 'composio' } };
   const tools = await getDiscoverConnectorTools('P1', 'kortix:stripe', 'composio:stripe');

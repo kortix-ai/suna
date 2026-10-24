@@ -21130,7 +21130,12 @@
     "typeFilterAll": "所有类型",
     "moveComposioTitle": "{app} 有自己的 MCP 服务器",
     "moveComposioBody": "此连接器通过 Composio 运行。你可以将其切换到 {app} 自己的 MCP 服务器：登录一次即可切换。智能体、触发器和 kortix.yaml 继续使用 {slug}。",
-    "moveComposioAction": "切换到 MCP"
+    "moveComposioAction": "切换到 MCP",
+    "wayChannel": "Kortix 自己的 {name} 渠道：用户在 {name} 中给智能体发消息。无第三方；在“渠道”页面设置一次即可。",
+    "waySetUp": "设置",
+    "typeFilterChannels": "渠道",
+    "setUpNamed": "设置 {name}",
+    "setUpWhere": "在“渠道”页面"
   },
   "connectMcp": {
     "title": "通过 MCP 连接 Kortix",

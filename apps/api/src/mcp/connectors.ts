@@ -159,7 +159,7 @@ export const CONNECTOR_TOOLS = [
         query: { type: 'string', description: 'App name or keyword, e.g. "calendar".' },
         limit: { type: 'number', description: 'Maximum apps (default 20, max 100).' },
         cursor: { type: 'string', description: 'The `cursor` of the previous page.' },
-        kind: { type: 'string', description: 'Connectors v2: only apps that connect these ways, comma separated: mcp, composio, openapi, graphql.' },
+        kind: { type: 'string', description: 'Connectors v2: only apps that connect these ways, comma separated: channel, mcp, composio, openapi, graphql.' },
         one_click: { type: 'boolean', description: 'Connectors v2: only apps the human connects by signing in (a public or self-registering MCP server, or Composio). Default false: every app.' },
         category: { type: 'string', description: 'Connectors v2: a catalogue section key, e.g. "productivity", "crm", "finance".' },
       },
@@ -172,7 +172,7 @@ export const CONNECTOR_TOOLS = [
     name: 'get_connector_app',
     title: 'Get a connector app',
     description:
-      'Connectors v2: every way to connect one catalogue app, best first: `ways[]` with `way` (its id), `via` (mcp, composio, openapi, graphql, postman, http), `one_click`, `recommended` and `installable`; and `tools` — what one way can do before install (the recommended way unless `way`): up to `limit` tools with descriptions, `total`, and `source` (mcp: the server itself; directory: tool names from a public MCP directory; composio; spec: OpenAPI operations; none: listed after install). Composio is a third-party partner that runs the sign-in for the human (one click). Pass `app` and the chosen `way` to add_connector.',
+      'Connectors v2: every way to connect one catalogue app, best first: `ways[]` with `way` (its id), `via` (channel, mcp, composio, openapi, graphql, postman, http; `channel` is Kortix\'s own Slack, Teams, Email or Telegram channel, set up by the human, never installed), `one_click`, `recommended` and `installable`; and `tools` — what one way can do before install (the recommended way unless `way`): up to `limit` tools with descriptions, `total`, and `source` (mcp: the server itself; directory: tool names from a public MCP directory; composio; spec: OpenAPI operations; none: listed after install). Composio is a third-party partner that runs the sign-in for the human (one click). Pass `app` and the chosen `way` to add_connector.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -616,6 +616,7 @@ export async function runConnectorTool(name: string, input: Record<string, unkno
         one_click: v.oneClick === true,
         recommended: v.recommended === true,
         installable: Boolean(v.connector) || v.kind === 'composio',
+        ...(v.kind === 'channel' ? { setup: 'A Kortix channel: the human sets it up on the Channels page (kortix channels connect); add_connector cannot install it.' } : {}),
         url: v.url ?? null,
       }));
       const t = await h.call('GET', `${base}/discover/connectors/tools`, { query: { id, way: h.optionalArg(input, 'way') } });

@@ -117,6 +117,7 @@ const CATALOG_KIND_FILTERS = {
   composio: ['composio'],
   openapi: ['openapi'],
   graphql: ['graphql'],
+  channel: ['channel'],
 } satisfies Record<string, DiscoverConnectorKind[]>;
 type CatalogKindFilter = keyof typeof CATALOG_KIND_FILTERS;
 
@@ -576,7 +577,12 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                 scope read out of the URL have nothing to wait for. */}
                 <Tabs value={scope} onValueChange={(value) => setScope(value as ConnectorScope)}>
                   <TabsList>
-                    {visibleScopes.map((value) => (
+                    {/* Connectors v2 lists the channels in the catalogue, so
+                        Channels is no tab: it shows only while its setup page
+                        (a channel card's Set up) is open. */}
+                    {visibleScopes
+                      .filter((value) => !mcpApps || value !== 'channels' || scope === 'channels')
+                      .map((value) => (
                       <TabsTrigger key={value} value={value}>
                         {SCOPE_LABEL[value]}
                       </TabsTrigger>
@@ -615,7 +621,11 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                           className={cn('gap-1 px-0 transition-colors', kindFilter !== 'all' && 'text-foreground')}
                           aria-label={tPages('typeFilterLabel')}
                         >
-                          {kindFilter === 'all' ? tPages('typeFilterAll') : wayKindLabel(kindFilter)}
+                          {kindFilter === 'all'
+                            ? tPages('typeFilterAll')
+                            : kindFilter === 'channel'
+                              ? tPages('typeFilterChannels')
+                              : wayKindLabel(kindFilter)}
                           <CaretDownIcon className="size-3 shrink-0" />
                         </Button>
                       </DropdownMenuTrigger>
@@ -631,7 +641,11 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                         >
                           {(Object.keys(CATALOG_KIND_FILTERS) as CatalogKindFilter[]).map((value) => (
                             <DropdownMenuRadioItem key={value} value={value}>
-                              {value === 'all' ? tPages('typeFilterAll') : wayKindLabel(value)}
+                              {value === 'all'
+                                ? tPages('typeFilterAll')
+                                : value === 'channel'
+                                  ? tPages('typeFilterChannels')
+                                  : wayKindLabel(value)}
                             </DropdownMenuRadioItem>
                           ))}
                         </DropdownMenuRadioGroup>

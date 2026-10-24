@@ -21130,7 +21130,12 @@
     "typeFilterAll": "Tutti i tipi",
     "moveComposioTitle": "{app} ha un proprio server MCP",
     "moveComposioBody": "Questo connettore passa da Composio. Puoi spostarlo sul server MCP di {app}: accedi una volta e cambia. Agenti, trigger e kortix.yaml continuano a usare {slug}.",
-    "moveComposioAction": "Passa a MCP"
+    "moveComposioAction": "Passa a MCP",
+    "wayChannel": "Il canale {name} di Kortix: le persone scrivono all’agente in {name}. Nessuna terza parte; configuralo una volta nella pagina Canali.",
+    "waySetUp": "Configura",
+    "typeFilterChannels": "Canali",
+    "setUpNamed": "Configura {name}",
+    "setUpWhere": "Nella pagina Canali"
   },
   "connectMcp": {
     "title": "Collega Kortix tramite MCP",

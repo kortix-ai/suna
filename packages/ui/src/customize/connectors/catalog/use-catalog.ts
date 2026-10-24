@@ -285,7 +285,8 @@ export function useCatalog(
 ): CatalogState {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { debouncedValue: activeQuery } = useDebounce(query.trim(), 300);
-  const computers = opts.computers === true;
+  // The native Computer card is no MCP server, API or channel: a type filter hides it.
+  const computers = opts.computers === true && !(opts.kinds?.length);
   const searching = activeQuery.length > 0;
 
   // Always probed, whether or not the catalogue is `enabled`: the answer picks

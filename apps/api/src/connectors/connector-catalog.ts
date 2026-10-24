@@ -59,7 +59,9 @@ const OFFICIAL_SURFACE_ENRICHMENTS: Record<string, ConnectorSurfaceVariant[]> = 
 };
 
 /** `composio`: a managed Composio toolkit (`connectors_v2` catalogue only). */
-export type ConnectorCatalogKind = 'openapi' | 'mcp' | 'graphql' | 'composio';
+/** `channel`: a Kortix channel (Slack, Teams, Email, Telegram): people message
+ *  the agent there. It is set up on the channel page, not installed. */
+export type ConnectorCatalogKind = 'openapi' | 'mcp' | 'graphql' | 'composio' | 'channel';
 
 /** A Composio toolkit as the managed catalogue routes publish it. */
 export interface ComposioCatalogCard {
@@ -93,6 +95,8 @@ export interface ConnectorCatalogItem {
   oneClick?: boolean;
   /** The toolkit a `composio` record installs. */
   composio?: ComposioCatalogCard;
+  /** The Kortix channel a `channel` record sets up. */
+  channel?: { platform: KortixChannelPlatform };
   /** `connectors_v2`: the integrations.sh domain of a record filed under a
    *  Kortix app's domain (Notion is notion.so here, notion.com there). */
   registryDomain?: string;
@@ -115,7 +119,7 @@ export interface ConnectorTemplate {
 export interface ConnectorSurfaceVariant {
   id: string;
   /** `composio`: a managed toolkit (`connectors_v2` only), installed from `composio`. */
-  kind: 'openapi' | 'postman' | 'mcp' | 'graphql' | 'http' | 'composio';
+  kind: 'openapi' | 'postman' | 'mcp' | 'graphql' | 'http' | 'composio' | 'channel';
   name: string;
   url: string | null;
   docs: string | null;
@@ -130,11 +134,17 @@ export interface ConnectorSurfaceVariant {
   recommended?: boolean;
   /** The toolkit a `composio` variant installs. */
   composio?: ComposioCatalogCard;
+  /** The Kortix channel a `channel` variant sets up. */
+  channel?: { platform: KortixChannelPlatform };
 }
+
+export type KortixChannelPlatform = 'slack' | 'teams' | 'email' | 'telegram';
 
 /** A way to connect, best first: a one-click MCP server, the managed toolkit,
  *  any MCP server, the APIs; a surface Kortix cannot install comes last. */
 export function variantRank(variant: ConnectorSurfaceVariant): number {
+  // Kortix's own channel leads: no third party, and people message the agent there.
+  if (variant.kind === 'channel') return -1;
   if (variant.kind === 'composio') return 1;
   if (!variant.connector) return 10;
   if (variant.kind === 'mcp') return variant.oneClick ? 0 : 2;
@@ -364,6 +374,7 @@ function appCount(items: ConnectorCatalogItem[]): number {
 /** The surface an app's card stands for: a one-click MCP server, then a
  *  managed toolkit, then any MCP server, then the APIs. */
 const SURFACE_RANK: Record<ConnectorCatalogKind, number> = {
+  channel: -1,
   composio: 1,
   mcp: 2,
   openapi: 3,

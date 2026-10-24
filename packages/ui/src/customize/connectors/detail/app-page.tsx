@@ -119,7 +119,9 @@ interface ResolvedApp {
     key: string;
     label: string;
     kind: WayKind;
-    target: InstallTarget;
+    /** `null` for a Kortix channel: it is set up on the channel page (`setupHref`). */
+    target: InstallTarget | null;
+    setupHref?: string;
     oneClick: boolean;
     recommended: boolean;
     variantId: string | null;
@@ -267,17 +269,19 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
   /** Install one way: a one-click MCP server opens the MCP dialog, which
    *  names the profile; every other way asks for the name first. */
   const startInstall = (key: string, surface: Surface, name: string) => {
+    const target = surface.target;
+    if (!target) return;
     setPendingControl(key);
     // The way the user picked is the way installed. Only a managed-only page
     // (no ranked ways) still offers the app's own one-click server first.
     const mcpUrl =
       surface.kind === 'mcp' && surface.oneClick
         ? surface.url
-        : surface.target.managed && !detail
+        : target.managed && !detail
           ? (managed?.directMcpUrl ?? null)
           : null;
     const askName = () =>
-      ask({ target: surface.target, way: { kind: surface.kind, oneClick: surface.oneClick }, connectors, app });
+      ask({ target, way: { kind: surface.kind, oneClick: surface.oneClick }, connectors, app });
     if (!mcpUrl) {
       askName();
       return;
@@ -292,7 +296,13 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
   /** `name` tells the page's Install controls apart for assistive tech; `key`
    *  tells them apart for the progress indicator. */
   const installMenu = (key: string, surface: Surface, variant: 'default' | 'secondary', name: string) =>
-    canWrite ? (
+    surface.setupHref ? (
+      <Button asChild size="sm" variant={variant} className="shrink-0">
+        <Link href={surface.setupHref} aria-label={t('setUpNamed', { name })}>
+          {t('waySetUp')}
+        </Link>
+      </Button>
+    ) : canWrite ? (
       <InstallButton
         label={t('install')}
         aria-label={t('installNamed', { name })}
@@ -314,7 +324,13 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
   // its API/MCP server, the partner (Composio) for a managed app.
   const managedOnly = managed && !detail;
   const managedBy =
-    primary?.kind === 'composio' ? 'Composio' : managedOnly ? connectorRunsOver(provider) : null;
+    primary?.kind === 'composio'
+      ? 'Composio'
+      : primary?.kind === 'channel'
+        ? 'Kortix'
+        : managedOnly
+          ? connectorRunsOver(provider)
+          : null;
   if (primary)
     infoCells.push({
       key: 'provider',
@@ -360,7 +376,9 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
           <div className="flex shrink-0 items-center gap-2">
             {resolved.surfaces.length > 1 ? (
               <span className="text-muted-foreground text-xs">
-                {t('installsWay', { kind: wayKindLabel(primary.kind) })}
+                {primary.kind === 'channel'
+                  ? t('setUpWhere')
+                  : t('installsWay', { kind: wayKindLabel(primary.kind) })}
               </span>
             ) : null}
             {installMenu('header', primary, 'default', resolved.name)}
@@ -677,7 +695,22 @@ function useAppData(projectId: string, app: ReturnType<typeof appRefFromLocation
         icon: managed?.imgSrc ?? discoverEntryIcon(detail.item),
         // Server order: best way first, the recommended one marked.
         surfaces: [
-          ...detail.variants.flatMap((variant) => {
+          ...detail.variants.flatMap((variant): ResolvedApp['surfaces'] => {
+            if (variant.kind === 'channel') {
+              return [
+                {
+                  key: `channel:${variant.id}`,
+                  label: variant.name,
+                  kind: 'channel' as WayKind,
+                  target: null,
+                  setupHref: connectorsHref(projectId, 'channels'),
+                  oneClick: true,
+                  recommended: variant.recommended === true,
+                  variantId: null,
+                  url: null,
+                },
+              ];
+            }
             if (variant.kind === 'composio') {
               return variant.composio
                 ? [
@@ -713,7 +746,7 @@ function useAppData(projectId: string, app: ReturnType<typeof appRefFromLocation
           ...(managedSurface ? [managedSurface] : []),
         ],
         references: detail.variants
-          .filter((variant) => !variant.connector && variant.kind !== 'composio')
+          .filter((variant) => !variant.connector && variant.kind !== 'composio' && variant.kind !== 'channel')
           .map((variant) => ({
             key: `${variant.kind}:${variant.id}`,
             label: variant.name,

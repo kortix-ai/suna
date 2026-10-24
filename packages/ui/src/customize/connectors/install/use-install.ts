@@ -17,6 +17,7 @@ import {
   appHref,
   appRefFromEntry,
   connectorHref,
+  connectorsHref,
   type AppRef,
 } from '../connector-routes';
 import { useTranslations } from '../../../i18n';
@@ -161,6 +162,11 @@ export function useInstall(
         return;
       }
       if (entry.source !== 'discover' || !app) return;
+      // A Kortix channel is set up on the channel page, not installed.
+      if (entry.connector.kind === 'channel') {
+        router.push(connectorsHref(projectId, 'channels'));
+        return;
+      }
       // A Discover card does not carry its ways to connect; the detail does,
       // best first, with the recommended one marked (Connectors v2).
       setPendingKey(app.slug);

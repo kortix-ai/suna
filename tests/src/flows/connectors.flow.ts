@@ -5634,6 +5634,18 @@ flow(
       (await owner.get('/v1/connectors/projects/:projectId/discover/connectors/tools', { params, query: { id: 'kortix:missing' } })).status(404);
     });
 
+    await ctx.step('Kortix channels lead their apps: kind=channel lists four; Slack\'s page recommends the channel and install points to its setup', async () => {
+      const list = await owner.get('/v1/connectors/projects/:projectId/discover/connectors', { params, query: { kind: 'channel', limit: '10' } });
+      list.status(200);
+      const ids = list.json<{ items: Array<{ id: string }> }>().items.map((item) => item.id).sort();
+      if (JSON.stringify(ids) !== JSON.stringify(['channel:email', 'channel:slack', 'channel:teams', 'channel:telegram'])) throw new Error(`channels: ${ids}`);
+      const detail = await owner.get('/v1/connectors/projects/:projectId/discover/connectors/detail', { params, query: { id: 'channel:slack' } });
+      detail.status(200);
+      const first = detail.json<{ variants: Array<{ kind: string; recommended?: boolean; channel?: { platform: string } }> }>().variants[0];
+      if (first?.kind !== 'channel' || first.recommended !== true || first.channel?.platform !== 'slack') throw new Error(`slack ways: ${JSON.stringify(first)}`);
+      (await owner.post('/v1/connectors/projects/:projectId/discover/install', { id: 'channel:slack' }, { params })).status(400).body().matches('$.error', /kortix channels connect/);
+    });
+
     let slug = '';
     await ctx.step('install adds the recommended way as a profile named as asked; the list reads it back', async () => {
       const r = await owner.post('/v1/connectors/projects/:projectId/discover/install', { id: 'kortix:linear', name: 'Issue tracker' }, { params, timeoutMs: 60_000 });

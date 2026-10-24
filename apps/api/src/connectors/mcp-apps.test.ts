@@ -115,7 +115,8 @@ describe('the Kortix MCP app catalogue', () => {
     // Browse order: Kortix's apps, then popular registry apps and managed apps
     // taking turns, then the rest.
     const browse = (await catalog.list({ limit: 96 })).items.map((item) => item.id);
-    const firstOther = browse.findIndex((id) => !id.startsWith('kortix:'));
+    // Kortix's own block: its channels and MCP apps.
+    const firstOther = browse.findIndex((id) => !id.startsWith('kortix:') && !id.startsWith('channel:'));
     // Managed apps keep Composio's usage order, whatever their domain's first record.
     expect(browse.slice(firstOther, firstOther + 3)).toEqual(['acme-mcp', 'composio:zeta', 'composio:outlook']);
     expect(browse.indexOf('composio:outlook')).toBeLessThan(browse.indexOf('billing-openapi'));
@@ -179,6 +180,24 @@ describe('the ways to connect one app (connectors_v2 detail)', () => {
       ['mcp', false],
       ['openapi', false],
     ]);
+  });
+});
+
+describe('Kortix channels in the catalogue', () => {
+  test('each channel is a one-click card that leads its app, ahead of the app\'s MCP server and Composio', async () => {
+    const items = await connectorsV2Items({
+      apps: () => [],
+      index: async () => [record('curated/slack-com-mcp', 'mcp', 'Slack', 'slack.com', { mcpUrl: 'https://mcp.slack.com/mcp' }), record('openapi/telegram-org', 'openapi', 'Telegram', 'telegram.org')],
+      toolkits: async () => [toolkit('telegram', 'Telegram')],
+    });
+    const channels = items.filter((item) => item.kind === 'channel').map((item) => item.id);
+    expect(channels).toEqual(['channel:slack', 'channel:teams', 'channel:email', 'channel:telegram']);
+    const catalog = createConnectorCatalog({ source: { items: async () => items, surfaces: () => [] } });
+    expect((await catalog.list({ q: 'slack' })).items[0]?.id).toBe('channel:slack');
+    expect((await catalog.list({ q: 'telegram' })).items.map((item) => item.id)).toEqual(['channel:telegram']);
+    expect((await catalog.list({ kinds: ['channel'], limit: 10 })).items).toHaveLength(4);
+    const ways = await connectorsV2Surfaces('telegram.org', { items: async () => items, surfaces: async () => [] });
+    expect(ways.map((way) => [way.kind, way.recommended === true])).toEqual([['channel', true], ['composio', false]]);
   });
 });
 

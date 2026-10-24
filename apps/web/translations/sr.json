@@ -21130,7 +21130,12 @@
     "typeFilterAll": "Svi tipovi",
     "moveComposioTitle": "{app} ima sopstveni MCP server",
     "moveComposioBody": "Ovaj konektor radi preko Composio. Možeš ga prebaciti na sopstveni MCP server aplikacije {app}: prijavi se jednom i prebacuje se. Agenti, okidači i kortix.yaml i dalje koriste {slug}.",
-    "moveComposioAction": "Prebaci na MCP"
+    "moveComposioAction": "Prebaci na MCP",
+    "wayChannel": "Kortixov sopstveni {name} kanal: ljudi pišu agentu u aplikaciji {name}. Bez treće strane; podesi ga jednom na stranici Kanali.",
+    "waySetUp": "Podesi",
+    "typeFilterChannels": "Kanali",
+    "setUpNamed": "Podesi {name}",
+    "setUpWhere": "Na stranici Kanali"
   },
   "connectMcp": {
     "title": "Povežite Kortix preko MCP-a",

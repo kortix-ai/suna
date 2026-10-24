@@ -70,13 +70,15 @@ function CatalogAffordance({
     );
   }
   if (!canInstallEntry(entry, install)) return null;
+  // A Kortix channel is set up on the channel page, not installed.
+  const channel = entry.source === 'discover' && entry.connector.kind === 'channel';
   return (
     <InstallButton
-      label={t('install')}
+      label={channel ? t('waySetUp') : t('install')}
       variant="outline"
       className="gap-1 rounded-full"
       // A page holds dozens of these; the name says which app each installs.
-      aria-label={t('installNamed', { name: entry.name })}
+      aria-label={channel ? t('setUpNamed', { name: entry.name }) : t('installNamed', { name: entry.name })}
       onInstall={() => install.onInstall(entry)}
       pending={install.pendingKey === entry.slug}
       // `pendingKey` holds one install. A second one started beside it would
@@ -244,7 +246,7 @@ function CatalogFoot({
           every idle count change would narrate the whole scroll. */}
       {summary ? (
         <p
-          className="text-muted-foreground/70 flex items-center gap-2 text-xs tabular-nums"
+          className="text-muted-foreground flex items-center gap-2 text-xs tabular-nums"
           role={isLoadingMore ? 'status' : undefined}
           aria-live={isLoadingMore ? 'polite' : undefined}
         >

@@ -259,6 +259,10 @@ kortix connectors catalog show composio:gmail       # every way to connect it + 
 Each app lists its ways to connect, best first, the first marked
 `recommended`:
 
+0. a Kortix channel (`kind: channel`: Slack, Microsoft Teams, Email,
+   Telegram) — people message the agent there. It is never installed: the
+   human sets it up (`kortix channels connect`, `--platform teams`,
+   `kortix channels email connect`, or the web Channels page);
 1. a one-click MCP server — the vendor's own server; the human only signs in;
 2. Composio — a third-party partner that runs the sign-in (one click), for an
    app with no one-click MCP server (Gmail, Outlook, …);

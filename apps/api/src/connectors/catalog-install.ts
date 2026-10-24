@@ -21,12 +21,27 @@ export function catalogSlug(name: string): string {
 /** The way to install: `way` by id, else the recommended one. */
 export function catalogWay(detail: ConnectorCatalogDetail, way?: string): ConnectorSurfaceVariant {
   const installable = detail.variants.filter((variant) => variant.connector || variant.kind === 'composio');
+  const recommended = detail.variants.find((variant) => variant.recommended);
+  // A recommended channel is the answer, not a reason to install the next way.
   const picked = way
     ? detail.variants.find((variant) => variant.id === way)
-    : (installable.find((variant) => variant.recommended) ?? installable[0]);
+    : recommended?.kind === 'channel'
+      ? recommended
+      : (installable.find((variant) => variant.recommended) ?? installable[0]);
   if (!picked) {
     throw new CatalogInstallError(
       way ? `"${way}" is not a way to connect ${detail.item.name}` : `${detail.item.name} has no way Kortix can install`,
+    );
+  }
+  if (picked.kind === 'channel') {
+    const platform = picked.channel?.platform;
+    const command =
+      platform === 'teams' ? 'kortix channels connect --platform teams'
+      : platform === 'email' ? 'kortix channels email connect'
+      : platform === 'slack' ? 'kortix channels connect'
+      : null;
+    throw new CatalogInstallError(
+      `${picked.name} is a Kortix channel, set up on the channel page${command ? ` or with \`${command}\`` : ''}, not installed as a connector`,
     );
   }
   if (!picked.connector && picked.kind !== 'composio') {

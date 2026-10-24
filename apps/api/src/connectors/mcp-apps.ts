@@ -33,6 +33,7 @@ import {
   type ComposioCatalogCard,
   type ConnectorCatalogItem,
   type ConnectorSurfaceVariant,
+  type KortixChannelPlatform,
   connectorCatalogItems,
   connectorCatalogSurfaces,
   createConnectorCatalog,
@@ -307,6 +308,57 @@ export function composioSurface(item: ConnectorCatalogItem): ConnectorSurfaceVar
   };
 }
 
+/** Kortix's own channels: people message the agent there. Each is set up on
+ *  the channel page (`kortix channels …`), never through Install, and it is the
+ *  recommended way to its app (`variantRank`). */
+export const KORTIX_CHANNELS: ReadonlyArray<{
+  platform: KortixChannelPlatform;
+  name: string;
+  domain: string;
+  description: string;
+  icon: string | null;
+}> = [
+  { platform: 'slack', name: 'Slack', domain: 'slack.com', description: 'Message the agent in Slack: mentions, DMs and channels, through the Kortix Slack app.', icon: '/connector-icons/slack.svg' },
+  { platform: 'teams', name: 'Microsoft Teams', domain: 'teams.microsoft.com', description: 'Message the agent in Microsoft Teams chats and channels, through the Kortix Teams app.', icon: null },
+  { platform: 'email', name: 'Email', domain: 'email.kortix', description: 'Give the project an inbox: people email the agent and it replies.', icon: null },
+  { platform: 'telegram', name: 'Telegram', domain: 'telegram.org', description: 'Message the agent from Telegram through a bot you own.', icon: null },
+];
+
+export function channelCatalogItem(channel: (typeof KORTIX_CHANNELS)[number]): ConnectorCatalogItem {
+  return {
+    id: `channel:${channel.platform}`,
+    kind: 'channel',
+    slug: channel.platform,
+    name: channel.name,
+    description: channel.description,
+    url: null,
+    icon: channel.icon,
+    domain: channel.domain,
+    categories: ['communication'],
+    feeds: ['kortix'],
+    popularity: null,
+    oneClick: true,
+    channel: { platform: channel.platform },
+  };
+}
+
+export function channelSurface(channel: (typeof KORTIX_CHANNELS)[number]): ConnectorSurfaceVariant {
+  return {
+    id: `channel:${channel.platform}`,
+    kind: 'channel',
+    name: `Kortix ${channel.name} channel`,
+    url: null,
+    docs: null,
+    description: channel.description,
+    transports: [],
+    requiresAuth: true,
+    command: null,
+    connector: null,
+    oneClick: true,
+    channel: { platform: channel.platform },
+  };
+}
+
 /** A managed toolkit as a catalogue record. `domain` is the same app's domain
  *  in the other catalogues, so one card stands for both; else a pseudo-domain
  *  with no surfaces. */
@@ -348,7 +400,7 @@ export async function connectorsV2Items(
     toolkits?: () => Promise<ComposioCatalogCard[]>;
   } = {},
 ): Promise<ConnectorCatalogItem[]> {
-  const kortix = (load.apps ?? availableMcpApps)().map(mcpAppCatalogItem);
+  const kortix = [...KORTIX_CHANNELS.map(channelCatalogItem), ...(load.apps ?? availableMcpApps)().map(mcpAppCatalogItem)];
   const [index, toolkits] = await Promise.all([
     (load.index ?? connectorCatalogItems)().catch(() => [] as ConnectorCatalogItem[]),
     (load.toolkits ?? (async () => (await composioVisibleToolkits()).map(publicToolkit)))().catch(
@@ -429,9 +481,12 @@ export async function connectorsV2Surfaces(
   } = {},
 ): Promise<ConnectorSurfaceVariant[]> {
   const records = (await (load.items ?? connectorsV2Items)()).filter((item) => item.domain === domain);
-  const curated = availableMcpApps()
-    .filter((app) => app.domain === domain)
-    .map(mcpAppSurface);
+  const curated = [
+    ...KORTIX_CHANNELS.filter((channel) => channel.domain === domain).map(channelSurface),
+    ...availableMcpApps()
+      .filter((app) => app.domain === domain)
+      .map(mcpAppSurface),
+  ];
   const registryDomains = new Set(
     records.filter((item) => !item.feeds.includes('kortix') && item.kind !== 'composio').map((item) => item.registryDomain ?? item.domain),
   );
