@@ -52,18 +52,18 @@ import {
 import { Skeleton } from '../../primitives/skeleton';
 import { StatusDot, type StatusTone } from '../../primitives/status';
 import { UiLink as Link, useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
-import { CapabilityPageShell } from '../shared/capability-page-shell';
 import { CatalogNoMatch } from '../shared/catalog/catalog-empty-state';
 import { ALL_SPACES, CatalogSpaceTabs } from '../shared/catalog/catalog-space-tabs';
 import { agentEditorOptionQueries } from '../sections/view/agent-editor';
 import { toArray } from '../shared/utils';
 import { AgentAccessText } from './agent-access-text';
 import { agentInMode, filterAgents } from './agent-filter';
+import { AgentTabBody, CustomizeHeader } from './agent-page-chrome';
 import { CreateAgentModal } from './create-agent-modal';
 
 type Agent = ProjectConfigSummary['agents'][number];
 
-const ROW_GRID = 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 md:grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)_minmax(0,1.4fr)_5rem_5rem_8rem]';
+const ROW_GRID = 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 md:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1.6fr)_7rem_5rem_8rem]';
 
 export function AgentsPage({ projectId }: { projectId: string }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
@@ -92,7 +92,8 @@ export function AgentsPage({ projectId }: { projectId: string }) {
 
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
-  useSlashFocus(searchRef);
+  // The table is the page's main content, not the search: no focus on arrival.
+  useSlashFocus(searchRef, true, { focusOnArrival: false });
 
   const detailQuery = useQuery({
     queryKey: qk.project.detail(projectId),
@@ -171,7 +172,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
   };
 
   const newButton = canWrite ? (
-    <Button onClick={() => setCreating(true)} className="gap-1.5">
+    <Button size="sm" onClick={() => setCreating(true)} className="gap-1.5">
       <PlusIcon className="size-4" />
       {t('newAgent')}
     </Button>
@@ -299,11 +300,17 @@ export function AgentsPage({ projectId }: { projectId: string }) {
                         <span className="text-muted-foreground hidden truncate text-sm md:block">
                           <AgentAccessText agent={agent} />
                         </span>
-                        <span className="text-muted-foreground hidden text-sm tabular-nums md:block">
-                          {people === undefined ? '' : people}
+                        {/* Unknown (no members.manage) reads as a dash, nobody
+                            granted as who still may use it. Never a blank cell. */}
+                        <span className="text-muted-foreground hidden truncate text-sm tabular-nums md:block">
+                          {people === undefined
+                            ? grantsQuery.isSuccess
+                              ? t('managersOnly')
+                              : '—'
+                            : people}
                         </span>
                         <span className="text-muted-foreground hidden text-sm tabular-nums md:block">
-                          {canReadTriggers ? triggers : ''}
+                          {canReadTriggers ? triggers : '—'}
                         </span>
                         <span className="flex items-center justify-end gap-2 md:justify-between">
                           <span className="text-foreground flex items-center gap-1.5 text-sm">
@@ -324,32 +331,46 @@ export function AgentsPage({ projectId }: { projectId: string }) {
     );
   })();
 
+  const search = (ref?: typeof searchRef) => (
+    <InputGroupSearch>
+      <InputGroupSearchIcon>
+        <MagnifyingGlassIcon />
+      </InputGroupSearchIcon>
+      <InputGroupSearchInput
+        ref={ref}
+        aria-label={tI18nComplete.raw('text212fd04a1d20')}
+        placeholder={tI18nComplete.raw('text212fd04a1d20')}
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        variant="popover"
+        size="sm"
+      />
+      {query ? <InputGroupSearchClear onClick={() => setQuery('')} /> : null}
+    </InputGroupSearch>
+  );
+
+  // The same header as the agent page, My Kortix and Review (`CustomizeHeader`),
+  // so the title never jumps between them. Search sits in it from `md`; below
+  // that it is the first row of the list.
   return (
     <>
-      <CapabilityPageShell
-        wide
-        title={tI18nComplete.raw('text279b44d2ab4b')}
-        description={t('agentsLead')}
-        action={newButton}
-        search={
-          <InputGroupSearch>
-            <InputGroupSearchIcon>
-              <MagnifyingGlassIcon />
-            </InputGroupSearchIcon>
-            <InputGroupSearchInput
-              ref={searchRef}
-              placeholder={tI18nComplete.raw('text212fd04a1d20')}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              variant="popover"
-              size="sm"
-            />
-            <InputGroupSearchClear onClick={() => setQuery('')} />
-          </InputGroupSearch>
-        }
-      >
-        {body}
-      </CapabilityPageShell>
+      <div className="flex h-full min-h-0 flex-1 flex-col">
+        <CustomizeHeader
+          title={tI18nComplete.raw('text279b44d2ab4b')}
+          description={t('agentsLead')}
+          rule
+          actions={
+            <>
+              <div className="hidden w-64 md:block">{search(searchRef)}</div>
+              {newButton}
+            </>
+          }
+        />
+        <AgentTabBody className="space-y-5">
+          <div className="md:hidden">{search()}</div>
+          {body}
+        </AgentTabBody>
+      </div>
       {canWrite ? (
         <CreateAgentModal open={createOpen} onOpenChange={setCreateOpen} projectId={projectId} config={config} />
       ) : null}

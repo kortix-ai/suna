@@ -2471,9 +2471,11 @@ nativeBrowserTest?.(
       await selectAccountForUi(main, accounts[0].account_id);
       await dismissOnboarding(main);
       await main.getByRole("button", { name: "Collapse sidebar" }).click();
-      const row = main.locator(
-        ".kx-capability-titlebar[data-sidebar-collapsed='true']",
-      );
+      // The Agents index header (`CustomizeHeader`): the one title-bar row
+      // every Customize page draws, now that Customize has no top bar.
+      const row = main
+        .locator("header.kx-titlebar-row[data-sidebar-collapsed='true']")
+        .first();
       await expect(row).toBeVisible();
       const dragPoint = () =>
         row.evaluate((element) => {
@@ -2492,10 +2494,10 @@ nativeBrowserTest?.(
           return null;
         });
       expect(await dragPoint()).not.toBeNull();
-      const tab = row.getByRole("tab").first();
-      await expect(tab).toBeVisible();
+      const control = row.getByRole("button", { name: "New agent" });
+      await expect(control).toBeVisible();
       expect(
-        await tab.evaluate((element) => getComputedStyle(element).webkitAppRegion),
+        await control.evaluate((element) => getComputedStyle(element).webkitAppRegion),
       ).toBe("no-drag");
       const nativeWindow = await app.browserWindow(main);
       await nativeWindow.evaluate((window) => window.setContentSize(720, 480));

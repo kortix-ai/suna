@@ -22,6 +22,7 @@ import {
   type SpaceTabV3,
 } from '@kortix/manifest-schema';
 import { type LoadedAgents, extractAgents } from '../agents';
+import { parse as parseYaml } from 'yaml';
 import { listManagedSkills } from '../../skills/catalog';
 import { disconnectedManifestVerdict, resolveManifestVerdict } from '../lib/manifest-verdict';
 import { listRepoFiles, readManifestFromRepo, readRepoFile } from './files';
@@ -120,10 +121,29 @@ function parseJsonCString(raw: string | null, key: string) {
   return match?.[1] || null;
 }
 
-function parseFrontmatter(raw: string | null) {
+/** A file's frontmatter, every scalar as text. The YAML parser reads what a
+ *  YAML writer emits, including a long scalar folded over several lines (the
+ *  agent editor's `stringifyYaml`). A block the parser refuses falls back to
+ *  the one-line reader below, so a hand-written, not-quite-YAML header still
+ *  yields its simple keys. */
+function parseFrontmatter(raw: string | null): Record<string, string> {
   if (!raw?.startsWith('---')) return {};
   const end = raw.indexOf('\n---', 3);
   if (end === -1) return {};
+  try {
+    const parsed: unknown = parseYaml(raw.slice(3, end));
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const meta: Record<string, string> = {};
+      for (const [key, value] of Object.entries(parsed)) {
+        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+          meta[key] = String(value);
+        }
+      }
+      return meta;
+    }
+  } catch {
+    // Not valid YAML: read it line by line below.
+  }
   const meta: Record<string, string> = {};
   for (const line of raw.slice(3, end).split(/\r?\n/)) {
     const match = line.match(/^([A-Za-z0-9_-]+):\s*(.+)$/);

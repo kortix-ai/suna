@@ -13,6 +13,7 @@
 
 import { slugifySlug } from '@kortix/manifest-schema';
 import type { ProjectConfigSummary } from '@kortix/sdk';
+import { isMetaAgentName } from '@kortix/shared';
 import { useState } from 'react';
 
 import { useTranslations as useI18nTranslations } from '../../i18n';
@@ -85,7 +86,9 @@ export function CreateAgentModal({
   const [description, setDescription] = useState('');
   const [from, setFrom] = useState<string>('');
   const slug = name.trim() ? slugifySlug(name, '') : '';
-  const taken = agents.some((a) => a.name === slug);
+  // Every declared agent and the built-in ones: a new agent can never take a
+  // platform agent's key. `agents` (the Duplicate sources) leaves them out.
+  const taken = (config?.agents ?? []).some((a) => a.name === slug) || isMetaAgentName(slug);
   const source = agents.find((a) => a.name === from);
   const ready = slug.length > 0 && !taken && (start !== 'duplicate' || source !== undefined);
 

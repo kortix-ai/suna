@@ -377,6 +377,30 @@ description: "Runs deploys: say \\"go\\""
     expect(skill?.description).toBe('Runs deploys: say "go"');
   });
 
+  // The agent editor writes an agent's `.md` frontmatter with `stringifyYaml`,
+  // which folds a long double-quoted scalar over several lines. A line reader
+  // took only the first line and kept its opening quote, so every agent list
+  // showed `"Generic … handles coding` while the editor showed the text.
+  test('reads a folded multi-line frontmatter scalar back to its text', async () => {
+    await push(
+      {
+        '.kortix/opencode/agents/long.md': `---
+description: "Generic knowledge worker. Hands-on: handles coding
+  / research / content tasks end-to-end."
+mode: primary
+---
+Long body.
+`,
+      },
+      'add the folded agent',
+    );
+    const config = await loadProjectConfig(project);
+
+    const agent = config.agents.find((a) => a.name === 'long');
+    expect(agent?.description).toBe('Generic knowledge worker. Hands-on: handles coding / research / content tasks end-to-end.');
+    expect(agent?.mode).toBe('primary');
+  });
+
   // A plain scalar (the writer emits one when the text needs no quoting) may
   // end in a quote character; the reader must not eat it as a closing quote.
   test('reads a plain scalar that ends in a quote back intact', async () => {

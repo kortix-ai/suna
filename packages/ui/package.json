@@ -119,7 +119,6 @@
     "./customize/shared/capability-access-gate": "./src/customize/shared/capability-access-gate.tsx",
     "./customize/shared/capability-page-shell": "./src/customize/shared/capability-page-shell.tsx",
     "./customize/shared/capability-skeleton": "./src/customize/shared/capability-skeleton.tsx",
-    "./customize/shared/capability-tabs": "./src/customize/shared/capability-tabs.tsx",
     "./customize/shared/entity/entity-files": "./src/customize/shared/entity/entity-files.ts",
     "./customize/shared/feature-gate-screen": "./src/customize/shared/feature-gate-screen.tsx",
     "./customize/shared/use-customize-prefetch": "./src/customize/shared/use-customize-prefetch.ts",
@@ -944,10 +943,6 @@
       "./customize/shared/capability-skeleton": {
         "types": "./dist/customize/shared/capability-skeleton.d.ts",
         "import": "./dist/customize/shared/capability-skeleton.js"
-      },
-      "./customize/shared/capability-tabs": {
-        "types": "./dist/customize/shared/capability-tabs.d.ts",
-        "import": "./dist/customize/shared/capability-tabs.js"
       },
       "./customize/shared/entity/entity-files": {
         "types": "./dist/customize/shared/entity/entity-files.d.ts",

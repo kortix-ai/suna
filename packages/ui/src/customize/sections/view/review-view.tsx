@@ -1,6 +1,8 @@
 'use client';
 
 import { ProjectFilesProvider } from '../../../files/project';
+import { useTranslations } from '../../../i18n';
+import { CustomizeHeader } from '../../agents/agent-page-chrome';
 import { ReviewCenterConnected } from './review-center-connected';
 import { useProjectName } from '@kortix/sdk/react';
 
@@ -22,6 +24,21 @@ export function ReviewView({ projectId }: { projectId: string }) {
       <ProjectFilesProvider value={{ projectId, ref: '', defaultBranch: '' }}>
         <ReviewCenterConnected projectName={projectName} />
       </ProjectFilesProvider>
+    </div>
+  );
+}
+
+/**
+ * /customize/review: the Review Center under the one Customize header
+ * (`CustomizeHeader`), so its title sits where the Agents index, an agent and
+ * My Kortix put theirs.
+ */
+export function ReviewPage({ projectId }: { projectId: string }) {
+  const t = useTranslations('agentEditor.tabs');
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <CustomizeHeader title={t('review')} description={t('reviewLead')} rule />
+      <ReviewView projectId={projectId} />
     </div>
   );
 }

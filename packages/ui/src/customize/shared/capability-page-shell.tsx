@@ -41,6 +41,8 @@ interface CapabilityPageShellProps {
 export interface CapabilityShellEmbed {
   agentName: string;
   lead?: ReactNode;
+  /** The column class, so every Access and Runtime view shares one width. */
+  className?: string;
 }
 const CapabilityShellEmbedContext = createContext<CapabilityShellEmbed | null>(null);
 export const CapabilityShellEmbedProvider = CapabilityShellEmbedContext.Provider;
@@ -79,8 +81,8 @@ export function CapabilityPageShell({
   const embed = useCapabilityShellEmbed();
   if (embed) {
     return (
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-        <div className="w-full space-y-5 px-4 pt-5 pb-24 md:px-8">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto" data-capability-embed="">
+        <div className={cn('w-full space-y-5 px-4 pt-5 pb-24 md:px-8', embed.className)}>
           {embed.lead}
           <header className={cn('flex flex-col gap-3', !stacked && 'md:flex-row md:items-center md:justify-between')}>
             <h2 className="sr-only">{title}</h2>

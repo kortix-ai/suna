@@ -172,10 +172,11 @@ export function AppsView({
   // still grantable, and its card says so.
   const grantNeeded = new Set(appGrantRows(apps.data).filter((r) => r.needsGrant).map((r) => r.id));
   const selectFor = (app: App): AppSelect | undefined =>
-    agentGrant
+    // Only under Specific: under All or None the grant sentence decides.
+    agentGrant?.mode === 'specific'
       ? {
           checked: agentGrant.isGranted(app.slug),
-          disabled: agentGrant.mode !== 'specific',
+          disabled: false,
           onToggle: () => agentGrant.toggle(app.slug),
           label: tI18nComplete('textd4170e74c3b0', { value0: app.name }),
           note: grantNeeded.has(app.slug) ? null : tAgentApps('openWithoutGrant'),

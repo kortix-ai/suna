@@ -38,13 +38,21 @@ import {
   UsersIcon,
   WrenchIcon,
 } from '@phosphor-icons/react';
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, type ReactNode, useState } from 'react';
 
 import { useLocale, useTranslations as useI18nTranslations } from '../../i18n';
 import { agentDisplayName } from '../../internal/components/agent-mark';
 import { MarkdownWithFrontmatter } from '../../markdown/markdown-frontmatter';
 import { Button } from '../../primitives/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../primitives/select';
+import { Input } from '../../primitives/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from '../../primitives/select';
 import { StatusDot } from '../../primitives/status';
 import { Switch } from '../../primitives/switch';
 import { Textarea } from '../../primitives/textarea';
@@ -55,6 +63,7 @@ import {
   type AgentDraft,
   useLocalizedAgentConfigCatalog,
 } from '../sections/view/agent-editor';
+import { useGrantLabel } from './agent-access-text';
 import { ACCESS_VIEWS } from './agent-tabs';
 
 type Agent = ProjectConfigSummary['agents'][number];
@@ -139,7 +148,7 @@ export function DescriptionField({
         value={value}
         placeholder={t('descriptionPlaceholder')}
         minHeight={44}
-        className="max-w-3xl text-sm"
+        className="text-sm"
         onChange={(e) => onChange(e.target.value)}
       />
     </section>
@@ -159,7 +168,7 @@ function SummarySentence({
   name: string;
   block: AgentConfigBlock;
   views: readonly AgentConfigSectionKey[];
-  hrefFor: (view: AgentConfigSectionKey) => string;
+  hrefFor: (view: AgentConfigSectionKey) => string | null;
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
   const locale = useLocale();
@@ -181,13 +190,22 @@ function SummarySentence({
       {t('summaryLead', { name })}{' '}
       {pieces.map((piece, i) =>
         i % 2 === 1 ? (
-          <Link
-            key={i}
-            href={hrefFor(parts[Number(piece)].view)}
-            className="text-foreground decoration-border hover:decoration-foreground underline underline-offset-4 transition-colors"
-          >
-            {words[Number(piece)]}
-          </Link>
+          (() => {
+            const href = hrefFor(parts[Number(piece)].view);
+            return href ? (
+              <Link
+                key={i}
+                href={href}
+                className="text-foreground decoration-border hover:decoration-foreground underline underline-offset-4 transition-colors"
+              >
+                {words[Number(piece)]}
+              </Link>
+            ) : (
+              <span key={i} className="text-foreground">
+                {words[Number(piece)]}
+              </span>
+            );
+          })()
         ) : (
           <Fragment key={i}>{piece}</Fragment>
         ),
@@ -250,10 +268,11 @@ function AccessSummary({
   block: AgentConfigBlock;
   views: readonly AgentConfigSectionKey[];
   facts: OverviewFacts;
-  hrefFor: (view: AgentConfigSectionKey) => string;
+  hrefFor: (view: AgentConfigSectionKey) => string | null;
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
   const tPage = useI18nTranslations('agentEditor.page');
+  const grantLabel = useGrantLabel();
   const catalog = useLocalizedAgentConfigCatalog();
   const labelOf = (key: AgentConfigSectionKey) => catalog.sections.find((s) => s.key === key)?.label ?? key;
   const rows = ACCESS_VIEWS.filter((view) => views.includes(view));
@@ -279,49 +298,50 @@ function AccessSummary({
                 : count === 0
                   ? t('detailNone')
                   : (value as string[]).join(', ');
-          const valueText =
-            view === 'drives'
-              ? null
-              : count === 'all'
-                ? tPage('all')
-                : count === 0
-                  ? tPage('none')
-                  : total !== undefined
-                    ? t('countOf', { count, total })
-                    : String(count);
+          const valueText = view === 'drives' ? null : grantLabel(value, total);
           const warn = view === 'connectors' ? facts.needsSignIn.length : 0;
+          const href = hrefFor(view);
+          const content = (
+            <>
+              <span className="bg-muted text-muted-foreground flex size-7 shrink-0 items-center justify-center rounded-sm">
+                <RowIcon aria-hidden className="size-4" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="text-foreground block truncate text-sm">{labelOf(view)}</span>
+                <span className="text-muted-foreground block truncate text-xs">{detail}</span>
+              </span>
+              {warn > 0 ? (
+                <span className="text-foreground hidden shrink-0 items-center gap-1.5 text-sm sm:flex">
+                  <StatusDot tone="warning" />
+                  {t('needsSignIn', { count: warn })}
+                </span>
+              ) : null}
+              {valueText ? (
+                <span
+                  className={
+                    count === 0
+                      ? 'text-muted-foreground shrink-0 text-sm tabular-nums'
+                      : 'text-foreground shrink-0 text-sm tabular-nums'
+                  }
+                >
+                  {valueText}
+                </span>
+              ) : null}
+              {href ? <CaretRightIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" /> : null}
+            </>
+          );
           return (
             <li key={view}>
-              <Link
-                href={hrefFor(view)}
-                className="hover:bg-hover focus-visible:bg-hover flex items-center gap-3 px-4 py-2.5 transition-colors duration-fast focus-visible:outline-none"
-              >
-                <span className="bg-muted text-muted-foreground flex size-7 shrink-0 items-center justify-center rounded-sm">
-                  <RowIcon aria-hidden className="size-4" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="text-foreground block truncate text-sm">{labelOf(view)}</span>
-                  <span className="text-muted-foreground block truncate text-xs">{detail}</span>
-                </span>
-                {warn > 0 ? (
-                  <span className="text-foreground hidden shrink-0 items-center gap-1.5 text-sm sm:flex">
-                    <StatusDot tone="warning" />
-                    {t('needsSignIn', { count: warn })}
-                  </span>
-                ) : null}
-                {valueText ? (
-                  <span
-                    className={
-                      count === 0
-                        ? 'text-muted-foreground shrink-0 text-sm tabular-nums'
-                        : 'text-foreground shrink-0 text-sm tabular-nums'
-                    }
-                  >
-                    {valueText}
-                  </span>
-                ) : null}
-                <CaretRightIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
-              </Link>
+              {href ? (
+                <Link
+                  href={href}
+                  className="hover:bg-hover focus-visible:bg-hover flex items-center gap-3 px-4 py-2.5 transition-colors duration-fast focus-visible:outline-none"
+                >
+                  {content}
+                </Link>
+              ) : (
+                <div className="flex items-center gap-3 px-4 py-2.5">{content}</div>
+              )}
             </li>
           );
         })}
@@ -334,6 +354,47 @@ function AccessSummary({
 
 const PROJECT_WIDE = '__project_wide__';
 const INHERIT = '__inherit__';
+const NEW_SPACE = '__new_space__';
+
+/** A space slug from what a person typed: the API's `SPACE_SLUG_RE` shape. */
+export function spaceSlug(input: string): string {
+  return input
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 63);
+}
+
+/**
+ * The Space select's "New space…": an inline field for a space kortix.yaml
+ * does not declare yet. Enter keeps it (as a slug), Escape or an empty value
+ * goes back to the select.
+ */
+function NewSpaceInput({ onDone }: { onDone: (slug: string | null) => void }) {
+  const t = useI18nTranslations('agentEditor.tabs');
+  const [value, setValue] = useState('');
+  return (
+    <Input
+      autoFocus
+      size="sm"
+      aria-label={t('newSpace')}
+      placeholder={t('newSpacePlaceholder')}
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={() => onDone(spaceSlug(value) || null)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          onDone(spaceSlug(value) || null);
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          onDone(null);
+        }
+      }}
+    />
+  );
+}
 
 /** A headed section of the aside: one heading, then divided rows. */
 function AsideSection({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
@@ -403,7 +464,11 @@ function OverviewAside({
   const behavior = block.behavior ?? {};
   const enabled = block.enabled !== false;
   const shown = !behavior.hidden;
-  const space = block.space ?? agent.space ?? null;
+  // Editable: the draft alone, so choosing Project-wide shows Project-wide
+  // (the save drops the key, which clears it). Read-only: the served block,
+  // which already carries the agent's space.
+  const space = (editor ? block.space : (block.space ?? agent.space)) || null;
+  const [addingSpace, setAddingSpace] = useState(false);
   const spaces = config.spaces ?? [];
   const spaceNames = new Set(spaces.map((s) => s.name));
   const yesNo = (on: boolean) => (
@@ -464,9 +529,20 @@ function OverviewAside({
         <div className="space-y-2 px-4 py-2.5">
           <p className="text-foreground text-sm">{t('space')}</p>
           {editor ? (
+            addingSpace ? (
+              <NewSpaceInput
+                onDone={(slug) => {
+                  setAddingSpace(false);
+                  if (slug) editor.set('space', slug);
+                }}
+              />
+            ) : (
             <Select
               value={space ?? PROJECT_WIDE}
-              onValueChange={(v) => editor.set('space', v === PROJECT_WIDE ? undefined : v)}
+              onValueChange={(v) => {
+                if (v === NEW_SPACE) return setAddingSpace(true);
+                editor.set('space', v === PROJECT_WIDE ? undefined : v);
+              }}
             >
               <SelectTrigger aria-label={t('space')} size="sm" className="w-full">
                 <SelectValue />
@@ -481,8 +557,11 @@ function OverviewAside({
                 {space && !spaceNames.has(space) ? (
                   <SelectItem value={space}># {space}</SelectItem>
                 ) : null}
+                <SelectSeparator />
+                <SelectItem value={NEW_SPACE}>{t('newSpace')}</SelectItem>
               </SelectContent>
             </Select>
+            )
           ) : (
             <p className="text-muted-foreground text-sm">{space ? `# ${space}` : t('projectWide')}</p>
           )}
@@ -538,7 +617,7 @@ export function AgentOverview({
   views: readonly AgentConfigSectionKey[];
   facts: OverviewFacts;
   editor?: AgentDraft;
-  hrefFor: (view: AgentConfigSectionKey) => string;
+  hrefFor: (view: AgentConfigSectionKey) => string | null;
   hrefs: { instructions: string; model: string; tools: string; workspace: string; triggers: string; people: string };
   sourcePath: string;
 }) {

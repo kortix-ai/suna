@@ -434,8 +434,12 @@ export function AgentConfigSections({
   apps,
   drives,
   authority,
+  sectionStyle = 'panel',
 }: {
   section: AgentConfigSectionKey;
+  /** `tab` under the agent page's view switcher: the lead title goes, the
+   *  switcher names the view. */
+  sectionStyle?: 'panel' | 'tab';
   editor: AgentDraft;
   options: AgentEditorOptions;
   skillsOptions: GrantOption[];
@@ -533,7 +537,7 @@ export function AgentConfigSections({
     }
   })();
   return (
-    <EditorSectionStyleProvider value="panel">
+    <EditorSectionStyleProvider value={sectionStyle}>
       <div className="space-y-8">{body}</div>
     </EditorSectionStyleProvider>
   );

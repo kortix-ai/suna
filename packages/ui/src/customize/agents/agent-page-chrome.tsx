@@ -49,35 +49,46 @@ export interface HeaderFact {
 }
 
 /**
- * The identity header. `slug` draws the agent's mark; without one (an agent
- * that failed to load or does not exist) the tile is a quiet placeholder, so
- * every state of the page keeps the same header slot.
+ * The one header of every Customize page: the agent page, My Kortix, the
+ * Agents index, Review and the error / not-found states. Same top offset, same
+ * title rung, same height, so moving between them never makes the title jump.
+ * `slug` draws the agent's mark; a page that is not one agent has no tile.
+ * `rule` draws the bottom hairline; the agent page leaves it to its tab row.
+ * It is the window's title-bar row (`kx-titlebar-row`), so it holds the
+ * sidebar opener and the desktop drag band.
  */
-export function AgentIdentityHeader({
+export function CustomizeHeader({
   slug,
   title,
   facts,
+  description,
   actions,
+  rule = false,
 }: {
   slug?: string;
   title: ReactNode;
   facts?: HeaderFact[];
+  /** One muted line under the title, for a page with no facts. */
+  description?: ReactNode;
   actions?: ReactNode;
+  rule?: boolean;
 }) {
   const sidebar = useOptionalSidebar();
   return (
     <header
-      className="kx-titlebar-row flex shrink-0 items-center gap-3 px-4 pt-4 pb-3 md:px-8"
+      className={cn(
+        'kx-titlebar-row flex shrink-0 items-center gap-3 px-4 pt-4 pb-3 md:px-8',
+        rule && 'border-b',
+      )}
       data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
     >
       <SidebarToggle />
-      {slug ? (
-        <AgentMark slug={slug} size={28} />
-      ) : (
-        <span aria-hidden className="bg-muted size-10 shrink-0 rounded-md" />
-      )}
+      {slug ? <AgentMark slug={slug} size={28} /> : null}
       <div className="min-w-0 flex-1">
         <h1 className="text-foreground truncate text-xl font-medium">{title}</h1>
+        {description && !(facts && facts.length > 0) ? (
+          <p className="text-muted-foreground truncate text-sm">{description}</p>
+        ) : null}
         {facts && facts.length > 0 ? (
           <p className="text-muted-foreground flex min-w-0 items-center gap-1.5 truncate text-sm">
             {facts.map((fact, index) => (
@@ -95,6 +106,9 @@ export function AgentIdentityHeader({
   );
 }
 
+/** The agent page's name for the header. */
+export const AgentIdentityHeader = CustomizeHeader;
+
 export interface AgentTabItem {
   key: AgentTab;
   label: string;
@@ -104,13 +118,16 @@ export interface AgentTabItem {
 
 /**
  * The underline tabs under the header. A tab holding an unsaved edit carries a
- * dot, so the save bar's "what changed" is visible from every tab. The row
- * sits above the page's scroller, so it never scrolls away.
+ * dot, so the save bar's "what changed" is visible from every tab. On an
+ * editable page every tab reserves the dot's box, so a tab never grows (and
+ * its neighbours never shift) when the draft turns dirty. A read-only page
+ * passes no `dirty` and reserves nothing. The row sits above the page's
+ * scroller, so it never scrolls away.
  */
 export function AgentTabBar({
   items,
   active,
-  dirty = [],
+  dirty,
 }: {
   items: AgentTabItem[];
   active: AgentTab;
@@ -131,8 +148,12 @@ export function AgentTabBar({
               {item.count !== undefined ? (
                 <span className="text-muted-foreground tabular-nums">{item.count}</span>
               ) : null}
-              {dirty.includes(item.key) ? (
-                <span aria-label={t('unsavedTab')} className="bg-foreground size-1.5 rounded-full" />
+              {dirty ? (
+                dirty.includes(item.key) ? (
+                  <span role="img" aria-label={t('unsavedTab')} className="bg-foreground size-1.5 shrink-0 rounded-full" />
+                ) : (
+                  <span aria-hidden className="size-1.5 shrink-0" />
+                )
               ) : null}
             </Link>
           </TabsTrigger>
@@ -201,13 +222,14 @@ export function AgentPageSkeleton() {
 
 /**
  * A page that has a header and a single state under it (error, not found):
- * the same header slot, so the sidebar opener is always reachable.
+ * the same header slot, so the sidebar opener is always reachable. No tile:
+ * the page is not (yet) an agent.
  */
 export function AgentStatePage({ title, children }: { title: ReactNode; children: ReactNode }) {
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      <AgentIdentityHeader title={title} />
-      <div className="min-h-0 flex-1 overflow-y-auto border-t">
+      <CustomizeHeader title={title} rule />
+      <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-xl px-4 py-16">{children}</div>
       </div>
     </div>

@@ -479,7 +479,9 @@ export function SecretsView({
               <Table className="overflow-hidden rounded-md">
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
-                    {agentGrant ? (
+                    {/* The grant column only under Specific: under All or None the
+                        grant sentence decides every row. */}
+                    {agentGrant?.mode === 'specific' ? (
                       <TableHead className="w-10">
                         <span className="sr-only">{tAgentScope('grantedColumn')}</span>
                       </TableHead>
@@ -498,7 +500,7 @@ export function SecretsView({
                     <SecretTableRow
                       key={row.identifier}
                       row={row}
-                      grant={agentGrant}
+                      grant={agentGrant?.mode === 'specific' ? agentGrant : undefined}
                       canManage={canManage}
                       viewerId={viewerId}
                       busy={removeShared.isPending && removeShared.variables === row.identifier}
