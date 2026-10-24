@@ -22605,6 +22605,8 @@
     "removed": "Plus partagé",
     "mediaSingleFile": "Les images et les vidéos nécessitent un document dans son propre dossier. Publiez le document comme dossier pour ajouter des médias.",
     "mediaTooLarge": "Ce fichier dépasse 16 Mo.",
-    "refresh": "Actualiser"
+    "refresh": "Actualiser",
+    "diagramEdit": "Modifier le diagramme",
+    "diagramDone": "Terminé"
   }
 }

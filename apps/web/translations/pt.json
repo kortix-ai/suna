@@ -22605,6 +22605,8 @@
     "removed": "Não é mais compartilhado",
     "mediaSingleFile": "Imagens e vídeos precisam de um documento na sua própria pasta. Publique o documento como pasta para adicionar mídia.",
     "mediaTooLarge": "Este arquivo tem mais de 16 MB.",
-    "refresh": "Recarregar"
+    "refresh": "Recarregar",
+    "diagramEdit": "Editar diagrama",
+    "diagramDone": "Concluído"
   }
 }
