@@ -227,8 +227,10 @@ These replace the matching parts above where they differ.
 - Who gets which set: the grant on the principal decides. A session token
   (sandbox CLI, SDK, agent tools, MCP `call_connector` with a session) uses the
   session agent's set. A pi subagent child shares the root session's token,
-  so the ROOT agent's set applies. A user token with `X-Kortix-Session-Id`
-  uses that session's agent. A PAT or dashboard call without a session, a
+  so the ROOT agent's set applies. A user token (JWT/PAT) with
+  `X-Kortix-Session-Id` is refused (`403`, `resolveTokenBoundSessionId`: only a
+  session token carries a session; verified on dev 2026-10-24). A PAT or
+  dashboard call without a session, a
   trigger poll (`mcp-poll.ts`, `agentGrant: null`) and the platform meta agent
   get the base rules. The request body never selects a set.
 - Trust boundary: assigning or changing any `policy_sets` entry needs
