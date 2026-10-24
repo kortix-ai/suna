@@ -184,3 +184,84 @@ export async function createAgentMailWebhook(input: {
     },
   });
 }
+
+// ─── Domains (custom sending/receiving domains on an AgentMail account) ──────
+
+/** AgentMail's own domain: every account can create inboxes on it. */
+export const AGENTMAIL_DEFAULT_DOMAIN = 'agentmail.to';
+
+export type AgentMailDomainStatus =
+  | 'NOT_STARTED'
+  | 'PENDING'
+  | 'INVALID'
+  | 'FAILED'
+  | 'VERIFYING'
+  | 'VERIFIED';
+
+export interface AgentMailDnsRecord {
+  type: 'TXT' | 'CNAME' | 'MX';
+  name: string;
+  value: string;
+  status: 'MISSING' | 'INVALID' | 'VALID';
+  priority?: number;
+  reason?: string;
+}
+
+export interface AgentMailDomain {
+  domain_id: string;
+  domain: string;
+  status: AgentMailDomainStatus;
+  records: AgentMailDnsRecord[];
+  reason?: string;
+}
+
+export interface AgentMailDomainSetupLink {
+  supported: boolean;
+  provider_name?: string;
+  url?: string;
+  conflicting_provider?: string;
+}
+
+/** The account's domains, with status and DNS records (the list omits both). */
+export async function listAgentMailDomains(apiKey: string): Promise<AgentMailDomain[]> {
+  const list = await agentMailRequest<{ domains?: Array<{ domain_id: string }> }>(
+    apiKey,
+    '/domains?limit=50',
+  );
+  const ids = (list.domains ?? []).map((d) => d.domain_id).filter(Boolean);
+  return Promise.all(ids.map((id) => getAgentMailDomain(apiKey, id)));
+}
+
+export async function getAgentMailDomain(apiKey: string, domainId: string): Promise<AgentMailDomain> {
+  return agentMailRequest<AgentMailDomain>(apiKey, `/domains/${encodeURIComponent(domainId)}`);
+}
+
+export async function createAgentMailDomain(apiKey: string, domain: string): Promise<AgentMailDomain> {
+  return agentMailRequest<AgentMailDomain>(apiKey, '/domains', { method: 'POST', body: { domain } });
+}
+
+/** Ask AgentMail to re-check the DNS records now, then read the result. */
+export async function verifyAgentMailDomain(apiKey: string, domainId: string): Promise<AgentMailDomain> {
+  await agentMailRequest(apiKey, `/domains/${encodeURIComponent(domainId)}/verify`, { method: 'POST' });
+  return getAgentMailDomain(apiKey, domainId);
+}
+
+/** One-click DNS setup (Domain Connect) when the DNS provider supports it. */
+export async function getAgentMailDomainSetupLink(
+  apiKey: string,
+  domainId: string,
+): Promise<AgentMailDomainSetupLink> {
+  return agentMailRequest<AgentMailDomainSetupLink>(
+    apiKey,
+    `/domains/${encodeURIComponent(domainId)}/setup-link`,
+  );
+}
+
+/** AgentMail's own readable reason (`message`, then `fix`) for a refused request. */
+export function agentMailRefusal(err: unknown): string | null {
+  if (!(err instanceof AgentMailApiError)) return null;
+  const body = err.body as { message?: unknown; fix?: unknown; errors?: unknown } | null;
+  const parts = [body?.message, body?.fix].filter((p): p is string => typeof p === 'string' && p.trim() !== '');
+  if (parts.length) return parts.join(' ');
+  return err.message || null;
+}

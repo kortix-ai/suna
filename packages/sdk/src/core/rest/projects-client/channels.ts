@@ -345,6 +345,8 @@ export interface EmailMode {
   provider: 'agentmail';
   enabled?: boolean;
   managed_available: boolean;
+  /** Where a managed inbox lives: `<username>@<managed_domain>`. Older servers omit it (`agentmail.to`). */
+  managed_domain?: string;
 }
 
 const DEFAULT_EMAIL_MODE: EmailMode = { provider: 'agentmail', managed_available: false };
@@ -395,6 +397,97 @@ export async function connectEmail(
     'Failed to connect email',
   );
   return normalizeEmailInstallation(installation);
+}
+
+/** A DNS record AgentMail needs before a custom domain can send and receive. */
+export interface EmailDomainRecord {
+  type: 'TXT' | 'CNAME' | 'MX';
+  name: string;
+  value: string;
+  status: 'MISSING' | 'INVALID' | 'VALID';
+  priority?: number;
+  reason?: string;
+}
+
+/** A domain an AgentMail account can create inboxes on. `domain_id` is null for `agentmail.to` and the managed domain. */
+export interface EmailDomain {
+  domain_id: string | null;
+  domain: string;
+  status: 'NOT_STARTED' | 'PENDING' | 'INVALID' | 'FAILED' | 'VERIFYING' | 'VERIFIED';
+  /** `status === 'VERIFIED'`: an inbox can be created on it. */
+  verified: boolean;
+  records: EmailDomainRecord[];
+  /** Why the domain is not verified yet, in AgentMail's words. */
+  reason?: string;
+}
+
+export interface EmailDomainList {
+  /** True when the list is the managed account's: one domain, no custom domains. */
+  managed: boolean;
+  default_domain: string;
+  domains: EmailDomain[];
+}
+
+/** One-click DNS setup at the domain's DNS provider (Domain Connect), when it supports it. */
+export interface EmailDomainSetup {
+  url: string;
+  provider_name: string | null;
+  /** Another email provider's MX records already on the domain; applying replaces them. */
+  conflicting_provider: string | null;
+}
+
+export interface EmailDomainResult {
+  domain: EmailDomain;
+  setup: EmailDomainSetup | null;
+}
+
+/**
+ * The domains an AgentMail key can create inboxes on. No `apiKey`: the
+ * deployment's managed account, which offers its one managed domain. The key
+ * travels in the POST body, never in a URL.
+ */
+export async function listEmailDomains(
+  projectId: string,
+  input: { apiKey?: string } = {},
+): Promise<EmailDomainList> {
+  return unwrap(
+    await backendApi.post<EmailDomainList>(
+      `/projects/${encodeURIComponent(projectId)}/channels/email/domains`,
+      input.apiKey ? { api_key: input.apiKey } : {},
+      { showErrors: false },
+    ),
+    'Failed to list email domains',
+  );
+}
+
+/** Add a custom domain to the AgentMail account of `apiKey`; returns the DNS records to set. */
+export async function addEmailDomain(
+  projectId: string,
+  input: { apiKey: string; domain: string },
+): Promise<EmailDomainResult> {
+  return unwrap(
+    await backendApi.post<EmailDomainResult>(
+      `/projects/${encodeURIComponent(projectId)}/channels/email/domains/add`,
+      { api_key: input.apiKey, domain: input.domain },
+      { showErrors: false },
+    ),
+    'Failed to add the email domain',
+  );
+}
+
+/** Ask AgentMail to check a custom domain's DNS records again. */
+export async function verifyEmailDomain(
+  projectId: string,
+  input: { apiKey: string; domainId: string },
+): Promise<EmailDomainResult> {
+  return unwrap(
+    await backendApi.post<EmailDomainResult>(
+      `/projects/${encodeURIComponent(projectId)}/channels/email/domains/verify`,
+      { api_key: input.apiKey, domain_id: input.domainId },
+      { showErrors: false },
+    ),
+    'Failed to check the email domain',
+  );
 }
 
 export async function disconnectEmail(

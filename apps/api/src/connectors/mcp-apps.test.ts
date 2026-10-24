@@ -5,7 +5,7 @@ import { config } from '../config';
 import { type ConnectorCatalogItem, type ConnectorSurfaceVariant, createConnectorCatalog } from './connector-catalog';
 import { fallbackIconSource } from './connector-icon';
 import {
-  KORTIX_CHANNELS,
+  KORTIX_APPS,
   MCP_APPS,
   availableMcpApps,
   kortixClientApplication,
@@ -36,7 +36,7 @@ describe('the Kortix MCP app catalogue', () => {
     }
     const listed = new Set([
       ...MCP_APPS.filter((app) => app.icon).map((app) => `${app.slug}.svg`),
-      ...KORTIX_CHANNELS.flatMap((channel) => (channel.icon ? [channel.icon.split('/').pop()!] : [])),
+      ...KORTIX_APPS.flatMap((entry) => (entry.icon ? [entry.icon.split('/').pop()!] : [])),
     ]);
     expect(readdirSync(ICONS).filter((file) => !listed.has(file))).toEqual([]);
   });
@@ -119,8 +119,8 @@ describe('the Kortix MCP app catalogue', () => {
     // Browse order: Kortix's apps, then popular registry apps and managed apps
     // taking turns, then the rest.
     const browse = (await catalog.list({ limit: 96 })).items.map((item) => item.id);
-    // Kortix's own block: its channels and MCP apps.
-    const firstOther = browse.findIndex((id) => !id.startsWith('kortix:') && !id.startsWith('channel:'));
+    // Kortix's own block: what it built and its MCP apps.
+    const firstOther = browse.findIndex((id) => !id.startsWith('kortix:') && !id.startsWith('native:'));
     // Managed apps keep Composio's usage order, whatever their domain's first record.
     expect(browse.slice(firstOther, firstOther + 3)).toEqual(['acme-mcp', 'composio:zeta', 'composio:outlook']);
     expect(browse.indexOf('composio:outlook')).toBeLessThan(browse.indexOf('billing-openapi'));
@@ -187,21 +187,26 @@ describe('the ways to connect one app (connectors_v2 detail)', () => {
   });
 });
 
-describe('Kortix channels in the catalogue', () => {
-  test('each channel is a one-click card that leads its app, ahead of the app\'s MCP server and Composio', async () => {
+describe('What Kortix built, in the catalogue', () => {
+  test('each is a one-click Kortix card that leads its app, ahead of the app\'s MCP server and Composio', async () => {
     const items = await connectorsV2Items({
       apps: () => [],
       index: async () => [record('curated/slack-com-mcp', 'mcp', 'Slack', 'slack.com', { mcpUrl: 'https://mcp.slack.com/mcp' }), record('openapi/telegram-org', 'openapi', 'Telegram', 'telegram.org')],
       toolkits: async () => [toolkit('telegram', 'Telegram')],
     });
-    const channels = items.filter((item) => item.kind === 'channel').map((item) => item.id);
-    expect(channels).toEqual(['channel:slack', 'channel:teams', 'channel:email', 'channel:telegram']);
+    const kortix = items.filter((item) => item.kind === 'kortix').map((item) => item.id);
+    expect(kortix).toEqual(['native:slack', 'native:teams', 'native:email', 'native:telegram', 'native:computer']);
     const catalog = createConnectorCatalog({ source: { items: async () => items, surfaces: () => [] } });
-    expect((await catalog.list({ q: 'slack' })).items[0]?.id).toBe('channel:slack');
-    expect((await catalog.list({ q: 'telegram' })).items.map((item) => item.id)).toEqual(['channel:telegram']);
-    expect((await catalog.list({ kinds: ['channel'], limit: 10 })).items).toHaveLength(4);
+    expect((await catalog.list({ q: 'slack' })).items[0]?.id).toBe('native:slack');
+    expect((await catalog.list({ q: 'telegram' })).items.map((item) => item.id)).toEqual(['native:telegram']);
+    expect((await catalog.list({ kinds: ['kortix'], limit: 10 })).items).toHaveLength(5);
+    expect((await catalog.list({ q: 'computer' })).items[0]).toMatchObject({ id: 'native:computer', kind: 'kortix', kortix: { app: 'computer' } });
+    // Links from before the rename (`channel:<platform>`) still open the app.
+    expect((await catalog.detail('channel:email')).item.id).toBe('native:email');
+    expect((await catalog.detail('native:email')).item.id).toBe('native:email');
+    await expect(catalog.detail('channel:nope')).rejects.toThrow('Connector not found');
     const ways = await connectorsV2Surfaces('telegram.org', { items: async () => items, surfaces: async () => [] });
-    expect(ways.map((way) => [way.kind, way.recommended === true])).toEqual([['channel', true], ['composio', false]]);
+    expect(ways.map((way) => [way.kind, way.recommended === true])).toEqual([['kortix', true], ['composio', false]]);
   });
 });
 

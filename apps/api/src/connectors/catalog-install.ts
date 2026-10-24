@@ -5,9 +5,17 @@
  * recommends. The draft is a connector PROFILE: the project's entry in
  * `kortix.yaml`, where its accounts, who may use them and its tool rules live.
  */
-import type { ConnectorCatalogDetail, ConnectorSurfaceVariant } from './connector-catalog';
+import { canonicalCatalogId, type ConnectorCatalogDetail, type ConnectorSurfaceVariant } from './connector-catalog';
 
 export class CatalogInstallError extends Error {}
+
+/** How each Kortix integration is set up outside the web. Telegram has no CLI command yet. */
+const KORTIX_SETUP_COMMAND: Record<string, string> = {
+  slack: 'kortix channels connect',
+  teams: 'kortix channels connect --platform teams',
+  email: 'kortix channels email connect',
+  computer: 'npx --yes @kortix/agent-tunnel@latest connect',
+};
 
 /** A connector slug from a name: lower case, letters, digits, `-` and `_`. */
 export function catalogSlug(name: string): string {
@@ -19,13 +27,14 @@ export function catalogSlug(name: string): string {
 }
 
 /** The way to install: `way` by id, else the recommended one. */
-export function catalogWay(detail: ConnectorCatalogDetail, way?: string): ConnectorSurfaceVariant {
+export function catalogWay(detail: ConnectorCatalogDetail, requestedWay?: string): ConnectorSurfaceVariant {
+  const way = requestedWay ? canonicalCatalogId(requestedWay) : undefined;
   const installable = detail.variants.filter((variant) => variant.connector || variant.kind === 'composio');
   const recommended = detail.variants.find((variant) => variant.recommended);
-  // A recommended channel is the answer, not a reason to install the next way.
+  // A recommended Kortix integration is the answer, not a reason to install the next way.
   const picked = way
     ? detail.variants.find((variant) => variant.id === way)
-    : recommended?.kind === 'channel'
+    : recommended?.kind === 'kortix'
       ? recommended
       : (installable.find((variant) => variant.recommended) ?? installable[0]);
   if (!picked) {
@@ -33,15 +42,10 @@ export function catalogWay(detail: ConnectorCatalogDetail, way?: string): Connec
       way ? `"${way}" is not a way to connect ${detail.item.name}` : `${detail.item.name} has no way Kortix can install`,
     );
   }
-  if (picked.kind === 'channel') {
-    const platform = picked.channel?.platform;
-    const command =
-      platform === 'teams' ? 'kortix channels connect --platform teams'
-      : platform === 'email' ? 'kortix channels email connect'
-      : platform === 'slack' ? 'kortix channels connect'
-      : null;
+  if (picked.kind === 'kortix') {
+    const command = KORTIX_SETUP_COMMAND[picked.kortix?.app ?? ''];
     throw new CatalogInstallError(
-      `${picked.name} is a Kortix channel, set up on the channel page${command ? ` or with \`${command}\`` : ''}, not installed as a connector`,
+      `${picked.name} is built into Kortix: set it up on its page${command ? ` or with \`${command}\`` : ''}, not installed as a connector`,
     );
   }
   if (!picked.connector && picked.kind !== 'composio') {

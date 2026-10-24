@@ -1869,12 +1869,14 @@ export async function listConnectSections(
  *  Composio toolkit from `DiscoverConnector.composio`. `cli` is kept for
  *  compatibility: the catalogue no longer returns CLI records (2026-10-24),
  *  and the API answers `400` to `kind=cli`. */
-export type DiscoverConnectorKind = 'openapi' | 'mcp' | 'graphql' | 'composio' | 'channel' | 'cli';
+export type DiscoverConnectorKind = 'openapi' | 'mcp' | 'graphql' | 'composio' | 'kortix' | 'cli';
 
-/** A Kortix channel a `channel` entry sets up: people message the agent there.
- *  It is set up on the channel page, never through `installDiscoverConnector`. */
-export interface DiscoverChannel {
-  platform: 'slack' | 'teams' | 'email' | 'telegram';
+/** What a `kortix` entry is: an integration Kortix built itself — a channel
+ *  people message the agent in (`slack`, `teams`, `email`, `telegram`) or the
+ *  computer it works on (`computer`). It is set up on its own page, never
+ *  through `installDiscoverConnector`. */
+export interface DiscoverKortixApp {
+  app: 'slack' | 'teams' | 'email' | 'telegram' | 'computer';
 }
 
 export interface DiscoverConnector {
@@ -1898,8 +1900,8 @@ export interface DiscoverConnector {
   oneClick?: boolean;
   /** The managed toolkit a `composio` entry installs. */
   composio?: ConnectToolkit;
-  /** The Kortix channel a `channel` entry sets up. */
-  channel?: DiscoverChannel;
+  /** What a `kortix` entry sets up. */
+  kortix?: DiscoverKortixApp;
 }
 
 export interface DiscoverConnectorTemplate {
@@ -1919,7 +1921,7 @@ export interface DiscoverConnectorTemplate {
 export interface DiscoverConnectorVariant {
   id: string;
   /** `composio`: a Composio app (Connectors v2), installed from `composio`. */
-  kind: 'openapi' | 'postman' | 'mcp' | 'graphql' | 'http' | 'composio' | 'channel' | 'cli';
+  kind: 'openapi' | 'postman' | 'mcp' | 'graphql' | 'http' | 'composio' | 'kortix' | 'cli';
   name: string;
   url: string | null;
   docs: string | null;
@@ -1934,8 +1936,8 @@ export interface DiscoverConnectorVariant {
   recommended?: boolean;
   /** The Composio toolkit a `composio` variant installs. */
   composio?: ConnectToolkit;
-  /** The Kortix channel a `channel` variant sets up. */
-  channel?: DiscoverChannel;
+  /** What a `kortix` variant sets up. */
+  kortix?: DiscoverKortixApp;
 }
 
 export interface DiscoverConnectorsPage {

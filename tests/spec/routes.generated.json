@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 914,
+  "count": 917,
   "routes": [
     {
       "method": "GET",
@@ -2149,6 +2149,18 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/channels/email/connect"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/email/domains"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/email/domains/add"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/email/domains/verify"
     },
     {
       "method": "DELETE",

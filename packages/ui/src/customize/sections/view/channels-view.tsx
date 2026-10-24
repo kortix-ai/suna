@@ -166,6 +166,8 @@ import {
 } from '@phosphor-icons/react';
 import { UiLink as Link, useUiPathname, useUiRouter, useUiSearchParams } from '../../../providers/ui-provider';
 import { useEffect, useMemo, useState } from 'react';
+import { useTunnelConnections } from '@kortix/sdk/react';
+import { ComputerHero } from '../../connectors/detail/computer-app-page';
 
 /** Reserved slug for the built-in Email channel (see api connectors.ts). */
 const EMAIL_CONNECTOR_SLUG = 'kortix_email';
@@ -207,6 +209,10 @@ export function ChannelsSection({ projectId, platform }: { projectId: string; pl
   const platforms: ChannelPlatform[] = platform
     ? [platform]
     : ['slack', 'teams', 'email', ...(telegramEnabled ? (['telegram'] as const) : [])];
+  // The Kortix tab also holds the computer, where this deployment can pair one
+  // (the machine list answers 503 where computers are off).
+  const computersEnabled = useTunnelConnections({ refetchInterval: false }).isSuccess;
+  const showComputer = !platform && computersEnabled;
 
   const hero = (pf: ChannelPlatform) => {
     switch (pf) {
@@ -261,6 +267,7 @@ export function ChannelsSection({ projectId, platform }: { projectId: string; pl
                 {hero(pf)}
               </div>
             ))}
+        {showComputer && !loading ? <ComputerHero projectId={projectId} /> : null}
         <ChannelBindingsDialog
           key={channelsDialog.session}
           projectId={projectId}

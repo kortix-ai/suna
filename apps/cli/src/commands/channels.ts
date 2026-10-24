@@ -45,6 +45,10 @@ Subcommands:
 Email (AgentMail):
   email status [--json]           Inbox + delivery mode for one connector.
   email connect [options]         Create (or attach) the inbox.
+  email domains [--api-key k]     Domains an inbox can use (no key: the managed one).
+  email domains add <domain>      Add a custom domain to your AgentMail account
+                                  (--api-key); prints the DNS records to set.
+  email domains verify <id>       Check that domain's DNS records again.
   email disconnect                Drop the inbox connection.
   email policy [options]          Replace who may email the agent.
 

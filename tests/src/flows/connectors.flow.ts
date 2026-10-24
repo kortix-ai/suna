@@ -5634,16 +5634,17 @@ flow(
       (await owner.get('/v1/connectors/projects/:projectId/discover/connectors/tools', { params, query: { id: 'kortix:missing' } })).status(404);
     });
 
-    await ctx.step('Kortix channels lead their apps: kind=channel lists four; Slack\'s page recommends the channel and install points to its setup', async () => {
-      const list = await owner.get('/v1/connectors/projects/:projectId/discover/connectors', { params, query: { kind: 'channel', limit: '10' } });
+    await ctx.step('what Kortix built leads its apps: kind=kortix lists the four channels and Computer; Slack\'s page recommends the Kortix way; install points to each setup', async () => {
+      const list = await owner.get('/v1/connectors/projects/:projectId/discover/connectors', { params, query: { kind: 'kortix', limit: '10' } });
       list.status(200);
       const ids = list.json<{ items: Array<{ id: string }> }>().items.map((item) => item.id).sort();
-      if (JSON.stringify(ids) !== JSON.stringify(['channel:email', 'channel:slack', 'channel:teams', 'channel:telegram'])) throw new Error(`channels: ${ids}`);
-      const detail = await owner.get('/v1/connectors/projects/:projectId/discover/connectors/detail', { params, query: { id: 'channel:slack' } });
+      if (JSON.stringify(ids) !== JSON.stringify(['native:computer', 'native:email', 'native:slack', 'native:teams', 'native:telegram'])) throw new Error(`kortix: ${ids}`);
+      const detail = await owner.get('/v1/connectors/projects/:projectId/discover/connectors/detail', { params, query: { id: 'native:slack' } });
       detail.status(200);
-      const first = detail.json<{ variants: Array<{ kind: string; recommended?: boolean; channel?: { platform: string } }> }>().variants[0];
-      if (first?.kind !== 'channel' || first.recommended !== true || first.channel?.platform !== 'slack') throw new Error(`slack ways: ${JSON.stringify(first)}`);
-      (await owner.post('/v1/connectors/projects/:projectId/discover/install', { id: 'channel:slack' }, { params })).status(400).body().matches('$.error', /kortix channels connect/);
+      const first = detail.json<{ variants: Array<{ kind: string; recommended?: boolean; kortix?: { app: string } }> }>().variants[0];
+      if (first?.kind !== 'kortix' || first.recommended !== true || first.kortix?.app !== 'slack') throw new Error(`slack ways: ${JSON.stringify(first)}`);
+      (await owner.post('/v1/connectors/projects/:projectId/discover/install', { id: 'native:slack' }, { params })).status(400).body().matches('$.error', /kortix channels connect/);
+      (await owner.post('/v1/connectors/projects/:projectId/discover/install', { id: 'native:computer' }, { params })).status(400).body().matches('$.error', /@kortix\/agent-tunnel/);
     });
 
     let slug = '';

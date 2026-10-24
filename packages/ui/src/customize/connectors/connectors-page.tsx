@@ -119,7 +119,7 @@ const CATALOG_KIND_FILTERS = {
   composio: ['composio'],
   openapi: ['openapi'],
   graphql: ['graphql'],
-  channel: ['channel'],
+  kortix: ['kortix'],
 } satisfies Record<string, DiscoverConnectorKind[]>;
 type CatalogKindFilter = keyof typeof CATALOG_KIND_FILTERS;
 
@@ -223,7 +223,9 @@ const SCOPES: readonly ConnectorScope[] = ['all', 'connected', 'channels'];
 const SCOPE_LABEL: Record<ConnectorScope, string> = {
   all: 'All',
   connected: 'Connected',
-  channels: 'Channels',
+  // The URL keeps `scope=channels` (links, the retired /channels redirect);
+  // the tab holds everything Kortix built: the channels and the computer.
+  channels: 'Kortix',
 };
 
 /**
@@ -235,7 +237,7 @@ const SCOPE_LABEL: Record<ConnectorScope, string> = {
 const SCOPE_DESCRIPTION: Record<ConnectorScope, string> = {
   all: 'Give agents access to outside tools and data.',
   connected: 'Give agents access to outside tools and data.',
-  channels: 'Talk to your agents from the apps your team uses.',
+  channels: 'Talk to your agents from the apps your team uses, and let them work on your computer.',
 };
 
 /** `?scope=` is user-editable text; anything that is not a scope is All. */
@@ -497,8 +499,8 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
           >
             {kindFilter === 'all'
               ? tPages('typeFilterAll')
-              : kindFilter === 'channel'
-                ? tPages('typeFilterChannels')
+              : kindFilter === 'kortix'
+                ? tPages('typeFilterKortix')
                 : wayKindLabel(kindFilter)}
             <CaretDownIcon className="size-3 shrink-0" />
           </Button>
@@ -517,8 +519,8 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
               <DropdownMenuRadioItem key={value} value={value}>
                 {value === 'all'
                   ? tPages('typeFilterAll')
-                  : value === 'channel'
-                    ? tPages('typeFilterChannels')
+                  : value === 'kortix'
+                    ? tPages('typeFilterKortix')
                     : wayKindLabel(value)}
               </DropdownMenuRadioItem>
             ))}

@@ -164,8 +164,8 @@ export function catalogEntryKindLabel(entry: CatalogEntry): string {
   switch (entry.connector.kind) {
     case 'composio':
       return 'Composio';
-    case 'channel':
-      return 'Kortix channel';
+    case 'kortix':
+      return 'Kortix';
     case 'mcp':
       return 'MCP';
     case 'graphql':

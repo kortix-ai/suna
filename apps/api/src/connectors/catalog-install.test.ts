@@ -46,15 +46,27 @@ describe('install from the catalogue', () => {
     expect(specOperations(null)).toEqual([]);
   });
 
-  test('a Kortix channel is set up on the channel page: install says how, even when another way exists', () => {
+  test('a Kortix integration is set up on its page: install says how, even when another way exists', () => {
     const slack: ConnectorCatalogDetail = {
-      item: { ...detail.item, id: 'channel:slack', kind: 'channel', slug: 'slack', name: 'Slack', domain: 'slack.com' },
+      item: { ...detail.item, id: 'native:slack', kind: 'kortix', slug: 'slack', name: 'Slack', domain: 'slack.com' },
       variants: [
-        { id: 'channel:slack', kind: 'channel', name: 'Kortix Slack channel', url: null, docs: null, description: null, transports: [], requiresAuth: true, command: null, connector: null, oneClick: true, recommended: true, channel: { platform: 'slack' } },
+        { id: 'native:slack', kind: 'kortix', name: 'Kortix Slack', url: null, docs: null, description: null, transports: [], requiresAuth: true, command: null, connector: null, oneClick: true, recommended: true, kortix: { app: 'slack' } },
         { id: 'slack-mcp', kind: 'mcp', name: 'Slack MCP', url: 'https://mcp.slack.com/mcp', docs: null, description: null, transports: [], requiresAuth: true, command: null, connector: { provider: 'mcp', url: 'https://mcp.slack.com/mcp' } },
       ],
     };
     expect(() => catalogInstallDraft(slack)).toThrow('kortix channels connect');
     expect(catalogInstallDraft(slack, { way: 'slack-mcp' }).draft).toMatchObject({ provider: 'mcp', url: 'https://mcp.slack.com/mcp' });
+  });
+
+  test('Computer names the pairing command', () => {
+    const computer: ConnectorCatalogDetail = {
+      item: { ...detail.item, id: 'native:computer', kind: 'kortix', slug: 'computer', name: 'Computer', domain: 'computer.kortix' },
+      variants: [
+        { id: 'native:computer', kind: 'kortix', name: 'Kortix Computer', url: null, docs: null, description: null, transports: [], requiresAuth: true, command: null, connector: null, oneClick: true, recommended: true, kortix: { app: 'computer' } },
+      ],
+    };
+    expect(() => catalogInstallDraft(computer)).toThrow('npx --yes @kortix/agent-tunnel@latest connect');
+    // A way saved before the rename (`channel:<platform>`) is the same way.
+    expect(() => catalogInstallDraft(computer, { way: 'channel:computer' })).toThrow('npx --yes @kortix/agent-tunnel@latest connect');
   });
 });

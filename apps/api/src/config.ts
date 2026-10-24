@@ -453,6 +453,9 @@ const envSchema = z.object({
   // ── Channels — AgentMail email adapter (optional) ────────────────────────
   AGENTMAIL_API_URL: optUrl('https://api.agentmail.to/v0'),
   AGENTMAIL_API_KEY: optStr,
+  // Domain for inboxes made with the managed key (verified on Kortix's AgentMail
+  // account). Unset: AgentMail's own `agentmail.to`.
+  AGENTMAIL_MANAGED_DOMAIN: optStr,
   AGENTMAIL_WEBHOOK_SECRET: optStr,
 
   // ── Channels — Telegram Bot API (connectors_v2). Overridable for tests. ──
@@ -1357,6 +1360,7 @@ export const config = {
   // ─── Channels (AgentMail email) ──────────────────────────────────────────
   AGENTMAIL_API_URL: env.AGENTMAIL_API_URL,
   AGENTMAIL_API_KEY: env.AGENTMAIL_API_KEY,
+  AGENTMAIL_MANAGED_DOMAIN: env.AGENTMAIL_MANAGED_DOMAIN,
   AGENTMAIL_WEBHOOK_SECRET: env.AGENTMAIL_WEBHOOK_SECRET,
   TELEGRAM_API_URL: env.TELEGRAM_API_URL,
   KORTIX_OAUTH_CLIENTS: env.KORTIX_OAUTH_CLIENTS,

@@ -107,7 +107,7 @@ export function wayDescription(
   appName: string,
 ): string {
   if (way.kind === 'composio') return t('wayComposio', { name: appName });
-  if (way.kind === 'channel') return t('wayChannel', { name: appName });
+  if (way.kind === 'kortix') return t('wayChannel', { name: appName });
   if (way.kind === 'mcp') return way.oneClick ? t('wayMcpOneClick', { name: appName }) : t('wayMcpSetup', { name: appName });
   return t('wayApi', { name: appName, kind: wayKindLabel(way.kind) });
 }

@@ -162,7 +162,7 @@ interface DiscoverTools {
 const WAY_LABEL: Record<string, string> = {
   mcp: 'MCP',
   composio: 'Composio',
-  channel: 'Kortix channel',
+  kortix: 'Kortix',
   openapi: 'REST API',
   graphql: 'GraphQL',
   postman: 'Postman',
@@ -296,10 +296,10 @@ Subcommands:
        [--cursor <c>] [--limit <n>]  slugs that add --provider composio --app
        [--pipedream] [--json]        accepts. Alias: toolkits. Use --pipedream
                                      for the legacy Pipedream catalog.
-  catalog [<query>] [--kind <k,k>]  Browse the app catalogue: Kortix channels,
-          [--one-click]             every MCP server, REST (OpenAPI) and GraphQL
-          [--category <c>]          API and Composio app, one row per app by its
-          [--limit <n>] [--cursor]  best way in. --kind channel,mcp,composio,
+  catalog [<query>] [--kind <k,k>]  Browse the app catalogue: what Kortix built
+          [--one-click]             (channels, Computer), every MCP server, REST
+          [--category <c>]          and GraphQL API and Composio app, one row per
+          [--limit <n>] [--cursor]  app by its best way in. --kind kortix,mcp,composio,
           [--json]                  openapi,graphql filters by how it connects;
                                     --one-click keeps the apps the human
                                     connects by signing in.
@@ -1441,7 +1441,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
             const marks = [
               v.recommended ? 'recommended' : '',
               v.oneClick ? '1-click' : '',
-              v.kind === 'channel' ? 'set up with kortix channels' : !v.connector && v.kind !== 'composio' ? 'not installable' : '',
+              v.kind === 'kortix' ? 'built into Kortix, set up on its page' : !v.connector && v.kind !== 'composio' ? 'not installable' : '',
             ].filter(Boolean).join(', ');
             process.stdout.write(
               `  ${C.cyan}${pad(v.id, idW)}${C.reset}  ${pad(wayLabel(v.kind), 9)}  ${trim(v.name, 28)}${marks ? ` ${C.faded}(${marks})${C.reset}` : ''}${v.url ? `  ${C.dim}${v.url}${C.reset}` : ''}\n`,

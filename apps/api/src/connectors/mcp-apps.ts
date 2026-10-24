@@ -33,7 +33,7 @@ import {
   type ComposioCatalogCard,
   type ConnectorCatalogItem,
   type ConnectorSurfaceVariant,
-  type KortixChannelPlatform,
+  type KortixApp,
   connectorCatalogItems,
   connectorCatalogSurfaces,
   createConnectorCatalog,
@@ -308,54 +308,60 @@ export function composioSurface(item: ConnectorCatalogItem): ConnectorSurfaceVar
   };
 }
 
-/** Kortix's own channels: people message the agent there. Each is set up on
- *  the channel page (`kortix channels …`), never through Install, and it is the
- *  recommended way to its app (`variantRank`). */
-export const KORTIX_CHANNELS: ReadonlyArray<{
-  platform: KortixChannelPlatform;
+/** What Kortix built itself: the four channels people message the agent in,
+ *  and the computer it works on. Each is set up on its own page
+ *  (`kortix channels …`, the desktop app or the pairing command), never
+ *  through Install, and it is the recommended way to its app (`variantRank`). */
+export const KORTIX_APPS: ReadonlyArray<{
+  app: KortixApp;
   name: string;
   domain: string;
   description: string;
   icon: string | null;
+  categories: string[];
 }> = [
-  { platform: 'slack', name: 'Slack', domain: 'slack.com', description: 'Message the agent in Slack: mentions, DMs and channels, through the Kortix Slack app.', icon: '/connector-icons/slack.svg' },
-  { platform: 'teams', name: 'Microsoft Teams', domain: 'teams.microsoft.com', description: 'Message the agent in Microsoft Teams chats and channels, through the Kortix Teams app.', icon: null },
-  { platform: 'email', name: 'Email', domain: 'email.kortix', description: 'Give the project an inbox: people email the agent and it replies.', icon: '/connector-icons/email.svg' },
-  { platform: 'telegram', name: 'Telegram', domain: 'telegram.org', description: 'Message the agent from Telegram through a bot you own.', icon: null },
+  { app: 'slack', name: 'Slack', domain: 'slack.com', description: 'Message the agent in Slack: mentions, DMs and channels, through the Kortix Slack app.', icon: '/connector-icons/slack.svg', categories: ['communication'] },
+  { app: 'teams', name: 'Microsoft Teams', domain: 'teams.microsoft.com', description: 'Message the agent in Microsoft Teams chats and channels, through the Kortix Teams app.', icon: null, categories: ['communication'] },
+  { app: 'email', name: 'Email', domain: 'email.kortix', description: 'Give the project an inbox: people email the agent and it replies.', icon: '/connector-icons/email.svg', categories: ['communication'] },
+  { app: 'telegram', name: 'Telegram', domain: 'telegram.org', description: 'Message the agent from Telegram through a bot you own.', icon: null, categories: ['communication'] },
+  { app: 'computer', name: 'Computer', domain: 'computer.kortix', description: 'Let agents work with the files, terminal and apps on your own computer, with the access you allow.', icon: '/connector-icons/computer.svg', categories: ['developer-tools'] },
 ];
 
-export function channelCatalogItem(channel: (typeof KORTIX_CHANNELS)[number]): ConnectorCatalogItem {
+/** The catalogue id of a Kortix integration: the web opens `native:computer` on its own page. */
+export const kortixAppId = (app: KortixApp): string => `native:${app}`;
+
+export function kortixCatalogItem(entry: (typeof KORTIX_APPS)[number]): ConnectorCatalogItem {
   return {
-    id: `channel:${channel.platform}`,
-    kind: 'channel',
-    slug: channel.platform,
-    name: channel.name,
-    description: channel.description,
+    id: kortixAppId(entry.app),
+    kind: 'kortix',
+    slug: entry.app,
+    name: entry.name,
+    description: entry.description,
     url: null,
-    icon: channel.icon,
-    domain: channel.domain,
-    categories: ['communication'],
+    icon: entry.icon,
+    domain: entry.domain,
+    categories: entry.categories,
     feeds: ['kortix'],
     popularity: null,
     oneClick: true,
-    channel: { platform: channel.platform },
+    kortix: { app: entry.app },
   };
 }
 
-export function channelSurface(channel: (typeof KORTIX_CHANNELS)[number]): ConnectorSurfaceVariant {
+export function kortixSurface(entry: (typeof KORTIX_APPS)[number]): ConnectorSurfaceVariant {
   return {
-    id: `channel:${channel.platform}`,
-    kind: 'channel',
-    name: `Kortix ${channel.name} channel`,
+    id: kortixAppId(entry.app),
+    kind: 'kortix',
+    name: `Kortix ${entry.name}`,
     url: null,
     docs: null,
-    description: channel.description,
+    description: entry.description,
     transports: [],
     requiresAuth: true,
     command: null,
     connector: null,
     oneClick: true,
-    channel: { platform: channel.platform },
+    kortix: { app: entry.app },
   };
 }
 
@@ -400,7 +406,7 @@ export async function connectorsV2Items(
     toolkits?: () => Promise<ComposioCatalogCard[]>;
   } = {},
 ): Promise<ConnectorCatalogItem[]> {
-  const kortix = [...KORTIX_CHANNELS.map(channelCatalogItem), ...(load.apps ?? availableMcpApps)().map(mcpAppCatalogItem)];
+  const kortix = [...KORTIX_APPS.map(kortixCatalogItem), ...(load.apps ?? availableMcpApps)().map(mcpAppCatalogItem)];
   const [index, toolkits] = await Promise.all([
     (load.index ?? connectorCatalogItems)().catch(() => [] as ConnectorCatalogItem[]),
     (load.toolkits ?? (async () => (await composioVisibleToolkits()).map(publicToolkit)))().catch(
@@ -482,7 +488,7 @@ export async function connectorsV2Surfaces(
 ): Promise<ConnectorSurfaceVariant[]> {
   const records = (await (load.items ?? connectorsV2Items)()).filter((item) => item.domain === domain);
   const curated = [
-    ...KORTIX_CHANNELS.filter((channel) => channel.domain === domain).map(channelSurface),
+    ...KORTIX_APPS.filter((entry) => entry.domain === domain).map(kortixSurface),
     ...availableMcpApps()
       .filter((app) => app.domain === domain)
       .map(mcpAppSurface),

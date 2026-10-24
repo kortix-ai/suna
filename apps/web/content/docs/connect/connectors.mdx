@@ -82,13 +82,13 @@ With the project flag **Connectors v2** (`connectors_v2`, off by default) on, th
 
 Each app shows once, by its best way in:
 
-0. **A Kortix channel.** Slack, Microsoft Teams, Email and Telegram are Kortix's own [channels](/docs/connect/channels): people message the agent there, with no third party. A channel leads its app and is set up on the channel page with **Set up**, never through Install.
+0. **Kortix.** What Kortix built itself, with no third party: the [channels](/docs/connect/channels) Slack, Microsoft Teams, Email and Telegram, where people message the agent, and **Computer**, the machine the agent works on. Each leads its app and is set up on its own page with **Set up**, never through Install.
 1. **A one-click MCP server.** The vendor's server is public, or its OAuth server registers Kortix on the fly. You only sign in.
 2. **Composio.** A third-party partner that runs the sign-in for you, for an app with no one-click MCP server, for example Gmail or Outlook. You only sign in.
 3. **Everything else.** An MCP server that needs your own OAuth app or an API key, then the REST (OpenAPI) and GraphQL APIs, then a CLI.
 
 - **One-click only** is on by default and lists ways 1 and 2. Turn it off to see every app.
-- The type filter (**MCP**, **Composio**, **REST API**, **GraphQL**, **Channels**) lists the apps that connect that way. With Connectors v2 there is no Channels tab: the channels are in the catalog, and a channel's **Set up** opens its setup page.
+- The type filter (**MCP**, **Composio**, **REST API**, **GraphQL**, **Kortix**) lists the apps that connect that way. The **Kortix** tab shows all five on one page, each with its setup or, once connected, what it is connected to. In the API, the CLI (`--kind kortix`) and the agent's tools the type is `kortix`, with ids `native:slack`, `native:teams`, `native:email`, `native:telegram` and `native:computer`.
 - An app's page lists every way to connect it, best first. The first is marked **Recommended**; **One click** marks the ways where you only sign in. **Install** at the top installs the recommended way; each row installs its own way.
 - **Tools** on each way lists what it can do before you install it: a public MCP server's own tools, the tool names a public MCP directory lists for an OAuth server, Composio's tools, or the operations in an OpenAPI document.
 - Install asks for a **name**. It is the name of the connector profile Kortix adds: the project's entry in `kortix.yaml`. The profile's accounts, who can use them and its tool rules live on it.

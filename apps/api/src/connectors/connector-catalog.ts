@@ -59,9 +59,9 @@ const OFFICIAL_SURFACE_ENRICHMENTS: Record<string, ConnectorSurfaceVariant[]> = 
 };
 
 /** `composio`: a managed Composio toolkit (`connectors_v2` catalogue only). */
-/** `channel`: a Kortix channel (Slack, Teams, Email, Telegram): people message
- *  the agent there. It is set up on the channel page, not installed. */
-export type ConnectorCatalogKind = 'openapi' | 'mcp' | 'graphql' | 'composio' | 'channel';
+/** `kortix`: an integration Kortix built itself (Slack, Teams, Email, Telegram,
+ *  Computer). It is set up on its own page, not installed as a connector. */
+export type ConnectorCatalogKind = 'openapi' | 'mcp' | 'graphql' | 'composio' | 'kortix';
 
 /** A Composio toolkit as the managed catalogue routes publish it. */
 export interface ComposioCatalogCard {
@@ -95,8 +95,8 @@ export interface ConnectorCatalogItem {
   oneClick?: boolean;
   /** The toolkit a `composio` record installs. */
   composio?: ComposioCatalogCard;
-  /** The Kortix channel a `channel` record sets up. */
-  channel?: { platform: KortixChannelPlatform };
+  /** The Kortix integration a `kortix` record sets up. */
+  kortix?: { app: KortixApp };
   /** `connectors_v2`: the integrations.sh domain of a record filed under a
    *  Kortix app's domain (Notion is notion.so here, notion.com there). */
   registryDomain?: string;
@@ -119,7 +119,7 @@ export interface ConnectorTemplate {
 export interface ConnectorSurfaceVariant {
   id: string;
   /** `composio`: a managed toolkit (`connectors_v2` only), installed from `composio`. */
-  kind: 'openapi' | 'postman' | 'mcp' | 'graphql' | 'http' | 'composio' | 'channel';
+  kind: 'openapi' | 'postman' | 'mcp' | 'graphql' | 'http' | 'composio' | 'kortix';
   name: string;
   url: string | null;
   docs: string | null;
@@ -134,17 +134,24 @@ export interface ConnectorSurfaceVariant {
   recommended?: boolean;
   /** The toolkit a `composio` variant installs. */
   composio?: ComposioCatalogCard;
-  /** The Kortix channel a `channel` variant sets up. */
-  channel?: { platform: KortixChannelPlatform };
+  /** The Kortix integration a `kortix` variant sets up. */
+  kortix?: { app: KortixApp };
 }
 
-export type KortixChannelPlatform = 'slack' | 'teams' | 'email' | 'telegram';
+/** Ids from before the `kortix` kind (2026-10-24): `channel:<platform>` is now
+ *  `native:<platform>`. Old app-page links and saved ways keep resolving. */
+export function canonicalCatalogId(id: string): string {
+  return id.startsWith('channel:') ? `native:${id.slice('channel:'.length)}` : id;
+}
+
+/** What Kortix built itself: four channels people message the agent in, and the computer it works on. */
+export type KortixApp = 'slack' | 'teams' | 'email' | 'telegram' | 'computer';
 
 /** A way to connect, best first: a one-click MCP server, the managed toolkit,
  *  any MCP server, the APIs; a surface Kortix cannot install comes last. */
 export function variantRank(variant: ConnectorSurfaceVariant): number {
-  // Kortix's own channel leads: no third party, and people message the agent there.
-  if (variant.kind === 'channel') return -1;
+  // Kortix's own integration leads: no third party in between.
+  if (variant.kind === 'kortix') return -1;
   if (variant.kind === 'composio') return 1;
   if (!variant.connector) return 10;
   if (variant.kind === 'mcp') return variant.oneClick ? 0 : 2;
@@ -374,7 +381,7 @@ function appCount(items: ConnectorCatalogItem[]): number {
 /** The surface an app's card stands for: a one-click MCP server, then a
  *  managed toolkit, then any MCP server, then the APIs. */
 const SURFACE_RANK: Record<ConnectorCatalogKind, number> = {
-  channel: -1,
+  kortix: -1,
   composio: 1,
   mcp: 2,
   openapi: 3,
@@ -703,7 +710,8 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
       return new Map([...best].map(([key, item]) => [key, item.mcpUrl!]));
     },
 
-    async detail(id: string): Promise<ConnectorCatalogDetail> {
+    async detail(requested: string): Promise<ConnectorCatalogDetail> {
+      const id = canonicalCatalogId(requested);
       const items = await loadIndex();
       const item = items.find((candidate) => candidate.id === id);
       if (!item) throw new Error('Connector not found');

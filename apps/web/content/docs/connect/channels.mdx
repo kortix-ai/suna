@@ -294,8 +294,19 @@ Teams bots cannot add reactions or search messages.
 
 Every project can connect an email inbox. The inbox comes from AgentMail. Nothing is created until you connect.
 
+Open **Customize → Connectors → Channels** and select **Connect** on Email. Pick where the inbox lives:
+
+- **Kortix managed.** The inbox is created on the deployment's managed domain (`agentmail.to` unless the operator sets `AGENTMAIL_MANAGED_DOMAIN`). You choose only the name before the `@`.
+- **Your AgentMail account.** Paste your AgentMail API key. The domain list then shows `agentmail.to` and every domain on that account; one that is not verified yet shows its DNS records. **Add a domain…** adds a new one to your account and lists the records to set at your DNS provider. When the provider supports it, **Set up in one click** writes them for you. **Check again** re-reads them. An inbox can use a domain once it is verified.
+
+Then choose **Who can email the agent**. A work email preselects everyone at your domain; a public address (Gmail, Outlook…) preselects only you. **Anyone** lets every sender start a session on this project's credits.
+
 ```bash
 kortix channels email connect --allow @example.com
+kortix channels email domains --api-key -            # domains your key can use (stdin)
+kortix channels email domains add mail.example.com --api-key -
+kortix channels email domains verify <domain_id> --api-key -
+kortix channels email connect --api-key - --username support --domain mail.example.com
 ```
 
 - **One email thread is one session.** A new message starts a session. A reply in the thread continues it. The agent reads and replies through the email connector.
@@ -306,7 +317,10 @@ kortix channels email connect --allow @example.com
 | --- | --- |
 | `email connect` | Create a managed inbox. `--username` and `--domain` set the address. The username defaults to the project name. `--display-name` sets the from-name (default: the project name). |
 | `email connect --inbox-id <id> --email <address>` | Attach an existing AgentMail inbox. An inbox connected to another project is refused. |
-| `email connect --api-key <key>` | Use your own AgentMail key instead of the managed one. `-` reads it from stdin. |
+| `email connect --api-key <key>` | Use your own AgentMail key instead of the managed one. `-` reads it from stdin. Without a key, `--domain` accepts only the managed domain. |
+| `email domains [--api-key <key>]` | List the domains an inbox can use, with status. Without a key: the managed domain. |
+| `email domains add <domain> --api-key <key>` | Add a custom domain to your AgentMail account and print the DNS records to set. |
+| `email domains verify <domain_id> --api-key <key>` | Check that domain's DNS records again. |
 | `email status [--json]` | Show the inbox, the connector and the sender policy |
 | `email policy` | Replace the sender policy |
 | `email disconnect` | Remove the inbox connection and its secrets. Aliases: `rm`, `remove`. |

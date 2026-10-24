@@ -328,9 +328,11 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
   const primary = resolved.surfaces[0] ?? null;
   // A Kortix channel's own page draws the channel as its hero; the ways list
   // keeps only the other ways (the vendor's MCP server, Composio, the API).
-  const channelPlatform = detail?.item.kind === 'channel' ? (detail.item.channel?.platform ?? null) : null;
+  // Computer has a page of its own (`ComputerAppPage`).
+  const kortixApp = detail?.item.kind === 'kortix' ? (detail.item.kortix?.app ?? null) : null;
+  const channelPlatform = kortixApp && kortixApp !== 'computer' ? kortixApp : null;
   const waySurfaces = channelPlatform
-    ? resolved.surfaces.filter((surface) => surface.kind !== 'channel')
+    ? resolved.surfaces.filter((surface) => surface.kind !== 'kortix')
     : resolved.surfaces;
   const waysCount = resolved.surfaces.length + resolved.references.length;
   const infoCells: Array<{
@@ -345,7 +347,7 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
   const managedBy =
     primary?.kind === 'composio'
       ? 'Composio'
-      : primary?.kind === 'channel'
+      : primary?.kind === 'kortix'
         ? 'Kortix'
         : managedOnly
           ? connectorRunsOver(provider)
@@ -395,7 +397,7 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
           <div className="flex shrink-0 items-center gap-2">
             {resolved.surfaces.length > 1 ? (
               <span className="text-muted-foreground text-xs">
-                {primary.kind === 'channel'
+                {primary.kind === 'kortix'
                   ? t('setUpWhere')
                   : t('installsWay', { kind: wayKindLabel(primary.kind) })}
               </span>
@@ -720,14 +722,14 @@ function useAppData(projectId: string, app: ReturnType<typeof appRefFromLocation
         // Server order: best way first, the recommended one marked.
         surfaces: [
           ...detail.variants.flatMap((variant): ResolvedApp['surfaces'] => {
-            if (variant.kind === 'channel') {
+            if (variant.kind === 'kortix') {
               return [
                 {
-                  key: `channel:${variant.id}`,
+                  key: `kortix:${variant.id}`,
                   label: variant.name,
-                  kind: 'channel' as WayKind,
+                  kind: 'kortix' as WayKind,
                   target: null,
-                  setupHref: appHref(projectId, { source: 'discover', slug: variant.channel?.platform ?? 'channel', id: variant.id }),
+                  setupHref: appHref(projectId, { source: 'discover', slug: variant.kortix?.app ?? 'kortix', id: variant.id }),
                   oneClick: true,
                   recommended: variant.recommended === true,
                   variantId: null,
@@ -770,7 +772,7 @@ function useAppData(projectId: string, app: ReturnType<typeof appRefFromLocation
           ...(managedSurface ? [managedSurface] : []),
         ],
         references: detail.variants
-          .filter((variant) => !variant.connector && variant.kind !== 'composio' && variant.kind !== 'channel')
+          .filter((variant) => !variant.connector && variant.kind !== 'composio' && variant.kind !== 'kortix')
           .map((variant) => ({
             key: `${variant.kind}:${variant.id}`,
             label: variant.name,

@@ -70,8 +70,8 @@ function CatalogAffordance({
     );
   }
   if (!canInstallEntry(entry, install)) return null;
-  // A Kortix channel is set up on the channel page, not installed.
-  const channel = entry.source === 'discover' && entry.connector.kind === 'channel';
+  // What Kortix built is set up on its own page, not installed.
+  const channel = entry.source === 'discover' && entry.connector.kind === 'kortix';
   return (
     <InstallButton
       label={channel ? t('waySetUp') : t('install')}

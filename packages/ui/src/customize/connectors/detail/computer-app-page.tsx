@@ -16,12 +16,12 @@ import { DetailPageShell } from './detail-page-shell';
 const HOW_IT_WORKS = ['computerHow1', 'computerHow2', 'computerHow3', 'computerHow4'] as const;
 
 /**
- * `…/connectors/computer?id=native:computer`: the Computer card's page, drawn
- * like a Kortix channel's. Not connected, the hero pairs this machine (the
- * same flow as the sidebar's "Connect your computer"); connected, it says
- * which machines and opens them. Below, how it works and what agents may do.
+ * The Computer hero, the same frame as every Kortix channel's: not connected,
+ * it pairs this machine (the sidebar's "Connect your computer" flow);
+ * connected, it names the machines and opens them. On the Computer page and in
+ * the Kortix tab of Connectors.
  */
-export function ComputerAppPage({ projectId }: { projectId: string }) {
+export function ComputerHero({ projectId }: { projectId: string }) {
   const t = useTranslations('connectorPages');
   const tComputers = useTranslations('computers');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -31,14 +31,7 @@ export function ComputerAppPage({ projectId }: { projectId: string }) {
   const names = accounts.map((account) => account.label?.trim()).filter(Boolean).join(', ');
 
   return (
-    <DetailPageShell>
-      <Button asChild variant="text" size="sm" className="-ml-1 w-fit px-0 has-[>svg]:px-0">
-        <Link href={connectorsHref(projectId)}>
-          <CaretLeftIcon className="size-3.5 shrink-0" />
-          {tI18nComplete.raw('textc3d2e79ebdd0')}
-        </Link>
-      </Button>
-
+    <>
       <ChannelHeroFrame
         logo={<MonitorIcon className="size-5 shrink-0" />}
         title={connected ? t('computerConnectedTitle', { count: accounts.length }) : t('computerHeroTitle')}
@@ -65,6 +58,29 @@ export function ComputerAppPage({ projectId }: { projectId: string }) {
         }
         preview={<ComputerTerminalMock />}
       />
+      <ComputerConnectModal projectId={projectId} open={connectOpen} onOpenChange={setConnectOpen} />
+    </>
+  );
+}
+
+/**
+ * `…/connectors/computer?id=native:computer`: the Computer card's page, drawn
+ * like a Kortix channel's: the hero, then how it works and what agents may do.
+ */
+export function ComputerAppPage({ projectId }: { projectId: string }) {
+  const t = useTranslations('connectorPages');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+
+  return (
+    <DetailPageShell>
+      <Button asChild variant="text" size="sm" className="-ml-1 w-fit px-0 has-[>svg]:px-0">
+        <Link href={connectorsHref(projectId)}>
+          <CaretLeftIcon className="size-3.5 shrink-0" />
+          {tI18nComplete.raw('textc3d2e79ebdd0')}
+        </Link>
+      </Button>
+
+      <ComputerHero projectId={projectId} />
 
       <section className="space-y-3">
         <h2 className="text-foreground text-sm font-medium">{t('computerHowTitle')}</h2>
@@ -84,8 +100,6 @@ export function ComputerAppPage({ projectId }: { projectId: string }) {
           <ComputerCapabilities />
         </div>
       </section>
-
-      <ComputerConnectModal projectId={projectId} open={connectOpen} onOpenChange={setConnectOpen} />
     </DetailPageShell>
   );
 }

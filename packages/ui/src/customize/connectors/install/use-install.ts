@@ -161,8 +161,8 @@ export function useInstall(
         return;
       }
       if (entry.source !== 'discover' || !app) return;
-      // A Kortix channel is set up on the channel page, not installed.
-      if (entry.connector.kind === 'channel') {
+      // What Kortix built is set up on its own page, not installed.
+      if (entry.connector.kind === 'kortix') {
         router.push(appHref(projectId, app));
         return;
       }

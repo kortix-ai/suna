@@ -14,7 +14,7 @@ const OneClickParam = z.enum(['1', 'true', '0', 'false']).optional();
 const oneClickQuery = (c: { req: { query(name: string): string | undefined } }) =>
   ['1', 'true'].includes(c.req.query('oneClick') ?? '');
 
-const KINDS = ['mcp', 'openapi', 'graphql', 'composio', 'channel'] as const;
+const KINDS = ['mcp', 'openapi', 'graphql', 'composio', 'kortix'] as const;
 /** `kind=mcp,composio`: only the apps that connect one of these ways. */
 const KindParam = z
   .string()

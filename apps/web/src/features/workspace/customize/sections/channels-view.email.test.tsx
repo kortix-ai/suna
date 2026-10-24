@@ -4,9 +4,9 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 // (`resetIdentityState`, `useConnectTeams`), and a missing binding fails
 // the module link, not just the render.
 import * as sdkReact from '@kortix/sdk/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-let emailEnabled = false;
 let canWrite = true;
 const emailInstall = mock(() => ({ data: null, isLoading: false }));
 const disconnected = () => ({ data: null, isLoading: false });
@@ -14,7 +14,7 @@ const disconnect = () => ({ isPending: false, mutate: mock() });
 
 mock.module('@kortix/sdk/react', () => ({
   ...sdkReact,
-  useFeatureFlag: () => ({ enabled: emailEnabled, isLoading: false }),
+  useFeatureFlag: () => ({ enabled: true, isLoading: false }),
   useVisibleAgents: () => [],
   useRuntimeProviders: disconnected,
   modelKeyToWire: ({ providerID, modelID }: { providerID: string; modelID: string }) =>
@@ -51,6 +51,7 @@ mock.module('next/navigation', () => ({
 // Keep the actual ChannelsSection, EmailChannelRow, ChannelRow and Button/Link.
 mock.module('@kortix/ui/customize/sections/component/slack-connect-card', () => ({
   SlackConnectCard: () => null,
+  SlackChannelMock: () => null,
 }));
 // Telegram (connectors_v2, on here with every flag) reads its install hooks
 // through a QueryClient this suite does not mount.
@@ -59,9 +60,14 @@ mock.module('@kortix/ui/customize/sections/component/telegram-channel-row', () =
 }));
 mock.module('@kortix/ui/customize/sections/component/teams-connect-card', () => ({
   TeamsConnectCard: () => null,
+  TeamsChannelMock: () => null,
 }));
 mock.module('@kortix/ui/customize/sections/connectors-view', () => ({
   EmailConnectForm: () => null,
+}));
+// The Computer hero reads paired machines through a QueryClient this suite does not mount.
+mock.module('@kortix/ui/customize/connectors/detail/computer-app-page', () => ({
+  ComputerHero: () => null,
 }));
 mock.module('@kortix/ui/session/models/model-selector', () => ({ ModelSelector: () => null }));
 mock.module('@kortix/ui/session/composer/session-chat-input', () => ({
@@ -70,45 +76,35 @@ mock.module('@kortix/ui/session/composer/session-chat-input', () => ({
 
 const { ChannelsSection } = await import('@kortix/ui/customize/sections/view/channels-view');
 
-function renderEmailRow() {
-  const markup = renderToStaticMarkup(<ChannelsSection projectId="email-test" />);
-  const row = markup
-    .match(/<li\b[^>]*>[\s\S]*?<\/li>/g)
-    ?.find((item) => item.includes('>Email</p>'));
-  expect(row).toBeDefined();
-  return row ?? '';
+function renderEmail() {
+  // A server render runs no query; the client only satisfies hooks this suite does not stub.
+  return renderToStaticMarkup(
+    <QueryClientProvider client={new QueryClient()}>
+      <ChannelsSection projectId="email-test" />
+    </QueryClientProvider>,
+  );
 }
 
 beforeEach(() => {
-  emailEnabled = false;
   canWrite = true;
   emailInstall.mockClear();
 });
 
-describe('ChannelsSection — Email availability', () => {
-  test('flag off keeps Email visible with Feature flags navigation, not Install', () => {
-    const row = renderEmailRow();
-    expect(row).toContain('AgentMail Email is off for this project');
-    expect(row).toContain('href="/projects/email-test/customize/settings?section=feature-flags"');
-    expect(row).toContain('>Feature flags</a>');
-    expect(row).not.toMatch(/>(?:Install|Connect)<\/button>/);
-    expect(emailInstall).toHaveBeenCalledWith(null, 'kortix_email');
-  });
-
-  test('read-only members can still find Email and navigate to Feature flags', () => {
-    canWrite = false;
-    const row = renderEmailRow();
-    expect(row).toContain('href="/projects/email-test/customize/settings?section=feature-flags"');
-    expect(row).toContain('>Feature flags</a>');
-    expect(row).not.toMatch(/>(?:Install|Connect)<\/button>/);
-  });
-
-  test('flag on retains the disconnected Email install action', () => {
-    emailEnabled = true;
-    const row = renderEmailRow();
-    expect(row).toContain('Give your agent an inbox it can read and reply from.');
-    expect(row).toContain('>Connect</button>');
-    expect(row).not.toContain('>Feature flags</a>');
+// The `agentmail_email` flag graduated (2026-10-24): Email is on for every
+// project, drawn as its hero like every other Kortix channel.
+describe('ChannelsSection — Email', () => {
+  test('every project gets the Email hero with Connect, and no Feature flags detour', () => {
+    const markup = renderEmail();
+    expect(markup).toContain('Give your agent an inbox');
+    expect(markup).toContain('>Connect</button>');
+    expect(markup).not.toContain('Feature flags');
     expect(emailInstall).toHaveBeenCalledWith('email-test', 'kortix_email');
+  });
+
+  test('read-only members still see Email, without a Connect they cannot use', () => {
+    canWrite = false;
+    const markup = renderEmail();
+    expect(markup).toContain('Give your agent an inbox');
+    expect(markup).not.toContain('>Connect</button>');
   });
 });

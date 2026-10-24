@@ -72,6 +72,7 @@ import {
   type Connection,
   type ConnectionShare,
   type ConnectionSharePrincipal,
+  type DiscoverKortixApp,
 } from './connectors';
 
 const canonicalConnectionType: import('./connectors').Connection = {
@@ -1017,8 +1018,13 @@ test('the Discover catalogue filters by kind, lists a way\'s tools and installs 
   nextResponse = { status: 200, body: { popular: [], sections: [], categories: [] } };
   await listDiscoverSections('P1', { kinds: ['openapi'] });
   expect(last().url).toContain('kind=openapi');
-  await listDiscoverConnectors('P1', { kinds: ['channel'] });
-  expect(last().url).toContain('kind=channel');
+  await listDiscoverConnectors('P1', { kinds: ['kortix'] });
+  expect(last().url).toContain('kind=kortix');
+  // What Kortix built (a channel or the computer) names itself.
+  nextResponse = { status: 200, body: { items: [{ id: 'native:computer', kind: 'kortix', kortix: { app: 'computer' } }], total: 1, hasMore: false } };
+  const kortix = await listDiscoverConnectors('P1', { kinds: ['kortix'] });
+  const app: DiscoverKortixApp['app'] | undefined = kortix.items[0]?.kortix?.app;
+  expect(app).toBe('computer');
 
   nextResponse = { status: 200, body: { way: { id: 'composio:stripe', kind: 'composio', name: 'Stripe' }, tools: [{ name: 'STRIPE_LIST', description: 'List' }], total: 1, source: 'composio' } };
   const tools = await getDiscoverConnectorTools('P1', 'kortix:stripe', 'composio:stripe');

@@ -285,8 +285,11 @@ export function useCatalog(
 ): CatalogState {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { debouncedValue: activeQuery } = useDebounce(query.trim(), 300);
-  // The native Computer card is no MCP server, API or channel: a type filter hides it.
-  const computers = opts.computers === true && !(opts.kinds?.length);
+  // The legacy catalogues get the Computer card from here; Connectors v2 lists
+  // it from the API (`native:computer`, kind `kortix`). A type filter hides it.
+  const computers = opts.computers === true && !opts.mcpApps && !(opts.kinds?.length);
+  // Connectors v2: where this deployment cannot pair a computer, its record goes.
+  const hideComputerRecord = opts.mcpApps === true && opts.computers !== true;
   const searching = activeQuery.length > 0;
 
   // Always probed, whether or not the catalogue is `enabled`: the answer picks
@@ -373,7 +376,7 @@ export function useCatalog(
 
   const entries = useMemo(
     () =>
-      assembleCatalogEntries({
+      withoutComputerRecord(hideComputerRecord, assembleCatalogEntries({
         source,
         computers,
         activeQuery,
@@ -381,8 +384,9 @@ export function useCatalog(
         tI18nComplete,
         discoverPages: discoverQuery.data?.pages,
         managedPages: easyConnectQuery.data?.pages,
-      }),
+      })),
     [
+      hideComputerRecord,
       searchDirect,
       tI18nComplete,
       computers,
@@ -434,8 +438,8 @@ export function useCatalog(
       native: computers ? computersCatalogEntry(tI18nComplete) : null,
       cardCount: SECTION_CARD_COUNT,
       title: (label) => localizedSectionTitle(label, tI18nComplete),
-    });
-  }, [searching, sectionsQuery.data, tI18nComplete, computers]);
+    }).map((section) => ({ ...section, items: withoutComputerRecord(hideComputerRecord, section.items) }));
+  }, [searching, sectionsQuery.data, tI18nComplete, computers, hideComputerRecord]);
 
   const easyConnectPage = easyConnectQuery.data?.pages[0];
 
@@ -478,6 +482,11 @@ export function useCatalog(
     loadMore,
     refetch,
   };
+}
+
+/** The catalogue's Computer record (`native:computer`), dropped where no computer can be paired. */
+function withoutComputerRecord(hide: boolean, entries: CatalogEntry[]): CatalogEntry[] {
+  return hide ? entries.filter((entry) => entry.key !== 'discover:native:computer') : entries;
 }
 
 export function assembleCatalogEntries({

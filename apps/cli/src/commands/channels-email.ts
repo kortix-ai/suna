@@ -29,6 +29,35 @@ export interface EmailMode {
   provider: 'agentmail';
   enabled?: boolean;
   managed_available: boolean;
+  managed_domain?: string;
+}
+
+interface EmailDomain {
+  domain_id: string | null;
+  domain: string;
+  status: string;
+  verified: boolean;
+  records: Array<{ type: string; name: string; value: string; status: string; priority?: number }>;
+  reason?: string;
+}
+
+interface EmailDomainResult {
+  domain: EmailDomain;
+  setup: { url: string; provider_name: string | null } | null;
+}
+
+/** A domain and, until it verifies, the DNS records to set. */
+function printDomain(d: EmailDomain): void {
+  const state = d.verified ? `${C.green}verified${C.reset}` : `${C.yellow}${d.status.toLowerCase()}${C.reset}`;
+  process.stdout.write(`  ${C.bold}${d.domain}${C.reset}  ${state}${d.domain_id ? `  ${C.dim}${d.domain_id}${C.reset}` : ''}\n`);
+  if (d.verified) return;
+  if (d.reason) process.stdout.write(`    ${C.dim}${d.reason}${C.reset}\n`);
+  for (const r of d.records) {
+    const ok = r.status === 'VALID' ? C.green + '✓' : C.yellow + '·';
+    process.stdout.write(
+      `    ${ok}${C.reset} ${r.type.padEnd(5)} ${r.name}  ${C.dim}${r.priority !== undefined ? `${r.priority} ` : ''}${r.value}${C.reset}\n`,
+    );
+  }
 }
 
 /** The default connector slug every email route falls back to (channel-email.ts). */
@@ -152,6 +181,52 @@ export async function emailCommand(
         printEmailInstall(install);
         return 0;
       }
+      case 'domains': {
+        // `domains` · `domains add <domain>` · `domains verify <domain_id>`. The
+        // key goes in the POST body; `--api-key -` reads it from stdin.
+        const apiKey = extra.apiKey === '-' ? readFileSync(0, 'utf-8').trim() : extra.apiKey;
+        const [sub, arg] = rest.filter((a) => !a.startsWith('-')).slice(1);
+        if (sub === 'add' || sub === 'verify') {
+          if (!arg) return fail(sub === 'add' ? 'Usage: kortix channels email domains add <domain> --api-key <key>' : 'Usage: kortix channels email domains verify <domain_id> --api-key <key>');
+          const result = await ctx.client.post<EmailDomainResult>(
+            `${base}/domains/${sub}`,
+            sub === 'add' ? { api_key: apiKey, domain: arg } : { api_key: apiKey, domain_id: arg },
+          );
+          if (json) {
+            emitJson(result);
+            return 0;
+          }
+          printDomain(result.domain);
+          if (result.setup) {
+            process.stdout.write(
+              `\n  Set the records in one click${result.setup.provider_name ? ` at ${result.setup.provider_name}` : ''}: ${C.cyan}${result.setup.url}${C.reset}\n`,
+            );
+          }
+          if (!result.domain.verified) {
+            process.stdout.write(
+              `\n  Add the records at your DNS provider, then: ${C.cyan}kortix channels email domains verify ${result.domain.domain_id} --api-key …${C.reset}\n`,
+            );
+          }
+          return 0;
+        }
+        if (sub) return fail(`unknown domains action "${sub}" — add|verify`);
+        const list = await ctx.client.post<{ managed: boolean; default_domain: string; domains: EmailDomain[] }>(
+          `${base}/domains`,
+          apiKey ? { api_key: apiKey } : {},
+        );
+        if (json) {
+          emitJson(list);
+          return 0;
+        }
+        process.stdout.write(
+          `${list.managed ? 'Managed account' : 'Your AgentMail account'} — inboxes can use:\n`,
+        );
+        for (const d of list.domains) printDomain(d);
+        if (list.managed) {
+          process.stdout.write(`\n  ${C.dim}Custom domains need your own key: --api-key <key>${C.reset}\n`);
+        }
+        return 0;
+      }
       case 'disconnect':
       case 'rm':
       case 'remove': {
@@ -196,7 +271,7 @@ export async function emailCommand(
         return 0;
       }
       default:
-        return fail(`unknown email action "${action}" — status|connect|disconnect|policy`);
+        return fail(`unknown email action "${action}" — status|connect|domains|disconnect|policy`);
     }
   } catch (err) {
     return surfaceApiError(err);

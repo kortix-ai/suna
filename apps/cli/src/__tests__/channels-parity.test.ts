@@ -106,6 +106,19 @@ function startServer(opts: { emailEnabled?: boolean; failTeams?: boolean; connec
         }
         return Response.json(EMAIL_INSTALL);
       }
+      if (p === '/channels/email/domains/add' && req.method === 'POST') {
+        const b = body as { domain: string };
+        return Response.json({
+          domain: {
+            domain_id: 'dom_1',
+            domain: b.domain,
+            status: 'PENDING',
+            verified: false,
+            records: [{ type: 'MX', name: b.domain, value: 'inbound.agentmail.to', status: 'MISSING', priority: 10 }],
+          },
+          setup: null,
+        });
+      }
       if (p === '/channels/email/installation' && req.method === 'DELETE') {
         return Response.json({ status: 'disconnected' });
       }
@@ -316,6 +329,26 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
       },
     ]);
     expect(r.stdout).toContain('support@acme.kortix.email');
+  });
+
+  test('email domains add POSTs the key in the body and prints the DNS records to set', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['channels', 'email', 'domains', 'add', 'mail.acme.io', '--api-key', 'am_secret', '--project', PROJECT],
+      config,
+    );
+    expect(r.code).toBe(0);
+    expect(calls).toEqual([
+      {
+        method: 'POST',
+        path: `/v1/projects/${PROJECT}/channels/email/domains/add`,
+        query: '',
+        body: { api_key: 'am_secret', domain: 'mail.acme.io' },
+      },
+    ]);
+    expect(r.stdout).toContain('mail.acme.io');
+    expect(r.stdout).toContain('inbound.agentmail.to');
+    expect(r.stdout).toContain('domains verify dom_1');
   });
 
   test('email connect refuses --inbox-id without --email before any request', async () => {

@@ -1,7 +1,10 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
+  addEmailDomain,
   connectEmail,
+  listEmailDomains,
+  verifyEmailDomain,
   completeSlackInstall,
   completeTeamsInstall,
   connectSlack,
@@ -451,4 +454,62 @@ test('disconnectTelegram deletes the installation', async () => {
   await disconnectTelegram('P1');
   expect(last()).toMatchObject({ method: 'DELETE' });
   expect(last().url).toMatch(/\/projects\/P1\/channels\/telegram$/);
+});
+
+test('listEmailDomains posts the key in the body, never in the URL', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      managed: false,
+      default_domain: 'agentmail.to',
+      domains: [
+        { domain_id: null, domain: 'agentmail.to', status: 'VERIFIED', verified: true, records: [] },
+        { domain_id: 'd1', domain: 'mail.example.com', status: 'PENDING', verified: false, records: [] },
+      ],
+    },
+  };
+  const list = await listEmailDomains('P1', { apiKey: 'am_secret' });
+  expect(last().url).toMatch(/\/projects\/P1\/channels\/email\/domains$/);
+  expect(last().url).not.toContain('am_secret');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ api_key: 'am_secret' });
+  expect(list.domains.map((d) => d.domain)).toEqual(['agentmail.to', 'mail.example.com']);
+});
+
+test('listEmailDomains without a key asks for the managed domain', async () => {
+  nextResponse = {
+    status: 200,
+    body: { managed: true, default_domain: 'agentmail.to', domains: [] },
+  };
+  const list = await listEmailDomains('P1');
+  expect(last().body).toEqual({});
+  expect(list.managed).toBe(true);
+});
+
+test('addEmailDomain and verifyEmailDomain post to their routes and return the domain with DNS records', async () => {
+  const domain = {
+    domain_id: 'd1',
+    domain: 'mail.example.com',
+    status: 'PENDING',
+    verified: false,
+    records: [{ type: 'TXT', name: '_dmarc.mail.example.com', value: 'v=DMARC1', status: 'MISSING' }],
+  };
+  nextResponse = { status: 200, body: { domain, setup: null } };
+  const added = await addEmailDomain('P1', { apiKey: 'am_secret', domain: 'mail.example.com' });
+  expect(last().url).toContain('/projects/P1/channels/email/domains/add');
+  expect(last().body).toEqual({ api_key: 'am_secret', domain: 'mail.example.com' });
+  expect(added.domain.records[0]?.type).toBe('TXT');
+
+  nextResponse = { status: 200, body: { domain: { ...domain, status: 'VERIFIED', verified: true }, setup: null } };
+  const checked = await verifyEmailDomain('P1', { apiKey: 'am_secret', domainId: 'd1' });
+  expect(last().url).toContain('/projects/P1/channels/email/domains/verify');
+  expect(last().body).toEqual({ api_key: 'am_secret', domain_id: 'd1' });
+  expect(checked.domain.verified).toBe(true);
+});
+
+test('addEmailDomain throws the server refusal', async () => {
+  nextResponse = { status: 400, body: { error: 'AgentMail rejected this API key.', code: 'agentmail_key_rejected' } };
+  await expect(addEmailDomain('P1', { apiKey: 'bad', domain: 'mail.example.com' })).rejects.toThrow(
+    'AgentMail rejected this API key.',
+  );
 });

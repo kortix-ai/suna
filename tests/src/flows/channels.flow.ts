@@ -1927,3 +1927,60 @@ flow(
     });
   },
 );
+
+// CHN-EM1 — Email domains: which addresses an AgentMail key can create. The
+// managed account offers only its managed domain; custom domains need the
+// project's own key, and malformed input is refused before any AgentMail call.
+flow(
+  "CHN-EM1",
+  {
+    domain: "channels",
+    routes: [
+      "POST /v1/projects/:projectId/channels/email/domains",
+      "POST /v1/projects/:projectId/channels/email/domains/add",
+      "POST /v1/projects/:projectId/channels/email/domains/verify",
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    const params = { params: { projectId: p.id } };
+    const mode = (
+      await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/channels/email/mode", params)
+    ).json<{ managed_available: boolean; managed_domain?: string }>();
+
+    await ctx.step("OWNER lists the managed domains with no key → the one managed domain, or 503 without a managed key", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/:projectId/channels/email/domains", {}, params);
+      if (mode.managed_available) {
+        r.status(200).body().has("$.managed", true).has("$.domains[0].domain", mode.managed_domain ?? "agentmail.to");
+        const domains = r.json<{ domains: unknown[] }>().domains;
+        if (domains.length !== 1) throw new Error(`managed account must offer exactly one domain, got ${domains.length}`);
+      } else {
+        r.status(503).body().has("$.code", "agentmail_key_required");
+      }
+    });
+    await ctx.step("adding a domain without your own key → 400 agentmail_key_required", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/email/domains/add", { domain: "mail.example.com" }, params);
+      r.status(400).body().has("$.code", "agentmail_key_required");
+    });
+    await ctx.step("a malformed domain → 400 invalid_domain before any AgentMail call", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/email/domains/add", { api_key: "am_us_bogus", domain: "nope" }, params);
+      r.status(400).body().has("$.code", "invalid_domain");
+    });
+    await ctx.step("verify without a domain_id → 400 invalid_domain", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/email/domains/verify", { api_key: "am_us_bogus" }, params);
+      r.status(400).body().has("$.code", "invalid_domain");
+    });
+    await ctx.step("NONMEMBER → 403/404; ANON → 401", async () => {
+      const r = await ctx.client.as(ctx.P.NONMEMBER).post("/v1/projects/:projectId/channels/email/domains", {}, params);
+      r.status([403, 404]);
+      const anon = await ctx.client.as(ctx.P.ANON).post("/v1/projects/:projectId/channels/email/domains", {}, params);
+      anon.status(401);
+    });
+  },
+);
