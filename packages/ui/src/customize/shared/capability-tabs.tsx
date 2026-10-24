@@ -6,7 +6,6 @@ import { useTranslations } from '../../i18n';
 import { ArrowUpRightIcon } from '@phosphor-icons/react';
 import { UiLink as Link, useUiPathname } from '../../providers/ui-provider';
 
-import { FadedScrollArea } from '../../primitives/faded-scroll-area';
 import { useOptionalSidebar } from '../../primitives/sidebar';
 import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
 import { HubLink } from '../../internal/account-hub/account-hub-location';
@@ -23,7 +22,6 @@ import { receivedDenial } from './capability-access-gate';
 import {
   ADMIN_MANAGED_TABS,
   CAPABILITY_TABS,
-  PRIMARY_TABS,
   activeCapabilityTab,
   capabilityTabHref,
   type CapabilityTab,
@@ -179,12 +177,10 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
     access.settled ? allowedTabs.has(tab.key) : !FLAG_GATED_TABS.includes(tab.key),
   );
 
-  const leading = tabs.filter((tab) => !TRAILING_TABS.includes(tab.key));
-  const primary = leading.filter((tab) => PRIMARY_TABS.includes(tab.key));
-  const library = leading.filter(
-    (tab) => !PRIMARY_TABS.includes(tab.key) && !GOVERNANCE_TABS.includes(tab.key),
-  );
-  const governance = leading.filter((tab) => GOVERNANCE_TABS.includes(tab.key));
+  // Agent-first Customize (Marko, 2026-10-24): the top bar no longer carries the
+  // Agents / Repo / Review tab navigation — that lives in the sidebar now
+  // (agents + Review + Settings). The bar keeps only the sidebar toggle, the
+  // Members launch link, and Settings.
   const trailing = tabs.filter((tab) => TRAILING_TABS.includes(tab.key));
   const renderTab = (tab: CapabilityTab) => (
     <TabsTrigger key={tab.key} value={tab.key} asChild className="w-fit flex-none px-1 py-3">
@@ -200,35 +196,22 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
       data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
     >
       <SidebarToggle />
-      <FadedScrollArea
-        orientation="horizontal"
-        fadeColor="from-background"
-        rootClassName="min-w-0 flex-1"
-      >
-        <Tabs value={activeKey ?? ''} className="w-max min-w-full">
-          <TabsList
-            type="underline"
-            underlineSize="md"
-            size="lg"
-            className={cn(
-              'kx-titlebar-tabs h-auto w-full justify-start gap-5 border-b-0 px-2',
-              !access.settled && 'invisible',
-            )}
-            aria-busy={!access.settled || undefined}
-          >
-            {primary.map(renderTab)}
-            {primary.length > 0 && library.length > 0 ? <GroupSeam /> : null}
-            {library.map(renderTab)}
-            {governance.length > 0 && (primary.length > 0 || library.length > 0) ? (
-              <GroupSeam />
-            ) : null}
-            {governance.map(renderTab)}
-            <MembersLaunchLink projectId={projectId} />
-            {trailing.length > 0 ? <GroupSeam /> : null}
-            {trailing.map(renderTab)}
-          </TabsList>
-        </Tabs>
-      </FadedScrollArea>
+      <div className="min-w-0 flex-1" />
+      <Tabs value={activeKey ?? ''} className="w-max">
+        <TabsList
+          type="underline"
+          underlineSize="md"
+          size="lg"
+          className={cn(
+            'kx-titlebar-tabs h-auto justify-end gap-5 border-b-0 px-2',
+            !access.settled && 'invisible',
+          )}
+          aria-busy={!access.settled || undefined}
+        >
+          <MembersLaunchLink projectId={projectId} />
+          {trailing.map(renderTab)}
+        </TabsList>
+      </Tabs>
     </div>
   );
 }

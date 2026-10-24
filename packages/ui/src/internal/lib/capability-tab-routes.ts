@@ -134,10 +134,10 @@ export const ADMIN_MANAGED_TABS: readonly CapabilityTab['key'][] = [
   'secrets',
 ];
 
-/** Tabs that moved INTO Settings (Marko, 2026-10-24): Repo and Review are
- *  reachable from the Settings rail (Repositories, Review), so Customize no
- *  longer lists them as top-level tabs. */
-export const SETTINGS_MANAGED_TABS: readonly CapabilityTab['key'][] = ['files', 'review'];
+/** Tabs that moved INTO Settings (Marko, 2026-10-24): Repo lives in the
+ *  Settings rail (Repositories). Review is NOT here — it is its own standalone
+ *  row in the Customize sidebar (Marko, 2026-10-24). */
+export const SETTINGS_MANAGED_TABS: readonly CapabilityTab['key'][] = ['files'];
 
 /** The capability tabs Customize still lists, in bar order: the caller's
  *  allowed tabs minus the libraries that moved to `/admin` and the ones that

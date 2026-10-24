@@ -38,11 +38,13 @@ export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
 
   const agents = (config?.agents ?? []).filter((agent) => !agent.hidden);
   const activeAgent = pathname?.match(/\/customize\/agents\/([^/?#]+)/)?.[1] ?? null;
+  const hasReview = access.tabs.includes('review');
+  const onReview = pathname ? activeCapabilityTab(pathname) === 'review' : false;
   const hasSettings = access.tabs.includes('config');
   const onSettings = pathname ? activeCapabilityTab(pathname) === 'config' : false;
   const close = () => isMobile && setOpenMobile(false);
 
-  if (agents.length === 0 && !hasSettings) return null;
+  if (agents.length === 0 && !hasReview && !hasSettings) return null;
 
   return (
     <SidebarMenuSub>
@@ -56,16 +58,25 @@ export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
           </SidebarMenuSubButton>
         </SidebarMenuSubItem>
       ))}
-      {hasSettings ? (
+      {hasReview ? (
         <SidebarMenuSubItem>
-          <SidebarMenuSubButton asChild isActive={onSettings}>
-            <Link href={capabilityTabHref(projectId, 'config')} prefetch={false} onClick={close}>
-              <span className="truncate">Settings</span>
+          <SidebarMenuSubButton asChild isActive={onReview}>
+            <Link href={capabilityTabHref(projectId, 'review')} prefetch={false} onClick={close}>
+              <span className="truncate">Review</span>
               {needsYou > 0 ? (
                 <span className="ml-auto flex shrink-0 items-center">
                   <CountBadge count={needsYou} tone="waiting" />
                 </span>
               ) : null}
+            </Link>
+          </SidebarMenuSubButton>
+        </SidebarMenuSubItem>
+      ) : null}
+      {hasSettings ? (
+        <SidebarMenuSubItem>
+          <SidebarMenuSubButton asChild isActive={onSettings}>
+            <Link href={capabilityTabHref(projectId, 'config')} prefetch={false} onClick={close}>
+              <span className="truncate">Settings</span>
             </Link>
           </SidebarMenuSubButton>
         </SidebarMenuSubItem>
