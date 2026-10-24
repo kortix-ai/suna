@@ -1005,7 +1005,6 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'drives',
     'marketplace',
     'meta_agent',
-    'monitors',
     'reminders',
     'secrets_egress',
     'pooled_provider_secrets',
@@ -1030,7 +1029,7 @@ test('FEATURE_FLAG_KEYS members are assignable to FeatureFlagKey', () => {
   // A compile-time assertion with a runtime witness: if the runtime list and
   // the hand-written union drift, this stops typechecking.
   const keys: readonly FeatureFlagKey[] = FEATURE_FLAG_KEYS;
-  const one: FeatureFlagKey = 'monitors';
+  const one: FeatureFlagKey = 'reminders';
   expect(keys).toContain(one);
 });
 
@@ -1099,7 +1098,7 @@ test('FeatureFlagView stability accepts stable, beta, and experimental', () => {
 });
 
 test('ExperimentalFeatureKey and ExperimentalFeatureView stay as aliases', () => {
-  const key: ExperimentalFeatureKey = 'monitors';
+  const key: ExperimentalFeatureKey = 'reminders';
   const legacy: ExperimentalFeatureView = {
     key,
     name: 'Monitors',
@@ -1110,7 +1109,7 @@ test('ExperimentalFeatureKey and ExperimentalFeatureView stay as aliases', () =>
     overridden: false,
   };
   const canonical: FeatureFlagView = legacy;
-  expect(canonical.key).toBe('monitors');
+  expect(canonical.key).toBe('reminders');
 });
 
 test('FeatureFlagView marks an operator-only flag; older servers omit the field', () => {
@@ -1124,7 +1123,7 @@ test('FeatureFlagView marks an operator-only flag; older servers omit the field'
     overridden: true,
     operator_only: true,
   };
-  const legacy: FeatureFlagView = { ...managed, key: 'monitors', operator_only: undefined };
+  const legacy: FeatureFlagView = { ...managed, key: 'reminders', operator_only: undefined };
   expect(managed.operator_only).toBe(true);
   expect(legacy.operator_only).toBeUndefined();
 });
@@ -1150,15 +1149,15 @@ async function captureFeatureCall(
 }
 
 test('updateFeatureFlag PATCHes the canonical /features route', async () => {
-  const sent = await captureFeatureCall(() => updateFeatureFlag('proj-1', 'monitors', true));
+  const sent = await captureFeatureCall(() => updateFeatureFlag('proj-1', 'reminders', true));
 
   expect(sent.method).toBe('PATCH');
   expect(sent.url).toBe('http://backend.test/v1/projects/proj-1/features');
-  expect(sent.parsed).toEqual({ feature: 'monitors', enabled: true });
+  expect(sent.parsed).toEqual({ feature: 'reminders', enabled: true });
 });
 
 test('updateFeatureFlag puts an explicit null enabled on the wire, not an absent key', async () => {
-  const sent = await captureFeatureCall(() => updateFeatureFlag('proj-1', 'monitors', null));
+  const sent = await captureFeatureCall(() => updateFeatureFlag('proj-1', 'reminders', null));
 
   // Both halves matter: `parsed.enabled === null` alone passes when the key was
   // dropped; `'enabled' in parsed` alone passes when the value was rewritten.
@@ -1170,10 +1169,10 @@ test('updateFeatureFlag puts an explicit null enabled on the wire, not an absent
 test('updateExperimentalFeature keeps its legacy /experimental wire path', async () => {
   // Older deployed APIs only serve `/experimental`. Repointing this alias at
   // the canonical route would break every consumer pinned to an old server.
-  const sent = await captureFeatureCall(() => updateExperimentalFeature('proj-1', 'monitors', false));
+  const sent = await captureFeatureCall(() => updateExperimentalFeature('proj-1', 'reminders', false));
 
   expect(sent.url).toBe('http://backend.test/v1/projects/proj-1/experimental');
-  expect(sent.parsed).toEqual({ feature: 'monitors', enabled: false });
+  expect(sent.parsed).toEqual({ feature: 'reminders', enabled: false });
 });
 
 /**

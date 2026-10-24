@@ -35,6 +35,10 @@ another host. Volumes need Platinum (the default on Kortix Cloud).
 5. Never run `kortix apps deploy` from an uninspected workspace root. It can
    publish unrelated files as a static App.
 6. New Apps are private. Choose another access mode only when the user asks.
+7. New Apps have no card on the Apps page: they sit under Background Apps.
+   Register every App a person opens (a site, a UI, a dashboard) with
+   `display: { listed: true }` in its `kortix.yaml` block, or `--listed` on
+   `kortix apps deploy`. Leave a backend, a worker or a poller unlisted.
 
 ## Choose what to build
 
@@ -64,7 +68,7 @@ or topic when that fits the project better (`apps/sales/crm`,
 
 ```bash
 kortix apps launch --template convex           # a ready-made backend App, deployed
-kortix apps deploy apps/storefront/dist --slug storefront --name Storefront --type static --spa
+kortix apps deploy apps/storefront/dist --slug storefront --name Storefront --type static --spa --listed
 kortix apps deploy apps/api --slug api --type dockerfile --on-demand \
   --command '["node","server.js"]' --port 3000 --readiness-path /health
 ```

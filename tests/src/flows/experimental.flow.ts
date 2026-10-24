@@ -142,7 +142,7 @@ flow(
         .as(ctx.P.OWNER)
         .patch(
           '/v1/projects/:projectId/experimental',
-          { feature: 'monitors', enabled: 'yes' },
+          { feature: 'reminders', enabled: 'yes' },
           { params: { projectId: p.id } },
         );
       r.status(400);
@@ -153,7 +153,7 @@ flow(
         .as(ctx.P.NONMEMBER)
         .patch(
           '/v1/projects/:projectId/experimental',
-          { feature: 'monitors', enabled: true },
+          { feature: 'reminders', enabled: true },
           { params: { projectId: p.id } },
         );
       r.status([403, 404]);
@@ -164,7 +164,7 @@ flow(
         .as(ctx.P.ANON)
         .patch(
           '/v1/projects/:projectId/experimental',
-          { feature: 'monitors', enabled: true },
+          { feature: 'reminders', enabled: true },
           { params: { projectId: p.id } },
         );
       r.status(401);

@@ -820,7 +820,6 @@ describe('envelopes', () => {
       'connectors_api_discover',
       'agentmail_email',
       'meta_agent',
-      'monitors',
       'reminders',
       'warm_sessions',
       'secrets_egress',

@@ -39,7 +39,7 @@ Each session also has an `origin`, the class of caller that started it.
 | `origin` | Started by |
 | --- | --- |
 | `user` | A person in the web, desktop, or mobile app; a Slack, Teams, or email message; or an agent inside a session. |
-| `trigger` | A webhook, app event, monitor, or manual [trigger](/docs/connect/triggers) run, or a [reminder](/docs/connect/triggers#reminders). |
+| `trigger` | A schedule, webhook, connector event, App event, or manual [trigger](/docs/connect/triggers) run, or a [reminder](/docs/connect/triggers#reminders). |
 | `schedule` | A cron trigger. |
 | `backend` | A personal access key, which includes the `kortix` CLI on your machine, or a service account, for example the [SDK](/docs/sdk) on your server. |
 | `system` | Kortix itself. |
@@ -53,7 +53,7 @@ You need the `project.session.start` permission. The agent you pick, or the proj
 - **CLI:** run `kortix sessions new` from a linked project directory.
 - **API and SDK:** `POST /v1/projects/<project_id>/sessions` answers `201` with the session, or `202` when the create continues in the background. See [Sessions from code](/docs/sdk/sessions).
 - **Slack, Microsoft Teams, and email:** a message to the bot starts a session. See [Slack, Teams & email](/docs/connect/channels).
-- **Triggers:** a schedule, webhook, app event, or monitor starts one. See [Triggers & reminders](/docs/connect/triggers).
+- **Triggers:** a schedule, webhook, connector event or App event starts one. See [Triggers & reminders](/docs/connect/triggers).
 
 ```bash
 kortix sessions new -p "Fix the failing test in src/billing and open a change request" --wait

@@ -6,7 +6,7 @@
  * due schedule slot (and a reminder, which is a schedule row) of a paused
  * account is not claimed while another account's is, and resuming claims the
  * missed slot once; a slot already queued when the account pauses is skipped
- * by the drain and starts nothing; a monitor event is skipped with the reason.
+ * by the drain and starts nothing; an App event is skipped with the reason.
  * Session creation is stubbed; every query is real.
  */
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
@@ -154,12 +154,11 @@ describe('a paused account', () => {
     await setAccountAutomationsPaused({ accountId: paused.account_id, paused: false, userId: PERSON });
   });
 
-  test('a monitor event is skipped with the reason', async () => {
-    await db.update(projects).set({ metadata: { experimental: { monitors: true } } }).where(eq(projects.projectId, paused.project_id));
+  test('an App event is skipped with the reason', async () => {
     await setAccountAutomationsPaused({ accountId: paused.account_id, paused: true, userId: PERSON });
     const [event] = await db
       .insert(projectMonitorEvents)
-      .values({ projectId: paused.project_id, slug: 'watch-logs', boxEpoch: 'e1', seq: 1, kind: 'event', line: { text: 'boom' }, emittedAt: new Date() })
+      .values({ projectId: paused.project_id, slug: 'bank-reply', boxEpoch: 'app:00000000-0000-4000-a000-000000000001', seq: 1, kind: 'event', line: { text: 'boom' }, emittedAt: new Date() })
       .returning();
 
     expect(await processMonitorEvent(event!, new Date())).toBe('skipped');

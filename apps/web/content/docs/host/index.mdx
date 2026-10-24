@@ -244,7 +244,7 @@ Set these with `kortix self-host env set`. Each row says what the variable turns
 | `MICROSOFT_APP_ID`, `MICROSOFT_APP_PASSWORD`, `MICROSOFT_APP_TENANT` (default `botframework.com`) | One shared Microsoft Teams bot. Without them, each project brings its own bot app. |
 | `AGENTMAIL_API_KEY` | Managed inboxes for the email channel. |
 | `TUNNEL_ENABLED` | Default `true`. `false` turns off [computers](/docs/connect/computers): `/v1/tunnel/*` answers `503` `tunnel_disabled`. |
-| `PLATINUM_API_KEY` | Monitors (also need `platinum` in `ALLOWED_SANDBOX_PROVIDERS`), project Files (`volumes`). |
+| `PLATINUM_API_KEY` | Project Files (`volumes`). |
 
 OAuth callbacks, such as `<KORTIX_URL>/v1/connectors/oauth2/callback` and the Slack and Teams redirects, use `KORTIX_URL`. Domain mode and a named tunnel keep it stable. A quick tunnel changes it at every restart and breaks every callback you registered.
 

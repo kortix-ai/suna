@@ -18,7 +18,6 @@ const SESSION_ID = '9bf3acd4-85bc-46fe-a938-e61404e00270';
 
 const ctx = { defaultBranch: 'main' };
 const session: GitPrincipal = { kind: 'session', sessionId: SESSION_ID, branch: SESSION_ID };
-const monitor: GitPrincipal = { kind: 'monitor' };
 const user: GitPrincipal = { kind: 'user', userId: 'user-1' };
 const internal: GitPrincipal = { kind: 'internal' };
 
@@ -112,17 +111,6 @@ describe('session principal', () => {
   });
 });
 
-describe('monitor principal', () => {
-  test.each([
-    ['its own-looking branch', 'refs/heads/anything'],
-    ['the default branch', 'refs/heads/main'],
-  ])('may NOT push %s — monitor boxes are read-only', (_label, ref) => {
-    const denials = evaluateRefUpdates(monitor, ctx, [update(ref)]);
-    expect(denials).toHaveLength(1);
-    expect(denials[0]!.reason).toContain('read-only');
-  });
-});
-
 describe('user principal', () => {
   test.each([
     ['the default branch', 'refs/heads/main'],
@@ -191,9 +179,6 @@ describe('the two authority layers', () => {
     // The default-branch floor, for a principal that could otherwise delete refs.
     const [floor] = evaluateRefUpdates(user, ctx, [remove('refs/heads/main')]);
     expect(floor!.requires).toBeUndefined();
-    // A monitor has no principal behind it to hold a scope.
-    const [mon] = evaluateRefUpdates(monitor, ctx, [update('refs/heads/x')]);
-    expect(mon!.requires).toBeUndefined();
   });
 
   test('the default-branch floor outranks a delete scope for a session too', () => {
@@ -217,7 +202,6 @@ describe('principalLabel', () => {
   });
 
   test('labels every principal kind', () => {
-    expect(principalLabel(monitor)).toBe('monitor');
     expect(principalLabel(user)).toBe('user:user-1');
     expect(principalLabel({ kind: 'user', userId: null })).toBe('user');
     expect(principalLabel(internal)).toBe('internal');
