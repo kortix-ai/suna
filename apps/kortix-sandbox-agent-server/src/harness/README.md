@@ -836,10 +836,12 @@ describes.
   `/workspace` (`resolvePiV3SkillDirectories`). The image default has no
   project skill. pi does not scan `skills/` or the legacy dir. The agent's
   `permission.skill` allowlist still hides every skill it does not grant.
-- **Subagents.** No built-in `general` or `explore`. The `task` tool offers
+- **Subagents.** No built-in `general` or `explore`. The `agent` tool offers
   only declared, enabled agents with `mode` `subagent` or `all` that the
   calling agent's `permission.task` rule does not deny. The rule's subject is
   `subagent_type`, so a call to a denied name is refused before it runs.
+  The tool also takes an inline ephemeral agent (no manifest entry); the
+  session's tool rules still gate every call its child makes.
 - **Commands.** `GET /command` lists every `compiled.commands` entry with its
   `agents`. `POST /session/:id/command` runs on the body's `agent`, else the
   session's agent. An agent outside `agents` gets `403 { error:
@@ -1018,8 +1020,8 @@ default: the other tools stay declared), `only` (requests declare codemode alone
   `parentToolCallId`). pi runs them through the extension `tool_call` handlers only, never
   `agent.beforeToolCall`, where the policy sits (`toolGate`). `nestedCallGate`, first in the
   extension list (pi stops at the first block), applies the root rule to every call with a
-  parent: `deny` blocks, `ask` attaches to the codemode part. `task` and `question` are refused
-  from a script (a subagent thread links to its root `task` call; a question needs its own part).
+  parent: `deny` blocks, `ask` attaches to the codemode part. `agent`/`task` and `question` are refused
+  from a script (a subagent thread links to its root `agent` call; a question needs its own part).
   A tool the agent's tool access turns off is not callable from a script either (pi offers
   scripts only active tools). A subagent gets only the workspace tools, so no codemode.
 - **Transcript.** A nested call is not a part. The codemode part's `metadata.calls` is pi's
@@ -1041,18 +1043,26 @@ Child sessions have no `AgentSession`; the runtime routes their tool, context an
 provider hooks to the same runner. `ctx.ui` has no UI bound (`hasUI` is false):
 tools and events work, TUI-only rendering does nothing.
 
-`subagents` is OpenCode's `task` tool: input `{ description, prompt,
-subagent_type, task_id? }`, the child id in the part's `metadata.sessionId`
-(set while the child runs), output `task_id: <id>` + `<task_result>`. Each call
+`subagents` is the `agent` tool (OpenCode called it `task`): input `{
+description, prompt, subagent_type?, agent?, task_id? }`, the child id in the
+part's `metadata.sessionId` (set while the child runs), output `task_id: <id>`
++ `<task_result>`. It registers under two names with one handler — `agent` (use
+this) and `task` (a deprecated alias kept so OpenCode-era prompts and sessions
+keep working); both are callable and behave identically. Each call
 runs an in-process pi agent in a child session (`parentID` = root), with its
 own wire transcript served by `/session`, `/session/:id`,
 `/session/:id/message`, `/session/:root/children`, the state document and
 `/kortix/runtime/messages/:id`, and persisted in the root's dump so `task_id`
-resumes it after a restart. Types: `general` (all workspace and Kortix tools), `explore`
+resumes it after a restart. A call picks one of two sources. A named
+`subagent_type`: `general` (all workspace and Kortix tools), `explore`
 (`bash`/`read`/`glob`/`grep`), and every compiled agent with `mode: subagent`
 or `all`; v3 has only the declared agents. The calling agent's
 `permission.task` rule (subject: `subagent_type`) removes a denied type from
-the list and refuses a call to it. A child gets no `task` (no nesting) and no `question`. Several task
+the list and refuses a call to it. Or an inline ephemeral agent `agent: {
+instructions, model?, tools?, description? }`, defined on the fly with no
+manifest entry, run under the agent name `inline`; it has no name to deny, so
+the session's own tool rules are its only gate. A child gets no `agent`/`task`
+(no nesting) and no `question`. Several
 calls in one message run concurrently; a batch that includes any other tool
 stays sequential. A child session is read-only (prompts to it answer 501).
 A child's calls are checked against the subagent's own rules and the session's
@@ -1285,7 +1295,7 @@ v1 and v2 sets keep the behavior above.
   config. `OPENCODE_CONFIG_CONTENT` from the environment is not merged.
 - **Built-in agents.** The API sends `build`, `plan`, `general` and `explore`
   as `{ disable: true }` unless the manifest declares them. OpenCode deletes
-  a disabled agent, so the `task` tool cannot start one.
+  a disabled agent, so the `agent` tool cannot start one.
 - **Session notice.** The config-release notice names `kortix.yaml` as the
   file to edit.
 

@@ -1375,8 +1375,8 @@ export class PiRuntime {
         pi.on('tool_call', (event) => {
           const parent = event.parentToolCallId
           if (!parent) return undefined
-          // A subagent thread links to its root `task` call, and a question renders on its own part.
-          if (event.toolName === 'task' || event.toolName === 'question') {
+          // A subagent thread links to its root `agent`/`task` call, and a question renders on its own part.
+          if (event.toolName === 'agent' || event.toolName === 'task' || event.toolName === 'question') {
             return { block: true, reason: `Call ${event.toolName} directly, not from a script.` }
           }
           return this.decide(this.rootRule(event.toolName, event.input), event.toolName, event.input, () => this.adapter?.toolRef(parent))

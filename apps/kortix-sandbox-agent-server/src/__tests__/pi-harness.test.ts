@@ -643,7 +643,7 @@ describe('pi harness', () => {
     }
     expect(await r.user('/command').then((res) => res.json())).toEqual([])
     const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
-    expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
+    expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'agent', 'task'])
     expect((await r.user('/session/status').then((res) => res.json()))).toEqual({})
     expect((await r.user('/lsp/diagnostics')).status).toBe(200)
     expect((await r.user('/no/such/route')).status).toBe(404)
@@ -661,8 +661,8 @@ describe('pi harness', () => {
     await waitFor(() => !r.service.runtime()!.busy())
     // Step 2 of 2 is the last: the model may not call another tool.
     expect(gateway.sampling.slice(before)).toEqual([
-      { temperature: 0.3, top_p: 0.8, tool_choice: undefined, tools: 14, toolNames: expect.arrayContaining(['bash', 'codemode']) },
-      { temperature: 0.3, top_p: 0.8, tool_choice: 'none', tools: 14, toolNames: expect.arrayContaining(['bash', 'codemode']) },
+      { temperature: 0.3, top_p: 0.8, tool_choice: undefined, tools: 15, toolNames: expect.arrayContaining(['bash', 'codemode']) },
+      { temperature: 0.3, top_p: 0.8, tool_choice: 'none', tools: 15, toolNames: expect.arrayContaining(['bash', 'codemode']) },
     ])
   })
 
@@ -1511,7 +1511,7 @@ describe('project tools on pi', () => {
       env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ lookup_order: 'integrations/orders/lookup.ts' }) },
       prepare: (workspace) => write(workspace, 'integrations/orders/lookup.ts', LOOKUP),
     })
-    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'lookup_order', 'question', 'codemode', 'task'])
+    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'lookup_order', 'question', 'codemode', 'agent', 'task'])
     await promptAndSettle(r, 'look up order 42')
     const part = toolParts(await page(r), 'lookup_order')[0]!
     expect(part.state.status).toBe('completed')
@@ -1540,7 +1540,7 @@ describe('project tools on pi', () => {
       script: [{ tool: 'show', args: { action: 'show', type: 'text', content: 'hi' } }, { tool: 'memory', args: { command: 'view', path: 'memory' } }, { text: 'done' }],
       env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: {} }, kortix_tools: ['web_search', 'image_search', 'scrape_webpage', 'memory'] }) },
     })
-    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'question', 'codemode', 'task'])
+    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'question', 'codemode', 'agent', 'task'])
     await promptAndSettle(r, 'show hi, then view memory')
     const show = toolParts(await page(r), 'show')[0]!
     expect(show.state.status).toBe('error')
@@ -1973,6 +1973,58 @@ describe('pi subagents extension', () => {
     expect(running?.payload.part.state.metadata.sessionId).toBe(childId)
   })
 
+  test('the tool is `agent`, with `task` as a deprecated alias, and both spawn a named subagent', async () => {
+    const r = await boot({
+      script: [
+        { tool: 'agent', args: { description: 'Write a', prompt: 'write a.txt', subagent_type: 'general' } },
+        { tool: 'bash', args: { command: 'printf A > a.txt' } },
+        { text: 'agent child done' },
+        { tool: 'task', args: { description: 'Write b', prompt: 'write b.txt', subagent_type: 'general' } },
+        { tool: 'bash', args: { command: 'printf B > b.txt' } },
+        { text: 'task child done' },
+        { text: 'parent done' },
+      ],
+    })
+    const ids = (await r.user('/tool/ids').then((res) => res.json())) as string[]
+    expect(ids).toContain('agent')
+    expect(ids).toContain('task')
+    const tools = (await r.user('/tool').then((res) => res.json())) as Array<{ id: string; description: string }>
+    expect(tools.find((t) => t.id === 'task')!.description.startsWith('Deprecated alias of `agent`')).toBe(true)
+    expect(tools.find((t) => t.id === 'agent')!.description).not.toContain('Deprecated')
+
+    await promptAndSettle(r, 'delegate twice')
+    expect(readFileSync(join(r.workspace, 'a.txt'), 'utf8')).toBe('A')
+    expect(readFileSync(join(r.workspace, 'b.txt'), 'utf8')).toBe('B')
+    const root = r.service.runtime()!.rootId
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(toolParts(page, 'agent')[0]!.state.status).toBe('completed')
+    expect(toolParts(page, 'task')[0]!.state.status).toBe('completed')
+    expect(toolParts(page, 'agent')[0]!.state.output).toContain('<task_result>\nagent child done\n</task_result>')
+    expect(toolParts(page, 'task')[0]!.state.output).toContain('<task_result>\ntask child done\n</task_result>')
+  })
+
+  test('an inline ephemeral agent spec spawns a child with no named subagent_type', async () => {
+    const r = await boot({
+      script: [
+        { tool: 'agent', args: { description: 'Write note', prompt: 'write inline.txt', agent: { instructions: 'You are an ephemeral agent. Write the file.' } } },
+        { tool: 'bash', args: { command: 'printf from-inline > inline.txt && cat inline.txt' } },
+        { text: 'inline child wrote it' },
+        { text: 'parent done' },
+      ],
+    })
+    await promptAndSettle(r, 'delegate inline')
+    expect(readFileSync(join(r.workspace, 'inline.txt'), 'utf8')).toBe('from-inline')
+    const root = r.service.runtime()!.rootId
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    const task = toolParts(page, 'agent')[0]!
+    expect(task.state.status).toBe('completed')
+    expect(task.state.output).toContain('<task_result>\ninline child wrote it\n</task_result>')
+    const childId = task.state.metadata.sessionId as string
+    const child = (await r.bearer(`/kortix/runtime/messages/${childId}`).then((res) => res.json())) as WirePage
+    expect(child.messages[1]!.info.agent).toBe('inline')
+    expect(toolParts(child, 'bash')[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('from-inline') })
+  })
+
   test('a subagent whose stream is cut retries and returns its answer', async () => {
     const r = await boot({ script: [TASK({}), { cut: 'partial' }, { text: 'child finished' }, { text: 'parent done' }] })
     const root = r.service.runtime()!.rootId
@@ -2096,14 +2148,14 @@ describe('pi subagents extension', () => {
     const compiled = (tools?: Record<string, boolean>) => JSON.stringify({ agent: { build: { tools } } })
     const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ bash: false }) } })
     const ids = async () => (await r.user('/tool/ids').then((res) => res.json())) as string[]
-    expect(await ids()).toEqual(['read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
+    expect(await ids()).toEqual(['read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'agent', 'task'])
     const runtime = r.service.runtime()! as unknown as { env: NodeJS.ProcessEnv; reconfigure: () => Promise<unknown> }
     runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled()
     await runtime.reconfigure()
-    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
+    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'agent', 'task'])
     runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled({ grep: false })
     await runtime.reconfigure()
-    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
+    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'agent', 'task'])
   })
 
   test('several task calls in one message run their subagents concurrently', async () => {

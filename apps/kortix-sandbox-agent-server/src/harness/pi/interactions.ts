@@ -188,14 +188,14 @@ export function toolPath(raw: string, workspace: string): string | undefined {
 /**
  * The string a pattern is tested against, per tool — the subject OpenCode sends
  * as the permission request's pattern: the command line for `bash`, the skill
- * name for `skill`, the subagent name for `task`, and for the workspace tools
+ * name for `skill`, the subagent name for `agent`/`task`, and for the workspace tools
  * the file the path names, relative to the workspace (`tool/read.ts`,
  * `edit.ts`, `write.ts`). So `./secrets/a`, `x/../secrets/a` and
  * `/workspace/secrets/a` are all `secrets/a`.
  */
 export function permissionSubject(tool: string, args: unknown, workspace: string): string | undefined {
   if (!args || typeof args !== 'object') return undefined
-  const key = tool === 'bash' ? 'command' : tool === 'skill' ? 'name' : tool === 'task' ? 'subagent_type' : 'path'
+  const key = tool === 'bash' ? 'command' : tool === 'skill' ? 'name' : tool === 'task' || tool === 'agent' ? 'subagent_type' : 'path'
   const value = (args as Record<string, unknown>)[key]
   if (typeof value !== 'string') return undefined
   if (key !== 'path') return value
