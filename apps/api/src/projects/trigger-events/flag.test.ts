@@ -17,14 +17,14 @@ const source = (configured: boolean) => ({
 describe('event_triggers flag helpers', () => {
   afterEach(() => setEventSourceForTest('composio', undefined));
 
-  test('a configured source enables a project that is on or unset (the default is on); an explicit false is off', () => {
+  test('a configured source + project opt-in enables; unset or false is off for the project', () => {
     setEventSourceForTest('composio', source(true));
-    for (const metadata of [{ experimental: { event_triggers: true } }, {}, null]) {
-      expect(eventTriggersEnabled(metadata)).toBe(true);
-      expect(eventTriggersOffForProject(metadata)).toBe(false);
+    expect(eventTriggersEnabled({ experimental: { event_triggers: true } })).toBe(true);
+    expect(eventTriggersOffForProject({ experimental: { event_triggers: true } })).toBe(false);
+    for (const metadata of [{}, { experimental: { event_triggers: false } }, null]) {
+      expect(eventTriggersEnabled(metadata)).toBe(false);
+      expect(eventTriggersOffForProject(metadata)).toBe(true);
     }
-    expect(eventTriggersEnabled({ experimental: { event_triggers: false } })).toBe(false);
-    expect(eventTriggersOffForProject({ experimental: { event_triggers: false } })).toBe(true);
   });
 
   test('eventStatusFor reports the off message as error, ahead of any stored row', () => {
