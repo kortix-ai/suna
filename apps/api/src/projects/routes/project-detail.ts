@@ -1,7 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { projects } from '@kortix/db';
 import { type SQL, eq } from 'drizzle-orm';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
 /** One project: read, detail, and update. */
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json, lenientBody } from '../../openapi';
@@ -23,6 +22,7 @@ import { applyDetailCapabilityFilter } from '../lib/detail-capability-filter';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { addPlatformMetaAgent } from '../lib/platform-meta-agent';
+import { projectBuiltinAgents } from '../lib/builtin-agents';
 import { normalizeProjectGlyph } from '../lib/project-glyph';
 import { normalizeProjectIcon } from '../lib/project-icon';
 import { denierFromConfig, filterConfigResourcesForUser } from '../lib/project-resources';
@@ -163,12 +163,15 @@ export function registerProjectDetailRoutes(): void {
         actingTokenId: (c.get('iamTokenId') as string | undefined) ?? undefined,
       };
       const filteredConfig = await filterConfigResourcesForUser(rawConfig, denierCtx);
-      // The platform coordinator appears in the agent list (and becomes the
-      // default) only for projects that opted into the `meta_agent` experimental
-      // feature. Flag off: the config is exactly the repo-declared surface.
-      const withAgents = resolveFeatureFlag(loaded.row.metadata, 'meta_agent')
-        ? addPlatformMetaAgent(filteredConfig)
-        : filteredConfig;
+      // My Kortix (slug `meta`) is listed first and is the default agent unless
+      // kortix.yaml sets `builtin_agents.my_kortix: false` (or, with no key, the
+      // project's legacy `meta_agent` switch is off). Off: the config is
+      // exactly the repo-declared surface.
+      const builtinAgents = projectBuiltinAgents(rawConfig.manifest, loaded.row.metadata);
+      const withAgents = {
+        ...(builtinAgents.my_kortix ? addPlatformMetaAgent(filteredConfig) : filteredConfig),
+        builtin_agents: builtinAgents,
+      };
       // A Kortix skill behind a feature flag is listed only while the flag is on: the box does
       // not have it either (feature-flag-env.ts → kortixd).
       const enabledFlags = new Set(featureFlagsEnvValue(loaded.row.metadata).split(','));

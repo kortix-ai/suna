@@ -2,7 +2,7 @@ import type { AgentGrant } from '@kortix/db';
 import { isMetaAgentName } from '@kortix/shared';
 import { canonicalizeGrantActions, canonicalizeGrantConnectors } from '../../iam/agent-scope';
 import type { GitBackedProject } from '../git';
-import { platformMetaAgentGrant } from '../lib/platform-meta-agent';
+import { disabledPlatformMetaAgentGrant, platformMetaAgentGrant } from '../lib/platform-meta-agent';
 import { type ManifestFormat, OPENCODE_BUILTIN_AGENTS_V3 } from '@kortix/manifest-schema';
 import { parseManifestString } from '../manifest-io';
 import { extractAgents, loadProjectAgents } from './parse';
@@ -64,8 +64,9 @@ export const OPENCODE_BUILTIN_AGENT_NAMES: ReadonlySet<string> = new Set([
  * DIFFERENT project, onto ~50 session tokens of unrelated projects, and every
  * one of those sessions lost its CLI and connector access.
  *
- *   - `default`, the platform meta agent and OpenCode's built-in agents are
- *     launchable: none of them is ever another project's agent. In a v3
+ *   - `default`, My Kortix (`meta`, unless `builtin_agents.my_kortix: false`)
+ *     and OpenCode's built-in agents are launchable: none of them is ever
+ *     another project's agent. In a v3
  *     project `build`/`plan`/`general`/`explore` are launchable only when
  *     declared.
  *   - A project with no per-agent governance (no specs, no parse errors) keeps
@@ -78,7 +79,9 @@ export const OPENCODE_BUILTIN_AGENT_NAMES: ReadonlySet<string> = new Set([
 export function isLaunchableAgentName(agentName: string, loaded: LoadedAgents): boolean {
   const name = agentName.trim();
   if (!name) return false;
-  if (name === DEFAULT_AGENT_SENTINEL || isMetaAgentName(name)) return true;
+  if (name === DEFAULT_AGENT_SENTINEL) return true;
+  // My Kortix is launchable unless kortix.yaml turned it off.
+  if (isMetaAgentName(name)) return loaded.builtinAgents?.my_kortix !== false;
   // OpenCode ships these in every runtime and a governed project's picker can
   // still send one. They are the runtime's own, not another project's, so they
   // keep running exactly as before: an undeclared built-in resolves to the
@@ -167,7 +170,11 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
   // token, so the deny-all overwrote the coordinator's real grant on its first
   // turn (every later `kortix` call then 403'd) and the null made the re-mint
   // refuse the prompt outright. Its grant is platform-owned, at mint and here.
-  if (isMetaAgentName(agentName)) return platformMetaAgentGrant();
+  // A kortix.yaml that turned My Kortix off (`builtin_agents.my_kortix: false`)
+  // strips an existing `meta` session of every project action on its next prompt.
+  if (isMetaAgentName(agentName)) {
+    return loaded.builtinAgents?.my_kortix === false ? disabledPlatformMetaAgentGrant() : platformMetaAgentGrant();
+  }
 
   // No [[agents]] section parsed and no errors → project hasn't adopted
   // per-agent governance → no restriction (today's behavior).

@@ -212,18 +212,22 @@ const FLAGS: readonly FeatureFlagDef[] = [
   // operator lever. A stored `experimental.llm_gateway` override is inert.
   {
     key: 'meta_agent',
-    name: 'Meta Agent',
+    name: 'My Kortix',
     description:
-      'A reserved coordinator agent that spawns and manages specialized sessions, transfers files between them, and orchestrates multi-step work across the project. Adds a platform-owned meta agent to the project and changes the default agent for new sessions without an explicit --agent flag.',
+      'My Kortix, the one agent you talk to. It runs your agents, goals and spaces for you, with your permissions. The project setting is `builtin_agents.my_kortix` in kortix.yaml; this switch applies only when that key is not set.',
     stability: 'experimental',
     available: () => true,
-    // On by default (Marko, 2026-10-24): the meta agent is the default cloud
-    // orchestrator for every project. A project can still turn it off.
+    // On by default (Marko, 2026-10-24): My Kortix is the default cloud
+    // orchestrator for every project. The project switch is kortix.yaml
+    // `builtin_agents.my_kortix`; this flag is its operator-only legacy fallback,
+    // so Settings never shows a second toggle that the manifest overrides.
     platformDefault: () => true,
+    catalogHidden: true,
     enforcement: 'behavioral',
     enforcementNote:
-      'Off ⇒ the platform meta agent is not added to the agent list and is not ' +
-      'the default for new sessions (projects/lib/platform-meta-agent.ts).',
+      'The legacy fallback of kortix.yaml `builtin_agents.my_kortix`: read only when ' +
+      'the manifest does not set the key (projects/lib/builtin-agents.ts). Off ⇒ the ' +
+      'built-in `meta` agent is not listed and is not the default for new sessions.',
   },
   // `apps` graduated (2026-10-14, spec §28): Apps is generally available —
   // every project can create and deploy Apps and there is no flag, no row and

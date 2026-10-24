@@ -1228,8 +1228,8 @@
           "description": "Affectez des boîtes AgentMail pour que les e-mails entrants puissent démarrer et poursuivre des sessions Kortix."
         },
         "meta_agent": {
-          "name": "Méta-agent",
-          "description": "Ajoutez un coordinateur qui gère les sessions spécialisées et les travaux en plusieurs étapes du projet."
+          "name": "My Kortix",
+          "description": "My Kortix, le seul agent à qui vous parlez. Il exécute vos agents, objectifs et espaces pour vous, avec vos autorisations. Le paramètre du projet est `builtin_agents.my_kortix` dans kortix.yaml ; ce commutateur ne s’applique que si cette clé n’est pas définie."
         },
         "monitors": {
           "name": "Moniteurs",
@@ -1585,7 +1585,7 @@
     "sessionViewOptions": "Options d'affichage des sessions",
     "sectionOptions": "Options de la section",
     "allSectionsHidden": "Toutes les sections sont masquées.",
-    "metaCoordinator": "Coordinateur Meta",
+    "metaCoordinator": "My Kortix",
     "files": "Fichiers",
     "retry": "Réessayer",
     "review": "Examiner",
@@ -19812,8 +19812,7 @@
       "text0e5f7f6732e0": "Bifurquer la conversation",
       "text32ad3abe4479": "Échec de la bifurcation de la conversation",
       "text95de71e25038": "Conversation bifurquée",
-      "text85b7a59cdbd5": "Agent de la plateforme",
-      "textd9c0c74b514b": "Meta est un agent de la plateforme qui orchestre votre travail. Sa configuration est fixe : vous pouvez démarrer une session avec lui, mais il ne se configure pas ici.",
+      "text85b7a59cdbd5": "Intégré",
       "text6c4af31cd4ab": "Déconnecté sur cet appareil, mais le serveur n'a pas pu confirmer la déconnexion.",
       "text228359b08506": "Contacter les ventes et réserver une démo",
       "text9d2ac301f9b3": "Marketplace : agents, compétences et modèles de projet",
@@ -22496,7 +22495,67 @@
   },
   "agentEditor": {
     "manage": "Gérer",
-    "overviewTitle": "Vue d'ensemble"
+    "overviewTitle": "Vue d'ensemble",
+    "myKortix": {
+      "allowed": "Autorisé",
+      "notAllowed": "Non autorisé",
+      "on": "Activé",
+      "goalsOff": "Objectifs désactivés",
+      "asYou": "En votre nom",
+      "noAccess": "Aucun accès",
+      "denied": "Nécessite <code>{grant}</code>. Toute personne qui gère ce projet peut l’accorder.",
+      "capabilities": {
+        "title": "Fonctionnalités",
+        "configure": {
+          "label": "Configurer vos agents",
+          "help": "Crée et restreint des agents dans kortix.yaml avec uniquement les outils, skills, connecteurs et autorisations dont une tâche a besoin. Il demande avant d’élargir une autorisation."
+        },
+        "delegate": {
+          "label": "Déléguer le travail",
+          "help": "Lance chaque tâche dans une session cloud durable de l’agent le plus restreint, l’attend et rapporte le résultat vérifié."
+        },
+        "goals": {
+          "label": "Mener des objectifs",
+          "help": "Lance une session coordinatrice qui porte l’objectif jusqu’à sa confirmation par un vérificateur, avec un point quotidien."
+        },
+        "spaces": {
+          "label": "Construire des espaces",
+          "help": "Ajoute et organise les blocs d’un espace dans kortix.yaml via une demande de modification."
+        }
+      },
+      "access": {
+        "title": "Accès",
+        "asYou": {
+          "label": "Vos autorisations, dans ce projet",
+          "help": "Chaque action s’exécute au nom de la personne qui a lancé la session. Il n’a jamais plus de droits que vous."
+        },
+        "otherProjects": {
+          "label": "Autres projets et paramètres du compte",
+          "help": "Son accès s’arrête à ce projet."
+        },
+        "tokens": {
+          "label": "Nouveaux jetons",
+          "help": "Il ne peut créer d’identifiant ni pour lui-même ni pour quelqu’un d’autre."
+        },
+        "secrets": {
+          "label": "Secrets du projet",
+          "help": "Un agent autorisé pour le secret l’utilise à sa place."
+        },
+        "connectors": {
+          "label": "Appels directs aux connecteurs",
+          "help": "Il confie le travail sur un connecteur à un agent autorisé pour ce connecteur."
+        }
+      },
+      "agents": {
+        "title": "Agents",
+        "empty": "Les agents que vous créez apparaîtront ici"
+      },
+      "project": {
+        "title": "Paramètre du projet",
+        "label": "My Kortix",
+        "help": "Les nouvelles sessions démarrent avec My Kortix. Kortix maintient son prompt et ses outils. Pour le désactiver, définissez <code>builtin_agents.my_kortix: false</code> dans kortix.yaml."
+      }
+    }
   },
   "connectAppForm": {
     "title": "Connecter Shopify",

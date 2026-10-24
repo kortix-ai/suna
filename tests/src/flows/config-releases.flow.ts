@@ -13,6 +13,7 @@
  * (`/v1/git/<project>.git`) with an OWNER PAT, the way `kortix ship` pushes.
  */
 import { subscribe } from '../fixtures/billing';
+import { setFeatureAsOperator } from '../fixtures/feature-flags';
 import { flow, harnessFlow } from '../core/flow';
 import { sleep, waitFor } from '../core/poll';
 import type { CreatedProject, FlowContext, Harness, TeamFixture } from '../core/types';
@@ -127,9 +128,9 @@ interface Fixture {
   /** `GET .../sessions/:sessionId/config` as the project owner. */
   configState(sessionId: string): Promise<{ status: number; body: any }>;
   /**
-   * The project's own switch for `meta_agent`, through the published write
-   * path. `true` opts in, `false` opts out, `null` clears the override and
-   * returns the project to the platform default, OFF
+   * The legacy `meta_agent` switch, through the operator write path (the flag
+   * is catalogHidden). `true` opts in, `false` opts out, `null` clears the
+   * override and returns the project to the platform default, ON
    * (`apps/api/src/feature-flags/registry.ts`).
    */
   setFeature(enabled: boolean | null, feature: 'meta_agent'): Promise<void>;
@@ -432,14 +433,8 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
       return commitTo(repo, files, message);
     },
     async setFeature(enabled, feature) {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch(
-          '/v1/projects/:projectId/features',
-          { feature, enabled },
-          { params: { projectId: project.id } },
-        );
-      r.status(200);
+      // `meta_agent` is operator-only (catalogHidden): kortix.yaml `builtin_agents` is the project switch.
+      await setFeatureAsOperator(ctx, project.id, feature, enabled);
     },
     async storeRetiredConfigReleasesFlag(enabled) {
       await db.query(

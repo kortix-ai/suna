@@ -1228,8 +1228,8 @@
           "description": "AgentMail の受信箱を割り当て、受信メールから Kortix セッションを開始・継続できるようにします。"
         },
         "meta_agent": {
-          "name": "メタエージェント",
-          "description": "専門セッションとプロジェクト内の複数手順の作業を管理するコーディネーターを追加します。"
+          "name": "My Kortix",
+          "description": "My Kortix は、あなたが話しかける唯一のエージェントです。あなたの権限で、エージェント、目標、スペースを代わりに実行します。プロジェクトの設定は kortix.yaml の `builtin_agents.my_kortix` です。このスイッチは、そのキーが未設定のときだけ適用されます。"
         },
         "monitors": {
           "name": "モニター",
@@ -1585,7 +1585,7 @@
     "sessionViewOptions": "セッション表示オプション",
     "sectionOptions": "セクションオプション",
     "allSectionsHidden": "すべてのセクションが非表示です。",
-    "metaCoordinator": "Meta コーディネーター",
+    "metaCoordinator": "My Kortix",
     "files": "ファイル",
     "retry": "もう一度",
     "review": "確認",
@@ -19812,8 +19812,7 @@
       "text0e5f7f6732e0": "会話をフォーク",
       "text32ad3abe4479": "会話のフォークに失敗しました",
       "text95de71e25038": "会話をフォークしました",
-      "text85b7a59cdbd5": "プラットフォームエージェント",
-      "textd9c0c74b514b": "Meta は作業を統括するプラットフォームエージェントです。設定は固定されています。Meta とのセッションは開始できますが、ここでは設定できません。",
+      "text85b7a59cdbd5": "組み込み",
       "text6c4af31cd4ab": "このデバイスではサインアウトしましたが、サーバーがサインアウトを確認できませんでした。",
       "text228359b08506": "営業に問い合わせてデモを予約",
       "text9d2ac301f9b3": "マーケットプレイス: エージェント、スキル、テンプレート",
@@ -22496,7 +22495,67 @@
   },
   "agentEditor": {
     "manage": "管理",
-    "overviewTitle": "概要"
+    "overviewTitle": "概要",
+    "myKortix": {
+      "allowed": "許可",
+      "notAllowed": "許可なし",
+      "on": "オン",
+      "goalsOff": "目標はオフ",
+      "asYou": "あなたとして",
+      "noAccess": "アクセスなし",
+      "denied": "<code>{grant}</code> が必要です。このプロジェクトを管理する人なら誰でも付与できます。",
+      "capabilities": {
+        "title": "機能",
+        "configure": {
+          "label": "エージェントを設定",
+          "help": "タスクに必要なツール、スキル、コネクター、権限だけを持つエージェントを kortix.yaml に作成し、絞り込みます。権限を広げる前に確認します。"
+        },
+        "delegate": {
+          "label": "作業を委任",
+          "help": "各タスクを最も範囲の狭いエージェントの永続クラウドセッションとして開始し、完了を待って検証済みの結果を報告します。"
+        },
+        "goals": {
+          "label": "目標を実行",
+          "help": "目標のコーディネーターセッションを開始します。検証者が確認するまで目標を担い、毎日チェックインします。"
+        },
+        "spaces": {
+          "label": "スペースを構築",
+          "help": "変更リクエストを通じて、kortix.yaml のスペースのブロックを追加・配置します。"
+        }
+      },
+      "access": {
+        "title": "アクセス",
+        "asYou": {
+          "label": "このプロジェクトでのあなたの権限",
+          "help": "すべての操作は、セッションを開始した人として実行されます。あなた以上の権限を持つことはありません。"
+        },
+        "otherProjects": {
+          "label": "他のプロジェクトとアカウント設定",
+          "help": "アクセスはこのプロジェクトまでです。"
+        },
+        "tokens": {
+          "label": "新しいトークン",
+          "help": "自分自身にも他の誰にも認証情報を発行できません。"
+        },
+        "secrets": {
+          "label": "プロジェクトのシークレット",
+          "help": "代わりに、そのシークレットを許可されたエージェントが使います。"
+        },
+        "connectors": {
+          "label": "コネクターの直接呼び出し",
+          "help": "コネクターの作業は、そのコネクターを許可されたエージェントに任せます。"
+        }
+      },
+      "agents": {
+        "title": "エージェント",
+        "empty": "作成したエージェントがここに表示されます"
+      },
+      "project": {
+        "title": "プロジェクト設定",
+        "label": "My Kortix",
+        "help": "新しいセッションは My Kortix で始まります。プロンプトとツールは Kortix が管理します。オフにするには、kortix.yaml で <code>builtin_agents.my_kortix: false</code> を設定します。"
+      }
+    }
   },
   "connectAppForm": {
     "title": "Shopify を接続",

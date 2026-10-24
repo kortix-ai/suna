@@ -1050,8 +1050,8 @@
           "description": "Assign AgentMail inboxes so incoming email threads can start and continue Kortix sessions."
         },
         "meta_agent": {
-          "name": "Meta Agent",
-          "description": "Add a coordinator agent that manages specialized sessions and multi-step work across the project."
+          "name": "My Kortix",
+          "description": "My Kortix, the one agent you talk to. It runs your agents, goals and spaces for you, with your permissions. The project setting is `builtin_agents.my_kortix` in kortix.yaml; this switch applies only when that key is not set."
         },
         "monitors": {
           "name": "Monitors",
@@ -1585,7 +1585,7 @@
     "sessionViewOptions": "Session view options",
     "sectionOptions": "Section options",
     "allSectionsHidden": "All sections are hidden.",
-    "metaCoordinator": "Meta",
+    "metaCoordinator": "My Kortix",
     "files": "Files",
     "retry": "Try again",
     "review": "Review",
@@ -19843,8 +19843,7 @@
       "text0e5f7f6732e0": "Fork conversation",
       "text32ad3abe4479": "Failed to fork conversation",
       "text95de71e25038": "Conversation forked",
-      "text85b7a59cdbd5": "Platform agent",
-      "textd9c0c74b514b": "Meta is a platform agent that orchestrates your work. Its setup is fixed: start a session with it, but it can't be configured here.",
+      "text85b7a59cdbd5": "Built-in",
       "text6c4af31cd4ab": "Signed out on this device, but the server could not confirm the sign-out.",
       "text228359b08506": "Contact sales and book a demo",
       "text9d2ac301f9b3": "Marketplace: agents, skills and project templates",
@@ -22500,7 +22499,67 @@
   },
   "agentEditor": {
     "manage": "Manage",
-    "overviewTitle": "Overview"
+    "overviewTitle": "Overview",
+    "myKortix": {
+      "allowed": "Allowed",
+      "notAllowed": "Not allowed",
+      "on": "On",
+      "goalsOff": "Goals off",
+      "asYou": "As you",
+      "noAccess": "No access",
+      "denied": "Needs <code>{grant}</code>. Anyone who manages this project can grant it.",
+      "capabilities": {
+        "title": "Capabilities",
+        "configure": {
+          "label": "Configure your agents",
+          "help": "Creates and narrows agents in kortix.yaml with only the tools, skills, connectors and permissions a task needs. It asks before it widens a grant."
+        },
+        "delegate": {
+          "label": "Delegate work",
+          "help": "Starts each task as a durable cloud session of the narrowest agent, waits for it, and reports the verified result."
+        },
+        "goals": {
+          "label": "Run goals",
+          "help": "Starts a goal coordinator session that owns the objective until a verifier confirms it, with a daily check-in."
+        },
+        "spaces": {
+          "label": "Build spaces",
+          "help": "Adds and arranges a space's blocks in kortix.yaml through a change request."
+        }
+      },
+      "access": {
+        "title": "Access",
+        "asYou": {
+          "label": "Your permissions, in this project",
+          "help": "Every action runs as the person who started the session. It never holds more than you do."
+        },
+        "otherProjects": {
+          "label": "Other projects and account settings",
+          "help": "Its access ends at this project."
+        },
+        "tokens": {
+          "label": "New tokens",
+          "help": "It cannot mint a credential for itself or anyone else."
+        },
+        "secrets": {
+          "label": "Project secrets",
+          "help": "An agent granted the secret uses it instead."
+        },
+        "connectors": {
+          "label": "Direct connector calls",
+          "help": "It hands connector work to an agent granted that connector."
+        }
+      },
+      "agents": {
+        "title": "Agents",
+        "empty": "Agents you create will show up here"
+      },
+      "project": {
+        "title": "Project setting",
+        "label": "My Kortix",
+        "help": "New sessions start with My Kortix. Kortix maintains its prompt and tools. To turn it off, set <code>builtin_agents.my_kortix: false</code> in kortix.yaml."
+      }
+    }
   },
   "connectAppForm": {
     "title": "Connect Shopify",

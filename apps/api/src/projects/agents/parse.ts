@@ -12,6 +12,7 @@ import {
   type GrantSetV2,
 } from '@kortix/manifest-schema';
 import { normalizeRequiredConnectorAliases, readAgentBlockV2 } from '../lib/agent-config-v2';
+import { declaredBuiltinAgents } from '../lib/platform-meta-agent';
 import {
   MANIFEST_FILENAME,
   type AgentParseError,
@@ -242,6 +243,7 @@ export async function loadProjectAgents(
   if (!manifest) manifest = synthesizeBlankManifest({ manifestPath: project.manifestPath });
   return {
     ...extractAgents(manifest),
+    builtinAgents: declaredBuiltinAgents(manifest.raw),
     manifest: { revision: manifest.revision ?? null, commit: manifest.commit ?? null },
   };
 }

@@ -57,6 +57,7 @@ import {
   validateTriggerAgentRefsV2,
 } from './index.v2';
 import { safeAgentFile, safeRepoPath, safeToolFile } from './layout';
+import { BUILTIN_AGENT_KEYS, BUILTIN_AGENTS, type BuiltinAgentKey } from '@kortix/shared/meta-agent';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -175,6 +176,8 @@ export interface ManifestV3 {
   approvals?: { ttl?: string };
   /** Optional display groups for the dashboard: slug → label/description/order. Data-only. */
   domains?: Record<string, DomainV3>;
+  /** Built-in agents the platform injects, keyed by built-in (`my_kortix`). Absent = on; `false` removes it from the project. */
+  builtin_agents?: Partial<Record<BuiltinAgentKey, boolean>>;
   agents: Record<string, AgentBlockV3>;
 }
 
@@ -199,6 +202,7 @@ const TOP_LEVEL_KEYS_V3 = [
   'policies',
   'approvals',
   'domains',
+  'builtin_agents',
   'agents',
 ] as const;
 
@@ -308,6 +312,7 @@ export function validateManifestBodyV3(
     extensions: validateExtensionsV3(parsed.extensions, 'extensions', issues),
   };
   const agents = validateAgentsV3(parsed.agents, 'agents', registry, issues);
+  validateBuiltinAgentsV3(parsed.builtin_agents, 'builtin_agents', agents, issues);
   validateDefaultAgentV3(parsed.default_agent, 'default_agent', agents, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', [...agents.keys()], issues);
 }
@@ -685,6 +690,34 @@ function validateNetworkEgressV3(value: unknown, where: string, issues: Manifest
   issues.push(ok
     ? { path: where, message: 'declaration only: network egress is not enforced until provider gateway isolation is available.', severity: 'warning' }
     : { path: where, message: 'only version 1 default-deny with empty rules is supported; network egress is not enforced.', severity: 'error' });
+}
+
+/**
+ * `builtin_agents`: built-in key → on/off. Absent or `true` = on. A built-in's
+ * slug (`meta` for My Kortix) is reserved whatever the switch says: the
+ * platform keys that slug's grant, prompt and sandbox, so a declared block
+ * would never run as written.
+ */
+function validateBuiltinAgentsV3(node: unknown, path: string, agents: AgentScanV3, issues: ManifestIssue[]): void {
+  if (node !== undefined && node !== null) {
+    if (!isTable(node)) {
+      issues.push({ path, message: `\`${path}\` must be a map of built-in agent to true or false (${BUILTIN_AGENT_KEYS.join(', ')}).`, severity: 'error' });
+    } else {
+      for (const [key, value] of Object.entries(node)) {
+        if (!(BUILTIN_AGENT_KEYS as string[]).includes(key)) {
+          issues.push({ path: `${path}.${key}`, message: `unknown built-in agent "${key}". Built-in agents: ${BUILTIN_AGENT_KEYS.join(', ')}.`, severity: 'error' });
+        } else if (typeof value !== 'boolean') {
+          issues.push({ path: `${path}.${key}`, message: `\`${path}.${key}\` must be true or false.`, severity: 'error' });
+        }
+      }
+    }
+  }
+  for (const key of BUILTIN_AGENT_KEYS) {
+    const { agent, displayName } = BUILTIN_AGENTS[key];
+    if (agents.has(agent)) {
+      issues.push({ path: `agents.${agent}`, message: `"${agent}" is reserved for ${displayName}, the built-in agent. Rename this agent. To turn ${displayName} off, set \`${path}.${key}: false\`.`, severity: 'error' });
+    }
+  }
 }
 
 function validateDefaultAgentV3(node: unknown, path: string, agents: AgentScanV3, issues: ManifestIssue[]): void {

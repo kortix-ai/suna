@@ -152,6 +152,7 @@ import { AgentModel, AgentScope } from './agent-detail-aside';
 import { AppsGrantPage } from './agent-grant-pages';
 import { AgentPeopleSection } from './agent-people-section';
 import { AgentShareControl } from './agent-share-control';
+import { PlatformAgentOverview } from './platform-agent-overview';
 import { ConnectorsPage } from '../connectors/connectors-page';
 import { ModelsPage } from '../models/models-page';
 import { SecretsPage } from '../secrets/secrets-page';
@@ -669,6 +670,11 @@ function AgentChips({
   const { showMode, isDefault, disabled } = agentStatus(agent, config);
   return (
     <span className="flex items-center gap-1.5">
+      {agent.platform ? (
+        <Badge variant="outline" size={size}>
+          {tI18nComplete.raw('text85b7a59cdbd5')}
+        </Badge>
+      ) : null}
       {showMode ? (
         <Badge variant="secondary" size={size}>
           {formatMode(agent.mode ?? '')}
@@ -1280,9 +1286,7 @@ function ReadOnlyAgentPage({
         <EditorSectionStyleProvider value="panel">
           <div className="space-y-8">
             {isPlatform ? (
-              <InfoBanner tone="info" title={tI18nComplete.raw('text85b7a59cdbd5')}>
-                {tI18nComplete.raw('textd9c0c74b514b')}
-              </InfoBanner>
+              <PlatformAgentOverview projectId={projectId} config={config} />
             ) : showUpgradeHint ? (
               <InfoBanner tone="info" title={tI18nComplete.raw('textdc7ab144ca89')}>
                 {tUpgrades.rich('agentEditorHint', {

@@ -261,6 +261,24 @@ describe('runPrePromptEnvSync — refusals and retries', () => {
     expect(refusal?.status).toBe(503);
     expect(await refusal?.json()).toMatchObject({ code: 'AGENT_SWITCH_GRANT_UNAPPLIED' });
   });
+
+  // The one 409: a My Kortix prompt in a project whose kortix.yaml turned it off.
+  test('a My Kortix prompt in a project that turned it off refuses with 409 builtin_agent_disabled', async () => {
+    const rec = recorder({
+      envSyncError: () =>
+        new SessionGrantRemintError(
+          'ses_1',
+          new Error('My Kortix is off in this project. Start a session with a project agent.'),
+          'builtin_agent_disabled',
+        ),
+    });
+    const refusal = await runSync(rec, COMMAND_BODY);
+    expect(refusal?.status).toBe(409);
+    expect(await refusal?.json()).toEqual({
+      error: 'My Kortix is off in this project. Start a session with a project agent.',
+      code: 'builtin_agent_disabled',
+    });
+  });
 });
 
 // The 502 for a non-retryable env-sync failure and the retry of a transient

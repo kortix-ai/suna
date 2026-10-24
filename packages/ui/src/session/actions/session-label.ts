@@ -48,7 +48,7 @@ export interface SessionSource {
   triggerSlug: string | null;
 }
 
-/** The platform meta coordinator — drives other sessions from its own sandbox. */
+/** My Kortix (slug `meta`), the built-in agent — drives other sessions from its own sandbox. */
 export function isMetaCoordinatorSession(session: ProjectSession): boolean {
   return session.agent_name === 'meta';
 }

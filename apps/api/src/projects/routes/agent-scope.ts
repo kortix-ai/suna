@@ -26,6 +26,8 @@ import { GrantSecretToAgentInputSchema, GrantSecretToAgentResultSchema } from '@
 import { and, eq, isNull, or } from 'drizzle-orm';
 import { auth, errors, json } from '../../openapi';
 import { applyAgentScope, extractAgents, grantsByAgent } from '../agents';
+import { projectBuiltinAgents } from '../lib/builtin-agents';
+import { builtinAgentWriteRefusal, enabledBuiltinAgentKey } from '../lib/platform-meta-agent';
 import {
   applyAgentScopeV2,
   grantSecretToAgentV2,
@@ -146,6 +148,8 @@ export function registerAgentScopeRoutes(): void {
           400,
         );
       }
+      const builtinKey = enabledBuiltinAgentKey(agentName, projectBuiltinAgents(manifest.raw, loaded.row.metadata));
+      if (builtinKey) return c.json(builtinAgentWriteRefusal(builtinKey), 409);
       // Read before the edit below mutates `manifest.raw` (v1 in place).
       const grantsBefore = grantsByAgent(extractAgents(manifest));
 

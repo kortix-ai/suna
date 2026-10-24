@@ -148,6 +148,37 @@ describe('kortix_version 3: agents', () => {
   });
 });
 
+describe('kortix_version 3: builtin_agents (My Kortix switch)', () => {
+  test('absent is valid: My Kortix stays on', () => {
+    expect(check(GOLDEN).errors).toEqual([]);
+  });
+
+  test.each([['true'], ['false']])('my_kortix: %s is valid', (value) => {
+    const { errors, warnings } = check(swap('agents:', `builtin_agents:\n  my_kortix: ${value}\nagents:`));
+    expect(errors).toEqual([]);
+    expect(warnings).toEqual([]);
+  });
+
+  test('an unknown built-in is an error that lists the known ones', () => {
+    const { errors } = check(swap('agents:', 'builtin_agents:\n  helper: true\nagents:'));
+    expect(errors.map((issue) => issue.path)).toEqual(['builtin_agents.helper']);
+    expect(errors[0]?.message).toContain('my_kortix');
+  });
+
+  test('a non-boolean value and a non-map are errors', () => {
+    expect(errorPaths(swap('agents:', 'builtin_agents:\n  my_kortix: yes please\nagents:'))).toEqual(['builtin_agents.my_kortix']);
+    expect(errorPaths(swap('agents:', 'builtin_agents: [my_kortix]\nagents:'))).toEqual(['builtin_agents']);
+  });
+
+  test('a declared `meta` agent is an error whether My Kortix is on, off or unset', () => {
+    const declared = swap('agents:', 'agents:\n  meta:\n    prompt: hi');
+    expect(errorPaths(declared)).toEqual(['agents.meta']);
+    expect(check(declared).errors[0]?.message).toContain('reserved for My Kortix');
+    expect(errorPaths(declared.replace('agents:', 'builtin_agents:\n  my_kortix: false\nagents:'))).toEqual(['agents.meta']);
+    expect(errorPaths(declared.replace('agents:', 'builtin_agents:\n  my_kortix: true\nagents:'))).toEqual(['agents.meta']);
+  });
+});
+
 describe('agents.<name>.workspace.project_repository default', () => {
   test('defaults to true for v1/v2 and false when the caller passes the v3 default', async () => {
     const { resolveProjectRepository, projectRepositoryDefault } = await import('../index.ts');

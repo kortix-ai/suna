@@ -57,7 +57,7 @@ export const PIXEL_MARK_TONES: readonly PixelMarkTone[] = [
   tone('slate', '#E4E7EC', '#3B4656'),
 ];
 
-/** The built-in agent and the platform's Meta agent keep the brand tile. */
+/** The starter's `kortix` agent and My Kortix (slug `meta`) keep the brand tile. */
 const BRAND: PixelMarkTone = {
   name: 'brand',
   tile: '#1F1F1F',
