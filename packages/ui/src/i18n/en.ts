@@ -5833,7 +5833,18 @@ const catalog = {
       "text57f57edb6f16": "Change request #{number} is ready to review.",
       "texta8597db6f24b": "Remove skill",
       "text5f6ba69d66d1": "Skill removed",
-      "textcb8d6b0c94c9": " and every file in it, edits included, and removes the skill from every agent that lists it. One commit on the default branch."
+      "textcb8d6b0c94c9": " and every file in it, edits included, and removes the skill from every agent that lists it. One commit on the default branch.",
+      "text0ba357fa63f8": "Connector events",
+      "textca395c4d19b2": "Connector event",
+      "text6064256ee716": "connector event",
+      "text85a6c98e5584": "New connector event",
+      "text165d9237c163": "Search connector events",
+      "texta9caf7909165": "No connector events yet",
+      "text451ef98453d2": "Have an agent run when one of your Kortix Apps emits an event.",
+      "text064694999e1f": "New App event",
+      "text1934aa0740bb": "Search App events",
+      "text25db7e5609e5": "No App events yet",
+      "text9f8f92588517": "An App starts agents by emitting events. Add a trigger with on: { event, app } in kortix.yaml."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
