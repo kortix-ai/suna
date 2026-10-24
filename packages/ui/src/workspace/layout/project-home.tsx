@@ -12,7 +12,7 @@ import type { AttachedFile } from '../../session/composer/session-chat-input';
 import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
 import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
 import { useIsMobile } from '../../internal/hooks';
-import { useProjectCan } from '../../internal/lib/use-project-can';
+import { useProjectCan, useProjectCans } from '../../internal/lib/use-project-can';
 import { useComposerPrefillStore } from '../../internal/stores/composer-prefill-store';
 import {
   firstChatHref,
@@ -43,6 +43,12 @@ import { useProjectHomeSend } from './use-project-home-send';
 // This path is this view's public surface — the instant session shell and the
 // IAM tests already import from here, so the moved pieces keep their address.
 export { ProjectHomeWelcomeBody } from '../home/welcome-body';
+
+/** What finishing the onboarding takes. Module-level: the batch key needs a stable list. */
+const ONBOARDING_ACTIONS = [
+  PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE,
+  PROJECT_ACTIONS.PROJECT_SESSION_START,
+] as const;
 
 export interface ProjectHomeSendOptions extends ComposerOptions {
   sandbox_slug?: string;
@@ -193,12 +199,16 @@ function ProjectHomeView({
     (projectDetailQuery.data?.project?.metadata as { onboarding_completed_at?: string } | undefined)
       ?.onboarding_completed_at,
   );
-  // Only someone who can set the project up is onboarded: the stamp is a
-  // project write (`PATCH /projects/:id/onboarding`). A member who cannot
-  // write sees the usual home. `=== true`: an unresolved probe never
-  // redirects someone the onboarding is not for.
-  const canSetUpProject =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_WRITE).allowed === true;
+  // Only someone who can finish the onboarding is sent into it: the kickoff
+  // starts a session (project.session.start) and the stamp,
+  // `PATCH /projects/:id/onboarding`, asserts project.settings.write. A role
+  // missing either would auto-send a kickoff whose stamp is refused, and get
+  // the onboarding again on every visit. `=== true`: an unresolved probe
+  // never redirects someone the onboarding is not for.
+  const onboardingCans = useProjectCans(projectId, ONBOARDING_ACTIONS);
+  const canSetUpProject = ONBOARDING_ACTIONS.every(
+    (action) => onboardingCans[action]?.allowed === true,
+  );
   const onboarding =
     onboardingEnabled && projectDetailQuery.isSuccess && !onboarded && canSetUpProject;
   // The onboarding lands on the first chat: it starts the chat (the sidebar

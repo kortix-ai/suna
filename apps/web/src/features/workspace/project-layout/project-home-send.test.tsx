@@ -12,8 +12,9 @@ let firstChatPending = false;
 let firstChatRequested = true;
 /** `metadata.onboarding_completed_at` on the project detail; `null` = not onboarded. */
 let onboardedAt: string | null = '2026-10-01T00:00:00Z';
-/** The `project.write` probe: who may set the project up. */
+/** The onboarding leaves: `project.settings.write` (the stamp) and `project.session.start` (the kickoff). */
 let canWrite = true;
+let canStart = true;
 const stamp = mock(async () => ({}));
 const replaced: string[] = [];
 // `mock.module` is process-wide: every shared module keeps its real exports and
@@ -75,9 +76,21 @@ mock.module('@tanstack/react-query', () => ({
 }));
 mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
   ...realProjectCan,
-  useProjectCan: (_projectId: string, action: string) => ({
-    allowed: action === realSdk.PROJECT_ACTIONS.PROJECT_WRITE ? canWrite : false,
-  }),
+  useProjectCan: () => ({ allowed: false }),
+  useProjectCans: (_projectId: string, actions: readonly string[]) =>
+    Object.fromEntries(
+      actions.map((action) => [
+        action,
+        {
+          allowed:
+            action === realSdk.PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE
+              ? canWrite
+              : action === realSdk.PROJECT_ACTIONS.PROJECT_SESSION_START
+                ? canStart
+                : false,
+        },
+      ]),
+    ),
 }));
 mock.module('@kortix/ui/internal/stores/account-panel-store', () => ({ ...realAccountPanel, hubTarget: () => null }));
 mock.module('@kortix/sdk', () => ({
@@ -137,6 +150,7 @@ afterEach(() => {
   firstChatPending = false;
   onboardedAt = '2026-10-01T00:00:00Z';
   canWrite = true;
+  canStart = true;
   stamp.mockClear();
   replaced.length = 0;
 });
@@ -238,6 +252,27 @@ test('a member who cannot set the project up never gets the onboarding', () => {
   onboardedAt = null;
   firstChatRequested = false;
   canWrite = false;
+  mount(mock(async () => {}), true);
+
+  expect(firstChat).toBeUndefined();
+});
+
+// A custom role that can start sessions but not write settings would send a
+// kickoff whose stamp is refused, and get the onboarding on every visit.
+test('a role without project.settings.write never gets the onboarding', () => {
+  onboardedAt = null;
+  firstChatRequested = false;
+  canWrite = false;
+  canStart = true;
+  mount(mock(async () => {}), true);
+
+  expect(firstChat).toBeUndefined();
+});
+
+test('a role that cannot start a session never gets the onboarding', () => {
+  onboardedAt = null;
+  firstChatRequested = false;
+  canStart = false;
   mount(mock(async () => {}), true);
 
   expect(firstChat).toBeUndefined();
