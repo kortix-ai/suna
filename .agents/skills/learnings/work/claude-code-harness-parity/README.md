@@ -30,7 +30,8 @@ AppPreview) already exist.
 | dynamic workflows | Workflow tool / `goal.ts` | exists |
 | stop hook | the `on-idle` hook | exists |
 | — | **Space = configurable channel (chat/artifact/app tabs)** | new surface over existing embeds |
-| agent_rooms | **DELETE** | — |
+| p2p (prime: agents discover/message/steer) | **`agent_rooms` + `session.steer`** | keep + rework, not delete |
+| inline subagent (prime `rlm.spawn`) | ephemeral `task` spec, promotable | new in Pillar 1 |
 
 ---
 
@@ -55,6 +56,16 @@ turn-end, returns the final message as `<task_result>`. **The tool keeps its
 exact contract, so the web renderers need ZERO change** — the id now names a
 real session. The **agent view** is a board over the existing parent-filtered
 session list.
+
+**Ephemeral / inline subagents (gap vs prime-agent `rlm.spawn` + Claude Code
+inline `task`).** Today `subagent_type` must resolve to a declared yaml agent
+(or built-in `general`/`explore`) — "everything in yaml" is the pain point. Add:
+`task` accepts an **inline spec** (`prompt`, a tool/permission set, a model) and
+spawns a real session from it with no yaml declaration. A good inline subagent
+is **promotable** to a durable "retained subagent" spec (prime's
+subagent-spec-as-durable-state) — written to `kortix.yaml` agents or a durable
+subagent store. So subagents come in two forms: **inline/ephemeral** (on the
+fly) and **declared/retained** (reusable). Both spawn a real cloud session.
 
 **Hard tradeoff / guardrails (must be in scope):**
 - Cost/latency: real session = sandbox provision + pi boot *per `task`* (vs ~0
@@ -154,23 +165,28 @@ Gate the whole feature behind a flag (per "a flag gates every surface") until
 
 ---
 
-## Pillar 4 — Delete `agent_rooms`
+## Pillar 4 — `agent_rooms` = the p2p substrate (KEEP, requalify)
 
-~50 files: DB (`rooms`, `room_messages`, `room_members`, `session_idle_watches`
-+ notification `room_id`/`room_thread_seq`/`message` kind), API
-(`projects/rooms/`, `routes/rooms.ts`, the `fireIdleWatches` turn-end hook),
-UI (sidebar nav, room-message rendering), **SDK public exports** (`useRooms`
-et al. — semver-breaking removal, follow the sdk skill), IAM leaves, the
-`kortix-rooms` skill, tests. Ordered removal: web → UI → SDK → API → shared →
-**DB DROP migration last** → tests; regenerate `embedded.generated.json`,
-`routes.generated.json`, `audit-http-routes.generated.ts` + fix the IAM
-parity test.
+**Reversed from "delete" (2026-10-24):** `agent_rooms` (channels / threads /
+members / `session_idle_watches`) is the obvious substrate for the **p2p
+system** prime-agent describes — *running agents discover one another, exchange
+messages, orchestrate and **steer** each other without routing through the
+user.* Do NOT delete it. Requalify as: the durable, cloud, server-side
+inter-agent + human messaging layer.
 
-**`kortix-teams` is the Microsoft Teams channel connector — KEEP.** Zero
-relation to Rooms.
+Pair it with pi's existing **`session.steer`** capability (steer active work)
+and the real-session subagents from Pillar 1 (children discover/message each
+other via parent/child + rooms). This is the cloud-first p2p: durable
+server-side messaging, not local IPC.
 
-Low-risk (off by default, no prod data expected); wide but bounded. Good first
-PR to clear the deck.
+**Work here is evaluation + rework, not removal:** does the current rooms model
+(channels-only, Slack-thread shaped, under More) match the p2p we want (agent
+discovery, direct agent↔agent messages, steer)? Gaps to close vs prime-agent:
+agent-initiated messages to another running agent, discovery of running
+agents, and steer. The inventory (DB/API/UI/SDK surface) from the deletion
+pass is now the **map of what to build on**, not what to tear out.
+
+**`kortix-teams` is the Microsoft Teams channel connector — KEEP.** Unrelated.
 
 ---
 
@@ -187,17 +203,39 @@ Revisit after the harness + spaces tracks land.
 
 ## Sequencing (parallelizable)
 
-1. **Delete `agent_rooms`** — bounded, clears the deck, removes a concept that
-   overlaps chat-room tabs. (1 focused PR.)
-2. **Subagent = real session** — the keystone; unlocks agent view + real
-   delegation. Build with the concurrency/cost/nesting guardrails. (Harness +
-   API.)
-3. **Loop/Goal/Trigger consolidation** — rename Reminders→Loops (keep flag),
-   make Goal a daemon-armed harness primitive. (API + CLI + UI, mostly rename.)
+1. **Subagent = real session, + inline/ephemeral spec** — the keystone; unlocks
+   agent view, real delegation, and on-the-fly subagents (the yaml pain). Build
+   with the concurrency/cost/nesting guardrails. (Harness + API.)
+2. **Loop/Goal/Trigger consolidation** — rename Reminders→Loops (keep flag),
+   make Goal a daemon-armed harness primitive; add `/autonomous`-style budgets.
+   (API + CLI + UI, mostly rename.)
+3. **p2p on `agent_rooms` + `session.steer`** — rework rooms into the agent
+   discovery + direct messaging + steer layer (not a deletion).
 4. **Spaces as channels** — the tab model + DB store + the three embeds + the
-   empty-domain fix. (Largest; needs the chat-room-semantics decision first.)
-5. **Agent view** — the board, on top of (2).
+   empty-domain fix. Its chat-room tab reuses the p2p/rooms session model, so
+   it follows (3). (Largest; needs the chat-room-semantics decision.)
+5. **Agent view** — the board, on top of (1).
 6. **Drive/volume** — after the above, once the git question is settled.
+
+## Prime-agent (PrimeIntellect) — what we take, what we already beat
+
+Prime-agent is **local, terminal-first, not a sandbox** (model code runs with
+the user's permissions, work is local). Its strong ideas and our stance:
+- **RLM** (context-as-variables + programmatic subagent calls in a Python REPL)
+  → our `codemode` + Workflow tool; adopt the principle, cloud-first (the REPL
+  is a sandbox, subagents are real sessions).
+- **`rlm.spawn` ephemeral subagents** → Pillar 1 inline-spec subagents.
+- **Retained subagent specs** → promotion target for inline subagents.
+- **Continual Harness / `/refine`** → we already have `harness-reflector` +
+  `kortix-harness-refinement` + memory, and ours is *stronger* (git/CR,
+  reviewable) than prime's local snapshots; borrow only the granularity.
+- **Agents discover/message/steer** → Pillar 4 p2p (`agent_rooms` +
+  `session.steer`).
+- **`/heartbeat` `/goal` `schedule` `/autonomous`** → Pillar 2 Loop/Goal/Trigger.
+
+**The moat:** we build prime's concepts on a cloud-native, durable,
+multi-tenant substrate (isolated sandboxes, IAM, UI, connectors, billing).
+Durable + cloud-first is the differentiator, not a feature.
 
 ## Decisions needed from Marko before building
 
@@ -208,6 +246,12 @@ Revisit after the harness + spaces tracks land.
 3. **Reminders→Loops rename:** go ahead (surface rename, keep the flag key)?
 4. **Goal as harness primitive:** a `goal()` tool the agent calls, or any goal
    auto-registers the server-side continuation?
-5. **Chat-room tab:** one shared persistent session per channel, or per-viewer?
-   (This is the pivotal spaces decision.)
+5. **Chat-room tab + p2p:** one shared persistent session per channel, or
+   per-viewer? This is now the SAME decision as the p2p model — a channel is a
+   shared durable session where humans + agents post and steer. (Pivotal.)
 6. **Tab storage:** hybrid (manifest for existence, DB for tab layout) — OK?
+7. **Inline/ephemeral subagents:** allow `task` to take an inline spec
+   (prompt+tools+model, no yaml) and promote good ones to retained specs?
+8. **p2p on rooms:** rework the existing `agent_rooms` into the agent
+   discovery + direct-message + `session.steer` layer, rather than a fresh
+   build?
