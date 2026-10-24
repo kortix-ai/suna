@@ -306,8 +306,9 @@ export type AgentConfigSectionGroup = (typeof AGENT_CONFIG_SECTION_GROUPS)[numbe
 /**
  * The page's topics, in rail order, each under a group heading.
  *
- * General is the agent itself and who runs it: overview, identity, people,
- * triggers. Access is one topic per grant set — skills, connectors, secrets,
+ * General is the agent itself and who runs it: the overview (the agent at a
+ * glance, every grant summarized), its instructions, people, triggers and the
+ * basic switches. Access is one topic per grant set — skills, connectors, secrets,
  * Apps, project actions — each its own page (Marko, 2026-09-03: "split up
  * ACCESS … into its own standalone menu items on the left & we can have nicer
  * UX/UI for each"). Runtime is what a session runs on: model, tools,
@@ -318,9 +319,10 @@ export type AgentConfigSectionGroup = (typeof AGENT_CONFIG_SECTION_GROUPS)[numbe
  */
 export const AGENT_CONFIG_SECTIONS = [
   { key: 'overview', label: 'Overview', group: 'General' },
-  { key: 'basics', label: 'Basics', group: 'General' },
+  { key: 'instructions', label: 'Instructions', group: 'General' },
   { key: 'people', label: 'People', group: 'General' },
   { key: 'triggers', label: 'Triggers', group: 'General' },
+  { key: 'basics', label: 'Basics', group: 'General' },
   { key: 'skills', label: 'Skills', group: 'Access' },
   { key: 'subagents', label: 'Subagents', group: 'Access' },
   { key: 'commands', label: 'Commands', group: 'Access' },
@@ -421,6 +423,7 @@ export function AgentConfigSections({
   skillsOptions,
   registryOptions,
   overview,
+  instructions,
   triggers,
   people,
   skills,
@@ -436,8 +439,10 @@ export function AgentConfigSections({
   skillsOptions: GrantOption[];
   /** The v3 grant pick lists (`registryGrantOptions`). */
   registryOptions?: Record<RegistryGrant, GrantOption[]>;
-  /** Description + instructions — a page-owned section, the Overview tab. */
+  /** The agent at a glance — a page-owned section, the Overview tab. */
   overview?: React.ReactNode;
+  /** The system prompt editor — a page-owned section, the Instructions tab. */
+  instructions?: React.ReactNode;
   /** The agent's triggers — a page-owned section, the Triggers tab. */
   triggers?: React.ReactNode;
   /** Who may use the agent — a page-owned section, the People tab. */
@@ -464,6 +469,8 @@ export function AgentConfigSections({
     switch (section) {
       case 'overview':
         return <>{overview}</>;
+      case 'instructions':
+        return <>{instructions}</>;
       case 'people':
         return <>{people}</>;
       case 'skills':

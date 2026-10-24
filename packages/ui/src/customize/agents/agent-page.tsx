@@ -1,59 +1,50 @@
 'use client';
-import { AgentMark } from '../../internal/components/agent-mark';
+import { AgentMark, agentDisplayName } from '../../internal/components/agent-mark';
 import { EntityFilePane } from '../shared/entity/entity-modal';
-import { agentStatus } from './agent-status';
 import { useDefaultAgent } from './use-default-agent';
 
 import { useTranslations as useI18nTranslations } from '../../i18n';
 /**
- * /projects/[id]/agent/[name] — one agent, as a full-page editor. The core
- * screen of Customize.
+ * /projects/[id]/customize/agents/[name] — one agent, as a full-page editor.
+ * The core screen of Customize.
  *
- * Customize is agent-centric (Marko, 2026-09-01): the agent is the only
- * object a project manager grants a person or a group, so every other
- * decision — who may use it, which model, which skills, which connectors and
- * secrets, when it runs — hangs off it. This page is built like the Settings
- * page (Marko, 2026-09-03: "make it a regular full page Agent Editor"): a
- * header, a left rail of topics, and one full-width pane per topic.
+ * Customize is agent-first: the agent is the one object a project manager
+ * grants a person or a group, and My Kortix configures every other agent as a
+ * least-privilege work product. So the page answers, in this order: who is
+ * this agent, what does it do, what may it touch, how does it run — then
+ * lets the person change each answer.
  *
- *   ┌ Agents › name                  ● Name  chips   [Start session] [⋯] ┐
- *   ├──────────────┬──────────────────────────────────────────────────────┤
- *   │ Overview     │                                                      │
- *   │ People       │   the selected topic's pane, one column,            │
- *   │ Access       │   `max-w-2xl` like the Settings page                 │
- *   │ Triggers     │                                                      │
- *   │ Model        │                                                      │
- *   │ Workspace    │                                                      │
- *   │ Tools        │                                                      │
- *   │ Basics       │                                                      │
- *   ├──────────────┴──────────────────────────────────────────────────────┤
- *   │ Unsaved changes · commits to the repo             [Discard] [Save ⌘S] │
- *   └─────────────────────────────────────────────────────────────────────┘
+ *   ┌ Agents › ▣ Name                      [Share] [Start session] [⋯] ┐
+ *   ├──────────────┬──────────────────────────────────────────────────┤
+ *   │ Overview     │  Overview: the hero (mark, name, kind,           │
+ *   │ Instructions │  description), the instructions excerpt, then    │
+ *   │ People  …    │  Access / Runtime / Use lists. Every row opens   │
+ *   │ Access  …    │  its section. Other sections: their editor, or   │
+ *   │ Runtime …    │  the full resource page in agent scope.          │
+ *   └──────────────┴──────────────────────────────────────────────────┘
+ *                     [ Unsaved changes        Discard   Save ⌘S ]
  *
- * The rail is the Settings rail's dialect (`project-settings-page.tsx`,
- * `settings-panel.tsx`): same width, same row classes, a real `<Link>` per
- * topic so a topic has a URL (`?section=<key>`) a person can be sent to. The
- * draft is shared across topics, so switching never drops an edit, and the
- * save bar spans the page foot. Below `lg` the rail is a horizontal row.
+ * The rail stays because the resource sections are whole pages (their own
+ * heading, search and scroller) and a person moves between them; each topic
+ * has a URL (`?section=<key>`). The draft is shared across topics, so
+ * switching never drops an edit; the save bar floats at the foot while the
+ * draft is dirty. Below `lg` the rail is a horizontal strip. An agent with one
+ * section (My Kortix) has no rail at all.
  *
- * Two bodies behind one header:
+ * Two bodies behind one top bar:
  *
- *  - **Editable** — a v2 (kortix.yaml) project and a caller with
- *    `project.agent.write`. Every field is live; Save round-trips the whole
- *    `agents.<name>` block through the agent-config route, which commits it to
- *    the project repo. State lives in `useAgentDraft`; the panes are
- *    `AgentConfigSections` with the page's own Overview, People and Triggers
- *    slotted in.
- *  - **Read-only** — a v1 project, or a caller without write. Overview shows
- *    the agent's source file; People, Access (the legacy scope mirror),
- *    Triggers and Model (the gateway pin) remain. We degrade, never blank.
+ *  - **Editable**: a v2+ project and a caller with `project.agent.write`.
+ *    Save round-trips the whole `agents.<name>` block through the
+ *    agent-config route, which commits it to the project repo.
+ *  - **Read-only**: a v1 project, a caller without write, or a platform
+ *    agent. Overview shows the agent's source file; People, Triggers,
+ *    Kortix permissions and Model remain. We degrade, never blank.
  *
  * The page is keyed on the agent name by its route, so switching agents
  * remounts every draft rather than carrying one agent's edits onto another.
  */
 
 import { MarkdownWithFrontmatter } from '../../markdown/markdown-frontmatter';
-import { Badge } from '../../primitives/badge';
 import { Button } from '../../primitives/button';
 import { ConfirmDialog } from '../../primitives/confirm-dialog';
 import {
@@ -86,7 +77,7 @@ import {
   useAgentEditorOptions,
   useLocalizedAgentConfigCatalog,
 } from '../sections/view/agent-editor';
-import { formatMode, toArray } from '../shared/utils';
+import { toArray } from '../shared/utils';
 import {
   editConfigPrompt,
   useConfigureThread,
@@ -104,34 +95,13 @@ import {
   type AgentConfigBlock,
   type AgentGrantSetV2,
   getProjectDetail,
+  listProjectResourceGrants,
+  listProjectTriggers,
   type ProjectConfigSummary,
   readProjectFile,
 } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
-import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
-import {
-  BookOpenTextIcon,
-  CaretRightIcon,
-  CommandIcon,
-  CpuIcon,
-  CubeIcon,
-  DotsThreeIcon,
-  FileTextIcon,
-  GlobeIcon,
-  HardDriveIcon,
-  type Icon,
-  KeyIcon,
-  PlayIcon,
-  PlugsConnectedIcon,
-  PuzzlePieceIcon,
-  SlidersHorizontalIcon,
-  StarIcon,
-  TerminalWindowIcon,
-  TimerIcon,
-  TreeStructureIcon,
-  UsersIcon,
-  WrenchIcon,
-} from '@phosphor-icons/react';
+import { CaretRightIcon, DotsThreeIcon, PlayIcon, StarIcon } from '@phosphor-icons/react';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, m } from 'motion/react';
 import { UiLink as Link, useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
@@ -143,12 +113,18 @@ import { capabilityTabHref } from '../../internal/lib/capability-tab-routes';
 import { useIsMobile } from '../../internal/hooks';
 
 import { EditorSection, EditorSectionStyleProvider } from '../sections/view/agent-editor-primitives';
-import { SettingsSectionHeader } from '../../primitives/settings-section-header';
 
 import { AgentDrivesSection } from './agent-drives-section';
 
 import { AgentAuthorityCard } from './agent-authority-card';
 import { AgentModel, AgentScope } from './agent-detail-aside';
+import {
+  AgentHero,
+  AgentOverviewSummary,
+  DescriptionField,
+  InstructionsExcerpt,
+  SECTION_ICON,
+} from './agent-overview';
 import { AppsGrantPage } from './agent-grant-pages';
 import { AgentPeopleSection } from './agent-people-section';
 import { AgentShareControl } from './agent-share-control';
@@ -168,27 +144,6 @@ import { pruneRequiredConnectors, toggleRequiredConnector } from './connectors-r
 export type RenderAgentApps = (args: { agentName: string; grant: AgentGrant }) => ReactNode;
 
 type Agent = ProjectConfigSummary['agents'][number];
-
-/** The rail's icons — the one place that draws them (`AGENT_CONFIG_SECTIONS`
- *  is pure data, imported by the editor module). */
-const SECTION_ICON: Record<AgentConfigSectionKey, Icon> = {
-  overview: FileTextIcon,
-  people: UsersIcon,
-  basics: SlidersHorizontalIcon,
-  triggers: TimerIcon,
-  skills: BookOpenTextIcon,
-  subagents: TreeStructureIcon,
-  commands: CommandIcon,
-  extensions: PuzzlePieceIcon,
-  connectors: PlugsConnectedIcon,
-  secrets: KeyIcon,
-  apps: GlobeIcon,
-  drives: HardDriveIcon,
-  actions: TerminalWindowIcon,
-  model: CpuIcon,
-  tools: WrenchIcon,
-  workspace: CubeIcon,
-};
 
 export function AgentPage({
   projectId,
@@ -318,9 +273,9 @@ export function AgentPage({
 // ─── Frame ─────────────────────────────────────────────────────────────────
 
 /**
- * Header on top, then the rail beside the pane, then the footer. The pane is
- * the one scroller; the rail is the Settings rail
- * (`project-settings-page.tsx`), row for row.
+ * The top bar, then the rail beside the pane, then the footer. The pane is the
+ * one scroller. With one section (My Kortix) there is no rail: the pane takes
+ * the whole width.
  */
 function AgentPageFrame({
   header,
@@ -343,8 +298,8 @@ function AgentPageFrame({
   summary?: Partial<Record<AgentConfigSectionKey, ReactNode>>;
   /** A resource section (`FULL_SECTIONS`, plus Apps) renders the full page,
    *  which brings its own `CapabilityPageShell` heading and scroll container.
-   *  The frame then hands it the whole area — no centred column, no second
-   *  scroller — the same context the standalone route gives that page. */
+   *  The frame then hands it the whole area: no centred column, no second
+   *  scroller, the same context the standalone route gives that page. */
   full?: boolean;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
@@ -352,14 +307,10 @@ function AgentPageFrame({
   const localizedConfig = useLocalizedAgentConfigCatalog();
   const sectionKeys = new Set(sections);
   const items = localizedConfig.sections.filter((s) => sectionKeys.has(s.key));
-  // The Preferences rail's rule: a heading over a lone group labels nothing.
   const groups = localizedConfig.groups
-    .map((group) => ({
-      group,
-      items: items.filter((s) => s.group === group),
-    }))
+    .map((group) => ({ group, items: items.filter((s) => s.group === group) }))
     .filter((g) => g.items.length > 0);
-  const showGroupLabels = groups.length > 1;
+  const showRail = items.length > 1;
   const trigger = (item: (typeof localizedConfig.sections)[number], horizontal: boolean) => {
     const SectionIcon = SECTION_ICON[item.key];
     return (
@@ -370,7 +321,7 @@ function AgentPageFrame({
         size={horizontal ? undefined : 'md'}
         className={
           horizontal
-            ? 'w-auto shrink-0 gap-2.5 px-3 py-0.75 whitespace-nowrap'
+            ? 'w-auto shrink-0 gap-2 px-3 py-0.75 whitespace-nowrap'
             : cn(
                 // The Settings rail's row dialect (`project-settings-page.tsx`).
                 'gap-2 px-2.5 py-1 font-normal transition-none has-[>svg]:px-2.5',
@@ -389,20 +340,24 @@ function AgentPageFrame({
     );
   };
 
+  const main = full ? (
+    <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{pane}</main>
+  ) : (
+    <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
+      <div className="mx-auto w-full max-w-2xl px-4 py-8 pb-32 lg:py-12 lg:pb-32">{pane}</div>
+    </main>
+  );
+
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col">
-      <div className="border-border/60 shrink-0 border-b px-5 py-3">{header}</div>
-      <div
-        className={cn(
-          'min-h-0 flex-1',
-          isMobile ? 'flex flex-col overflow-hidden' : 'grid overflow-hidden',
-        )}
-        style={isMobile ? undefined : { gridTemplateColumns: `${SETTINGS_SIDEBAR_WIDTH_PX}px 1fr` }}
-      >
-        {isMobile ? (
+      <div className="shrink-0 border-b px-4 py-2.5">{header}</div>
+      {!showRail ? (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{main}</div>
+      ) : isMobile ? (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <nav
             aria-label={tI18nComplete.raw('text7be318295927')}
-            className="border-border/60 flex h-auto shrink-0 items-center border-b"
+            className="flex h-auto shrink-0 items-center border-b"
           >
             <FadedScrollArea
               orientation="horizontal"
@@ -416,17 +371,23 @@ function AgentPageFrame({
               </Tabs>
             </FadedScrollArea>
           </nav>
-        ) : (
+          {main}
+        </div>
+      ) : (
+        <div
+          className="grid min-h-0 flex-1 overflow-hidden"
+          style={{ gridTemplateColumns: `${SETTINGS_SIDEBAR_WIDTH_PX}px 1fr` }}
+        >
           <aside className="flex min-h-0 flex-col border-r bg-inherit">
             <nav
               aria-label={tI18nComplete.raw('text7be318295927')}
-              className="flex min-h-0 flex-1 [scrollbar-width:none] flex-col gap-4 overflow-y-auto px-2 pt-3 pb-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+              className="flex min-h-0 flex-1 [scrollbar-width:none] flex-col overflow-y-auto px-2 pt-3 pb-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             >
-              <Tabs value={section} orientation="vertical" className="space-y-3">
+              <Tabs value={section} orientation="vertical" className="space-y-4">
                 {groups.map((g) => (
                   <div key={g.group}>
-                    {showGroupLabels ? (
-                      <div className="text-muted-foreground flex h-7 items-center px-2.5 text-xs font-medium">
+                    {groups.length > 1 ? (
+                      <div className="text-muted-foreground flex h-7 items-center px-2.5 text-xs">
                         {g.group}
                       </div>
                     ) : null}
@@ -438,15 +399,9 @@ function AgentPageFrame({
               </Tabs>
             </nav>
           </aside>
-        )}
-        {full ? (
-          <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{pane}</main>
-        ) : (
-          <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
-            <div className="mx-auto w-full max-w-2xl px-4 py-10 pb-32 lg:py-14 lg:pb-32">{pane}</div>
-          </main>
-        )}
-      </div>
+          {main}
+        </div>
+      )}
       {footer}
     </div>
   );
@@ -461,36 +416,40 @@ function CenteredState({ children }: { children: ReactNode }) {
 }
 
 /**
- * The frame, drawn before its reads land: the identity row (tile, name, one
- * line), the rail as two labelled groups, and the pane heading and body. The
- * same boxes as the loaded page, so nothing moves when it resolves.
+ * The frame, drawn before its reads land: the top bar, the rail as two
+ * labelled groups, and the Overview hero. The same boxes as the loaded page,
+ * so nothing moves when it resolves.
  */
 function AgentPageSkeleton() {
   const isMobile = useIsMobile();
   const header = (
-    <div className="border-border/60 flex shrink-0 items-center gap-3 border-b px-5 py-3">
-      {/* `AgentMark size={21}` is a 28px tile (literal px, see agent-mark.tsx). */}
-      <Skeleton className="shrink-0 rounded-sm" style={{ width: 28, height: 28 }} />
-      <div className="min-w-0 flex-1 space-y-1.5">
-        <Skeleton className="h-3.5 w-40 rounded-sm" />
-        <Skeleton className="h-3 w-64 max-w-full rounded-sm" />
-      </div>
+    <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2.5">
+      <Skeleton className="h-4 w-14 rounded-sm" />
+      <Skeleton className="shrink-0 rounded-sm" style={{ width: 20, height: 20 }} />
+      <Skeleton className="h-4 w-24 rounded-sm" />
+      <div className="flex-1" />
       <Skeleton className="h-8 w-28 shrink-0 rounded-md" />
     </div>
   );
   const pane = (
-    <div className="mx-auto w-full max-w-2xl space-y-6 px-4 py-10 lg:py-14">
-      <Skeleton className="h-6 w-32 rounded-sm" />
+    <div className="mx-auto w-full max-w-2xl space-y-8 px-4 py-8 lg:py-12">
+      <div className="flex items-center gap-4">
+        {/* `AgentMark size={42}` is a 56px tile (literal px, see agent-mark.tsx). */}
+        <Skeleton className="shrink-0 rounded-md" style={{ width: 56, height: 56 }} />
+        <div className="min-w-0 flex-1 space-y-2">
+          <Skeleton className="h-6 w-40 rounded-sm" />
+          <Skeleton className="h-4 w-56 max-w-full rounded-sm" />
+        </div>
+      </div>
       <Skeleton className="h-11 w-full rounded-md" />
-      <Skeleton className="h-72 w-full rounded-md" />
+      <Skeleton className="h-56 w-full rounded-md" />
     </div>
   );
   if (isMobile) {
     return (
       <div className="flex h-full min-h-0 flex-1 flex-col">
         {header}
-        {/* The loaded mobile frame's horizontal section strip. */}
-        <div className="border-border/60 flex shrink-0 items-center gap-2 overflow-hidden border-b py-2">
+        <div className="flex shrink-0 items-center gap-2 overflow-hidden border-b py-2">
           {Array.from({ length: 5 }).map((_, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length placeholder
             <Skeleton key={i} className="h-8 w-20 shrink-0 rounded-md" />
@@ -508,7 +467,7 @@ function AgentPageSkeleton() {
         style={{ gridTemplateColumns: `${SETTINGS_SIDEBAR_WIDTH_PX}px 1fr` }}
       >
         <div className="space-y-4 border-r px-2 pt-3">
-          {[4, 6].map((rows) => (
+          {[5, 6].map((rows) => (
             <div key={rows} className="space-y-1">
               <Skeleton className="mx-2.5 my-2 h-3 w-16 rounded-sm" />
               {Array.from({ length: rows }).map((_, i) => (
@@ -540,6 +499,46 @@ function useAgentSection(available: readonly AgentConfigSectionKey[]): AgentConf
 
 function sectionHrefFor(pathname: string) {
   return (key: AgentConfigSectionKey) => `${pathname}?section=${key}`;
+}
+
+/**
+ * The Overview's Use facts: how many grants name this agent, and how many
+ * triggers start it. The same two lists, under the same keys and gates, as
+ * the Agents index cards, so both read one cache. A count the viewer may not
+ * read stays undefined, and its row shows no value.
+ */
+function useAgentUseCounts(projectId: string, agentName: string, config: ProjectConfigSummary) {
+  const accountId = useProjectAccountId(projectId);
+  const canReadTriggers =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_READ, { accountId }).allowed === true;
+  const canManageMembers =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { accountId }).allowed === true;
+  const triggers = useQuery({
+    queryKey: qk.project.triggers(projectId),
+    queryFn: () => listProjectTriggers(projectId),
+    enabled: canReadTriggers,
+    ...contract('config'),
+  });
+  const grants = useQuery({
+    queryKey: qk.project.resourceGrants(projectId),
+    queryFn: () => listProjectResourceGrants(projectId),
+    enabled: canManageMembers,
+    retry: false,
+    ...contract('inventory'),
+  });
+  // A trigger stored as `default` starts the project's default agent.
+  const fallback = config.default_agent ?? config.open_code_default_agent ?? null;
+  return {
+    triggerCount: triggers.data
+      ? triggers.data.triggers.filter(
+          (t) => (t.agent === 'default' && fallback ? fallback : t.agent) === agentName,
+        ).length
+      : undefined,
+    peopleCount: grants.data
+      ? grants.data.grants.filter((g) => g.resource_type === 'agent' && g.resource_id === agentName)
+          .length
+      : undefined,
+  };
 }
 
 // ─── Header ────────────────────────────────────────────────────────────────
@@ -656,98 +655,42 @@ function AgentActions({
   );
 }
 
-/** The status chips beside the name. Only states worth flagging. */
-function AgentChips({
-  agent,
-  config,
-  size,
-}: {
-  agent: Agent;
-  config: ProjectConfigSummary;
-  size: 'sm' | 'xs';
-}) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const { showMode, isDefault, disabled } = agentStatus(agent, config);
-  return (
-    <span className="flex items-center gap-1.5">
-      {agent.platform ? (
-        <Badge variant="outline" size={size}>
-          {tI18nComplete.raw('text85b7a59cdbd5')}
-        </Badge>
-      ) : null}
-      {showMode ? (
-        <Badge variant="secondary" size={size}>
-          {formatMode(agent.mode ?? '')}
-        </Badge>
-      ) : null}
-      {isDefault ? (
-        <Badge variant="secondary" size={size}>
-          {tI18nComplete.raw('text21b111cbfe6e')}
-        </Badge>
-      ) : null}
-      {disabled ? (
-        <Badge variant="muted" size={size}>
-          {tI18nComplete.raw('text75081b593d15')}
-        </Badge>
-      ) : null}
-    </span>
-  );
-}
-
 /**
- * The agent's identity, once, at the top of every section: its mark, the
- * breadcrumb whose last crumb is the name (the h1), the status chips, and the
- * one line that says what the agent is for. Every action sits on the right.
- *
- * One crumb row (Marko, 2026-09-03): a second row for the name alone said
- * nothing new. The line under it is the description, which does — it is what
- * other agents read when they pick a subagent, so the person editing one sees
- * it from any section. The editable page passes the draft, so it updates
- * while they type it on Overview.
+ * The top bar of every section: where you are (Agents › mark and name, the
+ * h1) and what you can do. The agent's kind, status and description live in
+ * the Overview hero, so this bar stays one calm line on every section.
  */
 function AgentHeader({
   projectId,
   agent,
   config,
   canWrite,
-  description,
 }: {
   projectId: string;
   agent: Agent;
   config: ProjectConfigSummary;
   canWrite: boolean;
-  description?: string | null;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const line = description?.trim();
   return (
-    <header className="flex items-center gap-3">
-      <AgentMark slug={agent.name} size={21} />
-      <div className="min-w-0 flex-1">
-        <nav
-          aria-label={tI18nComplete.raw('text2bd873d6c734')}
-          className="flex min-w-0 items-center gap-1.5 text-sm"
+    <header className="flex min-h-8 items-center gap-3">
+      <nav
+        aria-label={tI18nComplete.raw('text2bd873d6c734')}
+        className="flex min-w-0 flex-1 items-center gap-1.5 text-sm"
+      >
+        <Link
+          href={capabilityTabHref(projectId, 'agent')}
+          prefetch
+          className="text-muted-foreground hover:text-foreground shrink-0 transition-colors"
         >
-          <Link
-            href={capabilityTabHref(projectId, 'agent')}
-            prefetch
-            className="text-muted-foreground hover:text-foreground shrink-0 transition-colors"
-          >
-            {tI18nComplete.raw('text279b44d2ab4b')}
-          </Link>
-          <CaretRightIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
-          <h1 className="text-foreground truncate text-sm font-semibold">
-            {isMetaAgentName(agent.name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(agent.name)}
-          </h1>
-          <AgentChips agent={agent} config={config} size="xs" />
-        </nav>
-        {/* One line here; the whole text on hover, and on a reader's Overview. */}
-        {line ? (
-          <p className="text-muted-foreground truncate text-xs" title={line}>
-            {line}
-          </p>
-        ) : null}
-      </div>
+          {tI18nComplete.raw('text279b44d2ab4b')}
+        </Link>
+        <CaretRightIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
+        <AgentMark slug={agent.name} size={14} />
+        <h1 className="text-foreground truncate text-sm font-medium">
+          {agentDisplayName(agent.name)}
+        </h1>
+      </nav>
       <AgentActions projectId={projectId} agent={agent} config={config} canWrite={canWrite} />
     </header>
   );
@@ -832,6 +775,7 @@ function EditableAgentPage({
     [config.manifest_raw, config.agents, agent.name],
   );
   const section = useAgentSection(sections);
+  const counts = useAgentUseCounts(projectId, agent.name, config);
   const surface = { kind: 'agent', agentName: agent.name } as const;
   const defaultAgent = config.default_agent ?? config.open_code_default_agent;
 
@@ -869,7 +813,7 @@ function EditableAgentPage({
     try {
       const response = await update.mutateAsync(editor.draft);
       editor.commit(response.block ?? editor.draft);
-      successToast(tI18nComplete('text6b0bbffdbd6e', { value0: capitalizeWords(agent.name) }));
+      successToast(tI18nComplete('text6b0bbffdbd6e', { value0: agentDisplayName(agent.name) }));
     } catch (e) {
       errorToast((e as Error)?.message ?? tI18nComplete.raw('text166442c65e8e'));
     }
@@ -925,13 +869,7 @@ function EditableAgentPage({
     <LeaveGuardProvider value={leaveGuard.confirmLeave}>
     <AgentPageFrame
       header={
-        <AgentHeader
-          projectId={projectId}
-          agent={agent}
-          config={config}
-          canWrite
-          description={editor.oc.description}
-        />
+        <AgentHeader projectId={projectId} agent={agent} config={config} canWrite />
       }
       section={section}
       sections={sections}
@@ -951,16 +889,46 @@ function EditableAgentPage({
           apps={<AppsGrantPage projectId={projectId} editor={editor} />}
           drives={<AgentDrivesSection projectId={projectId} agentName={agent.name} />}
           overview={
-            <OverviewPane
-              description={editor.oc.description ?? ''}
-              onDescriptionChange={(next) => editor.setOc('description', next)}
-              descriptionHelp={
-                editor.oc.mode === 'subagent'
-                  ? 'Required. This is how other agents decide to call it.'
-                  : 'One line on what this agent is for. Other agents read it when picking a subagent.'
-              }
-              prompt={editor.oc.prompt ?? ''}
-              onPromptChange={(next) => editor.setOc('prompt', next)}
+            <div className="space-y-10">
+              <AgentHero agent={agent} config={config}>
+                <DescriptionField
+                  value={editor.oc.description ?? ''}
+                  onChange={(next) => editor.setOc('description', next)}
+                  subagent={editor.oc.mode === 'subagent'}
+                />
+              </AgentHero>
+              <InstructionsExcerpt
+                prompt={editor.oc.prompt ?? ''}
+                href={sectionHrefFor(pathname)('instructions')}
+              />
+              <AgentOverviewSummary
+                sections={sections}
+                sectionHref={sectionHrefFor(pathname)}
+                facts={{
+                  grants: {
+                    skills: draft.skills,
+                    subagents: draft.subagents,
+                    commands: draft.commands,
+                    extensions: draft.extensions,
+                    connectors: draft.connectors,
+                    secrets: draft.secrets,
+                    apps: draft.apps,
+                    actions: draft.kortix_permissions ?? draft.kortix_cli,
+                  },
+                  requiredConnectors: draft.connectors_required?.length ?? 0,
+                  model: editor.oc.model,
+                  permission: editor.oc.permission,
+                  sandbox: draft.sandbox,
+                  repositoryAccess: draft.repository_access,
+                  ...counts,
+                }}
+              />
+            </div>
+          }
+          instructions={
+            <InstructionsSection
+              value={editor.oc.prompt ?? ''}
+              onChange={(next) => editor.setOc('prompt', next)}
             />
           }
           people={<AgentPeopleSection projectId={projectId} agentName={agent.name} />}
@@ -987,7 +955,7 @@ function EditableAgentPage({
             open={confirmDiscard}
             onOpenChange={setConfirmDiscard}
             title={tI18nComplete.raw('text3b13192b9d88')}
-            description={tI18nComplete('text8a36cce34f68', { value0: capitalizeWords(agent.name) })}
+            description={tI18nComplete('text8a36cce34f68', { value0: agentDisplayName(agent.name) })}
             confirmLabel={tI18nComplete.raw('texteb1a70e39274')}
             cancelLabel={tI18nComplete.raw('texte76fd2add010')}
             confirmVariant="destructive"
@@ -1006,7 +974,7 @@ function EditableAgentPage({
               if (!open) leaveGuard.stay();
             }}
             title={tI18nComplete.raw('text2190d03af90a')}
-            description={tI18nComplete('textbbc5a3f2ca48', { value0: capitalizeWords(agent.name) })}
+            description={tI18nComplete('textbbc5a3f2ca48', { value0: agentDisplayName(agent.name) })}
             confirmLabel={tI18nComplete.raw('textfc6e4a408d56')}
             cancelLabel={tI18nComplete.raw('texte76fd2add010')}
             confirmVariant="destructive"
@@ -1016,45 +984,6 @@ function EditableAgentPage({
       }
     />
     </LeaveGuardProvider>
-  );
-}
-
-/**
- * The Overview topic — what the agent IS: one line of description and the
- * instructions. Laid out like a Settings pane: the pane title, then each
- * field under its own section heading. A field is its own surface; no box
- * wraps a heading and a field together.
- */
-function OverviewPane({
-  description,
-  onDescriptionChange,
-  descriptionHelp,
-  prompt,
-  onPromptChange,
-}: {
-  description: string;
-  onDescriptionChange: (next: string) => void;
-  descriptionHelp: string;
-  prompt: string;
-  onPromptChange: (next: string) => void;
-}) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const tEditor = useI18nTranslations('agentEditor');
-  return (
-    <>
-      <SettingsSectionHeader title={tEditor('overviewTitle')} className="pb-1" />
-      <EditorSection title={tI18nComplete.raw('text526e0087cc3f')} description={descriptionHelp} bare>
-        <Textarea
-          aria-label={tI18nComplete.raw('text526e0087cc3f')}
-          value={description}
-          placeholder={tI18nComplete.raw('text446f4eabf99f')}
-          minHeight={44}
-          className="text-sm"
-          onChange={(e) => onDescriptionChange(e.target.value)}
-        />
-      </EditorSection>
-      <InstructionsSection value={prompt} onChange={onPromptChange} />
-    </>
   );
 }
 
@@ -1078,6 +1007,7 @@ function InstructionsSection({
     <EditorSection
       title={tI18nComplete.raw('text934652dce41d')}
       description={tI18nComplete.raw('text5fe8921b712c')}
+      lead
       trailing={
         <Tabs value={view} onValueChange={(next) => setView(next as 'edit' | 'preview')}>
           <TabsList aria-label={tI18nComplete.raw('texte75bb2d0d554')}>
@@ -1158,11 +1088,7 @@ function SaveBar({
               >
                 {tI18nComplete.raw('texteb1a70e39274')}
               </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="gap-1.5"
-                onClick={onSave}
+              <Button size="sm" className="gap-1.5" onClick={onSave}
                 disabled={pending}
               >
                 {pending ? <Loading className="size-3.5 shrink-0" /> : null}
@@ -1238,7 +1164,6 @@ function ReadOnlyAgentPage({
     <EditorSection
       title={tI18nComplete.raw('text934652dce41d')}
       description={<span className="font-mono">{sourcePath}</span>}
-      lead
       bare
     >
       <div className="bg-popover overflow-hidden rounded-md border">
@@ -1266,7 +1191,6 @@ function ReadOnlyAgentPage({
           agent={agent}
           config={config}
           canWrite={canWrite && !isPlatform}
-          description={agent.description}
         />
       }
       section={section}
@@ -1284,26 +1208,29 @@ function ReadOnlyAgentPage({
           />
         ) : (
         <EditorSectionStyleProvider value="panel">
-          <div className="space-y-8">
-            {isPlatform ? (
-              <PlatformAgentOverview projectId={projectId} config={config} />
-            ) : showUpgradeHint ? (
+          <div className="space-y-10">
+            {showUpgradeHint ? (
               <InfoBanner tone="info" title={tI18nComplete.raw('textdc7ab144ca89')}>
                 {tUpgrades.rich('agentEditorHint', {
                   code: (chunks) => <span className="font-mono">{chunks}</span>,
                 })}
               </InfoBanner>
             ) : null}
-            {isPlatform ? null : section === 'overview' ? (
+            {section === 'overview' ? (
               <>
-                {/* The header shows one line of it; a reader reads it whole here. */}
-                {agent.description ? (
-                  <p className="text-muted-foreground max-w-2xl text-sm text-pretty">
-                    {agent.description}
-                  </p>
-                ) : null}
-                {source}
-                <AgentScope projectId={projectId} agentName={agent.name} scope={agent.scope} />
+                <AgentHero agent={agent} config={config}>
+                  {agent.description ? (
+                    <p className="text-muted-foreground text-sm text-pretty">{agent.description}</p>
+                  ) : null}
+                </AgentHero>
+                {isPlatform ? (
+                  <PlatformAgentOverview projectId={projectId} config={config} />
+                ) : (
+                  <>
+                    {source}
+                    <AgentScope projectId={projectId} agentName={agent.name} scope={agent.scope} />
+                  </>
+                )}
               </>
             ) : section === 'people' ? (
               <AgentPeopleSection projectId={projectId} agentName={agent.name} />

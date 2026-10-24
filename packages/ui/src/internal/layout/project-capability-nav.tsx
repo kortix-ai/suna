@@ -1,8 +1,10 @@
 'use client';
 
 import { useProjectConfig } from '@kortix/sdk/react';
+import { isMetaAgentName } from '@kortix/shared';
 
-import { AgentMark } from '../components/agent-mark';
+import { useTranslations as useI18nTranslations } from '../../i18n';
+import { AgentMark, agentDisplayName } from '../components/agent-mark';
 import { CountBadge } from '../../primitives/count-badge';
 import {
   SidebarMenuSub,
@@ -11,20 +13,41 @@ import {
   useSidebar,
 } from '../../primitives/sidebar';
 import { UiLink as Link, useUiPathname } from '../../providers/ui-provider';
+import { projectAdminHref } from '../../workspace/admin/project-admin-sections';
 import { useIsMobile } from '../hooks';
 import { activeCapabilityTab, agentHref, capabilityTabHref } from '../lib/capability-tab-routes';
 import { useReviewSessionSummary } from '../hooks/use-review-session-summary';
 import { useCapabilityAccess } from './project-settings-nav';
 
+type Agent = NonNullable<ReturnType<typeof useProjectConfig>>['agents'][number];
+
+/** My Kortix first (the agent a person talks to), then every other agent by
+ *  display name. */
+export function sortCustomizeAgents<T extends Pick<Agent, 'name'>>(agents: readonly T[]): T[] {
+  return [...agents].sort((a, b) => {
+    const meta = Number(isMetaAgentName(b.name)) - Number(isMetaAgentName(a.name));
+    return meta || agentDisplayName(a.name).localeCompare(agentDisplayName(b.name));
+  });
+}
+
+/** The agent segment of the pathname, decoded like the agent page decodes it. */
+function decodeSegment(segment: string | undefined): string | null {
+  if (!segment) return null;
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
+
 /**
- * The points nested under Customize. Customize is 100% agent-centric (Marko,
- * 2026-10-24): the sidebar lists every agent with its own mark, and each row
- * opens that agent's config page — where its Access (Skills, Connectors,
- * Secrets, Apps, Drives, Kortix permissions) and Runtime (Model, Tools,
- * Workspace) live. The capability libraries are configured per agent there, or
- * managed globally under `/admin`. Repo and Review are no longer rows here —
- * they moved into Settings — so the only non-agent row is Settings, which also
- * carries the Review "needs you" count. The active row follows the pathname.
+ * The points nested under Customize. Customize is agent-first: My Kortix
+ * leads (the one agent a person talks to, marked Built-in), then every other
+ * agent by display name, each opening its own page — where its Access and
+ * Runtime live. Then Review (with its "needs you" count) and Settings, which
+ * opens Project admin on its General section: the project-wide libraries and
+ * every project setting. The active row follows the pathname.
  */
 export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
   const pathname = useUiPathname();
@@ -33,15 +56,16 @@ export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
   const needsYou = useReviewSessionSummary(projectId, { enabled: true }).totalNeedsYou;
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
+  const t = useI18nTranslations('agentEditor.page');
 
   if (!access.settled) return null;
 
-  const agents = (config?.agents ?? []).filter((agent) => !agent.hidden);
-  const activeAgent = pathname?.match(/\/customize\/agents\/([^/?#]+)/)?.[1] ?? null;
+  const agents = sortCustomizeAgents((config?.agents ?? []).filter((agent) => !agent.hidden));
+  const activeAgent = decodeSegment(pathname?.match(/\/customize\/agents\/([^/?#]+)/)?.[1]);
   const hasReview = access.tabs.includes('review');
   const onReview = pathname ? activeCapabilityTab(pathname) === 'review' : false;
   const hasSettings = access.tabs.includes('config');
-  const onSettings = pathname ? activeCapabilityTab(pathname) === 'config' : false;
+  const onSettings = pathname?.startsWith(`/projects/${projectId}/admin`) ?? false;
   const close = () => isMobile && setOpenMobile(false);
 
   if (agents.length === 0 && !hasReview && !hasSettings) return null;
@@ -50,10 +74,16 @@ export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
     <SidebarMenuSub>
       {agents.map((agent) => (
         <SidebarMenuSubItem key={agent.name}>
-          <SidebarMenuSubButton asChild isActive={activeAgent === agent.name}>
+          <SidebarMenuSubButton
+            asChild
+            isActive={activeAgent === agent.name}
+          >
             <Link href={agentHref(projectId, agent.name)} prefetch={false} onClick={close}>
               <AgentMark slug={agent.name} size={14} />
-              <span className="truncate">{agent.name}</span>
+              <span className="truncate">{agentDisplayName(agent.name)}</span>
+              {agent.platform ? (
+                <span className="text-muted-foreground ml-auto shrink-0 text-xs">{t('builtIn')}</span>
+              ) : null}
             </Link>
           </SidebarMenuSubButton>
         </SidebarMenuSubItem>
@@ -75,7 +105,7 @@ export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
       {hasSettings ? (
         <SidebarMenuSubItem>
           <SidebarMenuSubButton asChild isActive={onSettings}>
-            <Link href={capabilityTabHref(projectId, 'config')} prefetch={false} onClick={close}>
+            <Link href={projectAdminHref(projectId, 'general')} prefetch={false} onClick={close}>
               <span className="truncate">Settings</span>
             </Link>
           </SidebarMenuSubButton>

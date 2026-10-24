@@ -15,8 +15,9 @@ const NEW_PROMPTS: Record<ConfigureKind, string> = {
     "I want to configure a new agent for this project. Ask me what it should " +
     "specialize in and how it should behave, then create its config at " +
     "`agents/<name>.md`, declare it in `kortix.yaml` under `agents:` with " +
-    "`file: agents/<name>.md` and the access it needs, and open a change " +
-    "request so I can review and merge it.",
+    "`file: agents/<name>.md` and only the access its job needs: the fewest " +
+    "skills, connectors, secrets, tools and Kortix permissions. Then open a " +
+    "change request so I can review and merge it.",
   skill:
     "I want to add a new skill to this project. Ask me what capability it " +
     "should provide and when it should trigger, then scaffold " +

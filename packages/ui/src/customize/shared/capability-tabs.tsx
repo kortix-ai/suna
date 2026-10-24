@@ -7,7 +7,7 @@ import { ArrowUpRightIcon } from '@phosphor-icons/react';
 import { UiLink as Link, useUiPathname } from '../../providers/ui-provider';
 
 import { useOptionalSidebar } from '../../primitives/sidebar';
-import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
+import { Tabs, TabsList } from '../../primitives/tabs';
 import { HubLink } from '../../internal/account-hub/account-hub-location';
 import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
 import { useCapabilityAccess } from '../../internal/layout/project-settings-nav';
@@ -18,12 +18,12 @@ import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
+import { projectAdminHref } from '../../workspace/admin/project-admin-sections';
 import { receivedDenial } from './capability-access-gate';
 import {
   ADMIN_MANAGED_TABS,
   CAPABILITY_TABS,
   activeCapabilityTab,
-  capabilityTabHref,
   type CapabilityTab,
 } from '../../internal/lib/capability-tab-routes';
 
@@ -57,6 +57,9 @@ import {
  */
 const MEMBERS_LINK_CLASS =
   'text-muted-foreground hover:text-foreground ml-auto flex w-fit flex-none items-center gap-1 px-1 py-3 text-sm font-medium whitespace-nowrap transition-colors';
+
+const SETTINGS_LINK_CLASS =
+  'text-muted-foreground hover:text-foreground flex w-fit flex-none items-center px-1 py-3 text-sm font-medium whitespace-nowrap transition-colors';
 
 function MembersLaunchLink({ projectId }: { projectId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -181,13 +184,18 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
   // Agents / Repo / Review tab navigation — that lives in the sidebar now
   // (agents + Review + Settings). The bar keeps only the sidebar toggle, the
   // Members launch link, and Settings.
+  // Settings opens Project admin on its General section: the project-wide
+  // libraries and every project setting live there, beside the agents.
   const trailing = tabs.filter((tab) => TRAILING_TABS.includes(tab.key));
   const renderTab = (tab: CapabilityTab) => (
-    <TabsTrigger key={tab.key} value={tab.key} asChild className="w-fit flex-none px-1 py-3">
-      <Link href={capabilityTabHref(projectId, tab.key)} prefetch={true}>
-        {tab.label}
-      </Link>
-    </TabsTrigger>
+    <Link
+      key={tab.key}
+      href={projectAdminHref(projectId, 'general')}
+      prefetch={true}
+      className={SETTINGS_LINK_CLASS}
+    >
+      {tab.label}
+    </Link>
   );
 
   return (

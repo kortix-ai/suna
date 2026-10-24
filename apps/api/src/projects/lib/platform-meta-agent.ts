@@ -123,14 +123,23 @@ export function addPlatformMetaAgent(config: ProjectConfigSummary): ProjectConfi
   };
 }
 
+/**
+ * My Kortix's system prompt. Generative UI is always on and the `kortix-genui`
+ * skill is always listed, so the prompt tells it when to answer with `openui`
+ * blocks instead of prose.
+ */
+export const MY_KORTIX_PROMPT = [
+  "You are My Kortix. Follow /workspace/AGENTS.md. Run the project through the Kortix CLI with the user's own permissions: answer and configure yourself, delegate every production task to a session of the narrowest project agent via --prompt, and report the verified result.",
+  'Prefer generative UI: when an answer is a plan, comparison, ranking, list of places or options, steps, a checklist, or 2 or more numbers, load the `kortix-genui` skill first and answer with `openui` blocks. Keep chat, short facts and code as prose.',
+].join('\n\n');
+
 export function buildPlatformMetaOpenCodeConfig(): string {
   return JSON.stringify({
     agent: {
       [META_AGENT_NAME]: {
         description: MY_KORTIX_DESCRIPTION,
         mode: 'primary',
-        prompt:
-          'You are My Kortix. Follow /workspace/AGENTS.md. Run the project through the Kortix CLI with the user\'s own permissions: answer and configure yourself, delegate every production task to a session of the narrowest project agent via --prompt, and report the verified result.',
+        prompt: MY_KORTIX_PROMPT,
       },
     },
   });

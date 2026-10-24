@@ -20,15 +20,15 @@ import type { ReactNode } from 'react';
 import { CaretRightIcon } from '@phosphor-icons/react';
 import type { ProjectConfigSummary } from '@kortix/sdk';
 import { useFeatureFlag } from '@kortix/sdk/react';
-import { capitalizeWords, isMetaAgentName } from '@kortix/shared';
+import { isMetaAgentName } from '@kortix/shared';
 
 import { useTranslations as useI18nTranslations } from '../../i18n';
-import { AgentMark } from '../../internal/components/agent-mark';
+import { AgentMark, agentDisplayName } from '../../internal/components/agent-mark';
 import { agentHref } from '../../internal/lib/capability-tab-routes';
 import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
 import { useProjectCan } from '../../internal/lib/use-project-can';
-import { Badge } from '../../primitives/badge';
 import { EmptyState } from '../../primitives/empty-state';
+import { StatusDot } from '../../primitives/status';
 import { UiLink as Link } from '../../providers/ui-provider';
 import {
   EditorList,
@@ -38,13 +38,18 @@ import {
 
 type Agent = ProjectConfigSummary['agents'][number];
 
-/** A row's state, right-aligned in the control column. */
+/**
+ * A row's state, right-aligned in the control column: the brand status
+ * pattern, a dot that carries the hue and a word that stays ink. Green for a
+ * capability the viewer holds; a muted dot for one that is off or withheld.
+ */
 function State({ on, label }: { on: boolean; label: string }) {
   return (
-    <div className="flex sm:justify-end">
-      <Badge variant={on ? 'success' : 'muted'} size="sm">
+    <div className="flex items-center gap-2 sm:justify-end">
+      <StatusDot tone={on ? 'success' : 'neutral'} />
+      <span className={on ? 'text-foreground text-sm' : 'text-muted-foreground text-sm'}>
         {label}
-      </Badge>
+      </span>
     </div>
   );
 }
@@ -76,7 +81,7 @@ export function PlatformAgentOverview({
 
   return (
     <div className="space-y-8">
-      <EditorSection title={t('capabilities.title')} lead>
+      <EditorSection title={t('capabilities.title')}>
         <SettingRow
           label={t('capabilities.configure.label')}
           help={canConfigure ? t('capabilities.configure.help') : denied('project.agent.write')}
@@ -142,7 +147,7 @@ function AgentRow({ projectId, agent }: { projectId: string; agent: Agent }) {
         <AgentMark slug={agent.name} />
         <div className="min-w-0 flex-1">
           <span className="text-foreground block truncate text-sm font-medium">
-            {capitalizeWords(agent.name)}
+            {agentDisplayName(agent.name)}
           </span>
           {agent.description ? (
             <span className="text-muted-foreground block truncate text-xs">

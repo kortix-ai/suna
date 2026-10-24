@@ -4,7 +4,7 @@ import type { CSSProperties } from 'react';
 
 import { cn } from '../lib/utils';
 import { Hint } from '../../primitives/hint';
-import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
+import { isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
 import { pixelMark } from '../lib/pixel-mark';
 
 /** Mark size → tile size. The mark is a multiple of 7, so each pixel lands on
@@ -83,12 +83,20 @@ export function AgentMark({
     </span>
   );
   return (
-    <Hint side="top" sideOffset={6} alignOffset={0} label={label ?? agentLabel(slug)}>
+    <Hint side="top" sideOffset={6} alignOffset={0} label={label ?? agentDisplayName(slug)}>
       {mark}
     </Hint>
   );
 }
 
-function agentLabel(slug: string): string {
-  return isMetaAgentName(slug) ? META_AGENT_DISPLAY_NAME : capitalizeWords(slug);
+/**
+ * An agent's name as a person reads it: My Kortix for the built-in agent,
+ * otherwise the manifest key in sentence case with its separators as spaces
+ * (`session-reviewer` → "Session reviewer"). One helper, so the sidebar, the
+ * agent page, the index and the hover hint name an agent the same way.
+ */
+export function agentDisplayName(slug: string): string {
+  if (isMetaAgentName(slug)) return META_AGENT_DISPLAY_NAME;
+  const words = slug.replace(/[-_]+/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }

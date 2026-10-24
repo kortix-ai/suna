@@ -42,7 +42,6 @@ import {
   updateProjectDefaultAgent,
 } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
-import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
 import { MagnifyingGlassIcon, RobotIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -57,7 +56,7 @@ import { useActiveDomain } from '../../internal/stores/active-domain-store';
 import { CatalogGrid } from '../shared/catalog/catalog-grid';
 import { GRID_CLASSNAME } from '../shared/catalog/catalog-grid-tokens';
 
-import { AgentMark } from '../../internal/components/agent-mark';
+import { AgentMark, agentDisplayName } from '../../internal/components/agent-mark';
 import { AgentCoverCard } from './agent-cover-card';
 import { agentInMode, filterAgents } from './agent-filter';
 import { useSlashFocus } from '../../internal/hooks';
@@ -87,6 +86,7 @@ type Agent = ProjectConfigSummary['agents'][number];
  */
 export function AgentsPage({ projectId }: { projectId: string }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tPage = useI18nTranslations('agentEditor.page');
   // `accountId` skips useProjectCan's own getProject and lets the IAM probe
   // run on the first render instead of waiting a round-trip for it.
   const accountId = useProjectAccountId(projectId);
@@ -165,10 +165,13 @@ export function AgentsPage({ projectId }: { projectId: string }) {
   // grid. The agents a person starts get the full cards, the default first;
   // the ones other agents call sit below in a compact list. `all` is usable
   // both ways, so it stays with the agents a person starts.
+  // My Kortix leads, alone, above every other agent: it is the one agent a
+  // person talks to, and it runs the rest as least-privilege work products.
+  const builtInAgents = useMemo(() => filtered.filter((agent) => agent.platform), [filtered]);
   const primaryAgents = useMemo(
     () =>
       filtered
-        .filter((agent) => agentInMode(agent, 'primary'))
+        .filter((agent) => !agent.platform && agentInMode(agent, 'primary'))
         .sort((a, b) => Number(b.name === defaultAgent) - Number(a.name === defaultAgent)),
     [filtered, defaultAgent],
   );
@@ -273,6 +276,17 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         ) : undefined
       }
     >
+      {!detailQuery.isLoading && !detailQuery.isError && builtInAgents.length > 0 ? (
+        <section aria-labelledby="built-in-heading" className="mb-8 space-y-2">
+          <div>
+            <h2 id="built-in-heading" className="text-foreground text-sm font-medium">
+              {tPage('builtIn')}
+            </h2>
+            <p className="text-muted-foreground mt-1 text-xs">{tPage('builtInHint')}</p>
+          </div>
+          <div className={GRID_CLASSNAME}>{builtInAgents.map(renderPrimaryAgentCard)}</div>
+        </section>
+      ) : null}
       {useDomainGrouping && !detailQuery.isLoading && !detailQuery.isError && emptyKind === null ? (
         domainFilter === ALL_DOMAINS ? (
           <CatalogDomainSections groups={primaryDomainGroups} renderCard={renderPrimaryAgentCard} />
@@ -351,7 +365,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
 }
 
 function agentTitle(name: string): string {
-  return isMetaAgentName(name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(name);
+  return agentDisplayName(name);
 }
 
 
@@ -463,7 +477,7 @@ function DefaultAgentSelector({
     mutationFn: (agentName: string) => updateProjectDefaultAgent(projectId, agentName),
     onSuccess: async (result) => {
       successToast(
-        tI18nComplete('text0bb557895b32', { value0: capitalizeWords(result.default_agent) }),
+        tI18nComplete('text0bb557895b32', { value0: agentDisplayName(result.default_agent) }),
       );
       // One invalidation, not two: the project CONFIG is a `select` projection
       // over this same `qk.project.detail(id)` entry (`useProjectConfig`), not

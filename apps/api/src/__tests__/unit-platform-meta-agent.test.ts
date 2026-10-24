@@ -68,7 +68,8 @@ describe('platform meta agent', () => {
           description: MY_KORTIX_DESCRIPTION,
           mode: 'primary',
           prompt:
-            "You are My Kortix. Follow /workspace/AGENTS.md. Run the project through the Kortix CLI with the user's own permissions: answer and configure yourself, delegate every production task to a session of the narrowest project agent via --prompt, and report the verified result.",
+            "You are My Kortix. Follow /workspace/AGENTS.md. Run the project through the Kortix CLI with the user's own permissions: answer and configure yourself, delegate every production task to a session of the narrowest project agent via --prompt, and report the verified result.\n\n" +
+            'Prefer generative UI: when an answer is a plan, comparison, ranking, list of places or options, steps, a checklist, or 2 or more numbers, load the `kortix-genui` skill first and answer with `openui` blocks. Keep chat, short facts and code as prose.',
         },
       },
     });
