@@ -6,7 +6,7 @@ export interface TriggerScheduleSpec {
   slug: string;
   /** `monitor` never schedules — `nextTriggerScheduleSlot` returns null for it,
    *  so the cron sweep's `trigger_type = 'cron'` claim can never see one. */
-  type: 'cron' | 'webhook' | 'monitor' | 'event';
+  type: 'cron' | 'webhook' | 'event' | 'app';
   enabled: boolean;
   cron: string | null;
   runAt: string | null;
@@ -18,13 +18,14 @@ export interface TriggerScheduleSpec {
   pinnedSessionId: string | null;
   sessionKey: string | null;
   filter: TriggerFilter | null;
-  /** type=monitor only — see GitTriggerSpec. Absent for cron/webhook. */
-  run?: string | null;
-  monitorMode?: 'poll' | 'stream' | null;
-  intervalSeconds?: number | null;
-  expectEventWithinSeconds?: number | null;
   /** type=event only — see GitTriggerSpec. Absent for every other type. */
   event?: { connector: string; account?: string | null; source?: string | null; type: string; config: Record<string, unknown> } | null;
+  /** type=app only — see GitTriggerSpec.app. */
+  app?: string | null;
+  /** See GitTriggerSpec.target. */
+  target?: { app: string; path: string; method: 'POST' | 'GET'; payload?: Record<string, unknown> } | null;
+  /** type=cron only — see GitTriggerSpec.everySeconds. */
+  everySeconds?: number;
   /** Session reminder only — see GitTriggerSpec.reminder. */
   reminder?: { everySeconds: number | null } | null;
   /** type=cron only — see GitTriggerSpec.maxLatenessSeconds. */
@@ -82,22 +83,13 @@ export function triggerScheduleRevision(spec: TriggerScheduleSpec): string {
     pinnedSessionId: spec.pinnedSessionId,
     sessionKey: spec.sessionKey,
     filter,
-    // Monitor fields join the hash ONLY for a monitor. Adding them
-    // unconditionally would change every existing cron/webhook revision on
-    // deploy, and a revision change re-upserts the catalog row — which
-    // recomputes `next_fire_at` and would re-arm every already-fired one-off
-    // `run_at` trigger in the fleet.
-    ...(spec.type === 'monitor'
-      ? {
-          run: spec.run ?? null,
-          monitorMode: spec.monitorMode ?? null,
-          intervalSeconds: spec.intervalSeconds ?? null,
-          expectEventWithinSeconds: spec.expectEventWithinSeconds ?? null,
-        }
-      : {}),
     // Same rule again: event fields join the hash only for an event trigger.
     // `source` joins the event only when set, so earlier event revisions stay put.
     ...(spec.type === 'event' ? { event: spec.event ? withSourceIfSet(spec.event) : null } : {}),
+    ...(spec.type === 'app' ? { app: spec.app ?? null } : {}),
+    // Joins only when set, like the fields below: a spec without a target keeps its revision.
+    ...(spec.target ? { target: spec.target } : {}),
+    ...(spec.everySeconds ? { everySeconds: spec.everySeconds } : {}),
     // Same rule as the monitor fields: absent for every manifest trigger.
     ...(spec.reminder ? { reminderEverySeconds: spec.reminder.everySeconds } : {}),
     // Joins only when set: the claim reads it from the stored spec, which is
@@ -160,7 +152,7 @@ function cronJitterMs(cron: Cron, after: Date, key: string, windowMs: number): n
 }
 
 export function nextTriggerScheduleSlot(
-  spec: Pick<TriggerScheduleSpec, 'type' | 'enabled' | 'cron' | 'runAt' | 'timezone' | 'reminder'>,
+  spec: Pick<TriggerScheduleSpec, 'type' | 'enabled' | 'cron' | 'runAt' | 'timezone' | 'reminder' | 'everySeconds'>,
   after: Date,
   options: { includePastOneOff?: boolean; jitterKey?: string; jitterWindowMs?: number } = {},
 ): Date | null {
@@ -171,8 +163,8 @@ export function nextTriggerScheduleSlot(
     if (runAtMs > after.getTime()) return new Date(runAtMs);
     return options.includePastOneOff ? new Date(runAtMs) : null;
   }
-  // A reminder's period runs from the claim, so a missed slot never bunches up.
-  const everySeconds = spec.reminder?.everySeconds;
+  // An `every` period (a schedule's, or a reminder's) runs from the claim, so a missed slot never bunches up.
+  const everySeconds = spec.everySeconds ?? spec.reminder?.everySeconds;
   if (everySeconds) return new Date(after.getTime() + everySeconds * 1000);
   if (!spec.cron) return null;
   const error = validateTriggerCron(spec.cron, spec.timezone);

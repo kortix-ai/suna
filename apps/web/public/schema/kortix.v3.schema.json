@@ -195,603 +195,976 @@
     "triggers": {
       "type": "array",
       "items": {
-        "type": "object",
-        "required": [
-          "slug",
-          "type"
-        ],
-        "properties": {
-          "slug": {
-            "type": "string",
-            "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
-          },
-          "type": {
-            "type": "string",
-            "enum": [
-              "cron",
-              "webhook",
-              "monitor",
-              "event"
-            ]
-          },
-          "name": {
-            "type": "string"
-          },
-          "agent": {
-            "type": "string",
-            "pattern": "\\S"
-          },
-          "agent_name": {
-            "type": "string"
-          },
-          "enabled": {
-            "oneOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "pattern": "^(?:[tT][rR][uU][eE]|[fF][aA][lL][sS][eE]|1|0|[yY][eE][sS]|[nN][oO]|[oO][nN]|[oO][fF][fF])$"
-              }
-            ]
-          },
-          "session_mode": {
-            "type": "string",
-            "anyOf": [
-              {
-                "enum": [
-                  "fresh",
-                  "reuse",
-                  "pinned",
-                  "keyed"
-                ]
-              },
-              {
-                "pattern": "^\\s*(?:[fF][rR][eE][sS][hH]|[rR][eE][uU][sS][eE]|[pP][iI][nN][nN][eE][dD]|[kKK][eE][yY][eE][dD])\\s*$(?![\\s\\S])"
-              }
-            ]
-          },
-          "session_key": {
-            "type": "string"
-          },
-          "sessionKey": {
-            "type": "string"
-          },
-          "filter": {
-            "type": "object",
-            "additionalProperties": {
-              "oneOf": [
-                {
-                  "type": [
-                    "string",
-                    "number",
-                    "boolean"
-                  ]
-                },
-                {
-                  "type": "object",
-                  "minProperties": 1,
-                  "maxProperties": 1,
-                  "additionalProperties": false,
-                  "properties": {
-                    "not": {
-                      "oneOf": [
-                        {
-                          "type": [
-                            "string",
-                            "number",
-                            "boolean"
-                          ]
-                        },
-                        {
-                          "type": "array",
-                          "minItems": 1,
-                          "items": {
-                            "type": [
-                              "string",
-                              "number",
-                              "boolean"
-                            ]
-                          }
-                        }
-                      ]
-                    },
-                    "in": {
-                      "oneOf": [
-                        {
-                          "type": [
-                            "string",
-                            "number",
-                            "boolean"
-                          ]
-                        },
-                        {
-                          "type": "array",
-                          "minItems": 1,
-                          "items": {
-                            "type": [
-                              "string",
-                              "number",
-                              "boolean"
-                            ]
-                          }
-                        }
-                      ]
-                    },
-                    "exists": {
-                      "type": "boolean"
-                    },
-                    "prefix": {
-                      "oneOf": [
-                        {
-                          "type": [
-                            "string",
-                            "number",
-                            "boolean"
-                          ],
-                          "minLength": 1
-                        },
-                        {
-                          "type": "array",
-                          "minItems": 1,
-                          "items": {
-                            "type": [
-                              "string",
-                              "number",
-                              "boolean"
-                            ],
-                            "minLength": 1
-                          }
-                        }
-                      ]
-                    },
-                    "not_prefix": {
-                      "oneOf": [
-                        {
-                          "type": [
-                            "string",
-                            "number",
-                            "boolean"
-                          ],
-                          "minLength": 1
-                        },
-                        {
-                          "type": "array",
-                          "minItems": 1,
-                          "items": {
-                            "type": [
-                              "string",
-                              "number",
-                              "boolean"
-                            ],
-                            "minLength": 1
-                          }
-                        }
-                      ]
-                    }
-                  }
-                }
-              ]
-            }
-          },
-          "sessionMode": {
-            "type": "string",
-            "anyOf": [
-              {
-                "enum": [
-                  "fresh",
-                  "reuse",
-                  "pinned",
-                  "keyed"
-                ]
-              },
-              {
-                "pattern": "^\\s*(?:[fF][rR][eE][sS][hH]|[rR][eE][uU][sS][eE]|[pP][iI][nN][nN][eE][dD]|[kKK][eE][yY][eE][dD])\\s*$(?![\\s\\S])"
-              }
-            ]
-          },
-          "session_id": {
-            "type": "string"
-          },
-          "sessionId": {
-            "type": "string"
-          },
-          "prompt": {
-            "type": "string"
-          },
-          "prompt_template": {
-            "type": "string"
-          },
-          "cron": {
-            "type": "string",
-            "minLength": 1
-          },
-          "schedule": {
-            "type": "string",
-            "minLength": 1
-          },
-          "run_at": {
-            "type": "string",
-            "minLength": 1
-          },
-          "runAt": {
-            "type": "string",
-            "minLength": 1
-          },
-          "timezone": {
-            "type": "string"
-          },
-          "max_lateness": {
-            "type": "string",
-            "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
-          },
-          "max_runs_per_hour": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "max_runs_per_day": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "overlap": {
-            "type": "string",
-            "enum": [
-              "skip",
-              "allow"
-            ]
-          },
-          "secret_env": {
-            "type": "string",
-            "pattern": "^[A-Z_][A-Z0-9_]*$"
-          },
-          "secretEnv": {
-            "type": "string",
-            "pattern": "^[A-Z_][A-Z0-9_]*$"
-          },
-          "run": {
-            "type": "string",
-            "maxLength": 1024
-          },
-          "mode": {
-            "type": "string",
-            "enum": [
-              "poll",
-              "stream"
-            ]
-          },
-          "interval": {
-            "type": "string",
-            "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
-          },
-          "expect_event_within": {
-            "type": "string",
-            "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
-          },
-          "connector": {
-            "type": "string",
-            "pattern": "\\S"
-          },
-          "account": {
-            "type": "string",
-            "pattern": "\\S"
-          },
-          "source": {
-            "type": "string",
-            "pattern": "\\S"
-          },
-          "event": {
-            "type": "string",
-            "pattern": "\\S"
-          },
-          "config": {
-            "type": "object"
-          }
-        },
-        "additionalProperties": true,
-        "allOf": [
+        "anyOf": [
           {
-            "if": {
-              "anyOf": [
-                {
-                  "required": [
-                    "session_mode"
-                  ],
-                  "properties": {
-                    "session_mode": {
-                      "type": "string",
-                      "anyOf": [
-                        {
-                          "enum": [
-                            "pinned"
-                          ]
-                        },
-                        {
-                          "pattern": "^\\s*(?:[pP][iI][nN][nN][eE][dD])\\s*$(?![\\s\\S])"
-                        }
-                      ]
-                    }
+            "type": "object",
+            "required": [
+              "slug",
+              "type"
+            ],
+            "properties": {
+              "slug": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "cron",
+                  "webhook",
+                  "event",
+                  "app"
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "agent": {
+                "type": "string",
+                "pattern": "\\S"
+              },
+              "agent_name": {
+                "type": "string"
+              },
+              "enabled": {
+                "oneOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^(?:[tT][rR][uU][eE]|[fF][aA][lL][sS][eE]|1|0|[yY][eE][sS]|[nN][oO]|[oO][nN]|[oO][fF][fF])$"
                   }
-                },
-                {
-                  "not": {
-                    "required": [
-                      "session_mode"
+                ]
+              },
+              "session_mode": {
+                "type": "string",
+                "anyOf": [
+                  {
+                    "enum": [
+                      "fresh",
+                      "reuse",
+                      "pinned",
+                      "keyed"
                     ]
                   },
-                  "required": [
-                    "sessionMode"
-                  ],
-                  "properties": {
-                    "sessionMode": {
-                      "type": "string",
-                      "anyOf": [
-                        {
-                          "enum": [
-                            "pinned"
+                  {
+                    "pattern": "^\\s*(?:[fF][rR][eE][sS][hH]|[rR][eE][uU][sS][eE]|[pP][iI][nN][nN][eE][dD]|[kKK][eE][yY][eE][dD])\\s*$(?![\\s\\S])"
+                  }
+                ]
+              },
+              "session_key": {
+                "type": "string"
+              },
+              "sessionKey": {
+                "type": "string"
+              },
+              "filter": {
+                "type": "object",
+                "additionalProperties": {
+                  "oneOf": [
+                    {
+                      "type": [
+                        "string",
+                        "number",
+                        "boolean"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "minProperties": 1,
+                      "maxProperties": 1,
+                      "additionalProperties": false,
+                      "properties": {
+                        "not": {
+                          "oneOf": [
+                            {
+                              "type": [
+                                "string",
+                                "number",
+                                "boolean"
+                              ]
+                            },
+                            {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ]
+                              }
+                            }
                           ]
                         },
-                        {
-                          "pattern": "^\\s*(?:[pP][iI][nN][nN][eE][dD])\\s*$(?![\\s\\S])"
+                        "in": {
+                          "oneOf": [
+                            {
+                              "type": [
+                                "string",
+                                "number",
+                                "boolean"
+                              ]
+                            },
+                            {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ]
+                              }
+                            }
+                          ]
+                        },
+                        "exists": {
+                          "type": "boolean"
+                        },
+                        "prefix": {
+                          "oneOf": [
+                            {
+                              "type": [
+                                "string",
+                                "number",
+                                "boolean"
+                              ],
+                              "minLength": 1
+                            },
+                            {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ],
+                                "minLength": 1
+                              }
+                            }
+                          ]
+                        },
+                        "not_prefix": {
+                          "oneOf": [
+                            {
+                              "type": [
+                                "string",
+                                "number",
+                                "boolean"
+                              ],
+                              "minLength": 1
+                            },
+                            {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ],
+                                "minLength": 1
+                              }
+                            }
+                          ]
                         }
-                      ]
+                      }
+                    }
+                  ]
+                }
+              },
+              "sessionMode": {
+                "type": "string",
+                "anyOf": [
+                  {
+                    "enum": [
+                      "fresh",
+                      "reuse",
+                      "pinned",
+                      "keyed"
+                    ]
+                  },
+                  {
+                    "pattern": "^\\s*(?:[fF][rR][eE][sS][hH]|[rR][eE][uU][sS][eE]|[pP][iI][nN][nN][eE][dD]|[kKK][eE][yY][eE][dD])\\s*$(?![\\s\\S])"
+                  }
+                ]
+              },
+              "session_id": {
+                "type": "string"
+              },
+              "sessionId": {
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "prompt_template": {
+                "type": "string"
+              },
+              "cron": {
+                "type": "string",
+                "minLength": 1
+              },
+              "schedule": {
+                "type": "string",
+                "minLength": 1
+              },
+              "run_at": {
+                "type": "string",
+                "minLength": 1
+              },
+              "runAt": {
+                "type": "string",
+                "minLength": 1
+              },
+              "timezone": {
+                "type": "string"
+              },
+              "max_lateness": {
+                "type": "string",
+                "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+              },
+              "max_runs_per_hour": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "max_runs_per_day": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "overlap": {
+                "type": "string",
+                "enum": [
+                  "skip",
+                  "allow"
+                ]
+              },
+              "secret_env": {
+                "type": "string",
+                "pattern": "^[A-Z_][A-Z0-9_]*$"
+              },
+              "secretEnv": {
+                "type": "string",
+                "pattern": "^[A-Z_][A-Z0-9_]*$"
+              },
+              "connector": {
+                "type": "string",
+                "pattern": "\\S"
+              },
+              "account": {
+                "type": "string",
+                "pattern": "\\S"
+              },
+              "source": {
+                "type": "string",
+                "pattern": "\\S"
+              },
+              "event": {
+                "type": "string",
+                "pattern": "\\S"
+              },
+              "config": {
+                "type": "object"
+              },
+              "app": {
+                "type": "string",
+                "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+              },
+              "target": {
+                "type": "object",
+                "required": [
+                  "app"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "app": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+                  },
+                  "path": {
+                    "type": "string",
+                    "pattern": "^/"
+                  },
+                  "method": {
+                    "type": "string",
+                    "enum": [
+                      "POST",
+                      "GET"
+                    ]
+                  },
+                  "payload": {
+                    "type": "object"
+                  }
+                }
+              },
+              "every": {
+                "type": "string",
+                "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+              }
+            },
+            "additionalProperties": true,
+            "allOf": [
+              {
+                "if": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "session_mode"
+                      ],
+                      "properties": {
+                        "session_mode": {
+                          "type": "string",
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned"
+                              ]
+                            },
+                            {
+                              "pattern": "^\\s*(?:[pP][iI][nN][nN][eE][dD])\\s*$(?![\\s\\S])"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "not": {
+                        "required": [
+                          "session_mode"
+                        ]
+                      },
+                      "required": [
+                        "sessionMode"
+                      ],
+                      "properties": {
+                        "sessionMode": {
+                          "type": "string",
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "pinned"
+                              ]
+                            },
+                            {
+                              "pattern": "^\\s*(?:[pP][iI][nN][nN][eE][dD])\\s*$(?![\\s\\S])"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "then": {
+                  "if": {
+                    "required": [
+                      "session_id"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "session_id": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      }
+                    }
+                  },
+                  "else": {
+                    "required": [
+                      "sessionId"
+                    ],
+                    "properties": {
+                      "sessionId": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      }
                     }
                   }
                 }
-              ]
-            },
-            "then": {
-              "if": {
-                "required": [
-                  "session_id"
+              },
+              {
+                "if": {
+                  "not": {
+                    "required": [
+                      "target"
+                    ]
+                  }
+                },
+                "then": {
+                  "if": {
+                    "required": [
+                      "prompt"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "prompt": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      }
+                    }
+                  },
+                  "else": {
+                    "required": [
+                      "prompt_template"
+                    ],
+                    "properties": {
+                      "prompt_template": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "type": {
+                      "const": "cron"
+                    }
+                  }
+                },
+                "then": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "cron"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "schedule"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "every"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "run_at"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "runAt"
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "type": {
+                      "const": "webhook"
+                    }
+                  }
+                },
+                "then": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "secret_env"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "secretEnv"
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "type": {
+                      "const": "event"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "connector",
+                    "event"
+                  ],
+                  "properties": {
+                    "cron": false,
+                    "schedule": false,
+                    "run_at": false,
+                    "runAt": false,
+                    "timezone": false,
+                    "secret_env": false,
+                    "secretEnv": false
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "type": {
+                      "const": "app"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "app"
+                  ],
+                  "properties": {
+                    "cron": false,
+                    "schedule": false,
+                    "run_at": false,
+                    "runAt": false,
+                    "timezone": false,
+                    "secret_env": false,
+                    "secretEnv": false,
+                    "connector": false,
+                    "account": false,
+                    "source": false,
+                    "event": false,
+                    "config": false
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "cron",
+                        "webhook",
+                        "event"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "app": false
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "cron",
+                        "webhook",
+                        "app"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "connector": false,
+                    "account": false,
+                    "source": false,
+                    "event": false,
+                    "config": false
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "webhook",
+                        "event",
+                        "app"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "max_lateness": false,
+                    "every": false
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "slug",
+              "on",
+              "run"
+            ],
+            "properties": {
+              "slug": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+              },
+              "name": {
+                "type": "string"
+              },
+              "type": false,
+              "enabled": {
+                "oneOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^(?:[tT][rR][uU][eE]|[fF][aA][lL][sS][eE]|1|0|[yY][eE][sS]|[nN][oO]|[oO][nN]|[oO][fF][fF])$"
+                  }
                 ]
               },
-              "then": {
+              "filter": {
+                "type": "object",
+                "additionalProperties": {
+                  "oneOf": [
+                    {
+                      "type": [
+                        "string",
+                        "number",
+                        "boolean"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "minProperties": 1,
+                      "maxProperties": 1,
+                      "additionalProperties": false,
+                      "properties": {
+                        "not": {
+                          "oneOf": [
+                            {
+                              "type": [
+                                "string",
+                                "number",
+                                "boolean"
+                              ]
+                            },
+                            {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ]
+                              }
+                            }
+                          ]
+                        },
+                        "in": {
+                          "oneOf": [
+                            {
+                              "type": [
+                                "string",
+                                "number",
+                                "boolean"
+                              ]
+                            },
+                            {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ]
+                              }
+                            }
+                          ]
+                        },
+                        "exists": {
+                          "type": "boolean"
+                        },
+                        "prefix": {
+                          "oneOf": [
+                            {
+                              "type": [
+                                "string",
+                                "number",
+                                "boolean"
+                              ],
+                              "minLength": 1
+                            },
+                            {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ],
+                                "minLength": 1
+                              }
+                            }
+                          ]
+                        },
+                        "not_prefix": {
+                          "oneOf": [
+                            {
+                              "type": [
+                                "string",
+                                "number",
+                                "boolean"
+                              ],
+                              "minLength": 1
+                            },
+                            {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ],
+                                "minLength": 1
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              "max_runs_per_hour": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "max_runs_per_day": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "max_lateness": {
+                "type": "string",
+                "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+              },
+              "overlap": {
+                "type": "string",
+                "enum": [
+                  "skip",
+                  "allow"
+                ]
+              },
+              "on": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "required": [
+                      "cron"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "cron": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      },
+                      "timezone": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "every"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "every": {
+                        "type": "string",
+                        "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+                      },
+                      "timezone": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "at"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "at": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      },
+                      "timezone": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "webhook"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "webhook": {
+                        "type": "object",
+                        "required": [
+                          "secret"
+                        ],
+                        "additionalProperties": false,
+                        "properties": {
+                          "secret": {
+                            "type": "string",
+                            "pattern": "^[A-Z_][A-Z0-9_]*$"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "event",
+                      "connector"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "event": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      },
+                      "connector": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      },
+                      "account": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      },
+                      "source": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      },
+                      "config": {
+                        "type": "object"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "event",
+                      "app"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "event": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      },
+                      "app": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+                      }
+                    }
+                  }
+                ]
+              },
+              "run": {
+                "type": "object",
+                "additionalProperties": false,
+                "anyOf": [
+                  {
+                    "required": [
+                      "prompt"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "app"
+                    ]
+                  }
+                ],
                 "properties": {
+                  "agent": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  },
+                  "prompt": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  },
+                  "session": {
+                    "type": "string",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "fresh",
+                          "reuse",
+                          "pinned",
+                          "keyed"
+                        ]
+                      },
+                      {
+                        "pattern": "^\\s*(?:[fF][rR][eE][sS][hH]|[rR][eE][uU][sS][eE]|[pP][iI][nN][nN][eE][dD]|[kKK][eE][yY][eE][dD])\\s*$(?![\\s\\S])"
+                      }
+                    ]
+                  },
+                  "session_key": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  },
                   "session_id": {
                     "type": "string",
                     "pattern": "\\S"
-                  }
-                }
-              },
-              "else": {
-                "required": [
-                  "sessionId"
-                ],
-                "properties": {
-                  "sessionId": {
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "app": {
                     "type": "string",
-                    "pattern": "\\S"
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+                  },
+                  "path": {
+                    "type": "string",
+                    "pattern": "^/"
+                  },
+                  "method": {
+                    "type": "string",
+                    "enum": [
+                      "POST",
+                      "GET"
+                    ]
+                  },
+                  "payload": {
+                    "type": "object"
                   }
                 }
               }
-            }
-          },
-          {
-            "if": {
-              "required": [
-                "prompt"
-              ]
             },
-            "then": {
-              "properties": {
-                "prompt": {
-                  "type": "string",
-                  "pattern": "\\S"
-                }
-              }
-            },
-            "else": {
-              "required": [
-                "prompt_template"
-              ],
-              "properties": {
-                "prompt_template": {
-                  "type": "string",
-                  "pattern": "\\S"
-                }
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "type": {
-                  "const": "cron"
-                }
-              }
-            },
-            "then": {
-              "anyOf": [
-                {
-                  "required": [
-                    "cron"
-                  ]
-                },
-                {
-                  "required": [
-                    "schedule"
-                  ]
-                },
-                {
-                  "required": [
-                    "run_at"
-                  ]
-                },
-                {
-                  "required": [
-                    "runAt"
-                  ]
-                }
-              ]
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "type": {
-                  "const": "webhook"
-                }
-              }
-            },
-            "then": {
-              "anyOf": [
-                {
-                  "required": [
-                    "secret_env"
-                  ]
-                },
-                {
-                  "required": [
-                    "secretEnv"
-                  ]
-                }
-              ]
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "type": {
-                  "const": "monitor"
-                }
-              }
-            },
-            "then": {
-              "required": [
-                "run",
-                "mode"
-              ],
-              "properties": {
-                "run": {
-                  "type": "string",
-                  "pattern": "\\S"
-                },
-                "cron": false,
-                "schedule": false,
-                "run_at": false,
-                "runAt": false,
-                "timezone": false,
-                "secret_env": false,
-                "secretEnv": false
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "type": {
-                  "const": "event"
-                }
-              }
-            },
-            "then": {
-              "required": [
-                "connector",
-                "event"
-              ],
-              "properties": {
-                "cron": false,
-                "schedule": false,
-                "run_at": false,
-                "runAt": false,
-                "timezone": false,
-                "secret_env": false,
-                "secretEnv": false,
-                "run": false,
-                "mode": false,
-                "interval": false,
-                "expect_event_within": false
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "type": {
-                  "enum": [
-                    "cron",
-                    "webhook",
-                    "monitor"
-                  ]
-                }
-              },
-              "required": [
-                "type"
-              ]
-            },
-            "then": {
-              "properties": {
-                "connector": false,
-                "account": false,
-                "source": false,
-                "event": false,
-                "config": false
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "type": {
-                  "enum": [
-                    "webhook",
-                    "monitor",
-                    "event"
-                  ]
-                }
-              },
-              "required": [
-                "type"
-              ]
-            },
-            "then": {
-              "properties": {
-                "max_lateness": false
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "type": {
-                  "const": "monitor"
-                },
-                "mode": {
-                  "const": "poll"
-                }
-              },
-              "required": [
-                "mode"
-              ]
-            },
-            "then": {
-              "required": [
-                "interval"
-              ]
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "type": {
-                  "const": "monitor"
-                },
-                "mode": {
-                  "const": "stream"
-                }
-              },
-              "required": [
-                "mode"
-              ]
-            },
-            "then": {
-              "properties": {
-                "interval": false
-              }
-            }
+            "additionalProperties": true
           }
         ]
       }

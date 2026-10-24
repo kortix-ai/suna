@@ -60,9 +60,6 @@ export async function principalHoldsRefScope(
   switch (principal.kind) {
     case 'internal':
       return true;
-    case 'monitor':
-      // No principal behind a monitor box to hold anything.
-      return false;
     case 'user': {
       // An account-scoped API key carries NO user identity, so there is no
       // principal to evaluate a role against — the same reasoning

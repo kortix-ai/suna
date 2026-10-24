@@ -57,7 +57,6 @@ describe('gitPrincipalEnvelope', () => {
       actorUserId: 'u1',
     });
     expect(gitPrincipalEnvelope({ kind: 'user', userId: null })).toMatchObject({ actorType: 'system', actorUserId: null });
-    expect(gitPrincipalEnvelope({ kind: 'monitor' })).toMatchObject({ actorType: 'system', source: 'monitor' });
   });
 });
 
@@ -110,11 +109,6 @@ describe('git proxy attribution binds into the request scope', () => {
       authMethod: { kind: 'git', principal: 'user', token_id: 'pat-1' },
     });
     expect(scope.principal.lateAttribution).toBeUndefined();
-  });
-
-  test('a monitor box is system', () => {
-    const scope = scopeAfter(() => bindGitProxyPrincipal({ kind: 'monitor' }, project));
-    expect(scope.principal).toMatchObject({ actorType: 'system', authoritativeSource: 'monitor' });
   });
 
   test('a transfer names itself as git.clone / git.push on the git repository', () => {

@@ -819,7 +819,6 @@ describe('envelopes', () => {
       'marketplace',
       'connectors_api_discover',
       'meta_agent',
-      'monitors',
       'reminders',
       'warm_sessions',
       'secrets_egress',

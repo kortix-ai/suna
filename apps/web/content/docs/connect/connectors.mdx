@@ -60,7 +60,7 @@ A connector page has up to four tabs:
 | --- | --- | --- |
 | **Accounts** | The accounts the connector can run as. | Everyone with access to the project. |
 | **Tools** | Each action, and whether it runs, needs approval, or is blocked. | Members who can change connectors. |
-| **Triggers** | [App event triggers](/docs/connect/triggers#app-events) on this connector. | Everyone, when the app has events. |
+| **Triggers** | [Connector event triggers](/docs/connect/triggers#connector-events) on this connector. | Everyone, when the app has events. |
 | **Settings** | Connection details and **Remove connector**. | Members who can change connectors. Absent on the computer connector. |
 
 ### Add an MCP server from its URL
@@ -113,7 +113,7 @@ Apps sign in one of three ways:
 - Connectors you added from the managed catalog keep working with the flag on.
 - Agents see the same catalog: the `search_connector_apps` tool of the [Kortix MCP server](/docs/connect/mcp) lists every app, with `kind` and `one_click` filters, and `add_connector` with `app` installs its recommended way, or `way`. The catalog is large, not complete: for an app it lacks, agents search the web for the vendor's MCP server or API and add it directly.
 
-Catalog apps can start [triggers](/docs/connect/triggers#app-events). With the project flag `event_triggers` also on, Kortix checks an installed app's MCP server for new items, such as a new email in Gmail, and fires the trigger once for each one. Every tool that lists items and only reads can be an event, on catalog apps and on your own MCP servers. The trigger runs on an account shared with the whole project.
+Catalog apps can start [triggers](/docs/connect/triggers#connector-events). With the project flag `event_triggers` also on, Kortix checks an installed app's MCP server for new items, such as a new email in Gmail, and fires the trigger once for each one. Every tool that lists items and only reads can be an event, on catalog apps and on your own MCP servers. The trigger runs on an account shared with the whole project.
 
 #### Move a Pipedream or Composio connector to Kortix
 
@@ -131,7 +131,7 @@ What changes:
 - Kortix rewrites the `kortix.yaml` entry to `provider: mcp` with the app's `url`, commits it to the default branch and syncs the connector.
 - The tools now come from the vendor's own MCP server, so the tool names differ. Check the agent prompts that name an old tool.
 - The account that signed in holds the new sign-in. Every other account on the connector loses its old sign-in. It reads not signed in until its owner signs in again.
-- A Composio [event trigger](/docs/connect/triggers#app-events) on the connector moves to the Kortix event that replaces it, in the same `kortix.yaml` commit, and its Composio subscription is deleted. Kortix then checks the app itself.
+- A Composio [event trigger](/docs/connect/triggers#connector-events) on the connector moves to the Kortix event that replaces it, in the same `kortix.yaml` commit, and its Composio subscription is deleted. Kortix then checks the app itself.
 
 ```yaml
 # Before

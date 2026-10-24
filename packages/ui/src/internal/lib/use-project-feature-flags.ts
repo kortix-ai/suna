@@ -31,7 +31,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const connectorsApiDiscover = useFeatureFlag(projectId, 'connectors_api_discover');
   const agentmailEmail = useFeatureFlag(projectId, 'agentmail_email');
   const metaAgent = useFeatureFlag(projectId, 'meta_agent');
-  const monitors = useFeatureFlag(projectId, 'monitors');
   const reminders = useFeatureFlag(projectId, 'reminders');
   const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
   const secretsEgress = useFeatureFlag(projectId, 'secrets_egress');
@@ -57,7 +56,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       connectors_api_discover: connectorsApiDiscover.enabled,
       agentmail_email: agentmailEmail.enabled,
       meta_agent: metaAgent.enabled,
-      monitors: monitors.enabled,
       reminders: reminders.enabled,
       warm_sessions: warmSessions.enabled,
       secrets_egress: secretsEgress.enabled,

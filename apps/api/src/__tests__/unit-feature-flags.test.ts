@@ -154,33 +154,18 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('llm_gateway');
   });
 
-  test('monitors is explicit opt-in and gated on Platinum availability', () => {
-    const available = Boolean(config.PLATINUM_API_KEY);
-    expect(findCatalogFlag('monitors')).toMatchObject({
-      name: 'Monitors',
-      stability: 'experimental',
-      available,
-      enabled: false,
-    });
-    // Off by default everywhere; a project's explicit opt-in wins only where
-    // the platform can actually run a persistent box (Platinum configured).
-    expect(resolveFeatureFlag({}, 'monitors')).toBe(false);
-    expect(resolveFeatureFlag({ experimental: { monitors: true } }, 'monitors')).toBe(available);
-    expect(resolveFeatureFlag({ experimental: { monitors: false } }, 'monitors')).toBe(false);
-  });
-
-  test('event_triggers is a beta, explicit opt-in flag offered everywhere', () => {
+  test('event_triggers is a beta flag, on by default everywhere, that a project can turn off', () => {
     expect(findCatalogFlag('event_triggers')).toMatchObject({
-      name: 'App event triggers',
+      name: 'Connector event triggers',
       stability: 'beta',
-      enabled: false,
+      enabled: true,
       operator_only: false,
     });
     const def = REGISTERED_FEATURE_FLAGS.find((f) => f.key === 'event_triggers')!;
     expect(def.enforcement).toBe('routes');
     expect(def.available()).toBe(true);
-    expect(def.platformDefault()).toBe(false);
-    expect(resolveFeatureFlag({}, 'event_triggers')).toBe(false);
+    expect(def.platformDefault()).toBe(true);
+    expect(resolveFeatureFlag({}, 'event_triggers')).toBe(true);
     expect(resolveFeatureFlag({ experimental: { event_triggers: true } }, 'event_triggers')).toBe(true);
     expect(resolveFeatureFlag({ experimental: { event_triggers: false } }, 'event_triggers')).toBe(false);
   });
@@ -265,9 +250,6 @@ describe('resolveFeatureFlag — explicit override wins', () => {
 
   test('non-boolean stored values are treated as "no override"', () => {
     for (const garbage of ['true', 1, 0, null, [], {}, 'yes']) {
-      expect(resolveFeatureFlag({ experimental: { monitors: garbage } }, 'monitors')).toBe(
-        resolveFeatureFlag({}, 'monitors'),
-      );
       expect(resolveFeatureFlag({ experimental: { marketplace: garbage } }, 'marketplace')).toBe(
         resolveFeatureFlag({}, 'marketplace'),
       );

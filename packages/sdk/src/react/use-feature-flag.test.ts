@@ -38,7 +38,7 @@ function withDetail(experimental: Record<string, unknown> | undefined) {
 
 describe('useFeatureFlag', () => {
   test('reads the shared project-detail cache entry, not a private key', () => {
-    useFeatureFlag('proj-1', 'monitors');
+    useFeatureFlag('proj-1', 'reminders');
 
     // Built through the factory on purpose: the guard in
     // `query-key-literals.test.ts` forbids hand-typed key literals here, and
@@ -49,40 +49,40 @@ describe('useFeatureFlag', () => {
   });
 
   test('is disabled and fail-closed with no project id', () => {
-    const flag = useFeatureFlag(null, 'monitors');
+    const flag = useFeatureFlag(null, 'reminders');
 
     expect(lastConfig?.enabled).toBe(false);
     expect(flag.enabled).toBe(false);
   });
 
   test('queryFn fetches the project detail for the given id', async () => {
-    useFeatureFlag('proj-9', 'monitors');
+    useFeatureFlag('proj-9', 'reminders');
     await lastConfig?.queryFn();
 
     expect(detailCalls).toEqual(['proj-9']);
   });
 
   test('enabled only when the server says exactly true', () => {
-    withDetail({ monitors: true });
-    expect(useFeatureFlag('p', 'monitors').enabled).toBe(true);
+    withDetail({ reminders: true });
+    expect(useFeatureFlag('p', 'reminders').enabled).toBe(true);
 
-    withDetail({ monitors: false });
-    expect(useFeatureFlag('p', 'monitors').enabled).toBe(false);
+    withDetail({ reminders: false });
+    expect(useFeatureFlag('p', 'reminders').enabled).toBe(false);
 
     // Fail-closed on every non-`true` shape the wire could produce.
-    withDetail({ monitors: 'true' as unknown as boolean });
-    expect(useFeatureFlag('p', 'monitors').enabled).toBe(false);
+    withDetail({ reminders: 'true' as unknown as boolean });
+    expect(useFeatureFlag('p', 'reminders').enabled).toBe(false);
 
     withDetail({});
-    expect(useFeatureFlag('p', 'monitors').enabled).toBe(false);
+    expect(useFeatureFlag('p', 'reminders').enabled).toBe(false);
 
     withDetail(undefined);
-    expect(useFeatureFlag('p', 'monitors').enabled).toBe(false);
+    expect(useFeatureFlag('p', 'reminders').enabled).toBe(false);
   });
 
   test('reports the loading state so callers can gate on it', () => {
     nextResult = { data: undefined, isLoading: true };
-    const flag = useFeatureFlag('p', 'monitors');
+    const flag = useFeatureFlag('p', 'reminders');
 
     expect(flag.isLoading).toBe(true);
     // Loading is NOT enabled — the surface stays dark until the server answers.
@@ -90,9 +90,9 @@ describe('useFeatureFlag', () => {
   });
 
   test('one flag never reads another flag`s slot', () => {
-    withDetail({ monitors: true, reminders: false });
+    withDetail({ genui: true, reminders: false });
 
-    expect(useFeatureFlag('p', 'monitors').enabled).toBe(true);
+    expect(useFeatureFlag('p', 'genui').enabled).toBe(true);
     expect(useFeatureFlag('p', 'reminders').enabled).toBe(false);
   });
 

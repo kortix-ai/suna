@@ -521,6 +521,8 @@ export function registerAppsRoutes(): void {
           alwaysOn,
           externalUrl,
           externalFrameable,
+          // An external App exists to be shown: it is on the Apps page from the start.
+          ...(externalUrl ? { display: { listed: true } } : {}),
         }).returning()) as [typeof apps.$inferSelect];
       } catch (error) {
         // Drizzle wraps the postgres.js error, so the SQLSTATE lives on

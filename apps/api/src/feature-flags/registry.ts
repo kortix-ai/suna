@@ -218,21 +218,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
   // `apps` graduated (2026-10-14, spec §28): Apps is generally available —
   // every project can create and deploy Apps and there is no flag, no row and
   // no operator lever. A stored `experimental.apps` override is inert.
-  {
-    key: 'monitors',
-    name: 'Monitors',
-    description:
-      'Run 24/7 watchers from your repo that observe anything — logs, feeds, APIs — and fire trigger events into agent sessions. Runs on a persistent per-project monitor box. The contract is still experimental.',
-    stability: 'experimental',
-    // Monitors need a provider that can run a persistent (never auto-stopped)
-    // box. Only Platinum supports autoStop=0 — Daytona clamps auto-stop to
-    // ≥1 min — so the surface stays dark unless
-    // Platinum credentials are configured.
-    available: () => Boolean(config.PLATINUM_API_KEY),
-    // Explicit opt-in: off by default even where Platinum is available.
-    platformDefault: () => false,
-    enforcement: 'routes',
-  },
+  // `monitors` (the per-project monitor box) was removed: an App with a
+  // schedule or `type: app` trigger replaces it. A stored
+  // `experimental.monitors` override is inert.
   {
     key: 'reminders',
     name: 'Reminders',
@@ -328,15 +316,16 @@ const FLAGS: readonly FeatureFlagDef[] = [
   },
   {
     key: 'event_triggers',
-    name: 'App event triggers',
+    name: 'Connector event triggers',
     description:
-      'Start an agent when something happens in a connected app — a new email, a pull request, a calendar event.',
+      'Start an agent when something happens in a connected app: a new email, a pull request, a calendar event. ' +
+      'Events come from Composio. With Connectors v2 on, Kortix also checks your connected apps itself.',
     stability: 'beta',
     // Always offered: on a deployment with no event source configured, the
     // triggers themselves say so (status `error` naming COMPOSIO_API_KEY).
     available: () => true,
-    // Per-project opt-in on every environment.
-    platformDefault: () => false,
+    // On for every project (2026-10-24); a project can still turn it off.
+    platformDefault: () => true,
     enforcement: 'routes',
     enforcementNote:
       'ROUTES: GET /triggers/event-types, GET /triggers/event-apps, and POST|PATCH /triggers ' +
@@ -480,7 +469,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'connectors_v2',
     name: 'Connectors v2',
     description:
-      'Connectors on Kortix: the MCP app catalog in Customize → Connectors (vendor MCP servers, signed in with OAuth that Kortix runs), app events that Kortix checks on those apps (with App event triggers on), and Telegram as a channel connector. New connector accounts are no longer created for the whole project by default.',
+      'Connectors on Kortix: the MCP app catalog in Customize → Connectors (vendor MCP servers, signed in with OAuth that Kortix runs), app events that Kortix checks on those apps (with Connector event triggers on), and Telegram as a channel connector. New connector accounts are no longer created for the whole project by default.',
     stability: 'experimental',
     available: () => true,
     platformDefault: () => false,

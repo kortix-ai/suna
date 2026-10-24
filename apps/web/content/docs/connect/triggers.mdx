@@ -1,20 +1,49 @@
 ---
 title: Triggers & reminders
-description: Start sessions on a schedule, from a signed webhook, from an app event or from a monitor, and have a session re-prompt itself later.
+description: Start sessions or call your Apps on a schedule, from a signed webhook, from a connected app or from one of your Apps, and have a session re-prompt itself later.
 ---
 
 A trigger starts a [session](/docs/work/sessions) with no person present. A reminder re-prompts one existing session later, once or on repeat. This page is for project owners who automate agent work and debug a fire that failed.
 
 ## How triggers work
 
-A trigger has a type, a prompt, and the agent that runs it. Each fire renders the prompt against the fire's payload and sends it to the session that `session_mode` picks: a new session by default.
+A trigger has two parts: `on:`, what fires it, and `run:`, what runs. By default `run:` is a prompt to an agent: each fire renders the prompt against the fire's payload and sends it to the session that `session_mode` picks, a new session by default.
 
-| Type | Fires when | Needs |
-| --- | --- | --- |
-| `cron` | A schedule slot arrives, or once at `run_at`. | Nothing else. |
-| `webhook` | A signed `POST` reaches the trigger's URL. | A project secret that signs requests. |
-| `event` | Something happens in a connected app, such as a new pull request or a new email. | The project flag `event_triggers` and a connector with a shared account. Source `mcp` also needs the flag `connectors_v2`. |
-| `monitor` | A command from your repository prints a line on stdout. | The project flag `monitors`, on an instance whose sandbox provider is [Platinum](/docs/work/runtime#sandbox-providers). |
+| Type | `on:` | Fires when | Needs |
+| --- | --- | --- | --- |
+| `cron` | `cron`, `every` or `at` | A schedule slot arrives, a fixed period passes, or once at a time. | Nothing else. |
+| `webhook` | `webhook: { secret }` | A signed `POST` reaches the trigger's URL. | A project secret that signs requests. |
+| `event` | `event` + `connector` | Something happens in a connected app, such as a new pull request or a new email. | The project flag `event_triggers` and a connector with a shared account. Source `mcp` also needs the flag `connectors_v2`. |
+| `app` | `event` + `app` | One of your [Apps](/docs/apps) posts an event. | Nothing else: every App machine has its credentials. |
+
+| `run:` | What a fire does |
+| --- | --- |
+| `prompt`, plus `agent`, `model`, `session` | Sends the prompt to an agent session. |
+| `app`, `path`, plus `method`, `payload` | Calls one of your Apps. Kortix wakes an App that sleeps, then sends the request. No session starts and no model runs. See [Call an App](#call-an-app). |
+
+```yaml
+triggers:
+  - slug: digest
+    on: { cron: "0 0 9 * * 1-5", timezone: Europe/Berlin }
+    run: { agent: writer, prompt: "Summarize yesterday's commits." }
+  - slug: poll-inbox
+    on: { every: 5m }
+    run: { app: inbox-poller, path: /tick }
+  - slug: handle-reply
+    on: { event: reply.received, app: inbox-poller }
+    run: { prompt: "Answer the reply: {{ event.data.subject }}" }
+```
+
+### Which trigger to use
+
+To react to something outside Kortix, pick the first that fits:
+
+1. **A connector event.** The service already emits it: a new email, a new pull request. No code, no secret.
+2. **A webhook.** The service can call a URL. One secret, no code to run.
+3. **A schedule.** Checking on a fixed cadence is enough.
+4. **An App that posts App events.** Only when none of the above works: the source has no events and no webhook, code must decide what deserves an agent, or the watch needs a connection that stays open.
+
+An entry may also use the flat form (`type: cron`, `cron: …`, `prompt: …`). Both forms mean the same trigger. `kortix triggers add`, the web app and the API write new triggers in the `on:`/`run:` form. An edit keeps the form the entry already has.
 
 The shortest path is a schedule:
 
@@ -46,8 +75,8 @@ From code, the SDK exports `listProjectTriggers`, `createProjectTrigger`, `updat
 
 | Command | Effect |
 | --- | --- |
-| `kortix triggers ls [--type cron\|webhook\|event\|monitor] [--connector <slug>] [--json]` | Lists triggers, their state, last fire and manifest errors. |
-| `kortix triggers info <slug> [--json]` | Shows one trigger in full: the webhook URL and a signed sample request, or an app event's status and next step. |
+| `kortix triggers ls [--type cron\|webhook\|event\|app] [--connector <slug>] [--json]` | Lists triggers, their state, last fire and manifest errors. |
+| `kortix triggers info <slug> [--json]` | Shows one trigger in full: the webhook URL and a signed sample request, or a connector event's status and next step. |
 | `kortix triggers add <slug> [--apply]` | Adds a trigger. `--type` defaults to `cron`. |
 | `kortix triggers set <slug>` | Changes a live trigger. Writes only the flags you pass. |
 | `kortix triggers rm\|enable\|disable <slug> [--apply]` | Removes, enables or disables a trigger. |
@@ -56,7 +85,7 @@ From code, the SDK exports `listProjectTriggers`, `createProjectTrigger`, `updat
 | `kortix triggers runs <slug> [--status <s>] [--limit N] [--cursor <c>] [--json]` | Lists the trigger's runs, newest first: run id, started, source, status, run status, duration, cost, session. |
 | `kortix triggers replay <slug> <run_id> [--confirm-unverified]` | Fires again with that run's stored payload. A run whose webhook signature did not verify needs `--confirm-unverified`. |
 | `kortix triggers pause\|resume` | Stops or restarts every automatic fire in the project. See [Pause and limits](#pause-and-limits). |
-| `kortix triggers events …` | Lists apps and events for app event triggers. See [App events](#app-events). |
+| `kortix triggers events …` | Lists apps and events for connector event triggers. See [Connector events](#connector-events). |
 
 `--model`, `--session-mode`, `--session-key`, `--session-id`, `--session-access`, `--member`, `--group` and `--filter` apply only with `--apply` on `add`, and on `set`. `--max-runs-per-hour` and `--max-runs-per-day` apply on every `add` and `set`; see [Run limits](#run-limits).
 
@@ -71,14 +100,13 @@ A `cron` trigger takes a 6-field expression: second, minute, hour, day of month,
 ```yaml
 triggers:
   - slug: daily-digest
-    type: cron
-    cron: "0 0 9 * * 1-5"
-    timezone: Europe/Berlin
-    prompt: Summarize yesterday's commits and open change requests.
+    on: { cron: "0 0 9 * * 1-5", timezone: Europe/Berlin }
+    run: { prompt: Summarize yesterday's commits and open change requests. }
 ```
 
+- `every: 5m` (or `--every 5m`) fires at a fixed period instead of a cron expression. The minimum is `60s`.
 - A trigger fires at most once a minute. `0 */30 * * * *` is every 30 minutes. `*/30 * * * * *` is every 30 seconds, and `kortix validate` and the API reject it.
-- `run_at: 2026-11-02T09:00:00Z` (or `--run-at`) fires once, in place of `cron`. Set one of the two, never both.
+- `at: 2026-11-02T09:00:00Z` (`run_at` in the flat form, or `--run-at`) fires once, in place of `cron`. Set one of `cron`, `every` and `at`.
 - `timezone` takes an IANA name. The default is `UTC`.
 - Kortix offsets each run by a fixed amount: up to a quarter of the period, at most 30 minutes. This spreads triggers on the same minute. `next_fire_at` in `GET /v1/projects/<project_id>/triggers` shows the real time of the next run.
 - Each fire is keyed on its schedule slot. A retried fire does not run the slot twice.
@@ -156,11 +184,11 @@ curl -X POST "$URL" \
 
 Kortix runs a delivery once per event. It reads the event id from the first of these headers that is present: `X-Kortix-Delivery-Id`, `X-GitHub-Delivery`, `X-Gitlab-Event-UUID`, `Linear-Delivery`, `webhook-id`, `svix-id`. A retry with the same id answers `202` with `status: deduped` and runs nothing. Without an id, an identical body and signature within 10 minutes count as one event. Send a new `X-Kortix-Delivery-Id` for each event.
 
-## App events
+## Connector events
 
 An `event` trigger runs an agent when something happens in a connected app: a pull request opens, an email arrives. You do not sign anything. Kortix subscribes to the event, or checks the app, for you.
 
-App event triggers need the project flag `event_triggers`, off by default. Turn it on in **Customize → Settings → Feature flags → App event triggers**, or run `kortix projects features enable event_triggers`. While it is off, the event routes answer `403` with `code: feature_disabled`. The CLI prints the command that turns it on. An `event` trigger in `kortix.yaml` reads status `error`. Turning it on subscribes those triggers without another save.
+Connector event triggers use the project flag `event_triggers`, on by default. A project owner can turn it off, and back on, in **Customize → Settings → Feature flags → Connector event triggers**, or with `kortix projects features disable|enable event_triggers`. While it is off, the event routes answer `403` with `code: feature_disabled`. The CLI prints the command that turns it on. An `event` trigger in `kortix.yaml` reads status `error`. Turning it on subscribes those triggers without another save.
 
 ### Event sources
 
@@ -278,7 +306,7 @@ Source `mcp` has three events of its own, plus one event for each tool that list
 | `google_drive.file.created` | **New file** | A file is created in Google Drive, or in the folder `folder_id`. | `folder_id`: the part of the folder URL after `/folders/`. Empty: every file you can open. `query`: a Drive search clause, such as `mimeType = 'application/pdf'` or `title contains 'invoice'`. |
 | `new_item.<tool>` | **New item from** *tool* | The tool returns an item that it did not return before. | The tool's own arguments. See [Any tool](#any-tool). |
 
-Every event also takes `interval`: the minutes between checks, `1`, `5` (default), `15`, `30`, `60`, `360` or `1440`. A new item fires within that many minutes. `interval` goes inside `config`. The top-level `interval` field belongs to monitors, and an `event` trigger rejects it.
+Every event also takes `interval`: the minutes between checks, `1`, `5` (default), `15`, `30`, `60`, `360` or `1440`. A new item fires within that many minutes. `interval` goes inside `config`. A top-level `interval` field is an error on an `event` trigger.
 
 | Event | `{{ event.data.* }}` fields |
 | --- | --- |
@@ -342,37 +370,61 @@ A trigger keeps the source of its connector. To move a Composio trigger to a Kor
 3. **Change the prompt to the new data fields.** Composio event data uses other field names. List the new fields with `kortix triggers events --connector <slug> --event <type>`. Rewrite every `{{ event.data.* }}` in the prompt and every path in `filter`.
 4. **Remove the old trigger.** When the new trigger reads **Live**, run `kortix triggers rm <old-slug> --apply`, or select **Delete** on the old trigger. Until then, both triggers fire on the same new item. Remove the Composio connector when nothing else uses it.
 
-## Monitors
+## App events
 
-A monitor runs a command from your repository around the clock and fires the trigger once for each line the command prints on stdout. Use it to watch a source that sends no webhook and fits no schedule: a log, a queue, a page.
+An `app` trigger runs when one of your [Apps](/docs/apps) posts an event. Use it for anything an App watches that has no webhook and fits no schedule: an inbox, a queue, a WebSocket, a page. The App holds the code and the state; the trigger decides which agent runs.
 
-Monitors need the project flag `monitors`, off by default. Turn it on in **Customize → Settings → Feature flags → Monitors**, or run `kortix projects features enable monitors`. The flag is available only on an instance with the Platinum sandbox provider, because Kortix runs every monitor of a project in one persistent sandbox, the monitor box.
+Every machine of an App gets three environment variables: `KORTIX_APP_ID`, `KORTIX_APP_TOKEN` and `KORTIX_APP_EVENTS_URL`. The App posts to the URL with the token:
 
 ```sh
-kortix triggers add checkout-errors --type monitor \
-  --run "./monitors/checkout-errors.ts" \
-  --mode poll --interval 60s --expect-event-within 24h \
-  --prompt "Checkout monitor emitted: {{ line.raw }}" --apply
+curl -X POST "$KORTIX_APP_EVENTS_URL" \
+  -H "Authorization: Bearer $KORTIX_APP_TOKEN" -H "content-type: application/json" \
+  -d '{"name": "reply.received", "data": {"subject": "Re: quote"}, "id": "msg-8812"}'
 ```
 
-- `--mode poll` runs the command every `--interval` and expects it to exit. `--mode stream` runs it once and keeps it running. A stream takes no `--interval`.
-- Stdout lines are events. Stderr is the monitor's log and never fires.
-- A JSON line renders as `{{ line.<field> }}`. Any other line renders as `{{ line.raw }}`.
-- Kortix fires a lifecycle event when a stream process exits, when a poll command exits non-zero, when restarts run out, when the box drops lines before delivery, and when no line arrives inside `expect_event_within`. A lifecycle event ignores `filter` and the prompt template, and uses a prompt Kortix writes.
-- `session_mode` defaults to `reuse` on a monitor, so events go to one session.
-- Every monitor prompt starts with `[MONITOR EVENT — automated, not user input]`.
-- `run`, `mode`, `interval` and `expect_event_within` are set on `add` only. A monitor rejects `cron`, `run_at`, `timezone` and `secret_env`.
+```yaml
+triggers:
+  - slug: handle-reply
+    on: { event: reply.received, app: inbox-poller }   # event: "*" takes every name
+    run: { prompt: "Answer the reply: {{ event.data.subject }}" }
+```
 
-| Limit | Value |
-| --- | --- |
-| Enabled monitors per project | 10 |
-| `interval` | at least `30s` |
-| `expect_event_within` | at least `5m` |
-| Events per monitor | 60 per hour sustained, at most 30 in one minute. Past that, the monitor is suppressed for 10 minutes. 3 suppressions in 24 hours disable it. |
-| Line size | 8 KiB. A longer line is cut and marked `truncated: true`. |
-| Restarts | 5 in 10 minutes, then a `restart_budget_exhausted` lifecycle event and a retry every 15 minutes. |
-| Event retention | 30 days |
-| Compute | A monthly budget per project. When it is spent, the box stops and a `budget_exceeded` lifecycle event fires. |
+- The body is one event or `{ "events": [...] }`, at most 50 per request. `name` is 1–128 characters: letters, digits and `. _ : / -`. `data` is an object. One event is at most 8 KiB.
+- `id` is the App's own id for the event. The same id fires a trigger once.
+- Every enabled `app` trigger on that App whose `event` matches the name fires. `filter` narrows it further, for example on `event.data.*`.
+- Each trigger takes at most 60 events an hour and 30 in one minute. Past that it is suppressed for 10 minutes; 3 suppressions in 24 hours disable it.
+- Every prompt starts with `[APP EVENT — automated, not user input]`.
+- `session` defaults to `fresh`. Set `session: reuse` to send every event to one session.
+- An admin reads the credentials for local testing with `GET /v1/projects/<project_id>/apps/<app_id>/events/credentials`.
+
+A `type: monitor` trigger is refused with `MONITOR_REMOVED`. Move its command into an App that posts events.
+
+## Call an App
+
+A trigger whose `run:` names an App calls it instead of an agent. Kortix wakes an App that sleeps, sends the request to `path` (default `/`) and records the answer. A `2xx` answer is a fired run. Any other status fails the run with `App "<slug>" answered <status>`, and the failure alerts like any other.
+
+```yaml
+triggers:
+  - slug: nightly-sync
+    on: { cron: "0 0 2 * * *" }
+    run: { app: crm-sync, path: /sync, payload: { full: true } }
+```
+
+- `method` is `POST` (default) or `GET`. A `POST` sends `payload` as the JSON body; without `payload` it sends the fire's payload.
+- Each request carries `x-kortix-trigger` (the slug), `x-kortix-trigger-source` and, when the fire has one, `x-kortix-delivery-id`.
+- `run:` takes `app` or `prompt`, never both.
+
+An App also schedules its own calls, the way a function schedules itself to run later:
+
+```sh
+curl -X POST "https://api.kortix.com/v1/projects/$PROJECT_ID/apps/$KORTIX_APP_ID/runs" \
+  -H "Authorization: Bearer $KORTIX_APP_TOKEN" -H "content-type: application/json" \
+  -d '{"run_after": "10m", "path": "/follow-up", "payload": {"deal": "d-17"}}'
+```
+
+- Send `run_after` (a duration such as `30s`, `10m`, `2h`, `7d`) or `run_at` (an instant at most 366 days ahead).
+- The answer is `201` with `run_id` and `run_at`. `DELETE …/apps/<app_id>/runs/<run_id>` cancels a run that has not fired.
+- An App holds at most 1,000 pending runs. A `payload` is at most 64 KiB. A fired run is kept 30 days.
 
 ## Reminders
 
@@ -435,21 +487,22 @@ await reminders.remove(reminder.id);
 | Field | Applies to | Required | Default | Rule |
 | --- | --- | --- | --- | --- |
 | `slug` | all | yes | — | `[a-z0-9][a-z0-9_-]{0,127}`, unique per project. Part of the webhook URL. |
-| `type` | all | yes | — | `cron`, `webhook`, `event` or `monitor`. |
-| `prompt` | all | yes | — | Template. The message each fire sends. |
+| `type` | all | yes, in the flat form | — | `cron`, `webhook`, `event` or `app`. The `on:` form implies it. |
+| `prompt` | all | yes, unless `target` | — | Template. The message each fire sends. |
 | `name` | all | no | `slug` | Display name. |
 | `agent` | all | no | `default_agent` | Must name an agent under `agents:`. Omit it to use `default_agent`. |
 | `model` | all | no | the default model | A model id. See [How a session gets a model](/docs/project/models#how-a-session-gets-a-model). |
 | `enabled` | all | no | `true` | `false` stops every automatic fire of this trigger. |
-| `session_mode` | all | no | `fresh`; `reuse` on a monitor | `fresh`, `reuse`, `pinned` or `keyed`. See [Session strategy](#session-strategy). |
+| `session_mode` | all | no | `fresh` | `fresh`, `reuse`, `pinned` or `keyed` (`run: { session }`). See [Session strategy](#session-strategy). |
 | `session_id` | `pinned` | yes | — | The session to re-prompt. |
 | `session_key` | `keyed` | yes | — | Template. Setting it alone implies `keyed`. |
 | `filter` | all | no | — | Map of dotted path to a value it must equal, or to one operator: `not`, `in`, `exists`, `prefix`, `not_prefix`. See [Templates and filters](#templates-and-filters). |
 | `max_runs_per_hour` | all | no | `60` | Whole number, at least 1. Runs the trigger may start in any 60 minutes. See [Pause and limits](#pause-and-limits). |
 | `max_runs_per_day` | all | no | no cap | Whole number, at least 1. Runs the trigger may start in a UTC day. |
 | `overlap` | all, fresh session mode | no | `skip` for cron, `allow` otherwise | `skip` or `allow`. See [Overlap](#overlap). |
-| `cron` | `cron` | one of `cron`, `run_at` | — | 6-field expression, at most once a minute. |
-| `run_at` | `cron` | one of `cron`, `run_at` | — | ISO-8601 instant. Fires once. |
+| `cron` | `cron` | one of `cron`, `every`, `run_at` | — | 6-field expression, at most once a minute. |
+| `every` | `cron` | one of `cron`, `every`, `run_at` | — | Duration such as `5m` or `2h`, at least `60s`. |
+| `run_at` | `cron` | one of `cron`, `every`, `run_at` | — | ISO-8601 instant (`on: { at }`). Fires once. |
 | `timezone` | `cron` | no | `UTC` | IANA name. |
 | `secret_env` | `webhook` | yes | — | The name of a project secret stored with `--scope connector`. Declare it under `env`. |
 | `connector` | `event` | yes | — | A connector slug under `connectors:`. |
@@ -457,12 +510,10 @@ await reminders.remove(reminder.id);
 | `config` | `event` | no | — | The event's settings. On source `mcp`, `interval` is the minutes between checks. See [Kortix events](#kortix-events). |
 | `account` | `event` | no | the connector's default shared account | Label of one shared account. |
 | `source` | `event` | no | the connector's provider | The event source: `composio` or `mcp`. `mcp` needs the project flag `connectors_v2`. See [Event sources](#event-sources). |
-| `run` | `monitor` | yes | — | Repository-relative command. One line, at most 1,024 characters. |
-| `mode` | `monitor` | yes | — | `poll` or `stream`. |
-| `interval` | `monitor` with `mode: poll` | yes | — | Duration such as `30s`, `5m`, `24h`, `7d`. At least `30s`. |
-| `expect_event_within` | `monitor` | no | — | Duration, at least `5m`. |
+| `app` | `app` | yes | — | The slug of the App whose events fire the trigger. |
+| `target` | all | no | — | `{ app, path, method, payload }` (`run: { app, … }`): calls the App instead of an agent. See [Call an App](#call-an-app). |
 
-A field that belongs to another type is an error: an `event` trigger rejects `cron`, `run_at`, `timezone`, `secret_env`, `run`, `mode`, `interval` and `expect_event_within`, and the other types reject the event fields.
+A field that belongs to another type is an error: an `event` trigger rejects `cron`, `every`, `run_at`, `timezone` and `secret_env`, and the other types reject the event fields. Inside `on:` and `run:` an unknown key is an error.
 
 ## Session strategy
 
@@ -486,8 +537,8 @@ A frequent trigger can roll its session on a calendar boundary so its history st
 | Every fire | `trigger.slug`, `trigger.type` |
 | Schedule | `cron.schedule`, `cron.timezone`, `cron.scheduled_for` (the slot), `cron.claimed_at`, `cron.last_scheduled_for` (empty on the first fire), `cron.scheduled_date` (UTC `YYYY-MM-DD`), `cron.scheduled_hour` (UTC `YYYY-MM-DDTHH`) |
 | Webhook | `fired_at`, `body.*` (the parsed JSON body; `body.raw` when it does not parse), `headers.content_type`, `headers.user_agent`, `headers.forwarded_for` |
-| App event | `fired_at`, `event.data.*`, `event.id`, `event.type`, `event.app`, `event.connector`, `event.occurred_at` |
-| Monitor | `line.*` (`line.raw` for a line that is not JSON), `monitor.slug`, `monitor.seq`, `monitor.emitted_at`, `monitor.kind` (`event` or `lifecycle`) |
+| Connector event | `fired_at`, `event.data.*`, `event.id`, `event.type`, `event.app`, `event.connector`, `event.occurred_at` |
+| App event | `event.name`, `event.data.*`, `event.id`, `event.emitted_at`, `app.slug` |
 | Manual fire | `fired_at`, `source` (`manual`), `actor`. An `event` trigger gets an empty `event.data`. |
 
 `filter` maps dotted paths to conditions. A fire runs only when every condition matches. A webhook that does not match answers `200` with `status: skipped`. Values compare as text, so `true`, `3` and `"3"` are the same. A missing or `null` path reads as an empty string.
@@ -545,15 +596,15 @@ When a fire or a run fails, Kortix sets the trigger's `last_status` to `failed` 
 With the project flag `notification_center` on, Kortix sends one `automation_failed` alert when a trigger starts failing and one `automation_recovered` alert when it works again. Failures in between send nothing new.
 
 - **Recipients:** the people who created or edited the trigger through the web app, the API, the SDK or the CLI. Without one, the project managers. A reminder's alert goes to the person who set it.
-- **Timing:** schedules, reminders and monitors alert after their retries run out. Manual and webhook fires alert on the first failure. An app event alerts on the third failed delivery of one event, or on the first failure that a retry cannot fix.
+- **Timing:** schedules, reminders and App events alert after their retries run out. Manual and webhook fires alert on the first failure. A connector event alerts on the third failed delivery of one event, or on the first failure that a retry cannot fix.
 - **Flag off:** an account owner's phone gets one push when a trigger starts failing.
 - **Turn alerts off:** see [Notifications](/docs/work/sessions#notifications).
 
 ## Pause and limits
 
-`kortix triggers pause` stops every automatic fire in the project: schedules, webhooks, app events, monitors and reminders. Webhooks answer `200` with `status: skipped`. A manual fire still runs. `kortix triggers resume` turns fires back on. The API route is `PATCH /v1/projects/<project_id>/triggers/activation` with `{ "paused": true }`. Pause one of two instances that run the same repository, so that schedules do not fire twice. For app events of source `mcp`, see Pause in [How checks work](#how-checks-work).
+`kortix triggers pause` stops every automatic fire in the project: schedules, webhooks, connector events, App events and reminders. Webhooks answer `200` with `status: skipped`. A manual fire still runs. `kortix triggers resume` turns fires back on. The API route is `PATCH /v1/projects/<project_id>/triggers/activation` with `{ "paused": true }`. Pause one of two instances that run the same repository, so that schedules do not fire twice. For app events of source `mcp`, see Pause in [How checks work](#how-checks-work).
 
-**Pause all automations** does the same for every project of the account at once: no schedule, reminder, webhook, app event or monitor of any project fires on its own. Use it to stop all automation at once, for example while you investigate unexpected spend. A webhook answers `200` with `status: skipped` and `reason: "account automations are paused"`. A manual fire still runs. A schedule slot missed while paused fires once on resume.
+**Pause all automations** does the same for every project of the account at once: no schedule, reminder, webhook, connector event or App event of any project fires on its own. Use it to stop all automation at once, for example while you investigate unexpected spend. A webhook answers `200` with `status: skipped` and `reason: "account automations are paused"`. A manual fire still runs. A schedule slot missed while paused fires once on resume.
 
 - In the web app: **Account settings** → **Settings** → **Automations** → **Pause all automations**. The Triggers page of every project shows that automations are paused.
 - In the CLI: `kortix triggers pause --account-wide` and `kortix triggers resume --account-wide`.
@@ -583,7 +634,7 @@ triggers:
 
 A schedule that fires faster than its runs finish would stack sessions. With `overlap: skip`, a fire waits out the previous run: it starts nothing and is a skipped run with the reason `overlap: the previous run is still active (session <id>)`, or `… still queued (command <id>)` while its create waits in the queue. With `overlap: allow`, every fire starts a run.
 
-- `skip` is the default for a cron trigger and `allow` for webhook, app event and monitor triggers, where each delivery is separate work. Set it per trigger.
+- `skip` is the default for a cron trigger and `allow` for webhook, connector event and App event triggers, where each delivery is separate work. Set it per trigger.
 - Overlap applies to session mode `fresh` only. The other modes send each fire into one session, which runs one prompt at a time.
 - The previous run counts as still active while a session this trigger started in the last 24 hours is still being set up, or is running a turn, or while its create is still queued. A turn that never ends stops counting when the platform ends it, within 24 hours.
 - A manual fire and a replay are never held.
@@ -602,7 +653,7 @@ triggers:
 
 A trigger that keeps hitting its hourly limit is a runaway, not a burst. When `max_runs_per_hour` holds a fire and the trigger also ran at that limit through the hour before, the trigger pauses itself. Two full hours at the limit is the threshold. `max_runs_per_day` never pauses a trigger: holding the rest of the day is that limit's purpose.
 
-- While auto-paused, no schedule slot, webhook, app event or monitor event starts a run. Each fire is a skipped run with the reason `auto-paused: ran at max_runs_per_hour <n> for 2 hours in a row`. A webhook answers `200` with `status: skipped` and that reason. A manual fire still runs.
+- While auto-paused, no schedule slot, webhook, connector event or App event starts a run. Each fire is a skipped run with the reason `auto-paused: ran at max_runs_per_hour <n> for 2 hours in a row`. A webhook answers `200` with `status: skipped` and that reason. A manual fire still runs.
 - The trigger's watchers get one alert per pause. The alert needs the project's notification center.
 - The trigger shows **Paused** on the Triggers page. Its sheet says why, and its `GET …/triggers` entry carries `auto_paused_at` and `auto_paused_reason`. `kortix triggers ls` marks it `auto-paused`, and `kortix triggers info` prints the reason.
 - To resume it, find what keeps firing it, then press **Resume** in the trigger's sheet, run `kortix triggers enable <slug> --apply`, or send `PATCH …/triggers/<slug>` with `{ "enabled": true }`. The pause is runtime state, not a `kortix.yaml` change, so editing the file does not resume it.
@@ -612,4 +663,4 @@ A trigger that keeps hitting its hourly limit is a runaway, not a burst. When `m
 
 - At most 3 trigger-created sessions provision at once in a project. A fire past that answers `queued` and runs when a slot frees.
 - The webhook URLs of one project accept 120 requests per minute from one client.
-- A project runs at most 10 enabled monitors, and a session holds at most 20 active reminders.
+- A session holds at most 20 active reminders.

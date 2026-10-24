@@ -1681,21 +1681,6 @@
       "count": 2
     }
   },
-  "src/projects/lib/monitor-box-core.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
-  "src/projects/lib/monitor-box-provision.ts": {
-    "no-console": {
-      "count": 3
-    }
-  },
-  "src/projects/lib/monitor-box.ts": {
-    "no-console": {
-      "count": 6
-    }
-  },
   "src/projects/lib/on-behalf-of.ts": {
     "no-console": {
       "count": 1
@@ -2131,14 +2116,6 @@
     },
     "no-restricted-syntax": {
       "count": 10
-    }
-  },
-  "src/projects/routes/monitors.ts": {
-    "no-restricted-imports": {
-      "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/projects/routes/oauth2-connectors.ts": {
