@@ -1,10 +1,8 @@
 "use client";
 
-import { PublicShareLinkButton } from "../../internal/share/public-share-link-button";
 import { Button } from "../../primitives/button";
 import { ButtonGroup } from "../../primitives/button-group";
 import Hint from "../../primitives/hint";
-import Loading from "../../primitives/loading";
 import { errorToast, successToast } from "../../primitives/toast";
 import { Download } from "../../internal/icons/download";
 import { useTranslations } from "../../i18n";
@@ -16,7 +14,6 @@ import {
   useDialogLayerDepth,
 } from "../../lib/z-stack";
 import {
-  ArrowClockwiseIcon,
   CaretLeftIcon as ChevronLeft,
   CaretRightIcon as ChevronRight,
   CodeIcon as Code,
@@ -30,7 +27,6 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
   type ComponentType,
@@ -45,6 +41,12 @@ import {
 } from "./file-source";
 import { getLanguageFromExt } from "./preview-policy";
 import { SaveAsPdfButton } from "./save-as-pdf-button";
+import {
+  RefreshButton,
+  ViewerActions,
+  ViewerPathPill,
+  fileShareInput,
+} from "./viewer-actions";
 
 /** Tabbable elements used by the focus trap below. */
 const FOCUSABLE_SELECTOR = [
@@ -132,6 +134,7 @@ export function FilePreviewModal({
   onPrev: prevPreview,
   source,
   HistoryContent,
+  renderFileIcon,
   statusSlot,
   extraActions,
   shareContext,
@@ -167,7 +170,6 @@ export function FilePreviewModal({
   // renders — the same pattern `FileContentRenderer` uses for `useFileContent`.
   const useRefresh = source.useRefresh ?? useNoRefresh;
   const { refresh, refreshing, reloadKey } = useRefresh(selectedFilePath);
-  const refreshLabel = tI18nHardcoded.raw("i18nComplete.text0e9161011702");
   const [markdownPreview, setMarkdownPreview] = useState(true);
   // Markdown and Mermaid files both open rendered, with a Source toggle.
   const isMarkdownFile = ["markdown", "mermaid"].includes(
@@ -181,16 +183,7 @@ export function FilePreviewModal({
   const { data: pdfSource } = source.useFileContent(
     exportsPdf ? selectedFilePath : null,
   );
-  const shareInput = useMemo(() => {
-    if (!selectedFilePath || !shareContext) return null;
-    return {
-      file: {
-        label: fileName || selectedFilePath,
-        path: selectedFilePath,
-      },
-      mode: "view" as const,
-    };
-  }, [fileName, selectedFilePath, shareContext]);
+
 
   // The dialog surface — focus target for the trap and the focus-on-open below.
   const surfaceRef = useRef<HTMLDivElement | null>(null);
@@ -324,6 +317,7 @@ export function FilePreviewModal({
   const [toolbarEl, toolbarRef] = useState<HTMLDivElement | null>(null);
   const [nameEl, nameRef] = useState<HTMLSpanElement | null>(null);
   const compactToolbar = useCompactRow(toolbarEl, nameEl);
+  const [editSlot, editSlotRef] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!isOpen || !fullscreen) return;
     const el = contentRef.current;
@@ -359,18 +353,29 @@ export function FilePreviewModal({
 
   const toolbar = (
     <>
-      {/* Name and place in the folder only: Close is the one way out. */}
-      <div className="flex min-w-0 flex-1 items-center gap-2 pl-1">
-        <span
-          ref={nameRef}
-          className="max-w-[300px] truncate text-sm font-medium"
+      {/* The one file header every viewer shares: icon, folders / name, and
+          the file's own actions (Refresh, Copy link) inside the pill. */}
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <ViewerPathPill
+          icon={renderFileIcon(fileName)}
+          path={selectedFilePath ?? undefined}
+          fileName={fileName}
+          nameRef={nameRef}
         >
-          {fileName}
-        </span>
+          {source.useRefresh && (
+            <RefreshButton onRefresh={refresh} refreshing={refreshing} />
+          )}
+          <ViewerActions
+            shareContext={shareContext}
+            shareInput={fileShareInput(selectedFilePath ?? undefined, fileName)}
+          />
+        </ViewerPathPill>
         {!compactToolbar && statusSlot}
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
+        {/* The editor's unsaved state, Save and Discard (FileContentRenderer portals them here). */}
+        <div ref={editSlotRef} className="flex items-center empty:hidden" />
         {isMarkdownFile && (
           <Hint
             label={
@@ -401,25 +406,6 @@ export function FilePreviewModal({
                 <Code className="h-4 w-4" />
               ) : (
                 <Eye className="h-4 w-4" />
-              )}
-            </Button>
-          </Hint>
-        )}
-        {source.useRefresh && (
-          <Hint label={refreshLabel} side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={refreshLabel}
-              aria-busy={refreshing}
-              disabled={refreshing}
-              className="text-muted-foreground hover:text-foreground h-8 w-8 active:scale-[0.96]"
-              onClick={refresh}
-            >
-              {refreshing ? (
-                <Loading className="text-muted-foreground size-4 motion-reduce:animate-none" />
-              ) : (
-                <ArrowClockwiseIcon className="h-4 w-4" />
               )}
             </Button>
           </Hint>
@@ -505,17 +491,6 @@ export function FilePreviewModal({
               tI18nHardcoded.raw("i18nComplete.textd6eafe823591")}
           </Button>
         </ButtonGroup>
-        {shareContext && !compactToolbar && (
-          <PublicShareLinkButton
-            projectId={shareContext.projectId}
-            sessionId={shareContext.sessionId}
-            input={shareInput}
-            tooltip={tI18nHardcoded.raw(
-              "autoFeaturesFileViewerFilePreviewModalJsxAttrTooltipCopy42229181",
-            )}
-            className="text-muted-foreground hover:text-foreground"
-          />
-        )}
         {extraActions}
         {embedded && (
           <Hint
@@ -580,6 +555,7 @@ export function FilePreviewModal({
             reloadKey={reloadKey}
             onUnsavedChange={setDirty}
             showHeader={!!source.editablePreview}
+            headerSlot={editSlot}
             readOnly={!source.editablePreview}
             targetLine={targetLine}
             markdownPreview={markdownPreview}
@@ -603,6 +579,7 @@ export function FilePreviewModal({
     <>
       <div
         ref={toolbarRef}
+        data-file-toolbar=""
         className="border-border/40 bg-background/95 flex h-12 shrink-0 items-center gap-2 border-b px-3 backdrop-blur-sm"
       >
         {toolbar}

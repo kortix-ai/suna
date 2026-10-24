@@ -685,3 +685,39 @@ test('list preserves the exact cron occurrence separately from scheduled executi
   expect(result.triggers[0]?.next_cron_at).toBe('2026-10-10T09:00:00.000Z');
   expect(result.triggers[0]?.next_fire_at).toBe('2026-10-10T09:15:00.000Z');
 });
+
+test('createProjectTrigger sends a type app trigger; the listing reads its app', async () => {
+  const input: CreateProjectTriggerInput = { name: 'Bank reply', type: 'app', app: 'bank-replies', prompt_template: 'Reply: {{ event.data.subject }}' };
+  await createProjectTrigger('P1', input);
+  expect(last()).toMatchObject({ url: 'http://test.local/projects/P1/triggers', method: 'POST', body: { type: 'app', app: 'bank-replies' } });
+
+  nextResponse = { status: 200, body: { triggers: [{ ...MONITOR_WIRE_ENTRY, type: 'app', run: null, mode: null, app: 'bank-replies' }], errors: [] } };
+  const listing = await listProjectTriggers('P1');
+  const trigger: ProjectTrigger = listing.triggers[0]!;
+  const type: ProjectTriggerType = trigger.type;
+  expect([type, trigger.app]).toEqual(['app', 'bank-replies']);
+});
+
+test('a trigger may call an App: create sends target, the listing reads it, update clears it with null', async () => {
+  const input: CreateProjectTriggerInput = { name: 'Poll bank', type: 'cron', cron: '0 */5 * * * *', target: { app: 'bank-watcher', path: '/tick' } };
+  await createProjectTrigger('P1', input);
+  expect(last()!.body).toMatchObject({ type: 'cron', target: { app: 'bank-watcher', path: '/tick' } });
+  expect((last()!.body as Record<string, unknown>).prompt_template).toBeUndefined();
+
+  nextResponse = { status: 200, body: { triggers: [{ ...MONITOR_WIRE_ENTRY, type: 'cron', run: null, mode: null, target: { app: 'bank-watcher', path: '/tick', method: 'POST' } }], errors: [] } };
+  const trigger: ProjectTrigger = (await listProjectTriggers('P1')).triggers[0]!;
+  expect(trigger.target).toEqual({ app: 'bank-watcher', path: '/tick', method: 'POST' });
+
+  const clear: UpdateProjectTriggerInput = { target: null };
+  await updateProjectTrigger('P1', 'poll-bank', clear);
+  expect(last()!.body).toEqual({ target: null });
+});
+
+test('an every schedule with an App target payload: create sends every and payload, the listing reads every_seconds', async () => {
+  const input: CreateProjectTriggerInput = { name: 'Poll', type: 'cron', every: '5m', target: { app: 'w', path: '/tick', payload: { source: 'bank' } } };
+  await createProjectTrigger('P1', input);
+  expect(last()!.body).toMatchObject({ every: '5m', target: { payload: { source: 'bank' } } });
+  nextResponse = { status: 200, body: { triggers: [{ ...MONITOR_WIRE_ENTRY, type: 'cron', run: null, mode: null, every_seconds: 300 }], errors: [] } };
+  const trigger: ProjectTrigger = (await listProjectTriggers('P1')).triggers[0]!;
+  expect(trigger.every_seconds).toBe(300);
+});

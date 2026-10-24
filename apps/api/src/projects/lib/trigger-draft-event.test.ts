@@ -86,7 +86,6 @@ describe('event trigger entry', () => {
     [{ config: 'nope' }, 'config must be an object'],
     [{ cron: '0 0 9 * * *' }, 'cron is not valid on an event trigger'],
     [{ secret_env: 'HOOK_SECRET' }, 'secret_env is not valid on an event trigger'],
-    [{ mode: 'poll' }, 'mode is not valid on an event trigger'],
   ])('rejects %j', (patch, message) => {
     const { errors } = extractTriggers(manifest([{ ...entry, ...patch }]));
     expect(errors[0]?.error).toContain(message);

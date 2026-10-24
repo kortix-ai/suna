@@ -61,9 +61,7 @@ import {
   PERMISSION_ACTION_ONLY_KEYS_V2,
   PERMISSION_ACTIONS_V2,
   DURATION_RE,
-  MONITOR_MODES,
   EVENT_FORBIDDEN_KEYS,
-  MONITOR_RUN_MAX_LENGTH,
   RESERVED_SANDBOX_SLUG,
   RESERVED_SLUG_PROVIDERS,
   SANDBOX_CPU_BOUNDS,
@@ -432,7 +430,7 @@ function sandboxSchema(): JsonSchemaFragment {
   };
 }
 
-/** One `[[triggers]]` entry — cron, webhook, monitor, or event (`validateTriggers`). */
+/** One `[[triggers]]` entry — cron, webhook, event, or app (`validateTriggers`). */
 /**
  * A trigger `filter` (KRTX-1721): payload path → a value (equals) or an object
  * with exactly one operator. Mirrors `parseTriggerFilter` in `./trigger-filter`.
@@ -466,6 +464,63 @@ function triggerFilterSchema(): JsonSchemaFragment {
   };
 }
 
+/**
+ * One trigger in the `on:` / `run:` shape (trigger-shape.ts): what fires it,
+ * and what a fire runs. `type` is implied by `on`, so it may not appear.
+ */
+function onRunTriggerSchema(): JsonSchemaFragment {
+  const durationSchema: JsonSchemaFragment = { type: 'string', pattern: DURATION_RE.source };
+  const appSlug: JsonSchemaFragment = { type: 'string', pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$' };
+  const source = (required: string[], properties: Record<string, JsonSchemaFragment>): JsonSchemaFragment => ({
+    type: 'object', required, additionalProperties: false, properties,
+  });
+  return {
+    type: 'object',
+    required: ['slug', 'on', 'run'],
+    properties: {
+      slug: SLUG_SCHEMA,
+      name: { type: 'string' },
+      type: false,
+      enabled: enabledValueSchema(),
+      filter: triggerFilterSchema(),
+      max_runs_per_hour: { type: 'integer', minimum: 1 },
+      max_runs_per_day: { type: 'integer', minimum: 1 },
+      max_lateness: durationSchema,
+      overlap: { type: 'string', enum: ['skip', 'allow'] },
+      on: {
+        oneOf: [
+          source(['cron'], { cron: NON_BLANK_STRING, timezone: { type: 'string' } }),
+          source(['every'], { every: durationSchema, timezone: { type: 'string' } }),
+          source(['at'], { at: NON_BLANK_STRING, timezone: { type: 'string' } }),
+          source(['webhook'], { webhook: source(['secret'], { secret: { type: 'string', pattern: ENV_NAME_PATTERN } }) }),
+          source(['event', 'connector'], {
+            event: NON_BLANK_STRING, connector: NON_BLANK_STRING, account: NON_BLANK_STRING, source: NON_BLANK_STRING, config: { type: 'object' },
+          }),
+          source(['event', 'app'], { event: NON_BLANK_STRING, app: appSlug }),
+        ],
+      },
+      run: {
+        type: 'object',
+        additionalProperties: false,
+        anyOf: [{ required: ['prompt'] }, { required: ['app'] }],
+        properties: {
+          agent: NON_BLANK_STRING,
+          prompt: NON_BLANK_STRING,
+          session: normalizedEnumSchema(['fresh', 'reuse', 'pinned', 'keyed']),
+          session_key: NON_BLANK_STRING,
+          session_id: NON_BLANK_STRING,
+          model: { type: 'string' },
+          app: appSlug,
+          path: { type: 'string', pattern: '^/' },
+          method: { type: 'string', enum: ['POST', 'GET'] },
+          payload: { type: 'object' },
+        },
+      },
+    },
+    additionalProperties: true,
+  };
+}
+
 function triggerSchema(version: 1 | 2): JsonSchemaFragment {
   const durationSchema: JsonSchemaFragment = { type: 'string', pattern: DURATION_RE.source };
   return {
@@ -495,7 +550,7 @@ function triggerSchema(version: 1 | 2): JsonSchemaFragment {
       runAt: { type: 'string', minLength: 1 },
       timezone: { type: 'string' },
       // `type: cron` only — the misfire bound. Its 60s floor is the imperative
-      // validator's, like the monitor duration floors below.
+      // validator's.
       max_lateness: durationSchema,
       // Any trigger type: runs started in any 60 minutes (60 when unset) and
       // in a UTC day (KRTX-1721).
@@ -505,15 +560,6 @@ function triggerSchema(version: 1 | 2): JsonSchemaFragment {
       overlap: { type: 'string', enum: ['skip', 'allow'] },
       secret_env: { type: 'string', pattern: ENV_NAME_PATTERN },
       secretEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
-      // `type: monitor` only — the repo command the platform supervises 24/7,
-      // its shape, and the two duration bounds. The FLOORS (interval ≥ 30s,
-      // expect_event_within ≥ 5m) are value ranges over a formatted string,
-      // which JSON Schema can't express — the imperative validator owns them
-      // (see json-schema.conformance.test.ts's documented-divergence block).
-      run: { type: 'string', maxLength: MONITOR_RUN_MAX_LENGTH },
-      mode: { type: 'string', enum: [...MONITOR_MODES] },
-      interval: durationSchema,
-      expect_event_within: durationSchema,
       // `type: event` only — the connector slug, the provider event type id
       // and the provider event config (opaque here; the provider validates it).
       connector: NON_BLANK_STRING,
@@ -523,6 +569,22 @@ function triggerSchema(version: 1 | 2): JsonSchemaFragment {
       source: NON_BLANK_STRING,
       event: NON_BLANK_STRING,
       config: { type: 'object' },
+      // `type: app` only — the slug of the App whose events fire the trigger.
+      app: { type: 'string', pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$' },
+      // A fire calls this App instead of running an agent.
+      target: {
+        type: 'object',
+        required: ['app'],
+        additionalProperties: false,
+        properties: {
+          app: { type: 'string', pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$' },
+          path: { type: 'string', pattern: '^/' },
+          method: { type: 'string', enum: ['POST', 'GET'] },
+          payload: { type: 'object' },
+        },
+      },
+      // `type: cron` only: a fixed period instead of a cron expression or run_at.
+      every: durationSchema,
     },
     additionalProperties: true,
     allOf: [
@@ -539,19 +601,23 @@ function triggerSchema(version: 1 | 2): JsonSchemaFragment {
           else: { required: ['sessionId'], properties: { sessionId: NON_BLANK_STRING } },
         },
       },
-      // A prompt (or its alias) is always required, non-empty.
+      // A prompt (or its alias) is required, non-empty, unless an App target receives the payload.
       {
-        if: { required: ['prompt'] },
-        then: { properties: { prompt: NON_BLANK_STRING } },
-        else: { required: ['prompt_template'], properties: { prompt_template: NON_BLANK_STRING } },
+        if: { not: { required: ['target'] } },
+        then: {
+          if: { required: ['prompt'] },
+          then: { properties: { prompt: NON_BLANK_STRING } },
+          else: { required: ['prompt_template'], properties: { prompt_template: NON_BLANK_STRING } },
+        },
       },
       {
         if: { properties: { type: { const: 'cron' } } },
         then: {
-          // A recurring `cron`/`schedule`, or a one-off `run_at`/`runAt`.
+          // A recurring `cron`/`schedule` or `every`, or a one-off `run_at`/`runAt`.
           anyOf: [
             { required: ['cron'] },
             { required: ['schedule'] },
+            { required: ['every'] },
             { required: ['run_at'] },
             { required: ['runAt'] },
           ],
@@ -562,26 +628,8 @@ function triggerSchema(version: 1 | 2): JsonSchemaFragment {
         then: { anyOf: [{ required: ['secret_env'] }, { required: ['secretEnv'] }] },
       },
       {
-        // A monitor names its command and its shape, and carries none of the
-        // cron/webhook wiring (`false` = the key may not appear at all).
-        if: { properties: { type: { const: 'monitor' } } },
-        then: {
-          required: ['run', 'mode'],
-          properties: {
-            run: NON_BLANK_STRING,
-            cron: false,
-            schedule: false,
-            run_at: false,
-            runAt: false,
-            timezone: false,
-            secret_env: false,
-            secretEnv: false,
-          },
-        },
-      },
-      {
         // An event names its connector + event type and carries none of the
-        // cron/webhook/monitor wiring.
+        // cron/webhook wiring.
         if: { properties: { type: { const: 'event' } } },
         then: {
           required: ['connector', 'event'],
@@ -589,29 +637,29 @@ function triggerSchema(version: 1 | 2): JsonSchemaFragment {
         },
       },
       {
+        // An app trigger names its App and carries no other type's wiring.
+        if: { properties: { type: { const: 'app' } } },
+        then: {
+          required: ['app'],
+          properties: Object.fromEntries(
+            [...EVENT_FORBIDDEN_KEYS, 'connector', 'account', 'source', 'event', 'config'].map((k) => [k, false]),
+          ),
+        },
+      },
+      {
+        // `app` exists only on an app trigger.
+        if: { properties: { type: { enum: ['cron', 'webhook', 'event'] } }, required: ['type'] },
+        then: { properties: { app: false } },
+      },
+      {
         // The event fields exist only on an event trigger.
-        if: { properties: { type: { enum: ['cron', 'webhook', 'monitor'] } }, required: ['type'] },
+        if: { properties: { type: { enum: ['cron', 'webhook', 'app'] } }, required: ['type'] },
         then: { properties: { connector: false, account: false, source: false, event: false, config: false } },
       },
       {
-        // The misfire bound exists only on a cron trigger.
-        if: { properties: { type: { enum: ['webhook', 'monitor', 'event'] } }, required: ['type'] },
-        then: { properties: { max_lateness: false } },
-      },
-      {
-        // `interval` is the poll period: required on poll, forbidden on stream.
-        if: {
-          properties: { type: { const: 'monitor' }, mode: { const: 'poll' } },
-          required: ['mode'],
-        },
-        then: { required: ['interval'] },
-      },
-      {
-        if: {
-          properties: { type: { const: 'monitor' }, mode: { const: 'stream' } },
-          required: ['mode'],
-        },
-        then: { properties: { interval: false } },
+        // The misfire bound and `every` exist only on a cron trigger.
+        if: { properties: { type: { enum: ['webhook', 'event', 'app'] } }, required: ['type'] },
+        then: { properties: { max_lateness: false, every: false } },
       },
     ],
   };
@@ -1051,7 +1099,8 @@ function sharedSectionProperties(connectorVersion: 1 | 2): JsonSchemaFragment {
     sandbox: sandboxSchema(),
     // `[[sandboxes]]` was renamed — always a hard error, so forbid it.
     sandboxes: false,
-    triggers: { type: 'array', items: triggerSchema(connectorVersion) },
+    // The flat shape (`type: …`) or the `on:` / `run:` shape; `type` is required by one and forbidden by the other.
+    triggers: { type: 'array', items: { anyOf: [triggerSchema(connectorVersion), onRunTriggerSchema()] } },
     connectors: { type: 'array', items: connectorSchema(connectorVersion) },
     apps: connectorVersion === 2 ? appsV2Schema() : false,
   };

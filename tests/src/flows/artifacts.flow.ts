@@ -25,6 +25,9 @@ type Detail = {
   version: { id: string | null; files: { path: string }[]; view_url: string };
 };
 
+/** A 1×1 PNG: binary bytes must survive the CLI's base64 upload unchanged. */
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAwS2OUAAAAABJRU5ErkJggg==', 'base64');
+
 const DOC_V1 = '# Churn report\n\nChurn fell to **2.1%**.\n\n- [x] measured\n- [ ] announced\n';
 const DOC_V2 = DOC_V1.replace('2.1%', '1.9%');
 
@@ -109,7 +112,7 @@ flow(
     });
     if (!storage) return;
 
-    await ctx.step('the signed view_url renders the Markdown with the doc stylesheet as a CSP sandbox and keeps one URL across reads; ?print=1 adds the print call; a single shared file never serves its sibling; a forged token → 404; no trailing slash → 301', async () => {
+    await ctx.step('the signed view_url renders the Markdown with the doc stylesheet as a CSP sandbox and keeps one URL across reads; ?print=1 adds the print call; a lone file cannot be shared (400 share_folder) and its index file names the folder (409 already_shared); a forged token → 404; no trailing slash → 301', async () => {
       const a = (await owner.get(ONE, one())).status(200).json<Detail>();
       const view = await get(a.view_url);
       if (view.status !== 200 || !view.headers.get('content-type')?.startsWith('text/html')) throw new Error(`view ${view.status} ${view.headers.get('content-type')}`);
@@ -120,9 +123,9 @@ flow(
       if ((await owner.get(ONE, one())).json<Detail>().view_url !== a.view_url) throw new Error('the view URL changed between two reads');
       if (!view.text.includes('class="kx-doc"') || !view.text.includes('<strong>2.1%</strong>') || !view.text.includes('data-type="taskList"')) throw new Error(view.text.slice(0, 400));
       if (!(await get(`${a.view_url}?print=1`)).text.includes('print()')) throw new Error('?print=1 does not open the print dialog');
-      const single = (await owner.post(SHARE, { path: `${docPath}/notes.md` }, { params: p })).status(201).json<Detail>();
-      if ((await get(single.view_url)).status !== 200 || (await get(`${single.view_url}index.md`)).status !== 404) throw new Error('a single-file artifact served a sibling');
-      (await owner.del(ONE, one(single.artifact_id))).status(200);
+      // An artifact is always a folder: a lone file is refused, an index file stands for its folder.
+      (await owner.post(SHARE, { path: `${docPath}/notes.md` }, { params: p })).status(400).body().has('$.code', 'share_folder');
+      (await owner.post(SHARE, { path: `${docPath}/index.md` }, { params: p })).status(409).body().has('$.code', 'already_shared');
       if ((await get(a.view_url.replace(/\/s\/[^.]+/, '/s/forged'))).status !== 404) throw new Error('a forged token served');
       const bare = await get(a.view_url.replace(/\/$/, ''));
       if (bare.status !== 301 || !bare.headers.get('location')?.endsWith('/')) throw new Error(`bare view URL ${bare.status}`);
@@ -172,6 +175,14 @@ flow(
       (await owner.put(ONE, { base_version: before, files: { 'index.md': { content: 'stale' } } }, one())).status(409).body().has('$.code', 'version_conflict');
       const now = (await owner.get(CONTENT, one())).status(200).text();
       if (!now.includes('1.9%')) throw new Error(now);
+    });
+
+    await ctx.step('a save keeps the artifact\'s name; only an "Untitled doc" takes its first heading', async () => {
+      const fresh = (await owner.post(LIST, { files: { 'index.md': { content: '# Untitled doc\n\n' } } }, { params: p })).status(201).json<Detail>();
+      const save = (content: string) => owner.put(ONE, { files: { 'index.md': { content } } }, one(fresh.artifact_id));
+      if ((await save('# Launch notes\n\nDraft.\n')).status(200).json<Detail>().title !== 'Launch notes') throw new Error('an untitled doc did not take its heading');
+      if ((await save('# Launch notes, revised\n\nDraft.\n')).status(200).json<Detail>().title !== 'Launch notes') throw new Error('a save renamed a named artifact');
+      (await owner.del(ONE, one(fresh.artifact_id))).status(200);
     });
 
     await ctx.step('versions come from the Files history: two saves; the old one reads 2.1%; restoring it writes it back as a third save', async () => {
@@ -260,14 +271,21 @@ flow(
     let doc = '';
     let docPath = '';
     try {
-      await ctx.step('`types html --starter` prints a page; the agent publishes a folder (index.html + app.js) → html, in Files, recorded with its session', async () => {
+      await ctx.step('`types html --starter` prints a page; the agent publishes a folder (index.html + app.js + cards/*.png) → html, in Files, recorded with its session; each image serves byte for byte', async () => {
         const starter = ok(await run(['artifacts', 'types', 'html', '--starter']), 'types').stdout;
         if (!starter.includes('<html')) throw new Error(starter.slice(0, 200));
         sandbox.writeFile('deck/index.html', starter.replace('<title>Untitled page</title>', '<title>Board update</title><script src="app.js"></script>'));
         sandbox.writeFile('deck/app.js', 'console.log(1)');
+        // Binary assets in a subfolder travel with the page.
+        for (const n of [1, 2, 3]) sandbox.writeFile(`deck/cards/${n}.png`, PNG);
         const out = JSON.parse(ok(await run(['artifacts', 'publish', 'deck', '--json']), 'publish').stdout);
         if (out.title !== 'Board update' || out.type !== 'html' || !out.path.endsWith('/Artifacts/board-update') || out.created_by_session_id !== sessionId) throw new Error(JSON.stringify(out));
         page = out.artifact_id;
+        for (const n of [1, 2, 3]) {
+          const img = await fetch(`${out.view_url}cards/${n}.png`);
+          const bytes = Buffer.from(await img.arrayBuffer());
+          if (img.status !== 200 || img.headers.get('content-type') !== 'image/png' || !bytes.equals(PNG)) throw new Error(`cards/${n}.png ${img.status} ${bytes.length}`);
+        }
       });
 
       await ctx.step('`publish report.md` makes a doc: a folder in Files with index.md, titled by its heading', async () => {

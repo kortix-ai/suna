@@ -26,6 +26,7 @@ import {
   readVolumeFile,
   statVolumeFile,
   writeVolumeFile,
+  writeVolumeFiles,
 } from '../drives/volumes';
 import { ARTIFACT_TYPE_KEYS, docTitle, htmlTitle, typeOfEntry, type ArtifactType } from './formats';
 
@@ -150,9 +151,11 @@ function encodeFiles(files: Record<string, FileInput>) {
     out.push({ rel, bytes });
   }
   if (total > MAX_PUBLISH_BYTES) throw new ArtifactError(413, 'One publish carries at most 32 MB', 'publish_too_large');
-  // The entry last, so a reader never sees it before its assets.
-  return out.sort((a, b) => Number(ENTRIES.includes(a.rel as never)) - Number(ENTRIES.includes(b.rel as never)));
+  return out;
 }
+
+/** The names a new artifact gets before anyone names it (the starters, an empty page). */
+const UNNAMED = new Set(['Untitled', 'Untitled doc', 'Untitled page']);
 
 function titleOf(type: ArtifactType, text: string): string | null {
   return type === 'doc' ? docTitle(text) : htmlTitle(text);
@@ -194,7 +197,8 @@ export async function publishNew(
     const base = join(join(home, 'Artifacts'), slugify(title));
     let candidate = base;
     for (let n = 2; await exists(volume, candidate); n++) candidate = `${base}-${n}`;
-    for (const f of files) await writeVolumeFile(volume, join(candidate, f.rel), f.bytes, { overwrite: false });
+    // One commit: the whole folder lands at once, as one version in the history.
+    await writeVolumeFiles(volume, files.map((f) => ({ path: join(candidate, f.rel), bytes: f.bytes })), { overwrite: false });
     return candidate;
   });
   const [row] = await db.insert(artifacts).values({
@@ -230,9 +234,12 @@ export async function share(
       for (const e of ENTRIES) if (await exists(volume, join(path, e))) return { root: path, entry: e, folder: true };
       throw new ArtifactError(400, 'A folder needs an index.md or an index.html to be an artifact', 'missing_entry');
     }
+    // An artifact is always a folder: its page's images, scripts and media sit
+    // next to it. An index file stands for its folder; any other file is refused.
     const name = path.split('/').pop()!;
-    if (!typeOfEntry(name)) throw new ArtifactError(400, 'Share a .md or .html file, or a folder with an index', 'invalid_type');
-    return { root: path.slice(0, path.lastIndexOf('/')) || '/', entry: name, folder: false };
+    const parent = path.slice(0, path.lastIndexOf('/')) || '/';
+    if ((ENTRIES as readonly string[]).includes(name) && parent !== '/') return { root: parent, entry: name, folder: true };
+    throw new ArtifactError(400, `An artifact is a folder. Share the folder that holds ${name} (with an index.md or index.html), or publish the file to make one`, 'share_folder');
   }, () => null);
   if (!target) throw new ArtifactError(404, 'File or folder not found', 'not_found');
   const type = typeOfEntry(target.entry)!;
@@ -284,10 +291,11 @@ export async function publishChanges(
   if (!row.folder && files.some((f) => f.rel !== row.entry)) throw new ArtifactError(400, `This artifact is one file: publish only ${row.entry}`, 'single_file');
   try {
     await writeDriveVolume(drive, async (volume) => {
-      for (const f of files) {
-        const isEntry = f.rel === row.entry;
-        await writeVolumeFile(volume, join(row.root, f.rel), f.bytes, { overwrite: true, ...(isEntry && input.base_version ? { ifMatch: input.base_version } : {}) });
-      }
+      // A conditional save writes its entry alone (If-Match), after the assets
+      // it may point at; anything else lands in one commit.
+      const conditional = input.base_version ? files.find((f) => f.rel === row.entry) : undefined;
+      await writeVolumeFiles(volume, files.filter((f) => f !== conditional).map((f) => ({ path: join(row.root, f.rel), bytes: f.bytes })), { overwrite: true });
+      if (conditional) await writeVolumeFile(volume, join(row.root, conditional.rel), conditional.bytes, { overwrite: true, ifMatch: input.base_version });
     });
   } catch (err) {
     if (err instanceof DriveStorageError && err.code === 'file_changed') {
@@ -295,8 +303,12 @@ export async function publishChanges(
     }
     throw err;
   }
+  // The title is the artifact's name: a save keeps it unless it sets one. Only
+  // an artifact still named like a starter follows its first heading.
+  // ponytail: a fixed list of starter names; a `named` flag if more creation paths appear.
   const entry = files.find((f) => f.rel === row.entry);
-  const title = input.title?.trim() || (entry ? titleOf(row.type as ArtifactType, new TextDecoder().decode(entry.bytes)) : null);
+  const derived = entry && UNNAMED.has(row.title) ? titleOf(row.type as ArtifactType, new TextDecoder().decode(entry.bytes)) : null;
+  const title = input.title?.trim() || derived;
   const [updated] = await db.update(artifacts).set({
     updatedAt: new Date(),
     ...(title ? { title } : {}),

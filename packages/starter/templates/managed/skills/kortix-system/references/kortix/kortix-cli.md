@@ -361,7 +361,7 @@ the same state.
 
 | Command | Effect |
 | --- | --- |
-| `kortix triggers ls [--type cron\|webhook\|event\|monitor] [--connector <slug>] [--json]` | List triggers + runtime state (`last_fired_at`). `--type` keeps one kind; `--type event` groups the rows by app. `--connector` keeps the app events on one connector. The filters combine, and `--json` respects them. |
+| `kortix triggers ls [--type cron\|webhook\|event\|app] [--connector <slug>] [--json]` | List triggers + runtime state (`last_fired_at`). `--type` keeps one kind; `--type event` groups the rows by app. `--connector` keeps the connector events on one connector. The filters combine, and `--json` respects them. |
 | `kortix triggers info <slug>` | Show one trigger in full. |
 | `kortix triggers fire <slug>` | Manually fire a trigger now. |
 | `kortix triggers fire <slug> --payload <json\|@file> [--dry-run] [--json]` | Fire with a JSON object merged over the manual payload. `--dry-run` fires nothing: it prints the rendered prompt, the filter verdict and the session key. Test a webhook or event prompt this way. |
@@ -369,7 +369,7 @@ the same state.
 | `kortix triggers replay <slug> <run_id> [--confirm-unverified]` | Fire again with that run's stored payload. An unverified webhook run exits 1 until you pass `--confirm-unverified`. |
 | `kortix triggers enable <slug>` | Set `enabled = true`. |
 | `kortix triggers disable <slug>` | Set `enabled = false`. |
-| `kortix triggers events --apps [--json]` (all `triggers events` forms and `triggers add|set --type event` need the project flag `event_triggers`: off prints `App event triggers are off for this project. Turn them on: kortix projects features enable event_triggers`, exit 1) | List apps that can trigger events: event count and state (`connected`, `needs account`). Under each app, every connector (profile) with its shared accounts: label, `as <connected_as>`, `default`, `not connected`. Apps with no connector print as one `No connector yet` line. |
+| `kortix triggers events --apps [--json]` (all `triggers events` forms and `triggers add|set --type event` need the project flag `event_triggers`, on by default: turned off, they print `Connector event triggers are off for this project. Turn them on: kortix projects features enable event_triggers`, exit 1) | List apps that can trigger events: event count and state (`connected`, `needs account`). Under each app, every connector (profile) with its shared accounts: label, `as <connected_as>`, `default`, `not connected`. Apps with no connector print as one `No connector yet` line. |
 | `kortix triggers events --app <app> [--source <adapter>] [--event <TYPE>] [--json]` | List an app's events, or one event's fields, with no connector: browse before you add a connector. `--source` defaults to `composio`. |
 | `kortix triggers events --connector <slug> [--json]` | List the events a connector offers: `TYPE`, `NAME`, `DELIVERY`. |
 | `kortix triggers events --connector <slug> --event <TYPE> [--json]` | One event in full: config fields (type, required, default, allowed values, description) and the `{{ event.data.* }}` prompt variables. |

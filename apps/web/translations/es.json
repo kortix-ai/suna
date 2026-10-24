@@ -1264,8 +1264,8 @@
           "description": "Avisa a las personas a las que concierne una sesión (quien envió el prompt, quien la creó y quien la sigue) con una bandeja con campana, notificaciones push del navegador y correo, y alerta cuando fallan disparadores y recordatorios. Desactivado: solo el teléfono de quien creó la sesión recibe su push, y el teléfono de un propietario de la cuenta recibe uno cuando un disparador empieza a fallar."
         },
         "event_triggers": {
-          "name": "Disparadores de eventos de app",
-          "description": "Inicia un agente cuando ocurre algo en una app conectada: un correo nuevo, un pull request, un evento del calendario."
+          "name": "Disparadores de eventos de conectores",
+          "description": "Inicia un agente cuando ocurre algo en una app conectada: un correo nuevo, un pull request, un evento del calendario. Los eventos vienen de Composio. Con Connectors v2 activado, Kortix también revisa por sí mismo tus apps conectadas."
         },
         "volumes": {
           "name": "Volúmenes",
@@ -20357,7 +20357,44 @@
       "cliDeviceWarning": "Aprueba solo un inicio de sesión que hayas iniciado. Escribe el código que muestra tu terminal.",
       "cliDeviceCode": "Código de inicio de sesión",
       "cliDeviceApproved": "Inicio de sesión aprobado. Vuelve a tu terminal.",
-      "cliDeviceAction": "Autorizar CLI"
+      "cliDeviceAction": "Autorizar CLI",
+      "text705a7e325b66": "La app de Kortix emitió eventos",
+      "text4b80152fb96b": "Se leyeron las credenciales de eventos de la app de Kortix",
+      "text59374c1f1acd": "La app de Kortix programó una ejecución",
+      "text32f35e849409": "La app de Kortix canceló una ejecución",
+      "textea2b8a878841": "Segundo plano",
+      "textdbf09e33067b": "{value0} en ejecución",
+      "text09ca25aa9ecf": "{value0} en reposo",
+      "text7850d9d304e8": "{value0} sin desplegar",
+      "texta06ef89024c7": "{value0} externa(s)",
+      "text94ecd43f8b2b": "Aún sin desplegar",
+      "text660bf36b1338": "Funciona 24/7",
+      "text6aa00f0b3e36": "Reposa cuando está inactiva",
+      "textd6d136eb7406": "Llamada por {value0}",
+      "text08f59056870d": "Activa {value0}",
+      "textbeeb1f954807": "Sin solicitudes aún",
+      "text0d209cd1f377": "Aún no hay ninguna App en esta página. Las Apps que la gente abre tienen aquí una tarjeta; las de abajo funcionan en segundo plano.",
+      "texteac997a26ac5": "Funciona en segundo plano. No tiene página que mostrar; esto es lo que hace.",
+      "textcb0a5f32744d": "Llamada por",
+      "text5265247cedb4": "Inicia agentes con",
+      "text1af851907331": "Tamaño",
+      "textc8814bbd2883": "Versión {value0} · desplegada {value1}",
+      "text6473ccf96fd6": "Todas las versiones",
+      "text22f3da948b4b": "Pide a un agente que la despliegue, o ejecuta:",
+      "textfaca381ebe87": "Se detiene tras {value0} min sin solicitudes y despierta con la siguiente solicitud o disparador.",
+      "text1d7b00a8a249": "Mostrar en la página de Apps",
+      "textf15a2daaaabf": "Una tarjeta en la cuadrícula. Desactivado: aparece en Segundo plano.",
+      "text0ba357fa63f8": "Eventos de conectores",
+      "textca395c4d19b2": "Evento de conector",
+      "text6064256ee716": "evento de conector",
+      "text85a6c98e5584": "Nuevo evento de conector",
+      "text165d9237c163": "Buscar eventos de conectores",
+      "texta9caf7909165": "Aún no hay eventos de conectores",
+      "text451ef98453d2": "Haz que un agente se ejecute cuando una de tus Kortix Apps emita un evento.",
+      "text064694999e1f": "Nuevo evento de App",
+      "text1934aa0740bb": "Buscar eventos de App",
+      "text25db7e5609e5": "Aún no hay eventos de App",
+      "text9f8f92588517": "Una App inicia agentes emitiendo eventos. Añade un disparador con on: { event, app } en kortix.yaml."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -22598,6 +22635,8 @@
     "removed": "Ya no se comparte",
     "mediaSingleFile": "Las imágenes y los vídeos necesitan un documento en su propia carpeta. Publica el documento como carpeta para añadir medios.",
     "mediaTooLarge": "Este archivo supera los 16 MB.",
-    "refresh": "Recargar"
+    "refresh": "Recargar",
+    "diagramEdit": "Editar diagrama",
+    "diagramDone": "Listo"
   }
 }

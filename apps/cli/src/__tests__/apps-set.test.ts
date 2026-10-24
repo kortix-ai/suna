@@ -263,6 +263,23 @@ describe('kortix apps set', () => {
     expect(cleared.stdout).toMatch(/uses\s+none/);
   });
 
+  test('set --listed puts the App on the Apps page, keeping its other display keys; --unlisted takes it off', async () => {
+    appOverrides = { display: { preview: 'none' } };
+    const config = writeConfig(startServer());
+    const on = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--listed'], config);
+    expect(on.code).toBe(0);
+    expect(patchCall()?.body).toEqual({ display: { preview: 'none', listed: true } });
+
+    calls = [];
+    const off = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--unlisted'], config);
+    expect(off.code).toBe(0);
+    expect(patchCall()?.body).toEqual({ display: { preview: 'none', listed: false } });
+
+    const both = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--listed', '--unlisted'], config);
+    expect(both.code).toBe(2);
+    expect(both.stderr).toContain("--listed or --unlisted");
+  });
+
   test('set refuses an App slug the API would refuse, before any request', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--uses', 'Main'], config);

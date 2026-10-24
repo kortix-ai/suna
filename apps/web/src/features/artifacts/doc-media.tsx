@@ -1,9 +1,13 @@
 'use client';
 
+import { Button } from '@kortix/ui/button';
 import { MermaidRenderer } from '@kortix/ui/mermaid-renderer';
 import CodeBlock from '@tiptap/extension-code-block';
 import { Node, mergeAttributes } from '@tiptap/core';
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from '@tiptap/react';
+import { useState } from 'react';
+
+import { useTranslations } from '@/i18n/use-translations';
 
 /** A video in a doc: `<video src controls>`, kept as HTML in the Markdown file. */
 export const Video = Node.create({
@@ -22,16 +26,26 @@ export const Video = Node.create({
   },
 });
 
-function CodeBlockView({ node }: ReactNodeViewProps) {
+function CodeBlockView({ node, editor }: ReactNodeViewProps) {
+  const t = useTranslations('artifacts');
+  const [editing, setEditing] = useState(false);
   const source = node.textContent.trim();
+  const diagram = node.attrs.language === 'mermaid' && source;
+  // A diagram shows as a picture; its source opens only for someone editing it.
+  const showSource = !diagram || editing;
   return (
     <NodeViewWrapper as="div">
-      <pre>
+      <pre hidden={!showSource}>
         <NodeViewContent<'code'> as="code" />
       </pre>
-      {node.attrs.language === 'mermaid' && source ? (
+      {diagram ? (
         <div contentEditable={false} className="kx-diagram">
           <MermaidRenderer chart={source} enableFullscreen={false} />
+          {editor.isEditable ? (
+            <Button size="sm" variant="ghost" onClick={() => setEditing((v) => !v)}>
+              {editing ? t('diagramDone') : t('diagramEdit')}
+            </Button>
+          ) : null}
         </div>
       ) : null}
     </NodeViewWrapper>

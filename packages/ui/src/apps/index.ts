@@ -29,12 +29,17 @@ export {
   appCan,
   appCommand,
   appHost,
+  appSizeLabel,
+  DeployCommand,
   appStatus,
   appTabLabel,
   cardPreviewApp,
   childApps,
   deployNotice,
   gridApps,
+  hiddenApps,
+  appTriggers,
+  backgroundSummary,
   localizedAppCopy,
 } from './app-shared';
 export { isKortixAppUrl } from './kortix-app-url';

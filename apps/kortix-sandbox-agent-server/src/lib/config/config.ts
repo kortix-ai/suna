@@ -95,19 +95,6 @@ const Schema = z.object({
   // slower than a full one and defers cost into unpredictable mid-session
   // stalls. Kept for remotes where shallow is unavailable.
   KORTIX_CLONE_FILTER: z.string().default(''),
-  // ── Monitor box ────────────────────────────────────────────────────────
-  // `monitor` selects the daemon's monitor mode: it clones the repo, skips
-  // opencode entirely, and supervises the project's monitor processes instead.
-  // Anything else (including unset) is the normal session daemon.
-  KORTIX_WORKLOAD: z.string().default(''),
-  // The enabled monitors, resolved from kortix.yaml BY apps/api and injected as
-  // JSON. The daemon deliberately does not parse the manifest: one parser means
-  // the box can never disagree with the platform about what a monitor is.
-  KORTIX_MONITORS: z.string().default(''),
-  // This boot's epoch, minted by the reconciler and stored on the box row. The
-  // ingest route rejects any batch stamped with another value, so events from a
-  // superseded boot can never fire.
-  KORTIX_MONITOR_BOX_EPOCH: z.string().default(''),
   // ── Harness selection ────────────────────────────────────────────────────
   // Which agent runtime this session boots: `opencode` (the default, and what
   // an unset value means) or `pi`. apps/api sets it from the manifest's
@@ -160,12 +147,6 @@ export type Config = {
   gitUserEmail: string
   cloneFilter: string
   cloneDepth: number
-  /** `'monitor'` selects monitor mode; '' (the default) is the session daemon. */
-  workload: string
-  /** Raw `KORTIX_MONITORS` JSON; parsed by monitor-runner.parseMonitorSpecs. */
-  monitorsJson: string
-  /** The box epoch this boot must stamp on every ingest batch. */
-  monitorBoxEpoch: string
 }
 
 /**
@@ -203,9 +184,6 @@ export function loadHostConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_GIT_USER_EMAIL: env.KORTIX_GIT_USER_EMAIL,
     KORTIX_CLONE_FILTER: env.KORTIX_CLONE_FILTER,
     KORTIX_CLONE_DEPTH: env.KORTIX_CLONE_DEPTH,
-    KORTIX_WORKLOAD: env.KORTIX_WORKLOAD,
-    KORTIX_MONITORS: env.KORTIX_MONITORS,
-    KORTIX_MONITOR_BOX_EPOCH: env.KORTIX_MONITOR_BOX_EPOCH,
     KORTIX_HARNESS: env.KORTIX_HARNESS,
   })
 
@@ -241,9 +219,6 @@ export function loadHostConfig(env: NodeJS.ProcessEnv = process.env): Config {
     gitUserEmail: parsed.KORTIX_GIT_USER_EMAIL,
     cloneFilter: parsed.KORTIX_CLONE_FILTER,
     cloneDepth: parsed.KORTIX_CLONE_DEPTH,
-    workload: parsed.KORTIX_WORKLOAD.trim(),
-    monitorsJson: parsed.KORTIX_MONITORS,
-    monitorBoxEpoch: parsed.KORTIX_MONITOR_BOX_EPOCH.trim(),
   }
 }
 

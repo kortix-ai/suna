@@ -1264,8 +1264,8 @@
           "description": "通过铃铛收件箱、浏览器推送和电子邮件通知与会话相关的人（发送提示的人、创建者和关注者），并在触发器和提醒失败时发出警报。关闭时，会话的推送只发到会话创建者的手机；触发器开始失败时，账户所有者的手机会收到一条推送。"
         },
         "event_triggers": {
-          "name": "应用事件触发器",
-          "description": "当已连接的应用中发生事件时启动智能体：新邮件、拉取请求、日历事件。"
+          "name": "连接器事件触发器",
+          "description": "当已连接的应用中发生事件时启动智能体：新邮件、拉取请求、日历事件。事件来自 Composio。开启 Connectors v2 后，Kortix 也会自行检查你已连接的应用。"
         },
         "volumes": {
           "name": "卷",
@@ -20357,7 +20357,44 @@
       "cliDeviceWarning": "仅批准您自己发起的登录。请输入终端中显示的代码。",
       "cliDeviceCode": "登录代码",
       "cliDeviceApproved": "登录已批准。请返回终端。",
-      "cliDeviceAction": "授权 CLI"
+      "cliDeviceAction": "授权 CLI",
+      "text705a7e325b66": "Kortix 应用发出了事件",
+      "text4b80152fb96b": "读取了 Kortix 应用的事件凭据",
+      "text59374c1f1acd": "Kortix 应用安排了一次运行",
+      "text32f35e849409": "Kortix 应用取消了一次运行",
+      "textea2b8a878841": "后台",
+      "textdbf09e33067b": "{value0} 个运行中",
+      "text09ca25aa9ecf": "{value0} 个休眠",
+      "text7850d9d304e8": "{value0} 个未部署",
+      "texta06ef89024c7": "{value0} 个外部",
+      "text94ecd43f8b2b": "尚未部署",
+      "text660bf36b1338": "全天候运行",
+      "text6aa00f0b3e36": "空闲时休眠",
+      "textd6d136eb7406": "由 {value0} 调用",
+      "text08f59056870d": "活跃于 {value0}",
+      "textbeeb1f954807": "暂无请求",
+      "text0d209cd1f377": "此页面尚无应用。人们打开的应用会在这里显示卡片；下面的应用在后台运行。",
+      "texteac997a26ac5": "在后台运行。它没有可显示的页面；以下是它的工作内容。",
+      "textcb0a5f32744d": "调用方",
+      "text5265247cedb4": "触发智能体的事件",
+      "text1af851907331": "规格",
+      "textc8814bbd2883": "版本 {value0} · 部署于 {value1}",
+      "text6473ccf96fd6": "所有版本",
+      "text22f3da948b4b": "请智能体部署，或运行：",
+      "textfaca381ebe87": "无请求 {value0} 分钟后停止，下一次请求或触发时唤醒。",
+      "text1d7b00a8a249": "在应用页面显示",
+      "textf15a2daaaabf": "在网格中显示卡片。关闭：列在后台中。",
+      "text0ba357fa63f8": "连接器事件",
+      "textca395c4d19b2": "连接器事件",
+      "text6064256ee716": "连接器事件",
+      "text85a6c98e5584": "新建连接器事件",
+      "text165d9237c163": "搜索连接器事件",
+      "texta9caf7909165": "暂无连接器事件",
+      "text451ef98453d2": "当你的某个 Kortix 应用发出事件时运行智能体。",
+      "text064694999e1f": "新建应用事件",
+      "text1934aa0740bb": "搜索应用事件",
+      "text25db7e5609e5": "暂无应用事件",
+      "text9f8f92588517": "应用通过发出事件来启动智能体。在 kortix.yaml 中添加 on: { event, app } 触发器。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -22598,6 +22635,8 @@
     "removed": "已停止分享",
     "mediaSingleFile": "图片和视频需要文档位于单独的文件夹中。请将文档发布为文件夹以添加媒体。",
     "mediaTooLarge": "此文件超过 16 MB。",
-    "refresh": "刷新"
+    "refresh": "刷新",
+    "diagramEdit": "编辑图表",
+    "diagramDone": "完成"
   }
 }

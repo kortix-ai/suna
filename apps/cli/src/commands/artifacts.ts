@@ -43,12 +43,15 @@ Subcommands:
   publish <file|dir>         Upload and share as a new artifact, stored in your
                              folder in Files under Artifacts/. A .md file is a
                              doc; an .html file or a folder with index.html is
-                             a page. Prints the link.
+                             a page. Everything in the folder (images, video,
+                             scripts) is uploaded with it; a folder over 12 MB
+                             goes up in several saves. Prints the link.
                              --title "<title>" (default: the doc's # heading or
                              the page's <title>), --description "<sentence>",
                              --visibility private|project|public (default private)
-  add <path>                 Share a path already in Files (a .md or .html
-                             file, or a folder with an index). Same options.
+  add <path>                 Share a folder already in Files (it holds an
+                             index.md or index.html; an index file stands for
+                             its folder). Same options.
   publish <file|dir> --id <artifact>
                              Save the files into that artifact. A doc takes a
                              .md file. --base-version <v> refuses the save
@@ -112,6 +115,30 @@ async function collectFiles(path: string): Promise<Record<string, ArtifactFileIn
     }
   };
   await walk(path);
+  return out;
+}
+
+/** Raw bytes per request: well inside the API's 32 MB and its 25 s request deadline on a slow uplink. */
+const BATCH_BYTES = 12 * 1024 * 1024;
+const sizeOf = (file: ArtifactFileInput) => (file.content !== undefined ? Buffer.byteLength(file.content) : Math.floor((file.content_base64?.length ?? 0) * 0.75));
+
+/** Split the files into requests of at most BATCH_BYTES, the entry (index.*) in the first. */
+function batches(files: Record<string, ArtifactFileInput>): Array<Record<string, ArtifactFileInput>> {
+  const paths = Object.keys(files).sort((x, y) => Number(/^index\.(md|html?)$/.test(y)) - Number(/^index\.(md|html?)$/.test(x)));
+  const out: Array<Record<string, ArtifactFileInput>> = [];
+  let current: Record<string, ArtifactFileInput> = {};
+  let size = 0;
+  for (const path of paths) {
+    const bytes = sizeOf(files[path]!);
+    if (size > 0 && size + bytes > BATCH_BYTES) {
+      out.push(current);
+      current = {};
+      size = 0;
+    }
+    current[path] = files[path]!;
+    size += bytes;
+  }
+  out.push(current);
   return out;
 }
 
@@ -229,18 +256,30 @@ export async function runArtifacts(argv: string[]): Promise<number> {
           } catch {
             return fail(`Cannot read ${a0}.`);
           }
+          // A title is a name: an explanation after ':' / ' - ' / '—' / '→' belongs in --description.
+          if (f.title && /:|\s[-–—]\s|→/.test(f.title)) {
+            process.stderr.write(`${C.dim}hint: a title is a short name ("${f.title.split(/:|\s[-–—]\s|→/)[0]!.trim()}"); put the rest in --description${C.reset}\n`);
+          }
+          const [first, ...rest] = batches(files);
+          let a: Artifact;
           if (f.id) {
             const id = await resolve(f.id);
             if (!id) return 1;
-            const a = await saveArtifact(pid, id, {
-              files,
+            a = await saveArtifact(pid, id, {
+              files: first,
               ...(f.title ? { title: f.title } : {}),
               ...(f.description ? { description: f.description } : {}),
               ...(f.baseVersion ? { base_version: f.baseVersion } : {}),
             });
-            return shared(a, 'Saved');
+          } else {
+            a = await createArtifact(pid, { files: first, ...meta });
           }
-          return shared(await createArtifact(pid, { files, ...meta }), 'Published');
+          // The entry went first; the rest of a large folder follows as plain saves.
+          for (const [i, batch] of rest.entries()) {
+            if (!f.json) process.stderr.write(`${C.dim}uploading ${i + 2} of ${rest.length + 1}${C.reset}\n`);
+            a = await saveArtifact(pid, a.artifact_id, { files: batch });
+          }
+          return shared(a, f.id ? 'Saved' : 'Published');
         }
         case 'add': {
           if (!a0) return missing('a path in Files');

@@ -54,7 +54,6 @@ export const FeatureFlagMapSchema = z.object({
   connectors_api_discover: z.boolean(),
   agentmail_email: z.boolean(),
   meta_agent: z.boolean(),
-  monitors: z.boolean(),
   reminders: z.boolean(),
   warm_sessions: z.boolean(),
   secrets_egress: z.boolean(),
@@ -1516,7 +1515,7 @@ export const TriggerSchema = z.object({
   slug: z.string(),
   path: z.string(),
   name: z.string(),
-  type: z.enum(['cron', 'webhook', 'monitor', 'event']),
+  type: z.enum(['cron', 'webhook', 'monitor', 'event', 'app']),
   agent: z.string(),
   /** Wire-form model (`provider/model`) or null for "Default". */
   model: z.string().nullable(),
@@ -1533,6 +1532,12 @@ export const TriggerSchema = z.object({
   interval_seconds: z.number().nullable(),
   /** For type=monitor only — the silence watchdog, in whole seconds. */
   expect_event_within_seconds: z.number().nullable(),
+  /** For type=app only — the slug of the App whose emitted events fire the trigger. */
+  app: z.string().nullable().optional(),
+  /** A fire calls this App (method path) instead of running an agent. Null: an agent run. */
+  target: z.object({ app: z.string(), path: z.string(), method: z.enum(['POST', 'GET']), payload: z.record(z.string(), z.unknown()).optional() }).nullable().optional(),
+  /** For type=cron with `every` — the fixed period in whole seconds; null otherwise. */
+  every_seconds: z.number().nullable().optional(),
   /**
    * For type=event only. `pending` = declared but no subscription row yet.
    * Null for every other type.
@@ -1633,7 +1638,7 @@ export type TriggerList = z.infer<typeof TriggerListSchema>;
 export const TriggerRunSchema = z.object({
   run_id: z.string(),
   slug: z.string(),
-  source: z.enum(['cron', 'webhook', 'manual', 'monitor', 'reminder', 'event']),
+  source: z.enum(['cron', 'webhook', 'manual', 'monitor', 'reminder', 'event', 'app']),
   /** The fire's outcome. `fired` = a session was started or prompted. */
   status: z.enum(['queued', 'running', 'fired', 'failed', 'skipped', 'rejected']),
   /** The agent turn's outcome; null when the run started no turn. */

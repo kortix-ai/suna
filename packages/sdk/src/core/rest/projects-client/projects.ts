@@ -58,6 +58,7 @@ export type FeatureFlagKey =
   | 'meta_agent'
   /** @deprecated Graduated — Apps is on for every project. Removed in the next major. */
   | 'apps'
+  /** @deprecated Withdrawn — the monitor box was removed; an App with a schedule or a `type: app` trigger replaces it. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'monitors'
   | 'reminders'
   | 'warm_sessions'
@@ -109,7 +110,8 @@ type GraduatedFeatureFlagKey =
   | 'stateless_sessions'
   | 'ephemeral_sandboxes'
   | 'session_log'
-  | 'pi_harness';
+  | 'pi_harness'
+  | 'monitors';
 /** The keys `KortixProject.experimental` carries on every response. */
 type ServedFeatureFlagKey = Exclude<FeatureFlagKey, GraduatedFeatureFlagKey>;
 
@@ -123,7 +125,6 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'connectors_api_discover',
   'agentmail_email',
   'meta_agent',
-  'monitors',
   'reminders',
   'warm_sessions',
   'secrets_egress',

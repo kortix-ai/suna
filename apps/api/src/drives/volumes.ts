@@ -1,6 +1,7 @@
 // The storage behind a drive: one Platinum volume in drive sync mode. Every
 // call here speaks the Platinum volumes API; nothing above this file does.
 
+import { createHash } from 'node:crypto';
 import { logger } from '../lib/logger';
 import { isPlatinumConfigured, platinumFetch } from '../shared/platinum';
 import { DEFAULT_SANDBOX_MOUNT_LIMIT } from './access';
@@ -212,6 +213,39 @@ export async function commitVolumeUpload(volume: string, uploadId: string): Prom
     method: 'POST',
     signal: AbortSignal.timeout(FILE_TIMEOUT_MS),
   });
+}
+
+const BLOCK_BYTES = 1024 * 1024;
+const BLOCK_CONCURRENCY = 8;
+
+/**
+ * Write many files as ONE commit, through the block protocol: the store
+ * answers which 1 MiB blocks it lacks, only those travel (8 at a time), and the
+ * commit lands every file at once. A reader never sees half a folder.
+ */
+export async function writeVolumeFiles(
+  volume: string,
+  files: Array<{ path: string; bytes: Uint8Array<ArrayBuffer> }>,
+  opts: { overwrite: boolean },
+): Promise<void> {
+  if (!files.length) return;
+  const blocks = new Map<string, Uint8Array<ArrayBuffer>>();
+  const planned = files.map((f) => {
+    const shas: string[] = [];
+    for (let off = 0; off < f.bytes.byteLength; off += BLOCK_BYTES) {
+      const block = f.bytes.subarray(off, Math.min(f.bytes.byteLength, off + BLOCK_BYTES));
+      const sha = createHash('sha256').update(block).digest('hex');
+      blocks.set(sha, block);
+      shas.push(sha);
+    }
+    return { path: f.path, size: f.bytes.byteLength, blocks: shas };
+  });
+  const plan = (await planVolumeUpload(volume, { files: planned, overwrite: opts.overwrite })) as { upload_id: string; missing?: string[] };
+  const missing = [...new Set(plan.missing ?? [])];
+  for (let i = 0; i < missing.length; i += BLOCK_CONCURRENCY) {
+    await Promise.all(missing.slice(i, i + BLOCK_CONCURRENCY).map((sha) => putVolumeUploadBlock(volume, plan.upload_id, sha, blocks.get(sha)!)));
+  }
+  await commitVolumeUpload(volume, plan.upload_id);
 }
 
 export async function moveVolumeFile(volume: string, src: string, dst: string): Promise<void> {

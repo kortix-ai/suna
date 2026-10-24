@@ -1264,8 +1264,8 @@
           "description": "Обавештава људе којих се сесија тиче (ко је послао промпт, ко ју је направио и ко је прати) преко пријемног сандучета са звонцем, push обавештења у прегледачу и е-поште, и упозорава на окидаче и подсетнике који не успевају. Искључено: push сесије добија само телефон особе која ју је направила, а телефон власника налога добија један push кад окидач почне да не успева."
         },
         "event_triggers": {
-          "name": "Okidači događaja aplikacije",
-          "description": "Pokrenite agenta kada se nešto desi u povezanoj aplikaciji: nova e-pošta, pull request, događaj u kalendaru."
+          "name": "Okidači događaja konektora",
+          "description": "Pokrenite agenta kada se nešto desi u povezanoj aplikaciji: nova e-pošta, pull request, događaj u kalendaru. Događaji dolaze iz Composio-a. Kada je Connectors v2 uključen, Kortix i sam proverava vaše povezane aplikacije."
         },
         "volumes": {
           "name": "Volumeni",
@@ -20357,7 +20357,44 @@
       "cliDeviceWarning": "Odobrite samo prijavu koju ste sami pokrenuli. Unesite kod koji prikazuje vaš terminal.",
       "cliDeviceCode": "Kod za prijavu",
       "cliDeviceApproved": "Prijava je odobrena. Vratite se u terminal.",
-      "cliDeviceAction": "Ovlasti CLI"
+      "cliDeviceAction": "Ovlasti CLI",
+      "text705a7e325b66": "Kortix апликација је послала догађаје",
+      "text4b80152fb96b": "Прочитани акредитиви за догађаје Kortix апликације",
+      "text59374c1f1acd": "Kortix апликација је заказала покретање",
+      "text32f35e849409": "Kortix апликација је отказала покретање",
+      "textea2b8a878841": "Pozadina",
+      "textdbf09e33067b": "{value0} radi",
+      "text09ca25aa9ecf": "{value0} miruje",
+      "text7850d9d304e8": "{value0} nije postavljeno",
+      "texta06ef89024c7": "{value0} spoljno",
+      "text94ecd43f8b2b": "Još nije postavljeno",
+      "text660bf36b1338": "Radi 24/7",
+      "text6aa00f0b3e36": "Miruje kada je neaktivna",
+      "textd6d136eb7406": "Poziva je {value0}",
+      "text08f59056870d": "Aktivna {value0}",
+      "textbeeb1f954807": "Još nema zahteva",
+      "text0d209cd1f377": "Na ovoj stranici još nema aplikacija. Aplikacije koje ljudi otvaraju dobijaju karticu ovde; one ispod rade u pozadini.",
+      "texteac997a26ac5": "Radi u pozadini. Nema stranicu za prikaz; ovo je ono što radi.",
+      "textcb0a5f32744d": "Poziva je",
+      "text5265247cedb4": "Pokreće agente na",
+      "text1af851907331": "Veličina",
+      "textc8814bbd2883": "Verzija {value0} · postavljena {value1}",
+      "text6473ccf96fd6": "Sve verzije",
+      "text22f3da948b4b": "Zatraži od agenta da je postavi ili pokreni:",
+      "textfaca381ebe87": "Zaustavlja se posle {value0} min bez zahteva i budi se na sledeći zahtev ili okidač.",
+      "text1d7b00a8a249": "Prikaži na stranici aplikacija",
+      "textf15a2daaaabf": "Kartica u mreži. Isključeno: navedeno pod Pozadina.",
+      "text0ba357fa63f8": "Događaji konektora",
+      "textca395c4d19b2": "Događaj konektora",
+      "text6064256ee716": "događaj konektora",
+      "text85a6c98e5584": "Novi događaj konektora",
+      "text165d9237c163": "Pretraži događaje konektora",
+      "texta9caf7909165": "Još nema događaja konektora",
+      "text451ef98453d2": "Pokreni agenta kada jedna od tvojih Kortix aplikacija emituje događaj.",
+      "text064694999e1f": "Novi događaj aplikacije",
+      "text1934aa0740bb": "Pretraži događaje aplikacija",
+      "text25db7e5609e5": "Još nema događaja aplikacija",
+      "text9f8f92588517": "Aplikacija pokreće agente emitovanjem događaja. Dodaj okidač sa on: { event, app } u kortix.yaml."
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -22598,6 +22635,8 @@
     "removed": "Више се не дели",
     "mediaSingleFile": "Слике и видео снимци захтевају документ у сопственој фасцикли. Објави документ као фасциклу да би додао медије.",
     "mediaTooLarge": "Ова датотека је већа од 16 MB.",
-    "refresh": "Освежи"
+    "refresh": "Освежи",
+    "diagramEdit": "Уреди дијаграм",
+    "diagramDone": "Готово"
   }
 }
