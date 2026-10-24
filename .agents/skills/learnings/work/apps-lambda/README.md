@@ -112,17 +112,16 @@ Decisions:
 
 | # | Ask | State |
 |---|---|---|
-| 1 | event_triggers flag text | shipped #10872 (e67722ab12); relabel to "Connector event triggers" pending with 3 |
-| 2 | `type: app` triggers (App → agent) | committed c2a108c29d, live-verified on Platinum |
-| 3a | App target on the trigger engine | committed bcbae7e5a1 |
-| 3b | `every` schedules, `target.payload`, one-off App runs (`POST …/apps/:id/runs`) | committed 94fa9a534a |
+| 1 | event_triggers flag text | shipped #10872; renamed "Connector event triggers" in #10876 |
+| 2 | `type: app` triggers (App → agent) | merged #10876, live-verified on Platinum |
+| 3a | App target on the trigger engine | merged #10876; redirect fix (SSRF) in the same PR |
+| 3b | `every` schedules, `target.payload`, one-off App runs (`POST …/apps/:id/runs`) | merged #10876 |
 | 3c | MCP poll loop | Marko 2026-10-24: keep it as is (it works); maybe move onto the engine later |
-| 3d | remove the monitor box and `type: monitor` | committed 2744a6097c; prod usage not checkable locally, so a maintenance step retires any live box; drop `project_monitor_boxes` + `monitor-retire.ts` in a later migration |
-| 3e | trigger = `on:` (what fires) + `run:` (what runs), one normalizer in @kortix/manifest-schema; new triggers written in it, edits keep their shape; flat `type:` entries stay valid | committed (this commit); flag relabel \"Connector events\" moves to item 5 |
-| 5a | `/apps`: a card only with `display.listed: true` (default false); Background Apps section; backfill keeps every existing App listed; external Apps listed on create; `--listed`/`--unlisted` on `kortix apps deploy` and `set`; skill + docs | committed (this commit). Open: Triggers page rendering for `type: app` and App targets |
-| 4 | Lambda-style Apps: `memory_mb` sizes, pause/resume, invoke | after 3 |
-| 5 | `/apps` shows only Apps with `display.listed: true` + rendering pass; **Triggers page renders `type: app` triggers and App targets (today `isTriggerKind` hides them)** | needs `next dev`; when the laptop has RAM |
-| 6 | docs (`apps.mdx`, `connect/triggers.mdx`, `project/manifest.mdx`), agent skill + templates | one pass after 3e, for the final shape; docs still describe monitors until then |
+| 3d | remove the monitor box and `type: monitor` | merged #10876; maintenance retires any live box. BEFORE THE NEXT PROMOTE: count live `project_monitor_boxes` and `type: monitor` triggers in prod. Later: drop the table |
+| 3e | trigger = `on:` + `run:` | merged #10876 |
+| 5 | `/apps`: listed-only grid, Background list, overview for background Apps, Settings switch; Triggers page lists App events | merged #10876 (65c20fa833) |
+| 4 | Lambda-style Apps: lifecycle (`idle_timeout: 0` = never stop, `on_idle: pause\|stop`, replaces `always_on`), `memory_mb` sizes, invoke | next; design agreed in chat 2026-10-24 |
+| 6 | docs (`connect/triggers`, `project/manifest`, `apps`, flags table), agent skill | merged #10876 |
 | 7 | Platinum template build stuck in `building` (kortix-appimg-dev-06b5823eb6aab7bb5d209061) | reported to the Platinum session, passed to Marko |
 
 Found on the way (not this branch's work): `apps/api/src/__tests__/unit-audit-route-labels.test.ts`
