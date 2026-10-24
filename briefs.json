@@ -58,6 +58,60 @@
       "slack": {
         "status": "skipped"
       }
+    },
+    "2026-W40": {
+      "week": "2026-W40",
+      "start": "2026-09-28T00:00:00.000Z",
+      "end": "2026-10-05T00:00:00.000Z",
+      "releases": [
+        "v0.13.50",
+        "v0.13.49",
+        "v0.13.48",
+        "v0.13.47",
+        "v0.13.46",
+        "v0.13.45",
+        "v0.13.44",
+        "v0.13.43",
+        "v0.13.42",
+        "v0.13.41",
+        "v0.13.40"
+      ],
+      "highlights": [
+        {
+          "text": "Connect your computer from the desktop app, with access approval and a tunnel that keeps running while the app is closed.",
+          "tags": [
+            "v0.13.42"
+          ]
+        },
+        {
+          "text": "Fork a conversation from any point in a session.",
+          "tags": [
+            "v0.13.50"
+          ]
+        },
+        {
+          "text": "Share a secret or connector account with an agent across all its sessions, triggers and schedules.",
+          "tags": [
+            "v0.13.47"
+          ]
+        },
+        {
+          "text": "Failed triggers show their reason on the Schedule page and send one push notification when a failure streak starts.",
+          "tags": [
+            "v0.13.47"
+          ]
+        },
+        {
+          "text": "Edit queued prompts in place in a dedicated card above the composer.",
+          "tags": [
+            "v0.13.48"
+          ]
+        }
+      ],
+      "generated_at": "2026-10-24T10:21:02.197Z",
+      "slack": {
+        "status": "skipped"
+      }
     }
   }
 }
