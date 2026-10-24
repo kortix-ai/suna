@@ -22776,5 +22776,12 @@
     "auditSet": "规则集 {set}",
     "bulkInheritTitle": "将 {count, plural, other {# 个工具}}恢复为基础规则?",
     "bulkInheritBody": "删除此规则集中 {group} 下每个工具的规则,使其重新遵循基础规则。模式规则保持不变。"
+  },
+  "sessionChangeRequests": {
+    "title": "更改请求",
+    "open": "待处理",
+    "jump": "跳转到 #{number} 的回复",
+    "unavailable": "已加载的历史记录中没有此回复。",
+    "loadError": "无法加载回复。请重试。"
   }
 }
