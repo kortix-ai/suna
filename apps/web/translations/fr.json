@@ -22637,6 +22637,8 @@
     "mediaTooLarge": "Ce fichier dépasse 16 Mo.",
     "refresh": "Actualiser",
     "diagramEdit": "Modifier le diagramme",
-    "diagramDone": "Terminé"
+    "diagramDone": "Terminé",
+    "codeLanguage": "Langage du code",
+    "editedAgo": "Modifié {time}"
   }
 }
