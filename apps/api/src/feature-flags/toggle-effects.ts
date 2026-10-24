@@ -57,7 +57,7 @@ const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
  * findable instead of a silent console.warn.
  */
 export async function runFeatureFlagToggleEffects(ctx: FeatureFlagToggleContext): Promise<void> {
-  // Every flag reaches the box as boot-only env (KORTIX_FEATURE_FLAGS, KORTIX_GENUI): a warm box
+  // Every flag reaches the box as boot-only env (KORTIX_FEATURE_FLAGS): a warm box
   // from before the change must not be adopted, or its skills and CLI keep the old flag.
   const own = TOGGLE_EFFECTS[ctx.key];
   const effect: ToggleEffect = async (c) => {

@@ -85,7 +85,7 @@ flow(
         .as(ctx.P.OWNER)
         .patch(
           '/v1/projects/:projectId/features',
-          { feature: 'genui', enabled: null },
+          { feature: 'agent_rooms', enabled: null },
           { params: { projectId: p.id } },
         );
       project.status(200);
@@ -112,7 +112,7 @@ flow(
         .as(ctx.P.OWNER)
         .patch(
           '/v1/projects/:projectId/features',
-          { feature: 'genui', enabled: null },
+          { feature: 'agent_rooms', enabled: null },
           { params: { projectId: p.id } },
         );
       project.status(200);
@@ -123,6 +123,33 @@ flow(
       if (body.experimental.pi_harness !== true) throw new Error(`experimental.pi_harness is ${body.experimental.pi_harness}, not true`);
       if (body.experimental_features.some((f) => f.key === 'pi_harness')) {
         throw new Error('the catalog still lists pi_harness');
+      }
+    });
+
+    await ctx.step('genui graduated (generative UI is always on) → 400, absent from the catalog, experimental.genui true', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          '/v1/projects/:projectId/features',
+          { feature: 'genui', enabled: false },
+          { params: { projectId: p.id } },
+        );
+      r.status(400);
+      const project = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          '/v1/projects/:projectId/features',
+          { feature: 'agent_rooms', enabled: null },
+          { params: { projectId: p.id } },
+        );
+      project.status(200);
+      const body = project.json<{
+        experimental: Record<string, boolean>;
+        experimental_features: Array<{ key: string }>;
+      }>();
+      if (body.experimental.genui !== true) throw new Error(`experimental.genui is ${body.experimental.genui}, not true`);
+      if (body.experimental_features.some((f) => f.key === 'genui')) {
+        throw new Error('the catalog still lists genui');
       }
     });
 

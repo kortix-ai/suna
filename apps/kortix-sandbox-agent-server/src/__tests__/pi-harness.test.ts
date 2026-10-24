@@ -931,7 +931,7 @@ describe('pi harness', () => {
     }
   })
 
-  test('the kortix-genui skill is listed only while KORTIX_GENUI=1', async () => {
+  test('the kortix-genui skill is always listed, also with flag-era env that turned it off', async () => {
     const managed = mkdtempSync(join(tmpdir(), 'pi-managed-'))
     for (const name of ['kortix-memory', 'kortix-genui']) {
       mkdirSync(join(managed, name), { recursive: true })
@@ -940,16 +940,17 @@ describe('pi harness', () => {
     const previous = process.env.KORTIX_MANAGED_SKILLS_DIR
     process.env.KORTIX_MANAGED_SKILLS_DIR = managed
     try {
-      for (const [flag, listed] of [['1', true], ['0', false]] as const) {
-        const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_GENUI: flag } })
+      const envs: Array<Record<string, string>> = [{}, { KORTIX_GENUI: '0', KORTIX_FEATURE_FLAGS: 'agent_rooms' }]
+      for (const env of envs) {
+        const r = await boot({ script: [{ text: 'ok' }], env })
         const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>
-        expect(skills.map((s) => s.name).sort()).toEqual(listed ? ['kortix-genui', 'kortix-memory'] : ['kortix-memory'])
+        expect(skills.map((s) => s.name).sort()).toEqual(['kortix-genui', 'kortix-memory'])
         const root = r.service.runtime()!.rootId
         const before = gateway.sent.length
         expect((await prompt(r, root, { parts: [{ type: 'text', text: 'hi' }] })).status).toBe(204)
         await waitFor(() => !r.service.runtime()!.busy())
         const system = JSON.stringify(gateway.sent[before]!.filter((m) => m.role === 'system'))
-        expect(system.includes('kortix-genui')).toBe(listed)
+        expect(system).toContain('kortix-genui')
         expect(system).not.toContain('Generative UI')
       }
     } finally {

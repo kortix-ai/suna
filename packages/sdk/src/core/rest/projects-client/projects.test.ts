@@ -1008,7 +1008,6 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'reminders',
     'secrets_egress',
     'pooled_provider_secrets',
-    'genui',
     'us_region',
     'event_triggers',
     'warm_sessions',
@@ -1082,6 +1081,11 @@ test('llm_gateway graduated: the gateway is the only model path, the key still t
   // no longer lists, resolves, or accepts `llm_gateway`; it still sends
   // `experimental.llm_gateway: true` for older clients.
   const graduated: FeatureFlagKey = 'llm_gateway';
+  expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
+});
+
+test('genui graduated: absent from the runtime list, the key still typechecks', () => {
+  const graduated: FeatureFlagKey = 'genui';
   expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
 });
 

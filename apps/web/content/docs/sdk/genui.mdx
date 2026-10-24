@@ -3,17 +3,17 @@ title: Generative UI
 description: Render the agent's step rows, cards, checklists, comparisons, charts, maps, and tabs in your own app.
 ---
 
-The agent answers in markdown. When a project turns on **Generative UI**, the agent may add
+The agent answers in markdown. Generative UI is on for every project: the agent may add
 ` ```openui ` blocks for structured content: a ranked recommendation, a comparison, a chart from
 tool data, places on a map. Short answers, explanations, and code stay prose. A guide, a trip, or a
 shortlist reads as short paragraphs with one block per section.
 
 ## How the agent learns the blocks
 
-The catalog ships as the `kortix-genui` system skill, not as system-prompt text. With the `genui`
-[project flag](/docs/project#feature-flags) on, every new session lists the skill by name and a
-one-line description. The agent loads the full catalog only when an answer needs a block, so a turn
-without UI pays nothing for it. With the flag off, the skill is hidden. An agent with an explicit
+The catalog ships as the `kortix-genui` system skill, not as system-prompt text. Every session
+lists the skill by name and a one-line description. There is no flag to turn it off. The agent
+loads the full catalog only when an answer needs a block, so a turn without UI pays nothing for
+it. An agent with an explicit
 `skills:` list in `kortix.yaml` sees the skill only when the list names `kortix-genui`.
 
 ## Install

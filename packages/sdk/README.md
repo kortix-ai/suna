@@ -1493,7 +1493,7 @@ Other freshness tiers keep their existing behavior.
 
 ## Generative UI (`@kortix/sdk/genui`)
 
-When a project turns on the `genui` flag, the agent may answer with ` ```openui ` blocks:
+Generative UI is on for every project: the agent may answer with ` ```openui ` blocks:
 cards, comparisons, charts, maps, tabs. Render them with the headless renderer and your own
 components, or with the bundled defaults:
 

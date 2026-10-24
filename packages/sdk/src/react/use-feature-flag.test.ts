@@ -90,9 +90,9 @@ describe('useFeatureFlag', () => {
   });
 
   test('one flag never reads another flag`s slot', () => {
-    withDetail({ genui: true, reminders: false });
+    withDetail({ meta_agent: true, reminders: false });
 
-    expect(useFeatureFlag('p', 'genui').enabled).toBe(true);
+    expect(useFeatureFlag('p', 'meta_agent').enabled).toBe(true);
     expect(useFeatureFlag('p', 'reminders').enabled).toBe(false);
   });
 
@@ -182,6 +182,17 @@ describe('useFeatureFlag', () => {
     expect(useFeatureFlag('p', 'pi_harness').enabled).toBe(true);
 
     expect(useFeatureFlag(null, 'pi_harness').enabled).toBe(true);
+  });
+
+  test('genui graduated: generative UI is on for every project', () => {
+    // No flag since 2026-10-24. A stored `genui: false` from the flag era is inert.
+    withDetail({ genui: false });
+    expect(useFeatureFlag('p', 'genui').enabled).toBe(true);
+
+    withDetail(undefined);
+    expect(useFeatureFlag('p', 'genui').enabled).toBe(true);
+
+    expect(useFeatureFlag(null, 'genui').enabled).toBe(true);
   });
 
   test('config_releases graduated: every session runs the base branch config release', () => {

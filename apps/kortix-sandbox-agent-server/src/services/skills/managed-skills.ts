@@ -149,7 +149,7 @@ export async function withheldManagedSkills(
   const withheld: string[] = []
   for (const [name, dir] of [...candidates].sort((a, b) => a[0].localeCompare(b[0]))) {
     const body = await readFile(join(dir, 'SKILL.md'), 'utf8').catch(() => '')
-    const flag = skillFeatureFlag(body, name)
+    const flag = skillFeatureFlag(body)
     if (flag && !enabled.has(flag)) withheld.push(name)
   }
   return withheld

@@ -15,6 +15,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `getPublicResponse` and the `PublicResponse` type: the anonymous read of a shared response
   (`GET /public/responses/:token`); `prompt` is null unless the sharer included it. Throws `HostBoundaryError` with `status` 404 or 410.
 
+### Changed (generative UI is always on)
+- `FeatureFlagKey` `'genui'` is deprecated and no longer a flag: absent from `FEATURE_FLAG_KEYS`
+  and from the feature-flag catalog. The API sends `experimental.genui: true` for every project,
+  and `useFeatureFlag(id, 'genui')` reports `true`. `KortixProject.experimental.genui` is optional
+  in the type.
+
 ### Changed (pi runs every new session; OpenCode is sunset)
 - `FeatureFlagKey` `'pi_harness'` is deprecated and no longer a flag: absent from `FEATURE_FLAG_KEYS`
   and from the feature-flag catalog. The API sends `experimental.pi_harness: true` for every

@@ -142,7 +142,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       warm_sessions: false,
       secrets_egress: false,
       pooled_provider_secrets: false,
-      genui: false,
       us_region: false,
       event_triggers: false,
       notification_center: false,
@@ -355,6 +354,13 @@ describe('ProjectSchema', () => {
     const experimental = projectFixture().experimental as Record<string, boolean>;
     expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, pi_harness: true } })).experimental.pi_harness).toBe(true);
     expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, pi_harness: false } }))).toThrow();
+  });
+
+  test('experimental carries the graduated genui key only as a constant true', () => {
+    // Wire compat: the API still sends `genui: true`; older web, SDK and mobile clients render blocks only while it is true.
+    const experimental = projectFixture().experimental as Record<string, boolean>;
+    expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, genui: true } })).experimental.genui).toBe(true);
+    expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, genui: false } }))).toThrow();
   });
 
   test('accepts a null icon', () => {
@@ -824,7 +830,6 @@ describe('envelopes', () => {
       'warm_sessions',
       'secrets_egress',
       'pooled_provider_secrets',
-      'genui',
       'us_region',
       'event_triggers',
       'notification_center',

@@ -348,7 +348,7 @@ describe('warm sessions — compute placement', () => {
   });
 });
 
-// Every flag is boot-only env (KORTIX_FEATURE_FLAGS, KORTIX_GENUI; projects/lib/feature-flag-env.ts).
+// Every flag is boot-only env (KORTIX_FEATURE_FLAGS; projects/lib/feature-flag-env.ts).
 // A warm box provisioned before a flag change carries the old value, so any
 // change retires every unclaimed warm session of the project.
 describe('a flag change — retires warm sessions', () => {
@@ -358,7 +358,7 @@ describe('a flag change — retires warm sessions', () => {
     return { metadata: (row?.metadata ?? {}) as Record<string, unknown>, status: row?.status, boxStatus: box?.status };
   }
 
-  test.each(['genui', 'agent_rooms'] as const)('%s: every unclaimed warm session of the project (all users) is deleted; a claimed one is kept', async (key) => {
+  test.each(['goals', 'agent_rooms'] as const)('%s: every unclaimed warm session of the project (all users) is deleted; a claimed one is kept', async (key) => {
     const mine = await seedWarmSession();
     const theirs = await seedWarmSession({ createdBy: OTHER_USER });
     const claimed = await seedWarmSession({ warm: false });

@@ -1247,10 +1247,6 @@
           "name": "Secrets de fournisseur partagés",
           "description": "Les membres connectent leurs propres abonnements ChatGPT et clés de fournisseur, les partagent si besoin et choisissent ceux que chaque session utilise."
         },
-        "genui": {
-          "name": "UI générative",
-          "description": "L'agent peut répondre avec des cartes, des comparatifs, des graphiques, des cartes géographiques et des onglets plutôt qu'avec de longs textes."
-        },
         "reminders": {
           "name": "Rappels",
           "description": "Permet aux agents et aux personnes de planifier des points de contrôle sur une session, une fois ou de façon récurrente. Chaque déclenchement relance cette session. Ajoute la page Rappels, l’indicateur de rappels de la session et `kortix remind`."

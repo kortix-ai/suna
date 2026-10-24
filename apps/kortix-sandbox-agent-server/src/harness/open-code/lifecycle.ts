@@ -585,7 +585,7 @@ export async function buildOpencodeConfigContent(
   // (6) A rule names a capability (`RUNTIME_PERMISSION_CAPABILITIES`), not an
   // OpenCode tool: the tools a capability covers get its rule (E9).
   // (7) OpenCode's built-in skills describe a standalone OpenCode install, not
-  // a Kortix project: every permission block denies them. (The kortix-genui
+  // a Kortix project: every permission block denies them. (A flagged managed
   // skill is not handled here: a project's `"*": "allow"` outranks a skill deny,
   // so kortixd withholds its files instead, `syncFlaggedManagedSkills`.)
   out.permission = denyBuiltinSkills(capabilityToolRules(out.permission))
@@ -2120,7 +2120,7 @@ export function createOpencodeLifecycle(
     const projectRoot = served ? (releaseRootOf(served) ?? currentCfg.projectTarget) : null
     const servesProject = !!served && !!projectRoot && served.startsWith(`${projectRoot}/`)
     // A config release is staged once and reused from disk without the overlay step, so the
-    // kortix-genui skill is made to match the `genui` flag here, where the overlay lands
+    // flagged managed skills are made to match the project's flags here, where the overlay lands
     // (`managedOverlayRoot`, as the assets service resolves it), before OpenCode reads it.
     if (served && projectRoot) {
       const skillsDir = join(managedOverlayRoot(served, projectRoot), 'skills')

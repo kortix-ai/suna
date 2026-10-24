@@ -1247,10 +1247,6 @@
           "name": "Segreti del provider condivisi",
           "description": "I membri collegano i propri abbonamenti ChatGPT e chiavi dei provider, li condividono quando serve e scelgono quali usa ogni sessione."
         },
-        "genui": {
-          "name": "UI generativa",
-          "description": "L'agente può rispondere con schede, confronti, grafici, mappe e tab invece di testi lunghi."
-        },
         "reminders": {
           "name": "Promemoria",
           "description": "Consente ad agenti e persone di programmare controlli su una sessione, una volta o in modo ricorrente. Ogni attivazione richiama quella sessione. Aggiunge la pagina Promemoria, l’indicatore dei promemoria della sessione e `kortix remind`."

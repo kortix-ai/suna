@@ -1247,10 +1247,6 @@
           "name": "Secretos de proveedor compartidos",
           "description": "Los miembros conectan sus propias suscripciones de ChatGPT y claves de proveedor, las comparten cuando hace falta y eligen cuáles usa cada sesión."
         },
-        "genui": {
-          "name": "UI generativa",
-          "description": "El agente puede responder con tarjetas, comparaciones, gráficos, mapas y pestañas en lugar de textos largos."
-        },
         "reminders": {
           "name": "Recordatorios",
           "description": "Permite que agentes y personas programen revisiones en una sesión, una vez o de forma recurrente. Cada activación vuelve a avisar a esa sesión. Añade la página Recordatorios, el indicador de recordatorios de la sesión y `kortix remind`."

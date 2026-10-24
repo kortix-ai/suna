@@ -1,5 +1,7 @@
 # Generative UI (genui) Implementation Plan — master
 
+> **Superseded (2026-10-24):** generative UI is always on. The `genui` project flag, the `GENUI_ENABLED` kill switch and the `KORTIX_GENUI` sandbox env described below were deleted. Every session lists the `kortix-genui` system skill. See `../SKILL.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** The Kortix agent can answer with typed UI blocks (cards, comparisons, charts, maps, tabs) that render natively on web, mobile, and any `@kortix/sdk` host, and that fall back to markdown everywhere else, with no regression when the feature is off.

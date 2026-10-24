@@ -1,12 +1,8 @@
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 
-import { config } from '../../config';
-import { resolveFeatureFlag, resolveFeatureFlags } from '../../feature-flags/registry';
+import { resolveFeatureFlags } from '../../feature-flags/registry';
 import { db } from '../../shared/db';
-
-/** Read by kortixd (lib/config/genui.ts): 1 lists the kortix-genui system skill. Boot-only. */
-export const GENUI_ENV_NAME = 'KORTIX_GENUI';
 
 /**
  * Read by kortixd (lib/config/feature-flags.ts) and the CLI (feature-flags.ts): the project's
@@ -15,20 +11,19 @@ export const GENUI_ENV_NAME = 'KORTIX_GENUI';
  */
 export const FEATURE_FLAGS_ENV_NAME = 'KORTIX_FEATURE_FLAGS';
 
-/** '1' only when the kill switch is open and the project flag is on. */
-export function genuiEnvValue(metadata: unknown, enabled: boolean = config.GENUI_ENABLED): '1' | '0' {
-  return enabled && resolveFeatureFlag(metadata, 'genui') ? '1' : '0';
-}
+/**
+ * Graduated keys still listed for sandbox images built before they graduated: such an image
+ * withholds the kortix-genui skill unless `genui` is listed. Delete once every served image
+ * is newer than 2026-10-24.
+ */
+const LEGACY_IMAGE_FLAGS = ['genui'];
 
-/** The enabled flags, sorted; `genui` follows the kill switch too. */
-export function featureFlagsEnvValue(metadata: unknown, genuiKillSwitchOpen: boolean = config.GENUI_ENABLED): string {
-  const flags = resolveFeatureFlags(metadata);
-  flags.genui = genuiEnvValue(metadata, genuiKillSwitchOpen) === '1';
-  return Object.entries(flags)
+/** The enabled flags, sorted. */
+export function featureFlagsEnvValue(metadata: unknown): string {
+  const flags = Object.entries(resolveFeatureFlags(metadata))
     .filter(([, on]) => on)
-    .map(([key]) => key)
-    .sort()
-    .join(',');
+    .map(([key]) => key);
+  return [...flags, ...LEGACY_IMAGE_FLAGS].sort().join(',');
 }
 
 export async function buildFeatureFlagSandboxEnv(projectId: string): Promise<Record<string, string>> {
@@ -37,8 +32,5 @@ export async function buildFeatureFlagSandboxEnv(projectId: string): Promise<Rec
     .from(projects)
     .where(eq(projects.projectId, projectId))
     .limit(1);
-  return {
-    [GENUI_ENV_NAME]: genuiEnvValue(row?.metadata),
-    [FEATURE_FLAGS_ENV_NAME]: featureFlagsEnvValue(row?.metadata),
-  };
+  return { [FEATURE_FLAGS_ENV_NAME]: featureFlagsEnvValue(row?.metadata) };
 }

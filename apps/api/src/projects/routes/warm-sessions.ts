@@ -51,7 +51,7 @@ import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-reg
  */
 const NO_REFRESH = { status: 'skipped' as const };
 
-// Not tombstoned too: a `genui` flag change deletes warm sessions with the
+// Not tombstoned too: a feature flag change deletes warm sessions with the
 // marker kept (retireWarmProjectSessions), and neither adoption CAS may revive one.
 const WARM_SESSION_MARKER = sql`${projectSessions.metadata}->>${WARM_SESSION_METADATA_KEY}::text = 'true'
   AND coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`;

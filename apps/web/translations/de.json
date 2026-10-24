@@ -1247,10 +1247,6 @@
           "name": "Gemeinsam genutzte Anbieter-Schlüssel",
           "description": "Mitglieder verbinden ihre eigenen ChatGPT-Abos und Anbieter-Schlüssel, teilen sie bei Bedarf und wählen pro Sitzung, welche genutzt werden."
         },
-        "genui": {
-          "name": "Generative UI",
-          "description": "Der Agent kann statt langer Texte mit Karten, Vergleichen, Diagrammen, Landkarten und Tabs antworten."
-        },
         "reminders": {
           "name": "Erinnerungen",
           "description": "Agenten und Personen können Rückfragen für eine Sitzung planen, einmalig oder wiederkehrend. Jede Auslösung spricht diese Sitzung erneut an. Fügt die Seite „Erinnerungen“, den Erinnerungs-Chip der Sitzung und `kortix remind` hinzu."

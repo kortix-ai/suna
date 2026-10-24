@@ -131,7 +131,7 @@ describe('dropWarmSessionMarkerOnAdopt', () => {
     expect(after.metadata).toEqual({ source: 'ui' });
   });
 
-  // A `genui` flag change retires warm sessions by tombstoning them with the
+  // A feature flag change retires warm sessions by tombstoning them with the
   // marker kept (projects/session-lifecycle/actions.ts retireWarmProjectSessions).
   // The adoption CAS must refuse that row, or a racing adopt revives it.
   test('a tombstoned warm session is not adopted — the marker and timestamps stay', async () => {
