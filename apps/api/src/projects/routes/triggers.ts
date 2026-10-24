@@ -287,7 +287,7 @@ export function registerTriggersRoutes(): void {
       method: 'get',
       path: '/{projectId}/triggers/event-types',
       tags: ['triggers'],
-      summary: 'List the app events a connector or an app can trigger on',
+      summary: 'List the connector events a connector or an app can trigger on',
       description: 'Send `connector` (a project connector slug) or `app` (an app of an event source, no connector needed) with an optional `source`, not both.',
       ...auth,
       request: {

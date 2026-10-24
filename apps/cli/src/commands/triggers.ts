@@ -54,10 +54,11 @@ Subcommands:
   ls [--type <cron|webhook|event|app>] [--connector <slug>] [--json]
                            List triggers + runtime state. --type keeps one
                            kind; --type event groups the rows by app.
-                           --connector keeps the app events on one connector
+                           --connector keeps the connector events on one connector
                            (profile). The two combine. --json respects both.
-                           All app events: \`kortix triggers ls --type event\`.
-  add <slug> [options]     Append a [[triggers]] block (cron, webhook, event, app).
+                           All connector events: \`kortix triggers ls --type event\`.
+  add <slug> [options]     Add a trigger (on: + run:) to kortix.yaml: cron, webhook,
+                           event (connector event), app (App event).
              [--apply]     Create it on the cloud project now instead (commit
                            to kortix.yaml on main + reconcile).
   set <slug> [options]     Change a LIVE trigger. Only the flags you pass are
@@ -131,7 +132,7 @@ Add options:
   --name <label>           Display name (default: slug).
   --disabled               Create it disabled (default enabled).
 
-Event options (--type event). Run the agent when an app event happens on a
+Event options (--type event). Run the agent when a connector event happens on a
 connected app (e.g. a new pull request). The prompt reads the event as
 {{ event.data.<field> }}, plus event.id, event.type, event.app,
 event.connector, and event.occurred_at.
@@ -693,7 +694,7 @@ async function accountAutomations(paused: boolean, hostArg: string | undefined):
   }
   process.stdout.write(
     paused
-      ? `${status.ok('All automations PAUSED for this account')} ${C.dim}— no project's schedules, webhooks, app events or monitors auto-run. Manual \`fire\` still works.${C.reset}\n`
+      ? `${status.ok('All automations PAUSED for this account')} ${C.dim}— no project's schedules, webhooks, connector events or App events auto-run. Manual \`fire\` still works.${C.reset}\n`
       : `${status.ok('All automations RESUMED for this account')} ${C.dim}— a schedule slot missed while paused fires once.${C.reset}\n`,
   );
   return 0;

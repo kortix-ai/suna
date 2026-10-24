@@ -63,7 +63,7 @@ export function registerAutomationRoutes(): void {
       summary: 'Pause or resume every automation of the account',
       description:
         'paused: true stops every automatic fire in every project of the account: schedules, reminders, webhooks, ' +
-        'app events and monitors. A manual fire still runs. Resuming fires a schedule slot missed while paused once.',
+        'connector events and App events. A manual fire still runs. Resuming fires a schedule slot missed while paused once.',
       ...auth,
       request: {
         params: AccountIdParam,
