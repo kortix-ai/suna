@@ -21167,7 +21167,8 @@
     "mockComputerFilesResult": "README.md, package.json, 214 file",
     "mockComputerTestsResult": "42 superati in 6,1 s",
     "mockComputerScreen": "Apertura di Figma",
-    "mockComputerScreenResult": "Esportati 3 frame in ~/Desktop"
+    "mockComputerScreenResult": "Esportati 3 frame in ~/Desktop",
+    "allApps": "Tutte le app"
   },
   "connectMcp": {
     "title": "Collega Kortix tramite MCP",

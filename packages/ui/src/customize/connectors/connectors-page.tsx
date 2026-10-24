@@ -362,7 +362,6 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // integrations.sh and the managed apps, each app by its best way in.
   const mcpApps = useFeatureFlag(projectId, 'connectors_v2').enabled;
   const discoverEnabled = useFeatureFlag(projectId, 'connectors_api_discover').enabled || mcpApps;
-  const emailChannelEnabled = useFeatureFlag(projectId, 'agentmail_email').enabled;
 
   // One catalogue: managed apps for browsing, plus API/MCP apps in search
   // (`useCatalog`). The probe is independent of the active scope so an absent
@@ -384,8 +383,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // report a failure and both have to be retried.
   //
   // `projectQuery` is the SAME cache entry `useFeatureFlag` reads, and every
-  // flag read off it FAILS CLOSED: a 500 leaves `discoverEnabled` and
-  // `emailChannelEnabled` false.
+  // flag read off it FAILS CLOSED: a 500 leaves `discoverEnabled` false.
   // `settled` does not save us — react-query drops `isLoading` once a query
   // has exhausted its retries, so on failure the page rendered as fully loaded
   // with capabilities silently gone. Naming only `connectorsQuery` here also
@@ -485,6 +483,57 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
     />
   );
 
+  // Quiet on purpose: a filter, not a second tab strip.
+  const catalogFilters = (
+    <div className="flex items-center gap-4">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="text"
+            size="sm"
+            className={cn('gap-1 px-0 transition-colors', kindFilter !== 'all' && 'text-foreground')}
+            aria-label={tPages('typeFilterLabel')}
+          >
+            {kindFilter === 'all'
+              ? tPages('typeFilterAll')
+              : kindFilter === 'channel'
+                ? tPages('typeFilterChannels')
+                : wayKindLabel(kindFilter)}
+            <CaretDownIcon className="size-3 shrink-0" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="end"
+          className="w-40"
+          // A pointer pick returns no focus ring to the quiet trigger.
+          onCloseAutoFocus={(event) => event.preventDefault()}
+        >
+          <DropdownMenuRadioGroup
+            value={kindFilter}
+            onValueChange={(next) => setKindFilter(next as CatalogKindFilter)}
+          >
+            {(Object.keys(CATALOG_KIND_FILTERS) as CatalogKindFilter[]).map((value) => (
+              <DropdownMenuRadioItem key={value} value={value}>
+                {value === 'all'
+                  ? tPages('typeFilterAll')
+                  : value === 'channel'
+                    ? tPages('typeFilterChannels')
+                    : wayKindLabel(value)}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <Switch
+        label={tPages('oneClickOnly')}
+        checked={oneClick}
+        onCheckedChange={setOneClick}
+        className="px-0 py-0"
+      />
+    </div>
+  );
+
   const catalogHref = useCallback(
     (entry: CatalogEntry) => {
       const app = appRefFromEntry(entry);
@@ -577,12 +626,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                 scope read out of the URL have nothing to wait for. */}
                 <Tabs value={scope} onValueChange={(value) => setScope(value as ConnectorScope)}>
                   <TabsList>
-                    {/* Connectors v2 lists the channels in the catalogue, so
-                        Channels is no tab: it shows only while its setup page
-                        (a channel card's Set up) is open. */}
-                    {visibleScopes
-                      .filter((value) => !mcpApps || value !== 'channels' || scope === 'channels')
-                      .map((value) => (
+                    {visibleScopes.map((value) => (
                       <TabsTrigger key={value} value={value}>
                         {SCOPE_LABEL[value]}
                       </TabsTrigger>
@@ -609,62 +653,12 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
 
                 Not gated on `canWrite` — anyone who can open the page can read
                 the project's approval policy. */}
-                {mcpApps && catalogActive ? (
-                  <div className="ml-auto flex items-center gap-4">
-                    {/* Quiet on purpose: a filter, not a second tab strip. */}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="text"
-                          size="sm"
-                          className={cn('gap-1 px-0 transition-colors', kindFilter !== 'all' && 'text-foreground')}
-                          aria-label={tPages('typeFilterLabel')}
-                        >
-                          {kindFilter === 'all'
-                            ? tPages('typeFilterAll')
-                            : kindFilter === 'channel'
-                              ? tPages('typeFilterChannels')
-                              : wayKindLabel(kindFilter)}
-                          <CaretDownIcon className="size-3 shrink-0" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent
-                        align="end"
-                        className="w-40"
-                        // A pointer pick returns no focus ring to the quiet trigger.
-                        onCloseAutoFocus={(event) => event.preventDefault()}
-                      >
-                        <DropdownMenuRadioGroup
-                          value={kindFilter}
-                          onValueChange={(next) => setKindFilter(next as CatalogKindFilter)}
-                        >
-                          {(Object.keys(CATALOG_KIND_FILTERS) as CatalogKindFilter[]).map((value) => (
-                            <DropdownMenuRadioItem key={value} value={value}>
-                              {value === 'all'
-                                ? tPages('typeFilterAll')
-                                : value === 'channel'
-                                  ? tPages('typeFilterChannels')
-                                  : wayKindLabel(value)}
-                            </DropdownMenuRadioItem>
-                          ))}
-                        </DropdownMenuRadioGroup>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                    <Switch
-                      label={tPages('oneClickOnly')}
-                      checked={oneClick}
-                      onCheckedChange={setOneClick}
-                      className="px-0 py-0"
-                    />
-                  </div>
-                ) : null}
                 <Button
                   type="button"
                   variant="text"
                   size="sm"
                   onClick={() => setRulesOpen(true)}
-                  className={cn('px-0 transition-colors', !(mcpApps && catalogActive) && 'ml-auto')}
+                  className="ml-auto px-0 transition-colors"
                 >
                   {tI18nComplete.raw('text1d59a5e09714')}
                 </Button>
@@ -695,6 +689,14 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                   >
                     {ownMatches.map(ownConnectorCard)}
                   </CatalogGrid>
+                </div>
+              ) : null}
+              {/* The catalogue's own header: its filters sit with what they
+                  filter, under the project's own connectors. */}
+              {mcpApps ? (
+                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                  <h2 className="text-sm font-medium">{tPages('allApps')}</h2>
+                  {catalogFilters}
                 </div>
               ) : null}
               <ConnectorBrowse
@@ -800,7 +802,6 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
               <ModalBody className="max-h-[75vh] overflow-y-auto">
                 <CustomConnectorForm
                   projectId={projectId}
-                  emailChannelEnabled={emailChannelEnabled}
                   onAdded={(slug, { addAccount }) => {
                     invalidate();
                     setPanel(null);

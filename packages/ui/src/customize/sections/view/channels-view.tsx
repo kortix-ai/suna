@@ -82,7 +82,6 @@ import {
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '../../../primitives/input-group';
-import { Label } from '../../../primitives/label';
 import {
   Modal,
   ModalBody,
@@ -124,7 +123,6 @@ import {
 } from './channel-settings-patch';
 import { slackConversationName } from '../../../session/turn/channel-message';
 import { bindingTabs } from './channel-binding-tabs';
-import { projectSettingsSectionHref } from '../../project-settings/project-settings-sections';
 import { AccessRow } from '../../../access/access/access-row';
 import {
   type ChannelBinding,
@@ -172,31 +170,12 @@ import { useEffect, useMemo, useState } from 'react';
 /** Reserved slug for the built-in Email channel (see api connectors.ts). */
 const EMAIL_CONNECTOR_SLUG = 'kortix_email';
 
-/**
- * Skeleton shapes match what replaces them: one tall hero panel, then two
- * short rows. Matching the shape is the point — a placeholder that settles
- * into a different geometry reads as a layout jump, not as loading.
- */
-const CHANNEL_LOADING_ROWS = ['channel-loading-1', 'channel-loading-2'];
-
 /** A Kortix channel's own page (`platform`), or every channel (the Channels page). */
 export type ChannelPlatform = 'slack' | 'teams' | 'email' | 'telegram';
 
 export function ChannelsSection({ projectId, platform }: { projectId: string; platform?: ChannelPlatform }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   useTeamsInstallReturnToast();
-  // This view used to read the flags off the project SUMMARY query
-  // (`qk.project.summary` / `getProject`, whose payload nests them one level
-  // shallower). It now reads the one gating primitive, which is backed by
-  // `qk.project.detail` — the entry the Customize panel that hosts this view
-  // already holds, so the switch removes a fetch rather than adding one.
-  //
-  // The LOADING semantics are preserved deliberately: unlike its siblings, this
-  // surface WAITS on the flag before painting (`emailFlag.isLoading` feeds
-  // `loading` below), so the header action cannot flash the wrong state, and
-  // `useEmailInstall` stays unfired until the flag resolves.
-  const emailFlag = useFeatureFlag(projectId, 'agentmail_email');
-  const emailChannelEnabled = emailFlag.enabled;
   // Telegram is a channel connector behind connectors_v2; off, it is not listed.
   const telegramEnabled = useFeatureFlag(projectId, 'connectors_v2').enabled;
   const { data: install, isLoading: loadingInstall } = useSlackInstall(projectId);
@@ -206,15 +185,9 @@ export function ChannelsSection({ projectId, platform }: { projectId: string; pl
   const { data: teamsMode } = useTeamsMode(projectId);
   // Not connected, Teams gets the same hero as Slack; connected, it is a row.
   const teamsHero = !teamsInstall && Boolean(teamsMode?.enabled);
-  const { data: emailInstall, isLoading: loadingEmail } = useEmailInstall(
-    emailChannelEnabled ? projectId : null,
-    EMAIL_CONNECTOR_SLUG,
-  );
-  const loading =
-    loadingInstall ||
-    loadingMode ||
-    emailFlag.isLoading ||
-    (emailChannelEnabled && loadingEmail);
+  // Email is on for every project (its `agentmail_email` flag graduated on 2026-10-24).
+  const { data: emailInstall, isLoading: loadingEmail } = useEmailInstall(projectId, EMAIL_CONNECTOR_SLUG);
+  const loading = loadingInstall || loadingMode || loadingEmail;
   const oauthInstallUrl = mode?.oauth_available ? mode.install_url : null;
   const canWrite =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE).allowed === true;
@@ -229,160 +202,75 @@ export function ChannelsSection({ projectId, platform }: { projectId: string; pl
   const openChannels = (platform: string) =>
     setChannelsDialog((dialog) => ({ open: true, platform, session: dialog.session + 1 }));
 
-  // Once Slack is connected it stops being the headline and becomes a peer of
-  // Email and Teams — same row, same list. So the "More channels" label only
-  // earns its place while the hero is above it; with Slack in the list, the
-  // rows ARE the channel list and the section header already says "Channels".
-  // The list always has the Teams row.
-  const slackRow = Boolean(install);
-  const showMoreLabel = !slackRow;
+  // Every channel draws as a hero, connected or not: its own page shows one
+  // platform, the Channels tab every platform, one under the other.
+  const platforms: ChannelPlatform[] = platform
+    ? [platform]
+    : ['slack', 'teams', 'email', ...(telegramEnabled ? (['telegram'] as const) : [])];
 
-  // One channel's page: that channel alone, drawn as a hero, connected or not.
-  if (platform) {
-    if (loading) return <Skeleton className="h-72 w-full rounded-lg" />;
-    return (
-      <ChannelHeroLayoutProvider>
-        <div className="w-full space-y-4">
-          {platform === 'slack' ? (
-            install ? (
-              <>
-                <SlackChannelRow
-                  projectId={projectId}
-                  installation={install}
-                  canWrite={canWrite}
-                  channelCount={channelCounts.get('slack') ?? 0}
-                  onOpenChannels={() => openChannels('slack')}
-                />
-                <SlackFollowUp projectId={projectId} />
-              </>
-            ) : (
-              <SlackConnectCard projectId={projectId} oauthInstallUrl={oauthInstallUrl} canWrite={canWrite} />
-            )
-          ) : null}
-          {platform === 'teams' ? (
-            teamsHero && teamsMode ? (
-              <TeamsConnectCard projectId={projectId} mode={teamsMode} canWrite={canWrite} />
-            ) : (
-              <>
-                <TeamsChannelRow
-                  projectId={projectId}
-                  canWrite={canWrite}
-                  channelCount={channelCounts.get('teams') ?? 0}
-                  onOpenChannels={() => openChannels('teams')}
-                />
-                {teamsInstall?.appUpdateAvailable ? (
-                  <TeamsAppUpdateNotice install={teamsInstall} tI18nComplete={tI18nComplete} />
-                ) : null}
-              </>
-            )
-          ) : null}
-          {platform === 'email' ? (
-            <EmailChannelRow
+  const hero = (pf: ChannelPlatform) => {
+    switch (pf) {
+      case 'slack':
+        return install ? (
+          <>
+            <SlackChannelRow
               projectId={projectId}
-              enabled={emailChannelEnabled}
-              installation={emailInstall ?? null}
+              installation={install}
               canWrite={canWrite}
+              channelCount={channelCounts.get('slack') ?? 0}
+              onOpenChannels={() => openChannels('slack')}
             />
-          ) : null}
-          {platform === 'telegram' ? <TelegramChannelRow projectId={projectId} canWrite={canWrite} /> : null}
-          <ChannelBindingsDialog
-            key={channelsDialog.session}
-            projectId={projectId}
-            canWrite={canWrite}
-            platform={channelsDialog.platform}
-            open={channelsDialog.open}
-            onOpenChange={(open) => setChannelsDialog((dialog) => ({ ...dialog, open }))}
-          />
-        </div>
-      </ChannelHeroLayoutProvider>
-    );
-  }
-
-  return (
-    /* Full width of the Connectors shell, like the All and Connected scopes
-       beside it: the connect heroes are split cards whose chat preview needs
-       the room, and a capped column left a dead band to the right of the
-       scope tabs.
-
-       No heading and no scroll container here. Both belong to the
-       `CapabilityPageShell` in `connectors-page.tsx`; a second of either would
-       print a second `<h1>` and scroll the wrong box. */
-    <div className="w-full space-y-6">
-      {loading ? (
-        <>
-          <Skeleton className="h-64 rounded-md" />
-          <div className="space-y-2">
-            {CHANNEL_LOADING_ROWS.map((key) => (
-              <Skeleton key={key} className="h-14 rounded-md" />
-            ))}
-          </div>
-        </>
-      ) : (
-        <>
-          {/* Slack, not connected: the hero. Connected, it drops into the row
-              list below and this branch renders nothing. */}
-          {install ? null : (
-            <SlackConnectCard
+            <SlackFollowUp projectId={projectId} />
+          </>
+        ) : (
+          <SlackConnectCard projectId={projectId} oauthInstallUrl={oauthInstallUrl} canWrite={canWrite} />
+        );
+      case 'teams':
+        return teamsHero && teamsMode ? (
+          <TeamsConnectCard projectId={projectId} mode={teamsMode} canWrite={canWrite} />
+        ) : (
+          <>
+            <TeamsChannelRow
               projectId={projectId}
-              oauthInstallUrl={oauthInstallUrl}
               canWrite={canWrite}
+              channelCount={channelCounts.get('teams') ?? 0}
+              onOpenChannels={() => openChannels('teams')}
             />
-          )}
-          {teamsHero && teamsMode ? (
-            <TeamsConnectCard projectId={projectId} mode={teamsMode} canWrite={canWrite} />
-          ) : null}
-
-          <section className="space-y-2">
-            {showMoreLabel ? <Label>{tI18nComplete.raw('text28647129955c')}</Label> : null}
-            <ul className="space-y-2">
-              {install ? (
-                <SlackChannelRow
-                  projectId={projectId}
-                  installation={install}
-                  canWrite={canWrite}
-                  channelCount={channelCounts.get('slack') ?? 0}
-                  onOpenChannels={() => openChannels('slack')}
-                />
-              ) : null}
-              {/* The Email row renders on every project — the CLI lists Email
-                  on every project (its help line carries the flag note), so the
-                  web list may not drop it when `agentmail_email` is off
-                  (dogfood:channels-page-readonly). The flag only decides the
-                  row's state; `useEmailInstall` stays unfired until it resolves. */}
-              <EmailChannelRow
-                projectId={projectId}
-                enabled={emailChannelEnabled}
-                installation={emailInstall ?? null}
-                canWrite={canWrite}
-              />
-              {telegramEnabled ? <TelegramChannelRow projectId={projectId} canWrite={canWrite} /> : null}
-              {teamsHero ? null : (
-                <TeamsChannelRow
-                  projectId={projectId}
-                  canWrite={canWrite}
-                  channelCount={channelCounts.get('teams') ?? 0}
-                  onOpenChannels={() => openChannels('teams')}
-                />
-              )}
-            </ul>
             {teamsInstall?.appUpdateAvailable ? (
               <TeamsAppUpdateNotice install={teamsInstall} tI18nComplete={tI18nComplete} />
             ) : null}
-          </section>
+          </>
+        );
+      case 'email':
+        return <EmailChannelRow projectId={projectId} installation={emailInstall ?? null} canWrite={canWrite} />;
+      case 'telegram':
+        return <TelegramChannelRow projectId={projectId} canWrite={canWrite} />;
+    }
+  };
 
-          {install ? <SlackFollowUp projectId={projectId} /> : null}
-          <ChannelBindingsDialog
-            key={channelsDialog.session}
-            projectId={projectId}
-            canWrite={canWrite}
-            platform={channelsDialog.platform}
-            open={channelsDialog.open}
-            onOpenChange={(open) => setChannelsDialog((dialog) => ({ ...dialog, open }))}
-          />
-
-        </>
-      )}
-    </div>
+  return (
+    /* Full width of the Connectors shell: the heroes are split cards whose
+       chat preview needs the room. No heading and no scroll container here;
+       both belong to the `CapabilityPageShell` in `connectors-page.tsx`. */
+    <ChannelHeroLayoutProvider>
+      <div className="w-full space-y-6">
+        {loading
+          ? platforms.map((pf) => <Skeleton key={pf} className="h-72 w-full rounded-lg" />)
+          : platforms.map((pf) => (
+              <div key={pf} className="space-y-4">
+                {hero(pf)}
+              </div>
+            ))}
+        <ChannelBindingsDialog
+          key={channelsDialog.session}
+          projectId={projectId}
+          canWrite={canWrite}
+          platform={channelsDialog.platform}
+          open={channelsDialog.open}
+          onOpenChange={(open) => setChannelsDialog((dialog) => ({ ...dialog, open }))}
+        />
+      </div>
+    </ChannelHeroLayoutProvider>
   );
 }
 
@@ -1197,7 +1085,7 @@ function TeamsChannelRow({
             />
           </>
         ) : installUrl ? (
-          <Button size="sm" variant="secondary" asChild>
+          <Button className="transition-transform active:scale-96" asChild>
             <Link href={installUrl} target="_blank" rel="noopener noreferrer">
               {tI18nComplete.raw('text1a2303ede074')}
             </Link>
@@ -1211,15 +1099,10 @@ function TeamsChannelRow({
 
 function EmailChannelRow({
   projectId,
-  enabled,
   installation,
   canWrite,
 }: {
   projectId: string;
-  /** The project's `agentmail_email` flag. Off, the row still renders — the
-   *  CLI lists Email on every project — and points at the one place a flag
-   *  turns on instead of offering an install that would 403. */
-  enabled: boolean;
   installation: EmailInstallation | null;
   canWrite: boolean;
 }) {
@@ -1240,24 +1123,12 @@ function EmailChannelRow({
         hero={{
           title: tPages('emailHeroTitle'),
           connectedTitle: tPages('emailConnectedTitle'),
-          ...(enabled && !connected ? { lede: tPages('emailHeroLede') } : {}),
+          ...(connected ? {} : { lede: tPages('emailHeroLede') }),
           preview: <EmailThreadMock />,
         }}
-        pitch={
-          enabled
-            ? tI18nComplete.raw('text27ba4ec98716')
-            : // `FeatureGateScreen`'s exact words for a flag that is off, with
-              // the name the Feature flags section lists the flag under.
-              `AgentMail Email ${tI18nComplete.raw('text26965989cce5')}`
-        }
+        pitch={tI18nComplete.raw('text27ba4ec98716')}
         actions={
-          !enabled ? (
-            <Button size="sm" variant="secondary" asChild>
-              <Link href={projectSettingsSectionHref(projectId, 'feature-flags')}>
-                {tI18nComplete.raw('text20a2e59ba129')}
-              </Link>
-            </Button>
-          ) : !canWrite ? null : connected ? (
+          !canWrite ? null : connected ? (
             <ChannelDisconnectButton
               pending={disconnect.isPending}
               onConfirm={(done) =>
@@ -1273,7 +1144,7 @@ function EmailChannelRow({
               }
             />
           ) : (
-            <Button size="sm" variant="secondary" onClick={() => setConnectOpen(true)}>
+            <Button className="transition-transform active:scale-96" onClick={() => setConnectOpen(true)}>
               {tI18nComplete.raw('text1a2303ede074')}
             </Button>
           )

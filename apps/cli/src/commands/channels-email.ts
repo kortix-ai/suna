@@ -115,7 +115,8 @@ export async function emailCommand(
         }
         if (!mode.enabled) {
           process.stdout.write(
-            `${C.dim}email${C.reset}  off — the ${C.cyan}agentmail_email${C.reset} feature flag is disabled for this project.\n` +
+            // Only an older server still gates email behind the `agentmail_email` flag.
+            `${C.dim}email${C.reset}  off — this server still gates email behind the ${C.cyan}agentmail_email${C.reset} feature flag.\n` +
               `       Turn it on: ${C.cyan}kortix projects features enable agentmail_email${C.reset}\n`,
           );
           return 0;

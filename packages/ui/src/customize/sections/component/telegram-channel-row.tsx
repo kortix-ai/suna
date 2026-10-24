@@ -82,7 +82,7 @@ export function TelegramChannelRow({ projectId, canWrite }: { projectId: string;
               />
             </>
           ) : (
-            <Button size="sm" variant="secondary" onClick={() => setDialog('connect')}>
+            <Button className="transition-transform active:scale-96" onClick={() => setDialog('connect')}>
               {t.raw('text1a2303ede074')}
             </Button>
           )

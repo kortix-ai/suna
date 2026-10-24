@@ -42,7 +42,7 @@ Subcommands:
                           manifest from the server. The one-click install
                           never needs this.
 
-Email (AgentMail — needs the \`agentmail_email\` feature flag):
+Email (AgentMail):
   email status [--json]           Inbox + delivery mode for one connector.
   email connect [options]         Create (or attach) the inbox.
   email disconnect                Drop the inbox connection.
@@ -257,7 +257,7 @@ async function allChannelsStatus(
         `CHANNEL  STATUS\n` +
           `slack    ${slack ? 'connected' : 'not connected'}\n` +
           `teams    ${teams ? 'connected' : 'not connected'}\n` +
-          `email    ${!mode.enabled ? 'off — agentmail_email feature flag is disabled' : email ? 'connected' : 'not connected'}\n` +
+          `email    ${!mode.enabled ? 'off on this server (older Kortix version)' : email ? 'connected' : 'not connected'}\n` +
           `\nDetails: kortix channels status --platform <slack|teams> or kortix channels email status\n`,
       );
     }

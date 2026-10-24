@@ -116,10 +116,6 @@ export async function synthesizeChannelConnectors(
     specs.push(channelSpec('telegram', telegramSlug));
   }
 
-  if (!resolveFeatureFlag(project.metadata, 'agentmail_email')) {
-    return specs;
-  }
-
   const emailInstalls = await listAgentMailInstalls(projectId).catch(() => []);
   const canonicalEmailSlug = channelDefaultSlug('email');
   if (emailInstalls.length > 0 && !channelAlreadyDeclared(declared, 'email', canonicalEmailSlug)) {

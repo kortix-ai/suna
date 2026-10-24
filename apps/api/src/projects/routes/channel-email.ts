@@ -20,8 +20,6 @@ import {
 } from '../../channels/install-store';
 import { config } from '../../config';
 import { reconcileChannelConnectors } from '../../connectors/sync';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { featureDisabledBody } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { loadProjectAgents } from '../agents';
@@ -30,10 +28,6 @@ import { AnyObject, projectsApp } from '../lib/app';
 import { loadEmailInstallConnectionId } from '../lib/session-connector-bindings';
 
 // ─── Email install — AgentMail-backed inbox per project ─────────────────────
-
-function emailChannelEnabled(metadata: unknown): boolean {
-  return resolveFeatureFlag(metadata, 'agentmail_email');
-}
 
 export function registerChannelEmailRoutes(): void {
   projectsApp.openapi(
@@ -55,7 +49,6 @@ export function registerChannelEmailRoutes(): void {
       const projectId = c.req.param('projectId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      if (!emailChannelEnabled(loaded.row.metadata)) return c.json(null);
       const connectorSlug = c.req.query('connector_slug') || 'kortix_email';
       const install = await loadAgentMailInstall(projectId, connectorSlug);
       if (!install) return c.json(null);
@@ -85,11 +78,12 @@ export function registerChannelEmailRoutes(): void {
       const projectId = c.req.param('projectId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      const enabled = emailChannelEnabled(loaded.row.metadata);
+      // `enabled` stays on the wire for older clients: the channel graduated
+      // from the `agentmail_email` flag (2026-10-24) and is on for every project.
       return c.json({
         provider: 'agentmail',
-        enabled,
-        managed_available: enabled && Boolean(config.AGENTMAIL_API_KEY),
+        enabled: true,
+        managed_available: Boolean(config.AGENTMAIL_API_KEY),
       });
     },
   );
@@ -124,9 +118,6 @@ export function registerChannelEmailRoutes(): void {
         projectId,
         PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
       );
-      if (!emailChannelEnabled(loaded.row.metadata)) {
-        return c.json(featureDisabledBody('agentmail_email'), 403);
-      }
 
       let body: {
         api_key?: string;
@@ -305,9 +296,6 @@ export function registerChannelEmailRoutes(): void {
         projectId,
         PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
       );
-      if (!emailChannelEnabled(loaded.row.metadata)) {
-        return c.json(featureDisabledBody('agentmail_email'), 403);
-      }
       let body: {
         connector_slug?: string;
         sender_policy?: Partial<AgentMailSenderPolicy>;

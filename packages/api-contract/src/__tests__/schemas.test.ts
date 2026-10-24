@@ -135,7 +135,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
     experimental: {
       marketplace: false,
       connectors_api_discover: false,
-      agentmail_email: false,
       meta_agent: false,
       monitors: false,
       reminders: false,
@@ -818,7 +817,6 @@ describe('envelopes', () => {
     expect(FEATURE_FLAG_KEYS as readonly string[]).toEqual([
       'marketplace',
       'connectors_api_discover',
-      'agentmail_email',
       'meta_agent',
       'monitors',
       'reminders',

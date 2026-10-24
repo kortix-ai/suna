@@ -1000,7 +1000,6 @@ describe('provisionProjectStream', () => {
 
 test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
   const expected: FeatureFlagKey[] = [
-    'agentmail_email',
     'connectors_api_discover',
     'drives',
     'marketplace',

@@ -196,17 +196,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
     platformDefault: () => false,
     enforcement: 'routes',
   },
-  {
-    key: 'agentmail_email',
-    name: 'AgentMail Email',
-    description:
-      'Assign AgentMail inbox connections to the agent so inbound email threads can start and continue Kortix sessions. Native email channels are still experimental.',
-    stability: 'experimental',
-    available: () => true,
-    // Explicit opt-in: hidden unless a project enables it in Settings.
-    platformDefault: () => false,
-    enforcement: 'routes',
-  },
+  // `agentmail_email` graduated (2026-10-24): every project can connect an
+  // email inbox. Turning it on never provisioned an inbox (only an explicit
+  // connect does), so graduating creates nothing. A stored override is inert.
   // `llm_gateway` graduated (2026-10-20): the LLM gateway is the only model
   // path for every project. No flag, no native OpenCode provider mode, no
   // operator lever. A stored `experimental.llm_gateway` override is inert.

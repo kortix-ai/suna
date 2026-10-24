@@ -21167,7 +21167,8 @@
     "mockComputerFilesResult": "README.md、package.json，共 214 个文件",
     "mockComputerTestsResult": "6.1 秒内通过 42 项",
     "mockComputerScreen": "正在打开 Figma",
-    "mockComputerScreenResult": "已将 3 个画框导出到 ~/Desktop"
+    "mockComputerScreenResult": "已将 3 个画框导出到 ~/Desktop",
+    "allApps": "所有应用"
   },
   "connectMcp": {
     "title": "通过 MCP 连接 Kortix",

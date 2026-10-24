@@ -199,7 +199,6 @@ A flag the deployment does not support is unavailable. It stays off whatever the
 
 A toggle of these flags also updates running state. The API response does not wait for it.
 
-- `agentmail_email`: the email channel connector appears or goes.
 - `event_triggers`: app-event subscriptions start or stop.
 - `connectors_v2`: the Telegram channel connector appears or goes. With `event_triggers` on, the app events that Kortix checks start, or move to `error` and stop.
 - `genui`: warm sandboxes from before the toggle are not used for new sessions.
@@ -210,7 +209,6 @@ A toggle of these flags also updates running state. The API response does not wa
 | --- | --- | --- | --- | --- | --- |
 | `marketplace` | Marketplace | On | Beta | Always | Install marketplace items into the project. See [Install from the marketplace](#install-from-the-marketplace). |
 | `connectors_api_discover` | Connectors API Discover | Off | Beta | Always | Browse direct API, MCP, GraphQL, CLI and Postman surfaces when you add a [connector](/docs/connect/connectors). |
-| `agentmail_email` | AgentMail Email | Off | Experimental | Always | Inbound email starts and continues sessions. See [Slack, Teams & email](/docs/connect/channels#email). |
 | `meta_agent` | Meta Agent | Off | Experimental | Always | Adds a platform coordinator agent that starts and manages other sessions. It becomes the default agent for a new session that names no agent. See [Agents & permissions](/docs/project/agents#which-agent-runs). |
 | `session_log_restore` | Session log restore | Off (on by default on the Kortix dev deployment). Kortix turns it on per project. | Experimental | Always | A session whose sandbox lost the conversation (a new sandbox, or a sandbox whose saved conversation is older than the session log) gets it back from the session log when the sandbox starts. A session log over the restore limit (24 MB by default; attachments count at two fifths of their size) is not loaded: the agent gets a note instead, and the session page shows a notice. Off: the sandbox keeps what it has. Settings does not list this flag. |
 | `workspace_volume` | Workspace volume | Off. Kortix turns it on per project. | Experimental | With Platinum (`PLATINUM_API_KEY`) | A new Platinum session keeps `/workspace` on its own volume instead of the sandbox disk. A sandbox stopped for 1 hour is deleted; the next open boots a new sandbox on the same volume, with the same files and conversation. A session that has a volume keeps it after the flag is turned off. A deleted session keeps its volume while it can be restored, and the volume is deleted with the session's content after that. The volume takes one of the sandbox's 8 mounts, so a session mounts at most 7 `/drives` folders. Settings does not list this flag. |

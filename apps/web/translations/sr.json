@@ -21167,7 +21167,8 @@
     "mockComputerFilesResult": "README.md, package.json, 214 fajlova",
     "mockComputerTestsResult": "42 prošlo za 6,1 s",
     "mockComputerScreen": "Otvaram Figma",
-    "mockComputerScreenResult": "Izvezeno 3 okvira u ~/Desktop"
+    "mockComputerScreenResult": "Izvezeno 3 okvira u ~/Desktop",
+    "allApps": "Sve aplikacije"
   },
   "connectMcp": {
     "title": "Povežite Kortix preko MCP-a",

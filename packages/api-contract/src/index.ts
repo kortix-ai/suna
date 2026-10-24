@@ -52,7 +52,6 @@ export type OkResponse = z.infer<typeof OkResponseSchema>;
 export const FeatureFlagMapSchema = z.object({
   marketplace: z.boolean(),
   connectors_api_discover: z.boolean(),
-  agentmail_email: z.boolean(),
   meta_agent: z.boolean(),
   monitors: z.boolean(),
   reminders: z.boolean(),

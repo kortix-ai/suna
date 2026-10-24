@@ -100,11 +100,11 @@ flow(
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
-    await ctx.step("OWNER reads email mode → 200 (disabled unless experimental flag is enabled)", async () => {
+    await ctx.step("OWNER reads email mode → 200, enabled for every project (no flag)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/channels/email/mode", { params: { projectId: p.id } });
-      r.status(200).body().has("$.provider", "agentmail").has("$.enabled", false);
+      r.status(200).body().has("$.provider", "agentmail").has("$.enabled", true);
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
@@ -130,17 +130,16 @@ flow(
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
-    await ctx.step("disabled by default → 403 before AgentMail key validation", async () => {
+    await ctx.step("no flag gate: OWNER reaches input validation → blank agent_name is 400 invalid_agent, before any AgentMail call", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
           "/v1/projects/:projectId/channels/email/connect",
-          { api_key: "am_us_bogus", display_name: "Kortix E2E" },
+          { api_key: "am_us_bogus", display_name: "Kortix E2E", agent_name: "  " },
           { params: { projectId: p.id } },
         );
-      r.status(403);
-      r.body().has("$.code", "feature_disabled");
-      r.body().has("$.feature", "agentmail_email");
+      r.status(400);
+      r.body().has("$.code", "invalid_agent");
     });
     await ctx.step("NONMEMBER cannot connect → 403/404", async () => {
       const r = await ctx.client

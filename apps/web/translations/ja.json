@@ -21167,7 +21167,8 @@
     "mockComputerFilesResult": "README.md、package.json、214 ファイル",
     "mockComputerTestsResult": "6.1 秒で 42 件成功",
     "mockComputerScreen": "Figma を起動中",
-    "mockComputerScreenResult": "3 フレームを ~/Desktop に書き出しました"
+    "mockComputerScreenResult": "3 フレームを ~/Desktop に書き出しました",
+    "allApps": "すべてのアプリ"
   },
   "connectMcp": {
     "title": "MCP で Kortix に接続",

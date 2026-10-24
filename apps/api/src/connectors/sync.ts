@@ -390,22 +390,19 @@ export async function reconcileChannelConnectors(
     if (slackInstalled) await ensureChannelConnectorDeclared(projectId, 'slack');
     else await removeChannelConnectorDeclared(projectId, 'slack');
 
-    const emailEnabled = resolveFeatureFlag(row.metadata, 'agentmail_email');
-    if (removed?.platform === 'email' || !emailEnabled) {
-      await removeChannelConnectorDeclared(projectId, 'email', removed?.slug);
+    if (removed?.platform === 'email') {
+      await removeChannelConnectorDeclared(projectId, 'email', removed.slug);
     }
-    if (emailEnabled) {
-      const emailInstalls = await listAgentMailInstalls(projectId).catch(() => []);
-      for (const install of emailInstalls) {
-        await ensureChannelConnectorDeclared(
-          projectId,
-          'email',
-          install.connectionSlug,
-          install.displayName || install.email || 'Email',
-        );
-      }
-      if (emailInstalls.length === 0) await removeChannelConnectorDeclared(projectId, 'email');
+    const emailInstalls = await listAgentMailInstalls(projectId).catch(() => []);
+    for (const install of emailInstalls) {
+      await ensureChannelConnectorDeclared(
+        projectId,
+        'email',
+        install.connectionSlug,
+        install.displayName || install.email || 'Email',
+      );
     }
+    if (emailInstalls.length === 0) await removeChannelConnectorDeclared(projectId, 'email');
     await syncProjectConnectors(projectId, row.accountId);
   } catch (e) {
     console.warn('[connector] channel connector reconcile failed', {

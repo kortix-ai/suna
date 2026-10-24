@@ -2145,14 +2145,12 @@ export function ConnectionSection({
 
 export function AddAppPanel({
   projectId,
-  emailChannelEnabled,
   discoverEnabled,
   existingSlugs,
   onAdded,
   canWrite = false,
 }: {
   projectId: string;
-  emailChannelEnabled: boolean;
   discoverEnabled: boolean;
   existingSlugs: readonly string[];
   onAdded: (slug?: string) => void;
@@ -2236,14 +2234,12 @@ export function AddAppPanel({
         <TabsContent value="channels" className="mt-4">
           <ChannelCatalogue
             projectId={projectId}
-            emailChannelEnabled={emailChannelEnabled}
             onAdded={onAdded}
           />
         </TabsContent>
         <TabsContent value="custom" className="mt-4">
           <CustomConnectorForm
             projectId={projectId}
-            emailChannelEnabled={emailChannelEnabled}
             onAdded={onAdded}
           />
         </TabsContent>
@@ -2254,16 +2250,14 @@ export function AddAppPanel({
 
 function ChannelCatalogue({
   projectId,
-  emailChannelEnabled,
   onAdded,
 }: {
   projectId: string;
-  emailChannelEnabled: boolean;
   onAdded: (slug?: string) => void;
 }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      {emailChannelEnabled && <AddEmailConnectionCard projectId={projectId} onAdded={onAdded} />}
+      <AddEmailConnectionCard projectId={projectId} onAdded={onAdded} />
       <AddSlackConnectionCard projectId={projectId} onAdded={onAdded} />
     </div>
   );
@@ -2779,7 +2773,6 @@ function ConnectorConfigFields({
   draft,
   onChange,
   slugEditable,
-  emailChannelEnabled = true,
   readOnly = false,
   detectedAuth = null,
   detectedTitle = null,
@@ -2789,7 +2782,6 @@ function ConnectorConfigFields({
   draft: ConnectorDraftInput;
   onChange: (d: ConnectorDraftInput) => void;
   slugEditable?: boolean;
-  emailChannelEnabled?: boolean;
   readOnly?: boolean;
   /** What auto-detect found on the source, surfaced inline on the Auth field. */
   detectedAuth?: { type: string; parameterName: string | null } | null;
@@ -2854,9 +2846,7 @@ function ConnectorConfigFields({
                 provider,
                 platform:
                   provider === 'channel'
-                    ? draft.platform === 'email' && !emailChannelEnabled
-                      ? 'slack'
-                      : (draft.platform ?? (emailChannelEnabled ? 'email' : 'slack'))
+                    ? (draft.platform ?? 'email')
                     : undefined,
                 auth:
                   provider === 'channel'
@@ -2893,11 +2883,7 @@ function ConnectorConfigFields({
         <div className="space-y-1.5">
           <Label>{tI18nHardcoded.raw('i18nComplete.textce4683e7013a')}</Label>
           <Select
-            value={
-              draft.platform === 'email' && !emailChannelEnabled
-                ? 'slack'
-                : (draft.platform ?? (emailChannelEnabled ? 'email' : 'slack'))
-            }
+            value={draft.platform ?? 'email'}
             disabled={readOnly}
             onValueChange={(v) => set({ platform: v as ChannelPlatform, auth: { type: 'none' } })}
           >
@@ -2905,11 +2891,9 @@ function ConnectorConfigFields({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {emailChannelEnabled && (
-                <SelectItem value="email">
-                  {tI18nHardcoded.raw('i18nComplete.text969ccbd3cf63')}
-                </SelectItem>
-              )}
+              <SelectItem value="email">
+                {tI18nHardcoded.raw('i18nComplete.text969ccbd3cf63')}
+              </SelectItem>
               <SelectItem value="slack">
                 {tI18nHardcoded.raw('i18nComplete.textb27fb38ba323')}
               </SelectItem>
@@ -3217,7 +3201,7 @@ function ConnectorConfigFields({
   );
 }
 
-function connectionValid(d: ConnectorDraftInput, emailChannelEnabled = true): boolean {
+function connectionValid(d: ConnectorDraftInput): boolean {
   if ((d.auth?.type === 'custom' || d.auth?.type === 'api_key') && !d.auth.name?.trim()) {
     return false;
   }
@@ -3227,18 +3211,16 @@ function connectionValid(d: ConnectorDraftInput, emailChannelEnabled = true): bo
   if (d.provider === 'graphql') return !!d.endpoint?.trim();
   if (d.provider === 'http') return !!d.baseUrl?.trim();
   if (d.provider === 'channel') {
-    return d.platform === 'slack' || (emailChannelEnabled && d.platform === 'email');
+    return d.platform === 'slack' || d.platform === 'email';
   }
   return true;
 }
 
 export function CustomConnectorForm({
   projectId,
-  emailChannelEnabled,
   onAdded,
 }: {
   projectId: string;
-  emailChannelEnabled: boolean;
   /** The connector exists: open its page. `addAccount` opens "Add account" there. */
   onAdded: (slug: string, options: { addAccount: boolean }) => void;
 }) {
@@ -3254,9 +3236,6 @@ export function CustomConnectorForm({
     const timer = window.setTimeout(() => setDiscoveryDraft(draft), 400);
     return () => window.clearTimeout(timer);
   }, [draft]);
-  if (!emailChannelEnabled && draft.provider === 'channel' && draft.platform === 'email') {
-    setDraft((current) => ({ ...current, platform: 'slack' }));
-  }
   // Channel connectors have no OAuth2-at-creation offer.
   if (draft.provider === 'channel' && oauth2Selected) {
     setOauth2Selected(false);
@@ -3268,7 +3247,7 @@ export function CustomConnectorForm({
     queryFn: () => discoverConnectorAuth(projectId, discoveryDraft),
     enabled:
       discoveryDraft.auth === undefined &&
-      connectionValid(discoveryDraft, emailChannelEnabled) &&
+      connectionValid(discoveryDraft) &&
       discoveryDraft.provider !== 'channel' &&
       discoveryDraft.provider !== 'pipedream' &&
       discoveryDraft.provider !== 'computer',
@@ -3290,7 +3269,6 @@ export function CustomConnectorForm({
             draft={draft}
             onChange={setDraft}
             slugEditable
-            emailChannelEnabled={emailChannelEnabled}
             detectedAuth={
               discovery.data?.recommended
                 ? {
@@ -3350,7 +3328,7 @@ export function CustomConnectorForm({
               disabled={
                 !draft.slug ||
                 save.isPending ||
-                !connectionValid(draft, emailChannelEnabled) ||
+                !connectionValid(draft) ||
                 (oauth2Selected && !oauth2CredentialFormValid(oauth2))
               }
               className="gap-1.5"

@@ -292,10 +292,9 @@ Teams bots cannot add reactions or search messages.
 
 ## Email
 
-Email is off by default. Turn on the **AgentMail Email** project flag (`agentmail_email`) first. See [Feature flags](/docs/project#feature-flags).
+Every project can connect an email inbox. The inbox comes from AgentMail. Nothing is created until you connect.
 
 ```bash
-kortix projects features enable agentmail_email
 kortix channels email connect --allow @example.com
 ```
 

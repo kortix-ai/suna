@@ -9,8 +9,6 @@ import { connectors, projects, projectSessionConnectorBindings } from '@kortix/d
  * the agent, not the connector). Credentials live in the split store.
  */
 import { and, eq } from 'drizzle-orm';
-import { featureDisabledBody } from '../feature-flags/gate';
-import { resolveFeatureFlag } from '../feature-flags/registry';
 import {
   type ConnectorAuthorizationStrategy,
   type ConnectorPolicyAction,
@@ -214,15 +212,6 @@ export async function upsertConnectorInManifest(
 
   const row = await loadRow(projectId);
   if (!row) return { ok: false, error: 'project not found', status: 404 };
-  if (
-    draft.provider === 'channel' &&
-    draft.platform === 'email' &&
-    !resolveFeatureFlag(row.metadata, 'agentmail_email')
-  ) {
-    const disabled = featureDisabledBody('agentmail_email');
-    return { ok: false, error: disabled.error, status: 403, body: disabled };
-  }
-
   let gitProject: Awaited<ReturnType<typeof withProjectGitAuth>>;
   try {
     gitProject = await withProjectGitAuth(row);

@@ -114,14 +114,15 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(resolveFeatureFlag({ experimental: { warm_sessions: false } }, 'warm_sessions')).toBe(false);
   });
 
-  test('agentmail_email is explicit opt-in', () => {
-    expect(resolveFeatureFlag({}, 'agentmail_email')).toBe(false);
-    expect(
-      resolveFeatureFlag({ experimental: { agentmail_email: true } }, 'agentmail_email'),
-    ).toBe(true);
-    expect(
-      resolveFeatureFlag({ experimental: { agentmail_email: false } }, 'agentmail_email'),
-    ).toBe(false);
+  test('agentmail_email graduated: every project can connect email and a stored override is inert', () => {
+    // 2026-10-24: the email channel is on for every project. Turning it on
+    // never created an inbox (only an explicit connect does), so graduating
+    // provisions nothing. A stored `experimental.agentmail_email` stays in
+    // metadata; it must not resurface as a key, a catalog row, or a gate.
+    expect(isFeatureFlagKey('agentmail_email')).toBe(false);
+    const metadata = { experimental: { agentmail_email: false } };
+    expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain('agentmail_email');
+    expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('agentmail_email');
   });
 
   test('apps graduated: Apps is generally available and a stored override is inert', () => {
@@ -269,7 +270,6 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     for (const metadata of [null, undefined, {}, { experimental: null }, { experimental: 'x' }, []]) {
       expect(typeof resolveFeatureFlag(metadata, 'meta_agent')).toBe('boolean');
       expect(typeof resolveFeatureFlag(metadata, 'marketplace')).toBe('boolean');
-      expect(typeof resolveFeatureFlag(metadata, 'agentmail_email')).toBe('boolean');
     }
   });
 });
@@ -307,13 +307,6 @@ describe('buildFeatureFlagCatalog', () => {
     expect(metaAgent.enabled).toBe(true);
     expect(metaAgent.overridden).toBe(true);
     expect(typeof metaAgent.available).toBe('boolean');
-
-    const email = catalog.find((f) => f.key === 'agentmail_email');
-    if (!email) throw new Error('Missing AgentMail Email flag');
-    expect(email.name).toBe('AgentMail Email');
-    expect(email.stability).toBe('experimental');
-    expect(email.enabled).toBe(false);
-    expect(email.overridden).toBe(false);
   });
 
   test('an unavailable flag is never enabled', () => {
