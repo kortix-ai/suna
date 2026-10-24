@@ -53,12 +53,12 @@ describe('notification emails follow the transactional email rules', () => {
     expect(email.text).toContain(`Open automations: ${href}`);
   });
 
-  test('a reminder alert opens the Reminders page and its button says so', () => {
+  test('a reminder alert opens the Loops page and its button says so', () => {
     const url = `/projects/${PID}/reminders?notification=n1`;
     for (const kind of ['automation_failed', 'automation_recovered'] as const) {
       const email = renderImmediateNotificationEmail({ ...failed, kind, url })!;
-      expect(email.text).toContain(`Open reminders: ${absoluteAppUrl(url)}`);
-      expect(email.html).toContain('Open reminders');
+      expect(email.text).toContain(`Open loops: ${absoluteAppUrl(url)}`);
+      expect(email.html).toContain('Open loops');
       expect(`${email.html}\n${email.text}`).not.toContain('Open automations');
     }
   });

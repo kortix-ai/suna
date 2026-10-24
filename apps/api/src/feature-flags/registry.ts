@@ -245,9 +245,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
   },
   {
     key: 'reminders',
-    name: 'Reminders',
+    name: 'Loops',
     description:
-      'Let agents and people schedule check-ins on a session — "in 24 hours, check whether the vendor replied", once or on repeat. Each fire re-prompts that session. Adds the Reminders page, the session reminder chip, and `kortix remind` in the CLI.',
+      'Let agents and people schedule a Loop on a session — "in 24 hours, check whether the vendor replied", once or on repeat. Each fire re-prompts that session. Adds the Loops page, the session loop chip, and `kortix loop` in the CLI.',
     stability: 'beta',
     available: () => true,
     // On by default (2026-10-19): goals wake on a heartbeat reminder (kortix-goals).

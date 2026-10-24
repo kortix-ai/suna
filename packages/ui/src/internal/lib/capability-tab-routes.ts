@@ -95,7 +95,7 @@ export const CAPABILITY_TABS: readonly CapabilityTab[] = [
   { key: 'skills', label: 'Skills' },
   { key: 'connectors', label: 'Connectors' },
   { key: 'triggers', label: 'Triggers' },
-  { key: 'reminders', label: 'Reminders' },
+  { key: 'reminders', label: 'Loops' },
   { key: 'models', label: 'Models' },
   { key: 'secrets', label: 'Secrets' },
   { key: 'files', label: 'Repo' },

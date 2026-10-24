@@ -260,9 +260,9 @@ export const TIERS: readonly CommandTier[] = [
           },
           { name: 'triggers', args: '<subcommand>', blurb: 'List, fire, enable/disable triggers' },
           {
-            name: 'reminders',
+            name: 'loops',
             args: '<subcommand>',
-            blurb: 'Re-prompt one session later or on repeat (kortix remind "…" --in 24h)',
+            blurb: 'Re-prompt one session later or on repeat — a durable Loop (kortix loop "…" --in 24h; alias: reminders)',
           },
           {
             name: 'goals',

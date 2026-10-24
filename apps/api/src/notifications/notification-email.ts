@@ -95,7 +95,7 @@ function message(parts: {
  */
 export function renderImmediateNotificationEmail(item: NotificationEmailItem): RenderedEmail | null {
   if (item.kind === 'capture_device_down' || item.kind === 'capture_device_recovered') return renderCaptureEmail(item);
-  const cta = { url: absoluteAppUrl(item.url), label: opensRemindersPage(item.url) ? 'Open reminders' : 'Open automations' };
+  const cta = { url: absoluteAppUrl(item.url), label: opensRemindersPage(item.url) ? 'Open loops' : 'Open automations' };
   // True for the creator, the last editor, a reminder's owner and a project
   // manager who gets the alert because nobody else can read the trigger.
   const note = 'You get this email because you created or edited this automation, or you manage its project.';

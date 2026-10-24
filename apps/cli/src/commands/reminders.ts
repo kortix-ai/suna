@@ -1,11 +1,13 @@
 /**
- * `kortix reminders` (and the `kortix remind` shortcut) — scheduled prompts
- * into one session.
+ * `kortix loops` (and the `kortix loop` shortcut) — scheduled prompts into one
+ * session. `reminders` / `remind` stay as aliases for the same command.
  *
- * A reminder is a trigger scoped to one session and stored in the database,
- * not kortix.yaml. It re-prompts its session at the scheduled time(s) until
- * someone removes it. Inside a sandbox `--session` defaults to
- * $KORTIX_SESSION_ID, so an agent schedules its own follow-up with one command.
+ * A Loop is a trigger scoped to one session and stored in the database, not
+ * kortix.yaml. It re-prompts its session at the scheduled time(s) until someone
+ * removes it. The backend term stays `reminder` (routes, DB rows, the
+ * `reminders` feature flag): a Loop is the durable, user-facing name for it.
+ * Inside a sandbox `--session` defaults to $KORTIX_SESSION_ID, so an agent
+ * schedules its own follow-up with one command.
  */
 import type { SessionReminder } from '@kortix/sdk';
 import { splitHelp } from '../command-argv.ts';
@@ -22,28 +24,29 @@ import {
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 
-const HELP = help`Usage: kortix reminders <subcommand> [options]
-       kortix remind "<prompt>" [schedule]        (= reminders add)
+const HELP = help`Usage: kortix loops <subcommand> [options]
+       kortix loop "<prompt>" [schedule]          (= loops add)
+       aliases: kortix reminders, kortix remind
 
-Reminders are a per-project feature flag, on by default. A project that turned
-them off turns them back on with \`kortix projects features enable reminders\`
-(or Settings → Feature flags).
+Loops are a per-project feature flag, on by default. A project that turned them
+off turns them back on with \`kortix projects features enable reminders\` (the
+flag key stays \`reminders\`; or Settings → Feature flags).
 
-A reminder re-prompts ONE session on a schedule — "in 24h, check whether the
-email arrived", "every hour until the deploy is green". It is a trigger scoped
-to that session and stored in the database, not kortix.yaml: no commit, no
-review, gone when you remove it. Each fire wakes the session (parked or not)
-with the reminder text. A fire never starts a new session; if the session is
-deleted or failed, the reminder pauses itself.
+A Loop re-prompts ONE session on a schedule — "in 24h, check whether the email
+arrived", "every hour until the deploy is green". It is a trigger scoped to that
+session and stored in the database, not kortix.yaml: no commit, no review, gone
+when you remove it. Each fire wakes the session (parked or not) with the Loop
+text. A fire never starts a new session; if the session is deleted or failed,
+the Loop pauses itself.
 
 Subcommands:
-  add "<prompt>" [schedule]   Create a reminder. Prints its id.
-  ls                          List this session's reminders.
-  pause <id>                  Stop firing, keep the reminder.
+  add "<prompt>" [schedule]   Create a Loop. Prints its id.
+  ls                          List this session's Loops.
+  pause <id>                  Stop firing, keep the Loop.
   resume <id>                 Fire again, re-armed from now.
   run <id>                    Fire once now (retry a failed run). The
                               schedule does not move.
-  rm <id>                     Delete the reminder (aliases: stop, delete).
+  rm <id>                     Delete the Loop (aliases: stop, delete).
 
 Schedule (add):
   --in <duration>     First fire after this long: 30m, 24h, 2d.
@@ -63,12 +66,12 @@ Options:
   -h, --help          Show this help.
 
 Examples:
-  kortix remind "Did the email to the vendor arrive? If yes, stop this reminder." --in 24h --every 1h
-  kortix remind "Re-run the flaky test suite and report" --at 2026-10-01T09:00:00Z
-  kortix reminders add "Post the standup summary" --cron "0 0 9 * * 1-5" --timezone Europe/Berlin
-  kortix reminders ls
-  kortix reminders run reminder.3f9a1c2e7b04
-  kortix reminders rm reminder.3f9a1c2e7b04
+  kortix loop "Did the email to the vendor arrive? If yes, stop this loop." --in 24h --every 1h
+  kortix loop "Re-run the flaky test suite and report" --at 2026-10-01T09:00:00Z
+  kortix loops add "Post the standup summary" --cron "0 0 9 * * 1-5" --timezone Europe/Berlin
+  kortix loops ls
+  kortix loops run reminder.3f9a1c2e7b04
+  kortix loops rm reminder.3f9a1c2e7b04
 `;
 
 function describeSchedule(r: SessionReminder): string {
@@ -85,14 +88,14 @@ function formatInstant(iso: string | null): string {
 function writeReminder(r: SessionReminder, heading: string): void {
   // A fired one-shot reminder stays done on resume; do not say it resumed.
   const done = heading === 'Resumed' && r.state === 'done';
-  process.stdout.write(`\n${done ? status.warn(`${r.id} already fired and stays done. Create a new reminder to fire again.`) : status.ok(`${heading} ${C.bold}${r.id}${C.reset}`)}\n`);
+  process.stdout.write(`\n${done ? status.warn(`${r.id} already fired and stays done. Create a new loop to fire again.`) : status.ok(`${heading} ${C.bold}${r.id}${C.reset}`)}\n`);
   process.stdout.write(`  ${C.dim}session ${C.reset}${r.session_id ?? '—'}\n`);
   process.stdout.write(`  ${C.dim}repeat  ${C.reset}${describeSchedule(r)}\n`);
   process.stdout.write(`  ${C.dim}state   ${C.reset}${r.state}\n`);
   process.stdout.write(`  ${C.dim}next    ${C.reset}${formatInstant(r.next_fire_at)}\n`);
   if (r.last_fired_at) process.stdout.write(`  ${C.dim}last    ${C.reset}${formatInstant(r.last_fired_at)}\n`);
   if (r.state !== 'done') {
-    process.stdout.write(`  ${C.dim}remove  ${C.reset}kortix reminders rm ${r.id}\n`);
+    process.stdout.write(`  ${C.dim}remove  ${C.reset}kortix loops rm ${r.id}\n`);
   }
   process.stdout.write('\n');
 }
@@ -124,7 +127,7 @@ export async function runReminders(argv: string[], shortcut = false): Promise<nu
   const sub = shortcut ? 'add' : rest.shift();
   const args = rest;
   if (!['add', 'create', 'ls', 'list', 'pause', 'resume', 'run', 'rm', 'stop', 'delete', 'remove'].includes(sub ?? '')) {
-    return fail(`Unknown subcommand "${sub}". Run \`kortix reminders --help\`.`);
+    return fail(`Unknown subcommand "${sub}". Run \`kortix loops --help\`.`);
   }
 
   const implicitSession = flags.session === undefined;
@@ -147,14 +150,14 @@ export async function runReminders(argv: string[], shortcut = false): Promise<nu
   try {
     if (sub === 'add' || sub === 'create') {
       const prompt = args.join(' ').trim();
-      if (!prompt) return missing('the reminder text, e.g. kortix remind "Did it arrive?" --in 24h');
+      if (!prompt) return missing('the loop text, e.g. kortix loop "Did it arrive?" --in 24h');
       const body: Record<string, string> = { prompt };
       for (const key of ['in', 'at', 'every', 'cron', 'timezone', 'name'] as const) {
         if (flags[key] !== undefined) body[key] = flags[key]!;
       }
       const created = await client.post<SessionReminder>(base, body);
       if (json) emitJson(created);
-      else writeReminder(created, 'Reminder set');
+      else writeReminder(created, 'Loop set');
       return 0;
     }
 
@@ -165,7 +168,7 @@ export async function runReminders(argv: string[], shortcut = false): Promise<nu
         return 0;
       }
       if (reminders.length === 0) {
-        process.stdout.write(`  ${C.dim}No reminders on this session.${C.reset}\n`);
+        process.stdout.write(`  ${C.dim}No loops on this session.${C.reset}\n`);
         return 0;
       }
       const idW = Math.max(...reminders.map((r) => r.id.length), 2);
@@ -183,7 +186,7 @@ export async function runReminders(argv: string[], shortcut = false): Promise<nu
     }
 
     const id = args[0];
-    if (!id) return missing(`a reminder id: kortix reminders ${sub} <id>`);
+    if (!id) return missing(`a loop id: kortix loops ${sub} <id>`);
     if (sub === 'pause' || sub === 'resume') {
       const updated = await client.patch<SessionReminder>(`${base}/${id}`, { enabled: sub === 'resume' });
       if (json) emitJson(updated);

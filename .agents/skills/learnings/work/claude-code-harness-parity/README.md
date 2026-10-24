@@ -2,7 +2,9 @@
 
 Status: draft for review (Marko). Authored 2026-10-24 from four parallel
 read-only investigations (subagent-as-session, continuation primitives,
-spaces-as-channels, rooms deletion). Nothing implemented yet.
+spaces-as-channels, rooms deletion). Implemented so far: the Pillar 2
+user-facing rename Reminders → Loops (presentation only; see Pillar 2).
+Everything else is unbuilt.
 
 ## Thesis
 
@@ -23,7 +25,7 @@ AppPreview) already exist.
 | Claude Code (ephemeral/local) | Kortix (durable/cloud) | State |
 |---|---|---|
 | subagent (in-process child) | **real cloud Kortix session** | reroute, not rebuild |
-| /loop + reminders | **Loop** (one durable primitive) | Reminders renamed |
+| /loop + reminders | **Loop** (one durable primitive) | Reminders renamed (UI/CLI/flag copy done 2026-10-24; backend term kept) |
 | /goal | **Goal** (durable outcome engine) | engine exists; promote to harness primitive |
 | cron / webhook | **Trigger** (durable event) | unchanged |
 | agent view | board over `?parent=<id>` sessions | nearly free |
@@ -156,6 +158,29 @@ turn**: an interval (Loop), an outcome verdict (Goal), an external event
   There is no ephemeral loop. ~95% reuse: rename the surface + redirects.
   **Keep the `reminders` feature-flag key** (Goals depends on it) or alias it
   atomically. Storage: DB (correct — ad-hoc, not reviewed).
+  - **Status 2026-10-24 — the user-facing rename landed (presentation only).**
+    "Loop" is now the one user-facing name for the durable session-scoped
+    continuation, surfaced consistently:
+    - Web: the whole `reminders` i18n namespace in
+      `apps/web/translations/en.json` (title, page, chip, calendar, bulk,
+      gate), the feature-flag display name, the account Automations copy, the
+      notification labels, and the `@kortix/ui` capability-tab label all read
+      "Loop(s)". `packages/ui/src/i18n/en.ts` is regenerated from the catalog.
+    - CLI: `kortix loops` / `kortix loop` are the primary commands; help,
+      examples and output strings say "Loop". `reminders` / `remind` stay as
+      aliases.
+    - API: the feature-flag display name + description in
+      `apps/api/src/feature-flags/registry.ts` and the notification-email CTA
+      say "Loops".
+    - **Unchanged, on purpose (backend/wire term stays `reminder`):** the HTTP
+      routes (`/sessions/:id/reminders`), DB rows, the `reminders` feature-flag
+      KEY (Goals depends on it), the `@kortix/sdk` exported names (they mirror
+      the wire contract one-to-one — a rename would be a breaking public-API
+      change for zero user-facing gain), and the audit-event titles.
+    - **Not done:** the 8 non-English catalogs still carry the old translated
+      word (English `en.json` is the canonical source; a translation pass is a
+      follow-up). The server-armed Goal entry and the on-idle engine are a
+      separate track, untouched here.
 - **GOAL = durable outcome engine, promoted to a harness primitive.** Exists
   today as a Files folder (`Goals/<slug>/goal.json`), a CLI state machine, a
   heartbeat Loop, and the `on-idle` goal check. Net-new: the **daemon arms
