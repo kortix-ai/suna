@@ -589,7 +589,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
       case 'create': {
         const slug = positional[0];
         if (!slug) return missing('a connector slug');
-        if (!f.provider) return missing('--provider');
+        if (!f.provider) return missing(ADD_PROVIDER_HINT);
         if (!(PROVIDERS as readonly string[]).includes(f.provider)) {
           return missing(`--provider ${PROVIDERS.join('|')}`);
         }
@@ -1889,13 +1889,18 @@ function connectionActionPastTense(action: 'revoke' | 'activate' | 'default'): s
 
 // ── Local kortix.yaml config edits (source of truth; no cloud round-trip) ────
 
+/** The one recipe a missing --provider usually means: a SaaS app from the catalog. */
+const ADD_PROVIDER_HINT =
+  '--provider. For a SaaS app: kortix connectors add <slug> --provider composio --app <toolkit> --apply ' +
+  '(find the toolkit with kortix connectors apps <name>), then kortix connectors connect <slug>';
+
 function connectorAddLocal(
   slug: string | undefined,
   f: Record<string, string | undefined>,
   allowLegacyPipedream: boolean,
 ): number {
   if (!slug) return missing('a connector slug');
-  if (!f.provider) return missing('--provider');
+  if (!f.provider) return missing(ADD_PROVIDER_HINT);
   if (!(PROVIDERS as readonly string[]).includes(f.provider)) {
     process.stderr.write(`${status.err(`--provider must be one of ${PROVIDERS.join(', ')}`)}\n`);
     return 2;
@@ -1926,8 +1931,14 @@ function connectorAddLocal(
     if (f.credential) fields.credential = f.credential;
     if (f.authType) fields.auth = { type: f.authType };
     appendArrayBlock('connectors', fields);
+    // In a session the local file is the session branch: nothing goes live
+    // until a change request merges. An agent almost always meant --apply.
+    const sessionNote = process.env.KORTIX_SESSION_ID
+      ? `  ${C.dim}This edited the session branch only, not the live project. To make it live now: ${C.reset}${C.cyan}kortix connectors add ${slug} --provider ${f.provider}${f.app ? ` --app ${f.app}` : ''} --apply${C.reset}${C.dim} (undo this edit first: git checkout kortix.yaml).${C.reset}\n`
+      : '';
     process.stdout.write(
       `${status.ok(`Added [[connectors]] ${C.bold}${slug}${C.reset} to kortix.yaml`)}\n` +
+        sessionNote +
         `  ${C.dim}Apply it with ${C.reset}${C.cyan}kortix ship${C.reset}${C.dim}; authentication will be detected from the source unless --auth-type overrides it.${C.reset}\n` +
         `  ${C.dim}Then ${f.provider === 'composio' || f.provider === 'pipedream' ? 'connect it with' : 'set the credential with'} ${C.reset}${C.cyan}kortix connectors ${f.provider === 'composio' || f.provider === 'pipedream' ? `connect ${slug}` : `credential ${slug}`}${C.reset}\n`,
     );
