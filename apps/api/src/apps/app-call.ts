@@ -48,6 +48,9 @@ export async function callAppTarget(input: {
       headers: { ...ingress.headers, ...input.headers, ...(input.method === 'POST' ? { 'content-type': 'application/json' } : {}) },
       body: input.method === 'POST' ? JSON.stringify(input.payload) : undefined,
       signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+      // The App's own server answers this call: a 3xx must not steer it, and the
+      // provider token it carries, at another host (public-proxy-handler does the same).
+      redirect: 'manual',
     });
     await response.body?.cancel().catch(() => {});
     return {
