@@ -200,7 +200,7 @@
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "eslint": "^9",
     "eslint-config-next": "16.4.2",
-    "happy-dom": "^20.14.5",
+    "happy-dom": "^21.0.4",
     "intl-messageformat": "11.2.9",
     "prettier": "^3.5.3",
     "prettier-plugin-organize-imports": "^4.3.0",
