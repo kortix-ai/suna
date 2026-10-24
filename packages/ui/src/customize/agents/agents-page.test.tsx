@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 mock.module('../../internal/lib/use-project-can', () => ({
   useProjectCan: () => ({ allowed: false }),
+  useProjectPageCans: () => ({}),
 }));
 mock.module('../use-configure-thread', () => ({
   useConfigureThread: () => ({ pending: false }),

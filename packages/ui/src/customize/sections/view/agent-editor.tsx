@@ -123,6 +123,8 @@ export interface AgentDraft {
   set: SetKortix;
   setOc: SetRuntime;
   isDirty: boolean;
+  /** The last saved block: the draft compares against it. */
+  baseline: AgentConfigBlock;
   /** Throw the draft away and return to the baseline. */
   discard: () => void;
   /** A save landed: the server's block is the new baseline AND the new draft. */
@@ -184,7 +186,7 @@ export function useAgentDraft(initial: AgentConfigBlock): AgentDraft {
     setDraft(block);
   }, []);
 
-  return { draft, oc: draft.behavior ?? {}, set, setOc, isDirty, discard, commit };
+  return { draft, oc: draft.behavior ?? {}, set, setOc, isDirty, baseline, discard, commit };
 }
 
 export interface AgentEditorOptions {

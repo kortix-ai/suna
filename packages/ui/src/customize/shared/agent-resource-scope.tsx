@@ -19,7 +19,9 @@ import type { AgentGrantSetV2 } from '@kortix/sdk';
 import { useState } from 'react';
 
 import { useTranslations } from '../../i18n';
-import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
+import { agentDisplayName } from '../../internal/components/agent-mark';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../primitives/select';
+import { useCapabilityShellEmbed } from './capability-page-shell';
 
 /** Which surface a resource catalog renders for. */
 export type ResourceScope = { kind: 'global' } | { kind: 'agent'; agentName: string };
@@ -98,21 +100,34 @@ const GRANT_MODE_TABS: ReadonlyArray<{ value: GrantMode; labelKey: string }> = [
 ];
 
 /**
- * The agent's grant-mode selector — the catalog's primary control in `agent`
- * scope. Segmented, like the connectors scope strip beside it, so the two
- * read as one header row.
+ * The agent's grant-mode selector, the catalog's primary control in `agent`
+ * scope. A select inside one sentence ("researcher can use [Specific]"), so
+ * it never reads as a second segmented control beside the catalog's own
+ * scope strip.
  */
 export function GrantModeTabs({ grant, label }: { grant: AgentGrant; label: string }) {
   const t = useTranslations('agentScope');
+  const tTabs = useTranslations('agentEditor.tabs');
+  const embed = useCapabilityShellEmbed();
   return (
-    <Tabs value={grant.mode} onValueChange={(next) => grant.setMode(next as GrantMode)}>
-      <TabsList aria-label={label}>
-        {GRANT_MODE_TABS.map((tab) => (
-          <TabsTrigger key={tab.value} value={tab.value}>
-            {t(tab.labelKey)}
-          </TabsTrigger>
-        ))}
-      </TabsList>
-    </Tabs>
+    <div className="flex min-w-0 items-center gap-2">
+      {embed ? (
+        <span className="text-foreground shrink-0 truncate text-sm">
+          {tTabs('canUse', { name: agentDisplayName(embed.agentName) })}
+        </span>
+      ) : null}
+      <Select value={grant.mode} onValueChange={(next) => grant.setMode(next as GrantMode)}>
+        <SelectTrigger aria-label={label} size="sm" className="w-36 shrink-0">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent align="start">
+          {GRANT_MODE_TABS.map((tab) => (
+            <SelectItem key={tab.value} value={tab.value}>
+              {t(tab.labelKey)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
