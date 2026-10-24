@@ -17,7 +17,9 @@ Before every publish:
    `kortix artifacts share <id> --visibility project`.
 3. **Answer first**: the recommendation or result is the first paragraph.
 4. **One artifact per thing.** Revising an existing one? Save into it (`--id`).
-5. **Reply with the app link** and one line on what it shows.
+5. **Hand it over with `show`**: `url` = the artifact's app link, `title` = its
+   name. The user sees it in the chat and opens it beside the chat. Then one
+   line on what it shows.
 </checklist>
 
 <overview>
@@ -64,7 +66,9 @@ Never publish a second copy (see `<update>`).
    below).
 6. **Publish, look once, fix once.** See "Check once" in
    `references/design.md`. No loops.
-7. **Report.** End your reply with the app link and one line on what the
+7. **Hand it over.** Call `show` with the app link (`url`) and the name
+   (`title`): the chat shows the artifact itself, and the user opens it beside
+   the chat. End your reply with one line on what the
    artifact shows. Never paste its content into the chat. Mention the design
    in at most one plain sentence.
 </method>
@@ -141,8 +145,8 @@ Two ways, same result:
     kortix artifacts add /Company/Plans/roadmap                     # shares a folder already in Files (index.md or index.html)
 
 A `.md` file is a doc; anything else is html. The command prints the artifact
-id, its path in Files and its app link. End your answer with the app link and
-one line on what it shows. Never paste the content into the chat.
+id, its path in Files and its app link. Hand it over with `show` (the app link
+as `url`) and one line on what it shows. Never paste the content into the chat.
 
 A new artifact is **private**: the person who runs this session (and you) can
 see it. Share it when the user asks. "Share it with the team", "something the

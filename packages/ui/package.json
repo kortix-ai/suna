@@ -40,6 +40,7 @@
     "./alert": "./src/primitives/alert.tsx",
     "./alert-dialog": "./src/primitives/alert-dialog.tsx",
     "./apps": "./src/apps/index.ts",
+    "./artifacts": "./src/artifacts/index.ts",
     "./avatar": "./src/primitives/avatar.tsx",
     "./back-pill": "./src/primitives/back-pill.tsx",
     "./badge": "./src/primitives/badge.tsx",
@@ -628,6 +629,10 @@
       "./apps": {
         "types": "./dist/apps/index.d.ts",
         "import": "./dist/apps/index.js"
+      },
+      "./artifacts": {
+        "types": "./dist/artifacts/index.d.ts",
+        "import": "./dist/artifacts/index.js"
       },
       "./avatar": {
         "types": "./dist/primitives/avatar.d.ts",

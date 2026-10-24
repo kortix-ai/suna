@@ -45,8 +45,8 @@ import { useEffect, useRef, useState } from 'react';
 import { drivePathToParam } from '@/features/drives/drive-path-param';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
-import { ArtifactFrame, VISIBILITY_ICON, relativeTime } from './artifact-meta';
-import { artifactFrameKey, printArtifact } from './frame-sandbox';
+import { VISIBILITY_ICON, relativeTime } from './artifact-meta';
+import { ArtifactFrame, artifactFrameKey, printArtifact } from '@kortix/ui/artifacts';
 import { DocEditor, type DocSaveStatus } from './doc-editor';
 import { ShareArtifactDialog } from './share-artifact-dialog';
 
