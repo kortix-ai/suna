@@ -1901,15 +1901,36 @@ const catalog = {
     "greeting": "Welcome, {name}. I'm Kortix.",
     "greetingNoName": "Welcome. I'm Kortix.",
     "intro": "Bring me anything: a task, a workflow, or a half-formed idea. We'll figure it out together.",
-    "question": "Where do you want to start?",
-    "recommendTools": "Recommend tools",
-    "updateMemory": "Update memory",
+    "canTitle": "What you can do with Kortix",
+    "can": {
+      "work": {
+        "title": "Hand off real work",
+        "body": "Research, docs, decks, spreadsheets and sites. Each session has its own isolated machine."
+      },
+      "memory": {
+        "title": "It remembers",
+        "body": "What it learns about you, your team and your company carries into every session."
+      },
+      "tools": {
+        "title": "Works in your tools",
+        "body": "3,000+ apps in a click. Connector credentials never enter the machine."
+      },
+      "chat": {
+        "title": "Joins your team chat",
+        "body": "Mention it in Slack or Microsoft Teams with a task."
+      },
+      "schedule": {
+        "title": "Runs on its own",
+        "body": "Triggers start work on a schedule or from a webhook."
+      },
+      "apps": {
+        "title": "Builds apps",
+        "body": "Internal tools and dashboards, hosted with sign-in."
+      }
+    },
+    "startHint": "Tell Kortix what you’re working on below, or send “Onboard me” for a guided setup.",
     "placeholder": "Tell Kortix what you're working on",
-    "toolsPrompt": "Recommend tools and connectors that fit my workflow. Ask me what I work on first if you need to.",
-    "memoryPrompt": "Get to know how I work. Ask me one short question at a time about my role, what I work on, the tools I use, and how I like to work. Save my answers to project memory so future sessions start with them.",
-    "inviteTeammate": "Invite teammate",
-    "connectSlack": "Connect Slack",
-    "slackConnected": "Slack connected"
+    "kickoff": "Onboard me"
   },
   "hardcodedUi": {
     "appProjectsIdCustomizeSecretsPage": {
@@ -5786,13 +5807,7 @@ const catalog = {
       "text064694999e1f": "New App event",
       "text1934aa0740bb": "Search App events",
       "text25db7e5609e5": "No App events yet",
-      "text9f8f92588517": "An App starts agents by emitting events. Add a trigger with on: { event, app } in kortix.yaml.",
-      "textfd1317630c49": "Used as the first choice for the Resend address, for example support@kortixmail.",
-      "textb270bf37ec1c": "Resend inbox assigned to this connection.",
-      "text21a606ab61a7": "This channel connection has no Resend inbox yet.",
-      "text6ae82b1545c9": "Add a separate Resend inbox connection for support, sales, founders, or any mailbox the agent should run.",
-      "text8d6a5c4c17be": "Create a separate connection. You choose the Resend address when connecting it.",
-      "text000a82dd887b": "Create a managed Resend inbox for your agent, or attach one you already have."
+      "text9f8f92588517": "An App starts agents by emitting events. Add a trigger with on: { event, app } in kortix.yaml."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

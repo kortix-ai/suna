@@ -357,8 +357,10 @@ const FLAGS: readonly FeatureFlagDef[] = [
     stability: 'experimental',
     // Every volume is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
-    // Explicit opt-in. A project with `goals` needs it on.
-    platformDefault: () => false,
+    // On by default (founder, 2026-10-24): every project gets Files — a private
+    // folder per person (`/drives/me`, where the agent keeps user memory) and
+    // the shared `/Company` folder (`Company/Memory`). Onboarding writes both.
+    platformDefault: () => true,
     enforcement: 'behavioral',
     enforcementNote:
       'BEHAVIORAL only, through the flag derived from it: drives (Files routes and ' +
@@ -413,10 +415,12 @@ const FLAGS: readonly FeatureFlagDef[] = [
     available: () => Boolean(config.PLATINUM_API_KEY),
     platformDefault: () => false,
     enforcement: 'routes',
+    iamActions: ['project.artifact.read', 'project.artifact.write', 'project.artifact.manage', 'project.artifact.public'],
     enforcementNote:
       'ROUTES: every /v1/projects/:id/artifacts* route answers 403 `feature_disabled` when off, and ' +
       '/v1/artifacts/* (the content server) answers 404 for an artifact of a flag-off project. BOX: off, ' +
-      'a session box has no kortix-artifacts skill and its CLI hides and refuses `kortix artifacts`.',
+      'a session box has no kortix-artifacts skill and its CLI hides and refuses `kortix artifacts`. ' +
+      'IAM: project.artifact.* leave the account permission catalog until a project of the account has it on.',
   },
   {
     key: 'email_channel',

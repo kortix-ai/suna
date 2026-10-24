@@ -3404,15 +3404,36 @@
     "greeting": "Ti diamo il benvenuto, {name}. Sono Kortix.",
     "greetingNoName": "Ti diamo il benvenuto. Sono Kortix.",
     "intro": "Portami qualsiasi cosa: un'attività, un workflow o un'idea non ancora definita. La risolviamo insieme.",
-    "question": "Da dove vuoi iniziare?",
-    "recommendTools": "Strumenti consigliati",
-    "updateMemory": "Aggiorna la memoria del progetto",
+    "canTitle": "Cosa puoi fare con Kortix",
+    "can": {
+      "work": {
+        "title": "Affida lavoro vero",
+        "body": "Ricerche, documenti, presentazioni, fogli di calcolo e siti. Ogni sessione ha la propria macchina isolata."
+      },
+      "memory": {
+        "title": "Si ricorda",
+        "body": "Ciò che impara su di te, sul tuo team e sulla tua azienda lo porta in ogni sessione."
+      },
+      "tools": {
+        "title": "Lavora nei tuoi strumenti",
+        "body": "Oltre 3.000 app con un clic. Le credenziali dei connettori non entrano mai nella macchina."
+      },
+      "chat": {
+        "title": "Entra nella chat del team",
+        "body": "Menzionalo in Slack o Microsoft Teams con un compito."
+      },
+      "schedule": {
+        "title": "Lavora da solo",
+        "body": "I trigger avviano il lavoro secondo una pianificazione o da un webhook."
+      },
+      "apps": {
+        "title": "Crea app",
+        "body": "Strumenti interni e dashboard, ospitati con accesso."
+      }
+    },
+    "startHint": "Di’ a Kortix qui sotto a cosa stai lavorando, oppure invia «Guidami alla scoperta di Kortix» per una configurazione guidata.",
     "placeholder": "Dì a Kortix su cosa stai lavorando",
-    "toolsPrompt": "Consigliami strumenti e connettori adatti al mio workflow. Se ti serve, chiedimi prima su cosa lavoro.",
-    "memoryPrompt": "Scopri come lavoro. Fammi una domanda breve alla volta sul mio ruolo, su cosa lavoro, gli strumenti che uso e come mi piace lavorare. Salva le mie risposte nella memoria del progetto così le prossime sessioni partono già con queste informazioni.",
-    "inviteTeammate": "Invita collega",
-    "connectSlack": "Collega Slack",
-    "slackConnected": "Slack collegato"
+    "kickoff": "Guidami alla scoperta di Kortix"
   },
   "announcements": {
     "memories": {
@@ -20541,61 +20562,6 @@
       "quoted": "«{text}»"
     }
   },
-  "projectOnboarding": {
-    "resetSuccess": "Reimpostazione dell'onboarding",
-    "back": "Indietro",
-    "skip": "Salta",
-    "skipForNow": "Salta per ora",
-    "progress": "Avanzamento della configurazione",
-    "work": {
-      "title": "Di cosa ti occupi principalmente?",
-      "description": "Kortix lo usa per suggerirti le prime attività.",
-      "ariaLabel": "Di cosa ti occupi",
-      "noteLabel": "Raccontacelo in poche parole",
-      "notePlaceholder": "Ad esempio ricerca o recruiting",
-      "continue": "Continua",
-      "options": {
-        "founder": "Guidare un’azienda",
-        "engineering": "Ingegneria",
-        "product_design": "Prodotto e design",
-        "sales": "Vendite",
-        "marketing": "Marketing",
-        "finance_ops": "Operazioni",
-        "support": "Supporto e customer success",
-        "other": "Altro"
-      }
-    },
-    "apps": {
-      "title": "Quali app usi?",
-      "description": "Fai clic su un’app per collegarla. Puoi aggiungerne altre in qualsiasi momento.",
-      "ariaLabel": "App",
-      "searchPlaceholder": "Cerca app o categorie",
-      "clearSearch": "Cancella ricerca",
-      "connectApp": "Collega {app}",
-      "appConnected": "{app} è collegata",
-      "connectedCount": "{count} collegate",
-      "noMatches": "Nessuna app corrisponde a “{query}”",
-      "notConfiguredTitle": "Le app non sono configurate qui",
-      "notConfiguredDescription": "Questa installazione non ha un catalogo di app. Puoi aggiungere i connettori più tardi dalle Impostazioni.",
-      "continue": "Continua"
-    },
-    "plan": {
-      "title": "Quali modelli deve usare Kortix?",
-      "description": "Puoi cambiarlo in qualsiasi momento nelle Impostazioni.",
-      "seePlans": "Vedi i piani",
-      "open": "Apri il workspace",
-      "addKey": "Aggiungi una chiave",
-      "modelAccess": "Accesso ai modelli",
-      "useKortix": "Modelli Kortix",
-      "recommended": "Consigliato",
-      "useKortixDescription": "Pronti subito. Usano i crediti del tuo piano.",
-      "useKortixNeedsPlan": "Richiede un piano Kortix o crediti.",
-      "bringKey": "La mia chiave API",
-      "providerDescription": "Anthropic, OpenAI o un altro provider.",
-      "keyConnected": "Una chiave è collegata.",
-      "decideLater": "Decidi più tardi"
-    }
-  },
   "commandPalette": {
     "title": "Tavolozza dei comandi",
     "description": "Cerca un comando da eseguire...",
@@ -22691,7 +22657,9 @@
     "mediaTooLarge": "Questo file supera i 16 MB.",
     "refresh": "Ricarica",
     "diagramEdit": "Modifica diagramma",
-    "diagramDone": "Fatto"
+    "diagramDone": "Fatto",
+    "codeLanguage": "Linguaggio del codice",
+    "editedAgo": "Modificato {time}"
   },
   "emailConnect": {
     "homeTitle": "Dove si trova la casella",

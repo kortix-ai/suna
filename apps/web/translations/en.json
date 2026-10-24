@@ -3415,15 +3415,36 @@
     "greeting": "Welcome, {name}. I'm Kortix.",
     "greetingNoName": "Welcome. I'm Kortix.",
     "intro": "Bring me anything: a task, a workflow, or a half-formed idea. We'll figure it out together.",
-    "question": "Where do you want to start?",
-    "recommendTools": "Recommend tools",
-    "updateMemory": "Update memory",
+    "canTitle": "What you can do with Kortix",
+    "can": {
+      "work": {
+        "title": "Hand off real work",
+        "body": "Research, docs, decks, spreadsheets and sites. Each session has its own isolated machine."
+      },
+      "memory": {
+        "title": "It remembers",
+        "body": "What it learns about you, your team and your company carries into every session."
+      },
+      "tools": {
+        "title": "Works in your tools",
+        "body": "3,000+ apps in a click. Connector credentials never enter the machine."
+      },
+      "chat": {
+        "title": "Joins your team chat",
+        "body": "Mention it in Slack or Microsoft Teams with a task."
+      },
+      "schedule": {
+        "title": "Runs on its own",
+        "body": "Triggers start work on a schedule or from a webhook."
+      },
+      "apps": {
+        "title": "Builds apps",
+        "body": "Internal tools and dashboards, hosted with sign-in."
+      }
+    },
+    "startHint": "Tell Kortix what you’re working on below, or send “Onboard me” for a guided setup.",
     "placeholder": "Tell Kortix what you're working on",
-    "toolsPrompt": "Recommend tools and connectors that fit my workflow. Ask me what I work on first if you need to.",
-    "memoryPrompt": "Get to know how I work. Ask me one short question at a time about my role, what I work on, the tools I use, and how I like to work. Save my answers to project memory so future sessions start with them.",
-    "inviteTeammate": "Invite teammate",
-    "connectSlack": "Connect Slack",
-    "slackConnected": "Slack connected"
+    "kickoff": "Onboard me"
   },
   "announcements": {
     "memories": {
@@ -20552,61 +20573,6 @@
       "quoted": "“{text}”"
     }
   },
-  "projectOnboarding": {
-    "resetSuccess": "Onboarding reset",
-    "back": "Back",
-    "skip": "Skip",
-    "skipForNow": "Skip for now",
-    "progress": "Setup progress",
-    "work": {
-      "title": "What do you mostly work on?",
-      "description": "Kortix uses this to suggest your first tasks.",
-      "ariaLabel": "What you work on",
-      "noteLabel": "Tell us in a few words",
-      "notePlaceholder": "For example, research or recruiting",
-      "continue": "Continue",
-      "options": {
-        "founder": "Running a company",
-        "engineering": "Engineering",
-        "product_design": "Product and design",
-        "sales": "Sales",
-        "marketing": "Marketing",
-        "finance_ops": "Operations",
-        "support": "Support and success",
-        "other": "Something else"
-      }
-    },
-    "apps": {
-      "title": "Which apps do you use?",
-      "description": "Click an app to connect it. You can add more any time.",
-      "ariaLabel": "Apps",
-      "searchPlaceholder": "Search apps or categories",
-      "clearSearch": "Clear search",
-      "connectApp": "Connect {app}",
-      "appConnected": "{app} is connected",
-      "connectedCount": "{count} connected",
-      "noMatches": "No apps match “{query}”",
-      "notConfiguredTitle": "Apps are not set up here",
-      "notConfiguredDescription": "This deployment has no app catalogue. You can add connectors later from Settings.",
-      "continue": "Continue"
-    },
-    "plan": {
-      "title": "Which models should Kortix use?",
-      "description": "You can change this any time in Settings.",
-      "seePlans": "See plans",
-      "open": "Open workspace",
-      "addKey": "Add a key",
-      "modelAccess": "Model access",
-      "useKortix": "Kortix models",
-      "recommended": "Recommended",
-      "useKortixDescription": "Ready now. Runs on your plan’s credits.",
-      "useKortixNeedsPlan": "Needs a Kortix plan or credits.",
-      "bringKey": "My own API key",
-      "providerDescription": "Anthropic, OpenAI, or another provider.",
-      "keyConnected": "A key is connected.",
-      "decideLater": "Decide later"
-    }
-  },
   "commandPalette": {
     "title": "Command Palette",
     "description": "Search for a command to run...",
@@ -22691,7 +22657,9 @@
     "mediaTooLarge": "This file is larger than 16 MB.",
     "refresh": "Refresh",
     "diagramEdit": "Edit diagram",
-    "diagramDone": "Done"
+    "diagramDone": "Done",
+    "codeLanguage": "Code language",
+    "editedAgo": "Edited {time}"
   },
   "emailConnect": {
     "homeTitle": "Where the inbox lives",

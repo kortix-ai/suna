@@ -3404,15 +3404,36 @@
     "greeting": "Willkommen, {name}. Ich bin Kortix.",
     "greetingNoName": "Willkommen. Ich bin Kortix.",
     "intro": "Bringen Sie mir alles: eine Aufgabe, einen Workflow oder eine halbfertige Idee. Wir finden es gemeinsam heraus.",
-    "question": "Wo möchten Sie anfangen?",
-    "recommendTools": "Tools empfehlen",
-    "updateMemory": "Projektspeicher aktualisieren",
+    "canTitle": "Was du mit Kortix tun kannst",
+    "can": {
+      "work": {
+        "title": "Echte Arbeit abgeben",
+        "body": "Recherche, Dokumente, Präsentationen, Tabellen und Websites. Jede Sitzung hat ihre eigene isolierte Maschine."
+      },
+      "memory": {
+        "title": "Es merkt sich Dinge",
+        "body": "Was es über dich, dein Team und dein Unternehmen lernt, nimmt es in jede Sitzung mit."
+      },
+      "tools": {
+        "title": "Arbeitet in deinen Tools",
+        "body": "3.000+ Apps mit einem Klick. Connector-Zugangsdaten gelangen nie auf die Maschine."
+      },
+      "chat": {
+        "title": "Arbeitet in eurem Team-Chat",
+        "body": "Erwähne es in Slack oder Microsoft Teams mit einer Aufgabe."
+      },
+      "schedule": {
+        "title": "Läuft von selbst",
+        "body": "Trigger starten Arbeit nach Zeitplan oder per Webhook."
+      },
+      "apps": {
+        "title": "Baut Apps",
+        "body": "Interne Tools und Dashboards, gehostet mit Anmeldung."
+      }
+    },
+    "startHint": "Sag Kortix unten, woran du arbeitest, oder sende „Führ mich durch Kortix“ für eine geführte Einrichtung.",
     "placeholder": "Sagen Sie Kortix, woran Sie arbeiten",
-    "toolsPrompt": "Empfehlen Sie mir Tools und Connectoren, die zu meinem Workflow passen. Fragen Sie mich bei Bedarf zuerst, woran ich arbeite.",
-    "memoryPrompt": "Lernen Sie, wie ich arbeite. Stellen Sie mir jeweils eine kurze Frage zu meiner Rolle, woran ich arbeite, welche Tools ich nutze und wie ich gerne arbeite. Speichern Sie meine Antworten im Projektspeicher, damit künftige Sitzungen direkt darauf aufbauen.",
-    "inviteTeammate": "Teammitglied einladen",
-    "connectSlack": "Slack verbinden",
-    "slackConnected": "Slack verbunden"
+    "kickoff": "Führ mich durch Kortix"
   },
   "announcements": {
     "memories": {
@@ -20541,61 +20562,6 @@
       "quoted": "„{text}“"
     }
   },
-  "projectOnboarding": {
-    "resetSuccess": "Onboarding-Reset",
-    "back": "Zurück",
-    "skip": "Überspringen",
-    "skipForNow": "Überspringen Sie es vorerst",
-    "progress": "Einrichtungsfortschritt",
-    "work": {
-      "title": "Woran arbeitest du hauptsächlich?",
-      "description": "Kortix schlägt dir damit deine ersten Aufgaben vor.",
-      "ariaLabel": "Woran du arbeitest",
-      "noteLabel": "Beschreib es in ein paar Worten",
-      "notePlaceholder": "Zum Beispiel Forschung oder Recruiting",
-      "continue": "Weiter",
-      "options": {
-        "founder": "Ein Unternehmen führen",
-        "engineering": "Engineering",
-        "product_design": "Produkt und Design",
-        "sales": "Vertrieb",
-        "marketing": "Marketing",
-        "finance_ops": "Betrieb",
-        "support": "Support und Kundenerfolg",
-        "other": "Etwas anderes"
-      }
-    },
-    "apps": {
-      "title": "Welche Apps nutzt du?",
-      "description": "Klicke auf eine App, um sie zu verbinden. Du kannst jederzeit weitere hinzufügen.",
-      "ariaLabel": "Apps",
-      "searchPlaceholder": "Apps oder Kategorien suchen",
-      "clearSearch": "Suche löschen",
-      "connectApp": "{app} verbinden",
-      "appConnected": "{app} ist verbunden",
-      "connectedCount": "{count} verbunden",
-      "noMatches": "Keine Apps passen zu „{query}“",
-      "notConfiguredTitle": "Apps sind hier nicht eingerichtet",
-      "notConfiguredDescription": "Diese Installation hat keinen App-Katalog. Du kannst Connectors später in den Einstellungen hinzufügen.",
-      "continue": "Weiter"
-    },
-    "plan": {
-      "title": "Welche Modelle soll Kortix nutzen?",
-      "description": "Du kannst das jederzeit in den Einstellungen ändern.",
-      "seePlans": "Pläne ansehen",
-      "open": "Workspace öffnen",
-      "addKey": "Schlüssel hinzufügen",
-      "modelAccess": "Modellzugang",
-      "useKortix": "Kortix-Modelle",
-      "recommended": "Empfohlen",
-      "useKortixDescription": "Sofort bereit. Läuft mit den Credits deines Plans.",
-      "useKortixNeedsPlan": "Braucht einen Kortix-Plan oder Credits.",
-      "bringKey": "Mein eigener API-Schlüssel",
-      "providerDescription": "Anthropic, OpenAI oder ein anderer Anbieter.",
-      "keyConnected": "Ein Schlüssel ist verbunden.",
-      "decideLater": "Später entscheiden"
-    }
-  },
   "commandPalette": {
     "title": "Befehlspalette",
     "description": "Nach einem auszuführenden Befehl suchen...",
@@ -22691,7 +22657,9 @@
     "mediaTooLarge": "Diese Datei ist größer als 16 MB.",
     "refresh": "Neu laden",
     "diagramEdit": "Diagramm bearbeiten",
-    "diagramDone": "Fertig"
+    "diagramDone": "Fertig",
+    "codeLanguage": "Sprache des Codes",
+    "editedAgo": "Bearbeitet {time}"
   },
   "emailConnect": {
     "homeTitle": "Wo das Postfach liegt",

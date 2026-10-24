@@ -32,8 +32,8 @@ export function usePersonalContactTier(): PersonalContactTier {
 
 /**
  * Whether the *personal* founder surfaces should show (paid + cloud only).
- * Used by surfaces that have no standard fallback (e.g. the onboarding wizard's
- * "Book a call with Marko" step). Equivalent to `tier === 'personal'`.
+ * Used by surfaces that have no standard fallback (e.g. the founder welcome
+ * card). Equivalent to `tier === 'personal'`.
  */
 export function useShowPersonalContact(): boolean {
   return usePersonalContactTier() === 'personal';

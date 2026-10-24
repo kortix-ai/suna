@@ -8,7 +8,9 @@
 // packages/ui/src/styles/theme.css and apps/mobile/global.css, whole-file
 // outputs under references/visual/, packages/ui/src/styles/tokens.css and
 // fonts.css, and
-// apps/api/src/lib/email/brand-tokens.generated.ts.
+// apps/api/src/lib/email/brand-tokens.generated.ts, and
+// packages/shared/src/brand-css.generated.ts (the kit tokens and the Roobert
+// faces as strings, for pages a server renders: a doc artifact).
 // Stdlib only.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join, relative } from 'node:path';
@@ -22,6 +24,7 @@ const UI_THEME_CSS = join(ROOT, 'packages/ui/src/styles/theme.css');
 const UI_TOKENS_CSS = join(ROOT, 'packages/ui/src/styles/tokens.css');
 const UI_FONTS_CSS = join(ROOT, 'packages/ui/src/styles/fonts.css');
 const EMAIL_TS = join(ROOT, 'apps/api/src/lib/email/brand-tokens.generated.ts');
+const SHARED_CSS_TS = join(ROOT, 'packages/shared/src/brand-css.generated.ts');
 
 const EDIT_HINT =
   'edit .agents/skills/kortix-brand/references/visual/visual-system.json, then run generate-tokens.ts';
@@ -507,6 +510,19 @@ function rewriteRegions(file: string, bodies: Record<string, string>): string {
   return out.join('\n');
 }
 
+/** The kit tokens (light, dark by prefers-color-scheme) and the Roobert faces
+ *  (absolute kortix.com URLs) as strings, for a page a server renders. */
+function sharedCss(): string {
+  return [
+    '// GENERATED from visual-system.json by .agents/skills/kortix-brand/scripts/generate-tokens.ts. Do not edit.',
+    '// The brand tokens and fonts for a page a server renders (a doc artifact): the',
+    '// kit tokens.css (light, dark by prefers-color-scheme) and @kortix/ui fonts.css.',
+    `export const BRAND_TOKENS_CSS = ${JSON.stringify(kitTokens())};`,
+    `export const BRAND_FONTS_CSS = ${JSON.stringify(uiFonts())};`,
+    '',
+  ].join('\n');
+}
+
 // ───────────────────────── main ─────────────────────────
 const errors = validate();
 if (errors.length) {
@@ -527,6 +543,7 @@ const outputs: Record<string, string> = {
   [join(VISUAL, 'tokens.css')]: kitTokens(),
   [join(VISUAL, 'fonts.css')]: kitFonts(),
   [EMAIL_TS]: emailTokens(),
+  [SHARED_CSS_TS]: sharedCss(),
 };
 
 const check = process.argv.includes('--check');

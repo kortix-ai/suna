@@ -4,8 +4,8 @@
 // The files are plain files in Files; their history is the Files commit log
 // (`listArtifactVersions`). `listArtifactTypes` has each format and a starter. Visibility: private (the creator and
 // `shared_with_user_ids`), project (every member), public (anyone with the
-// link). Reading needs `project.read`; publishing `project.session.start`;
-// changing an artifact its creator or project.write.
+// link). Permissions: `project.artifact.read` (read), `.write` (publish,
+// save, your own sharing), `.manage` (anyone's sharing), `.public` (public links).
 
 import { ApiError, backendApi } from '../../http/api-client';
 import { authenticatedFetch } from '../../http/auth';

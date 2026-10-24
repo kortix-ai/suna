@@ -34,7 +34,7 @@ import { Placeholder } from '@tiptap/extensions';
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
 import { BubbleMenu, FloatingMenu } from '@tiptap/react/menus';
 import StarterKit from '@tiptap/starter-kit';
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { DocCodeBlock, Video, fileBase64, isMedia, mediaPath, mediaUrls, tooLarge } from './doc-media';
 import { htmlToMarkdown, markdownToHtml } from './markdown';
@@ -44,14 +44,6 @@ import { useTranslations } from '@/i18n/use-translations';
 export type DocSaveStatus = 'saved' | 'unsaved' | 'saving' | 'error';
 
 /** The doc stylesheet's colors from the app's theme, so the doc follows light and dark. */
-const THEME_VARS = {
-  '--kx-doc-bg': 'var(--background)',
-  '--kx-doc-fg': 'var(--foreground)',
-  '--kx-doc-muted': 'var(--muted-foreground)',
-  '--kx-doc-border': 'var(--border)',
-  '--kx-doc-subtle': 'var(--muted)',
-  '--kx-doc-accent': 'var(--kortix-blue)',
-} as CSSProperties;
 
 const AUTOSAVE_MS = 2_000;
 
@@ -233,7 +225,7 @@ export function DocEditor({
   }, [editor, editable]);
 
   return (
-    <div className="kx-doc min-h-full" style={THEME_VARS}>
+    <div className="kx-doc min-h-full">
       <style>{ARTIFACT_DOC_CSS}</style>
       {loaded === null || !editor ? (
         <div className="flex flex-col gap-3">
