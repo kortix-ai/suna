@@ -69,3 +69,5 @@ export * from './model-access';
 export * from './custom-llm-providers';
 export * from './session-attachments';
 export * from './project-agents';
+
+export * from './change-request-recovery';
