@@ -44,6 +44,7 @@ const KIND_ICON = {
   video: VideoIcon,
   presentation: PresentationIcon,
   app: AppWindow,
+  artifact: FileText,
 } as const;
 
 /** `callID:path` → object URL, shared across rows and re-renders. Keyed by
