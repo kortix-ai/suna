@@ -252,7 +252,7 @@ To add an app, search the app catalogue first:
 
 ```sh
 kortix connectors catalog gmail                     # every way in, one row per app
-kortix connectors catalog crm --kind mcp,composio   # filter: mcp, composio, openapi, graphql, cli
+kortix connectors catalog crm --kind mcp,composio   # filter: kortix, mcp, composio, openapi, graphql
 kortix connectors catalog notes --one-click         # only apps the human connects by signing in
 kortix connectors catalog show composio:gmail       # every way to connect it + its tools
 ```
@@ -260,10 +260,13 @@ kortix connectors catalog show composio:gmail       # every way to connect it + 
 Each app lists its ways to connect, best first, the first marked
 `recommended`:
 
-0. a Kortix channel (`kind: channel`: Slack, Microsoft Teams, Email,
-   Telegram) — people message the agent there. It is never installed: the
-   human sets it up (`kortix channels connect`, `--platform teams`,
-   `kortix channels email connect`, or the web Channels page);
+0. built by Kortix (`kind: kortix`): the channels Slack, Microsoft Teams,
+   Email and Telegram, where people message the agent, and Computer, the
+   human's own machine. They are never installed: the human sets them up
+   (`kortix channels connect`, `--platform teams`,
+   `kortix channels email inboxes add`, Telegram on its page in the web app,
+   Computer with `npx --yes @kortix/agent-tunnel@latest connect` on that
+   machine or the desktop app);
 1. a one-click MCP server — the vendor's own server; the human only signs in;
 2. Composio — a third-party partner that runs the sign-in (one click), for an
    app with no one-click MCP server (Gmail, Outlook, …);
@@ -293,10 +296,6 @@ OpenAPI spec, then add it directly:
 kortix connectors add acme --provider mcp --url https://mcp.acme.com/mcp --transport http --apply
 kortix connectors add acme --provider openapi --spec https://acme.com/openapi.json --apply
 ```
-
-If `catalog` answers that the catalogue is off for this project, use Composio:
-`kortix connectors apps <query>`, then
-`kortix connectors add <slug> --provider composio --app <slug> --apply`.
 
 Pipedream exists only for rollback compatibility with already-declared
 connectors. Never add a new Pipedream connector automatically. If Composio
