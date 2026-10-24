@@ -79,7 +79,20 @@ export interface ProjectConfigSummary {
   commands: Array<{ name: string; path: string; description: string | null }>;
   /** Declared display groups from the manifest's top-level `domains:` map (v3).
    *  Data-only; paired with each agent's `domain` to group the dashboard. */
-  domains?: Array<{ name: string; label?: string; description?: string; order?: number }>;
+  domains?: Array<{
+    name: string;
+    label?: string;
+    description?: string;
+    order?: number;
+    /** The Space's configurable tabs (chat/artifact/app), in order. */
+    tabs?: Array<{
+      type: 'chat' | 'artifact' | 'app';
+      label?: string;
+      room?: string;
+      path?: string;
+      app?: string;
+    }>;
+  }>;
 }
 
 export interface RepoGrepMatch {

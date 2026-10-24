@@ -197,4 +197,22 @@ describe('kortix_version 3: domains (optional grouping)', () => {
     const yaml = swap('agents:', 'domains:\n  eng:\n    order: soon\nagents:');
     expect(errorPaths(yaml)).toContain('domains.eng.order');
   });
+
+  test('a space may declare configurable tabs (chat/artifact/app)', () => {
+    const yaml = swap(
+      'agents:',
+      'domains:\n  eng:\n    label: Engineering\n    tabs:\n      - type: chat\n        label: Standup\n        room: eng-standup\n      - type: artifact\n        path: docs/plan.md\n      - type: app\n        app: dashboard\nagents:',
+    );
+    expect(check(yaml).errors).toEqual([]);
+  });
+
+  test('an invalid tab type is an error', () => {
+    const yaml = swap('agents:', 'domains:\n  eng:\n    tabs:\n      - type: video\nagents:');
+    expect(errorPaths(yaml)).toContain('domains.eng.tabs[0].type');
+  });
+
+  test('an unknown tab key is an error', () => {
+    const yaml = swap('agents:', 'domains:\n  eng:\n    tabs:\n      - type: chat\n        color: red\nagents:');
+    expect(errorPaths(yaml)).toContain('domains.eng.tabs[0].color');
+  });
 });

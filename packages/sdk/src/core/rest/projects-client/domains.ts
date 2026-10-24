@@ -11,7 +11,21 @@
 /** The group an entity falls into when it declares no `domain`. */
 export const DEFAULT_PROJECT_DOMAIN = 'general';
 
-/** A declared domain from the manifest's top-level `domains:` map. */
+/** One tab of a Space (a configurable channel): a chat room (shared durable
+ *  session), an artifact (a Files/Drive path), or an app (a Kortix App slug).
+ *  Display/config only; the running instance is resolved at render. */
+export interface SpaceTab {
+  type: 'chat' | 'artifact' | 'app';
+  label?: string;
+  /** chat: a stable room/channel key → a shared durable session. */
+  room?: string;
+  /** artifact: a Files/Drive path (doc or html page). */
+  path?: string;
+  /** app: a Kortix App slug. */
+  app?: string;
+}
+
+/** A declared domain (Space) from the manifest's top-level `domains:` map. */
 export interface ProjectDomain {
   /** The domain slug (the key in `domains:`), matched against each entity's `domain`. */
   name: string;
@@ -20,6 +34,8 @@ export interface ProjectDomain {
   description?: string;
   /** Sort position among declared domains; lower first. */
   order?: number;
+  /** The Space's configurable tabs (chat/artifact/app), in order. */
+  tabs?: SpaceTab[];
 }
 
 /** One rendered group: a domain and the entities in it, in declaration order. */

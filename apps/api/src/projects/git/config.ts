@@ -478,11 +478,26 @@ function domainsFromManifest(manifest: Record<string, unknown>): ProjectConfigSu
   return Object.entries(manifestMap(manifest.domains))
     .map(([name, meta]) => {
       const m = manifestMap(meta);
+      const tabs = Array.isArray(m.tabs)
+        ? m.tabs
+            .map((t) => manifestMap(t))
+            .filter((t): t is Record<string, unknown> & { type: 'chat' | 'artifact' | 'app' } =>
+              t.type === 'chat' || t.type === 'artifact' || t.type === 'app',
+            )
+            .map((t) => ({
+              type: t.type,
+              label: manifestText(t.label) ?? undefined,
+              room: manifestText(t.room) ?? undefined,
+              path: manifestText(t.path) ?? undefined,
+              app: manifestText(t.app) ?? undefined,
+            }))
+        : undefined;
       return {
         name,
         label: manifestText(m.label) ?? undefined,
         description: manifestText(m.description) ?? undefined,
         order: typeof m.order === 'number' ? m.order : undefined,
+        ...(tabs && tabs.length ? { tabs } : {}),
       };
     })
     .sort(
