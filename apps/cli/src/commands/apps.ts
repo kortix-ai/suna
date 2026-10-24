@@ -104,6 +104,10 @@ Subcommands:
     --groups <ids>                  Comma-separated group ids for restricted access.
     --always-on | --on-demand       Server Apps: run 24/7 (default), or stop when
                                     idle. Static Apps run no server.
+    --listed | --unlisted           A card on the Apps page, or Background Apps.
+                                    A new App is unlisted unless kortix.yaml sets
+                                    display.listed: true. Pass --listed for a
+                                    site or UI people open.
     --no-wait                       Return after the deployment is queued.
     --wait-seconds <seconds>        Default: 1200.
   set <id|slug>                     Change an existing App. Only the flags you
@@ -118,6 +122,9 @@ Subcommands:
     --disk-gb <gb>                  Alias: --disk.
     --idle-timeout <seconds>        120-86400.
     --always-on | --on-demand       Run 24/7, or stop when idle.
+    --listed | --unlisted           Show the App as a card on the Apps page, or
+                                    keep it in Background Apps (the default for
+                                    a new App; kortix.yaml display.listed).
     --uses <slugs>                  Replace the Apps this App uses. Comma-
                                     separated; --uses= clears the list.
   link <id|slug> --uses <slugs>     Add Apps this App uses. Code in the App then
@@ -381,7 +388,7 @@ function runModeRows(app: App): string {
 function displaySummary(app: App): string | null {
   const display = app.display ?? {};
   const parts = [
-    display.parent ? `tab in ${display.parent}` : display.listed === false ? 'not in the Apps grid' : null,
+    display.parent ? `tab in ${display.parent}` : display.listed !== true ? 'not on the Apps page (kortix apps set <app> --listed)' : null,
     display.preview === 'none' ? 'icon card' : null,
   ].filter(Boolean);
   return parts.length ? parts.join(' · ') : null;
@@ -441,6 +448,9 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
   const idle = positiveInteger(takeFlagValue(rest, ['--idle-timeout']), '--idle-timeout');
   const uses = usesList(takeFlagValue(rest, ['--uses']));
   const externalUrl = takeFlagValue(rest, ['--url']);
+  const listed = takeFlagBool(rest, ['--listed']);
+  const unlisted = takeFlagBool(rest, ['--unlisted']);
+  if (listed && unlisted) return fail('Pass --listed or --unlisted, not both');
   Object.assign(input, runMode(rest));
   const target = rest.find((value) => !value.startsWith('-'));
   if (!target) return fail('set needs an App id or slug');
@@ -451,15 +461,17 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
   if (idle !== undefined) input.idle_timeout_seconds = idle;
   if (uses !== undefined) input.uses = uses;
   if (externalUrl !== undefined) input.external_url = externalUrl;
-  if (Object.keys(input).length === 0) {
+  if (Object.keys(input).length === 0 && !listed && !unlisted) {
     return fail(
-      'set needs at least one of --name, --url, --cpu, --memory-gb, --disk-gb, --idle-timeout, --always-on, --on-demand, --uses',
+      'set needs at least one of --name, --url, --cpu, --memory-gb, --disk-gb, --idle-timeout, --always-on, --on-demand, --uses, --listed, --unlisted',
     );
   }
   const ctx = await context(options);
   if (!ctx) return 1;
   const app = await scoped(ctx, async () => {
     const found = await resolveApp(ctx.apps, target);
+    // A PATCH replaces `display` whole: merge the switch into what the App has.
+    if (listed || unlisted) input.display = { ...(found.display ?? {}), listed: listed };
     return ctx.apps.update(found.app_id, input);
   });
   printWarnings(app);
@@ -638,10 +650,15 @@ async function deployOne(
       app = await ctx.apps.get(app.app_id);
     }
 
-    // kortix.yaml owns labels (when listed) and display (absent = the defaults).
+    // kortix.yaml owns labels and display when it declares them. An absent
+    // `display` keeps the App's own (`kortix apps set --listed`); `display: {}`
+    // resets it. `--listed` / `--unlisted` beat both.
+    const display = flags.listed === undefined
+      ? manifestBlock?.display
+      : { ...(manifestBlock?.display ?? app.display ?? {}), listed: flags.listed };
     const sync = {
       ...(manifestBlock?.labels && JSON.stringify(manifestBlock.labels) !== JSON.stringify(app.labels ?? []) ? { labels: manifestBlock.labels } : {}),
-      ...(manifestBlock && JSON.stringify(manifestBlock.display ?? {}) !== JSON.stringify(app.display ?? {}) ? { display: manifestBlock.display ?? {} } : {}),
+      ...(display !== undefined && JSON.stringify(display) !== JSON.stringify(app.display ?? {}) ? { display } : {}),
     };
     if (Object.keys(sync).length > 0) app = await ctx.apps.update(app.app_id, sync);
     const releaseConfig = appReleaseInputFromBlock(manifestBlock);

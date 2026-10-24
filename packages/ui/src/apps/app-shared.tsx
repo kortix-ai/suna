@@ -124,13 +124,24 @@ export function appStatus(
  * control shows only for the Apps that support it.
  */
 /**
- * The Apps the grid shows as cards (`display`): not `listed: false`, and not a
- * tab of a parent that exists. A tab whose parent is gone stays reachable as a card.
+ * The Apps the grid shows as cards (`display`): registered with `listed: true`,
+ * and not a tab of a parent that exists. A tab whose parent is gone stays
+ * reachable as a card. Background Apps (a poller, a bot, a backend) stay out
+ * of the grid unless their author registers them.
  */
 export function gridApps(apps: App[], canAdmin = true): App[] {
   const slugs = new Set(apps.map((app) => app.slug));
   return apps.filter((app) =>
-    app.display?.listed !== false
+    app.display?.listed === true
+    && !(app.display?.parent && slugs.has(app.display.parent))
+    && (canAdmin || !appAdminsOnly(app)));
+}
+
+/** The Apps of the project that are neither a card nor a tab: the ones the page counts as hidden. */
+export function hiddenApps(apps: App[], canAdmin = true): App[] {
+  const slugs = new Set(apps.map((app) => app.slug));
+  return apps.filter((app) =>
+    app.display?.listed !== true
     && !(app.display?.parent && slugs.has(app.display.parent))
     && (canAdmin || !appAdminsOnly(app)));
 }

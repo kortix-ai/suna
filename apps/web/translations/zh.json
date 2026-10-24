@@ -20361,7 +20361,10 @@
       "text705a7e325b66": "Kortix 应用发出了事件",
       "text4b80152fb96b": "读取了 Kortix 应用的事件凭据",
       "text59374c1f1acd": "Kortix 应用安排了一次运行",
-      "text32f35e849409": "Kortix 应用取消了一次运行"
+      "text32f35e849409": "Kortix 应用取消了一次运行",
+      "text7efecc6972f0": "后台应用",
+      "textac20a57bfde0": "隐藏",
+      "text64dd874fc6cc": "这些应用在没有卡片的情况下运行。在 kortix.yaml 中设置 display.listed: true 即可在上方显示。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

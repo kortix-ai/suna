@@ -20361,7 +20361,10 @@
       "text705a7e325b66": "L’app Kortix a émis des événements",
       "text4b80152fb96b": "Identifiants d’événements de l’app Kortix lus",
       "text59374c1f1acd": "L’app Kortix a planifié une exécution",
-      "text32f35e849409": "L’app Kortix a annulé une exécution"
+      "text32f35e849409": "L’app Kortix a annulé une exécution",
+      "text7efecc6972f0": "Apps en arrière-plan",
+      "textac20a57bfde0": "Masquer",
+      "text64dd874fc6cc": "Elles tournent sans carte. Définissez display.listed: true dans kortix.yaml pour en afficher une ci-dessus."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

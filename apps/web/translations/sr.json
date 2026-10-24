@@ -20361,7 +20361,10 @@
       "text705a7e325b66": "Kortix апликација је послала догађаје",
       "text4b80152fb96b": "Прочитани акредитиви за догађаје Kortix апликације",
       "text59374c1f1acd": "Kortix апликација је заказала покретање",
-      "text32f35e849409": "Kortix апликација је отказала покретање"
+      "text32f35e849409": "Kortix апликација је отказала покретање",
+      "text7efecc6972f0": "Pozadinske aplikacije",
+      "textac20a57bfde0": "Sakrij",
+      "text64dd874fc6cc": "Ove rade bez kartice. Postavi display.listed: true u kortix.yaml da bi se jedna prikazala gore."
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

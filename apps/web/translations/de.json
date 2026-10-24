@@ -20361,7 +20361,10 @@
       "text705a7e325b66": "Kortix-App hat Ereignisse gesendet",
       "text4b80152fb96b": "Ereignis-Zugangsdaten der Kortix-App gelesen",
       "text59374c1f1acd": "Kortix-App hat einen Lauf geplant",
-      "text32f35e849409": "Kortix-App hat einen Lauf abgebrochen"
+      "text32f35e849409": "Kortix-App hat einen Lauf abgebrochen",
+      "text7efecc6972f0": "Hintergrund-Apps",
+      "textac20a57bfde0": "Ausblenden",
+      "text64dd874fc6cc": "Diese laufen ohne Karte. Setze display.listed: true in kortix.yaml, um eine oben anzuzeigen."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

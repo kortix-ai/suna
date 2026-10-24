@@ -35,6 +35,7 @@ export {
   childApps,
   deployNotice,
   gridApps,
+  hiddenApps,
   localizedAppCopy,
 } from './app-shared';
 export { isKortixAppUrl } from './kortix-app-url';

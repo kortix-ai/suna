@@ -20361,7 +20361,10 @@
       "text705a7e325b66": "L’app Kortix ha emesso eventi",
       "text4b80152fb96b": "Lette le credenziali degli eventi dell’app Kortix",
       "text59374c1f1acd": "L’app Kortix ha pianificato un’esecuzione",
-      "text32f35e849409": "L’app Kortix ha annullato un’esecuzione"
+      "text32f35e849409": "L’app Kortix ha annullato un’esecuzione",
+      "text7efecc6972f0": "App in background",
+      "textac20a57bfde0": "Nascondi",
+      "text64dd874fc6cc": "Girano senza scheda. Imposta display.listed: true in kortix.yaml per mostrarne una qui sopra."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

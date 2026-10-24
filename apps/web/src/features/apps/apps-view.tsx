@@ -27,7 +27,9 @@ import {
   appStatus,
   cardPreviewApp,
   gridApps,
+  hiddenApps,
 } from '@kortix/ui/apps';
+import { CountBadge } from '@kortix/ui/count-badge';
 import { APP_GRID_CONTAINER, APP_GRID_COLUMN_OPTIONS, AppGridColumnsControl, useAppGridColumns, type AppGridColumns } from './app-density';
 import { AppDetailModal } from './app-detail';
 import { AddExternalAppDialog } from './app-add-external';
@@ -106,6 +108,8 @@ export function AppsView({ projectId }: { projectId: string }) {
   const [openAppId, setOpenAppId] = useState<string | null>(() => searchParams.get('app'));
   const [gridColumns, setGridColumns] = useAppGridColumns();
   const [adding, setAdding] = useState(false);
+  const [showBackground, setShowBackground] = useState(false);
+  const background = apps.data ? hiddenApps(apps.data, canAdmin) : [];
   const openApp = apps.data?.find((item) => item.app_id === openAppId) ?? null;
   // Mirror the open App into `?app=` so a reload or a copied link reopens it.
   // Debounced so a fast open/close writes one history entry, not two.
@@ -202,9 +206,40 @@ export function AppsView({ projectId }: { projectId: string }) {
                 />
               ))}
             </ul>
-          ) : (
+          ) : background.length ? null : (
             <AppsEmptyState />
           )}
+          {background.length ? (
+            /* Apps with no card (a poller, a bot, a backend): one line that
+               says how many, and the same grid on demand. */
+            <section className="mt-10 space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-foreground flex items-center gap-1.5 text-sm font-medium">
+                  {tI18nComplete.raw('text7efecc6972f0')}
+                  <CountBadge count={background.length} />
+                </span>
+                <Button size="sm" variant="ghost" aria-expanded={showBackground} onClick={() => setShowBackground((open) => !open)}>
+                  {tI18nComplete.raw(showBackground ? 'textac20a57bfde0' : 'text0df6f1cad36c')}
+                </Button>
+              </div>
+              {showBackground ? (
+                <>
+                  <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text64dd874fc6cc')}</p>
+                  <ul className={cn('grid gap-6', APP_GRID_COLUMN_OPTIONS[gridColumns].grid)}>
+                    {background.map((app) => (
+                      <AppCard
+                        key={app.app_id}
+                        projectId={projectId}
+                        app={app}
+                        shown={cardPreviewApp(apps.data!, app, canAdmin)}
+                        onOpen={() => setOpenAppId(app.app_id)}
+                      />
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+            </section>
+          ) : null}
         </div>
       </div>
 

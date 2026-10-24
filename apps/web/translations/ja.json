@@ -20361,7 +20361,10 @@
       "text705a7e325b66": "Kortix アプリがイベントを送信しました",
       "text4b80152fb96b": "Kortix アプリのイベント認証情報を読み取りました",
       "text59374c1f1acd": "Kortix アプリが実行を予約しました",
-      "text32f35e849409": "Kortix アプリが実行を取り消しました"
+      "text32f35e849409": "Kortix アプリが実行を取り消しました",
+      "text7efecc6972f0": "バックグラウンドのアプリ",
+      "textac20a57bfde0": "非表示",
+      "text64dd874fc6cc": "これらはカードなしで動作します。上に表示するには kortix.yaml で display.listed: true を設定します。"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

@@ -20361,7 +20361,10 @@
       "text705a7e325b66": "La app de Kortix emitió eventos",
       "text4b80152fb96b": "Se leyeron las credenciales de eventos de la app de Kortix",
       "text59374c1f1acd": "La app de Kortix programó una ejecución",
-      "text32f35e849409": "La app de Kortix canceló una ejecución"
+      "text32f35e849409": "La app de Kortix canceló una ejecución",
+      "text7efecc6972f0": "Apps en segundo plano",
+      "textac20a57bfde0": "Ocultar",
+      "text64dd874fc6cc": "Se ejecutan sin tarjeta. Define display.listed: true en kortix.yaml para mostrar una arriba."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

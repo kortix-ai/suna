@@ -145,7 +145,7 @@ describe('trigger edits keep every YAML comment (KRTX-2742)', () => {
     });
 
     expect(commentLines(after)).toEqual(commentLines(FIXTURE));
-    const data = parseYaml(after) as { triggers: Array<{ slug: string; enabled?: boolean; on?: unknown; run?: unknown }> };
+    const data = parseYaml(after) as { triggers: Array<Record<string, unknown> & { slug: string }> };
     expect(data.triggers.map((t) => t.slug)).toEqual(['nightly-audit', 'support-triage', 'release-notes']);
     // A new trigger is written in the on/run shape; enabled (the default) stays out of the file.
     expect(data.triggers[2]).toEqual({

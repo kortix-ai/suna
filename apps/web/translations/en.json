@@ -20372,7 +20372,10 @@
       "text705a7e325b66": "Kortix App emitted events",
       "text4b80152fb96b": "Read Kortix App event credentials",
       "text59374c1f1acd": "Kortix App scheduled a run",
-      "text32f35e849409": "Kortix App cancelled a run"
+      "text32f35e849409": "Kortix App cancelled a run",
+      "text7efecc6972f0": "Background Apps",
+      "textac20a57bfde0": "Hide",
+      "text64dd874fc6cc": "These run without a card. Set display.listed: true in kortix.yaml to show one above."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
