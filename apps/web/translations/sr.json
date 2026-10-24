@@ -21064,7 +21064,7 @@
     "moveNoSignIn": "{app} nema prijavu jednim klikom na ovom okruženju.",
     "moveDone": "{name} sada radi na Kortixu.",
     "movesBannerTitle": "{count, plural, one {# konektor može da pređe} few {# konektora mogu da pređu} other {# konektora može da pređe}} na Kortix",
-    "movesBannerBody": "Kortix gasi Pipedream i Composio. Otvori svaki i izaberi „Premesti na Kortix“:",
+    "movesBannerBody": "Kortix gasi Pipedream. Otvori svaki i izaberi Premesti u Kortix:",
     "nameLabel": "Назив",
     "toolsEmptyBody": "{name} није пријавио ниједан алат. Појавиће се овде након повезивања.",
     "stripStatus": "Status",
@@ -21127,7 +21127,10 @@
     "toolsShowAll": "Prikaži svih {count}",
     "toolsAfterInstall": "Ova {kind} navodi svoje alate posle instalacije.",
     "typeFilterLabel": "Tip konektora",
-    "typeFilterAll": "Svi tipovi"
+    "typeFilterAll": "Svi tipovi",
+    "moveComposioTitle": "{app} ima sopstveni MCP server",
+    "moveComposioBody": "Ovaj konektor radi preko Composio. Možeš ga prebaciti na sopstveni MCP server aplikacije {app}: prijavi se jednom i prebacuje se. Agenti, okidači i kortix.yaml i dalje koriste {slug}.",
+    "moveComposioAction": "Prebaci na MCP"
   },
   "connectMcp": {
     "title": "Povežite Kortix preko MCP-a",

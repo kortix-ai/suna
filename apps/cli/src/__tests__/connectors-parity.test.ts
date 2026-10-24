@@ -158,6 +158,9 @@ function startServer(): string {
       if (url.pathname === `${ex}/discover/connectors/tools` && req.method === 'GET') {
         return Response.json({ way: { id: url.searchParams.get('way'), kind: 'mcp', name: 'Stripe' }, tools: [{ name: 'list_customers', description: 'List customers' }], total: 1, source: 'directory' });
       }
+      if (url.pathname === `${ex}/discover/sections` && req.method === 'GET') {
+        return Response.json({ popular: [], sections: [], categories: [{ key: 'finance', label: 'Finance', count: 71 }, { key: 'crm', label: 'CRM', count: 40 }] });
+      }
       if (url.pathname === `${ex}/discover/install` && req.method === 'POST') {
         return Response.json({ ok: true, slug: 'billing', name: 'Billing', provider: 'composio', way: { id: 'composio:stripe', kind: 'composio', name: 'Stripe', oneClick: true }, next: 'connect' });
       }
@@ -645,6 +648,25 @@ describe('kortix connectors — capability-page parity', () => {
     const r = await runCli(['connectors', 'catalog', 'pay', '--kind', 'mcp,composio', '--one-click', '--category', 'finance', '--limit', '10', '--project', PROJECT], config);
     expect(r.code).toBe(0);
     expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors?q=pay&category=finance&limit=10&kind=mcp%2Ccomposio&oneClick=1`);
+  });
+
+  test('catalog categories lists the keys --category takes, with the same filters', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'catalog', 'categories', '--kind', 'composio', '--one-click', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/sections?perCategory=1&maxCategories=40&kind=composio&oneClick=1`);
+    expect(r.stdout).toContain('finance');
+    expect(r.stdout).toContain('71');
+    const j = await runCli(['connectors', 'catalog', 'categories', '--json', '--project', PROJECT], config);
+    expect(JSON.parse(j.stdout)).toEqual([{ key: 'finance', label: 'Finance', count: 71 }, { key: 'crm', label: 'CRM', count: 40 }]);
+  });
+
+  test('catalog tools --json prints one way\'s tools', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'catalog', 'tools', 'stripe', '--way', 'composio:stripe', '--json', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors/tools?id=stripe&way=composio%3Astripe`);
+    expect(JSON.parse(r.stdout).tools[0].name).toBe('list_customers');
   });
 
   test('catalog install posts the id, way, name and slug and names the profile', async () => {

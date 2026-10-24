@@ -268,9 +268,14 @@ function registerDiscoverToolsAndInstallRoutes(app: OpenAPIHono, deps: Connector
       }
       const { draft, way } = built;
       try {
+        // Best effort, as on the web: a server that cannot be probed now still
+        // installs, and its sign-in or credential is set on the profile later.
         if (way.kind !== 'composio' && !draft.auth && deps.discoverConnectorAuth) {
-          const discovery = await deps.discoverConnectorAuth(projectId, draft);
-          if (discovery.recommended) draft.auth = discovery.recommended;
+          const discovery = await deps.discoverConnectorAuth(projectId, draft).catch((err: unknown) => {
+            if (allowedSourceValidationResponse(c, err)) throw err;
+            return null;
+          });
+          if (discovery?.recommended) draft.auth = discovery.recommended;
         }
         let result = await deps.createConnector(projectId, admin.accountId, draft, admin.userId);
         // A default slug the project already uses: one more try with a suffix.

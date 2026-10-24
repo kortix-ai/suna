@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 912,
+  "count": 914,
   "routes": [
     {
       "method": "GET",
@@ -1381,6 +1381,14 @@
     {
       "method": "GET",
       "path": "/v1/connectors/projects/:projectId/discover/connectors/detail"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/discover/connectors/tools"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/connectors/projects/:projectId/discover/install"
     },
     {
       "method": "GET",

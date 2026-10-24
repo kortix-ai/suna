@@ -31,10 +31,13 @@ export function useConnectorMove(projectId: string, connector: AdminConnector) {
 }
 
 /**
- * A Pipedream or Composio connector in a `connectors_v2` project: Kortix retires
- * both. With a Kortix app for it, the row moves the connector there: the person
- * signs in once, and the connector switches when the sign-in completes (it keeps
- * its slug). Without one, it says the connector stays on its provider.
+ * A Pipedream connector in a `connectors_v2` project: Kortix retires Pipedream.
+ * With a Kortix app for it, the row moves the connector there: the person signs
+ * in once, and the connector switches when the sign-in completes (it keeps its
+ * slug). Without one, it says the connector stays on Pipedream.
+ *
+ * A Composio connector is a supported way to connect. Its row appears only when
+ * the app also has its own MCP server, and offers the switch as an option.
  */
 export function ConnectorMoveRow({
   projectId,
@@ -73,8 +76,11 @@ export function ConnectorMoveRow({
     onError: (error: Error) => errorToast(error.message),
   });
   if (!move) return null;
+  const composio = move.provider === 'composio';
+  // A Composio connector with no MCP server of its own: nothing to offer.
+  if (composio && !move.to) return null;
 
-  const provider = move.provider === 'composio' ? 'Composio' : 'Pipedream';
+  const provider = composio ? 'Composio' : 'Pipedream';
   // The other accounts hold logins of the old provider, which no Kortix app accepts.
   const others = Math.max(0, move.accounts - 1);
   const start = () => (others > 0 ? setConfirming(true) : run.mutate());
@@ -82,22 +88,32 @@ export function ConnectorMoveRow({
     <>
       <ConnectorNoticeRow
         title={
-          move.to
-            ? t('moveTitle', { app: move.to.name, provider })
-            : t('moveNoneTitle', { name: displayName, provider })
+          composio && move.to
+            ? t('moveComposioTitle', { app: move.to.name })
+            : move.to
+              ? t('moveTitle', { app: move.to.name, provider })
+              : t('moveNoneTitle', { name: displayName, provider })
         }
         detail={
           <p className="text-muted-foreground text-xs text-pretty">
-            {move.to
-              ? t('moveBody', { app: move.to.name, slug: connector.slug, provider })
-              : t('moveNoneBody', { name: displayName, provider })}
+            {composio && move.to
+              ? t('moveComposioBody', { app: move.to.name, slug: connector.slug })
+              : move.to
+                ? t('moveBody', { app: move.to.name, slug: connector.slug, provider })
+                : t('moveNoneBody', { name: displayName, provider })}
           </p>
         }
       >
         {move.to && canWrite ? (
-          <Button size="sm" className="gap-1.5" onClick={start} disabled={run.isPending}>
+          <Button
+            size="sm"
+            variant={composio ? 'secondary' : 'default'}
+            className="gap-1.5"
+            onClick={start}
+            disabled={run.isPending}
+          >
             {run.isPending ? <Loading className="size-4 shrink-0" /> : null}
-            {move.signed_in ? t('moveFinishAction') : t('moveAction')}
+            {move.signed_in ? t('moveFinishAction') : composio ? t('moveComposioAction') : t('moveAction')}
           </Button>
         ) : null}
       </ConnectorNoticeRow>

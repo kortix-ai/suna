@@ -296,7 +296,7 @@ Subcommands:
        [--pipedream] [--json]        accepts. Alias: toolkits. Use --pipedream
                                      for the legacy Pipedream catalog.
   catalog [<query>] [--kind <k,k>]  Browse the app catalogue: every MCP server,
-          [--one-click]             REST (OpenAPI) and GraphQL API, CLI and
+          [--one-click]             REST (OpenAPI) and GraphQL API and
           [--category <c>]          Composio app, one row per app by its best
           [--limit <n>] [--cursor]  way in. --kind mcp,composio,openapi,graphql
           [--json]                  filters by how it connects; --one-click keeps
@@ -305,6 +305,8 @@ Subcommands:
   catalog show <id> [--way <id>]    Every way to connect the app (recommended
           [--json]                  first) and the tools of one way.
   catalog tools <id> [--way <id>]   Every tool one way to connect offers.
+  catalog categories [--kind <k>]   The category keys --category accepts, with
+          [--one-click] [--json]    how many apps each holds.
   catalog install <id>              Install the app as a connector profile:
           [--way <id>] [--name <n>] the recommended way unless --way. Its
           [--slug <s>] [--json]     accounts, access and tool rules live on it.
@@ -1450,6 +1452,31 @@ export async function runConnectors(argv: string[]): Promise<number> {
             `  ${C.dim}Install: kortix connectors catalog install ${detail.item.id} [--way <id>] [--name <name>]${C.reset}\n\n`,
           );
           if (tools) printTools(id, tools, 25);
+          return 0;
+        }
+
+        if (action === 'categories') {
+          const qs = [
+            'perCategory=1',
+            'maxCategories=40',
+            f.kind ? `kind=${encodeURIComponent(f.kind)}` : '',
+            f.oneClick === 'true' ? 'oneClick=1' : '',
+          ]
+            .filter(Boolean)
+            .join('&');
+          const page = await ctx.client.get<{ categories: { key: string; label: string; count: number }[] }>(
+            `${ex}/discover/sections?${qs}`,
+          );
+          if (json) {
+            emitJson(page.categories);
+            return 0;
+          }
+          const keyW = Math.max(...page.categories.map((c) => c.key.length), 3);
+          process.stdout.write('\n');
+          for (const c of page.categories) {
+            process.stdout.write(`  ${C.cyan}${pad(c.key, keyW)}${C.reset}  ${pad(String(c.count), 5)}  ${C.dim}${c.label}${C.reset}\n`);
+          }
+          process.stdout.write(`\n  ${C.dim}${page.categories.length} categories · kortix connectors catalog --category <key>${C.reset}\n\n`);
           return 0;
         }
 

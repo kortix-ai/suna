@@ -12,7 +12,8 @@ import { useTranslations } from '../../i18n';
 import { connectorHref } from './connector-routes';
 import { connectorMovesQueryKey } from './detail/connector-move-row';
 
-/** The Pipedream and Composio connectors a `connectors_v2` project can move to Kortix apps, each linked to its page. */
+/** The Pipedream connectors a `connectors_v2` project can move to Kortix apps, each linked to its page.
+ *  Composio is a supported way to connect, not a retired one: it never shows here. */
 export function ConnectorMovesBanner({ projectId }: { projectId: string }) {
   const t = useTranslations('connectorPages');
   const enabled = useFeatureFlag(projectId, 'connectors_v2').enabled;
@@ -21,7 +22,7 @@ export function ConnectorMovesBanner({ projectId }: { projectId: string }) {
     queryFn: () => listConnectorMoves(projectId),
     enabled,
   });
-  const movable = (moves.data ?? []).filter((move) => move.to);
+  const movable = (moves.data ?? []).filter((move) => move.to && move.provider === 'pipedream');
   if (!enabled || movable.length === 0) return null;
   return (
     <InfoBanner tone="info" title={t('movesBannerTitle', { count: movable.length })}>

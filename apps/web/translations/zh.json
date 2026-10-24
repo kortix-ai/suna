@@ -21064,7 +21064,7 @@
     "moveNoSignIn": "在此部署上，{app} 不支持一键登录。",
     "moveDone": "{name} 现在在 Kortix 上运行。",
     "movesBannerTitle": "{count, plural, other {# 个连接器可以迁移到 Kortix}}",
-    "movesBannerBody": "Kortix 即将停用 Pipedream 和 Composio。打开每个连接器并选择“迁移到 Kortix”：",
+    "movesBannerBody": "Kortix 正在停用 Pipedream。打开每一个并选择“迁移到 Kortix”：",
     "nameLabel": "名称",
     "toolsEmptyBody": "{name} 尚未报告任何工具。连接后会显示在这里。",
     "stripStatus": "状态",
@@ -21127,7 +21127,10 @@
     "toolsShowAll": "显示全部 {count} 个",
     "toolsAfterInstall": "此 {kind} 在安装后列出其工具。",
     "typeFilterLabel": "连接器类型",
-    "typeFilterAll": "所有类型"
+    "typeFilterAll": "所有类型",
+    "moveComposioTitle": "{app} 有自己的 MCP 服务器",
+    "moveComposioBody": "此连接器通过 Composio 运行。你可以将其切换到 {app} 自己的 MCP 服务器：登录一次即可切换。智能体、触发器和 kortix.yaml 继续使用 {slug}。",
+    "moveComposioAction": "切换到 MCP"
   },
   "connectMcp": {
     "title": "通过 MCP 连接 Kortix",

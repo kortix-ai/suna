@@ -5576,3 +5576,91 @@ flow(
     });
   },
 );
+
+// CONN-39 — the Connectors v2 app catalogue is fully programmatic: filters,
+// every way to connect one app (best first), one way's tools before install,
+// and install as a named connector profile. Kortix's own MCP apps and the tool
+// snapshot are in-process, so this runs with no network on the local profile.
+flow(
+  'CONN-39',
+  {
+    domain: 'connectors',
+    routes: [
+      'GET /v1/connectors/projects/:projectId/discover/connectors',
+      'GET /v1/connectors/projects/:projectId/discover/connectors/detail',
+      'GET /v1/connectors/projects/:projectId/discover/connectors/tools',
+      'POST /v1/connectors/projects/:projectId/discover/install',
+      'GET /v1/connectors/projects/:projectId/connectors',
+    ],
+  },
+  async (ctx) => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const on = await ctx.fixtures.project({ managedGit: true, metadata: { experimental: { connectors_v2: true } } });
+    const off = await ctx.fixtures.project();
+    const params = { projectId: on.id };
+
+    await ctx.step('the list filters by type and one-click: Linear is a one-click MCP app', async () => {
+      const r = await owner.get('/v1/connectors/projects/:projectId/discover/connectors', { params, query: { q: 'linear', kind: 'mcp', oneClick: '1' } });
+      r.status(200);
+      const first = r.json<{ items: Array<{ id: string; kind: string; oneClick?: boolean }> }>().items[0];
+      if (first?.id !== 'kortix:linear' || first.kind !== 'mcp' || first.oneClick !== true) throw new Error(`first item: ${JSON.stringify(first)}`);
+    });
+
+    await ctx.step('an unknown or retired type, or a bad one-click value, is 400', async () => {
+      for (const query of [{ kind: 'cli' }, { kind: 'soap' }, { kind: 'mcp,' }, { oneClick: 'yes' }]) {
+        (await owner.get('/v1/connectors/projects/:projectId/discover/connectors', { params, query })).status(400);
+      }
+    });
+
+    await ctx.step('detail lists the ways to connect, best first: Linear\'s own MCP server is recommended and one click', async () => {
+      const r = await owner.get('/v1/connectors/projects/:projectId/discover/connectors/detail', { params, query: { id: 'kortix:linear' } });
+      r.status(200);
+      const ways = r.json<{ variants: Array<{ id: string; kind: string; oneClick?: boolean; recommended?: boolean; connector: { url?: string } | null }> }>().variants;
+      const first = ways[0];
+      if (first?.id !== 'kortix:linear:mcp' || first.recommended !== true || first.oneClick !== true || first.connector?.url !== 'https://mcp.linear.app/mcp') {
+        throw new Error(`ways: ${JSON.stringify(ways)}`);
+      }
+      if (ways.slice(1).some((way) => way.recommended)) throw new Error('only the first way is recommended');
+    });
+
+    await ctx.step('tools list what the recommended way can do before install; an unknown way is 404', async () => {
+      const r = await owner.get('/v1/connectors/projects/:projectId/discover/connectors/tools', { params, query: { id: 'kortix:linear' } });
+      r.status(200).body().has('$.way.id', 'kortix:linear:mcp').has('$.source', 'directory');
+      const body = r.json<{ total: number; tools: Array<{ name: string }> }>();
+      if (body.total < 10 || !body.tools.some((tool) => tool.name === 'list_issues')) throw new Error(`tools: ${JSON.stringify(body).slice(0, 300)}`);
+      (await owner.get('/v1/connectors/projects/:projectId/discover/connectors/tools', { params, query: { id: 'kortix:linear', way: 'nope' } })).status(404);
+      (await owner.get('/v1/connectors/projects/:projectId/discover/connectors/tools', { params, query: { id: 'kortix:missing' } })).status(404);
+    });
+
+    let slug = '';
+    await ctx.step('install adds the recommended way as a profile named as asked; the list reads it back', async () => {
+      const r = await owner.post('/v1/connectors/projects/:projectId/discover/install', { id: 'kortix:linear', name: 'Issue tracker' }, { params, timeoutMs: 60_000 });
+      r.status(200).body().has('$.slug', 'issue-tracker').has('$.name', 'Issue tracker').has('$.provider', 'mcp').has('$.way.id', 'kortix:linear:mcp').has('$.next', 'connect');
+      slug = r.json<{ slug: string }>().slug;
+      const list = await owner.get('/v1/connectors/projects/:projectId/connectors', { params });
+      list.status(200);
+      const row = list.json<{ connectors: Array<{ slug: string; name: string | null; provider: string }> }>().connectors.find((c) => c.slug === slug);
+      if (row?.provider !== 'mcp' || row.name !== 'Issue tracker') throw new Error(`read back: ${JSON.stringify(row)}`);
+    });
+
+    await ctx.step('the same name again gets a free slug, never the existing profile', async () => {
+      const r = await owner.post('/v1/connectors/projects/:projectId/discover/install', { id: 'kortix:linear', name: 'Issue tracker' }, { params, timeoutMs: 60_000 });
+      r.status(200);
+      const again = r.json<{ slug: string }>().slug;
+      if (again === slug || !again.startsWith('issue-tracker-')) throw new Error(`second slug: ${again}`);
+    });
+
+    await ctx.step('install refuses a body without an id (400), an unknown app (404) and a way the app lacks (400)', async () => {
+      (await owner.post('/v1/connectors/projects/:projectId/discover/install', {}, { params })).status(400);
+      (await owner.post('/v1/connectors/projects/:projectId/discover/install', { id: 'kortix:missing' }, { params })).status(404);
+      (await owner.post('/v1/connectors/projects/:projectId/discover/install', { id: 'kortix:linear', way: 'nope' }, { params })).status(400).body().matches('$.error', /not a way to connect/);
+    });
+
+    await ctx.step('a non-member is refused, and a project without connectors_v2 or the API catalogue is 403', async () => {
+      (await ctx.client.as(ctx.P.NONMEMBER).post('/v1/connectors/projects/:projectId/discover/install', { id: 'kortix:linear' }, { params })).status(403);
+      (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/connectors/projects/:projectId/discover/connectors/tools', { params, query: { id: 'kortix:linear' } })).status(403);
+      (await owner.get('/v1/connectors/projects/:projectId/discover/connectors/tools', { params: { projectId: off.id }, query: { id: 'kortix:linear' } })).status(403);
+      (await owner.post('/v1/connectors/projects/:projectId/discover/install', { id: 'kortix:linear' }, { params: { projectId: off.id } })).status(403);
+    });
+  },
+);

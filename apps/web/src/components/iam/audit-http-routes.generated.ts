@@ -347,6 +347,8 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|connectors|projects|:projectId|connectors|sync",
   "GET|v1|connectors|projects|:projectId|discover|connectors",
   "GET|v1|connectors|projects|:projectId|discover|connectors|detail",
+  "GET|v1|connectors|projects|:projectId|discover|connectors|tools",
+  "POST|v1|connectors|projects|:projectId|discover|install",
   "GET|v1|connectors|projects|:projectId|discover|sections",
   "GET|v1|connectors|projects|:projectId|pipedream|apps",
   "GET|v1|connectors|projects|:projectId|pipedream|sections",

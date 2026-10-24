@@ -61,7 +61,9 @@ export function bindProjectOperations(
         finalize: (...a: DropFirst<Parameters<typeof P.pipedreamFinalize>>) =>
           P.pipedreamFinalize(projectId, ...a),
       },
-      /** Direct connector catalogue and normalized domain surfaces. */
+      /** The app catalogue: every MCP server, API and Composio app (Connectors
+       *  v2), filtered by `q`, `category`, `kinds` and `oneClick`; each app's
+       *  ways to connect (`detail`), one way's tools, and install. */
       discover: {
         list: (...a: DropFirst<Parameters<typeof P.listDiscoverConnectors>>) =>
           P.listDiscoverConnectors(projectId, ...a),
@@ -71,6 +73,12 @@ export function bindProjectOperations(
           P.listDiscoverSections(projectId, ...a),
         detail: (...a: DropFirst<Parameters<typeof P.getDiscoverConnector>>) =>
           P.getDiscoverConnector(projectId, ...a),
+        /** The tools one way to connect offers, before install. */
+        tools: (...a: DropFirst<Parameters<typeof P.getDiscoverConnectorTools>>) =>
+          P.getDiscoverConnectorTools(projectId, ...a),
+        /** Install a way to connect as a named connector profile. */
+        install: (...a: DropFirst<Parameters<typeof P.installDiscoverConnector>>) =>
+          P.installDiscoverConnector(projectId, ...a),
       },
     },
 

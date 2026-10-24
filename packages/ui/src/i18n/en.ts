@@ -6396,7 +6396,7 @@ const catalog = {
     "moveNoSignIn": "{app} has no one-click sign-in on this deployment.",
     "moveDone": "{name} now runs on Kortix.",
     "movesBannerTitle": "{count, plural, one {# connector can move} other {# connectors can move}} to Kortix",
-    "movesBannerBody": "Kortix is retiring Pipedream and Composio. Open each one and choose Move to Kortix:",
+    "movesBannerBody": "Kortix is retiring Pipedream. Open each one and choose Move to Kortix:",
     "nameLabel": "Name",
     "toolsEmptyBody": "{name} has not reported any tools. They appear here after it connects.",
     "stripStatus": "Status",
@@ -6459,7 +6459,10 @@ const catalog = {
     "toolsShowAll": "Show all {count}",
     "toolsAfterInstall": "This {kind} lists its tools after install.",
     "typeFilterLabel": "Connector type",
-    "typeFilterAll": "All types"
+    "typeFilterAll": "All types",
+    "moveComposioTitle": "{app} has its own MCP server",
+    "moveComposioBody": "This connector runs through Composio. You can switch it to {app}'s own MCP server: sign in once and it switches. Agents, triggers and kortix.yaml keep using {slug}.",
+    "moveComposioAction": "Switch to MCP"
   },
   "connectMcp": {
     "title": "Connect Kortix over MCP",

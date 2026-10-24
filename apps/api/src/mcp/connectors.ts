@@ -151,7 +151,7 @@ export const CONNECTOR_TOOLS = [
     name: 'search_connector_apps',
     title: 'Search connector apps',
     description:
-      'Search the catalogue of apps (Gmail, Slack, GitHub, Notion, Linear, …) a new connector can be added from. On a project with Connectors v2 the catalogue is every MCP server, REST (OpenAPI) and GraphQL API, CLI and Composio app, one entry per app by its best way in: `app` is its id, `via` how that entry connects (mcp, composio, openapi, graphql, cli) and `one_click` whether the human only signs in. Filter with `kind` and `one_click`. Pass `app` to add_connector; it installs the recommended way unless you pass `way`. The catalogue is large, not complete: when nothing matches, search the web for the vendor\'s MCP server or API and add it with `provider`. Without Connectors v2 it returns Composio apps by slug. Returns `cursor` when more exist: pass it back as `cursor`.',
+      'Search the catalogue of apps (Gmail, Slack, GitHub, Notion, Linear, …) a new connector can be added from. On a project with Connectors v2 the catalogue is every MCP server, REST (OpenAPI) and GraphQL API and Composio app, one entry per app by its best way in: `app` is its id, `via` how that entry connects (mcp, composio, openapi, graphql) and `one_click` whether the human only signs in. Filter with `kind`, `one_click` and `category`. get_connector_app lists every way to connect one app and what it can do. Pass `app` to add_connector; it installs the recommended way unless you pass `way`. The catalogue is large, not complete: when nothing matches, search the web for the vendor\'s MCP server or API and add it with `provider`. Without Connectors v2 it returns Composio apps by slug. Returns `cursor` when more exist: pass it back as `cursor`.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -161,8 +161,27 @@ export const CONNECTOR_TOOLS = [
         cursor: { type: 'string', description: 'The `cursor` of the previous page.' },
         kind: { type: 'string', description: 'Connectors v2: only apps that connect these ways, comma separated: mcp, composio, openapi, graphql.' },
         one_click: { type: 'boolean', description: 'Connectors v2: only apps the human connects by signing in (a public or self-registering MCP server, or Composio). Default false: every app.' },
+        category: { type: 'string', description: 'Connectors v2: a catalogue section key, e.g. "productivity", "crm", "finance".' },
       },
       required: ['project_id', 'query'],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, openWorldHint: true },
+  },
+  {
+    name: 'get_connector_app',
+    title: 'Get a connector app',
+    description:
+      'Connectors v2: every way to connect one catalogue app, best first: `ways[]` with `way` (its id), `via` (mcp, composio, openapi, graphql, postman, http), `one_click`, `recommended` and `installable`; and `tools` — what one way can do before install (the recommended way unless `way`): up to `limit` tools with descriptions, `total`, and `source` (mcp: the server itself; directory: tool names from a public MCP directory; composio; spec: OpenAPI operations; none: listed after install). Composio is a third-party partner that runs the sign-in for the human (one click). Pass `app` and the chosen `way` to add_connector.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_id: PROJECT_ID,
+        app: { type: 'string', description: 'The `app` from search_connector_apps, e.g. "kortix:stripe" or "composio:gmail".' },
+        way: { type: 'string', description: 'One of `ways[].way`: whose tools to list. Default: the recommended way.' },
+        limit: { type: 'number', description: 'Maximum tools (default 50, max 500).' },
+      },
+      required: ['project_id', 'app'],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: true, openWorldHint: true },
@@ -536,7 +555,7 @@ export async function runConnectorTool(name: string, input: Record<string, unkno
       const limit = Math.min(Math.max(Math.trunc(Number(input.limit)) || 20, 1), 100);
       if (await mcpAppsCatalogue(h, pid)) {
         const oneClick = input.one_click === true ? '1' : undefined;
-        const r = await h.call('GET', `${base}/discover/connectors`, { query: { q: h.arg(input, 'query'), limit, cursor: h.optionalArg(input, 'cursor'), oneClick, kind: h.optionalArg(input, 'kind') } });
+        const r = await h.call('GET', `${base}/discover/connectors`, { query: { q: h.arg(input, 'query'), limit, cursor: h.optionalArg(input, 'cursor'), oneClick, kind: h.optionalArg(input, 'kind'), category: h.optionalArg(input, 'category') } });
         if (r.status >= 400) return h.apiResult(r);
         const page = parse(r.body) ?? {};
         const apps = ((page.items ?? []) as any[]).map((a) => ({
@@ -575,6 +594,48 @@ export async function runConnectorTool(name: string, input: Record<string, unkno
       return h.text(
         JSON.stringify(
           { apps, cursor: page.cursor ?? null, next: apps.length ? 'add_connector with app=<slug> adds one to the project.' : 'No app matches: try another word.' },
+          null,
+          2,
+        ),
+      );
+    }
+    case 'get_connector_app': {
+      const app = h.arg(input, 'app');
+      const id = /[:/]/.test(app) ? app : `kortix:${app}`;
+      const limit = Math.min(Math.max(Math.trunc(Number(input.limit)) || 50, 1), 500);
+      const d = await h.call('GET', `${base}/discover/connectors/detail`, { query: { id } });
+      if (d.status === 404) throw h.input(`"${app}" is not in the app catalogue: search_connector_apps lists the apps`);
+      if (d.status >= 400) return h.apiResult(d);
+      const detail = parse(d.body) ?? {};
+      const ways = ((detail.variants ?? []) as any[]).map((v) => ({
+        way: v.id,
+        name: v.name,
+        via: v.kind,
+        one_click: v.oneClick === true,
+        recommended: v.recommended === true,
+        installable: Boolean(v.connector) || v.kind === 'composio',
+        url: v.url ?? null,
+      }));
+      const t = await h.call('GET', `${base}/discover/connectors/tools`, { query: { id, way: h.optionalArg(input, 'way') } });
+      const tools = t.status < 400 ? (parse(t.body) ?? null) : null;
+      return h.text(
+        JSON.stringify(
+          {
+            app: id,
+            name: detail.item?.name ?? app,
+            description: oneLine(detail.item?.description ?? '', 300),
+            ways,
+            tools: tools
+              ? {
+                  way: tools.way?.id ?? null,
+                  via: tools.way?.kind ?? null,
+                  total: tools.total ?? 0,
+                  source: tools.source ?? 'none',
+                  list: ((tools.tools ?? []) as any[]).slice(0, limit).map((tool) => ({ name: tool.name, description: oneLine(tool.description ?? '', 160) })),
+                }
+              : { error: t.status === 404 ? `no way "${h.optionalArg(input, 'way')}"` : 'the tools could not be read now' },
+            next: 'add_connector with app=<app> installs the recommended way; pass way=<way> for another.',
+          },
           null,
           2,
         ),

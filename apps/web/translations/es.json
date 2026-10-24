@@ -21064,7 +21064,7 @@
     "moveNoSignIn": "{app} no tiene inicio de sesión con un clic en este despliegue.",
     "moveDone": "{name} ya funciona en Kortix.",
     "movesBannerTitle": "{count, plural, one {# conector puede pasar} other {# conectores pueden pasar}} a Kortix",
-    "movesBannerBody": "Kortix retira Pipedream y Composio. Abre cada uno y elige «Mover a Kortix»:",
+    "movesBannerBody": "Kortix retira Pipedream. Abre cada uno y elige Mover a Kortix:",
     "nameLabel": "Nombre",
     "toolsEmptyBody": "{name} no ha informado de ninguna herramienta. Aparecerán aquí cuando se conecte.",
     "stripStatus": "Estado",
@@ -21127,7 +21127,10 @@
     "toolsShowAll": "Mostrar las {count}",
     "toolsAfterInstall": "Esta {kind} lista sus herramientas tras instalar.",
     "typeFilterLabel": "Tipo de conector",
-    "typeFilterAll": "Todos los tipos"
+    "typeFilterAll": "Todos los tipos",
+    "moveComposioTitle": "{app} tiene su propio servidor MCP",
+    "moveComposioBody": "Este conector funciona a través de Composio. Puedes cambiarlo al servidor MCP propio de {app}: inicia sesión una vez y cambia. Los agentes, disparadores y kortix.yaml siguen usando {slug}.",
+    "moveComposioAction": "Cambiar a MCP"
   },
   "connectMcp": {
     "title": "Conecta Kortix por MCP",

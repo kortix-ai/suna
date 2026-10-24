@@ -21064,7 +21064,7 @@
     "moveNoSignIn": "このデプロイメントでは {app} のワンクリックサインインを利用できません。",
     "moveDone": "{name} は Kortix で動作するようになりました。",
     "movesBannerTitle": "{count, plural, other {# 件のコネクターを Kortix に移行できます}}",
-    "movesBannerBody": "Kortix は Pipedream と Composio の提供を終了します。各コネクターを開き、「Kortix に移行」を選んでください:",
+    "movesBannerBody": "Kortix は Pipedream を終了します。各コネクターを開き「Kortix に移行」を選んでください：",
     "nameLabel": "名前",
     "toolsEmptyBody": "{name} はツールを報告していません。接続後にここに表示されます。",
     "stripStatus": "ステータス",
@@ -21127,7 +21127,10 @@
     "toolsShowAll": "{count} 件すべて表示",
     "toolsAfterInstall": "この {kind} はインストール後にツールを一覧します。",
     "typeFilterLabel": "コネクターの種類",
-    "typeFilterAll": "すべての種類"
+    "typeFilterAll": "すべての種類",
+    "moveComposioTitle": "{app} には独自の MCP サーバーがあります",
+    "moveComposioBody": "このコネクターは Composio 経由で動いています。{app} 自身の MCP サーバーに切り替えられます。一度サインインすると切り替わります。エージェント、トリガー、kortix.yaml は引き続き {slug} を使います。",
+    "moveComposioAction": "MCP に切り替え"
   },
   "connectMcp": {
     "title": "MCP で Kortix に接続",
