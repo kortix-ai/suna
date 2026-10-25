@@ -1,16 +1,30 @@
 'use client';
 
-import { Button } from '@kortix/ui/button';
-import { CopyButton } from '@kortix/ui/markdown/copy-button';
-import { Hint } from '@kortix/ui/hint';
-import { MermaidRenderer } from '@kortix/ui/mermaid-renderer';
-import { CheckIcon, PencilSimpleIcon } from '@phosphor-icons/react';
+/**
+ * The one Kortix document editor's schema: what a Markdown doc can hold when
+ * a person edits it in place. Doc artifacts and an agent's instructions use
+ * the same set, so a doc reads and edits the same everywhere. The look is
+ * `ARTIFACT_DOC_CSS` (`.kx-doc`); Markdown goes in and out through
+ * `markdown.ts`.
+ */
+
+import { Code } from '@tiptap/extension-code';
 import CodeBlock from '@tiptap/extension-code-block';
-import { Node, mergeAttributes } from '@tiptap/core';
+import Image from '@tiptap/extension-image';
+import { TaskItem, TaskList } from '@tiptap/extension-list';
+import { TableKit } from '@tiptap/extension-table';
+import { Placeholder } from '@tiptap/extensions';
+import { Node, mergeAttributes, type Extensions } from '@tiptap/core';
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import { CheckIcon, PencilSimpleIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
-import { useTranslations } from '@/i18n/use-translations';
+import { useTranslations } from '../../i18n';
+import { Button } from '../../primitives/button';
+import Hint from '../../primitives/hint';
+import { MermaidRenderer } from '../../primitives/mermaid-renderer';
+import { CopyButton } from '../copy-button';
 
 /** A video in a doc: `<video src controls>`, kept as HTML in the Markdown file. */
 export const Video = Node.create({
@@ -93,56 +107,56 @@ export const DocCodeBlock = CodeBlock.extend({
   },
 });
 
-const MAX_MEDIA_BYTES = 16 * 1024 * 1024;
-
-/** The path a pasted or dropped file gets in the doc's folder: `media/<time>-<name>`. */
-export function mediaPath(file: File): string {
-  const clean = file.name.normalize('NFKD').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(-80) || 'file';
-  return `media/${Date.now().toString(36)}-${clean}`;
-}
-
-export function isMedia(file: File): 'image' | 'video' | null {
-  if (file.type.startsWith('image/')) return 'image';
-  if (file.type.startsWith('video/')) return 'video';
-  return null;
-}
-
-export function tooLarge(file: File): boolean {
-  return file.size > MAX_MEDIA_BYTES;
-}
-
-export async function fileBase64(file: File): Promise<string> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(binary);
-}
-
-const ABSOLUTE = /^([a-z][a-z0-9+.-]*:|\/\/|#)/i;
+/**
+ * A line break in the Markdown source inside a paragraph. It reads as a space
+ * and saves as the newline it was (`markdown.ts`), so a hard-wrapped file
+ * keeps its lines. Backspace over it joins the words, like a space.
+ */
+export const SoftBreak = Node.create({
+  name: 'softBreak',
+  group: 'inline',
+  inline: true,
+  selectable: false,
+  parseHTML() {
+    return [{ tag: 'span[data-soft-break]' }];
+  },
+  renderHTML() {
+    return ['span', { 'data-soft-break': '' }, ' '];
+  },
+  renderText() {
+    return ' ';
+  },
+});
 
 /**
- * Relative media paths (`media/x.png`) as the editor shows them: absolute
- * against the doc's signed page URL. `restore` turns them back on save, so the
- * Markdown file keeps paths that work in Files and on every page.
+ * Inline code that may sit inside bold or a link: StarterKit's code mark
+ * excludes every other mark, which would drop the bold from
+ * "**`view` before a task**" on the first save.
  */
-export function mediaUrls(baseUrl: string) {
-  const toRelative = new Map<string, string>();
-  return {
-    absolute(path: string): string {
-      if (ABSOLUTE.test(path)) return path;
-      const url = new URL(path, baseUrl).toString();
-      toRelative.set(url, path);
-      return url;
-    },
-    resolveHtml(html: string): string {
-      const doc = new DOMParser().parseFromString(html, 'text/html');
-      doc.querySelectorAll('img[src], video[src]').forEach((el) => el.setAttribute('src', this.absolute(el.getAttribute('src')!)));
-      return doc.body.innerHTML;
-    },
-    restore(html: string): string {
-      let out = html;
-      for (const [url, path] of toRelative) out = out.split(url).join(path);
-      return out;
-    },
-  };
+const DocCode = Code.extend({ excludes: '' });
+
+/** The document editor's extensions. `placeholder` names the empty line. */
+export function docExtensions({
+  editable,
+  placeholder,
+}: {
+  editable: boolean;
+  placeholder: (node: { type: { name: string } }) => string;
+}): Extensions {
+  return [
+    StarterKit.configure({
+      code: false,
+      codeBlock: false,
+      link: { openOnClick: !editable, autolink: true, defaultProtocol: 'https' },
+    }),
+    DocCode,
+    DocCodeBlock,
+    SoftBreak,
+    TableKit.configure({ table: { resizable: false } }),
+    Image,
+    Video,
+    TaskList,
+    TaskItem.configure({ nested: true }),
+    Placeholder.configure({ placeholder: ({ node }) => placeholder(node) }),
+  ];
 }

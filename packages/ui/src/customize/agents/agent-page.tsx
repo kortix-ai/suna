@@ -76,7 +76,7 @@ import Hint from '../../primitives/hint';
 import { InfoBanner } from '../../primitives/info-banner';
 import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
 import { errorToast, successToast } from '../../primitives/toast';
-import { UiLink as Link, useUiPathname, useUiSearchParams } from '../../providers/ui-provider';
+import { UiLink as Link, useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
 import { ConnectorsPage } from '../connectors/connectors-page';
 import { SecretsPage } from '../secrets/secrets-page';
 import { configEntitySourcePath } from '../sections/component/config-entity-source-path';
@@ -103,9 +103,8 @@ import { AgentAuthorityCard } from './agent-authority-card';
 import { AgentModel, AgentScope } from './agent-detail-aside';
 import { AgentDrivesSection } from './agent-drives-section';
 import { AppsGrantPage } from './agent-grant-pages';
-import { InstructionsEditor } from './agent-instructions';
 import { useGrantLabel } from './agent-access-text';
-import { AgentOverview, DescriptionField, grantOf, type OverviewFacts } from './agent-overview';
+import { AgentOverview, grantOf, type OverviewFacts } from './agent-overview';
 import {
   AgentIdentityHeader,
   AgentPageSkeleton,
@@ -117,7 +116,6 @@ import {
   LeaveDialog,
   SaveBar,
 } from './agent-page-chrome';
-import { AgentPeopleSection } from './agent-people-section';
 import { AgentShareControl } from './agent-share-control';
 import {
   ACCESS_VIEWS,
@@ -416,6 +414,29 @@ function useHeaderFacts(
   ];
 }
 
+interface ShareState {
+  open: boolean;
+  setOpen: (open: boolean) => void;
+}
+
+/**
+ * The header's Share dialog. The old `?tab=people` link opens it; closing it
+ * drops that query, so a reload or a later tab click does not reopen it.
+ */
+function useShareDialog(openedByLink: boolean): ShareState {
+  const pathname = useUiPathname();
+  const router = useUiRouter();
+  const [open, setOpenState] = useState(openedByLink);
+  const setOpen = useCallback(
+    (next: boolean) => {
+      setOpenState(next);
+      if (!next && openedByLink) router.replace(pathname);
+    },
+    [openedByLink, router, pathname],
+  );
+  return { open, setOpen };
+}
+
 /**
  * Mod+S saves the agent, only while the draft holds an edit. With nothing to
  * save the key keeps the browser's own behavior. A key pressed inside an open
@@ -446,17 +467,15 @@ function useTabItems(
   const t = useI18nTranslations('agentEditor.tabs');
   const labels: Record<AgentTab, string> = {
     overview: t('tabOverview'),
-    instructions: t('tabInstructions'),
     access: t('tabAccess'),
     runtime: t('tabRuntime'),
     triggers: t('tabTriggers'),
-    people: t('tabPeople'),
   };
   return tabs.map((key) => ({
     key,
     label: labels[key],
     href: agentLocationHref(pathname, key),
-    count: key === 'triggers' ? counts.triggerCount || undefined : key === 'people' ? counts.peopleCount || undefined : undefined,
+    count: key === 'triggers' ? counts.triggerCount || undefined : undefined,
   }));
 }
 
@@ -476,13 +495,14 @@ function AgentActions({
   agent,
   config,
   canWrite,
-  peopleHref,
+  share,
 }: {
   projectId: string;
   agent: Agent;
   config: ProjectConfigSummary;
   canWrite: boolean;
-  peopleHref: string;
+  /** The Share dialog, owned by the page so the Overview can open it too. */
+  share: ShareState;
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
@@ -524,7 +544,7 @@ function AgentActions({
 
   return (
     <>
-      <AgentShareControl projectId={projectId} agentName={agent.name} peopleHref={peopleHref} />
+      <AgentShareControl projectId={projectId} agentName={agent.name} open={share.open} onOpenChange={share.setOpen} />
       {startBlocked ? (
         <Hint label={startBlocked}>
           <span className="inline-flex">{start}</span>
@@ -700,7 +720,6 @@ function EditableAgentPage({
   renderApps?: RenderAgentApps;
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
-  const tPage = useI18nTranslations('agentEditor.page');
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const locale = useLocale();
   const editor = useAgentDraft(initial);
@@ -715,6 +734,8 @@ function EditableAgentPage({
     [schemaVersion, drivesOn],
   );
   const location = useAgentLocation(AGENT_TABS, views);
+  const share = useShareDialog(location.open === 'share');
+  const canManageMembers = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed === true;
   const registryOptions = useMemo(
     () => registryGrantOptions({ manifest_raw: config.manifest_raw, agents: toArray(config.agents) }, agent.name),
     [config.manifest_raw, config.agents, agent.name],
@@ -829,35 +850,17 @@ function EditableAgentPage({
               editor={editor}
               hrefFor={viewHref}
               hrefs={{
-                instructions: agentLocationHref(pathname, 'instructions'),
                 model: viewHref('model'),
                 tools: viewHref('tools'),
                 workspace: viewHref('workspace'),
                 triggers: agentLocationHref(pathname, 'triggers'),
-                people: agentLocationHref(pathname, 'people'),
               }}
               sourcePath={sourcePath}
+              onOpenShare={canManageMembers ? () => share.setOpen(true) : undefined}
+              onAskMyKortix={() => configure.start(editConfigPrompt('agent', agent.name, agent.path))}
+              focusInstructions={location.open === 'instructions'}
             />
           </AgentTabBody>
-        );
-      case 'instructions':
-        return (
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pt-5 pb-20 md:px-8">
-            <InstructionsEditor
-              value={editor.oc.prompt ?? ''}
-              onChange={(next) => editor.setOc('prompt', next)}
-              path={sourcePath}
-              name={name}
-              onAskMyKortix={() => configure.start(editConfigPrompt('agent', agent.name, agent.path))}
-              description={
-                <DescriptionField
-                  value={editor.oc.description ?? ''}
-                  onChange={(next) => editor.setOc('description', next)}
-                  subagent={editor.oc.mode === 'subagent'}
-                />
-              }
-            />
-          </div>
         );
       case 'access':
       case 'runtime': {
@@ -921,14 +924,6 @@ function EditableAgentPage({
             <TriggersPage projectId={projectId} surface={surface} defaultAgent={defaultAgent} />
           </Embedded>
         );
-      case 'people':
-        return (
-          <AgentTabBody>
-            <EditorSectionStyleProvider value="tab">
-              <AgentPeopleSection projectId={projectId} agentName={agent.name} />
-            </EditorSectionStyleProvider>
-          </AgentTabBody>
-        );
     }
   })();
 
@@ -947,7 +942,7 @@ function EditableAgentPage({
               agent={agent}
               config={config}
               canWrite
-              peopleHref={agentLocationHref(pathname, 'people')}
+              share={share}
             />
           }
         />
@@ -1028,6 +1023,8 @@ function ReadOnlyAgentPage({
     return [...own, 'model'] as AgentConfigSectionKey[];
   }, []);
   const location = useAgentLocation(AGENT_TABS, READ_ONLY_VIEWS);
+  const share = useShareDialog(location.open === 'share');
+  const canManageMembers = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed === true;
   const facts = useOverviewFacts(projectId, agent.name, config, block);
   const headerFacts = useHeaderFacts(agent, config, block, false);
   const tabItems = useTabItems(pathname, AGENT_TABS, facts);
@@ -1065,23 +1062,15 @@ function ReadOnlyAgentPage({
               facts={facts}
               hrefFor={viewHref}
               hrefs={{
-                instructions: agentLocationHref(pathname, 'instructions'),
                 model: sectionLocationHref(pathname, 'model'),
                 tools: sectionLocationHref(pathname, 'model'),
                 workspace: sectionLocationHref(pathname, 'model'),
                 triggers: agentLocationHref(pathname, 'triggers'),
-                people: agentLocationHref(pathname, 'people'),
               }}
               sourcePath={sourcePath}
+              onOpenShare={canManageMembers ? () => share.setOpen(true) : undefined}
             />
           </AgentTabBody>
-        );
-      case 'instructions':
-        return (
-          <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-4 pt-5 pb-20 md:px-8">
-            {banner}
-            <InstructionsEditor value={prompt ?? ''} path={sourcePath} name={name} readOnly />
-          </div>
         );
       case 'access':
       case 'runtime':
@@ -1120,14 +1109,6 @@ function ReadOnlyAgentPage({
             />
           </Embedded>
         );
-      case 'people':
-        return (
-          <AgentTabBody>
-            <EditorSectionStyleProvider value="tab">
-              <AgentPeopleSection projectId={projectId} agentName={agent.name} />
-            </EditorSectionStyleProvider>
-          </AgentTabBody>
-        );
     }
   })();
 
@@ -1143,7 +1124,7 @@ function ReadOnlyAgentPage({
             agent={agent}
             config={config}
             canWrite={canWrite}
-            peopleHref={agentLocationHref(pathname, 'people')}
+            share={share}
           />
         }
       />
@@ -1173,8 +1154,8 @@ function PlatformAgentPage({
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
   const tPage = useI18nTranslations('agentEditor.page');
-  const pathname = useUiPathname();
   const isDefault = (config.default_agent ?? config.open_code_default_agent) === agent.name;
+  const share = useShareDialog(false);
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col">
       <AgentIdentityHeader
@@ -1192,7 +1173,7 @@ function PlatformAgentPage({
             agent={agent}
             config={config}
             canWrite={canWrite}
-            peopleHref={pathname}
+            share={share}
           />
         }
       />

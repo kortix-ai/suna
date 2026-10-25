@@ -1,18 +1,22 @@
 /**
- * The agent page's address: six tabs, and a view inside Access and Runtime.
+ * The agent page's address: four tabs, and a view inside Access and Runtime.
  *
- *   ?tab=overview | instructions | access | runtime | triggers | people
+ *   ?tab=overview | access | runtime | triggers
  *   ?tab=access&view=skills | connectors | secrets | apps | drives | permissions | …
  *   ?tab=runtime&view=model | tools | workspace
  *
- * The page used to be a rail of seventeen `?section=<key>` topics. Every old
- * link still resolves: `resolveAgentLocation` maps `?section=` onto a tab and
- * a view (Basics became the Overview's Availability panel).
+ * The page used to be a rail of seventeen `?section=<key>` topics, then six
+ * tabs. Every old link still resolves: `resolveAgentLocation` maps
+ * `?section=` onto a tab and a view (Basics became the Overview's
+ * Availability panel). Instructions and People are no tabs any more: the
+ * instructions are edited on the Overview, and People is the header's Share
+ * dialog. Their old links open the Overview with the instructions in focus or
+ * the Share dialog open (`open`).
  */
 
 import type { AgentConfigSectionKey } from '../sections/view/agent-editor';
 
-export const AGENT_TABS = ['overview', 'instructions', 'access', 'runtime', 'triggers', 'people'] as const;
+export const AGENT_TABS = ['overview', 'access', 'runtime', 'triggers'] as const;
 export type AgentTab = (typeof AGENT_TABS)[number];
 
 /** Access views, in the order the segmented control lists them. */
@@ -47,14 +51,20 @@ function viewFromParam(value: string | null): AgentConfigSectionKey | null {
 function tabOfSection(section: AgentConfigSectionKey): AgentTab {
   if ((ACCESS_VIEWS as readonly string[]).includes(section)) return 'access';
   if ((RUNTIME_VIEWS as readonly string[]).includes(section)) return 'runtime';
-  if (section === 'basics') return 'overview';
+  if (section === 'basics' || section === 'instructions' || section === 'people') return 'overview';
   return section as AgentTab;
 }
+
+/** What a retired tab's link opens on the Overview. */
+export type AgentOverlay = 'instructions' | 'share';
+const RETIRED_TABS: Record<string, AgentOverlay> = { instructions: 'instructions', people: 'share' };
 
 export interface AgentLocation {
   tab: AgentTab;
   /** The Access or Runtime view; null on every other tab. */
   view: AgentConfigSectionKey | null;
+  /** Set by a retired tab's link: the instructions in focus, or the Share dialog open. */
+  open?: AgentOverlay;
 }
 
 /**
@@ -67,6 +77,8 @@ export function resolveAgentLocation(
   tabs: readonly AgentTab[],
   views: readonly AgentConfigSectionKey[],
 ): AgentLocation {
+  const retired = RETIRED_TABS[params.tab ?? ''] ?? (params.tab ? undefined : RETIRED_TABS[params.section ?? '']);
+  if (retired) return { tab: 'overview', view: null, open: retired };
   let tab = (params.tab as AgentTab | null) ?? null;
   let view = viewFromParam(params.view);
   const legacy = viewFromParam(params.section);
@@ -92,8 +104,14 @@ export function sectionLocationHref(pathname: string, section: AgentConfigSectio
   return agentLocationHref(pathname, tab, tab === 'access' || tab === 'runtime' ? section : null);
 }
 
-const INSTRUCTIONS_FIELDS = new Set(['behavior.prompt', 'behavior.description']);
-const OVERVIEW_FIELDS = new Set(['enabled', 'space', 'behavior.hidden', 'behavior.mode']);
+const OVERVIEW_FIELDS = new Set([
+  'enabled',
+  'space',
+  'behavior.hidden',
+  'behavior.mode',
+  'behavior.prompt',
+  'behavior.description',
+]);
 const ACCESS_FIELDS = new Set([
   'skills',
   'connectors',
@@ -128,15 +146,7 @@ export function changedTabs(draft: object, baseline: object): AgentTab[] {
   const changed = new Set<AgentTab>();
   for (const key of new Set([...a.keys(), ...b.keys()])) {
     if (a.get(key) === b.get(key)) continue;
-    changed.add(
-      INSTRUCTIONS_FIELDS.has(key)
-        ? 'instructions'
-        : OVERVIEW_FIELDS.has(key)
-          ? 'overview'
-          : ACCESS_FIELDS.has(key)
-            ? 'access'
-            : 'runtime',
-    );
+    changed.add(OVERVIEW_FIELDS.has(key) ? 'overview' : ACCESS_FIELDS.has(key) ? 'access' : 'runtime');
   }
   return AGENT_TABS.filter((tab) => changed.has(tab));
 }

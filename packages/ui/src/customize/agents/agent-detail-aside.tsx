@@ -15,7 +15,7 @@ import { useTranslations as useI18nTranslations } from '../../i18n';
  * Historically this file was the whole right-hand aside of the agent detail
  * MODAL (assignments + configuration summary). The modal is gone — an agent
  * is a routed page now, Customize being agent-centric (Marko, 2026-09-01) —
- * and the assignments moved to `agent-people-section.tsx`.
+ * and the assignments moved to `agent-share-dialog.tsx`.
  */
 
 import { Badge } from '../../primitives/badge';

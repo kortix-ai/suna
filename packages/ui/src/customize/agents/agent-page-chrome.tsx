@@ -6,9 +6,9 @@
  *
  *   ┌ ▣ researcher                         [Share] [Start session] [⋯] ┐
  *   │   ● Enabled · Space: workspace · People start it                 │
- *   ├ Overview  Instructions •  Access  Runtime  Triggers 1  People 3  ┤
+ *   ├ Overview •  Access  Runtime  Triggers 1                          ┤
  *   │ content (the one scroller)                                       │
- *   └──────────────── [ ● Unsaved changes  Instructions  Discard  Save ⌘S ]
+ *   └──────────────────── [ ● Unsaved changes  Overview  Discard  Save ⌘S ]
  *
  * The header echoes the Space channel header (`space-page.tsx`): a tile, the
  * name at `text-xl font-medium`, one muted line. It is also the window's
@@ -117,11 +117,12 @@ export interface AgentTabItem {
 }
 
 /**
- * The underline tabs under the header. A tab holding an unsaved edit carries a
- * dot, so the save bar's "what changed" is visible from every tab. On an
- * editable page every tab reserves the dot's box, so a tab never grows (and
- * its neighbours never shift) when the draft turns dirty. A read-only page
- * passes no `dirty` and reserves nothing. The row sits above the page's
+ * The underline tabs under the header: the Space channel header's strip
+ * (`space-page.tsx`), so every tab row in Kortix has one geometry. Each tab
+ * is its label plus the trigger's even padding, and the rule spans exactly
+ * the tab. A tab holding an unsaved edit carries a dot in its top-right
+ * padding, out of flow, so a tab never grows (and its neighbours never
+ * shift) when the draft turns dirty. The row sits above the page's
  * scroller, so it never scrolls away.
  */
 export function AgentTabBar({
@@ -139,7 +140,7 @@ export function AgentTabBar({
       <TabsList
         type="underline"
         aria-label={t('tabsLabel')}
-        className="w-full shrink-0 justify-start gap-1 overflow-x-auto px-4 [scrollbar-width:none] md:px-8"
+        className="w-full shrink-0 justify-start overflow-x-auto px-4 [scrollbar-width:none] md:px-8"
       >
         {items.map((item) => (
           <TabsTrigger key={item.key} value={item.key} asChild className="w-fit flex-none">
@@ -148,12 +149,12 @@ export function AgentTabBar({
               {item.count !== undefined ? (
                 <span className="text-muted-foreground tabular-nums">{item.count}</span>
               ) : null}
-              {dirty ? (
-                dirty.includes(item.key) ? (
-                  <span role="img" aria-label={t('unsavedTab')} className="bg-foreground size-1.5 shrink-0 rounded-full" />
-                ) : (
-                  <span aria-hidden className="size-1.5 shrink-0" />
-                )
+              {dirty?.includes(item.key) ? (
+                <span
+                  role="img"
+                  aria-label={t('unsavedTab')}
+                  className="bg-foreground absolute top-2 right-1.5 size-1.5 rounded-full"
+                />
               ) : null}
             </Link>
           </TabsTrigger>
@@ -173,7 +174,7 @@ export function AgentTabBody({ children, className }: { children: ReactNode; cla
 }
 
 /**
- * The page before its reads land: the header, the six tabs and the Overview's
+ * The page before its reads land: the header, the four tabs and the Overview's
  * two columns, in the boxes the loaded page draws, so nothing moves.
  */
 export function AgentPageSkeleton() {
@@ -193,7 +194,7 @@ export function AgentPageSkeleton() {
         <Skeleton className="hidden h-8 w-48 shrink-0 rounded-md sm:block" />
       </header>
       <div className="flex shrink-0 gap-5 overflow-hidden border-b px-4 pt-1 pb-3 md:px-8">
-        {['w-16', 'w-20', 'w-12', 'w-16', 'w-16', 'w-12'].map((w, i) => (
+        {['w-16', 'w-12', 'w-16', 'w-16'].map((w, i) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length placeholder
           <Skeleton key={i} className={cn('h-4 shrink-0 rounded-sm', w)} />
         ))}
@@ -249,7 +250,7 @@ export function SaveBar({
 }: {
   dirty: boolean;
   pending: boolean;
-  /** The changed tabs, already joined for reading ("Instructions and Access"). */
+  /** The changed tabs, already joined for reading ("Overview and Access"). */
   changed: string;
   onDiscard: () => void;
   onSave: () => void;

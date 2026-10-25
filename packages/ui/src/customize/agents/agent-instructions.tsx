@@ -1,140 +1,176 @@
 'use client';
 
 /**
- * The Instructions tab: the description on top, then the system prompt in an
- * editor panel with Write, Preview and Split (both side by side, the default
- * where it fits). Below `lg` there is no room for two panes, so the control
- * offers Write and Preview only and a Split choice reads as Write.
+ * The agent's instructions on the Overview, edited in place: the formatted
+ * document is the editor. A person clicks into it and types, like a doc; the
+ * Markdown file (`agents/<name>.md`) never shows its `**` or `##`. It is the
+ * same editor as doc artifacts (`markdown/doc-editor`), so Kortix has one
+ * document editor, and a file opened and saved unchanged stays byte for byte
+ * the same (`doc-round-trip.test.ts`).
  *
- * The source is set in the body font, not mono: instructions are prose a
- * person writes, and mono is for literal values only (typography.md).
+ * Edits go to the page's draft on every change; the save bar, ⌘S and the
+ * leave guard save them. A long document opens folded under a fade, and
+ * clicking into it unfolds it. Escape leaves the editor.
  */
 
-import { ArrowsInSimpleIcon, ArrowsOutSimpleIcon, SparkleIcon } from '@phosphor-icons/react';
-import { type ReactNode, useEffect, useState } from 'react';
+import { ARTIFACT_DOC_CSS } from '@kortix/shared/artifact-doc';
+import { SparkleIcon } from '@phosphor-icons/react';
+import { EditorContent, useEditor } from '@tiptap/react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { useTranslations as useI18nTranslations } from '../../i18n';
-import { useMediaQuery } from '../../internal/hooks';
 import { cn } from '../../internal/lib/utils';
-import { MarkdownWithFrontmatter } from '../../markdown/markdown-frontmatter';
+import { docExtensions } from '../../markdown/doc-editor/doc-extensions';
+import { DocMenus } from '../../markdown/doc-editor/doc-menus';
+import { htmlToMarkdown, markdownToHtml } from '../../markdown/doc-editor/markdown';
 import { Button } from '../../primitives/button';
-import Hint from '../../primitives/hint';
-import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
+import { Skeleton } from '../../primitives/skeleton';
 
-type View = 'write' | 'preview' | 'split';
+export function wordCount(text: string): number {
+  const trimmed = text.trim();
+  return trimmed ? trimmed.split(/\s+/).length : 0;
+}
 
-export function InstructionsEditor({
+export function AgentInstructions({
   value,
   onChange,
-  path,
-  name,
-  description,
   onAskMyKortix,
-  readOnly = false,
+  autoFocus = false,
 }: {
-  value: string;
+  /** The instructions as Markdown; null while a reader's source file loads. */
+  value: string | null;
+  /** Writes the draft. Without it the document is read-only. */
   onChange?: (next: string) => void;
-  /** The agent's source file, shown in mono in the toolbar. */
-  path: string;
-  name: string;
-  /** The description field, above the editor. */
-  description?: ReactNode;
   /** Opens a configure thread that asks My Kortix to edit the instructions. */
   onAskMyKortix?: () => void;
-  readOnly?: boolean;
+  /** Open unfolded with the cursor in it (the old `?tab=instructions` link). */
+  autoFocus?: boolean;
 }) {
-  const t = useI18nTranslations('agentEditor.tabs');
-  const tPage = useI18nTranslations('agentEditor.page');
-  const wide = useMediaQuery('(min-width: 1024px)');
-  const [chosen, setChosen] = useState<View>(readOnly ? 'preview' : 'split');
-  const [full, setFull] = useState(false);
-  const view: View = chosen === 'split' && !wide ? 'write' : chosen;
-  const words = value.trim() ? value.trim().split(/\s+/).length : 0;
+  const t = useI18nTranslations('agentEditor.page');
+  const tTabs = useI18nTranslations('agentEditor.tabs');
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const editable = onChange !== undefined;
+  const [unfolded, setUnfolded] = useState(autoFocus);
+  // Taller than the fold: measured while folded, kept once unfolded.
+  const [long, setLong] = useState(false);
+  const frame = useRef<HTMLDivElement>(null);
+  // The Markdown the editor last wrote. A value that differs came from
+  // outside (Discard, a save's read-back) and reloads the document.
+  const written = useRef(value);
+  // The document as loaded: its source, and what the editor saves it as.
+  // Saving the loaded document gives back the source, byte for byte.
+  const loaded = useRef<{ source: string; saved: string | null }>({ source: value ?? '', saved: null });
+  const latest = useRef(onChange);
+  useEffect(() => {
+    latest.current = onChange;
+  });
+
+  const editor = useEditor(
+    {
+      immediatelyRender: false,
+      editable,
+      autofocus: autoFocus ? 'start' : false,
+      extensions: docExtensions({ editable, placeholder: () => tTabs('instructionsPlaceholder') }),
+      content: value === null ? '' : markdownToHtml(value),
+      editorProps: {
+        attributes: { 'aria-label': t('instructions') },
+        handleKeyDown: (view, event) => {
+          if (event.key !== 'Escape') return false;
+          (view.dom as HTMLElement).blur();
+          return true;
+        },
+      },
+      onCreate: ({ editor: e }) => {
+        loaded.current = { source: value ?? '', saved: htmlToMarkdown(e.getHTML()) };
+      },
+      onFocus: () => setUnfolded(true),
+      onUpdate: ({ editor: e }) => {
+        // Only a person's edit writes the draft. The editor's own fix-ups on
+        // load (a trailing paragraph after a list) are not an edit.
+        if (!e.isFocused) return;
+        const saved = htmlToMarkdown(e.getHTML());
+        const next = saved === loaded.current.saved ? loaded.current.source : saved;
+        written.current = next;
+        latest.current?.(next);
+      },
+    },
+    [editable, value === null],
+  );
 
   useEffect(() => {
-    if (!full) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setFull(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [full]);
+    if (!editor || value === null || value === written.current) return;
+    written.current = value;
+    editor.commands.setContent(markdownToHtml(value), { emitUpdate: false });
+    loaded.current = { source: value, saved: htmlToMarkdown(editor.getHTML()) };
+  }, [editor, value]);
 
-  const source = (
-    <textarea
-      aria-label={tPage('instructions')}
-      value={value}
-      readOnly={readOnly}
-      placeholder={t('instructionsPlaceholder')}
-      onChange={(e) => onChange?.(e.target.value)}
-      className="text-foreground placeholder:text-muted-foreground block h-full w-full resize-none bg-transparent px-4 py-3 text-sm leading-relaxed outline-none"
-    />
-  );
-  const preview = (
-    <div className="h-full min-h-0 overflow-y-auto px-4 py-3">
-      {value.trim() ? (
-        <MarkdownWithFrontmatter content={value} />
-      ) : (
-        <p className="text-muted-foreground text-sm">{tPage('instructionsEmpty')}</p>
-      )}
-    </div>
-  );
+  // Fold only a document taller than the fold.
+  useLayoutEffect(() => {
+    const el = frame.current;
+    if (!el || unfolded) return;
+    const measure = () => setLong(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [editor, unfolded]);
 
-  const panel = (
-    <div
-      className={cn(
-        'bg-background flex flex-col overflow-hidden border',
-        full ? 'fixed inset-0 z-50' : 'min-h-0 flex-1 rounded-md',
-      )}
-    >
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-2 py-1.5">
-        {readOnly ? null : (
-          <Tabs value={view} onValueChange={(next) => setChosen(next as View)}>
-            <TabsList aria-label={t('editorView')}>
-              <TabsTrigger value="write">{t('write')}</TabsTrigger>
-              <TabsTrigger value="preview">{t('preview')}</TabsTrigger>
-              {wide ? <TabsTrigger value="split">{t('split')}</TabsTrigger> : null}
-            </TabsList>
-          </Tabs>
-        )}
-        {onAskMyKortix ? (
-          <Button variant="ghost" size="sm" onClick={onAskMyKortix} className="gap-1.5">
-            <SparkleIcon className="size-4" />
-            {t('askToEdit')}
-          </Button>
-        ) : null}
-        <div className="ml-auto flex min-w-0 items-center gap-3 pr-1">
-          <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{tPage('words', { count: words })}</span>
-          <span className="text-muted-foreground hidden min-w-0 truncate font-mono text-xs sm:block">{path}</span>
-          <Hint label={full ? t('exitFullScreen') : t('fullScreen')}>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={full ? t('exitFullScreen') : t('fullScreen')}
-              onClick={() => setFull((v) => !v)}
-            >
-              {full ? <ArrowsInSimpleIcon className="size-4" /> : <ArrowsOutSimpleIcon className="size-4" />}
-            </Button>
-          </Hint>
-        </div>
-      </div>
-      <div className={cn('grid min-h-0 flex-1', view === 'split' && 'grid-cols-2 divide-x divide-border')}>
-        {view === 'preview' ? null : <div className="min-h-0">{source}</div>}
-        {view === 'write' ? null : preview}
-      </div>
-    </div>
-  );
+  const words = wordCount(value ?? '');
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-6">
-      {description}
-      <section className="flex min-h-80 flex-1 flex-col gap-2">
-        <h2 className="text-foreground flex flex-wrap items-baseline gap-x-2 text-sm font-medium">
-          {tPage('instructions')}
-          <span className="text-muted-foreground text-xs font-normal">{t('instructionsHint', { name })}</span>
+    <section className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-foreground text-sm font-medium">
+          {t('instructions')}
+          {words > 0 ? (
+            <span className="text-muted-foreground ml-2 font-normal tabular-nums">{t('words', { count: words })}</span>
+          ) : null}
         </h2>
-        {panel}
-      </section>
-    </div>
+        {onAskMyKortix ? (
+          <Button variant="ghost" size="sm" onClick={onAskMyKortix}>
+            <SparkleIcon className="size-4" />
+            {tTabs('askToEdit')}
+          </Button>
+        ) : null}
+      </div>
+      <div
+        className={cn(
+          'bg-background relative rounded-md border px-4 py-3',
+          editable && 'hover:border-foreground/20 focus-within:border-foreground/20 cursor-text transition-colors',
+        )}
+      >
+        <style>{ARTIFACT_DOC_CSS}</style>
+        <div
+          ref={frame}
+          className={cn('kx-doc kx-doc-inline', !unfolded && 'max-h-96 overflow-hidden')}
+        >
+          {value === null || !editor ? (
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-5/6" />
+            </div>
+          ) : (
+            <>
+              {editable ? <DocMenus editor={editor} /> : null}
+              <EditorContent editor={editor} />
+            </>
+          )}
+        </div>
+        {long && !unfolded ? (
+          <div className="from-background absolute inset-x-0 bottom-0 flex h-24 items-end justify-center rounded-b-md bg-gradient-to-t to-transparent pb-3">
+            <Button variant="secondary" size="sm" onClick={() => setUnfolded(true)}>
+              {tI18nComplete.raw('textf5c9bd131486')}
+            </Button>
+          </div>
+        ) : null}
+      </div>
+      {long && unfolded ? (
+        <div className="flex justify-center">
+          <Button variant="ghost" size="sm" onClick={() => setUnfolded(false)}>
+            {tI18nComplete.raw('text94ea9b1d33a0')}
+          </Button>
+        </div>
+      ) : null}
+    </section>
   );
 }
