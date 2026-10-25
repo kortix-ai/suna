@@ -31,7 +31,6 @@ import {
   PencilSimpleIcon as PencilSimple,
   ArrowClockwiseIcon as RefreshCw,
   PlugsIcon as Unplug,
-  DotsThreeIcon as DotsThree,
   ClockIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -60,17 +59,8 @@ import { ScimCard } from '@/components/iam/scim-card';
 import { AccountSessionsPanel, SessionControlsCard } from '@/components/iam/session-controls-card';
 import { SsoCard } from '@/components/iam/sso-card';
 import { Badge } from '@kortix/ui/badge';
-import { ButtonGroup } from '@kortix/ui/button-group';
 import { Button } from '@kortix/ui/button';
-import { Checkbox } from '@kortix/ui/checkbox';
 import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@kortix/ui/dropdown-menu';
 import { EntityAvatar } from '@kortix/ui/entity-avatar';
 import Hint from '@kortix/ui/hint';
 import { InfoBanner } from '@kortix/ui/info-banner';
@@ -115,7 +105,6 @@ import {
 import { AccessDialog } from '@kortix/ui/access';
 import { useAccountState } from '@kortix/ui/internal/billing/index';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
-import { cn } from '@kortix/ui';
 import { forgetPushedEntry, hubTarget, openAccountPanel } from '@kortix/ui/internal/stores/account-panel-store';
 import { BillingAccountProvider } from '@kortix/ui/internal/stores/billing-account-context';
 import {
@@ -139,11 +128,12 @@ import {
 } from '@phosphor-icons/react';
 import { useAccountPanelId, useHubSearchParams } from '@kortix/ui/internal/account-hub/account-hub-location';
 import { AccountPane, AccountPaneSkeleton } from './account-pane';
+import { MemberTableHead, MemberTableRow, ROLE_TONE, memberHandle, type RoleTone } from './member-table';
 import { type AccountSection, localizedAccountPaneMeta, paneWidth } from '@kortix/ui/internal/account-hub/sections';
 import { useAccountDetail } from '@kortix/ui/internal/account-hub/use-account-detail';
 import { useAccountHubSection } from '@kortix/ui/internal/account-hub/use-account-hub-access';
 import { useAccountMembers } from '@kortix/ui/internal/account-hub/use-account-members';
-import { useAccountHubSheet } from '@kortix/ui/internal/account-hub/hub-sheet';
+import { AccountHubSelectionBar, useAccountHubSheet } from '@kortix/ui/internal/account-hub/hub-sheet';
 
 // The enterprise IdP surface (SAML SSO + SCIM provisioning) is PLAN-GATED,
 // not env-gated: the cards render only for accounts whose tier carries the
@@ -976,24 +966,21 @@ function DangerZoneCard() {
 
 type MemberFilter = 'all' | AccountRole | 'invited';
 const MEMBER_FILTERS: readonly MemberFilter[] = ['all', 'owner', 'admin', 'member', 'invited'];
-/** "Owner" / "Admin" / "Member" — Linear's short role names. */
+/** "Owner" / "Admin" / "Member" — the short role names. */
 const ACCOUNT_ROLE_KEY: Record<AccountRole, string> = {
   owner: 'text4b1b8aa3608a',
   admin: 'textc1c224b03cd9',
   member: 'text7c968fb71f50',
 };
 
-type RoleTone = 'secondary' | 'outline' | 'muted';
-/** Badge variant by rank: the owner reads strongest, a member quietest. A
- *  custom role reads like an admin; an invite like a member. */
+/** Badge variant by rank (`ROLE_TONE`). An invite reads like a member. */
 function roleTone(value: RoleValue): RoleTone {
-  if (value.kind !== 'builtin') return 'outline';
-  if (value.role === 'owner') return 'secondary';
-  if (value.role === 'admin') return 'outline';
-  return 'muted';
+  if (value.kind !== 'builtin') return ROLE_TONE.custom;
+  if (value.role === 'owner' || value.role === 'admin') return ROLE_TONE[value.role];
+  return ROLE_TONE.member;
 }
 //
-// Linear's members table (`MemberTableHead` / `MemberTableRow` below): flat
+// The members table (`MemberTableHead` / `MemberTableRow` below): flat
 // rows, a checkbox gutter that appears on hover and stays once anything is
 // selected, a floating bulk bar. Granting opens `AccessDialog` in the hub's
 // split sheet; editing and bulk changes use it as a modal. What used to live
@@ -1304,7 +1291,7 @@ function MembersCard({
     setSelectedIds(failedIds);
   }
 
-  // Linear's selection model: once anything is ticked, every row shows its
+  // The selection model: once anything is ticked, every row shows its
   // checkbox; before that a checkbox shows only on the hovered row.
   const selecting = selectedCount > 0;
   const ownerCount = sorted.filter((m) => m.account_role === 'owner').length;
@@ -1347,7 +1334,7 @@ function MembersCard({
 
       {!isLoading && !isError ? (
         <>
-          {/* Linear's toolbar: search, a role filter, and Invite pushed right.
+          {/* The toolbar: search, a role filter, and Invite pushed right.
               Search filters invites and members alike. */}
           <div className="flex items-center gap-2">
             {/* h-8 like the select and Invite beside it. */}
@@ -1376,34 +1363,7 @@ function MembersCard({
                 ))}
               </SelectContent>
             </Select>
-            {/* Bulk actions sit in the toolbar, before Invite, while anything
-                is selected. No count, no floating bar. */}
             <div className="ml-auto flex shrink-0 items-center gap-3">
-              {selecting && canBulk ? (
-                <ButtonGroup>
-                  {canUpdateRole ? (
-                    <Button size="sm" variant="secondary" onClick={() => setBulkDialog('set_role')} disabled={bulkBusy}>
-                      {tI18nComplete.raw('texta43a8d8cfd29')}
-                    </Button>
-                  ) : null}
-                  {canAddToGroup ? (
-                    <Button size="sm" variant="secondary" onClick={() => setBulkDialog('add_to_group')} disabled={bulkBusy}>
-                      {tI18nComplete.raw('textea849eb70c26')}
-                    </Button>
-                  ) : null}
-                  {canRemove ? (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => setBulkDialog('remove')}
-                      disabled={bulkBusy}
-                    >
-                      {tI18nComplete.raw('textc3812fc4acb8')}
-                    </Button>
-                  ) : null}
-                </ButtonGroup>
-              ) : null}
             {canInvite ? (
               <Button size="sm" className="shrink-0 gap-1.5" onClick={onInvite}>
                 <Plus className="size-3.5" />
@@ -1413,6 +1373,51 @@ function MembersCard({
             </div>
           </div>
 
+          {/* Bulk actions: the shared selection bar, pinned to the bottom. */}
+          {selecting && canBulk ? (
+            <AccountHubSelectionBar
+              selectedCount={selectedCount}
+              allSelected={allEligibleSelected}
+              canSelectAll={bulkEligible.length > 0}
+              onSelectAll={toggleAllEligible}
+              onClear={clearSelection}
+              onExit={clearSelection}
+              actions={[
+                ...(canUpdateRole
+                  ? [
+                      {
+                        id: 'set-role',
+                        label: tI18nComplete.raw('texta43a8d8cfd29'),
+                        disabled: bulkBusy,
+                        onSelect: () => setBulkDialog('set_role'),
+                      },
+                    ]
+                  : []),
+                ...(canAddToGroup
+                  ? [
+                      {
+                        id: 'add-to-group',
+                        label: tI18nComplete.raw('textea849eb70c26'),
+                        disabled: bulkBusy,
+                        onSelect: () => setBulkDialog('add_to_group'),
+                      },
+                    ]
+                  : []),
+                ...(canRemove
+                  ? [
+                      {
+                        id: 'remove',
+                        label: tI18nComplete.raw('textc3812fc4acb8'),
+                        tone: 'destructive' as const,
+                        disabled: bulkBusy,
+                        onSelect: () => setBulkDialog('remove'),
+                      },
+                    ]
+                  : []),
+              ]}
+            />
+          ) : null}
+
           {members.length === 0 ? (
             <EmptyState
               icon={Users}
@@ -1421,8 +1426,8 @@ function MembersCard({
               description={tI18nComplete.raw('text9233263288f5')}
             />
           ) : (
-            // `-ml-7`: the select gutter hangs outside the content edge.
-            <div role="table" aria-label={tI18nComplete.raw('text1044a4c056d0')} className="-ml-7">
+            // `-ml-9`: the select gutter hangs outside the content edge.
+            <div role="table" aria-label={tI18nComplete.raw('text1044a4c056d0')} className="-ml-2 sm:-ml-9">
               <MemberTableHead
                 select={
                   canBulk && bulkEligible.length > 0
@@ -1657,191 +1662,6 @@ function MembersCard({
   );
 }
 
-// ============================== MEMBER TABLE ==============================
-
-/**
- * Linear's team members table: flat rows, no borders, a full-width fill on
- * hover. One grid so every row lines up: select gutter · name · email · role ·
- * actions. The gutter sits OUTSIDE the content edge (the table pulls left by
- * its width), so avatars align with the toolbar above. Below `sm` the email
- * column drops.
- */
-const MEMBER_GRID =
-  'grid grid-cols-[1.75rem_minmax(0,1fr)_minmax(0,9rem)_2rem] items-center pr-1 sm:grid-cols-[1.75rem_minmax(0,1fr)_minmax(0,18rem)_11rem_2rem]';
-
-/** The name cell's handle: the email's local part, else the label. */
-function memberHandle(email: string | null | undefined, fallback: string): string {
-  return email?.split('@')[0] || fallback;
-}
-
-interface MemberSelect {
-  /** Any row is selected: show every checkbox, not just the hovered one. */
-  visible: boolean;
-  checked: boolean | 'indeterminate';
-  onCheckedChange: () => void;
-  label: string;
-}
-
-function SelectCell({ select }: { select?: MemberSelect }) {
-  return (
-    <span role="cell" className="relative z-10 flex items-center justify-center">
-      {select ? (
-        <Checkbox
-          checked={select.checked}
-          onCheckedChange={select.onCheckedChange}
-          onClick={(event) => event.stopPropagation()}
-          aria-label={select.label}
-          className={cn(
-            // A 32px hit area: the pseudo-element takes the clicks.
-            "relative after:absolute after:-inset-2 after:content-['']",
-            !select.visible &&
-              'opacity-0 group-hover/member:opacity-100 focus-visible:opacity-100',
-          )}
-        />
-      ) : null}
-    </span>
-  );
-}
-
-function MemberTableHead({ select }: { select?: MemberSelect }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const head = 'text-muted-foreground truncate text-xs font-medium';
-  return (
-    <div role="row" className={cn(MEMBER_GRID, 'group/member h-9 px-2')}>
-      <SelectCell select={select} />
-      <span role="columnheader" aria-sort="ascending" className={cn(head, 'flex items-center gap-1')}>
-        {tI18nComplete.raw('textdcd1d5223f73')}
-      </span>
-      <span role="columnheader" className={cn(head, 'max-sm:hidden')}>
-        {tI18nComplete.raw('text969ccbd3cf63')}
-      </span>
-      <span role="columnheader" className={head}>
-        {tI18nComplete.raw('text14736a2eb9f4')}
-      </span>
-      <span aria-hidden />
-    </div>
-  );
-}
-
-function MemberTableRow({
-  select,
-  selected = false,
-  pending = false,
-  invited = false,
-  onOpen,
-  avatar,
-  name,
-  email,
-  tags,
-  role,
-  roleTone: tone = 'muted',
-  kebab,
-  kebabLabel,
-}: {
-  select?: MemberSelect;
-  selected?: boolean;
-  pending?: boolean;
-  /** A pending invite: muted name. */
-  invited?: boolean;
-  /** Row click: opens the member's access panel. */
-  onOpen?: () => void;
-  avatar: ReactNode;
-  name: string;
-  email: string;
-  tags?: ReactNode;
-  role: ReactNode;
-  /** Badge variant by the role's rank (`roleTone`). */
-  roleTone?: RoleTone;
-  kebab?: KebabItem[];
-  kebabLabel: string;
-}) {
-  return (
-    <div
-      role="row"
-      aria-selected={select ? selected : undefined}
-      className={cn(
-        MEMBER_GRID,
-        'group/member relative h-11 rounded-lg px-2',
-        selected ? 'bg-active' : 'hover:bg-hover',
-      )}
-    >
-      {onOpen ? (
-        // The whole row opens the member; checkbox and kebab sit above it.
-        <button
-          type="button"
-          aria-label={email}
-          onClick={onOpen}
-          className="focus-visible:ring-ring absolute inset-0 rounded-[inherit] outline-none focus-visible:ring-1"
-        />
-      ) : null}
-      <SelectCell select={select} />
-      <span role="cell" className="flex min-w-0 items-center gap-3">
-        {avatar}
-        <span
-          className={cn(
-            'min-w-0 truncate text-sm',
-            invited ? 'text-muted-foreground' : 'text-foreground',
-          )}
-        >
-          {name}
-        </span>
-        {tags ? <span className="relative z-10 flex shrink-0 items-center gap-1.5">{tags}</span> : null}
-      </span>
-      <span role="cell" className="text-muted-foreground truncate pr-4 text-sm max-sm:hidden">
-        {email}
-      </span>
-      <span role="cell" className="flex min-w-0">
-        {/* The role as a neutral `Badge` tag in sans, the same recipe as the
-            Roles pane's Built-in / Custom tags. */}
-        <Badge variant={tone} className="max-w-full truncate">
-          {role}
-        </Badge>
-      </span>
-      <span role="cell" className="relative z-10 flex justify-end">
-        {pending ? (
-          <Loading className="size-3.5 shrink-0" />
-        ) : kebab && kebab.length > 0 ? (
-          <MemberKebab items={kebab} label={kebabLabel} />
-        ) : null}
-      </span>
-    </div>
-  );
-}
-
-/** The row's actions. Hidden until the row is hovered, focused or open. */
-function MemberKebab({ items, label }: { items: KebabItem[]; label: string }) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={label}
-          className="text-muted-foreground hover:text-foreground data-[state=open]:text-foreground opacity-0 group-hover/member:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
-        >
-          <DotsThree className="size-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
-        {items.map((item, index) => (
-          <div key={item.label}>
-            {item.separated && index > 0 ? <DropdownMenuSeparator /> : null}
-            <DropdownMenuItem
-              variant={item.variant}
-              disabled={item.disabled}
-              onSelect={item.onSelect}
-              className="gap-2"
-            >
-              {item.icon}
-              {item.label}
-            </DropdownMenuItem>
-          </div>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
 // ============================== PENDING INVITES ==============================
 
 function PendingInvitesSection({
@@ -1950,7 +1770,7 @@ function PendingInvitesSection({
             }
             name={memberHandle(invite.email, invite.email)}
             email={invite.email}
-            // Linear's "Admin (Invited)": the role the invite carries, marked.
+            // "Admin (Invited)": the role the invite carries, marked.
             role={`${tI18nComplete.raw(ACCOUNT_ROLE_KEY[invite.initial_role] ?? ACCOUNT_ROLE_KEY.member)} (${tI18nComplete.raw('text63b17becd812')})`}
             roleTone="muted"
             tags={
