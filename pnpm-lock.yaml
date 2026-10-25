@@ -2021,6 +2021,12 @@ importers:
       '@tiptap/extension-bubble-menu':
         specifier: 3.30.5
         version: 3.30.5(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
+      '@tiptap/extension-code':
+        specifier: 3.30.5
+        version: 3.30.5(@tiptap/core@3.30.5)
+      '@tiptap/extension-code-block':
+        specifier: 3.30.5
+        version: 3.30.5(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
       '@tiptap/extension-document':
         specifier: 3.30.5
         version: 3.30.5(@tiptap/core@3.30.5)
@@ -2030,12 +2036,21 @@ importers:
       '@tiptap/extension-hard-break':
         specifier: 3.30.5
         version: 3.30.5(@tiptap/core@3.30.5)
+      '@tiptap/extension-image':
+        specifier: 3.30.5
+        version: 3.30.5(@tiptap/core@3.30.5)
+      '@tiptap/extension-list':
+        specifier: 3.30.5
+        version: 3.30.5(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
       '@tiptap/extension-paragraph':
         specifier: 3.30.5
         version: 3.30.5(@tiptap/core@3.30.5)
       '@tiptap/extension-placeholder':
         specifier: 3.30.5
         version: 3.30.5(@tiptap/extensions@3.30.5)
+      '@tiptap/extension-table':
+        specifier: 3.30.5
+        version: 3.30.5(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
       '@tiptap/extension-text':
         specifier: 3.30.5
         version: 3.30.5(@tiptap/core@3.30.5)
@@ -2048,6 +2063,9 @@ importers:
       '@tiptap/react':
         specifier: 3.30.5
         version: 3.30.5(@floating-ui/dom@1.8.0)(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)(@types/react-dom@19.2.3)(@types/react@19.2.18)(react-dom@19.3.0)(react@19.3.0)
+      '@tiptap/starter-kit':
+        specifier: 3.30.5
+        version: 3.30.5
       '@tiptap/suggestion':
         specifier: 3.30.5
         version: 3.30.5(@floating-ui/dom@1.8.0)(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
@@ -2111,6 +2129,9 @@ importers:
       maplibre-gl:
         specifier: 6.12.0
         version: 6.12.0
+      marked:
+        specifier: ^16.4.2
+        version: 16.4.2
       mermaid:
         specifier: 11.16.1
         version: 11.16.1
@@ -2180,6 +2201,12 @@ importers:
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.7.0
+      turndown:
+        specifier: ^7.2.1
+        version: 7.2.4
+      turndown-plugin-gfm:
+        specifier: ^1.0.2
+        version: 1.0.2
       unified:
         specifier: ^11.0.5
         version: 11.0.5
@@ -2229,6 +2256,9 @@ importers:
       '@types/react-test-renderer':
         specifier: ^19.3.0
         version: 19.3.0
+      '@types/turndown':
+        specifier: ^5.0.5
+        version: 5.0.6
       '@typescript/native-preview':
         specifier: 7.0.0-dev.20260707.2
         version: 7.0.0-dev.20260707.2

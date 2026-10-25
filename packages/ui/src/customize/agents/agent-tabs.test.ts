@@ -20,7 +20,7 @@ describe('changedTabs', () => {
         { behavior: { prompt: 'new', model: 'x/y' }, connectors: ['github'], enabled: false },
         { behavior: { prompt: 'old' } },
       ),
-    ).toEqual(['overview', 'instructions', 'access', 'runtime']);
+    ).toEqual(['overview', 'access', 'runtime']);
   });
 });
 
@@ -64,10 +64,10 @@ describe('resolveAgentLocation', () => {
   });
 
   test('every legacy ?section= maps to a tab and view', () => {
-    const cases: Record<string, { tab: string; view: string | null }> = {
+    const cases: Record<string, { tab: string; view: string | null; open?: string }> = {
       overview: { tab: 'overview', view: null },
-      instructions: { tab: 'instructions', view: null },
-      people: { tab: 'people', view: null },
+      instructions: { tab: 'overview', view: null, open: 'instructions' },
+      people: { tab: 'overview', view: null, open: 'share' },
       triggers: { tab: 'triggers', view: null },
       basics: { tab: 'overview', view: null },
       skills: { tab: 'access', view: 'skills' },
@@ -86,6 +86,11 @@ describe('resolveAgentLocation', () => {
     }
   });
 
+  test('the retired Instructions and People tabs open the Overview with the editor or Share', () => {
+    expect(at({ tab: 'instructions' })).toEqual({ tab: 'overview', view: null, open: 'instructions' });
+    expect(at({ tab: 'people' })).toEqual({ tab: 'overview', view: null, open: 'share' });
+  });
+
   test('a view the agent lacks falls back to the first one it has', () => {
     expect(at({ tab: 'access', view: 'drives' }, ['skills', 'connectors'])).toEqual({
       tab: 'access',
@@ -94,7 +99,7 @@ describe('resolveAgentLocation', () => {
   });
 
   test('a tab the agent lacks falls back to its first tab', () => {
-    expect(resolveAgentLocation({ tab: 'access', view: null, section: null }, ['overview', 'people'], [])).toEqual({
+    expect(resolveAgentLocation({ tab: 'access', view: null, section: null }, ['overview', 'triggers'], [])).toEqual({
       tab: 'overview',
       view: null,
     });

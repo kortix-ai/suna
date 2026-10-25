@@ -4,9 +4,11 @@
  * The agent page's Overview tab: the agent at a glance.
  *
  * Main column, in reading order: who it is (the description and one generated
- * sentence whose nouns link to their Access view), what it does (the top of
- * its instructions), and what it may touch (one row per grant, each opening
- * its Access view). The 20rem aside holds the switches a person flips most
+ * sentence whose nouns link to their Access view), what it does (its
+ * instructions, edited in place as a formatted document), and what it may
+ * touch (one row per grant, each opening its Access view). The description
+ * and the instructions write the page's draft in place; there is no
+ * separate editor. The 20rem aside holds the switches a person flips most
  * (Availability) and the facts about how it runs, who starts it and who may
  * use it. Below `lg` the aside stacks under the main column.
  *
@@ -42,8 +44,7 @@ import { Fragment, type ReactNode, useState } from 'react';
 
 import { useLocale, useTranslations as useI18nTranslations } from '../../i18n';
 import { agentDisplayName } from '../../internal/components/agent-mark';
-import { MarkdownWithFrontmatter } from '../../markdown/markdown-frontmatter';
-import { Button } from '../../primitives/button';
+import { cn } from '../../internal/lib/utils';
 import { Input } from '../../primitives/input';
 import {
   Select,
@@ -64,6 +65,7 @@ import {
   useLocalizedAgentConfigCatalog,
 } from '../sections/view/agent-editor';
 import { useGrantLabel } from './agent-access-text';
+import { AgentInstructions } from './agent-instructions';
 import { ACCESS_VIEWS } from './agent-tabs';
 
 type Agent = ProjectConfigSummary['agents'][number];
@@ -124,34 +126,75 @@ export interface OverviewFacts {
 
 // ─── Main column ─────────────────────────────────────────────────────────────
 
-/** The description field, for the Instructions tab. */
-export function DescriptionField({
+/**
+ * The description, edited in place: the text is the control. Click it (or
+ * the empty line) and it becomes a field; Enter or leaving keeps the edit in
+ * the draft, Escape puts back what was there.
+ */
+function AboutDescription({
   value,
   onChange,
   subagent,
 }: {
   value: string;
-  onChange: (next: string) => void;
+  onChange?: (next: string) => void;
   subagent: boolean;
 }) {
   const t = useI18nTranslations('agentEditor.page');
-  return (
-    <section className="space-y-2">
-      <h2 className="text-foreground flex flex-wrap items-baseline gap-x-2 text-sm font-medium">
-        {t('description')}
-        <span className="text-muted-foreground text-xs font-normal">
+  const tTabs = useI18nTranslations('agentEditor.tabs');
+  const [editing, setEditing] = useState<string | null>(null);
+  if (!onChange) {
+    return value ? (
+      <p className="text-foreground max-w-3xl text-base text-pretty">{value}</p>
+    ) : (
+      <p className="text-muted-foreground text-sm">{tTabs('noDescription')}</p>
+    );
+  }
+  if (editing !== null) {
+    const finish = (keep: boolean) => {
+      if (!keep) onChange(editing);
+      setEditing(null);
+    };
+    return (
+      // The field takes the text's box: the same inset and line, so nothing moves.
+      <div className="-mx-3 max-w-3xl space-y-1.5">
+        <Textarea
+          autoFocus
+          aria-label={t('description')}
+          value={value}
+          placeholder={t('descriptionPlaceholder')}
+          minHeight={44}
+          className="text-base font-normal"
+          onChange={(e) => onChange(e.target.value.replace(/\n/g, ' '))}
+          onBlur={() => finish(true)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              finish(true);
+            } else if (e.key === 'Escape') {
+              e.preventDefault();
+              finish(false);
+            }
+          }}
+        />
+        <p className="text-muted-foreground px-3 text-xs text-pretty">
           {subagent ? t('descriptionHelpSubagent') : t('descriptionHelp')}
-        </span>
-      </h2>
-      <Textarea
-        aria-label={t('description')}
-        value={value}
-        placeholder={t('descriptionPlaceholder')}
-        minHeight={44}
-        className="text-sm"
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </section>
+        </p>
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(value)}
+      aria-label={t('description')}
+      className={cn(
+        'hover:bg-hover focus-visible:bg-hover -mx-3 block max-w-3xl rounded-md border border-transparent px-3 py-2 text-left text-pretty transition-colors duration-fast focus-visible:outline-none',
+        value ? 'text-foreground text-base' : 'text-muted-foreground text-sm',
+      )}
+    >
+      {value || t('descriptionPlaceholder')}
+    </button>
   );
 }
 
@@ -212,43 +255,6 @@ function SummarySentence({
       )}
       .
     </p>
-  );
-}
-
-/** The top of the instructions, rendered under a fade, with Edit. */
-function InstructionsPreview({ prompt, href, editable }: { prompt: string | null; href: string; editable: boolean }) {
-  const t = useI18nTranslations('agentEditor.page');
-  const text = prompt?.trim() ?? '';
-  const words = text ? text.split(/\s+/).length : 0;
-  return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-foreground text-sm font-medium">
-          {t('instructions')}
-          {words > 0 ? (
-            <span className="text-muted-foreground ml-2 font-normal tabular-nums">{t('words', { count: words })}</span>
-          ) : null}
-        </h2>
-        <Button asChild variant="outline" size="sm">
-          <Link href={href}>{editable ? (words > 0 ? t('instructionsEdit') : t('instructionsWrite')) : t('instructions')}</Link>
-        </Button>
-      </div>
-      {words > 0 ? (
-        <Link
-          href={href}
-          aria-label={t('instructionsEdit')}
-          className="bg-background hover:border-foreground/20 relative block max-h-64 overflow-hidden rounded-md border px-4 py-3 transition-colors"
-        >
-          <MarkdownWithFrontmatter content={text} />
-          <span
-            aria-hidden
-            className="from-background pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t to-transparent"
-          />
-        </Link>
-      ) : (
-        <p className="text-muted-foreground rounded-md border px-4 py-3 text-sm">{t('instructionsEmpty')}</p>
-      )}
-    </section>
   );
 }
 
@@ -422,19 +428,38 @@ function AsideRow({ label, help, children }: { label: string; help?: string; chi
   );
 }
 
-/** A row that opens another tab: its value, then a caret. */
-function AsideLink({ label, value, href }: { label: string; value: ReactNode; href: string }) {
-  return (
-    <Link
-      href={href}
-      className="hover:bg-hover focus-visible:bg-hover flex items-center justify-between gap-3 px-4 py-2.5 transition-colors duration-fast focus-visible:outline-none"
-    >
+const ASIDE_LINK =
+  'hover:bg-hover focus-visible:bg-hover flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left transition-colors duration-fast focus-visible:outline-none';
+
+/** A row that opens another tab (`href`) or a dialog (`onClick`): its value, then a caret. */
+function AsideLink({
+  label,
+  value,
+  href,
+  onClick,
+}: {
+  label: string;
+  value: ReactNode;
+  href?: string;
+  onClick?: () => void;
+}) {
+  const content = (
+    <>
       <span className="text-muted-foreground shrink-0 text-sm">{label}</span>
       <span className="text-foreground flex min-w-0 items-center gap-1.5 text-sm">
         <span className="truncate">{value}</span>
         <CaretRightIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
       </span>
+    </>
+  );
+  return href ? (
+    <Link href={href} className={ASIDE_LINK}>
+      {content}
     </Link>
+  ) : (
+    <button type="button" onClick={onClick} className={ASIDE_LINK}>
+      {content}
+    </button>
   );
 }
 
@@ -451,13 +476,15 @@ function OverviewAside({
   editor,
   facts,
   hrefs,
+  onOpenShare,
 }: {
   agent: Agent;
   config: ProjectConfigSummary;
   block: AgentConfigBlock;
   editor?: AgentDraft;
   facts: OverviewFacts;
-  hrefs: { model: string; tools: string; workspace: string; triggers: string; people: string };
+  hrefs: { model: string; tools: string; workspace: string; triggers: string };
+  onOpenShare?: () => void;
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
   const tPage = useI18nTranslations('agentEditor.page');
@@ -584,11 +611,13 @@ function OverviewAside({
           href={hrefs.triggers}
           value={facts.triggerCount === undefined ? '—' : facts.triggerCount > 0 ? tPage('triggers', { count: facts.triggerCount }) : tPage('none')}
         />
-        <AsideLink
-          label={t('people')}
-          href={hrefs.people}
-          value={facts.peopleCount === undefined ? t('manage') : facts.peopleCount > 0 ? tPage('granted', { count: facts.peopleCount }) : tPage('none')}
-        />
+        {onOpenShare ? (
+          <AsideLink
+            label={t('people')}
+            onClick={onOpenShare}
+            value={facts.peopleCount === undefined ? t('manage') : facts.peopleCount > 0 ? tPage('granted', { count: facts.peopleCount }) : tPage('none')}
+          />
+        ) : null}
       </AsideSection>
     </div>
   );
@@ -607,6 +636,9 @@ export function AgentOverview({
   hrefFor,
   hrefs,
   sourcePath,
+  onOpenShare,
+  onAskMyKortix,
+  focusInstructions = false,
 }: {
   agent: Agent;
   config: ProjectConfigSummary;
@@ -618,29 +650,48 @@ export function AgentOverview({
   facts: OverviewFacts;
   editor?: AgentDraft;
   hrefFor: (view: AgentConfigSectionKey) => string | null;
-  hrefs: { instructions: string; model: string; tools: string; workspace: string; triggers: string; people: string };
+  hrefs: { model: string; tools: string; workspace: string; triggers: string };
   sourcePath: string;
+  /** Opens the header's Share dialog; absent for a viewer who cannot manage people. */
+  onOpenShare?: () => void;
+  onAskMyKortix?: () => void;
+  /** Unfold the instructions with the cursor in them (the old Instructions tab link). */
+  focusInstructions?: boolean;
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
   const name = agentDisplayName(agent.name);
-  const description = block.behavior?.description ?? agent.description ?? '';
+  // Editable: the draft alone, so clearing the description shows it cleared.
+  const description = (editor ? editor.oc.description : (block.behavior?.description ?? agent.description)) ?? '';
   return (
     <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <div className="min-w-0 space-y-8">
         <section className="space-y-2">
           <h2 className="text-foreground text-sm font-medium">{t('about')}</h2>
-          {description ? (
-            <p className="text-foreground max-w-3xl text-base text-pretty">{description}</p>
-          ) : (
-            <p className="text-muted-foreground text-sm">{t('noDescription')}</p>
-          )}
+          <AboutDescription
+            value={description}
+            onChange={editor ? (next) => editor.setOc('description', next) : undefined}
+            subagent={(editor?.oc.mode ?? block.behavior?.mode) === 'subagent'}
+          />
           <SummarySentence name={name} block={block} views={views} hrefFor={hrefFor} />
         </section>
-        <InstructionsPreview prompt={prompt} href={hrefs.instructions} editable={editor !== undefined} />
+        <AgentInstructions
+          value={prompt}
+          onChange={editor ? (next) => editor.setOc('prompt', next) : undefined}
+          onAskMyKortix={onAskMyKortix}
+          autoFocus={focusInstructions}
+        />
         <AccessSummary name={name} block={block} views={views} facts={facts} hrefFor={hrefFor} />
       </div>
       <div className="min-w-0 space-y-3">
-        <OverviewAside agent={agent} config={config} block={block} editor={editor} facts={facts} hrefs={hrefs} />
+        <OverviewAside
+          agent={agent}
+          config={config}
+          block={block}
+          editor={editor}
+          facts={facts}
+          hrefs={hrefs}
+          onOpenShare={onOpenShare}
+        />
         <p className="text-muted-foreground px-1 text-xs text-pretty">
           {t.rich('savedIn', {
             file: () => <span className="font-mono">kortix.yaml</span>,

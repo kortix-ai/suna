@@ -57,6 +57,7 @@ export const ENTRIES = {
   './files': 'files/index.ts',
   './file-viewer': 'files/viewer/index.ts',
   './terminal': 'terminal/index.ts',
+  './artifacts': 'artifacts/index.ts',
   './browser': 'browser/index.ts',
   './apps': 'apps/index.ts',
   './composer': 'session/composer/index.ts',

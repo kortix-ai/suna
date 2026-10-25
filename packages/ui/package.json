@@ -389,6 +389,9 @@
     "./map": "./src/primitives/map.tsx",
     "./markdown": "./src/markdown/index.tsx",
     "./markdown/copy-button": "./src/markdown/copy-button.tsx",
+    "./markdown/doc-editor/doc-extensions": "./src/markdown/doc-editor/doc-extensions.tsx",
+    "./markdown/doc-editor/doc-menus": "./src/markdown/doc-editor/doc-menus.tsx",
+    "./markdown/doc-editor/markdown": "./src/markdown/doc-editor/markdown.ts",
     "./markdown/setup-links/api-base": "./src/markdown/setup-links/api-base.ts",
     "./markdown/setup-links/app-credentials-form": "./src/markdown/setup-links/app-credentials-form.tsx",
     "./markdown/setup-links/approval-decision": "./src/markdown/setup-links/approval-decision.tsx",
@@ -2019,6 +2022,18 @@
         "types": "./dist/markdown/copy-button.d.ts",
         "import": "./dist/markdown/copy-button.js"
       },
+      "./markdown/doc-editor/doc-extensions": {
+        "types": "./dist/markdown/doc-editor/doc-extensions.d.ts",
+        "import": "./dist/markdown/doc-editor/doc-extensions.js"
+      },
+      "./markdown/doc-editor/doc-menus": {
+        "types": "./dist/markdown/doc-editor/doc-menus.d.ts",
+        "import": "./dist/markdown/doc-editor/doc-menus.js"
+      },
+      "./markdown/doc-editor/markdown": {
+        "types": "./dist/markdown/doc-editor/markdown.d.ts",
+        "import": "./dist/markdown/doc-editor/markdown.js"
+      },
       "./markdown/setup-links/api-base": {
         "types": "./dist/markdown/setup-links/api-base.d.ts",
         "import": "./dist/markdown/setup-links/api-base.js"
@@ -2757,15 +2772,21 @@
     "@tanstack/react-virtual": "^3.13.12",
     "@tiptap/core": "3.30.5",
     "@tiptap/extension-bubble-menu": "3.30.5",
+    "@tiptap/extension-code": "3.30.5",
+    "@tiptap/extension-code-block": "3.30.5",
     "@tiptap/extension-document": "3.30.5",
     "@tiptap/extension-floating-menu": "3.30.5",
     "@tiptap/extension-hard-break": "3.30.5",
+    "@tiptap/extension-image": "3.30.5",
+    "@tiptap/extension-list": "3.30.5",
     "@tiptap/extension-paragraph": "3.30.5",
     "@tiptap/extension-placeholder": "3.30.5",
+    "@tiptap/extension-table": "3.30.5",
     "@tiptap/extension-text": "3.30.5",
     "@tiptap/extensions": "3.30.5",
     "@tiptap/pm": "3.30.5",
     "@tiptap/react": "3.30.5",
+    "@tiptap/starter-kit": "3.30.5",
     "@tiptap/suggestion": "3.30.5",
     "@uiw/codemirror-extensions-langs": "^4.23.10",
     "@uiw/codemirror-themes": "4.23.10",
@@ -2787,6 +2808,7 @@
     "jszip": "^3.10.1",
     "katex": "^0.18.7",
     "maplibre-gl": "6.12.0",
+    "marked": "^16.4.2",
     "mermaid": "^11.12.0",
     "motion": "^12.40.0",
     "papaparse": "^5.5.2",
@@ -2810,6 +2832,8 @@
     "sql.js": "^1.14.1",
     "streamdown": "^1.6.11",
     "tailwind-merge": "^3.6.0",
+    "turndown": "^7.2.1",
+    "turndown-plugin-gfm": "^1.0.2",
     "unified": "^11.0.5",
     "uqr": "0.1.3",
     "use-intl": "^4.13.4",
@@ -2858,6 +2882,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@types/react-test-renderer": "^19.3.0",
+    "@types/turndown": "^5.0.5",
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "eslint": "^9.39.4",
     "happy-dom": "^20.14.5",

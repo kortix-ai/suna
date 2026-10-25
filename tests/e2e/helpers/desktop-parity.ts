@@ -520,26 +520,10 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
           .first()
           .click();
         await expect(page).toHaveURL(/\/customize\/agents\/kortix/);
-        await expectSeparateRows(
-          page.locator(
-            '[role="tablist"][aria-orientation="vertical"] [role="tab"]',
-          ),
-        );
-        for (const name of [
-          "Basics",
-          "People",
-          "Triggers",
-          "Skills",
-          "Connectors",
-          "Secrets",
-          "Kortix permissions",
-          "Model",
-          "Tools",
-          "Workspace",
-          "Overview",
-        ]) {
+        // The agent page's underline tabs (People is the header's Share dialog).
+        for (const name of ["Access", "Runtime", "Triggers", "Overview"]) {
           const tab = page
-            .locator('[role="tablist"][aria-orientation="vertical"]')
+            .getByRole("tablist", { name: "Agent sections" })
             .getByRole("tab", { name, exact: true });
           await tab.click();
           await expect(tab).toHaveAttribute("aria-selected", "true");
@@ -2554,6 +2538,8 @@ nativeBrowserTest?.(
       await selectAccountForUi(main, accounts[0].account_id);
       await dismissOnboarding(main);
       await main.goto(agentUrl);
+      // The Overview's description is its text until clicked, then a field.
+      await main.getByRole("button", { name: "Description", exact: true }).click({ timeout: 60_000 });
       const description = main.getByRole("textbox", { name: /Description/i });
       await expect(description).toBeVisible({ timeout: 60_000 });
       const original = await description.inputValue();

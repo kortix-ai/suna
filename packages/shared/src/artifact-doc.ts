@@ -5,11 +5,14 @@
  * opens. Every value is a Kortix token (`--foreground`, `--font-sans`,
  * `--spacing`, …): the app defines them, and the served page loads the kit
  * tokens (`BRAND_TOKENS_CSS`). Each element mirrors `UnifiedMarkdown`
- * (`@kortix/ui/markdown`), the Markdown look of chat and Files.
+ * (`@kortix/ui/markdown`), the Markdown look of chat and Files. An agent's
+ * instructions on its page use the same look inside the page column
+ * (`.kx-doc-inline`: no page width, margins or padding).
  */
 export const ARTIFACT_DOC_CSS = `
 .kx-doc{--s:var(--spacing,.23rem);color:var(--foreground);font-family:var(--font-sans);font-weight:500;font-size:var(--text-base,1rem);line-height:var(--leading-relaxed,1.625);
   -webkit-font-smoothing:antialiased;overflow-wrap:anywhere;max-width:46rem;margin:0 auto;padding:calc(var(--s)*16) max(16px,calc(var(--s)*8)) calc(var(--s)*32);box-sizing:border-box}
+.kx-doc.kx-doc-inline{max-width:none;margin:0;padding:0}
 .kx-doc *{box-sizing:border-box}
 .kx-doc :where(.ProseMirror,main)>:first-child,.kx-doc>:first-child{margin-top:0}
 .kx-doc :where(h1,h2,h3,h4,h5,h6){color:var(--foreground);font-weight:600;text-wrap:balance}

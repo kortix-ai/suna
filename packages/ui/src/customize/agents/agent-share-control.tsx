@@ -7,11 +7,12 @@ import { useTranslations as useI18nTranslations } from '../../i18n';
  * to someone else. Asana's shape (Marko, 2026-09-03): a stack of the
  * granted people's avatars, an overflow count, and a Share button.
  *
- * The avatars are a link to the People topic, where each grant can be edited;
- * Share opens the shared `AccessDialog` in grant mode with the agent picker
- * already narrowed to this agent, the same dialog the People topic's own
- * button opens. Both read the same `qk.project.resourceGrants` list, so a
- * grant made in the dialog shows up in the stack when the dialog closes.
+ * The avatars and Share open one dialog (`AgentShareDialog`): who may use
+ * the agent, Edit on each grant, and Grant access. The page owns the
+ * dialog's open state, so the Overview's People row and the old
+ * `?tab=people` link open the same dialog. Both read the same
+ * `qk.project.resourceGrants` list, so a grant made in the dialog shows up
+ * in the stack at once.
  *
  * Gated on `project.members.manage`, the leaf the grants endpoint asserts;
  * a reader without it sees only Start session.
@@ -23,16 +24,14 @@ import { EntityAvatar } from '../../primitives/entity-avatar';
 import { FadedScrollArea } from '../../primitives/faded-scroll-area';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '../../primitives/hover-card';
 import { UserAvatar } from '../../primitives/user-avatar';
-import { AccessDialog } from '../../access/access/access-dialog';
 import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
 import { useProjectCan } from '../../internal/lib/use-project-can';
 import { cn } from '../../internal/lib/utils';
-import { useProjectAccountId, useProjectName } from '@kortix/sdk/react';
+import { useProjectAccountId } from '@kortix/sdk/react';
 import { ShareNetworkIcon, UsersIcon, UsersThreeIcon } from '@phosphor-icons/react';
-import { UiLink as Link } from '../../providers/ui-provider';
 import { useMemo, useState } from 'react';
 
-import { grantsForAgent } from './agent-people-section';
+import { AgentShareDialog, grantsForAgent } from './agent-share-dialog';
 
 type Grant = ReturnType<typeof grantsForAgent>[number];
 
@@ -56,23 +55,23 @@ const STACK_LIMIT = 3;
 export function AgentShareControl({
   projectId,
   agentName,
-  peopleHref,
+  open,
+  onOpenChange,
 }: {
   projectId: string;
   agentName: string;
-  /** The People topic of this agent's page — where the stack links. */
-  peopleHref: string;
+  /** The Share dialog, owned by the page. */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const canManage =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed === true;
   const accountId = useProjectAccountId(projectId);
-  const [open, setOpen] = useState(false);
   const [stackOpen, setStackOpen] = useState(false);
   const tParticipants = useI18nTranslations('sessionParticipants');
 
   const grantsQuery = useAgentGrants(projectId, canManage);
-  const projectName = useProjectName(projectId) ?? '';
 
   const assigned = useMemo(
     () => grantsForAgent(grantsQuery.data?.grants ?? [], agentName),
@@ -85,16 +84,16 @@ export function AgentShareControl({
   const label =
     assigned.length === 0
       ? 'No one is granted this agent yet'
-      : `${assigned.length} ${assigned.length === 1 ? 'grant' : 'grants'} — open People`;
+      : `${assigned.length} ${assigned.length === 1 ? 'grant' : 'grants'} — open Share`;
 
   return (
     <div className="flex items-center gap-2">
       {assigned.length > 0 ? (
         <HoverCard open={stackOpen} onOpenChange={setStackOpen} openDelay={300} closeDelay={100}>
           <HoverCardTrigger asChild>
-            <Link
-              href={peopleHref}
-              prefetch
+            <button
+              type="button"
+              onClick={() => onOpenChange(true)}
               aria-label={label}
               className={cn(
                 'hover:bg-secondary flex h-7 items-center rounded-md p-0.5',
@@ -114,7 +113,7 @@ export function AgentShareControl({
                   </AvatarGroupCount>
                 ) : null}
               </AvatarGroup>
-            </Link>
+            </button>
           </HoverCardTrigger>
           <HoverCardContent
             side="bottom"
@@ -149,19 +148,12 @@ export function AgentShareControl({
           </HoverCardContent>
         </HoverCard>
       ) : null}
-      <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
+      <Button variant="secondary" size="sm" onClick={() => onOpenChange(true)}>
         <ShareNetworkIcon className="size-3.5 shrink-0" />
         {tI18nComplete.raw('text29887a5ff984')}
       </Button>
 
-      <AccessDialog
-        open={open}
-        onOpenChange={setOpen}
-        accountId={accountId}
-        scope={{ kind: 'project', projectId, projectName }}
-        mode={{ kind: 'grant' }}
-        initialAgentIds={[agentName]}
-      />
+      <AgentShareDialog projectId={projectId} agentName={agentName} open={open} onOpenChange={onOpenChange} />
     </div>
   );
 }

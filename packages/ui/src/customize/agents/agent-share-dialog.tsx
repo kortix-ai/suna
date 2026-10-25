@@ -3,7 +3,7 @@ import { useAgentGrants } from './use-agent-grants';
 
 import { useTranslations as useI18nTranslations } from '../../i18n';
 /**
- * Who may use this agent — managed here, on the agent's page.
+ * Who may use this agent: the header's Share button opens this dialog.
  *
  * This is THE access path in Kortix: a project manager grants a person or a
  * group an agent, never a skill or a secret directly (`object_policies` marks
@@ -29,7 +29,7 @@ import { useTranslations as useI18nTranslations } from '../../i18n';
  *    grants = unscoped), which is the opposite of what "remove" means.
  *
  * Gated on `project.members.manage`, the leaf the grants endpoint asserts.
- * Someone without it sees nothing rather than a section that 403s.
+ * Someone without it has no Share button, so the dialog never opens.
  */
 
 import { Button } from '../../primitives/button';
@@ -39,7 +39,15 @@ import { Skeleton } from '../../primitives/skeleton';
 import { errorToast, successToast } from '../../primitives/toast';
 import { UserAvatar } from '../../primitives/user-avatar';
 import { EmptyState } from '../../primitives/empty-state';
-import { EditorList, EditorSection } from '../sections/view/agent-editor-primitives';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '../../primitives/modal';
 import {
   AccessDialog,
   type AccessDialogCurrent,
@@ -106,12 +114,16 @@ interface EditTarget {
   inheritedFrom?: string[];
 }
 
-export function AgentPeopleSection({
+export function AgentShareDialog({
   projectId,
   agentName,
+  open,
+  onOpenChange,
 }: {
   projectId: string;
   agentName: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tSharing = useI18nTranslations('accessSharing');
@@ -129,7 +141,7 @@ export function AgentPeopleSection({
   const accessQuery = useQuery({
     queryKey: qk.project.access(projectId),
     queryFn: () => listProjectAccess(projectId),
-    enabled: canManage,
+    enabled: canManage && open,
     ...contract('inventory'),
   });
   const projectName = useProjectName(projectId) ?? '';
@@ -192,41 +204,33 @@ export function AgentPeopleSection({
   };
 
   return (
-    <EditorSection
-      title={tI18nComplete.raw('text82d9af69e1a1')}
-      description={tI18nComplete.raw('text96feb5be077d')}
-      trailing={
-        accountId ? (
-          <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setGrantOpen(true)}>
-            <PlusIcon className="size-4" />
-            {tI18nComplete.raw('text8693768c7e08')}
-          </Button>
-        ) : undefined
-      }
-      lead
-      bare
-    >
-      <div>
+    <Modal open={open} onOpenChange={onOpenChange}>
+      <ModalContent>
+        <ModalHeader>
+          <ModalTitle>{tI18nComplete.raw('text82d9af69e1a1')}</ModalTitle>
+          <ModalDescription>{tI18nComplete.raw('text96feb5be077d')}</ModalDescription>
+        </ModalHeader>
+        <ModalBody className="max-h-[60vh] overflow-y-auto">
         {grantsQuery.isLoading ? (
-          <EditorList>
+          <ul className="divide-border divide-y">
             {[0, 1].map((i) => (
-              <li key={i} className="flex items-center gap-3 px-4 py-2.5">
+              <li key={i} className="flex items-center gap-3 py-2.5">
                 <Skeleton className="size-8 rounded-md" />
                 <Skeleton className="h-4 w-40 rounded-sm" />
               </li>
             ))}
-          </EditorList>
+          </ul>
         ) : assigned.length === 0 ? (
           <EmptyState size="sm" title={tI18nComplete.raw('text011c4e48df01')} />
         ) : (
-          <EditorList>
+          <ul className="divide-border divide-y">
             {assigned.map((g) => {
               const member =
                 g.principal_type === 'member'
                   ? accessQuery.data?.members.find((m) => m.user_id === g.principal_id)
                   : undefined;
               return (
-                <li key={g.grant_id} className="flex items-center gap-3 px-4 py-2.5">
+                <li key={g.grant_id} className="flex items-center gap-3 py-2.5">
                   {g.principal_type === 'group' ? (
                     <EntityAvatar icon={UsersIcon} size="md" />
                   ) : g.principal_type === 'project' ? (
@@ -273,9 +277,18 @@ export function AgentPeopleSection({
                 </li>
               );
             })}
-          </EditorList>
+          </ul>
         )}
-      </div>
+        </ModalBody>
+        {accountId ? (
+          <ModalFooter className="pb-5">
+            <Button size="sm" onClick={() => setGrantOpen(true)}>
+              <PlusIcon className="size-4" />
+              {tI18nComplete.raw('text8693768c7e08')}
+            </Button>
+          </ModalFooter>
+        ) : null}
+      </ModalContent>
 
       {accountId ? (
         <AccessDialog
@@ -310,6 +323,6 @@ export function AgentPeopleSection({
         isPending={stopSharingMutation.isPending}
         onConfirm={() => stopSharing && stopSharingMutation.mutate(stopSharing.grant_id)}
       />
-    </EditorSection>
+    </Modal>
   );
 }
