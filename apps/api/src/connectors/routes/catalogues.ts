@@ -319,7 +319,9 @@ function registerDiscoverToolsAndInstallRoutes(app: OpenAPIHono, deps: Connector
           way.kind === 'composio' ? 'connect' : !authType || authType === 'none' ? 'ready' : signIn ? 'connect' : 'credential';
         const result = await deps.createConnector(projectId, admin.accountId, draft, admin.userId);
         if (!result.ok) return c.json(result.body ?? { error: result.error }, result.status as 400 | 403 | 409 | 502);
-        const syncError = result.sync?.errors.find((e) => e.slug === draft.slug)?.error;
+        // A way that still needs a sign-in or a credential cannot list its tools
+        // yet; its sync error is expected, and the next step stays that account.
+        const syncError = next === 'ready' ? result.sync?.errors.find((e) => e.slug === draft.slug)?.error : undefined;
         return c.json({
           ok: true,
           existing: false,

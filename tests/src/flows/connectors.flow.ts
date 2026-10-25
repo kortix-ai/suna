@@ -5143,21 +5143,25 @@ flow(
         if (r.header('retry-after') !== '30') throw new Error(`Retry-After: ${r.header('retry-after')}`);
       });
 
-      await ctx.step('an MCP isError result → 200 whose upstream_error carries the tool text', async () => {
+      await ctx.step('an MCP isError result → 200 with ok false, status tool_error and the tool text', async () => {
         const r = await call(slug.mcp, 'get_issue', { id: 'KE2E-1' });
         r.status(200)
           .body()
-          .has('$.ok', true)
+          .has('$.ok', false)
+          .has('$.status', 'tool_error')
+          .has('$.error', 'Issue KE2E-1 does not exist')
           .has('$.binding', 'mcp')
           .has('$.upstream_error', 'Issue KE2E-1 does not exist')
           .has('$.output[0].text', 'Issue KE2E-1 does not exist')
           .has('$.data.result.isError', true);
       });
 
-      await ctx.step('GraphQL errors with no data → 200 whose upstream_error names the GraphQL message', async () => {
+      await ctx.step('GraphQL errors with no data → 200 ok false (tool_error) whose upstream_error names the GraphQL message', async () => {
         const r = await call(slug.gql, 'issue', { id: 'KE2E-1', __select: 'id' });
         r.status(200)
           .body()
+          .has('$.ok', false)
+          .has('$.status', 'tool_error')
           .has('$.binding', 'graphql')
           .has('$.upstream_error', 'Entity not found: issue')
           .has('$.output.issue', null);
@@ -5654,9 +5658,11 @@ flow(
       if (row?.provider !== 'mcp' || row.name !== 'Issue tracker') throw new Error(`read back: ${JSON.stringify(row)}`);
     });
 
-    await ctx.step('the same name again gets a free slug, never the existing profile', async () => {
-      const r = await owner.post('/v1/connectors/projects/:projectId/discover/install', { id: 'kortix:linear', name: 'Issue tracker' }, { params, timeoutMs: 60_000 });
-      r.status(200);
+    await ctx.step('the same way again answers the existing profile; as_new_profile adds a second one with a free slug', async () => {
+      (await owner.post('/v1/connectors/projects/:projectId/discover/install', { id: 'kortix:linear', name: 'Issue tracker' }, { params, timeoutMs: 60_000 }))
+        .status(200).body().has('$.existing', true).has('$.slug', slug);
+      const r = await owner.post('/v1/connectors/projects/:projectId/discover/install', { id: 'kortix:linear', name: 'Issue tracker', as_new_profile: true }, { params, timeoutMs: 60_000 });
+      r.status(200).body().has('$.existing', false);
       const again = r.json<{ slug: string }>().slug;
       if (again === slug || !again.startsWith('issue-tracker-')) throw new Error(`second slug: ${again}`);
     });
@@ -5667,7 +5673,7 @@ flow(
       (await owner.post('/v1/connectors/projects/:projectId/discover/install', { id: 'kortix:linear', way: 'nope' }, { params })).status(400).body().matches('$.error', /not a way to connect/);
     });
 
-    await ctx.step('the agent\'s MCP tools read the same catalogue: search by type, one app\'s ways and tools, and install a way by name', async () => {
+    await ctx.step('the agent\'s MCP tools read the same catalogue: search by type, one app\'s ways and tools, an installed way answers the existing profile, as_new_profile adds one by name', async () => {
       const created = await owner.post('/v1/accounts/tokens', { name: 'CONN-39 agent' });
       created.status(201);
       const pat = created.json<{ secret_key: string }>().secret_key;
@@ -5690,8 +5696,11 @@ flow(
       if (app.ways?.[0]?.way !== 'kortix:linear:mcp' || app.ways[0].recommended !== true || app.tools?.total < 10 || app.tools.list.length !== 5) {
         throw new Error(`app: ${JSON.stringify(app).slice(0, 300)}`);
       }
-      const added = await call(3, 'add_connector', { app: 'kortix:linear', name: 'Agent tracker' });
-      if (added.connector !== 'agent-tracker' || added.via !== 'mcp') throw new Error(`add: ${JSON.stringify(added)}`);
+      // The project already has Linear over MCP: the agent gets that profile back, not a duplicate.
+      const same = await call(3, 'add_connector', { app: 'kortix:linear', name: 'Agent tracker' });
+      if (same.connector !== 'issue-tracker' || same.existing !== true) throw new Error(`add again: ${JSON.stringify(same)}`);
+      const added = await call(4, 'add_connector', { app: 'kortix:linear', name: 'Agent tracker', as_new_profile: true });
+      if (added.connector !== 'agent-tracker' || added.via !== 'mcp' || added.existing === true) throw new Error(`add: ${JSON.stringify(added)}`);
     });
 
     await ctx.step('a non-member is refused', async () => {

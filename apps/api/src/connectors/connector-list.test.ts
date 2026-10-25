@@ -153,6 +153,7 @@ describe('buildAdminConnectorViews state', () => {
         candidate({ slug: 'gmail', status: 'needs_auth', requiresAuth: true }),
         candidate({ slug: 'linear', status: 'active', requiresAuth: true }),
         candidate({ slug: 'wiki', status: 'active', requiresAuth: false }),
+        candidate({ slug: 'mcp-oauth', status: 'error', lastError: 'HTTP 401', requiresAuth: true }),
       ],
       new Set(['linear']),
     );
@@ -162,6 +163,8 @@ describe('buildAdminConnectorViews state', () => {
       ['gmail', 'needs_account', 'no account connected', true],
       ['linear', 'connected', null, true],
       ['wiki', 'connected', null, false],
+      // No tools without a sign-in: the fix is an account, not a repair.
+      ['mcp-oauth', 'needs_account', 'no account connected', true],
     ]);
   });
 });

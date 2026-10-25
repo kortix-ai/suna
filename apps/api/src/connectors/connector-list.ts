@@ -92,11 +92,13 @@ export function connectorState(
 ): Pick<AdminConnectorView, 'state' | 'state_reason' | 'auth_needed'> {
   const auth_needed = candidate.requiresAuth;
   if (candidate.status === 'disabled') return { state: 'disabled', state_reason: 'disabled in kortix.yaml', auth_needed };
-  if (candidate.status === 'error') {
-    return { state: 'error', state_reason: safeConnectorLastError(candidate.lastError) ?? 'its tools could not be loaded', auth_needed };
-  }
+  // Before `error`: a server that needs a sign-in fails to list its tools
+  // until one exists, and the fix for that is an account, not a repair.
   if (auth_needed && !connectedSlugs.has(candidate.slug)) {
     return { state: 'needs_account', state_reason: 'no account connected', auth_needed };
+  }
+  if (candidate.status === 'error') {
+    return { state: 'error', state_reason: safeConnectorLastError(candidate.lastError) ?? 'its tools could not be loaded', auth_needed };
   }
   return { state: 'connected', state_reason: null, auth_needed };
 }
