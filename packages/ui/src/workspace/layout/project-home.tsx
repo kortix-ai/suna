@@ -179,7 +179,6 @@ function ProjectHomeView({
     ...contract('inventory'),
     refetchOnWindowFocus: false,
   });
-  const pendingAccessCount = accessRequests.data?.requests.length ?? 0;
 
   // Same query key page.tsx (`ProjectIndexPage`) already fetches for this
   // project — this dedupes against that cache entry rather than firing a
@@ -384,7 +383,7 @@ function ProjectHomeView({
       <ProjectHomeWallpaper />
       <SidebarToggle placement="floating" />
       <AccessRequestsBell
-        count={pendingAccessCount}
+        requests={accessRequests.data?.requests ?? []}
         to={accessRequestsTo}
         notificationCenter={notificationCenterOn(projectDetailQuery.data?.project)}
       />

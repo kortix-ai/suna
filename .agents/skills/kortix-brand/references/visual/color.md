@@ -78,9 +78,11 @@ The `kortix-*` accents are the only source of hue in product UI. Same value in l
 | `kortix-orange` | warning, needs attention |
 | `kortix-yellow` | pending |
 | `kortix-blue` | info, open, in review |
-| `kortix-purple` | Reserved. No default meaning. Do not assign one ad hoc. (Existing uses are debt. Add none.) |
+| `kortix-purple` | The owner role badge (`Badge variant="royal"`, R1). Nothing else: other existing uses are debt. Add none. |
 | none | idle, off, unknown → `text-muted-foreground`, no hue |
 | none | count, structure (a subagent count) → neutral fill, `Badge size="tabular"`. Yellow is the "awaiting you" tone. A count is structure (#7067). |
+
+**Rule.** A role badge takes one hue per rank, top-down: owner `royal` (purple), account admin `info` (blue), project manager `success` (green), custom role `secondary` and member `default` (neutral ink), no access `muted`. The source is `ROLE_TONE` in `apps/web/src/features/accounts/hub/member-table.tsx` (R1). — *Why:* the role column is read as a ladder. A member in muted text looked like no access, and an owner in grey looked like nobody. — *Where:* app (Members, project access). — *When silent:* a role with access is never `muted`.
 
 **Rule.** Map status to one hue per meaning, as the table says (D5). — *Why:* three sources gave three greens, two reds and three warning hues (`status.tsx` emerald/amber, `badge.tsx` hex, `info-banner.tsx` yellow-as-info). One mapping ends it. — *Where:* app, marketing, deck, mobile (mobile `success`/`warning` alias these accents; see `decisions.md` J-4). CLI maps it to ANSI, see below. — *When silent:* if the state is not in the table, it is idle: `text-muted-foreground`.
 

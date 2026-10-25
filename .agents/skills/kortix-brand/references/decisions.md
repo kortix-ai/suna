@@ -10,6 +10,18 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ---
 
+## 2026-10-25
+
+### R1 Role badges: one hue per rank, the owner purple
+- **Date:** 2026-10-25
+- **Decision:** Role badges read as a ladder: owner `royal` (`bg-kortix-purple/15`), account admin `info` (blue), project manager `success` (green), custom role `secondary` and member `default` (neutral ink), no access `muted`. Every role badge is borderless (`ring-0`) and sans (`normal-case`). `kortix-purple` gets its one meaning: the owner.
+- **Why:** Jay, 2026-10-25: a project member in muted text read as "no access", and the owner in grey did not read as the top of the hierarchy. "The owner should be royal."
+- **Where:** `packages/ui/src/primitives/badge.tsx` (`royal`), `ROLE_TONE` in `apps/web/src/features/accounts/hub/member-table.tsx`, `visual/color.md` (Accents and status).
+- **Supersedes:** the `kortix-purple` "Reserved" row in `visual/color.md`.
+- **Source:** Jay Suthar, account Members and project access tables.
+
+---
+
 ## 2026-10-19
 
 ### K9 `@kortix/ui`: the shared Tailwind v4 component library

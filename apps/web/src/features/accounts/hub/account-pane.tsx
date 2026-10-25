@@ -76,8 +76,10 @@ export function AccountPane({
       <div
         className={cn(
           'px-4 pb-12',
-          // Fluid panes run edge to edge with Linear's gutter (~34px).
-          width === 'fluid' ? 'sm:px-9' : 'sm:px-12',
+          // `sm:px-12` on every pane. A fluid table hangs its select gutter
+          // and hover fill `9` steps outside the content edge (`member-table.tsx`);
+          // `px-9` left nothing between that fill and the sidebar border.
+          'sm:px-12',
           back ? 'md:pt-12' : 'pt-12',
         )}
       >
