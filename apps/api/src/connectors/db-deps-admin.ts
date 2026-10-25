@@ -31,6 +31,7 @@ import {
   selectPoliciesForRead,
 } from './policy';
 import { COMPUTER_SLUG, withComputerCatalog } from './computers';
+import { likelyToolRisk } from './policy-templates';
 import {
   ensureComputerConnector,
   rematerializeCatalogAfterCredentialUpdate,
@@ -140,6 +141,8 @@ export async function getConnectorPolicies(
         source: EffectiveSource;
         /** The stored risk the project default decides on. */
         risk?: string;
+        /** What the tool likely does (from its name when the source has no risk). */
+        likely_risk?: 'read' | 'write' | 'unknown';
         /** The rule that decided; absent when the default did. */
         rule?: ApiRule;
       }>;
@@ -228,6 +231,7 @@ export async function getConnectorPolicies(
       action: resolved.action,
       source: resolved.source,
       risk: a.risk,
+      likely_risk: likelyToolRisk(row.providerType, a.path, a.risk),
       ...(resolved.rule
         ? {
             rule: {
