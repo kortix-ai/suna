@@ -43,15 +43,6 @@ const LINK_SITES: LinkSite[] = [
     expectAbsent: [`href="/legal?tab=terms"`],
   },
   {
-    file: 'app/[locale]/(public)/(marketing)/support/page.tsx',
-    expectPresent: [
-      `href="/legal/terms"`,
-      `href="/legal?tab=privacy"`,
-      `href="/legal?tab=imprint"`,
-    ],
-    expectAbsent: [`href="/legal?tab=terms"`],
-  },
-  {
     file: 'lib/site-config.ts',
     expectPresent: [`url: '/legal/terms'`, `url: '/legal?tab=privacy'`],
     expectAbsent: [`url: '/legal?tab=terms'`],

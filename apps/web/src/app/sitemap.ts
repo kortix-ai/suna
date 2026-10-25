@@ -1,7 +1,5 @@
 import type { MetadataRoute } from 'next';
 
-import { ROLES } from '@/features/marketing/solutions/registry';
-
 import { locales } from '@/i18n/config';
 import {
   absoluteUrl,
@@ -13,7 +11,7 @@ import {
 type SitemapEntry = MetadataRoute.Sitemap[number];
 
 // The middleware's locale matcher is a prefix match on MARKETING_ROUTES, so
-// /de/support already rewrites and self-canonicalizes. Listing a route here is
+// /de/pricing already rewrites and self-canonicalizes. Listing a route here is
 // what puts its per-locale URLs and hreflang set in the sitemap. Every route
 // below renders fully translated (the strict i18n audit covers its copy), and
 // its layout emits the same hreflang set through localizedMarketingMetadata.
@@ -22,13 +20,7 @@ type SitemapEntry = MetadataRoute.Sitemap[number];
 export const LOCALIZED_ROUTES = [
   '/',
   '/about',
-  '/agent-computer',
-  '/agents-and-skills',
-  '/automations',
   '/careers',
-  '/channels',
-  '/company-as-code',
-  '/connectors',
   '/contact',
   '/developers',
   '/download',
@@ -37,8 +29,6 @@ export const LOCALIZED_ROUTES = [
   '/pricing',
   '/security',
   '/self-hosted',
-  '/solutions',
-  '/support',
 ] as const;
 
 function htmlEntry(pathname: string, lastModified?: string): SitemapEntry {
@@ -72,7 +62,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
   // Keep the explicit locale routes that middleware actually serves. English
   // uses the unprefixed URL; every alternate stays on the same non-www origin.
-  for (const pathname of [...LOCALIZED_ROUTES, ...ROLES.map((role) => `/solutions/${role.slug}`)]) {
+  for (const pathname of LOCALIZED_ROUTES) {
     const languages = Object.fromEntries(
       locales.map((locale) => [
         locale,

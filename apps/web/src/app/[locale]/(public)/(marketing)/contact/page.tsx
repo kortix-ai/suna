@@ -1,123 +1,143 @@
 'use client';
 
-import {
-  ArrowRightIcon as ArrowRight,
-  CubeIcon as Boxes,
-  ClockIcon as Clock,
-  LockIcon as Lock,
-  EnvelopeIcon as Mail,
-  PlayCircleIcon as PlayCircle,
-  HardDrivesIcon as Server,
-  ShieldCheckIcon as ShieldCheck,
-} from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
-import { Button } from '@/components/ui/button';
 import { DemoQualifierModal } from '@/features/contact/demo-qualifier-modal';
+import { useEnglishOnly } from '@/features/marketing/kit/english-only';
+import { MarketingButton } from '@/features/marketing/kit/marketing-button';
+import { MARKETING_CONTAINER } from '@/features/marketing/kit/section';
+import { SectionHeading } from '@/features/marketing/kit/section-heading';
 import { CONTACT_TRANSLATION_KEYS } from '@/i18n/contact-translation-keys.generated';
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { cn } from '@/lib/utils';
 
 const CONTACT_EMAIL = 'hey@kortix.ai';
+const SUPPORT_EMAIL = 'support@kortix.com';
+const SECURITY_EMAIL = 'security@kortix.com';
+const DISCORD_URL = 'https://discord.com/invite/RvFhXUdZ9H';
 
 // Public demo event (cal.com/team/kortix/demo) + a namespace unique to it.
 const CAL_LINK = 'team/kortix/demo';
 const CAL_NAMESPACE = 'kortix-enterprise-demo';
 
+/* The English two-line heading. Other locales show the translated "See Kortix
+   run your company's work" as a one-line title (`useEnglishOnly`), so the
+   heading never mixes two languages. */
+const HEADING = {
+  title: 'Talk to the team.',
+  titleMuted: "See Kortix run your company's work.",
+} as const;
+
+/* Every line traces to a row in kortix-brand `claims.md`, word for word. No
+   number: the star count is the only sanctioned one, and it is not here. */
 const VALUE_PROPS = [
   {
-    icon: <PlayCircle className="size-4" />,
     title: 'A tailored walkthrough',
-    desc: 'See agents run your actual workflows end-to-end — not a generic demo.',
+    desc: 'See agents run your actual workflows end to end, not a generic demo.',
   },
   {
-    icon: <Server className="size-4" />,
     title: 'Deploy your way',
     // ACCURACY: not "air-gapped" — `self-host start` pulls images from
     // docker.io. Isolated topologies get scoped with us, not self-served.
-    desc: 'Managed cloud, your private VPC, or your own on-prem network.',
+    desc: 'Run it on Kortix Cloud, in your VPC, or on your own on-prem network.',
   },
   {
-    icon: <Boxes className="size-4" />,
-    title: 'Batteries included',
-    desc: '3,000+ connectors, 60+ skills, and agents pre-built for your industry.',
+    title: 'Access and audit',
+    desc: 'Per-resource permissions for people and agents. Roles, groups, and an audit trail. SAML 2.0 single sign-on and SCIM 2.0.',
   },
   {
-    icon: <ShieldCheck className="size-4" />,
-    title: 'Enterprise-ready',
-    desc: 'SSO, RBAC, audit logs, secrets manager — and open to audit.',
+    title: 'Compliance',
+    desc: 'SOC 2 Type I is held. SOC 2 Type II is in progress.',
   },
   {
-    icon: <Lock className="size-4" />,
     title: 'Yours to own',
-    desc: 'Self-host, bring your own models, no vendor lock-in.',
+    desc: 'Open source. Read it, fork it, audit it. Any model provider with your own keys.',
   },
 ];
 
+const CHANNELS = [
+  { label: 'General', value: CONTACT_EMAIL, href: `mailto:${CONTACT_EMAIL}` },
+  { label: 'Support', value: SUPPORT_EMAIL, href: `mailto:${SUPPORT_EMAIL}` },
+  { label: 'Security', value: SECURITY_EMAIL, href: `mailto:${SECURITY_EMAIL}` },
+  { label: 'Community', value: 'Discord', href: DISCORD_URL, external: true },
+] as const;
+
+/**
+ * `/contact` (Buio contact page): the two-line heading, the demo actions and
+ * the ways to reach us on the left; what the demo covers on the right. The
+ * demo request stays the `DemoQualifierModal` flow with `source="contact"`.
+ */
 export default function ContactPage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [open, setOpen] = useState(false);
   const valueProps = localizeUiCatalog(VALUE_PROPS, tI18nComplete, CONTACT_TRANSLATION_KEYS);
+  const englishOnly = useEnglishOnly();
+  const translatedTitle = `${tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextSeeKortixRun82bdbdad')} ${tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextYourCompanyS9f04147b')}`;
 
   return (
-    <div className="bg-background relative min-h-dvh overflow-hidden">
-      {/* Soft top glow — keeps the page on-brand without the busy brandmark. */}
-      <div className="from-muted/40 pointer-events-none absolute inset-x-0 top-0 h-[420px] bg-gradient-to-b to-transparent" />
-
-      <section className="relative z-[1] mx-auto flex min-h-dvh max-w-2xl flex-col items-center justify-center px-6 py-32 text-center">
-        <div className="border-border bg-background/70 text-muted-foreground inline-flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-xs tracking-wider uppercase backdrop-blur-sm">
-          <span className="size-1.5 rounded-full bg-emerald-500" />
-          {tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextEnterpriseOnPremb5a0c0b0')}
-        </div>
-
-        <h1 className="text-foreground mt-6 text-4xl leading-[1.04] font-medium tracking-tight sm:text-5xl md:text-6xl">
-          {tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextSeeKortixRun82bdbdad')}
-          <br />
-          <span className="text-muted-foreground">
-            {tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextYourCompanyS9f04147b')}
-          </span>
-        </h1>
-
-        <p className="text-muted-foreground mt-5 max-w-xl text-base leading-relaxed sm:text-lg">
-          {tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextBookA30ee0f8c6a')}
-        </p>
-
-        <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row">
-          <Button
-            size="lg"
-            className="h-12 rounded-full px-8 text-sm"
-            onClick={() => setOpen(true)}
-          >
-            {tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextBookADemofaaea0a0')}
-            <ArrowRight className="ml-1.5 size-3.5" />
-          </Button>
-          <Button asChild size="lg" variant="outline" className="h-12 rounded-full px-7 text-sm">
-            <a href={`mailto:${CONTACT_EMAIL}`}>
-              <Mail className="mr-1.5 size-4" />
-              {tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextEmailUs505f9598')}
-            </a>
-          </Button>
-        </div>
-
-        <p className="text-muted-foreground mt-6 inline-flex items-center gap-2 text-sm">
-          <Clock className="text-foreground/60 size-4" />
-          {tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextASolutionsEngineer7001e57e')}
-        </p>
-
-        {/* Value props — minimal list, balanced regardless of count. */}
-        <div className="mx-auto mt-16 flex w-full max-w-md flex-col gap-5 text-left">
-          {valueProps.map(({ icon, title, desc }) => (
-            <div key={title} className="flex items-start gap-3.5">
-              <div className="text-muted-foreground mt-0.5 flex size-7 shrink-0 items-center justify-center">
-                {icon}
+    <main className="bg-background pt-16">
+      <section
+        className={cn(
+          MARKETING_CONTAINER,
+          'grid grid-cols-1 gap-y-16 pt-24 pb-24 md:pt-30 md:pb-30 lg:grid-cols-4',
+        )}
+      >
+        <div className="lg:col-span-2 lg:pr-12">
+          <SectionHeading
+            as="h1"
+            title={englishOnly(HEADING.title) ?? translatedTitle}
+            titleMuted={englishOnly(HEADING.titleMuted)}
+            description={tI18nHardcoded.raw(
+              'autoAppPublicMarketingContactPageJsxTextBookA30ee0f8c6a',
+            )}
+            actions={
+              <>
+                <MarketingButton size="md" className="hit-area-y-1" variant="secondary" asChild>
+                  <a href={`mailto:${CONTACT_EMAIL}`}>
+                    {tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextEmailUs505f9598')}
+                  </a>
+                </MarketingButton>
+                <MarketingButton size="md" className="hit-area-y-1" onClick={() => setOpen(true)}>
+                  {tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextBookADemofaaea0a0')}
+                </MarketingButton>
+              </>
+            }
+          />
+          <dl className="mt-12 grid grid-cols-2 gap-x-8 gap-y-6 border-t pt-8">
+            {CHANNELS.map((channel) => (
+              <div key={channel.label} className="min-w-0">
+                <dt className="text-muted-foreground text-sm">{channel.label}</dt>
+                <dd className="mt-1">
+                  <a
+                    href={channel.href}
+                    {...('external' in channel
+                      ? { target: '_blank', rel: 'noopener noreferrer' }
+                      : {})}
+                    className="text-foreground hover:text-muted-foreground duration-moderate block py-1 text-sm break-all transition-colors"
+                  >
+                    {channel.value}
+                  </a>
+                </dd>
               </div>
-              <p className="text-muted-foreground text-sm leading-relaxed">
-                <span className="text-foreground font-medium">{title}.</span> {desc}
-              </p>
-            </div>
-          ))}
+            ))}
+          </dl>
+          <p className="text-muted-foreground mt-12 max-w-sm text-sm text-balance">
+            {tI18nHardcoded.raw(
+              'autoAppPublicMarketingContactPageJsxTextASolutionsEngineer7001e57e',
+            )}
+          </p>
         </div>
+
+        <ul className="border-b lg:col-span-2">
+          {valueProps.map(({ title, desc }) => (
+            <li key={title} className="border-t py-6">
+              <h2 className="text-foreground text-base font-medium">{title}</h2>
+              <p className="text-muted-foreground mt-2 text-sm text-pretty">{desc}</p>
+            </li>
+          ))}
+        </ul>
       </section>
 
       <DemoQualifierModal
@@ -127,6 +147,6 @@ export default function ContactPage() {
         calNamespace={CAL_NAMESPACE}
         source="contact"
       />
-    </div>
+    </main>
   );
 }

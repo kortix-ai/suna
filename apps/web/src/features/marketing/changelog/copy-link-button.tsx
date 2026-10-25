@@ -39,8 +39,8 @@ export function CopyLinkButton({ anchor, className }: { anchor: string; classNam
       }
       className={cn(
         'text-muted-foreground hover:text-foreground inline-flex items-center gap-2 text-sm',
-        'hit-area-2 cursor-pointer transition-[color,scale] duration-150 outline-none focus-visible:underline',
-        'focus-visible:underline-offset-4 active:scale-[0.98]',
+        'hit-area-y-3 cursor-pointer transition-[color,scale] duration-normal outline-none focus-visible:underline',
+        'focus-visible:underline-offset-4 active:scale-[0.96]',
         className,
       )}
     >

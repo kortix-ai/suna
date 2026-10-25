@@ -34,9 +34,9 @@
  */
 
 export const hero = {
-  eyebrow: 'About Kortix',
   title: 'We are building the open-source AI Operating System.',
-  lead: 'Every company should own all of it — every agent, all of their data, every skill, every connector, the memory, the whole configuration.',
+  titleMuted: 'Every company should own all of it.',
+  lead: 'Every agent, all of their data, every skill, every connector, the memory and the whole configuration.',
   ctaPrimary: 'We are hiring',
   ctaPrimaryHref: '/careers',
   ctaSecondary: 'Read the code',
@@ -45,25 +45,26 @@ export const hero = {
   starsCaption: 'stars on kortix-ai/suna',
 } as const;
 
-/** The three claims the page rests on. One headline, one paragraph, no more. */
+/**
+ * The two claims the page rests on. One headline, one paragraph, no more.
+ * "AGI" stays out of these (positioning.md: mission and manifesto only), and
+ * so does any line that hands the company's autonomy to agents (claims.md).
+ */
+export const beliefs = {
+  title: 'What we believe.',
+  titleMuted: 'And why it has to be open.',
+} as const;
+
 export const statements = [
   {
     id: 'own',
-    n: '01',
     title: 'You own all of it.',
     body: 'On your own infrastructure if you want it there. Kortix does not sit beside the company as one more tool. It becomes the company — where the work, the context and the operations live.',
   },
   {
     id: 'closed',
-    n: '02',
-    title: 'The closed platforms are becoming AGI operating systems too.',
+    title: 'The closed platforms are becoming AI operating systems too.',
     body: 'Claude Cowork, ChatGPT Work and the rest are heading for full AI operating systems an entire company runs on. That is the direction of the industry. The difference is that you will never own those.',
-  },
-  {
-    id: 'shift',
-    n: '03',
-    title: 'Autonomy is shifting from humans to agents.',
-    body: 'Every company is already autonomous. Today people drive that autonomy. Agents will. Kortix is where the shift happens.',
   },
 ] as const;
 
@@ -73,8 +74,8 @@ export const statements = [
  * are true today, and the last two are future tense because they are not.
  */
 export const platform = {
-  eyebrow: 'The platform',
-  title: 'Build, host, manage, monitor. Then train and eval.',
+  title: 'Build, host, manage, monitor.',
+  titleMuted: 'Then train and eval.',
   sub: 'One place your agents run and all of your context connects. Six verbs, one system.',
   items: [
     {
@@ -110,9 +111,12 @@ export const platform = {
   ],
 } as const;
 
+/* "AGI platform" is a retired category name (kortix-brand D1), so the close
+   is the hiring call instead of the old thesis line. */
 export const closing = {
-  title: 'Every lab will have an AGI platform. Ours is the one you own.',
-  ctaPrimary: 'Come build it',
+  title: 'Help us build it.',
+  titleMuted: 'We are hiring in Belgrade and San Francisco.',
+  ctaPrimary: 'See open positions',
   ctaPrimaryHref: '/careers',
   ctaSecondary: 'Read the code',
   ctaSecondaryHref: 'https://github.com/kortix-ai/suna',
@@ -120,7 +124,7 @@ export const closing = {
 
 export function getLocalizedAboutContent(tI18nComplete: UiTranslator) {
   return localizeUiCatalog(
-    { hero, statements, platform, closing },
+    { hero, beliefs, statements, platform, closing },
     tI18nComplete,
     MARKETING_SECONDARY_TRANSLATION_KEYS,
   );

@@ -1,264 +1,199 @@
-import { Reveal } from '@/components/home/reveal';
-import { RowList, SectionDivider } from '@/features/marketing/component/public-route-helpers';
-import { CapabilityHero } from '@/features/marketing/component/capability-hero';
-import SectionHeader from '@/features/marketing/component/section-header';
-import { BoundaryDiagram } from '@/features/marketing/self-hosted/boundary-diagram';
-import { CodePanel } from '@/features/marketing/self-hosted/code-panel';
+import Link from '@/components/site-link';
+import { CodePanel } from '@/features/marketing/code-panel';
+import { splitTitle } from '@/features/marketing/kit/blocks';
+import { CodeTabs } from '@/features/marketing/kit/code-tabs';
+import { MarketingButton } from '@/features/marketing/kit/marketing-button';
+import { Band, Block, CellGrid, Heading, KeyRows, PageFrame, PageHero, SpecGrid } from '@/features/marketing/kit/page-frame';
 import { getLocalizedSelfHostedContent } from '@/features/marketing/self-hosted/content';
-import { SelfHostedHeroVisual } from '@/features/marketing/self-hosted/hero-visual';
-import { StackDiagram } from '@/features/marketing/self-hosted/stack-diagram';
-import { cn } from '@/lib/utils';
 import { getTranslations } from '@/i18n/get-translations';
 import type { ReactNode } from 'react';
 
 /**
- * Hairlines for a 4-up grid that reflows 1 → 2 → 4 columns. Written per index
- * because the divider a cell needs changes with the breakpoint.
- */
-const GRID_4_RULES = [
-  '',
-  'border-t sm:border-t-0 sm:border-l',
-  'border-t lg:border-t-0 lg:border-l',
-  'border-t sm:border-l lg:border-t-0',
-] as const;
-
-/**
- * The same idea for the 6-up first-run grid, which reflows 1 → 2 → 3 columns.
- * Derived per index rather than by a formula so the rule a cell carries is
- * readable next to the cell it belongs to: `sm` puts cells 1/3/5 in the second
- * column, `lg` puts cells 1/2/4/5 there instead.
- */
-const GRID_6_RULES = [
-  '',
-  'border-t sm:border-t-0 sm:border-l',
-  'border-t lg:border-t-0 lg:border-l',
-  'border-t sm:border-l lg:border-l-0',
-  'border-t lg:border-l',
-  'border-t sm:border-l',
-] as const;
-
-
-
-/**
- * `/self-hosted` — run the whole thing on your own box.
+ * `/self-hosted`: run the whole thing on your own box.
  *
  * Copy lives in `features/marketing/self-hosted/content.ts`, and that file's
  * header lists the six claims this page corrects against the shipped CLI (the
  * first-run wizard does NOT ask for GitHub or a model key; air-gapped is not
  * what `kortix self-host start` gives you; there is no Redis). Read it before
  * editing a line here.
+ *
+ * Layout is the /security page's (`kit/page-frame.tsx`): a two-tone title and
+ * one line of description per section, then a band of hairline cells, rows or
+ * tabs. No eyebrows, no reveal motion, no closing section: the footer carries
+ * the call to action.
  */
+
+/** A section title: two sentences split into ink and muted, else the muted line from content. */
+function twoTone(section: { title: string; titleMuted?: string }) {
+  const [title, muted] = splitTitle(section.title);
+  return { title, titleMuted: muted ?? section.titleMuted };
+}
+
 export default async function SelfHostedPage(): Promise<ReactNode> {
   const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   const { commands, firstRun, hero, models, parity, stack, targets, yours } =
     getLocalizedSelfHostedContent(tI18nComplete);
+
   return (
-    <div className="bg-background relative">
-      <CapabilityHero
-        eyebrow={hero.eyebrow}
-        title={hero.title}
-        sub={hero.sub}
-        ctaPrimary={hero.ctaPrimary}
-        ctaPrimaryHref={hero.ctaPrimaryHref}
-        ctaSecondary={hero.ctaSecondary}
-        ctaSecondaryHref={hero.ctaSecondaryHref}
-        visual={<SelfHostedHeroVisual />}
-      />
-
-      {/* ── 1 · what you keep ───────────────────────────────────────────── */}
-      <section id="what-you-keep" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader eyebrow={yours.eyebrow} title={yours.title} description={yours.sub} />
-
-        <Reveal delay={0.06}>
-          <div className="mt-10">
-            <BoundaryDiagram />
-          </div>
-        </Reveal>
+    <PageFrame>
+      {/* Hero: the four facts the rest of the page proves, as one row of cells. */}
+      <section id="hero">
+        <PageHero
+          {...twoTone(hero)}
+          sub={hero.sub}
+          actions={
+            <>
+              <MarketingButton variant="secondary" size="md" className="hit-area-y-1" asChild>
+                <Link href={hero.ctaSecondaryHref}>{hero.ctaSecondary}</Link>
+              </MarketingButton>
+              <MarketingButton size="md" className="hit-area-y-1" asChild>
+                <Link href={hero.ctaPrimaryHref}>{hero.ctaPrimary}</Link>
+              </MarketingButton>
+            </>
+          }
+        />
+        <Band>
+          <SpecGrid items={hero.specs} cols="lg:grid-cols-4" />
+        </Band>
       </section>
 
-      <SectionDivider />
-
-      {/* ── 2 · the commands ────────────────────────────────────────────── */}
-      <section id="commands" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader
-          eyebrow={commands.eyebrow}
-          title={commands.title}
-          description={commands.sub}
-        />
-
-        <Reveal delay={0.06}>
-          <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <CodePanel title={commands.install.title} lines={commands.install.lines} lang="sh" />
-            <CodePanel title={commands.hosts.title} lines={commands.hosts.lines} lang="sh" />
+      {/* 1 · What you keep: on your box, and what is not. */}
+      <Block id="what-you-keep">
+        <Heading {...twoTone(yours)} sub={yours.sub} />
+        <Band className="mt-12">
+          <div className="grid grid-cols-1 md:grid-cols-2">
+            {[yours.onbox, yours.offbox].map((side, i) => (
+              <div key={side.label} className={i === 0 ? 'p-6 lg:p-11' : 'border-t p-6 md:border-t-0 md:border-l lg:p-11'}>
+                <h3 className="text-foreground text-base font-medium first-letter:uppercase">{side.label}</h3>
+                <ul className="mt-4 divide-y">
+                  {side.items.map((item) => (
+                    <li
+                      key={item}
+                      className={
+                        i === 0 ? 'text-foreground py-3.5 text-sm text-pretty' : 'text-muted-foreground py-3.5 text-sm text-pretty'
+                      }
+                    >
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
-        </Reveal>
+        </Band>
+        <p className="text-muted-foreground px-8 pt-6 text-sm text-pretty lg:px-28">{yours.offbox.note}</p>
+      </Block>
 
-        <Reveal delay={0.1}>
-          <ul className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {commands.notes.map((note) => (
-              <li
-                key={note}
-                className="border-border text-muted-foreground border-t pt-4 text-sm leading-relaxed"
-              >
-                {note}
-              </li>
-            ))}
-          </ul>
-        </Reveal>
-      </section>
+      {/* 2 · The commands: start the stack, then choose the host. */}
+      <Block id="commands">
+        <Heading {...twoTone(commands)} sub={commands.sub} />
+        <Band className="mt-12">
+          <CodeTabs
+            label="Commands"
+            tabs={[
+              { id: 'install', k: commands.install.title, v: commands.notes[1], panel: { ...commands.install, lang: 'sh' } },
+              {
+                id: 'hosts',
+                k: commands.hosts.title,
+                v: `${commands.notes[0]} ${commands.notes[2]}`,
+                panel: { ...commands.hosts, lang: 'sh' },
+              },
+            ]}
+          />
+        </Band>
+      </Block>
 
-      <SectionDivider />
-
-      {/* ── 3 · the first run ───────────────────────────────────────────── */}
-      <section id="first-run" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader
-          eyebrow={firstRun.eyebrow}
-          title={firstRun.title}
-          description={firstRun.sub}
-        />
-
-        <Reveal delay={0.06}>
-          <ol className="border-border bg-card mt-10 grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-3">
-            {firstRun.asks.items.map((item, i) => (
-              <li
-                key={item.n}
-                className={cn('border-border flex flex-col p-6 sm:p-7', GRID_6_RULES[i])}
-              >
-                <span className="text-muted-foreground/45 font-mono text-xs tracking-widest tabular-nums">
-                  {item.n}
-                </span>
-                <h3 className="text-foreground mt-6 text-base leading-tight font-medium">
-                  {item.k}
-                </h3>
-                <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{item.v}</p>
-              </li>
-            ))}
-          </ol>
-        </Reveal>
-
-        <Reveal delay={0.1}>
-          <div className="border-border bg-card mt-4 rounded-sm border p-6 sm:p-8">
-            <p className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-              {firstRun.generates.label}
-            </p>
-            <ul className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {/* 3 · The first run: six questions, then what it generates. */}
+      <Block id="first-run">
+        <Heading {...twoTone(firstRun)} sub={firstRun.sub} />
+        <Band className="mt-12">
+          <CellGrid
+            cols="lg:grid-cols-3"
+            items={firstRun.asks.items.map((item) => ({ id: item.n, n: item.n, k: item.k, v: item.v }))}
+          />
+        </Band>
+        <Band className="mt-6">
+          <div className="grid grid-cols-1 md:grid-cols-2">
+            <div className="p-6 lg:p-11">
+              <h3 className="text-foreground text-base font-medium first-letter:uppercase">{firstRun.generates.label}</h3>
+              <p className="text-muted-foreground mt-4 text-sm text-pretty">{firstRun.generates.note}</p>
+            </div>
+            <ul className="divide-y border-t p-6 md:border-t-0 md:border-l lg:p-11">
               {firstRun.generates.items.map((item) => (
-                <li key={item} className="flex items-start gap-3">
-                  <span
-                    aria-hidden
-                    className="bg-muted-foreground/35 mt-[7px] size-1.5 shrink-0 rounded-full"
-                  />
-                  <span className="text-muted-foreground text-sm leading-relaxed">{item}</span>
+                <li key={item} className="text-foreground py-3.5 text-sm text-pretty">
+                  {item}
                 </li>
               ))}
             </ul>
-            <p className="text-muted-foreground border-border mt-6 border-t pt-6 text-sm leading-relaxed">
-              {firstRun.generates.note}
-            </p>
           </div>
-        </Reveal>
+        </Band>
+        <p className="text-muted-foreground px-8 pt-6 text-sm text-pretty lg:px-28">{firstRun.after}</p>
+      </Block>
 
-        <Reveal delay={0.14}>
-          <p className="text-muted-foreground border-border mt-6 border-t pt-6 text-sm leading-relaxed">
-            {firstRun.after}
-          </p>
-        </Reveal>
-      </section>
-
-      <SectionDivider />
-
-      {/* ── 4 · the stack ───────────────────────────────────────────────── */}
-      <section id="stack" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader eyebrow={stack.eyebrow} title={stack.title} description={stack.sub} />
-
-        <Reveal delay={0.06}>
-          <div className="mt-10">
-            <StackDiagram />
-          </div>
-        </Reveal>
-
-        <Reveal delay={0.1}>
-          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {[stack.data, stack.updates].map((card) => (
-              <div
-                key={card.title}
-                className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8"
-              >
-                <h3 className="text-foreground text-lg leading-tight font-medium">{card.title}</h3>
-                <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{card.body}</p>
+      {/* 4 · The stack: every Compose service by group, then data and updates. */}
+      <Block id="stack">
+        <Heading {...twoTone(stack)} sub={stack.sub} />
+        <Band className="mt-12">
+          <div className="bg-border grid grid-cols-1 gap-px md:grid-cols-3">
+            {stack.groups.map((group) => (
+              <div key={group.id} className="bg-background p-6 lg:p-8">
+                <h3 className="text-foreground text-base font-medium first-letter:uppercase">{group.label}</h3>
+                <dl className="mt-4 divide-y">
+                  {group.services.map((service) => (
+                    <div key={service.k} className="py-3.5">
+                      <dt className="text-foreground font-mono text-sm">{service.k}</dt>
+                      <dd className="text-muted-foreground mt-1 text-sm text-pretty">{service.v}</dd>
+                    </div>
+                  ))}
+                </dl>
               </div>
             ))}
           </div>
-        </Reveal>
-      </section>
-
-      <SectionDivider />
-
-      {/* ── 5 · parity ──────────────────────────────────────────────────── */}
-      <section id="parity" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader eyebrow={parity.eyebrow} title={parity.title} description={parity.sub} />
-
-        <Reveal delay={0.06}>
-          <div className="mt-10">
-            <RowList rows={parity.rows} />
-          </div>
-        </Reveal>
-      </section>
-
-      <SectionDivider />
-
-      {/* ── 6 · models ──────────────────────────────────────────────────── */}
-      <section id="models" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader eyebrow={models.eyebrow} title={models.title} description={models.sub} />
-
-        <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
-          <Reveal delay={0.06} className="lg:col-span-7">
-            <CodePanel title={models.shell.title} lines={models.shell.lines} lang="sh" />
-          </Reveal>
-
-          <Reveal delay={0.1} className="lg:col-span-5">
-            <div className="grid h-full gap-4">
-              {models.points.map((point) => (
-                <div
-                  key={point.id}
-                  className="border-border bg-card flex h-full flex-col justify-center rounded-sm border p-6"
-                >
-                  <h3 className="text-foreground text-base leading-tight font-medium">
-                    {point.title}
-                  </h3>
-                  <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{point.body}</p>
-                </div>
-              ))}
-            </div>
-          </Reveal>
+        </Band>
+        <div className="mt-6">
+          <KeyRows rows={[stack.data, stack.updates].map((card) => ({ id: card.title, k: card.title, v: card.body }))} />
         </div>
-      </section>
+      </Block>
 
-      <SectionDivider />
+      {/* 5 · Parity. */}
+      <Block id="parity">
+        <Heading {...twoTone(parity)} sub={parity.sub} />
+        <div className="mt-6">
+          <KeyRows rows={parity.rows} />
+        </div>
+      </Block>
 
-      {/* ── 7 · where it runs ───────────────────────────────────────────── */}
-      <section id="targets" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader eyebrow={targets.eyebrow} title={targets.title} description={targets.sub} />
-
-        <Reveal delay={0.06}>
-          <div className="mt-10">
-            <RowList rows={targets.rows} />
+      {/* 6 · Models: the two notes beside the shell that connects a provider. */}
+      <Block id="models">
+        <Heading {...twoTone(models)} sub={models.sub} />
+        <Band className="mt-12">
+          <div className="grid grid-cols-1 lg:grid-cols-2">
+            <ul className="flex flex-col gap-8 px-4 py-12 lg:px-11 lg:py-16 lg:pr-12">
+              {models.points.map((point) => (
+                <li key={point.id}>
+                  <h3 className="text-foreground text-base font-medium text-pretty">{point.title}</h3>
+                  <p className="text-muted-foreground mt-2 text-sm text-pretty">{point.body}</p>
+                </li>
+              ))}
+            </ul>
+            <div className="bg-card flex min-w-0 items-center border-t p-4 sm:p-8 lg:border-t-0 lg:border-l lg:p-12">
+              <CodePanel title={models.shell.title} lines={models.shell.lines} lang="sh" className="w-full" />
+            </div>
           </div>
-        </Reveal>
+        </Band>
+      </Block>
 
-        <Reveal delay={0.1}>
-          <dl className="border-border bg-card mt-4 grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-4">
-            {targets.sizing.items.map((item, i) => (
-              <div key={item.k} className={cn('border-border px-5 py-6 sm:px-6', GRID_4_RULES[i])}>
-                <dt className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-                  {item.k}
-                </dt>
-                <dd className="text-foreground mt-2.5 text-sm leading-snug">{item.v}</dd>
-              </div>
-            ))}
-          </dl>
-        </Reveal>
-      </section>
-    </div>
+      {/* 7 · Where it runs, then what it wants. */}
+      <Block id="targets">
+        <Heading {...twoTone(targets)} sub={targets.sub} />
+        <Band className="mt-12">
+          <CellGrid cols="lg:grid-cols-3" items={targets.rows} />
+        </Band>
+        <h3 className="text-foreground px-8 pt-12 text-base font-medium lg:px-28">{targets.sizing.label}</h3>
+        <div className="mt-2">
+          <KeyRows rows={targets.sizing.items} />
+        </div>
+      </Block>
+    </PageFrame>
   );
 }

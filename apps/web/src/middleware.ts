@@ -41,14 +41,9 @@ const NEXT_INTL_LOCALE_HEADER = 'X-NEXT-INTL-LOCALE';
 const MARKETING_ROUTES = [
   '/',
   '/about',
-  '/agent-computer',
-  '/agents-and-skills',
-  '/automations',
+  '/blog',
   '/careers',
-  '/channels',
   '/changelog',
-  '/company-as-code',
-  '/connectors',
   '/contact',
   '/design-system',
   '/developers',
@@ -59,25 +54,18 @@ const MARKETING_ROUTES = [
   '/pricing',
   '/security',
   '/self-hosted',
-  '/solutions',
-  '/support',
   '/use-cases',
 ];
 
 // Pure marketing/promo routes that a self-host with the landing page disabled
 // (KORTIX_PUBLIC_DISABLE_LANDING_PAGE) should NOT serve — they bounce to the
-// app. Functional public routes (/auth, /docs, /legal, /support,
+// app. Functional public routes (/auth, /docs, /legal,
 // /marketplace, /share, /download, /maintenance, …) stay reachable; only the
 // marketing site itself is deactivated.
 const SELF_HOST_MARKETING_ONLY = [
   '/about',
   '/launch',
-  '/agent-computer',
-  '/agents-and-skills',
-  '/automations',
-  '/channels',
   '/self-hosted',
-  '/company-as-code',
   '/careers',
   '/changelog',
   '/contact',
@@ -85,8 +73,6 @@ const SELF_HOST_MARKETING_ONLY = [
   '/enterprise',
   '/pricing',
   '/use-cases',
-  '/solutions',
-  '/connectors',
   '/security',
 ];
 
@@ -107,15 +93,9 @@ const PUBLIC_ROUTES = [
   '/connect', // Agent-minted Pipedream Quick Connect links — token-gated, MUST be openable with no login (distinct from authed /connectors)
   '/master-login', // Master password admin login
   '/checkout', // Public checkout wrapper for Apple compliance
-  '/support', // Support hub — FAQ, contact channels, account deletion
   '/docs', // Product documentation (Fumadocs) should be public
   '/about', // About page should be public
-  '/agent-computer', // Agent computer marketing page should be public
-  '/agents-and-skills', // marketing page should be public
-  '/automations', // marketing page should be public
-  '/channels', // marketing page should be public
   '/self-hosted', // marketing page should be public
-  '/company-as-code', // marketing page should be public
   '/careers', // Careers page should be public
   '/changelog', // Public release notes (sourced from GitHub Releases)
   '/install',
@@ -134,8 +114,7 @@ const PUBLIC_ROUTES = [
   '/enterprise', // Enterprise page should be public
   '/pricing', // Pricing page should be public
   '/use-cases', // Use cases page should be public
-  '/solutions', // Solutions / persona landing pages should be public
-  '/connectors', // Connector directory + per-tool pages should be public
+  '/blog', // Blog index and posts should be public
   '/security', // Security & trust page should be public
   '/maintenance', // Maintenance page must be accessible without auth
   '/debug', // Dev-only visual harnesses (tools, connecting, error) — unlinked
@@ -312,10 +291,12 @@ export async function middleware(request: NextRequest) {
     );
   }
 
-  // /blog is proxied to a separate deployment (the blog app, next.config.ts
-  // rewrites). It serves public pages only, so a kortix.com session never
-  // crosses to it: the Supabase cookie and any Authorization header stay here.
-  if (pathname === '/blog' || pathname.startsWith('/blog/')) {
+  // /blog and its posts are pages here; the blog's FILES (rss.xml, feed.xml,
+  // llms.txt, sitemap.xml, <slug>.md) are still proxied to the blog app
+  // (next.config.ts rewrites). That deployment serves public files only, so a
+  // kortix.com session never crosses to it: the Supabase cookie and any
+  // Authorization header stay here.
+  if (pathname.startsWith('/blog/') && pathname.includes('.')) {
     const requestHeaders = new Headers(request.headers);
     requestHeaders.delete('cookie');
     requestHeaders.delete('authorization');
@@ -531,7 +512,7 @@ export async function middleware(request: NextRequest) {
   // (KORTIX_PUBLIC_DISABLE_LANDING_PAGE — default ON for self-host), the WHOLE
   // marketing surface is deactivated: the homepage and every marketing route
   // bounce straight to the app — authenticated users to /projects, everyone
-  // else to /auth. Functional public routes (/docs, /legal, /support,
+  // else to /auth. Functional public routes (/docs, /legal,
   // /marketplace, /share, …) are unaffected. Read via process.env directly —
   // NEXT_PUBLIC_ vars are inlined at build time, so in Docker containers they'd
   // carry the image's placeholder value; the runtime container env

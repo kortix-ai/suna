@@ -2,8 +2,10 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
 import { UseCasesBrowser } from '@/components/use-cases/use-cases-browser';
+import { MARKETING_CONTAINER } from '@/features/marketing/kit/section';
 import { getTranslations } from '@/i18n/get-translations';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
+import { cn } from '@/lib/utils';
 import { siteMetadata } from '@/lib/site-metadata';
 import { getAllUseCases } from '@/lib/use-cases';
 
@@ -47,8 +49,6 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function UseCasesIndexPage() {
   if (process.env.NEXT_PUBLIC_USE_CASES_ENABLED === 'false') notFound();
   const t = await getTranslations('hardcodedUi.i18nComplete');
-  const tUseCases = await getTranslations('useCases');
-  const title = t.raw('textb697dd6a71d9');
   const description = t.raw('text7fa8aef486d8');
   const useCases = getAllUseCases();
 
@@ -75,27 +75,22 @@ export default async function UseCasesIndexPage() {
   };
 
   return (
-    <main className="bg-background relative min-h-screen">
+    <main className="bg-background relative min-h-screen pt-16">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: safeJsonForHtml(jsonLd) }}
       />
-      <div className="mx-auto max-w-7xl px-6 pb-24 sm:pb-32">
-        {/* Measure is capped at max-w-2xl so the deck reads as a paragraph, not
-            as a banner stretched across the full 80rem catalog width. */}
-        <header className="max-w-2xl pt-32 pb-12 sm:pt-44 sm:pb-16">
-          <span className="text-muted-foreground/70 font-mono text-xs tracking-wider uppercase">
-            {title}
-          </span>
-          <h1 className="text-foreground mt-4 text-3xl font-medium tracking-tight text-balance sm:text-4xl md:text-[2.75rem] md:leading-[1.1]">
-            {tUseCases('headline')}
-          </h1>
-          <p className="text-muted-foreground mt-5 text-base leading-relaxed sm:text-lg">
-            {description}
-          </p>
-        </header>
-
-        <UseCasesBrowser posts={useCases} />
+      {/* The /blog layout: two-tone title, filter row, lead, then the grid. */}
+      <div className={cn(MARKETING_CONTAINER, 'pt-24 pb-24 md:pt-30 md:pb-30')}>
+        <UseCasesBrowser
+          posts={useCases}
+          title={
+            <h1 className="text-foreground text-xl font-medium tracking-tight text-balance md:text-2xl lg:text-3xl">
+              Use cases{' '}
+              <span className="text-muted-foreground block">Real work Kortix agents run, end to end.</span>
+            </h1>
+          }
+        />
       </div>
     </main>
   );

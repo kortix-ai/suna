@@ -1,14 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { CodePanel as AgentComputerPanel } from './agent-computer/code-panel';
 import { CodePanel as SecurityPagePanel } from './security-page/code-panel';
 import { CodePanel as SelfHostedPanel } from './self-hosted/code-panel';
 
-// ─── Three marketing pages ship the same code panel in three copies that
-// differ only in the React key of each row. These tests pin the rendering all
-// three must keep — comment/key/value in YAML, prompt/output in shell, blanks
-// and repeated lines kept as rows — through all three module paths, so the
+// ─── Two marketing pages ship the same code panel in two copies that
+// differ only in the React key of each row. These tests pin the rendering both
+// must keep — comment/key/value in YAML, prompt/output in shell, blanks
+// and repeated lines kept as rows — through both module paths, so the
 // copies can collapse into one module without changing what a visitor sees.
 // They pass unchanged before and after that dedupe. ────────────────────────
 
@@ -46,12 +45,11 @@ const ROW = '<span class="block whitespace-pre">';
 
 // Panels keyed by their page, exactly as the pages import them.
 const PANELS = [
-  ['agent-computer', AgentComputerPanel],
   ['security-page', SecurityPagePanel],
   ['self-hosted', SelfHostedPanel],
 ] as const;
 
-describe('the marketing code panel rendering, pinned for all three pages', () => {
+describe('the marketing code panel rendering, pinned for both pages', () => {
   test('colors YAML comments, keys, indents and values', () => {
     for (const [page, Panel] of PANELS) {
       const html = renderToStaticMarkup(<Panel title="kortix.yaml" lines={YAML_LINES} lang="yaml" />);
@@ -123,10 +121,9 @@ describe('the marketing code panel rendering, pinned for all three pages', () =>
     }
   });
 
-  test('renders the identical markup from all three module paths', () => {
+  test('renders the identical markup from both module paths', () => {
     const rendered = PANELS.map(([, Panel]) => renderToStaticMarkup(<Panel title="t" lines={YAML_LINES} lang="yaml" />));
     expect(rendered[0]).toBe(rendered[1]);
-    expect(rendered[0]).toBe(rendered[2]);
   });
 
   test('appends the caller className to the panel frame', () => {

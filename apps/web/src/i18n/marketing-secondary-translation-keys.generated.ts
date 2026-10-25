@@ -118,7 +118,7 @@ export const MARKETING_SECONDARY_TRANSLATION_KEYS: Readonly<Record<string, strin
   'Tell me what you have worked on.': 'text83cf3d0fc7c1',
   'The Kortix stack': 'text892fc6b36621',
   'The agent can install, run and break anything — only commits survive': 'text11e9a34decaa',
-  'The closed platforms are becoming AGI operating systems too.': 'textdcb912de1250',
+  'The closed platforms are becoming AI operating systems too.': 'textdcb912de1250',
   'The filter': 'text0d0fce8dc78a',
   'The harness needs somewhere to run. Each session boots its own isolated Linux machine with your repo and your tools already on it — nothing to install, no laptop involved.':
     'textf9fd7d923e08',

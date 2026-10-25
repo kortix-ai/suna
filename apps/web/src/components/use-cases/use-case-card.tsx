@@ -3,9 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 
-import { InlineMeta } from '@/components/ui/inline-meta';
 import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
-import { useTranslations } from '@/i18n/use-translations';
 import { formatPostDate, type Post } from '@/lib/blog';
 import { cn } from '@/lib/utils';
 import { USE_CASE_COVERS } from './covers';
@@ -14,7 +12,7 @@ import { USE_CASE_COVERS } from './covers';
  * Cover art with three tiers, most specific first:
  *  1. a custom per-slug cover component (USE_CASE_COVERS) — put anything here;
  *  2. the frontmatter `cover` image;
- *  3. a branded gradient placeholder.
+ *  3. a plain muted tile with the asterisk.
  */
 export function UseCaseCover({
   post,
@@ -47,70 +45,70 @@ export function UseCaseCover({
     );
   }
   return (
-    <div
-      className={cn(
-        'from-muted/60 via-background to-kortix-base/[0.08] relative overflow-hidden bg-gradient-to-br',
-        className,
-      )}
-    >
-      <div className="absolute inset-0 bg-[url('/grain-texture.png')] bg-repeat opacity-[0.12]" />
-      <div className="absolute inset-0 flex items-center justify-center">
-        <KortixAsterisk index={0} parentClass="size-10" />
-      </div>
+    <div className={cn('bg-muted relative flex items-center justify-center', className)}>
+      <KortixAsterisk index={0} parentClass="size-10" />
     </div>
   );
 }
 
-/**
- * One entry in the use-case catalog. Deliberately chrome-free: the thumbnail
- * carries the only border on the page, and the text sits directly on the page
- * background. A card border around every cell would double every line the grid
- * already draws with whitespace.
- *
- * No author avatar here — a case study is about the company and the loop, not
- * about who wrote it up. The byline belongs on the article itself.
- */
-export function UseCaseCard({ post }: { post: Post }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+/** "Finance · October 25, 2026": the archetype and the date, muted. */
+function UseCaseMeta({ post, className }: { post: Post; className?: string }) {
   const archetype = post.data.tags[0];
+  return (
+    <p className={cn('text-muted-foreground flex items-center gap-2 text-sm', className)}>
+      {archetype ? (
+        <>
+          <span>{archetype}</span>
+          <span aria-hidden>·</span>
+        </>
+      ) : null}
+      <time dateTime={post.data.date}>{formatPostDate(post.data.date)}</time>
+    </p>
+  );
+}
 
+/**
+ * The lead use case (Polar blog lead, as on /blog): the two-tone title on the
+ * left, the title in ink and the description under it in muted ink at the
+ * same size, the cover on the right. The whole block is one link.
+ */
+export function UseCaseFeatured({ post }: { post: Post }) {
   return (
     <Link
       href={post.url}
-      className={cn(
-        'group focus-visible:ring-ring flex flex-col rounded-md',
-        'focus-visible:ring-offset-background focus-visible:ring-2 focus-visible:ring-offset-4 focus-visible:outline-none',
-      )}
+      className="outline-ring grid grid-cols-1 items-center gap-10 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 lg:grid-cols-2 lg:gap-16"
     >
-      <UseCaseCover
-        post={post}
-        className="border-border/60 group-hover:border-border aspect-[4/3] w-full shrink-0 rounded-md border transition-colors"
-      />
-
-      <div className="mt-4 flex flex-1 flex-col">
-        {archetype && (
-          <span className="text-muted-foreground/70 mb-2 font-mono text-xs tracking-wider uppercase">
-            {archetype}
-          </span>
-        )}
-
-        {/* Transparent-by-default underline: the rule is always laid out, so
-            revealing it on hover shifts nothing. */}
-        <h3 className="text-foreground group-hover:decoration-foreground/40 text-base leading-snug font-medium tracking-tight underline decoration-transparent decoration-1 underline-offset-[3px] transition-colors">
-          {post.data.title}
-        </h3>
-
-        {post.data.description && (
-          <p className="text-muted-foreground mt-2 line-clamp-2 text-sm leading-relaxed">
-            {post.data.description}
-          </p>
-        )}
-
-        <InlineMeta className="mt-4">
-          <time dateTime={post.data.date}>{formatPostDate(post.data.date)}</time>
-          {tI18nComplete('text7def269b78b1', { value0: post.readingTime })}
-        </InlineMeta>
+      <div className="order-last lg:order-first">
+        <h2 className="text-xl font-medium tracking-tight text-balance md:text-2xl">
+          <span className="text-foreground">{post.data.title}</span>
+          {post.data.description ? (
+            <>
+              {' '}
+              <span className="text-muted-foreground mt-2 block line-clamp-3">{post.data.description}</span>
+            </>
+          ) : null}
+        </h2>
+        <UseCaseMeta post={post} className="mt-8" />
       </div>
+      <UseCaseCover post={post} featured className="aspect-video w-full" />
+    </Link>
+  );
+}
+
+/**
+ * One entry in the use-case catalog (Polar blog card, as on /blog): a wide
+ * cover, the title, then archetype and date. The whole card is the link; the
+ * title keeps its colour on hover.
+ */
+export function UseCaseCard({ post }: { post: Post }) {
+  return (
+    <Link
+      href={post.url}
+      className="outline-ring flex flex-col rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4"
+    >
+      <UseCaseCover post={post} className="aspect-video w-full shrink-0" />
+      <h3 className="text-foreground mt-5 text-base font-medium text-pretty">{post.data.title}</h3>
+      <UseCaseMeta post={post} className="mt-2" />
     </Link>
   );
 }

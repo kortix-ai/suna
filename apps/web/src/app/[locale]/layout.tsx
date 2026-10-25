@@ -172,7 +172,7 @@ const SITE_JSON_LD = {
         'https://x.com/kortix',
         'https://linkedin.com/company/kortix',
       ],
-      contactPoint: { '@type': 'ContactPoint', contactType: 'Customer Support', url: `${siteMetadata.url}/support` },
+      contactPoint: { '@type': 'ContactPoint', contactType: 'Customer Support', url: `${siteMetadata.url}/contact` },
     },
     {
       '@type': 'SoftwareApplication',

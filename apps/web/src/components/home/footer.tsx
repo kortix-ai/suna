@@ -6,6 +6,7 @@ import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { cn } from '@/lib/utils';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { ThemeToggle } from './theme-toggle';
 
 type FooterLinkItem = {
@@ -23,32 +24,11 @@ const FOOTER_SECTIONS: FooterSection[] = [
   {
     title: 'Product',
     links: [
-      { label: 'Agent Computer', href: '/agent-computer' },
-      { label: 'Company as Code', href: '/company-as-code' },
-      { label: 'Connectors', href: '/connectors' },
-      { label: 'Automations', href: '/automations' },
-      { label: 'Channels', href: '/channels' },
-      { label: 'Agents & Skills', href: '/agents-and-skills' },
       { label: 'Security', href: '/security' },
       { label: 'Self-hosted', href: '/self-hosted' },
       { label: 'Enterprise', href: '/enterprise' },
       { label: 'Pricing', href: '/pricing' },
       { label: 'Download', href: '/download' },
-    ],
-  },
-  {
-    // Pulled out of the top bar: eight roles is a wide menu beside Product and
-    // Company, and a reader looking for their own function looks down here.
-    title: 'Solutions',
-    links: [
-      { label: 'Sales', href: '/solutions/sales' },
-      { label: 'Marketing', href: '/solutions/marketing' },
-      { label: 'Engineering', href: '/solutions/engineering' },
-      { label: 'Product', href: '/solutions/product' },
-      { label: 'Finance', href: '/solutions/finance' },
-      { label: 'People', href: '/solutions/people' },
-      { label: 'IT', href: '/solutions/it' },
-      { label: 'Data Science', href: '/solutions/data-science' },
     ],
   },
   {
@@ -84,7 +64,7 @@ const FOOTER_SECTIONS: FooterSection[] = [
       { label: 'LinkedIn', href: 'https://linkedin.com/company/kortix', external: true },
       { label: 'Discord', href: 'https://discord.com/invite/RvFhXUdZ9H', external: true },
       { label: 'Status', href: 'https://status.kortix.com', external: true },
-      { label: 'Support', href: '/support' },
+      { label: 'Contact', href: '/contact' },
       { label: 'Terms', href: '/legal/terms' },
       { label: 'Privacy', href: '/legal?tab=privacy' },
     ],
@@ -93,7 +73,7 @@ const FOOTER_SECTIONS: FooterSection[] = [
 
 function FooterLink({ label, href, external }: FooterLinkItem) {
   const className = cn(
-    'group flex w-full min-w-0 items-baseline py-1 text-sm hover:text-foreground text-muted-foreground/90 whitespace-nowrap',
+    'text-foreground hover:text-muted-foreground flex w-full min-w-0 items-baseline py-1 text-sm whitespace-nowrap transition-colors duration-normal ease-out',
   );
 
   if (external) {
@@ -121,14 +101,31 @@ const Footer = () => {
     <section className="from-card to-background relative overflow-hidden border-t bg-linear-to-b from-30% to-90% pt-12">
       <CtaSection />
 
+      {/* Polar's layout: the mark top left, the copyright and theme switch
+          pinned to the bottom of the same column; the link groups in a grid
+          on the right. */}
       <footer id="site-footer" className="relative z-10">
-        <div className="mx-auto mb-12 max-w-7xl px-6">
-          <nav>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-8 md:grid-cols-5">
+        <div className="mx-auto grid max-w-7xl grid-cols-1 gap-12 px-6 pt-12 pb-16 lg:grid-cols-12">
+          <div className="flex flex-col justify-between gap-12 lg:col-span-5">
+            <Link href="/" aria-label="Kortix home" className="text-foreground outline-ring w-fit rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2">
+              <KortixLogo size={22} variant="logomark" />
+            </Link>
+
+            <div className="flex items-center gap-4">
+              <small className="text-muted-foreground text-sm">
+                {tI18nHardcoded.raw('autoComponentsHomeFooterJsxTextCopye99743e8')}
+                {currentYear} {tI18nHardcoded.raw('i18nComplete.textab54cf5e1d9d')}
+              </small>
+              <ThemeToggle variant="compact" systemTheme={false} />
+            </div>
+          </div>
+
+          <nav aria-label="Footer" className="lg:col-span-7">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-12 md:grid-cols-4">
               {footerSections.map((section) => (
-                <div key={section.title} className="min-w-0 space-y-2">
-                  <h3 className="text-foreground text-sm">{section.title}</h3>
-                  <ul className="space-y-0">
+                <div key={section.title} className="min-w-0">
+                  <h3 className="text-muted-foreground text-sm">{section.title}</h3>
+                  <ul className="mt-4 flex flex-col gap-1">
                     {section.links.map((link) =>
                       process.env.NEXT_PUBLIC_USE_CASES_ENABLED === 'false' &&
                       link.href === '/use-cases' ? null : (
@@ -143,34 +140,8 @@ const Footer = () => {
             </div>
           </nav>
         </div>
-
-        <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-4 border-t p-6 md:flex-row md:items-center">
-          <div className="text-muted-foreground flex items-center gap-3 text-base">
-            <small>
-              {tI18nHardcoded.raw('autoComponentsHomeFooterJsxTextCopye99743e8')}
-              {currentYear} {tI18nHardcoded.raw('i18nComplete.textab54cf5e1d9d')}
-            </small>
-          </div>
-
-          <ThemeToggle variant="compact" systemTheme={false} />
-        </div>
       </footer>
 
-      {/* Dithered wordmark: an alpha mask painted with the foreground token, so it follows the theme. */}
-      <div
-        aria-hidden
-        className="bg-foreground mx-auto mt-6 aspect-[1440/381] w-full max-w-7xl opacity-15"
-        style={{
-          maskImage: 'url(/marketing/dither-wordmark.png)',
-          WebkitMaskImage: 'url(/marketing/dither-wordmark.png)',
-          maskSize: 'contain',
-          WebkitMaskSize: 'contain',
-          maskRepeat: 'no-repeat',
-          WebkitMaskRepeat: 'no-repeat',
-          maskPosition: 'bottom',
-          WebkitMaskPosition: 'bottom',
-        }}
-      />
     </section>
   );
 };

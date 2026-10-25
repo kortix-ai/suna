@@ -1,339 +1,239 @@
-import { Reveal } from '@/components/home/reveal';
-import { RowList, SectionDivider } from '@/features/marketing/component/public-route-helpers';
-import { CapabilityHero } from '@/features/marketing/component/capability-hero';
-import SectionHeader from '@/features/marketing/component/section-header';
-import { BoundaryDiagram } from '@/features/marketing/security-page/boundary-diagram';
-import { CodePanel } from '@/features/marketing/security-page/code-panel';
+import Link from '@/components/site-link';
+import { MarketingButton } from '@/features/marketing/kit/marketing-button';
+import { Band, Block, CellGrid, Heading, KeyRows, PageFrame, PageHero, SpecGrid } from '@/features/marketing/kit/page-frame';
+import { Seal } from '@/features/marketing/kit/seal';
+import { ApprovalTabs } from '@/features/marketing/security-page/approval-tabs';
 import { getLocalizedSecurityContent } from '@/features/marketing/security-page/content';
-import { CredentialFlow } from '@/features/marketing/security-page/credential-flow';
-import { SecurityHeroVisual } from '@/features/marketing/security-page/hero-visual';
-import { PermissionMatrix } from '@/features/marketing/security-page/permission-matrix';
-import { cn } from '@/lib/utils';
 import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 
 /**
- * Hairlines for a 4-up grid that reflows 1 → 2 → 4 columns. Written per index
- * because the divider a cell needs changes with the breakpoint: cell 3 is a new
- * row at `sm` (top rule) and a new column at `lg` (left rule).
- */
-const GRID_4_RULES = [
-  '',
-  'border-t sm:border-t-0 sm:border-l',
-  'border-t lg:border-t-0 lg:border-l',
-  'border-t sm:border-l lg:border-t-0',
-] as const;
-
-
-
-/**
- * `/security` — the page a security reviewer reads before they will let anyone
- * else in the building use Kortix.
+ * `/security`: the page a security reviewer reads before they let anyone else
+ * in the building use Kortix.
  *
  * Copy lives in `features/marketing/security-page/content.ts` and every claim on
  * it is traced to code in that file's header, including the seven places where
- * a neighbouring page or the `kortix-brand` skill says more than the code supports.
- * Read that header before editing a single line here.
+ * a neighbouring page or the `kortix-brand` skill says more than the code
+ * supports. Read that header before editing a single line here.
+ *
+ * Layout is the landing page's: one 1440px column between two hairline rails;
+ * each section is a two-tone title (font-medium, 20/24/30px) and one line of
+ * description, then a bordered band whose top and bottom hairlines cross the
+ * page and fade past the rails (`kx-rail-fade`). Cells inside a band are split
+ * by hairlines (`gap-px` over `bg-border`). No eyebrows, no reveal motion.
+ *
+ * The closing call to action is the footer's, so the page has no closing
+ * section of its own.
  */
+
+// The part of kortix.yaml each approval note is about (line ranges into
+// control.yaml.lines). Keep in step with that array.
+const APPROVAL_SLICES = {
+  actions: [4, 19],
+  conditions: [4, 11],
+  percall: [4, 15],
+  default: [0, 3],
+} as const;
+
 export default function SecurityPage(): ReactNode {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { audit, control, credentials, disclosure, hero, identity, isolation, landing, posture } =
     getLocalizedSecurityContent(tI18nComplete);
+
   return (
-    <div className="bg-background relative">
-      <CapabilityHero
-        eyebrow={hero.eyebrow}
-        title={hero.title}
-        sub={hero.sub}
-        ctaPrimary={hero.ctaPrimary}
-        ctaPrimaryHref={hero.ctaPrimaryHref}
-        ctaSecondary={hero.ctaSecondary}
-        ctaSecondaryHref={hero.ctaSecondaryHref}
-        visual={<SecurityHeroVisual />}
-      />
-
-      {/* ── 1 · isolation ───────────────────────────────────────────────── */}
-      <section id="isolation" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader
-          eyebrow={isolation.eyebrow}
-          title={isolation.title}
-          description={isolation.sub}
+    <PageFrame>
+      {/* Hero: the landing hero's type and spacing, then the four facts the
+          rest of the page proves, as one row of cells. */}
+      <section id="hero">
+        <PageHero
+          title={hero.title}
+          titleMuted={hero.titleMuted}
+          sub={hero.sub}
+          actions={
+            <>
+              <MarketingButton variant="secondary" size="md" className="hit-area-y-1" asChild>
+                <Link href={hero.ctaPrimaryHref}>{hero.ctaPrimary}</Link>
+              </MarketingButton>
+              <MarketingButton size="md" className="hit-area-y-1" asChild>
+                <Link href={hero.ctaSecondaryHref}>{hero.ctaSecondary}</Link>
+              </MarketingButton>
+            </>
+          }
         />
-
-        <Reveal delay={0.06}>
-          <div className="mt-10">
-            <BoundaryDiagram />
-          </div>
-        </Reveal>
-
-        <Reveal delay={0.1}>
-          <div className="mt-4">
-            <RowList rows={isolation.rows} />
-          </div>
-        </Reveal>
+        <Band>
+          <SpecGrid items={hero.specs} cols="lg:grid-cols-4" />
+        </Band>
       </section>
 
-      <SectionDivider />
-
-      {/* ── 2 · credentials ─────────────────────────────────────────────── */}
-      <section id="credentials" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader
-          eyebrow={credentials.eyebrow}
-          title={credentials.title}
-          description={credentials.sub}
-        />
-
-        <Reveal delay={0.06}>
-          <div className="mt-10">
-            <CredentialFlow />
-          </div>
-        </Reveal>
-
-        <Reveal delay={0.1}>
-          <div className="mt-4">
-            <RowList rows={credentials.rows} />
-          </div>
-        </Reveal>
-      </section>
-
-      <SectionDivider />
-
-      {/* ── 3 · identity & permissions ──────────────────────────────────── */}
-      <section id="identity" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader
-          eyebrow={identity.eyebrow}
-          title={identity.title}
-          description={identity.sub}
-        />
-
-        <Reveal delay={0.06}>
-          <div className="mt-10">
-            <PermissionMatrix />
-          </div>
-        </Reveal>
-
-        <Reveal delay={0.1}>
-          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <div className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8">
-              <p className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-                {identity.presets.label}
-              </p>
-              <div className="mt-6 grid grid-cols-1 gap-8 sm:grid-cols-2">
-                {(
-                  [
-                    ['account', identity.presets.account],
-                    ['project', identity.presets.project],
-                  ] as const
-                ).map(([scope, roles]) => (
-                  <div key={scope}>
-                    <p className="text-muted-foreground/50 font-mono text-[10px] tracking-widest uppercase">
-                      {scope}
-                    </p>
-                    <ul className="mt-3 space-y-3">
-                      {roles.map((role) => (
-                        <li key={role.k} className="text-sm leading-relaxed">
-                          <span className="text-foreground font-medium">{role.k}.</span>{' '}
-                          <span className="text-muted-foreground">{role.v}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8">
-              <p className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-                {identity.enterprise.label}
-              </p>
-              <ul className="mt-6 space-y-3">
-                {identity.enterprise.items.map((item) => (
-                  <li key={item.k} className="text-sm leading-relaxed">
-                    <span className="text-foreground font-medium">{item.k}.</span>{' '}
-                    <span className="text-muted-foreground">{item.v}</span>
-                  </li>
-                ))}
-              </ul>
-              <p className="text-muted-foreground/60 border-border mt-auto border-t pt-5 text-[13px] leading-relaxed">
-                {identity.enterprise.note}
-              </p>
-            </div>
-          </div>
-        </Reveal>
-
-        <Reveal delay={0.14}>
-          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {[identity.agents, identity.scoping].map((card) => (
-              <div
-                key={card.title}
-                className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8"
-              >
-                <h3 className="text-foreground text-lg leading-tight font-medium">{card.title}</h3>
-                <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{card.body}</p>
+      {/* 1 · Isolation: inside one session, and what stays out. */}
+      <Block id="isolation">
+        <Heading title={isolation.title} titleMuted={isolation.titleMuted} sub={isolation.sub} />
+        <Band className="mt-12">
+          <div className="grid grid-cols-1 md:grid-cols-2">
+            {[isolation.inside, isolation.outside].map((side, i) => (
+              <div key={side.label} className={i === 0 ? 'p-6 lg:p-11' : 'border-t p-6 md:border-t-0 md:border-l lg:p-11'}>
+                <h3 className="text-foreground text-base font-medium first-letter:uppercase">{side.label}</h3>
+                <ul className="mt-4 divide-y">
+                  {side.items.map((item) => (
+                    <li
+                      key={item}
+                      className={
+                        i === 0 ? 'text-foreground py-3.5 text-sm text-pretty' : 'text-muted-foreground py-3.5 text-sm text-pretty'
+                      }
+                    >
+                      {item}
+                    </li>
+                  ))}
+                </ul>
               </div>
             ))}
           </div>
-        </Reveal>
-      </section>
+        </Band>
+        <div className="mt-6">
+          <KeyRows rows={isolation.rows} />
+        </div>
+      </Block>
 
-      <SectionDivider />
+      {/* 2 · Credentials: the five-step path a key takes. */}
+      <Block id="credentials">
+        <Heading title={credentials.title} titleMuted={credentials.titleMuted} sub={credentials.sub} />
+        <Band className="mt-12">
+          <CellGrid
+            cols="lg:grid-cols-5"
+            items={credentials.flow.map((step) => ({ id: step.n, n: step.n, k: step.k, v: step.v }))}
+          />
+        </Band>
+        <div className="mt-6">
+          <KeyRows rows={credentials.rows} />
+        </div>
+      </Block>
 
-      {/* ── 4 · control ─────────────────────────────────────────────────── */}
-      <section id="control" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader eyebrow={control.eyebrow} title={control.title} description={control.sub} />
-
-        <Reveal delay={0.06}>
-          <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
-            <div className="lg:col-span-6">
-              <CodePanel title={control.yaml.title} lines={control.yaml.lines} lang="yaml" />
-            </div>
-            <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:col-span-6 lg:auto-rows-fr">
-              {control.notes.map((note) => (
-                <li
-                  key={note.id}
-                  className="border-border bg-card flex h-full flex-col rounded-sm border p-6"
-                >
-                  <p className="text-foreground font-mono text-[11px] tracking-widest uppercase">
-                    {note.k}
-                  </p>
-                  <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{note.v}</p>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </Reveal>
-      </section>
-
-      <SectionDivider />
-
-      {/* ── 5 · how work lands ──────────────────────────────────────────── */}
-      <section id="change-requests" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader eyebrow={landing.eyebrow} title={landing.title} description={landing.sub} />
-
-        <Reveal delay={0.06}>
-          <ol className="border-border mt-10 grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-4">
-            {landing.steps.map((step, i) => (
-              <li
-                key={step.n}
-                className={cn('border-border bg-card flex flex-col p-6 sm:p-7', GRID_4_RULES[i])}
-              >
-                <span className="text-muted-foreground/45 font-mono text-xs tracking-widest tabular-nums">
-                  {step.n}
-                </span>
-                <h3 className="text-foreground mt-6 text-lg leading-tight font-medium">
-                  {step.title}
-                </h3>
-                <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{step.body}</p>
-              </li>
-            ))}
-          </ol>
-        </Reveal>
-      </section>
-
-      <SectionDivider />
-
-      {/* ── 6 · audit ───────────────────────────────────────────────────── */}
-      <section id="audit" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader eyebrow={audit.eyebrow} title={audit.title} description={audit.sub} />
-
-        <Reveal delay={0.06}>
-          <div className="mt-10">
-            <RowList rows={audit.rows} />
-          </div>
-        </Reveal>
-      </section>
-
-      <SectionDivider />
-
-      {/* ── 7 · deployment & posture ────────────────────────────────────── */}
-      <section id="posture" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader eyebrow={posture.eyebrow} title={posture.title} description={posture.sub} />
-
-        <Reveal delay={0.06}>
-          <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {posture.deployments.map((item) => (
-              <div
-                key={item.id}
-                className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8"
-              >
-                <h3 className="text-foreground text-lg leading-tight font-medium">{item.k}</h3>
-                <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{item.v}</p>
+      {/* 3 · Identity: principals, the built-in roles, enterprise identity. */}
+      <Block id="identity">
+        <Heading title={identity.title} titleMuted={identity.titleMuted} sub={identity.sub} />
+        <Band className="mt-12">
+          <div className="grid grid-cols-1 md:grid-cols-2">
+            {(
+              [
+                ['Account roles', identity.presets.account],
+                ['Project roles', identity.presets.project],
+              ] as const
+            ).map(([scope, roles], i) => (
+              <div key={scope} className={i === 0 ? 'p-6 lg:p-11' : 'border-t p-6 md:border-t-0 md:border-l lg:p-11'}>
+                <h3 className="text-foreground text-base font-medium">{scope}</h3>
+                <dl className="mt-4 divide-y">
+                  {roles.map((role) => (
+                    <div key={role.k} className="py-3.5">
+                      <dt className="text-foreground text-sm font-medium">{role.k}</dt>
+                      <dd className="text-muted-foreground mt-1 text-sm text-pretty">{role.v}</dd>
+                    </div>
+                  ))}
+                </dl>
               </div>
             ))}
           </div>
-        </Reveal>
+        </Band>
+        <div className="mt-6">
+          <KeyRows
+            rows={[
+              {
+                id: 'principals',
+                k: 'Principals',
+                v: <span className="font-mono">{identity.matrix.principals.join(', ')}</span>,
+              },
+              {
+                id: 'resources',
+                k: 'Resource types',
+                v: <span className="font-mono">{identity.matrix.resources.join(', ')}</span>,
+              },
+              ...identity.enterprise.items,
+              ...[identity.agents, identity.scoping].map((card) => ({ id: card.title, k: card.title, v: card.body })),
+            ]}
+          />
+          <p className="text-muted-foreground px-8 pt-2 text-sm text-pretty lg:px-28">{identity.enterprise.note}</p>
+        </div>
+      </Block>
 
-        {/* The honest half. Nothing here moves without a report in hand. */}
-        <Reveal delay={0.1}>
-          <div className="border-border bg-card mt-4 rounded-sm border p-6 sm:p-8">
-            <p className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-              {posture.compliance.label}
-            </p>
-            <dl className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-              {posture.compliance.items.map((item) => (
-                <div
-                  key={item.k}
-                  className="border-border flex items-baseline justify-between gap-4 border-t pt-4"
-                >
-                  <dt className="text-foreground text-sm font-medium">{item.k}</dt>
-                  <dd className="text-muted-foreground shrink-0 font-mono text-[11px] tracking-wider uppercase">
-                    {item.v}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-            <p className="text-muted-foreground border-border mt-6 border-t pt-6 text-sm leading-relaxed">
-              {posture.compliance.note}
-            </p>
+      {/* 4 · Control: the approval rules, as tabs over kortix.yaml. */}
+      <Block id="control">
+        <Heading title={control.title} titleMuted={control.titleMuted} sub={control.sub} />
+        <Band className="mt-12">
+          <ApprovalTabs notes={control.notes} title={control.yaml.title} lines={control.yaml.lines} slices={APPROVAL_SLICES} />
+        </Band>
+      </Block>
+
+      {/* 5 · Change requests: four steps to main. */}
+      <Block id="change-requests">
+        <Heading title={landing.title} titleMuted={landing.titleMuted} sub={landing.sub} />
+        <Band className="mt-12">
+          <CellGrid
+            cols="lg:grid-cols-4"
+            items={landing.steps.map((step) => ({ id: step.n, n: step.n, k: step.title, v: step.body }))}
+          />
+        </Band>
+      </Block>
+
+      {/* 6 · Audit. */}
+      <Block id="audit">
+        <Heading title={audit.title} titleMuted={audit.titleMuted} sub={audit.sub} />
+        <div className="mt-6">
+          <KeyRows rows={audit.rows} />
+        </div>
+      </Block>
+
+      {/* 7 · Posture: where it runs, and the honest compliance line. */}
+      <Block id="posture">
+        <Heading title={posture.title} titleMuted={posture.titleMuted} sub={posture.sub} />
+        <Band className="mt-12">
+          <CellGrid
+            cols="lg:grid-cols-3"
+            items={posture.deployments.map((item) => ({ id: item.id, k: item.k, v: item.v }))}
+          />
+        </Band>
+        <div className="grid grid-cols-1 items-center gap-10 px-8 pt-12 lg:grid-cols-12 lg:px-28">
+          <div className="lg:col-span-5">
+            <h3 className="text-foreground text-base font-medium">{posture.compliance.label}</h3>
+            <p className="text-muted-foreground mt-2 text-sm text-pretty">{posture.compliance.note}</p>
           </div>
-        </Reveal>
-      </section>
+          <ul className="flex flex-wrap items-center gap-4 lg:col-span-7 lg:justify-end">
+            <li>
+              <Seal name="SOC 2" detail="Type I" ornament="double" />
+            </li>
+            <li>
+              <Seal name="SOC 2" detail="Type II" note="In progress" ornament="ticks" />
+            </li>
+            <li>
+              <Seal name="GDPR" detail="Operated" ornament="stars" />
+            </li>
+          </ul>
+        </div>
+      </Block>
 
-      <SectionDivider />
-
-      {/* ── disclosure ──────────────────────────────────────────────────── */}
-      <section id="disclosure" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader
-          eyebrow={disclosure.eyebrow}
-          title={disclosure.title}
-          description={disclosure.sub}
-        />
-
-        <Reveal delay={0.06}>
-          <div className="border-border bg-card mt-10 grid overflow-hidden rounded-sm border lg:grid-cols-12">
-            <div className="border-border flex flex-col justify-center p-6 sm:p-8 lg:col-span-5 lg:border-r">
-              <p className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-                {tI18nComplete.raw('text43c1eff02d17')}
-              </p>
+      {/* 8 · Disclosure. */}
+      <Block id="disclosure">
+        <Heading title={disclosure.title} titleMuted={disclosure.titleMuted} sub={disclosure.sub} />
+        <Band className="mt-12">
+          <div className="grid grid-cols-1 md:grid-cols-2">
+            <div className="p-6 lg:p-11">
               <a
                 href={`mailto:${disclosure.email}`}
-                className="text-foreground mt-4 font-mono text-lg underline-offset-4 hover:underline sm:text-xl"
+                className="text-foreground hover:text-muted-foreground outline-ring font-mono text-lg transition-colors duration-moderate focus-visible:outline-2 focus-visible:outline-offset-4 sm:text-xl"
               >
                 {disclosure.email}
               </a>
-              <p className="text-muted-foreground mt-4 text-sm leading-relaxed">
-                {disclosure.credit}
-              </p>
+              <p className="text-muted-foreground mt-4 text-sm text-pretty">{disclosure.credit}</p>
             </div>
-            <dl className="lg:col-span-7">
-              {disclosure.slas.map((sla, i) => (
-                <div
-                  key={sla.k}
-                  className={cn(
-                    'border-border flex flex-wrap items-baseline justify-between gap-3 px-6 py-5 sm:px-8',
-                    i > 0 ? 'border-t' : 'border-t lg:border-t-0',
-                  )}
-                >
+            <dl className="divide-y border-t p-6 md:border-t-0 md:border-l lg:p-11">
+              {disclosure.slas.map((sla) => (
+                <div key={sla.k} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3.5">
                   <dt className="text-foreground text-sm font-medium">{sla.k}</dt>
-                  <dd className="text-muted-foreground font-mono text-[11px] tracking-wider uppercase">
-                    {sla.v}
-                  </dd>
+                  <dd className="text-muted-foreground text-sm">{sla.v}</dd>
                 </div>
               ))}
             </dl>
           </div>
-        </Reveal>
-      </section>
-    </div>
+        </Band>
+      </Block>
+    </PageFrame>
   );
 }

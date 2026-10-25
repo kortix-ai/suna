@@ -1,10 +1,7 @@
 /**
- * Characterization for the marketing `Navbar` around the dead symbols this
- * branch deletes: the unused compaction constants, the unused drawer-menu
- * state and `DRAWER_SOCIALS`. The live behaviors stay: the bar's surface, the
- * drawer lock and the anchor navigation. The scroll state itself is live — the
- * dark-hero bar reads it — and the last test pins that, so a future cleanup
- * cannot delete it again.
+ * The marketing `Navbar`: the bar (brand, mega-menu triggers, plain links,
+ * GitHub stars, the auth CTA), the mega menu's open and close contract, and
+ * the mobile drawer (scroll lock, pending navigation, tap targets).
  */
 import { afterEach, expect, mock, test } from 'bun:test';
 import React, { act } from 'react';
@@ -293,11 +290,67 @@ test('mobile tap targets: the brand links span the 64px bar and the menu toggles
 test('mobile tap targets: the Get started CTA extends its hit area to the 44px floor without growing the filled button', async () => {
   // The CTA is a filled button — growing its box would change what the
   // visitor sees, so its tap target extends through the shared hit-area
-  // pseudo-element instead (29px box + 3*spacing each side ≈ 51px).
+  // pseudo-element instead (36px box + 3*spacing each side ≈ 58px).
   await mountNavbar();
-  const cta = header()!.querySelector<HTMLAnchorElement>('a[href="/auth"]');
-  expect(cta).not.toBeNull();
+  const cta = [...header()!.querySelectorAll<HTMLAnchorElement>('a[href="/auth"]')].find(
+    (a) => a.textContent === 'componentsHomeNavbar.line312JsxTextGetStarted',
+  );
+  expect(cta).toBeDefined();
   expect(cta!.className).toContain('hit-area-y-3');
+});
+
+/** The desktop trigger for one mega menu. */
+const trigger = (id: string) =>
+  container!.querySelector<HTMLButtonElement>(`button[aria-controls="mega-${id}"]`)!;
+const panel = (id: string) => container!.querySelector<HTMLElement>(`#mega-${id}`)!;
+
+test('a mega-menu trigger click opens its panel, a second click closes it', async () => {
+  await mountNavbar();
+  expect(trigger('product').getAttribute('aria-expanded')).toBe('false');
+  expect(panel('product').hasAttribute('inert')).toBe(true);
+  await act(async () => {
+    lib.click(trigger('product'));
+  });
+  expect(trigger('product').getAttribute('aria-expanded')).toBe('true');
+  expect(panel('product').hasAttribute('inert')).toBe(false);
+  // Switching menus swaps the open panel in place.
+  await act(async () => {
+    lib.click(trigger('resources'));
+  });
+  expect(trigger('product').getAttribute('aria-expanded')).toBe('false');
+  expect(panel('resources').hasAttribute('inert')).toBe(false);
+  await act(async () => {
+    lib.click(trigger('resources'));
+  });
+  expect(trigger('resources').getAttribute('aria-expanded')).toBe('false');
+});
+
+test('Escape closes the open mega menu and returns focus to its trigger', async () => {
+  await mountNavbar();
+  await act(async () => {
+    lib.click(trigger('resources'));
+  });
+  expect(trigger('resources').getAttribute('aria-expanded')).toBe('true');
+  await act(async () => {
+    trigger('resources').dispatchEvent(
+      new win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event,
+    );
+  });
+  expect(trigger('resources').getAttribute('aria-expanded')).toBe('false');
+  expect(win.document.activeElement).toBe(trigger('resources') as unknown as typeof win.document.activeElement);
+});
+
+test('every mega-menu link points at a route, and a panel link click closes the menu', async () => {
+  await mountNavbar();
+  await act(async () => {
+    lib.click(trigger('product'));
+  });
+  const links = [...panel('product').querySelectorAll<HTMLAnchorElement>('a[href]')];
+  expect(links.map((a) => a.getAttribute('href'))).toContain('/security');
+  await act(async () => {
+    lib.click(links[0]!);
+  });
+  expect(trigger('product').getAttribute('aria-expanded')).toBe('false');
 });
 
 test('the drawer docs row stays a plain anchor: the tap marks it pending and leaves the document load to the browser', async () => {

@@ -1,176 +1,124 @@
 'use client';
 
-import { Reveal } from '@/components/home/reveal';
-import { Button } from '@/components/ui/marketing/button';
-import { ArrowRightIcon } from '@/features/icon/arrow-right';
-import SectionHeader from '@/features/marketing/component/section-header';
-import { cn } from '@/lib/utils';
+import { MarketingButton } from '@/features/marketing/kit/marketing-button';
+import { MARKETING_CONTAINER, Section } from '@/features/marketing/kit/section';
+import { SectionHeading } from '@/features/marketing/kit/section-heading';
 import { useTranslations } from '@/i18n/use-translations';
+import { cn } from '@/lib/utils';
 import Image from 'next/image';
 import Link from '@/components/site-link';
 import type { ReactNode } from 'react';
 import { getLocalizedAboutContent } from './content';
 
-/* Prose sits on a ~65–70 character measure. The grid is 6xl; body copy never
-   runs its full width. */
-const MEASURE = 'max-w-[34rem]';
-
 /**
- * The team, then the thesis. The photograph opens the page edge to edge — it is
- * the six people making the argument, so it gets the full viewport rather than
- * the 6xl measure everything else hangs on.
+ * `/about` — why Kortix exists, in the founder's framing (Buio team page).
  *
- * The crop is the whole point. `/images/team.webp` is 1920×1080 with roughly a
- * quarter of its height empty above the heads, so the band is wider than the
- * source at every width and `object-bottom` takes the whole crop off the top —
- * dead space out, the six figures whole, shoes to hair. `object-cover` scales to
- * the container WIDTH, so cropping the top costs nothing in how large the people
- * render; it only removes emptiness. 21:9 is the tightest the band can go, and
- * full-bleed spends the remaining margin: at 1440px it crops 193px of a 211px
- * void. Widen the ratio further and the crop line reaches the tallest head.
+ * Header, then the team photograph, then three sections with one rhythm: the
+ * beliefs and the six-verb platform as hairline rows on the shared 4-column
+ * grid (title in columns 1–2, text in 3–4), and the hiring call. Copy and the
+ * accuracy gate live in `content.ts`.
  */
-function Hero(): ReactNode {
+export function AboutPage(): ReactNode {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const { hero } = getLocalizedAboutContent(tI18nComplete);
+  const { hero, beliefs, statements, platform, closing } =
+    getLocalizedAboutContent(tI18nComplete);
+
   return (
-    <section className="mx-auto max-w-7xl px-6 pt-28 pb-14 sm:pt-36 sm:pb-28">
-      <Reveal>
-        <div className="relative aspect-[2/1] w-full overflow-hidden rounded-sm border lg:aspect-[21/9]">
+    <main className="bg-background pt-16">
+      <header className={cn(MARKETING_CONTAINER, 'pt-24 md:pt-30')}>
+        <SectionHeading
+          as="h1"
+          title={hero.title}
+          titleMuted={hero.titleMuted}
+          description={hero.lead}
+          actions={
+            <>
+              <MarketingButton size="md" className="hit-area-y-1" asChild>
+                <Link href={hero.ctaPrimaryHref}>{hero.ctaPrimary}</Link>
+              </MarketingButton>
+              <MarketingButton size="md" className="hit-area-y-1" variant="secondary" asChild>
+                <a href={hero.ctaSecondaryHref} target="_blank" rel="noreferrer">
+                  {hero.ctaSecondary}
+                </a>
+              </MarketingButton>
+            </>
+          }
+        />
+        {/* `/images/team.webp` is 1920×1080 with about a quarter of its height
+            empty above the heads. `object-bottom` takes the whole crop off the
+            top, so the six people stay whole at 2:1 and 21:9. */}
+        <div className="bg-muted relative mt-16 aspect-2/1 w-full overflow-hidden lg:aspect-21/9">
           <Image
             src="/images/team.webp"
             alt={hero.imageAlt}
             fill
             priority
             className="object-cover object-bottom"
-            sizes="100vw"
+            sizes="(min-width: 1280px) 1280px, 100vw"
           />
         </div>
+      </header>
 
-        <div className="mt-14 flex w-full flex-col items-start gap-6 sm:mt-16">
-          <span
-            className="text-muted-foreground font-mono text-[0.75rem] leading-none font-normal uppercase select-none"
-            data-text="true"
-          >
-            {hero.eyebrow}
-          </span>
-          <h1 className="text-foreground max-w-4xl text-4xl font-medium tracking-tight text-balance sm:text-5xl lg:text-6xl">
-            {hero.title}
-          </h1>
-          <p className="text-muted-foreground max-w-2xl text-lg leading-relaxed">{hero.lead}</p>
-
-          <div className="kx-hero-text flex w-full shrink-0 flex-wrap items-center gap-2 [--kx-enter:210ms] sm:w-auto sm:gap-3">
-            <Button size="lg" className="flex-1 active:scale-[0.97] sm:flex-none" asChild>
-              <Link href={hero.ctaPrimaryHref}>{hero.ctaPrimary}</Link>
-            </Button>
-            <Button
-              size="lg"
-              variant="ghost"
-              className="group/arrow-right flex-1 gap-1.5 active:scale-[0.97] sm:flex-none"
-              asChild
+      <Section id="thesis">
+        <SectionHeading title={beliefs.title} titleMuted={beliefs.titleMuted} />
+        <ul className="mt-16 border-b">
+          {statements.map((statement) => (
+            <li
+              key={statement.id}
+              className="grid grid-cols-1 gap-y-4 border-t py-8 lg:grid-cols-4 lg:py-12"
             >
-              <Link href={hero.ctaSecondaryHref} target="_blank" rel="noreferrer">
-                {hero.ctaSecondary}
-                <ArrowRightIcon aria-hidden />
-              </Link>
-            </Button>
-          </div>
-        </div>
-      </Reveal>
-    </section>
-  );
-}
+              <h3 className="text-foreground text-xl font-medium tracking-tight text-balance md:text-2xl lg:col-span-2 lg:pr-8">
+                {statement.title}
+              </h3>
+              <p className="text-muted-foreground max-w-xl text-base text-pretty lg:col-span-2">
+                {statement.body}
+              </p>
+            </li>
+          ))}
+        </ul>
+      </Section>
 
-/** The three claims. Mono index, headline, one paragraph, a rule between each. */
-function Statements(): ReactNode {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const { statements } = getLocalizedAboutContent(tI18nComplete);
-  return (
-    <section id="thesis" className="mx-auto max-w-7xl px-6">
-      <ol>
-        {statements.map((statement) => (
-          <li key={statement.id} className="border-border border-t">
-            <Reveal>
-              <div className="grid gap-6 py-12 sm:py-16 lg:grid-cols-12 lg:gap-16">
-                <div className="lg:col-span-6">
-                  <span
-                    className="text-muted-foreground font-mono text-[0.75rem] leading-none font-normal uppercase select-none"
-                    data-text="true"
-                  >
-                    {statement.n}
-                  </span>
-                  <h2 className="text-foreground mt-4 max-w-xl text-2xl leading-tight font-medium tracking-tight text-balance sm:text-3xl">
-                    {statement.title}
-                  </h2>
-                </div>
-                <p
-                  className={cn(
-                    MEASURE,
-                    'text-muted-foreground text-base leading-relaxed lg:col-span-6 lg:pt-8',
-                  )}
-                >
-                  {statement.body}
-                </p>
-              </div>
-            </Reveal>
-          </li>
-        ))}
-      </ol>
-    </section>
-  );
-}
-
-function PlatformSection(): ReactNode {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const { platform } = getLocalizedAboutContent(tI18nComplete);
-  return (
-    <section id="platform" className="mx-auto max-w-7xl px-6 py-24 sm:py-30">
-      <SectionHeader eyebrow={platform.eyebrow} title={platform.title} />
-      <Reveal>
-        <p className={cn(MEASURE, 'text-muted-foreground mt-5 text-base leading-relaxed')}>
-          {platform.sub}
-        </p>
-
-        <ul className="border-border mt-12 border-b">
+      <Section id="platform">
+        <SectionHeading
+          title={platform.title}
+          titleMuted={platform.titleMuted}
+          description={platform.sub}
+        />
+        <ul className="mt-16 border-b">
           {platform.items.map((item) => (
             <li
               key={item.id}
-              className="border-border grid gap-2 border-t py-6 lg:grid-cols-12 lg:items-baseline lg:gap-10"
+              className="grid grid-cols-1 gap-y-2 border-t py-6 lg:grid-cols-4 lg:items-baseline"
             >
-              {/* 6/6, the same split the statements above use, so both sections
-                  hang their body copy off one vertical axis. */}
-              <h3 className="text-foreground text-xl font-medium tracking-tight lg:col-span-6">
+              <h3 className="text-foreground text-base font-medium lg:col-span-2 lg:pr-8">
                 {item.verb}
               </h3>
-
-              <p
-                className={cn(
-                  MEASURE,
-                  'text-muted-foreground text-base leading-relaxed lg:col-span-6',
-                )}
-              >
+              <p className="text-muted-foreground max-w-xl text-sm text-pretty lg:col-span-2">
                 {item.body}
               </p>
             </li>
           ))}
         </ul>
-      </Reveal>
-    </section>
-  );
-}
+      </Section>
 
-/**
- * `/about` — why Kortix exists, in the founder's framing.
- *
- * The team opens the page, then the thesis at the largest type on the site.
- * Everything after it is support: three claims, the six-verb platform table,
- * and one close. Copy and the accuracy gate live in `content.ts`.
- */
-export function AboutPage(): ReactNode {
-  return (
-    <main className="bg-background min-h-screen">
-      <Hero />
-      <Statements />
-      <PlatformSection />
+      <Section id="hiring">
+        <SectionHeading
+          title={closing.title}
+          titleMuted={closing.titleMuted}
+          actions={
+            <>
+              <MarketingButton size="md" className="hit-area-y-1" asChild>
+                <Link href={closing.ctaPrimaryHref}>{closing.ctaPrimary}</Link>
+              </MarketingButton>
+              <MarketingButton size="md" className="hit-area-y-1" variant="secondary" asChild>
+                <a href={closing.ctaSecondaryHref} target="_blank" rel="noreferrer">
+                  {closing.ctaSecondary}
+                </a>
+              </MarketingButton>
+            </>
+          }
+        />
+      </Section>
     </main>
   );
 }

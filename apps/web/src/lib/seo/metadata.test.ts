@@ -50,7 +50,7 @@ describe('locale-routed marketing pages', () => {
     expect(localePath('en', '/')).toBe('/');
     expect(localePath('de', '/')).toBe('/de');
     expect(localePath('en', '/legal')).toBe('/legal');
-    expect(localePath('fr', '/support')).toBe('/fr/support');
+    expect(localePath('fr', '/pricing')).toBe('/fr/pricing');
   });
 
   test('languageAlternates carries every locale plus x-default', () => {

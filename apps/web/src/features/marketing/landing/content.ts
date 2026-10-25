@@ -43,7 +43,9 @@ export const heroEyebrow = {
 /** Closing CTA. Same block the page has always ended with. */
 export const cta = {
   badge: 'Get started',
-  title: 'Run your whole company from one repo you own.',
+  // Two-tone title: `title` in ink, `subtitle` muted on the line below.
+  title: 'Run your whole company',
+  subtitle: 'from one repo you own.',
   // ONE IDEA ONLY. This line is the invitation, nothing else. Pricing, hosting
   // and channels each pulled the reader somewhere different and belong on their
   // own pages. If a price ever comes back here it must match
@@ -181,14 +183,8 @@ export type UseCaseArtifact = {
 
 export type UseCase = {
   id: string;
-  /** The `/solutions/<role>` page this card belongs to. Keep spelling in step. */
+  /** The team this card belongs to. */
   role: string;
-  /**
-   * Where the card navigates: `/solutions/<slug>`, taken verbatim from
-   * `solutions/roles/*.ts`. Optional on purpose — a card whose role has no page
-   * must not link anywhere.
-   */
-  href?: string;
   /** Department. Rendered mono + uppercase; it is the only differentiator. */
   tag: string;
   /** One line, bold. The job the agent does for that team. */
@@ -202,9 +198,8 @@ export type UseCase = {
 /**
  * The use-case wheel — seven roles, one per card, on a scroll-driven arc.
  *
- * ORGANISED BY ROLE, NOT BY INDUSTRY, and deliberately the same roles the
- * `/solutions/<role>` pages use, so the site speaks one vocabulary. The cards
- * are the highlights, not a directory: fewer cards than role pages is fine.
+ * ORGANISED BY ROLE, NOT BY INDUSTRY. The cards are the highlights, not a
+ * directory.
  *
  * THE BAR A CARD HAS TO CLEAR. A job a company already pays somebody to do,
  * that an agent with its own machine, a git repo, connectors and a schedule can
@@ -215,8 +210,7 @@ export type UseCase = {
  *
  * ==========================================================================
  * ACCURACY GATE — this copy is bold, which is exactly where marketing starts
- * describing a product we do not ship. It mirrors the gate in
- * features/marketing/solutions/types.ts. Keep the two in step.
+ * describing a product we do not ship.
  * ==========================================================================
  *  - MERGE IS DEFAULT-DENY. Work lands as a CHANGE REQUEST. Never "pushes to
  *    main", never "the agent deploys", never "only a human can merge".
@@ -251,8 +245,6 @@ export const useCases = {
   cards: [
     {
       id: 'sales',
-      href: '/solutions/sales',
-      /** `role` and `href` match `solutions/roles/*.ts` exactly — one vocabulary. */
       role: 'Sales',
       tag: 'Sales',
       headline: 'Builds the outbound campaign and runs it.',
@@ -275,7 +267,6 @@ export const useCases = {
     },
     {
       id: 'engineering',
-      href: '/solutions/engineering',
       role: 'Engineering',
       tag: 'Engineering',
       headline: 'Reads the logs, ships the fix.',
@@ -296,7 +287,6 @@ export const useCases = {
     },
     {
       id: 'marketing',
-      href: '/solutions/marketing',
       role: 'Marketing',
       tag: 'Marketing',
       headline: 'Runs the SEO program week after week.',
@@ -320,7 +310,6 @@ export const useCases = {
     },
     {
       id: 'finance',
-      href: '/solutions/finance',
       role: 'Finance',
       tag: 'Finance',
       headline: 'Does the books, not just the summary.',
@@ -343,7 +332,6 @@ export const useCases = {
     },
     {
       id: 'people',
-      href: '/solutions/people',
       role: 'People',
       tag: 'People',
       headline: 'Sources the pipeline, not just the inbox.',
@@ -366,7 +354,6 @@ export const useCases = {
     },
     {
       id: 'product',
-      href: '/solutions/product',
       role: 'Product',
       tag: 'Product',
       headline: 'Turns what customers say into what ships.',
@@ -385,7 +372,6 @@ export const useCases = {
     },
     {
       id: 'data-science',
-      href: '/solutions/data-science',
       role: 'Data Science',
       tag: 'Data Science',
       headline: 'Has Monday’s numbers before Monday.',

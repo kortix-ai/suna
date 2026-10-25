@@ -20,7 +20,7 @@ export function UseCaseMdxImage({
         alt={alt}
         loading={loading}
         className={cn(
-          'h-auto max-w-full rounded-lg outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10',
+          'outline-foreground/10 h-auto max-w-full outline outline-1 -outline-offset-1',
           className,
         )}
       />

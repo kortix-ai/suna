@@ -1,13 +1,11 @@
+import Link from '@/components/site-link';
+import { getTranslations } from '@/i18n/get-translations';
 import { metaDescription } from '@/lib/seo/metadata';
 import type { Metadata } from 'next';
-import { getTranslations } from '@/i18n/get-translations';
-import Link from '@/components/site-link';
 import { notFound } from 'next/navigation';
+import type { ReactNode } from 'react';
 
 import { BlogProse } from '@/components/blog/blog-prose';
-import { PostByline } from '@/components/blog/post-byline';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import {
   Callout,
   Fact,
@@ -23,8 +21,11 @@ import { UseTemplateButton } from '@/components/use-cases/template-install-dialo
 import { UseCaseCard, UseCaseCover } from '@/components/use-cases/use-case-card';
 import { UseCaseMdxImage } from '@/components/use-cases/use-case-mdx-image';
 import { UseCaseToc, type TocItem } from '@/components/use-cases/use-case-toc';
-import { resolveAuthor } from '@/lib/blog';
+import { MarketingButton } from '@/features/marketing/kit/marketing-button';
+import { MARKETING_CONTAINER } from '@/features/marketing/kit/section';
+import { formatPostDate, resolveAuthor } from '@/lib/blog';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
+import { cn } from '@/lib/utils';
 import { siteMetadata } from '@/lib/site-metadata';
 import { getAllUseCases } from '@/lib/use-cases';
 import { useCasesSource } from '@/lib/use-cases-source';
@@ -118,7 +119,6 @@ export default async function UseCasePage(props: PageProps) {
 
   const MDX = data.body;
   const author = resolveAuthor(data.author);
-  const archetype = data.tags?.[0] as string | undefined;
   const allUseCases = getAllUseCases();
   const post = allUseCases.find((p) => p.slug === slug);
   const readingTime = post?.readingTime ?? 1;
@@ -165,119 +165,103 @@ export default async function UseCasePage(props: PageProps) {
     ],
   };
 
+  const meta: { label: string; value: ReactNode }[] = [
+    { label: 'Written by', value: author.name },
+    {
+      label: 'Published',
+      value: <time dateTime={data.date}>{formatPostDate(data.date)}</time>,
+    },
+    { label: 'Reading time', value: tI18nComplete('text7def269b78b1', { value0: readingTime }) },
+    ...(data.tags?.length ? [{ label: 'Topics', value: (data.tags as string[]).join(', ') }] : []),
+  ];
+
   return (
-    <main className="bg-background relative min-h-screen">
+    <main className="bg-background relative min-h-screen pt-16">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: safeJsonForHtml(jsonLd) }}
       />
 
-      {/* Measure first: the article column is pinned to 42rem (~78 characters)
-          at every breakpoint. Below xl it is simply centred on the page; at xl
-          the sticky rail appears beside it and the pair is centred together, so
-          the prose width never changes when the rail arrives. */}
-      <div className="mx-auto max-w-[42rem] px-6 pt-28 pb-20 sm:pt-32 lg:max-w-7xl lg:px-8">
-        <div className="lg:grid lg:grid-cols-[minmax(0,64rem)_16rem] lg:justify-center lg:gap-x-16">
-          <article className="min-w-0">
-            <header>
-              {archetype && (
-                <span
-                  className="text-muted-foreground font-mono text-[0.75rem] leading-none font-normal uppercase select-none"
-                  data-text="true"
-                >
-                  {archetype}
-                </span>
-              )}
-              <h1 className="text-foreground mt-4 text-3xl font-medium tracking-tight text-balance sm:text-4xl md:text-[2.75rem] md:leading-[1.1]">
-                {data.title}
-              </h1>
-              {data.description && (
-                <p className="text-muted-foreground mt-5 text-lg leading-relaxed">
-                  {data.description}
-                </p>
-              )}
-              <PostByline
-                author={author}
-                date={data.date}
-                readingTime={readingTime}
-                className="border-border/60 mt-8 border-t pt-8"
-              />
-            </header>
+      {/* Buio's blog post: title and description, the cover, then the shared
+          4-column grid. Column 1 is the sticky byline, columns 2–3 the prose
+          (~600px, a calm measure), column 4 the sticky contents and the call to
+          action. The hero's measure. */}
+      <div className={cn(MARKETING_CONTAINER, 'pb-24 md:pb-30')}>
+        <header className="max-w-4xl pt-24 md:pt-30">
+          <h1 className="text-foreground text-3xl font-medium tracking-tight text-balance md:text-4xl lg:text-5xl">
+            {data.title}
+          </h1>
+          {data.description ? (
+            <p className="text-muted-foreground mt-6 max-w-2xl text-base text-pretty">
+              {data.description}
+            </p>
+          ) : null}
+        </header>
 
-            {post && (
-              <UseCaseCover
-                post={post}
-                className="border-border/60 mt-10 aspect-[16/9] w-full rounded-md border"
-              />
-            )}
+        {post ? <UseCaseCover post={post} className="mt-16 aspect-[2/1] w-full" /> : null}
 
-            <BlogProse className="mt-10">
-              <MDX components={mdxComponents} />
-            </BlogProse>
-
-            {data.tags?.length > 1 && (
-              <div className="border-border/60 mt-12 flex flex-wrap gap-1.5 border-t pt-8">
-                {data.tags.slice(1).map((tag: string) => (
-                  <Badge key={tag} variant="secondary">
-                    {tag}
-                  </Badge>
-                ))}
+        <div className="mt-16 grid grid-cols-1 gap-y-12 lg:grid-cols-4">
+          <dl className="grid grid-cols-2 gap-6 sm:grid-cols-4 lg:sticky lg:top-24 lg:flex lg:flex-col lg:self-start lg:pr-8">
+            {meta.map((item) => (
+              <div key={item.label}>
+                <dt className="text-muted-foreground text-sm">{item.label}</dt>
+                <dd className="text-foreground mt-1 text-sm text-pretty">{item.value}</dd>
               </div>
-            )}
-          </article>
+            ))}
+          </dl>
 
-          <aside className="hidden lg:block">
-            <div className="sticky top-24 space-y-8">
+          <BlogProse className="min-w-0 lg:col-span-2 lg:pr-8 [&>*:first-child]:mt-0">
+            <MDX components={mdxComponents} />
+          </BlogProse>
+
+          <aside className="flex flex-col gap-12 lg:sticky lg:top-24 lg:self-start">
+            <div className="hidden lg:block">
               <UseCaseToc items={toc} />
+            </div>
 
-              <div className="border-border/60 bg-popover rounded-md border px-4 py-5">
-                {templatesEnabled && data.template ? (
-                  <>
-                    <p className="text-foreground text-sm font-medium">
-                      {tI18nComplete.raw('text5bad1b115369')}
-                    </p>
-                    <p className="text-muted-foreground mt-1.5 text-sm leading-relaxed">
-                      {tI18nComplete.raw('text512241b9824c')}
-                    </p>
-                    <UseTemplateButton
-                      templateId={data.template}
-                      className="mt-4 w-full"
-                      size="sm"
-                    />
-                  </>
-                ) : (
-                  <>
-                    <p className="text-foreground text-sm font-medium">
-                      {tI18nComplete.raw('text8887e9d916d6')}
-                    </p>
-                    <p className="text-muted-foreground mt-1.5 text-sm leading-relaxed">
-                      {tI18nComplete.raw('text31c48dd4f15a')}
-                    </p>
-                    <Button asChild size="sm" className="mt-4 w-full">
-                      <Link href="/">{tI18nComplete.raw('text61e8d44ad423')}</Link>
-                    </Button>
-                  </>
-                )}
-              </div>
+            <div className="border-border border-t pt-6">
+              {templatesEnabled && data.template ? (
+                <>
+                  <h2 className="text-foreground text-base font-medium">
+                    {tI18nComplete.raw('text5bad1b115369')}
+                  </h2>
+                  <p className="text-muted-foreground mt-2 text-sm text-pretty">
+                    {tI18nComplete.raw('text512241b9824c')}
+                  </p>
+                  <UseTemplateButton templateId={data.template} className="mt-6" size="sm" />
+                </>
+              ) : (
+                <>
+                  <h2 className="text-foreground text-base font-medium">
+                    {tI18nComplete.raw('text8887e9d916d6')}
+                  </h2>
+                  <p className="text-muted-foreground mt-2 text-sm text-pretty">
+                    {tI18nComplete.raw('text31c48dd4f15a')}
+                  </p>
+                  <MarketingButton size="md" asChild className="hit-area-y-1 mt-6">
+                    <Link href="/auth">{tI18nComplete.raw('text61e8d44ad423')}</Link>
+                  </MarketingButton>
+                </>
+              )}
             </div>
           </aside>
         </div>
-      </div>
 
-      {more.length > 0 && (
-        <section className="border-border border-t">
-          <div className="mx-auto max-w-7xl px-6 py-16 sm:py-20">
-            <h2 className="text-muted-foreground mb-10 font-mono text-xs tracking-wider uppercase">
-              {tI18nComplete.raw('text564e4ace86b3')}
+        {more.length > 0 ? (
+          <section className="border-border mt-24 grid grid-cols-1 gap-y-12 border-t pt-8 lg:grid-cols-4">
+            <h2 className="text-foreground text-xl font-medium tracking-tight text-balance md:text-2xl lg:pr-8 lg:text-3xl">
+              {tI18nComplete.raw('text564e4ace86b3')}.
             </h2>
-            <div className="grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
+            <ul className="grid grid-cols-1 gap-y-12 sm:grid-cols-2 lg:col-span-3 lg:grid-cols-3">
               {more.map((item) => (
-                <UseCaseCard key={item.slug} post={item} />
+                <li key={item.slug} className="sm:pr-6 lg:pr-8">
+                  <UseCaseCard post={item} />
+                </li>
               ))}
-            </div>
-          </div>
-        </section>
-      )}
+            </ul>
+          </section>
+        ) : null}
+      </div>
     </main>
   );
 }
