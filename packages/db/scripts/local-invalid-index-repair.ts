@@ -1,4 +1,4 @@
-import { withClient } from '../src/with-client';
+import { withClient, withTransaction } from '../src/with-client';
 
 function quoteIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
@@ -32,19 +32,14 @@ export async function dropLocalInvalidIndexes(databaseUrl: string): Promise<stri
     `);
     if (invalid.rows.length === 0) return [];
 
-    await client.query('begin');
-    try {
+    return withTransaction(client, async () => {
       await client.query("set local lock_timeout = '5s'");
       for (const row of invalid.rows) {
         await client.query(
           `drop index if exists ${quoteIdentifier(row.schema_name)}.${quoteIdentifier(row.index_name)}`,
         );
       }
-      await client.query('commit');
       return invalid.rows.map((row) => `${row.schema_name}.${row.index_name}`);
-    } catch (error) {
-      await client.query('rollback');
-      throw error;
-    }
+    });
   });
 }
