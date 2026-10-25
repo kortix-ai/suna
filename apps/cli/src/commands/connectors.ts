@@ -1807,7 +1807,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
         if (cAction === 'effective') {
           let resp: {
             sensitive?: boolean;
-            effective?: { path: string; action: string; source: string; risk?: string; rule?: { match: string; action: string } }[];
+            effective?: { path: string; action: string; source: string; risk?: string; likely_risk?: string; rule?: { match: string; action: string } }[];
           };
           try {
             resp = await ctx.client.get(path);
@@ -1835,7 +1835,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
           process.stdout.write(`\n  ${C.bold}${label}${C.reset} ${C.dim}— what each tool does${C.reset}\n`);
           for (const a of rows) {
             process.stdout.write(
-              `  ${C.cyan}${pad(a.path, w)}${C.reset}  ${pad(a.risk ?? '', 7)}  ${pad(shown[a.action] ?? a.action, 7)}  ${C.dim}${layer(a.source)}${a.rule ? ` (${a.rule.match} → ${a.rule.action})` : ''}${C.reset}\n`,
+              `  ${C.cyan}${pad(a.path, w)}${C.reset}  ${pad(a.likely_risk ?? a.risk ?? '', 7)}  ${pad(shown[a.action] ?? a.action, 7)}  ${C.dim}${layer(a.source)}${a.rule ? ` (${a.rule.match} → ${a.rule.action})` : ''}${C.reset}\n`,
             );
           }
           process.stdout.write('\n');

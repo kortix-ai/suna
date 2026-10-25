@@ -6268,6 +6268,10 @@ flow(
         if (byPath.send_note?.source !== 'policy_set' || byPath.send_note.rule?.match !== 'send_note' || byPath.send_note.risk !== 'write') {
           throw new Error(`send_note effective: ${JSON.stringify(byPath.send_note)}`);
         }
+        // The source stores no risk for an MCP tool; likely_risk reads it from the name.
+        if ((byPath.list_items as { likely_risk?: string } | undefined)?.likely_risk !== 'read' || (byPath.send_note as { likely_risk?: string }).likely_risk !== 'write') {
+          throw new Error(`likely_risk: ${JSON.stringify(view.effective)}`);
+        }
         if (byPath.list_items?.action !== 'always_run' || byPath.list_items.rule !== undefined || view.sensitive !== false) {
           throw new Error(`list_items effective: ${JSON.stringify(byPath.list_items)}`);
         }
