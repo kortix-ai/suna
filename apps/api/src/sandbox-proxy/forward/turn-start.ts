@@ -41,8 +41,7 @@ import {
 } from '../prompt-dedupe';
 import { recordSessionActivity } from '../../projects/session-activity';
 import { MEMORY_TURN_SYSTEM_MAX_CHARS } from '@kortix/api-contract';
-import { recordThreadLoad } from '../../memory/thread-loads';
-import { isMemoryTurnRoute, memoryTurnContext, withMemoryTurn, withoutClientSystem } from '../../memory/turn-context';
+import { isMemoryTurnRoute, memoryChannelsOn, withMemoryTurn, withoutClientSystem } from '../../memory/turn-body';
 import { logger } from '../../lib/logger';
 import type { ForwardRequest, ForwardState } from './context';
 
@@ -363,6 +362,9 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
   state.requestBody = withoutClientSystem(state.requestBody);
   const sessionId = req.record.sessionId;
   try {
+    // Flag off: the memory and drives services are never loaded on this path.
+    if (!(await memoryChannelsOn(req.record.projectId))) return;
+    const { memoryTurnContext } = await import('../../memory/turn-context');
     // The prompter decides whether the thread's personal layer is listed (its owner only).
     const turn = await memoryTurnContext(req.record.projectId, sessionId, req.userId);
     if (!turn) return;
@@ -371,7 +373,7 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
     // ponytail: recorded before delivery; a refused prompt or a daemon older than the `system` field still records it.
     if (!turn.firstTurn || turn.system.length > MEMORY_TURN_SYSTEM_MAX_CHARS) return;
     // Off the turn's path: a lost record only hides the "Used memory" chip.
-    void recordThreadLoad(sessionId, turn.loaded).catch((error: unknown) =>
+    void import('../../memory/thread-loads').then(({ recordThreadLoad }) => recordThreadLoad(sessionId, turn.loaded)).catch((error: unknown) =>
       logger.warn('[memory] the thread load was not recorded', {
         session_id: sessionId,
         error: error instanceof Error ? error.message : String(error),

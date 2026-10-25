@@ -61,6 +61,9 @@ const DRIVE_LIST = 'GET /v1/drives';
 const DRIVE_FILES = 'GET /v1/drives/:driveId/files';
 const DRIVE_READ = 'GET /v1/drives/:driveId/files/content';
 const DRIVE_WRITE = 'PUT /v1/drives/:driveId/files/content';
+/** `hasStorage` probes with a folder made and removed. */
+const STORAGE_PROBE = ['GET /v1/drives', 'POST /v1/drives/:driveId/files/mkdir', 'DELETE /v1/drives/:driveId/files'];
+const RESOURCE_GRANTS = 'POST /v1/projects/:projectId/resource-grants';
 
 const LAYER = '/v1/projects/:projectId/memory/layers/:layerKey';
 const PAGES = '/v1/projects/:projectId/memory/layers/:layerKey/pages';
@@ -118,6 +121,12 @@ async function thread(ctx: FlowContext, world: AgentPrincipalsWorld, spaceId: st
      VALUES ($1, $2, $3, $1, 'kortix', 'stopped', $4, 'project', $5)`,
     [sessionId, world.accountId, world.projectId, world.ownerUserId, spaceId],
   );
+  // A session credential needs a live sandbox lease (`validateAccountToken`); `world.close()` deletes it.
+  await world.db.query(
+    `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status)
+     VALUES ($1::uuid, $1, $2, $3, 'active')`,
+    [sessionId, world.accountId, world.projectId],
+  );
   const minted = (await world.owner.post('/v1/projects/:projectId/cli-token', { name: ctx.fixtures.name('memory') }, { params: { projectId: world.projectId } }))
     .status(201)
     .json<{ token_id: string; secret_key: string }>();
@@ -136,15 +145,32 @@ function fail(what: string, detail: unknown): never {
   throw new Error(`${what}: ${typeof detail === 'string' ? detail : JSON.stringify(detail).slice(0, 1_200)}`);
 }
 
-/** The target has drive storage: the Company layer reads (200), not 503 `drive_storage_unavailable`. */
+/**
+ * The target has drive storage: a write lands (a folder made and removed in
+ * the owner's own folder), not 503 `drive_storage_unavailable`. A read cannot
+ * tell: a drive with no volume yet reads as empty on every target.
+ */
 async function hasStorage(world: AgentPrincipalsWorld): Promise<boolean> {
-  const r = await world.owner.get(LAYER, { params: { projectId: world.projectId, layerKey: 'company' } });
+  const { driveId, personalFolder } = await driveOf(world.owner, world.projectId);
+  const path = `${personalFolder}/.storage-probe-${randomUUID().slice(0, 8)}`;
+  const r = await world.owner.post('/v1/drives/:driveId/files/mkdir', { path }, { params: { driveId } });
   if (r.statusCode === 503) {
     r.body().has('$.code', 'drive_storage_unavailable');
     return false;
   }
-  r.status(200);
+  r.status([200, 201]);
+  (await world.owner.del('/v1/drives/:driveId/files', { params: { driveId }, query: { path } })).status([200, 204]);
   return true;
+}
+
+/** Without drive storage a Files write answers 503: the flow asserts that and ends (a local profile never skips). */
+async function noStorage(ctx: FlowContext, world: AgentPrincipalsWorld): Promise<void> {
+  await ctx.step('no drive storage on this target: a Files write → 503 drive_storage_unavailable', async () => {
+    const { driveId, personalFolder } = await driveOf(world.owner, world.projectId);
+    (await world.owner.put('/v1/drives/:driveId/files/content', '# x\n', {
+      params: { driveId }, query: { path: `${personalFolder}/Memory/probe.md` }, headers: { 'content-type': 'application/octet-stream' }, raw: true,
+    })).status(503).body().has('$.code', 'drive_storage_unavailable');
+  });
 }
 
 /** The project drive's id and the caller's own folder. */
@@ -230,7 +256,7 @@ flow('MEMORY-1', meta([...Object.values(R), FEATURES, TOKEN_MINT]), async (ctx) 
   }
 });
 
-flow('MEMORY-2', meta([R.layer, R.pages, R.create, R.note, R.page, R.update, R.remove, R.history, FEATURES, SPACE_CREATE, SPACE_DM]), async (ctx) => {
+flow('MEMORY-2', meta([R.layer, R.pages, R.create, R.note, R.page, R.update, R.remove, R.history, FEATURES, SPACE_CREATE, SPACE_DM, ...STORAGE_PROBE]), async (ctx) => {
   const { team, project, world } = await openWorld(ctx, { channels: true });
   const projectId = project.id;
   try {
@@ -269,9 +295,9 @@ flow('MEMORY-2', meta([R.layer, R.pages, R.create, R.note, R.page, R.update, R.r
     });
 
     if (!storage) {
-      await ctx.step('no drive storage on this target: the Company, channel and DM layers → 503 drive_storage_unavailable', async () => {
+      await ctx.step('no drive storage on this target: a note in the Company, channel and DM layers → 503 drive_storage_unavailable', async () => {
         for (const layerKey of ['company', launch.space_id, dmId]) {
-          (await world.owner.get(LAYER, { params: { projectId, layerKey } })).status(503).body().has('$.code', 'drive_storage_unavailable');
+          (await world.owner.post(NOTES, { text: 'Launch moves to Nov 19' }, { params: { projectId, layerKey } })).status(503).body().has('$.code', 'drive_storage_unavailable');
         }
       });
       return;
@@ -342,12 +368,12 @@ flow('MEMORY-3', meta([R.create, R.update, R.note, R.search, FEATURES]), async (
 
 flow(
   'MEMORY-4',
-  meta([R.layer, R.pages, R.create, R.note, R.page, R.update, R.remove, R.history, R.search, FEATURES, DRIVE_LIST, DRIVE_FILES, DRIVE_READ, DRIVE_WRITE], { tags: ['deployed'] }),
+  meta([R.layer, R.pages, R.create, R.note, R.page, R.update, R.remove, R.history, R.search, FEATURES, DRIVE_LIST, DRIVE_FILES, DRIVE_READ, DRIVE_WRITE, ...STORAGE_PROBE], { tags: ['deployed'] }),
   async (ctx) => {
     const { project, world } = await openWorld(ctx);
     const projectId = project.id;
     try {
-      if (!(await hasStorage(world))) ctx.skip('no drive storage on this target (MEMORY-2 asserts the 503)');
+      if (!(await hasStorage(world))) return await noStorage(ctx, world);
       const { driveId } = await driveOf(world.owner, projectId);
       const layer = { params: { projectId, layerKey: 'company' } };
       const pageOf = (pageId: string) => ({ params: { projectId, pageId } });
@@ -412,11 +438,11 @@ flow(
   },
 );
 
-flow('MEMORY-5', meta([R.layer, R.pages, FEATURES, DRIVE_LIST, DRIVE_FILES, DRIVE_READ, DRIVE_WRITE, SPACE_CREATE, SPACE_DM]), async (ctx) => {
+flow('MEMORY-5', meta([R.layer, R.pages, FEATURES, DRIVE_LIST, DRIVE_FILES, DRIVE_READ, DRIVE_WRITE, SPACE_CREATE, SPACE_DM, ...STORAGE_PROBE]), async (ctx) => {
   const { project, world } = await openWorld(ctx);
   const projectId = project.id;
   try {
-    if (!(await hasStorage(world))) ctx.skip('no drive storage on this target (MEMORY-2 asserts the 503)');
+    if (!(await hasStorage(world))) return await noStorage(ctx, world);
     const { driveId, personalFolder } = await driveOf(world.owner, projectId);
     const put = async (path: string, text: string) =>
       (await world.owner.put('/v1/drives/:driveId/files/content', text, { params: { driveId }, query: { path }, headers: { 'content-type': 'application/octet-stream' }, raw: true })).status(200);
@@ -489,13 +515,15 @@ const SPACE_LIST = 'GET /v1/projects/:projectId/spaces';
  */
 flow(
   'MEMORY-16',
-  meta([...ONBOARDING_ROUTES, FEATURES, SPACE_LIST, SPACE_CREATE, SPACE_DM, R.note]),
+  meta([...ONBOARDING_ROUTES, FEATURES, SPACE_LIST, SPACE_CREATE, SPACE_DM, R.note, RESOURCE_GRANTS]),
   async (ctx) => {
     const { team, project, world } = await openWorld(ctx);
     const projectId = project.id;
     const params = { projectId };
     const member = await team.addMember('member');
     await team.grantProjectRole(projectId, member.userId!, 'member');
+    // A DM runs its agent: the member needs the agent's run grant to open one.
+    await world.grantRun('kortix', member);
     // An account member with no access to this project: never on its roster.
     const outsider = await team.addMember('member');
     const asMember = ctx.client.as(member);

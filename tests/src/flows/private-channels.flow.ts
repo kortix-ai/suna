@@ -14,7 +14,7 @@
  * `integration-private-channels-phase2.test.ts`.
  */
 import { randomUUID } from 'node:crypto';
-import { SpaceListSchema, SpaceMemberListSchema, SpaceSchema } from '@kortix/api-contract';
+import { PrivateChannelListSchema, SpaceListSchema, SpaceMemberListSchema, SpaceSchema } from '@kortix/api-contract';
 import { flow } from '../core/flow';
 import type { Client } from '../core/client';
 import type { FlowContext, FlowMeta, Principal } from '../core/types';
@@ -22,6 +22,7 @@ import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
 
 const R = {
   list: 'GET /v1/projects/:projectId/spaces',
+  privateList: 'GET /v1/projects/:projectId/spaces/private',
   create: 'POST /v1/projects/:projectId/spaces',
   update: 'PATCH /v1/projects/:projectId/spaces/:spaceId',
   links: 'GET /v1/projects/:projectId/spaces/:spaceId/links',
@@ -40,6 +41,8 @@ const R = {
   search: 'GET /v1/projects/:projectId/memory/search',
   drives: 'GET /v1/drives',
   files: 'GET /v1/drives/:driveId/files',
+  mkdir: 'POST /v1/drives/:driveId/files/mkdir',
+  removeFile: 'DELETE /v1/drives/:driveId/files',
   triggers: 'GET /v1/projects/:projectId/triggers',
   createTrigger: 'POST /v1/projects/:projectId/triggers',
 } as const;
@@ -119,11 +122,33 @@ async function thread(world: AgentPrincipalsWorld, spaceId: string, userId: stri
   return sessionId;
 }
 
+/**
+ * The target has drive storage: a folder made and removed in the owner's own
+ * folder lands. Without it the write answers 503 `drive_storage_unavailable`,
+ * asserted here. A read cannot tell: a drive with no volume yet reads as empty.
+ */
+async function hasStorage(ctx: FlowContext, world: AgentPrincipalsWorld): Promise<boolean> {
+  const drive = (await world.owner.get(DRIVES, { query: { projectId: world.projectId } }))
+    .status(200)
+    .json<{ drives: { driveId: string; personalFolder: string }[] }>().drives[0]!;
+  const path = `${drive.personalFolder}/.storage-probe-${randomUUID().slice(0, 8)}`;
+  const made = await world.owner.post('/v1/drives/:driveId/files/mkdir', { path }, { params: { driveId: drive.driveId } });
+  if (made.statusCode === 503) {
+    await ctx.step('no drive storage on this target: a Files write → 503 drive_storage_unavailable', async () => {
+      made.body().has('$.code', 'drive_storage_unavailable');
+    });
+    return false;
+  }
+  made.status([200, 201]);
+  (await world.owner.del(FILES, { params: { driveId: drive.driveId }, query: { path } })).status([200, 204]);
+  return true;
+}
+
 const ids = (list: MemberList) => list.members.map((m) => m.user_id).sort();
 
 flow(
   'SPACE-24',
-  meta([R.list, R.create, R.links, R.apps, R.members, R.join, R.addMembers, R.features]),
+  meta([R.list, R.privateList, R.create, R.links, R.apps, R.members, R.join, R.addMembers, R.features]),
   async (ctx) => {
     const { world, people, as, params, p, spaceParams } = await openWorld(ctx);
     try {
@@ -162,8 +187,18 @@ flow(
         if (rows.length !== 0) throw new Error('bob became a member');
       });
 
-      await ctx.step('the manager outside P lists its people but cannot read its links (404) or add anyone (can_add false)', async () => {
-        (await as(people.manager).get(MEMBERS, { params: spaceParams })).status(200).body().has('$.can_add', false);
+      await ctx.step('the manager outside P finds it in GET /spaces/private (name and member count, no content); bob → 403 forbidden', async () => {
+        const r = (await as(people.manager).get('/v1/projects/:projectId/spaces/private', { params })).status(200);
+        r.body().schema(PrivateChannelListSchema);
+        const found = r.json<{ channels: { space_id: string; slug: string; member_count: number }[] }>().channels.find((c) => c.space_id === p.space_id);
+        if (found?.slug !== p.slug || found.member_count !== 2) throw new Error(`P in /spaces/private: ${JSON.stringify(found)}`);
+        (await as(people.alice).get('/v1/projects/:projectId/spaces/private', { params })).status(403).body().has('$.code', 'forbidden');
+        (await as(people.bob).get('/v1/projects/:projectId/spaces/private', { params })).status(403).body().has('$.code', 'forbidden');
+      });
+
+      // Owner decision 2026-10-26: a manager adds people (never themself), so a channel its last member left is not stuck.
+      await ctx.step('the manager outside P lists its people and may add others (can_add true) but cannot read its links (404)', async () => {
+        (await as(people.manager).get(MEMBERS, { params: spaceParams })).status(200).body().has('$.can_add', true);
         (await as(people.manager).get(LINKS, { params: spaceParams })).status(404).body().has('$.code', 'space_not_found');
       });
 
@@ -210,12 +245,11 @@ flow('SPACE-25', meta([R.create, R.sessions, R.removeMember, R.join, R.list, R.f
 
 flow(
   'SPACE-26',
-  meta([R.create, R.layer, R.createPage, R.pages, R.search, R.note, R.features]),
+  meta([R.create, R.layer, R.createPage, R.pages, R.search, R.note, R.features, R.drives, R.mkdir, R.removeFile]),
   async (ctx) => {
     const { world, people, as, params, p } = await openWorld(ctx, { volumes: true });
     try {
-      const company = await world.owner.get(LAYER, { params: { ...params, layerKey: 'company' } });
-      if (company.statusCode === 503) ctx.skip('no drive storage on this target (MEMORY-2 asserts the 503)');
+      if (!(await hasStorage(ctx, world))) return;
       const word = `quokka${randomUUID().slice(0, 6)}`;
       const layerParams = { ...params, layerKey: p.space_id };
 
@@ -249,9 +283,11 @@ flow(
   },
 );
 
-flow('SPACE-27', meta([R.create, R.drives, R.files, R.features]), async (ctx) => {
+flow('SPACE-27', meta([R.create, R.drives, R.files, R.features, R.mkdir, R.removeFile]), async (ctx) => {
   const { world, people, as, params, p } = await openWorld(ctx, { volumes: true });
   try {
+    // Without storage every path reads as an empty folder: only the access checks hold.
+    const storage = await hasStorage(ctx, world);
     // Named by the channel's id, listed under its name.
     const folder = `/Channels/${p.space_id}`;
     const driveOf = async (who: Principal) =>
@@ -260,6 +296,7 @@ flow('SPACE-27', meta([R.create, R.drives, R.files, R.features]), async (ctx) =>
     await ctx.step('alice opens /Channels/<slug> (write); its folder is outside /Company', async () => {
       const driveId = await driveOf(people.alice);
       (await as(people.alice).get(FILES, { params: { driveId }, query: { path: folder } })).status(200).body().has('$.access', 'write');
+      if (!storage) return;
       (await as(people.alice).get(FILES, { params: { driveId }, query: { path: `/Company/Channels/${p.slug}` } })).status(404);
       const listed = (await as(people.alice).get(FILES, { params: { driveId }, query: { path: '/Channels' } })).status(200).json<{ entries: { path: string; name: string }[] }>();
       if (!listed.entries.some((e) => e.path === folder && e.name === `#${p.slug}`)) throw new Error(`/Channels lists ${JSON.stringify(listed.entries)}`);
@@ -314,8 +351,10 @@ flow('SPACE-28', meta([R.create, R.update, R.addLink, R.members, R.list, R.featu
 });
 
 flow('SPACE-29', meta([R.create, R.createTrigger, R.features]), async (ctx) => {
-  const { world, people, as, params, p } = await openWorld(ctx, { manifest: true });
+  const { team, world, people, as, params, p } = await openWorld(ctx, { manifest: true });
   try {
+    // Creating a trigger needs `project.trigger.manage`: a project manager inside P and one outside it.
+    for (const who of [people.alice, people.bob]) await team.grantProjectRole(params.projectId, who.userId!, 'manager');
     const trigger = (slug: string) => ({
       name: slug,
       slug,
@@ -327,7 +366,7 @@ flow('SPACE-29', meta([R.create, R.createTrigger, R.features]), async (ctx) => {
       space_id: p.space_id,
     });
 
-    await ctx.step('bob pointing a trigger at P → 404 space_not_found; alice (a member) → 400 private_channel_trigger; nothing is stored', async () => {
+    await ctx.step('bob (a manager outside P) pointing a trigger at P → 404 space_not_found; alice (a manager in P) → 400 private_channel_trigger; nothing is stored', async () => {
       (await as(people.bob).post(TRIGGERS, trigger('bob-digest'), { params })).status(404).body().has('$.code', 'space_not_found');
       (await as(people.alice).post(TRIGGERS, trigger('deal-digest'), { params })).status(400).body().has('$.code', 'private_channel_trigger');
       const { rows } = await world.db.query('SELECT 1 FROM kortix.project_trigger_runtime WHERE project_id = $1 AND space_id = $2', [params.projectId, p.space_id]);

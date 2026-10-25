@@ -30,6 +30,7 @@ import { HTTPException } from 'hono/http-exception';
 import { DriveStorageError } from '../../drives/volumes';
 import {
   addNote,
+  assertFilesOn,
   authorName,
   createPage,
   decodePageId,
@@ -113,6 +114,7 @@ function memoryValidationHook(
 
 /** The page of a page id: its layer (the viewer must read it) and its path in it. */
 async function pageRef(project: Project, viewer: Viewer, pageId: string) {
+  assertFilesOn(project);
   const ref = decodePageId(pageId);
   if (!ref) throw notFound();
   return { layer: await resolveLayer(project, ref.key, viewer), rel: ref.rel };
@@ -333,6 +335,7 @@ export function registerProjectMemoryRoutes(): void {
     }),
     (c) =>
       withMemoryCaller(c, async ({ project, viewer }) => {
+        assertFilesOn(project);
         const query = c.req.valid('query');
         return c.json(await searchMemory(project, viewer, { ...query, limit: query.limit ?? MEMORY_SEARCH_LIMITS.limit }), 200);
       }),

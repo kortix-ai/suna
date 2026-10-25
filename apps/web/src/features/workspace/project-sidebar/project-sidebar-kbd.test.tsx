@@ -9,6 +9,7 @@ import { afterEach, expect, mock, test } from 'bun:test';
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
 
@@ -157,12 +158,17 @@ async function mountSidebar(width: number) {
   const mobile = width < 768;
   await act(async () => {
     root!.render(
+      // The channels nav's permission probe reads a QueryClient.
       React.createElement(
-        SidebarProvider,
-        null,
-        mobile
-          ? React.createElement(MobileOpenHarness, { projectId: 'synthetic-project' })
-          : React.createElement(ProjectSidebar, { projectId: 'synthetic-project' }),
+        QueryClientProvider,
+        { client: new QueryClient() },
+        React.createElement(
+          SidebarProvider,
+          null,
+          mobile
+            ? React.createElement(MobileOpenHarness, { projectId: 'synthetic-project' })
+            : React.createElement(ProjectSidebar, { projectId: 'synthetic-project' }),
+        ),
       ),
     );
   });

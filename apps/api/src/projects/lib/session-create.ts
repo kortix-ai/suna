@@ -285,8 +285,11 @@ async function resolveRequestedSessionSpace(input: CreateProjectSessionInput): P
   const access = () => spaceAccessFor(project.projectId, userId, input.callerSessionId ?? null);
   // A fork or child of a private channel's thread stays in it, whatever the
   // flag or the body says (`inheritedPrivateSpace`). A trigger run names no
-  // source, so it is not affected.
-  const inherited = warm
+  // source, so it is not affected. No source named: no access read.
+  const sourced = [body.fork_from_session_id, input.callerSessionId, body.parent_session_id].some(
+    (id) => typeof id === 'string' && id.length > 0,
+  );
+  const inherited = warm || !sourced
     ? null
     : await inheritedPrivateSpace(
         project.projectId,

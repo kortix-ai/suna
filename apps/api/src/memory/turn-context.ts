@@ -8,32 +8,20 @@
  * the project has no Drive: the body is then forwarded byte for byte.
  */
 import { MEMORY_TURN_SYSTEM_MAX_CHARS, type MemoryPageType } from '@kortix/api-contract';
-import { type MemoryThreadLoadLayer, projects } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import type { MemoryThreadLoadLayer } from '@kortix/db';
 import { mountedAt, type NotesMount } from '../drives/folders';
 import { findProjectDrive, listFolderGrants, personalFolderFor, readSessionDriveMounts } from '../drives/service';
-import { resolveFeatureFlag } from '../feature-flags/registry';
 import { logger } from '../lib/logger';
-import { classifyRuntimeRequest } from '../sandbox-proxy/runtime-request';
 import { db } from '../shared/db';
 import { ttlMemo } from '../shared/ttl-memo';
 import { layerFiles, pageIdOf, titleFromName, typeOf } from './files';
 import { dmAgentsOf, type Layer } from './layers';
 import { volumeOps } from './volume-ops';
 import { layerFolders, type PlannedLayer, readThreadRow, threadPlan } from './thread-layers';
+import { memoryChannelsOn } from './turn-body';
 
-/**
- * `project_channels` of a project, read at most once per 30 s per replica: a
- * project with the flag off costs no thread query on its prompts.
- */
-const channelsOn = ttlMemo({
-  ttlMs: 30_000,
-  keyFn: (projectId: string) => projectId,
-  loader: async (projectId: string) => {
-    const [row] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
-    return resolveFeatureFlag(row?.metadata, 'project_channels') && resolveFeatureFlag(row?.metadata, 'drives');
-  },
-});
+export { isMemoryTurnRoute, withMemoryTurn, withoutClientSystem } from './turn-body';
+
 
 /** A layer as the list shows it: where it is mounted, and its files (agent folder first, newest first). */
 export interface TurnLayer {
@@ -165,7 +153,7 @@ export interface MemoryTurnContext {
 
 /** Flag on and the thread in a space: one thread query, one grants query for a DM, one listing per layer folder (30 s cache). */
 export async function memoryTurnContext(projectId: string, sessionId: string, prompterUserId: string): Promise<MemoryTurnContext | null> {
-  if (!(await channelsOn(projectId))) return null;
+  if (!(await memoryChannelsOn(projectId))) return null;
   const thread = await threadTurnLayers(sessionId, prompterUserId);
   if (!thread) return null;
   const { system, pageIds } = memorySystem(thread.layers);
@@ -180,43 +168,4 @@ export async function memoryTurnContext(projectId: string, sessionId: string, pr
     firstTurn: !thread.loaded,
     loaded: thread.layers.map((layer, i) => ({ layer_id: layer.key, scope: layer.scope, name: layer.name, version: 0, page_ids: pageIds[i]! })),
   };
-}
-
-/** Only the Kortix prompt route carries the memory `system`: not `/steer`, not OpenCode's `prompt_async`. */
-export function isMemoryTurnRoute(method: string, path: string): boolean {
-  const request = classifyRuntimeRequest(method, path);
-  return request.kind === 'turn-start' && request.verb === 'prompt';
-}
-
-/** A JSON object body, or null for any other body. */
-function jsonObject(body: ArrayBuffer | undefined): Record<string, unknown> | null {
-  if (!body?.byteLength) return null;
-  try {
-    const parsed: unknown = JSON.parse(new TextDecoder().decode(body));
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
-}
-
-const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).buffer as ArrayBuffer;
-
-/**
- * The body without a `system` a client sent: only the API sets a turn's
- * system text, so a member who may prompt a thread cannot add to its agent's
- * system prompt. A body without `system` is returned as it is (byte for byte).
- */
-export function withoutClientSystem(body: ArrayBuffer | undefined): ArrayBuffer | undefined {
-  const parsed = jsonObject(body);
-  if (!parsed || !('system' in parsed)) return body;
-  const { system: _client, ...rest } = parsed;
-  return encode(rest);
-}
-
-/** The JSON object body with the memory `system` set (any `system` in it is replaced); any other body is returned as it is. */
-export function withMemoryTurn(body: ArrayBuffer | undefined, turn: Pick<MemoryTurnContext, 'system'>): ArrayBuffer | undefined {
-  const parsed = jsonObject(body);
-  if (!parsed) return body;
-  const { system: _client, ...rest } = parsed;
-  return encode({ ...rest, ...(turn.system.length <= MEMORY_TURN_SYSTEM_MAX_CHARS ? { system: turn.system } : {}) });
 }

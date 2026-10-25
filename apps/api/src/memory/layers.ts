@@ -78,6 +78,13 @@ export interface Layer {
   isDefault: boolean;
 }
 
+/** 403 `feature_disabled` while Files is off: every memory route answers it first. */
+export function assertFilesOn(project: Project): void {
+  if (!resolveFeatureFlag(project.metadata, 'drives')) {
+    throw new MemoryError(403, 'feature_disabled', 'Memory lives in Files. Turn on Files for this project first.', { feature: 'drives' });
+  }
+}
+
 // One driveSubjectFor per request and viewer: a search resolves several layers.
 const callers = new WeakMap<Viewer, Promise<{ drive: DriveRow; caller: DriveCaller }>>();
 
@@ -86,9 +93,7 @@ function driveCallerOf(project: Project, viewer: Viewer): Promise<{ drive: Drive
   let memo = callers.get(viewer);
   if (!memo) {
     memo = (async () => {
-      if (!resolveFeatureFlag(project.metadata, 'drives')) {
-        throw new MemoryError(403, 'feature_disabled', 'Memory lives in Files. Turn on Files for this project first.', { feature: 'drives' });
-      }
+      assertFilesOn(project);
       if (!volumeOps().available()) throw new MemoryError(503, 'drive_storage_unavailable', 'Drive storage is not available.');
       const drive = await ensureProjectDrive(project.accountId, project.projectId);
       return { drive, caller: await driveSubjectFor(drive, viewer.userId, viewer.may) };

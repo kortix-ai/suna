@@ -18,7 +18,6 @@ import type { PrivateChannelSummary, Space, SpaceCreateInput, SpaceUpdateInput }
 import { projectSessions, projectSpaceLinks, projectSpaceMembers, projectSpaces } from '@kortix/db';
 import { spaceSlug } from '@kortix/shared';
 import { type SQL, and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
-import { makeChannelFolders, moveChannelFolderVisibility } from '../../drives/space-folders';
 import { logger } from '../../lib/logger';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { db } from '../../shared/db';
@@ -29,6 +28,10 @@ import { insertSpaceMembers, memberDisplayName, nonProjectMembers } from './proj
 import { resolveUserIdentities } from './user-identity';
 import { bustSpaceAccess, canSeeSpace, type SpaceAccess } from '../../shared/space-access';
 import { normalizeString } from './serializers';
+
+// Lazy: the drives service stays off the static import graph of every session
+// create, trigger and member offboard that reaches this module.
+const spaceFolders = () => import('../../drives/space-folders');
 
 type SpaceRow = typeof projectSpaces.$inferSelect;
 
@@ -118,7 +121,7 @@ async function ensureDefaultSpaceCreated(projectId: string, accountId: string): 
 export async function ensureDefaultSpace(projectId: string, accountId: string): Promise<SpaceRow> {
   const general = await ensureDefaultSpaceCreated(projectId, accountId);
   if (general.created) {
-    void makeChannelFolders(accountId, projectId, DEFAULT_SLUG);
+    void spaceFolders().then((m) => m.makeChannelFolders(accountId, projectId, DEFAULT_SLUG));
     await assignUnassignedSessions(projectId, general.space.spaceId);
   }
   return general.space;
@@ -131,7 +134,7 @@ export async function ensureDefaultSpace(projectId: string, accountId: string): 
  */
 export async function turnOnChannels(projectId: string, accountId: string): Promise<{ generalCreatedAt: Date; filed: number }> {
   const general = await ensureDefaultSpaceCreated(projectId, accountId);
-  if (general.created) void makeChannelFolders(accountId, projectId, DEFAULT_SLUG);
+  if (general.created) void spaceFolders().then((m) => m.makeChannelFolders(accountId, projectId, DEFAULT_SLUG));
   const filed = await assignUnassignedSessions(projectId, general.space.spaceId);
   return { generalCreatedAt: general.space.createdAt, filed };
 }
@@ -494,7 +497,7 @@ export async function updateChannel(
   let folderMoved = false;
   if (converting && row.slug) {
     try {
-      folderMoved = await moveChannelFolderVisibility(projectId, { spaceId, slug: row.slug }, 'private');
+      folderMoved = await (await spaceFolders()).moveChannelFolderVisibility(projectId, { spaceId, slug: row.slug }, 'private');
     } catch (error) {
       logger.warn(`[spaces] the folder of channel ${spaceId} did not move for its conversion to private`, {
         error: error instanceof Error ? error.message : String(error),
@@ -509,7 +512,7 @@ export async function updateChannel(
   }
   const moveBack = async () => {
     if (!folderMoved) return;
-    await moveChannelFolderVisibility(projectId, { spaceId, slug: row.slug! }, 'public').catch((error) =>
+    await (await spaceFolders()).moveChannelFolderVisibility(projectId, { spaceId, slug: row.slug! }, 'public').catch((error) =>
       logger.error(`[spaces] the folder of channel ${spaceId} is in /Channels but the channel stayed public`, {
         error: error instanceof Error ? error.message : String(error),
       }),
