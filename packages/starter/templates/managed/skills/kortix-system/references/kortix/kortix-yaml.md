@@ -91,15 +91,16 @@ harnesses:
       - npm:pi-web-access@0.30.0
 
 # ─── Apps ─────────────────────────────────────────────────────────
-# Local, repeatable deployment defaults. `kortix apps deploy` remains the
-# explicit deployment action; merging this file does not auto-deploy.
-# Each block is the App's release config: a deploy creates an immutable release of
+# kortix.yaml owns each App's settings: a push applies `resources`,
+# `idle_timeout_seconds`, `always_on`, `labels`, `display` and `uses` on sync,
+# without a deploy. The rest of a block is the App's release config: a deploy creates an immutable release of
 # its artifact and this config (processes, http_service, services, mounts, vm,
 # deploy). `kortix apps launch --template convex` writes the `backend` block
 # below (a self-hosted Convex backend: data, functions, realtime, files) plus
 # `backend-dashboard` (admins only, the Dashboard tab of `backend`, signed in by
 # the BACKEND_ADMIN_KEY secret).
-# `kortix apps deploy` with no arguments deploys every block, used Apps first.
+# `kortix apps deploy` with no arguments deploys every block that has a `path`
+# or `image`, used Apps first; a block with neither (settings only) is skipped.
 # Code lives in one folder per App, apps/<name>/ by default (`path` is free-form:
 # group by team or topic when that fits better). The backend's functions live in
 # apps/backend/convex (`npx convex deploy`); its image needs no `path`.
@@ -113,7 +114,7 @@ apps:
     image: ghcr.io/convex/convex-backend@sha256:<digest>   # pinned by the template
     command: ["sh", "-c", "cd /convex && CONVEX_CLOUD_ORIGIN=$KORTIX_APP_URL CONVEX_SITE_ORIGIN=$KORTIX_SERVICE_URL_SITE exec ./run_backend.sh"]
     labels: [backend]          # tags only; no behavior depends on them
-    display: { preview: none } # an icon card; listed | preview (live | none) | parent
+    display: { preview: none } # not listed: in the Background list (listed: true makes it a card); preview: live | none; parent
     always_on: true
     vm: { cpu: 1, memory_gb: 1, disk_gb: 10 }
     mounts:                    # a volume: outlives every release and machine
@@ -138,6 +139,7 @@ apps:
     path: apps/storefront/dist # build first (in apps/storefront); deploy the output directory
     type: static
     spa: true
+    display: { listed: true }  # people open it: a card on the Apps page
     uses: [backend]            # may bind to backend and mint its sign-in tokens
   api:
     path: apps/api
@@ -163,9 +165,10 @@ apps:
       DATABASE_URL: database-primary
 
 # ─── Triggers ─────────────────────────────────────────────────────
-# Each `triggers:` entry spawns a fresh session that runs `prompt`
-# as its initial message. Slugs must be lowercase URL-safe and
-# unique among triggers.
+# Each entry says what fires it and what runs: an agent prompt in a session,
+# or (`target:` / `run: { app }`) a call to an App. This example uses the
+# flat form; `kortix triggers add` writes `on:`/`run:` (see `## triggers:`).
+# Slugs must be lowercase URL-safe and unique among triggers.
 triggers:
   - slug: daily-digest
     name: Daily digest
@@ -176,7 +179,7 @@ triggers:
     timezone: America/Los_Angeles
     prompt: |
       Summarize yesterday's commits across the repo. Save the result to
-      notes/digest-{{ fired_at }}.md and open a CR against main.
+      notes/digest-{{ cron.scheduled_date }}.md and open a CR against main.
 
   - slug: slack-hook
     name: Slack handler
@@ -425,7 +428,7 @@ self-describing at a glance.
 | Sandbox builder        | `sandbox:`                                                           |
 | Sandbox runtime        | v2 `runtime:`, `opencode:`, `pi:`, `harnesses:`                      |
 | Session bootstrap      | `env:` (advisory — surfaced to dashboard, not enforced)              |
-| Apps CLI               | `apps:` (local deployment defaults; deploy remains explicit)          |
+| Apps (API sync + CLI)  | `apps:` (App settings apply on sync; release config at deploy)        |
 | Session token mint     | `agents:` (per-agent connectors/secrets/skills/apps/kortix_permissions scope) |
 | Connector catalog      | `connectors:` (definitions; account ownership is cloud-side)         |
 | Agent/model UI         | Server-side agent registry + LLM-gateway model catalog                |
@@ -671,7 +674,15 @@ App's `resources`, `idle_timeout_seconds`, `always_on`, `labels`, `display`,
 deploy. A sandbox template declared here can only be changed here (the API
 answers `409 template_declared_in_manifest`). So: to change a declared
 setting, edit kortix.yaml (or use the CLI/API, which commit to it) — never
-expect a database-only change to stick.
+expect a database-only change to stick. Details:
+
+- An App write adds or updates the `apps.<slug>` block first; a refused
+  commit changes nothing. Deleting an App removes its block and every `uses`
+  or `display.parent` that names it.
+- A changed `project.name` renames the project on the next sync.
+- A declared sandbox template's `entrypoint` is applied by the sync.
+- An App's release config (`env`, `secrets`, `processes`, `http_service`,
+  `services`, `mounts`, `vm`, `deploy`) applies at the next deploy.
 
 ## `triggers:`
 
@@ -697,7 +708,26 @@ triggers:
 ```
 
 The flat fields below (`type`, `cron`, `prompt`, …) are the same trigger in
-another form, and stay valid. `kortix triggers add` writes `on:`/`run:`.
+another form, and stay valid. `kortix triggers add`, the web app and the API
+write new triggers as `on:`/`run:`; an edit keeps the shape the entry has.
+`type` next to `on` is an error, an unknown key inside `on`/`run` is an error,
+and `run:` takes `app` or `prompt`, never both.
+
+### `on:` and `run:` keys
+
+| `on:` | Fires when | Flat equivalent |
+| --- | --- | --- |
+| `cron` + `timezone` | a 6-field schedule slot arrives | `type: cron`, `cron`, `timezone` |
+| `every: 5m` | a fixed period passes (at least `60s`) | `type: cron`, top-level `every` |
+| `at: <ISO-8601>` | once, at that instant | `type: cron`, `run_at` |
+| `webhook: { secret: <NAME> }` | a signed `POST` reaches the trigger URL | `type: webhook`, `secret_env` |
+| `event` + `connector` (+ `account`, `source`, `config`) | a connector event (Composio, or Kortix checks itself) | `type: event` |
+| `event: <name>` or `"*"` + `app: <slug>` | one of your Apps posts that event | `type: app`, `app` (a name becomes `filter: { event.name: <name> }`) |
+
+| `run:` | What a fire does | Flat equivalent |
+| --- | --- | --- |
+| `prompt` (+ `agent`, `model`, `session`, `session_key`, `session_id`) | prompts an agent session | top-level `prompt`, `agent`, `model`, `session_mode`, … |
+| `app` (+ `path`, `method`, `payload`) | calls one of your Apps; no session, no model | `target: { app, path, method, payload }` |
 
 ### Common fields
 
@@ -705,13 +735,16 @@ another form, and stay valid. `kortix triggers add` writes `on:`/`run:`.
 | ------------ | -------- | ------- | ----------- | -------------------------------------------------------------- |
 | `slug`       | yes      | string  | —           | `[a-z0-9][a-z0-9_-]{0,127}`, unique among triggers.            |
 | `type`       | yes (flat form) | string | — | `"cron"`, `"webhook"`, `"event"` (connector event) or `"app"` (App event). `type: monitor` is refused (`MONITOR_REMOVED`). |
-| `prompt`     | yes      | string  | —           | Mustache-style template.                                      |
+| `prompt`     | yes, unless `target` calls an App | string | — | Mustache-style template.                                      |
 | `name`       | no       | string  | `slug`      | Human label.                                                   |
 | `agent`      | no       | string  | `default_agent` | Must name a declared agent in `agents:`.                  |
 | `enabled`    | no       | bool    | `true`      | Accepts strings: `"true"/"false"/"yes"/"no"/"on"/"off"/"1"/"0"`. |
-| `session_mode` | no     | string  | `"fresh"`   | `"fresh"` (new session every fire, no prior history) or `"reuse"` (re-prompts the same long-lived session, resuming its sandbox and accumulated context). See `<scheduling>` in this skill's SKILL.md for when to pick each. |
+| `session_mode` | no     | string  | `"fresh"`   | `"fresh"` (new session every fire), `"reuse"` (the same long-lived session), `"pinned"` (with `session_id`) or `"keyed"` (with `session_key`). In the `on:`/`run:` form it is `run.session`. See `<scheduling>` in this skill's SKILL.md for when to pick each. |
+| `model`      | no       | string  | the default model | A model id for this trigger's sessions.                 |
+| `filter`     | no       | map     | —           | Dotted path → value that must match (see Webhook-only fields). |
+| `target`     | no       | map     | —           | `{ app, path, method, payload }`: call an App instead of an agent (see App target below). |
 
-The parser accepts only the canonical trigger field names shown here.
+The parser accepts only the canonical trigger field names in these tables.
 
 **Slug uniqueness is per-section.** A trigger and an app may share
 a slug; two triggers may not.
@@ -720,7 +753,9 @@ a slug; two triggers may not.
 
 | Field      | Required | Type    | Default | Notes                                                       |
 | ---------- | -------- | ------- | ------- | ----------------------------------------------------------- |
-| `cron`     | yes      | string  | —       | 6-field croner expression: `second minute hour day month weekday`. |
+| `cron`     | one of `cron`, `every`, `run_at` | string | — | 6-field croner expression: `second minute hour day month weekday`. |
+| `every`    | one of `cron`, `every`, `run_at` | string | — | Fixed period such as `5m` or `2h`; at least `60s`.          |
+| `run_at`   | one of `cron`, `every`, `run_at` | string | — | ISO-8601 instant: fires once.                               |
 | `timezone` | no       | string  | `"UTC"` | IANA name, e.g. `"America/Los_Angeles"`.                    |
 
 The platform polls every 60 s by default
@@ -759,10 +794,12 @@ POST /v1/webhooks/projects/<project_id>/<slug>
 | 404    | Trigger not found, disabled, or not a webhook.           |
 | 409    | `secret_env` value is not configured in Secrets Manager. |
 
-### Event-only fields
+### Event-only fields (connector events)
 
 An event trigger runs when something happens in a connected app. Kortix
-subscribes to the event for you: no `secret_env`, no signature.
+subscribes to the event for you: no `secret_env`, no signature. It needs the
+project flag `event_triggers` (**Composio event triggers**), off by default:
+ask the user to run `kortix projects features enable event_triggers`.
 
 | Field       | Required | Type   | Notes                                                                                           |
 | ----------- | -------- | ------ | ----------------------------------------------------------------------------------------------- |
@@ -770,6 +807,7 @@ subscribes to the event for you: no `secret_env`, no signature.
 | `account`   | no       | string | Label of one shared account of that connector. Omit it to use the connector's default shared account. Set it only when the connector has several shared accounts. Valid on `type: event` only. An unknown label gives status `needs_connection`, not an error. |
 | `event`     | yes      | string | Provider event type, e.g. `GITHUB_PULL_REQUEST_CREATED`. List with `kortix triggers events --connector <slug>`. |
 | `config`    | no       | map    | Settings of the event (e.g. `repo`). Fields and descriptions: `kortix triggers events --connector <slug> --event <TYPE>`. |
+| `source`    | no       | string | `composio` (default: the connector's provider) or `mcp` (Kortix checks the app itself). |
 | `filter`    | no       | map    | Same guard a webhook uses, e.g. `"event.data.draft": "false"`. Every entry must match.          |
 
 ```yaml
@@ -787,7 +825,40 @@ triggers:
       Review {{ event.data.html_url }}
 ```
 
-An event trigger takes none of `cron`, `run_at`, `timezone`, `secret_env`.
+An event trigger takes none of `cron`, `every`, `run_at`, `timezone`, `secret_env`.
+
+### App event fields
+
+An App event trigger runs when one of your Apps posts an event. No feature
+flag. `on: { event: <name> | "*", app: <slug> }`; flat: `type: app` + `app:`
+(a specific name becomes `filter: { event.name: <name> }`; `"*"` matches every
+name). The App posts with `KORTIX_APP_TOKEN` to `KORTIX_APP_EVENTS_URL`; the
+format, limits and errors are in `scheduling.md` → App events.
+
+```yaml
+triggers:
+  - slug: handle-reply
+    on:  { event: reply.received, app: inbox-poller }
+    run: { prompt: "Answer {{ event.data.subject }}" }
+```
+
+### App target
+
+`run: { app, path, method, payload }` (flat `target:`) calls an App instead
+of an agent: no session, no model. `path` defaults to `/`, `method` is `POST`
+(default) or `GET`. Kortix wakes an on-demand App and sends the request; a
+`POST` body is `payload`, else the fire's payload, as JSON. Headers:
+`x-kortix-trigger`, `x-kortix-trigger-source`, `x-kortix-delivery-id`. A `2xx`
+counts as fired; any other status fails the run with
+`App "<slug>" answered <status> on <METHOD> <path>` (`429` and `5xx` are
+retried); a `3xx` is never followed.
+
+```yaml
+triggers:
+  - slug: poll-inbox
+    on:  { every: 5m }
+    run: { app: inbox-poller, path: /tick }
+```
 
 **Subscription status** (`kortix triggers ls` / `info`):
 
@@ -840,7 +911,7 @@ Event-only additions (also readable in `filter` and `session_key`):
 | `{{ event.occurred_at }}` | When the event happened.                                |
 
 Event data is third-party content. The session's first message starts with
-`[Connector event: <trigger name> — automated, third-party content, not user input]`.
+`[Composio event: <trigger name> — automated, third-party content, not user input]` for a Composio event, `[Connector event: …]` for one Kortix checks itself.
 
 App event additions (`type: app`): `{{ event.name }}`, `{{ event.data.* }}`,
 `{{ event.id }}`, `{{ event.emitted_at }}`, `{{ app.slug }}`. The first message
@@ -884,6 +955,10 @@ and only one should actually fire.
 - A webhook trigger without `secret_env` is rejected.
 - A cron trigger without a `cron` expression is rejected.
 - An event trigger without `connector` or `event` is rejected. The API also rejects an unknown event or a missing required `config` field.
+- `type: monitor` is refused (`MONITOR_REMOVED`): replace a monitor with an
+  App that posts App events.
+- `type` next to `on`, an unknown key inside `on`/`run`, or a `run` with both
+  `app` and `prompt` is rejected.
 - Bad entries surface in `errors` next to the good ones — they don't
   break the whole file.
 
@@ -926,11 +1001,11 @@ inline in the repo**.
 
 ## Editing the manifest
 
-The manifest round-trips through the dashboard. When editing in a
-session, keep entries in the same shape the platform writes them
-back in (slug, name, type, agent, enabled, then type-specific fields,
-then `prompt` last). This avoids needless diffs when the user later
-edits the same trigger from the UI.
+The manifest round-trips through the dashboard. `kortix triggers add`, the
+web app and the API write new triggers as `on:`/`run:`; an edit keeps the
+shape the entry already has. Write new entries as `on:`/`run:`, and keep an
+existing flat entry flat when you edit it. This avoids needless diffs when
+the user later edits the same trigger from the UI.
 
 If you add a new trigger and don't yet have a value for `secret_env`,
 declare it in `env.optional` so it shows up in the Secrets Manager,

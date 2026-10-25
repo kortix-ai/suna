@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 952,
+  "count": 955,
   "routes": [
     {
       "method": "GET",
@@ -523,20 +523,20 @@
       "path": "/v1/accounts/:accountId/iam/policies"
     },
     {
-      "method": "POST",
-      "path": "/v1/accounts/:accountId/iam/policies:bulk-delete"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/accounts/:accountId/iam/policies:bulk-import"
-    },
-    {
       "method": "DELETE",
       "path": "/v1/accounts/:accountId/iam/policies/:policyId"
     },
     {
       "method": "PATCH",
       "path": "/v1/accounts/:accountId/iam/policies/:policyId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/policies:bulk-delete"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/policies:bulk-import"
     },
     {
       "method": "GET",
@@ -1315,6 +1315,10 @@
       "path": "/v1/connectors/projects/:projectId/connectors/:slug/accounts"
     },
     {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/agents"
+    },
+    {
       "method": "PUT",
       "path": "/v1/connectors/projects/:projectId/connectors/:slug/authorization-strategy"
     },
@@ -1345,6 +1349,10 @@
     {
       "method": "PUT",
       "path": "/v1/connectors/projects/:projectId/connectors/:slug/name"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/oauth2/connection"
     },
     {
       "method": "GET",
@@ -1425,6 +1433,10 @@
     {
       "method": "PUT",
       "path": "/v1/connectors/projects/:projectId/policies"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/rules-matrix"
     },
     {
       "method": "GET",

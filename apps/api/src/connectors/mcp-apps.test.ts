@@ -9,6 +9,7 @@ import {
   MCP_APPS,
   availableMcpApps,
   kortixClientApplication,
+  catalogDegraded,
   composioCatalogItem,
   connectorsV2Items,
   connectorsV2Surfaces,
@@ -290,5 +291,21 @@ describe('an app the project cannot use yet', () => {
       const page = await catalog.list({ category: section.key, exclude: hidden });
       expect(page.total).toBe(section.total);
     }
+  });
+});
+
+describe('a catalogue source that is down', () => {
+  test('drops out of the list and is named in catalogDegraded until it answers again', async () => {
+    const items = await connectorsV2Items({
+      apps: () => [],
+      index: async () => [],
+      toolkits: async () => {
+        throw new Error('composio 503');
+      },
+    });
+    expect(items.length).toBe(KORTIX_APPS.length);
+    expect(catalogDegraded()).toEqual(['composio']);
+    await connectorsV2Items({ apps: () => [], index: async () => [], toolkits: async () => [] });
+    expect(catalogDegraded()).toEqual([]);
   });
 });

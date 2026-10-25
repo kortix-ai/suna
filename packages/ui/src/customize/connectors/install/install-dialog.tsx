@@ -27,10 +27,10 @@ export interface InstallWay {
 }
 
 /**
- * Install → this dialog → the connector profile. The user names the profile
- * here: it is the project's entry in `kortix.yaml`, and its accounts, who may
- * use them and its tool rules all live on it. The text says which way it
- * connects, so a Composio app or an API key never comes as a surprise.
+ * Install → this dialog → the connector. The text says which way it
+ * connects, so a Composio app or an API key never comes as a surprise. The
+ * name is the app's; Rename opens the field for the rare second install.
+ * Who may use an account is chosen next, in Add account.
  */
 export function InstallDialog({
   appName,
@@ -51,6 +51,7 @@ export function InstallDialog({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const id = useId();
   const [name, setName] = useState(appName);
+  const [renaming, setRenaming] = useState(false);
   const valid = /[a-z0-9]/i.test(name);
 
   return (
@@ -72,18 +73,34 @@ export function InstallDialog({
           }}
         >
           <ModalBody className="space-y-4">
-            <Field>
-              <FieldLabel htmlFor={`${id}-name`}>{t('installNameLabel')}</FieldLabel>
-              <Input
-                id={`${id}-name`}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                autoComplete="off"
-                disabled={pending}
-                autoFocus
-              />
-              <FieldDescription>{t('installProfileHint')}</FieldDescription>
-            </Field>
+            {renaming ? (
+              <Field>
+                <FieldLabel htmlFor={`${id}-name`}>{t('installNameLabel')}</FieldLabel>
+                <Input
+                  id={`${id}-name`}
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  autoComplete="off"
+                  disabled={pending}
+                  autoFocus
+                />
+                <FieldDescription>{t('installProfileHint')}</FieldDescription>
+              </Field>
+            ) : (
+              <p className="text-muted-foreground flex flex-wrap items-center gap-x-2 text-sm text-pretty">
+                {t('installNextStep', { name: appName })}
+                <Button
+                  type="button"
+                  variant="text"
+                  size="sm"
+                  className="h-auto px-0"
+                  onClick={() => setRenaming(true)}
+                  disabled={pending}
+                >
+                  {t('installRename')}
+                </Button>
+              </p>
+            )}
           </ModalBody>
           <ModalFooter className="sm:justify-between">
             <Button type="button" variant="outline-ghost" onClick={() => onOpenChange(false)} disabled={pending}>

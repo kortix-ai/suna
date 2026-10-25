@@ -308,7 +308,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
   },
   {
     key: 'event_triggers',
-    name: 'Connector event triggers',
+    name: 'Composio event triggers',
     description:
       'Start an agent when something happens in a connected app: a new email, a pull request, a calendar event. ' +
       'Events come from Composio, and Kortix also checks your connected apps itself.',

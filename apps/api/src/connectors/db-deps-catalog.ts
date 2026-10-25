@@ -1,4 +1,5 @@
 /** The connector lists: the gateway catalog a principal can use (listCatalog) and the admin dashboard list (listConnectors). */
+import { likelyToolRisk } from './policy-templates';
 import { mapLimit } from '@kortix/registry';
 import {
   connectorConnections,
@@ -22,7 +23,7 @@ import { db } from '../shared/db';
 import { hideSupersededSlack } from './channel-rules';
 import { resolveFallbackIcons } from './connector-icon';
 import { connectorCatalogIcons } from './connector-catalog';
-import { buildAdminConnectorViews } from './connector-list';
+import { buildAdminConnectorViews, signedInComposioSlugs } from './connector-list';
 import {
   connectionIdsWithCredentials,
   connectionSignedIn,
@@ -444,11 +445,7 @@ export async function listConnectors(
       })),
     ]),
   );
-  const authorizedComposioSlugs = new Set(
-    composioRows
-      .filter((row) => (entitledByConnector.get(row.connectorId) ?? []).length > 0)
-      .map((row) => row.slug),
-  );
+  const authorizedComposioSlugs = signedInComposioSlugs(composioRows, entitledByConnector);
   // `authorization_strategy` is a DERIVED SUMMARY now, not a setting. The
   // column is retired (see migration 20260917160000000) and the PUT route is an
   // inert no-op, but the field stays on the wire so an older client keeps
@@ -574,6 +571,7 @@ export async function listConnectors(
         name: a.name,
         description: a.description ?? '',
         risk: a.risk,
+        likely_risk: likelyToolRisk(row.providerType, a.path, a.risk),
         // The full per-action JSON Schema is the bulk of this route's payload
         // (1.6 MB on prod). It is included unless the caller passes
         // `includeSchemas: false` (`?include_schemas=false`): baked sandbox

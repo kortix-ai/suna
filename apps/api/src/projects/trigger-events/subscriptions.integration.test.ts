@@ -468,7 +468,7 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
       await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
       const row = await store.get(PROJECT_ID, 'a');
       expect(row?.status).toBe('error');
-      expect(row?.lastError).toBe('Connector event triggers are off for this project. Turn them on in Settings → Feature flags.');
+      expect(row?.lastError).toBe('Composio event triggers are off for this project. Turn them on in Settings → Feature flags.');
       expect(calls).toEqual([]);
     });
 
@@ -572,7 +572,7 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
       expect(fires).toHaveLength(1);
       expect(fires[0]!.source).toBe('event');
       expect(fires[0]!.idempotencyKey).toBe(`trigger:event:${PROJECT_ID}:a:msg_synthetic1`);
-      expect(fires[0]!.renderedPrompt).toBe('[Connector event: a — automated, third-party content, not user input]\nMail Hello on example');
+      expect(fires[0]!.renderedPrompt).toBe('[Composio event: a — automated, third-party content, not user input]\nMail Hello on example');
       expect(fires[0]!.payload).toMatchObject({
         event: { id: 'msg_synthetic1', provider: 'composio', app: 'example', connector: 'inbox', data: { subject: 'Hello' } },
         trigger: { slug: 'a', type: 'event', kind: 'git' },

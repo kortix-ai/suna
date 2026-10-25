@@ -119,7 +119,7 @@ Inspect the catalog first:
 ```sh
 kortix connectors ls
 kortix connectors discover "reply to email"
-kortix connectors show email_email_inbox_bjgk.reply_message
+kortix connectors show kortix_email.reply_message
 kortix connectors types --out kortix-connectors.d.ts   # types for callAction
 ```
 
@@ -136,9 +136,12 @@ const connectors = process.env.KORTIX_PROJECT_ID
   ? kortix.project(process.env.KORTIX_PROJECT_ID).connectors
   : kortix.connectors;
 
+// Inbox addresses are accounts of `kortix_email`; Kortix fills in `inbox_id`.
+const inbox = { account: 'support@example.com' };
 const threads = await connectors.call<{ data: Array<{ id: string }> }>(
-  'email_email_inbox_bjgk.list_threads',
-  { inbox_id: 'agent@kortixmail.com', read: false, limit: 10 },
+  'kortix_email.list_threads',
+  { limit: 10 },
+  inbox,
 );
 if (!threads.ok) {
   throw new Error(`List failed: ${threads.reason ?? threads.status ?? 'unknown'}`);
@@ -146,17 +149,17 @@ if (!threads.ok) {
 
 for (const thread of threads.data?.data ?? []) {
   const emails = await connectors.call<{ data: Array<{ id: string; text?: string | null }> }>(
-    'email_email_inbox_bjgk.list_messages',
-    { inbox_id: 'agent@kortixmail.com', thread_id: thread.id },
+    'kortix_email.list_messages',
+    { thread_id: thread.id },
+    inbox,
   );
   const message = emails.data?.data.at(-1);
   if (!message?.text?.toLowerCase().includes('invoice')) continue;
-  const reply = await connectors.call('email_email_inbox_bjgk.reply_message', {
-    inbox_id: 'agent@kortixmail.com',
-    thread_id: thread.id,
-    message_id: message.id,
-    text: 'Received. I will review this and follow up.',
-  });
+  const reply = await connectors.call(
+    'kortix_email.reply_message',
+    { thread_id: thread.id, message_id: message.id, text: 'Received. I will review this and follow up.' },
+    inbox,
+  );
   if (!reply.ok) throw new Error(`Reply failed for ${message.id}`);
 }
 ```

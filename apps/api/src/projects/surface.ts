@@ -53,6 +53,9 @@ export {
   commitManifest,
 } from './lib/triggers';
 
+// Every declared agent's grant (consumed by the connectors rules matrix).
+export { extractAgents, grantsByAgent } from './agents';
+
 // Project access, the route app and the secret envelope.
 export { assertProjectCapability, loadProjectForUser } from './lib/access';
 

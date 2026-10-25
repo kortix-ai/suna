@@ -1993,7 +1993,7 @@ flow(
       const unknown = await create({ name: 'Bad source', event_source: 'nope' });
       unknown.status(400);
       const text = JSON.stringify(unknown.json());
-      if (!text.includes('Unknown event source \\"nope\\". Sources: composio.')) throw new Error(`error text missing: ${text}`);
+      if (!text.includes('Unknown event source \\"nope\\". Sources: composio, mcp.')) throw new Error(`error text missing: ${text}`);
       (await create({ name: 'Blank source', event_source: ' ' })).status(400);
       const r = await owner.post(
         '/v1/projects/:projectId/triggers',
@@ -2022,7 +2022,7 @@ flow(
     await ctx.step('unknown source → 400 naming the sources', async () => {
       const r = await owner.get(url, { params, query: { app: 'github', source: 'nope' } });
       r.status(400);
-      if (!JSON.stringify(r.json()).includes('Unknown event source \\"nope\\". Sources: composio.')) throw new Error(`error text missing: ${JSON.stringify(r.json())}`);
+      if (!JSON.stringify(r.json()).includes('Unknown event source \\"nope\\". Sources: composio, mcp.')) throw new Error(`error text missing: ${JSON.stringify(r.json())}`);
     });
     await ctx.step('connector and app together → 400', async () => {
       (await owner.get(url, { params, query: { connector: 'inbox', app: 'github' } })).status(400);
@@ -2083,7 +2083,7 @@ flow(
       await setFlag(false);
       const listed = (await owner.get('/v1/projects/:projectId/triggers', { params })).json<{ triggers: EventTriggerRow[] }>();
       const row = listed.triggers.find((t) => t.slug === 'gated-mail');
-      if (row?.event?.status !== 'error' || !/Connector event triggers are off for this project/.test(row.event.error ?? '')) {
+      if (row?.event?.status !== 'error' || !/Composio event triggers are off for this project/.test(row.event.error ?? '')) {
         throw new Error(`expected status error with the off text — got ${JSON.stringify(row?.event)}`);
       }
       denied(await owner.patch('/v1/projects/:projectId/triggers/:slug', { name: 'Renamed' }, { params: { ...params, slug: 'gated-mail' } }));

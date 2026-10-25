@@ -237,8 +237,13 @@ const callResponse = async (deps: ConnectorRouterDeps, c: any, p: ConnectorPrinc
   });
   switch (result.status) {
     case 'ok':
+      // The tool ran and reported a failure inside a 2xx (MCP `isError`, a
+      // JSON-RPC error, GraphQL `errors` with no data): HTTP 200, as the call
+      // reached it, but `ok: false` so no caller reads it as done.
+      // `upstream_error` stays for clients that predate `tool_error`.
       return c.json({
-        ok: true,
+        ok: !result.upstreamError,
+        ...(result.upstreamError ? { status: 'tool_error', error: result.upstreamError } : {}),
         data: result.data,
         risk: result.risk,
         ...(result.account ? { account: result.account } : {}),

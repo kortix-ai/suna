@@ -237,8 +237,8 @@ Set these with `kortix self-host env set`. Each row says what the variable turns
 | Variables | Effect |
 |---|---|
 | `COMPOSIO_API_KEY` | The connector app catalog. Without it, Easy connect, the `/connections` page and the onboarding apps step are hidden. Custom connectors work without it. |
-| `COMPOSIO_WEBHOOK_SECRET` | Composio app-event [triggers](/docs/connect/triggers). Without it, `POST /v1/webhooks/events/composio` answers `503` `event_ingress_not_configured`. |
-| `KORTIX_EVENT_POLLS_ENABLED` | Default `true`. `false` pauses every check of the app events that Kortix checks itself ([source `mcp`](/docs/connect/triggers#how-checks-work)). The triggers stay, and fires already queued still run. Checks resume when it is `true` again. |
+| `COMPOSIO_WEBHOOK_SECRET` | Composio [connector events](/docs/connect/triggers#connector-events) (the `event_triggers` flag, **Composio event triggers**). Without it, `POST /v1/webhooks/events/composio` answers `503` `event_ingress_not_configured`. |
+| `KORTIX_EVENT_POLLS_ENABLED` | Default `true`. `false` pauses every check of the connector events that Kortix checks itself ([source `mcp`](/docs/connect/triggers#how-checks-work)). The triggers stay, and fires already queued still run. Checks resume when it is `true` again. |
 | `KORTIX_OAUTH_CLIENTS` | Your own OAuth clients for the [app catalog](/docs/connect/connectors#the-app-catalog) apps whose servers have no dynamic client registration. JSON, one entry per vendor: `google`, `github`, `slack`, `hubspot`, `asana`, `box`. Without an entry, those apps are not listed. See [Kortix OAuth clients](#kortix-oauth-clients). |
 | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_SIGNING_SECRET` | One-click **Add to Slack** with your own Slack app. Without all three, each project connects its own Slack app. See [Slack, Teams & email](/docs/connect/channels). |
 | `MICROSOFT_APP_ID`, `MICROSOFT_APP_PASSWORD`, `MICROSOFT_APP_TENANT` (default `botframework.com`) | One shared Microsoft Teams bot. Without them, each project brings its own bot app. |
@@ -265,7 +265,7 @@ Some MCP servers in the catalog do not let Kortix register itself. Kortix signs 
 
 3. Restart the API. The apps of each configured vendor appear in the catalog.
 
-### Receive Composio app events
+### Receive Composio events
 
 One Composio project has one webhook URL, so it serves one instance.
 

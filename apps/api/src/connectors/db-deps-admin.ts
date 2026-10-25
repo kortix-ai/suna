@@ -27,10 +27,11 @@ import {
   type PolicyAction,
   type PolicyArgCondition,
   isValidMatcher,
-  resolveEffectiveAction,
+  resolveEffectiveRule,
   selectPoliciesForRead,
 } from './policy';
 import { COMPUTER_SLUG, withComputerCatalog } from './computers';
+import { likelyToolRisk } from './policy-templates';
 import {
   ensureComputerConnector,
   rematerializeCatalogAfterCredentialUpdate,
@@ -138,7 +139,15 @@ export async function getConnectorPolicies(
         path: string;
         action: PolicyAction;
         source: EffectiveSource;
+        /** The stored risk the project default decides on. */
+        risk?: string;
+        /** What the tool likely does (from its name when the source has no risk). */
+        likely_risk?: 'read' | 'write' | 'unknown';
+        /** The rule that decided; absent when the default did. */
+        rule?: ApiRule;
       }>;
+      /** Marked sensitive: every tool no rule decides needs approval. */
+      sensitive?: boolean;
       project_policies: Array<{ match: string; action: string }>;
       default_mode: DefaultMode;
     }
@@ -205,7 +214,7 @@ export async function getConnectorPolicies(
   ]);
   const sensitive = (row.config as { sensitive?: unknown } | null)?.sensitive === true;
   const effective = actions.map((a) => {
-    const resolved = resolveEffectiveAction({
+    const resolved = resolveEffectiveRule({
       fullPath: `${slug}.${a.path}`,
       relPath: a.path,
       projectPolicies,
@@ -215,12 +224,30 @@ export async function getConnectorPolicies(
       defaultMode,
       sensitive,
     });
-    return { path: a.path, action: resolved.action, source: resolved.source };
+    // `risk`: the stored risk the default decided on. `rule`: the rule that
+    // decided, when one did (`conditions`: it decides only for matching args).
+    return {
+      path: a.path,
+      action: resolved.action,
+      source: resolved.source,
+      risk: a.risk,
+      likely_risk: likelyToolRisk(row.providerType, a.path, a.risk),
+      ...(resolved.rule
+        ? {
+            rule: {
+              match: resolved.rule.match,
+              action: resolved.rule.action,
+              ...(resolved.rule.conditions?.length ? { conditions: resolved.rule.conditions } : {}),
+            },
+          }
+        : {}),
+    };
   });
   return {
     policies,
     ...setView,
     effective,
+    sensitive,
     project_policies: projectPolicies.map((p) => ({
       match: p.match,
       action: p.action,

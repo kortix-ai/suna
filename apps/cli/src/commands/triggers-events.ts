@@ -163,7 +163,7 @@ export function surfaceEventTriggerError(err: unknown): number {
   const body = (err as { body?: { code?: unknown; feature?: unknown } } | null)?.body;
   if (body?.code === 'feature_disabled' && body.feature === 'event_triggers') {
     process.stderr.write(
-      `${status.err('Connector event triggers are off for this project. Turn them on: kortix projects features enable event_triggers')}\n`,
+      `${status.err('Composio event triggers are off for this project. Turn them on: kortix projects features enable event_triggers')}\n`,
     );
     return 1;
   }
@@ -207,7 +207,7 @@ export function eventNextStep(
       };
     case 'error': {
       // The project flag is off: the fix is the flag, not the trigger's settings.
-      if (e.error?.startsWith('Connector event triggers are off') || e.error?.startsWith('App event triggers are off')) {
+      if (/^(Composio|Connector|App) event triggers are off/.test(e.error ?? '')) {
         return {
           word: 'error',
           lines: [`Error: ${e.error}`, 'Turn them on: kortix projects features enable event_triggers'],

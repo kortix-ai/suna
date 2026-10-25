@@ -681,6 +681,14 @@ test('project(id).connectors covers credential-mode/sensitive/policies/pipedream
   await kortix.project('PID123').connectors.pipedream.finalize('gmail-1');
   expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail-1/connect/finalize');
   expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').connectors.agents('gmail');
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail/agents');
+  await kortix.project('PID123').connectors.rulesMatrix();
+  expect(last().url).toContain('/connectors/projects/PID123/rules-matrix');
+  await kortix.project('PID123').connectors.setOAuth2ClientCredentials('billing', { token_url: 'https://a.test/t', client_id: 'c' });
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/billing/oauth2/connection');
+  expect(last().method).toBe('PUT');
 });
 
 test('project(id).connectors exposes the connection lifecycle', async () => {

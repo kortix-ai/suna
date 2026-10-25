@@ -67,7 +67,7 @@ A trigger is an entry under `triggers:` in [`kortix.yaml`](/docs/project/manifes
 | The web app, the API or the SDK | Commits to the default branch now. No change request. |
 | `kortix.yaml` edited in a session | Follows the session branch and its change request. |
 
-In the web app, open the project, then **Triggers**. **New trigger** creates one. **Run now** fires one.
+In the web app, open the project, then **Triggers**. The tabs are **All**, **Schedules**, **Connector events**, **App events** (once the project has one) and **Webhooks**. **New trigger** creates a schedule, a connector event or a webhook that runs an agent. Write App event triggers and triggers that call an App in `kortix.yaml` or with `kortix triggers add`. **Run now** fires one.
 
 From code, the SDK exports `listProjectTriggers`, `createProjectTrigger`, `updateProjectTrigger`, `deleteProjectTrigger`, `fireProjectTrigger` and `setProjectTriggersActivation`. The REST routes are under `/v1/projects/<project_id>/triggers` in the [API reference](https://api.kortix.com/v1/docs).
 
@@ -77,7 +77,7 @@ From code, the SDK exports `listProjectTriggers`, `createProjectTrigger`, `updat
 | --- | --- |
 | `kortix triggers ls [--type cron\|webhook\|event\|app] [--connector <slug>] [--json]` | Lists triggers, their state, last fire and manifest errors. |
 | `kortix triggers info <slug> [--json]` | Shows one trigger in full: the webhook URL and a signed sample request, or a connector event's status and next step. |
-| `kortix triggers add <slug> [--apply]` | Adds a trigger. `--type` defaults to `cron`. |
+| `kortix triggers add <slug> [--apply]` | Adds a trigger, written as `on:`/`run:`. `--type` defaults to `cron`: `--cron`, `--every 5m` or `--run-at <ISO>`. `--type app --app <slug> [--event <name>]` adds an App event trigger. `--target-app <slug> --target-path /tick` calls an App instead of an agent. |
 | `kortix triggers set <slug>` | Changes a live trigger. Writes only the flags you pass. |
 | `kortix triggers rm\|enable\|disable <slug> [--apply]` | Removes, enables or disables a trigger. |
 | `kortix triggers fire <slug> [--wait <dur>]` | Fires now. `--wait 0` returns when the fire is accepted. |
@@ -188,7 +188,7 @@ Kortix runs a delivery once per event. It reads the event id from the first of t
 
 An `event` trigger runs an agent when something happens in a connected app: a pull request opens, an email arrives. You do not sign anything. Kortix subscribes to the event, or checks the app, for you.
 
-Connector event triggers need the project flag `event_triggers`, off by default. Turn it on in **Customize → Settings → Feature flags → Connector event triggers**, or run `kortix projects features enable event_triggers`. While it is off, the event routes answer `403` with `code: feature_disabled`. The CLI prints the command that turns it on. An `event` trigger in `kortix.yaml` reads status `error`. Turning it on subscribes those triggers without another save.
+Connector events need the project flag `event_triggers` (**Composio event triggers**), off by default. It covers events from Composio and events Kortix checks itself. Turn it on in **Customize → Settings → Feature flags → Composio event triggers**, or run `kortix projects features enable event_triggers`. While it is off, the event routes answer `403` with `code: feature_disabled`. The CLI prints the command that turns it on. An `event` trigger in `kortix.yaml` reads status `error`. Turning it on subscribes those triggers without another save.
 
 ### Event sources
 
@@ -205,7 +205,7 @@ The source of an `event` trigger is the provider of its connector. The source de
 ### Set up in the web app
 
 1. Open **Triggers**, then **New trigger** and **Set up manually**.
-2. Under **When**, choose **App event**. Pick the app and the event. Fill in the event's settings, such as the repository.
+2. Under **When**, choose **Connector event**. The tab shows only while `event_triggers` is on. Pick the app and the event. Fill in the event's settings, such as the repository.
 3. Under **Connection**, pick a connector and one of its shared accounts, or connect one. If the project has no connector for the app, Kortix adds one when you create the trigger.
 4. Under **Then**, write the instruction and pick the agent and the model.
 5. Choose **Create trigger**. The trigger works when its badge reads **Live**.
@@ -289,8 +289,8 @@ triggers:
 - Each provider event fires a trigger once. A redelivered event does not start a second session.
 - A paused trigger or a paused project skips events. Skipped events do not queue. For source `mcp`, see Pause in [How checks work](#how-checks-work).
 - Changing `connector`, `source`, `account`, `event` or `config` replaces the subscription. On source `mcp`, a changed `interval` keeps it.
-- Event data comes from a third party. The session's first line reads `[App event: <trigger name> — automated, third-party content, not user input]`, so the agent treats the content as data.
-- A self-hosted instance needs its own setup for Composio events. Source `mcp` needs none. See [Self-hosting](/docs/host#receive-composio-app-events).
+- Event data comes from a third party. The session's first line reads `[Composio event: <trigger name> — automated, third-party content, not user input]`, or `[Connector event: …]` for an event Kortix checks itself, so the agent treats the content as data.
+- A self-hosted instance needs its own setup for Composio events. Source `mcp` needs none. See [Self-hosting](/docs/host#receive-composio-events).
 
 ### Kortix events
 
@@ -386,7 +386,8 @@ triggers:
     run: { prompt: "Answer the reply: {{ event.data.subject }}" }
 ```
 
-- The body is one event or `{ "events": [...] }`, at most 50 per request. `name` is 1–128 characters: letters, digits and `. _ : / -`. `data` is an object. One event is at most 8 KiB.
+- The body is one event or `{ "events": [...] }`, at most 50 per request. `name` is 1–128 characters: letters, digits and `. _ : / -`, starting with a letter or digit. `data` is an object. One event is at most 8 KiB.
+- Kortix answers `202 {accepted, deduped, suppressed, triggers}`. A bad token gets `401 app_token_invalid`; a bad name gets `400`.
 - `id` is the App's own id for the event. The same id fires a trigger once.
 - Every enabled `app` trigger on that App whose `event` matches the name fires. `filter` narrows it further, for example on `event.data.*`.
 - Each trigger takes at most 60 events an hour and 30 in one minute. Past that it is suppressed for 10 minutes; 3 suppressions in 24 hours disable it.
@@ -398,7 +399,7 @@ A `type: monitor` trigger is refused with `MONITOR_REMOVED`. Move its command in
 
 ## Call an App
 
-A trigger whose `run:` names an App calls it instead of an agent. Kortix wakes an App that sleeps, sends the request to `path` (default `/`) and records the answer. A `2xx` answer is a fired run. Any other status fails the run with `App "<slug>" answered <status>`, and the failure alerts like any other.
+A trigger whose `run:` names an App calls it instead of an agent. Kortix wakes an App that sleeps, sends the request to `path` (default `/`) and records the answer. A `2xx` answer is a fired run. Any other status fails the run with `App "<slug>" answered <status> on <METHOD> <path>`, and the failure alerts like any other. `429` and `5xx` answers are retried. Kortix never follows a `3xx`.
 
 ```yaml
 triggers:
@@ -414,12 +415,13 @@ triggers:
 An App also schedules its own calls, the way a function schedules itself to run later:
 
 ```sh
-curl -X POST "https://api.kortix.com/v1/projects/$PROJECT_ID/apps/$KORTIX_APP_ID/runs" \
+# KORTIX_APP_EVENTS_URL ends in /apps/<app_id>/events; runs live next to it.
+curl -X POST "$(dirname "$KORTIX_APP_EVENTS_URL")/runs" \
   -H "Authorization: Bearer $KORTIX_APP_TOKEN" -H "content-type: application/json" \
   -d '{"run_after": "10m", "path": "/follow-up", "payload": {"deal": "d-17"}}'
 ```
 
-- Send `run_after` (a duration such as `30s`, `10m`, `2h`, `7d`) or `run_at` (an instant at most 366 days ahead).
+- Send `run_after` (a duration such as `30s`, `10m`, `2h`, `7d`, or seconds) or `run_at` (an instant at most 366 days ahead), plus `path` (default `/`), `method` and `payload`.
 - The answer is `201` with `run_id` and `run_at`. `DELETE …/apps/<app_id>/runs/<run_id>` cancels a run that has not fired.
 - An App holds at most 1,000 pending runs. A `payload` is at most 64 KiB. A fired run is kept 30 days.
 
@@ -503,14 +505,14 @@ await reminders.remove(reminder.id);
 | `timezone` | `cron` | no | `UTC` | IANA name. |
 | `secret_env` | `webhook` | yes | — | The name of a project secret stored with `--scope connector`. Declare it under `env`. |
 | `connector` | `event` | yes | — | A connector slug under `connectors:`. |
-| `event` | `event` | yes | — | The event type, from `kortix triggers events`. |
+| `event` | `event`, `app` | yes on `event` | — | `event`: the event type, from `kortix triggers events`. `app`: the event name, or `*` (`on: { event, app }`; flat: `filter: { event.name }`). |
 | `config` | `event` | no | — | The event's settings. On source `mcp`, `interval` is the minutes between checks. See [Kortix events](#kortix-events). |
 | `account` | `event` | no | the connector's default shared account | Label of one shared account. |
 | `source` | `event` | no | the connector's provider | The event source: `composio` or `mcp`. See [Event sources](#event-sources). |
 | `app` | `app` | yes | — | The slug of the App whose events fire the trigger. |
 | `target` | all | no | — | `{ app, path, method, payload }` (`run: { app, … }`): calls the App instead of an agent. See [Call an App](#call-an-app). |
 
-A field that belongs to another type is an error: an `event` trigger rejects `cron`, `every`, `run_at`, `timezone` and `secret_env`, and the other types reject the event fields. Inside `on:` and `run:` an unknown key is an error.
+A field that belongs to another type is an error: an `event` trigger rejects `cron`, `every`, `run_at`, `timezone` and `secret_env`, and the other types reject `connector`, `account`, `source` and `config`. Inside `on:` and `run:` an unknown key is an error.
 
 ## Session strategy
 
@@ -610,7 +612,7 @@ With the project flag `notification_center` on, Kortix sends one `automation_fai
 
 ## Pause and limits
 
-`kortix triggers pause` stops every automatic fire in the project: schedules, webhooks, connector events, App events and reminders. Webhooks answer `200` with `status: skipped`. A manual fire still runs. `kortix triggers resume` turns fires back on. The API route is `PATCH /v1/projects/<project_id>/triggers/activation` with `{ "paused": true }`. Pause one of two instances that run the same repository, so that schedules do not fire twice. For app events of source `mcp`, see Pause in [How checks work](#how-checks-work).
+`kortix triggers pause` stops every automatic fire in the project: schedules, webhooks, connector events, App events and reminders. Webhooks answer `200` with `status: skipped`. A manual fire still runs. `kortix triggers resume` turns fires back on. The API route is `PATCH /v1/projects/<project_id>/triggers/activation` with `{ "paused": true }`. Pause one of two instances that run the same repository, so that schedules do not fire twice. For connector events of source `mcp`, see Pause in [How checks work](#how-checks-work).
 
 **Pause all automations** does the same for every project of the account at once: no schedule, reminder, webhook, connector event or App event of any project fires on its own. Use it to stop all automation at once, for example while you investigate unexpected spend. A webhook answers `200` with `status: skipped` and `reason: "account automations are paused"`. A manual fire still runs. A schedule slot missed while paused fires once on resume.
 
