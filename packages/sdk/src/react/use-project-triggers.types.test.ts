@@ -4,7 +4,6 @@
  */
 import { expect, test } from 'bun:test';
 import type { bindProjectOperationsAdmin } from '../core/client/project-operations-admin';
-import type { ProjectSpaceSummary } from '../core/rest/projects-client/spaces';
 import type {
   CreateProjectTriggerInput,
   FireProjectTriggerResponse,
@@ -46,12 +45,11 @@ export function fireTypes(flag: boolean): void {
   expectTrue<Equal<Awaited<ReturnType<typeof handleUnknown>>, FireProjectTriggerResponse | ProjectTriggerDryRunResult>>();
 }
 
-/** Never called: a trigger names the channel or DM its runs post to, and a space counts its triggers. */
+/** Never called: a trigger names the channel or DM its runs post to. */
 export function spaceTypes(): void {
   expectTrue<Equal<ProjectTrigger['space_id'], string | null | undefined>>();
   expectTrue<Equal<CreateProjectTriggerInput['space_id'], string | null | undefined>>();
   expectTrue<Equal<UpdateProjectTriggerInput['space_id'], string | null | undefined>>();
-  expectTrue<Equal<ProjectSpaceSummary['triggers'], number>>();
 }
 
 test('the space type contract compiles (checked by typecheck)', () => {

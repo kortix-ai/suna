@@ -520,6 +520,23 @@ test('listProjectSessions sends spaceId as the space_id query parameter', async 
   expect(url.searchParams.get('parent')).toBe('root');
 });
 
+test('listProjectSessions sends createdBy, agent and updatedAfter as created_by, agent and updated_after', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessions('P1', {
+    spaceId: 'SPACE-1',
+    createdBy: 'USER-1',
+    agent: 'researcher',
+    updatedAfter: '2026-10-18T00:00:00.000Z',
+  });
+  const url = new URL(last().url);
+  expect(url.searchParams.get('created_by')).toBe('USER-1');
+  expect(url.searchParams.get('agent')).toBe('researcher');
+  expect(url.searchParams.get('updated_after')).toBe('2026-10-18T00:00:00.000Z');
+  await listProjectSessions('P1', { spaceId: 'SPACE-1' });
+  const plain = new URL(last().url);
+  expect(['created_by', 'agent', 'updated_after'].map((k) => plain.searchParams.has(k))).toEqual([false, false, false]);
+});
+
 test('createProjectSession defaults the body to {} when no input is given', async () => {
   nextResponse = { status: 200, body: { session_id: 'NEW-3' } };
   await createProjectSession('P1');

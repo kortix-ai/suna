@@ -131,32 +131,45 @@ test('project(id).spaces lists, creates, updates and opens a DM', async () => {
   ]);
 });
 
-test('project(id).memory reaches layers, pages, history and undo', async () => {
+test('project(id).spaces.members lists, adds, removes, joins and leaves', async () => {
+  const members = kortix.project('P1').spaces.members;
+  await members.list('S1');
+  await members.add('S1', ['U2']);
+  await members.remove('S1', 'U2');
+  await members.join('S1');
+  await members.leave('S1');
+  const base = 'http://test.local/projects/P1/spaces/S1';
+  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+    `GET ${base}/members`,
+    `POST ${base}/members`,
+    `DELETE ${base}/members/U2`,
+    `POST ${base}/join`,
+    `DELETE ${base}/members/me`,
+  ]);
+});
+
+test('project(id).memory reaches layers, pages and history', async () => {
   const memory = kortix.project('P1').memory;
   await memory.layer('company');
   await memory.pages.list('S1');
   await memory.pages.create('S1', { type: 'people', title: 'Priya' });
   await memory.notes.add('S1', { text: 'Priya owns the Northwind launch' });
-  await memory.changes('S1', { before: 'C2' });
   await memory.pages.get('PG1');
   await memory.pages.update('PG1', { base_version: 3, body: 'Owns QA' });
   await memory.pages.delete('PG1');
   await memory.pages.history('PG1');
-  await memory.undo('V2');
   const base = 'http://test.local/projects/P1/memory';
   expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
     `GET ${base}/layers/company`,
     `GET ${base}/layers/S1/pages`,
     `POST ${base}/layers/S1/pages`,
     `POST ${base}/layers/S1/notes`,
-    `GET ${base}/layers/S1/changes?before=C2`,
     `GET ${base}/pages/PG1`,
     `PATCH ${base}/pages/PG1`,
     `DELETE ${base}/pages/PG1`,
     `GET ${base}/pages/PG1/history`,
-    `POST ${base}/versions/V2/undo`,
   ]);
-  expect(calls[6]!.body).toEqual({ base_version: 3, body: 'Owns QA' });
+  expect(calls[5]!.body).toEqual({ base_version: 3, body: 'Owns QA' });
 });
 
 test('project(id).memory searches pages and reads a thread’s Used memory', async () => {
@@ -186,19 +199,17 @@ test('project(id).spaces reads #general\'s notice and the caller\'s onboarding, 
   ]);
 });
 
-test('project(id).spaces reaches a channel’s apps, links and summary', async () => {
+test('project(id).spaces reaches a channel’s apps and links', async () => {
   const spaces = kortix.project('P1').spaces;
   await spaces.apps('S1');
   await spaces.links.list('S1');
   await spaces.links.add('S1', { url: 'https://example.test' });
   await spaces.links.remove('S1', 'L1');
-  await spaces.summary('S1');
   expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
     'GET http://test.local/projects/P1/spaces/S1/apps',
     'GET http://test.local/projects/P1/spaces/S1/links',
     'POST http://test.local/projects/P1/spaces/S1/links',
     'DELETE http://test.local/projects/P1/spaces/S1/links/L1',
-    'GET http://test.local/projects/P1/spaces/S1/summary',
   ]);
   expect(calls[2]!.body).toEqual({ url: 'https://example.test' });
 });

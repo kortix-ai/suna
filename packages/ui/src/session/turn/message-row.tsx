@@ -77,7 +77,7 @@ export function MessageRow({
           avatar
         )}
       </div>
-      {/* The markdown renderer sets prose at `text-base` for the session view;
+      {/* The markdown renderer sets prose at 15px for the session view;
           in a row it reads at the row's `text-sm`. */}
       <div className="min-w-0 flex-1 [&_.kortix-markdown]:text-sm">
         {compact ? null : (
@@ -105,18 +105,17 @@ export function MessageRow({
  * so Tab reaches its buttons and their focus reveals it. `p-[2px]`: the group
  * is `rounded-lg` (10px), so 2px of inset gives the `rounded-md` (8px)
  * buttons concentric corners. Its buttons are `icon-sm` (h-7), so the group is
- * ~32px tall and `top-0.5` centres it on the name line.
+ * ~32px tall; `-top-3.5` sits it on the row's top edge, half above it.
  *
- * It stays inside the row's box. A group that overhangs the top edge is cut
- * off: the thread transcript paints each turn with `content-visibility: auto`,
- * which clips to the turn, and a row at the top of any scrolled list loses the
- * overhang to the scroll edge.
+ * A thread's first message is the one row whose overhang is cut off (its turn
+ * paints with `content-visibility: auto`, which clips to the turn): that row
+ * moves the group inside with `[&_[data-slot=row-toolbar]]:top-0.5`.
  */
 export function RowToolbar({ children }: { children: ReactNode }) {
   return (
     <div
       data-slot="row-toolbar"
-      className="bg-popover pointer-events-none absolute top-0.5 right-5 z-10 flex items-center rounded-lg border p-[2px] opacity-0 shadow-md group-focus-within/message:pointer-events-auto group-focus-within/message:opacity-100 group-hover/message:pointer-events-auto group-hover/message:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100"
+      className="bg-popover pointer-events-none absolute -top-3.5 right-5 z-10 flex items-center rounded-lg border p-[2px] opacity-0 shadow-md group-focus-within/message:pointer-events-auto group-focus-within/message:opacity-100 group-hover/message:pointer-events-auto group-hover/message:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100"
     >
       {children}
     </div>

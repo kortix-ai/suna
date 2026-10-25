@@ -46,25 +46,22 @@ export function useProjectTriggers(projectId: string | null | undefined) {
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey });
-  // A trigger can post to a channel or DM: its Triggers tab count moves with it.
-  const invalidateWithSpaces = () =>
-    Promise.all([invalidate(), queryClient.invalidateQueries({ queryKey: qk.project.spaceSummaries(projectId ?? '') })]);
 
   const create = useMutation({
     mutationFn: (input: Parameters<typeof createProjectTrigger>[1]) =>
       createProjectTrigger(projectId as string, input),
-    onSuccess: invalidateWithSpaces,
+    onSuccess: invalidate,
   });
 
   const update = useMutation({
     mutationFn: (args: { slug: string; input: Parameters<typeof updateProjectTrigger>[2] }) =>
       updateProjectTrigger(projectId as string, args.slug, args.input),
-    onSuccess: invalidateWithSpaces,
+    onSuccess: invalidate,
   });
 
   const remove = useMutation({
     mutationFn: (slug: string) => deleteProjectTrigger(projectId as string, slug),
-    onSuccess: invalidateWithSpaces,
+    onSuccess: invalidate,
   });
 
   // A real fire or a replay writes a run and moves `last_*`; the run lists sit

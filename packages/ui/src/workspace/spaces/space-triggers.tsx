@@ -2,7 +2,7 @@
 
 import type { ProjectSpace, ProjectTrigger } from '@kortix/sdk';
 import { qk, useProjectTriggers } from '@kortix/sdk/react';
-import { PlusIcon } from '@phosphor-icons/react';
+import { LightningIcon, PlusIcon } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
@@ -14,6 +14,7 @@ import { TriggerTile } from '../../customize/triggers/schedule/trigger-tile';
 import { useLocale, useTranslations } from '../../i18n';
 import { uiRoutes } from '../../lib/routes';
 import { Button } from '../../primitives/button';
+import { EmptyArt } from '../../primitives/empty-art';
 import { EmptyState } from '../../primitives/empty-state';
 import { ErrorState } from '../../primitives/error-state';
 import { Switch } from '../../primitives/switch';
@@ -24,7 +25,8 @@ import { UiLink as Link } from '../../providers/ui-provider';
  * A channel's or DM's Triggers tab: the project's triggers that post here
  * (`space_id`, filtered from the one trigger list every trigger surface
  * shares), each with its schedule, its last run and its on/off switch, and
- * "New trigger", which opens the trigger form posting here.
+ * "New trigger", which opens the trigger form posting here. A private channel
+ * has no "New trigger": the API refuses a trigger into it, so one line says why.
  */
 export function SpaceTriggers({ projectId, space, place }: { projectId: string; space: ProjectSpace; place: string }) {
   const t = useTranslations('spaces.view');
@@ -34,9 +36,11 @@ export function SpaceTriggers({ projectId, space, place }: { projectId: string; 
   const [creating, setCreating] = useState(false);
   const triggers = listing.data?.triggers.filter((trigger) => trigger.space_id === space.space_id);
 
-  const newButton = controls.canCreate ? (
-    <Button variant="outline" size="sm" onClick={() => setCreating(true)}>
-      <PlusIcon aria-hidden />
+  const isPrivate = space.visibility === 'private';
+  const privateNote = isPrivate ? <p className="text-muted-foreground text-xs text-pretty">{t('triggers.privateNote')}</p> : null;
+  const newButton = controls.canCreate && !isPrivate ? (
+    <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setCreating(true)}>
+      <PlusIcon aria-hidden className="size-3.5 shrink-0" />
       {t('empty.triggers.action')}
     </Button>
   ) : null;
@@ -59,9 +63,10 @@ export function SpaceTriggers({ projectId, space, place }: { projectId: string; 
   } else if (triggers.length === 0) {
     body = (
       <EmptyState
-        size="sm"
+        className="min-h-full"
+        media={<EmptyArt icon={LightningIcon} />}
         title={t('empty.triggers.title')}
-        description={t('empty.triggers.description', { place })}
+        description={isPrivate ? t('triggers.privateNote') : t('empty.triggers.description', { place })}
         action={newButton}
       />
     );
@@ -69,6 +74,7 @@ export function SpaceTriggers({ projectId, space, place }: { projectId: string; 
     body = (
       <div className="flex flex-col gap-3">
         {newButton ? <div className="flex justify-end">{newButton}</div> : null}
+        {privateNote}
         <ul className="flex flex-col">
           {triggers.map((trigger) => (
             <TriggerRow
@@ -88,7 +94,7 @@ export function SpaceTriggers({ projectId, space, place }: { projectId: string; 
   }
 
   return (
-    <div className={triggers?.length ? 'px-5 py-4' : 'px-5 py-16'}>
+    <div className={triggers?.length ? 'px-5 py-4' : triggers ? 'flex min-h-full flex-col' : 'px-5 py-16'}>
       {body}
       <TriggerComposer
         projectId={projectId}
@@ -100,7 +106,6 @@ export function SpaceTriggers({ projectId, space, place }: { projectId: string; 
         onCreated={() => {
           setCreating(false);
           void queryClient.invalidateQueries({ queryKey: qk.project.triggers(projectId) });
-          void queryClient.invalidateQueries({ queryKey: qk.project.spaceSummaries(projectId) });
         }}
       />
     </div>

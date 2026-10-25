@@ -49,6 +49,7 @@ import { readSessionConversationModels } from '../session-log-read';
 import { validateProviderSecretPool } from './provider-secret-pools';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { spaceAccessFor } from '../../shared/space-access';
 import { findForkSourceSpace, findSessionSpace } from '../lib/project-spaces';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
@@ -257,16 +258,31 @@ export function registerProjectSessionsRoutes(): void {
     // A DM thread (named, or a fork of one) runs the DM's agent. It overrides
     // any `agent_name` (a create with none already falls back to a default
     // agent), so the gate below authorizes the agent that will actually run.
+    let channelSpaceId: string | null = null;
     if (resolveFeatureFlag(loaded.row.metadata, 'project_channels')) {
+      const access = await spaceAccessFor(projectId, loaded.userId, callerKortixSessionId(c));
       const space =
         typeof body.space_id === 'string' && isUuid(body.space_id)
-          ? await findSessionSpace(projectId, body.space_id, loaded.userId)
+          ? await findSessionSpace(projectId, body.space_id, access)
           : body.space_id === undefined && typeof body.fork_from_session_id === 'string'
-            ? (await findForkSourceSpace(projectId, body.fork_from_session_id, loaded.userId))?.space ?? null
+            ? (await findForkSourceSpace(projectId, body.fork_from_session_id, access))?.space ?? null
             : null;
       if (space?.kind === 'dm' && space.dmAgentName) {
         body.agent_name = space.dmAgentName;
         delete body.agentName;
+      }
+      if (space?.kind === 'channel') {
+        channelSpaceId = space.spaceId;
+        // No agent named: the channel's default (its first agent), for every
+        // client (CLI, SDK, integrations), not only the web composer.
+        // A fork keeps its source's agent.
+        if (
+          typeof body.space_id === 'string' &&
+          !normalizeString(body.agent_name ?? body.agentName) &&
+          space.agents.length > 0
+        ) {
+          body.agent_name = space.agents[0];
+        }
       }
     }
     const launchAgent = normalizeString(body.agent_name ?? body.agentName);
@@ -278,11 +294,12 @@ export function registerProjectSessionsRoutes(): void {
     //
     // Runs BEFORE the leaf assert below so its message wins. Both refuse the same
     // requests; only this one can say WHICH agents the caller could pick instead.
-    const agentAccess = await resolveAndAuthorizeAgent(c, loaded, projectId, launchAgent);
+    const agentAccess = await resolveAndAuthorizeAgent(c, loaded, projectId, launchAgent, undefined, undefined, channelSpaceId);
     // A disconnected repository: 409 `repository_disconnected` with the fix,
     // before a session row or a sandbox exists.
     await assertRepositoryConnected(loaded.row);
-    if (launchAgent) {
+    // A channel's agent is open to whoever may post in the channel, without an agent grant.
+    if (launchAgent && !agentAccess.viaChannel) {
       await assertProjectCapability(
         c,
         loaded.userId,
@@ -460,6 +477,11 @@ export function registerProjectSessionsRoutes(): void {
             // that the caller may see (400 unless a UUID). Ignored while the
             // flag is off, whatever its value, as before the flag existed.
             space_id: z.string().optional(),
+            // Only the sessions this person started (a user id), the agent
+            // they run (its slug), or with activity at or after a time.
+            created_by: z.string().uuid().optional(),
+            agent: z.string().min(1).max(128).optional(),
+            updated_after: z.string().datetime({ offset: true }).optional(),
           }),
         },
       responses: {
@@ -557,6 +579,9 @@ export function registerProjectSessionsRoutes(): void {
         view: query.pinned ? 'pinned' : query.archived ? 'archived' : null,
         deleted: query.deleted === 'only',
         spaceId,
+        createdBy: query.created_by ?? null,
+        agent: query.agent ?? null,
+        updatedAfter: query.updated_after ? new Date(query.updated_after) : null,
       },
       boundCredentialSessionId: callerKortixSessionId(c),
       agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,

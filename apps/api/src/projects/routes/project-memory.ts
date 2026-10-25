@@ -12,19 +12,16 @@
  */
 import { createRoute, z } from '@hono/zod-openapi';
 import {
-  MemoryChangeListSchema,
   MemoryDeleteResultSchema,
   MemoryLayerSchema,
   MemoryNoteInputSchema,
   MemoryPageCreateInputSchema,
   MemoryPageListSchema,
   MemoryPageSchema,
-  MemoryPageStatusSchema,
   MemoryPageTypeSchema,
   MemoryPageUpdateInputSchema,
   MEMORY_SEARCH_LIMITS,
   MemorySearchResultSchema,
-  MemoryUndoResultSchema,
   MemoryUsageSchema,
   MemoryVersionListSchema,
 } from '@kortix/api-contract';
@@ -36,10 +33,8 @@ import {
   authorName,
   createPage,
   decodePageId,
-  decodeVersionId,
   deletePage,
   getPage,
-  layerChanges,
   layerView,
   listPages,
   MemoryError,
@@ -50,7 +45,6 @@ import {
   searchMemory,
   threadLabelOf,
   threadUsage,
-  undoVersion,
   updatePage,
   type Viewer,
 } from '../../memory';
@@ -64,7 +58,6 @@ import { addChannelsMark } from '../lib/channels-onboarding';
 const projectParams = z.object({ projectId: z.string() });
 const layerParams = projectParams.extend({ layerKey: z.string() });
 const pageParams = projectParams.extend({ pageId: z.string() });
-const versionParams = projectParams.extend({ versionId: z.string() });
 
 type Caller = {
   project: Project;
@@ -108,7 +101,7 @@ export async function withMemoryCaller<R>(c: Context<AppEnv>, run: (caller: Call
 }
 
 /** A zod failure as the memory routes answer every refusal: `{error, code: invalid_input}`. */
-export function memoryValidationHook(
+function memoryValidationHook(
   result: { success: boolean; error?: { issues: { message: string; path: PropertyKey[] }[] } },
   c: Context,
 ) {
@@ -159,20 +152,18 @@ export function registerProjectMemoryRoutes(): void {
       path: '/{projectId}/memory/layers/{layerKey}/pages',
       tags: ['memory'],
       summary: 'List the pages of a memory layer',
-      description: 'One summary per Markdown file, newest first (a DM’s agent folder first), at most 500 (`truncated` past it). `status=unconfirmed` lists nothing.',
+      description: 'One summary per Markdown file, newest first (a DM’s agent folder first), at most 500 (`truncated` past it).',
       ...auth,
       request: {
         params: layerParams,
-        query: z.object({ type: MemoryPageTypeSchema.optional(), status: MemoryPageStatusSchema.optional() }),
+        query: z.object({ type: MemoryPageTypeSchema.optional() }),
       },
       responses: { 200: json(MemoryPageListSchema, 'The pages'), ...ERRORS },
     }),
     (c) =>
       withMemoryCaller(c, async ({ project, viewer }) => {
         const layer = await resolveLayer(project, c.req.valid('param').layerKey, viewer);
-        const query = c.req.valid('query');
-        if (query.status === 'unconfirmed') return c.json({ pages: [], truncated: false }, 200);
-        return c.json(await listPages(layer, { type: query.type }), 200);
+        return c.json(await listPages(layer, { type: c.req.valid('query').type }), 200);
       }),
     memoryValidationHook,
   );
@@ -222,30 +213,11 @@ export function registerProjectMemoryRoutes(): void {
         if (input.source_session_id && !(await canOpenSession(input.source_session_id))) {
           throw new MemoryError(404, 'session_not_found', 'Thread not found.');
         }
-        const label = input.source_session_id ? await threadLabelOf(project.projectId, input.source_session_id) : null;
+        const label = input.source_session_id ? await threadLabelOf(project.projectId, input.source_session_id, layer.spaceId) : null;
         const rel = await addNote(layer, await authorName(viewer.userId), input, label);
         await markGeneral(project, viewer, layer);
         return c.json(await getPage(layer, rel), 201);
       }),
-    memoryValidationHook,
-  );
-
-  // GET /v1/projects/:projectId/memory/layers/:layerKey/changes — Recent changes.
-  projectsApp.openapi(
-    createRoute({
-      method: 'get',
-      path: '/{projectId}/memory/layers/{layerKey}/changes',
-      tags: ['memory'],
-      summary: 'List the recently changed pages of a memory layer',
-      description: 'The 20 most recently changed files, newest first. `next` is always null.',
-      ...auth,
-      request: { params: layerParams },
-      responses: { 200: json(MemoryChangeListSchema, 'The changes'), ...ERRORS },
-    }),
-    (c) =>
-      withMemoryCaller(c, async ({ project, viewer }) =>
-        c.json(await layerChanges(await resolveLayer(project, c.req.valid('param').layerKey, viewer)), 200),
-      ),
     memoryValidationHook,
   );
 
@@ -328,30 +300,6 @@ export function registerProjectMemoryRoutes(): void {
       withMemoryCaller(c, async ({ project, viewer }) => {
         const { layer, rel } = await pageRef(project, viewer, c.req.valid('param').pageId);
         return c.json(await pageHistory(layer, rel), 200);
-      }),
-    memoryValidationHook,
-  );
-
-  // POST /v1/projects/:projectId/memory/versions/:versionId/undo
-  projectsApp.openapi(
-    createRoute({
-      method: 'post',
-      path: '/{projectId}/memory/versions/{versionId}/undo',
-      tags: ['memory'],
-      summary: 'Undo the newest change of a memory page',
-      description:
-        'Writes the version before it back, or deletes the file when the change created it. 409 `superseded` for an older version; ' +
-        '404 `version_gone` when the newest 100 Drive commits do not reach it.',
-      ...auth,
-      request: { params: versionParams },
-      responses: { 200: json(MemoryUndoResultSchema, 'The page after the undo'), ...ERRORS },
-    }),
-    (c) =>
-      withMemoryCaller(c, async ({ project, viewer }) => {
-        const ref = decodeVersionId(c.req.valid('param').versionId);
-        if (!ref) throw notFound();
-        const layer = await resolveLayer(project, ref.key, viewer);
-        return c.json({ pages: await undoVersion(layer, ref.rel, ref.commit) }, 200);
       }),
     memoryValidationHook,
   );

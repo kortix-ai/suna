@@ -20600,7 +20600,10 @@
     "copySessionTitle": "会话标题",
     "copyAction": "复制{label}",
     "copied": "已复制{label}",
-    "copyFailed": "无法复制到剪贴板"
+    "copyFailed": "无法复制到剪贴板",
+    "threads": "话题",
+    "recentThreads": "最近的话题",
+    "searchChannels": "搜索频道、话题、命令..."
   },
   "personalWelcome": {
     "dismiss": "关闭",
@@ -20790,7 +20793,8 @@
     "postTo": "发布到",
     "postToHint": "每次运行都会在那里开始一个新话题。未选择频道时，运行会进入 #{channel}。",
     "postToNone": "无频道",
-    "postToUnavailable": "不可用的频道"
+    "postToUnavailable": "不可用的频道",
+    "postToPrivate": "私有：触发器无法发布到这里"
   },
   "gatewayAccess": {
     "heroTitle": "在任何地方使用此项目的模型",
@@ -22893,17 +22897,22 @@
     "memory": {
       "search": "搜索记忆",
       "pagesLabel": "记忆页面",
+      "all": {
+        "title": "全部",
+        "explainCompany": "Kortix 记忆：智能体对此项目的了解。它们会在每次回复前阅读。",
+        "explainChannel": "Kortix 记忆：智能体对 {place} 的了解。它们会在每次回复前阅读。",
+        "explainDm": "Kortix 记忆：智能体对你和 {place} 的了解。它们会在每次回复前阅读。"
+      },
       "allPages": "所有页面",
       "noMatches": "没有与“{query}”匹配的页面。",
       "loadError": "无法加载此记忆。",
       "pageLoadError": "无法加载此页面。",
       "retry": "重试",
       "close": "关闭",
-      "loadOlder": "显示更早的",
-      "fromThread": "来自“{thread}”",
       "author": {
         "system": "Kortix",
-        "unknown": "一位成员"
+        "unknown": "一位成员",
+        "agent": "一个智能体"
       },
       "edit": "编辑",
       "delete": "删除",
@@ -22911,11 +22920,6 @@
       "deleteDescription": "此操作无法撤销。",
       "deleted": "页面已删除",
       "deleteFailed": "无法删除页面，请重试。",
-      "undo": "撤销",
-      "undone": "更改已撤销",
-      "undoFailed": "无法撤销更改，请重试。",
-      "superseded": "此后页面又有更改。打开历史记录以恢复更早的版本。",
-      "alreadyUndone": "此更改已撤销。",
       "relatedPages": "相关页面",
       "emptyPage": "此页面还没有内容。",
       "history": {
@@ -22923,21 +22927,22 @@
         "description": "“{title}”的所有更改，最新的在前。",
         "loadError": "无法加载历史记录。",
         "current": "当前",
-        "undone": "已撤销",
         "restore": "恢复此版本",
         "restored": "版本已恢复",
         "restoreFailed": "无法恢复此版本，请重试。",
         "op": {
           "create": "{author} 创建了页面",
-          "update": "{author} 编辑了页面",
-          "append": "{author} 添加了一条事实",
-          "delete": "{author} 删除了页面",
-          "restore": "{author} 恢复了一个版本",
-          "undo": "{author} 撤销了一项更改",
-          "confirm": "{author} 确认了页面",
-          "file_note": "{author} 归档了一条笔记",
-          "import": "{author} 导入了页面"
-        }
+          "update": "{author} 编辑了页面"
+        },
+        "preview": "预览",
+        "restoreShort": "恢复",
+        "viewing": "正在查看{time}的版本",
+        "backToCurrent": "返回当前版本",
+        "added": "+{count} 行",
+        "removed": "−{count} 行",
+        "viewingBy": "由 {author}",
+        "created": "页面已创建",
+        "edited": "页面已编辑"
       },
       "editor": {
         "body": "页面",
@@ -22966,10 +22971,11 @@
         "open": "记住这个…"
       },
       "empty": {
-        "title": "Kortix 记住的关于此频道的内容。",
-        "titleDm": "Kortix 记住的关于此对话的内容。",
-        "description": "每次回复前，它都会阅读这些页面。",
-        "titleCompany": "Kortix 记住的关于此项目的内容。"
+        "title": "{place} 中还没有记忆",
+        "titleDm": "与 {place} 还没有记忆",
+        "description": "智能体会把学到的内容保存在这里，并在每次回复前阅读。",
+        "titleCompany": "还没有公司记忆",
+        "openCompany": "打开公司记忆 · {count, plural, other {# 个页面}}"
       },
       "source": {
         "thread": "打开话题“{label}”",
@@ -23010,7 +23016,17 @@
         "outside": "链接",
         "import": "文件"
       },
-      "pageCount": "{count, plural, other {# 个页面}}"
+      "pageCount": "{count, plural, other {# 个页面}}",
+      "companyLink": "公司记忆 · {count, plural, other {# 个页面}}",
+      "companyLinkHint": "这里的智能体也会使用公司记忆。",
+      "group": {
+        "other": "概况",
+        "people": "人员",
+        "decisions": "决策",
+        "workstreams": "项目",
+        "playbooks": "工作方式",
+        "note": "笔记"
+      }
     },
     "create": {
       "title": "创建频道",
@@ -23030,7 +23046,12 @@
       "renameDescription": "频道链接会随名称一起改变。",
       "save": "保存",
       "renamed": "频道已重命名",
-      "renameFailed": "无法重命名频道。请重试。"
+      "renameFailed": "无法重命名频道。请重试。",
+      "descriptionPrivate": "只有你添加的人可以查看和使用该频道。",
+      "privateLabel": "私密",
+      "privateHint": "只有受邀成员可以看到它。",
+      "privateUnavailable": "此工作区尚未开放私密频道。",
+      "privateLimits": "私密会对其他人隐藏该频道。代码更改（git 分支）和代理自身的工具不是私密的。"
     },
     "view": {
       "welcomeTitle": "欢迎来到 #{name}",
@@ -23048,6 +23069,7 @@
       "loadEarlier": "加载更早的话题",
       "messageChannel": "发消息到 #{name}",
       "messageAgent": "发消息给 {agent}",
+      "threadsEmptyTitle": "还没有话题",
       "threadsEmpty": "你开始的话题会显示在这里。",
       "loadError": "无法加载此频道。",
       "threadsLoadError": "无法加载话题。",
@@ -23125,45 +23147,92 @@
       },
       "links": {
         "add": "添加链接",
-        "addDescription": "将链接固定到 {place}。频道中的每个智能体都会获得已固定的链接。",
+        "addDescription": "向 {place} 添加链接。",
         "urlLabel": "URL",
         "titleLabel": "标题（可选）",
         "titlePlaceholder": "它是什么",
-        "invalidUrl": "请输入以 http:// 或 https:// 开头的链接。",
+        "invalidUrl": "请输入有效的链接，例如 example.com。",
         "addFailed": "无法添加链接，请重试。",
         "limit": "此频道已固定 200 个链接。请先取消固定一个。",
-        "added": "已添加链接",
+        "addLimit": "此频道已添加 200 个链接。请先移除一个。",
+        "added": "添加时间",
         "remove": "移除链接",
         "removeTitle": "移除此链接？",
         "removeDescription": "{link} 将从 {place} 中移除，对所有人生效。",
         "removed": "已移除链接",
         "removeFailed": "无法移除链接，请重试。",
         "loadError": "无法加载链接。",
-        "intro": "在 {place} 的线程中分享的链接。固定一个链接即可将其提供给频道中的每个智能体。",
-        "pinnedTitle": "已固定 · 智能体会阅读",
-        "sharedTitle": "线程中分享的链接",
-        "sharedNote": "从成员的消息中自动收集",
-        "pinnedBy": "{name} 固定",
         "pinnedLabel": "已固定",
-        "fromThread": "来自“{thread}”",
-        "inThread": "在“{thread}”中",
-        "sharedTimes": "分享 {count} 次",
         "pin": "固定",
         "unpin": "取消固定",
         "pinnedToast": "已固定链接",
         "unpinnedToast": "已取消固定链接",
         "pinFailed": "无法固定链接，请重试。",
-        "unpinFailed": "无法取消固定链接，请重试。"
+        "unpinFailed": "无法取消固定链接，请重试。",
+        "search": "搜索链接",
+        "show": "显示",
+        "all": "全部",
+        "sharedBy": "分享者",
+        "earlier": "更早",
+        "pinHint": "固定它。频道中的每个智能体都会读取已固定的链接。",
+        "unpinHint": "取消固定。智能体将不再读取它。",
+        "copyLink": "复制链接",
+        "linkCopied": "已复制链接",
+        "openThread": "打开话题",
+        "noMatch": "没有匹配的链接"
       },
       "appsLoadError": "无法加载应用。",
       "triggers": {
-        "loadError": "无法加载触发器。"
+        "loadError": "无法加载触发器。",
+        "privateNote": "触发器无法发布到私有频道。请改为在线程中设置提醒。"
       },
       "reply": "回复",
       "rosterTitlePeople": "成员",
       "rosterTitleAgents": "智能体",
       "viewAllMembers": "查看全部成员",
-      "agentThreads": "{count} 个话题"
+      "agentThreads": "{count} 个话题",
+      "threadFilter": {
+        "search": "搜索话题",
+        "filter": "筛选",
+        "clear": "清除",
+        "clearFilters": "清除筛选",
+        "noMatch": "没有匹配的话题",
+        "noMatchHint": "试试其他搜索，或清除筛选。",
+        "remove": "移除筛选 {facet}：{value}",
+        "status": "状态",
+        "startedBy": "发起人",
+        "agent": "智能体",
+        "activity": "活动",
+        "any": "全部",
+        "anyone": "所有人",
+        "me": "我",
+        "anyAgent": "所有智能体",
+        "anyTime": "任意时间",
+        "statusValue": {
+          "working": "进行中",
+          "needsYou": "需要你处理",
+          "failed": "失败",
+          "done": "已完成"
+        },
+        "activityValue": {
+          "today": "今天",
+          "last7": "最近 7 天",
+          "last30": "最近 30 天"
+        }
+      },
+      "setup": {
+        "label": "设置 {name}",
+        "addAgents": "添加智能体",
+        "addAgentsHint": "选择谁在这里回复",
+        "invite": "邀请成员",
+        "inviteHint": "把团队拉进来",
+        "remember": "记住一件事",
+        "rememberHint": "每个智能体都会读的笔记"
+      },
+      "allAgents": "所有智能体",
+      "join": "加入频道",
+      "joined": "你已加入 #{name}。",
+      "joinFailed": "无法加入频道，请重试。"
     },
     "details": {
       "about": "关于",
@@ -23176,19 +23245,44 @@
       "archiveTitle": "归档此频道",
       "archiveHint": "它会从所有成员的侧边栏中移除。其中的话题会保留。",
       "archive": "归档",
-      "people": "人",
-      "agents": "智能体",
-      "membersHint": "在目前已加载的话题中，在这里发起话题的人以及回复过话题的智能体。",
-      "threads": "{count} 个话题",
       "find": "查找成员或智能体",
-      "addPeople": "添加成员",
+      "search": "搜索",
       "you": "（你）",
-      "groupCount": "{label} · {count}",
       "noMatches": "没有与“{query}”匹配的结果。",
       "defaultAgent": "默认智能体",
       "defaultAgentHint": "回复未指定智能体的消息。在“自定义 › 智能体”中为整个项目设置。",
       "visibility": "可见范围",
-      "visibilityProject": "项目中的所有人"
+      "visibilityProject": "项目中的所有人",
+      "defaultTag": "默认",
+      "agentTag": "智能体",
+      "makeDefault": "设为默认",
+      "removeAgent": "从 #{name} 移除",
+      "agentMenu": "{agent} 选项",
+      "agentsFailed": "无法更新智能体，请重试。",
+      "defaultSet": "{agent} 现在是 #{name} 的默认智能体。",
+      "agentRemoved": "已将 {agent} 从 #{name} 移除。",
+      "channelDefaultHint": "回复未指定智能体的消息。可在“成员”中更改。",
+      "personRemoved": "已将 {person} 从 #{name} 移除。",
+      "peopleFailed": "无法更新成员，请重试。",
+      "personMenu": "{person} 选项",
+      "removePerson": "从 #{name} 移除",
+      "leave": "退出频道",
+      "left": "你已退出 #{name}。",
+      "leaveTitle": "退出此频道",
+      "leaveHint": "退出后仍可阅读，并可随时重新加入。",
+      "visibilityPrivate": "仅限成员",
+      "privateNote": "只有成员可以看到 #{name}。",
+      "makePrivate": "设为私密",
+      "makePrivateTitle": "将 #{name} 设为私密？",
+      "makePrivateWho": "只有成员可以看到 #{name} 的线程、文件、记忆和链接。发起过线程或添加过链接的人都会成为成员。",
+      "makePrivateLeave": "其他人将失去访问权限。之后退出的成员也会失去访问权限，包括自己的线程。",
+      "makePrivateFinal": "之后无法再设为公开。已复制到外部的文件保持不变。",
+      "makePrivateTriggers": "{count, plural, other {# 个触发器发布到这里，它们将停止运行。}}",
+      "madePrivate": "#{name} 现在是私密频道",
+      "leaveHintPrivate": "你将失去对其线程、文件和记忆的访问权限，包括你自己的线程。需要成员重新添加你。",
+      "leavePrivateTitle": "退出 #{name}？",
+      "addMembers": "添加成员",
+      "privateLimits": "私密会对其他人隐藏该频道。代码更改（git 分支）和代理自身的工具不是私密的。"
     },
     "folder": {
       "memory": "记忆",
@@ -23205,22 +23299,41 @@
     "onboarding": {
       "reenabled": "频道关闭期间开始的会话都在这里。",
       "intro": {
-        "title": "你的会话现在是 #general 中的话题。",
+        "title": "欢迎使用频道",
         "channels": "频道按团队组织工作。",
         "threads": "每条新消息都会开始一个话题。",
         "memory": "智能体会记住每个频道达成的共识。",
         "gotIt": "知道了"
       },
       "getStarted": {
-        "title": "开始使用",
         "dismiss": "关闭",
         "channel": "为团队创建一个频道",
-        "remember": "告诉 {place} 需要记住的事",
-        "dm": "与智能体开启私信",
-        "pickAgent": "给智能体发消息",
-        "noAgents": "此项目还没有智能体。",
         "done": "已完成"
       }
+    },
+    "addMembers": {
+      "title": "向 #{name} 添加成员",
+      "description": "从项目中选择成员和智能体。",
+      "search": "搜索成员和智能体",
+      "selected": "已选成员",
+      "people": "成员",
+      "agents": "智能体",
+      "unpick": "移除 {member}",
+      "cancel": "取消",
+      "inviteByEmail": "通过邮箱邀请",
+      "confirmEmpty": "添加成员",
+      "confirm": "添加{what}",
+      "peopleCount": "{count} 人",
+      "agentsCount": "{count} 个智能体",
+      "both": "{people}和{agents}",
+      "added": "已向 #{name} 添加{what}。",
+      "failed": "无法添加成员。请重试。",
+      "peopleFailed": "无法添加成员。请重试。",
+      "agentsFailed": "无法添加智能体。请重试。",
+      "peopleFailedAgentsAdded": "已向 #{name} 添加{what}。无法添加成员：他们仍处于选中状态。",
+      "agentsFailedPeopleAdded": "已向 #{name} 添加{what}。无法添加智能体：它们仍处于选中状态。",
+      "allAdded": "项目里的所有人都已经在这里。",
+      "noMatches": "没有与“{query}”匹配的项。"
     }
   }
 }

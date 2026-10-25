@@ -52,9 +52,8 @@ describe('Kortix Apps React Query bindings', () => {
     deployments.deploy.onSuccess();
     deployments.rollback.onSuccess();
 
-    // The App list key also covers every channel's Apps (`qk.project.spaceApps`); the
-    // channels' Apps counts are refetched with it.
-    const listed = [qk.project.apps('project-1'), qk.project.spaceSummaries('project-1')];
+    // The App list key also covers every channel's Apps (`qk.project.spaceApps`).
+    const listed = [qk.project.apps('project-1')];
     expect(invalidated).toEqual([
       ...listed, ...listed, ...listed, ...listed, ...listed,
       ...listed,
@@ -67,8 +66,6 @@ describe('Kortix Apps React Query bindings', () => {
   test('a channel’s Apps sit under the App list key, so every App invalidation refetches them', () => {
     const scope = qk.project.apps('project-1');
     expect(qk.project.spaceApps('project-1', 'S1').slice(0, scope.length)).toEqual([...scope]);
-    const summaries = qk.project.spaceSummaries('project-1');
-    expect(qk.project.spaceSummary('project-1', 'S1').slice(0, summaries.length)).toEqual([...summaries]);
   });
 
   test('access policy updates revoke cached browser sessions and refresh App metadata', async () => {
@@ -80,7 +77,6 @@ describe('Kortix Apps React Query bindings', () => {
       qk.project.appAccess('project-1', 'app-1'),
       qk.project.appAccessSession('project-1', 'app-1'),
       qk.project.apps('project-1'),
-      qk.project.spaceSummaries('project-1'),
     ]);
   });
 

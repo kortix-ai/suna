@@ -406,6 +406,12 @@ export interface ListProjectSessionsOptions {
   view?: 'pinned' | 'archived' | 'deleted';
   /** Only the sessions filed in this space (`ProjectSession.space_id`). Sent as `space_id`. */
   spaceId?: string;
+  /** Only the sessions this person started (a user id; `startedBy: 'me'` for the caller). Sent as `created_by`. */
+  createdBy?: string;
+  /** Only the sessions that run this agent (its slug, `ProjectSession.agent_name`). */
+  agent?: string;
+  /** Only the sessions with activity at or after this ISO 8601 time (`updated_at`). Sent as `updated_after`. */
+  updatedAfter?: string;
 }
 
 /** One keyset page of a project's sessions. */
@@ -427,6 +433,9 @@ function projectSessionListQuery(options?: ListProjectSessionsOptions): string {
   for (const label of options?.labels ?? []) params.append('label', label);
   if (options?.view) params.set(options.view, 'only');
   if (options?.spaceId) params.set('space_id', options.spaceId);
+  if (options?.createdBy) params.set('created_by', options.createdBy);
+  if (options?.agent) params.set('agent', options.agent);
+  if (options?.updatedAfter) params.set('updated_after', options.updatedAfter);
   return params.size > 0 ? `?${params}` : '';
 }
 

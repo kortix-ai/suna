@@ -2,7 +2,7 @@ import type { ProjectSession } from '@kortix/sdk';
 import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
 
 import { relativeTime } from '../../internal/lib/relative-time';
-import { sessionDisplayLabel } from '../../session/actions/session-label';
+import { sessionDisplayLabel, sessionDisplayStatus } from '../../session/actions/session-label';
 import {
   parseAgentMentionReferences,
   parseFileMentionReferences,
@@ -112,6 +112,21 @@ export function threadMessageText(session: ProjectSession): string {
   return text || sessionDisplayLabel(session);
 }
 
+/**
+ * The server stores a thread's first prompt cut at this length
+ * (`FIRST_PROMPT_MAX_CHARS` in `apps/api/src/projects/lib/project-spaces.ts`).
+ */
+export const SERVER_FIRST_PROMPT_MAX_CHARS = 500;
+
+/**
+ * The server cut the first prompt: the row shows "…" and its "Show more"
+ * opens the thread, whose transcript holds the whole message. A prompt of
+ * exactly the limit reads as cut too, and opening its thread is harmless.
+ */
+export function firstPromptTruncated(session: ProjectSession): boolean {
+  return (session.first_prompt?.length ?? 0) >= SERVER_FIRST_PROMPT_MAX_CHARS;
+}
+
 /** The agent whose mark stands in when a row does not name its agent. */
 export const DEFAULT_AGENT_SLUG = 'kortix';
 
@@ -162,9 +177,9 @@ export function spaceRoster(
 }
 
 /** A channel's tabs, in order. `?tab=` names one; Chat has no param. */
-export const CHANNEL_TABS = ['chat', 'threads', 'files', 'memory', 'apps', 'links', 'triggers'] as const;
+const CHANNEL_TABS = ['chat', 'threads', 'files', 'memory', 'apps', 'links', 'triggers'] as const;
 /** A DM has no apps or links of its own. */
-export const DM_TABS = ['chat', 'threads', 'files', 'memory', 'triggers'] as const;
+const DM_TABS = ['chat', 'threads', 'files', 'memory', 'triggers'] as const;
 export type SpaceTab = (typeof CHANNEL_TABS)[number];
 
 export function spaceTabs(kind: 'channel' | 'dm'): readonly SpaceTab[] {
@@ -174,4 +189,56 @@ export function spaceTabs(kind: 'channel' | 'dm'): readonly SpaceTab[] {
 /** The `?tab=` value as a tab of this kind of space; anything else is Chat. */
 export function spaceTabFromParam(value: string | null, kind: 'channel' | 'dm'): SpaceTab {
   return spaceTabs(kind).find((tab) => tab === value) ?? 'chat';
+}
+
+/** The Threads tab's Status filter: the states a thread row shows. */
+export const THREAD_STATUSES = ['working', 'needs-you', 'failed', 'done'] as const;
+export type ThreadStatus = (typeof THREAD_STATUSES)[number];
+/** The Threads tab's Activity filter: the last activity on or after a local day. */
+export const THREAD_ACTIVITIES = ['today', 'last7', 'last30'] as const;
+export type ThreadActivity = (typeof THREAD_ACTIVITIES)[number];
+
+/**
+ * The Threads tab's search and filters, as the URL holds them
+ * (`?q=&status=&by=&agent=&active=`). `by` is `me` or a user id. A DM has
+ * one person and one agent, so it reads no `by` or `agent`.
+ */
+export interface ThreadFilters {
+  q: string;
+  status: ThreadStatus | null;
+  by: string | null;
+  agent: string | null;
+  active: ThreadActivity | null;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const oneOf = <T extends string>(values: readonly T[], value: string | null): T | null =>
+  values.find((candidate) => candidate === value) ?? null;
+
+export function threadFiltersFromParams(params: { get(name: string): string | null }, kind: 'channel' | 'dm'): ThreadFilters {
+  const by = params.get('by');
+  return {
+    q: params.get('q')?.trim() ?? '',
+    status: oneOf(THREAD_STATUSES, params.get('status')),
+    by: kind === 'dm' ? null : by === 'me' || (by && UUID.test(by)) ? by : null,
+    agent: kind === 'dm' ? null : params.get('agent') || null,
+    active: oneOf(THREAD_ACTIVITIES, params.get('active')),
+  };
+}
+
+/**
+ * The start of an Activity window: local midnight today, 6 days earlier
+ * (7 days with today) or 29 days earlier. A day boundary, so the list's query
+ * stays the same all day.
+ */
+export function threadActivitySince(active: ThreadActivity, now: Date): string {
+  const days = active === 'today' ? 0 : active === 'last7' ? 6 : 29;
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() - days).toISOString();
+}
+
+/** A thread's Status filter value. A pending review wins; a turn in flight is Working. */
+export function threadStatus(session: ProjectSession, reviewCount = 0): ThreadStatus {
+  if (reviewCount > 0) return 'needs-you';
+  if (threadIsWorking(session)) return 'working';
+  return sessionDisplayStatus(session) === 'failed' ? 'failed' : 'done';
 }

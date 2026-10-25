@@ -472,7 +472,7 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
     enabled: pendingValues[f.key] ?? f.enabled,
   }));
 
-  // D7: the Channels switch changes the sidebar for everyone, so only a
+  // the Channels switch changes the sidebar for everyone, so only a
   // viewer who may flip it sees it (hidden while that answer loads).
   const visible = canEdit ? withPending : withPending.filter((f) => f.key !== 'project_channels');
   const features = filterFeatures(visible, query);

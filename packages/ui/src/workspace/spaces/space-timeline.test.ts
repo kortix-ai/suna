@@ -9,8 +9,11 @@ import {
   liveReplyCount,
   spaceRoster,
   spaceTabFromParam,
+  threadActivitySince,
+  threadFiltersFromParams,
   threadIsWorking,
   threadMessageText,
+  threadStatus,
 } from './space-timeline';
 
 /** Local wall-clock time, so the day grouping is the same in every time zone. */
@@ -134,5 +137,45 @@ describe('spaceTabFromParam', () => {
     expect(spaceTabFromParam('links', 'dm')).toBe('chat');
     expect(spaceTabFromParam('nope', 'channel')).toBe('chat');
     expect(spaceTabFromParam(null, 'dm')).toBe('chat');
+  });
+});
+
+describe('thread filters', () => {
+  const params = (query: string) => new URLSearchParams(query);
+  const USER = '0b6f3c1e-8a4d-4f2b-9c7e-1d2a3b4c5d6e';
+
+  test('reads the URL; unknown values, a malformed person and a DM\'s person and agent are dropped', () => {
+    expect(threadFiltersFromParams(params(`q=+lease+&status=failed&by=${USER}&agent=researcher&active=last7`), 'channel')).toEqual({
+      q: 'lease',
+      status: 'failed',
+      by: USER,
+      agent: 'researcher',
+      active: 'last7',
+    });
+    expect(threadFiltersFromParams(params('status=bogus&by=alice&active=year'), 'channel')).toEqual({
+      q: '',
+      status: null,
+      by: null,
+      agent: null,
+      active: null,
+    });
+    expect(threadFiltersFromParams(params('by=me&agent=researcher'), 'dm')).toMatchObject({ by: null, agent: null });
+    expect(threadFiltersFromParams(params('by=me'), 'channel').by).toBe('me');
+  });
+
+  test('an Activity window starts at a local midnight: today, 6 or 29 days back', () => {
+    const now = new Date(2026, 9, 25, 15, 30);
+    expect(threadActivitySince('today', now)).toBe(new Date(2026, 9, 25).toISOString());
+    expect(threadActivitySince('last7', now)).toBe(new Date(2026, 9, 19).toISOString());
+    expect(threadActivitySince('last30', now)).toBe(new Date(2026, 8, 26).toISOString());
+  });
+
+  test('status: a review wins, then a running turn, then a failed computer, else done', () => {
+    const working = thread('w', 'U', at(20, 9), { working: { state: 'working' } } as Partial<ProjectSession>);
+    expect(threadStatus(working, 1)).toBe('needs-you');
+    expect(threadStatus(working)).toBe('working');
+    expect(threadStatus(thread('f', 'U', at(20, 9), { status: 'failed' }))).toBe('failed');
+    expect(threadStatus(thread('d', 'U', at(20, 9), { status: 'stopped' }))).toBe('done');
+    expect(threadStatus(thread('i', 'U', at(20, 9), { working: { state: 'idle' } } as Partial<ProjectSession>))).toBe('done');
   });
 });

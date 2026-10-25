@@ -18,13 +18,11 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
   ChannelsOnboardingSchema,
-  MemoryChangeListSchema,
   MemoryDeleteResultSchema,
   MemoryLayerSchema,
   MemoryPageListSchema,
   MemoryPageSchema,
   MemorySearchResultSchema,
-  MemoryUndoResultSchema,
   MemoryUsageSchema,
   MemoryVersionListSchema,
   SpaceListSchema,
@@ -47,12 +45,10 @@ const R = {
   pages: 'GET /v1/projects/:projectId/memory/layers/:layerKey/pages',
   create: 'POST /v1/projects/:projectId/memory/layers/:layerKey/pages',
   note: 'POST /v1/projects/:projectId/memory/layers/:layerKey/notes',
-  changes: 'GET /v1/projects/:projectId/memory/layers/:layerKey/changes',
   page: 'GET /v1/projects/:projectId/memory/pages/:pageId',
   update: 'PATCH /v1/projects/:projectId/memory/pages/:pageId',
   remove: 'DELETE /v1/projects/:projectId/memory/pages/:pageId',
   history: 'GET /v1/projects/:projectId/memory/pages/:pageId/history',
-  undo: 'POST /v1/projects/:projectId/memory/versions/:versionId/undo',
   search: 'GET /v1/projects/:projectId/memory/search',
   usage: 'GET /v1/projects/:projectId/sessions/:sessionId/memory-usage',
 } as const;
@@ -69,10 +65,8 @@ const DRIVE_WRITE = 'PUT /v1/drives/:driveId/files/content';
 const LAYER = '/v1/projects/:projectId/memory/layers/:layerKey';
 const PAGES = '/v1/projects/:projectId/memory/layers/:layerKey/pages';
 const NOTES = '/v1/projects/:projectId/memory/layers/:layerKey/notes';
-const CHANGES = '/v1/projects/:projectId/memory/layers/:layerKey/changes';
 const PAGE = '/v1/projects/:projectId/memory/pages/:pageId';
 const HISTORY = '/v1/projects/:projectId/memory/pages/:pageId/history';
-const UNDO = '/v1/projects/:projectId/memory/versions/:versionId/undo';
 const SEARCH = '/v1/projects/:projectId/memory/search';
 const USAGE = '/v1/projects/:projectId/sessions/:sessionId/memory-usage';
 const SPACES = '/v1/projects/:projectId/spaces';
@@ -84,6 +78,8 @@ const REMOVED = [
   ['GET', '/v1/projects/:projectId/memory/layers/:layerKey/export'],
   ['POST', '/v1/projects/:projectId/memory/pages/:pageId/confirm'],
   ['POST', '/v1/projects/:projectId/memory/pages/:pageId/restore'],
+  ['GET', '/v1/projects/:projectId/memory/layers/:layerKey/changes'],
+  ['POST', '/v1/projects/:projectId/memory/versions/:versionId/undo'],
 ] as const;
 
 /** A credential shape the secret check refuses, built at run time so no scanner reads a key here. Synthetic: it opens nothing. */
@@ -192,12 +188,10 @@ flow('MEMORY-1', meta([...Object.values(R), FEATURES, TOKEN_MINT]), async (ctx) 
       client.get(PAGES, { params: { projectId, layerKey: 'company' } }),
       client.post(PAGES, { type: 'people', title: 'Priya' }, { params: { projectId, layerKey: 'company' } }),
       client.post(NOTES, { text: 'Launch moves to Nov 19' }, { params: { projectId, layerKey: 'company' } }),
-      client.get(CHANGES, { params: { projectId, layerKey: 'company' } }),
       client.get(PAGE, { params: { projectId, pageId: id } }),
       client.patch(PAGE, { base_version: 1, body: 'x' }, { params: { projectId, pageId: id } }),
       client.del(PAGE, { params: { projectId, pageId: id } }),
       client.get(HISTORY, { params: { projectId, pageId: id } }),
-      client.post(UNDO, undefined, { params: { projectId, versionId: id } }),
       client.get(SEARCH, { params: { projectId }, query: { q: 'Pricing' } }),
     ]);
   try {
@@ -218,9 +212,9 @@ flow('MEMORY-1', meta([...Object.values(R), FEATURES, TOKEN_MINT]), async (ctx) 
       r.status([200, 503]);
     });
 
-    await ctx.step('the routes of the page store are gone: remember, export, confirm and restore → 404', async () => {
+    await ctx.step('the routes of the page store are gone: remember, export, confirm, restore, Recent changes and undo → 404', async () => {
       for (const [method, path] of REMOVED) {
-        const params = { projectId, layerKey: 'company', pageId: id };
+        const params = { projectId, layerKey: 'company', pageId: id, versionId: id };
         const r = method === 'GET' ? await world.owner.get(path, { params }) : await world.owner.post(path, {}, { params });
         r.status(404);
       }
@@ -236,7 +230,7 @@ flow('MEMORY-1', meta([...Object.values(R), FEATURES, TOKEN_MINT]), async (ctx) 
   }
 });
 
-flow('MEMORY-2', meta([R.layer, R.pages, R.create, R.note, R.page, R.update, R.remove, R.history, R.undo, FEATURES, SPACE_CREATE, SPACE_DM]), async (ctx) => {
+flow('MEMORY-2', meta([R.layer, R.pages, R.create, R.note, R.page, R.update, R.remove, R.history, FEATURES, SPACE_CREATE, SPACE_DM]), async (ctx) => {
   const { team, project, world } = await openWorld(ctx, { channels: true });
   const projectId = project.id;
   try {
@@ -259,7 +253,7 @@ flow('MEMORY-2', meta([R.layer, R.pages, R.create, R.note, R.page, R.update, R.r
       (await asMember.post(NOTES, { text: 'x' }, { params })).status(404);
     });
 
-    await ctx.step("page ids that name the owner's DM, or escape a folder, → 404 for the member on read, edit, history, delete and undo", async () => {
+    await ctx.step("page ids that name the owner's DM, or escape a folder, → 404 for the member on read, edit, history and delete", async () => {
       const pageIds = [
         Buffer.from(`${dmId}\npreferences.md`).toString('base64url'),
         Buffer.from('company\n../../Users/x/Memory/preferences.md').toString('base64url'),
@@ -272,8 +266,6 @@ flow('MEMORY-2', meta([R.layer, R.pages, R.create, R.note, R.page, R.update, R.r
         (await asMember.get(HISTORY, p)).status(404);
         (await asMember.del(PAGE, p)).status(404);
       }
-      const versionId = Buffer.from(`${dmId}\npreferences.md\nlatest`).toString('base64url');
-      (await asMember.post(UNDO, undefined, { params: { projectId, versionId } })).status(404);
     });
 
     if (!storage) {
@@ -350,7 +342,7 @@ flow('MEMORY-3', meta([R.create, R.update, R.note, R.search, FEATURES]), async (
 
 flow(
   'MEMORY-4',
-  meta([R.layer, R.pages, R.create, R.note, R.changes, R.page, R.update, R.remove, R.history, R.undo, R.search, FEATURES, DRIVE_LIST, DRIVE_FILES, DRIVE_READ, DRIVE_WRITE], { tags: ['deployed'] }),
+  meta([R.layer, R.pages, R.create, R.note, R.page, R.update, R.remove, R.history, R.search, FEATURES, DRIVE_LIST, DRIVE_FILES, DRIVE_READ, DRIVE_WRITE], { tags: ['deployed'] }),
   async (ctx) => {
     const { project, world } = await openWorld(ctx);
     const projectId = project.id;
@@ -396,22 +388,15 @@ flow(
         (await world.owner.patch(PAGE, { base_version: created!.version_no, body: 'stale' }, pageOf(created!.page_id))).status(409).body().has('$.code', 'version_conflict');
       });
 
-      let versions: MemoryVersion[] = [];
-      await ctx.step('history from Drive commits → 2 versions newest first: update (undoable), then create', async () => {
-        versions = read<{ versions: MemoryVersion[] }>((await world.owner.get(HISTORY, pageOf(created!.page_id))).status(200), (b) => b.schema(MemoryVersionListSchema)).versions;
-        const shape = versions.map((v) => [v.op, v.snapshot.body, v.can_undo]);
-        if (JSON.stringify(shape) !== JSON.stringify([['update', 'We charge $59 per seat.\n', true], ['create', 'We charge $49 per seat.\n', false]])) fail('history', shape);
+      await ctx.step('history from Drive commits → 2 versions newest first: update, then create', async () => {
+        const versions = read<{ versions: MemoryVersion[] }>((await world.owner.get(HISTORY, pageOf(created!.page_id))).status(200), (b) => b.schema(MemoryVersionListSchema)).versions;
+        const shape = versions.map((v) => [v.op, v.snapshot.body]);
+        if (JSON.stringify(shape) !== JSON.stringify([['update', 'We charge $59 per seat.\n'], ['create', 'We charge $49 per seat.\n']])) fail('history', shape);
       });
 
-      await ctx.step('undo the older version → 409 superseded; undo the newest → 200 {pages: [the page at $49]}', async () => {
-        (await world.owner.post(UNDO, undefined, { params: { projectId, versionId: versions[1]!.version_id } })).status(409).body().has('$.code', 'superseded');
-        read((await world.owner.post(UNDO, undefined, { params: { projectId, versionId: versions[0]!.version_id } })).status(200), (b) =>
-          b.schema(MemoryUndoResultSchema).has('$.pages[0].body', 'We charge $49 per seat.\n'));
-      });
-
-      await ctx.step('a note → 201: one line appended to Notes.md; Recent changes lists Notes.md first; search finds the pre-existing file', async () => {
+      await ctx.step('a note → 201: one line appended to Notes.md, listed first; search finds the pre-existing file', async () => {
         (await world.owner.post(NOTES, { text: 'Launch moves to Nov 19' }, layer)).status(201).body().has('$.type', 'note').has('$.path', '/Company/Memory/Notes.md');
-        read((await world.owner.get(CHANGES, layer)).status(200), (b) => b.schema(MemoryChangeListSchema).has('$.changes[0].page_title', 'Notes').has('$.next', null));
+        read((await world.owner.get(PAGES, layer)).status(200), (b) => b.schema(MemoryPageListSchema).has('$.pages[0].title', 'Notes'));
         const hits = read<{ hits: { title: string }[] }>((await world.owner.get(SEARCH, { params: { projectId }, query: { q: 'ship on' } })).status(200), (b) => b.schema(MemorySearchResultSchema)).hits;
         if (!hits.some((h) => h.title === 'Launch plan')) fail('search', hits);
       });
@@ -498,7 +483,7 @@ const ONBOARDING_ROUTES = ['GET /v1/projects/:projectId/onboarding/channels', 'P
 const SPACE_LIST = 'GET /v1/projects/:projectId/spaces';
 
 /**
- * Channels onboarding (spec section 14, D7, D8). The flag's toggle effect runs
+ * Channels onboarding. The flag's toggle effect runs
  * behind the PATCH response, so every step after a toggle polls for the
  * effect's result with a bounded wait.
  */

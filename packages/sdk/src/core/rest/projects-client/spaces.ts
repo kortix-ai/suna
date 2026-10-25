@@ -25,6 +25,24 @@ export interface ProjectSpace {
   updated_at: string;
   /** The caller may rename, describe, archive and unarchive it: the channel's creator or a project manager. False for a DM. Absent on older APIs. */
   can_edit?: boolean;
+  /**
+   * The channel's agents, in order: the first is the channel's default for a
+   * new thread. Empty: no agent list, a new thread starts on the project's
+   * default. Always empty for a DM. Absent on older APIs.
+   */
+  agents?: string[];
+  /**
+   * The caller is in the channel: always for `#general` and a DM, for another
+   * channel once added or joined. A non-member of a public channel still
+   * reads and posts. Absent on older APIs.
+   */
+  is_member?: boolean;
+  /**
+   * `public`: every project member sees and opens it. `private`: only its
+   * members see the channel and its threads. `#general` and a DM are always
+   * `public`. Absent on older APIs (read it as `public`).
+   */
+  visibility?: 'public' | 'private';
 }
 
 export interface CreateProjectSpaceInput {
@@ -32,6 +50,10 @@ export interface CreateProjectSpaceInput {
   name: string;
   /** At most 500 characters. */
   description?: string;
+  /** People added with the creator (who is always a member); every id a member of the project, at most 100. */
+  member_ids?: string[];
+  /** Default `public`. `private`: only its members see it. */
+  visibility?: 'public' | 'private';
 }
 
 export interface UpdateProjectSpaceInput {
@@ -40,6 +62,17 @@ export interface UpdateProjectSpaceInput {
   description?: string | null;
   /** `true` archives the channel; `false` unarchives it. */
   archived?: boolean;
+  /**
+   * Replaces the channel's agent list, in order: the first is the default.
+   * Every name must be an agent of the project, each once (else 400
+   * `invalid_agents`); at most 50. `[]` clears it.
+   */
+  agents?: string[];
+  /**
+   * `private` makes a public channel private: the people who started a thread
+   * in it or added a link become members. One way only.
+   */
+  visibility?: 'private';
 }
 
 /**
@@ -78,6 +111,20 @@ export async function getProjectSpaceGeneralNotice(projectId: string): Promise<P
 }
 
 /**
+ * Whether this deployment lets a channel be private (create with `visibility:
+ * 'private'`, or make one private). Read from the spaces list; an older API
+ * that sends no field reads false. A background read.
+ */
+export async function getPrivateChannelsAvailable(projectId: string): Promise<boolean> {
+  const body = unwrap(
+    await backendApi.get<{ private_channels_available?: boolean }>(`/projects/${projectId}/spaces`, {
+      showErrors: false,
+    }),
+  );
+  return body.private_channels_available === true;
+}
+
+/**
  * Create a channel. A name whose slug is taken rejects with an `ApiError`:
  * `status` 409, `code` `'slug_taken'`, and `data.space_id` / `data.archived`
  * name the existing channel; `data.can_edit` says whether the caller may
@@ -92,7 +139,7 @@ export async function createProjectSpace(projectId: string, input: CreateProject
 }
 
 /**
- * Rename, describe, archive or unarchive a channel. Only its creator or a
+ * Rename, describe, archive or unarchive a channel, or replace its agent list. Only its creator or a
  * project manager may (`can_edit`); anyone else rejects with 403 `forbidden`.
  * A rename whose slug is taken rejects with 409 `slug_taken` (fields as in
  * `createProjectSpace`). The caller shows the error, so it never reaches the
@@ -115,6 +162,118 @@ export async function getOrCreateProjectDm(projectId: string, agentName: string)
   );
 }
 
+/** A person in a channel. Same fields as the API's `SpaceMember`. */
+export interface ProjectSpaceMember {
+  user_id: string;
+  /** The display name, else the email's local part. Never an email. */
+  name: string;
+  avatar_url: string | null;
+  /** The channel's creator. */
+  is_creator: boolean;
+  is_viewer: boolean;
+  /** When they were added or joined; null in `#general` and for backfilled rows. */
+  added_at: string | null;
+  /** The caller may remove them: a manager anyone, the creator anyone but themself, a member only themself (Leave). */
+  can_remove: boolean;
+}
+
+/** A channel's people: the same list for every viewer, the caller first. */
+export interface ProjectSpaceMemberList {
+  members: ProjectSpaceMember[];
+  /** `#general`: every project member is in it; nobody is added and nobody leaves. */
+  implicit: boolean;
+  /** The caller may add people: a member of the channel, its creator or a project manager. */
+  can_add: boolean;
+}
+
+/** A channel's people. `#general` lists every project member. A background read. */
+export async function listProjectSpaceMembers(projectId: string, spaceId: string): Promise<ProjectSpaceMemberList> {
+  return unwrap(
+    await backendApi.get<ProjectSpaceMemberList>(`/projects/${projectId}/spaces/${spaceId}/members`, { showErrors: false }),
+  );
+}
+
+/**
+ * Add people to a channel in one request; resolves to the list after the add.
+ * Someone already in it is skipped. An id outside the project rejects with
+ * 400 `not_project_member` (`data.user_ids` names them; nobody is added). A
+ * caller outside the channel who is neither its creator nor a project manager
+ * rejects with 403 `forbidden`. `#general` rejects with 400 `default_channel`.
+ * The caller shows the error.
+ */
+export async function addProjectSpaceMembers(
+  projectId: string,
+  spaceId: string,
+  userIds: string[],
+): Promise<ProjectSpaceMemberList> {
+  return unwrap(
+    await backendApi.post<ProjectSpaceMemberList>(
+      `/projects/${projectId}/spaces/${spaceId}/members`,
+      { user_ids: userIds },
+      { showErrors: false },
+    ),
+  );
+}
+
+/**
+ * Remove someone from a channel; resolves to the list after. A manager
+ * removes anyone, the creator anyone but themself, a member only themself.
+ * The creator rejects with 403 `creator_not_removable` unless a manager
+ * removes them; another refusal is 403 `forbidden`.
+ */
+export async function removeProjectSpaceMember(
+  projectId: string,
+  spaceId: string,
+  userId: string,
+): Promise<ProjectSpaceMemberList> {
+  return unwrap(
+    await backendApi.delete<ProjectSpaceMemberList>(`/projects/${projectId}/spaces/${spaceId}/members/${userId}`, {
+      showErrors: false,
+    }),
+  );
+}
+
+/** A private channel the caller is not in, as a project manager sees it: no content (`GET /spaces/private`). */
+export interface PrivateChannelSummary {
+  space_id: string;
+  name: string;
+  slug: string;
+  /** Its people who still have project access. 0: everyone left, a manager can add people. */
+  member_count: number;
+  created_by: string | null;
+  /** The creator's display name, null when unknown. */
+  created_by_name: string | null;
+  created_at: string;
+  archived_at: string | null;
+}
+
+/**
+ * Project managers: the private channels they are not in, archived ones too.
+ * A manager renames or archives one with `updateProjectSpace` and adds or
+ * removes its people with `addProjectSpaceMembers` / `removeProjectSpaceMember`
+ * (never themself: 403 `manager_self_add`). Anyone else rejects with 403
+ * `forbidden`. A background read.
+ */
+export async function listPrivateChannelsNotIn(projectId: string): Promise<PrivateChannelSummary[]> {
+  return unwrap(
+    await backendApi.get<{ channels: PrivateChannelSummary[] }>(`/projects/${projectId}/spaces/private`, { showErrors: false }),
+  ).channels;
+}
+
+/** The caller joins a public channel. Idempotent. `#general` rejects with 400 `default_channel`. */
+export async function joinProjectSpace(projectId: string, spaceId: string): Promise<ProjectSpaceMemberList> {
+  return unwrap(
+    await backendApi.post<ProjectSpaceMemberList>(`/projects/${projectId}/spaces/${spaceId}/join`, undefined, {
+      showErrors: false,
+    }),
+  );
+}
+
+/** The caller leaves a channel. Its creator rejects with 403 `creator_not_removable` (only a manager removes them). */
+export async function leaveProjectSpace(projectId: string, spaceId: string): Promise<ProjectSpaceMemberList> {
+  return removeProjectSpaceMember(projectId, spaceId, 'me');
+}
+
 /** A link of a channel (its Links tab): added with "Add link" or shared in a thread. Same fields as the API's `SpaceLink`. */
 export interface ProjectSpaceLink {
   link_id: string;
@@ -127,7 +286,7 @@ export interface ProjectSpaceLink {
   created_at: string;
   /** The caller may remove it: they added it, or they manage the project. */
   can_delete: boolean;
-  /** Agents in the channel read pinned links. "Add link" pins; a link shared in a thread is unpinned until a member pins it. */
+  /** Agents in the channel read pinned links. Every link starts unpinned (added or shared in a thread) until a member pins it. */
   pinned: boolean;
   /** Who pinned it; null while unpinned or when unknown. */
   pinned_by_name: string | null;
@@ -137,8 +296,6 @@ export interface ProjectSpaceLink {
   source: 'manual' | 'message';
   /** The latest thread that shared it; null for a link no thread shared. */
   session_id: string | null;
-  /** How many messages shared it. */
-  share_count: number;
   last_shared_at: string;
   /** The row's name: the title a member gave, else the page's fetched title, else the decoded path, else the host. Absent on older APIs: fall back to `title ?? url`. */
   display_title?: string;
@@ -153,14 +310,6 @@ export interface AddProjectSpaceLinkInput {
   url: string;
   /** At most 200 characters. */
   title?: string;
-}
-
-/** The counts beside a channel's tab labels. Fields are added over time, never renamed. */
-export interface ProjectSpaceSummary {
-  apps: number;
-  links: number;
-  /** Triggers that post to the space; 0 without the trigger read permission. */
-  triggers: number;
 }
 
 /**
@@ -185,9 +334,10 @@ export async function listProjectSpaceLinks(projectId: string, spaceId: string):
 }
 
 /**
- * Pin a link to a channel. A URL that is not http(s), longer than 2,048
- * characters, or a title over 200 rejects with 400. A channel that already
- * holds 200 links rejects with 409 `link_limit`. The caller shows both. The
+ * Add a link to a channel, unpinned, with the caller as its adder. A URL that
+ * is not http(s), longer than 2,048 characters, or a title over 200 rejects
+ * with 400. A channel that already holds 200 added links rejects with 409
+ * `link_limit`. The caller shows both. The
  * stored `url` is the parsed form (`new URL(url).href`).
  */
 export async function addProjectSpaceLink(projectId: string, spaceId: string, input: AddProjectSpaceLinkInput) {
@@ -208,10 +358,11 @@ export async function removeProjectSpaceLink(projectId: string, spaceId: string,
 }
 
 /**
- * Pin or unpin a link. Agents in the channel read the pinned ones. Returns the
- * link, or null when unpinning a link no thread shared removed it (only its
- * creator or a project manager may: anyone else gets 403 `forbidden`). A
- * channel that already pins 200 links rejects pinning with 409 `link_limit`.
+ * Pin or unpin a link. Agents in the channel read the pinned ones. Unpinning
+ * only clears the pin: the link stays listed (`removeProjectSpaceLink` removes
+ * it). Returns the link; null only from an older server, where unpinning an
+ * added link removed it. A channel that already pins 200 links rejects pinning
+ * with 409 `link_limit`.
  */
 export async function pinProjectSpaceLink(
   projectId: string,
@@ -227,13 +378,6 @@ export async function pinProjectSpaceLink(
     ),
   );
   return body.link;
-}
-
-/** The counts beside a channel's or the caller's DM's tab labels (a DM has no Apps or links: 0). A background read. */
-export async function getProjectSpaceSummary(projectId: string, spaceId: string): Promise<ProjectSpaceSummary> {
-  return unwrap(
-    await backendApi.get<ProjectSpaceSummary>(`/projects/${projectId}/spaces/${spaceId}/summary`, { showErrors: false }),
-  );
 }
 
 /** A mark a member leaves once per project: the intro dialog seen, or a "Get started" row done or dismissed. */

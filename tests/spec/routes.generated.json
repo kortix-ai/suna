@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 955,
+  "count": 957,
   "routes": [
     {
       "method": "GET",
@@ -523,20 +523,20 @@
       "path": "/v1/accounts/:accountId/iam/policies"
     },
     {
-      "method": "DELETE",
-      "path": "/v1/accounts/:accountId/iam/policies/:policyId"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/accounts/:accountId/iam/policies/:policyId"
-    },
-    {
       "method": "POST",
       "path": "/v1/accounts/:accountId/iam/policies:bulk-delete"
     },
     {
       "method": "POST",
       "path": "/v1/accounts/:accountId/iam/policies:bulk-import"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/iam/policies/:policyId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId/iam/policies/:policyId"
     },
     {
       "method": "GET",
@@ -2671,10 +2671,6 @@
       "path": "/v1/projects/:projectId/memory/layers/:layerKey"
     },
     {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/memory/layers/:layerKey/changes"
-    },
-    {
       "method": "POST",
       "path": "/v1/projects/:projectId/memory/layers/:layerKey/notes"
     },
@@ -2705,10 +2701,6 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/memory/search"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/memory/versions/:versionId/undo"
     },
     {
       "method": "GET",
@@ -3319,6 +3311,10 @@
       "path": "/v1/projects/:projectId/spaces/:spaceId/apps"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/join"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/spaces/:spaceId/links"
     },
@@ -3336,11 +3332,23 @@
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/spaces/:spaceId/summary"
+      "path": "/v1/projects/:projectId/spaces/:spaceId/members"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/members"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/members/:userId"
     },
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/spaces/dm"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/spaces/private"
     },
     {
       "method": "POST",

@@ -2,11 +2,13 @@
 
 import type { ProjectMemoryPage, ProjectMemoryVersion } from '@kortix/sdk';
 import { useProjectMemoryHistory, useUpdateProjectMemoryPage } from '@kortix/sdk/react';
+import { diffLines } from 'diff';
+import { useMemo, type MouseEvent } from 'react';
 
-import { DiffView } from '../../diff/diff-view';
 import { useLocale, useTranslations } from '../../i18n';
 import { relativeTime } from '../../internal/lib/relative-time';
 import { cn } from '../../lib/utils';
+import { hasOpenFloatingLayer } from '../../lib/z-stack';
 import { Badge } from '../../primitives/badge';
 import { Button } from '../../primitives/button';
 import { ErrorState } from '../../primitives/error-state';
@@ -19,42 +21,53 @@ import {
   SplitSheetTitle,
 } from '../../primitives/split-sheet';
 import { errorToast, successToast } from '../../primitives/toast';
-import { MemoryAuthorAvatar, useMemoryAuthorName } from './memory-labels';
+import { hasMemoryAuthor, MemoryAuthorAvatar, useMemoryAuthorName } from './memory-labels';
 
-/** A version as one text, so title and summary changes show in the same diff as the body. */
+/** The row's quiet bordered buttons, as the reader's Edit · History · Delete. */
+const ACTION = 'text-muted-foreground hover:text-foreground font-normal';
+
+/** A version as one text, so a title or summary change counts with the body. */
 function versionText(version: ProjectMemoryVersion | undefined): string {
   if (!version) return '';
   const { title, summary, body } = version.snapshot;
   return `${[`# ${title}`, summary, body].filter(Boolean).join('\n\n')}\n`;
 }
 
-/**
- * The page's History in a sheet beside the reader: every version, newest
- * first. The selected version shows what it changed against the one before
- * it, and "Restore this version".
- */
-export function MemoryHistory({
-  projectId,
-  page,
-  selectedId,
-  onSelect,
-  onRestored,
-}: {
-  projectId: string;
-  page: ProjectMemoryPage;
-  selectedId: string | null;
-  onSelect: (versionId: string | null) => void;
-  onRestored: () => void;
-}) {
-  const t = useTranslations('spaces.memory');
-  const history = useProjectMemoryHistory(projectId, page.page_id);
-  const versions = history.data?.pages.flatMap((p) => p.versions) ?? [];
-  const restore = useUpdateProjectMemoryPage(projectId);
-  const selected = selectedId ?? versions[0]?.version_id ?? null;
+/** Lines a version added and removed against the one before it. */
+function lineChanges(version: ProjectMemoryVersion, previous: ProjectMemoryVersion | undefined) {
+  let added = 0;
+  let removed = 0;
+  for (const part of diffLines(versionText(previous), versionText(version))) {
+    if (part.added) added += part.count ?? 0;
+    else if (part.removed) removed += part.count ?? 0;
+  }
+  return { added, removed };
+}
 
-  // A version comes back as a new edit of the body (the title is the file's and does not change).
-  const restoreVersion = (version: ProjectMemoryVersion) =>
-    restore.mutate(
+/**
+ * The sheet covers the reader: the split sheet's container is too narrow for
+ * two columns (`@max-3xl/split-sheet`), so its main cell is `invisible`. A
+ * preview shown behind the sheet would then show nothing.
+ */
+function coversReader(from: HTMLElement): boolean {
+  const main = from
+    .closest('[data-slot="split-sheet-grid"]')
+    ?.querySelector<HTMLElement>(':scope > [data-slot="split-sheet-main"]');
+  return !!main && getComputedStyle(main).visibility === 'hidden';
+}
+
+/** The versions History shows; the reader reads the same cache for the one it previews. */
+export function useMemoryVersions(projectId: string, pageId: string | undefined) {
+  const history = useProjectMemoryHistory(projectId, pageId);
+  return { history, versions: history.data?.versions ?? [] };
+}
+
+/** "Restore this version": the version's body comes back as a new edit (the title is the file's and does not change). */
+export function useRestoreMemoryVersion(projectId: string, page: ProjectMemoryPage, onRestored: () => void) {
+  const t = useTranslations('spaces.memory');
+  const update = useUpdateProjectMemoryPage(projectId);
+  const restore = (version: ProjectMemoryVersion) =>
+    update.mutate(
       { pageId: page.page_id, input: { base_version: page.version_no, body: version.snapshot.body } },
       {
         onSuccess: () => {
@@ -64,9 +77,44 @@ export function MemoryHistory({
         onError: () => errorToast(t('history.restoreFailed')),
       },
     );
+  return { restore, restoring: update.isPending };
+}
+
+/**
+ * The page's History in a sheet beside the reader: every version, newest
+ * first. Preview shows a version in the reader, as the page looked then;
+ * Restore makes it the current version. `previewId` is the previewed
+ * version (null: the current page). Esc while previewing returns to the
+ * current page; a second Esc closes the sheet. Where the sheet covers the
+ * reader (a narrow container), Preview passes `covered`: the view closes the
+ * sheet so the reader can show the version.
+ */
+export function MemoryHistory({
+  projectId,
+  page,
+  previewId,
+  onPreview,
+  onRestored,
+}: {
+  projectId: string;
+  page: ProjectMemoryPage;
+  previewId: string | null;
+  onPreview: (versionId: string | null, covered?: boolean) => void;
+  onRestored: () => void;
+}) {
+  const t = useTranslations('spaces.memory');
+  const { history, versions } = useMemoryVersions(projectId, page.page_id);
+  const { restore, restoring } = useRestoreMemoryVersion(projectId, page, onRestored);
 
   return (
-    <SplitSheetContent>
+    <SplitSheetContent
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape' || !previewId || hasOpenFloatingLayer()) return;
+        // Handled here, so the sheet stays open.
+        event.preventDefault();
+        onPreview(null);
+      }}
+    >
       <SplitSheetHeader closeLabel={t('close')}>
         <SplitSheetTitle>{t('history.title')}</SplitSheetTitle>
         <SplitSheetDescription>{t('history.description', { title: page.title })}</SplitSheetDescription>
@@ -94,27 +142,20 @@ export function MemoryHistory({
                 version={version}
                 previous={versions[index + 1]}
                 current={index === 0}
-                selected={version.version_id === selected}
+                previewed={version.version_id === previewId}
                 canRestore={page.can_edit && index > 0 && !version.snapshot.deleted}
-                restoring={restore.isPending}
-                onSelect={() => onSelect(version.version_id)}
-                onRestore={() => restoreVersion(version)}
+                restoring={restoring}
+                onPreview={(event) => {
+                  // Covered: Preview always shows the version (the reader is hidden, so a second press is not "back").
+                  const covered = coversReader(event.currentTarget);
+                  const toggleOff = !covered && version.version_id === previewId;
+                  onPreview(toggleOff ? null : version.version_id, covered);
+                }}
+                onRestore={() => restore(version)}
               />
             ))}
           </ol>
         )}
-        {history.hasNextPage ? (
-          <Button
-            variant="ghost"
-            size="toolbar"
-            className="text-muted-foreground mt-2"
-            disabled={history.isFetchingNextPage}
-            aria-busy={history.isFetchingNextPage || undefined}
-            onClick={() => history.fetchNextPage()}
-          >
-            {t('loadOlder')}
-          </Button>
-        ) : null}
       </SplitSheetBody>
     </SplitSheetContent>
   );
@@ -124,77 +165,71 @@ function VersionRow({
   version,
   previous,
   current,
-  selected,
+  previewed,
   canRestore,
   restoring,
-  onSelect,
+  onPreview,
   onRestore,
 }: {
   version: ProjectMemoryVersion;
   /** The version before it; undefined for the first version (or one past the loaded history). */
   previous: ProjectMemoryVersion | undefined;
   current: boolean;
-  selected: boolean;
+  previewed: boolean;
   canRestore: boolean;
   restoring: boolean;
-  onSelect: () => void;
+  onPreview: (event: MouseEvent<HTMLButtonElement>) => void;
   onRestore: () => void;
 }) {
   const t = useTranslations('spaces.memory');
   const locale = useLocale();
   const authorName = useMemoryAuthorName();
   const name = authorName(version.author);
+  const changes = useMemo(() => lineChanges(version, previous), [version, previous]);
   const meta = [
-    version.source ? t('fromThread', { thread: version.source.label }) : null,
     relativeTime(version.created_at, locale),
+    changes.added ? t('history.added', { count: changes.added }) : null,
+    changes.removed ? t('history.removed', { count: changes.removed }) : null,
   ].filter(Boolean);
+  const canPreview = !current && !version.snapshot.deleted;
   return (
-    <li className={cn('rounded-md', selected && 'bg-active')}>
-      <button
-        type="button"
-        aria-expanded={selected}
-        onClick={onSelect}
-        className={cn(
-          'focus-visible:ring-ring flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left outline-none focus-visible:ring-2',
-          !selected && 'hover:bg-hover',
-        )}
-      >
-        <MemoryAuthorAvatar author={version.author} name={name} />
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="flex items-center gap-1.5 text-xs">
-            <span className="truncate font-medium">{t(`history.op.${version.op}`, { author: name })}</span>
-            {current ? <Badge variant="muted">{t('history.current')}</Badge> : null}
-            {version.undone ? <Badge variant="muted">{t('history.undone')}</Badge> : null}
+    <li
+      aria-current={previewed || undefined}
+      className={cn('flex items-start gap-2.5 rounded-md px-2.5 py-2', previewed && 'bg-active')}
+    >
+      <MemoryAuthorAvatar author={version.author} name={name} />
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="flex items-center gap-1.5 text-xs">
+          <span className="truncate font-medium">
+            {hasMemoryAuthor(version.author)
+              ? t(`history.op.${version.op}`, { author: name })
+              : t(version.op === 'create' ? 'history.created' : 'history.edited')}
           </span>
-          <span className="text-muted-foreground truncate text-xs">{meta.join(' · ')}</span>
+          {current ? <Badge variant="muted">{t('history.current')}</Badge> : null}
         </span>
-      </button>
-      {selected ? (
-        <div className="flex flex-col gap-3 px-2.5 pb-3">
-          <div className="overflow-hidden rounded-md border">
-            <DiffView
-              before={{ name: 'before.md', contents: versionText(previous) }}
-              after={{ name: 'after.md', contents: versionText(version) }}
-              layout="unified"
-              hideFileHeader
-              hideLineNumbers
-              wrap
-            />
+        <span className="text-muted-foreground truncate text-xs tabular-nums">{meta.join(' · ')}</span>
+        {canPreview || canRestore ? (
+          <div className="flex flex-wrap items-center gap-1.5 pt-1.5">
+            {canPreview ? (
+              <Button variant="outline" size="toolbar" className={ACTION} aria-pressed={previewed} onClick={onPreview}>
+                {t('history.preview')}
+              </Button>
+            ) : null}
+            {canRestore ? (
+              <Button
+                variant="outline"
+                size="toolbar"
+                className={ACTION}
+                disabled={restoring}
+                aria-busy={restoring || undefined}
+                onClick={onRestore}
+              >
+                {t('history.restoreShort')}
+              </Button>
+            ) : null}
           </div>
-          {canRestore ? (
-            <Button
-              variant="outline"
-              size="toolbar"
-              className="self-start"
-              disabled={restoring}
-              aria-busy={restoring || undefined}
-              onClick={onRestore}
-            >
-              {t('history.restore')}
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </li>
   );
 }

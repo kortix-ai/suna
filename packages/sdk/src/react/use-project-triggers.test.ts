@@ -37,9 +37,9 @@ describe('useProjectTriggers (query-key stability + invalidation wiring)', () =>
     expect((useProjectTriggers('proj-1') as any).enabled).toBe(true);
   });
 
-  test('create/update/remove invalidate the listing and every space summary (a trigger can post to a channel or DM)', () => {
+  test('create/update/remove invalidate the listing', () => {
     const result = useProjectTriggers('proj-1') as any;
-    const expected = [[...projectTriggersKey('proj-1')], [...qk.project.spaceSummaries('proj-1')]];
+    const expected = [[...projectTriggersKey('proj-1')]];
 
     result.create.onSuccess();
     result.update.onSuccess();

@@ -8,7 +8,6 @@ const keepPreviousData = (previous: unknown) => previous;
 mock.module('@tanstack/react-query', () => ({
   keepPreviousData,
   useQuery: (config: Record<string, unknown>) => config,
-  useInfiniteQuery: (config: Record<string, unknown>) => config,
   useMutation: (config: Record<string, unknown>) => config,
   useQueryClient: () => ({
     invalidateQueries: (opts: { queryKey: unknown[] }) => {
@@ -22,16 +21,13 @@ mock.module('@tanstack/react-query', () => ({
 
 const {
   useAddProjectMemoryNote,
-  useCreateProjectMemoryPage,
   useDeleteProjectMemoryPage,
-  useProjectMemoryChanges,
   useProjectMemoryHistory,
   useProjectMemoryLayer,
   useProjectMemoryPage,
   useProjectMemoryPages,
   useProjectMemorySearch,
   useSessionMemoryUsage,
-  useUndoProjectMemoryVersion,
   useUpdateProjectMemoryPage,
 } = await import('./use-project-memory');
 const { qk } = await import('./query-keys');
@@ -60,7 +56,6 @@ describe('memory query keys', () => {
     for (const key of [
       qk.project.memoryLayer('P1', 'company'),
       qk.project.memoryPages('P1', 'company'),
-      qk.project.memoryChanges('P1', 'company'),
       qk.project.memoryPage('P1', 'PG1'),
       qk.project.memoryHistory('P1', 'PG1'),
     ]) {
@@ -81,30 +76,15 @@ describe('memory reads', () => {
     const reads = [
       [useProjectMemoryLayer('P1', 'company'), qk.project.memoryLayer('P1', 'company'), `GET ${base}/layers/company`],
       [useProjectMemoryPages('P1', 'S1'), qk.project.memoryPages('P1', 'S1'), `GET ${base}/layers/S1/pages`],
-      [useProjectMemoryChanges('P1', 'S1'), qk.project.memoryChanges('P1', 'S1'), `GET ${base}/layers/S1/changes`],
       [useProjectMemoryPage('P1', 'PG1'), qk.project.memoryPage('P1', 'PG1'), `GET ${base}/pages/PG1`],
       [useProjectMemoryHistory('P1', 'PG1'), qk.project.memoryHistory('P1', 'PG1'), `GET ${base}/pages/PG1/history`],
     ] as const;
     for (const [query, key] of reads) {
       expect((query as any).queryKey).toEqual(key);
       expect((query as any).enabled).toBe(true);
-      await (query as any).queryFn({ pageParam: undefined });
+      await (query as any).queryFn();
     }
     expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual(reads.map((r) => r[2]));
-  });
-
-  test('Recent changes and history page with next → before', async () => {
-    response = { changes: [], next: null };
-    const changes = useProjectMemoryChanges('P1', 'S1') as any;
-    const history = useProjectMemoryHistory('P1', 'PG1') as any;
-    await changes.queryFn({ pageParam: 'C2' });
-    await history.queryFn({ pageParam: 'V9' });
-    expect(calls.map((c) => c.url)).toEqual([`${base}/layers/S1/changes?before=C2`, `${base}/pages/PG1/history?before=V9`]);
-    for (const query of [changes, history]) {
-      expect(query.initialPageParam).toBeUndefined();
-      expect(query.getNextPageParam({ next: 'N2' })).toBe('N2');
-      expect(query.getNextPageParam({ next: null })).toBeUndefined();
-    }
   });
 
   test('a filtered list gets its own slot under the layer pages key, and reads with the filter', async () => {
@@ -126,7 +106,6 @@ describe('memory reads', () => {
   test('a read is disabled without its ids or when the caller disables it', () => {
     expect((useProjectMemoryLayer(null, 'company') as any).enabled).toBe(false);
     expect((useProjectMemoryPages('P1', null) as any).enabled).toBe(false);
-    expect((useProjectMemoryChanges('P1', undefined) as any).enabled).toBe(false);
     expect((useProjectMemoryPage('P1', null) as any).enabled).toBe(false);
     expect((useProjectMemoryHistory('P1', null) as any).enabled).toBe(false);
     expect((useProjectMemoryPages('P1', 'S1', { enabled: false }) as any).enabled).toBe(false);
@@ -167,8 +146,8 @@ describe('memory search', () => {
   });
 
   test('a memory write refreshes search results: the search key sits under the invalidated prefix', async () => {
-    const create = useCreateProjectMemoryPage('P1', 'S1') as any;
-    await create.onSuccess();
+    const note = useAddProjectMemoryNote('P1', 'S1') as any;
+    await note.onSuccess();
     const prefix = qk.project.memory('P1');
     expect(invalidated).toContainEqual([...prefix]);
     expect(qk.project.memorySearch('P1', { q: 'Priya' }).slice(0, prefix.length)).toEqual([...prefix]);
@@ -207,27 +186,19 @@ describe('Used memory', () => {
 });
 
 describe('memory mutations', () => {
-  // Every write can change the layer counts, its page list, Recent changes and
-  // any page of the change (a filed note touches two pages), and the tab counts.
+  // Every write can change the layer counts, its page list and its pages.
   // Saving memory in #general completes a "Get started" row, so the onboarding state refreshes too.
   const everyMemoryKey = () => [
     [...qk.project.memory('P1')],
-    [...qk.project.spaceSummaries('P1')],
     [...qk.project.channelsOnboarding('P1')],
   ];
 
-  test('create and note POST to the layer and invalidate memory and the tab counts', async () => {
-    const create = useCreateProjectMemoryPage('P1', 'S1') as any;
+  test('a note POSTs to the layer and invalidates memory and the tab counts', async () => {
     const note = useAddProjectMemoryNote('P1', 'S1') as any;
-    await create.mutationFn({ type: 'people', title: 'Priya' });
     await note.mutationFn({ text: 'Priya owns the Northwind launch' });
     expect(calls).toEqual([
-      { method: 'POST', url: `${base}/layers/S1/pages`, body: { type: 'people', title: 'Priya' } },
       { method: 'POST', url: `${base}/layers/S1/notes`, body: { text: 'Priya owns the Northwind launch' } },
     ]);
-    await create.onSuccess();
-    expect(invalidated).toEqual(everyMemoryKey());
-    invalidated = [];
     await note.onSuccess();
     expect(invalidated).toEqual(everyMemoryKey());
   });
@@ -243,31 +214,11 @@ describe('memory mutations', () => {
     expect(invalidated).toEqual(everyMemoryKey());
   });
 
-  test('undo writes every page it changed into its cache slot', async () => {
-    const undo = useUndoProjectMemoryVersion('P1') as any;
-    const note = { page_id: 'PG2', version_no: 2 };
-    const target = { page_id: 'PG1', version_no: 7 };
-    await undo.onSuccess({ pages: [note, target] });
-    expect(cached).toEqual([
-      { key: [...qk.project.memoryPage('P1', 'PG2')], data: note },
-      { key: [...qk.project.memoryPage('P1', 'PG1')], data: target },
-    ]);
-    expect(invalidated).toEqual(everyMemoryKey());
-  });
-
-  test('delete and undo call their routes and invalidate memory, the pages included', async () => {
+  test('delete calls its route and invalidates memory, the pages included', async () => {
     const remove = useDeleteProjectMemoryPage('P1') as any;
-    const undo = useUndoProjectMemoryVersion('P1') as any;
     await remove.mutationFn('PG1');
-    await undo.mutationFn('V1');
-    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
-      `DELETE ${base}/pages/PG1`,
-      `POST ${base}/versions/V1/undo`,
-    ]);
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([`DELETE ${base}/pages/PG1`]);
     await remove.onSuccess();
-    expect(invalidated).toEqual(everyMemoryKey());
-    invalidated = [];
-    await undo.onSuccess({ pages: [] });
     expect(invalidated).toEqual(everyMemoryKey());
     // The memory prefix covers the page and its history.
     const prefix = qk.project.memory('P1');
@@ -278,11 +229,9 @@ describe('memory mutations', () => {
     // Each caller shows a specific message for 409/413/422. Without a hook-level
     // onError, TanStack also runs the QueryClient's default mutation onError.
     for (const hook of [
-      useCreateProjectMemoryPage('P1', 'company'),
       useAddProjectMemoryNote('P1', 'company'),
       useUpdateProjectMemoryPage('P1'),
       useDeleteProjectMemoryPage('P1'),
-      useUndoProjectMemoryVersion('P1'),
     ] as any[]) {
       expect(typeof hook.onError).toBe('function');
     }

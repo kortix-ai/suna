@@ -20600,7 +20600,10 @@
     "copySessionTitle": "titre de la session",
     "copyAction": "Copier {label}",
     "copied": "Copié : {label}",
-    "copyFailed": "Impossible de copier dans le presse-papiers"
+    "copyFailed": "Impossible de copier dans le presse-papiers",
+    "threads": "Fils",
+    "recentThreads": "Fils récents",
+    "searchChannels": "Rechercher des canaux, fils, commandes..."
   },
   "personalWelcome": {
     "dismiss": "Fermer",
@@ -20790,7 +20793,8 @@
     "postTo": "Publier dans",
     "postToHint": "Chaque exécution démarre un nouveau fil ici. Sans canal, les exécutions vont dans #{channel}.",
     "postToNone": "Aucun canal",
-    "postToUnavailable": "Canal indisponible"
+    "postToUnavailable": "Canal indisponible",
+    "postToPrivate": "Privé : les déclencheurs ne peuvent pas publier ici"
   },
   "gatewayAccess": {
     "heroTitle": "Utilisez les modèles de ce projet partout",
@@ -22893,17 +22897,22 @@
     "memory": {
       "search": "Rechercher dans la mémoire",
       "pagesLabel": "Pages de mémoire",
+      "all": {
+        "title": "Tout",
+        "explainCompany": "Mémoire Kortix : ce que les agents savent de ce projet. Ils la lisent avant chaque réponse.",
+        "explainChannel": "Mémoire Kortix : ce que les agents savent de {place}. Ils la lisent avant chaque réponse.",
+        "explainDm": "Mémoire Kortix : ce que les agents savent de vous et de {place}. Ils la lisent avant chaque réponse."
+      },
       "allPages": "Toutes les pages",
       "noMatches": "Aucune page ne correspond à « {query} ».",
       "loadError": "Impossible de charger cette mémoire.",
       "pageLoadError": "Impossible de charger cette page.",
       "retry": "Réessayer",
       "close": "Fermer",
-      "loadOlder": "Afficher plus ancien",
-      "fromThread": "depuis « {thread} »",
       "author": {
         "system": "Kortix",
-        "unknown": "Un membre"
+        "unknown": "Un membre",
+        "agent": "Un agent"
       },
       "edit": "Modifier",
       "delete": "Supprimer",
@@ -22911,11 +22920,6 @@
       "deleteDescription": "Cette action est irréversible.",
       "deleted": "Page supprimée",
       "deleteFailed": "Impossible de supprimer la page. Réessayez.",
-      "undo": "Annuler",
-      "undone": "Modification annulée",
-      "undoFailed": "Impossible d’annuler la modification. Réessayez.",
-      "superseded": "La page a changé depuis. Ouvrez l’historique pour restaurer une version antérieure.",
-      "alreadyUndone": "Cette modification est déjà annulée.",
       "relatedPages": "Pages liées",
       "emptyPage": "Cette page est encore vide.",
       "history": {
@@ -22923,21 +22927,22 @@
         "description": "Chaque modification de « {title} », de la plus récente à la plus ancienne.",
         "loadError": "Impossible de charger l’historique.",
         "current": "Actuelle",
-        "undone": "Annulée",
         "restore": "Restaurer cette version",
         "restored": "Version restaurée",
         "restoreFailed": "Impossible de restaurer cette version. Réessayez.",
         "op": {
           "create": "{author} a créé la page",
-          "update": "{author} a modifié la page",
-          "append": "{author} a ajouté un fait",
-          "delete": "{author} a supprimé la page",
-          "restore": "{author} a restauré une version",
-          "undo": "{author} a annulé une modification",
-          "confirm": "{author} a confirmé la page",
-          "file_note": "{author} a classé une note",
-          "import": "{author} a importé la page"
-        }
+          "update": "{author} a modifié la page"
+        },
+        "preview": "Aperçu",
+        "restoreShort": "Restaurer",
+        "viewing": "Version de {time}",
+        "backToCurrent": "Revenir à l’actuelle",
+        "added": "+{count, plural, one {# ligne} other {# lignes}}",
+        "removed": "−{count, plural, one {# ligne} other {# lignes}}",
+        "viewingBy": "par {author}",
+        "created": "Page créée",
+        "edited": "Page modifiée"
       },
       "editor": {
         "body": "Page",
@@ -22966,10 +22971,11 @@
         "open": "Mémoriser…"
       },
       "empty": {
-        "title": "Ce dont Kortix se souvient à propos de ce canal.",
-        "titleDm": "Ce dont Kortix se souvient à propos de cette conversation.",
-        "description": "Il lit ces pages avant chaque réponse.",
-        "titleCompany": "Ce dont Kortix se souvient à propos de ce projet."
+        "title": "Pas encore de mémoire dans {place}",
+        "titleDm": "Pas encore de mémoire avec {place}",
+        "description": "Les agents enregistrent ici ce qu’ils apprennent et le lisent avant chaque réponse.",
+        "titleCompany": "Pas encore de mémoire d’entreprise",
+        "openCompany": "Ouvrir la mémoire d’entreprise · {count, plural, one {# page} other {# pages}}"
       },
       "source": {
         "thread": "Ouvrir le fil « {label} »",
@@ -23010,7 +23016,17 @@
         "outside": "lien",
         "import": "fichier"
       },
-      "pageCount": "{count, plural, one {# page} other {# pages}}"
+      "pageCount": "{count, plural, one {# page} other {# pages}}",
+      "companyLink": "Mémoire de l’entreprise · {count, plural, one {# page} other {# pages}}",
+      "companyLinkHint": "L’agent d’ici utilise aussi la mémoire de l’entreprise.",
+      "group": {
+        "other": "À propos",
+        "people": "Personnes",
+        "decisions": "Décisions",
+        "workstreams": "Projets",
+        "playbooks": "Notre façon de travailler",
+        "note": "Notes"
+      }
     },
     "create": {
       "title": "Créer un canal",
@@ -23030,7 +23046,12 @@
       "renameDescription": "Le lien du canal change avec son nom.",
       "save": "Enregistrer",
       "renamed": "Canal renommé",
-      "renameFailed": "Impossible de renommer le canal. Réessayez."
+      "renameFailed": "Impossible de renommer le canal. Réessayez.",
+      "descriptionPrivate": "Seules les personnes que vous ajoutez peuvent voir et utiliser le canal.",
+      "privateLabel": "Privé",
+      "privateHint": "Seuls les membres invités peuvent le voir.",
+      "privateUnavailable": "Les canaux privés ne sont pas encore disponibles dans cet espace de travail.",
+      "privateLimits": "Privé masque le canal aux autres personnes. Les modifications de code (branches git) et les outils propres aux agents ne sont pas privés."
     },
     "view": {
       "welcomeTitle": "Bienvenue dans #{name}",
@@ -23048,6 +23069,7 @@
       "loadEarlier": "Charger les fils précédents",
       "messageChannel": "Message à #{name}",
       "messageAgent": "Message à {agent}",
+      "threadsEmptyTitle": "Pas encore de fils",
       "threadsEmpty": "Les fils que vous lancez apparaîtront ici.",
       "loadError": "Impossible de charger ce canal.",
       "threadsLoadError": "Impossible de charger les fils.",
@@ -23125,45 +23147,92 @@
       },
       "links": {
         "add": "Ajouter un lien",
-        "addDescription": "Épinglez un lien dans {place}. Chaque agent du canal reçoit ses liens épinglés.",
+        "addDescription": "Ajoutez un lien à {place}.",
         "urlLabel": "URL",
         "titleLabel": "Titre (facultatif)",
         "titlePlaceholder": "De quoi il s’agit",
-        "invalidUrl": "Saisissez un lien qui commence par http:// ou https://.",
+        "invalidUrl": "Saisissez un lien valide, par exemple example.com.",
         "addFailed": "Impossible d’ajouter le lien. Réessayez.",
         "limit": "Ce canal a déjà 200 liens épinglés. Désépinglez-en un d’abord.",
-        "added": "Lien ajouté",
+        "addLimit": "Ce canal a déjà 200 liens ajoutés. Retirez-en un d’abord.",
+        "added": "Ajouté",
         "remove": "Retirer le lien",
         "removeTitle": "Retirer ce lien ?",
         "removeDescription": "{link} est retiré de {place} pour tout le monde.",
         "removed": "Lien retiré",
         "removeFailed": "Impossible de retirer le lien. Réessayez.",
         "loadError": "Impossible de charger les liens.",
-        "intro": "Liens partagés dans les fils de {place}. Épinglez un lien pour le donner à chaque agent du canal.",
-        "pinnedTitle": "Épinglés · les agents les lisent",
-        "sharedTitle": "Partagés dans les fils",
-        "sharedNote": "Collectés automatiquement dans les messages des personnes",
-        "pinnedBy": "Épinglé par {name}",
         "pinnedLabel": "Épinglé",
-        "fromThread": "depuis « {thread} »",
-        "inThread": "dans « {thread} »",
-        "sharedTimes": "partagé {count}×",
         "pin": "Épingler",
         "unpin": "Désépingler",
         "pinnedToast": "Lien épinglé",
         "unpinnedToast": "Lien désépinglé",
         "pinFailed": "Impossible d’épingler le lien. Réessayez.",
-        "unpinFailed": "Impossible de désépingler le lien. Réessayez."
+        "unpinFailed": "Impossible de désépingler le lien. Réessayez.",
+        "search": "Rechercher des liens",
+        "show": "Afficher",
+        "all": "Tous",
+        "sharedBy": "Partagé par",
+        "earlier": "Plus tôt",
+        "pinHint": "Épinglez-le. Chaque agent du canal lit les liens épinglés.",
+        "unpinHint": "Désépinglez-le. Les agents ne le lisent plus.",
+        "copyLink": "Copier le lien",
+        "linkCopied": "Lien copié",
+        "openThread": "Ouvrir le fil",
+        "noMatch": "Aucun lien ne correspond"
       },
       "appsLoadError": "Impossible de charger les apps.",
       "triggers": {
-        "loadError": "Impossible de charger les déclencheurs."
+        "loadError": "Impossible de charger les déclencheurs.",
+        "privateNote": "Les déclencheurs ne peuvent pas publier dans un canal privé. Programmez plutôt un rappel dans un fil."
       },
       "reply": "Répondre",
       "rosterTitlePeople": "Personnes",
       "rosterTitleAgents": "Agents",
       "viewAllMembers": "Voir tous les membres",
-      "agentThreads": "{count, plural, one {# fil} other {# fils}}"
+      "agentThreads": "{count, plural, one {# fil} other {# fils}}",
+      "threadFilter": {
+        "search": "Rechercher des fils",
+        "filter": "Filtrer",
+        "clear": "Effacer",
+        "clearFilters": "Effacer les filtres",
+        "noMatch": "Aucun fil ne correspond",
+        "noMatchHint": "Essayez une autre recherche ou effacez les filtres.",
+        "remove": "Retirer le filtre {facet} : {value}",
+        "status": "Statut",
+        "startedBy": "Lancé par",
+        "agent": "Agent",
+        "activity": "Activité",
+        "any": "Tous",
+        "anyone": "Tout le monde",
+        "me": "Moi",
+        "anyAgent": "Tous les agents",
+        "anyTime": "N’importe quand",
+        "statusValue": {
+          "working": "En cours",
+          "needsYou": "Vous attend",
+          "failed": "Échec",
+          "done": "Terminé"
+        },
+        "activityValue": {
+          "today": "Aujourd’hui",
+          "last7": "7 derniers jours",
+          "last30": "30 derniers jours"
+        }
+      },
+      "setup": {
+        "label": "Configurer {name}",
+        "addAgents": "Ajouter des agents",
+        "addAgentsHint": "Choisissez qui répond ici",
+        "invite": "Inviter des membres",
+        "inviteHint": "Faites venir votre équipe",
+        "remember": "Retenir quelque chose",
+        "rememberHint": "Des notes lues par chaque agent"
+      },
+      "allAgents": "Tous les agents",
+      "join": "Rejoindre le canal",
+      "joined": "Vous avez rejoint #{name}.",
+      "joinFailed": "Impossible de rejoindre le canal. Réessayez."
     },
     "details": {
       "about": "À propos",
@@ -23176,19 +23245,44 @@
       "archiveTitle": "Archiver ce canal",
       "archiveHint": "Il quitte la barre latérale de tous les membres. Ses fils restent.",
       "archive": "Archiver",
-      "people": "Personnes",
-      "agents": "Agents",
-      "membersHint": "Toutes les personnes qui ont lancé un fil ici et tous les agents qui en ont répondu un, dans les fils chargés jusqu’ici.",
-      "threads": "{count, plural, one {# fil} other {# fils}}",
       "find": "Rechercher des personnes ou des agents",
-      "addPeople": "Ajouter des personnes",
+      "search": "Rechercher",
       "you": "(toi)",
-      "groupCount": "{label} · {count}",
       "noMatches": "Personne ne correspond à « {query} ».",
       "defaultAgent": "Agent par défaut",
       "defaultAgentHint": "Répond aux messages qui ne nomment aucun agent. Se règle pour tout le projet dans Personnaliser › Agents.",
       "visibility": "Qui peut le voir",
-      "visibilityProject": "Tout le monde dans le projet"
+      "visibilityProject": "Tout le monde dans le projet",
+      "defaultTag": "Par défaut",
+      "agentTag": "Agent",
+      "makeDefault": "Définir par défaut",
+      "removeAgent": "Retirer de #{name}",
+      "agentMenu": "Options de {agent}",
+      "agentsFailed": "Impossible de mettre à jour les agents. Réessayez.",
+      "defaultSet": "{agent} est désormais l’agent par défaut de #{name}.",
+      "agentRemoved": "{agent} a été retiré de #{name}.",
+      "channelDefaultHint": "Répond à un message qui ne nomme aucun agent. Modifiable dans Membres.",
+      "personRemoved": "{person} a été retiré de #{name}.",
+      "peopleFailed": "Impossible de modifier les membres. Réessayez.",
+      "personMenu": "Options de {person}",
+      "removePerson": "Retirer de #{name}",
+      "leave": "Quitter le canal",
+      "left": "Vous avez quitté #{name}.",
+      "leaveTitle": "Quitter ce canal",
+      "leaveHint": "Vous pouvez toujours le lire et le rejoindre à tout moment.",
+      "visibilityPrivate": "Ses membres uniquement",
+      "privateNote": "Seuls les membres peuvent voir #{name}.",
+      "makePrivate": "Rendre privé",
+      "makePrivateTitle": "Rendre #{name} privé ?",
+      "makePrivateWho": "Seuls les membres verront #{name} : ses fils, fichiers, mémoire et liens. Toute personne ayant lancé un fil ou ajouté un lien devient membre.",
+      "makePrivateLeave": "Les autres perdent l’accès. Un membre qui part plus tard le perd aussi, y compris pour ses propres fils.",
+      "makePrivateFinal": "Vous ne pourrez pas le rendre public à nouveau. Les fichiers copiés en dehors restent où ils sont.",
+      "makePrivateTriggers": "{count, plural, one {# déclencheur publie ici. Il cesse de s’exécuter.} other {# déclencheurs publient ici. Ils cessent de s’exécuter.}}",
+      "madePrivate": "#{name} est maintenant privé",
+      "leaveHintPrivate": "Vous perdez l’accès à ses fils, fichiers et mémoire, y compris vos propres fils. Un membre devra vous ajouter à nouveau.",
+      "leavePrivateTitle": "Quitter #{name} ?",
+      "addMembers": "Ajouter des membres",
+      "privateLimits": "Privé masque le canal aux autres personnes. Les modifications de code (branches git) et les outils propres aux agents ne sont pas privés."
     },
     "folder": {
       "memory": "Mémoire",
@@ -23205,22 +23299,41 @@
     "onboarding": {
       "reenabled": "Les sessions démarrées pendant que les Canaux étaient désactivés sont ici.",
       "intro": {
-        "title": "Vos sessions sont maintenant des fils dans #general.",
+        "title": "Bienvenue dans les canaux",
         "channels": "Les canaux regroupent le travail par équipe.",
         "threads": "Chaque nouveau message démarre un fil.",
         "memory": "Les agents retiennent ce que chaque canal décide.",
         "gotIt": "Compris"
       },
       "getStarted": {
-        "title": "Pour commencer",
         "dismiss": "Masquer",
         "channel": "Créer un canal pour une équipe",
-        "remember": "Dire à {place} quelque chose à retenir",
-        "dm": "Ouvrir un message direct avec un agent",
-        "pickAgent": "Écrire à un agent",
-        "noAgents": "Ce projet n’a pas encore d’agents.",
         "done": "Fait"
       }
+    },
+    "addMembers": {
+      "title": "Ajouter des membres à #{name}",
+      "description": "Choisissez des personnes et des agents du projet.",
+      "search": "Rechercher des personnes et des agents",
+      "selected": "Membres sélectionnés",
+      "people": "Personnes",
+      "agents": "Agents",
+      "unpick": "Retirer {member}",
+      "cancel": "Annuler",
+      "inviteByEmail": "Inviter par e-mail",
+      "confirmEmpty": "Ajouter des membres",
+      "confirm": "Ajouter {what}",
+      "peopleCount": "{count, plural, one {# personne} other {# personnes}}",
+      "agentsCount": "{count, plural, one {# agent} other {# agents}}",
+      "both": "{people} et {agents}",
+      "added": "{what} ajouté(s) à #{name}.",
+      "failed": "Impossible d’ajouter les membres. Réessayez.",
+      "peopleFailed": "Impossible d’ajouter les personnes. Réessayez.",
+      "agentsFailed": "Impossible d’ajouter les agents. Réessayez.",
+      "peopleFailedAgentsAdded": "{what} ajouté(s) à #{name}. Impossible d’ajouter les personnes : elles restent sélectionnées.",
+      "agentsFailedPeopleAdded": "{what} ajouté(s) à #{name}. Impossible d’ajouter les agents : ils restent sélectionnés.",
+      "allAdded": "Tout le monde dans le projet est déjà là.",
+      "noMatches": "Aucun résultat pour « {query} »."
     }
   }
 }

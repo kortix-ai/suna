@@ -45,21 +45,8 @@ export type MemoryPageType = z.infer<typeof MemoryPageTypeSchema>;
 export const MemoryCreatePageTypeSchema = z.enum([...MEMORY_FILED_PAGE_TYPES, 'other']);
 export type MemoryCreatePageType = z.infer<typeof MemoryCreatePageTypeSchema>;
 
-/** Always `confirmed`: files have no pending state. Kept for the response shape. */
-export const MemoryPageStatusSchema = z.enum(['confirmed', 'unconfirmed']);
-export type MemoryPageStatus = z.infer<typeof MemoryPageStatusSchema>;
-
-export const MemoryChangeOpSchema = z.enum([
-  'create',
-  'update',
-  'append',
-  'delete',
-  'restore',
-  'undo',
-  'confirm',
-  'file_note',
-  'import',
-]);
+/** What a page version did to the file: created it, or changed it. */
+export const MemoryChangeOpSchema = z.enum(['create', 'update']);
 export type MemoryChangeOp = z.infer<typeof MemoryChangeOpSchema>;
 
 export const MemorySourceKindSchema = z.enum(['thread', 'person', 'outside', 'import']);
@@ -82,10 +69,6 @@ export const MemoryAuthorSchema = z
   })
   .strict();
 export type MemoryAuthor = z.infer<typeof MemoryAuthorSchema>;
-
-/** The thread a change came from. Always null for files; kept for the response shape. */
-export const MemoryThreadRefSchema = z.object({ session_id: z.string(), label: z.string() }).strict();
-export type MemoryThreadRef = z.infer<typeof MemoryThreadRefSchema>;
 
 /** A numbered source of a page, from front-matter `sources:` (1-based, in file order). */
 export const MemorySourceSchema = z
@@ -116,7 +99,7 @@ export const MemoryLayerSchema = z
     space_id: z.string().nullable(),
     /** "Company", "#marketing", or the DM's agent name. */
     name: z.string(),
-    /** Pages per type. `unconfirmed` and `trash` are always 0 (no pending state, no trash). */
+    /** Pages per type. */
     counts: z
       .object({
         people: z.number().int(),
@@ -125,8 +108,6 @@ export const MemoryLayerSchema = z
         playbooks: z.number().int(),
         note: z.number().int(),
         other: z.number().int(),
-        unconfirmed: z.number().int(),
-        trash: z.number().int(),
       })
       .strict(),
     /** An archived channel's layer: every write answers 409 `layer_read_only`. */
@@ -152,10 +133,10 @@ const memoryPageSummaryShape = {
   type: MemoryPageTypeSchema,
   title: z.string(),
   summary: z.string(),
-  status: MemoryPageStatusSchema,
+  /** The page's opening as plain text (no Markdown, no title), at most 280 characters: the All view's card. */
+  excerpt: z.string(),
   updated_at: z.string(),
   updated_by: MemoryAuthorSchema,
-  updated_source: MemoryThreadRefSchema.nullable(),
   /** The file, a Drive path. */
   path: z.string(),
 };
@@ -182,50 +163,21 @@ export const MemoryPageSchema = z
   .strict();
 export type MemoryPage = z.infer<typeof MemoryPageSchema>;
 
-/** One row of Recent changes: a recently changed file. */
-export const MemoryChangeSchema = z
-  .object({
-    version_id: z.string(),
-    /** The page id. */
-    change_id: z.string(),
-    page_id: z.string(),
-    page_title: z.string(),
-    op: MemoryChangeOpSchema,
-    author: MemoryAuthorSchema,
-    source: MemoryThreadRefSchema.nullable(),
-    created_at: z.string(),
-    undone: z.boolean(),
-    can_undo: z.boolean(),
-  })
-  .strict();
-export type MemoryChange = z.infer<typeof MemoryChangeSchema>;
-
-/** `next`: always null (one page of the newest changes). */
-export const MemoryChangeListSchema = z
-  .object({ changes: z.array(MemoryChangeSchema), next: z.string().nullable() })
-  .strict();
-export type MemoryChangeList = z.infer<typeof MemoryChangeListSchema>;
-
 /** One entry of a page's history: the file as it was at one Drive commit. */
 export const MemoryVersionSchema = z
   .object({
     version_id: z.string(),
-    change_id: z.string(),
     /** The commit time in ms. */
     version_no: z.number().int(),
     op: MemoryChangeOpSchema,
     author: MemoryAuthorSchema,
-    source: MemoryThreadRefSchema.nullable(),
     created_at: z.string(),
-    undone: z.boolean(),
-    can_undo: z.boolean(),
     snapshot: z
       .object({
         type: MemoryPageTypeSchema,
         title: z.string(),
         summary: z.string(),
         body: z.string(),
-        status: MemoryPageStatusSchema,
         related: z.array(z.string()),
         deleted: z.boolean(),
       })
@@ -234,19 +186,13 @@ export const MemoryVersionSchema = z
   .strict();
 export type MemoryVersion = z.infer<typeof MemoryVersionSchema>;
 
-/** `next`: always null. Older versions are in Files → Versions. */
-export const MemoryVersionListSchema = z
-  .object({ versions: z.array(MemoryVersionSchema), next: z.string().nullable() })
-  .strict();
+/** At most 20 versions, newest first. Older versions are in Files → Versions. */
+export const MemoryVersionListSchema = z.object({ versions: z.array(MemoryVersionSchema) }).strict();
 export type MemoryVersionList = z.infer<typeof MemoryVersionListSchema>;
 
-/** `DELETE …/pages/:pageId`: the file is deleted for good. `version_id` is the deleted page id; it is not undoable. */
+/** `DELETE …/pages/:pageId`: the file is deleted for good. `version_id` is the deleted page id. */
 export const MemoryDeleteResultSchema = z.object({ ok: z.literal(true), version_id: z.string() }).strict();
 export type MemoryDeleteResult = z.infer<typeof MemoryDeleteResultSchema>;
-
-/** `POST …/versions/:versionId/undo`: the page after the undo; empty when the undo deleted a file the version created. */
-export const MemoryUndoResultSchema = z.object({ pages: z.array(MemoryPageSchema) }).strict();
-export type MemoryUndoResult = z.infer<typeof MemoryUndoResultSchema>;
 
 const TitleInput = z.string().trim().min(1).max(MEMORY_LIMITS.title_chars);
 const SummaryInput = z.string().trim().max(MEMORY_LIMITS.summary_chars).regex(/^[^\r\n]*$/, 'summary is one line');
@@ -305,7 +251,6 @@ export const MemorySearchHitSchema = z
     summary: z.string(),
     /** Up to ~160 characters of the body around the first match. */
     snippet: z.string(),
-    status: MemoryPageStatusSchema,
   })
   .strict();
 export type MemorySearchHit = z.infer<typeof MemorySearchHitSchema>;

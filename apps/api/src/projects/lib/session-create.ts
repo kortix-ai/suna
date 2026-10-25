@@ -45,6 +45,7 @@ import { notifySessionProvisioningFailed } from '../../shared/session-failure-no
 import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
 import {
   grantFromLoadedAgents,
+  isLaunchableAgentName,
   loadProjectAgents,
   projectRequiresDeclaredAgents,
   resolveGovernedAgentGrant,
@@ -96,7 +97,8 @@ import { transitionSession } from '../session-lifecycle/status-transitions';
 import { mergeSessionSandboxEnv, parseSessionRuntimeContext } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { resolvePlatformMetaSandbox } from './platform-meta-agent';
-import { FIRST_PROMPT_MAX_CHARS, SPACE_NOT_FOUND, ensureDefaultSpace, findForkSourceSpace, findSessionSpace, spaceSessionVisibility } from './project-spaces';
+import { spaceAccessFor } from '../../shared/space-access';
+import { FIRST_PROMPT_MAX_CHARS, SPACE_NOT_FOUND, ensureDefaultSpace, findForkSourceSpace, findLiveChannel, findSessionSpace, inheritedPrivateSpace, spaceSessionVisibility } from './project-spaces';
 import { liveTriggerSpace, triggerRunSpace } from './trigger-space';
 
 import {
@@ -280,6 +282,23 @@ async function resolveRequestedSessionSpace(input: CreateProjectSessionInput): P
   const { project, body, userId } = input;
   const warm =
     (input.metadata?.[WARM_SESSION_METADATA_KEY] ?? normalizeJsonObject(body.metadata)[WARM_SESSION_METADATA_KEY]) === true;
+  const access = () => spaceAccessFor(project.projectId, userId, input.callerSessionId ?? null);
+  // A fork or child of a private channel's thread stays in it, whatever the
+  // flag or the body says (`inheritedPrivateSpace`). A trigger run names no
+  // source, so it is not affected.
+  const inherited = warm
+    ? null
+    : await inheritedPrivateSpace(
+        project.projectId,
+        {
+          forkFromSessionId: body.fork_from_session_id,
+          parentSessionId: input.callerSessionId ?? null,
+          bodyParentSessionId: body.parent_session_id,
+          requestedSpaceId: body.space_id,
+        },
+        await access(),
+      );
+  if (inherited) return 'error' in inherited ? inherited : { filed: true, spaceId: inherited.spaceId };
   if (!resolveFeatureFlag(project.metadata, 'project_channels') || warm) return { filed: false, spaceId: null };
   // A run of a repo trigger lands in the trigger's live space, read when the
   // create executes (a queued run sees the space as it is then). The space
@@ -299,13 +318,13 @@ async function resolveRequestedSessionSpace(input: CreateProjectSessionInput): P
     // A fork lands in its source's space while the caller may still post there,
     // with its source's sharing (never wider); else in `#general`.
     const fork = typeof body.fork_from_session_id === 'string'
-      ? await findForkSourceSpace(project.projectId, body.fork_from_session_id, userId)
+      ? await findForkSourceSpace(project.projectId, body.fork_from_session_id, await access())
       : null;
     if (!fork) return { filed: true, spaceId: null };
     return { filed: true, spaceId: fork.space.spaceId, visibility: spaceSessionVisibility(fork.space.kind, fork.visibility) };
   }
   const space = typeof body.space_id === 'string' && isUuid(body.space_id)
-    ? await findSessionSpace(project.projectId, body.space_id, userId)
+    ? await findSessionSpace(project.projectId, body.space_id, await access())
     : null;
   if (!space) return { error: { status: 404, body: SPACE_NOT_FOUND } };
   return { filed: true, spaceId: space.spaceId, visibility: spaceSessionVisibility(space.kind) };
@@ -479,6 +498,8 @@ async function validateSessionSecretsAllowlist(params: {
 async function resolveSessionAgent(params: {
   input: CreateProjectSessionInput;
   projectId: string;
+  /** The channel the session is filed in: its first launchable agent stands in for an unnamed one. */
+  channelAgents: readonly string[];
 }): Promise<
   SessionCreateStep<{
     loadedAgents: LoadedProjectAgents;
@@ -499,7 +520,10 @@ async function resolveSessionAgent(params: {
   // The literal "default" is a non-binding legacy sentinel. It must not block
   // the configured project default. This rule applies to every caller,
   // including older triggers and channel adapters that still send the sentinel.
-  const requestedAgent = normalizeString(body.agent_name ?? body.agentName);
+  const requestedAgent =
+    normalizeString(body.agent_name ?? body.agentName) ??
+    params.channelAgents.find((name) => isLaunchableAgentName(name, loadedAgents)) ??
+    null;
   const mirroredDefaultAgent = normalizeString(
     (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
   );
@@ -1703,7 +1727,18 @@ export async function createProjectSession(input: {
   const { secretsAllowlist } = secretsCheck;
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
-  const agent = await resolveSessionAgent({ input, projectId });
+  // A new thread in a channel with no agent named runs the channel's default
+  // (its first agent) for every caller: CLI, SDK, triggers, integrations. A
+  // fork keeps its source's agent and a child its spawner's choice.
+  const channelAgents =
+    requestedSpace.spaceId &&
+    !normalizeString(body.agent_name ?? body.agentName) &&
+    body.fork_from_session_id === undefined &&
+    body.parent_session_id === undefined &&
+    !input.callerSessionId
+      ? ((await findLiveChannel(projectId, requestedSpace.spaceId))?.agents ?? [])
+      : [];
+  const agent = await resolveSessionAgent({ input, projectId, channelAgents });
   if (agent.error) return { error: agent.error };
   const { loadedAgents, projectDefaultAgent, agentName, platformMetaAgent, repositoryAccess } = agent;
 

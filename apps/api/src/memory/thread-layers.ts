@@ -6,7 +6,7 @@
  * | Thread                       | Reads                                        |
  * |------------------------------|----------------------------------------------|
  * | channel                      | Company, the channel                         |
- * | private channel thread (D3)  | Company, the channel, the owner's DM layer   |
+ * | private channel thread  | Company, the channel, the owner's DM layer   |
  * | DM                           | Company, the DM layer                        |
  * | no space                     | nothing (null)                               |
  */
@@ -26,9 +26,11 @@ export interface ThreadRow {
   space_id: string | null;
   space_kind: 'channel' | 'dm' | null;
   space_slug: string | null;
+  /** A channel's visibility: a private channel's memory is `/Channels/<slug>/Memory`. */
+  space_visibility?: 'public' | 'private' | null;
   space_dm_user_id: string | null;
   space_dm_agent: string | null;
-  /** D3: the root owner's live DM with the root's agent, for a private channel thread. */
+  /** the root owner's live DM with the root's agent, for a private channel thread. */
   dm_space_id: string | null;
   dm_user_id: string | null;
   dm_agent: string | null;
@@ -44,18 +46,28 @@ export interface PlannedLayer {
   name: string;
   /** The channel slug; null for others. */
   slug: string | null;
+  /** The channel's visibility; undefined reads as public. */
+  visibility?: 'public' | 'private';
   /** The DM owner and agent; null for others. */
   dmUserId: string | null;
   dmAgent: string | null;
 }
 
-/** Which layers a thread reads (pure): Company first, then its own, then (D3) the owner's DM. Null for a thread in no space. */
+/** Which layers a thread reads (pure): Company first, then its own, then the owner's DM. Null for a thread in no space. */
 export function threadPlan(row: ThreadRow): PlannedLayer[] | null {
   if (!row.space_id || !row.space_kind) return null;
   const company: PlannedLayer = { key: 'company', scope: 'company', name: 'Company', slug: null, dmUserId: null, dmAgent: null };
   const own: PlannedLayer =
     row.space_kind === 'channel'
-      ? { key: row.space_id, scope: 'channel', name: `#${row.space_slug}`, slug: row.space_slug, dmUserId: null, dmAgent: null }
+      ? {
+          key: row.space_id,
+          scope: 'channel',
+          name: `#${row.space_slug}`,
+          slug: row.space_slug,
+          visibility: row.space_visibility === 'private' ? 'private' : 'public',
+          dmUserId: null,
+          dmAgent: null,
+        }
       : { key: row.space_id, scope: 'dm', name: row.space_dm_agent ?? 'Direct message', slug: null, dmUserId: row.space_dm_user_id, dmAgent: row.space_dm_agent };
   const read = [company, own];
   if (row.space_kind === 'channel' && row.root_visibility === 'private' && row.dm_space_id) {
@@ -68,7 +80,7 @@ export function threadPlan(row: ThreadRow): PlannedLayer[] | null {
 export function layerFolders(layer: PlannedLayer, personalFolder: string | null): { root: string; agentFolder: string | null } | null {
   if (layer.scope === 'company') return { root: COMPANY_MEMORY_DIR, agentFolder: null };
   if (layer.scope === 'channel') {
-    const folders = layer.slug ? spaceDriveFolders('channel', layer.slug, null) : null;
+    const folders = layer.slug ? spaceDriveFolders('channel', layer.slug, null, layer.visibility === 'private' ? layer.key : null) : null;
     return folders ? { root: folders.memory, agentFolder: null } : null;
   }
   if (!personalFolder) return null;
@@ -90,7 +102,8 @@ export async function readThreadRow(sessionId: string): Promise<ThreadRow | null
     root AS (SELECT * FROM chain ORDER BY depth DESC LIMIT 1)
     SELECT r.project_id, pr.metadata AS project_metadata,
            r.session_id AS root_session_id, r.visibility AS root_visibility, r.created_by AS root_created_by,
-           s.space_id, s.kind::text AS space_kind, s.slug AS space_slug, s.dm_user_id AS space_dm_user_id,
+           s.space_id, s.kind::text AS space_kind, s.slug AS space_slug, s.visibility::text AS space_visibility,
+           s.dm_user_id AS space_dm_user_id,
            s.dm_agent_name AS space_dm_agent,
            dm.space_id AS dm_space_id, dm.dm_user_id, dm.dm_agent_name AS dm_agent,
            EXISTS (SELECT 1 FROM kortix.memory_thread_loads tl WHERE tl.session_id = ${sessionId}) AS loaded

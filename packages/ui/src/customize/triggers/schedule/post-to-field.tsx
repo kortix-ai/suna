@@ -1,7 +1,7 @@
 'use client';
 
 import { useFeatureFlag, useProjectSpaces } from '@kortix/sdk/react';
-import { HashIcon } from '@phosphor-icons/react';
+import { HashIcon, LockSimpleIcon } from '@phosphor-icons/react';
 
 import { useTranslations } from '../../../i18n';
 import { AgentMark } from '../../../internal/components/agent-mark';
@@ -17,7 +17,9 @@ const NONE = 'none';
 
 /**
  * "Post to": the channel or DM each run starts a thread in. Shown only while
- * the project's `project_channels` flag is on. A channel shares later runs
+ * the project's `project_channels` flag is on. A private channel shows
+ * disabled with its lock and why: the API refuses a trigger into one (a saved
+ * trigger already posting there stays selectable). A channel shares later runs
  * with the project unless the person chose other sharing; a DM shares them
  * with the viewer and runs the DM's agent (`postToChange`; the API enforces
  * the DM rules).
@@ -76,18 +78,29 @@ export function PostToField({
               {t('postToUnavailable')}
             </SelectItem>
           ) : null}
-          {list.map((space) => (
-            <SelectItem key={space.space_id} value={space.space_id} className="cursor-pointer">
-              <span className="flex items-center gap-1.5">
-                {space.kind === 'channel' ? (
-                  <HashIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
-                ) : (
-                  <AgentMark slug={space.dm_agent_name ?? 'kortix'} size={14} tile={18} />
-                )}
-                {space.kind === 'channel' ? space.slug : agentLabel(space.dm_agent_name ?? '')}
-              </span>
-            </SelectItem>
-          ))}
+          {list.map((space) => {
+            const locked = space.visibility === 'private';
+            return (
+              <SelectItem
+                key={space.space_id}
+                value={space.space_id}
+                disabled={locked && space.space_id !== draft.spaceId}
+                className="cursor-pointer"
+              >
+                <span className="flex min-w-0 items-center gap-1.5">
+                  {space.kind !== 'channel' ? (
+                    <AgentMark slug={space.dm_agent_name ?? 'kortix'} size={14} tile={18} />
+                  ) : locked ? (
+                    <LockSimpleIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
+                  ) : (
+                    <HashIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
+                  )}
+                  {space.kind === 'channel' ? space.slug : agentLabel(space.dm_agent_name ?? '')}
+                  {locked ? <span className="text-muted-foreground truncate text-xs">{t('postToPrivate')}</span> : null}
+                </span>
+              </SelectItem>
+            );
+          })}
         </SelectContent>
       </Select>
       <p className="text-muted-foreground text-xs text-pretty">

@@ -1286,36 +1286,8 @@
     {
       "idx": 183,
       "version": "7",
-      "when": 1792839000000,
-      "tag": "20261024105000_project_channels",
-      "breakpoints": true
-    },
-    {
-      "idx": 184,
-      "version": "7",
-      "when": 1792839003000,
-      "tag": "20261024105003_project_space_links_collected",
-      "breakpoints": true
-    },
-    {
-      "idx": 185,
-      "version": "7",
-      "when": 1792839004000,
-      "tag": "20261024105004_project_space_links_unfurl",
-      "breakpoints": true
-    },
-    {
-      "idx": 186,
-      "version": "7",
-      "when": 1792839005000,
-      "tag": "20261024105005_project_user_marks",
-      "breakpoints": true
-    },
-    {
-      "idx": 187,
-      "version": "7",
-      "when": 1792863845563,
-      "tag": "20261024174405_memory_thread_loads",
+      "when": 1792955176796,
+      "tag": "20261025190616_project_channels",
       "breakpoints": true
     }
   ]

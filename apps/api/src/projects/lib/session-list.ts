@@ -44,9 +44,10 @@ import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { hasAccountSessionOversight } from '../../iam/session-oversight';
 
 import { accountGroupMembers, projectSessionGrants, projectSessions, sessionSandboxes } from '@kortix/db';
-import { and, desc, eq, getTableColumns, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, gte, inArray, isNull, lt, notInArray, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { SessionStartedByFilter } from './session-initiator';
+import { hiddenSpaceIds } from '../../shared/space-access';
 import { resolveSessionOwnerIdentities, viewerManagerStanding } from './access';
 import { SESSION_DELETE_ROWS_DAYS } from '../session-log-purge';
 import {
@@ -79,8 +80,8 @@ function spawnedByOf(row: ProjectSessionRow): string | null {
   return typeof parent === 'string' && parent && parent !== row.sessionId ? parent : null;
 }
 
-/** `parent`, `started_by`, `q` of `GET /:projectId/sessions`. All optional;
- *  none set = the legacy flat list. */
+/** `parent`, `started_by`, `q`, `created_by`, `agent`, `updated_after` of
+ *  `GET /:projectId/sessions`. All optional; none set = the legacy flat list. */
 export interface SessionListFilter {
   /** 'root' = top-level sessions only; a session id = that session's children. */
   parent?: string | null;
@@ -91,6 +92,12 @@ export interface SessionListFilter {
   labels?: string[] | null;
   /** Only sessions filed into this space (`project_channels`). */
   spaceId?: string | null;
+  /** Only sessions this person started: `started_by=me`'s rule for another user id. */
+  createdBy?: string | null;
+  /** Only sessions that run this agent (its slug). */
+  agent?: string | null;
+  /** Only sessions with activity (`updated_at`) at or after this time. */
+  updatedAfter?: Date | null;
   /** The person whose pins and archive apply (`personUserId`). Null: an
    *  agent, API key or service account, which reads the raw list. */
   personId?: string | null;
@@ -115,8 +122,8 @@ function agentSearchKey(value: string): string {
   return value.toLowerCase().replace(/[\s_-]+/g, ' ').trim();
 }
 
-/** Title, trigger slug / channel (initiator_id), agent, source, the owner's
- *  email or name, or a session-id prefix (the branch is the session id). The
+/** Title, first prompt, trigger slug / channel (initiator_id), agent, source,
+ *  the owner's email or name, or a session-id prefix (the branch is the session id). The
  *  title is what `serializeSession` resolves: custom_name, the auto name, or a
  *  runtime conversation title in the opencode_sessions snapshot. The owner is
  *  already on every row the viewer may see (`owner_email`/`owner_name`). */
@@ -131,6 +138,7 @@ function searchMatchSql(t: SessionTable, q: string): SQL {
   return sql`(
     ${t.metadata}->>'custom_name' ilike ${pattern}
     or ${t.metadata}->>'name' ilike ${pattern}
+    or ${t.metadata}->>'first_prompt' ilike ${pattern}
     or ${t.initiatorId} ilike ${pattern}
     or ${t.agentName} ilike ${pattern}
     ${agentByName}
@@ -159,12 +167,16 @@ function searchMatchSql(t: SessionTable, q: string): SQL {
 function startedBySql(filter: SessionStartedByFilter, viewerId: string): SQL {
   const t = projectSessions;
   if (filter === 'automated') return sql`(${t.initiatorType} is not null and ${t.initiatorType} <> 'member')`;
-  if (filter === 'me') {
-    return sql`((${t.initiatorType} = 'member' and ${t.initiatorId} = ${viewerId})
-      or (${t.initiatorType} is null and ${t.createdBy}::text = ${viewerId}))`;
-  }
+  if (filter === 'me') return startedByPersonSql(viewerId);
   return sql`((${t.initiatorType} = 'member' and ${t.initiatorId} is distinct from ${viewerId})
     or (${t.initiatorType} is null and ${t.createdBy}::text is distinct from ${viewerId}))`;
+}
+
+/** A session this person started as a member: a trigger run they own is not theirs. */
+function startedByPersonSql(userId: string): SQL {
+  const t = projectSessions;
+  return sql`((${t.initiatorType} = 'member' and ${t.initiatorId} = ${userId})
+    or (${t.initiatorType} is null and ${t.createdBy}::text = ${userId}))`;
 }
 
 const childSessions = alias(projectSessions, 'child_sessions');
@@ -176,6 +188,9 @@ function sessionListFilterSql(filter: SessionListFilter, viewerId: string): SQL 
   else if (filter.parent) conditions.push(eq(t.parentSessionId, filter.parent));
   if (filter.startedBy) conditions.push(startedBySql(filter.startedBy, viewerId));
   if (filter.spaceId) conditions.push(eq(t.spaceId, filter.spaceId));
+  if (filter.createdBy) conditions.push(startedByPersonSql(filter.createdBy));
+  if (filter.agent) conditions.push(eq(t.agentName, filter.agent));
+  if (filter.updatedAfter) conditions.push(gte(t.updatedAt, filter.updatedAfter));
   if (filter.labels?.length) {
     const has = (table: SessionTable) => sql`${table.labels} @> ${JSON.stringify(filter.labels)}::jsonb`;
     conditions.push(
@@ -233,6 +248,8 @@ export interface SessionListViewer {
   accountSessionOversight: boolean;
   /** Recently deleted: `SessionListFilter.deleted`. */
   deleted?: boolean;
+  /** The private channels the viewer may not see (`hiddenSpaceIds`). REQUIRED: their sessions never list. */
+  hiddenSpaceIds: ReadonlySet<string>;
 }
 
 /**
@@ -296,9 +313,17 @@ export function sessionListViewerSql(viewer: SessionListViewer): SQL {
             byRules,
           ),
         );
+  // A private channel the viewer is not in hides its sessions, whatever their
+  // own sharing (`spaceVisible` in `isProjectSessionVisibleTo`). Oversight,
+  // the `undefined` above, is the one power that still lists them.
+  const hidden = [...viewer.hiddenSpaceIds];
+  const spaceVisible = hidden.length === 0 ? undefined : or(isNull(t.spaceId), notInArray(t.spaceId, hidden));
+  // The session's own credential included: a hidden channel refuses it too.
   const access = viewer.agentPrincipal
-    ? (or(own, and(eq(t.visibility, 'project'), canAccess)) as SQL)
-    : canAccess;
+    ? and(spaceVisible, or(own, and(eq(t.visibility, 'project'), canAccess)))
+    : canAccess === undefined
+      ? undefined
+      : and(spaceVisible, canAccess);
   // A non-manager's project scope (`projectReadView`) reads every session of
   // the project. The tombstone detoasts `metadata` (~6 KB a row) and the
   // planner evaluates it first, so a 16k-session project spent ~600 ms there
@@ -318,7 +343,7 @@ export function sessionRowMatchesSearch(row: ProjectSessionRow, q: string, owner
   const needle = q.toLowerCase();
   const hit = (value: unknown) => typeof value === 'string' && value.toLowerCase().includes(needle);
   const meta = (row.metadata ?? {}) as Record<string, unknown>;
-  if (hit(meta.custom_name) || hit(meta.name) || hit(row.initiatorId) || hit(row.agentName) || hit(meta.source)) return true;
+  if (hit(meta.custom_name) || hit(meta.name) || hit(meta.first_prompt) || hit(row.initiatorId) || hit(row.agentName) || hit(meta.source)) return true;
   const agentKey = agentSearchKey(q);
   if (agentKey && typeof row.agentName === 'string' && agentSearchKey(row.agentName).includes(agentKey)) return true;
   if (ownerText.some(hit)) return true;
@@ -364,7 +389,8 @@ function sessionCursorScope(input: SessionInventoryInput, filter: SessionListFil
     ordering: input.orderByActivity ? 'activity' : undefined,
     // A cursor is a scan position inside ONE filtered list.
     filter:
-      filter.parent || filter.startedBy || filter.q || filter.labels?.length || filter.view || filter.deleted || filter.spaceId
+      filter.parent || filter.startedBy || filter.q || filter.labels?.length || filter.view || filter.deleted || filter.spaceId ||
+      filter.createdBy || filter.agent || filter.updatedAfter
         ? JSON.stringify([
             filter.parent ?? null,
             filter.startedBy ?? null,
@@ -373,6 +399,9 @@ function sessionCursorScope(input: SessionInventoryInput, filter: SessionListFil
             ...(filter.view ? [{ view: filter.view }] : []),
             ...(filter.deleted ? [{ deleted: true }] : []),
             ...(filter.spaceId ? [{ space: filter.spaceId }] : []),
+            ...(filter.createdBy ? [{ createdBy: filter.createdBy }] : []),
+            ...(filter.agent ? [{ agent: filter.agent }] : []),
+            ...(filter.updatedAfter ? [{ updatedAfter: filter.updatedAfter.toISOString() }] : []),
           ])
         : undefined,
   };
@@ -393,6 +422,7 @@ async function foldSessionRows(
     ownerIdentities: Map<string, SessionOwnerIdentity>;
     runtimeStatusBySession: Map<string, RuntimeStatus>;
     userStates: Map<string, SessionUserState>;
+    hiddenSpaceIds: ReadonlySet<string>;
   },
 ) {
   const { input, canManageProject, subject, accountSessionOversight, grantsBySession, ownerIdentities, runtimeStatusBySession, userStates } = ctx;
@@ -446,6 +476,7 @@ async function foldSessionRows(
     accountSessionOversight,
     agentPrincipal: input.agentPrincipal === true,
     deleted: input.filter?.deleted === true,
+    hiddenSpaceIds: ctx.hiddenSpaceIds,
   });
 }
 
@@ -471,7 +502,9 @@ async function appendMissingAncestors(input: {
   // label filter promises only rows carrying every label, so it gets no
   // unlabeled ancestors either.
   // A pinned, archived, deleted or space view promises only those rows.
-  const appendAncestors = !filter.parent && !filter.labels?.length && !filter.view && !filter.deleted && !filter.spaceId;
+  const appendAncestors =
+    !filter.parent && !filter.labels?.length && !filter.view && !filter.deleted && !filter.spaceId &&
+    !filter.createdBy && !filter.agent && !filter.updatedAfter;
   for (let depth = 0; appendAncestors && depth < MAX_ANCESTOR_DEPTH; depth += 1) {
     const missing = [
       ...new Set(
@@ -646,7 +679,10 @@ export async function loadProjectSessionInventory(input: {
           (allowed) => allowed && hasAccountSessionOversight(input.userId, input.accountId),
         )
       : Promise.resolve(false);
-  const viewerSql = (canManageProject: boolean, accountSessionOversight: boolean) =>
+  // The private channels this viewer may not see: the page WHERE and the fold both drop their sessions.
+  const hiddenRead = hiddenSpaceIds(input.projectId, input.userId, input.boundCredentialSessionId);
+  hiddenRead.catch(() => undefined);
+  const viewerSql = (canManageProject: boolean, accountSessionOversight: boolean, hidden: ReadonlySet<string>) =>
     sessionListViewerSql({
       scope: input.scope,
       viewerId: input.userId,
@@ -655,13 +691,14 @@ export async function loadProjectSessionInventory(input: {
       canManageProject,
       accountSessionOversight,
       deleted: filter.deleted === true,
+      hiddenSpaceIds: hidden,
     });
   // The page WHERE needs the manager standing and the oversight verdict, so
   // the first chunk starts once both are in. It does not wait for the share
   // subject: the WHERE reads the viewer's groups itself, and the subject feeds
   // only the fold that re-checks each row.
-  const firstChunkRead = Promise.all([standingRead, oversightRead]).then(([allowed, oversight]) =>
-    managerInventory && !allowed ? [] : readChunk(cursor, viewerSql(allowed, oversight)),
+  const firstChunkRead = Promise.all([standingRead, oversightRead, hiddenRead]).then(([allowed, oversight, hidden]) =>
+    managerInventory && !allowed ? [] : readChunk(cursor, viewerSql(allowed, oversight, hidden)),
   );
   // Both are awaited after the caller reads. A rejection surfaces there, in
   // the original order, and must not be unhandled before.
@@ -690,7 +727,8 @@ export async function loadProjectSessionInventory(input: {
   }
 
   const accountSessionOversight = await oversightRead;
-  const pageSql = viewerSql(canManageProject, accountSessionOversight);
+  const hidden = await hiddenRead;
+  const pageSql = viewerSql(canManageProject, accountSessionOversight, hidden);
 
   const items: SessionInventoryItem[] = [];
   const scannedRows: ProjectSessionRow[] = [];
@@ -716,6 +754,7 @@ export async function loadProjectSessionInventory(input: {
       ownerIdentities,
       runtimeStatusBySession,
       userStates,
+      hiddenSpaceIds: hidden,
     });
 
   for (let pass = 0; pass < MAX_CHUNKS && items.length < limit; pass += 1) {

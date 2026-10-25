@@ -10,7 +10,6 @@
  */
 import type {
   MemoryAuthor,
-  MemoryChange,
   MemoryLayer,
   MemoryNoteInput,
   MemoryPage,
@@ -49,13 +48,8 @@ export function decodePageId(id: string): { key: string; rel: string } | null {
   return key && rel && rest.length === 0 && safeRel(rel) ? { key, rel } : null;
 }
 
-/** `commit`: a Drive commit id, or `latest` (the file as it is now). */
+/** A page version's id: the page and the Drive commit that wrote it. */
 export const versionIdOf = (key: string, rel: string, commit: string) => b64(`${key}\n${rel}\n${commit}`);
-
-export function decodeVersionId(id: string): { key: string; rel: string; commit: string } | null {
-  const [key, rel, commit, ...rest] = unb64(id).split('\n');
-  return key && rel && commit && rest.length === 0 && safeRel(rel) ? { key, rel, commit } : null;
-}
 
 // ─── A file as a page (pure) ────────────────────────────────────────────────
 
@@ -93,13 +87,14 @@ export function typeOf(declared: unknown, rel: string, agentSegment: string | nu
   return 'other';
 }
 
-/** `Jay` → a person; `kortix (agent)` → an agent; anything else → null. */
+/** `Jay` → a person; `kortix (agent)` → an agent; empty or an email (never shown) → null. */
 export function authorFromFrontMatter(value: FrontMatterValue | undefined): MemoryAuthor | null {
-  if (typeof value !== 'string' || !value.trim()) return null;
-  const agent = /^(.+?)\s*\(agent\)$/i.exec(value.trim());
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text || text.includes('@')) return null;
+  const agent = /^(.+?)\s*\(agent\)$/i.exec(text);
   return agent
     ? { kind: 'agent', user_id: null, name: null, agent: agent[1]! }
-    : { kind: 'person', user_id: null, name: value.trim(), agent: null };
+    : { kind: 'person', user_id: null, name: text, agent: null };
 }
 
 const SYSTEM_AUTHOR: MemoryAuthor = { kind: 'system', user_id: null, name: null, agent: null };
@@ -127,6 +122,8 @@ export interface ParsedPage {
   type: MemoryPageType;
   title: string;
   summary: string;
+  /** The body's opening as plain text, at most `EXCERPT_CHARS`: the All view's card. */
+  excerpt: string;
   body: string;
   sources: MemorySource[];
   /** Front-matter `related:`, relative paths. */
@@ -142,6 +139,30 @@ export interface ParsedPage {
 function firstLine(body: string): string {
   const line = body.split('\n').map((l) => l.trim()).find((l) => l && !l.startsWith('#')) ?? '';
   return line.replace(/^(?:[-*+>]\s+)+/, '').slice(0, MEMORY_LIMITS.summary_chars);
+}
+
+const EXCERPT_CHARS = 280;
+
+/** The body as one line of plain text: headings, fences, list, quote, table and inline Markdown marks dropped. */
+function excerptOf(body: string): string {
+  return body
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#') && !line.startsWith('```') && !/^\|?[\s:|-]+\|?$/.test(line))
+    .map((line) =>
+      line
+        .replace(/^(?:[-*+>]\s+|\d+[.)]\s+|\[[ xX]\]\s+)+/, '')
+        .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+        .replace(/[*`~]+/g, '')
+        // `_` marks emphasis only at a word edge: `project_channels` keeps its underscore.
+        .replace(/(^|\W)_+|_+(?=\W|$)/g, '$1')
+        .replace(/\s*\|\s*/g, ' ')
+        .trim(),
+    )
+    .filter(Boolean)
+    .join(' ')
+    .slice(0, EXCERPT_CHARS)
+    .trim();
 }
 
 export function parsePage(text: string, rel: string, agentSegment: string | null): ParsedPage {
@@ -164,6 +185,7 @@ export function parsePage(text: string, rel: string, agentSegment: string | null
     type: typeOf(data.type, rel, agentSegment),
     title: (h1?.[1] ?? str('title')).trim() || titleFromName(rel),
     summary: str('summary').trim().slice(0, MEMORY_LIMITS.summary_chars) || firstLine(body),
+    excerpt: excerptOf(body),
     body,
     sources: sourcesOf(data.sources),
     related,
@@ -177,11 +199,15 @@ export function parsePage(text: string, rel: string, agentSegment: string | null
 /** Front-matter `updated_at` trails a later edit by at most this: a file changed after it was set is read by its mtime and commit. */
 const FRESH_MS = 60_000;
 
-/** When and by whom: front-matter while it is fresh, else the file mtime and `system`. */
+/**
+ * When and by whom: front-matter `updated_at` while it is fresh, else the file mtime. The author is
+ * front-matter `updated_by`, else `system`: an agent's `updated_at` is its own guess of the time.
+ */
 export function updatedOf(page: Pick<ParsedPage, 'updatedAt' | 'updatedBy'>, mtimeMs: number): { at: string; by: MemoryAuthor } {
   const at = page.updatedAt ? Date.parse(page.updatedAt) : null;
-  if (at !== null && mtimeMs - at <= FRESH_MS) return { at: page.updatedAt!, by: page.updatedBy ?? SYSTEM_AUTHOR };
-  return { at: new Date(mtimeMs).toISOString(), by: at === null && page.updatedBy ? page.updatedBy : SYSTEM_AUTHOR };
+  const by = page.updatedBy ?? SYSTEM_AUTHOR;
+  if (at !== null && mtimeMs - at <= FRESH_MS) return { at: page.updatedAt!, by };
+  return { at: new Date(mtimeMs).toISOString(), by };
 }
 
 /** A title as a file name: lowercase ASCII words joined by `-`, at most 80 characters. */
@@ -281,10 +307,9 @@ export function summaryOf(layer: Layer, file: PageFile, page: ParsedPage): Memor
     type: page.type,
     title: page.title,
     summary: page.summary,
-    status: 'confirmed',
+    excerpt: page.excerpt,
     updated_at: updated.at,
     updated_by: updated.by,
-    updated_source: null,
     path: file.path,
   };
 }
@@ -302,7 +327,7 @@ export async function listPages(layer: Layer, filter: { type?: MemoryPageType } 
 
 export async function layerView(layer: Layer): Promise<MemoryLayer> {
   const { pages: files, otherFiles } = await layerFiles(layer);
-  const counts = { people: 0, decisions: 0, workstreams: 0, playbooks: 0, note: 0, other: 0, unconfirmed: 0, trash: 0 };
+  const counts = { people: 0, decisions: 0, workstreams: 0, playbooks: 0, note: 0, other: 0 };
   const listed = files.slice(0, MEMORY_LIMITS.pages_per_layer);
   for (const page of await mapWithConcurrency(listed, HEAD_CONCURRENCY, (file) => headOf(layer, file))) counts[page.type]++;
   return {
@@ -318,28 +343,6 @@ export async function layerView(layer: Layer): Promise<MemoryLayer> {
     drive_id: layer.drive.driveId,
     other_files: otherFiles,
   };
-}
-
-/** Recent changes: the 20 most recently changed files. */
-export async function layerChanges(layer: Layer, limit = 20): Promise<{ changes: MemoryChange[]; next: null }> {
-  const { pages: files } = await layerFiles(layer);
-  const newest = [...files].sort((a, b) => b.mtime - a.mtime).slice(0, limit);
-  const changes = await mapWithConcurrency(newest, HEAD_CONCURRENCY, async (file): Promise<MemoryChange> => {
-    const summary = summaryOf(layer, file, await headOf(layer, file));
-    return {
-      version_id: versionIdOf(layer.key, file.rel, 'latest'),
-      change_id: summary.page_id,
-      page_id: summary.page_id,
-      page_title: summary.title,
-      op: 'update',
-      author: summary.updated_by,
-      source: null,
-      created_at: summary.updated_at,
-      undone: false,
-      can_undo: layer.canWrite,
-    };
-  });
-  return { changes, next: null };
 }
 
 /** A page path of the layer: 404 for a path that is not one of its pages. */

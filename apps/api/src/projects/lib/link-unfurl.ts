@@ -12,14 +12,14 @@
  * and the icon `<link>` are read. The icon is stored as a URL, only when it
  * passes the same address check; the API never fetches or proxies it.
  */
-import { projectSpaceLinks } from '@kortix/db';
+import { projectSpaceLinks, projectSpaces } from '@kortix/db';
 import { and, eq, gt, ne } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { enqueueJobs, registerJobHandler } from '../../shared/job-queue';
 import { assertSafeEgressUrl, safeEgressFetch, UnsafeEgressError } from '../../shared/ssrf-guard';
 
-export const LINK_UNFURL_QUEUE = 'link-unfurl';
+const LINK_UNFURL_QUEUE = 'link-unfurl';
 export const UNFURL_TIMEOUT_MS = 5_000;
 export const UNFURL_MAX_BYTES = 256 * 1024;
 const UNFURL_MAX_REDIRECTS = 3;
@@ -246,7 +246,8 @@ export async function enqueueLinkUnfurls(rows: UnfurlState[]): Promise<void> {
 
 /**
  * The `link-unfurl` job. Another channel of the same project that fetched the
- * same URL within 7 days lends its values; else the page is fetched. A failure
+ * same URL within 7 days lends its values (never across a private channel's
+ * boundary); else the page is fetched. A failure
  * records `fetch_failed_at` and is not retried by the queue (the next share
  * after 24 h queues it again).
  */
@@ -263,17 +264,34 @@ export async function unfurlLink(linkId: string): Promise<void> {
 async function unfurlLinkUnsafe(linkId: string): Promise<void> {
   const t = projectSpaceLinks;
   const [row] = await db
-    .select({ projectId: t.projectId, url: t.url, fetchedAt: t.fetchedAt, fetchFailedAt: t.fetchFailedAt })
+    .select({
+      projectId: t.projectId,
+      spaceId: t.spaceId,
+      url: t.url,
+      fetchedAt: t.fetchedAt,
+      fetchFailedAt: t.fetchFailedAt,
+      visibility: projectSpaces.visibility,
+    })
     .from(t)
+    .innerJoin(projectSpaces, eq(projectSpaces.spaceId, t.spaceId))
     .where(eq(t.linkId, linkId))
     .limit(1);
   if (!row || !needsUnfurl(row)) return;
   // ponytail: reuse within one project only (served by the project_id index); a url index if cross-project reuse matters.
+  // Never across a private boundary: a private channel's link borrows only
+  // from its own channel, a public channel's only from public channels.
   const [cached] = await db
     .select({ fetchedTitle: t.fetchedTitle, siteName: t.siteName, iconUrl: t.iconUrl, fetchedAt: t.fetchedAt })
     .from(t)
+    .innerJoin(projectSpaces, eq(projectSpaces.spaceId, t.spaceId))
     .where(
-      and(eq(t.projectId, row.projectId), eq(t.url, row.url), ne(t.linkId, linkId), gt(t.fetchedAt, new Date(Date.now() - FRESH_MS))),
+      and(
+        eq(t.projectId, row.projectId),
+        eq(t.url, row.url),
+        ne(t.linkId, linkId),
+        gt(t.fetchedAt, new Date(Date.now() - FRESH_MS)),
+        row.visibility === 'private' ? eq(t.spaceId, row.spaceId) : eq(projectSpaces.visibility, 'public'),
+      ),
     )
     .limit(1);
   if (cached) {

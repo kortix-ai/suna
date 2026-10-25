@@ -3,6 +3,7 @@ import { FakeVolume } from '../__tests__/helpers/memory-fake-volume';
 import type { DriveRow } from '../drives/service';
 import {
   addNote,
+  authorFromFrontMatter,
   createPage,
   decodePageId,
   deletePage,
@@ -12,9 +13,10 @@ import {
   pageIdOf,
   parsePage,
   updatePage,
+  updatedOf,
   versionIdOf,
 } from './files';
-import { pageHistory, undoVersion } from './history';
+import { pageHistory } from './history';
 import type { Layer } from './layers';
 import { setVolumeOpsForTests } from './volume-ops';
 
@@ -56,6 +58,17 @@ describe('a file as a page', () => {
     expect(parsePage('Intro\n# Later heading', 'q4_launch-plan.md', null)).toMatchObject({ title: 'q4 launch plan', body: 'Intro\n# Later heading' });
   });
 
+  test('excerpt: the body as plain text, headings and Markdown marks dropped, at most 280 characters', () => {
+    const page = parsePage(
+      '---\nsummary: S\n---\n# Q4 launch\n\nShips on **2026-11-12**.\n\n## Plan\n\n1. New [pricing page](https://x.test) with `Team`.\n- [x] Copy _done_\n\n```\ncode\n```\n> Quote\n| a | b |\n',
+      'x.md', null,
+    );
+    expect(page.excerpt).toBe('Ships on 2026-11-12. New pricing page with Team. Copy done code Quote a b');
+    expect(parsePage(`# T\n\n${'x'.repeat(400)}`, 'x.md', null).excerpt).toHaveLength(280);
+    expect(parsePage('# Only a title', 'x.md', null).excerpt).toBe('');
+    expect(parsePage('# T\n\n`project_channels` is _off_ by default.', 'x.md', null).excerpt).toBe('project_channels is off by default.');
+  });
+
   test('sources, author and related come from front-matter', () => {
     const page = parsePage(
       '---\nupdated_by: kortix (agent)\nsources:\n  - label: Call\n    url: https://example.test/c\n  - label: Thread\n    session: s1\n  - Slack, 2026-10-20\nrelated: [people/priya.md, ../escape.md]\n---\n# T\n',
@@ -68,6 +81,23 @@ describe('a file as a page', () => {
       [3, 'outside', 'Slack, 2026-10-20', null, null],
     ]);
     expect(page.related).toEqual(['people/priya.md']);
+  });
+
+  test('updated_by: `<name> (agent)` is an agent, a plain name a person, an email or nothing is system', () => {
+    expect(authorFromFrontMatter('Kortix (agent)')).toEqual({ kind: 'agent', user_id: null, name: null, agent: 'Kortix' });
+    expect(authorFromFrontMatter('  Priya Shah  ')).toEqual({ kind: 'person', user_id: null, name: 'Priya Shah', agent: null });
+    expect(authorFromFrontMatter('priya@example.test')).toBeNull();
+    expect(authorFromFrontMatter('Priya <priya@example.test>')).toBeNull();
+    expect(authorFromFrontMatter(undefined)).toBeNull();
+    expect(parsePage('---\nupdated_by: "Priya Shah"\n---\n# T\n', 'x.md', null).updatedBy?.name).toBe('Priya Shah');
+  });
+
+  test('the declared author stays when the file is newer than its updated_at; the time is the mtime', () => {
+    const agent = authorFromFrontMatter('Kortix (agent)')!;
+    const mtime = Date.parse('2026-10-25T10:13:51.929Z');
+    expect(updatedOf({ updatedAt: '2026-10-09T16:40:00.000Z', updatedBy: agent }, mtime)).toEqual({ at: '2026-10-25T10:13:51.929Z', by: agent });
+    expect(updatedOf({ updatedAt: '2026-10-25T10:13:30.000Z', updatedBy: agent }, mtime)).toEqual({ at: '2026-10-25T10:13:30.000Z', by: agent });
+    expect(updatedOf({ updatedAt: null, updatedBy: null }, mtime).by.kind).toBe('system');
   });
 
   test('a page id round-trips and never escapes its folder', () => {
@@ -89,9 +119,9 @@ describe('reading a layer', () => {
     expect(truncated).toBe(false);
     expect(pages.map((p) => [p.title, p.type, p.path])).toEqual([['Launch plan', 'other', '/Company/Memory/launch-plan.md']]);
     const page = await getPage(company, rel(pages[0]!.page_id));
-    expect(page).toMatchObject({ body: 'Ship on 2026-11-02.\n', can_edit: true, status: 'confirmed', sources: [] });
+    expect(page).toMatchObject({ body: 'Ship on 2026-11-02.\n', can_edit: true, sources: [] });
     const view = await layerView(company);
-    expect(view).toMatchObject({ folder: '/Company/Memory', other_files: 1, counts: { other: 1, trash: 0, unconfirmed: 0 } });
+    expect(view).toMatchObject({ folder: '/Company/Memory', other_files: 1, counts: { other: 1 } });
     expect((await volume.commits(drive, 100)).length).toBe(commits);
   });
 
@@ -194,34 +224,20 @@ describe('writing', () => {
   });
 });
 
-describe('history and undo from Drive commits', () => {
-  test('one entry per distinct version, newest first; undo the newest writes the one before; an older one is superseded', async () => {
+describe('history from Drive commits', () => {
+  test('one entry per distinct version, newest first, named by the commit that wrote it', async () => {
     volume.put('/Company/Memory/plan.md', '# Plan\n\nv1\n');
     volume.put('/Company/Memory/other.md', '# Other'); // another file's commit: no new entry for plan.md
     volume.put('/Company/Memory/plan.md', '# Plan\n\nv2\n');
     volume.author = 'sandbox';
     volume.put('/Company/Memory/plan.md', '# Plan\n\nv3\n');
     const { versions } = await pageHistory(company, 'plan.md');
-    expect(versions.map((v) => [v.snapshot.body, v.op, v.author.kind, v.can_undo])).toEqual([
-      ['v3\n', 'update', 'agent', true],
-      ['v2\n', 'update', 'person', false],
-      ['v1\n', 'create', 'person', false],
+    expect(versions.map((v) => [v.snapshot.body, v.op, v.author.kind])).toEqual([
+      ['v3\n', 'update', 'agent'],
+      ['v2\n', 'update', 'person'],
+      ['v1\n', 'create', 'person'],
     ]);
-    await expect(undoVersion(company, 'plan.md', decodeCommit(versions[1]!.version_id))).rejects.toMatchObject({ status: 409, code: 'superseded' });
-    const [page] = await undoVersion(company, 'plan.md', decodeCommit(versions[0]!.version_id));
-    expect(page!.body).toBe('v2\n');
-    await expect(undoVersion(company, 'plan.md', 'vc_missing')).rejects.toMatchObject({ status: 404, code: 'version_gone' });
-  });
-
-  test('undo of the change that created a file deletes it; `latest` names the current version', async () => {
-    volume.put('/Company/Memory/new.md', '# New');
-    expect(await undoVersion(company, 'new.md', 'latest')).toEqual([]);
-    expect(volume.files.has('/Company/Memory/new.md')).toBe(false);
+    const [, , commit] = Buffer.from(versions[0]!.version_id, 'base64url').toString('utf8').split('\n');
+    expect(versions[0]!.version_id).toBe(versionIdOf('company', 'plan.md', commit!));
   });
 });
-
-function decodeCommit(versionId: string): string {
-  const [, , commit] = Buffer.from(versionId, 'base64url').toString('utf8').split('\n');
-  expect(versionId).toBe(versionIdOf('company', 'plan.md', commit!));
-  return commit!;
-}

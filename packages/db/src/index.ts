@@ -87,7 +87,9 @@ export {
   projectSessions,
   projectSpaces,
   projectSpaceLinks,
+  projectSpaceMembers,
   projectSpaceKindEnum,
+  projectSpaceVisibilityEnum,
   // Memory ("Used memory" records)
   memoryThreadLoads,
   projectUserMarks,

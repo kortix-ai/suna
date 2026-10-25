@@ -477,7 +477,12 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'routes',
     enforcementNote:
       'Every /projects/:id/spaces route returns 403 feature_disabled while off. Session create/list ignore space_id while off. ' +
-      'BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-channel-memory skill; a change reaches the next new box and retires warm sessions (feature-flags/toggle-effects.ts).',
+      'BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-channel-memory skill; a change reaches the next new box and retires warm sessions (feature-flags/toggle-effects.ts). ' +
+      'PRIVATE CHANNELS (shared/space-access.ts) are enforced whatever this flag says, and created only with KORTIX_PRIVATE_CHANNELS_ENABLED. ' +
+      'Revocation windows after a removal or a conversion: REST ≤ 10 s on another replica (access memo; busted at once on the serving one), ' +
+      'proxy ≤ 10 s more (verdict cache; cleared on the serving replica), /events SSE, proxied SSE and proxied WebSockets ≤ 60 s (re-check; WebSockets of the serving replica at once). ' +
+      'A channel created private reads as public on another replica for ≤ 10 s. ' +
+      'Accepted limits: a private thread\'s git branch is readable like any branch, and agent config, skills, MCP tools and network egress are not private.',
   },
   {
     key: 'agent_rooms',

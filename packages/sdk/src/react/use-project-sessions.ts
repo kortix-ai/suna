@@ -14,7 +14,7 @@
  * tested without mounting react-query, plus the hook itself.
  */
 
-import { focusManager, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { focusManager, keepPreviousData, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import {
   listProjectSessionsPage,
@@ -102,7 +102,7 @@ function withFreshFirstPage(data: ProjectSessionPages | undefined, fresh: Projec
 export interface UseProjectSessionsOptions
   extends Pick<
     ListProjectSessionsOptions,
-    'scope' | 'limit' | 'parent' | 'startedBy' | 'q' | 'labels' | 'view' | 'spaceId'
+    'scope' | 'limit' | 'parent' | 'startedBy' | 'q' | 'labels' | 'view' | 'spaceId' | 'createdBy' | 'agent' | 'updatedAfter'
   > {
   enabled?: boolean;
   /** Milliseconds, or false. Evaluated against the sessions loaded SO FAR. */
@@ -115,6 +115,12 @@ export interface UseProjectSessionsOptions
    */
   pollFirstPageOnly?: boolean;
   refetchOnWindowFocus?: boolean;
+  /**
+   * When a filter changes, keep the previous filter's rows (`isPlaceholderData`
+   * true, `isLoading` false) until the new list answers, so a search field
+   * does not blank the list on every keystroke.
+   */
+  keepPreviousData?: boolean;
 }
 
 /**
@@ -125,10 +131,11 @@ export interface UseProjectSessionsOptions
  */
 export function useProjectSessions(projectId: string, options?: UseProjectSessionsOptions) {
   const scope = options?.scope ?? 'visible';
-  const { parent, startedBy, q, labels, view, spaceId } = options ?? {};
-  const queryKey = qk.project.sessionsPaged(projectId, scope, { parent, startedBy, q, labels, view, spaceId });
+  const { parent, startedBy, q, labels, view, spaceId, createdBy, agent, updatedAfter } = options ?? {};
+  const filters = { parent, startedBy, q, labels, view, spaceId, createdBy, agent, updatedAfter };
+  const queryKey = qk.project.sessionsPaged(projectId, scope, filters);
   const readPage = (cursor: string | null) =>
-    listProjectSessionsPage(projectId, { scope, limit: options?.limit, cursor, parent, startedBy, q, labels, view, spaceId });
+    listProjectSessionsPage(projectId, { scope, limit: options?.limit, cursor, ...filters });
   const intervalFor = (data: ProjectSessionPages | undefined) => {
     const interval = options?.refetchInterval;
     if (typeof interval !== 'function') return interval ?? false;
@@ -142,6 +149,7 @@ export function useProjectSessions(projectId: string, options?: UseProjectSessio
     getNextPageParam: projectSessionsPageParam,
     enabled: options?.enabled ?? true,
     refetchOnWindowFocus: options?.refetchOnWindowFocus,
+    placeholderData: options?.keepPreviousData ? keepPreviousData : undefined,
     ...contract('inventory'),
     refetchInterval: (query) => (pollFirstPageOnly ? false : intervalFor(query.state.data)),
   });
@@ -169,7 +177,7 @@ export function useProjectSessions(projectId: string, options?: UseProjectSessio
     };
     // The answer's timestamp re-arms the timer; the key's parts identify the list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pollMs, query.dataUpdatedAt, rearm, projectId, scope, parent, startedBy, q, view, spaceId, options?.limit]);
+  }, [pollMs, query.dataUpdatedAt, rearm, projectId, scope, parent, startedBy, q, view, spaceId, createdBy, agent, updatedAfter, options?.limit]);
 
   // A failed fetch ends the scan: Load more (or a refetch) is the retry.
   const isScanning = shouldScanPastEmptySessionPages(query.data, query.hasNextPage) && !query.isError;

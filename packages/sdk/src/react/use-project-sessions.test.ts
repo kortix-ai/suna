@@ -247,6 +247,80 @@ describe('useProjectSessions spaceId', () => {
   });
 });
 
+describe('useProjectSessions thread filters', () => {
+  test('sends created_by, agent and updated_after and caches under their key', async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'token' });
+    const urls: string[] = [];
+    globalThis.fetch = mock(async (url: unknown) => {
+      urls.push(String(url));
+      return Response.json([{ session_id: 'S1', space_id: 'SPACE-1' }]);
+    }) as unknown as typeof fetch;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const filters = { parent: 'root', spaceId: 'SPACE-1', createdBy: 'U1', agent: 'researcher', updatedAfter: '2026-10-18T00:00:00.000Z' } as const;
+    function Probe() {
+      useProjectSessions('P1', filters);
+      return null;
+    }
+    let root: ReturnType<typeof create> | undefined;
+    await act(async () => {
+      root = create(React.createElement(QueryClientProvider, { client }, React.createElement(Probe)));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    const params = new URL(urls[0]!).searchParams;
+    expect([params.get('created_by'), params.get('agent'), params.get('updated_after')]).toEqual([
+      'U1',
+      'researcher',
+      '2026-10-18T00:00:00.000Z',
+    ]);
+    expect(client.getQueryData(qk.project.sessionsPaged('P1', 'visible', filters))).toBeDefined();
+    await act(async () => root!.unmount());
+  });
+});
+
+describe('useProjectSessions keepPreviousData', () => {
+  test('keeps the previous filter’s rows while the next filter loads, then swaps them', async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'token' });
+    let release: () => void = () => {};
+    globalThis.fetch = mock(async (url: unknown) => {
+      const agent = new URL(String(url)).searchParams.get('agent');
+      if (agent === 'researcher') await new Promise<void>((resolve) => (release = resolve));
+      return Response.json([{ session_id: agent ?? 'ALL', space_id: 'SPACE-1' }]);
+    }) as unknown as typeof fetch;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let list: ReturnType<typeof useProjectSessions> | undefined;
+    let setAgent: (agent: string | undefined) => void = () => {};
+    function Probe() {
+      const [agent, set] = React.useState<string | undefined>(undefined);
+      setAgent = set;
+      list = useProjectSessions('P1', { spaceId: 'SPACE-1', agent, keepPreviousData: true });
+      return null;
+    }
+    let root: ReturnType<typeof create> | undefined;
+    await act(async () => {
+      root = create(React.createElement(QueryClientProvider, { client }, React.createElement(Probe)));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(list?.sessions.map((s) => s.session_id)).toEqual(['ALL']);
+    await act(async () => setAgent('researcher'));
+    expect(list?.isLoading).toBe(false);
+    expect(list?.isPlaceholderData).toBe(true);
+    expect(list?.sessions.map((s) => s.session_id)).toEqual(['ALL']);
+    await act(async () => {
+      release();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(list?.isPlaceholderData).toBe(false);
+    expect(list?.sessions.map((s) => s.session_id)).toEqual(['researcher']);
+    await act(async () => root!.unmount());
+  });
+});
+
 describe('useProjectSessions pollFirstPageOnly', () => {
   // Page N answers cursor `C<N>` (page 0 the first read).
   let pages: Array<{ ids: string[]; next: string | null }> = [];

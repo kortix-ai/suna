@@ -1,26 +1,24 @@
 'use client';
 
-import type { ProjectMemoryPage, ProjectMemoryPageSummary } from '@kortix/sdk';
+import type { ProjectMemoryPage, ProjectMemoryPageSummary, ProjectMemoryVersion } from '@kortix/sdk';
 import { useDeleteProjectMemoryPage } from '@kortix/sdk/react';
 import { CaretLeftIcon, ClockCounterClockwiseIcon, PencilSimpleIcon, TrashIcon } from '@phosphor-icons/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useLocale, useTranslations } from '../../i18n';
 import { relativeTime } from '../../internal/lib/relative-time';
 import { Button } from '../../primitives/button';
 import { ConfirmDialog } from '../../primitives/confirm-dialog';
 import { ErrorState } from '../../primitives/error-state';
+import { Alert, AlertActions, AlertContent, AlertDescription, AlertMedia, AlertTitle } from '../../primitives/alert';
 import { Skeleton } from '../../primitives/skeleton';
 import { errorToast, successToast } from '../../primitives/toast';
 import { cn } from '../../lib/utils';
-import { useMemoryAuthorName } from './memory-labels';
+import { hasOpenFloatingLayer } from '../../lib/z-stack';
+import { hasMemoryAuthor, useMemoryAuthorName } from './memory-labels';
 import { MemoryBody } from './memory-body';
+import { useMemoryVersions, useRestoreMemoryVersion } from './memory-history';
 import { SourceList } from './source-mark';
-
-/** A named person or agent wrote the page; a file with no front-matter has the `system` author and shows no "by …". */
-function hasAuthor(author: ProjectMemoryPageSummary['updated_by']): boolean {
-  return author.kind === 'agent' ? !!author.agent : author.kind === 'person' && !!author.name;
-}
 
 /** The reader's three quiet bordered buttons: Edit, History, Delete. */
 const ACTION = 'text-muted-foreground hover:text-foreground font-normal';
@@ -31,7 +29,11 @@ const ACTION = 'text-muted-foreground hover:text-foreground font-normal';
  * source numbers, the numbered sources and the related pages. `editor`
  * replaces the body while it is edited (the buttons hide; Cancel and Save sit
  * under it). Delete asks once and deletes for good. The header draws from
- * the list's summary at once; the body arrives with the page.
+ * the list's summary at once; the body arrives with the page. `previewId`
+ * (a version picked in History) shows that version instead, read-only, under
+ * a bar with "Restore this version" and "Back to current" (Esc). Where the
+ * History sheet covers the reader (a narrow container), Preview closes the
+ * sheet first, so the version shows here; History reopens it on that version.
  */
 export function MemoryReader({
   projectId,
@@ -49,6 +51,9 @@ export function MemoryReader({
   onEditDone,
   onReload,
   onRemoved,
+  previewId = null,
+  previewFocus = false,
+  onPreviewEnd,
 }: {
   projectId: string;
   summary: ProjectMemoryPageSummary;
@@ -72,12 +77,32 @@ export function MemoryReader({
   onReload: () => void;
   /** The page is gone: leave it. */
   onRemoved: () => void;
+  /** A version picked in History to preview; null: the current page. */
+  previewId?: string | null;
+  /**
+   * The preview replaced a History sheet that covered the reader: focus goes
+   * to "Back to current", and back to History when the preview ends.
+   */
+  previewFocus?: boolean;
+  /** Back to the current page. */
+  onPreviewEnd?: () => void;
 }) {
   const t = useTranslations('spaces.memory');
   const locale = useLocale();
   const authorName = useMemoryAuthorName();
   const remove = useDeleteProjectMemoryPage(projectId);
   const [deleting, setDeleting] = useState(false);
+  const { versions } = useMemoryVersions(projectId, previewId && page ? page.page_id : undefined);
+  const preview = (previewId && versions.find((version) => version.version_id === previewId)) || null;
+  const historyRef = useRef<HTMLButtonElement>(null);
+  const focusedPreview = useRef(false);
+  useEffect(() => {
+    if (preview && previewFocus) focusedPreview.current = true;
+    else if (!preview && focusedPreview.current) {
+      focusedPreview.current = false;
+      historyRef.current?.focus({ preventScroll: true });
+    }
+  }, [preview, previewFocus]);
 
   const confirmDelete = () =>
     remove.mutate(summary.page_id, {
@@ -101,19 +126,20 @@ export function MemoryReader({
           <CaretLeftIcon aria-hidden />
           {t('allPages')}
         </Button>
+        {preview && page ? <PreviewBar projectId={projectId} page={page} version={preview} focus={previewFocus} onEnd={onPreviewEnd} /> : null}
         <header className="flex flex-col items-start gap-3 @xl/reader:flex-row @xl/reader:justify-between @xl/reader:gap-6">
           <div className="flex min-w-0 flex-col gap-1.5">
             <h2 className="text-2xl leading-tight font-semibold tracking-tight text-balance [overflow-wrap:anywhere]">
-              {summary.title}
+              {preview ? preview.snapshot.title : summary.title}
             </h2>
-            <p className="text-muted-foreground text-xs leading-snug">
-              {hasAuthor(summary.updated_by)
+            <p hidden={!!preview} className="text-muted-foreground text-xs leading-snug">
+              {hasMemoryAuthor(summary.updated_by)
                 ? t('updated', { time: relativeTime(summary.updated_at, locale), author: authorName(summary.updated_by) })
                 : t('updatedAt', { time: relativeTime(summary.updated_at, locale) })}
             </p>
           </div>
           {/* While editing the buttons hide but keep their place, so the body does not move. */}
-          {!page ? null : (
+          {!page || preview ? null : (
             <div
               className={cn('flex shrink-0 flex-wrap items-center gap-1.5 pt-0.5', editing && 'invisible')}
               aria-hidden={editing || undefined}
@@ -125,7 +151,7 @@ export function MemoryReader({
                   {t('edit')}
                 </Button>
               ) : null}
-              <Button variant="outline" size="toolbar" className={ACTION} onClick={onHistory}>
+              <Button ref={historyRef} variant="outline" size="toolbar" className={ACTION} onClick={onHistory}>
                 <ClockCounterClockwiseIcon aria-hidden />
                 {t('history.title')}
               </Button>
@@ -150,6 +176,17 @@ export function MemoryReader({
               }
             />
           </div>
+        ) : page && preview ? (
+          <MemoryBody
+            key={`preview:${preview.version_id}`}
+            projectId={projectId}
+            page={{ ...page, body: preview.snapshot.body }}
+            pages={pages}
+            editing={false}
+            onSelectPage={onSelectPage}
+            onDone={() => {}}
+            onReload={() => {}}
+          />
         ) : page ? (
           <>
             <MemoryBody
@@ -182,8 +219,77 @@ export function MemoryReader({
   );
 }
 
+/**
+ * Above the title while a version is previewed: when and by whom, then
+ * "Restore this version" and "Back to current". Esc outside the History
+ * sheet also returns (the sheet handles its own Esc).
+ */
+function PreviewBar({
+  projectId,
+  page,
+  version,
+  focus,
+  onEnd,
+}: {
+  projectId: string;
+  page: ProjectMemoryPage;
+  version: ProjectMemoryVersion;
+  /** Move focus to "Back to current" (the History sheet that held it closed). */
+  focus: boolean;
+  onEnd?: () => void;
+}) {
+  const t = useTranslations('spaces.memory');
+  const locale = useLocale();
+  const authorName = useMemoryAuthorName();
+  const { restore, restoring } = useRestoreMemoryVersion(projectId, page, () => onEnd?.());
+  const backRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (focus) backRef.current?.focus({ preventScroll: true });
+  }, [focus, version.version_id]);
+  useEffect(() => {
+    if (!onEnd) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || hasOpenFloatingLayer()) return;
+      event.preventDefault();
+      onEnd();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onEnd]);
+  // Narrow reader: the actions wrap under the text, to the right.
+  return (
+    <Alert className="mb-6 flex-wrap">
+      <AlertMedia>
+        <ClockCounterClockwiseIcon className="text-kortix-blue" aria-hidden />
+      </AlertMedia>
+      <AlertContent className="basis-40">
+        <AlertTitle>{t('history.viewing', { time: relativeTime(version.created_at, locale) })}</AlertTitle>
+        {hasMemoryAuthor(version.author) ? (
+          <AlertDescription>{t('history.viewingBy', { author: authorName(version.author) })}</AlertDescription>
+        ) : null}
+      </AlertContent>
+      <AlertActions className="ml-auto">
+        <Button ref={backRef} variant="ghost" size="sm" onClick={onEnd}>
+          {t('history.backToCurrent')}
+        </Button>
+        {page.can_edit ? (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={restoring}
+            aria-busy={restoring || undefined}
+            onClick={() => restore(version)}
+          >
+            {t('history.restore')}
+          </Button>
+        ) : null}
+      </AlertActions>
+    </Alert>
+  );
+}
+
 /** A text line's placeholder inside the line box of `line` (its font size and line height), so the real line lands where it sat. */
-function Line({ line, className }: { line: string; className: string }) {
+export function Line({ line, className }: { line: string; className: string }) {
   return (
     <div className={line}>
       <Skeleton className={cn('inline-block rounded-sm py-0 align-middle', className)} />

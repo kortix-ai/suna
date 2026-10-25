@@ -8,16 +8,14 @@ export {
   addNote,
   createPage,
   decodePageId,
-  decodeVersionId,
   deletePage,
   getPage,
-  layerChanges,
   layerView,
   listPages,
   pageIdOf,
   updatePage,
 } from './files';
-export { pageHistory, undoVersion } from './history';
+export { pageHistory } from './history';
 export { assertWrites, authorName, MemoryError, notFound, type Project, resolveLayer, threadLabelOf, type Viewer } from './layers';
 export { searchMemory } from './search';
 export { recordThreadLoad, threadUsage } from './thread-loads';

@@ -141,15 +141,15 @@ export function MemoryBody({
     if (update.isPending || !editor) return;
     const body = docToMarkdown(editor.getJSON());
     if (body === docToMarkdown(initial)) return onDone();
-    update.mutate(
-      { pageId: page.page_id, input: { base_version: page.version_no, body } },
-      {
-        onSuccess: () => {
-          successToast(t('editor.saved'));
-          onDone();
-        },
-        onError: (err) => setError((err instanceof ApiError && err.code && ERROR_BY_CODE[err.code]) || 'failed'),
+    // `mutateAsync`, not `mutate`'s callbacks: the save bumps the page's
+    // version, which remounts this body (its key), and TanStack drops the
+    // call-time callbacks of an unmounted caller, so the editor stayed open.
+    update.mutateAsync({ pageId: page.page_id, input: { base_version: page.version_no, body } }).then(
+      () => {
+        successToast(t('editor.saved'));
+        onDone();
       },
+      (err) => setError((err instanceof ApiError && err.code && ERROR_BY_CODE[err.code]) || 'failed'),
     );
   };
   const open = (href: string) => {

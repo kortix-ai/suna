@@ -256,16 +256,22 @@ export * from './use-session-participants';
 export * from './use-project-sessions';
 export {
   useAddProjectSpaceLink,
+  useAddProjectSpaceMembers,
   useChannelsOnboarding,
+  useJoinProjectSpace,
+  useLeaveProjectSpace,
+  useProjectSpaceMembers,
+  useRemoveProjectSpaceMember,
   useCreateProjectSpace,
   useMarkChannelsOnboarding,
   useOpenProjectDm,
   usePinProjectSpaceLink,
   useProjectSpaceApps,
   useProjectSpaceGeneralNotice,
+  usePrivateChannelsAvailable,
+  usePrivateChannelsNotIn,
   useProjectSpaceLinks,
   useProjectSpaces,
-  useProjectSpaceSummary,
   useRemoveProjectSpaceLink,
   useUpdateProjectSpace,
 } from './use-project-spaces';

@@ -1,4 +1,5 @@
 import type { TriggerSessionAccess } from '@kortix/api-contract';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import {
   projectSessionGrants,
   projectSessions,
@@ -108,7 +109,7 @@ export async function loadTriggerSessionAccessMap(
  * A run already filed in a DM keeps the DM's sharing: moving its trigger to a
  * channel must not widen the old DM threads to the project.
  */
-const notInDm = sql`not exists (select 1 from ${projectSpaces} where ${projectSpaces.spaceId} = ${projectSessions.spaceId} and ${projectSpaces.kind} = 'dm')`;
+const notInDm = sql`not exists (select 1 from ${projectSpaces} where ${projectSpaces.spaceId} = ${qualifiedColumn(projectSessions.spaceId)} and ${projectSpaces.kind} = 'dm')`;
 
 /** Save a policy and propagate it to every non-pinned session this trigger created, except those in a DM. */
 export async function setTriggerSessionAccess(input: {

@@ -2347,7 +2347,8 @@ function SessionTurnImpl(props: SessionTurnProps) {
       <div className="text-factor-[2]">
         {userContent.hasVisibleUserContent || userContent.sessionReport || userContent.systemMessages.length > 0 ? (
           <MessageRow
-            className="group/turn"
+            // The first message's turn clips its toolbar's overhang: it sits inside the row.
+            className={cn('group/turn', props.isFirstTurn && '[&_[data-slot=row-toolbar]]:top-0.5')}
             avatar={
               sender ? (
                 // 36px, the `lg` avatar column (`w-10`).

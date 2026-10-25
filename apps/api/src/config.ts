@@ -508,6 +508,12 @@ const envSchema = z.object({
   // (descriptors.ts) — both are gated on this and read no managed credentials
   // when off.
   KORTIX_MANAGED_PROVIDER_ENABLED: optBoolUnset,
+  // Private channels (`project_spaces.visibility = 'private'`). Off: creating
+  // or converting one answers 409. Turn it on only once every deployed API
+  // build enforces private channels: an older build shows a private channel to
+  // every project member. The rollout checklist:
+  // .agents/skills/kortix-release/references/private-channels-rollout.md.
+  KORTIX_PRIVATE_CHANNELS_ENABLED: optBoolFalse,
   // Empty = the in-API gateway at `${KORTIX_URL}/v1/llm`. Set to a standalone
   // gateway's public base (…/v1/llm) to route every sandbox model call there.
   LLM_GATEWAY_BASE_URL: optStr,
@@ -1382,6 +1388,7 @@ export const config = {
   // blob misses the var; self-host stays off). Explicit value always wins.
   KORTIX_MANAGED_PROVIDER_ENABLED:
     env.KORTIX_MANAGED_PROVIDER_ENABLED ?? env.KORTIX_BILLING_INTERNAL_ENABLED,
+  KORTIX_PRIVATE_CHANNELS_ENABLED: env.KORTIX_PRIVATE_CHANNELS_ENABLED,
   LLM_GATEWAY_BASE_URL: env.LLM_GATEWAY_BASE_URL,
   LLM_GATEWAY_DEFAULT_MODEL: env.LLM_GATEWAY_DEFAULT_MODEL,
   LLM_GATEWAY_VISION_MODEL: env.LLM_GATEWAY_VISION_MODEL,

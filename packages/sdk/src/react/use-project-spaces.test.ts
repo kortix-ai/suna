@@ -19,17 +19,22 @@ mock.module('@tanstack/react-query', () => ({
 }));
 
 const {
+  useAddProjectSpaceMembers,
+  useJoinProjectSpace,
+  useLeaveProjectSpace,
+  useProjectSpaceMembers,
+  useRemoveProjectSpaceMember,
   useAddProjectSpaceLink,
   useChannelsOnboarding,
   useMarkChannelsOnboarding,
   useProjectSpaceGeneralNotice,
+  usePrivateChannelsAvailable,
   useCreateProjectSpace,
   useOpenProjectDm,
   usePinProjectSpaceLink,
   useProjectSpaceApps,
   useProjectSpaceLinks,
   useProjectSpaces,
-  useProjectSpaceSummary,
   useRemoveProjectSpaceLink,
   useUpdateProjectSpace,
 } = await import('./use-project-spaces');
@@ -123,6 +128,19 @@ describe('#general turned-on-again line', () => {
   });
 });
 
+describe('private channels availability', () => {
+  test('reads private_channels_available from the spaces route under the spaces key; false when absent', async () => {
+    const query = usePrivateChannelsAvailable('P1') as any;
+    expect(query.queryKey).toEqual(qk.project.privateChannelsAvailable('P1'));
+    const prefix = qk.project.spaces('P1');
+    expect(query.queryKey.slice(0, prefix.length)).toEqual([...prefix]);
+    expect(query.queryKey).not.toEqual(prefix);
+    expect(await query.queryFn()).toBe(false);
+    expect(calls[0]).toMatchObject({ method: 'GET', url: 'http://test.local/projects/P1/spaces' });
+    expect((usePrivateChannelsAvailable(null) as any).enabled).toBe(false);
+  });
+});
+
 describe('Channels onboarding', () => {
   test('reads the onboarding route under its own project key', async () => {
     const query = useChannelsOnboarding('P1') as any;
@@ -152,39 +170,31 @@ describe('Channels onboarding', () => {
 });
 
 describe('channel tabs', () => {
-  test('apps, links and summary read under the spaces key, per channel', async () => {
+  test('apps and links read per channel: links under the spaces key, Apps under the App list key', async () => {
     const apps = useProjectSpaceApps('P1', 'S1') as any;
     const links = useProjectSpaceLinks('P1', 'S1') as any;
-    const summary = useProjectSpaceSummary('P1', 'S1') as any;
-    // Links and the summary sit under the spaces key; a channel's Apps under the App list key.
     const scope = [...qk.project.spaces('P1')];
-    for (const query of [links, summary]) {
-      expect(query.queryKey.slice(0, scope.length)).toEqual(scope);
-    }
+    expect(links.queryKey.slice(0, scope.length)).toEqual(scope);
     const appsScope = [...qk.project.apps('P1')];
     expect(apps.queryKey.slice(0, appsScope.length)).toEqual(appsScope);
-    for (const query of [apps, links, summary]) expect(query.enabled).toBe(true);
+    for (const query of [apps, links]) expect(query.enabled).toBe(true);
     expect(apps.queryKey).toEqual(qk.project.spaceApps('P1', 'S1'));
     expect(links.queryKey).toEqual(qk.project.spaceLinks('P1', 'S1'));
-    expect(summary.queryKey).toEqual(qk.project.spaceSummary('P1', 'S1'));
-    expect(summary.queryKey).not.toEqual(qk.project.spaceSummary('P1', 'S2'));
+    expect(links.queryKey).not.toEqual(qk.project.spaceLinks('P1', 'S2'));
     await apps.queryFn();
     await links.queryFn();
-    await summary.queryFn();
     expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
       'GET http://test.local/projects/P1/spaces/S1/apps',
       'GET http://test.local/projects/P1/spaces/S1/links',
-      'GET http://test.local/projects/P1/spaces/S1/summary',
     ]);
   });
 
   test('is disabled without a channel id', () => {
     expect((useProjectSpaceApps('P1', null) as any).enabled).toBe(false);
     expect((useProjectSpaceLinks('P1', undefined) as any).enabled).toBe(false);
-    expect((useProjectSpaceSummary(null, 'S1') as any).enabled).toBe(false);
   });
 
-  test('adding or removing a link refetches the links and the summary', async () => {
+  test('adding or removing a link refetches the links', async () => {
     const add = useAddProjectSpaceLink('P1', 'S1') as any;
     const remove = useRemoveProjectSpaceLink('P1', 'S1') as any;
     await add.mutationFn({ url: 'https://example.test', title: 'Ex' });
@@ -196,11 +206,11 @@ describe('channel tabs', () => {
     expect(calls[0]!.body).toEqual({ url: 'https://example.test', title: 'Ex' });
     await add.onSuccess();
     await remove.onSuccess();
-    const both = [[...qk.project.spaceLinks('P1', 'S1')], [...qk.project.spaceSummary('P1', 'S1')]];
-    expect(invalidated).toEqual([...both, ...both]);
+    const links = [...qk.project.spaceLinks('P1', 'S1')];
+    expect(invalidated).toEqual([links, links]);
   });
 
-  test('pinning or unpinning a link PATCHes it and refetches the links and the summary', async () => {
+  test('pinning or unpinning a link PATCHes it and refetches the links', async () => {
     const pin = usePinProjectSpaceLink('P1', 'S1') as any;
     await pin.mutationFn({ linkId: 'L1', pinned: true });
     await pin.mutationFn({ linkId: 'L1', pinned: false });
@@ -209,6 +219,40 @@ describe('channel tabs', () => {
       'PATCH http://test.local/projects/P1/spaces/S1/links/L1 {"pinned":false}',
     ]);
     await pin.onSuccess();
-    expect(invalidated).toEqual([[...qk.project.spaceLinks('P1', 'S1')], [...qk.project.spaceSummary('P1', 'S1')]]);
+    expect(invalidated).toEqual([[...qk.project.spaceLinks('P1', 'S1')]]);
+  });
+});
+
+describe('channel members', () => {
+  test('read the members route under the spaces key, so a spaces refresh refreshes the roster', async () => {
+    const query = useProjectSpaceMembers('P1', 'S1') as any;
+    expect(query.queryKey).toEqual(qk.project.spaceMembers('P1', 'S1'));
+    const prefix = qk.project.spaces('P1');
+    expect(query.queryKey.slice(0, prefix.length)).toEqual([...prefix]);
+    expect(query.enabled).toBe(true);
+    await query.queryFn();
+    expect(calls[0]).toMatchObject({ method: 'GET', url: 'http://test.local/projects/P1/spaces/S1/members' });
+    expect((useProjectSpaceMembers('P1', null) as any).enabled).toBe(false);
+  });
+
+  test('add, remove, join and leave call their routes and refetch the spaces list (members and is_member)', async () => {
+    const add = useAddProjectSpaceMembers('P1', 'S1') as any;
+    const remove = useRemoveProjectSpaceMember('P1', 'S1') as any;
+    const join = useJoinProjectSpace('P1', 'S1') as any;
+    const leave = useLeaveProjectSpace('P1', 'S1') as any;
+    await add.mutationFn(['U2']);
+    await remove.mutationFn('U2');
+    await join.mutationFn();
+    await leave.mutationFn();
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      'POST http://test.local/projects/P1/spaces/S1/members',
+      'DELETE http://test.local/projects/P1/spaces/S1/members/U2',
+      'POST http://test.local/projects/P1/spaces/S1/join',
+      'DELETE http://test.local/projects/P1/spaces/S1/members/me',
+    ]);
+    expect(calls[0]!.body).toEqual({ user_ids: ['U2'] });
+    for (const hook of [add, remove, join, leave]) await hook.onSuccess();
+    const key = [...qk.project.spaces('P1')];
+    expect(invalidated).toEqual([key, key, key, key]);
   });
 });

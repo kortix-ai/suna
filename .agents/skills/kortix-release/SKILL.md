@@ -282,6 +282,10 @@ written, evidence-backed justification, never silently.
   commits onto it to "fix" a failure — fix on `dev` and open a fresh promotion
   (Step 4). Squashing or force-pushing it breaks the SHA trail the migration
   cost pass and the release notes were verified against.
+- **Private channels have their own rollout.** `KORTIX_PRIVATE_CHANNELS_ENABLED`
+  stays unset until its checklist is done, and after it is on, no rollback goes
+  below that release while a private channel exists. The checklist is
+  [references/private-channels-rollout.md](references/private-channels-rollout.md).
 
 ## 5. Undo a bad / premature release
 

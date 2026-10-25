@@ -30,6 +30,11 @@ describe('front-matter', () => {
     expect(content).toBe('# Pricing\n\nWe charge $49.');
   });
 
+  test('updated_by reads as the written name, with CRLF line ends and quotes', () => {
+    expect(splitFrontMatter('---\r\nupdated_by: Kortix (agent)\r\n---\r\n# T').data.updated_by).toBe('Kortix (agent)');
+    expect(splitFrontMatter("---\nupdated_by: 'Priya Shah'\n---\n").data.updated_by).toBe('Priya Shah');
+  });
+
   test('a file without a block, or with an unclosed one, is all content', () => {
     expect(splitFrontMatter('# Notes\n- a')).toEqual({ entries: null, data: {}, content: '# Notes\n- a' });
     expect(splitFrontMatter('---\ntype: people\n# no close')).toMatchObject({ entries: null, content: '---\ntype: people\n# no close' });

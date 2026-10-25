@@ -20600,7 +20600,10 @@
     "copySessionTitle": "Sitzungstitel",
     "copyAction": "{label} kopieren",
     "copied": "{label} kopiert",
-    "copyFailed": "Kopieren in die Zwischenablage fehlgeschlagen"
+    "copyFailed": "Kopieren in die Zwischenablage fehlgeschlagen",
+    "threads": "Threads",
+    "recentThreads": "Letzte Threads",
+    "searchChannels": "Kanäle, Threads, Befehle suchen..."
   },
   "personalWelcome": {
     "dismiss": "Schließen",
@@ -20790,7 +20793,8 @@
     "postTo": "Posten in",
     "postToHint": "Jeder Lauf startet dort einen neuen Thread. Ohne Kanal landen Läufe in #{channel}.",
     "postToNone": "Kein Kanal",
-    "postToUnavailable": "Nicht verfügbarer Kanal"
+    "postToUnavailable": "Nicht verfügbarer Kanal",
+    "postToPrivate": "Privat: Trigger können hier nicht posten"
   },
   "gatewayAccess": {
     "heroTitle": "Die Modelle dieses Projekts überall nutzen",
@@ -22893,17 +22897,22 @@
     "memory": {
       "search": "Speicher durchsuchen",
       "pagesLabel": "Speicherseiten",
+      "all": {
+        "title": "Alle",
+        "explainCompany": "Kortix-Speicher: was Agents über dieses Projekt wissen. Sie lesen ihn vor jeder Antwort.",
+        "explainChannel": "Kortix-Speicher: was Agents über {place} wissen. Sie lesen ihn vor jeder Antwort.",
+        "explainDm": "Kortix-Speicher: was Agents über dich und {place} wissen. Sie lesen ihn vor jeder Antwort."
+      },
       "allPages": "Alle Seiten",
       "noMatches": "Keine Seite passt zu „{query}“.",
       "loadError": "Dieser Speicher konnte nicht geladen werden.",
       "pageLoadError": "Diese Seite konnte nicht geladen werden.",
       "retry": "Erneut versuchen",
       "close": "Schließen",
-      "loadOlder": "Ältere anzeigen",
-      "fromThread": "aus „{thread}“",
       "author": {
         "system": "Kortix",
-        "unknown": "Ein Mitglied"
+        "unknown": "Ein Mitglied",
+        "agent": "Ein Agent"
       },
       "edit": "Bearbeiten",
       "delete": "Löschen",
@@ -22911,11 +22920,6 @@
       "deleteDescription": "Das lässt sich nicht rückgängig machen.",
       "deleted": "Seite gelöscht",
       "deleteFailed": "Die Seite konnte nicht gelöscht werden. Versuche es erneut.",
-      "undo": "Rückgängig",
-      "undone": "Änderung rückgängig gemacht",
-      "undoFailed": "Die Änderung konnte nicht rückgängig gemacht werden. Versuche es erneut.",
-      "superseded": "Die Seite wurde danach geändert. Öffne den Verlauf, um eine frühere Version wiederherzustellen.",
-      "alreadyUndone": "Diese Änderung ist bereits rückgängig gemacht.",
       "relatedPages": "Verwandte Seiten",
       "emptyPage": "Auf dieser Seite steht noch nichts.",
       "history": {
@@ -22923,21 +22927,22 @@
         "description": "Jede Änderung an „{title}“, neueste zuerst.",
         "loadError": "Der Verlauf konnte nicht geladen werden.",
         "current": "Aktuell",
-        "undone": "Rückgängig gemacht",
         "restore": "Diese Version wiederherstellen",
         "restored": "Version wiederhergestellt",
         "restoreFailed": "Diese Version konnte nicht wiederhergestellt werden. Versuche es erneut.",
         "op": {
           "create": "{author} hat die Seite erstellt",
-          "update": "{author} hat die Seite bearbeitet",
-          "append": "{author} hat einen Fakt hinzugefügt",
-          "delete": "{author} hat die Seite gelöscht",
-          "restore": "{author} hat eine Version wiederhergestellt",
-          "undo": "{author} hat eine Änderung rückgängig gemacht",
-          "confirm": "{author} hat die Seite bestätigt",
-          "file_note": "{author} hat eine Notiz abgelegt",
-          "import": "{author} hat die Seite importiert"
-        }
+          "update": "{author} hat die Seite bearbeitet"
+        },
+        "preview": "Vorschau",
+        "restoreShort": "Wiederherstellen",
+        "viewing": "Version von {time}",
+        "backToCurrent": "Zurück zur aktuellen",
+        "added": "+{count, plural, one {# Zeile} other {# Zeilen}}",
+        "removed": "−{count, plural, one {# Zeile} other {# Zeilen}}",
+        "viewingBy": "von {author}",
+        "created": "Seite erstellt",
+        "edited": "Seite bearbeitet"
       },
       "editor": {
         "body": "Seite",
@@ -22966,10 +22971,11 @@
         "open": "Merken…"
       },
       "empty": {
-        "title": "Was Kortix sich zu diesem Channel merkt.",
-        "titleDm": "Was Kortix sich zu diesem Gespräch merkt.",
-        "description": "Kortix liest diese Seiten vor jeder Antwort.",
-        "titleCompany": "Was Kortix sich zu diesem Projekt merkt."
+        "title": "Noch kein Speicher in {place}",
+        "titleDm": "Noch kein Speicher mit {place}",
+        "description": "Agents speichern hier, was sie lernen, und lesen es vor jeder Antwort.",
+        "titleCompany": "Noch kein Unternehmensspeicher",
+        "openCompany": "Unternehmensspeicher öffnen · {count, plural, one {# Seite} other {# Seiten}}"
       },
       "source": {
         "thread": "Thread „{label}“ öffnen",
@@ -23010,7 +23016,17 @@
         "outside": "Link",
         "import": "Datei"
       },
-      "pageCount": "{count, plural, one {# Seite} other {# Seiten}}"
+      "pageCount": "{count, plural, one {# Seite} other {# Seiten}}",
+      "companyLink": "Unternehmensspeicher · {count, plural, one {# Seite} other {# Seiten}}",
+      "companyLinkHint": "Der Agent hier nutzt auch den Unternehmensspeicher.",
+      "group": {
+        "other": "Über uns",
+        "people": "Personen",
+        "decisions": "Entscheidungen",
+        "workstreams": "Projekte",
+        "playbooks": "So arbeiten wir",
+        "note": "Notizen"
+      }
     },
     "create": {
       "title": "Kanal erstellen",
@@ -23030,7 +23046,12 @@
       "renameDescription": "Der Link zum Kanal ändert sich mit seinem Namen.",
       "save": "Speichern",
       "renamed": "Kanal umbenannt",
-      "renameFailed": "Der Kanal konnte nicht umbenannt werden. Versuche es erneut."
+      "renameFailed": "Der Kanal konnte nicht umbenannt werden. Versuche es erneut.",
+      "descriptionPrivate": "Nur die Personen, die du hinzufügst, können den Kanal sehen und nutzen.",
+      "privateLabel": "Privat",
+      "privateHint": "Nur eingeladene Mitglieder können ihn sehen.",
+      "privateUnavailable": "Private Kanäle sind in diesem Workspace noch nicht verfügbar.",
+      "privateLimits": "Privat verbirgt den Kanal vor anderen. Codeänderungen (Git-Branches) und die eigenen Tools der Agents sind nicht privat."
     },
     "view": {
       "welcomeTitle": "Willkommen in #{name}",
@@ -23048,6 +23069,7 @@
       "loadEarlier": "Frühere Threads laden",
       "messageChannel": "Nachricht an #{name}",
       "messageAgent": "Nachricht an {agent}",
+      "threadsEmptyTitle": "Noch keine Threads",
       "threadsEmpty": "Threads, die du startest, erscheinen hier.",
       "loadError": "Der Kanal konnte nicht geladen werden.",
       "threadsLoadError": "Die Threads konnten nicht geladen werden.",
@@ -23125,45 +23147,92 @@
       },
       "links": {
         "add": "Link hinzufügen",
-        "addDescription": "Hefte einen Link an {place}. Jeder Agent im Kanal erhält die angehefteten Links.",
+        "addDescription": "Füge einen Link zu {place} hinzu.",
         "urlLabel": "URL",
         "titleLabel": "Titel (optional)",
         "titlePlaceholder": "Worum es geht",
-        "invalidUrl": "Gib einen Link ein, der mit http:// oder https:// beginnt.",
+        "invalidUrl": "Gib einen gültigen Link ein, zum Beispiel example.com.",
         "addFailed": "Der Link konnte nicht hinzugefügt werden. Versuche es erneut.",
         "limit": "Dieser Kanal hat bereits 200 angeheftete Links. Löse zuerst einen.",
-        "added": "Link hinzugefügt",
+        "addLimit": "Dieser Kanal hat bereits 200 hinzugefügte Links. Entferne zuerst einen.",
+        "added": "Hinzugefügt",
         "remove": "Link entfernen",
         "removeTitle": "Diesen Link entfernen?",
         "removeDescription": "{link} wird für alle aus {place} entfernt.",
         "removed": "Link entfernt",
         "removeFailed": "Der Link konnte nicht entfernt werden. Versuche es erneut.",
         "loadError": "Die Links konnten nicht geladen werden.",
-        "intro": "Links, die in Threads von {place} geteilt wurden. Hefte einen Link an, damit jeder Agent im Kanal ihn erhält.",
-        "pinnedTitle": "Angeheftet · Agenten lesen diese",
-        "sharedTitle": "In Threads geteilt",
-        "sharedNote": "Automatisch aus Nachrichten von Personen gesammelt",
-        "pinnedBy": "Angeheftet von {name}",
         "pinnedLabel": "Angeheftet",
-        "fromThread": "aus „{thread}“",
-        "inThread": "in „{thread}“",
-        "sharedTimes": "{count}× geteilt",
         "pin": "Anheften",
         "unpin": "Lösen",
         "pinnedToast": "Link angeheftet",
         "unpinnedToast": "Link gelöst",
         "pinFailed": "Der Link konnte nicht angeheftet werden. Versuche es erneut.",
-        "unpinFailed": "Der Link konnte nicht gelöst werden. Versuche es erneut."
+        "unpinFailed": "Der Link konnte nicht gelöst werden. Versuche es erneut.",
+        "search": "Links durchsuchen",
+        "show": "Anzeigen",
+        "all": "Alle",
+        "sharedBy": "Geteilt von",
+        "earlier": "Früher",
+        "pinHint": "Anheften. Jeder Agent im Kanal liest angeheftete Links.",
+        "unpinHint": "Lösen. Agents lesen ihn dann nicht mehr.",
+        "copyLink": "Link kopieren",
+        "linkCopied": "Link kopiert",
+        "openThread": "Thread öffnen",
+        "noMatch": "Keine passenden Links"
       },
       "appsLoadError": "Die Apps konnten nicht geladen werden.",
       "triggers": {
-        "loadError": "Die Trigger konnten nicht geladen werden."
+        "loadError": "Die Trigger konnten nicht geladen werden.",
+        "privateNote": "Trigger können nicht in einen privaten Kanal posten. Setze stattdessen eine Erinnerung in einem Thread."
       },
       "reply": "Antworten",
       "rosterTitlePeople": "Personen",
       "rosterTitleAgents": "Agenten",
       "viewAllMembers": "Alle Mitglieder anzeigen",
-      "agentThreads": "{count, plural, one {# Thread} other {# Threads}}"
+      "agentThreads": "{count, plural, one {# Thread} other {# Threads}}",
+      "threadFilter": {
+        "search": "Threads durchsuchen",
+        "filter": "Filter",
+        "clear": "Zurücksetzen",
+        "clearFilters": "Filter zurücksetzen",
+        "noMatch": "Keine Threads gefunden",
+        "noMatchHint": "Versuche eine andere Suche oder setze die Filter zurück.",
+        "remove": "Filter {facet} entfernen: {value}",
+        "status": "Status",
+        "startedBy": "Gestartet von",
+        "agent": "Agent",
+        "activity": "Aktivität",
+        "any": "Alle",
+        "anyone": "Alle",
+        "me": "Ich",
+        "anyAgent": "Alle Agents",
+        "anyTime": "Jederzeit",
+        "statusValue": {
+          "working": "Arbeitet",
+          "needsYou": "Braucht dich",
+          "failed": "Fehlgeschlagen",
+          "done": "Fertig"
+        },
+        "activityValue": {
+          "today": "Heute",
+          "last7": "Letzte 7 Tage",
+          "last30": "Letzte 30 Tage"
+        }
+      },
+      "setup": {
+        "label": "{name} einrichten",
+        "addAgents": "Agenten hinzufügen",
+        "addAgentsHint": "Wähle, wer hier antwortet",
+        "invite": "Mitglieder einladen",
+        "inviteHint": "Hol dein Team dazu",
+        "remember": "Etwas merken",
+        "rememberHint": "Notizen, die jeder Agent liest"
+      },
+      "allAgents": "Alle Agenten",
+      "join": "Kanal beitreten",
+      "joined": "Du bist #{name} beigetreten.",
+      "joinFailed": "Beitritt zum Kanal fehlgeschlagen. Versuche es erneut."
     },
     "details": {
       "about": "Info",
@@ -23176,19 +23245,44 @@
       "archiveTitle": "Diesen Kanal archivieren",
       "archiveHint": "Er verschwindet für alle Mitglieder aus der Seitenleiste. Seine Threads bleiben.",
       "archive": "Archivieren",
-      "people": "Personen",
-      "agents": "Agenten",
-      "membersHint": "Alle, die hier einen Thread gestartet haben, und alle Agenten, die einen beantwortet haben, in den bisher geladenen Threads.",
-      "threads": "{count, plural, one {# Thread} other {# Threads}}",
       "find": "Personen oder Agenten suchen",
-      "addPeople": "Personen hinzufügen",
+      "search": "Suchen",
       "you": "(du)",
-      "groupCount": "{label} · {count}",
       "noMatches": "Niemand passt zu „{query}“.",
       "defaultAgent": "Standard-Agent",
       "defaultAgentHint": "Antwortet auf Nachrichten ohne genannten Agenten. Für das ganze Projekt unter Anpassen › Agenten festgelegt.",
       "visibility": "Wer ihn sieht",
-      "visibilityProject": "Alle im Projekt"
+      "visibilityProject": "Alle im Projekt",
+      "defaultTag": "Standard",
+      "agentTag": "Agent",
+      "makeDefault": "Als Standard festlegen",
+      "removeAgent": "Aus #{name} entfernen",
+      "agentMenu": "Optionen für {agent}",
+      "agentsFailed": "Die Agenten konnten nicht aktualisiert werden. Versuche es erneut.",
+      "defaultSet": "{agent} ist jetzt der Standard in #{name}.",
+      "agentRemoved": "{agent} wurde aus #{name} entfernt.",
+      "channelDefaultHint": "Beantwortet eine Nachricht, die keinen Agenten nennt. Unter Mitglieder änderbar.",
+      "personRemoved": "{person} aus #{name} entfernt.",
+      "peopleFailed": "Die Mitglieder konnten nicht geändert werden. Versuche es erneut.",
+      "personMenu": "Optionen für {person}",
+      "removePerson": "Aus #{name} entfernen",
+      "leave": "Kanal verlassen",
+      "left": "Du hast #{name} verlassen.",
+      "leaveTitle": "Diesen Kanal verlassen",
+      "leaveHint": "Du kannst ihn weiter lesen und jederzeit wieder beitreten.",
+      "visibilityPrivate": "Nur seine Mitglieder",
+      "privateNote": "Nur Mitglieder können #{name} sehen.",
+      "makePrivate": "Privat machen",
+      "makePrivateTitle": "#{name} privat machen?",
+      "makePrivateWho": "Nur Mitglieder sehen #{name}: seine Threads, Dateien, Erinnerungen und Links. Alle, die einen Thread gestartet oder einen Link hinzugefügt haben, werden Mitglieder.",
+      "makePrivateLeave": "Alle anderen verlieren den Zugriff. Wer später austritt, verliert ihn ebenfalls, auch für die eigenen Threads.",
+      "makePrivateFinal": "Du kannst ihn nicht wieder öffentlich machen. Daraus kopierte Dateien bleiben, wo sie sind.",
+      "makePrivateTriggers": "{count, plural, one {# Trigger postet hier. Er läuft nicht mehr.} other {# Trigger posten hier. Sie laufen nicht mehr.}}",
+      "madePrivate": "#{name} ist jetzt privat",
+      "leaveHintPrivate": "Du verlierst den Zugriff auf seine Threads, Dateien und Erinnerungen, auch auf deine eigenen Threads. Ein Mitglied muss dich wieder hinzufügen.",
+      "leavePrivateTitle": "#{name} verlassen?",
+      "addMembers": "Mitglieder hinzufügen",
+      "privateLimits": "Privat verbirgt den Kanal vor anderen. Codeänderungen (Git-Branches) und die eigenen Tools der Agents sind nicht privat."
     },
     "folder": {
       "memory": "Speicher",
@@ -23205,22 +23299,41 @@
     "onboarding": {
       "reenabled": "Sitzungen, die gestartet wurden, während Kanäle aus waren, sind hier.",
       "intro": {
-        "title": "Deine Sitzungen sind jetzt Threads in #general.",
+        "title": "Willkommen bei Kanälen",
         "channels": "Kanäle bündeln die Arbeit nach Team.",
         "threads": "Jede neue Nachricht startet einen Thread.",
         "memory": "Agents merken sich, worauf sich jeder Kanal einigt.",
         "gotIt": "Verstanden"
       },
       "getStarted": {
-        "title": "Erste Schritte",
         "dismiss": "Ausblenden",
         "channel": "Einen Kanal für ein Team erstellen",
-        "remember": "{place} etwas zum Merken sagen",
-        "dm": "Eine Direktnachricht an einen Agent öffnen",
-        "pickAgent": "Einem Agent schreiben",
-        "noAgents": "Dieses Projekt hat noch keine Agents.",
         "done": "Erledigt"
       }
+    },
+    "addMembers": {
+      "title": "Mitglieder zu #{name} hinzufügen",
+      "description": "Wähle Personen und Agenten aus dem Projekt.",
+      "search": "Personen und Agenten suchen",
+      "selected": "Ausgewählte Mitglieder",
+      "people": "Personen",
+      "agents": "Agenten",
+      "unpick": "{member} entfernen",
+      "cancel": "Abbrechen",
+      "inviteByEmail": "Per E-Mail einladen",
+      "confirmEmpty": "Mitglieder hinzufügen",
+      "confirm": "{what} hinzufügen",
+      "peopleCount": "{count, plural, one {# Person} other {# Personen}}",
+      "agentsCount": "{count, plural, one {# Agent} other {# Agenten}}",
+      "both": "{people} und {agents}",
+      "added": "{what} zu #{name} hinzugefügt.",
+      "failed": "Die Mitglieder konnten nicht hinzugefügt werden. Versuche es erneut.",
+      "peopleFailed": "Die Personen konnten nicht hinzugefügt werden. Versuche es erneut.",
+      "agentsFailed": "Die Agenten konnten nicht hinzugefügt werden. Versuche es erneut.",
+      "peopleFailedAgentsAdded": "{what} zu #{name} hinzugefügt. Die Personen konnten nicht hinzugefügt werden und bleiben ausgewählt.",
+      "agentsFailedPeopleAdded": "{what} zu #{name} hinzugefügt. Die Agenten konnten nicht hinzugefügt werden und bleiben ausgewählt.",
+      "allAdded": "Alle im Projekt sind schon hier.",
+      "noMatches": "Nichts passt zu „{query}“."
     }
   }
 }

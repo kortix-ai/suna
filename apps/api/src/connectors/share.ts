@@ -304,9 +304,23 @@ export function isProjectSessionVisibleTo(
      * admin role. See `hasAccountSessionOversight` (iam/authorize.ts).
      */
     accountSessionOversight?: boolean;
+    /**
+     * The caller may see the session's channel (`canSeeSpace`,
+     * projects/lib/space-access.ts): true for a session in no space or a
+     * public one. REQUIRED so a new caller cannot omit it and fail open. False
+     * (a private channel the caller is not in) refuses everyone but an
+     * overseeing human admin: no own credential, ownership, grant, project
+     * visibility or manager override opens it.
+     */
+    spaceVisible: boolean;
   },
 ): boolean {
   if (!isSessionTargetVisibleToCaller(ownership)) return false;
+  // A hidden private channel refuses even the session's own credential: its
+  // reach follows the launcher's current membership.
+  if (!context.spaceVisible) {
+    return ownership.boundCredentialSessionId === null && context.accountSessionOversight === true;
+  }
   // The session's own credential, mint-time fact — before the overrides:
   // neither oversight nor the manager override is needed to open yourself,
   // and both are powers the bind must never widen into sibling reach.

@@ -56,16 +56,17 @@ export function RememberPopover({
   const save = () => {
     const note = text.trim();
     if (!note || add.isPending) return;
-    add.mutate(
-      { text: note },
-      {
-        onSuccess: () => {
-          setText('');
-          onOpenChange(false);
-          successToast(t('rememberThis.saved'));
-        },
-        onError: (err) => setFailure((err instanceof ApiError && err.code && FAILURE_BY_CODE[err.code]) || 'failed'),
+    // `mutateAsync`, not `mutate`'s callbacks: the first note turns the empty
+    // state into the page list, which unmounts this popover, and TanStack drops
+    // the call-time callbacks of an unmounted caller. The popover then stayed
+    // open (an empty copy, under the list's header).
+    add.mutateAsync({ text: note }).then(
+      () => {
+        setText('');
+        onOpenChange(false);
+        successToast(t('rememberThis.saved'));
       },
+      (err) => setFailure((err instanceof ApiError && err.code && FAILURE_BY_CODE[err.code]) || 'failed'),
     );
   };
 

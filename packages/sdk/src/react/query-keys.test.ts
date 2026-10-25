@@ -511,6 +511,20 @@ describe('qk.project.sessionsPaged space filter', () => {
   });
 });
 
+describe('qk.project.sessionsPaged thread filters', () => {
+  test('createdBy, agent and updatedAfter each get their own slot; unset keeps the space key', () => {
+    const inSpace = qk.project.sessionsPaged('P1', 'visible', { spaceId: 'S1' });
+    const byPerson = qk.project.sessionsPaged('P1', 'visible', { spaceId: 'S1', createdBy: 'U1' });
+    const byAgent = qk.project.sessionsPaged('P1', 'visible', { spaceId: 'S1', agent: 'researcher' });
+    const recent = qk.project.sessionsPaged('P1', 'visible', { spaceId: 'S1', updatedAfter: '2026-10-18T00:00:00.000Z' });
+    for (const key of [byPerson, byAgent, recent]) expect(key).not.toEqual(inSpace);
+    expect(new Set([byPerson, byAgent, recent].map((key) => JSON.stringify(key))).size).toBe(3);
+    expect(
+      qk.project.sessionsPaged('P1', 'visible', { spaceId: 'S1', createdBy: undefined, agent: undefined, updatedAfter: undefined }),
+    ).toEqual(inSpace);
+  });
+});
+
 describe('qk.project.spaces', () => {
   test('nests under the project scope, so a project invalidation reaches it', () => {
     const scope = qk.project.scope('P1');

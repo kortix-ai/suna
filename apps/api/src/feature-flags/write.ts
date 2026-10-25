@@ -1,7 +1,7 @@
 /**
  * The one write path for a project's feature-flag override. Two routes call
  * it: `PATCH /v1/projects/:id/features` (holders of `project.settings.write`:
- * project admins, D7) and
+ * project admins) and
  * `PUT /v1/admin/api/projects/:id/features` (platform operators).
  */
 import type { FeatureFlagKey } from '@kortix/api-contract';

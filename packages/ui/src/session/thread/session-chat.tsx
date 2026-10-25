@@ -49,7 +49,7 @@ import {
 } from '@phosphor-icons/react';
 import { m } from 'motion/react';
 import { jumpToOutcome } from '../outcomes/jump-to-outcome';
-import { useIsMobile } from '../../hooks/use-mobile';
+import { useIsMobile, useIsPhone } from '../../hooks/use-mobile';
 import {
   useUiLink,
   useUiPathname,
@@ -68,6 +68,7 @@ import {
   awaitsAgent,
   missingAuthorKey,
   resolveTranscriptAuthors,
+  rewindableMessageIds,
   showAuthorName,
   stoppedByName,
 } from '../turn/message-author';
@@ -109,7 +110,7 @@ import {
   Composer as SessionChatInput,
 } from '../composer/composer';
 import { ComposerDropZone } from '../composer/composer-drop-zone';
-import { resolveComposerAgent } from '../composer/composer-agent-access';
+import { channelRunnableAgents, resolveComposerAgent, withChannelAgents } from '../composer/composer-agent-access';
 import {
   acknowledgeQuoteRequests,
   type QuoteRequest,
@@ -242,6 +243,7 @@ import {
   useExecuteRuntimeCommand,
   useProjectConfig,
   useRuntimeAgents,
+  useProjectSpaces,
   useRuntimeBootStalled,
   useRuntimeCommands,
   useRuntimeConfig,
@@ -482,6 +484,7 @@ export function SessionChat({
   const rowsContext = useContext(TranscriptRowsContext);
   const transcriptRows = rowsContext !== null;
   const isMobile = useIsMobile();
+  const isPhone = useIsPhone();
   const tQueue = useTranslations('threads');
   const tComposerAttachments = useTranslations('hardcodedUi.composerAttachments');
   const onboardingActive = useOnboardingModeStore((s) => s.active);
@@ -772,7 +775,7 @@ export function SessionChat({
   // chat has no projectId, but runs inside the parent scope's project: its
   // roster is that project's. Only a chat with neither falls back to the
   // runtime's own agent list, which a pi box does not serve (KRTX-2887).
-  const { data: agents } = useRuntimeAgents({
+  const { data: rosterAgents } = useRuntimeAgents({
     directory: session?.directory,
     projectId: projectId ?? (scopeProjectId || undefined),
   });
@@ -869,6 +872,25 @@ export function SessionChat({
   const projectSessionRow = useProjectSession(projectId, projectSessionId ?? undefined, {
     enabled: !!projectId && !!projectSessionId,
   }).data;
+  // A channel thread: whoever posts in the channel runs its agents, granted or
+  // not (the server applies the same rule).
+  const { data: projectSpaces } = useProjectSpaces(projectId, {
+    enabled: !!projectId && !!projectSessionRow?.space_id,
+  });
+  const threadChannelAgents = useMemo(
+    () =>
+      channelRunnableAgents(
+        projectSpaces?.find((space) => space.space_id === projectSessionRow?.space_id),
+        projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
+      ),
+    [projectSpaces, projectSessionRow?.space_id, projectConfig?.default_agent, projectConfig?.open_code_default_agent],
+  );
+  const agents = useMemo(() => withChannelAgents(rosterAgents, threadChannelAgents), [rosterAgents, threadChannelAgents]);
+  // Edit-and-rewind only on the viewer's own message with nobody else's after it.
+  const rewindable = useMemo(
+    () => rewindableMessageIds(userMessageIds, transcriptAuthors.byMessage, viewerId, projectSessionRow?.created_by),
+    [userMessageIds, transcriptAuthors.byMessage, viewerId, projectSessionRow?.created_by],
+  );
 
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
   // The composer opens on the model the session already runs (its pin, or its
@@ -4688,6 +4710,7 @@ export function SessionChat({
                               onEditSend={stableEditSend}
                               rewindDisabled={
                                 !!readOnly ||
+                                (rewindable !== null && !rewindable.has(turn.id)) ||
                                 !runtimeCanRewind ||
                                 !sessionState ||
                                 isBusy ||
@@ -4955,9 +4978,10 @@ export function SessionChat({
                 notice={hostNotice(composerReadiness.notice, rowsContext?.notices)}
                 noticeAsleep={composerReadiness.notice === SESSION_NOTICE.idle}
                 // Inside the thread panel's bordered box, as the channel composer.
-                underbarPlacement={transcriptRows && !isMobile ? 'inline' : undefined}
+                // A phone keeps the row under the card; a 720px desktop window does not.
+                underbarPlacement={transcriptRows && !isPhone ? 'inline' : undefined}
                 // The panel's toolbar is narrow: the agent is its tile, the model keeps its name.
-                agentPickerCompact={transcriptRows && !isMobile}
+                agentPickerCompact={transcriptRows && !isPhone}
                 // A thread panel's rows run `px-5`, and the channel composer
                 // beside it sits `pb-4` off the window's bottom edge: the same
                 // margins, so the two boxes line up.

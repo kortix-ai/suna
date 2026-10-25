@@ -609,7 +609,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
     return (
       <div
         className={cn(
-          'kortix-markdown max-w-full min-w-0 text-base [overflow-wrap:anywhere]',
+          'kortix-markdown max-w-full min-w-0 text-[15px] [overflow-wrap:anywhere]',
           isStreaming && 'streaming-active',
           className,
         )}

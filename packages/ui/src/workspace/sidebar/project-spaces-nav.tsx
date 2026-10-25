@@ -1,7 +1,7 @@
 'use client';
 
 import { useProjectSpaces, useVisibleAgents } from '@kortix/sdk/react';
-import { CaretRightIcon, HashIcon, PlusIcon } from '@phosphor-icons/react';
+import { CaretRightIcon, PlusIcon } from '@phosphor-icons/react';
 import { useMemo, useState, type ReactNode } from 'react';
 
 import { useTranslations } from '../../i18n';
@@ -20,7 +20,9 @@ import Hint from '../../primitives/hint';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '../../primitives/sidebar';
 import { useUiPathname, useUiRouter } from '../../providers/ui-provider';
 import { CreateChannelDialog } from '../spaces/create-channel-dialog';
+import { PrivateChannelsNotInRow } from '../spaces/private-channels-not-in';
 import { agentLabel } from '../spaces/space-timeline';
+import { ChannelGlyph } from '../spaces/channel-glyph';
 
 /** Collapse state lives in the persisted session-filter store, beside the session sections. */
 const CHANNELS_SECTION_ID = 'section:channels';
@@ -75,7 +77,7 @@ export function ProjectSpacesNav({ projectId }: { projectId: string }) {
                 active={isAt(pathname, href)}
                 label={`#${channel.slug}`}
               >
-                <HashIcon />
+                <ChannelGlyph visibility={channel.visibility} />
                 <span>{channel.slug}</span>
               </ProjectNavRow>
             );
@@ -86,6 +88,7 @@ export function ProjectSpacesNav({ projectId }: { projectId: string }) {
               <span>{t('spaces.addChannel')}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
+          <PrivateChannelsNotInRow projectId={projectId} />
         </SpacesSection>
       ) : null}
       {/* Waits for the channels: drawn first, the agents jumped down when the channels arrived. */}

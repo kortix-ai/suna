@@ -26,14 +26,12 @@ import type { SessionStartResult } from './core/rest/projects-client/session-san
 import type {
   AddProjectMemoryNoteInput,
   CreateProjectMemoryPageInput,
-  ProjectMemoryChangeList,
   ProjectMemoryDeleteResult,
   ProjectMemoryLayer,
   ProjectMemoryPage,
   ProjectMemoryPageSummary,
   ProjectMemorySearchInput,
   ProjectMemorySearchResult,
-  ProjectMemoryUndoResult,
   ProjectMemoryVersionList,
   SessionMemoryUsage,
   UpdateProjectMemoryPageInput,
@@ -44,7 +42,6 @@ import type {
   ProjectSpace,
   ProjectSpaceGeneralNotice,
   ProjectSpaceLink,
-  ProjectSpaceSummary,
 } from './core/rest/projects-client/spaces';
 import type {
   CreateSessionPromptResult,
@@ -98,7 +95,7 @@ export function contractDrift(): void {
 
   fits<ProjectSpaceLink>(wire<C.SpaceLink>());
   noPhantom<NoPhantom<ProjectSpaceLink, C.SpaceLink>>();
-  // The fetched title and icon (P3): the SDK declares every field the Links tab reads.
+  // The fetched title and icon: the SDK declares every field the Links tab reads.
   noPhantom<NoPhantom<C.SpaceLink, ProjectSpaceLink>>();
   fits<ProjectSpaceGeneralNotice>(wire<NonNullable<C.SpaceList['general_notice']>>());
   noPhantom<NoPhantom<ProjectSpaceGeneralNotice, C.SpaceGeneralNotice>>();
@@ -108,9 +105,6 @@ export function contractDrift(): void {
   fits<C.ChannelsOnboardingMark>(wire<ChannelsOnboardingMark>());
   fits<ChannelsOnboardingMark>(wire<C.ChannelsOnboardingMark>());
 
-  fits<ProjectSpaceSummary>(wire<C.SpaceSummary>());
-  noPhantom<NoPhantom<ProjectSpaceSummary, C.SpaceSummary>>();
-
   // Memory (`/projects/:id/memory/*`, files in Drive). The inputs are checked the other way: what the SDK sends parses.
   fits<ProjectMemoryLayer>(wire<C.MemoryLayer>());
   noPhantom<NoPhantom<ProjectMemoryLayer, C.MemoryLayer>>();
@@ -118,14 +112,10 @@ export function contractDrift(): void {
   noPhantom<NoPhantom<ProjectMemoryPageSummary, C.MemoryPageSummary>>();
   fits<ProjectMemoryPage>(wire<C.MemoryPage>());
   noPhantom<NoPhantom<ProjectMemoryPage, C.MemoryPage>>();
-  fits<ProjectMemoryChangeList>(wire<C.MemoryChangeList>());
-  noPhantom<NoPhantom<ProjectMemoryChangeList['changes'][number], C.MemoryChange>>();
   fits<ProjectMemoryVersionList>(wire<C.MemoryVersionList>());
   noPhantom<NoPhantom<ProjectMemoryVersionList['versions'][number], C.MemoryVersion>>();
   fits<ProjectMemoryDeleteResult>(wire<C.MemoryDeleteResult>());
   noPhantom<NoPhantom<ProjectMemoryDeleteResult, C.MemoryDeleteResult>>();
-  fits<ProjectMemoryUndoResult>(wire<C.MemoryUndoResult>());
-  noPhantom<NoPhantom<ProjectMemoryUndoResult, C.MemoryUndoResult>>();
   fits<C.MemoryPageCreateInput>(wire<CreateProjectMemoryPageInput>());
   fits<C.MemoryPageUpdateInput>(wire<UpdateProjectMemoryPageInput>());
   fits<C.MemoryNoteInput>(wire<AddProjectMemoryNoteInput>());

@@ -5,10 +5,13 @@
  * |--------------|--------------------------------------|---------------------|
  * | `company`    | `/Company/Memory`                    | every project member |
  * | a channel id | `/Company/Channels/<slug>/Memory`    | every project member |
+ * | a private channel id | `/Channels/<space_id>/Memory` | the channel's members only |
  * | a DM id      | `/Users/<owner>/Memory`, agent folder `Memory/<agent>` first | the DM owner only |
  *
  * Read and write rights are the Drive folder rights (`driveSubjectFor`), so a
- * narrower grant made in Files holds here too. An archived channel is read-only.
+ * narrower grant made in Files holds here too. A private channel is first
+ * checked against membership (`canSeeSpace`): anyone else, a project manager
+ * included, gets 404. An archived channel is read-only.
  */
 import { COMPANY_MEMORY_DIR, MEMORY_DIR_NAME } from '../drives/folders';
 import { folderAccess, folderAccessAtLeast } from '../drives/folders';
@@ -20,6 +23,7 @@ import { spaceDriveFolders } from '@kortix/shared';
 import { and, eq, or, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { isUuid } from '../shared/validate';
+import { hiddenSpaceIds } from '../shared/space-access';
 import type { MemoryLayerScope } from '@kortix/api-contract';
 import { volumeOps } from './volume-ops';
 
@@ -78,7 +82,7 @@ export interface Layer {
 const callers = new WeakMap<Viewer, Promise<{ drive: DriveRow; caller: DriveCaller }>>();
 
 /** The project drive and the viewer's folder rights on it. 403 with Drive off, 503 without storage. */
-export function driveCallerOf(project: Project, viewer: Viewer): Promise<{ drive: DriveRow; caller: DriveCaller }> {
+function driveCallerOf(project: Project, viewer: Viewer): Promise<{ drive: DriveRow; caller: DriveCaller }> {
   let memo = callers.get(viewer);
   if (!memo) {
     memo = (async () => {
@@ -102,6 +106,7 @@ const SPACE_COLUMNS = {
   dmAgentName: projectSpaces.dmAgentName,
   archivedAt: projectSpaces.archivedAt,
   isDefault: projectSpaces.isDefault,
+  visibility: projectSpaces.visibility,
 };
 
 /** The DM agents of `userId` in the project, by space id. */
@@ -133,9 +138,11 @@ export async function resolveLayer(project: Project, key: string, viewer: Viewer
       )
       .limit(1);
     if (!space) throw notFound();
+    // Memory routes refuse session tokens (`withMemoryCaller`): the viewer is a person.
+    if (space.visibility === 'private' && (await hiddenSpaceIds(project.projectId, viewer.userId, null)).has(key)) throw notFound();
     const readOnly = space.archivedAt !== null;
     if (space.kind === 'channel') {
-      const folders = space.slug ? spaceDriveFolders('channel', space.slug, null) : null;
+      const folders = space.slug ? spaceDriveFolders('channel', space.slug, null, space.visibility === 'private' ? key : null) : null;
       if (!folders) throw notFound();
       layer = { ...base, scope: 'channel', spaceId: key, name: `#${space.slug}`, root: folders.memory, readOnly, isDefault: space.isDefault };
     } else {
@@ -173,19 +180,32 @@ export function assertWrites(layer: Layer): void {
 
 /** A person as memory files name them: the profile display name, never an email; "A member" when there is none. */
 export async function authorName(userId: string): Promise<string> {
-  const name = (await resolveUserIdentities([userId])).get(userId)?.displayName?.trim();
-  return name && !name.includes('@') ? name : 'A member';
+  // The app's `participantLabel` rule: the display name, else the email's local part (never the whole email).
+  const who = (await resolveUserIdentities([userId])).get(userId);
+  const name = who?.displayName?.trim();
+  return (name && !name.includes('@') ? name : who?.email?.split('@')[0]?.trim()) || 'A member';
 }
 
 const LABEL_CHARS = 80;
 
-/** A thread's label: its first prompt on one line, at most 80 characters; "a thread" when it has none. The caller checked the viewer may open it. */
-export async function threadLabelOf(projectId: string, sessionId: string): Promise<string> {
+/**
+ * A thread's label: its first prompt on one line, at most 80 characters; "a
+ * thread" when it has none. The caller checked the viewer may open it. A
+ * thread of a private channel noted into any other layer is "a private
+ * thread": its words never leave the channel (`targetSpaceId`: the layer's space, null for Company).
+ */
+export async function threadLabelOf(projectId: string, sessionId: string, targetSpaceId: string | null): Promise<string> {
   const [row] = await db
-    .select({ firstPrompt: sql<string | null>`${projectSessions.metadata}->>'first_prompt'` })
+    .select({
+      firstPrompt: sql<string | null>`${projectSessions.metadata}->>'first_prompt'`,
+      spaceId: projectSessions.spaceId,
+      visibility: projectSpaces.visibility,
+    })
     .from(projectSessions)
+    .leftJoin(projectSpaces, eq(projectSpaces.spaceId, projectSessions.spaceId))
     .where(and(eq(projectSessions.projectId, projectId), eq(projectSessions.sessionId, sessionId)))
     .limit(1);
+  if (row?.visibility === 'private' && row.spaceId !== targetSpaceId) return 'a private thread';
   const text = row?.firstPrompt?.replace(/\s+/g, ' ').trim() ?? '';
   if (!text) return 'a thread';
   return text.length > LABEL_CHARS ? `${text.slice(0, LABEL_CHARS - 1).trimEnd()}…` : text;

@@ -424,18 +424,23 @@ its first prompt is the thread's top message.
 ```ts
 const p = kortix.project(pid);
 const spaces = await p.spaces.list(); // #general first (created on the first call), channels, then the caller's DMs
-const ch = await p.spaces.create({ name: "Launch Week" }); // slug "launch-week"; a taken slug → ApiError 409 slug_taken
+const ch = await p.spaces.create({ name: "Launch Week", member_ids: [uid1] }); // slug "launch-week"; the creator is a member, plus member_ids; a taken slug → ApiError 409 slug_taken
 await p.spaces.update(ch.space_id, { archived: true }); // name, description (null clears), archived; its creator or a project manager (`can_edit`), else 403 forbidden
 const dm = await p.spaces.dm("kortix"); // the caller's DM, created on the first call
 
 // A channel's tabs (channels only; a DM, an archived or unknown id → 404 space_not_found)
 const apps = await p.spaces.apps(ch.space_id); // Apps deployed from its threads, only those the caller may open
-const link = await p.spaces.links.add(ch.space_id, { url: "https://example.com/spec", title: "Spec" }); // http(s) only, ≤ 2,048 chars; title ≤ 200; else 400; 200 links per channel, then 409 link_limit
+const link = await p.spaces.links.add(ch.space_id, { url: "https://example.com/spec", title: "Spec" }); // unpinned, you as its adder; http(s) only, ≤ 2,048 chars; title ≤ 200; else 400; 200 added links per channel, then 409 link_limit
 await p.spaces.links.list(ch.space_id); // pinned and shared in its threads, most recently shared first; `can_delete` per link
 // each link: display_title (member title, else fetched title, else decoded path), site_name, icon_url (null until fetched; load it only through an image proxy)
-await p.spaces.links.pin(ch.space_id, link.link_id, false); // any member; unpinning a link no thread shared removes it (→ null)
+await p.spaces.links.pin(ch.space_id, link.link_id, false); // any member; unpinning only clears the pin, the link stays listed
 await p.spaces.links.remove(ch.space_id, link.link_id); // its creator or a project manager; else 403 forbidden
-await p.spaces.summary(ch.space_id); // { apps, links, triggers }: the tab counts (a DM: apps and links are 0)
+// Who is in a channel (every channel is public: membership gates no read or post)
+await p.spaces.members.list(ch.space_id); // { members, implicit, can_add }: the same people for every viewer; names never emails; #general = every project member (implicit)
+await p.spaces.members.add(ch.space_id, [uid1, uid2]); // one request; project members only, else 400 not_project_member; a member, the creator or a manager adds
+await p.spaces.members.remove(ch.space_id, uid1); // a manager anyone, the creator anyone but themself, a member only themself
+await p.spaces.members.join(ch.space_id); // any project member; idempotent
+await p.spaces.members.leave(ch.space_id); // the creator gets 403 creator_not_removable; #general → 400 default_channel
 
 // A trigger that posts its runs to the channel as threads (a DM: the caller's own only, else 403)
 await p.triggers.create({ name: "Standup", type: "cron", cron: "0 0 9 * * 1-5", prompt_template: "Post the standup", space_id: ch.space_id });
@@ -459,14 +464,18 @@ rows[0].reply_count; // messages after it; a space list only, null elsewhere
   except in a DM. From the SDK, change sharing after a create with
   `session(pid, sid).setSharing(...)`.
 - `sessions.list({ spaceId })` pages inside the space; a non-UUID returns `400`.
+  Narrow it with `q` (title, first prompt, agent, person), `startedBy: "me"`,
+  `createdBy` (a user id), `agent` (a slug) and `updatedAfter` (ISO 8601: activity
+  at or after it). A malformed `createdBy` or `updatedAfter` returns `400`.
 - `ProjectSession.space_id`, `first_prompt` and `reply_count` are optional:
   older APIs omit them.
 - React: `useProjectSpaces(pid, { enabled })`, `useCreateProjectSpace`,
   `useUpdateProjectSpace`, `useOpenProjectDm`, `useProjectSpaceApps(pid, spaceId)`,
   `useProjectSpaceLinks(pid, spaceId)`, `useAddProjectSpaceLink(pid, spaceId)`,
-  `usePinProjectSpaceLink(pid, spaceId)`, `useRemoveProjectSpaceLink(pid, spaceId)` (each refreshes the links and the summary),
-  `useProjectSpaceSummary(pid, spaceId)`, and
-  `useProjectSessions(pid, { spaceId, parent: "root", refetchInterval, pollFirstPageOnly: true })`
+  `usePinProjectSpaceLink(pid, spaceId)`, `useRemoveProjectSpaceLink(pid, spaceId)` (each refreshes the links), and
+  `useProjectSpaceMembers(pid, spaceId)`, `useAddProjectSpaceMembers`, `useRemoveProjectSpaceMember`,
+  `useJoinProjectSpace`, `useLeaveProjectSpace` (each `(pid, spaceId)`; each refreshes the spaces list, the members under it), and
+  `useProjectSessions(pid, { spaceId, parent: "root", q, createdBy, agent, updatedAfter, refetchInterval, pollFirstPageOnly: true })`
   (`pollFirstPageOnly` polls page one only; experimental).
 - A trigger's `space_id` files each run of it into that channel or DM as a
   thread. A channel trigger without `session_access` is project-visible. A DM
@@ -475,8 +484,7 @@ rows[0].reply_count; // messages after it; a space list only, null elsewhere
   agent (else 400 `agent_mismatch`). A space change applies to later runs only.
   An archived or deleted
   space sends its runs to `#general`. `ProjectTrigger.space_id` is present only
-  while the flag is on. `useProjectTriggers` create, update and remove refresh
-  every space summary.
+  while the flag is on.
 - Turning the flag on files every session in no space into `#general`;
   turning it off deletes nothing. Turning it on again (with `#general`
   already there) sets `#general`'s notice for 7 days:
@@ -519,18 +527,15 @@ const page = await m.pages.create(ch.space_id, { type: "people", title: "Priya",
 await m.notes.add(ch.space_id, { text: "Priya owns the launch checklist" }); // one line appended to Notes.md
 const full = await m.pages.get(page.page_id); // body (no front-matter, no title line), sources, related, version_no (mtime)
 await m.pages.update(page.page_id, { base_version: full.version_no, body: "## Role\n- Owns QA" }); // body only; stale → 409 version_conflict
-const { changes } = await m.changes(ch.space_id); // the 20 most recently changed files
-const { versions } = await m.pages.history(page.page_id); // from Drive commits, newest first, ≤ 20
-await m.undo(versions[0].version_id); // { pages }: the version before is written back; an older version → 409 superseded
+const { versions } = await m.pages.history(page.page_id); // from Drive commits, newest first, ≤ 20; restore one with pages.update
 await m.pages.delete(page.page_id); // deletes the file for good
 const { hits } = await m.search({ q: "launch date", type: "decisions" }); // title hits first; `layer` limits it to one layer
 const used = await m.usage(sessionId); // a thread's "Used memory": { loaded_at, layers: [{ layer_key, scope, name, pages }] }
 ```
 
 - Errors are `ApiError` with `code`: `409` `title_taken` (`data.page_id`),
-  `layer_read_only` (archived channel), `version_conflict`, `superseded`;
-  `404` `version_gone` (older than the drive's newest 100 commits: Files →
-  Versions), `memory_not_found` (another member's DM, an unknown id); `403`
+  `layer_read_only` (archived channel), `version_conflict`; `404`
+  `memory_not_found` (another member's DM, an unknown id); `403`
   `forbidden` (no write access to the folder); `413` `page_too_large` (body
   over 262,144 UTF-8 bytes); `422` `secret_detected`. None reaches the host
   error handler.
@@ -543,11 +548,9 @@ const used = await m.usage(sessionId); // a thread's "Used memory": { loaded_at,
   deleted since are left out; a thread the caller cannot open → `404`
   `session_not_found`.
 - React: `useProjectMemoryLayer(pid, layerKey)`, `useProjectMemoryPages(pid, layerKey, { type? })`,
-  `useProjectMemoryChanges(pid, layerKey)` and `useProjectMemoryHistory(pid, pageId)`
-  (infinite queries with one page), `useProjectMemoryPage(pid, pageId)`; every
-  read takes `{ enabled }`. Mutations: `useCreateProjectMemoryPage(pid, layerKey)`,
-  `useAddProjectMemoryNote(pid, layerKey)`, `useUpdateProjectMemoryPage(pid)`,
-  `useDeleteProjectMemoryPage(pid)`, `useUndoProjectMemoryVersion(pid)`. Each
+  `useProjectMemoryHistory(pid, pageId)`, `useProjectMemoryPage(pid, pageId)`; every
+  read takes `{ enabled }`. Mutations: `useAddProjectMemoryNote(pid, layerKey)`,
+  `useUpdateProjectMemoryPage(pid)`, `useDeleteProjectMemoryPage(pid)`. Each
   write refreshes every memory read of the project (`qk.project.memory(pid)`),
   the channel tab counts and the onboarding state.
   `useProjectMemorySearch(pid, { q, layer?, type?, limit? })` runs while `q`
@@ -775,7 +778,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.mobileClientPolicy()` | the operator's mobile release policy, `GET /v1/clients/mobile`, **no token needed** (read before login): resolves `{ minimum_version, store_url_ios, store_url_android }`, each a string or `null`; a non-200 answer throws `ApiError`. A mobile host compares its app version to `minimum_version` with `compareSemver(a, b)` (`-1 \| 0 \| 1`, or `null` when either side does not parse; ignores a leading `v` and `-pre`/`+build` suffixes) and fails open on `null`. Also exported standalone as `getMobileClientPolicy` and the `MobileClientPolicy` type. The operator sets `MOBILE_MIN_VERSION`, `MOBILE_STORE_URL_IOS`, `MOBILE_STORE_URL_ANDROID` on the API |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
-| `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events; `.fire(slug, { payload, dryRun })`; run history `.runs(slug)` / `.projectRuns({ status })`; `.replay(slug, runId)`) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.spaces.{list,create,update,dm,apps,links,summary,generalNotice,onboarding}` (channels and DMs; experimental, `project_channels` flag) · `.memory.{layer,changes,pages,notes,undo,search,usage}` (memory files in Drive; experimental, `drives` flag) · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
+| `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events; `.fire(slug, { payload, dryRun })`; run history `.runs(slug)` / `.projectRuns({ status })`; `.replay(slug, runId)`) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.spaces.{list,create,update,dm,apps,links,summary,generalNotice,onboarding}` (channels and DMs; experimental, `project_channels` flag) · `.memory.{layer,pages,notes,search,usage}` (memory files in Drive; experimental, `drives` flag) · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`restore`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`watch`/`setWatch`/`presence`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · runtime REST escape hatches: `stream()` and the deprecated `.runtime` |
 | `kortix.runtime()` | the runtime REST client for the active sandbox (the SDK's own `RuntimeClient`, frozen at the `@opencode-ai/sdk` 1.18.23 route shapes); use a session-scoped handle in multi-tenant code |
 

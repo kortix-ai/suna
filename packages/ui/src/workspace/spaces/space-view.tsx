@@ -4,13 +4,15 @@ import { ApiError, type ProjectSession, type ProjectSpace } from '@kortix/sdk';
 import {
   updateCachedProjectSessions,
   useOpenProjectDm,
+  useProjectConfig,
   useProjectSpaces,
-  useProjectSpaceSummary,
   useSession,
   useSessionPrompts,
+  useProjectSpaceMembers,
   useUpdateProjectSpace,
+  useVisibleAgents,
 } from '@kortix/sdk/react';
-import { CaretDownIcon, HashIcon } from '@phosphor-icons/react';
+import { CaretDownIcon, SquaresFourIcon } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -18,9 +20,9 @@ import { useTranslations } from '../../i18n';
 import { Close } from '../../icons/close';
 import { AgentMark } from '../../internal/components/agent-mark';
 import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
-import { MemoryView, useMemoryPageCount } from '../memory/memory-view';
+import { MemoryView } from '../memory/memory-view';
 import { UsedMemoryChip } from '../memory/used-memory-chip';
-import { useIsMobile } from '../../internal/hooks';
+import { useIsPhone } from '../../hooks/use-mobile';
 import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
 import { type CanResult, useProjectCan, useProjectPageCans } from '../../internal/lib/use-project-can';
 import { ProjectScope } from '../../internal/project-scope';
@@ -29,7 +31,7 @@ import { cn } from '../../lib/utils';
 import { uiRoutes } from '../../lib/routes';
 import { Button } from '../../primitives/button';
 import { ConfirmDialog } from '../../primitives/confirm-dialog';
-import { CountBadge } from '../../primitives/count-badge';
+import { EmptyArt } from '../../primitives/empty-art';
 import { EmptyState } from '../../primitives/empty-state';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '../../primitives/resizable';
 import { ErrorState } from '../../primitives/error-state';
@@ -39,20 +41,37 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../primitives/tabs'
 import { errorToast, successToast } from '../../primitives/toast';
 import { UiLink as Link, useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
 import { ComposerChatInput, type ComposerOptions } from '../../session/composer/composer-chat-input';
+import { FeaturedAgentsContext } from '../../session/composer/agent-selector';
 import { ComposerDropZone } from '../../session/composer/composer-drop-zone';
 import type { DraftScope } from '../../session/composer/draft/composer-draft';
 import { AfterFirstPromptContext } from '../../session/thread/after-first-prompt';
 import { SessionThread } from '../../session/thread/session-thread';
 import { TranscriptRowsContext } from '../../session/thread/transcript-rows';
 import { useProjectHomeSend } from '../layout/use-project-home-send';
+import { ChannelSetup } from './channel-setup';
 import { ChannelsIntro, GeneralChatHead } from './channels-onboarding';
 import { CreateChannelDialog } from './create-channel-dialog';
+import { channelRunnableAgents, offeredChannelAgents } from './space-agents';
 import { SpaceLinks } from './space-links';
 import { SpaceTriggers } from './space-triggers';
 import { SpaceDetailsDialog, type SpaceDetailsTab } from './space-details-dialog';
+import { ChannelGlyph } from './channel-glyph';
+import { JoinChannelButton } from './space-members';
 import { SpaceRosterButton } from './space-roster';
-import { agentLabel, liveReplyCount, spaceRoster, spaceTabFromParam, spaceTabs, type SpaceTab } from './space-timeline';
-import { SpaceThreadList, SpaceTimeline, useSpaceThreads, type SpaceThreads } from './space-timeline-view';
+import {
+  agentLabel,
+  liveReplyCount,
+  spaceRoster,
+  spaceTabFromParam,
+  spaceTabs,
+  threadIsWorking,
+  type SpaceTab,
+} from './space-timeline';
+import { SpaceTimeline, useSpaceThreads, type SpaceThreads } from './space-timeline-view';
+import { SpaceThreadsTab } from './space-threads-tab';
+
+/** The search and filter keys of the Threads and Links tabs. */
+const TAB_FILTER_PARAMS = ['q', 'status', 'by', 'agent', 'active', 'pinned', 'added'] as const;
 
 /** A channel by slug, or the caller's DM with one agent. */
 export type SpaceTarget = { kind: 'channel'; slug: string } | { kind: 'dm'; agentName: string };
@@ -158,37 +177,69 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
   }, [dmAgent, spaces.data, listedDm, openDmMutate]);
 
   const threads = useSpaceThreads(projectId, space?.space_id);
-  // The counts beside the Apps, Links and Triggers labels (a DM has Triggers only).
-  const summary = useProjectSpaceSummary(projectId, space?.space_id);
-  // Memory counts its pages (notes not included).
-  const memoryCount = useMemoryPageCount(projectId, space?.space_id);
   const threadId = searchParams.get(THREAD_PARAM);
   const tabs = useReadableSpaceTabs(projectId, target.kind);
   const requestedTab = spaceTabFromParam(searchParams.get(TAB_PARAM), target.kind);
   const tab = tabs.includes(requestedTab) ? requestedTab : 'chat';
+  // `push` adds a history entry, so the browser's Back walks it: a tab, and
+  // opening the thread panel. Filters and switching threads replace the entry.
   const setParams = useCallback(
-    (change: (params: URLSearchParams) => void) => {
+    (change: (params: URLSearchParams) => void, mode: 'push' | 'replace' = 'replace') => {
       const params = new URLSearchParams(searchParams);
       change(params);
       const query = params.toString();
-      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+      router[mode](query ? `${pathname}?${query}` : pathname, { scroll: false });
     },
     [pathname, router, searchParams],
   );
+  // The current history entry is the one this view pushed to open the thread:
+  // closing goes Back to the entry under it. A reload, a link or a later tab
+  // push makes it someone else's entry, so closing replaces it instead.
+  const ownThreadEntry = useRef(false);
+  useEffect(() => {
+    if (!threadId) ownThreadEntry.current = false;
+  }, [threadId]);
   const openThread = useCallback(
-    (sessionId: string) => setParams((params) => params.set(THREAD_PARAM, sessionId)),
-    [setParams],
+    (sessionId: string) => {
+      if (threadId) return setParams((params) => params.set(THREAD_PARAM, sessionId));
+      ownThreadEntry.current = true;
+      setParams((params) => params.set(THREAD_PARAM, sessionId), 'push');
+    },
+    [setParams, threadId],
   );
-  const closeThread = useCallback(() => setParams((params) => params.delete(THREAD_PARAM)), [setParams]);
+  const closeThread = useCallback(() => {
+    if (ownThreadEntry.current) {
+      ownThreadEntry.current = false;
+      return router.back();
+    }
+    setParams((params) => params.delete(THREAD_PARAM));
+  }, [router, setParams]);
   const setTab = useCallback(
-    (next: string) =>
-      setParams((params) => (next === 'chat' ? params.delete(TAB_PARAM) : params.set(TAB_PARAM, next))),
+    (next: string) => {
+      ownThreadEntry.current = false;
+      setParams((params) => {
+        // Threads and Links share `q` and `by`: a tab starts unfiltered.
+        for (const key of TAB_FILTER_PARAMS) params.delete(key);
+        if (next === 'chat') params.delete(TAB_PARAM);
+        else params.set(TAB_PARAM, next);
+      }, 'push');
+    },
     [setParams],
   );
 
   const title = target.kind === 'channel' ? target.slug : agentLabel(target.agentName);
+  // The channel details dialog: the header opens it, and so does the setup block for a viewer who may add no one.
+  const [details, setDetails] = useState<SpaceDetailsTab | null>(null);
   const header = (
-    <SpaceHeader projectId={projectId} target={target} title={title} space={space} sessions={threads.sessions} />
+    <SpaceHeader
+      projectId={projectId}
+      target={target}
+      title={title}
+      space={space}
+      sessions={threads.sessions}
+      details={details}
+      setDetails={setDetails}
+    />
   );
 
   if (!space) {
@@ -285,12 +336,6 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
               {tabs.map((value) => (
                 <TabsTrigger key={value} value={value} className="w-fit flex-none">
                   {t(`tab.${value}`)}
-                  {/* Apps counts the host's cards: no host gallery, no count over the empty state. */}
-                  {(value === 'links' || value === 'triggers' || (value === 'apps' && renderApps)) && summary.data?.[value] ? (
-                    <CountBadge count={summary.data[value]} />
-                  ) : value === 'memory' && memoryCount ? (
-                    <CountBadge count={memoryCount} />
-                  ) : null}
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -301,10 +346,13 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
               threads={threads}
               threadId={threadId}
               onOpenThread={openThread}
+              onOpenMembers={() => setDetails('members')}
               beforeSend={beforeSend}
               renderFolder={renderFolder}
               renderApps={renderApps}
               tabs={tabs}
+              params={searchParams}
+              setParams={setParams}
             />
           </Tabs>
         </ComposerDropZone>
@@ -344,10 +392,13 @@ function SpaceTabs({
   threads,
   threadId,
   onOpenThread,
+  onOpenMembers,
   beforeSend,
   renderFolder,
   renderApps,
   tabs,
+  params,
+  setParams,
 }: {
   projectId: string;
   space: ProjectSpace;
@@ -357,20 +408,33 @@ function SpaceTabs({
   threads: SpaceThreads;
   threadId: string | null;
   onOpenThread: (sessionId: string) => void;
+  onOpenMembers: () => void;
   beforeSend?: () => Promise<void>;
   renderFolder?: (folder: SpaceFolder) => ReactNode;
   renderApps?: (space: ProjectSpace) => ReactNode;
+  /** The page's query: the Threads tab keeps its search and filters there. */
+  params: { get(name: string): string | null };
+  setParams: (change: (params: URLSearchParams) => void) => void;
 }) {
   const t = useTranslations('spaces.view');
   return (
     <>
       <TabsContent value="chat" className="flex min-h-0 flex-col">
-        {space.is_default ? <GeneralChatHead projectId={projectId} place={place} /> : null}
-        <SpaceTimeline space={space} threads={threads} selectedId={threadId} onOpenThread={onOpenThread} />
+        {space.is_default ? <GeneralChatHead projectId={projectId} /> : null}
+        {space.kind === 'channel' ? <ChannelSetup projectId={projectId} space={space} onOpenMembers={onOpenMembers} /> : null}
+        <SpaceTimeline projectId={projectId} space={space} threads={threads} selectedId={threadId} onOpenThread={onOpenThread} />
         <SpaceComposer projectId={projectId} space={space} onOpenThread={onOpenThread} beforeSend={beforeSend} />
       </TabsContent>
-      <TabsContent value="threads" className="min-h-0 overflow-y-auto">
-        <SpaceThreadList threads={threads} selectedId={threadId} onOpenThread={onOpenThread} />
+      <TabsContent value="threads" className="flex min-h-0 flex-col">
+        <SpaceThreadsTab
+          projectId={projectId}
+          space={space}
+          threads={threads}
+          selectedId={threadId}
+          onOpenThread={onOpenThread}
+          params={params}
+          setParams={setParams}
+        />
       </TabsContent>
       {tabs
         .filter((tab): tab is Exclude<SpaceTab, 'chat' | 'threads'> => tab !== 'chat' && tab !== 'threads')
@@ -384,8 +448,15 @@ function SpaceTabs({
               {renderFolder({ space, tab, place })}
             </TabsContent>
           ) : tab === 'links' ? (
-            <TabsContent key={tab} value={tab} className="min-h-0 overflow-y-auto">
-              <SpaceLinks projectId={projectId} space={space} place={place} />
+            <TabsContent key={tab} value={tab} className="flex min-h-0 flex-col">
+              <SpaceLinks
+                projectId={projectId}
+                space={space}
+                place={place}
+                onOpenThread={onOpenThread}
+                params={params}
+                setParams={setParams}
+              />
             </TabsContent>
           ) : tab === 'triggers' ? (
             <TabsContent key={tab} value={tab} className="min-h-0 overflow-y-auto">
@@ -394,25 +465,27 @@ function SpaceTabs({
           ) : tab === 'apps' ? (
             <TabsContent key={tab} value={tab} className="min-h-0 overflow-y-auto">
               {renderApps?.(space) ?? (
-                <div className="px-5 py-16">
-                  <EmptyState size="sm" title={t('empty.apps.title')} description={t('empty.apps.description', { place })} />
-                </div>
+                <EmptyState
+                  className="min-h-full"
+                  media={<EmptyArt icon={SquaresFourIcon} />}
+                  title={t('empty.apps.title')}
+                  description={t('empty.apps.description', { place })}
+                />
               )}
             </TabsContent>
           ) : (
             <TabsContent key={tab} value={tab} className="min-h-0 overflow-y-auto">
-              <div className="px-5 py-16">
-                <EmptyState
-                  size="sm"
-                  title={t(`empty.${tab}.title`)}
-                  description={t(`empty.${tab}.description`, { place })}
-                  action={
-                    <Button variant="outline" size="sm" disabled>
-                      {t(`empty.${tab}.action`)}
-                    </Button>
-                  }
-                />
-              </div>
+              <EmptyState
+                className="min-h-full"
+                media={<EmptyArt />}
+                title={t(`empty.${tab}.title`)}
+                description={t(`empty.${tab}.description`, { place })}
+                action={
+                  <Button variant="outline" size="sm" disabled>
+                    {t(`empty.${tab}.action`)}
+                  </Button>
+                }
+              />
             </TabsContent>
           ),
         )}
@@ -422,7 +495,7 @@ function SpaceTabs({
 
 /**
  * The header row: `# name ⌄` (the channel's details) and its description,
- * then the people and agents of its threads; a DM shows its agent. Same
+ * then its members and agents; a DM shows its agent. Same
  * title-bar classes as `ProjectPageHeader`, so it clears the desktop window
  * controls the same way.
  */
@@ -432,22 +505,39 @@ function SpaceHeader({
   title,
   space,
   sessions,
+  details,
+  setDetails,
 }: {
   projectId: string;
   target: SpaceTarget;
   title: string;
   space: ProjectSpace | undefined;
   sessions: readonly ProjectSession[];
+  details: SpaceDetailsTab | null;
+  setDetails: (tab: SpaceDetailsTab | null) => void;
 }) {
   const t = useTranslations('spaces.view');
   const sidebar = useOptionalSidebar();
   const router = useUiRouter();
   const update = useUpdateProjectSpace(projectId);
-  const [details, setDetails] = useState<SpaceDetailsTab | null>(null);
   const [renameOpen, setRenameOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
-  const roster = useMemo(() => spaceRoster(sessions, space?.dm_agent_name), [sessions, space?.dm_agent_name]);
   const channel = target.kind === 'channel' && space ? space : null;
+  // The channel's members and its agent list: the same roster for every
+  // viewer. The threads a viewer can load only add their thread counts.
+  const members = useProjectSpaceMembers(projectId, channel?.space_id);
+  const roster = useMemo(() => {
+    const found = spaceRoster(sessions, space?.dm_agent_name);
+    const threads = new Map(found.people.map((person) => [person.id, person.threads]));
+    const people = (members.data?.members ?? []).map((member) => ({
+      id: member.user_id,
+      name: member.name,
+      email: null,
+      avatarUrl: member.avatar_url,
+      threads: threads.get(member.user_id) ?? 0,
+    }));
+    return { people, agents: space?.agents ?? [], agentThreads: found.agentThreads };
+  }, [sessions, space?.dm_agent_name, space?.agents, members.data]);
 
   const archive = () => {
     if (!channel) return;
@@ -489,13 +579,13 @@ function SpaceHeader({
                 aria-label={t('channelDetails', { name: title })}
                 onClick={() => setDetails('about')}
               >
-                <HashIcon weight="bold" className="size-4.5 shrink-0" />
+                <ChannelGlyph visibility={channel.visibility} weight="bold" className="size-4.5 shrink-0" />
                 <span className="ml-0.5 truncate text-lg font-semibold">{title}</span>
                 <CaretDownIcon weight="bold" className="text-muted-foreground ml-1.5 size-3.5 shrink-0" />
               </Button>
             ) : (
               <span className="flex h-8 items-center px-1.5">
-                <HashIcon weight="bold" className="size-4.5 shrink-0" />
+                <ChannelGlyph weight="bold" className="size-4.5 shrink-0" />
                 <span className="ml-0.5 truncate text-lg font-semibold">{title}</span>
               </span>
             )}
@@ -512,6 +602,7 @@ function SpaceHeader({
           </p>
         ) : null}
       </div>
+      {channel && channel.is_member === false && channel.visibility !== 'private' ? <JoinChannelButton projectId={projectId} space={channel} /> : null}
       {channel && (roster.people.length > 0 || roster.agents.length > 0) ? (
         <SpaceRosterButton roster={roster} onViewAll={() => setDetails('members')} />
       ) : null}
@@ -519,7 +610,6 @@ function SpaceHeader({
         <>
           <SpaceDetailsDialog
             space={channel}
-            roster={roster}
             tab={details}
             onTabChange={setDetails}
             onOpenChange={(open) => setDetails(open ? 'about' : null)}
@@ -617,7 +707,7 @@ function SpaceComposer({
   beforeSend?: () => Promise<void>;
 }) {
   const t = useTranslations('spaces.view');
-  const isMobile = useIsMobile();
+  const isPhone = useIsPhone();
   const spaceSend = useMemo(() => ({ spaceId: space.space_id, onOpen: onOpenThread }), [space.space_id, onOpenThread]);
   const { send, sending } = useProjectHomeSend(projectId, { beforeSend, space: spaceSend });
   const draftScope = useMemo<DraftScope>(() => ({ kind: 'space', spaceId: space.space_id }), [space.space_id]);
@@ -649,41 +739,75 @@ function SpaceComposer({
   );
 
   const agent = space.dm_agent_name;
+  // A channel's agents lead its picker; the first one the project still offers starts a new thread.
+  const visible = useVisibleAgents({ projectId });
+  const projectConfig = useProjectConfig(projectId);
+  const projectDefault = projectConfig?.default_agent ?? projectConfig?.open_code_default_agent ?? null;
+  // A member with no agent grant still posts here with the channel's agents.
+  const runnable = useMemo(() => channelRunnableAgents(space, projectDefault), [space, projectDefault]);
+  const offered = useMemo(
+    () => [...visible, ...runnable.filter((name) => !visible.some((a) => a.name === name)).map((name) => ({ name }))],
+    [visible, runnable],
+  );
+  const channelAgents = useMemo(() => offeredChannelAgents(space, offered), [space, offered]);
+  const channelName = space.slug ?? space.name;
+  const featured = useMemo(
+    () => (channelAgents.length > 0 ? { label: `#${channelName}`, restLabel: t('allAgents'), names: channelAgents } : null),
+    [channelAgents, channelName, t],
+  );
   return (
     <div className="shrink-0 pt-1 pb-4">
-      <ComposerChatInput
-        onSend={send}
-        onCommand={onCommand}
-        projectId={projectId}
-        draftScope={draftScope}
-        isSending={sending}
-        disabled={sending}
-        // The box empties at the keypress; the thread on the right draws the attachments.
-        clearOnSend="text-only"
-        boundAgentName={agent}
-        // `hint`, not `placeholder`: a placeholder is only the first frame of
-        // the rotating tips, and this box must always say where the message goes.
-        hint={
-          agent ? t('messageAgent', { agent: agentLabel(agent) }) : t('messageChannel', { name: space.slug ?? space.name })
-        }
-        prefill={prefill}
-        // Attach, agent and settings inside the bordered box. A phone's toolbar
-        // is too narrow beside the model selector, so it keeps the row beneath.
-        underbarPlacement={isMobile ? 'below' : 'inline'}
-        slashMenuPlacement="above"
-        // The timeline's width and side margins, not the centred session column.
-        parentClassName="max-w-none px-5"
-      />
+      <FeaturedAgentsContext.Provider value={featured}>
+        <ComposerChatInput
+          defaultAgentName={channelAgents[0] ?? null}
+          channelAgentNames={runnable}
+          onSend={send}
+          onCommand={onCommand}
+          projectId={projectId}
+          draftScope={draftScope}
+          isSending={sending}
+          disabled={sending}
+          // The box empties at the keypress; the thread on the right draws the attachments.
+          clearOnSend="text-only"
+          boundAgentName={agent}
+          // `hint`, not `placeholder`: a placeholder is only the first frame of
+          // the rotating tips, and this box must always say where the message goes.
+          hint={
+            agent ? t('messageAgent', { agent: agentLabel(agent) }) : t('messageChannel', { name: space.slug ?? space.name })
+          }
+          prefill={prefill}
+          // Attach, agent and settings inside the bordered box, down to a 720px
+          // window. A phone's toolbar is too narrow beside the model selector, so
+          // it keeps the row beneath.
+          underbarPlacement={isPhone ? 'below' : 'inline'}
+          slashMenuPlacement="above"
+          // The timeline's width and side margins, not the centred session column.
+          parentClassName="max-w-none px-5"
+        />
+      </FeaturedAgentsContext.Provider>
     </div>
   );
 }
 
-/** "N replies" with a hairline to the right. */
+/**
+ * "N replies" with a hairline to the right. At 0 (the first answer pending)
+ * the hairline is drawn alone at the same place and height, and the count
+ * fades in when the answer lands: the answer row never moves.
+ */
 function RepliesDivider({ count, className }: { count: number; className?: string }) {
   const t = useTranslations('spaces.view');
   return (
     <div className={cn('flex items-center gap-3 px-5', className)}>
-      <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{t('replies', { count })}</span>
+      {/* At 0 the text holds "1 reply"'s width, invisible, so the line starts where it will stay. */}
+      <span
+        aria-hidden={count === 0 || undefined}
+        className={cn(
+          'text-muted-foreground shrink-0 text-xs tabular-nums transition-opacity duration-(--duration-normal) ease-out motion-reduce:transition-none',
+          count === 0 && 'opacity-0',
+        )}
+      >
+        {t('replies', { count: Math.max(count, 1) })}
+      </span>
       <div className="bg-border h-px flex-1" />
     </div>
   );
@@ -716,19 +840,23 @@ function ThreadPanel({
   // Null from an older API that does not count replies.
   const replyCount = thread?.reply_count ?? null;
   const dividerOnTop = Boolean(replyCount) && session.hasOlder;
+  const answered = session.messages.some((message) => message.info.role === 'assistant');
   // A turn has finished: the thread's "Used memory" record can be read.
-  const turnDone = !session.isBusy && session.messages.some((message) => message.info.role === 'assistant');
+  const turnDone = !session.isBusy && answered;
+  // The first answer is on its way (or landed a frame before its count):
+  // the divider is drawn without a count, so the answer does not push it in.
+  const answerPending = replyCount === 0 && (session.isBusy || answered || (!!thread && threadIsWorking(thread)));
   // Stable across stream frames: every memoized turn reads this context.
   // "Used memory" sits under the first prompt, or heads the panel with the divider.
   const afterFirstPrompt = useMemo(
     () =>
       dividerOnTop ? null : (
         <>
-          {replyCount ? <RepliesDivider count={replyCount} className="py-2" /> : null}
+          {replyCount || answerPending ? <RepliesDivider count={replyCount ?? 0} className="py-2" /> : null}
           <UsedMemoryChip projectId={projectId} sessionId={sessionId} ready={turnDone} className="px-5" />
         </>
       ),
-    [replyCount, dividerOnTop, projectId, sessionId, turnDone],
+    [replyCount, answerPending, dividerOnTop, projectId, sessionId, turnDone],
   );
   const agentName = session.agentName ?? thread?.agent_name ?? agentFallback;
   const rows = useMemo(

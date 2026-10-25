@@ -60,7 +60,7 @@ const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
   },
   // On: create `#general` and file every session that has no space into it. Off: nothing is deleted.
   // On again (off before the write, `#general` older than the write): mark the intro seen for the
-  // project's members (D8: no intro on turn-on again) and record the `#general` line with the count.
+  // project's members (no intro on a second turn-on) and record the `#general` line with the count.
   // A `#general` made after the write (a channel list in the window before this effect) is a first on.
   // Both: running threads' /drives/README.md gains or drops its channel section (that never throws).
   project_channels: async ({ projectId, accountId, metadata, previousMetadata, writtenAt }) => {

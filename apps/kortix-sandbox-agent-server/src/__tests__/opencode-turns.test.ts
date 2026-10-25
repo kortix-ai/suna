@@ -237,7 +237,7 @@ describe('parseRuntimePromptBody', () => {
   })
 })
 
-describe('the turn system text on OpenCode (memory P2)', () => {
+describe('the turn system text on OpenCode', () => {
   test('prompt_async carries system for that prompt; a prompt without it sends none', async () => {
     const { proxy, seen } = fakeProxy(() => ({ status: 204, body: null }))
     const turns = createOpenCodeTurnService(proxy, () => '/workspace')

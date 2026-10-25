@@ -15,7 +15,7 @@ import type { AttachmentSubmission } from './attachment-submission';
 import type { ComposerSendReset } from './composer-reset';
 import { type Command, type ModelKey, useProjectConfig, useRuntimeAgents, useRuntimeCommands, useRuntimeConfig, useRuntimeProviders, useSessionModelSelection } from '@kortix/sdk/react';
 import { appendMentionRefs } from '../../internal/lib/project-preamble';
-import { resolveComposerAgent } from './composer-agent-access';
+import { resolveComposerAgent, withChannelAgents } from './composer-agent-access';
 import type { DraftScope } from './draft/composer-draft';
 
 export interface ComposerOptions {
@@ -60,6 +60,8 @@ export function ComposerChatInput({
   cardClassName,
   parentClassName,
   boundAgentName,
+  defaultAgentName,
+  channelAgentNames,
   projectSession,
   clearOnSend,
   onAgentSelectionChange,
@@ -121,6 +123,10 @@ export function ComposerChatInput({
   parentClassName?: string;
   /** Immutable project-session agent. When set, sends are locked to this agent. */
   boundAgentName?: string | null;
+  /** The agent a new thread starts on here (a channel's default). Unset: the project's default. */
+  defaultAgentName?: string | null;
+  /** A channel's agents: anyone who posts here runs them, granted or not. */
+  channelAgentNames?: readonly string[];
   /** The project session row. Its model pin is the model this composer opens on. */
   projectSession?: { metadata?: Record<string, unknown> | null } | null;
   /** Reports the effective agent to parent controls such as the sandbox picker. */
@@ -137,17 +143,19 @@ export function ComposerChatInput({
   /** Up in an empty composer: open the latest queued message for editing. */
   onArrowUpAtStart?: SessionChatInputProps['onArrowUpAtStart'];
 }) {
-  const { data: agents } = useRuntimeAgents({ projectId });
+  const { data: rosterAgents } = useRuntimeAgents({ projectId });
+  const agents = useMemo(() => withChannelAgents(rosterAgents, channelAgentNames), [rosterAgents, channelAgentNames]);
   const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
   const { data: config } = useRuntimeConfig();
   const projectConfig = useProjectConfig(projectId);
+  const startAgent = defaultAgentName || (projectConfig?.default_agent ?? projectConfig?.open_code_default_agent);
   const local = useSessionModelSelection({
     agents,
     providers,
     config,
     sessionId,
     boundAgentName,
-    defaultAgentName: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
+    defaultAgentName: startAgent,
     projectSession,
   });
   const setAgent = local.agent.set;
@@ -188,7 +196,7 @@ export function ComposerChatInput({
   const agentResolution = resolveComposerAgent({
     agents,
     boundAgent: boundAgentName,
-    defaultAgent: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
+    defaultAgent: startAgent,
     selectedAgent: local.agent.current?.name ?? null,
   });
   const selectedAgentName = agentResolution.selected;

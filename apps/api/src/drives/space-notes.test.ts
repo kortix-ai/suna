@@ -118,6 +118,15 @@ describe('renderDriveNotes', () => {
     expect(text).toContain('/drives/me/Memory/ (load the kortix-user-memory skill)');
   });
 
+  test('N5/N11: a private channel thread is told to keep every fact, team facts included, in the channel, never Company', () => {
+    const lines = spaceNotesLines({ kind: 'channel', name: 'deals', visibility: 'private', spaceId: 'sp-1' }, [own]);
+    const text = renderDriveNotes([own], [], null, lines, { privateChannel: true });
+    expect(text).not.toContain('goes in Company/Memory/');
+    expect(text).toContain('#deals is a private channel');
+    expect(text).toContain('Save what you learn here, team facts included, in this channel’s memory folder');
+    expect(text).toContain('read-only in this thread');
+  });
+
   test('a thread with no space keeps the Company/Memory folder', () => {
     const text = renderDriveNotes([own], []);
     expect(text).toContain('what the whole team should know goes in Company/Memory/ when that folder is mounted.');

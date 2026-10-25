@@ -25,7 +25,13 @@ export function CompanyMemoryPage({ projectId }: { projectId: string }) {
           <p className="text-muted-foreground min-w-0 truncate self-center text-xs">{t('subtitle')}</p>
         </div>
       </div>
-      <MemoryView projectId={projectId} layerKey="company" place={t('place')} />
+      {/* Out of flow, as in a channel: the shell's wrapper is `min-h-svh`, so a body with an
+          intrinsic height (the All cards) would grow the page and scroll this header away. */}
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <div className="absolute inset-0 flex flex-col">
+          <MemoryView projectId={projectId} layerKey="company" place={t('place')} />
+        </div>
+      </div>
     </div>
   );
 }

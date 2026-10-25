@@ -1,8 +1,7 @@
 /**
- * Integration test (real local DB, real routes): turning Channels on and off
- * (spec section 14, D7, D8).
+ * Integration test (real local DB, real routes): turning Channels on and off.
  *
- * - D7: only a project admin (`project.settings.write`, the Manager role)
+ * - Only a project admin (`project.settings.write`, the Manager role)
  *   turns `project_channels` on or off. A member gets 403 and nothing changes.
  *   (The other writer, `PUT /v1/admin/api/projects/:id/features`, is for
  *   platform operators only.)
@@ -124,7 +123,7 @@ afterAll(async () => {
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
 });
 
-describe('D7: only a project admin turns Channels on or off', () => {
+describe('only a project admin turns Channels on or off', () => {
   test('a member gets 403 naming project.settings.write, and the flag stays on', async () => {
     const res = await req('PATCH', `${base}/features`, keys.priya, { feature: 'project_channels', enabled: false });
     expect(res.status).toBe(403);

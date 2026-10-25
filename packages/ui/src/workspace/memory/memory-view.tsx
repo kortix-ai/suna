@@ -1,6 +1,7 @@
 'use client';
 
 import { useProjectMemoryLayer, useProjectMemoryPage, useProjectMemoryPages } from '@kortix/sdk/react';
+import { SunDimIcon } from '@phosphor-icons/react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { useTranslations } from '../../i18n';
@@ -11,8 +12,8 @@ import { Skeleton } from '../../primitives/skeleton';
 import { SplitSheet, SplitSheetMain } from '../../primitives/split-sheet';
 import { useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
 import { MemoryEmpty } from './memory-empty';
+import { MemoryAll, MemoryAllSkeleton } from './memory-all';
 import { MemoryHistory } from './memory-history';
-import { memoryPageCount } from './memory-labels';
 import { MemoryPageList, sortMemoryPages } from './memory-page-list';
 import { MemoryReader, MemoryReaderSkeleton } from './memory-reader';
 import { RememberPopover } from './remember-popover';
@@ -24,6 +25,8 @@ export const MEMORY_HISTORY_PARAM = 'history';
 /** `1`: "Remember this…" opens on arrival (#general's "Get started"); the view then drops it. */
 export const MEMORY_REMEMBER_PARAM = 'remember';
 
+type HistoryState = { versionId: string | null; mode: 'sheet' | 'preview' | 'closed' };
+
 export interface MemoryViewProps {
   projectId: string;
   /** `company`, or the space id of a channel or DM. */
@@ -33,7 +36,7 @@ export interface MemoryViewProps {
 }
 
 /**
- * A layer's memory: the flat page list (with a small graph of the open page)
+ * A layer's memory: the flat page list
  * on the left, the open page on the right (its History in a sheet beside
  * it; its body edited in place). A layer with no pages says what memory is
  * and offers "Remember this…". The same view serves a channel, a DM and the
@@ -53,10 +56,14 @@ export function MemoryView({ projectId, layerKey, place }: MemoryViewProps) {
   // version itself: a save bumps it too, and a remount would drop the save's
   // own onSuccess (TanStack skips call-time callbacks of an unmounted caller).
   const [editorRun, setEditorRun] = useState(0);
-  // Open History: `versionId` null shows the newest version.
+  // History: `versionId` is the version picked in it (null: the current page).
+  // `sheet`: the sheet is open and the reader previews `versionId`.
+  // `preview`: the sheet covered the reader (a narrow container), so Preview
+  //   closed it; the reader shows `versionId` under its preview bar.
+  // `closed`: back to the current page from `preview`; History reopens on `versionId`.
   // `?history=1` (the thread line's "open History") opens it on arrival.
-  const [history, setHistory] = useState<{ versionId: string | null } | null>(() =>
-    searchParams.get(MEMORY_HISTORY_PARAM) ? { versionId: null } : null,
+  const [history, setHistory] = useState<HistoryState | null>(() =>
+    searchParams.get(MEMORY_HISTORY_PARAM) ? { versionId: null, mode: 'sheet' } : null,
   );
 
   // A page this view just deleted (or whose creation it undid) leaves the list
@@ -68,8 +75,8 @@ export function MemoryView({ projectId, layerKey, place }: MemoryViewProps) {
   }, [list.data, gone]);
   const requested = searchParams.get(MEMORY_PAGE_PARAM);
   const explicit = pages.find((page) => page.page_id === requested);
-  // No page in the URL (or one that is gone): the newest page.
-  const selected = explicit ?? pages[0];
+  // No page in the URL (or one that is gone): the All view.
+  const selected = explicit;
   const page = useProjectMemoryPage(projectId, selected?.page_id);
 
   const setPage = (pageId: string | null) => {
@@ -122,14 +129,18 @@ export function MemoryView({ projectId, layerKey, place }: MemoryViewProps) {
   if (!layer.data || !list.data) {
     // First load: a ghost of the list and the reader at their real line boxes, so nothing moves when the data lands.
     return (
-      <div aria-busy className="@container/memory flex min-h-0 w-full min-w-0 flex-1">
+      // Shown after 150 ms: a load faster than that draws no skeleton at all.
+      <div
+        aria-busy
+        className="@container/memory animate-in fade-in-0 fill-mode-backwards flex min-h-0 w-full min-w-0 flex-1 delay-150 motion-reduce:animate-none"
+      >
         <div
           className={cn(
             'flex w-72 shrink-0 flex-col border-r px-3.5 pt-5 pb-4 @max-md/memory:w-full',
             requested && '@max-md/memory:hidden',
           )}
         >
-          <div className="mb-1 flex h-7.5 shrink-0 items-center justify-between pr-1 pl-2">
+          <div className="mb-1.5 flex h-8 shrink-0 items-center justify-between pr-1 pl-2">
             <div className="text-xs">
               <Skeleton className="inline-block h-2.5 w-12 rounded-sm py-0 align-middle" />
             </div>
@@ -143,7 +154,7 @@ export function MemoryView({ projectId, layerKey, place }: MemoryViewProps) {
             </div>
           ))}
         </div>
-        <MemoryReaderSkeleton className={cn(!requested && '@max-md/memory:hidden')} />
+        {requested ? <MemoryReaderSkeleton /> : <MemoryAllSkeleton className="@max-md/memory:hidden" />}
       </div>
     );
   }
@@ -158,19 +169,22 @@ export function MemoryView({ projectId, layerKey, place }: MemoryViewProps) {
     onOpenChange: setRemembering,
   };
 
-  if (!selected) {
+  if (pages.length === 0) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <MemoryEmpty
+          projectId={projectId}
           kind={kind}
+          place={place}
           action={
             canWrite ? (
               <RememberPopover {...rememberProps}>
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" className="gap-1.5">
+                  <SunDimIcon className="size-3.5 shrink-0" />
                   {t('remember.open')}
                 </Button>
               </RememberPopover>
-            ) : null
+            ) : undefined
           }
         />
       </div>
@@ -184,8 +198,7 @@ export function MemoryView({ projectId, layerKey, place }: MemoryViewProps) {
         projectId={projectId}
         layerKey={layerKey}
         pages={pages}
-        selectedId={selected.page_id}
-        related={page.data?.page_id === selected.page_id ? page.data.related : undefined}
+        selectedId={selected?.page_id ?? null}
         onSelect={setPage}
         // `?remember=1` (#general's "Get started"): "Remember this…" opens under the header.
         anchor={
@@ -199,49 +212,57 @@ export function MemoryView({ projectId, layerKey, place }: MemoryViewProps) {
         }
         className={cn('@max-md/memory:w-full', explicit && '@max-md/memory:hidden')}
       />
-      <SplitSheet
-        size="lg"
-        open={history !== null && !!page.data}
-        onOpenChange={(open) => !open && setHistory(null)}
-        className={cn('min-w-0 flex-1', !explicit && '@max-md/memory:hidden')}
-      >
-        <SplitSheetMain className="flex flex-col">
-          <MemoryReader
-            projectId={projectId}
-            summary={selected}
-            page={page.data?.page_id === selected.page_id ? page.data : undefined}
-            pageError={page.isError}
-            pages={pages}
-            editing={editing && !!page.data}
-            editorRun={editorRun}
-            onRetry={() => void page.refetch()}
-            onSelectPage={setPage}
-            onBack={() => setPage(null)}
-            onEdit={() => setEditing(true)}
-            onHistory={() => setHistory({ versionId: null })}
-            onEditDone={() => setEditing(false)}
-            onReload={() => void page.refetch().then(() => setEditorRun((run) => run + 1))}
-            onRemoved={() => {
-              setGone({ pageId: selected.page_id, list: list.data });
-              setPage(null);
-            }}
-          />
-        </SplitSheetMain>
-        {history && page.data ? (
-          <MemoryHistory
-            projectId={projectId}
-            page={page.data}
-            selectedId={history.versionId}
-            onSelect={(versionId) => setHistory({ versionId })}
-            onRestored={() => setHistory({ versionId: null })}
-          />
-        ) : null}
-      </SplitSheet>
+      {selected ? (
+        <SplitSheet
+          size="lg"
+          open={history?.mode === 'sheet' && !!page.data}
+          onOpenChange={(open) => !open && setHistory(null)}
+          className={cn('min-w-0 flex-1', !explicit && '@max-md/memory:hidden')}
+        >
+          <SplitSheetMain className="flex flex-col">
+            <MemoryReader
+              projectId={projectId}
+              summary={selected}
+              page={page.data?.page_id === selected.page_id ? page.data : undefined}
+              pageError={page.isError}
+              pages={pages}
+              editing={editing && !!page.data}
+              editorRun={editorRun}
+              onRetry={() => void page.refetch()}
+              onSelectPage={setPage}
+              onBack={() => setPage(null)}
+              onEdit={() => setEditing(true)}
+              onHistory={() => setHistory((open) => ({ versionId: open?.versionId ?? null, mode: 'sheet' }))}
+              onEditDone={() => setEditing(false)}
+              onReload={() => void page.refetch().then(() => setEditorRun((run) => run + 1))}
+              onRemoved={() => {
+                setGone({ pageId: selected.page_id, list: list.data });
+                setPage(null);
+              }}
+              previewId={history && history.mode !== 'closed' ? history.versionId : null}
+              previewFocus={history?.mode === 'preview'}
+              onPreviewEnd={() =>
+                setHistory((open) =>
+                  open?.mode === 'preview' ? { ...open, mode: 'closed' } : open && { versionId: null, mode: 'sheet' },
+                )
+              }
+            />
+          </SplitSheetMain>
+          {history?.mode === 'sheet' && page.data ? (
+            <MemoryHistory
+              projectId={projectId}
+              page={page.data}
+              previewId={history.versionId}
+              onPreview={(versionId, covered) =>
+                setHistory({ versionId, mode: covered && versionId ? 'preview' : 'sheet' })
+              }
+              onRestored={() => setHistory({ versionId: null, mode: 'sheet' })}
+            />
+          ) : null}
+        </SplitSheet>
+      ) : (
+        <MemoryAll kind={kind} place={place} pages={pages} onSelect={setPage} className="@max-md/memory:hidden" />
+      )}
     </div>
   );
-}
-
-/** The Memory tab's count: the layer's live pages. */
-export function useMemoryPageCount(projectId: string, layerKey: string | null | undefined): number {
-  return memoryPageCount(useProjectMemoryLayer(projectId, layerKey).data?.counts);
 }

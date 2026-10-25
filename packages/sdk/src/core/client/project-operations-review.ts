@@ -34,14 +34,25 @@ export function bindProjectOperationsReview(projectId: string) {
       links: {
         list: (spaceId: string) => P.listProjectSpaceLinks(projectId, spaceId),
         add: (...a: DropFirst<Parameters<typeof P.addProjectSpaceLink>>) => P.addProjectSpaceLink(projectId, ...a),
-        /** `pin(spaceId, linkId, pinned)`: the link, or null when unpinning removed it. */
+        /** `pin(spaceId, linkId, pinned)`: the link; unpinning never removes it (null only from an older server). */
         pin: (...a: DropFirst<Parameters<typeof P.pinProjectSpaceLink>>) => P.pinProjectSpaceLink(projectId, ...a),
         remove: (...a: DropFirst<Parameters<typeof P.removeProjectSpaceLink>>) => P.removeProjectSpaceLink(projectId, ...a),
       },
-      /** The counts beside the channel's tab labels. */
-      summary: (spaceId: string) => P.getProjectSpaceSummary(projectId, spaceId),
+      /** A channel's people: the same list for every viewer. `#general` lists every project member. */
+      members: {
+        list: (spaceId: string) => P.listProjectSpaceMembers(projectId, spaceId),
+        /** `add(spaceId, userIds)`: in one request; only project members (else 400 `not_project_member`). */
+        add: (...a: DropFirst<Parameters<typeof P.addProjectSpaceMembers>>) => P.addProjectSpaceMembers(projectId, ...a),
+        remove: (...a: DropFirst<Parameters<typeof P.removeProjectSpaceMember>>) => P.removeProjectSpaceMember(projectId, ...a),
+        join: (spaceId: string) => P.joinProjectSpace(projectId, spaceId),
+        leave: (spaceId: string) => P.leaveProjectSpace(projectId, spaceId),
+      },
       /** `#general`'s "turned on again" line, or null. */
       generalNotice: () => P.getProjectSpaceGeneralNotice(projectId),
+      /** Whether this deployment allows private channels. */
+      privateChannelsAvailable: () => P.getPrivateChannelsAvailable(projectId),
+      /** Project managers: the private channels they are not in (name, member count, creator; no content). */
+      privateChannelsNotIn: () => P.listPrivateChannelsNotIn(projectId),
       /** The caller's Channels onboarding: the intro dialog and the `#general` "Get started" rows. */
       onboarding: {
         get: () => P.getChannelsOnboarding(projectId),
@@ -54,8 +65,6 @@ export function bindProjectOperationsReview(projectId: string) {
     memory: {
       /** One layer: its Drive folder and page counts. */
       layer: (layerKey: string) => P.getProjectMemoryLayer(projectId, layerKey),
-      /** Recent changes: the 20 most recently changed files. */
-      changes: (...a: DropFirst<Parameters<typeof P.listProjectMemoryChanges>>) => P.listProjectMemoryChanges(projectId, ...a),
       pages: {
         /** One page per Markdown file, newest first; `{ type }` filters. */
         list: (...a: DropFirst<Parameters<typeof P.listProjectMemoryPages>>) => P.listProjectMemoryPages(projectId, ...a),
@@ -63,14 +72,12 @@ export function bindProjectOperationsReview(projectId: string) {
         get: (pageId: string) => P.getProjectMemoryPage(projectId, pageId),
         update: (...a: DropFirst<Parameters<typeof P.updateProjectMemoryPage>>) => P.updateProjectMemoryPage(projectId, ...a),
         delete: (pageId: string) => P.deleteProjectMemoryPage(projectId, pageId),
-        history: (...a: DropFirst<Parameters<typeof P.listProjectMemoryHistory>>) => P.listProjectMemoryHistory(projectId, ...a),
+        history: (pageId: string) => P.listProjectMemoryHistory(projectId, pageId),
       },
       /** Remember-box sentences, appended to the layer's `Notes.md`. */
       notes: {
         add: (...a: DropFirst<Parameters<typeof P.addProjectMemoryNote>>) => P.addProjectMemoryNote(projectId, ...a),
       },
-      /** Undo the newest change of a page, by its version. */
-      undo: (versionId: string) => P.undoProjectMemoryVersion(projectId, versionId),
       /** Search the pages the caller can read: `{ q, layer?, type?, limit? }`, `q` at least 2 characters. */
       search: (...a: DropFirst<Parameters<typeof P.searchProjectMemory>>) => P.searchProjectMemory(projectId, ...a),
       /** A thread's "Used memory": the files listed to its agent at the first turn. */

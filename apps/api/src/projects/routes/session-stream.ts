@@ -104,6 +104,8 @@ import {
   publishRuntimeStateFrame,
   type WakeLadderActor,
 } from '../lib/session-control-reconciler';
+import { sessionStreamAccessCheck } from '../../shared/space-access';
+import { recheckStreamAccess } from '../../shared/stream-access-recheck';
 import { refreshRuntimeProjection } from '../lib/session-runtime-projection-refresh';
 import { readRuntimeLeg } from '../lib/session-runtime-projection';
 import {
@@ -455,6 +457,21 @@ export function registerSessionStreamRoutes(): void {
           // Our own TYPED heartbeat — not a `:` comment. An SSE parser swallows
           // comments without yielding anything, so a comment keeps TCP warm while
           // leaving every liveness watchdog blind (the 2026-08-26 prod defect).
+          // Access is re-checked every minute: a person removed from the
+          // thread's private channel, or whose share was revoked, stops
+          // receiving it.
+          const stopAccessRecheck = recheckStreamAccess(
+            sessionStreamAccessCheck(loaded.row.projectId, sessionId, async () => {
+              const still = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
+              return Boolean(still && !sessionIsTombstoned(still.row));
+            }),
+            () => {
+              writeMeta('kortix.stream.revoked', { type: 'kortix.stream.revoked', session_id: sessionId, at: Date.now() });
+              abort.abort();
+            },
+          );
+          abort.signal.addEventListener('abort', stopAccessRecheck, { once: true });
+
           heartbeat = setInterval(() => {
             writeMeta('kortix.stream.heartbeat', {
               type: 'kortix.stream.heartbeat',
@@ -929,7 +946,7 @@ async function wakeLadderActorFor(
   c: Context,
   projectId: string,
   sessionId: string,
-  visible: { row: { agentName: string | null }; canManageLifecycle?: boolean },
+  visible: { row: { agentName: string | null; spaceId: string | null }; canManageLifecycle?: boolean },
 ): Promise<WakeLadderActor | null> {
   // A cheap pre-filter at open. The real decision is `authorize()`, asked
   // again right before every step (Strix CWE-863).
@@ -939,7 +956,7 @@ async function wakeLadderActorFor(
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return null;
-    await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName);
+    await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName, undefined, visible.row.spaceId);
     const actor = await actorOf(c, loaded.row.accountId);
     // An agent's own stream never drives restarts of its session.
     if (actor.credential.kind === 'agent_session') return null;

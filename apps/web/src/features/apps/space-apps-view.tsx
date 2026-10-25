@@ -4,9 +4,11 @@ import { useProjectSpaceApps } from '@kortix/sdk/react';
 import { cn } from '@kortix/ui';
 import { cardPreviewApp, gridApps } from '@kortix/ui/apps';
 import { Button } from '@kortix/ui/button';
+import { EmptyArt } from '@kortix/ui/empty-art';
 import { EmptyState } from '@kortix/ui/empty-state';
 import { ErrorState } from '@kortix/ui/error-state';
 import { PROJECT_ACTIONS, useProjectCan } from '@kortix/ui/workspace';
+import { SquaresFourIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
 import { useTranslations } from '@/i18n/use-translations';
@@ -44,7 +46,14 @@ export function SpaceAppsView({ projectId, spaceId, place }: { projectId: string
       />
     );
   } else if (apps.data && shown.length === 0) {
-    body = <EmptyState size="sm" title={t('empty.apps.title')} description={t('empty.apps.description', { place })} />;
+    body = (
+      <EmptyState
+        className="min-h-full"
+        media={<EmptyArt icon={SquaresFourIcon} />}
+        title={t('empty.apps.title')}
+        description={t('empty.apps.description', { place })}
+      />
+    );
   } else if (apps.data) {
     body = (
       <ul className={cn('grid gap-6', APP_GRID_COLUMN_OPTIONS[columns].grid)}>
@@ -62,8 +71,14 @@ export function SpaceAppsView({ projectId, spaceId, place }: { projectId: string
   }
 
   return (
-    // The other tabs' empty-state spacing (`py-16`) when there is no grid.
-    <div className={cn('w-full px-5', APP_GRID_CONTAINER, shown.length ? 'py-4' : 'py-16')}>
+    // No grid: the empty state fills the tab, as in the other tabs; an error keeps `py-16`.
+    <div
+      className={cn(
+        'w-full',
+        APP_GRID_CONTAINER,
+        shown.length ? 'px-5 py-4' : apps.data ? 'flex min-h-full flex-col' : 'px-5 py-16',
+      )}
+    >
       {body}
       {openApp ? (
         <AppDetailModal

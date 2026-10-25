@@ -8,11 +8,9 @@ import {
   getProjectMemoryLayer,
   getProjectMemoryPage,
   getSessionMemoryUsage,
-  listProjectMemoryChanges,
   listProjectMemoryHistory,
   listProjectMemoryPages,
   searchProjectMemory,
-  undoProjectMemoryVersion,
   updateProjectMemoryPage,
   type ProjectMemoryLayer,
   type ProjectMemoryPage,
@@ -48,7 +46,7 @@ const layer: ProjectMemoryLayer = {
   scope: 'channel',
   space_id: SPACE,
   name: '#launch',
-  counts: { people: 1, decisions: 0, workstreams: 1, playbooks: 0, note: 0, other: 2, unconfirmed: 0, trash: 0 },
+  counts: { people: 1, decisions: 0, workstreams: 1, playbooks: 0, note: 0, other: 2 },
   read_only: false,
   can_write: true,
   folder: '/Company/Channels/launch/Memory',
@@ -63,10 +61,9 @@ const page: ProjectMemoryPage = {
   type: 'people',
   title: 'Priya',
   summary: 'Runs the Northwind launch',
-  status: 'confirmed',
+  excerpt: 'Runs the Northwind launch.',
   updated_at: '2026-10-23T00:00:00.000Z',
   updated_by: { kind: 'person', user_id: 'U1', name: 'Priya', agent: null },
-  updated_source: null,
   path: '/Company/Channels/launch/Memory/people/priya.md',
   body: '## Role\n- Owns the launch [1]',
   sources: [
@@ -97,11 +94,10 @@ test('listProjectMemoryPages GETs the layer pages and returns the array', async 
   expect(calls).toEqual([{ url: `${base}/layers/company/pages`, method: 'GET', body: undefined }]);
 });
 
-test('listProjectMemoryPages filters by type and status', async () => {
+test('listProjectMemoryPages filters by type', async () => {
   nextResponse = { status: 200, body: { pages: [], truncated: false } };
   await listProjectMemoryPages('P1', SPACE, { type: 'other' });
-  await listProjectMemoryPages('P1', SPACE, { type: 'people', status: 'unconfirmed' });
-  expect(calls.map((c) => c.url)).toEqual([`${base}/layers/${SPACE}/pages?type=other`, `${base}/layers/${SPACE}/pages?type=people&status=unconfirmed`]);
+  expect(calls.map((c) => c.url)).toEqual([`${base}/layers/${SPACE}/pages?type=other`]);
 });
 
 test('createProjectMemoryPage POSTs the input to the layer pages', async () => {
@@ -120,18 +116,6 @@ test('addProjectMemoryNote POSTs the sentence to the layer notes', async () => {
   ]);
 });
 
-test('listProjectMemoryChanges GETs Recent changes of the layer with its next cursor', async () => {
-  nextResponse = { status: 200, body: { changes: [], next: 'C2' } };
-  expect(await listProjectMemoryChanges('P1', SPACE)).toEqual({ changes: [], next: 'C2' });
-  expect(calls).toEqual([{ url: `${base}/layers/${SPACE}/changes`, method: 'GET', body: undefined }]);
-});
-
-test('listProjectMemoryChanges passes limit and the before cursor', async () => {
-  nextResponse = { status: 200, body: { changes: [], next: null } };
-  await listProjectMemoryChanges('P1', SPACE, { limit: 20, before: 'C2' });
-  expect(calls[0]!.url).toBe(`${base}/layers/${SPACE}/changes?limit=20&before=C2`);
-});
-
 test('getProjectMemoryPage GETs one page by id', async () => {
   nextResponse = { status: 200, body: page };
   expect(await getProjectMemoryPage('P1', PAGE)).toEqual(page);
@@ -147,28 +131,16 @@ test('updateProjectMemoryPage PATCHes the page with its base_version', async () 
   ]);
 });
 
-test('deleteProjectMemoryPage DELETEs the page and returns the version to undo', async () => {
+test('deleteProjectMemoryPage DELETEs the page and returns the deleted page id', async () => {
   nextResponse = { status: 200, body: { ok: true, version_id: VERSION } };
   expect(await deleteProjectMemoryPage('P1', PAGE)).toEqual({ ok: true, version_id: VERSION });
   expect(calls).toEqual([{ url: `${base}/pages/${PAGE}`, method: 'DELETE', body: undefined }]);
 });
 
-test('listProjectMemoryHistory GETs the page history with its next cursor', async () => {
-  nextResponse = { status: 200, body: { versions: [], next: null } };
-  expect(await listProjectMemoryHistory('P1', PAGE)).toEqual({ versions: [], next: null });
+test('listProjectMemoryHistory GETs the page history', async () => {
+  nextResponse = { status: 200, body: { versions: [] } };
+  expect(await listProjectMemoryHistory('P1', PAGE)).toEqual({ versions: [] });
   expect(calls).toEqual([{ url: `${base}/pages/${PAGE}/history`, method: 'GET', body: undefined }]);
-});
-
-test('listProjectMemoryHistory passes the before cursor', async () => {
-  nextResponse = { status: 200, body: { versions: [], next: null } };
-  await listProjectMemoryHistory('P1', PAGE, { before: 'V9' });
-  expect(calls[0]!.url).toBe(`${base}/pages/${PAGE}/history?before=V9`);
-});
-
-test('undoProjectMemoryVersion POSTs to the version undo and returns every page the undo changed', async () => {
-  nextResponse = { status: 200, body: { pages: [page] } };
-  expect(await undoProjectMemoryVersion('P1', VERSION)).toEqual({ pages: [page] });
-  expect(calls).toEqual([{ url: `${base}/versions/${VERSION}/undo`, method: 'POST', body: undefined }]);
 });
 
 const hit: ProjectMemorySearchHit = {
@@ -180,7 +152,6 @@ const hit: ProjectMemorySearchHit = {
   title: 'Priya',
   summary: 'Runs the Northwind launch',
   snippet: 'Owns the launch',
-  status: 'confirmed',
 };
 
 test('searchProjectMemory GETs memory/search with q and returns the hits', async () => {
@@ -212,9 +183,7 @@ test.each([
   ['createProjectMemoryPage', 409, 'title_taken', () => createProjectMemoryPage('P1', SPACE, { type: 'people', title: 'Priya' })],
   ['createProjectMemoryPage', 413, 'page_too_large', () => createProjectMemoryPage('P1', SPACE, { type: 'playbooks', title: 'Big', body: 'x' })],
   ['addProjectMemoryNote', 422, 'secret_detected', () => addProjectMemoryNote('P1', SPACE, { text: 'a key' })],
-  ['undoProjectMemoryVersion', 409, 'superseded', () => undoProjectMemoryVersion('P1', VERSION)],
   ['getProjectMemoryLayer', 404, 'memory_not_found', () => getProjectMemoryLayer('P1', SPACE)],
-  ['undoProjectMemoryVersion', 404, 'version_gone', () => undoProjectMemoryVersion('P1', VERSION)],
   ['getProjectMemoryLayer', 503, 'drive_storage_unavailable', () => getProjectMemoryLayer('P1', 'company')],
 ] as const)('%s rejects %i with ApiError code %s and never reaches the host error handler', async (_name, status, code, call) => {
   nextResponse = { status, body: { error: 'rejected', code, page_id: PAGE } };

@@ -87,7 +87,6 @@ export async function searchMemory(
         title: page.title,
         summary: page.summary,
         snippet: snippetOf(page.body, input.q),
-        status: 'confirmed',
       };
       return { hit, inTitle };
     })

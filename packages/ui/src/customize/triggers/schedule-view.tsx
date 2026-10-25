@@ -366,15 +366,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   const closeTrigger = () => navigateSheet({ slug: null });
   const [deleteTarget, setDeleteTarget] = useState<ProjectTrigger | null>(null);
 
-  // A trigger can post to a channel or DM: its Triggers tab count moves with it.
-  const invalidate = useCallback(
-    () =>
-      Promise.all([
-        queryClient.invalidateQueries({ queryKey }),
-        queryClient.invalidateQueries({ queryKey: qk.project.spaceSummaries(projectId) }),
-      ]),
-    [queryClient, queryKey, projectId],
-  );
+  const invalidate = useCallback(() => queryClient.invalidateQueries({ queryKey }), [queryClient, queryKey]);
 
   /* ── Mutations shared by the row menu and the detail panel ───────────── */
 

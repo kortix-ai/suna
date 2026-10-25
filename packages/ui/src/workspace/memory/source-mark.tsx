@@ -1,6 +1,7 @@
 'use client';
 
 import type { ProjectMemorySource } from '@kortix/sdk';
+import { safeHttpUrl } from '@kortix/shared';
 
 import { useTranslations } from '../../i18n';
 import { uiRoutes } from '../../lib/routes';
@@ -19,21 +20,12 @@ const MEMBER_FALLBACK = 'A member';
 /** The hint of a mark that opens nothing: a person, an import, a deleted thread, an outside source without a URL. */
 const STATIC_HINT = { thread: 'threadGone', outside: 'outsideText', person: 'person', import: 'import' } as const;
 
-function isHttpUrl(value: string): boolean {
-  try {
-    const { protocol } = new URL(value);
-    return protocol === 'http:' || protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Where a source thread opens: its channel or DM with `?thread=`. A thread of
  * the page the reader is on opens beside it and keeps the other params (the
  * Memory tab stays open).
  */
-export function useSourceThreadHref(projectId: string): (source: ProjectMemorySource) => string | null {
+function useSourceThreadHref(projectId: string): (source: ProjectMemorySource) => string | null {
   const pathname = useUiPathname();
   const searchParams = useUiSearchParams();
   return (source) => {
@@ -81,7 +73,7 @@ export function SourceList({ sources, projectId }: { sources: readonly ProjectMe
               <Link href={href} className={`${LINE} hover:text-foreground transition-colors duration-fast`}>
                 {text}
               </Link>
-            ) : source.kind === 'outside' && source.url && isHttpUrl(source.url) ? (
+            ) : source.kind === 'outside' && source.url && safeHttpUrl(source.url) ? (
               <a
                 href={source.url}
                 target="_blank"
@@ -119,7 +111,7 @@ export function SourceMark({ source, projectId }: { source: ProjectMemorySource;
       </Hint>
     );
   }
-  if (source.kind === 'outside' && source.url && isHttpUrl(source.url)) {
+  if (source.kind === 'outside' && source.url && safeHttpUrl(source.url)) {
     const label = t('source.outside', { label: source.label });
     return (
       <Hint side="top" label={label}>

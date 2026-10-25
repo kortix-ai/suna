@@ -46,15 +46,9 @@ export const appDeploymentKey = (
   deploymentId: string | null | undefined,
 ) => qk.project.appDeployment(projectId ?? '', appId ?? '', deploymentId ?? '');
 
-/**
- * The project's App list, which also covers every channel's Apps
- * (`qk.project.spaceApps`), and every channel's Apps count.
- */
+/** The project's App list, which also covers every channel's Apps (`qk.project.spaceApps`). */
 function invalidateProjectApps(queryClient: QueryClient, projectId: string | null | undefined) {
-  return Promise.all([
-    queryClient.invalidateQueries({ queryKey: projectAppsKey(projectId) }),
-    queryClient.invalidateQueries({ queryKey: qk.project.spaceSummaries(projectId ?? '') }),
-  ]);
+  return queryClient.invalidateQueries({ queryKey: projectAppsKey(projectId) });
 }
 
 const SETTLED_DEPLOYMENT = new Set(['ready', 'failed', 'cancelled']);

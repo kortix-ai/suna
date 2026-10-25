@@ -1101,6 +1101,8 @@ export const projectSessionOriginEnum = kortixSchema.enum('project_session_origi
 ]);
 
 export const projectSpaceKindEnum = kortixSchema.enum('project_space_kind', ['channel', 'dm']);
+/** Who sees a channel: every project member, or only its members (`project_space_members`). */
+export const projectSpaceVisibilityEnum = kortixSchema.enum('project_space_visibility', ['public', 'private']);
 
 /**
  * A project space: a channel (product word "Channel") or a member's DM with one
@@ -1130,6 +1132,10 @@ export const projectSpaces = kortixSchema.table(
     dmUserId: uuid('dm_user_id'),
     /** DM agent; null for channels. */
     dmAgentName: text('dm_agent_name'),
+    /** Channels: the channel's agents, in order; the first is the channel's default. Empty: the project's default (as before). Always empty for a DM. */
+    agents: text('agents').array().default(sql`'{}'::text[]`).notNull(),
+    /** `private`: only the channel's members see it and its threads. `#general` and DMs are always `public` (check below). */
+    visibility: projectSpaceVisibilityEnum('visibility').default('public').notNull(),
     createdBy: uuid('created_by'),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -1139,6 +1145,10 @@ export const projectSpaces = kortixSchema.table(
     check(
       'project_spaces_kind_shape_check',
       sql`(${table.kind} = 'channel' and ${table.slug} is not null and ${table.dmUserId} is null and ${table.dmAgentName} is null) or (${table.kind} = 'dm' and ${table.slug} is null and ${table.dmUserId} is not null and ${table.dmAgentName} is not null)`,
+    ),
+    check(
+      'project_spaces_private_channel_check',
+      sql`${table.visibility} = 'public' or (${table.kind} = 'channel' and not ${table.isDefault})`,
     ),
     uniqueIndex('uniq_project_spaces_channel_slug')
       .on(table.projectId, table.slug)
@@ -1168,7 +1178,7 @@ export const projectSpaceLinks = kortixSchema.table(
     /** The first person who added it ("Add link") or shared it in a thread. */
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    /** Agents read pinned links (the thread notes file). "Add link" pins; a shared link is unpinned until a member pins it. */
+    /** Agents read pinned links (the thread notes file). Every link starts unpinned until a member pins it; writers set it explicitly (the `true` default predates that). */
     pinned: boolean('pinned').default(true).notNull(),
     /** Who pinned it and when; null on a link "Add link" made before these columns (then `created_by`, `created_at`). */
     pinnedBy: uuid('pinned_by'),
@@ -1177,8 +1187,6 @@ export const projectSpaceLinks = kortixSchema.table(
     source: text('source').$type<'manual' | 'message'>().default('manual').notNull(),
     /** The latest thread that shared it. */
     sessionId: text('session_id').references(() => projectSessions.sessionId, { onDelete: 'set null' }),
-    /** How many messages shared it. */
-    shareCount: integer('share_count').default(1).notNull(),
     lastSharedAt: timestamp('last_shared_at', { withTimezone: true }).defaultNow().notNull(),
     /** The page's own title (`og:title`, else `<title>`), fetched by the server (job `link-unfurl`). */
     fetchedTitle: text('fetched_title'),
@@ -1193,13 +1201,37 @@ export const projectSpaceLinks = kortixSchema.table(
   },
   (table) => [
     check('project_space_links_source_check', sql`${table.source} in ('manual', 'message')`),
-    // One row per address per channel: a second share bumps `share_count`.
+    // One row per address per channel: a second share moves `last_shared_at` and `session_id`.
     uniqueIndex('uniq_project_space_links_space_url').on(table.spaceId, table.url),
     index('idx_project_space_links_space').on(table.spaceId, table.createdAt.desc()),
     // Serves the session_id FK: a session delete sets null without a scan.
     index('idx_project_space_links_session').on(table.sessionId),
     // Serves the project_id FK: a project delete cascades without a scan.
     index('idx_project_space_links_project').on(table.projectId),
+  ],
+);
+
+/**
+ * A person in a channel (the header roster and the Members tab). `#general`
+ * has no rows: every project member is in it. DMs have no rows either. A row
+ * whose user left the project is ignored on read. A private channel
+ * (`project_spaces.visibility`) is visible only to the people in this table.
+ */
+export const projectSpaceMembers = kortixSchema.table(
+  'project_space_members',
+  {
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => projectSpaces.spaceId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    /** Who added them; equals `user_id` for a join or the creator. Null: the backfill. */
+    addedBy: uuid('added_by'),
+    addedAt: timestamp('added_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.spaceId, table.userId] }),
+    // "My channels" and the cleanup when someone leaves the account.
+    index('idx_project_space_members_user').on(table.userId),
   ],
 );
 

@@ -21,11 +21,10 @@ const NOTE_MAX = 1000;
 /** How long the button shows its check after a save. */
 const SAVED_MS = 2000;
 
-type Failure = 'secret' | 'limit' | 'readOnly' | 'failed';
+type Failure = 'secret' | 'readOnly' | 'failed';
 type Target = 'space' | 'company';
 const FAILURE_BY_CODE: Record<string, Failure> = {
   secret_detected: 'secret',
-  page_limit: 'limit',
   layer_read_only: 'readOnly',
 };
 
@@ -45,7 +44,7 @@ export function RememberThisButton({ session, space }: { session: ProjectSession
   const [layer, setLayer] = useState<Target>('space');
   const [failure, setFailure] = useState<Failure | null>(null);
   const [saved, setSaved] = useState(false);
-  // Same reads as the Memory tab count and the Company page: shared cache entries.
+  // Same reads as the Memory tab and the Company page: shared cache entries.
   const spaceLayer = useProjectMemoryLayer(projectId, space.space_id).data;
   const companyLayer = useProjectMemoryLayer(projectId, 'company').data;
   const writable = (data: typeof spaceLayer) => !!data && data.can_write && !data.read_only;

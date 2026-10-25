@@ -609,14 +609,13 @@ export function registerProjectFilesRoutes(): void {
       const listed = await listBranches(await withProjectGitAuth(loaded.row), {
         allowRecent: !includeSessionBranches,
       });
-      // A non-manager sees only the session branches of sessions they may open.
+      // Only the session branches of sessions whose work the caller reads: a
+      // non-manager's they may open, a manager's outside hidden private channels.
       const view = await projectReadView(c, loaded);
-      const visibleSessions = includeSessionBranches && !view.full
+      const visibleSessions = includeSessionBranches
         ? await view.visibleSessionIds(listed.filter((b) => isSessionBranchName(b.name)).map((b) => b.name))
         : new Set<string>();
-      const allBranches = view.full
-        ? listed
-        : listed.filter((b) => b.is_default || !isSessionBranchName(b.name) || visibleSessions.has(b.name));
+      const allBranches = listed.filter((b) => b.is_default || !isSessionBranchName(b.name) || visibleSessions.has(b.name));
       const branches = filterBranchesForResponse(allBranches, {
         q: query.q,
         limit: query.limit,

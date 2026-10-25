@@ -1,7 +1,7 @@
 'use client';
 
 import type { ProjectSession, ProjectSpace } from '@kortix/sdk';
-import { useProjectSessions } from '@kortix/sdk/react';
+import { type UseProjectSessionsOptions, useProjectSessions } from '@kortix/sdk/react';
 import {
   CaretRightIcon,
   ChatTeardropTextIcon,
@@ -12,15 +12,15 @@ import {
   TimerIcon,
   WebhooksLogoIcon,
 } from '@phosphor-icons/react';
-import { useMemo } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useLocale, useTranslations } from '../../i18n';
 import { AgentMark } from '../../internal/components/agent-mark';
+import { useSessionNeedsYouCounts, useSessionsAwaitingAnswer } from '../../internal/hooks/use-review-session-summary';
 import { useCopy } from '../../internal/hooks/use-copy';
 import { relativeTime } from '../../internal/lib/relative-time';
 import { cn } from '../../lib/utils';
 import { Button } from '../../primitives/button';
-import { EmptyState } from '../../primitives/empty-state';
 import { EntityAvatar } from '../../primitives/entity-avatar';
 import { ErrorState } from '../../primitives/error-state';
 import Hint from '../../primitives/hint';
@@ -37,22 +37,50 @@ import {
   buildSpaceTimeline,
   DEFAULT_AGENT_SLUG,
   dayKind,
+  firstPromptTruncated,
   gutterTime,
   lastReplyLabel,
   threadIsWorking,
   threadMessageText,
+  threadStatus,
   type TimelineDay,
 } from './space-timeline';
+
+/** What a thread waits on the viewer for: none, an answer (question or approval), or a review. */
+type NeedsYou = 'answer' | 'review' | null;
+
+/**
+ * The sidebar session list's needs-you read (`useSessionNeedsYouCounts`,
+ * `useSessionsAwaitingAnswer`), as one lookup per thread: the Threads filter's
+ * "Needs you" (`threadStatus`) and the row's mark agree by construction.
+ */
+function useThreadNeedsYou(projectId: string): (session: ProjectSession) => NeedsYou {
+  const counts = useSessionNeedsYouCounts(projectId);
+  const awaitingAnswer = useSessionsAwaitingAnswer(projectId);
+  return (session) =>
+    threadStatus(session, counts[session.session_id]) !== 'needs-you'
+      ? null
+      : awaitingAnswer.has(session.session_id)
+        ? 'answer'
+        : 'review';
+}
 
 /**
  * The space's threads: top-level sessions only (`parent: 'root'`, a child
  * thread is part of its parent). Polls page one every 5 s while an agent works
  * so the "is working" line settles, else every 15 s so a member's new thread
  * shows up. Active threads sort first, so page one holds them; older pages the
- * viewer loaded are not re-read on each tick.
+ * viewer loaded are not re-read on each tick. `filters` narrow it on the
+ * server (the Threads tab); without them it is the Chat tab's list, one cache
+ * entry for both tabs.
  */
-export function useSpaceThreads(projectId: string, spaceId: string | undefined) {
+export function useSpaceThreads(
+  projectId: string,
+  spaceId: string | undefined,
+  filters?: Pick<UseProjectSessionsOptions, 'q' | 'startedBy' | 'createdBy' | 'agent' | 'updatedAfter' | 'keepPreviousData'>,
+) {
   return useProjectSessions(projectId, {
+    ...filters,
     spaceId,
     parent: 'root',
     enabled: !!spaceId,
@@ -102,11 +130,13 @@ function LoadEarlier({ threads }: { threads: SpaceThreads }) {
  * the newest thread and stays there as threads arrive.
  */
 export function SpaceTimeline({
+  projectId,
   space,
   threads,
   selectedId,
   onOpenThread,
 }: {
+  projectId: string;
   space: ProjectSpace;
   threads: SpaceThreads;
   selectedId: string | null;
@@ -116,6 +146,7 @@ export function SpaceTimeline({
   const locale = useLocale();
   const days = useMemo(() => buildSpaceTimeline(threads.sessions), [threads.sessions]);
   const loading = threads.isLoading || threads.isScanning;
+  const needsYou = useThreadNeedsYou(projectId);
   const now = new Date();
 
   const dayLabel = (day: TimelineDay) => {
@@ -124,6 +155,17 @@ export function SpaceTimeline({
     if (kind === 'yesterday') return t('yesterday');
     return day.date.toLocaleDateString(locale, { weekday: 'long', month: 'long', day: 'numeric' });
   };
+
+  // A channel with no thread yet: the welcome at the bottom, where it always sits.
+  if (space.kind === 'channel' && !loading && threads.data && !threads.hasNextPage && days.length === 0) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className="mt-auto pt-4 pb-3">
+          <SpaceWelcome space={space} empty />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col-reverse overflow-y-auto">
@@ -147,6 +189,7 @@ export function SpaceTimeline({
                     key={session.session_id}
                     session={session}
                     space={space}
+                    needsYou={needsYou(session)}
                     selected={session.session_id === selectedId}
                     onOpen={() => onOpenThread(session.session_id)}
                   />
@@ -227,11 +270,13 @@ function triggerAuthor(session: ProjectSession): { name: string; icon: Icon } | 
 function ThreadRow({
   session,
   space,
+  needsYou,
   selected,
   onOpen,
 }: {
   session: ProjectSession;
   space: ProjectSpace;
+  needsYou: NeedsYou;
   selected: boolean;
   onOpen: () => void;
 }) {
@@ -284,11 +329,57 @@ function ThreadRow({
         </>
       }
     >
-      <p className={cn(MESSAGE_TEXT_CLASS, 'text-pretty whitespace-pre-wrap wrap-anywhere')}>
-        {threadMessageText(session)}
-      </p>
-      <ThreadSummary session={session} space={space} onOpen={onOpen} />
+      <ThreadPrompt session={session} onOpen={onOpen} />
+      <ThreadSummary session={session} space={space} needsYou={needsYou} onOpen={onOpen} />
     </MessageRow>
+  );
+}
+
+/**
+ * The thread's first prompt, clamped to 6 lines with "…". When it runs longer,
+ * a quiet "Show more" unfolds it in place and "Show less" folds it back. A
+ * prompt the server cut (`firstPromptTruncated`) ends in "…", and its "Show
+ * more" opens the thread, whose transcript holds the whole message.
+ */
+function ThreadPrompt({ session, onOpen }: { session: ProjectSession; onOpen: () => void }) {
+  const t = useTranslations('hardcodedUi.i18nComplete');
+  const truncated = firstPromptTruncated(session);
+  const text = threadMessageText(session);
+  const [expanded, setExpanded] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+  const ref = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || expanded) return;
+    const measure = () => setOverflows(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [text, expanded]);
+  return (
+    <>
+      <p
+        ref={ref}
+        className={cn(
+          MESSAGE_TEXT_CLASS,
+          'text-pretty whitespace-pre-wrap wrap-anywhere',
+          !expanded && 'line-clamp-6',
+        )}
+      >
+        {truncated ? `${text}…` : text}
+      </p>
+      {truncated || overflows || expanded ? (
+        <button
+          type="button"
+          aria-expanded={truncated ? undefined : expanded}
+          onClick={truncated ? onOpen : () => setExpanded(!expanded)}
+          className="text-muted-foreground hover:text-foreground hit-area-x-2 hit-area-y-2 focus-visible:ring-ring mt-0.5 self-start rounded-sm text-xs font-medium transition-colors duration-(--duration-fast) focus-visible:ring-2 focus-visible:outline-none"
+        >
+          {expanded ? t.raw('text94ea9b1d33a0') : t.raw('textf5c9bd131486')}
+        </button>
+      ) : null}
+    </>
   );
 }
 
@@ -302,13 +393,16 @@ function ThreadRow({
 function ThreadSummary({
   session,
   space,
+  needsYou,
   onOpen,
 }: {
   session: ProjectSession;
   space: ProjectSpace;
+  needsYou: NeedsYou;
   onOpen: () => void;
 }) {
   const t = useTranslations('spaces.view');
+  const tf = useTranslations('spaces.view.threadFilter');
   const locale = useLocale();
   const agentName = session.agent_name ?? space.dm_agent_name;
   const agent = agentName ? agentLabel(agentName) : t('agentFallback');
@@ -318,14 +412,23 @@ function ThreadSummary({
     <button
       type="button"
       onClick={onOpen}
-      // `-mx-1` with `px-1`: the tile lines up with the body text above, and
-      // the fill extends past it. `w-full max-w-md`: the target is the line,
-      // not only its words, and stops before the line runs the width of a
-      // wide window. The fill is instant, like the row's.
-      className="group/summary hover:bg-hover focus-visible:ring-ring -mx-1 mt-1 flex w-full max-w-md items-center gap-2 rounded-md px-1 py-1 text-left text-xs outline-none focus-visible:ring-2"
+      // `-mx-1` with `pl-1`: the tile lines up with the body text above, and
+      // the fill extends past it. `pr-1.5`: the caret sits inside the fill,
+      // not on its edge. `w-full max-w-md`: the target is the line, not only
+      // its words, and stops before the line runs the width of a wide window.
+      // The fill is instant, like the row's.
+      className="group/summary hover:bg-hover focus-visible:ring-ring -mx-1 mt-1 flex w-full max-w-md items-center gap-2 rounded-md py-1 pr-1.5 pl-1 text-left text-xs outline-none focus-visible:ring-2"
     >
       <AgentMark slug={agentName ?? DEFAULT_AGENT_SLUG} size={14} label={agent} />
-      {working ? (
+      {/* A pending review, question or approval wins over a turn in flight,
+          as in the Threads filter: the session list's mark, then "Needs you". */}
+      {needsYou ? (
+        <span className="text-foreground flex shrink-0 items-center gap-1 font-medium">
+          <SessionStatusMark status="needs-you" waitingOn={needsYou} />
+          {tf('statusValue.needsYou')}
+        </span>
+      ) : null}
+      {working && !needsYou ? (
         <span className="text-muted-foreground flex min-w-0 items-center gap-1.5">
           {/* `in-[button]:` — the line is a button, where the spinner would turn
               `text-background` (built for filled buttons) and vanish. */}
@@ -395,21 +498,30 @@ function ThreadToolbar({ sessionId, onOpen }: { sessionId: string; onOpen: () =>
   );
 }
 
-/** The Threads tab: every thread, last activity first. */
+/**
+ * The Threads tab's rows, last activity first. `sessions` are the rows to
+ * show (the tab filters `threads`); `empty` is drawn when there are none.
+ */
 export function SpaceThreadList({
+  projectId,
   threads,
+  sessions,
+  empty,
   selectedId,
   onOpenThread,
 }: {
+  projectId: string;
   threads: SpaceThreads;
+  sessions: readonly ProjectSession[];
+  empty: ReactNode;
   selectedId: string | null;
   onOpenThread: (sessionId: string) => void;
 }) {
-  const t = useTranslations('spaces.view');
   const locale = useLocale();
+  const needsYou = useThreadNeedsYou(projectId);
   const sorted = useMemo(
-    () => [...threads.sessions].sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at)),
-    [threads.sessions],
+    () => [...sessions].sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at)),
+    [sessions],
   );
 
   if (threads.isError && !threads.data) {
@@ -422,8 +534,10 @@ export function SpaceThreadList({
   if (threads.isLoading || threads.isScanning) return null;
   if (sorted.length === 0) {
     return (
-      <div className="px-5 py-8">
-        <EmptyState size="sm" title={t('threadsEmpty')} />
+      <div className="flex min-h-full flex-col">
+        {empty}
+        {/* A Status filter reads the loaded pages: older ones may still match. */}
+        {threads.hasNextPage ? <LoadEarlier threads={threads} /> : null}
       </div>
     );
   }
@@ -440,7 +554,10 @@ export function SpaceThreadList({
                 session.session_id === selectedId && 'bg-active hover:bg-active',
               )}
             >
-              <SessionStatusMark status={sessionDisplayStatus(session)} />
+              <SessionStatusMark
+                status={needsYou(session) ? 'needs-you' : sessionDisplayStatus(session)}
+                waitingOn={needsYou(session) ?? undefined}
+              />
               <span className="min-w-0 flex-1 truncate text-sm font-medium">{sessionDisplayLabel(session)}</span>
               <time dateTime={session.updated_at} className="text-muted-foreground shrink-0 text-xs tabular-nums">
                 {relativeTime(session.updated_at, locale)}

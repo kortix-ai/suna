@@ -19,8 +19,9 @@ const PEOPLE_SHOWN = 2;
 const AGENTS_SHOWN = 3;
 
 /**
- * Who is in the channel, in its header: the people's faces, a hairline, the
- * agents' tiles. People and agents never mix, so a glance tells them apart.
+ * Who is in the channel, in its header: its members' faces, a hairline, its
+ * agents' tiles. The same for every viewer (the channel's member list and
+ * agent list, not the threads a viewer can load). People and agents never mix, so a glance tells them apart.
  * Hover, or a click, opens the session header's people card
  * (`SessionParticipantStack`): People, then Agents, each a label, a count and
  * plain rows. Its one action, "View all members", opens the Members tab.
@@ -102,13 +103,8 @@ export function SpaceRosterButton({ roster, onViewAll }: { roster: Roster; onVie
                     avatarUrl={person.avatarUrl}
                     size="md"
                   />
-                  {/* Name and email read as one block: tight leading, no gap. */}
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate leading-tight">{participantLabel(person)}</span>
-                    {person.email ? (
-                      <span className="text-muted-foreground truncate text-xs leading-tight">{person.email}</span>
-                    ) : null}
-                  </span>
+                  {/* The display name only: an email is not a name. */}
+                  <span className="min-w-0 flex-1 truncate">{participantLabel(person)}</span>
                 </li>
               ))}
             </RosterGroup>

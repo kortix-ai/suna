@@ -1626,7 +1626,7 @@ describe('pi extensions', () => {
     expect(two).toContain('EXTENSION RULE')
   })
 
-  test('the Kortix prompt route carries system to the model for its turn only (memory P2)', async () => {
+  test('the Kortix prompt route carries system to the model for its turn only', async () => {
     const r = await boot({ script: [{ text: 'a' }, { text: 'b' }] })
     const root = r.service.runtime()!.rootId
     const sentBefore = gateway.sent.length

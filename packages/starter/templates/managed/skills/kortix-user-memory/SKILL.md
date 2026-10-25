@@ -39,7 +39,9 @@ the one table in the `kortix-drives` skill (`<memory>`).
 
 `/drives/me` is the folder of the session's owner. In a session several
 people use (a shared session, a channel thread), keep only the owner's facts
-there. When `/drives/me` is absent (Volumes off for the project, or no
+there. In a private channel's thread `/drives/me` is read-only: save nothing
+there, and keep what you learn in the channel's memory (the
+`kortix-channel-memory` skill). When `/drives/me` is absent (Volumes off for the project, or no
 personal folder in `/drives/README.md`), there is no user memory: do not
 write one anywhere else, and tell the user if they asked you to remember
 something.

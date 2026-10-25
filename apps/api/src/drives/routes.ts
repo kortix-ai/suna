@@ -10,6 +10,7 @@ import { HTTPException } from 'hono/http-exception';
 import { featureDisabledBody, requireFeatureFlag } from '../feature-flags/gate';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { combinedAuth } from '../middleware/auth';
+import { callerKortixSessionId } from '../middleware/caller-session';
 import { rejectSandboxTokens } from '../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { actorOf } from '../iam/actor';
@@ -44,11 +45,16 @@ import {
   pathWithinFolder,
   folderKnownToTree,
   personalFolderOf,
+  NO_PRIVATE_CHANNEL_FOLDERS,
+  PRIVATE_CHANNELS_DIR,
+  type PrivateChannelFolders,
+  privateChannelFolderOf,
 } from './folders';
 import {
   type DriveRow,
   driveStats,
   driveSubjectFor,
+  privateChannelRows,
   enforceProjectMounts,
   ensureProjectDrive,
   getDrive,
@@ -204,7 +210,7 @@ async function callerOn(c: DriveContext, drive: DriveRow): Promise<Caller> {
     const { error } = featureDisabledBody('drives');
     fail(403, error, 'feature_disabled');
   }
-  return { drive, ...(await driveSubjectFor(drive, userId, (action) => mayUseProject(c, projectId, action))) };
+  return { drive, ...(await driveSubjectFor(drive, userId, (action) => mayUseProject(c, projectId, action), callerKortixSessionId(c))) };
 }
 
 async function loadDrive(c: DriveContext): Promise<Caller> {
@@ -245,9 +251,23 @@ function sharedWithCaller(caller: Caller): Array<{ path: string; access: FolderA
     .map((path) => ({ path, access: folderAccess(path, caller.grants, caller.subject) }));
 }
 
+/** The project's private channel folders, as the caller's folder rules know them. */
+function privateFolders(caller: Pick<Caller, 'subject'>): PrivateChannelFolders {
+  return caller.subject.privateChannelFolders ?? NO_PRIVATE_CHANNEL_FOLDERS;
+}
+
 /** Folders that hold the tree together: never moved, deleted or renamed. */
 function structural(path: string, caller: Caller): boolean {
-  return path === '/' || path === USERS_DIR || path === COMPANY_DIR || personalFolderOf(path) === path || path === caller.personalFolder;
+  return (
+    path === '/' ||
+    path === USERS_DIR ||
+    path === COMPANY_DIR ||
+    // `/Channels` holds the tree together only while it holds a private channel's folder.
+    (path === PRIVATE_CHANNELS_DIR && privateFolders(caller).size > 0) ||
+    personalFolderOf(path) === path ||
+    privateChannelFolderOf(path, privateFolders(caller)) === path ||
+    path === caller.personalFolder
+  );
 }
 
 function drivePath(raw: string | undefined, opts: { allowRoot: boolean }): string {
@@ -425,12 +445,17 @@ drivesApp.openapi(
     if (path === '/' && !seen.has(USERS_DIR)) virtual.add(USERS_DIR);
     for (const v of virtual) entries.push({ path: v, name: baseName(v), type: 'dir', size: 0, mtime: 0 });
     const sharedPaths = new Set(grants.filter((g) => g.source !== 'system').map((g) => g.path));
+    // A private channel's folder is named by its id (`/Channels/<space_id>`); it lists under `#<slug>`.
+    const channelNames = entries.some((e) => privateChannelFolderOf(e.path, privateFolders(caller)) === e.path)
+      ? new Map((await privateChannelRows(drive.projectId!)).flatMap((r) => (r.folder && r.slug ? [[r.folder, `#${r.slug}`] as const] : [])))
+      : null;
     return c.json({
       access: folderAccess(path, grants, subject),
       entries: entries
         .filter((e) => folderVisible(e.path, grants, subject))
         .map((e) => ({
           ...e,
+          ...(channelNames?.has(e.path) ? { name: channelNames.get(e.path)! } : {}),
           access: folderAccess(e.path, grants, subject),
           ...(e.type === 'dir' && sharedPaths.has(e.path) ? { shared: true } : {}),
         })),
@@ -679,12 +704,12 @@ drivesApp.openapi(
     const caller = await loadDrive(c);
     const path = drivePath(c.req.query('path'), { allowRoot: true });
     const access = path === '/' ? folderAccess('/', caller.grants, caller.subject) : need(caller, path, 'read');
-    const covering = grantsCovering(path, caller.grants);
+    const covering = grantsCovering(path, caller.grants, privateFolders(caller));
     const labels = await grantLabels(caller.drive, covering);
     return c.json({
       path,
       access,
-      grantable: grantableFolder(path),
+      grantable: grantableFolder(path, privateFolders(caller)),
       grants: covering.map((g) => ({
         grantId: g.grantId!,
         path: g.path,
@@ -728,7 +753,7 @@ drivesApp.openapi(
     const caller = await loadDrive(c);
     const body = c.req.valid('json') as z.infer<typeof ShareBody>;
     const path = drivePath(body.path, { allowRoot: false });
-    if (!grantableFolder(path)) fail(400, 'Share a folder inside Files');
+    if (!grantableFolder(path, privateFolders(caller))) fail(400, 'Share a folder inside Files');
     need(caller, path, 'manage');
     const { drive } = caller;
     let principalId: string;
@@ -893,6 +918,42 @@ drivesApp.openapi(
   },
 );
 
+/**
+ * The restore floor compares a storage commit's time (Platinum's clock) with a
+ * channel's `updated_at` (the API's clock), and a conversion's folder move
+ * commits just before `updated_at` is written. A version within this margin
+ * after the floor is refused too, so a storage clock up to 10 minutes ahead
+ * cannot let the last pre-conversion version through.
+ * ponytail: a wall-clock margin; record the conversion's commit id if versions
+ * right after a channel change must be restorable.
+ */
+const RESTORE_CLOCK_MARGIN_MS = 10 * 60_000;
+
+/**
+ * A restore is one whole-volume version: it rewrites every private channel's
+ * folder and can bring a converted channel's files back into `/Company`.
+ * While the project has a private channel, only an admin who is a member of
+ * every one may restore (403), and only to a version newer than each private
+ * channel's last change (its creation, conversion or rename: 409
+ * `restore_crosses_private_channel`).
+ */
+async function refuseRestoreAcrossPrivateChannels(caller: Caller, versionId: string, versionNotFound: () => never): Promise<void> {
+  const channels = await privateChannelRows(caller.drive.projectId!);
+  if (channels.length === 0) return;
+  const folders = new Set(channels.flatMap((ch) => (ch.folder ? [ch.folder] : [])));
+  const visible = new Set(caller.grants.map((g) => privateChannelFolderOf(g.path, folders)).filter(Boolean));
+  if (channels.some((ch) => ch.folder && !visible.has(ch.folder))) {
+    fail(403, 'Restoring Files would rewrite a private channel you are not in. Ask a member of every private channel.', 'restore_crosses_private_channel');
+  }
+  const commits = await withStorage(() => readDriveVolume(caller.drive, (volume) => listVolumeCommits(volume), () => []));
+  const target = commits.find((commit) => commit.id === versionId);
+  if (!target) versionNotFound();
+  const newest = Math.max(...channels.map((ch) => ch.updatedAt.getTime()));
+  if (Date.parse(target!.created_at) < newest + RESTORE_CLOCK_MARGIN_MS) {
+    fail(409, 'This version is older than a private channel’s last change: restoring it could bring that channel’s files back where others can read them.', 'restore_crosses_private_channel');
+  }
+}
+
 // GET /v1/drives/:driveId/versions
 drivesApp.openapi(
   createRoute({
@@ -931,13 +992,15 @@ drivesApp.openapi(
     path: '/{driveId}/restore',
     tags: ['drives'],
     summary: 'Restore the project’s Files to a version',
-    description: 'Project admins only. Adds a new version whose files equal the chosen one. Later versions stay in the history.',
+    description:
+      'Project admins only. Adds a new version whose files equal the chosen one. Later versions stay in the history. ' +
+      'With a private channel in the project: an admin outside one gets 403 and a version older than a private channel’s last change gets 409, both `restore_crosses_private_channel`.',
     ...auth,
     request: {
       params: DriveParams,
       body: { required: true, content: { 'application/json': { schema: z.object({ versionId: z.string().min(1) }) } } },
     },
-    responses: { 204: { description: 'Restored' }, ...errors(400, 401, 403, 404, 503) },
+    responses: { 204: { description: 'Restored' }, ...errors(400, 401, 403, 404, 409, 503) },
   }),
   async (c) => {
     const caller = await loadDrive(c);
@@ -945,6 +1008,7 @@ drivesApp.openapi(
     const { versionId } = c.req.valid('json') as { versionId: string };
     if (versionId === 'head' || !/^[A-Za-z0-9_-]{1,128}$/.test(versionId)) fail(400, 'Invalid version');
     const versionNotFound = (): never => fail(404, 'Version not found');
+    await refuseRestoreAcrossPrivateChannels(caller, versionId, versionNotFound);
     try {
       await readDriveVolume(caller.drive, (volume) => restoreVolume(volume, versionId), versionNotFound);
     } catch (err) {

@@ -1,8 +1,8 @@
 /**
  * A channel's links (`kortix.project_space_links`), its Links tab: the links
- * members added ("Add link", pinned) and the links people shared in its
- * threads (collected, unpinned until a member pins one). Agents read the
- * pinned ones (`drives/service.ts`). The routes in `routes/project-spaces.ts`
+ * members added ("Add link") and the links people shared in its threads
+ * (collected). Every link starts unpinned; a member pins one, and unpinning
+ * never removes it. Agents read the pinned ones (`drives/service.ts`). The routes in `routes/project-spaces.ts`
  * check the channel first (`findLiveChannel`); these functions take its id as
  * already checked.
  */
@@ -15,14 +15,17 @@ import { db } from '../../shared/db';
 import { enqueueLinkUnfurls } from './link-unfurl';
 import { extractMessageLinks } from './message-links';
 import { findLiveChannel } from './project-spaces';
+import { isSpaceMember } from './project-space-members';
 import { resolveSessionOwnerIdentities } from './user-identity';
 
 type LinkRow = typeof projectSpaceLinks.$inferSelect;
 
 /** The most pinned links one channel holds; pinning past it gets 409 `link_limit`. */
 export const SPACE_LINKS_MAX = 200;
-/** The most unpinned (collected) links one channel keeps; the least recently shared go first. */
-export const SPACE_SHARED_LINKS_MAX = 500;
+/** The most links one channel holds from "Add link"; one more add gets 409 `link_limit`. */
+export const SPACE_ADDED_LINKS_MAX = 200;
+/** The most unpinned collected links one channel keeps; the least recently shared go first. Added links are never pruned. */
+const SPACE_SHARED_LINKS_MAX = 500;
 
 /** Who asks: their id, and whether they manage the project (they may delete any link). */
 export type LinkViewer = { userId: string; manager: boolean };
@@ -44,7 +47,6 @@ function serializeLink(row: LinkRow, viewer: LinkViewer, names: Map<string, { na
     pinned_at: row.pinned ? (row.pinnedAt ?? row.createdAt).toISOString() : null,
     source: row.source,
     session_id: row.sessionId,
-    share_count: row.shareCount,
     last_shared_at: row.lastSharedAt.toISOString(),
     display_title: row.title?.trim() || row.fetchedTitle || linkPathTitle(row.url),
     site_name: row.siteName,
@@ -92,11 +94,12 @@ export async function listSpaceLinks(spaceId: string, accountId: string, viewer:
 }
 
 /**
- * Add and pin a link. The URL is stored as the URL parser serializes it (the
- * schema already checked it parses as http(s)), so spaces and the like reach
- * the README and the `href` encoded. A URL the channel already holds is pinned
- * (and takes the new title), not duplicated. `link_limit` at `SPACE_LINKS_MAX`
- * pinned links.
+ * Add a link, unpinned, recorded as added by the caller. The URL is stored as
+ * the URL parser serializes it (the schema already checked it parses as
+ * http(s)), so spaces and the like reach the README and the `href` encoded. A
+ * URL the channel already holds is not duplicated: that row takes the new
+ * title, keeps its pin and its first sharer, and moves to the top of the list.
+ * `link_limit` at `SPACE_ADDED_LINKS_MAX` added links.
  */
 export async function addSpaceLink(
   projectId: string,
@@ -106,22 +109,16 @@ export async function addSpaceLink(
   input: SpaceLinkCreateInput,
 ): Promise<SpaceLink | 'link_limit'> {
   // ponytail: count-then-insert, so two concurrent adds can pass 200 by one each; a per-space lock if that matters.
-  if ((await countPinnedLinks(spaceId)) >= SPACE_LINKS_MAX) return 'link_limit';
+  if ((await countAddedLinks(spaceId)) >= SPACE_ADDED_LINKS_MAX) return 'link_limit';
   const url = new URL(input.url).href;
   const t = projectSpaceLinks;
-  const now = new Date();
   const [row] = await db
     .insert(t)
-    .values({ projectId, spaceId, url, title: input.title || null, createdBy: viewer.userId, pinnedBy: viewer.userId, pinnedAt: now })
+    // `pinned` is set here: the column's default (true) dates from when "Add link" pinned.
+    .values({ projectId, spaceId, url, title: input.title || null, createdBy: viewer.userId, pinned: false })
     .onConflictDoUpdate({
       target: [t.spaceId, t.url],
-      set: {
-        pinned: true,
-        // Already pinned: whoever pinned it first keeps the credit.
-        pinnedBy: sql`case when ${t.pinned} then ${t.pinnedBy} else excluded.pinned_by end`,
-        pinnedAt: sql`case when ${t.pinned} then ${t.pinnedAt} else excluded.pinned_at end`,
-        title: sql`coalesce(excluded.title, ${t.title})`,
-      },
+      set: { title: sql`coalesce(excluded.title, ${t.title})`, lastSharedAt: sql`now()` },
     })
     .returning();
   await enqueueLinkUnfurls([row!]);
@@ -130,9 +127,9 @@ export async function addSpaceLink(
 }
 
 /**
- * Pin or unpin a link; any member who sees the channel may. Unpinning a link
- * no thread shared ("Add link" only) removes it, so only its creator or a
- * project manager may: `removed`. `link_limit` at `SPACE_LINKS_MAX` pinned.
+ * Pin or unpin a link; any member who sees the channel may. Unpinning only
+ * clears the pin: the link stays listed (removing it is `deleteSpaceLink`).
+ * `link_limit` at `SPACE_LINKS_MAX` pinned.
  */
 export async function pinSpaceLink(
   spaceId: string,
@@ -140,7 +137,7 @@ export async function pinSpaceLink(
   accountId: string,
   viewer: LinkViewer,
   pinned: boolean,
-): Promise<SpaceLink | 'removed' | 'not_found' | 'forbidden' | 'link_limit'> {
+): Promise<SpaceLink | 'not_found' | 'link_limit'> {
   const where = and(eq(projectSpaceLinks.spaceId, spaceId), eq(projectSpaceLinks.linkId, linkId));
   const [row] = await db.select().from(projectSpaceLinks).where(where).limit(1);
   if (!row) return 'not_found';
@@ -153,11 +150,6 @@ export async function pinSpaceLink(
       .where(where)
       .returning();
   } else if (!pinned && row.pinned) {
-    if (row.source === 'manual' && row.sessionId === null) {
-      if (!viewer.manager && row.createdBy !== viewer.userId) return 'forbidden';
-      await db.delete(projectSpaceLinks).where(where);
-      return 'removed';
-    }
     [next] = await db
       .update(projectSpaceLinks)
       .set({ pinned: false, pinnedBy: null, pinnedAt: null })
@@ -182,9 +174,11 @@ export async function deleteSpaceLink(
   return 'deleted';
 }
 
-/** Every link of the channel, pinned or shared: the Links tab count. */
-export async function countSpaceLinks(spaceId: string): Promise<number> {
-  const [row] = await db.select({ n: count() }).from(projectSpaceLinks).where(eq(projectSpaceLinks.spaceId, spaceId));
+async function countAddedLinks(spaceId: string): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(projectSpaceLinks)
+    .where(and(eq(projectSpaceLinks.spaceId, spaceId), eq(projectSpaceLinks.source, 'manual')));
   return row?.n ?? 0;
 }
 
@@ -198,8 +192,9 @@ async function countPinnedLinks(spaceId: string): Promise<number> {
 
 /**
  * Save the links in a person's message to the channel of its thread. Only a
- * thread every project member sees (`project` visibility) of a live channel:
- * a DM or a private thread shares nothing. An address the channel holds keeps
+ * thread every member of the channel sees (`project` visibility) of a live
+ * channel, from a member when the channel is private: a DM or a private
+ * thread shares nothing. An address the channel holds keeps
  * its first sharer; it counts one more share and points at this thread.
  * Each link without a fresh title is queued for the background fetch (`link-unfurl.ts`).
  * Callers run it after the prompt is accepted and ignore its failure.
@@ -215,7 +210,11 @@ export async function collectMessageLinks(input: {
   if (!input.spaceId || input.visibility !== 'project') return;
   // Sorted: two concurrent upserts lock the same rows in the same order (no deadlock).
   const urls = extractMessageLinks(input.text).sort();
-  if (urls.length === 0 || !(await findLiveChannel(input.projectId, input.spaceId))) return;
+  if (urls.length === 0) return;
+  const channel = await findLiveChannel(input.projectId, input.spaceId);
+  // A private channel takes links only from its members: a sender who lost
+  // access between the send and this write adds nothing.
+  if (!channel || (channel.visibility === 'private' && !(await isSpaceMember(channel, input.userId)))) return;
   const t = projectSpaceLinks;
   const rows = await db
     .insert(t)
@@ -233,8 +232,6 @@ export async function collectMessageLinks(input: {
     .onConflictDoUpdate({
       target: [t.spaceId, t.url],
       set: {
-        // An "Add link" row counts its first share in a thread as 1, not 2.
-        shareCount: sql`case when ${t.source} = 'manual' and ${t.sessionId} is null then 1 else ${t.shareCount} + 1 end`,
         lastSharedAt: sql`now()`,
         sessionId: sql`excluded.session_id`,
       },
@@ -265,12 +262,14 @@ export function collectMessageLinksInBackground(
   });
 }
 
-/** Drop the least recently shared unpinned links past `SPACE_SHARED_LINKS_MAX`. */
+/** Drop the least recently shared unpinned collected links past `SPACE_SHARED_LINKS_MAX`; an added link stays. */
 async function pruneSharedLinks(spaceId: string): Promise<void> {
   const stale = db
     .select({ id: projectSpaceLinks.linkId })
     .from(projectSpaceLinks)
-    .where(and(eq(projectSpaceLinks.spaceId, spaceId), eq(projectSpaceLinks.pinned, false)))
+    .where(
+      and(eq(projectSpaceLinks.spaceId, spaceId), eq(projectSpaceLinks.pinned, false), eq(projectSpaceLinks.source, 'message')),
+    )
     .orderBy(desc(projectSpaceLinks.lastSharedAt), desc(projectSpaceLinks.linkId))
     .offset(SPACE_SHARED_LINKS_MAX);
   await db.delete(projectSpaceLinks).where(inArray(projectSpaceLinks.linkId, stale));

@@ -1,21 +1,17 @@
 'use client';
 
-import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   addProjectMemoryNote,
-  createProjectMemoryPage,
   deleteProjectMemoryPage,
   getProjectMemoryLayer,
   getProjectMemoryPage,
   getSessionMemoryUsage,
-  listProjectMemoryChanges,
   listProjectMemoryHistory,
   listProjectMemoryPages,
   searchProjectMemory,
-  undoProjectMemoryVersion,
   updateProjectMemoryPage,
   type AddProjectMemoryNoteInput,
-  type CreateProjectMemoryPageInput,
   type ProjectMemoryPage,
   type ProjectMemoryPageListOptions,
   type ProjectMemorySearchInput,
@@ -54,23 +50,10 @@ export function useProjectMemoryPages(
   layerKey: Id,
   options?: ReadOptions & ProjectMemoryPageListOptions,
 ) {
-  const filter: ProjectMemoryPageListOptions = { type: options?.type, status: options?.status };
+  const filter: ProjectMemoryPageListOptions = { type: options?.type };
   return useQuery({
     queryKey: qk.project.memoryPages(projectId ?? '', layerKey ?? '', filter),
     queryFn: () => listProjectMemoryPages(projectId as string, layerKey as string, filter),
-    enabled: on(options, projectId, layerKey),
-    ...contract('inventory'),
-  });
-}
-
-/** The layer's Recent changes (its 20 most recently changed files), newest first. `hasNextPage` is false. */
-export function useProjectMemoryChanges(projectId: Id, layerKey: Id, options?: ReadOptions) {
-  return useInfiniteQuery({
-    queryKey: qk.project.memoryChanges(projectId ?? '', layerKey ?? ''),
-    queryFn: ({ pageParam }: { pageParam: string | undefined }) =>
-      listProjectMemoryChanges(projectId as string, layerKey as string, { before: pageParam }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last: { next: string | null }) => last.next ?? undefined,
     enabled: on(options, projectId, layerKey),
     ...contract('inventory'),
   });
@@ -86,14 +69,11 @@ export function useProjectMemoryPage(projectId: Id, pageId: Id, options?: ReadOp
   });
 }
 
-/** One page's versions from Drive commits, newest first, at most 20. `hasNextPage` is false: older ones are in Files → Versions. */
+/** One page's versions from Drive commits, newest first, at most 20. Older ones are in Files → Versions. */
 export function useProjectMemoryHistory(projectId: Id, pageId: Id, options?: ReadOptions) {
-  return useInfiniteQuery({
+  return useQuery({
     queryKey: qk.project.memoryHistory(projectId ?? '', pageId ?? ''),
-    queryFn: ({ pageParam }: { pageParam: string | undefined }) =>
-      listProjectMemoryHistory(projectId as string, pageId as string, { before: pageParam }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last: { next: string | null }) => last.next ?? undefined,
+    queryFn: () => listProjectMemoryHistory(projectId as string, pageId as string),
     enabled: on(options, projectId, pageId),
     ...contract('inventory'),
   });
@@ -141,8 +121,7 @@ const callerShowsError = () => {};
 /**
  * After a memory write: put the pages the response returned into their slots,
  * then refetch every memory read of the project (layer counts, page lists,
- * Recent changes, pages, history), the channel tab counts and the onboarding
- * state (memory saved in `#general` completes a "Get started" row).
+ * pages, history) and the onboarding state (memory saved in `#general` completes a "Get started" row).
  */
 function useMemoryWritten(projectId: string) {
   const queryClient = useQueryClient();
@@ -150,20 +129,9 @@ function useMemoryWritten(projectId: string) {
     for (const page of pages) queryClient.setQueryData(qk.project.memoryPage(projectId, page.page_id), page);
     return Promise.all([
       queryClient.invalidateQueries({ queryKey: qk.project.memory(projectId) }),
-      queryClient.invalidateQueries({ queryKey: qk.project.spaceSummaries(projectId) }),
       queryClient.invalidateQueries({ queryKey: qk.project.channelsOnboarding(projectId) }),
     ]);
   };
-}
-
-/** Create a page in a layer. Rejects with `ApiError` codes as `createProjectMemoryPage` does. */
-export function useCreateProjectMemoryPage(projectId: string, layerKey: string) {
-  const written = useMemoryWritten(projectId);
-  return useMutation({
-    mutationFn: (input: CreateProjectMemoryPageInput) => createProjectMemoryPage(projectId, layerKey, input),
-    onError: callerShowsError,
-    onSuccess: () => written(),
-  });
 }
 
 /** Append a Remember-box sentence to a layer's `Notes.md`. */
@@ -187,26 +155,12 @@ export function useUpdateProjectMemoryPage(projectId: string) {
   });
 }
 
-/** Delete a page's file for good. Resolves `{ ok, version_id }`; the delete is not undoable. */
+/** Delete a page's file for good. Resolves `{ ok, version_id }`. */
 export function useDeleteProjectMemoryPage(projectId: string) {
   const written = useMemoryWritten(projectId);
   return useMutation({
     mutationFn: (pageId: string) => deleteProjectMemoryPage(projectId, pageId),
     onError: callerShowsError,
     onSuccess: () => written(),
-  });
-}
-
-/**
- * Undo the newest change of a page, by its version (from Recent changes or
- * history). Rejects with `ApiError` code `superseded` (an older version) or
- * `version_gone` (older than the drive's newest 100 commits).
- */
-export function useUndoProjectMemoryVersion(projectId: string) {
-  const written = useMemoryWritten(projectId);
-  return useMutation({
-    mutationFn: (versionId: string) => undoProjectMemoryVersion(projectId, versionId),
-    onError: callerShowsError,
-    onSuccess: (result: { pages: ProjectMemoryPage[] }) => written(result.pages),
   });
 }

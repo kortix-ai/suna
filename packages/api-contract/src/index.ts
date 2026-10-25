@@ -1278,6 +1278,8 @@ export type ClaimWarmProjectSessionInput = z.infer<typeof ClaimWarmProjectSessio
  * one agent. `/projects/:id/spaces`, behind the `project_channels` flag.
  */
 export const SPACE_KINDS = ['channel', 'dm'] as const;
+/** Who sees a channel: every project member (`public`) or only its members (`private`). */
+export const SPACE_VISIBILITIES = ['public', 'private'] as const;
 export const SpaceSchema = z
   .object({
     space_id: z.string(),
@@ -1293,9 +1295,75 @@ export const SpaceSchema = z
     updated_at: z.string(),
     /** The caller may rename, describe, archive and unarchive it: the channel's creator or a project manager. False for a DM. */
     can_edit: z.boolean(),
+    /**
+     * The channel's agents, in order: the first is the channel's default for a
+     * new thread. Empty: no agent list, a new thread starts on the project's
+     * default. Always empty for a DM.
+     */
+    agents: z.array(z.string()),
+    /**
+     * The caller is in the channel: a member of `#general` always (every
+     * project member is), of another channel once added or joined. True for a
+     * DM. A non-member of a public channel still reads and posts.
+     */
+    is_member: z.boolean(),
+    /**
+     * `public`: every project member sees and opens it. `private`: only its
+     * members see the channel and everything in it; `#general` and a DM are
+     * always `public`.
+     */
+    visibility: z.enum(SPACE_VISIBILITIES),
   })
   .strict();
 export type Space = z.infer<typeof SpaceSchema>;
+
+/** At most this many people in one `POST /spaces/:spaceId/members` or one channel create. */
+export const SPACE_MEMBERS_ADD_MAX = 100;
+
+/**
+ * A person in a channel: `GET /projects/:id/spaces/:spaceId/members`. `name`
+ * is the display name (else the email's local part), never the email.
+ */
+export const SpaceMemberSchema = z
+  .object({
+    user_id: z.string(),
+    name: z.string(),
+    avatar_url: z.string().nullable(),
+    /** The channel's creator. */
+    is_creator: z.boolean(),
+    is_viewer: z.boolean(),
+    /** When they were added or joined; null for `#general` (implicit) and for rows the migration backfilled without a time. */
+    added_at: z.string().nullable(),
+    /**
+     * The caller may remove them: a project manager anyone, the creator anyone
+     * but themself, a member only themself (Leave). Nobody leaves the creator
+     * out except a manager. Always false in `#general`.
+     */
+    can_remove: z.boolean(),
+  })
+  .strict();
+export type SpaceMember = z.infer<typeof SpaceMemberSchema>;
+
+export const SpaceMemberListSchema = z
+  .object({
+    /** The caller first, then by name. */
+    members: z.array(SpaceMemberSchema),
+    /** `#general`: every project member is in it, no one is added, no one leaves. */
+    implicit: z.boolean(),
+    /** The caller may add people: a member of the channel, its creator or a project manager. False in `#general`. */
+    can_add: z.boolean(),
+  })
+  .strict();
+export type SpaceMemberList = z.infer<typeof SpaceMemberListSchema>;
+
+/** `POST /projects/:id/spaces/:spaceId/members`. Every id must be a member of the project; one already in the channel is skipped. */
+export const SpaceMembersAddInputSchema = z
+  .object({ user_ids: z.array(z.string().uuid()).min(1).max(SPACE_MEMBERS_ADD_MAX) })
+  .strict();
+export type SpaceMembersAddInput = z.infer<typeof SpaceMembersAddInputSchema>;
+
+/** At most this many agents in one channel's agent list. */
+export const SPACE_AGENTS_MAX = 50;
 
 /**
  * `#general`'s "turned on again" line: `count` sessions started while Channels
@@ -1307,9 +1375,37 @@ export const SpaceGeneralNoticeSchema = z
 export type SpaceGeneralNotice = z.infer<typeof SpaceGeneralNoticeSchema>;
 
 export const SpaceListSchema = z
-  .object({ spaces: z.array(SpaceSchema), general_notice: SpaceGeneralNoticeSchema.optional() })
+  .object({
+    spaces: z.array(SpaceSchema),
+    general_notice: SpaceGeneralNoticeSchema.optional(),
+    /** Whether this deployment lets a channel be private (`KORTIX_PRIVATE_CHANNELS_ENABLED`). */
+    private_channels_available: z.boolean(),
+  })
   .strict();
 export type SpaceList = z.infer<typeof SpaceListSchema>;
+
+/**
+ * `GET /projects/:id/spaces/private`, project managers only: the private
+ * channels the manager is not in, archived ones included. Name, member count
+ * and creator; never content. The manager renames,
+ * archives, lists, adds and removes people from it, never reads it.
+ */
+export const PrivateChannelSummarySchema = z
+  .object({
+    space_id: z.string(),
+    name: z.string(),
+    slug: z.string(),
+    member_count: z.number().int(),
+    created_by: z.string().nullable(),
+    /** The creator's display name, null when unknown. */
+    created_by_name: z.string().nullable(),
+    created_at: z.string(),
+    archived_at: z.string().nullable(),
+  })
+  .strict();
+export type PrivateChannelSummary = z.infer<typeof PrivateChannelSummarySchema>;
+export const PrivateChannelListSchema = z.object({ channels: z.array(PrivateChannelSummarySchema) }).strict();
+export type PrivateChannelList = z.infer<typeof PrivateChannelListSchema>;
 
 /**
  * Channels onboarding marks a member leaves once per project:
@@ -1345,6 +1441,10 @@ export const SpaceCreateInputSchema = z
   .object({
     name: z.string().trim().min(1).max(80),
     description: z.string().trim().max(500).optional(),
+    /** People added with the creator (who is always a member). Every id must be a member of the project. */
+    member_ids: z.array(z.string().uuid()).max(SPACE_MEMBERS_ADD_MAX).optional(),
+    /** Default `public`. `private`: only its members see it. */
+    visibility: z.enum(SPACE_VISIBILITIES).optional(),
   })
   .strict();
 export type SpaceCreateInput = z.infer<typeof SpaceCreateInputSchema>;
@@ -1356,6 +1456,17 @@ export const SpaceUpdateInputSchema = z
     description: z.string().trim().max(500).nullable().optional(),
     /** `true` archives the channel; `false` unarchives it. */
     archived: z.boolean().optional(),
+    /**
+     * Replaces the channel's agent list, in order: the first is the default.
+     * Every name must be an agent of the project, each once. `[]` clears it.
+     */
+    agents: z.array(z.string().trim().min(1).max(200)).max(SPACE_AGENTS_MAX).optional(),
+    /**
+     * `private` makes a public channel private: the people who started a
+     * thread in it or added a link become members. One way only: a private
+     * channel never becomes public.
+     */
+    visibility: z.literal('private').optional(),
   })
   .strict();
 export type SpaceUpdateInput = z.infer<typeof SpaceUpdateInputSchema>;
@@ -1376,7 +1487,7 @@ export const SpaceLinkSchema = z
     created_at: z.string(),
     /** The caller may delete it: they added it, or they manage the project. */
     can_delete: z.boolean(),
-    /** Agents in the channel read pinned links. "Add link" pins; a link shared in a thread is unpinned until a member pins it. */
+    /** Agents in the channel read pinned links. Every link starts unpinned (added or shared in a thread) until a member pins it. */
     pinned: z.boolean(),
     /** Who pinned it and when; null while unpinned (or, for `pinned_by_name`, when unknown). */
     pinned_by_name: z.string().nullable(),
@@ -1385,8 +1496,6 @@ export const SpaceLinkSchema = z
     source: z.enum(['manual', 'message']),
     /** The latest thread that shared it; null for a link never shared in a thread (or whose thread is gone). */
     session_id: z.string().nullable(),
-    /** How many messages shared it. */
-    share_count: z.number().int(),
     last_shared_at: z.string(),
     /** The row's name: the title a member gave, else the page's fetched title, else the decoded path, else the host. */
     display_title: z.string(),
@@ -1398,10 +1507,10 @@ export const SpaceLinkSchema = z
   .strict();
 export type SpaceLink = z.infer<typeof SpaceLinkSchema>;
 
-/** `PATCH /projects/:id/spaces/:spaceId/links/:linkId`. Unpinning a link never shared in a thread removes it. */
+/** `PATCH /projects/:id/spaces/:spaceId/links/:linkId`. Unpinning only clears the pin; the link stays listed. */
 export const SpaceLinkPinInputSchema = z.object({ pinned: z.boolean() }).strict();
 export type SpaceLinkPinInput = z.infer<typeof SpaceLinkPinInputSchema>;
-/** The link after the change; null when unpinning removed it. */
+/** The link after the change. `link` stays nullable for clients of older servers, where unpinning an added link removed it. */
 export const SpaceLinkPinResultSchema = z.object({ link: SpaceLinkSchema.nullable() }).strict();
 export type SpaceLinkPinResult = z.infer<typeof SpaceLinkPinResultSchema>;
 
@@ -1425,17 +1534,6 @@ export const SpaceLinkCreateInputSchema = z
   })
   .strict();
 export type SpaceLinkCreateInput = z.infer<typeof SpaceLinkCreateInputSchema>;
-
-/** The counts beside a channel's tab labels. Fields are added, never renamed. */
-export const SpaceSummarySchema = z
-  .object({
-    apps: z.number().int(),
-    links: z.number().int(),
-    /** Triggers that post to this channel or DM; 0 for a caller without the trigger read permission. */
-    triggers: z.number().int(),
-  })
-  .strict();
-export type SpaceSummary = z.infer<typeof SpaceSummarySchema>;
 
 export const SESSION_SANDBOX_STATUSES = [
   'provisioning',

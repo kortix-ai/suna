@@ -41,7 +41,7 @@ function rowsOf(result: unknown): CountRow[] {
 }
 
 /** `reply_count` per session id. Call only for sessions the viewer may read. */
-export async function countSessionReplies(database: Database, sessionIds: string[]): Promise<Map<string, number>> {
+async function countSessionReplies(database: Database, sessionIds: string[]): Promise<Map<string, number>> {
   const counts = new Map<string, number>(sessionIds.map((id) => [id, 0]));
   if (sessionIds.length === 0) return counts;
   const ids = sql.join(sessionIds.map((id) => sql`${id}`), sql`, `);

@@ -297,7 +297,7 @@ export function registerSessionPromptsRoutes(): void {
       // at create would let a member send the first message as their granted
       // agent and every one after it as any other agent in the manifest. Falls
       // back to the session's own agent when the prompt names none.
-      await resolveAndAuthorizeAgent(c, loaded, projectId, overrides.agent, visible.row.agentName);
+      await resolveAndAuthorizeAgent(c, loaded, projectId, overrides.agent, visible.row.agentName, undefined, visible.row.spaceId);
 
       // "Stop and send" ends the running turn, so it asks what Stop asks
       // (`turn-stop-authority.ts`). With no running turn it is a plain send.

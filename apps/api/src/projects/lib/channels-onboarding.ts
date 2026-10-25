@@ -1,5 +1,5 @@
 /**
- * Channels onboarding (spec section 14, D8): the member intro seen once, the
+ * Channels onboarding: the member intro seen once, the
  * `#general` "Get started" block, and the "turned on again" line. Marks live in
  * `kortix.project_user_marks`; the routes are in `routes/project-spaces.ts`.
  */

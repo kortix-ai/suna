@@ -7,17 +7,24 @@ import {
   getChannelsOnboarding,
   getOrCreateProjectDm,
   getProjectSpaceGeneralNotice,
-  getProjectSpaceSummary,
+  getPrivateChannelsAvailable,
+  addProjectSpaceMembers,
+  joinProjectSpace,
+  leaveProjectSpace,
+  listProjectSpaceMembers,
+  removeProjectSpaceMember,
   markChannelsOnboarding,
   listProjectSpaceApps,
   listProjectSpaceLinks,
   listProjectSpaces,
+  listPrivateChannelsNotIn,
   pinProjectSpaceLink,
   removeProjectSpaceLink,
   updateProjectSpace,
   type ChannelsOnboarding,
   type ProjectSpace,
   type ProjectSpaceLink,
+  type ProjectSpaceMemberList,
 } from './spaces';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -73,6 +80,33 @@ test('getProjectSpaceGeneralNotice reads #general\'s turned-on-again line from t
   ]);
 });
 
+test('getPrivateChannelsAvailable reads private_channels_available from the spaces list; an older API that sends none reads false', async () => {
+  nextResponse = { status: 200, body: { spaces: [general], private_channels_available: true } };
+  expect(await getPrivateChannelsAvailable('P1')).toBe(true);
+  nextResponse = { status: 200, body: { spaces: [general] } };
+  expect(await getPrivateChannelsAvailable('P1')).toBe(false);
+  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+    'GET http://test.local/v1/projects/P1/spaces',
+    'GET http://test.local/v1/projects/P1/spaces',
+  ]);
+});
+
+test('listPrivateChannelsNotIn GETs the manager list of private channels and returns its array', async () => {
+  const row = {
+    space_id: '00000000-0000-4000-8000-000000000009',
+    name: 'deals',
+    slug: 'deals',
+    member_count: 0,
+    created_by: null,
+    created_by_name: null,
+    created_at: '2026-10-20T00:00:00.000Z',
+    archived_at: null,
+  };
+  nextResponse = { status: 200, body: { channels: [row] } };
+  expect(await listPrivateChannelsNotIn('P1')).toEqual([row]);
+  expect(calls).toEqual([{ url: 'http://test.local/v1/projects/P1/spaces/private', method: 'GET', body: undefined }]);
+});
+
 test('getChannelsOnboarding GETs the caller\'s onboarding state', async () => {
   const state: ChannelsOnboarding = {
     intro_seen: false,
@@ -116,6 +150,20 @@ test('createProjectSpace POSTs the name and description', async () => {
   expect(space.slug).toBe('design');
 });
 
+test('createProjectSpace sends visibility private and reads the channel back as private', async () => {
+  nextResponse = { status: 201, body: { ...general, slug: 'deals', name: 'deals', is_default: false, visibility: 'private' } };
+  const space = await createProjectSpace('P1', { name: 'deals', visibility: 'private' });
+  expect(calls[0]!.body).toEqual({ name: 'deals', visibility: 'private' });
+  const visibility: 'public' | 'private' | undefined = space.visibility;
+  expect(visibility).toBe('private');
+});
+
+test('updateProjectSpace makes a public channel private', async () => {
+  nextResponse = { status: 200, body: { ...general, visibility: 'private' } };
+  await updateProjectSpace('P1', general.space_id, { visibility: 'private' });
+  expect(calls[0]!.body).toEqual({ visibility: 'private' });
+});
+
 test('createProjectSpace rejects a taken slug with code slug_taken and the existing space', async () => {
   nextResponse = {
     status: 409,
@@ -139,6 +187,18 @@ test('updateProjectSpace PATCHes the space by id', async () => {
     body: { archived: true, description: null },
   });
   expect(space.archived_at).toBe('2026-10-20T01:00:00.000Z');
+});
+
+test('updateProjectSpace sends the channel agent list in order and reads it back, first agent the default', async () => {
+  nextResponse = { status: 200, body: { ...general, agents: ['writer', 'kortix'] } };
+  const space = await updateProjectSpace('P1', general.space_id, { agents: ['writer', 'kortix'] });
+  expect(calls[0]).toEqual({
+    url: `http://test.local/v1/projects/P1/spaces/${general.space_id}`,
+    method: 'PATCH',
+    body: { agents: ['writer', 'kortix'] },
+  });
+  const agents: string[] | undefined = space.agents;
+  expect(agents).toEqual(['writer', 'kortix']);
 });
 
 test('updateProjectSpace rejects a taken slug with slug_taken and never reaches the host error handler', async () => {
@@ -195,7 +255,6 @@ const link: ProjectSpaceLink = {
   pinned_at: null,
   source: 'message',
   session_id: 'T1',
-  share_count: 2,
   last_shared_at: '2026-10-22T00:00:00.000Z',
   display_title: 'Spec',
   site_name: 'Example',
@@ -231,7 +290,7 @@ test('space links: list GETs, add POSTs url and title, remove DELETEs by id', as
   ]);
 });
 
-test('pinProjectSpaceLink PATCHes { pinned } and returns the link, or null when unpinning removed it', async () => {
+test('pinProjectSpaceLink PATCHes { pinned } and returns the link, or null from an older server that removed it on unpin', async () => {
   const pinned = { ...link, pinned: true, pinned_by_name: 'Ana', pinned_at: '2026-10-23T00:00:00.000Z' };
   nextResponse = { status: 200, body: { link: pinned } };
   expect(await pinProjectSpaceLink('P1', 'S1', 'L1', true)).toEqual(pinned);
@@ -265,8 +324,43 @@ test('addProjectSpaceLink rejects a bad url with 400 and never reaches the host 
   expect(errors).toEqual([]);
 });
 
-test('getProjectSpaceSummary GETs the tab counts', async () => {
-  nextResponse = { status: 200, body: { apps: 2, links: 3, triggers: 1 } };
-  expect(await getProjectSpaceSummary('P1', 'S1')).toEqual({ apps: 2, links: 3, triggers: 1 });
-  expect(calls[0]).toEqual({ url: 'http://test.local/v1/projects/P1/spaces/S1/summary', method: 'GET', body: undefined });
+const memberList: ProjectSpaceMemberList = {
+  members: [
+    {
+      user_id: 'U1',
+      name: 'Priya Rao',
+      avatar_url: null,
+      is_creator: true,
+      is_viewer: true,
+      added_at: '2026-10-25T00:00:00.000Z',
+      can_remove: false,
+    },
+  ],
+  implicit: false,
+  can_add: true,
+};
+
+test('channel members: list, add in bulk, remove, join and leave reach their routes and return the list', async () => {
+  nextResponse = { status: 200, body: memberList };
+  const base = 'http://test.local/v1/projects/P1/spaces/S1';
+  expect(await listProjectSpaceMembers('P1', 'S1')).toEqual(memberList);
+  expect(await addProjectSpaceMembers('P1', 'S1', ['U2', 'U3'])).toEqual(memberList);
+  expect(await removeProjectSpaceMember('P1', 'S1', 'U2')).toEqual(memberList);
+  expect(await joinProjectSpace('P1', 'S1')).toEqual(memberList);
+  expect(await leaveProjectSpace('P1', 'S1')).toEqual(memberList);
+  expect(calls).toEqual([
+    { url: `${base}/members`, method: 'GET', body: undefined },
+    { url: `${base}/members`, method: 'POST', body: { user_ids: ['U2', 'U3'] } },
+    { url: `${base}/members/U2`, method: 'DELETE', body: undefined },
+    { url: `${base}/join`, method: 'POST', body: undefined },
+    { url: `${base}/members/me`, method: 'DELETE', body: undefined },
+  ]);
+});
+
+test('adding someone outside the project rejects with ApiError 400 not_project_member', async () => {
+  nextResponse = { status: 400, body: { error: 'Only members of the project can be added to a channel.', code: 'not_project_member', user_ids: ['U9'] } };
+  const error = await addProjectSpaceMembers('P1', 'S1', ['U9']).catch((e) => e);
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error.status).toBe(400);
+  expect(error.code).toBe('not_project_member');
 });

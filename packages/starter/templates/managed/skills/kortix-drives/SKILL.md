@@ -22,7 +22,8 @@ rewrites it whenever access changes. Read it first; never edit it.
 | --- | --- | --- |
 | `/drives/me` (and `~/Desktop`) | the user's own folder, `Users/<name>` in Files | read-write |
 | `/drives/me/Memory` | what you keep about this user across sessions (the `kortix-user-memory` skill) | read-write |
-| `/drives/company` | the project's shared `Company` folder, with `Company/Memory` for what the whole team should know and `Company/Channels/<channel>/Memory` for each channel | as shared |
+| `/drives/company` | the project's shared `Company` folder, with `Company/Memory` for what the whole team should know and `Company/Channels/<channel>/Memory` for each public channel | as shared; read-only in a private channel's thread |
+| the private channel's folder | in a private channel's thread only: its files and `Memory/`, at the path `/drives/README.md` names | read-write |
 | `/drives/<name>` | any other folder shared with you, this agent or this user | as shared |
 
 - Look in `/drives/me` for the user's context before you ask them for it.
@@ -45,6 +46,12 @@ where a durable fact goes:
 | this channel's work: decisions, people, workstreams, playbooks | the channel's `Memory/` folder, at the path `/drives/README.md` names |
 | the whole team | `/drives/company/Memory/` |
 | what the project is and how it is built | the repo `memory/` (the `kortix-memory` skill, through a change request) |
+
+**In a private channel's thread** (`/drives/README.md` says the channel is
+private) every fact you learn there, team facts included, goes only in that
+channel's `Memory/` folder. Only its members may read it. `/drives/company`
+and `/drives/me` are read-only there: never copy the channel's content into
+them, into another channel, or out of the sandbox, unless a member asks.
 
 A folder that is not mounted is not yours to write: tell the user, never
 save the fact somewhere else.
@@ -96,6 +103,8 @@ Paths are Files paths (`/Company/plan.md`), not `/drives` paths.
 - `kortix drive` works only in the user's own private session. In a shared,
   chat or scheduled session it answers 403: use the folders mounted in the
   session, or ask the user to make the change in Files.
+- In a private channel's thread `kortix drive` writes only that channel's
+  folder; everything else is read-only (403 on a write).
 </commands>
 
 <limits>

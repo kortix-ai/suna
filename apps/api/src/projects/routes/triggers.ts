@@ -196,7 +196,7 @@ export function registerTriggersRoutes(): void {
         PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
       );
 
-      return c.json(await loadTriggersForResponse(projectId, loaded.row, loaded.userId));
+      return c.json(await loadTriggersForResponse(projectId, loaded.row, { userId: loaded.userId, bound: callerKortixSessionId(c) }));
     },
   );
 
@@ -456,7 +456,7 @@ export function registerTriggersRoutes(): void {
         if (configurationError) return c.json(configurationError, 409);
       }
       // The channel or DM its runs post to, and who sees its threads.
-      const placed = await resolveTriggerSpaceCreate(projectId, loaded, body, draft.agent);
+      const placed = await resolveTriggerSpaceCreate(projectId, { ...loaded, bound: callerKortixSessionId(c) }, body, draft.agent);
       if ('error' in placed) return c.json(placed.error.body, placed.error.status);
       const { space, access } = placed;
 
@@ -508,7 +508,7 @@ export function registerTriggersRoutes(): void {
       });
       await followTrigger(c, loaded.row, projectId, draft.slug);
 
-      return c.json(await loadTriggersForResponse(projectId, loaded.row, loaded.userId), 201);
+      return c.json(await loadTriggersForResponse(projectId, loaded.row, { userId: loaded.userId, bound: callerKortixSessionId(c) }), 201);
     },
   );
 
@@ -573,7 +573,7 @@ export function registerTriggersRoutes(): void {
         .where(eq(projects.projectId, projectId))
         .returning();
       if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-      return c.json(await loadTriggersForResponse(projectId, row, loaded.userId));
+      return c.json(await loadTriggersForResponse(projectId, row, { userId: loaded.userId, bound: callerKortixSessionId(c) }));
     },
   );
 
@@ -642,7 +642,7 @@ export function registerTriggersRoutes(): void {
       // PATCH that touches none is a no-op that skips git entirely.
       const touchesManifest = TRIGGER_MANIFEST_KEYS.some((k) => k in body);
       // `space_id`: undefined leaves the space, null clears it. Flag off: ignored.
-      const spacePatch = await resolveTriggerSpacePatch(projectId, slug, loaded, body);
+      const spacePatch = await resolveTriggerSpacePatch(projectId, slug, { ...loaded, bound: callerKortixSessionId(c) }, body);
       if ('error' in spacePatch) return c.json(spacePatch.error.body, spacePatch.error.status);
       const { nextSpace, access, propagate, agentSpace } = spacePatch;
       let committedManifest: ParsedManifest | undefined;
@@ -760,7 +760,7 @@ export function registerTriggersRoutes(): void {
       if (body.enabled === true) await clearTriggerAutoPause(projectId, slug);
       await followTrigger(c, loaded.row, projectId, slug);
 
-      return c.json(await loadTriggersForResponse(projectId, loaded.row, loaded.userId));
+      return c.json(await loadTriggersForResponse(projectId, loaded.row, { userId: loaded.userId, bound: callerKortixSessionId(c) }));
     },
   );
 

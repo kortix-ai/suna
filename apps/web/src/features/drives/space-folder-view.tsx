@@ -3,6 +3,7 @@
 import { type Drive, makeDriveFolder } from '@kortix/sdk';
 import { spaceDriveFolders } from '@kortix/shared';
 import { Button } from '@kortix/ui/button';
+import { EmptyArt } from '@kortix/ui/empty-art';
 import { EmptyState } from '@kortix/ui/empty-state';
 import { ErrorState } from '@kortix/ui/error-state';
 import {
@@ -63,7 +64,7 @@ export function SpaceFolderView({
   }
   if (!drive.data) return null;
   const name = space.kind === 'channel' ? space.slug : space.dm_agent_name;
-  const folders = name ? spaceDriveFolders(space.kind, name, drive.data.personalFolder) : null;
+  const folders = name ? spaceDriveFolders(space.kind, name, drive.data.personalFolder, space.visibility === 'private' ? space.space_id : null) : null;
   if (!folders) return <SpaceFolderEmpty tab={tab} place={place} />;
   const note =
     tab === 'memory'
@@ -246,13 +247,12 @@ function SpaceExplorer({
 function SpaceFolderEmpty({ tab, place }: { tab: SpaceFolder['tab']; place: string }) {
   const t = useTranslations('spaces');
   return (
-    <div className="px-5 py-16">
-      <EmptyState
-        size="sm"
-        title={t(`view.empty.${tab}.title`)}
-        description={t(`view.empty.${tab}.description`, { place })}
-      />
-    </div>
+    <EmptyState
+      className="min-h-full"
+      media={<EmptyArt />}
+      title={t(`view.empty.${tab}.title`)}
+      description={t(`view.empty.${tab}.description`, { place })}
+    />
   );
 }
 
