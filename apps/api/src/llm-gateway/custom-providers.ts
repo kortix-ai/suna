@@ -77,6 +77,16 @@ export function readCustomProviders(metadata: unknown): CustomLlmProviderDefinit
 
 const positive = (value: unknown) => (typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined);
 
+interface CustomModelWire {
+  id?: unknown;
+  context_window?: unknown; max_model_len?: unknown; context_length?: unknown;
+  max_output_tokens?: unknown; max_completion_tokens?: unknown;
+  architecture?: { input_modalities?: unknown } | null;
+  modalities?: { input?: unknown } | null;
+  top_provider?: { context_length?: unknown; max_completion_tokens?: unknown } | null;
+  supported_parameters?: unknown;
+}
+
 /**
  * What an OpenAI-compatible `GET /models` reports per model id. Window:
  * `context_window` (Morph), `max_model_len` (vLLM), `context_length`
@@ -95,7 +105,7 @@ export async function probeCustomModels(baseUrl: string, apiKey: string | null):
       allowPrivateHosts: config.KORTIX_LLM_CUSTOM_PROVIDER_ALLOW_HOSTS,
     });
     if (!res.ok) return out;
-    const body = await res.json() as { data?: Record<string, any>[] };
+    const body = await res.json() as { data?: CustomModelWire[] };
     for (const model of Array.isArray(body?.data) ? body.data : []) {
       if (typeof model?.id !== 'string') continue;
       const inputs = model.architecture?.input_modalities ?? model.modalities?.input;
