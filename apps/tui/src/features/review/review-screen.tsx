@@ -228,27 +228,19 @@ export function ReviewView({
     [actions],
   );
 
-  const runMerge = useCallback(async () => {
+  const runAction = useCallback(async (action: 'merge' | 'close') => {
     if (!current) return;
-    setBusy(`merging #${current.number}…`);
+    setBusy(`${action === 'merge' ? 'merging' : 'closing'} #${current.number}…`);
     try {
-      const sha = await actions.merge(current.crId);
-      onToast?.(`Merged #${current.number} as ${sha.slice(0, 7)}`);
+      if (action === 'merge') {
+        const sha = await actions.merge(current.crId);
+        onToast?.(`Merged #${current.number} as ${sha.slice(0, 7)}`);
+      } else {
+        await actions.close(current.crId);
+        onToast?.(`Closed #${current.number}`);
+      }
     } catch (error) {
-      onToast?.(`Merge failed: ${errorText(error)}`, 'error');
-    } finally {
-      setBusy(null);
-    }
-  }, [current, actions, onToast]);
-
-  const runClose = useCallback(async () => {
-    if (!current) return;
-    setBusy(`closing #${current.number}…`);
-    try {
-      await actions.close(current.crId);
-      onToast?.(`Closed #${current.number}`);
-    } catch (error) {
-      onToast?.(`Close failed: ${errorText(error)}`, 'error');
+      onToast?.(`${action === 'merge' ? 'Merge' : 'Close'} failed: ${errorText(error)}`, 'error');
     } finally {
       setBusy(null);
     }
@@ -264,8 +256,7 @@ export function ReviewView({
       if (matchesReviewBinding(key, 'review.confirm')) {
         const action = confirm;
         setConfirm(null);
-        if (action === 'merge') void runMerge();
-        else void runClose();
+        void runAction(action);
       }
       return;
     }
