@@ -14,6 +14,7 @@
  * import cycle with `./index` is safe (see the header of `./index.v2.ts`).
  */
 
+import { validateAgentPolicySetRefs } from './policy-sets';
 import {
   AGENT_MODES_V2,
   CODEMODE_VALUES,
@@ -25,6 +26,7 @@ import {
   PI_PACKAGE_NPM_RE,
   REGISTRY_NAME_MAX,
   REGISTRY_NAME_RE,
+  RETIRED_KORTIX_TOOLS,
   SLUG_RE,
   TOOL_NAME_RE,
 } from './constants';
@@ -72,7 +74,10 @@ export interface CommandV3 {
 
 /** `extensions.<name>`: one implementation per harness, at least one. */
 export interface ExtensionV3 {
-  /** A repo module path, loaded as an OpenCode plugin. */
+  /**
+   * A repo module path, loaded as an OpenCode plugin.
+   * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+   */
   opencode?: string;
   /** `npm:<name>@<x.y.z>`, a repo path, or pi's `{ source, extensions, … }` form. */
   pi?: PiPackageEntryV2;
@@ -117,6 +122,7 @@ export interface AgentBlockV3 {
 export interface ManifestV3 {
   kortix_version: 3;
   default_agent: string;
+  /** @deprecated Selects nothing: every new session runs pi. Remove the line. */
   runtime?: 'opencode' | 'pi';
   imports?: string[];
   project?: Record<string, unknown>;
@@ -131,6 +137,8 @@ export interface ManifestV3 {
   triggers?: Array<Record<string, unknown>>;
   policy?: Record<string, unknown>;
   policies?: Array<Record<string, unknown>>;
+  /** `ttl`: how long a held connector call waits for a decision (`30m`, `4h`, `7d`). */
+  approvals?: { ttl?: string };
   agents: Record<string, AgentBlockV3>;
 }
 
@@ -153,6 +161,7 @@ const TOP_LEVEL_KEYS_V3 = [
   'triggers',
   'policy',
   'policies',
+  'approvals',
   'agents',
 ] as const;
 
@@ -193,6 +202,7 @@ const AGENT_KEYS_V3 = new Set<string>([
   'extensions',
   'connectors',
   'connectors_required',
+  'policy_sets',
   'secrets',
   'apps',
   'kortix_permissions',
@@ -262,6 +272,7 @@ export function validateManifestBodyV3(
   const agents = validateAgentsV3(parsed.agents, 'agents', registry, issues);
   validateDefaultAgentV3(parsed.default_agent, 'default_agent', agents, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', [...agents.keys()], issues);
+  validateAgentPolicySetRefs(parsed.agents, parsed.connectors, 'agents', issues);
 }
 
 // ─── Registries ────────────────────────────────────────────────────────────
@@ -554,7 +565,12 @@ function validateToolGrantV3(value: unknown, where: string, known: Set<string>, 
     issues.push({ path: where, message: 'tools must be `all`, `none`, a list of tool names, or `{ exclude: [names] }`.', severity: 'error' });
     return;
   }
-  const unknown = (names as string[]).filter((name) => !known.has(name.trim()) && !name.startsWith('pty_'));
+  const missing = (names as string[]).map((name) => name.trim()).filter((name) => !known.has(name) && !name.startsWith('pty_'));
+  const retired = missing.filter((name) => RETIRED_KORTIX_TOOLS.includes(name));
+  const unknown = missing.filter((name) => !RETIRED_KORTIX_TOOLS.includes(name));
+  if (retired.length > 0) {
+    issues.push({ path: where, message: `removed: ${retired.join(', ')}. Agents reach connectors with the \`kortix connectors\` CLI. Delete these names.`, severity: 'warning' });
+  }
   if (unknown.length > 0) {
     issues.push({ path: where, message: `not a harness, Kortix or registered tool: ${unknown.join(', ')}.`, severity: 'error' });
   }

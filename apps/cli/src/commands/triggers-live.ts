@@ -12,7 +12,7 @@ import {
 } from '../command-helpers.ts';
 import { C, status } from '../style.ts';
 import { checkEventConfig, eventNextStep, surfaceEventTriggerError } from './triggers-events.ts';
-import { parseEventFlags, parseMonitorFlags, strayEventFlag } from './triggers-manifest.ts';
+import { appFlagProblem, scheduleFlagProblem, parseEventFlags, parseFilterFlags, parseRunCapFlags, MONITOR_REMOVED, strayEventFlag } from './triggers-manifest.ts';
 
 // ── The LIVE path (--apply, and every `set`) ───────────────────────────────
 //
@@ -27,22 +27,6 @@ interface LiveOpts {
   members: string[];
   groups: string[];
   filters: string[];
-}
-
-/** `path=value` pairs → the payload filter the API stores. */
-function parseFilters(raw: readonly string[]): Record<string, string> | { error: string } {
-  const filter: Record<string, string> = {};
-  for (const entry of raw) {
-    const index = entry.indexOf('=');
-    if (index <= 0) {
-      return { error: `--filter must look like path=value (got "${entry}")` };
-    }
-    const path = entry.slice(0, index).trim();
-    const value = entry.slice(index + 1);
-    if (!path) return { error: `--filter needs a payload path (got "${entry}")` };
-    filter[path] = value;
-  }
-  return filter;
 }
 
 /**
@@ -89,46 +73,60 @@ export async function triggersAddLive(
 ): Promise<number> {
   if (!slug) return missing('a trigger slug');
   const type = (tf.type ?? 'cron').toLowerCase();
-  if (type !== 'cron' && type !== 'webhook' && type !== 'monitor' && type !== 'event') {
-    return fail('--type must be cron, webhook, monitor, or event.');
+  if (type === 'monitor') return fail(MONITOR_REMOVED);
+  if (type !== 'cron' && type !== 'webhook' && type !== 'event' && type !== 'app') {
+    return fail('--type must be cron, webhook, event, or app.');
   }
-  if (!tf.prompt) return fail('--prompt is required.');
+  if (!tf.prompt && !tf.targetApp) return fail('--prompt is required (or --target-app).');
   if (type !== 'event') {
-    const stray = strayEventFlag(tf);
+    const stray = strayEventFlag(tf, type);
     if (stray) return fail(stray);
   }
+  const appProblem = appFlagProblem(type, tf) ?? scheduleFlagProblem(type, tf);
+  if (appProblem) return fail(appProblem);
   if (tf.cron && tf.runAt) return fail('--cron and --run-at are exclusive — pass one.');
-  if (type === 'cron' && !tf.cron && !tf.runAt) {
-    return fail('cron triggers need --cron "<6-field expr>" or --run-at <iso>.');
+  if (type === 'cron' && !tf.cron && !tf.runAt && !tf.every) {
+    return fail('cron triggers need --cron "<6-field expr>", --every <dur> or --run-at <iso>.');
   }
   if (type === 'webhook' && !tf.secretEnv) {
     return fail('webhook triggers need --secret-env <NAME>.');
   }
 
-  const filter = parseFilters(live.filters);
-  if ('error' in filter) return fail(filter.error);
+  const parsedFilter = parseFilterFlags(live.filters);
+  if ('error' in parsedFilter) return fail(parsedFilter.error);
+  const { filter } = parsedFilter;
   const access = buildSessionAccess(tf.sessionAccess, live);
   if (access && 'error' in access) return fail(access.error);
+  const parsedCaps = parseRunCapFlags(tf, false);
+  if ('error' in parsedCaps) return fail(parsedCaps.error);
+  const { caps } = parsedCaps;
 
   let event: ReturnType<typeof parseEventFlags> | null = null;
   const body: Record<string, unknown> = {
+    ...caps,
     slug,
     name: tf.name ?? slug,
     type,
-    prompt_template: tf.prompt,
+    ...(tf.prompt ? { prompt_template: tf.prompt } : {}),
+    ...(tf.targetApp ? { target: { app: tf.targetApp, ...(tf.targetPath ? { path: tf.targetPath } : {}) } } : {}),
     enabled: !disabled,
     ...(tf.agent ? { agent: tf.agent } : {}),
     ...(tf.model ? { model: tf.model } : {}),
     ...sessionFields(tf),
     ...(access ? { session_access: access } : {}),
-    ...(Object.keys(filter).length > 0 ? { filter } : {}),
+    ...(filter ? { filter } : {}),
   };
-  if (type === 'cron') {
+  if (type === 'cron' && tf.every) {
+    body.every = tf.every;
+  } else if (type === 'cron') {
     if (tf.runAt) body.run_at = tf.runAt;
     else body.cron = tf.cron;
     body.timezone = tf.timezone ?? 'UTC';
   } else if (type === 'webhook') {
     body.secret_env = tf.secretEnv;
+  } else if (type === 'app') {
+    body.app = tf.app;
+    if (tf.event && tf.event !== '*') body.filter = { ...(filter ?? {}), 'event.name': tf.event };
   } else if (type === 'event') {
     const parsed = parseEventFlags(tf);
     if ('error' in parsed) return fail(parsed.error);
@@ -137,19 +135,6 @@ export async function triggersAddLive(
     if (parsed.account) body.event_account = parsed.account;
     if (parsed.source) body.event_source = parsed.source;
     body.event = parsed.event;
-  } else {
-    // A monitor rejects cron/webhook wiring outright, so send only its own
-    // fields — the same validation `kortix triggers add` runs locally.
-    const monitor = parseMonitorFlags(tf);
-    if ('error' in monitor) return fail(monitor.error);
-    body.run = monitor.run;
-    body.mode = monitor.mode;
-    if (monitor.intervalSeconds !== null) {
-      body.interval = formatDurationSeconds(monitor.intervalSeconds);
-    }
-    if (monitor.expectEventWithinSeconds !== null) {
-      body.expect_event_within = formatDurationSeconds(monitor.expectEventWithinSeconds);
-    }
   }
 
   const ctx = await resolveProjectContext(opts);
@@ -212,8 +197,9 @@ export async function triggersSetLive(
   if (tf.account && tf.defaultAccount)
     return fail('--account and --default-account are exclusive — pass one.');
 
-  const filter = parseFilters(live.filters);
-  if ('error' in filter) return fail(filter.error);
+  const parsedFilter = parseFilterFlags(live.filters);
+  if ('error' in parsedFilter) return fail(parsedFilter.error);
+  const { filter } = parsedFilter;
   const access = buildSessionAccess(tf.sessionAccess, live);
   if (access && 'error' in access) return fail(access.error);
 
@@ -224,6 +210,9 @@ export async function triggersSetLive(
     }
     enabled = tf.enabled === 'true';
   }
+  const parsedCaps = parseRunCapFlags(tf, true);
+  if ('error' in parsedCaps) return fail(parsedCaps.error);
+  const { caps } = parsedCaps;
 
   const body: Record<string, unknown> = {
     ...(tf.name ? { name: tf.name } : {}),
@@ -240,6 +229,7 @@ export async function triggersSetLive(
     ...(tf.source ? { event_source: tf.source.trim() } : {}),
     ...(tf.event ? { event: tf.event } : {}),
     ...(enabled === undefined ? {} : { enabled }),
+    ...caps,
     ...sessionFields(tf),
     ...(access ? { session_access: access } : {}),
     ...(live.filters.length > 0 ? { filter } : {}),

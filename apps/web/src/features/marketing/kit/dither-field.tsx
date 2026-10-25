@@ -1,6 +1,6 @@
 'use client';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { useEffect, useRef } from 'react';
 
 const VERTEX = `

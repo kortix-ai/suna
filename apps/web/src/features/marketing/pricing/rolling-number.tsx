@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 /**
  * A number whose digits roll to their new value (after Number Flow, without

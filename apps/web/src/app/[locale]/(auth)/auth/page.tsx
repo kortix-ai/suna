@@ -30,13 +30,12 @@ import {
   submitAuthForm,
 } from '@/lib/auth/submit-auth';
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import Loading from '@/components/ui/loading';
-import { errorToast } from '@/components/ui/toast';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
-import { FieldLabel, InfoStrip, StepHeader } from '@/features/auth/auth-primitives';
+import { Button } from '@kortix/ui/button';
+import { Input } from '@kortix/ui/input';
+import Loading from '@kortix/ui/loading';
+import { errorToast } from '@kortix/ui/toast';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
+import { FieldError, FieldLabel, InfoStrip, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 
@@ -126,7 +125,7 @@ import {
   parseAuthMethods,
   passwordFailureCopy,
 } from '@/lib/auth/unified-auth-flow';
-import { authRedirectUrl } from '@/lib/desktop';
+import { authRedirectUrl } from '@kortix/ui/internal/lib/desktop';
 import { getEnv } from '@/lib/env-config';
 import { emailDomain, isWorkEmail } from '@/lib/personal-email';
 import {
@@ -144,6 +143,23 @@ const EASE = [0.23, 1, 0.32, 1] as const;
 // sessionStorage key holding the address a stale-bundle recovery is handing
 // back to the form with. Consumed by the prefill effect on the next mount.
 const STALE_BUNDLE_EMAIL_KEY = 'kortix:stale-bundle-email';
+
+// Browser-wide method preference only; never store the address or credentials.
+const AUTH_METHOD_KEY = 'kortix:auth-method';
+function prefersPassword(): boolean {
+  try {
+    return window.localStorage.getItem(AUTH_METHOD_KEY) === 'password';
+  } catch {
+    return false;
+  }
+}
+function rememberAuthMethod(method: 'password' | 'magic') {
+  try {
+    window.localStorage.setItem(AUTH_METHOD_KEY, method);
+  } catch {
+    // Sign-in still works when browser storage is unavailable.
+  }
+}
 
 // sessionStorage keys for the pre-hydration entry-submit guard (see the
 // ENTRY_HYDRATION_GUARD script): the intent flag it sets when it prevents a
@@ -232,6 +248,7 @@ function PasswordInput({
   autoComplete,
   autoFocus,
   invalid,
+  describedBy,
 }: {
   id: string;
   name: string;
@@ -239,6 +256,7 @@ function PasswordInput({
   autoComplete: string;
   autoFocus?: boolean;
   invalid?: boolean;
+  describedBy?: string;
 }) {
   const t = useTranslations('auth.unified');
   const [show, setShow] = useState(false);
@@ -254,6 +272,7 @@ function PasswordInput({
         autoComplete={autoComplete}
         autoFocus={autoFocus}
         aria-invalid={invalid || undefined}
+        aria-describedby={describedBy}
         className="pr-10"
       />
       <button
@@ -299,7 +318,7 @@ function AuthCardForm({
   // SSO interstitial state: the IdP redirect URL from the signInWithSSO probe,
   // plus what the existence check said the escape hatches should do.
   const [ssoUrl, setSsoUrl] = useState<string | null>(null);
-  const [ssoFallbackMode, setSsoFallbackMode] = useState<EmailFlowMode>('unknown');
+  const ssoFallbackMode = useRef<EmailFlowMode>('unknown');
   // Which button kicked off the in-flight request — every action button
   // disables while anything is pending, but only the clicked one spins.
   const [pendingAction, setPendingAction] = useState<
@@ -311,7 +330,7 @@ function AuthCardForm({
   const submitInFlight = useRef(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(callbackError ? tI18nComplete.raw('text301fe0058472') : null);
   const [code, setCode] = useState('');
-  const [emailCodeReturnUrl, setEmailCodeReturnUrl] = useState<string | null>(null);
+  const emailCodeReturnUrl = useRef<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [sentEmail, setSentEmail] = useState<string | null>(null);
   // The flow mode the send action resolved — which email GoTrue minted: the
@@ -382,11 +401,10 @@ function AuthCardForm({
     setInfo(null);
   };
 
-  // Keep sign-in failures visible after the toast expires. Clearing the
-  // message before each attempt lets the field shake replay.
+  // Sign-in failures render inline under the field, never as a banner or
+  // toast. Clearing the message before each attempt lets the field shake replay.
   const failWith = (msg: string) => {
     setErrorMessage(msg);
-    errorToast(msg);
   };
 
   // The bounded layers answer with submit-auth's English sentinel messages
@@ -413,7 +431,7 @@ function AuthCardForm({
     setSentEmail(null);
     setCode('');
     setSsoUrl(null);
-    setSsoFallbackMode('unknown');
+    ssoFallbackMode.current = 'unknown';
     setStep('entry');
   };
 
@@ -480,6 +498,7 @@ function AuthCardForm({
     submitInFlight.current = true;
     clearNotices();
     setPendingAction(source);
+    if (source === 'link') rememberAuthMethod('magic');
 
     try {
       const formData = buildBaseFormData(target);
@@ -511,11 +530,9 @@ function AuthCardForm({
 
       if (result.success) {
         setCode('');
-        setEmailCodeReturnUrl(
-          result.redirectTo
-            ? sanitizeAuthReturnUrl(result.redirectTo)
-            : resolveNewAccountReturnUrl(returnUrl),
-        );
+        emailCodeReturnUrl.current = result.redirectTo
+          ? sanitizeAuthReturnUrl(result.redirectTo)
+          : resolveNewAccountReturnUrl(returnUrl);
         setSentEmail(result.email || target);
         setLinkMode(result.mode ?? 'unknown');
         setResendIn(RESEND_COOLDOWN_SECONDS);
@@ -587,7 +604,7 @@ function AuthCardForm({
           window.location.href = data.url;
           return 'handled';
         }
-        setSsoFallbackMode(resolved);
+        ssoFallbackMode.current = resolved;
         setSsoUrl(data.url);
         setStep('sso');
         return 'handled';
@@ -685,20 +702,9 @@ function AuthCardForm({
         // Work domain with no SAML provider → fall through to magic/password.
       }
 
-      // The email link is the default path: Continue emails a link and lands
-      // the user on the link step — the link signs in existing accounts and
-      // registers new ones, so no password is needed anywhere on the default
-      // path. That includes accounts created passwordless: GoTrue stores a
-      // random hash for those too (supabase/gotrue discussion #5741), so
-      // "does the visitor still know a password for this address" is not
-      // observable server-side, and a password-first default dead-ends a
-      // passwordless account on a form no password can pass. The password
-      // form stays one explicit choice away ("Use a password instead" on the
-      // link step), and the link action re-checks closed signups and SSO
-      // server-side. Password-only deployments go through the existence check
-      // below, so the password step opens already knowing whether this is a
-      // sign-in or a registration.
-      if (magicLinkEnabled) {
+      // Keep email-first unless this browser explicitly chose password.
+      // The remembered choice still passes the server's SSO/signup gates.
+      if (magicLinkEnabled && !(passwordEnabled && prefersPassword())) {
         // sendMagic re-acquires the in-flight guard itself; release here first
         // or the hand-off would deadlock (this function already holds it).
         submitInFlight.current = false;
@@ -784,13 +790,14 @@ function AuthCardForm({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- replay on hydration and when the entry step appears; the submit path reads refs, not stale state
   }, [step]);
-  // Escape hatch off the link step for people who'd rather type a password.
+  // Password entry from either the entry or link step, without sending email.
   // The address can live in either field depending on how the step was reached,
   // and the credentials step renders it read-only from `email` — so settle on
   // one before switching, and bounce focus back if we somehow have neither.
   // Resolves existence on the way so the step opens in the right mode.
   const goToPassword = async () => {
-    const target = (email || sentEmail || '').trim();
+    if (step === 'entry' && emailRef.current && !emailRef.current.reportValidity()) return;
+    const target = (emailRef.current?.value || email || sentEmail || '').trim();
     if (!target) {
       emailRef.current?.focus();
       return;
@@ -808,6 +815,7 @@ function AuthCardForm({
         failWith(t('errors.ssoRequired'));
         return;
       }
+      rememberAuthMethod('password');
       setCredMode(resolved);
       setStep('credentials');
     } catch (err) {
@@ -919,7 +927,7 @@ function AuthCardForm({
       await establishSessionAndRedirect({
         accessToken: data.session.access_token,
         refreshToken: data.session.refresh_token,
-        redirectTo: emailCodeReturnUrl ?? resolveNewAccountReturnUrl(returnUrl),
+        redirectTo: emailCodeReturnUrl.current ?? resolveNewAccountReturnUrl(returnUrl),
         mobileHandoffUrl: mobileCallbackState
           ? buildMobileSessionHandoffUrl({
               origin: window.location.origin,
@@ -945,13 +953,15 @@ function AuthCardForm({
   // Password escape off the SSO interstitial. The existence check already ran
   // when the interstitial opened, so this is a synchronous relabel + step move.
   const usePasswordFromSso = () => {
-    if (ssoFallbackMode === 'closed') {
+    const fallbackMode = ssoFallbackMode.current;
+    if (fallbackMode === 'closed') {
       failWith(t('errors.signupsClosed'));
       return;
     }
+    rememberAuthMethod('password');
     clearNotices();
     setCredMode(
-      ssoFallbackMode === 'signin' || ssoFallbackMode === 'signup' ? ssoFallbackMode : 'unknown',
+      fallbackMode === 'signin' || fallbackMode === 'signup' ? fallbackMode : 'unknown',
     );
     setStep('credentials');
   };
@@ -974,7 +984,6 @@ function AuthCardForm({
 
         <m.div {...rise(0.06)}>
           {info && <InfoStrip message={info} />}
-          {errorMessage && <InfoBanner tone="destructive">{errorMessage}</InfoBanner>}
 
           <Button
             type="button"
@@ -987,6 +996,11 @@ function AuthCardForm({
           >
             {t('sso.continue')}
           </Button>
+          {errorMessage && (
+            <div className="mt-3">
+              <FieldError id="sso-error" message={errorMessage} />
+            </div>
+          )}
 
           <div className="text-muted-foreground mt-6 space-y-2 text-sm">
             <p className="flex flex-wrap items-center gap-2">
@@ -995,7 +1009,7 @@ function AuthCardForm({
                   type="button"
                   onClick={usePasswordFromSso}
                   disabled={pending}
-                  className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
+                  className="hover:text-foreground -my-2 py-2 transition-colors disabled:opacity-50"
                 >
                   {t('usePasswordInstead')}
                 </button>
@@ -1010,7 +1024,7 @@ function AuthCardForm({
                   type="button"
                   onClick={() => sendMagic(email, 'link')}
                   disabled={pending || resendIn > 0}
-                  className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
+                  className="hover:text-foreground -my-2 py-2 transition-colors disabled:opacity-50"
                 >
                   {pendingAction === 'link' ? t('sending') : t('emailLinkInstead')}
                 </button>
@@ -1023,7 +1037,7 @@ function AuthCardForm({
               <button
                 type="button"
                 onClick={goToEntry}
-                className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline"
+                className="hover:text-foreground -my-2 py-2 transition-colors"
               >
                 {t('useDifferentEmail')}
               </button>
@@ -1075,7 +1089,6 @@ function AuthCardForm({
 
         <m.div {...rise(0.06)}>
           {info && <InfoStrip message={info} />}
-          {errorMessage && <InfoBanner tone="destructive">{errorMessage}</InfoBanner>}
 
           <form onSubmit={handleCredentialsSubmit} className="space-y-5">
             <div className="space-y-3">
@@ -1119,7 +1132,9 @@ function AuthCardForm({
                 autoComplete={copy.passwordAutoComplete}
                 autoFocus
                 invalid={!!errorMessage}
+                describedBy={errorMessage ? 'password-error' : undefined}
               />
+              {errorMessage && <FieldError id="password-error" message={errorMessage} />}
             </div>
 
             <Button type="submit" size="lg" disabled={pending} className="w-full">
@@ -1164,7 +1179,6 @@ function AuthCardForm({
 
       <m.div {...rise(0.06)}>
         {info && <InfoStrip message={info} />}
-        {errorMessage && <InfoBanner tone="destructive">{errorMessage}</InfoBanner>}
 
         {googleEnabled && (
           <div className="mb-8">
@@ -1207,13 +1221,28 @@ function AuthCardForm({
               autoComplete="email"
               autoFocus
               aria-invalid={!!errorMessage || undefined}
+              aria-describedby={errorMessage ? 'email-error' : undefined}
             />
+            {errorMessage && <FieldError id="email-error" message={errorMessage} />}
           </div>
           <Button type="submit" size="lg" disabled={pending} className="w-full">
             {pendingAction === 'continue' ? <Loading className="size-4 shrink-0" /> : null}
             {t('continue')}
           </Button>
         </form>
+
+        {passwordEnabled && magicLinkEnabled && (
+          <p className="text-muted-foreground mt-4 text-sm">
+            <button
+              type="button"
+              onClick={() => void goToPassword()}
+              disabled={pending}
+              className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
+            >
+              {pendingAction === 'password' ? t('oneMoment') : t('usePasswordInstead')}
+            </button>
+          </p>
+        )}
 
         {/* Explicit SSO entry — the discoverable counterpart of the silent
             home-realm discovery Continue already performs. Same dialect as the
@@ -1225,7 +1254,7 @@ function AuthCardForm({
               type="button"
               onClick={() => void handleSsoContinue()}
               disabled={pending}
-              className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
+              className="hover:text-foreground -my-2 py-2 transition-colors disabled:opacity-50"
             >
               {pendingAction === 'sso' ? t('sso.lookingUp') : t('sso.use')}
             </button>

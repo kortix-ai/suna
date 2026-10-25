@@ -203,4 +203,21 @@ describe('kortix marketplace', () => {
       expect(stderr).toContain(`unknown subcommand "${sub}"`);
     }
   });
+  test('uninstall refuses to mutate without explicit whole-folder confirmation', async () => {
+    expect(await runMarketplace(['uninstall', 'skills/pdf', '--project', 'project-test'])).toBe(2);
+    expect(stderr).toContain('--yes');
+    expect(requests).toEqual([]);
+  });
+  test('uninstall sends the selected folder, never catalog dependencies', async () => {
+    let body: unknown;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe('https://api.test/v1/projects/project-test/skills/remove');
+      body = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ ok: true, commitSha: 'abc', removed: ['skills/pdf/SKILL.md'] }), { headers: JSON_HEADERS });
+    }) as typeof fetch;
+    expect(await runMarketplace(['uninstall', 'skills/pdf', '--project', 'project-test', '--yes', '--json'])).toBe(0);
+    expect(body).toEqual({ folder: 'skills/pdf', confirm: true });
+    expect(stdout).toContain('skills/pdf/SKILL.md');
+  });
+
 });

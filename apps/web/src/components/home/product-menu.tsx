@@ -2,8 +2,8 @@
 
 import Link from '@/components/site-link';
 import { MARKETING_CONTAINER } from '@/features/marketing/kit/section';
-import { cn } from '@/lib/utils';
-import { Github } from '@/features/icon/icons/github';
+import { cn } from '@kortix/ui';
+import { Github } from '@kortix/ui/internal/icons/github';
 import { ArrowUpRightIcon, StarIcon } from '@phosphor-icons/react';
 import { type KeyboardEvent, type Ref } from 'react';
 

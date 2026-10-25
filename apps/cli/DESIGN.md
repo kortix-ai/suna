@@ -146,7 +146,7 @@ Pattern can clone the project-level OAuth device flow already in
 | `kortix sessions new [--prompt "..."]`          | Start a session                                                      | `POST /v1/projects/:id/sessions`                                    |
 | `kortix sessions open <session-id>`             | Print / open the dashboard URL for one session                       | none                                                                |
 | `kortix sessions logs <session-id> [-f]`        | Stream session output                                                | `GET /v1/projects/:id/sessions/:sid/events` (SSE — exists)          |
-| `kortix sessions rm <session-id>`               | Stop + delete; restorable for 30 days, branch kept                   | `DELETE /v1/projects/:id/sessions/:sid`                             |
+| `kortix sessions rm <session-id>`               | Stop + delete; restorable for 30 days, then content + branch deleted | `DELETE /v1/projects/:id/sessions/:sid`                             |
 | `kortix sessions restore <session-id>`          | Restore a deleted session within 30 days (full id)                  | `POST /v1/projects/:id/sessions/:sid/restore`                       |
 | `kortix sessions pin/unpin <session-id>...`     | Pin or unpin sessions in your own list                               | `PUT /v1/projects/:id/sessions/:sid/pin`                            |
 | `kortix sessions archive/unarchive <session-id>...` | Take sessions out of your own list, or put them back; archiving unpins | `PUT /v1/projects/:id/sessions/:sid/archive`                    |
@@ -337,3 +337,21 @@ In strict order; each row blocks the next.
 4. Implement `src/api/{auth,client}.ts` + `src/commands/{login,logout,whoami}.ts`.
 5. Implement `src/commands/projects.ts` (`ls`, `info`, `link`, `unlink`, `open`).
 6. Hand over for review; then continue Phase 2.
+
+## Callback-free CLI login
+
+Use `kortix login --device` or `kortix hosts login <name> --device` from a
+remote shell. The default callback flow prints this fallback.
+
+The CLI calls `POST /v1/cli/device/start`, prints a separate approval code,
+and opens `/cli/authorize?user_code=<code>`. A signed-in browser confirms the
+code through `POST /v1/cli/device/decide`. Only browser JWTs can approve;
+the API checks the personal-token creation permission.
+
+The CLI polls `POST /v1/cli/device/poll` every five seconds for at most ten
+minutes. PostgreSQL stores only the polling-secret hash and approving
+identity. A row lock spans PAT creation and one-time consumption across API
+replicas. Denied, expired, and consumed grants cannot issue credentials.
+
+`login --token` accepts personal and service-account keys. API validation
+retains the credential's existing scope; accepting a prefix adds no access.

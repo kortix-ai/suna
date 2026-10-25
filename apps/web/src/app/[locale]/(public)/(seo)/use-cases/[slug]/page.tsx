@@ -25,8 +25,8 @@ import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { MARKETING_CONTAINER } from '@/features/marketing/kit/section';
 import { formatPostDate, resolveAuthor } from '@/lib/blog';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
-import { cn } from '@/lib/utils';
-import { siteMetadata } from '@/lib/site-metadata';
+import { cn } from '@kortix/ui';
+import { siteMetadata } from '@kortix/ui/internal/lib/site-metadata';
 import { getAllUseCases } from '@/lib/use-cases';
 import { useCasesSource } from '@/lib/use-cases-source';
 

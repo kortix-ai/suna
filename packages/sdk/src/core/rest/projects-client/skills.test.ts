@@ -59,3 +59,13 @@ describe('createProjectSkill', () => {
     expect(error?.message).toContain('already exists');
   });
 });
+
+describe('removeProjectSkill', () => {
+  test('removes an explicitly confirmed folder through the project API', async () => {
+    const { removeProjectSkill } = await import('./skills');
+    nextResponse = () => new Response(JSON.stringify({ ok: true, commitSha: 'abc', removed: ['skills/pdf/SKILL.md'] }), { headers: { 'content-type': 'application/json' } });
+    const removed = await removeProjectSkill('proj-1', { folder: 'skills/pdf', confirm: true });
+    expect(removed.removed).toEqual(['skills/pdf/SKILL.md']);
+    expect(globalThis.fetch).toHaveBeenCalledWith('http://backend.test/v1/projects/proj-1/skills/remove', expect.objectContaining({ method: 'POST', body: JSON.stringify({ folder: 'skills/pdf', confirm: true }) }));
+  });
+});

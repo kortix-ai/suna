@@ -16,12 +16,18 @@
  *                                  does not list, and Install names the
  *                                  connector after the app.
  *
+ *   mcp on a Kortix catalogue app → its icon, served by the web app
+ *                                  (`connectors/mcp-apps.ts`). No lookup.
+ *
  * A connector the catalogue cannot place gets no icon. The host is never sent
  * to an icon service, so a private hostname does not leave the deployment.
  */
+import { mcpAppForUrl, mcpAppIcon } from './mcp-apps';
 
 export type FallbackIconSource =
-  { kind: 'composio'; app: string } | { kind: 'catalog'; host: string | null };
+  | { kind: 'composio'; app: string }
+  | { kind: 'catalog'; host: string | null }
+  | { kind: 'kortix'; icon: string };
 
 export interface CatalogIcons {
   byDomain: ReadonlyMap<string, string>;
@@ -44,6 +50,11 @@ export function fallbackIconSource(provider: string, config: unknown): FallbackI
   }
   if (!(provider in HOST_KEY)) return null;
   const raw = cfg[HOST_KEY[provider] ?? ''];
+  if (provider === 'mcp' && typeof raw === 'string') {
+    const app = mcpAppForUrl(raw);
+    const icon = app ? mcpAppIcon(app) : null;
+    if (icon) return { kind: 'kortix', icon };
+  }
   let host: string | null = null;
   try {
     if (typeof raw === 'string') host = new URL(raw).hostname || null;
@@ -118,11 +129,13 @@ export async function resolveFallbackIcons(
     // logos, so a connector reads the same on its page as on the grid card.
     Promise.all(
       pending.map((item) =>
-        capped(
-          Promise.resolve(
-            item.source.kind === 'composio' ? item.source.app : composioToolkitKey(item.name),
-          ).then(deps.composioLogo),
-        ),
+        item.source.kind === 'kortix'
+          ? null
+          : capped(
+              Promise.resolve(
+                item.source.kind === 'composio' ? item.source.app : composioToolkitKey(item.name),
+              ).then(deps.composioLogo),
+            ),
       ),
     ),
   ]);
@@ -130,7 +143,9 @@ export async function resolveFallbackIcons(
   const icons = new Map<string, string>();
   pending.forEach((item, index) => {
     const icon =
-      item.source.kind === 'composio'
+      item.source.kind === 'kortix'
+        ? item.source.icon
+        : item.source.kind === 'composio'
         ? logos[index]
         : (logos[index] ??
           (catalog

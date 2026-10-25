@@ -159,6 +159,7 @@ function bounded(name: string, text: string): string {
  */
 let processKey: string | null = null
 
+/** @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function toolBridgeKey(env: Record<string, string | undefined> = process.env): string {
   const file = join(resolveKortixRuntimeStateDirectory(env), 'tool-bridge.key')
   const read = () => {

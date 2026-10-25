@@ -6,7 +6,7 @@ import Link from '@/components/site-link';
 import { UseCaseToc, type TocItem } from '@/components/use-cases/use-case-toc';
 import { MARKETING_CONTAINER } from '@/features/marketing/kit/section';
 import { SectionHeading } from '@/features/marketing/kit/section-heading';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { Fragment, Suspense, useState, type ReactNode } from 'react';
 

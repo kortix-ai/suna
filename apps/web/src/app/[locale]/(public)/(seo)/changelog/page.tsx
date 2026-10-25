@@ -1,22 +1,23 @@
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
-import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
-import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/remaining-ui-translation-keys.generated';
+import { CANONICAL_ORIGIN } from '@kortix/ui/internal/lib/site-metadata';
 import type { Metadata } from 'next';
 import { getTranslations } from '@/i18n/get-translations';
 
-import { ChangelogView } from '@/features/marketing/changelog/changelog-view';
-import { getChangelogPage } from '@/features/marketing/changelog/releases';
+import { getWeeklyChangelog } from '@/features/marketing/changelog/releases';
+import { WeeklyView } from '@/features/marketing/changelog/weekly-view';
+
+const DESCRIPTION = 'What shipped in Kortix each week, straight from our production releases.';
 
 export async function generateMetadata(): Promise<Metadata> {
   const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   return localizeUiCatalog(
     {
       title: 'Changelog',
-      description:
-        'Every Kortix release, straight from the source. New features, fixes, and improvements — versioned and dated.',
+      description: DESCRIPTION,
       openGraph: {
         title: 'Kortix Changelog',
-        description: 'Every Kortix release, straight from the source.',
+        description: DESCRIPTION,
         url: `${CANONICAL_ORIGIN}/changelog`,
         siteName: 'Kortix',
         type: 'website' as const,
@@ -25,7 +26,7 @@ export async function generateMetadata(): Promise<Metadata> {
       twitter: {
         card: 'summary_large_image' as const,
         title: 'Kortix Changelog',
-        description: 'Every Kortix release, straight from the source.',
+        description: DESCRIPTION,
         images: ['/banner.png'],
       },
       alternates: { canonical: `${CANONICAL_ORIGIN}/changelog` },
@@ -35,12 +36,9 @@ export async function generateMetadata(): Promise<Metadata> {
   );
 }
 
-// Rebuild hourly so new releases show up without a deploy. The rendered
-// release notes carry their own hourly cache (features/marketing/changelog).
+// Rebuild hourly so a new release shows up in its week without a deploy.
 export const revalidate = 3600;
 
 export default async function ChangelogPage() {
-  // Page 1 always exists: an unreachable GitHub yields an empty page.
-  const data = (await getChangelogPage(1))!;
-  return <ChangelogView data={data} />;
+  return <WeeklyView data={await getWeeklyChangelog()} />;
 }

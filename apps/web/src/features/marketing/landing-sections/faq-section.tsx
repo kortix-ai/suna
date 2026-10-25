@@ -1,7 +1,7 @@
 'use client';
 
 import { faq } from '@/features/marketing/faq';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
 import { PlusIcon } from '@phosphor-icons/react';
 import Link from 'next/link';

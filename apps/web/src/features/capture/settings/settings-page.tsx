@@ -2,13 +2,14 @@
 
 import { notFound } from 'next/navigation';
 
-import { SettingsRowGroup } from '@/components/ui/settings-row';
+import { SettingsRowGroup } from '@kortix/ui/settings-row';
 import { useTranslations } from '@/i18n/use-translations';
 
 import { CaptureAccountCard } from '../area/capture-account-card';
 import { CapturePage } from '../area/capture-area-shell';
-import { useCaptureArea } from '../area/use-capture-area';
+import { useCaptureArea } from '@kortix/ui/internal/capture/use-capture-area';
 import { CaptureSettingsPane } from './settings-view';
+import { CaptureStoragePane } from './storage-view';
 
 /**
  * /capture/[accountId]/settings: everything an organization decides about
@@ -28,6 +29,7 @@ export function CaptureSettingsPage({ accountId }: { accountId: string }) {
           <CaptureAccountCard accountId={accountId} />
         </SettingsRowGroup>
         <CaptureSettingsPane accountId={accountId} />
+        <CaptureStoragePane accountId={accountId} />
       </div>
     </CapturePage>
   );

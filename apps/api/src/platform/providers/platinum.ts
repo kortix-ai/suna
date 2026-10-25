@@ -379,6 +379,26 @@ function regionalTemplateRefusal(error: unknown): { region: string; state: strin
 }
 
 /**
+ * A create in a requested region refused because a volume it mounts (a drive)
+ * lives in another region. Volumes never cross regions, and a drive is opened
+ * through PLATINUM_API_URL, so it lives in the home region. Platinum names the
+ * owner (`409 volume_in_other_region` with `region`); a control plane without
+ * the volume directory answers `404 volume_not_found` instead, owner unknown.
+ */
+function volumeRegionRefusal(error: unknown): { volumeRegion: string | null } | null {
+  const http = platinumHttp(error);
+  if (http.status === 404 && http.code === 'volume_not_found') return { volumeRegion: null };
+  if (http.status !== 409 || http.code !== 'volume_in_other_region') return null;
+  let body: { region?: unknown } = {};
+  try {
+    body = JSON.parse(http.body ?? '') as typeof body;
+  } catch {
+    // code parsed from this body, so it is JSON
+  }
+  return { volumeRegion: typeof body.region === 'string' ? body.region : null };
+}
+
+/**
  * A definitive 409 whose body signals the deterministic NAME is already
  * taken. Because the name is derived solely from (sandboxId, attempt) and
  * never reused across sandboxes/attempts, the only way Platinum can already
@@ -571,6 +591,27 @@ export class PlatinumProvider implements SandboxProvider {
     try {
       sandbox = await postCreate();
     } catch (err) {
+      const elsewhere = opts.location && createBody.volumes ? volumeRegionRefusal(err) : null;
+      if (elsewhere && !opts.locationRequired) {
+        // A box must run where its drives live. With no region the create goes
+        // to the home control plane, which holds the drive (or routes the
+        // create to the region that does). A drive missing everywhere still
+        // fails loudly there. A warm box keeps its region and fails below.
+        const fallback = {
+          requested: opts.location!,
+          state: 'volume_in_other_region',
+          volumeRegion: elsewhere.volumeRegion,
+          at: new Date().toISOString(),
+        };
+        // Stable message: alert on it.
+        logger.warn('[platinum] region fallback: a mounted volume lives in another region; the box boots where it lives', {
+          ...fallback,
+          template,
+          sandboxId: opts.sandboxId ?? opts.name,
+        });
+        const home = await this.provisionFromTemplate(template, { ...opts, location: undefined });
+        return { ...home, metadata: { ...home.metadata, regionFallback: fallback } };
+      }
       // A full fleet stays a capacity error (retried, "try again in a minute").
       if (createBody.volumes && isVolumeRejection(err) && !/no capacity/i.test(platinumHttp(err).body ?? '')) {
         // Mounts a session cannot run without (its drives, its state): fail
@@ -578,6 +619,11 @@ export class PlatinumProvider implements SandboxProvider {
         const reason = (platinumHttp(err).body ?? '').slice(0, 300);
         if (workloadType === 'app') {
           throw new Error(`[apps] The machine's volume could not be mounted (storage refused: ${reason}). The machine did not start without it.`);
+        }
+        if (opts.volumes?.['/workspace']) {
+          throw new Error(
+            `[workspace] This session’s workspace volume or drives could not be mounted (storage refused: ${reason}). The session did not start without them.`,
+          );
         }
         throw new Error(
           `[drives] This session’s drives could not be mounted (storage refused: ${reason}). The session did not start without them.`,

@@ -351,6 +351,10 @@ describe('kortix projects cli-tokens', () => {
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('project.credentials.issue');
     expect(r.stdout).toContain('printed ONCE');
+    // KRTX-2992: GET /cli-token loads the project with the `credentials` gate
+    // (project-credentials.ts), the same leaf as new and rm — not project read.
+    expect(r.stdout).toContain('ls, new and rm need project.credentials.issue');
+    expect(r.stdout).not.toContain('ls needs project read');
   });
 
   test('ls lists the project tokens; --json emits the raw rows', async () => {
@@ -521,10 +525,10 @@ describe('kortix projects upgrade', () => {
       resolve(
         CLI_ROOT,
         '..',
-        'web',
+        '..',
+        'packages',
+        'ui',
         'src',
-        'features',
-        'workspace',
         'customize',
         'migrate-to-v2',
         'migration-prompt.ts',

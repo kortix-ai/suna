@@ -21,8 +21,10 @@ import {
 import { installFetchTiming } from './lib/server-timing';
 import { addBreadcrumb } from './lib/sentry';
 import { compressResponse } from './middleware/compress';
+import { protectResponseCache } from './middleware/cache-control';
 import { createCorsMiddleware } from './middleware/cors';
 import { requestDeadline } from './middleware/request-deadline';
+import { createPublicEdgeRateLimitMiddleware } from './middleware/public-edge-rate-limit';
 import { shouldSuppressRequestLog } from './sandbox-proxy/request-log-suppression';
 import { PROXY_HOP_HEADER, PROXY_UPSTREAM_STATUS_HEADER } from './sandbox-proxy/proxy-hop';
 import { upstreamTiming } from './middleware/upstream-timing';
@@ -33,6 +35,10 @@ import { isUuid } from './shared/validate';
 // Every line inside installHttpMiddleware is moved verbatim from the former
 // index.ts; the chain order is the behavior, so nothing is reordered.
 export function installHttpMiddleware(app: OpenAPIHono) {
+app.use('*', async (c, next) => {
+  await next();
+  c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+});
 app.use('*', async (c, next) => {
   const path = c.req.path;
   if (path === '/metrics' || path.startsWith('/health') || path.startsWith('/v1/health')) {
@@ -62,6 +68,9 @@ app.use('*', async (c, next) => {
 
 // === Global Middleware ===
 
+// Apply cache protection after compression and all downstream response rewrites.
+app.use("*", protectResponseCache);
+
 // Response compression. Mounted at the OUTSIDE of the chain so it sees the
 // final response of every route, including the ones the middleware below
 // rewrites. Only a NAMED compressible content type is ever compressed, which
@@ -70,8 +79,8 @@ app.use('*', async (c, next) => {
 // kilobyte of the body, never by buffering it. See middleware/compress.ts.
 app.use('*', compressResponse);
 
-const extraOrigins = process.env.CORS_ALLOWED_ORIGINS
-  ? process.env.CORS_ALLOWED_ORIGINS.split(',')
+const extraOrigins = config.CORS_ALLOWED_ORIGINS
+  ? config.CORS_ALLOWED_ORIGINS.split(',')
       .map((s) => s.trim())
       .filter(Boolean)
   : [];
@@ -83,6 +92,34 @@ app.use(
     extraOrigins,
   }),
 );
+
+// ─── Request body ceiling ───────────────────────────────────────────────────
+// Bun accepts 128 MiB by default. An anonymous caller therefore bought up to
+// 128 MiB of socket + buffer with no limit anywhere on the API before a route
+// could refuse it (pentest 2026-10-22 accepted a 20 MB JSON body). This check
+// reads `Content-Length` only, so it costs nothing and never buffers a stream.
+//
+// Streaming paths are exempt: a git push pack and a sandbox-preview upload are
+// legitimately larger than any JSON request and must not be pre-read.
+const REQUEST_BODY_LIMIT_BYTES = config.KORTIX_MAX_REQUEST_BODY_BYTES;
+const UNLIMITED_BODY_PREFIXES = ['/v1/git', '/v1/p/', '/v1/llm', '/v1/sandbox'];
+
+app.use('*', async (c, next) => {
+  if (Number.isFinite(REQUEST_BODY_LIMIT_BYTES) && REQUEST_BODY_LIMIT_BYTES > 0) {
+    const contentLength = Number(c.req.header('content-length') ?? NaN);
+    const exempt = UNLIMITED_BODY_PREFIXES.some((prefix) => c.req.path.startsWith(prefix));
+    if (!exempt && Number.isFinite(contentLength) && contentLength > REQUEST_BODY_LIMIT_BYTES) {
+      return c.json(
+        {
+          error: 'payload_too_large',
+          message: `Request body exceeds ${REQUEST_BODY_LIMIT_BYTES} bytes.`,
+        },
+        413,
+      );
+    }
+  }
+  await next();
+});
 
 // ─── Request context (AsyncLocalStorage) ────────────────────────────────────
 // Must be FIRST — wraps the entire request lifecycle so all downstream code
@@ -282,6 +319,9 @@ if (config.INTERNAL_KORTIX_ENV === 'dev') {
 // Every route, not just /v1: `/scim/v2` provisions users and changes group
 // membership, and was never request-audited. See shared/audit-scope.ts.
 app.use('*', auditApiRequest);
+
+// Before route validation and authentication; inside request logging and audit.
+app.use('/v1/*', createPublicEdgeRateLimitMiddleware());
 
 // Wall-clock deadline for non-streaming requests — returns 503 before the 30s
 // client abort instead of hanging. Streaming/proxy/WS surfaces are exempted

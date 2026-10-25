@@ -3,9 +3,9 @@
 import Image from 'next/image';
 import Link from 'next/link';
 
-import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
+import { KortixAsterisk } from '@kortix/ui/kortix-asterisk';
 import { formatPostDate, type Post } from '@/lib/blog';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { USE_CASE_COVERS } from './covers';
 
 /**

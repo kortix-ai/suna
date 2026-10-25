@@ -2,7 +2,7 @@ import Link from '@/components/site-link';
 
 import { BlogCover } from '@/components/blog/blog-cover';
 import { formatPostDate, type Post } from '@/lib/blog';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 /** "Field notes · October 25, 2026": the first tag and the date, muted. */
 function PostMeta({ post, className }: { post: Post; className?: string }) {

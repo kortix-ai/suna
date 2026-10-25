@@ -42,7 +42,9 @@ import {
   triggerFilterMatches,
   type TriggerFireSource,
   upsertTriggerInManifest,
+  validateAppTriggerTarget,
 } from '../lib/triggers';
+import { clearTriggerAutoPause } from '../lib/trigger-run-caps';
 // From the leaf, not the barrel: suites that stub '../lib/triggers' by listing
 // its exports would otherwise lose this name.
 import { ACCOUNT_STATE_FIRE_CODES, markGitTriggerAttemptFailed } from '../lib/trigger-fire';
@@ -56,7 +58,7 @@ import {
   triggerRunApiStatus,
   loadTriggerRunForReplay,
 } from '../trigger-runs';
-import { MONITOR_PROMPT_PREAMBLE } from '../lib/monitor-events';
+import { APP_EVENT_PROMPT_PREAMBLE } from '../lib/monitor-events';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { annotateAuditEvent } from '../../shared/audit-scope';
 import { deleteTriggerWatchers, triggerWatcherOf, upsertTriggerWatcher } from '../lib/trigger-watchers';
@@ -112,14 +114,16 @@ const EVENT_BODY_KEYS = ['connector', 'event_account', 'event_source', 'event', 
 
 /** Merge-body keys owned by one trigger type, dropped when a PATCH changes the type. */
 const TYPE_SPECIFIC_BODY_KEYS = [
-  'cron', 'run_at', 'timezone', 'secret_env', 'run', 'mode', 'interval',
-  'expect_event_within', 'connector', 'event_account', 'event_source', 'event', 'event_config',
+  'cron', 'run_at', 'every', 'timezone', 'secret_env', 'run', 'mode', 'interval',
+  'expect_event_within', 'connector', 'event_account', 'event_source', 'event', 'event_config', 'app',
 ] as const;
 
 // Body keys that change the trigger's *repo manifest* (committed to git). A PATCH
 // whose body touches none of these has nothing to commit, so we skip git entirely
 // and treat it as a no-op.
 const TRIGGER_MANIFEST_KEYS = [
+  'app',
+  'target',
   'name',
   'type',
   'agent',
@@ -128,6 +132,7 @@ const TRIGGER_MANIFEST_KEYS = [
   'prompt_template',
   'promptTemplate',
   'cron',
+  'every',
   'schedule',
   'run_at',
   'runAt',
@@ -141,6 +146,11 @@ const TRIGGER_MANIFEST_KEYS = [
   'session_key',
   'sessionKey',
   'filter',
+  // A PATCH of only these must still write the manifest (KRTX-1721, KRTX-1743).
+  'max_runs_per_hour',
+  'max_runs_per_day',
+  'max_lateness',
+  'overlap',
   'connector',
   'event_account',
   'event_source',
@@ -198,7 +208,8 @@ export function registerTriggersRoutes(): void {
       path: '/{projectId}/triggers/event-apps',
       tags: ['triggers'],
       summary: 'List the apps that can trigger an event',
-      description: 'Apps with at least one event type, with the project connector for each and whether a project-shared account is connected.',
+      description:
+        'Apps that can trigger an event, with the project connector for each and whether a project-shared account is connected. Source `composio`: apps with at least one event type. Source `mcp`: every catalog app with sign-in, with `mcp_url` to install it (`event_count` 0 until it is connected and its tools are read), and every project MCP server (`event_count` 0 when none of its tools lists or searches).',
       ...auth,
       request: { params: z.object({ projectId: z.string() }) },
       responses: {
@@ -212,6 +223,7 @@ export function registerTriggersRoutes(): void {
               logo: z.string().nullable(),
               event_count: z.number(),
               new_connector_slug: z.string(),
+              mcp_url: z.string().nullable().openapi({ description: 'Source `mcp`: the MCP server to install for this app (Customize → Connectors). Null for other sources and for a project MCP server outside the catalog.' }),
               connector: z.string().nullable().openapi({ description: 'Slug of the project connector for this app, or null.' }),
               connected: z.boolean().openapi({ description: 'The project has an active shared account for this app.' }),
               connectors: z.array(z.object({
@@ -254,6 +266,7 @@ export function registerTriggersRoutes(): void {
           logo: a.logo,
           event_count: a.eventCount,
           new_connector_slug: a.newConnectorSlug,
+          mcp_url: a.mcpUrl,
           connector: a.connector,
           connected: a.connected,
           connectors: a.connectors.map((k) => ({
@@ -274,7 +287,7 @@ export function registerTriggersRoutes(): void {
       method: 'get',
       path: '/{projectId}/triggers/event-types',
       tags: ['triggers'],
-      summary: 'List the app events a connector or an app can trigger on',
+      summary: 'List the connector events a connector or an app can trigger on',
       description: 'Send `connector` (a project connector slug) or `app` (an app of an event source, no connector needed) with an optional `source`, not both.',
       ...auth,
       request: {
@@ -325,7 +338,9 @@ export function registerTriggersRoutes(): void {
       const source = c.req.query('source')?.trim() || 'composio';
       const unknownSource = app ? unknownSourceMessage(source) : null;
       if (unknownSource) return c.json({ error: unknownSource }, 400);
-      const catalog = app ? await listAppEventTypes(source, app) : await listConnectorEventTypes(projectId, slug as string);
+      const catalog = app
+        ? await listAppEventTypes(source, app, { projectId })
+        : await listConnectorEventTypes(projectId, slug as string, null);
       if (catalog.kind === 'connector_not_found') return c.json({ error: `Connector "${slug}" not found` }, 404);
       if (catalog.kind === 'app_not_found') return c.json({ error: 'app_not_found' }, 404);
       if (catalog.kind === 'unavailable') return c.json({ error: 'event_source_unavailable' }, 409);
@@ -352,7 +367,7 @@ export function registerTriggersRoutes(): void {
       method: 'post',
       path: '/{projectId}/triggers',
       tags: ['triggers'],
-      summary: 'Create a project trigger (cron, webhook or event)',
+      summary: 'Create a project trigger (cron, webhook, event or app)',
       description:
         'Create a trigger. It is committed to kortix.yaml. Send name, type and prompt_template, plus cron, secret_env or run by type.',
       ...auth,
@@ -360,7 +375,7 @@ export function registerTriggersRoutes(): void {
         params: z.object({ projectId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             name: z.string().openapi({ description: 'Trigger name. The slug derives from it.' }),
-            type: z.enum(['cron', 'webhook', 'monitor', 'event']).openapi({ description: 'cron runs on a schedule, webhook runs on an HTTP call, monitor supervises a command, event runs when an app event happens on a connector.' }),
+            type: z.enum(['cron', 'webhook', 'monitor', 'event', 'app']).openapi({ description: 'cron runs on a schedule, webhook runs on an HTTP call, monitor supervises a command, event runs when an app event happens on a connector, app runs when an App of this project emits an event.' }),
             prompt_template: z.string().openapi({ description: 'Prompt the agent receives on each fire. Webhook payload templates like {{ body.x }} are allowed.' }),
             slug: z.string().optional().openapi({ description: 'Explicit slug (a-z, 0-9, _, -). Defaults to a slug of name.' }),
             agent: z.string().optional().openapi({ description: 'Agent to run. Default "default".' }),
@@ -368,6 +383,7 @@ export function registerTriggersRoutes(): void {
             enabled: z.boolean().optional().openapi({ description: 'Default true.' }),
             cron: z.string().optional().openapi({ description: 'Cron expression. Required for a cron trigger unless run_at is set.' }),
             run_at: z.string().optional().openapi({ description: 'ISO-8601 instant for a one-off cron trigger.' }),
+            every: z.string().nullish().openapi({ description: 'A fixed period such as 5m, 1h or 1d (at least 1m), instead of cron or run_at. Cron triggers only.' }),
             timezone: z.string().optional().openapi({ description: 'IANA timezone for cron. Default UTC.' }),
             secret_env: z.string().optional().openapi({ description: 'Project secret holding the webhook signing secret. Required for a webhook trigger.' }),
             connector: z.string().optional().openapi({ description: 'Connector slug the event happens on. Required for an event trigger.' }),
@@ -379,10 +395,15 @@ export function registerTriggersRoutes(): void {
             mode: z.enum(['poll', 'stream']).optional().openapi({ description: 'Monitor mode. Required for a monitor.' }),
             interval: z.string().optional().openapi({ description: 'Poll period such as 5m. Monitors with mode poll only.' }),
             expect_event_within: z.string().optional().openapi({ description: 'Silence watchdog such as 1h. Monitors only.' }),
+            app: z.string().optional().openapi({ description: 'Slug of the App whose events fire the trigger. Required for an app trigger.' }),
+            target: z.object({ app: z.string(), path: z.string().optional(), method: z.enum(['POST', 'GET']).optional(), payload: z.record(z.string(), z.any()).optional() }).nullish().openapi({ description: 'Call an App instead of running an agent: each fire wakes the App and sends the payload to method path (default POST /). prompt_template is then optional.' }),
             session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']).optional().openapi({ description: 'Whether each fire starts a new session, reuses one, pins one, or keys by session_key.' }),
             session_id: z.string().optional().openapi({ description: 'Session to pin when session_mode is pinned.' }),
             session_key: z.string().optional().openapi({ description: 'Template deriving one session per key when session_mode is keyed.' }),
-            filter: z.record(z.string(), z.any()).optional().openapi({ description: 'Payload path to expected value; a delivery fires only if all match.' }),
+            filter: z.record(z.string(), z.any()).optional().openapi({ description: 'Payload path to a value (equals) or one operator: {"not":[…]}, {"in":[…]}, {"exists":true|false}, {"prefix":[…]}, {"not_prefix":[…]}. A delivery fires only if every path matches.' }),
+            max_runs_per_hour: z.number().int().min(1).nullish().openapi({ description: 'Runs the trigger may start in any 60 minutes. Omit for the default, 60. A fire past it is a skipped run.' }),
+            max_runs_per_day: z.number().int().min(1).nullish().openapi({ description: 'Runs the trigger may start in a UTC day. Omit for no daily cap.' }),
+            overlap: z.enum(['skip', 'allow']).nullish().openapi({ description: 'Fresh session mode only: skip holds a fire while the previous run is still active. Omit for the default: skip for cron, allow for the other types.' }),
             session_access: z.object({ mode: z.enum(['private', 'members', 'project']), memberIds: z.array(z.string()).optional(), groupIds: z.array(z.string()).optional() }).optional().optional().openapi({ description: 'Who can see the sessions this trigger creates. Default private.' }),
           }) } } },
       },
@@ -415,6 +436,14 @@ export function registerTriggersRoutes(): void {
       if ('error' in draft) return c.json({ error: draft.error }, 400);
       if (draft.event) {
         const problem = await validateEventTrigger(projectId, draft.event);
+        if (problem) return c.json({ error: problem }, 400);
+      }
+      if (draft.type === 'app' && draft.app) {
+        const problem = await validateAppTriggerTarget(projectId, draft.app);
+        if (problem) return c.json({ error: problem }, 400);
+      }
+      if (draft.target) {
+        const problem = await validateAppTriggerTarget(projectId, draft.target.app);
         if (problem) return c.json({ error: problem }, 400);
       }
       if (draft.type === 'webhook' && draft.secretEnv) {
@@ -572,6 +601,7 @@ export function registerTriggersRoutes(): void {
             enabled: z.boolean().optional().openapi({ description: 'Turn the trigger on or off.' }),
             cron: z.string().optional().openapi({ description: 'Cron expression.' }),
             run_at: z.string().optional().openapi({ description: 'ISO-8601 instant for a one-off trigger.' }),
+            every: z.string().nullish().openapi({ description: 'A fixed period such as 5m, 1h or 1d (at least 1m), instead of cron or run_at. Cron triggers only.' }),
             timezone: z.string().optional().openapi({ description: 'IANA timezone.' }),
             secret_env: z.string().optional().openapi({ description: 'Webhook signing secret name.' }),
             connector: z.string().optional().openapi({ description: 'Connector slug of an event trigger.' }),
@@ -579,10 +609,15 @@ export function registerTriggersRoutes(): void {
             event_source: z.string().nullish().openapi({ description: 'Event source adapter id of an event trigger; null clears it to the connector provider.' }),
             event: z.string().optional().openapi({ description: 'The adapter event type id of an event trigger.' }),
             event_config: z.record(z.string(), z.any()).optional().openapi({ description: 'Provider event config of an event trigger.' }),
+            app: z.string().optional().openapi({ description: 'App slug of an app trigger.' }),
+            target: z.object({ app: z.string(), path: z.string().optional(), method: z.enum(['POST', 'GET']).optional(), payload: z.record(z.string(), z.any()).optional() }).nullish().openapi({ description: 'Call an App instead of running an agent: each fire wakes the App and sends the payload to method path (default POST /). null clears it.' }),
             session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']).optional().openapi({ description: 'Session reuse mode.' }),
             session_id: z.string().optional().openapi({ description: 'Session to pin.' }),
             session_key: z.string().optional().openapi({ description: 'Session key template.' }),
-            filter: z.record(z.string(), z.any()).optional().openapi({ description: 'Payload filter.' }),
+            filter: z.record(z.string(), z.any()).optional().openapi({ description: 'Payload filter: path to a value (equals) or one operator (not, in, exists, prefix, not_prefix). null or {} clears it.' }),
+            max_runs_per_hour: z.number().int().min(1).nullish().openapi({ description: 'Runs per 60 minutes; null resets it to the default, 60.' }),
+            max_runs_per_day: z.number().int().min(1).nullish().openapi({ description: 'Runs per UTC day; null removes the daily cap.' }),
+            overlap: z.enum(['skip', 'allow']).nullish().openapi({ description: 'skip or allow; null resets it to the default (skip for cron, allow otherwise).' }),
             session_access: z.object({ mode: z.enum(['private', 'members', 'project']), memberIds: z.array(z.string()).optional(), groupIds: z.array(z.string()).optional() }).optional().optional().openapi({ description: 'Who can see the sessions this trigger creates.' }),
           }) } } },
       },
@@ -658,6 +693,14 @@ export function registerTriggersRoutes(): void {
             const problem = await validateEventTrigger(projectId, draft.event);
             if (problem) return { ok: false, error: problem, status: 400 };
           }
+          if (draft.type === 'app' && draft.app && (body.type === 'app' || 'app' in body)) {
+            const problem = await validateAppTriggerTarget(projectId, draft.app);
+            if (problem) return { ok: false, error: problem, status: 400 };
+          }
+          if (draft.target && 'target' in body) {
+            const problem = await validateAppTriggerTarget(projectId, draft.target.app);
+            if (problem) return { ok: false, error: problem, status: 400 };
+          }
           if (draft.type === 'webhook' && draft.secretEnv) {
             const configurationError = await validateWebhookSecretConfiguration({
               projectId,
@@ -714,6 +757,9 @@ export function registerTriggersRoutes(): void {
           pinnedSessionId: effectivePinnedSessionId,
         });
       }
+      // Turning a trigger on also resumes it from an auto-pause (KRTX-1721):
+      // the same Resume control and `kortix triggers enable` clear both.
+      if (body.enabled === true) await clearTriggerAutoPause(projectId, slug);
       await followTrigger(c, loaded.row, projectId, slug);
 
       return c.json(await loadTriggersForResponse(projectId, loaded.row));
@@ -943,8 +989,8 @@ export function registerTriggersRoutes(): void {
       const source = run.source as TriggerFireSource;
       const template = renderPromptTemplate(target.spec.promptTemplate, run.payload);
       const renderedPrompt =
-        source === 'event' ? `${eventPromptPreamble(target.spec)}${template}`
-          : source === 'monitor' ? `${MONITOR_PROMPT_PREAMBLE}${template}`
+        source === 'event' ? `${eventPromptPreamble(target.spec, ((run.payload as { event?: { provider?: string } } | null)?.event?.provider) ?? null)}${template}`
+          : source === 'app' ? `${APP_EVENT_PROMPT_PREAMBLE}${template}`
             : template;
       return fireAndAnswer(c, target, {
         payload: run.payload,
@@ -1064,6 +1110,8 @@ async function fireAndAnswer(
     source,
     idempotencyKey: input.idempotencyKey ?? null,
     request: requestAuditContext(c),
+    // A person fired it: the run caps do not hold it (KRTX-1721).
+    deliberate: true,
   }).catch(async (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     await recordTriggerRun({ ...run, status: 'failed', error: message });

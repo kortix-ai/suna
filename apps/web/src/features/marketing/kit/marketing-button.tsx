@@ -1,7 +1,7 @@
 import { Slot } from '@radix-ui/react-slot';
 import { type ComponentProps } from 'react';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 const SIZES = {
   sm: 'h-9 px-4 text-xs',

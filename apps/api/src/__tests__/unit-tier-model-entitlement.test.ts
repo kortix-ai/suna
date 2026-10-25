@@ -37,11 +37,11 @@ describe('tierGrantsAllModels', () => {
     expect(tierGrantsAllModels('none')).toBe(false);
   });
 
-  // #10147: Free = 500 credits a month and the managed models.
-  test('the free tier grants 500 credits a month and the managed models', () => {
+  // #10147: Free = 500 credits a month. #10297: never the managed models.
+  test('the free tier grants 500 credits a month and no managed model', () => {
     const free = getTier('free');
     expect(free.monthlyCredits * 100).toBe(500);
-    expect(tierGrantsAllModels('free')).toBe(true);
+    expect(tierGrantsAllModels('free')).toBe(false);
   });
 
   test('credits and every legacy paid plan key are entitled', () => {

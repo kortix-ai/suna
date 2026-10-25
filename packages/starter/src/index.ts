@@ -55,18 +55,22 @@ export const DEFAULT_STARTER_TEMPLATE_ID: StarterTemplateId = 'general-knowledge
 export const KORTIX_MANAGED_SKILL_NAMES = [
   'kortix-cli',
   'kortix-apps',
+  'kortix-artifacts',
   'kortix-computer',
   'kortix-connectors',
   'kortix-drives',
   'kortix-genui',
+  'kortix-goals',
   'kortix-harness-refinement',
   'kortix-marketplace',
   'kortix-memory',
   'kortix-onboarding',
+  'kortix-rooms',
   'kortix-slack',
   'kortix-system',
   'kortix-teams',
   'kortix-ui',
+  'kortix-user-memory',
 ] as const;
 export type KortixManagedSkillName = (typeof KORTIX_MANAGED_SKILL_NAMES)[number];
 

@@ -1,13 +1,13 @@
 'use client';
 
-import { Claude } from '@/features/icon/icons/claude';
+import { Claude } from '@kortix/ui/internal/icons/claude';
 import { Gemini } from '@/features/icon/icons/gemini';
-import { OpenAI } from '@/features/icon/icons/open-ai';
+import { OpenAI } from '@kortix/ui/internal/icons/open-ai';
 import { GlobeIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { SandGlobe } from './sand-globe';
 
 /**
@@ -199,18 +199,20 @@ export function StepModels(): ReactNode {
           the next provider, the grains flow into a new pattern. */}
       <m.div
         {...band(0)}
-        className="pointer-events-none absolute -inset-x-4 -top-34 bottom-18 sm:-inset-x-8 sm:-top-38 lg:-inset-x-12 lg:-top-50"
+        className="pointer-events-none absolute -inset-x-4 -top-38 bottom-14 sm:-inset-x-8 sm:-top-46 sm:bottom-10 lg:-inset-x-12 lg:-top-62 lg:bottom-6"
       >
         <SandGlobe mode={index} reduced={!!reduced} radius={0.46} />
       </m.div>
 
-      {/* THE SLOT, as a spec strip: the mark in its own cell, then Provider,
+      {/* THE SLOT, as a spec strip: it runs past the panel's padding and sits
+          flush on the panel's bottom edge, open at the foot like a tab. The
+          mark in its own cell, then Provider,
           Models and Mode, each a mono label over its value, split by
           hairlines. Provider and Models move with the slot; Mode is `auto`
           and never moves. */}
       <m.div
         {...band(1)}
-        className="border-border bg-background absolute inset-x-4 bottom-0 flex items-stretch rounded-lg border sm:inset-x-8"
+        className="border-border bg-background absolute inset-x-4 -bottom-4 flex items-stretch rounded-t-lg border border-b-0 sm:inset-x-8 sm:-bottom-8 lg:-bottom-12"
       >
         {/* Fixed-size boxes with their contents stacked inside, so the
             outgoing and incoming values overlap and blur into each other

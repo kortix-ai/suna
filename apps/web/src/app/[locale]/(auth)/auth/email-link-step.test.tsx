@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { Window } from 'happy-dom';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -80,7 +81,10 @@ describe('link step copy names the link, not its kind', () => {
   for (const [locale, wording] of Object.entries(SIGN_IN_WORDING)) {
     test(`${locale}: the description says a link was sent`, () => {
       const catalog = JSON.parse(
-        readFileSync(fileURLToPath(new URL(`../../../../../translations/${locale}.json`, import.meta.url)), 'utf8'),
+        readFileSync(
+          fileURLToPath(new URL(`../../../../../translations/${locale}.json`, import.meta.url)),
+          'utf8',
+        ),
       );
       const description: string = catalog.auth.unified.link.description;
       expect(description).toContain('<address>{email}</address>');
@@ -138,7 +142,10 @@ test('mode other than signup keeps the generic link copy (fail-open, KRTX-2516)'
 test('every locale carries the confirmation copy with the address placeholder', () => {
   for (const locale of Object.keys(SIGN_IN_WORDING)) {
     const catalog = JSON.parse(
-      readFileSync(fileURLToPath(new URL(`../../../../../translations/${locale}.json`, import.meta.url)), 'utf8'),
+      readFileSync(
+        fileURLToPath(new URL(`../../../../../translations/${locale}.json`, import.meta.url)),
+        'utf8',
+      ),
     );
     const link = catalog.auth.unified.link;
     expect(link.confirmDescription.trim().length, locale).toBeGreaterThan(0);
@@ -147,3 +154,33 @@ test('every locale carries the confirmation copy with the address placeholder', 
     expect(link.confirmDescription, locale).not.toMatch(/\b(link|lien|enlace|リンク|链接|линк)/i);
   }
 });
+
+for (const mode of ['signup', 'signin', 'unknown'] as const) {
+  test(`${mode}: the code input shows at once, beside the link`, () => {
+    const markup = renderToStaticMarkup(
+      <EmailLinkStep
+        mode={mode}
+        sentEmail={null}
+        errorMessage={null}
+        info={null}
+        resendIn={0}
+        pending={false}
+        pendingAction={null}
+        passwordEnabled={false}
+        onResend={() => {}}
+        onChangeEmail={() => {}}
+        onPassword={() => {}}
+        onCodeChange={() => {}}
+        onVerify={() => {}}
+      />,
+    );
+    const document = new Window().document;
+    document.body.innerHTML = markup;
+    const codeInput = document.querySelector('input[autocomplete="one-time-code"]');
+    expect(codeInput).not.toBeNull();
+    expect(codeInput?.closest('details')).toBeNull();
+    expect(markup).toContain(
+      mode === 'signup' ? 'Confirm your email to continue' : 'Open it to continue',
+    );
+  });
+}

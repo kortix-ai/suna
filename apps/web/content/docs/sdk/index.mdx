@@ -16,7 +16,7 @@ npm install @kortix/sdk
 | `@kortix/sdk` | The client and every framework-free module. | Any runtime with a global `fetch`: browsers, Node 18 or later, Bun, edge workers. |
 | `@kortix/sdk/react` | Hooks, `useSession` first. Needs the optional peers `react` (18 or later) and `@tanstack/react-query` (5.75.2 or a later 5.x). | React and React Native. |
 | `@kortix/sdk/server` | `createScopedKortix`, `runWithKortix`, `createKortixAuth`, `createKortixAppGuard`, `readAppViewer`, `createAppViewerKortix`. It imports `node:async_hooks`. | Node and Bun. Never bundle it for a browser. |
-| `@kortix/ui` | The Kortix React components and `@kortix/ui/chat`, the whole session chat on top of `useSession`. A separate package, not on npm yet. See [Kortix UI](/docs/sdk/ui). | React hosts. |
+| `@kortix/ui` | The Kortix React components and `@kortix/ui/session`, the whole session chat on top of `useSession`. A separate package: `npm i @kortix/ui`, the same version as `@kortix/sdk`. See [Kortix UI](/docs/sdk/ui). | React hosts. |
 
 Import from the root. Two other subpaths are stable. `@kortix/sdk/wire-message-id` holds the wire-id clock in one module with no imports, and the root exports the same names. `@kortix/sdk/workspace-search` adds ranked file search over a session workspace, and the root does not export it. The other subpaths (`@kortix/sdk/turns`, `@kortix/sdk/projects-client` and similar) are deprecated aliases of root names. The full list is in [Entry points and stability](/docs/sdk/reference#entry-points-and-stability).
 
@@ -83,7 +83,7 @@ A session is one unit of agent work, on its own sandbox and branch. From code, i
 `kortix.projects.list()` returns the projects the token can open. `kortix.projects.provision({ name })` creates a project with a Kortix-managed repository and the starter configuration.
 </Step>
 <Step title="Create the session">
-`kortix.project(projectId).sessions.create(input?)` returns the session with its `session_id`. The sandbox starts to provision now, in the background. All input fields are optional: `name`, `agent_name`, `model` (a bare managed id such as `kimi-k3`, or `provider/model` for your own provider key; see [Models](/docs/project/models#how-a-session-gets-a-model)), `initial_prompt`, `labels`, `metadata`, `base_ref` and more. See [Create a session](/docs/sdk/sessions#create-a-session).
+`kortix.project(projectId).sessions.create(input?)` returns the session with its `session_id`. The sandbox starts to provision now, in the background. All input fields are optional: `name`, `agent_name`, `model` (a bare managed id such as `glm-5.3-flash`, or `provider/model` for your own provider key; see [Models](/docs/project/models#how-a-session-gets-a-model)), `initial_prompt`, `labels`, `metadata`, `base_ref` and more. See [Create a session](/docs/sdk/sessions#create-a-session).
 </Step>
 <Step title="Get the session handle">
 `kortix.session(projectId, sessionId)` binds both ids. The handle has no network cost.

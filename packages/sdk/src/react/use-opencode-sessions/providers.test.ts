@@ -8,7 +8,8 @@ import { ApiError } from '../../core/http/api/errors';
 // (backoff 1, 2, 4, then 8 s x7). Same harness as `../use-tunnel.test.ts`:
 // react-query is reduced to identity functions so a hook returns its config.
 
-let detailData: unknown = null;
+let rowData: unknown = null;
+let routeProjectId: string | null = 'P1';
 
 mock.module('react', () => ({
   useMemo: (fn: () => unknown) => fn(),
@@ -18,7 +19,7 @@ mock.module('react', () => ({
 mock.module('@tanstack/react-query', () => ({
   useQuery: (config: Record<string, unknown>) => ({
     ...config,
-    data: detailData,
+    data: rowData,
     isSuccess: true,
     isLoading: false,
   }),
@@ -31,7 +32,7 @@ mock.module('@tanstack/react-query', () => ({
 }));
 
 mock.module('../route-project', () => ({
-  useKortixRouteProjectId: () => 'P1',
+  useKortixRouteProjectId: () => routeProjectId,
 }));
 
 mock.module('./keys', () => ({
@@ -40,7 +41,7 @@ mock.module('./keys', () => ({
 }));
 
 mock.module('../../core/rest/projects-client', () => ({
-  getProjectDetail: async () => detailData,
+  getProject: async () => rowData,
   getProjectModelPicker: async () => ({ models: [] }),
   getProjectLlmCatalogProviders: async () => ({ providers: [] }),
   listProjectSecrets: async () => ({ items: [] }),
@@ -49,10 +50,26 @@ mock.module('../../core/rest/projects-client', () => ({
 const providers = await import('./providers');
 
 beforeEach(() => {
-  detailData = { project: { experimental: { llm_gateway: true } } };
+  rowData = { experimental: {} };
+  routeProjectId = 'P1';
 });
 
-type Config = { retry?: (failureCount: number, error: unknown) => boolean };
+type Config = {
+  retry?: (failureCount: number, error: unknown) => boolean;
+  queryKey?: unknown[];
+  enabled?: boolean;
+};
+
+describe('useRuntimeProviders on a project route', () => {
+  test('always reads the gateway picker, whatever a stored llm_gateway says', () => {
+    for (const experimental of [{}, { llm_gateway: false }, { llm_gateway: true }]) {
+      rowData = { experimental };
+      const config = providers.useRuntimeProviders() as Config;
+      expect(config.queryKey).toEqual(['project-providers', 'P1', 'gateway']);
+      expect(config.enabled).toBe(true);
+    }
+  });
+});
 
 describe('useRuntimeProviders gateway query retry policy', () => {
   test('does not retry a 401 from a dead token', () => {
@@ -77,11 +94,11 @@ describe('useRuntimeProviders gateway query retry policy', () => {
   });
 });
 
-describe('useRuntimeProviders native query retry policy', () => {
+describe('useRuntimeProviders runtime query retry policy (no project route)', () => {
   test('does not retry a 401 from a dead token', () => {
-    detailData = { project: { experimental: { llm_gateway: false } } };
+    routeProjectId = null;
     const config = providers.useRuntimeProviders() as Config;
-    // The shape the native queryFn actually throws: the runtime client resolves
+    // The shape the runtime queryFn actually throws: the runtime client resolves
     // `{ error, response }` and the react-layer unwrap throws an Error carrying
     // the status (see shared.ts unwrap + the engine test in use-tunnel-retry).
     const dead401 = Object.assign(new Error('{"detail":"Invalid or expired token"}'), {
@@ -91,7 +108,7 @@ describe('useRuntimeProviders native query retry policy', () => {
   });
 
   test('still retries the status-less boot race (no connected models yet) up to the cap', () => {
-    detailData = { project: { experimental: { llm_gateway: false } } };
+    routeProjectId = null;
     const config = providers.useRuntimeProviders() as Config;
     const bootRace = new Error(
       'opencode provider list has no connected models yet — sandbox still warming up',

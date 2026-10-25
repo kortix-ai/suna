@@ -13,9 +13,11 @@ import { requestAuditContext } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { releaseWebhookDeliveryKey, webhookDeliveryKey } from '../lib/webhook-delivery';
 import { ACCOUNT_STATE_FIRE_CODES, markGitTriggerAttemptFailed } from '../lib/trigger-fire';
+import { takeThrottledRunSlot } from '../lib/trigger-run-caps';
 import { raiseTriggerAlert } from '../lib/trigger-alerts';
 import { recordTriggerRun, triggerRunFromFire } from '../trigger-execution-store';
-import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
+import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
+import { PROJECT_TRIGGERS_PAUSED_REASON, automaticFirePauseReason } from '../lib/trigger-scheduler-state';
 import {
   validateWebhookSecretConfiguration,
   webhookSecretConfigurationError,
@@ -157,8 +159,10 @@ export function registerTriggerWebhooksRoutes(): void {
     (c as any).set('accountId', project.accountId);
 
     const payload = runPayload();
+    // Stamped before the fire: a run's turn is the first that starts after it.
+    const firedAt = new Date();
     const recordRun = (run: Omit<Parameters<typeof recordTriggerRun>[0], 'projectId' | 'slug' | 'source' | 'spec' | 'payload' | 'now'>) =>
-      recordTriggerRun({ projectId, slug, source: 'webhook', spec, payload, ...run, now: new Date() });
+      recordTriggerRun({ projectId, slug, source: 'webhook', spec, payload, ...run, now: firedAt });
     const renderedPrompt = renderPromptTemplate(spec.promptTemplate, payload);
     // One delivery runs once: keyed on the event when the sender names one,
     // else on the body inside a replay window (projects/lib/webhook-delivery.ts).
@@ -175,8 +179,10 @@ export function registerTriggerWebhooksRoutes(): void {
     // Server-side per-project kill-switch: a paused project ignores inbound
     // webhooks (acknowledged, not fired) so a repo deployed to two control planes
     // doesn't double-fire. Manual `…/fire` is unaffected. See triggersPausedForProject.
-    if (triggersPausedForProject(project.metadata)) {
-      const reason = 'triggers are paused server-side for this project';
+    // The account's Pause all automations stops it the same way (KRTX-1721).
+    const pausedReason = await automaticFirePauseReason(project);
+    if (pausedReason) {
+      const reason = pausedReason === PROJECT_TRIGGERS_PAUSED_REASON ? 'triggers are paused server-side for this project' : pausedReason;
       await recordRun({ status: 'skipped', error: reason });
       return c.json({ status: 'skipped' as const, reason }, 200);
     }
@@ -208,6 +214,12 @@ export function registerTriggerWebhooksRoutes(): void {
       await recordRun({ status: 'failed', error: error instanceof Error ? error.message : String(error) });
       throw error;
     });
+    // A run cap held it (KRTX-1721): 200 skipped, like a paused trigger, so a
+    // sender that retries on an error does not retry. One history row per 10 s.
+    if (result.status === 'skipped') {
+      if (takeThrottledRunSlot(project.projectId, spec.slug)) await recordRun(triggerRunFromFire(result));
+      return c.json({ status: 'skipped' as const, reason: result.reason ?? 'skipped' }, 200);
+    }
     await recordRun(triggerRunFromFire(result));
 
     // A duplicate ran nothing: it answers `deduped` and leaves last_fired_at alone.

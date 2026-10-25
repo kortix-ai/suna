@@ -87,8 +87,6 @@ export function gitPrincipalEnvelope(principal: GitPrincipal): {
       return principal.userId
         ? { actorType: 'human', actorUserId: principal.userId, sessionId: null, source: principal.tokenId ? 'api_key' : 'human' }
         : { actorType: 'system', actorUserId: null, sessionId: null, source: 'api_key' };
-    case 'monitor':
-      return { actorType: 'system', actorUserId: null, sessionId: null, source: 'monitor' };
     default:
       return { actorType: 'system', actorUserId: null, sessionId: null, source: 'system' };
   }

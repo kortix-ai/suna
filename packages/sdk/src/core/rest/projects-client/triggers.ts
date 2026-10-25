@@ -1,4 +1,4 @@
-// Triggers — cron/webhook/monitor triggers defined in the project manifest.
+// Triggers — cron/webhook/monitor/event/app triggers defined in the project manifest.
 
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
@@ -11,10 +11,17 @@ import { unwrap } from './shared';
 // in `project_trigger_runtime` so a fire doesn't amplify into a git commit.
 // ---------------------------------------------------------------------------
 
-export type ProjectTriggerType = 'cron' | 'webhook' | 'monitor' | 'event';
+/**
+ * `'monitor'` is deprecated: the monitor box was removed, and the API answers
+ * 400 to a new monitor trigger. An App with a schedule or a `type: app`
+ * trigger replaces it. The member stays until the next major.
+ */
+export type ProjectTriggerType = 'cron' | 'webhook' | 'monitor' | 'event' | 'app';
 
 /**
- * How the platform runs a `type: monitor` trigger's `run` command:
+ * @deprecated The monitor box was removed; the API sends `null`. Removed in the next major.
+ *
+ * How the platform ran a `type: monitor` trigger's `run` command:
  * - `poll` — run it every `interval`, print, exit.
  * - `stream` — run it once and keep it alive.
  *
@@ -43,6 +50,15 @@ export interface TriggerSessionAccess {
   groupIds: string[];
 }
 
+/** What a fire calls when a trigger targets an App: `method path` on the App, with the fire's payload. */
+export interface ProjectTriggerTarget {
+  app: string;
+  path: string;
+  method: 'POST' | 'GET';
+  /** Fixed JSON body the call sends instead of the fire's payload. */
+  payload?: Record<string, unknown>;
+}
+
 /** Subscription state of a `type: event` trigger. */
 export interface ProjectTriggerEvent {
   /** The connector (profile) the event happens on. */
@@ -64,9 +80,29 @@ export interface ProjectTriggerEvent {
   status: 'active' | 'needs_connection' | 'error' | 'pending';
   error: string | null;
   last_event_at: string | null;
+  /** Source `mcp`: when Kortix last checked the app with success. Null for other sources and before the first check. */
+  checked_at?: string | null;
+  /** Source `mcp`: when Kortix checks the app next. Null for other sources, and while the trigger is not subscribed. */
+  next_check_at?: string | null;
 }
 
 /** Parsed trigger spec — what the listing endpoint returns. */
+/**
+ * One trigger filter condition (KRTX-1721): exactly one operator. `not` and
+ * `in` compare the payload value as text; `prefix` and `not_prefix` test how
+ * it starts; `exists` tests that it is present and not null. A missing path
+ * reads as an empty string.
+ */
+export type TriggerFilterCondition =
+  | { not: string[] }
+  | { in: string[] }
+  | { exists: boolean }
+  | { prefix: string[] }
+  | { not_prefix: string[] };
+
+/** A filter path's condition: a string means "equals". */
+export type TriggerFilterValue = string | TriggerFilterCondition;
+
 export interface ProjectTrigger {
   /** URL-safe slug (the filename minus `.md`). */
   slug: string;
@@ -88,27 +124,48 @@ export interface ProjectTrigger {
   timezone: string;
   /** project_secrets key holding the webhook HMAC secret. */
   secret_env: string | null;
-  /**
-   * For type='monitor' only — the repo-relative command the platform
-   * supervises 24/7 in the project's monitor box. Its stdout lines are the
-   * events; nothing else is. Null on cron/webhook.
-   */
+  /** @deprecated The monitor box was removed; always `null`. Removed in the next major. */
   run: string | null;
-  /** For type='monitor' only — see {@link ProjectMonitorMode}. Null otherwise. */
+  /** @deprecated The monitor box was removed; always `null`. Removed in the next major. */
   mode: ProjectMonitorMode | null;
-  /** For mode='poll' only — the poll period in whole seconds. Null otherwise. */
+  /** @deprecated The monitor box was removed; always `null`. Removed in the next major. */
   interval_seconds: number | null;
-  /**
-   * For type='monitor' only — the silence watchdog in whole seconds. No event
-   * inside this window synthesizes a `silent` lifecycle event, so a wedged
-   * monitor can never fail silently. Null when the monitor declares none.
-   */
+  /** @deprecated The monitor box was removed; always `null`. Removed in the next major. */
   expect_event_within_seconds: number | null;
   /** For type='event' only — see {@link ProjectTriggerEvent}. Null otherwise. */
   event: ProjectTriggerEvent | null;
+  /** For type='app' only — the slug of the App whose emitted events fire this trigger. Null or absent otherwise. */
+  app?: string | null;
+  /** A fire calls this App instead of running an agent. Null or absent: an agent run. */
+  target?: ProjectTriggerTarget | null;
+  /** For type='cron' with `every` — the fixed period in whole seconds. Null or absent otherwise. */
+  every_seconds?: number | null;
   prompt_template: string;
   /** Session strategy — see {@link ProjectTriggerSessionMode}. */
   session_mode: ProjectTriggerSessionMode;
+  /**
+   * Runs the trigger may start in any 60 minutes. Null when unset: the
+   * default, 60, applies. A fire past it starts nothing and is recorded as a
+   * skipped run, `throttled: …`. Optional: older servers omit it.
+   */
+  max_runs_per_hour?: number | null;
+  /** Runs the trigger may start in a UTC day. Null when unset: no daily cap. */
+  max_runs_per_day?: number | null;
+  /**
+   * Fresh session mode only (KRTX-1721): `skip` holds a fire while the
+   * trigger's previous run is still active. Null when unset: `skip` for a
+   * cron trigger, `allow` for the others. Optional: older servers omit it.
+   */
+  overlap?: 'skip' | 'allow' | null;
+  /**
+   * Set while the trigger paused itself (KRTX-1721): it ran at its hourly run
+   * limit through the previous hour and was still being held. No automatic fire
+   * starts a run until it is resumed: `updateProjectTrigger(…, { enabled: true })`.
+   * Absent on older servers.
+   */
+  auto_paused_at?: string | null;
+  /** Why it paused, e.g. `auto-paused: ran at max_runs_per_hour 60 for 2 hours in a row`. */
+  auto_paused_reason?: string | null;
   /** For session_mode === 'pinned' only: the session id looped. Null otherwise. */
   session_id: string | null;
   /**
@@ -120,11 +177,12 @@ export interface ProjectTrigger {
   session_key: string | null;
   /**
    * Payload paths (dotted, rooted at the same `body`/`headers` object the
-   * prompt template sees) mapped to the value they must equal for the trigger
-   * to fire. A non-matching delivery is accepted but spawns no session. Null
-   * when unfiltered.
+   * prompt template sees) mapped to the condition each must meet for the
+   * trigger to fire: a value it must equal, or one operator
+   * ({@link TriggerFilterCondition}). A non-matching delivery is accepted but
+   * spawns no session. Null when unfiltered.
    */
-  filter: Record<string, string> | null;
+  filter: Record<string, TriggerFilterValue> | null;
   /** Access policy applied to every session this trigger creates. */
   session_access: TriggerSessionAccess;
   last_fired_at: string | null;
@@ -143,6 +201,8 @@ export interface ProjectTrigger {
   /** ISO time an enabled cron trigger runs next: the slot the scheduler
    *  claims, jitter included. Null for a webhook trigger, and from an older API. */
   next_fire_at?: string | null;
+  /** Next exact cron occurrence, without scheduler jitter. Absent from older APIs. */
+  next_cron_at?: string | null;
   /** Public fire URL for webhook triggers; null for cron. */
   webhook_url: string | null;
 }
@@ -166,6 +226,12 @@ export interface ProjectTriggerListing {
    * ONE repo deployed to two control planes (e.g. dev + prod) from double-firing.
    */
   triggers_paused?: boolean;
+  /**
+   * The account's Pause all automations (`PATCH /accounts/:id/automations`):
+   * true stops every automatic fire in every project of the account, this one
+   * included. Manual `fire` still works. Older servers omit it.
+   */
+  account_automations_paused?: boolean;
 }
 
 export interface CreateProjectTriggerInput {
@@ -177,7 +243,7 @@ export interface CreateProjectTriggerInput {
    */
   slug?: string;
   type: ProjectTriggerType;
-  prompt_template: string;
+  prompt_template?: string;
   /** Defaults to 'default'. */
   agent?: string;
   /** Wire-form model (`provider/model`). Omit or pass null to resolve the
@@ -192,17 +258,20 @@ export interface CreateProjectTriggerInput {
   timezone?: string;
   /** For type='webhook'. Name of a project_secrets entry. */
   secret_env?: string;
-  /** Required for type='monitor'. Repo-relative command whose stdout lines fire. */
+  /** @deprecated The monitor box was removed; the API refuses monitor triggers. Removed in the next major. */
   run?: string;
-  /** Required for type='monitor'. See {@link ProjectMonitorMode}. */
+  /** @deprecated The monitor box was removed; the API refuses monitor triggers. Removed in the next major. */
   mode?: ProjectMonitorMode;
-  /**
-   * Required for mode='poll', rejected on mode='stream'. Duration literal
-   * (`30s`, `5m`, `24h`, `7d`), floor 30s. Never a bare number.
-   */
+  /** @deprecated The monitor box was removed; the API refuses monitor triggers. Removed in the next major. */
   interval?: string;
-  /** For type='monitor'. Silence watchdog as a duration literal; floor 5m. */
+  /** @deprecated The monitor box was removed; the API refuses monitor triggers. Removed in the next major. */
   expect_event_within?: string;
+  /** Required for type='app'. Slug of the App whose events fire the trigger; the App must exist. */
+  app?: string;
+  /** Call an App instead of running an agent; `prompt_template` is then optional. */
+  target?: { app: string; path?: string; method?: 'POST' | 'GET'; payload?: Record<string, unknown> };
+  /** For type='cron'. A fixed period such as `5m`, `1h`, `1d` (at least 1m) instead of `cron` or `run_at`. */
+  every?: string;
   /** Required for type='event'. Connector slug the event happens on. */
   connector?: string;
   /** For type='event'. Label of one shared account of the connector; omit or null for the connector default. */
@@ -213,6 +282,12 @@ export interface CreateProjectTriggerInput {
   event?: string;
   /** For type='event'. Provider event config, shaped by the event type's `config_schema`. */
   event_config?: Record<string, unknown>;
+  /** Runs it may start in any 60 minutes, a whole number ≥ 1. Omit for the default, 60. */
+  max_runs_per_hour?: number;
+  /** Runs it may start in a UTC day, a whole number ≥ 1. Omit for no daily cap. */
+  max_runs_per_day?: number;
+  /** See {@link ProjectTrigger.overlap}. Omit for the type's default. */
+  overlap?: 'skip' | 'allow';
   /**
    * Session strategy across fires. Omit for the type's default — 'fresh' on
    * cron/webhook, 'reuse' on monitor (a monitor fires repeatedly by design, so
@@ -227,8 +302,8 @@ export interface CreateProjectTriggerInput {
    * sent explicitly.
    */
   session_key?: string | null;
-  /** Payload paths mapped to the value they must equal for the trigger to fire. */
-  filter?: Record<string, string> | null;
+  /** Payload paths mapped to the condition each must meet for the trigger to fire. See {@link ProjectTrigger.filter}. */
+  filter?: Record<string, TriggerFilterValue> | null;
   /** Defaults to private. This is account-local runtime state, not manifest config. */
   session_access?: TriggerSessionAccess;
 }
@@ -245,17 +320,20 @@ export interface UpdateProjectTriggerInput {
   run_at?: string | null;
   timezone?: string;
   secret_env?: string;
-  /** For type='monitor'. Repo-relative command whose stdout lines fire. */
+  /** @deprecated The monitor box was removed; the API refuses monitor triggers. Removed in the next major. */
   run?: string;
-  /** For type='monitor'. See {@link ProjectMonitorMode}. */
+  /** @deprecated The monitor box was removed; the API refuses monitor triggers. Removed in the next major. */
   mode?: ProjectMonitorMode;
-  /**
-   * For mode='poll'. Duration literal (`30s`, `5m`, `24h`, `7d`), floor 30s.
-   * null clears it — required when switching a poll monitor to 'stream'.
-   */
+  /** @deprecated The monitor box was removed; the API refuses monitor triggers. Removed in the next major. */
   interval?: string | null;
-  /** For type='monitor'. Duration literal, floor 5m. null clears the watchdog. */
+  /** @deprecated The monitor box was removed; the API refuses monitor triggers. Removed in the next major. */
   expect_event_within?: string | null;
+  /** For type='app'. Slug of the App whose events fire the trigger. */
+  app?: string;
+  /** Call an App instead of running an agent; null clears it. */
+  target?: { app: string; path?: string; method?: 'POST' | 'GET'; payload?: Record<string, unknown> } | null;
+  /** For type='cron'. A fixed period such as `5m`; null clears it. */
+  every?: string | null;
   /** For type='event'. Connector slug. Changing it clears the account unless `event_account` is sent. */
   connector?: string;
   /** For type='event'. Label of one shared account of the connector; null clears it to the connector default. */
@@ -266,12 +344,18 @@ export interface UpdateProjectTriggerInput {
   event?: string;
   /** For type='event'. Replaces the provider event config. */
   event_config?: Record<string, unknown>;
+  /** null resets it to the default, 60. */
+  max_runs_per_hour?: number | null;
+  /** null removes the daily cap. */
+  max_runs_per_day?: number | null;
+  /** See {@link ProjectTrigger.overlap}. null resets it to the type's default. */
+  overlap?: 'skip' | 'allow' | null;
   session_mode?: ProjectTriggerSessionMode;
   session_id?: string | null;
   /** See {@link CreateProjectTriggerInput.session_key}. null clears it. */
   session_key?: string | null;
-  /** null or {} clears the filter. */
-  filter?: Record<string, string> | null;
+  /** Replaces the whole filter. null or {} clears it. */
+  filter?: Record<string, TriggerFilterValue> | null;
   /** Replaces the policy and updates prior sessions created by this trigger. */
   session_access?: TriggerSessionAccess;
 }
@@ -314,6 +398,31 @@ export async function deleteProjectTrigger(projectId: string, slug: string) {
     await backendApi.delete<{ ok: boolean }>(
       `/projects/${projectId}/triggers/${slug}`,
     ),
+  );
+}
+
+/**
+ * The account's Pause all automations: `paused` stops every automatic fire in
+ * every project of the account — schedules, reminders, webhooks, app events and
+ * monitors. A manual fire still runs.
+ */
+export interface AccountAutomationsStatus {
+  paused: boolean;
+  paused_at: string | null;
+  /** The user who paused them; null while running. */
+  paused_by: string | null;
+  /** True when the caller may pause or resume (account.write). */
+  can_change: boolean;
+}
+
+export async function getAccountAutomations(accountId: string) {
+  return unwrap(await backendApi.get<AccountAutomationsStatus>(`/accounts/${accountId}/automations`));
+}
+
+/** Pause or resume every automation of the account. Needs account.write (owners and admins by default). */
+export async function setAccountAutomationsPaused(accountId: string, paused: boolean) {
+  return unwrap(
+    await backendApi.patch<AccountAutomationsStatus>(`/accounts/${accountId}/automations`, { paused }, { showErrors: false }),
   );
 }
 
@@ -369,7 +478,7 @@ export interface ProjectTriggerDryRunResult {
 }
 
 /** What fired a run. */
-export type ProjectTriggerRunSource = 'cron' | 'webhook' | 'manual' | 'monitor' | 'reminder' | 'event';
+export type ProjectTriggerRunSource = 'cron' | 'webhook' | 'manual' | 'monitor' | 'reminder' | 'event' | 'app';
 
 /**
  * A run's fire outcome. `fired` = a session was started or prompted;
@@ -529,7 +638,7 @@ export interface ProjectTriggerEventType {
 }
 
 export interface ProjectTriggerEventTypes {
-  /** Event source adapter id, such as `composio`. */
+  /** Event source adapter id: `composio` or `mcp`. */
   source?: string;
   /** @deprecated Same value as `source`. */
   provider: string;
@@ -541,7 +650,8 @@ export interface ProjectTriggerEventTypes {
  * The app events a connector, or an app with no connector, can trigger on.
  * Throws 404 for an unknown connector (`app_not_found` for an app with no
  * events), 400 for an unknown `source`, and 409 `event_source_unavailable`
- * when no event source serves it.
+ * when no event source serves it. With source `mcp`, a catalogue app or a
+ * project MCP server that has no events yet returns an empty `event_types`.
  */
 export async function listProjectTriggerEventTypes(
   projectId: string,
@@ -577,7 +687,7 @@ export interface ProjectTriggerEventConnector {
 
 /** An app that can trigger events, with the project's state for it. */
 export interface ProjectTriggerEventApp {
-  /** Event source adapter id, such as `composio`. The trigger's `event_source`. */
+  /** Event source adapter id: `composio` or `mcp`. The trigger's `event_source`. */
   source?: string;
   /** @deprecated Same value as `source`. */
   provider: string;
@@ -594,6 +704,8 @@ export interface ProjectTriggerEventApp {
   connectors?: ProjectTriggerEventConnector[];
   /** Slug to give a new connector for this app (never a reserved or taken one). */
   new_connector_slug?: string;
+  /** Source mcp: the catalogue MCP server to install for this app. Null for other sources and for a project MCP server outside the catalogue. */
+  mcp_url?: string | null;
 }
 
 export interface ProjectTriggerEventApps {

@@ -23,6 +23,8 @@ export function bindProjectOperationsReview(projectId: string) {
 
     /** Review Center — the per-project human-in-the-loop inbox (change requests, tool approvals, agent outputs/decisions). */
     review: {
+      recoverChangeRequest: (...args: DropFirst<Parameters<typeof P.recoverChangeRequest>>) =>
+        P.recoverChangeRequest(projectId, ...args),
       /** One page of the inbox. Walk the rest with `next_cursor` → `cursor`. */
       list: (params?: Parameters<typeof P.listReviewItems>[1]) =>
         P.listReviewItems(projectId, params),

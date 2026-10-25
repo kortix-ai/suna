@@ -57,8 +57,8 @@ describe('paginateReleases', () => {
     expect(paginateReleases([], 1).items).toEqual([]);
   });
 
-  test('page 1 is the bare /changelog URL', () => {
-    expect(changelogPageHref(1)).toBe('/changelog');
-    expect(changelogPageHref(3)).toBe('/changelog/page/3');
+  test('page 1 is the bare /changelog/releases URL', () => {
+    expect(changelogPageHref(1)).toBe('/changelog/releases');
+    expect(changelogPageHref(3)).toBe('/changelog/releases/page/3');
   });
 });

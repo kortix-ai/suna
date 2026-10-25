@@ -5,7 +5,7 @@ import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { MARKETING_CONTAINER, Section } from '@/features/marketing/kit/section';
 import { SectionHeading } from '@/features/marketing/kit/section-heading';
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import Link from '@/components/site-link';
 import { useState, type ReactNode } from 'react';
 import { ApplyModal } from './apply-modal';

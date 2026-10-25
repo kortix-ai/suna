@@ -1203,8 +1203,12 @@
     "stopNotAllowed": "Solo il membro che ha avviato questa esecuzione, il proprietario della sessione o un gestore del progetto può interromperla."
   },
   "genui": {
+    "call": "Chiama",
     "chartTapHint": "Tocca per leggere un valore",
     "checklistReady": "{{done}}/{{total}} pronti",
+    "directions": "Indicazioni",
+    "imageCount_one": "{{count}} immagine",
+    "imageCount_other": "{{count}} immagini",
     "map": "Mappa",
     "mapUnavailable": "Mappa non disponibile",
     "openImage": "Apri immagine",
@@ -1212,7 +1216,9 @@
     "pick": "Consigliato",
     "pieFocus": "{{label}} è il {{percent}}% del totale",
     "pieOfTotal": "{{value}} su {{total}}",
-    "showData": "Mostra dati"
+    "showData": "Mostra dati",
+    "unavailable": "Impossibile visualizzare questo contenuto.",
+    "website": "Sito web"
   },
   "updateRequired": {
     "title": "Aggiornamento necessario",
@@ -1246,6 +1252,9 @@
     "expiredBody": "Chiedi alla persona che ti ha invitato di inviarne uno nuovo.",
     "wrongAccountTitle": "Cambia account",
     "wrongAccountBody": "Questo invito è indirizzato a un altro account. Hai effettuato l'accesso come {{email}}.",
+    "directoryTitle": "Accedi con il single sign-on",
+    "directoryBody": "La directory della tua organizzazione ti ha aggiunto a questo account. Apri questo invito in un browser e accedi con il single sign-on della tua organizzazione, oppure chiedi a un amministratore dell'account di inviare di nuovo l'invito.",
+    "ssoDomainUnverifiedBody": "Il tuo provider di single sign-on non ha verificato il dominio di questa email. Esci e accedi di nuovo con il tuo indirizzo email per usare questo invito.",
     "signOutAndContinue": "Esci e continua",
     "backToProjects": "Torna ai progetti"
   },

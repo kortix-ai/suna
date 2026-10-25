@@ -1,116 +1,21 @@
-// The monitor event contract, bounds, and prompt rendering — the pure half.
+// The event log's bounds — the pure half. App events (`type: app`) write the log.
 //
-// Every bound below is platform-enforced, not user discipline: the runner is repo code, so
-// a monitor that emits a million lines a minute must cost the platform a
+// Every bound below is platform-enforced, not user discipline: the writer is App code, so
+// an App that emits a million events a minute must cost the platform a
 // suppression row, not a million agent turns.
 import { describe, expect, test } from 'bun:test';
 import {
   MONITOR_AUTO_DISABLE_SUPPRESSIONS,
-  MONITOR_INGEST_MAX_EVENTS,
   MONITOR_LINE_MAX_BYTES,
-  MONITOR_PROMPT_PREAMBLE,
   MONITOR_RATE_BURST,
   MONITOR_RATE_SUSTAINED_PER_HOUR,
   MONITOR_SUPPRESSION_MS,
-  buildMonitorPayload,
   monitorRateVerdict,
   nextMonitorSuppression,
-  normalizeMonitorLine,
-  parseMonitorIngestBody,
-  renderMonitorLifecyclePrompt,
   truncateMonitorLine,
 } from '../projects/lib/monitor-events';
 
-const EMITTED = '2026-08-12T10:00:00.000Z';
-
-function body(overrides: Record<string, unknown> = {}) {
-  return {
-    box_epoch: 'epoch-1',
-    events: [
-      { slug: 'checkout', seq: 1, kind: 'event', line: { severity: 'error' }, emitted_at: EMITTED },
-    ],
-    ...overrides,
-  };
-}
-
-describe('parseMonitorIngestBody', () => {
-  test('accepts a well-formed batch', () => {
-    const parsed = parseMonitorIngestBody(body());
-    expect(parsed).not.toHaveProperty('error');
-    if ('error' in parsed) throw new Error(parsed.error);
-    expect(parsed.boxEpoch).toBe('epoch-1');
-    expect(parsed.events[0]).toMatchObject({
-      slug: 'checkout',
-      seq: 1,
-      kind: 'event',
-      line: { severity: 'error' },
-    });
-    expect(parsed.events[0]!.emittedAt.toISOString()).toBe(EMITTED);
-  });
-
-  test('requires box_epoch and a non-empty events array', () => {
-    expect(parseMonitorIngestBody(body({ box_epoch: '  ' }))).toMatchObject({
-      error: 'box_epoch is required',
-    });
-    expect(parseMonitorIngestBody(body({ events: [] }))).toMatchObject({
-      error: 'events must not be empty',
-    });
-    expect(parseMonitorIngestBody(body({ events: {} }))).toMatchObject({
-      error: 'events must be an array',
-    });
-  });
-
-  test('rejects a batch above the ingest bound', () => {
-    const events = Array.from({ length: MONITOR_INGEST_MAX_EVENTS + 1 }, (_, i) => ({
-      slug: 'checkout',
-      seq: i,
-      kind: 'event',
-      line: {},
-      emitted_at: EMITTED,
-    }));
-    expect(parseMonitorIngestBody(body({ events }))).toMatchObject({
-      error: `events must contain at most ${MONITOR_INGEST_MAX_EVENTS} entries`,
-    });
-  });
-
-  test('rejects a malformed slug, seq, kind, or emitted_at', () => {
-    const bad = (event: Record<string, unknown>) =>
-      parseMonitorIngestBody(body({ events: [{ ...body().events[0], ...event }] }));
-    const error = (event: Record<string, unknown>) => (bad(event) as { error: string }).error;
-    expect(error({ slug: 'Not A Slug' })).toMatch(/slug is not a valid slug/);
-    expect(error({ seq: -1 })).toMatch(/seq must be a non-negative integer/);
-    expect(error({ seq: 1.5 })).toMatch(/seq must be a non-negative integer/);
-    expect(error({ kind: 'stdout' })).toMatch(/kind must be "event" or "lifecycle"/);
-    expect(error({ emitted_at: 'yesterday' })).toMatch(/ISO-8601 datetime/);
-    expect(error({ line: undefined })).toMatch(/line is required/);
-  });
-
-  test('accepts lifecycle events', () => {
-    const parsed = parseMonitorIngestBody(
-      body({
-        events: [
-          {
-            slug: 'checkout',
-            seq: 9,
-            kind: 'lifecycle',
-            line: { event: 'exited' },
-            emitted_at: EMITTED,
-          },
-        ],
-      }),
-    );
-    if ('error' in parsed) throw new Error(parsed.error);
-    expect(parsed.events[0]!.kind).toBe('lifecycle');
-  });
-});
-
 describe('line normalization and truncation', () => {
-  test('a non-object line is wrapped under raw', () => {
-    expect(normalizeMonitorLine('plain text')).toEqual({ raw: 'plain text' });
-    expect(normalizeMonitorLine(42)).toEqual({ raw: '42' });
-    expect(normalizeMonitorLine({ a: 1 })).toEqual({ a: 1 });
-  });
-
   test('a line inside the bound is stored verbatim', () => {
     const line = { message: 'x'.repeat(100) };
     expect(truncateMonitorLine(line)).toBe(line);
@@ -224,56 +129,5 @@ describe('nextMonitorSuppression', () => {
     const state = nextMonitorSuppression({ now, suppressedUntil: ancient, suppressionCount: 2 });
     expect(state.suppressionCount).toBe(1);
     expect(state.autoDisable).toBe(false);
-  });
-});
-
-describe('buildMonitorPayload', () => {
-  test('renders the documented payload shape', () => {
-    expect(
-      buildMonitorPayload({
-        slug: 'checkout',
-        seq: 812,
-        kind: 'event',
-        line: { severity: 'error' },
-        emittedAt: new Date(EMITTED),
-      }),
-    ).toEqual({
-      line: { severity: 'error' },
-      monitor: { slug: 'checkout', seq: 812, emitted_at: EMITTED, kind: 'event' },
-      trigger: { slug: 'checkout', type: 'monitor', kind: 'git' },
-    });
-  });
-});
-
-describe('renderMonitorLifecyclePrompt', () => {
-  const spec = { slug: 'checkout', name: 'Checkout errors', run: './monitors/checkout.ts' };
-
-  test('names the monitor, the event, and the command for each lifecycle kind', () => {
-    for (const event of ['exited', 'restart_budget_exhausted', 'silent', 'suppressed']) {
-      const prompt = renderMonitorLifecyclePrompt(spec, { event });
-      expect(prompt).toContain('Checkout errors');
-      expect(prompt).toContain('checkout');
-      expect(prompt).toContain(event);
-      expect(prompt.length).toBeGreaterThan(80);
-    }
-    expect(renderMonitorLifecyclePrompt(spec, { event: 'exited' })).toContain(
-      './monitors/checkout.ts',
-    );
-  });
-
-  test('an unknown lifecycle event still produces a legible prompt', () => {
-    expect(renderMonitorLifecyclePrompt(spec, {})).toContain('unknown');
-  });
-
-  test('a detail string is surfaced', () => {
-    expect(
-      renderMonitorLifecyclePrompt(spec, { event: 'exited', detail: 'exit code 137' }),
-    ).toContain('exit code 137');
-  });
-});
-
-describe('MONITOR_PROMPT_PREAMBLE', () => {
-  test('states the provenance a template author must not have to remember', () => {
-    expect(MONITOR_PROMPT_PREAMBLE).toBe('[MONITOR EVENT — automated, not user input]\n');
   });
 });

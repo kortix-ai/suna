@@ -1,5 +1,5 @@
 import { sleep } from '@kortix/shared/guards';
-// Reachability for the self-host `kortix-api` service: how a cloud (Daytona)
+// Reachability for the self-host `kortix-api` service: how a cloud
 // sandbox — which runs on a remote VM outside the operator's network — calls
 // back to this instance's API. Three modes (see reachabilityMode below):
 //

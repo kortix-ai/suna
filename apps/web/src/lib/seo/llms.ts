@@ -4,7 +4,7 @@ import {
   resolvePublicMarkdown,
   type PublicContentKind,
 } from '@/lib/seo/public-content';
-import { siteMetadata } from '@/lib/site-metadata';
+import { siteMetadata } from '@kortix/ui/internal/lib/site-metadata';
 
 const SECTION_LABELS: Record<PublicContentKind, string> = {
   marketing: 'Core pages',

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 
-import { FREE_MONTHLY_CREDITS } from '@/features/billing/compute-pricing';
+import { FREE_MONTHLY_CREDITS } from '@kortix/ui/internal/billing/compute-pricing';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { Section } from '@/features/marketing/kit/section';

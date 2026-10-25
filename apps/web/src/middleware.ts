@@ -5,7 +5,8 @@ import {
   deriveEnvironmentAccessCookie,
   ENVIRONMENT_ACCESS_COOKIE,
 } from '@/lib/environment-protection';
-import { legalTermsRedirectUrl } from '@/lib/legal-terms-redirect';
+import { legalShortPathRedirectUrl, legalTermsRedirectUrl } from '@/lib/legal-terms-redirect';
+import { canonicalPublicPath } from '@/lib/canonical-public-path';
 import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import {
@@ -16,7 +17,7 @@ import {
   PROJECT_LANDING_PATH,
   resolveDefaultLandingPath,
   serializeAuthBounce,
-} from '@/lib/onboarding/landing-destination';
+} from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import {
   cookieIdentityPlan,
@@ -55,6 +56,7 @@ const MARKETING_ROUTES = [
   '/security',
   '/self-hosted',
   '/use-cases',
+  '/white-label',
 ];
 
 // Pure marketing/promo routes that a self-host with the landing page disabled
@@ -74,7 +76,48 @@ const SELF_HOST_MARKETING_ONLY = [
   '/pricing',
   '/use-cases',
   '/security',
+  '/white-label',
 ];
+
+// Top-level segments that render the signed-in app. Anonymous traffic to one
+// of these is bounced to /auth; anonymous traffic to anything else falls
+// through to the localized catch-all and gets a real 404. Without this list,
+// EVERY unknown URL (`/privacy`, `/status`, a typo'd marketing link) was
+// answered with a 307 to /auth, so a crawler and a human both saw a sign-in
+// screen for a page that does not exist (pentest 2026-10-22). Adding an app
+// route means adding its segment here; it only affects signed-out visitors.
+const PROTECTED_APP_PREFIXES = [
+  '/a1o',
+  '/admin',
+  '/approve',
+  '/capture',
+  '/checkout',
+  '/cli',
+  '/connections',
+  '/debug',
+  '/github',
+  '/oauth',
+  '/preview',
+  '/slack',
+  '/teams',
+  '/tunnel',
+  '/game-of-life',
+  '/invites',
+  '/maintenance',
+  '/new',
+  '/p',
+  '/presentations',
+  '/projects',
+  '/rauch',
+  '/settings',
+  '/setup',
+];
+
+function isProtectedAppPath(pathname: string): boolean {
+  return PROTECTED_APP_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+}
 
 // Routes that don't require authentication
 const PUBLIC_ROUTES = [
@@ -96,6 +139,7 @@ const PUBLIC_ROUTES = [
   '/docs', // Product documentation (Fumadocs) should be public
   '/about', // About page should be public
   '/self-hosted', // marketing page should be public
+  '/white-label', // marketing page should be public
   '/careers', // Careers page should be public
   '/changelog', // Public release notes (sourced from GitHub Releases)
   '/install',
@@ -184,6 +228,15 @@ const DESKTOP_ALLOWED_ROUTES = [
   '/debug',
 ];
 
+function isDecodablePath(pathname: string): boolean {
+  try {
+    decodeURIComponent(pathname);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function middleware(request: NextRequest) {
   let { pathname } = request.nextUrl;
   // These are probes for server files, not product routes. A plain response also
@@ -191,14 +244,22 @@ export async function middleware(request: NextRequest) {
   if (/^\/(?:\.env(?:[./]|$)|\.git(?:\/|$)|package\.json$|etc\/passwd$)/i.test(pathname)) {
     return new NextResponse('Not found', { status: 404 });
   }
+  // A path whose percent-encoding does not decode (`/%ff`, an overlong
+  // `/%c0%af`) matches no route. The router answered it with a bare 500 or a
+  // 200 "Page not found" page (KRTX-3239).
+  if (!isDecodablePath(pathname)) {
+    return new NextResponse('Bad request', { status: 400 });
+  }
 
   // Dev and staging run behind one shared HTTP Basic credential. Read through
   // dynamic keys so the standalone container uses ECS runtime values instead of
   // build-time replacements. The gate fails closed when enabled without a secret.
   const protectionEnabled = Reflect.get(process.env, 'WEB_PROTECTION_ENABLED') as
-    string | undefined;
+    | string
+    | undefined;
   const protectionPassword = Reflect.get(process.env, 'WEB_PROTECTION_PASSWORD') as
-    string | undefined;
+    | string
+    | undefined;
   const authorization = request.headers.get('authorization');
   const accessCookie = request.cookies.get(ENVIRONMENT_ACCESS_COOKIE)?.value;
   const expectedAccessCookie =
@@ -355,14 +416,30 @@ export async function middleware(request: NextRequest) {
   if (termsDestination) {
     return finalizeEnvironmentAccess(NextResponse.redirect(termsDestination, 308));
   }
+  // /privacy, /terms, /imprint, /subprocessors (and each locale prefix) were
+  // 200 "Page not found" pages; each is a real legal page (KRTX-3256).
+  const legalDestination = legalShortPathRedirectUrl(pathname, request.nextUrl.searchParams, request.nextUrl);
+  if (legalDestination) {
+    return finalizeEnvironmentAccess(NextResponse.redirect(legalDestination, 308));
+  }
+  // /Pricing, /DOCS, /DE/Pricing: a public page in another letter case was a
+  // 200 "Page not found" page (KRTX-3312). /pricing/ was a 200 duplicate of
+  // /pricing (KRTX-3234).
+  const canonicalPath = canonicalPublicPath(pathname, [...MARKETING_ROUTES, '/docs'], locales);
+  if (canonicalPath) {
+    // A plain URL: a NextURL clone re-adds the request's trailing slash, and
+    // /pricing/ would redirect to itself.
+    const destination = new URL(request.url);
+    destination.pathname = canonicalPath;
+    return finalizeEnvironmentAccess(NextResponse.redirect(destination, 308));
+  }
 
   // Normalize app paths before maintenance, desktop and authentication gates.
   const pathSegments = pathname.split('/').filter(Boolean);
   const explicitLocale = locales.find((locale) => locale === pathSegments[0]);
   const remainingPath = '/' + pathSegments.slice(1).join('/');
   const isRemainingPathMarketing = MARKETING_ROUTES.some(
-    (route) => remainingPath === route ||
-      (route !== '/' && remainingPath.startsWith(route + '/')),
+    (route) => remainingPath === route || (route !== '/' && remainingPath.startsWith(route + '/')),
   );
   if (explicitLocale && !isRemainingPathMarketing) pathname = remainingPath;
 
@@ -742,6 +819,12 @@ export async function middleware(request: NextRequest) {
   try {
     // Redirect to auth if not authenticated (using the user we already fetched)
     if (authError || !user) {
+      // A URL that is not an app page and not public (a typo, a retired
+      // marketing page) is not a reason to ask for a sign-in: render the
+      // localized 404 instead of a 307 to /auth.
+      if (!isProtectedAppPath(pathname)) {
+        return finalizeEnvironmentAccess(rewriteToLocale(cookieLocale(), supabaseResponse));
+      }
       const url = request.nextUrl.clone();
       url.pathname = '/auth';
       const redirectTarget = `${pathname}${request.nextUrl.search || ''}`;

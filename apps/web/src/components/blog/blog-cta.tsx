@@ -1,11 +1,11 @@
 'use client';
 
-import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
+import { HoverPrefetchLink } from '@kortix/ui/internal/components/hover-prefetch-link';
 import { Button } from '@/components/ui/marketing/button';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
+import { latestProjectPath } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
 import { ArrowRightIcon as HiArrowRight } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';

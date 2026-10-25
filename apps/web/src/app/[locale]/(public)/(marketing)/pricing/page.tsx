@@ -15,20 +15,20 @@ import {
   monthlyCreditsForUsd,
   PLATFORM_FEE_PERCENT,
   TOP_UP_BONUS_STEPS,
-} from '@/features/billing/compute-pricing';
+} from '@kortix/ui/internal/billing/compute-pricing';
 import type { PricingPlan, PricingPlanId } from '@/features/billing/pricing-plans';
 import { usePricingPlans } from '@/features/billing/use-pricing-plans';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
-import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
+import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
 import { useEnglishOnly } from '@/features/marketing/kit/english-only';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { splitTitle } from '@/features/marketing/kit/blocks';
 import { WorksWithStrip } from '@/features/marketing/landing-sections/works-with-strip';
 import { CreditLadder } from '@/features/marketing/pricing/credit-ladder';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { MinusIcon, PlusIcon } from '@phosphor-icons/react';
 import { Fragment, useState, type ReactNode } from 'react';
 

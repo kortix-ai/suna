@@ -1,20 +1,11 @@
-'use client';
+import { redirect } from 'next/navigation';
 
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
-
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 
 /**
  * /setup redirects into the repo-first project shell. Setup now happens from
  * account and project settings rather than the legacy dashboard workspace.
  */
 export default function SetupPage() {
-  const router = useRouter();
-
-  useEffect(() => {
-    router.replace(PROJECT_LANDING_PATH);
-  }, [router]);
-
-  return null;
+  redirect(PROJECT_LANDING_PATH);
 }

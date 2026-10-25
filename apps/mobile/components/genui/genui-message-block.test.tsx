@@ -39,10 +39,13 @@ mock.module('react-native-svg', () => ({ default: host('svg'), G: host('svg-g'),
 mock.module('expo-router/react-navigation', () => ({ DefaultTheme: {}, DarkTheme: {} }));
 mock.module('nativewind', () => ({ useColorScheme: () => ({ colorScheme: 'light' }) }));
 /** i18next's two call shapes: `t(key, fallback)` and `t(key, { defaultValue, ...values })`. */
-const translate = (_key: string, options: string | Record<string, unknown>) =>
-  typeof options === 'string'
+const translated: { key: string; options: string | Record<string, unknown> }[] = [];
+const translate = (key: string, options: string | Record<string, unknown>) => {
+  translated.push({ key, options });
+  return typeof options === 'string'
     ? options
     : String(options.defaultValue).replace(/{{(\w+)}}/g, (_m, name: string) => String(options[name]));
+};
 mock.module('react-i18next', () => ({ useTranslation: () => ({ t: translate, i18n: { language: 'en' } }) }));
 mock.module('@/components/ui/text', () => ({ Text: host('text') }));
 mock.module('@/components/ui/badge', () => ({ Badge: host('badge') }));
@@ -61,7 +64,13 @@ mock.module('@/components/kortix/kortix-loader', () => ({ KortixLoader: host('lo
 mock.module('@/components/kortix/settings-list', () => ({ SettingsGroup: host('settings-group'), SettingsRow: host('settings-row') }));
 mock.module('./map/map-sheet', () => ({ MapSheet: host('map-sheet') }));
 // The Map module loads native modules (clipboard, sheet); genui-map.test.tsx renders it.
-mock.module('./components/map', () => ({ GenuiMap: host('genui-map') }));
+const mapThrows = { on: false };
+mock.module('./components/map', () => ({
+  GenuiMap: (props: HostProps) => {
+    if (mapThrows.on) throw new Error('map failed');
+    return host('genui-map')(props);
+  },
+}));
 // The chart's Show data sheet loads gorhom and Reanimated internals; components/charts.test.tsx covers it.
 mock.module('@/components/kortix/sheet', () => ({ KortixBottomSheetModal: host('sheet') }));
 mock.module('@gorhom/bottom-sheet', () => ({ BottomSheetScrollView: host('sheet-scroll') }));
@@ -99,6 +108,8 @@ afterEach(() => {
   act(() => tree?.unmount());
   tree = undefined;
   opened.length = 0;
+  translated.length = 0;
+  mapThrows.on = false;
   motion.reduced = false;
   motion.timings.length = 0;
   act(() => {
@@ -280,16 +291,37 @@ b = RankedItem("Option B", "Quietest")`);
     expect(opened).toEqual(['https://example.com/a']);
   });
 
-  test('a ranked list shows just the data, no rank numbers; #1 leads with the larger title', () => {
+  test('a ranked list shows each rank as a mono number in a fixed right-aligned lane; #1 leads with the larger title and ink', () => {
     const ids = Array.from({ length: 10 }, (_, i) => `r${i + 1}`);
     const root = render(
       [`root = Stack([list])`, `list = RankedList([${ids.join(', ')}])`, ...ids.map((id, i) => `${id} = RankedItem("Option ${i + 1}", "Reason")`)].join('\n'),
     );
-    expect(all(root, 'text').filter((n) => /^\d+$/.test(texts(n).join('')))).toHaveLength(0);
+    const ranks = all(root, 'text').filter((n) => /^\d+$/.test(texts(n).join('')));
+    expect(ranks.map((n) => texts(n).join(''))).toEqual(ids.map((_, i) => String(i + 1)));
+    // A fixed lane, so "10" lines up with "9"; its line box matches the title's, so it sits on the title's baseline.
+    for (const rank of ranks) expect(className(rank)).toEqual(expect.stringContaining('w-5 shrink-0 text-right font-mono text-xs tabular-nums'));
+    expect(className(ranks[0]!)).toContain('text-foreground font-medium leading-6');
+    expect(className(ranks[1]!)).toContain('text-muted-foreground leading-5');
     const titles = all(root, 'text').filter((n) => texts(n).join('').startsWith('Option '));
     expect(titles).toHaveLength(10);
     expect(className(titles[0]!)).toContain('text-lg');
     expect(className(titles[1]!)).not.toContain('text-lg');
+    // Each rank is its own card, with a gap between: no hairlines.
+    expect(all(root, 'separator')).toHaveLength(0);
+    expect(all(root, 'view').filter((n) => className(n).includes('rounded-2xl bg-card'))).toHaveLength(10);
+  });
+
+  test('a ranked item photo fills its 40pt box, with no outline, in compact mode', () => {
+    const root = render(`root = Stack([list])
+list = RankedList([a, b])
+a = RankedItem("Option A", "Closest", null, "https://example.com/a.jpg")
+b = RankedItem("Option B", "Quietest")`);
+    const images = all(root, 'markdown-image');
+    expect(images).toHaveLength(1);
+    expect(images[0]!.props).toMatchObject({ src: 'https://example.com/a.jpg', alt: '', fixedHeight: 40, look: { bare: true, resizeMode: 'cover', compact: true } });
+    // The rank lane comes first, then the photo.
+    const row = all(root, 'view').find((n) => className(n).includes('flex-row') && all(n, 'markdown-image').length === 1 && texts(n).includes('Option A'))!;
+    expect(texts(row)[0]).toBe('1');
   });
 
   test('links and linked cards open through the markdown link opener', () => {
@@ -326,7 +358,7 @@ c = Callout("success", "C")`);
     expect(tints.map((c) => c.match(/bg-kortix-\w+\/15/)![0])).toEqual(['bg-kortix-blue/15', 'bg-kortix-orange/15', 'bg-kortix-green/15']);
   });
 
-  test('badges follow Paper Badge 01: the tone paints the /15 tint and the label; neutral is the secondary well', () => {
+  test('badges: the tone paints the /15 tint only, the label stays ink (AA on every tint); neutral is the secondary well', () => {
     const root = render(`root = Stack([bad, good, warn, plain])
 bad = Badge("Sold out", "bad")
 good = Badge("Top pick", "good")
@@ -343,11 +375,12 @@ plain = Badge("Hotel")`);
       'bg-secondary',
     ]);
     expect(found.map((chip) => className(chip.label).match(/text-[\w-]+/)![0])).toEqual([
-      'text-kortix-red',
-      'text-kortix-green',
-      'text-kortix-orange',
+      'text-foreground',
+      'text-foreground',
+      'text-foreground',
       'text-foreground',
     ]);
+    for (const chip of found) expect(className(chip.label)).not.toMatch(/text-kortix-/);
     expect(all(root, 'badge')).toHaveLength(0);
   });
 
@@ -359,6 +392,14 @@ t = Table(["Region"], [["EU"]], "Seats by region")`);
     const title = all(root, 'text').find((n) => texts(n).join('') === 'Seats by region')!;
     expect(className(title)).toContain('font-medium');
     expect(flatten(title.props.style)).toMatchObject({ fontSize: 14, lineHeight: 20 });
+    // As web's aria-label: the caption names the table for a screen reader.
+    expect(all(root, 'view').filter((n) => n.props.accessibilityLabel === 'Seats by region')).toHaveLength(1);
+  });
+
+  test('a table with no caption has no accessibility label', () => {
+    const root = render(`root = Stack([t])
+t = Table(["Region"], [["EU"]])`);
+    expect(all(root, 'view').some((n) => n.props.accessibilityLabel !== undefined)).toBe(false);
   });
 
   test('an image sits in the dark letterbox well with its caption chip and an open button', () => {
@@ -385,6 +426,8 @@ pic = Image("https://example.com/venue.jpg", "Venue entrance", "The north door")
     const ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
     const root = render(`root = Stack([${ids.join(', ')}])\n${ids.map(img).join('\n')}`);
     const gallery = all(root, 'view').find((n) => n.props.accessibilityLabel === '7 images')!;
+    // The label is translated, with the count for the plural form.
+    expect(translated.find((call) => call.key === 'genui.imageCount')?.options).toMatchObject({ count: 7 });
     // Pages need the measured width before they exist.
     act(() => (gallery.props.onLayout as (e: unknown) => void)({ nativeEvent: { layout: { width: 320 } } }));
     const [pager] = all(root, 'scroll');
@@ -411,6 +454,22 @@ w = Badge("2 rooms left", "warn")`);
     expect(all(root, 'markdown-image')[0]!.props.fixedHeight).toBe(160);
   });
 
+  test('a single card shows rating, reviews and price on one line, a mono ink subtitle, and a covering photo with no outline', () => {
+    const root = render(`root = Card("Taj", "Sea-facing rooms.", "Colaba, South Mumbai", "https://example.com/taj.jpg", null, null, 4.7, 33899, "From 24,000 INR")`);
+    const shown = texts(root);
+    // As web's CardRating: ★ 4.7 (33,899) · price.
+    const at = shown.indexOf('4.7');
+    expect(shown.slice(at, at + 4)).toEqual(['4.7', '(33,899)', '·', 'From 24,000 INR']);
+    expect(all(root, 'icon').some((n) => n.props.as === 'star')).toBe(true);
+    const subtitle = all(root, 'text').find((n) => texts(n).join('') === 'Colaba, South Mumbai')!;
+    expect(className(subtitle)).toEqual(expect.stringContaining('font-mono'));
+    expect(className(subtitle)).toContain('text-xs');
+    expect(className(subtitle)).toContain('text-foreground');
+    expect(subtitle.props.variant).toBeUndefined();
+    const image = all(root, 'markdown-image')[0]!;
+    expect([image.props.fixedHeight, image.props.look?.resizeMode, image.props.look?.bare]).toEqual([160, 'cover', true]);
+  });
+
   test('two or more cards without a hint are a list: a 96pt thumbnail beside the title, rating, location, body, and tag pills', () => {
     const root = render(`root = Stack([a, b])
 a = Card("Python", "General-purpose.", "Language", "https://example.com/python.png", "https://python.org", [t, g], 4.7, 1200, "Free")
@@ -421,22 +480,46 @@ g = Badge("Best for a first project", "good")`);
     expect(thumbs).toHaveLength(1);
     const image = () => all(thumbs[0]!, 'markdown-image')[0]!;
     // Before it loads, the thumbnail is a photo: it fills the square, cropped.
-    expect([image().props.fixedHeight, image().props.look.resizeMode, image().props.look.bare]).toEqual([96, 'cover', true]);
+    expect([image().props.fixedHeight, image().props.look.resizeMode, image().props.look.bare, image().props.look.compact]).toEqual([96, 'cover', true, true]);
     expect(className(thumbs[0]!)).not.toContain('p-1.5');
+    // The subtitle is web's list subtitle: text-xs, muted.
+    const subtitle = all(root, 'text').find((n) => texts(n).join('') === 'Language')!;
+    expect(className(subtitle)).toEqual(expect.stringContaining('text-xs'));
+    expect(className(subtitle)).toContain('text-muted-foreground');
+    expect(subtitle.props.variant).toBeUndefined();
     // A narrow logo (under 240 px) sits whole inside a 6pt inset.
     act(() => (image().props.look.onSize as (w: number, h: number) => void)(200, 200));
     expect([image().props.fixedHeight, image().props.look.resizeMode]).toEqual([84, 'contain']);
     expect(className(thumbs[0]!)).toContain('p-1.5');
     expect(texts(root)).toEqual(expect.arrayContaining(['Python', '4.7', '(1,200)', 'Free', 'Language', 'General-purpose.', 'Popular', 'Go']));
-    // List tags are tone-dot pills on the secondary well, not a muted "A · B" line.
-    const pill = all(root, 'view').find((n) => className(n).includes('rounded-full px-2') && texts(n).join('') === 'Best for a first project')!;
-    expect(className(pill)).toContain('bg-secondary');
-    expect(all(pill, 'view').some((n) => className(n).includes('bg-kortix-green'))).toBe(true);
+    // The badges sit on the title row, top right, as secondary pills; not a muted "A · B" line, no tone dot.
+    const row = all(root, 'view').find((n) => className(n).includes('justify-between') && texts(n).includes('Python'))!;
+    const pills = all(row, 'view').filter((n) => className(n).includes('bg-foreground/10'));
+    expect(pills.map((n) => texts(n).join(''))).toEqual(['Popular', 'Best for a first project']);
+    expect(all(root, 'view').some((n) => /bg-kortix-\w+$|bg-kortix-\w+ /.test(className(n)))).toBe(false);
+    // Only the good pick leads with a gold star, at the label's size.
+    const stars = all(row, 'icon').filter((n) => n.props.as === 'star');
+    expect(stars).toHaveLength(1);
+    expect(all(pills[1]!, 'icon')).toEqual(stars);
+    expect([stars[0]!.props.weight, stars[0]!.props.size, className(stars[0]!)]).toEqual(['fill', 12, 'text-kortix-yellow']);
     expect(texts(root)).not.toContain('Popular · Best for a first project');
-    expect(all(root, 'separator')).toHaveLength(1);
+    // Each option is its own card, with a gap between: no hairlines.
+    expect(all(root, 'separator')).toHaveLength(0);
+    expect(all(root, 'pressable').filter((n) => className(n).includes('rounded-2xl bg-card'))).toHaveLength(2);
     const link = all(root, 'pressable').find((n) => n.props.accessibilityRole === 'link')!;
     act(() => (link.props.onPress as () => void)());
     expect(opened).toEqual(['https://python.org/']);
+  });
+
+  test('a list thumbnail that fails to load drops its box, as on web', () => {
+    const root = render(`root = Stack([a, b])
+a = Card("Python", null, null, "https://example.com/python.png")
+b = Card("Go", null, null, "https://example.com/go.png")`);
+    expect(all(root, 'view').filter((n) => n.props.style?.width === 96)).toHaveLength(2);
+    act(() => (all(root, 'markdown-image')[0]!.props.look.onError as () => void)());
+    expect(all(root, 'view').filter((n) => n.props.style?.width === 96)).toHaveLength(1);
+    expect(all(root, 'markdown-image').map((n) => n.props.src)).toEqual(['https://example.com/go.png']);
+    expect(texts(root)).toEqual(expect.arrayContaining(['Python', 'Go']));
   });
 
   test('cards switch to the grid once most loaded images prove to be photos; logos keep the list', () => {
@@ -605,7 +688,7 @@ s3 = Step("Airport One", "Check in and board.")`);
     // The row without a photo fills the same 96pt tile with its number, so every row has the same thumbnail.
     expect(tiles).toHaveLength(3);
     expect(texts(tiles[2]!)).toEqual(['3']);
-    expect(all(photos[0]!, 'markdown-image')[0]!.props).toMatchObject({ src: 'https://example.com/station.jpg', alt: '', fixedHeight: 96, look: { bare: true, resizeMode: 'cover' } });
+    expect(all(photos[0]!, 'markdown-image')[0]!.props).toMatchObject({ src: 'https://example.com/station.jpg', alt: '', fixedHeight: 96, look: { bare: true, resizeMode: 'cover', compact: true } });
     // The row without a photo shows its number on the same 96pt rail.
     const rails = all(root, 'view').filter((n) => className(n) === 'items-center');
     expect(rails.map((n) => n.props.style.width)).toEqual([96, 96, 96]);
@@ -711,13 +794,74 @@ list = Checklist("Bring", ["Passport", "Visa"])`;
     }
   });
 
+  describe('block error boundary', () => {
+    const MAP = `root = Stack([m])
+m = Map([a], "places tool")
+a = Marker(19.04, 72.82, "Place A")`;
+    const BADGE = `root = Stack([b])
+b = Badge("Sibling")`;
+    /** React logs every caught render error; the throws here are the point of the test. */
+    const quiet = <T,>(run: () => T): T => {
+      const original = console.error;
+      console.error = () => {};
+      try {
+        return run();
+      } finally {
+        console.error = original;
+      }
+    };
+    const failing = () => {
+      throw new Error('markdown failed');
+    };
+    const two = (first: string, renderFirst: (markdown: string) => React.ReactNode) => (
+      <>
+        <GenuiMessageBlock code={first} version={1} isStreaming={false} renderMarkdown={renderFirst} />
+        <GenuiMessageBlock code={BADGE} version={1} isStreaming={false} renderMarkdown={fallback} />
+      </>
+    );
+    const notes = (root: ReactTestInstance) =>
+      all(root, 'text').filter((n) => texts(n).join('') === 'This content could not be displayed.');
+
+    test('a throw the SDK cannot contain shows the muted note for that block only; the sibling block still renders', () => {
+      mapThrows.on = true;
+      quiet(() => act(() => void (tree = create(two(MAP, failing)))));
+      const [note] = notes(tree!.root);
+      expect(note).toBeDefined();
+      expect(note!.props.variant).toBe('muted');
+      expect(translated.some((call) => call.key === 'genui.unavailable')).toBe(true);
+      expect(texts(tree!.root)).toContain('Sibling');
+    });
+
+    test('a throwing component falls back inside the SDK to its markdown; the sibling block still renders', () => {
+      mapThrows.on = true;
+      quiet(() => act(() => void (tree = create(two(MAP, fallback)))));
+      expect(all(tree!.root, 'fallback')).toHaveLength(1);
+      expect(notes(tree!.root)).toHaveLength(0);
+      expect(texts(tree!.root)).toContain('Sibling');
+    });
+
+    test('the boundary resets when the block source changes', () => {
+      mapThrows.on = true;
+      quiet(() => act(() => void (tree = create(two(MAP, failing)))));
+      expect(notes(tree!.root)).toHaveLength(1);
+      act(() => tree!.update(two(`root = Stack([b])\nb = Badge("Fixed")`, failing)));
+      expect(notes(tree!.root)).toHaveLength(0);
+      expect(texts(tree!.root)).toEqual(expect.arrayContaining(['Fixed', 'Sibling']));
+    });
+
+    test('a block keeps web my-4 spacing', () => {
+      const root = render(BADGE);
+      expect(className(all(root, 'view')[0]!)).toBe('my-4');
+    });
+  });
+
   // Chart behavior (header row, legend, Show data sheet, pie layouts) lives in components/charts.test.tsx.
   test('pending heavy nodes hold their final height with the Kortix loader; pending text nodes render nothing', () => {
     act(() => {
       tree = create(<>{GenuiPending({ id: 't', type: 'Table', props: {}, partial: true })}</>);
     });
     const box = all(tree!.root, 'view')[0]!;
-    expect(flatten(box.props.style).height).toBe(160);
+    expect(flatten(box.props.style).height).toBe(144);
     expect(all(tree!.root, 'loader')).toHaveLength(1);
     expect(GenuiPending({ id: 's', type: 'Stat', props: {}, partial: true })).toBeNull();
   });

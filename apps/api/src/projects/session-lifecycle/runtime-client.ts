@@ -8,6 +8,7 @@
 
 import { sessionAttachmentStore } from '../lib/session-attachments';
 import { stableSessionAttachmentId } from '../lib/session-attachment-identity';
+import { HTTPException } from 'hono/http-exception';
 import { PromptDeliveryRefused, throwIfPromptRefused } from './prompt-delivery-refusal';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
@@ -456,6 +457,7 @@ export async function retractStrandedMessage(
  * failure (no pin yet, sandbox unreachable, request timeout) fails OPEN —
  * returns false, i.e. delivers exactly as before this guard existed — so a
  * transient read failure never blocks a legitimate follow-up.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
  */
 export async function queuedContinueHasStagedRevert(row: SessionLifecycleCommandRow): Promise<boolean> {
   if (!row.sessionId) return false;
@@ -594,7 +596,10 @@ export async function readLegacyRuntimeMessage(
   return (await response.json()) as LegacyRuntimeMessage;
 }
 
-/** `unsupported` when the runtime edits no parts: `501` (pi). Any other refusal throws. */
+/**
+ * `unsupported` when the runtime edits no parts: `501` (pi). Any other refusal throws.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ */
 export async function updateLegacyRuntimePart(
   input: LegacyRuntimePartTarget & { messageId: string; partId: string; text: string },
 ): Promise<'updated' | 'unsupported'> {
@@ -847,6 +852,12 @@ export async function postPrompt(
     return 'failed';
   } catch (err) {
     if (err instanceof PromptDeliveryRefused || err instanceof SteerNotTaken) throw err;
+    // The proxy's access gates THROW their 403 instead of returning it. It is
+    // the same refusal as a returned 403, not a down box: classify it alike.
+    if (err instanceof HTTPException && err.status < 500) {
+      await throwIfPromptRefused(new Response(JSON.stringify({ message: err.message }), { status: err.status }));
+      return 'failed';
+    }
     // A connection refused/reset while the sandbox finishes resuming — treat as a
     // retryable miss (the deliver loop will heal + retry) instead of letting it
     // bubble up and silently drop the turn.

@@ -156,16 +156,11 @@ export function removeArrayBlock(
   const text = readManifestText(cwd);
   const lines = text.split('\n');
   const headerRe = new RegExp(`^\\s*\\[\\[\\s*${escapeRe(section)}\\s*\\]\\]\\s*$`);
-  const anyHeaderRe = /^\s*\[/;
   const fieldRe = new RegExp(`^\\s*${escapeRe(field)}\\s*=\\s*["']${escapeRe(value)}["']\\s*$`);
 
-  for (let i = 0; i < lines.length; i += 1) {
-    if (!headerRe.test(lines[i]!)) continue;
-    // Find the block extent.
-    let end = i + 1;
-    while (end < lines.length && !anyHeaderRe.test(lines[end]!)) end += 1;
-    const blockMatches = lines.slice(i, end).some((l) => fieldRe.test(l));
-    if (!blockMatches) continue;
+  const block = findTomlBlock(lines, headerRe, fieldRe);
+  if (block) {
+    const [i, end] = block;
     // Also swallow a single leading comment block + blank line that introduces it.
     let start = i;
     while (
@@ -206,25 +201,10 @@ export function setScalarInArrayBlock(
   const text = readManifestText(cwd);
   const lines = text.split('\n');
   const headerRe = new RegExp(`^\\s*\\[\\[\\s*${escapeRe(section)}\\s*\\]\\]\\s*$`);
-  const anyHeaderRe = /^\s*\[/;
   const idRe = new RegExp(`^\\s*${escapeRe(field)}\\s*=\\s*["']${escapeRe(idValue)}["']\\s*$`);
-  const keyRe = new RegExp(`^(\\s*)${escapeRe(key)}\\s*=`);
-  const rendered = `${key} = ${renderScalar(value)}`;
-
-  for (let i = 0; i < lines.length; i += 1) {
-    if (!headerRe.test(lines[i]!)) continue;
-    let end = i + 1;
-    while (end < lines.length && !anyHeaderRe.test(lines[end]!)) end += 1;
-    if (!lines.slice(i, end).some((l) => idRe.test(l))) continue;
-    for (let j = i + 1; j < end; j += 1) {
-      if (keyRe.test(lines[j]!)) {
-        lines[j] = lines[j]!.replace(/=.*/, `= ${renderScalar(value)}`);
-        writeManifestText(lines.join('\n'), cwd);
-        return true;
-      }
-    }
-    // Not present — insert right after the header.
-    lines.splice(i + 1, 0, rendered);
+  const block = findTomlBlock(lines, headerRe, idRe);
+  if (block) {
+    setTomlBlockScalar(lines, block, key, value);
     writeManifestText(lines.join('\n'), cwd);
     return true;
   }
@@ -248,27 +228,45 @@ export function setTableScalar(
   const text = readManifestText(cwd);
   const lines = text.split('\n');
   const headerRe = new RegExp(`^\\s*\\[\\s*${escapeRe(table)}\\s*\\]\\s*$`);
-  const anyHeaderRe = /^\s*\[/;
-  const keyRe = new RegExp(`^(\\s*)${escapeRe(key)}\\s*=`);
-
-  for (let i = 0; i < lines.length; i += 1) {
-    if (!headerRe.test(lines[i]!)) continue;
-    let end = i + 1;
-    while (end < lines.length && !anyHeaderRe.test(lines[end]!)) end += 1;
-    for (let j = i + 1; j < end; j += 1) {
-      if (keyRe.test(lines[j]!)) {
-        lines[j] = lines[j]!.replace(/=.*/, `= ${renderScalar(value)}`);
-        writeManifestText(lines.join('\n'), cwd);
-        return;
-      }
-    }
-    lines.splice(i + 1, 0, `${key} = ${renderScalar(value)}`);
+  const block = findTomlBlock(lines, headerRe);
+  if (block) {
+    setTomlBlockScalar(lines, block, key, value);
     writeManifestText(lines.join('\n'), cwd);
     return;
   }
   // No table yet — append one.
   const sep = text.endsWith('\n') ? '\n' : '\n\n';
   writeManifestText(`${text}${sep}[${table}]\n${key} = ${renderScalar(value)}\n`, cwd);
+}
+
+function findTomlBlock(lines: string[], headerRe: RegExp, idRe?: RegExp): [number, number] | undefined {
+  const anyHeaderRe = /^\s*\[/;
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!headerRe.test(lines[i]!)) continue;
+    // Find the block extent.
+    let end = i + 1;
+    while (end < lines.length && !anyHeaderRe.test(lines[end]!)) end += 1;
+    if (idRe && !lines.slice(i, end).some((l) => idRe.test(l))) continue;
+    return [i, end];
+  }
+}
+
+function setTomlBlockScalar(
+  lines: string[],
+  [i, end]: [number, number],
+  key: string,
+  value: string | number | boolean,
+): void {
+  const keyRe = new RegExp(`^(\\s*)${escapeRe(key)}\\s*=`);
+  const rendered = `${key} = ${renderScalar(value)}`;
+  for (let j = i + 1; j < end; j += 1) {
+    if (keyRe.test(lines[j]!)) {
+      lines[j] = lines[j]!.replace(/=.*/, `= ${renderScalar(value)}`);
+      return;
+    }
+  }
+  // Not present — insert right after the header.
+  lines.splice(i + 1, 0, rendered);
 }
 
 // ── serialization ───────────────────────────────────────────────────────────

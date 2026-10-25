@@ -45,6 +45,13 @@ test('notifications register and unregister a push device token', async () => {
   ]);
 });
 
+test('notifications.releaseDeviceToken POSTs the token to the public release route (KRTX-2242)', async () => {
+  await kortix.notifications.releaseDeviceToken('t');
+  expect(calls).toEqual([
+    { method: 'POST', url: 'http://test.local/v1/notifications/device-token/release', body: { device_token: 't' } },
+  ]);
+});
+
 test('notifications reach the inbox, preferences and Web Push routes (KRTX-1742)', async () => {
   const n = kortix.notifications;
   await n.list({ limit: 20 });

@@ -113,7 +113,10 @@ function registerOpenCodeStateReader(): void {
   })
 }
 
-/** Run the existing OpenCode cold/session boot behind the harness boundary. */
+/**
+ * Run the existing OpenCode cold/session boot behind the harness boundary.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export async function runOpenCode(context: HarnessBootContext & { cfg: Config; bootState: SandboxBootState }): Promise<void> {
   const { cfg, bootState, bootMark, serve } = context
   // FIRST THING, before anything spawns or binds: restore the config-affecting
@@ -489,18 +492,22 @@ function runDeferredHistoryBackfill(bootState: SandboxBootState): void {
  *   - diff the live managed set against the provider map OpenCode actually
  *     booted with;
  *   - only a genuinely MISSING managed id — the model that would answer
- *     `ModelNotFound` — buys one controlled restart. The bundled managed table
- *     ships with every release, so the common case is a no-op.
+ *     `ModelNotFound` — buys one controlled restart. A box whose baked catalog
+ *     already carries the lineup does nothing.
  *
  * Never restarts across a live turn: `opencodeTurnInFlight` treats "cannot
  * tell" as busy, and a cold box with no pin answers a definite `false` without
  * a request.
  */
-/** Test seam: re-arm the once-per-process guard. */
+/**
+ * Test seam: re-arm the once-per-process guard.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function resetManagedReconcileForTests(): void {
   managedReconcileRan = false
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function reconcileManagedModels(
   opencode: Opencode,
   cfg: Config,
@@ -523,7 +530,7 @@ export async function reconcileManagedModels(
     // so it is normally already settled when this runs.
     const live = await settleManagedModelsPrefetch()
     if (!live) {
-      logger.info('[boot] managed reconcile: no live managed set; bundled managed models stand', {
+      logger.info('[boot] managed reconcile: no live managed set; the baked catalog stands', {
         ms: Date.now() - startedAt,
       })
       return
@@ -942,17 +949,10 @@ async function startSessionRuntime(
 }
 
 
-/** Concrete session model from KORTIX_OPENCODE_MODEL.
- *
- * Gateway mode exposes one OpenCode provider (`kortix`). Its model ids are the
- * complete gateway wire refs, including nested refs such as
- * `codex/gpt-5.6-sol` and `anthropic/claude-sonnet-4-6`. Gateway overrides must
- * therefore keep the complete wire ref as `modelID` instead of treating its
- * first segment as an OpenCode provider.
- *
- * Gateway-disabled sessions keep the native `provider/model` split. Bare
- * legacy Zen ids remain normalized onto the native OpenCode provider. */
-/** Claim warm-seed boot before the host considers monitor or session mode. */
+/**
+ * Claim warm-seed boot before the host considers monitor or session mode.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export async function runOpenCodeWarmSeed(context: HarnessBootContext & { cfg: Config; bootState: SandboxBootState }): Promise<boolean> {
   if ((process.env.KORTIX_WARM_SEED ?? '').trim() !== '1') return false
   const { cfg, bootState, bootMark, serve } = context

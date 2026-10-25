@@ -12,7 +12,6 @@
  *
  * `switchPreflight(log, to, ctx)` is the report of a switch to `to`:
  * - `available` / `reason`: the switch can happen. `same_harness`: the log already runs on `to`.
- *   `llm_gateway_off`: pi has no model path without the project's `llm_gateway` flag.
  * - `restores`: the project's `session_log_restore` flag (and the operator switch) is on and the log is
  *   under the API's restore cap (`SESSION_LOG_RESTORE_MAX_BYTES`), so the new box restores the log.
  *   Otherwise the new box starts without the conversation, and `losses` starts with a `history` line
@@ -64,6 +63,7 @@ const OPENCODE_NATIVE: CapabilityFeatures = {
   reasoning_replay: 'lowers_to_text', // another model's reasoning is replayed as text
   freeform_tool_input: false,
 };
+/** @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
 export const OPENCODE_CAPABILITIES: AdapterCapabilities = {
   harness: 'opencode',
   harness_versions: '1.18.23',
@@ -95,8 +95,6 @@ const own = <T>(table: Record<string, T>, key: string): T | undefined => (Object
 
 /** What the API knows besides the log (`POST …/log/switch-preflight`). */
 export type SwitchContext = {
-  /** The project's `llm_gateway` flag: pi has no model path without it. */
-  llmGateway: boolean;
   /** The project's `session_log_restore` flag and the operator switch are on and the log is under the restore cap: the new box restores the log. */
   restore: boolean;
   /** Tombstoned messages: OpenCode deletes the messages a rewind reverts. */
@@ -174,7 +172,7 @@ export function switchPreflight(log: SessionLog, to: SessionLogHarness, ctx: Swi
 
   // No restore: the new box starts without the conversation, the largest loss of all.
   if (!ctx.restore && messages.length > 0) losses.unshift({ feature: 'history', used: messages.length, status: 'lost' });
-  const reason = from === to ? 'same_harness' : to === 'pi' && !ctx.llmGateway ? 'llm_gateway_off' : null;
+  const reason = from === to ? 'same_harness' : null;
   return { session_id: log.session_id, from, to, available: reason === null, reason, restores: ctx.restore, losses, unsupported };
 }
 

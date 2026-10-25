@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto';
-import { CRON_MIN_INTERVAL_SECONDS, cronIntervalError } from '@kortix/manifest-schema';
+import { CRON_MIN_INTERVAL_SECONDS, type TriggerFilter, cronIntervalError } from '@kortix/manifest-schema';
 import { Cron } from 'croner';
 
 export interface TriggerScheduleSpec {
   slug: string;
   /** `monitor` never schedules — `nextTriggerScheduleSlot` returns null for it,
    *  so the cron sweep's `trigger_type = 'cron'` claim can never see one. */
-  type: 'cron' | 'webhook' | 'monitor' | 'event';
+  type: 'cron' | 'webhook' | 'event' | 'app';
   enabled: boolean;
   cron: string | null;
   runAt: string | null;
@@ -17,18 +17,24 @@ export interface TriggerScheduleSpec {
   sessionMode: string;
   pinnedSessionId: string | null;
   sessionKey: string | null;
-  filter: Record<string, string> | null;
-  /** type=monitor only — see GitTriggerSpec. Absent for cron/webhook. */
-  run?: string | null;
-  monitorMode?: 'poll' | 'stream' | null;
-  intervalSeconds?: number | null;
-  expectEventWithinSeconds?: number | null;
+  filter: TriggerFilter | null;
   /** type=event only — see GitTriggerSpec. Absent for every other type. */
   event?: { connector: string; account?: string | null; source?: string | null; type: string; config: Record<string, unknown> } | null;
+  /** type=app only — see GitTriggerSpec.app. */
+  app?: string | null;
+  /** See GitTriggerSpec.target. */
+  target?: { app: string; path: string; method: 'POST' | 'GET'; payload?: Record<string, unknown> } | null;
+  /** type=cron only — see GitTriggerSpec.everySeconds. */
+  everySeconds?: number;
   /** Session reminder only — see GitTriggerSpec.reminder. */
   reminder?: { everySeconds: number | null } | null;
   /** type=cron only — see GitTriggerSpec.maxLatenessSeconds. */
   maxLatenessSeconds?: number;
+  /** Any type — see GitTriggerSpec.maxRunsPerHour / maxRunsPerDay. */
+  maxRunsPerHour?: number;
+  maxRunsPerDay?: number;
+  /** See GitTriggerSpec.overlap. */
+  overlap?: 'skip' | 'allow';
 }
 
 export function validateTriggerTimezone(timezone: string): string | null {
@@ -77,27 +83,23 @@ export function triggerScheduleRevision(spec: TriggerScheduleSpec): string {
     pinnedSessionId: spec.pinnedSessionId,
     sessionKey: spec.sessionKey,
     filter,
-    // Monitor fields join the hash ONLY for a monitor. Adding them
-    // unconditionally would change every existing cron/webhook revision on
-    // deploy, and a revision change re-upserts the catalog row — which
-    // recomputes `next_fire_at` and would re-arm every already-fired one-off
-    // `run_at` trigger in the fleet.
-    ...(spec.type === 'monitor'
-      ? {
-          run: spec.run ?? null,
-          monitorMode: spec.monitorMode ?? null,
-          intervalSeconds: spec.intervalSeconds ?? null,
-          expectEventWithinSeconds: spec.expectEventWithinSeconds ?? null,
-        }
-      : {}),
     // Same rule again: event fields join the hash only for an event trigger.
     // `source` joins the event only when set, so earlier event revisions stay put.
     ...(spec.type === 'event' ? { event: spec.event ? withSourceIfSet(spec.event) : null } : {}),
+    ...(spec.type === 'app' ? { app: spec.app ?? null } : {}),
+    // Joins only when set, like the fields below: a spec without a target keeps its revision.
+    ...(spec.target ? { target: spec.target } : {}),
+    ...(spec.everySeconds ? { everySeconds: spec.everySeconds } : {}),
     // Same rule as the monitor fields: absent for every manifest trigger.
     ...(spec.reminder ? { reminderEverySeconds: spec.reminder.everySeconds } : {}),
     // Joins only when set: the claim reads it from the stored spec, which is
     // rewritten only on a revision change. Unset keeps every revision put.
     ...(spec.maxLatenessSeconds ? { maxLatenessSeconds: spec.maxLatenessSeconds } : {}),
+    // Run caps (KRTX-1721): the same rule. Cron, event and monitor fires read
+    // them from the stored spec.
+    ...(spec.maxRunsPerHour ? { maxRunsPerHour: spec.maxRunsPerHour } : {}),
+    ...(spec.overlap ? { overlap: spec.overlap } : {}),
+    ...(spec.maxRunsPerDay ? { maxRunsPerDay: spec.maxRunsPerDay } : {}),
   };
   return createHash('sha256').update(JSON.stringify(scheduleConfig)).digest('hex');
 }
@@ -150,7 +152,7 @@ function cronJitterMs(cron: Cron, after: Date, key: string, windowMs: number): n
 }
 
 export function nextTriggerScheduleSlot(
-  spec: Pick<TriggerScheduleSpec, 'type' | 'enabled' | 'cron' | 'runAt' | 'timezone' | 'reminder'>,
+  spec: Pick<TriggerScheduleSpec, 'type' | 'enabled' | 'cron' | 'runAt' | 'timezone' | 'reminder' | 'everySeconds'>,
   after: Date,
   options: { includePastOneOff?: boolean; jitterKey?: string; jitterWindowMs?: number } = {},
 ): Date | null {
@@ -161,8 +163,8 @@ export function nextTriggerScheduleSlot(
     if (runAtMs > after.getTime()) return new Date(runAtMs);
     return options.includePastOneOff ? new Date(runAtMs) : null;
   }
-  // A reminder's period runs from the claim, so a missed slot never bunches up.
-  const everySeconds = spec.reminder?.everySeconds;
+  // An `every` period (a schedule's, or a reminder's) runs from the claim, so a missed slot never bunches up.
+  const everySeconds = spec.everySeconds ?? spec.reminder?.everySeconds;
   if (everySeconds) return new Date(after.getTime() + everySeconds * 1000);
   if (!spec.cron) return null;
   const error = validateTriggerCron(spec.cron, spec.timezone);

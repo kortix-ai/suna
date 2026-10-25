@@ -5,7 +5,7 @@ import {
   CREDIT_TIERS,
   formatWholeUsd,
   monthlyCreditsForUsd,
-} from '@/features/billing/compute-pricing';
+} from '@kortix/ui/internal/billing/compute-pricing';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { formatCredits } from '@kortix/shared';
 import { useRef, type KeyboardEvent, type PointerEvent } from 'react';

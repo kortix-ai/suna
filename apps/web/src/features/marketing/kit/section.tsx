@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 /**
  * The one marketing measure (Buio `max-w-340 px-4 lg:px-24`): a 1440px column,

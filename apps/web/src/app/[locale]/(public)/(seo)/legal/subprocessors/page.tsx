@@ -8,7 +8,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
+} from '@kortix/ui/table';
 import {
   formatSubprocessorDate,
   subprocessorEffectiveDate,
@@ -20,7 +20,7 @@ import {
 
 import { MARKETING_CONTAINER } from '@/features/marketing/kit/section';
 import { SectionHeading } from '@/features/marketing/kit/section-heading';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 export const metadata: Metadata = {
   title: 'Subprocessors',

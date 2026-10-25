@@ -49,6 +49,7 @@ export interface LegacyRehydrateSpec {
  * project's own `legacy_migration.source_sandbox_id`. Project metadata is not
  * client-writable; session metadata is, so any other session value is ignored
  * and the project value applies.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
  */
 export function legacyRehydrateSpec(
   sessionMetadata: Record<string, unknown> | null | undefined,
@@ -77,7 +78,9 @@ function firstString(...values: unknown[]): string | null {
 }
 
 /** Re-key every project/session row to the live workspace's opencode projectID
- *  and checkpoint the WAL so one self-contained file ships. */
+ *  and checkpoint the WAL so one self-contained file ships.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ */
 export function rekeyOpencodeDb(dbPath: string, newProjectId: string): { sessions: number } {
   const local = new Database(dbPath);
   try {
@@ -98,6 +101,7 @@ const RESOLVE_STORE_SH =
   'if [ -d /home/kortix ]; then DEST=/home/kortix/.local/share/opencode; OWNER=/home/kortix; ' +
   'else DEST=/opt/kortix/home/.local/share/opencode; OWNER=/opt/kortix/home; fi';
 
+/** @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
 export function buildRestoreScript(): string {
   return [
     RESOLVE_STORE_SH,
@@ -127,6 +131,7 @@ export interface RehydrateInput {
   spec: LegacyRehydrateSpec;
 }
 
+/** @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
 export async function rehydrateSessionChat(input: RehydrateInput): Promise<void> {
   const { sessionId, externalId, spec } = input;
   if (input.provider !== 'daytona') {
@@ -210,7 +215,9 @@ export async function rehydrateSessionChat(input: RehydrateInput): Promise<void>
 type DaytonaSandbox = Awaited<ReturnType<ReturnType<typeof getDaytona>['get']>>;
 
 /** Create a throwaway session for the workspace and return its projectID —
- *  doubles as an opencode-readiness probe. */
+ *  doubles as an opencode-readiness probe.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ */
 async function waitForOpencodeProjectId(
   sandbox: DaytonaSandbox,
   timeoutMs: number,

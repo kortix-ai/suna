@@ -1,9 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 
 import { locales } from '@/i18n/config';
-import { languageAlternates, localePath, marketingMetadata, metaDescription } from '@/lib/seo/metadata';
+import {
+  languageAlternates,
+  localePath,
+  marketingMetadata,
+  metaDescription,
+  openGraphLocales,
+} from '@/lib/seo/metadata';
 import { getPublicContentRecords } from '@/lib/seo/public-content';
-import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
+import { CANONICAL_ORIGIN } from '@kortix/ui/internal/lib/site-metadata';
 
 const marketingRecords = getPublicContentRecords({ includeUseCases: true }).filter(
   (record) => record.kind === 'marketing',
@@ -85,5 +91,24 @@ describe('metaDescription', () => {
       const description = marketingMetadata(record.htmlPath, record).description ?? '';
       expect(description.length, record.htmlPath).toBeLessThanOrEqual(155);
     }
+  });
+});
+
+// KRTX-3254: every localized page declared og:locale en_US, though its body
+// and hreflang set were translated.
+describe('openGraphLocales', () => {
+  test('names the page locale, and every other locale as an alternate', () => {
+    expect(openGraphLocales('en')).toEqual({
+      locale: 'en_US',
+      alternateLocale: ['de_DE', 'it_IT', 'zh_CN', 'ja_JP', 'pt_BR', 'fr_FR', 'es_ES', 'sr_RS'],
+    });
+    expect(openGraphLocales('de').locale).toBe('de_DE');
+    expect(openGraphLocales('de').alternateLocale).not.toContain('de_DE');
+  });
+
+  test('every locale maps to a distinct language_TERRITORY tag', () => {
+    const tags = locales.map((locale) => openGraphLocales(locale).locale);
+    for (const tag of tags) expect(tag).toMatch(/^[a-z]{2}_[A-Z]{2}$/);
+    expect(new Set(tags).size).toBe(locales.length);
   });
 });

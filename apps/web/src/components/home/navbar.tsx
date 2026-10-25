@@ -8,21 +8,21 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
-} from '@/components/ui/context-menu';
-import Loading from '@/components/ui/loading';
-import { errorToast, successToast } from '@/components/ui/toast';
+} from '@kortix/ui/context-menu';
+import Loading from '@kortix/ui/loading';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
-import { Github } from '@/features/icon/icons/github';
+import { Github } from '@kortix/ui/internal/icons/github';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { MARKETING_CONTAINER } from '@/features/marketing/kit/section';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useGitHubStars } from '@/hooks/utils/use-github-stars';
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { useGitHubStars } from '@/hooks/use-github-stars';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { SITE_CONFIG_TRANSLATION_KEYS } from '@/i18n/site-config-translation-keys.generated';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
-import { cn } from '@/lib/utils';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
+import { latestProjectPath } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
+import { cn } from '@kortix/ui';
 import {
   CaretDownIcon,
   CaretUpIcon,
@@ -44,7 +44,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Download } from '@/features/icon/icons/download';
+import { Download } from '@kortix/ui/internal/icons/download';
 
 const CTA_LINK = '/auth';
 

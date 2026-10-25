@@ -3,7 +3,7 @@
 import { Children, cloneElement, isValidElement, type ReactNode } from 'react';
 
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 /**
  * Case-study MDX kit. Presentational blocks authors compose inside a use-case

@@ -21,8 +21,28 @@ export type AuthorizeResult =
       principal?: AuthedPrincipal;
     };
 
+/**
+ * The answers of `authorize`, `resolveRoute`, `resolveUpstream` for the routed
+ * model, and `assertBillingActive`, fetched in one call. A missing field means
+ * the host did not answer it, and the handler calls that hook itself. An
+ * `Error` is what the hook would have thrown.
+ */
+export interface AdmitResult {
+  admission: AuthorizeResult;
+  route?: ModelRoutePlan | null;
+  upstream?: UpstreamDescriptor[] | Error;
+  billing?: { holdUsd?: number } | Error;
+  /** Milliseconds the host spent per admission step (internal latency split). */
+  timing?: Record<string, number>;
+}
+
 export interface GatewayHooks {
   authenticate: (token: string) => Promise<AuthedPrincipal | null>;
+  /**
+   * Optional one-call admission. Null means the host cannot answer it (for
+   * example an older control plane), and the handler uses the separate hooks.
+   */
+  admit?: (token: string, input: ModelRouteInput) => Promise<AdmitResult | null>;
   // Optional combined authentication + budget gate. Billing runs after
   // upstream resolution because BYOK must never touch the Kortix wallet.
   // listModels still uses authenticate directly.

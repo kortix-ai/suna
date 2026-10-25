@@ -1,6 +1,6 @@
 // apps/mobile/components/kortix/sheet.tsx
 import * as React from 'react';
-import { Keyboard, View, useWindowDimensions, type ViewStyle } from 'react-native';
+import { Keyboard, Platform, View, useWindowDimensions, type ViewStyle } from 'react-native';
 import {
   ANIMATION_STATUS,
   BottomSheetModal,
@@ -11,7 +11,7 @@ import {
   type BottomSheetModalProps,
 } from '@gorhom/bottom-sheet';
 import { State as GestureState } from 'react-native-gesture-handler';
-import Animated, { useAnimatedStyle, useDerivedValue, useSharedValue } from 'react-native-reanimated';
+import Animated, { Easing, useAnimatedStyle, useDerivedValue, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { getSheetBg } from '@/lib/theme-colors';
@@ -27,6 +27,8 @@ import { detentsKey, withFullDetent } from '@/lib/ui/sheet-detents';
 import { sheetScrimColor } from '@/lib/ui/sheet-scrim';
 import { SurfaceContext } from '@/components/kortix/surface-context';
 import { PinnedBarShiftContext } from '@/components/kortix/pinned-bar';
+import { SheetSettledContext } from '@/components/kortix/sheet-settled';
+import { LIQUID_GLASS_AVAILABLE, LiquidGlassCapsule } from '@/components/kortix/liquid-glass-capsule';
 
 /**
  * Shared bottom-sheet backdrop. Every gorhom sheet creator in the app
@@ -126,12 +128,105 @@ const SHEET_DEFAULTS = {
   radius: 32,
   /** Side padding of the title row: the project edge. */
   titlePaddingX: 16,
-  /** Space between the grab handle and the title row, and under the title row. */
-  titlePaddingTop: 4,
-  titlePaddingBottom: 8,
+  /** Space between the grab handle and the title row, and under the title row.
+   *  iOS gets 6pt more on each side (Jay, 2026-10-20: the header felt cramped). */
+  titlePaddingTop: Platform.OS === 'ios' ? 10 : 4,
+  titlePaddingBottom: Platform.OS === 'ios' ? 14 : 8,
   /** Space above the grab handle. */
   handlePaddingTop: 5,
 } as const;
+
+/**
+ * The one sheet motion (KRTX-2929). Every sheet moves on the UI thread with
+ * these values; no call site passes `animationConfigs`.
+ *
+ * `open` — the present, every snap after a drag, a pan-down close and a
+ * backdrop tap. A critically damped spring (ratio 1: no overshoot, `stiffness`
+ * 256 with `mass` 1 is ω0 = 16 rad/s): 95% of the way in ~300 ms, 99% in
+ * ~415 ms. A spring, not a timing curve, because gorhom hands it the finger's
+ * release velocity: a flick carries straight into the snap with no seam.
+ * `energyThreshold` 5e-6 ends it once less than ~0.2% of the distance is left
+ * (~520 ms), so `onChange` (and `SheetSettledContext`) fire close to the
+ * visible end. Reanimated 4 ignores gorhom's old `restDisplacementThreshold`;
+ * at the default threshold the sheet reported "moving" for ~750 ms.
+ * Replaces gorhom's defaults, which differed per platform: a
+ * damping-500/stiffness-1000/mass-3 spring on iOS, 250 ms ease-out-expo on Android.
+ *
+ * `close` — `dismiss()` from code (the X, a row pick). 250 ms on the iOS
+ * sheet curve (`cubic-bezier(0.32, 0.72, 0, 1)`, the curve Vaul and Ionic use):
+ * faster than the open, as an exit should be, with a fixed end so the next
+ * sheet chained on `onDismiss` (`useCloseThen`) appears without waiting on a
+ * spring's tail.
+ */
+export const SHEET_MOTION = {
+  open: { stiffness: 256, damping: 32, mass: 1, overshootClamping: true, energyThreshold: 5e-6 },
+  close: { duration: 250, easing: Easing.bezier(0.32, 0.72, 0, 1) },
+} as const;
+
+type TitleSlots = {
+  title?: string;
+  hideClose: boolean;
+  leading?: React.ReactNode;
+  trailing?: React.ReactNode;
+  trailingGlass: boolean;
+  center?: React.ReactNode;
+  onClose: () => void;
+};
+
+/**
+ * The title row's props as a tiny store, read by one stable handle component.
+ *
+ * gorhom renders `handleComponent` as `<HandleComponent />`. A new function on
+ * each render is a new component type: React unmounts and remounts the whole
+ * title row (close button, title, trailing button) and gorhom rebuilds its
+ * layout-readiness worklet, on every parent render — each search keystroke,
+ * each tab switch, each list refresh during the open. Call sites pass
+ * `titleTrailing` as inline JSX, so a `useCallback` over the slots changed on
+ * every render. The handle now stays one component, and only re-renders.
+ */
+function useTitleSlotStore(slots: TitleSlots) {
+  const [store] = React.useState(() => {
+    let current = slots;
+    const listeners = new Set<() => void>();
+    return {
+      get: () => current,
+      set: (next: TitleSlots) => {
+        current = next;
+        listeners.forEach((listener) => listener());
+      },
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    };
+  });
+  React.useLayoutEffect(() => store.set(slots));
+  return store;
+}
+
+function TitledHandle({
+  store,
+  indicatorStyle,
+}: {
+  store: ReturnType<typeof useTitleSlotStore>;
+  indicatorStyle: ViewStyle;
+}) {
+  const slots = React.useSyncExternalStore(store.subscribe, store.get);
+  return (
+    <View style={{ paddingTop: SHEET_DEFAULTS.handlePaddingTop }}>
+      <View style={[{ alignSelf: 'center' }, indicatorStyle]} />
+      <SheetTitleRow
+        title={slots.title}
+        hideClose={slots.hideClose}
+        leading={slots.leading}
+        trailing={slots.trailing}
+        trailingGlass={slots.trailingGlass}
+        center={slots.center}
+        onClose={slots.onClose}
+      />
+    </View>
+  );
+}
 
 /**
  * SheetTitleRow — the one title row of every sheet: a close button at the far
@@ -144,6 +239,14 @@ const SHEET_DEFAULTS = {
  * Back chevron inside a multi-step sheet). `trailing` fills the far right, the
  * slot that is empty otherwise, with one 40pt icon `Button` (the file preview's
  * Copy). The slot mirrors the leading one, so the title stays centred.
+ *
+ * iOS 26+ (Jay, 2026-10-20): the close button, `leading` and `trailing` each
+ * sit on a Liquid Glass capsule (`GlassSlot`): a circle behind a 40pt icon
+ * button, a pill behind a wider one. The visible glass then sits on the 16pt
+ * edge, so the `-ml-2.5` / `-mr-2.5` pulls go and the balance spacer is the
+ * full 40pt. `trailingGlass={false}` keeps a trailing slot that is not a
+ * button (the participants count) off the glass. Android and older iOS keep
+ * the plain ghost buttons and the pulls.
  */
 export function SheetTitleRow({
   title,
@@ -151,6 +254,7 @@ export function SheetTitleRow({
   hideClose = false,
   leading,
   trailing,
+  trailingGlass = true,
   center,
 }: {
   title?: string;
@@ -158,31 +262,39 @@ export function SheetTitleRow({
   hideClose?: boolean;
   leading?: React.ReactNode;
   trailing?: React.ReactNode;
+  /** `false` when `trailing` is not a button: no glass behind it. */
+  trailingGlass?: boolean;
   /** Replaces the centred title text (e.g. a tab list). */
   center?: React.ReactNode;
 }) {
+  const glass = LIQUID_GLASS_AVAILABLE;
   return (
+    // `gap-3`: 12pt between the close button, the title (or `center`) and the
+    // trailing slot, so a long title or a centred control never touches a
+    // glass button (Jay, 2026-10-20). Equal on both sides: the centre holds.
     <View
-      className="flex-row items-center"
+      className="flex-row items-center gap-3"
       style={{
         paddingHorizontal: SHEET_DEFAULTS.titlePaddingX,
         paddingTop: SHEET_DEFAULTS.titlePaddingTop,
         paddingBottom: SHEET_DEFAULTS.titlePaddingBottom,
       }}>
       {leading ? (
-        <View className="-ml-2.5">{leading}</View>
+        <GlassSlot className={glass ? undefined : '-ml-2.5'}>{leading}</GlassSlot>
       ) : hideClose ? (
         <View className="size-10" />
       ) : (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="-ml-2.5 rounded-full"
-          onPress={onClose}
-          accessibilityLabel="Close"
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Icon as={XIcon} size={20} className="text-foreground" />
-        </Button>
+        <GlassSlot className={glass ? undefined : '-ml-2.5'}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-full"
+            onPress={onClose}
+            accessibilityLabel="Close"
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Icon as={XIcon} size={20} className="text-foreground" />
+          </Button>
+        </GlassSlot>
       )}
       {center ? (
         <View className="flex-1 items-center">{center}</View>
@@ -196,11 +308,30 @@ export function SheetTitleRow({
         </Text>
       )}
       {trailing ? (
-        <View className="-mr-2.5">{trailing}</View>
+        trailingGlass ? (
+          <GlassSlot className={glass ? undefined : '-mr-2.5'}>{trailing}</GlassSlot>
+        ) : (
+          <View className="-mr-2.5">{trailing}</View>
+        )
       ) : (
-        // Balances the leading slot: 40pt, less its 10pt pull to the edge.
-        <View style={{ width: hideClose && !leading ? 40 : 30 }} />
+        // Balances the leading slot: 40pt, less its 10pt pull to the edge
+        // (no pull on glass).
+        <View style={{ width: glass || (hideClose && !leading) ? 40 : 30 }} />
       )}
+    </View>
+  );
+}
+
+/**
+ * A title-row control on iOS 26+ Liquid Glass: the capsule fills the slot
+ * behind the child (a circle for a 40pt icon button). Elsewhere a plain
+ * wrapper. `className` carries the non-glass edge pull.
+ */
+function GlassSlot({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <View className={cn(LIQUID_GLASS_AVAILABLE && 'rounded-full', className)}>
+      {LIQUID_GLASS_AVAILABLE ? <LiquidGlassCapsule /> : null}
+      {children}
     </View>
   );
 }
@@ -217,6 +348,8 @@ interface KortixBottomSheetModalProps extends BottomSheetModalProps {
   titleLeading?: React.ReactNode;
   /** One 40pt icon `Button` at the far right of the title row. Needs `title`. */
   titleTrailing?: React.ReactNode;
+  /** `false` when `titleTrailing` is not a button (a count): no Liquid Glass behind it. */
+  titleTrailingGlass?: boolean;
   /** Replaces the centred title text with a control (a tab list). Needs `title` (used as the accessible name). */
   titleCenter?: React.ReactNode;
 }
@@ -225,7 +358,7 @@ export const KortixBottomSheetModal = React.forwardRef<
   BottomSheetModal,
   KortixBottomSheetModalProps
 >(({ title, hideClose = false, backgroundStyle, handleComponent, snapPoints, topInset, children, ...rest }, ref) => {
-  const { titleLeading, titleTrailing, titleCenter, ...props } = rest;
+  const { titleLeading, titleTrailing, titleTrailingGlass = true, titleCenter, onChange, onDismiss, ...props } = rest;
   // gorhom sizes the content box to the HIGHEST detent, which is now always
   // 100%. A fixed-detent sheet shown at 92% would lay its content out
   // full-screen tall and push a bottom Save row off-screen, so its body is
@@ -244,6 +377,9 @@ export const KortixBottomSheetModal = React.forwardRef<
   // left up from the screen behind covers the sheet's lower half, and its field
   // keeps the focus. Set HERE so no call site has to remember it. A sheet's own
   // auto-focused field mounts after this and raises the keyboard again.
+  //
+  // `dismiss()` / `close()` from code run `SHEET_MOTION.close` unless the
+  // caller passes its own config.
   React.useImperativeHandle(
     ref,
     () => ({
@@ -252,29 +388,45 @@ export const KortixBottomSheetModal = React.forwardRef<
         Keyboard.dismiss();
         innerRef.current?.present(...args);
       },
+      dismiss: (config?: Parameters<BottomSheetModal['dismiss']>[0]) =>
+        innerRef.current?.dismiss(config ?? SHEET_MOTION.close),
+      close: (config?: Parameters<BottomSheetModal['close']>[0]) =>
+        innerRef.current?.close(config ?? SHEET_MOTION.close),
     }),
     []
   );
+  // False from mount (gorhom mounts the body on present) until the open
+  // animation first comes to rest; reset once the body is gone. Never reset
+  // on the way down: that would re-render a long list during the close.
+  const [settled, setSettled] = React.useState(false);
+  const handleChange = React.useCallback<NonNullable<BottomSheetModalProps['onChange']>>(
+    (index, position, type) => {
+      if (index >= 0) setSettled(true);
+      onChange?.(index, position, type);
+    },
+    [onChange]
+  );
+  const handleDismiss = React.useCallback(() => {
+    setSettled(false);
+    onDismiss?.();
+  }, [onDismiss]);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const background = getSheetBg(isDark);
   const indicatorStyle = React.useMemo(() => sheetHandleIndicatorStyle(isDark), [isDark]);
 
+  const titleStore = useTitleSlotStore({
+    title,
+    hideClose,
+    leading: titleLeading,
+    trailing: titleTrailing,
+    trailingGlass: titleTrailingGlass,
+    center: titleCenter,
+    onClose: () => innerRef.current?.dismiss(SHEET_MOTION.close),
+  });
   const titledHandle = React.useCallback(
-    () => (
-      <View style={{ paddingTop: SHEET_DEFAULTS.handlePaddingTop }}>
-        <View style={[{ alignSelf: 'center' }, indicatorStyle]} />
-        <SheetTitleRow
-          title={title}
-          hideClose={hideClose}
-          leading={titleLeading}
-          trailing={titleTrailing}
-          center={titleCenter}
-          onClose={() => innerRef.current?.dismiss()}
-        />
-      </View>
-    ),
-    [indicatorStyle, hideClose, title, titleLeading, titleTrailing, titleCenter]
+    () => <TitledHandle store={titleStore} indicatorStyle={indicatorStyle} />,
+    [titleStore, indicatorStyle]
   );
 
   return (
@@ -285,7 +437,10 @@ export const KortixBottomSheetModal = React.forwardRef<
       handleComponent={handleComponent ?? (title ? titledHandle : undefined)}
       snapPoints={detents as BottomSheetModalProps['snapPoints']}
       topInset={topInset ?? insets.top}
+      animationConfigs={SHEET_MOTION.open}
       {...props}
+      onChange={handleChange}
+      onDismiss={handleDismiss}
       // Android keyboard: ONE mode app-wide. The window is `adjustResize`
       // (app.json `softwareKeyboardLayoutMode: "resize"`), but the root
       // KeyboardProvider draws edge-to-edge, so the window never actually
@@ -307,9 +462,12 @@ export const KortixBottomSheetModal = React.forwardRef<
       {typeof children === 'function' ? (
         children
       ) : (
-        // Rows inside know they sit on the sheet colour (`SettingsGroup`).
+        // Rows inside know they sit on the sheet colour (`SettingsGroup`),
+        // and whether the sheet is still opening (`useSheetRowLimit`).
         <SurfaceContext.Provider value="sheet">
-          {fixedDetents ? <SheetFill>{children}</SheetFill> : children}
+          <SheetSettledContext.Provider value={settled}>
+            {fixedDetents ? <SheetFill>{children}</SheetFill> : children}
+          </SheetSettledContext.Provider>
         </SurfaceContext.Provider>
       )}
     </BottomSheetModal>
@@ -476,6 +634,30 @@ export function CopyContentButton({
 export interface SheetRef {
   open: () => void;
   close: () => void;
+}
+
+/**
+ * The `ref` half of a sheet component: the modal ref plus the
+ * `useImperativeHandle({ open, close })` wiring every sheet hand-rolls.
+ * `onOpen` runs before the sheet presents (reset-to-tab, fresh timestamps).
+ */
+export function useSheetHandle(
+  ref: React.ForwardedRef<SheetRef>,
+  onOpen?: () => void,
+): React.RefObject<BottomSheetModal | null> {
+  const modalRef = React.useRef<BottomSheetModal>(null);
+  React.useImperativeHandle(
+    ref,
+    () => ({
+      open: () => {
+        onOpen?.();
+        modalRef.current?.present();
+      },
+      close: () => modalRef.current?.dismiss(),
+    }),
+    [onOpen],
+  );
+  return modalRef;
 }
 
 export { useCloseThen } from './use-close-then';

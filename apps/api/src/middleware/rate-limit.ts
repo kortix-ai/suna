@@ -87,7 +87,8 @@ export async function enforceRateLimit(
 // limit × API replicas. They stop runaways and floods; none meters a quota.
 const inviteAcceptLimiter = new TokenBucketRateLimiter('invite_accept');
 const sandboxProxyLimiter = new TokenBucketRateLimiter('sandbox_proxy');
-const publicSessionShareLimiter = new TokenBucketRateLimiter('public_session_share');
+const publicResponseLimiter = new TokenBucketRateLimiter('public_response');
+const artifactContentLimiter = new TokenBucketRateLimiter('artifact_content');
 const demoRequestLimiter = new TokenBucketRateLimiter('demo_request');
 const checkEmailLimiter = new TokenBucketRateLimiter('check_email');
 const projectWebhookLimiter = new TokenBucketRateLimiter('project_webhook');
@@ -98,6 +99,7 @@ const projectWebhookRejectedRunLimiter = new TokenBucketRateLimiter('project_web
 const projectSecretWriteLimiter = new TokenBucketRateLimiter('project_secret_write');
 const llmGatewayLimiter = new TokenBucketRateLimiter('llm_gateway');
 const feedbackLimiter = new TokenBucketRateLimiter('feedback');
+const deviceTokenReleaseLimiter = new TokenBucketRateLimiter('device_token_release');
 
 /**
  * Per-project budget on secret WRITES (POST/PUT/PATCH/DELETE under
@@ -191,41 +193,59 @@ export function createSandboxProxyRateLimitMiddleware() {
   });
 }
 
+/** A 429 with `Retry-After`, and no audit row: a flood must not become a DB-write amplifier. */
+function quietRateLimited(c: Context, result: RateLimitResult): Response {
+  setHeaders(c, result);
+  return c.json(
+    {
+      error: 'rate_limit_exceeded',
+      message: 'Rate limit exceeded. Please retry shortly.',
+      retry_after_seconds: Math.ceil((result.retryAfterMs ?? result.resetMs) / 1000),
+    },
+    429,
+  );
+}
+
 /**
- * Guards the anonymous `/v1/public/session-shares/:shareId*` family — same
- * shape as `createInviteAcceptRateLimitMiddleware` (no authenticated identity
- * to key on), but keyed on the share id path param rather than client IP:
- * every visitor to one shared link is legitimately behind the same bucket,
- * while a single caller trying many share ids from behind a shared NAT/VPN
- * doesn't starve everyone else's shares. Every call also fetches from the
- * sandbox daemon (list sessions + read messages), so this is deliberately
- * tighter than the plain metadata-only invite-accept limiter.
+ * Guards the anonymous `GET /v1/public/responses/:token`: one bucket per share
+ * (`KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN`, 3000), shared by every visitor of the
+ * link (the web page reads with no-store, so every view arrives), so it is a
+ * flood cap sized for a popular link. A token that names no
+ * share falls back to the client IP BEFORE it can key a bucket, so unique
+ * garbage tokens cannot grow the bucket Map without bound. No audit row (a
+ * flood must not become a DB-write amplifier), and the token or share id is
+ * never logged: the token is the share id, a bearer secret.
  */
-export function createPublicSessionShareRateLimitMiddleware() {
-  return createAuditedRateLimitMiddleware(publicSessionShareLimiter, (c) => {
-    // Key on the share id when the ref names one (every visitor to one
-    // shared link shares that bucket); otherwise fall back to client IP. This
-    // MUST run before the raw param can key the bucket Map — an attacker
-    // looping unique garbage ids would otherwise allocate an unbounded number
-    // of buckets (the id is never a real share, so it never reaches the
-    // handler's own validation) and OOM the process.
-    // A `kps_` token and its share id name the same share, so both key the
-    // same bucket.
-    const shareId = shareIdFromPublicRef(c.req.param('shareId') ?? '') ?? `ip:${requestClientKey(c)}`;
-    return {
-      key: shareId,
-      policy: {
-        limit: positiveInt((config as any).KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN, 60),
-        windowMs: 60_000,
-      },
-      auditContext: {
-        action: RATE_LIMIT_EXCEEDED_ACTION,
-        resourceType: 'public_session_share',
-        resourceId: shareId,
-        metadata: { limiter: 'public_session_share' },
-      },
-    };
-  });
+export function createPublicResponseRateLimitMiddleware() {
+  return async (c: Context, next: Next) => {
+    // No per-IP bucket: tokens carry 122 random bits, so enumeration is infeasible, and the IP seen here is the web tier's, shared by every visitor.
+    const shareKey = shareIdFromPublicRef(c.req.param('token') ?? '') ?? `ip:${requestClientKey(c)}`;
+    const share = publicResponseLimiter.check(shareKey, {
+      limit: positiveInt(config.KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN, 3000),
+      windowMs: 60_000,
+    });
+    if (!share.allowed) return quietRateLimited(c, share);
+    setHeaders(c, share);
+    await next();
+  };
+}
+
+/**
+ * The artifact content server (`/v1/artifacts/*`): one bucket per artifact,
+ * shared by every viewer, plus a backstop bucket per client. The key must name
+ * an identity the caller cannot invent (a verified token's artifact, a UUID):
+ * a raw path segment would give every request a fresh bucket. `keyOf` answers
+ * null otherwise, and the client address takes over.
+ */
+export function createArtifactContentRateLimitMiddleware(keyOf: (c: Context) => string | null) {
+  return async (c: Context, next: Next) => {
+    const client = artifactContentLimiter.check(`client:${requestClientKey(c)}`, { limit: 3000, windowMs: 60_000 });
+    if (!client.allowed) return quietRateLimited(c, client);
+    const result = artifactContentLimiter.check(keyOf(c) ?? `ip:${requestClientKey(c)}`, { limit: 3000, windowMs: 60_000 });
+    if (!result.allowed) return quietRateLimited(c, result);
+    setHeaders(c, result);
+    await next();
+  };
 }
 
 /**
@@ -333,6 +353,29 @@ export function createProjectWebhookRateLimitMiddleware() {
 }
 
 /**
+ * Guards the public `POST /v1/notifications/device-token/release`. Keyed on
+ * client IP; a signed-out app calls it once per sign-out. The rejection path
+ * writes no audit row, so a flood cannot become a database-write flood.
+ */
+export function createDeviceTokenReleaseRateLimitMiddleware() {
+  return async (c: Context, next: Next) => {
+    const result = deviceTokenReleaseLimiter.check(requestClientKey(c), { limit: 30, windowMs: 60_000 });
+    setHeaders(c, result);
+    if (!result.allowed) {
+      return c.json(
+        {
+          error: 'rate_limit_exceeded',
+          message: 'Rate limit exceeded. Please retry shortly.',
+          retry_after_seconds: Math.ceil((result.retryAfterMs ?? result.resetMs) / 1000),
+        },
+        429,
+      );
+    }
+    await next();
+  };
+}
+
+/**
  * Bound forced Git mirror refreshes by project, independent of source IP.
  * Each API replica owns a local mirror, so each replica needs its own budget.
  */
@@ -403,7 +446,8 @@ export function createLlmGatewayRateLimitMiddleware() {
 export function resetRateLimiters() {
   inviteAcceptLimiter.reset();
   sandboxProxyLimiter.reset();
-  publicSessionShareLimiter.reset();
+  publicResponseLimiter.reset();
+  artifactContentLimiter.reset();
   demoRequestLimiter.reset();
   checkEmailLimiter.reset();
   projectWebhookLimiter.reset();
@@ -412,4 +456,5 @@ export function resetRateLimiters() {
   projectSecretWriteLimiter.reset();
   llmGatewayLimiter.reset();
   feedbackLimiter.reset();
+  deviceTokenReleaseLimiter.reset();
 }

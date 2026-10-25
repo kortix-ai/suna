@@ -5,8 +5,8 @@ import { UseCasesBrowser } from '@/components/use-cases/use-cases-browser';
 import { MARKETING_CONTAINER } from '@/features/marketing/kit/section';
 import { getTranslations } from '@/i18n/get-translations';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
-import { cn } from '@/lib/utils';
-import { siteMetadata } from '@/lib/site-metadata';
+import { cn } from '@kortix/ui';
+import { siteMetadata } from '@kortix/ui/internal/lib/site-metadata';
 import { getAllUseCases } from '@/lib/use-cases';
 
 const URL = `${siteMetadata.url}/use-cases`;

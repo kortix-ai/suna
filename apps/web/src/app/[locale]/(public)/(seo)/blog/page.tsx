@@ -1,13 +1,13 @@
 import type { Metadata } from 'next';
 
 import { BlogFeaturedPost, BlogPostCard } from '@/components/blog/blog-post-card';
-import { EmptyState } from '@/features/layout/section/empty-state';
+import { EmptyState } from '@kortix/ui/empty-state';
 import { MARKETING_CONTAINER } from '@/features/marketing/kit/section';
 import { getTranslations } from '@/i18n/get-translations';
 import { getAllPosts } from '@/lib/blog-posts';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
-import { siteMetadata } from '@/lib/site-metadata';
-import { cn } from '@/lib/utils';
+import { siteMetadata } from '@kortix/ui/internal/lib/site-metadata';
+import { cn } from '@kortix/ui';
 
 const TITLE = 'Blog';
 const DESCRIPTION =

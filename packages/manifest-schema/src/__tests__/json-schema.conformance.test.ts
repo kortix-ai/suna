@@ -385,6 +385,229 @@ channels:
       'kortix_version = 1\n[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\nsession_mode = "sometimes"\n',
   },
 
+  // ─── shared sections: trigger `overlap` (KRTX-1721) ─────────────────────
+  {
+    name: 'overlap: skip is valid',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: "0 0 9 * * *"\n    prompt: go\n    overlap: skip\n',
+  },
+  {
+    name: 'overlap: queue is invalid',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: "0 0 9 * * *"\n    prompt: go\n    overlap: queue\n',
+  },
+
+  // ─── shared sections: trigger `filter` operators (KRTX-1721) ───────────
+  {
+    name: 'filter: a value and every operator is valid',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: HOOK_SECRET\n    prompt: go\n    filter:\n      body.type: push\n      body.count: 3\n      body.sender.login: { not: kortix-bot }\n      body.action: { in: [opened, reopened] }\n      body.pull_request: { exists: true }\n      body.base: { prefix: release/ }\n      body.ref: { not_prefix: [refs/heads/kortix/, refs/heads/bot/] }\n',
+  },
+  {
+    name: 'filter: an unknown operator is invalid',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: HOOK_SECRET\n    prompt: go\n    filter:\n      body.ref: { nott: x }\n',
+  },
+  {
+    name: 'filter: two operators on one path are invalid',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: HOOK_SECRET\n    prompt: go\n    filter:\n      body.ref: { in: [a], not: b }\n',
+  },
+  {
+    name: 'filter: an empty in list is invalid',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: HOOK_SECRET\n    prompt: go\n    filter:\n      body.action: { in: [] }\n',
+  },
+  {
+    name: 'filter: a non-boolean exists is invalid',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: HOOK_SECRET\n    prompt: go\n    filter:\n      body.pr: { exists: yes please }\n',
+  },
+
+  // ─── shared sections: triggers type = "app" ───────────────────────────
+  {
+    name: 'app: an App slug is valid',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: app\n    app: bank-replies\n    filter: { event.name: reply.received }\n    prompt: go\n',
+  },
+  {
+    name: 'app: missing app is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: app\n    prompt: go\n',
+  },
+  {
+    name: 'app: an invalid App slug is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: app\n    app: Bank_Replies\n    prompt: go\n',
+  },
+  {
+    name: 'app: cron key on app is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: app\n    app: bank-replies\n    cron: \"0 9 * * *\"\n    prompt: go\n',
+  },
+  {
+    name: 'app: event key on app is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: app\n    app: bank-replies\n    event: X\n    prompt: go\n',
+  },
+  {
+    name: 'app: app key on a cron trigger is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: \"0 0 9 * * *\"\n    app: bank-replies\n    prompt: go\n',
+  },
+
+  // ─── triggers: target (call an App) ───────────────────────────────────
+  {
+    name: 'target: a cron trigger may call an App with no prompt',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: \"0 0 9 * * *\"\n    target: { app: bank-watcher, path: /tick }\n',
+  },
+  {
+    name: 'target: a webhook trigger may call an App',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: HOOK_SECRET\n    target: { app: bank-watcher, method: POST }\n',
+  },
+  {
+    name: 'target: needs app',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: \"0 0 9 * * *\"\n    target: { path: /tick }\n',
+  },
+  {
+    name: 'target: unknown key rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: \"0 0 9 * * *\"\n    target: { app: w, url: x }\n',
+  },
+  {
+    name: 'target: not on a monitor',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./m.ts\n    mode: stream\n    target: { app: w }\n    prompt: go\n',
+  },
+  {
+    name: 'target: a cron trigger without target still needs a prompt',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: \"0 0 9 * * *\"\n',
+  },
+
+  // ─── triggers: every ─────────────────────────────────────────────────
+  {
+    name: 'every: a cron trigger may run on a fixed period',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    every: 5m\n    prompt: go\n',
+  },
+  {
+    name: 'every: with target payload',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    every: 1h\n    target: { app: w, path: /tick, payload: { a: 1 } }\n',
+  },
+  {
+    name: 'every: not on a webhook',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: HOOK_SECRET\n    every: 5m\n    prompt: go\n',
+  },
+  {
+    name: 'every: target payload must be an object',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    every: 1h\n    target: { app: w, payload: nope }\n',
+  },
+
+  // ─── triggers: the on/run shape ───────────────────────────────────────
+  {
+    name: 'on/run: a cron schedule that runs an agent',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { cron: \"0 0 9 * * *\", timezone: Europe/Berlin }\n    run: { agent: default, prompt: go, session: reuse }\n',
+  },
+  {
+    name: 'on/run: every that calls an App',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { every: 5m }\n    run: { app: watcher, path: /tick, payload: { a: 1 } }\n',
+  },
+  {
+    name: 'on/run: a one-off at',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { at: \"2026-11-01T09:00:00Z\" }\n    run: { prompt: go }\n',
+  },
+  {
+    name: 'on/run: a webhook',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { webhook: { secret: HOOK_SECRET } }\n    run: { prompt: \"{{ body.x }}\" }\n',
+  },
+  {
+    name: 'on/run: a connector event',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { event: PR, connector: github }\n    run: { prompt: go }\n',
+  },
+  {
+    name: 'on/run: an App event',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { event: reply.received, app: watcher }\n    run: { prompt: go }\n',
+  },
+  {
+    name: 'on/run: an unknown on key is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { crn: x }\n    run: { prompt: go }\n',
+  },
+  {
+    name: 'on/run: an unknown run key is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { every: 5m }\n    run: { promt: go }\n',
+  },
+  {
+    name: 'on/run: run is required',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { every: 5m }\n',
+  },
+  {
+    name: 'on/run: type with on is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    on: { every: 5m }\n    run: { prompt: go }\n',
+  },
+  {
+    name: 'on/run: run needs a prompt or an app',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { every: 5m }\n    run: { agent: default }\n',
+  },
+  {
+    name: 'on/run: a webhook needs its secret',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { webhook: {} }\n    run: { prompt: go }\n',
+  },
+
   // ─── shared sections: triggers type = "event" ─────────────────────────
   {
     name: 'event: connector + event + config object is valid',
@@ -536,16 +759,16 @@ channels:
 
   // ─── shared sections: triggers type = "monitor" ───────────────────────
   {
-    name: 'monitor: a stream monitor with run + mode is valid',
+    name: 'monitor: type monitor is rejected (the monitor box was removed)',
     format: 'yaml',
-    valid: true,
+    valid: false,
     input:
       'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./monitors/t.ts\n    mode: stream\n    prompt: go\n',
   },
   {
-    name: 'monitor: a poll monitor with an interval is valid',
+    name: 'monitor: a poll monitor is rejected too',
     format: 'yaml',
-    valid: true,
+    valid: false,
     input:
       'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./monitors/t.ts\n    mode: poll\n    interval: 60s\n    expect_event_within: 24h\n    prompt: go\n',
   },
@@ -1557,19 +1780,11 @@ describe('Known divergence: cross-field rules only the imperative validator enfo
     expect(validateCombined(parseToml(toml))).toBe(true);
   });
 
-  // A monitor's duration FLOORS (interval ≥ 30s, expect_event_within ≥ 5m)
-  // are value ranges over a formatted string. JSON Schema can pin the shape
-  // (`DURATION_RE`) but not the magnitude, so the floors stay imperative-only.
-  test('monitor interval below the 30s floor: imperative rejects, schema accepts the shape', () => {
-    const yaml =
-      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./m.ts\n    mode: poll\n    interval: 5s\n    prompt: go\n';
-    expect(validateManifest(yaml, 'yaml').valid).toBe(false);
-    expect(validateCombined(parseYaml(yaml))).toBe(true);
-  });
-
-  test('monitor expect_event_within below the 5m floor: imperative rejects, schema accepts the shape', () => {
-    const yaml =
-      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./m.ts\n    mode: stream\n    expect_event_within: 60s\n    prompt: go\n';
+  // A schedule's `every` FLOOR (≥ 1m) is a value range over a formatted
+  // string. JSON Schema can pin the shape (`DURATION_RE`) but not the
+  // magnitude, so the floor stays imperative-only.
+  test('every below the 1m floor: imperative rejects, schema accepts the shape', () => {
+    const yaml = 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    every: 30s\n    prompt: go\n';
     expect(validateManifest(yaml, 'yaml').valid).toBe(false);
     expect(validateCombined(parseYaml(yaml))).toBe(true);
   });

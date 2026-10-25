@@ -7,8 +7,8 @@ import { MARKETING_CONTAINER } from '@/features/marketing/kit/section';
 import { formatPostDate, resolveAuthor } from '@/lib/blog';
 import { getAllPosts, getPostEntry, type BlogPostEntry } from '@/lib/blog-posts';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
-import { siteMetadata } from '@/lib/site-metadata';
-import { cn } from '@/lib/utils';
+import { siteMetadata } from '@kortix/ui/internal/lib/site-metadata';
+import { cn } from '@kortix/ui';
 
 const BLOG_URL = `${siteMetadata.url}/blog`;
 

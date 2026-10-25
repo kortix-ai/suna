@@ -1,5 +1,5 @@
 import { BlockView } from '@/components/blog/blog-content';
-import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
+import { UnifiedMarkdown } from '@kortix/ui/markdown';
 import { parseRichBlock, RICH_BLOCKS } from '@/lib/rich-blocks';
 
 /**

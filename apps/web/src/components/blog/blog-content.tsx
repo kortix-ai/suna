@@ -1,10 +1,10 @@
 import { BlogCta } from '@/components/blog/blog-cta';
-import { CodeHighlight } from '@/components/markdown/code/code-block';
-import { INLINE_CODE } from '@/components/markdown/code/inline-chip';
+import { CodeHighlight } from '@kortix/ui/markdown';
+import { INLINE_CODE } from '@kortix/ui/markdown';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@kortix/ui/badge';
 import { CheckIcon as Check, MinusIcon as Minus } from '@/lib/icons/ssr';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';
 import { Fragment, type ReactNode } from 'react';

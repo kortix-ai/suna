@@ -3,6 +3,8 @@
 
 # Tools
 
+> **Deprecated: OpenCode is sunset.** Every new Kortix session runs pi (`../pi/overview.md`). This page applies only to a session that still runs OpenCode. Do not add OpenCode config to a project.
+
 Manage the tools an LLM can use.
 
 Tools allow the LLM to perform actions in your codebase. OpenCode comes with a set of built-in tools, and you can extend it with **custom tools** (defined in `.opencode/tools/`) or [MCP servers](./mcp-servers.md).

@@ -19,9 +19,17 @@
  * that has since been removed from the manifest is the cleanup path.
  */
 import { describe, expect, test, afterAll } from 'bun:test';
-process.env.LLM_GATEWAY_ENABLED = 'true';
+// deepseek-v4.1-flash, the model pinned below, is served by Platinum inference.
+// A placeholder key makes this deployment serve it, as prod does. Never reached.
+process.env.PLATINUM_INFERENCE_API_KEY = 'not-a-real-platinum-key-agent-name-gate';
 const { db } = await import('../shared/db');
 const { app } = await import('../index');
+// The managed lineup is what Platinum Inference lists; tests never call
+// Platinum, so seed the synthetic lineup (fixtures/managed-lineup.ts).
+const { __setManagedLineupForTest } = await import('../llm-gateway/models/managed-models');
+const { TEST_MANAGED_LINEUP } = await import('./fixtures/managed-lineup');
+__setManagedLineupForTest(TEST_MANAGED_LINEUP);
+
 const { eq, sql } = await import('drizzle-orm');
 const {
   accounts,
@@ -84,7 +92,6 @@ async function seed(manifestFile: 'kortix.yaml' | 'kortix.toml', manifest: strin
     accountId,
     name: 'agent-name-gate-test-project',
     repoUrl: upstream.repoUrl,
-    metadata: { experimental: { llm_gateway: true } },
   });
   await insertIntoView(db, accountMembers, [
     { userId, accountId, accountRole: 'owner', isSuperAdmin: false },

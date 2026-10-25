@@ -3,9 +3,9 @@
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import Link from '@/components/site-link';
 import { DitherField } from '@/features/marketing/kit/dither-field';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { ArrowUpRightIcon } from '@phosphor-icons/react';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { AnimatePresence, m, useReducedMotion, type Transition } from 'motion/react';
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 

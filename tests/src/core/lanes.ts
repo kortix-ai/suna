@@ -8,7 +8,7 @@ export function partitionParallelFlows(flows: RegisteredFlow[]): {
   const apiLane: RegisteredFlow[] = [];
   const sandboxLane: RegisteredFlow[] = [];
   for (const flow of flows) {
-    if (flow.meta.requires?.includes('daytona')) sandboxLane.push(flow);
+    if (flow.meta.requires?.includes('sandbox')) sandboxLane.push(flow);
     else apiLane.push(flow);
   }
   return { apiLane, sandboxLane };

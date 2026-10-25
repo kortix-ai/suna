@@ -1,4 +1,11 @@
 import { logger } from '../lib/logger';
+import {
+  APPROVAL_ENRICHERS,
+  type ApprovalEnricher,
+  enricherKey,
+  type ResolvedPreview,
+  resolveApprovalPreview,
+} from './approval-enrichers';
 import { buildArgsPreviewDetails, summarizeArgsPreview } from './args-preview';
 import {
   emailChannelAttachmentArgs,
@@ -10,6 +17,7 @@ import type { ConnectorAttachmentStore } from './attachments';
 import type { ChannelReadGate, ChannelReadInput } from './channel-read-scope';
 import type { ChannelWriteGate } from './channel-write-scope';
 import { executeComposio } from './composio';
+import { createdDraftId, toResendEmailArgs } from './email-resend-args';
 import {
   EMAIL_CHANNEL_CONNECTOR_SLUG,
   SLACK_CHANNEL_CONNECTOR_SLUG,
@@ -228,23 +236,34 @@ export interface GatewayDeps {
    * Absent = unconfined: production always wires it (db-deps.ts).
    */
   gateChannelWrite?(input: ChannelReadInput): Promise<ChannelWriteGate>;
-  /** Email connections represent one installed AgentMail inbox. */
+  /** Email connections represent one installed email (Resend) inbox. */
   loadEmailConnectorContext?(
     projectId: string,
     connectorSlug: string,
   ): Promise<EmailConnectorContext | null>;
-  /** Resolve the AgentMail credential for the install that owns this inbox. */
+  /** Resolve the email (Resend) credential for the install that owns this inbox. */
   resolveEmailCredentialForInbox?(projectId: string, inboxId: string): Promise<string | null>;
   /** Private attachment staging/claim lifecycle for native email actions. */
   attachmentStore?: ConnectorAttachmentStore;
   /** Connector-scoped policies (relative patterns over the connector's tool paths). */
   loadPolicies(connectorId: string): Promise<Policy[]>;
+  /** One named policy set's rules (`connectors[].policy_sets`). `null` = the
+   *  connector defines no such set: the call is blocked. A deps without this
+   *  loader blocks every call that names a set. */
+  loadPolicySet?(connectorId: string, name: string): Promise<Policy[] | null>;
   /** Project-scoped policies (fully-qualified patterns over <slug>.<path>). */
   loadProjectPolicies?(projectId: string): Promise<Policy[]>;
   /** Project's policy.default_mode setting (risk | allow_all). Defaults to allow_all. */
   loadDefaultMode?(projectId: string): Promise<DefaultMode>;
   /** Records the audit row; returns the new execution id used in the approval URL. */
   recordExecution(rec: ExecutionRecord): Promise<string | null>;
+  /** Set (`true`) or clear (`false`) `metadata.credential_rejected_at` on a
+   *  connection: the upstream answered 401 to its stored credential. Optional:
+   *  absent = the mark is never written. */
+  markCredentialRejected?(connectionId: string, rejected: boolean): Promise<void>;
+  /** `connection_credentials.kind` of the connection's stored credential, or
+   *  null when it has none. Read only after an upstream 401, to name the fix. */
+  credentialKind?(connectionId: string): Promise<string | null>;
   /** Approval carry-over: atomically claim a recent human approval for this
    *  exact request. The callback asks the session to continue, and its next
    *  attempt consumes the approval once instead of creating another gate. */
@@ -254,7 +273,13 @@ export interface GatewayDeps {
     connectorId: string;
     actionPath: string;
     requestDigest: string;
-  }): Promise<boolean>;
+    /** An object when claimed: `resolvedDigest` is the approved row's
+     *  `result_summary.resolved_digest`, the content the human saw;
+     *  `resolvedError` is true when that content could not be read. */
+  }): Promise<boolean | { resolvedDigest: string | null; resolvedError?: boolean }>;
+  /** Approval enrichers by `enricherKey` (approval-enrichers.ts). Absent =
+   *  the production registry. */
+  approvalEnrichers?: Readonly<Record<string, ApprovalEnricher>>;
   /** Reuse a legacy client's pending row only when it identifies this exact
    *  session-bound request. Prevents a caller from relabeling another approval. */
   isPendingApprovalExecution?(input: {
@@ -275,7 +300,7 @@ export interface GatewayDeps {
     projectId: string;
     executionId: string;
     sessionId: string | null;
-  }): string | null;
+  }): string | null | Promise<string | null>;
   /**
    * Post an approval card into the chat thread of the session that made a
    * gated call (Slack). Resolves `posted: false` for sessions with no thread.
@@ -388,6 +413,18 @@ export interface CallInput {
    *  Shown to the approver next to the arguments, labelled unverified. Never
    *  sent to the provider and outside the request digest. */
   approvalContext?: string | null;
+  /** The calling agent's policy set on this connector, from the caller's
+   *  agent grant (`AgentGrant.policySets`), resolved by the HTTP route. Never
+   *  read from the request body. Absent/null = base rules. */
+  policySet?: CallPolicySet | null;
+}
+
+export interface CallPolicySet {
+  name: string;
+  /** The agent whose grant named the set (audit + approval card). */
+  agent: string;
+  /** The manifest commit the grant was derived from, when known. */
+  manifestCommit: string | null;
 }
 
 /** Which account a successful call ran as — echoed on the wire (router.ts). */
@@ -415,7 +452,7 @@ export type CallResult =
       upstreamError?: string;
     }
   /** `message`: the sentence the agent reads, for a denial whose fix is not in `reason` alone. */
-  | { status: 'denied'; reason: string; message?: string }
+  | { status: 'denied'; reason: string; message?: string; policySet?: string; agent?: string }
   | {
       status: 'pending_approval';
       reason: string;
@@ -681,16 +718,20 @@ async function resolveEmailExecutionContext(
   if (!context?.inboxId) return { args, secretOverride: null };
 
   args.inbox_id = context.inboxId;
-  if ('threadId' in context && input.actionPath === 'get_thread' && context.threadId) {
+  // Inside an email session the thread and the email it answers are the
+  // session's own: Resend addresses a reply as thread + email.
+  const answersSessionEmail =
+    input.actionPath === 'reply_message' ||
+    input.actionPath === 'reply_all_message' ||
+    input.actionPath === 'get_message';
+  if (
+    'threadId' in context &&
+    context.threadId &&
+    (answersSessionEmail || input.actionPath === 'get_thread' || input.actionPath === 'list_messages')
+  ) {
     args.thread_id = context.threadId;
   }
-  if (
-    (input.actionPath === 'reply_message' ||
-      input.actionPath === 'reply_all_message' ||
-      input.actionPath === 'get_message') &&
-    'messageId' in context &&
-    context.messageId
-  ) {
+  if (answersSessionEmail && 'messageId' in context && context.messageId) {
     args.message_id = context.messageId;
   }
 
@@ -907,11 +948,18 @@ async function enforceCallPolicies(
   executionArgs: Record<string, unknown>,
   requestDigest: string,
 ): Promise<CallResult | null> {
-  const [connectorPolicies, projectPolicies, defaultMode] = await Promise.all([
+  const policySet = input.policySet ?? null;
+  const [connectorPolicies, projectPolicies, defaultMode, setPolicies] = await Promise.all([
     deps.loadPolicies(connector.connectorId),
     deps.loadProjectPolicies?.(input.projectId) ?? Promise.resolve([] as Policy[]),
     deps.loadDefaultMode?.(input.projectId) ?? Promise.resolve('allow_all' as DefaultMode),
+    // Fail closed: no loader, a failed load and an unknown set all read as
+    // missing, and a missing set blocks.
+    policySet
+      ? (deps.loadPolicySet?.(connector.connectorId, policySet.name).catch(() => null) ?? Promise.resolve(null))
+      : Promise.resolve(undefined),
   ]);
+  const setMissing = policySet !== null && setPolicies === null;
   // Built once per gated call: the redacted preview goes in the audit row and
   // the one-liner rides alongside the link, so an out-of-band relay ("approve
   // this: <url>") is still specific about what is being approved.
@@ -922,10 +970,10 @@ async function enforceCallPolicies(
   // Keys are OMITTED when empty rather than set to null: the pending_approval
   // result is a wire shape other code compares against, and a key that carries
   // no information shouldn't change it.
-  const approvalExtras = (executionId: string | null | undefined) => {
+  const approvalExtras = async (executionId: string | null | undefined) => {
     const url =
       executionId && deps.mintApprovalLink
-        ? deps.mintApprovalLink({
+        ? await deps.mintApprovalLink({
             projectId: input.projectId,
             executionId,
             sessionId: input.sessionId ?? null,
@@ -950,6 +998,8 @@ async function enforceCallPolicies(
     relPath: input.actionPath,
     projectPolicies,
     connectorPolicies,
+    setPolicies: setPolicies ?? undefined,
+    setMissing,
     risk: action.risk,
     defaultMode,
     sensitive: connector.sensitive,
@@ -960,6 +1010,13 @@ async function enforceCallPolicies(
     args: executionArgs,
     argsAvailable: true,
   });
+  // Audit keys naming the set that decided: the agent, the set, the manifest
+  // commit the grant came from. Omitted when a project rule, a base rule,
+  // `sensitive` or `default_mode` decided, so no surface credits the set.
+  const setDetails =
+    policySet && decision.source === 'policy_set'
+      ? { policy_set: policySet.name, agent: policySet.agent, manifest_commit: policySet.manifestCommit }
+      : {};
   if (decision.action === 'block') {
     await audit(
       deps,
@@ -968,8 +1025,9 @@ async function enforceCallPolicies(
       'denied',
       action.risk,
       {
-        reason: 'policy_block',
+        reason: setMissing ? 'policy_set_missing' : 'policy_block',
         policy_source: decision.source,
+        ...setDetails,
         args_preview_complete: argsPreviewDetails.complete,
         // A block is only auditable if you can see WHAT was blocked — otherwise
         // "denied gmail.send_email" can't be told apart from a false positive.
@@ -977,7 +1035,16 @@ async function enforceCallPolicies(
       },
       requestDigest,
     );
-    return { status: 'denied', reason: 'policy_block' };
+    if (!policySet || decision.source !== 'policy_set') return { status: 'denied', reason: 'policy_block' };
+    return {
+      status: 'denied',
+      reason: setMissing ? 'policy_set_missing' : 'policy_block',
+      message: setMissing
+        ? `Agent "${policySet.agent}" is assigned policy set "${policySet.name}", which connector "${input.connectorSlug}" does not define. Every call on this connector is blocked for this agent until the set exists or the assignment changes in kortix.yaml.`
+        : `Blocked by policy set "${policySet.name}" of agent "${policySet.agent}" on connector "${input.connectorSlug}".`,
+      policySet: policySet.name,
+      agent: policySet.agent,
+    };
   }
   if (decision.action === 'require_approval') {
     // SESSION-WIDE GRANTS ARE NO LONGER HONOURED.
@@ -1006,17 +1073,43 @@ async function enforceCallPolicies(
           requestDigest,
         })
       : false;
-    if (carriedOver) {
+    // Content binding: an approval given for enriched content (a draft's
+    // recipients and body) covers that content only. Re-read it; a change or
+    // a failed read asks again instead of running. An approval given while the
+    // content could not be read is re-read too: content that is now readable
+    // asks again so a human sees it; still unreadable, the approver's informed
+    // decision stands. The claim above already consumed the approval.
+    const enricher = (deps.approvalEnrichers ?? APPROVAL_ENRICHERS)[
+      enricherKey(connector, action.binding, input.actionPath)
+    ] as ApprovalEnricher | undefined;
+    const enrich = async (): Promise<ResolvedPreview | null> =>
+      enricher
+        ? resolveApprovalPreview(enricher, { deps, input, connector, binding: action.binding, args: executionArgs })
+        : null;
+    const approved = typeof carriedOver === 'object' ? carriedOver : null;
+    let resolved: ResolvedPreview | null = null;
+    let contentChanged = false;
+    if (approved?.resolvedDigest) {
+      resolved = await enrich();
+      contentChanged =
+        !resolved || !('resolved_digest' in resolved) || resolved.resolved_digest !== approved.resolvedDigest;
+    } else if (approved?.resolvedError && enricher) {
+      resolved = await enrich();
+      contentChanged = resolved !== null && 'resolved_digest' in resolved;
+    }
+    if (carriedOver && !contentChanged) {
       await audit(deps, input, connector, 'ok', action.risk, {
         reason: 'approval_carryover',
         policy_source: decision.source,
+        ...setDetails,
       });
     } else {
       // Older clients can pass an existing id. Preserve that row instead of
       // stacking another one, but never poll it. New clients make one request
       // and wait for the server-side session callback.
+      const reason = contentChanged ? 'content_changed' : 'policy_require_approval';
       const reuseExisting =
-        input.approvalExecutionId && deps.isPendingApprovalExecution
+        !contentChanged && input.approvalExecutionId && deps.isPendingApprovalExecution
           ? await deps.isPendingApprovalExecution({
               executionId: input.approvalExecutionId,
               projectId: input.projectId,
@@ -1027,6 +1120,10 @@ async function enforceCallPolicies(
               requestDigest,
             })
           : false;
+      // Only a new row reads the content. Never blocks or fails the hold: a
+      // slow or failed read is recorded as `resolved_error`. Only an action
+      // with an enricher carries these keys.
+      if (!reuseExisting) resolved ??= await enrich();
       const executionId =
         (reuseExisting ? input.approvalExecutionId : null) ??
         (await audit(
@@ -1036,8 +1133,9 @@ async function enforceCallPolicies(
           'pending_approval',
           action.risk,
           {
-            reason: 'policy_require_approval',
+            reason,
             policy_source: decision.source,
+            ...setDetails,
             args_preview_complete: argsPreviewDetails.complete,
             // WITHOUT THIS the approval prompt can name the tool but not its
             // target — a human was being asked to authorise `gmail.send_email`
@@ -1047,10 +1145,11 @@ async function enforceCallPolicies(
             // Reference args (`{draft_id}`) name a target without showing it,
             // so the agent may describe the effect. Unverified by design.
             ...(approvalContext ? { approval_context: approvalContext } : {}),
+            ...resolved,
           },
           requestDigest,
         ));
-      const extras = approvalExtras(executionId);
+      const extras = await approvalExtras(executionId);
       const cardPosted =
         !reuseExisting && executionId && input.sessionId && deps.postApprovalCard
           ? await postCardWithin(CARD_POST_BUDGET_MS, () =>
@@ -1061,9 +1160,13 @@ async function enforceCallPolicies(
                 actionPath: `${input.connectorSlug}.${input.actionPath}`,
                 risk: action.risk,
                 resultSummary: {
+                  ...(policySet && decision.source === 'policy_set'
+                    ? { policy_set: policySet.name, agent: policySet.agent }
+                    : {}),
                   args_preview: argsPreview,
                   args_preview_complete: argsPreviewDetails.complete,
                   ...(approvalContext ? { approval_context: approvalContext } : {}),
+                  ...resolved,
                 },
                 approvalUrl: extras.approvalUrl ?? null,
               }),
@@ -1071,7 +1174,7 @@ async function enforceCallPolicies(
           : false;
       return {
         status: 'pending_approval',
-        reason: 'policy_require_approval',
+        reason,
         executionId,
         retryable: false,
         ...extras,
@@ -1164,6 +1267,7 @@ async function runConnectorAction(
           attachmentClaim = await deps.attachmentStore.claimForEmail(scope, emailArgs);
           providerArgs = attachmentClaim.args;
         }
+        providerArgs = await toResendEmailArgs(input.actionPath, providerArgs);
       } else if (attachmentRefs.length > 0) {
         if (!deps.attachmentStore?.claimInline) {
           throw new Error('connector_attachment_transport_unavailable');
@@ -1198,6 +1302,22 @@ async function runConnectorAction(
           fetchImpl: (url, init) => deps.fetchImpl(url, { ...init, signal, maxResponseBytes: MAX_UPSTREAM_RESPONSE_BYTES }),
         }),
       );
+      // Email `send_message` created a draft: send it now, as one action.
+      const draftId =
+        result.ok && isEmailChannel && input.actionPath === 'send_message' ? createdDraftId(result.data) : null;
+      if (draftId) {
+        result = await withDeadline(
+          executeCall({
+            binding: { kind: 'http', method: 'POST', path: '/inboxes/{inbox_id}/drafts/{draft_id}/send' },
+            baseUrl: connector.baseUrl,
+            auth: connector.auth,
+            headers: connector.headers,
+            secret: executionSecret,
+            args: { inbox_id: providerArgs.inbox_id, draft_id: draftId },
+            fetchImpl: (url, init) => deps.fetchImpl(url, { ...init, signal, maxResponseBytes: MAX_UPSTREAM_RESPONSE_BYTES }),
+          }),
+        );
+      }
       // Channel platforms (Slack) reply HTTP 200 with an `{ ok:false, error }`
       // envelope on failure. Surface that as a real error so the agent gets the
       // cause (matching the in-sandbox CLI, which throws on `!ok`).
@@ -1239,6 +1359,11 @@ async function runConnectorAction(
         return { status: 'denied', reason, message };
       }
     }
+    const markedRejected = Boolean(connector.connectionMetadata?.credential_rejected_at);
+    const credentialRejected = await rejectedCredentialAccount(deps, connector, result, markedRejected);
+    if (connector.connectionId && (credentialRejected ? !markedRejected : markedRejected && result.ok)) {
+      await deps.markCredentialRejected?.(connector.connectionId, Boolean(credentialRejected)).catch(() => {});
+    }
     if (result.ok) {
       if (attachmentClaim?.claimToken) {
         await deps.attachmentStore
@@ -1276,11 +1401,13 @@ async function runConnectorAction(
     // An upstream that echoes the rejected body would echo the file's base64.
     const upstream = upstreamReason(result);
     const reason =
+      credentialRejected +
       teamsReadConsentHint(connector, result) +
       (attachmentRefs.length > 0 ? redactInlineBytes(upstream) : upstream) +
       fallbackHint(connector, action.binding);
     await audit(deps, input, connector, 'error', action.risk, {
       http_status: result.status,
+      ...(credentialRejected ? { error_code: CREDENTIAL_REJECTED } : {}),
       reason: reason.slice(0, 500),
     });
     const message = `[connector] ${fullPath} failed (upstream ${result.status}): ${reason.slice(0, 500)}`;
@@ -1410,7 +1537,7 @@ async function runPipedreamAction(
 }
 
 /** A Composio tool call on the connection's server-owned account and session. */
-async function runComposioAction(
+export async function runComposioAction(
   deps: GatewayDeps,
   input: CallInput,
   connector: GatewayConnector,
@@ -1576,6 +1703,50 @@ function upstreamReason(result: ExecResult): string {
     }
   }
   return `upstream_${result.status}`;
+}
+
+const CREDENTIAL_REJECTED = 'credential_rejected';
+
+/**
+ * An upstream 401 to the credential Kortix stored for this account: the key
+ * expired, was revoked, or is wrong. The bare upstream body (`api_key_expired`)
+ * reads like a Kortix auth failure, so name the account and the fix. Empty
+ * for any other result, and for a channel: it sends the platform install
+ * token, not an account credential. A later ok call clears the mark, so one
+ * stray 401 does not leave a working account flagged.
+ */
+async function rejectedCredentialAccount(
+  deps: GatewayDeps,
+  connector: GatewayConnector,
+  result: ExecResult,
+  markedRejected: boolean,
+): Promise<string> {
+  if (result.status !== 401 || !connector.hasAuth || !connector.connectionId || connector.provider === 'channel') {
+    return '';
+  }
+  const label = connector.connectionLabel || connector.connectionId;
+  const kind = await deps.credentialKind?.(connector.connectionId).catch(() => null);
+  let fix: string;
+  if (kind === 'secret') {
+    fix =
+      'A project member replaces it in Connectors, or runs ' +
+      `\`kortix connectors connections credential ${connector.connectionId} -\` with the new value on stdin.`;
+  } else if (!kind && connector.authSecret) {
+    fix = `A project member replaces the value of the project secret ${connector.authSecret} in Secrets.`;
+  } else if (kind?.startsWith('oauth2_')) {
+    // OAuth refreshes the token before expiry, so its 401 means the grant was revoked.
+    fix = `A project member signs in to account "${label}" again in Connectors.`;
+  } else if (connector.provider === 'pipedream') {
+    fix = `A project member reconnects it: \`kortix connectors connect ${connector.slug}\`.`;
+  } else {
+    fix = 'A project member replaces or reconnects it in Connectors.';
+  }
+  return (
+    `${CREDENTIAL_REJECTED}: ${connector.slug} rejected the credential stored in account "${label}" (HTTP 401): ` +
+    `it expired, was revoked, or is wrong. ${fix} ` +
+    (markedRejected ? 'Retrying returns this error until the credential is replaced. ' : '') +
+    'Upstream: '
+  );
 }
 
 /**

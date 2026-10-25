@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 const SIZES = {
   // Buio displayLG: 30 / 36 / 48px. The page h1.

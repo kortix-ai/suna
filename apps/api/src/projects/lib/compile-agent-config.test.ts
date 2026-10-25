@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { describe, expect, mock, spyOn, test } from 'bun:test';
 import { KORTIX_SKILL_NAMES, parseManifestText } from '@kortix/manifest-schema';
 
 // compile-agent-config.ts's I/O half imports the real ../git module, which
@@ -64,10 +64,8 @@ const {
   manifestPiCodemode,
   manifestPiPackageLists,
   manifestPiPackages,
-  manifestRuntime,
   resolveCompiledAgentConfigForSession,
   resolveSelectedAgentConfigForSession,
-  selectSessionHarness,
 } = await import('./compile-agent-config');
 type CompiledAgents = Awaited<ReturnType<typeof compileAgentConfig>> & object;
 
@@ -529,40 +527,6 @@ agents:
   });
 });
 
-describe('selectSessionHarness — flag OR manifest', () => {
-  test('pi when the project flag is on, whatever the manifest says', () => {
-    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'opencode', llmGateway: true })).toBe('pi');
-    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'pi', llmGateway: true })).toBe('pi');
-    expect(selectSessionHarness({ piHarnessFlag: true, runtime: null, llmGateway: true })).toBe('pi');
-  });
-
-  test('pi when the manifest says runtime: pi, even with the flag off', () => {
-    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'pi', llmGateway: true })).toBe('pi');
-  });
-
-  test('opencode in every other case', () => {
-    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'opencode', llmGateway: true })).toBe('opencode');
-    expect(selectSessionHarness({ piHarnessFlag: false, runtime: null, llmGateway: true })).toBe('opencode');
-  });
-
-  // W1 B7: pi calls models only through the gateway; without it the box would never start.
-  test('opencode when the LLM gateway is off, even when the flag or the manifest asks for pi', () => {
-    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'pi', llmGateway: false })).toBe('opencode');
-    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'pi', llmGateway: false })).toBe('opencode');
-    expect(selectSessionHarness({ piHarnessFlag: true, runtime: null, llmGateway: false })).toBe('opencode');
-  });
-});
-
-describe('manifestRuntime — the harness a manifest selects', () => {
-  test('pi only for a v2 manifest that says runtime: pi; everything else is opencode', () => {
-    expect(manifestRuntime(parseYaml('kortix_version: 2\nruntime: pi\nagents:\n  a: {}\n'))).toBe('pi');
-    expect(manifestRuntime(parseYaml('kortix_version: 2\nagents:\n  a: {}\n'))).toBe('opencode');
-    expect(manifestRuntime(parseYaml('kortix_version: 2\nruntime: opencode\n'))).toBe('opencode');
-    expect(manifestRuntime(parseYaml('runtime: pi\n'))).toBe('opencode');
-    expect(manifestRuntime(null)).toBe('opencode');
-  });
-});
-
 describe('manifestPiPackages — the project pi packages a manifest declares', () => {
   test('the v2 harnesses.pi.packages list, entries kept as written', () => {
     const raw = parseYaml('kortix_version: 2\nruntime: pi\nagents:\n  a: {}\nharnesses:\n  pi:\n    packages:\n      - npm:pi-web-access@0.30.0\n      - source: ./x.ts\n        skills: []\n');
@@ -672,11 +636,11 @@ describe('resolveCompiledAgentConfigForSession', () => {
     const result = await resolveCompiledAgentConfigForSession(PROJECT, null, { onManifest: (raw) => { seen = raw; } });
     expect(result).not.toBeNull();
     expect((JSON.parse(result!) as CompiledAgents).agent.support.prompt).toBe('Support body.');
-    expect(manifestRuntime(seen)).toBe('pi');
+    expect((seen as Record<string, unknown> | null)?.runtime).toBe('pi');
     // The restricted-session compiler reads the same manifest and reports it too.
     seen = null;
     await resolveSelectedAgentConfigForSession(PROJECT, 'support', null, { onManifest: (raw) => { seen = raw; } });
-    expect(manifestRuntime(seen)).toBe('pi');
+    expect((seen as Record<string, unknown> | null)?.runtime).toBe('pi');
   });
 
   test("reads each declared agent's conventional .md and returns the compiled JSON for a v2 manifest", async () => {
@@ -796,11 +760,16 @@ describe('resolveCompiledAgentConfigForSession — read failures', () => {
       // pr-bot.md deliberately absent
     };
 
-    const compiled = await resolveCompiledAgentConfigForSession(project);
-
-    expect(compiled).not.toBeNull();
-    expect(JSON.parse(compiled as string).agent['pr-bot']).toBeDefined();
-    expect(JSON.parse(compiled as string).agent.support.prompt).toBe('Support prompt.');
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const compiled = await resolveCompiledAgentConfigForSession(project);
+      expect(compiled).not.toBeNull();
+      expect(compiled && JSON.parse(compiled).agent['pr-bot']).toBeDefined();
+      expect(compiled && JSON.parse(compiled).agent.support.prompt).toBe('Support prompt.');
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   test('a TRANSIENT git failure yields null, not an agent stripped of its prompt', async () => {
@@ -912,7 +881,6 @@ agents:
     expect(JSON.parse(result!).agent.writer.prompt).toBe('Be concise.');
     expect(JSON.parse(result!).agent.reader.prompt).toBe('Read only.');
     expect(readRepoFileCalls).toEqual(['agents/reader.md']);
-    expect(manifestRuntime(parseYaml(manifestFile.content))).toBe('pi');
     const selected = JSON.parse(await resolveSelectedAgentConfigForSession(PROJECT, 'reader', 'feature/yaml'));
     expect(Object.keys(selected.agent).filter((name) => !selected.agent[name].disable)).toEqual(['reader']);
   });

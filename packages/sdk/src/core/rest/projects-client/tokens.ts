@@ -74,6 +74,16 @@ export async function listAccountTokens(
   return unwrap(await backendApi.get<AccountToken[]>(`/accounts/tokens${qs}`));
 }
 
+/** Approve a CLI device login (`kortix login` on a machine with no browser
+ *  callback): the signed-in browser confirms the code the terminal shows. The
+ *  API answers 404 for an expired or used code and 403 for a non-browser
+ *  caller; both reject with the API's sentence. */
+export async function approveCliDevice(userCode: string) {
+  return unwrap(
+    await backendApi.post<{ ok: boolean }>('/cli/device/decide', { user_code: userCode, approve: true }),
+  );
+}
+
 /** Mint a new account-scoped CLI PAT. The `secret_key` is returned once — the
  *  caller must persist it immediately; subsequent reads only ever see `public_key`. */
 export async function createAccountToken(input: CreateAccountTokenInput) {

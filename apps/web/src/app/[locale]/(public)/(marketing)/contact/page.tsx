@@ -9,8 +9,8 @@ import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { MARKETING_CONTAINER } from '@/features/marketing/kit/section';
 import { SectionHeading } from '@/features/marketing/kit/section-heading';
 import { CONTACT_TRANSLATION_KEYS } from '@/i18n/contact-translation-keys.generated';
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
-import { cn } from '@/lib/utils';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
+import { cn } from '@kortix/ui';
 
 const CONTACT_EMAIL = 'hey@kortix.ai';
 const SUPPORT_EMAIL = 'support@kortix.com';

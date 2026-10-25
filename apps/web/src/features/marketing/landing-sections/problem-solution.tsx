@@ -1,7 +1,7 @@
 'use client';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
+import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
 import { XCircleIcon } from '@phosphor-icons/react/dist/ssr';
 
 

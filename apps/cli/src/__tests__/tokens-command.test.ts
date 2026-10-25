@@ -56,6 +56,8 @@ const ghost = {
 };
 /** Overridden by the all-dead test; null falls back to the standard fixture. */
 let mineFixture: unknown[] | null = null;
+/** The token the CLI itself authenticates with, as `/accounts/me` reports it. */
+let meTokenId: string | null = 'tok_self';
 
 let tmp: string;
 let runner: string;
@@ -63,6 +65,9 @@ let api: FakeApi | null = null;
 
 const routes: Parameters<typeof startFakeApi>[0] = (req, url, body) => {
   const p = url.pathname;
+  if (p === '/v1/accounts/me' && req.method === 'GET') {
+    return Response.json({ user_id: 'user_1', email: 'user@example.test', token_context: { auth_type: 'pat', token_id: meTokenId } });
+  }
   if (p === '/v1/accounts/tokens' && req.method === 'GET') {
     const mine = url.searchParams.get('mine') === 'true';
     if (mine) return Response.json(mineFixture ?? [laptop, ci, ghost]);
@@ -197,6 +202,7 @@ describe('kortix tokens', () => {
     api?.stop();
     api = null;
     mineFixture = null;
+    meTokenId = 'tok_self';
     rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -219,6 +225,7 @@ describe('kortix tokens', () => {
     expect(h.stdout).toContain('cannot authorize; delete and');
     expect(h.stdout).toContain('re-create to return');
     expect(h.stdout).not.toContain('reversible only by');
+    expect(h.stdout.replace(/\s+/g, ' ')).toContain('--mine --all lists your revoked keys too');
     const bare = await runCommand(runner, [], { cwd: tmp });
     expect(bare.code).toBe(2);
   });
@@ -273,7 +280,9 @@ describe('kortix tokens', () => {
     expect(table.stdout).not.toContain('ghost');
     expect(table.stdout).toContain('1 key');
     expect(table.stdout).toContain('2 revoked hidden');
-    expect(table.stdout).toContain('--all');
+    // KRTX-2992: the account list (no --mine) holds only live keys
+    // (listAccountTokens), so `--all` changes something only with --mine.
+    expect(table.stdout).toContain('(--mine --all lists them)');
 
     const full = await runCommand(runner, ['ls', '--mine', '--all'], {
       cwd: tmp,
@@ -299,7 +308,7 @@ describe('kortix tokens', () => {
     expect(table.code).toBe(0);
     expect(table.stdout).toContain('No API keys minted by you');
     expect(table.stdout).toContain('2 revoked');
-    expect(table.stdout).toContain('--all');
+    expect(table.stdout).toContain('kortix tokens ls --mine --all');
   });
 
   test('new POSTs account_id IN THE BODY and prints the secret once', async () => {
@@ -378,7 +387,13 @@ describe('kortix tokens', () => {
       expect(result.stdout).toContain(initial === 'revoked' ? 'Deleted' : 'Revoked');
     } finally {
       server.closeAllConnections();
-      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      // Bun's closeAllConnections() can already stop the server; close() then
+      // reports ERR_SERVER_NOT_RUNNING, which is not a test failure.
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) =>
+          error && (error as NodeJS.ErrnoException).code !== 'ERR_SERVER_NOT_RUNNING' ? reject(error) : resolve(),
+        ),
+      );
     }
   });
 
@@ -386,12 +401,13 @@ describe('kortix tokens', () => {
     const config = boot();
     const ok = await runCommand(runner, ['rm', 'tok_a', '-y'], { cwd: tmp, configFile: config });
     expect(ok.code).toBe(0);
-    expect(api!.requests[1]).toMatchObject({
+    const revoke = api!.requests.find((r) => r.method === 'DELETE');
+    expect(revoke).toMatchObject({
       method: 'DELETE',
       path: '/v1/accounts/tokens/tok_a',
     });
     expect(api!.requests[0]!.query).toContain(`account_id=${ACCOUNT}`);
-    expect(api!.requests[1]!.query).not.toContain('delete_revoked=true');
+    expect(revoke!.query).not.toContain('delete_revoked=true');
 
     expect(ok.stdout).toContain('Revoked');
     const deleted = await runCommand(runner, ['rm', 'tok_b', '-y'], { cwd: tmp, configFile: config });
@@ -404,6 +420,49 @@ describe('kortix tokens', () => {
     });
     expect(miss.code).toBe(1);
     expect(miss.stderr).toContain('token not found or already revoked');
+  });
+
+  // KRTX-1842: `rm <active-id> -y` revoked the key the CLI itself signs in
+  // with, and every next command failed with "token rejected".
+  test('rm refuses the key this CLI is signed in with, even with -y; --force revokes it', async () => {
+    const config = boot();
+    meTokenId = 'tok_a';
+    const refused = await runCommand(runner, ['rm', 'tok_a', '-y'], { cwd: tmp, configFile: config });
+    expect(refused.code).toBe(2);
+    expect(refused.stderr).toContain('signed in with');
+    expect(refused.stderr).toContain('--force');
+    expect(api!.requests.some((r) => r.method === 'DELETE')).toBe(false);
+
+    const forced = await runCommand(runner, ['rm', 'tok_a', '-y', '--force'], { cwd: tmp, configFile: config });
+    expect(forced.code).toBe(0);
+    expect(api!.requests.find((r) => r.method === 'DELETE')).toMatchObject({ path: '/v1/accounts/tokens/tok_a' });
+  });
+
+  test('rm revokes as before when the API does not name the calling token', async () => {
+    const config = boot();
+    meTokenId = null;
+    const r = await runCommand(runner, ['rm', 'tok_a', '-y'], { cwd: tmp, configFile: config });
+    expect(r.code).toBe(0);
+    expect(api!.requests.find((q) => q.method === 'DELETE')).toMatchObject({ path: '/v1/accounts/tokens/tok_a' });
+  });
+
+  // KRTX-2829: `tokens ls --json` keyed a row by `token_id`, `tokens
+  // service-accounts ls --json` by `service_account_id`, so one script loop
+  // over both kinds had to special-case the key. Both carry `id` now; the
+  // original keys stay.
+  test('ls --json and service-accounts ls --json both carry a shared id key', async () => {
+    const config = boot();
+    const tokens = await runCommand(runner, ['ls', '--json'], { cwd: tmp, configFile: config });
+    expect(tokens.code).toBe(0);
+    const tokenRows = JSON.parse(tokens.stdout) as Array<{ id: string; token_id: string }>;
+    expect(tokenRows.length).toBeGreaterThan(0);
+    for (const row of tokenRows) expect(row.id).toBe(row.token_id);
+
+    const accounts = await runCommand(runner, ['service-accounts', 'ls', '--json'], { cwd: tmp, configFile: config });
+    expect(accounts.code).toBe(0);
+    const saRows = JSON.parse(accounts.stdout) as Array<{ id: string; service_account_id: string }>;
+    expect(saRows.length).toBeGreaterThan(0);
+    for (const row of saRows) expect(row.id).toBe(row.service_account_id);
   });
 
   test('service-accounts ls/new/disable/rm hit the IAM routes', async () => {

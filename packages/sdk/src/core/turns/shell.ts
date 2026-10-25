@@ -30,6 +30,7 @@ interface TextPartLike extends PartLike {
  *
  * Stricter than our previous implementation — matches SolidJS session-turn.tsx:364-379
  * which checks `msgParts.length !== 1` (exactly one assistant part total).
+ * @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support.
  */
 export function isShellMode(turn: TurnLike): boolean {
   const userParts = turn.userMessage.parts;
@@ -47,7 +48,10 @@ export function isShellMode(turn: TurnLike): boolean {
   return isToolPart(part) && (part as PartLike as ToolPartLike).tool === 'bash';
 }
 
-/** Get the bash tool part when in shell mode. */
+/**
+ * Get the bash tool part when in shell mode.
+ * @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support.
+ */
 export function getShellModePart<M extends MessageWithPartsLike>(
   turn: TurnLike<M>,
 ): (M['parts'][number] & { type: 'tool' }) | undefined {

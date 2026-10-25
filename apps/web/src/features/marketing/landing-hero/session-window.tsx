@@ -1,12 +1,12 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { CountBadge } from '@/components/ui/count-badge';
-import Hint from '@/components/ui/hint';
-import { ContextRing } from '@/features/session/composer/context-ring';
-import { CustomizeGlyph } from '@/features/icon/icons/customize';
-import { SidebarToggle } from '@/features/icon/icons/sidebar-toggle';
-import { cn } from '@/lib/utils';
+import { Button } from '@kortix/ui/button';
+import { CountBadge } from '@kortix/ui/count-badge';
+import Hint from '@kortix/ui/hint';
+import { ProgressRing } from '@kortix/ui/progress-ring';
+import { CustomizeGlyph } from './customize-glyph';
+import { SidebarToggle } from '@kortix/ui/workspace';
+import { cn } from '@kortix/ui';
 import {
   ArrowUpIcon,
   CaretDownIcon,
@@ -370,7 +370,7 @@ function Composer({ typed }: { typed: number }) {
           </Button>
         </div>
         <span className="flex size-8 items-center justify-center" aria-hidden>
-          <ContextRing percent={18} tone="info" className="size-4" />
+          <ProgressRing value={18} progressClassName="text-kortix-blue" className="size-4" />
         </span>
       </div>
     </div>

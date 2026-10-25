@@ -750,8 +750,8 @@ triggers:
 });
 
 describe('validateManifest — kortix_version 2 runtime enum', () => {
-  test('runtime: opencode is accepted', () => {
-    const { valid } = summarize(`
+  test('runtime: opencode is accepted with a deprecation warning: every new session runs pi', () => {
+    const { valid, warningPaths, issues } = summarize(`
 kortix_version: 2
 default_agent: w
 runtime: opencode
@@ -759,6 +759,19 @@ agents:
   w: {}
 `);
     expect(valid).toBe(true);
+    expect(warningPaths).toContain('runtime');
+    expect(issues.find((i) => i.path === 'runtime')?.message).toContain('every new session runs pi');
+  });
+
+  test('runtime: pi needs no warning', () => {
+    const { warningPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+runtime: pi
+agents:
+  w: {}
+`);
+    expect(warningPaths).not.toContain('runtime');
   });
 
   test('omitted runtime defaults implicitly (no error)', () => {

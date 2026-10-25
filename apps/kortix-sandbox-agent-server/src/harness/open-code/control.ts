@@ -25,9 +25,8 @@ import type { QuickQueueInterrupt } from './quick-queue-interrupt'
 
 const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   'KORTIX_LLM_BASE_URL',
-  // The daemon-local LLM proxy URL (warm-fork boxes). Cleared on a live
-  // gateway→native toggle — hasKortixLlmGateway() treats a set proxy URL as
-  // "gateway on", so leaving it behind would pin the box in gateway mode.
+  // The daemon-local LLM proxy URL, set when a live gateway push finds a
+  // running proxy (applyLlmGatewayMode).
   'KORTIX_LLM_PROXY_URL',
   // The session's model. opencode reads this when it builds its config at spawn
   // (opencode.ts), so accepting it here + restarting is what makes a mid-session
@@ -100,6 +99,7 @@ function persistOpencodeRuntimeEnvSnapshot(): void {
  * gap for a name whose sole source of truth is a live push, so the next
  * `/kortix/env` push of an UNCHANGED value reads as unchanged, not as a
  * config-affecting delta that forces an avoidable respawn.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function restoreOpencodeRuntimeEnvSnapshotIfUnset(): void {
   const snapshot = readOpencodeRuntimeEnvSnapshot()
@@ -148,12 +148,18 @@ function opencodeEnvRestartMayPromote(
  */
 let opencodeEnvRestartPending = false
 
-/** Test seam: clear the pending flag between rows. */
+/**
+ * Test seam: clear the pending flag between rows.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function resetOpencodeEnvRestartPendingForTests(): void {
   opencodeEnvRestartPending = false
 }
 
-/** Test seam: is a deferred restart currently pending? */
+/**
+ * Test seam: is a deferred restart currently pending?
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function opencodeEnvRestartIsPendingForTests(): boolean {
   return opencodeEnvRestartPending
 }
@@ -164,6 +170,7 @@ export function opencodeEnvRestartIsPendingForTests(): boolean {
  * A no-op when nothing is pending. Never throws: a failed retry leaves the
  * flag set so the NEXT idle boundary tries again, and the box otherwise runs
  * on unchanged.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function retryDeferredOpencodeEnvRestart(
   opencode: Pick<Opencode, 'reloadConfig' | 'getInternalUrl'>,
@@ -254,14 +261,11 @@ function setOpencodeRuntimeEnv(next: Record<string, string | null>): { changed: 
 function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown): { changed: boolean; names: string[] } {
   if (enabled === undefined) return { changed: false, names: [] }
   if (typeof enabled !== 'boolean') throw new Error('llmGatewayEnabled must be a boolean')
+  // The gateway is the only model path. An API from before that graduation
+  // can still send `false`; the box keeps its gateway env.
   if (!enabled) {
-    return setOpencodeRuntimeEnv({
-      KORTIX_LLM_BASE_URL: null,
-      // Warm-fork boxes run a localhost LLM proxy and mark it here; it also
-      // reads as "gateway on" (hasKortixLlmGateway), so a live disable must
-      // clear both or the respawned opencode keeps the kortix provider.
-      KORTIX_LLM_PROXY_URL: null,
-    })
+    logger.info('[env] llmGatewayEnabled=false ignored; the LLM gateway is the only model path')
+    return { changed: false, names: [] }
   }
   if (typeof baseUrl !== 'string' || !baseUrl.trim()) {
     throw new Error('llmGatewayBaseUrl is required when llmGatewayEnabled is true')
@@ -306,7 +310,10 @@ async function unchangedRepo(projectTarget: string) {
   return { before: info, after: info }
 }
 
-/** Native control operations. HTTP parsing, authorization and status mapping stay in routes. */
+/**
+ * Native control operations. HTTP parsing, authorization and status mapping stay in routes.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function createOpenCodeControlService(
   opencode: Opencode,
   quickQueue: Pick<QuickQueueInterrupt, 'arm' | 'disarm'>,

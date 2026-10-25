@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, mock, test } from 'bun:test';
 
-import { registerQueryClient } from '@/lib/query-client-singleton';
-import { safeSetItem } from '@/lib/storage/managed-storage';
+import { getSharedQueryClient, registerQueryClient } from '@kortix/ui/internal/lib/query-client-singleton';
+import { safeSetItem } from '@kortix/ui/internal/lib/storage/managed-storage';
 import {
   type SessionTranscriptSyncEnvelope,
   createPersistedQueryCache,
@@ -41,7 +41,11 @@ const indexedStorage = {
   setItem: async (key: string, value: string) => void indexed.set(key, value),
   removeItem: async (key: string) => void indexed.delete(key),
 };
+// A bun module mock is process-wide: keep the real exports, or a file that runs
+// after this one in the same `bun test` process imports a module with holes.
+const idbSyncCache = await import('@kortix/sdk/internal/idb-sync-cache');
 mock.module('@kortix/sdk/internal/idb-sync-cache', () => ({
+  ...idbSyncCache,
   indexedDBKeyValueStorage: () => indexedStorage,
 }));
 const { adoptDeviceCaches, clearDeviceCaches, sweepRetiredDeviceCaches, WEB_QUERY_CACHE_MAX_BYTES } =
@@ -72,7 +76,7 @@ afterAll(() => {
 
 const USER = 'user-a';
 const STORAGE_KEY = `kortix.query-cache:${USER}`;
-const gateKey = ['project-access-boundary', 'project-1', USER];
+const gateKey = qk.project.summary('project-1');
 const listKey = qk.project.sessionsPaged('project-1');
 const messagesKey = qk.project.messages('project-1', 'session-1');
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -133,6 +137,91 @@ function sessionRow(n: number) {
     updated_at: '2026-10-06T00:00:00.000Z',
   };
 }
+
+// Runs FIRST, while `getSharedQueryClient()` is still null: the app shell
+// mounts one auth round trip sooner (#10344), so `adoptDeviceCaches` can run
+// before `ReactQueryProvider` registers the client. Dropping adopt on that
+// null client left the saved-copy store unset, so the reloaded session painted
+// the skeleton instead of its kept conversation (journey 34, release 0.14.3).
+describe('adopt runs before the query client registers (#10344)', () => {
+  const user = 'user-early';
+  const gate = qk.project.summary('project-early');
+  const opensOn = (pathname: string) => Object.assign(pageWindow, { location: { pathname } });
+
+  test('registers the saved-copy store and prefetches the opened session with no client yet', async () => {
+    // This test's premise: no client registered yet. A prior test that
+    // registered one would make the assertion below a false pass.
+    expect(getSharedQueryClient()).toBeNull();
+
+    // The device kept this session's conversation, and the previous load left a
+    // persisted query cache, both for this user.
+    await createSavedCopyStore({ storage: indexedStorage, userId: user }).write(
+      'project-early',
+      'session-early',
+      envelope(),
+    );
+    const previous = new QueryClient();
+    previous.setQueryData(gate, { project_id: 'project-early' });
+    const writer = createPersistedQueryCache({ storage: local, userId: user, shouldPersist: () => true });
+    writer.persist(previous);
+    await writer.flush();
+
+    opensOn('/projects/project-early/sessions/session-early');
+    adoptDeviceCaches(user);
+    await settle();
+
+    // The fix: the saved-copy store does not wait on the client, so the opened
+    // session's copy is in memory for the first frame.
+    expect(currentSavedCopyStore()).not.toBeNull();
+    const first = currentSavedCopyStore()!.read('project-early', 'session-early');
+    expect(first).not.toBeInstanceOf(Promise);
+    expect((first as SessionTranscriptSyncEnvelope).messages).toHaveLength(1);
+
+    // The query cache waits for the client, then restores when it registers —
+    // not dropped on the early return.
+    const client = new QueryClient();
+    expect<unknown>(client.getQueryData(gate)).toBeUndefined();
+    registerQueryClient(client);
+    expect<unknown>(client.getQueryData(gate)).toEqual({ project_id: 'project-early' });
+
+    await clearDeviceCaches();
+  });
+});
+
+// React can discard a render in which `ReactQueryProvider` created and registered
+// its client (a hydration retry, a suspension, Strict Mode), then commit a second
+// client. The restore ran once, on the first: the committed client was empty, so the
+// project gate had no kept project and a reload with every read held showed
+// "Opening your project" until the network answered (journey 34).
+describe('a client registered after the restore (a discarded render) gets the kept queries too', () => {
+  const user = 'user-replaced';
+  const gate = qk.project.summary('project-replaced');
+
+  test('the second client holds the restored gate, and the writer follows it', async () => {
+    const previous = new QueryClient();
+    previous.setQueryData(gate, { project_id: 'project-replaced' });
+    const writer = createPersistedQueryCache({ storage: local, userId: user, shouldPersist: () => true });
+    writer.persist(previous);
+    await writer.flush();
+
+    const discarded = new QueryClient();
+    registerQueryClient(discarded);
+    adoptDeviceCaches(user);
+    expect<unknown>(discarded.getQueryData(gate)).toEqual({ project_id: 'project-replaced' });
+
+    const committed = new QueryClient();
+    registerQueryClient(committed);
+    expect<unknown>(committed.getQueryData(gate)).toEqual({ project_id: 'project-replaced' });
+
+    // What the committed client changes is what the next reload restores.
+    committed.setQueryData(gate, { project_id: 'project-replaced', name: 'renamed' });
+    pageWindow.dispatchEvent(new Event('pagehide'));
+    await settle();
+    expect(entries.get(`kortix.query-cache:${user}`)).toContain('renamed');
+
+    await clearDeviceCaches();
+  });
+});
 
 describe('device caches', () => {
   const client = new QueryClient();

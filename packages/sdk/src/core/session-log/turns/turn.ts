@@ -128,6 +128,8 @@ export interface SessionLogTurn {
 }
 
 export interface SessionLogTurnsOptions {
+  /** Fold compactions and their continuation work into the preceding prompt. Default false. */
+  foldCompactions?: boolean;
   /** The session is working (the composer shows Stop). Default false: no turn is live. */
   busy?: boolean;
   /** The user message id the working projection names (`WorkingProjection.turnId`), when it names one. */
@@ -293,6 +295,27 @@ function drafts(messages: readonly SessionLogMessage[], held: ReadonlySet<string
   return [...partials, ...shown, ...[...held].flatMap((id) => byId.get(id) ?? [])];
 }
 
+/** Keep the existing continuation ownership, but draw its work under the original prompt. */
+function foldCompactionDrafts(list: Draft[], hint: string | null | undefined): { list: Draft[]; hint: string | null | undefined } {
+  const folded: Draft[] = [];
+  const homes = new Map<string, Draft>();
+  let liveHint = hint;
+  for (const draft of list) {
+    const previous = folded[folded.length - 1];
+    const home = draft.continues ? homes.get(draft.continues.marker)
+      : draft.user.kind === 'compaction' && previous?.user.kind !== 'compaction' ? previous : undefined;
+    if (!home) {
+      folded.push({ ...draft, assistant: [...draft.assistant] });
+      continue;
+    }
+    homes.set(draft.user.message_id, home);
+    if (draft.user.kind === 'compaction') home.assistant.push(draft.user);
+    home.assistant.push(...draft.assistant);
+    if (hint === draft.user.message_id) liveHint = home.user.message_id;
+  }
+  return { list: folded, hint: liveHint };
+}
+
 /** The turn the working projection means: a prompt or a marker whose work continued below a compaction names its last continuation. */
 function continuedHint(list: readonly Draft[], hint: string | null | undefined): string | null | undefined {
   if (!hint) return hint;
@@ -433,7 +456,9 @@ function inContextOnly(thread: SessionLogThread): SessionLogThread {
 export function sessionLogTurns(source: SessionLogThread, options: SessionLogTurnsOptions = {}): SessionLogTurn[] {
   const thread = options.hideOutOfContext ? inContextOnly(source) : source;
   const held = new Set(options.held ?? NONE);
-  const list = drafts(thread.messages, held);
+  const raw = drafts(thread.messages, held);
+  const continued = continuedHint(raw, options.liveMessageId);
+  const { list, hint } = options.foldCompactions ? foldCompactionDrafts(raw, continued) : { list: raw, hint: continued };
   const lastReply = last(thread.messages, (m) => m.role === 'assistant');
   const retrying = sessionLogRetrying(thread);
   const working = resolveWorkingTurn({
@@ -441,7 +466,7 @@ export function sessionLogTurns(source: SessionLogThread, options: SessionLogTur
       userMessage: { info: { id: d.user.message_id } },
       assistantMessages: d.assistant.map((m) => ({ info: { time: m.status === 'streaming' ? {} : { completed: 1 }, error: m.error ?? undefined } })),
     })),
-    hintMessageId: continuedHint(list, options.liveMessageId),
+    hintMessageId: hint,
     unrunTurnIds: held,
   });
   const anchor = last(list, writesPlan) ?? list[list.length - 1];

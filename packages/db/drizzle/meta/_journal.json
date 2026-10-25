@@ -1163,6 +1163,125 @@
       "when": 1792252746876,
       "tag": "20261017155906_trigger_run_history",
       "breakpoints": true
+    },
+    {
+      "idx": 166,
+      "version": "7",
+      "when": 1792378345572,
+      "tag": "20261019025225_trigger_event_polls",
+      "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1792436141586,
+      "tag": "20261019185541_account_automations_paused",
+      "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "7",
+      "when": 1792450743208,
+      "tag": "20261019225903_session_lifecycle_claimable_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1792480772144,
+      "tag": "20261020071932_trigger_auto_pause",
+      "breakpoints": true
+    },
+    {
+      "idx": 170,
+      "version": "7",
+      "when": 1792481755915,
+      "tag": "20261020073555_krtx_2763_spend_audit_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 171,
+      "version": "7",
+      "when": 1792499131052,
+      "tag": "20261020122531_gateway_spend_daily",
+      "breakpoints": true
+    },
+    {
+      "idx": 172,
+      "version": "7",
+      "when": 1792510728100,
+      "tag": "20261020153848_agent_rooms",
+      "breakpoints": true
+    },
+    {
+      "idx": 173,
+      "version": "7",
+      "when": 1792518518473,
+      "tag": "20261020174838_approval_expiry",
+      "breakpoints": true
+    },
+    {
+      "idx": 174,
+      "version": "7",
+      "when": 1792526100000,
+      "tag": "20261020195500_secret_request_rotation",
+      "breakpoints": true
+    },
+    {
+      "idx": 175,
+      "version": "7",
+      "when": 1792544465606,
+      "tag": "20261021010105_connector_call_status_expired_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "7",
+      "when": 1792592891819,
+      "tag": "20261021142811_trigger_run_turn_token",
+      "breakpoints": true
+    },
+    {
+      "idx": 177,
+      "version": "7",
+      "when": 1792622431693,
+      "tag": "20261021224031_capture_workspace_storage",
+      "breakpoints": true
+    },
+    {
+      "idx": 178,
+      "version": "7",
+      "when": 1792688971178,
+      "tag": "20261022170931_audit_activity_daily",
+      "breakpoints": true
+    },
+    {
+      "idx": 179,
+      "version": "7",
+      "when": 1792689731259,
+      "tag": "20261022172211_cli_device_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 180,
+      "version": "7",
+      "when": 1792746565794,
+      "tag": "20261023090925_response_public_shares",
+      "breakpoints": true
+    },
+    {
+      "idx": 181,
+      "version": "7",
+      "when": 1792772352519,
+      "tag": "20261023161912_artifacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 182,
+      "version": "7",
+      "when": 1792823946886,
+      "tag": "20261024063906_connector_policy_sets",
+      "breakpoints": true
     }
   ]
 }

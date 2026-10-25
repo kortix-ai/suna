@@ -4,9 +4,9 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useMemo, useState, type ReactNode } from 'react';
 
 import { UseCaseCard, UseCaseFeatured } from '@/components/use-cases/use-case-card';
-import { EmptyState } from '@/features/layout/section/empty-state';
+import { EmptyState } from '@kortix/ui/empty-state';
 import type { Post } from '@/lib/blog';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 const ALL = 'All';
 

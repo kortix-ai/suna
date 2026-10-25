@@ -183,6 +183,8 @@ interface DeployFlags {
   groupIds?: string[];
   /** `--always-on` / `--on-demand`: applied to a new App, or to the existing one. */
   alwaysOn?: boolean;
+  /** `--listed` / `--unlisted`: a card on the Apps page, or Background Apps. Beats kortix.yaml `display.listed`. */
+  listed?: boolean;
   /** A worker-only App (process groups, no http service): no port. */
   workerOnly?: boolean;
 }
@@ -190,8 +192,8 @@ interface DeployFlags {
 export function deployFlags(rest: string[]): DeployFlags {
   dropRetiredBudgetFlag(rest);
   const provider = takeFlagValue(rest, ['--provider']) as AppHostingProvider | undefined;
-  if (provider && !['daytona', 'platinum', 'e2b'].includes(provider)) {
-    throw new Error('--provider must be daytona, platinum, or e2b');
+  if (provider && !['platinum', 'daytona'].includes(provider)) {
+    throw new Error('--provider must be platinum or daytona (legacy fallback)');
   }
   const accessMode = takeFlagValue(rest, ['--access']) as AppAccessMode | undefined;
   if (
@@ -208,6 +210,9 @@ export function deployFlags(rest: string[]): DeployFlags {
   const alwaysOn = takeFlagBool(rest, ['--always-on']);
   const onDemand = takeFlagBool(rest, ['--on-demand']);
   if (alwaysOn && onDemand) throw new Error('Pass --always-on or --on-demand, not both');
+  const listed = takeFlagBool(rest, ['--listed']);
+  const unlisted = takeFlagBool(rest, ['--unlisted']);
+  if (listed && unlisted) throw new Error('Pass --listed or --unlisted, not both');
   return {
     app: takeFlagValue(rest, ['--app']),
     slug: takeFlagValue(rest, ['--slug']),
@@ -233,6 +238,7 @@ export function deployFlags(rest: string[]): DeployFlags {
     memberIds: csv(takeFlagValue(rest, ['--members'])),
     groupIds: csv(takeFlagValue(rest, ['--groups'])),
     alwaysOn: alwaysOn ? true : onDemand ? false : undefined,
+    listed: listed ? true : unlisted ? false : undefined,
   };
 }
 

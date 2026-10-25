@@ -1,7 +1,7 @@
 import { PlusIcon } from '@phosphor-icons/react/dist/ssr';
 import { type ReactNode } from 'react';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 /** The hairline frame around a run of `Disclosure` rows: a rule above, between and below. */
 export function DisclosureList({

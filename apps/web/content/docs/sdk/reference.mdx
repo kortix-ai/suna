@@ -138,6 +138,7 @@ Methods: `signUp`, `signInWithPassword`, `sendMagicLink`, `verifyOtp`, `signInWi
 | `secretResources.list` · `.create` · `.rotate` · `.retry` · `.remove` · `.grant` · `.revoke` · `.setAccess` | Account-level provider secrets and which projects may use them. |
 | `branding.get(accountId)` · `.update(accountId, { app_name })` · `.uploadAsset(accountId, kind, file)` · `.removeAsset(accountId, kind)` · `.reset(accountId)` | Organization branding. `kind`: `logo`, `icon`, `favicon`, or `logo_dark`, `icon_dark`, `favicon_dark`. |
 | `audit.log(accountId, filters?)` · `audit.export(accountId, { format: 'csv' \| 'jsonl', …filters })` | The audit log, filtered by project, session, actor, source, outcome, request, resource, action or time · the same events as a file. |
+| `audit.activity(accountId, { since?, until?, projectId?, actor?, client?, actorType?, credentialKind? })` | Who was active and how often, per UTC day: per user, the active days, distinct active hours and events. `client: 'browser'` keeps only a person in a web page. |
 | `audit.webhooks.list` · `.create` · `.update` · `.remove` | Signed webhooks that stream audit events to a SIEM. |
 
 Account features are explained in [Accounts & access](/docs/accounts), keys in [API keys and tokens](/docs/accounts/identity#api-keys-and-tokens).
@@ -194,7 +195,7 @@ Every method needs a person's credential. A service account gets `403`.
 | `markRead({ ids })` · `markRead({ all: true })` · `markRead({ sessionId })` | Mark 1 to 100 rows, all rows, or one session's rows read. Returns `{ updated, unread_count }`. |
 | `preferences()` · `updatePreferences({ kinds })` | Push and email per kind: `{ kinds, email_available }`. A patch changes only the kinds it names. |
 | `webPushPublicKey()` · `registerWebPushSubscription({ endpoint, keys })` · `unregisterWebPushSubscription(endpoint)` | Web Push for this browser. Registration needs a browser sign-in: a personal access key gets `403`. |
-| `registerDeviceToken(input)` · `unregisterDeviceToken(token)` | A native app's push token. |
+| `registerDeviceToken(input)` · `unregisterDeviceToken(token)` · `releaseDeviceToken(token, { backendUrl? })` | A native app's push token. `releaseDeviceToken` needs no credential: a signed-out app removes its token. |
 
 Kinds (`INBOX_NOTIFICATION_KINDS`): `turn_done`, `turn_error`, `question`, `permission`, `shared`, `automation_failed`, `automation_recovered`. Defaults are in `DEFAULT_NOTIFICATION_PREFERENCES`. The inbox writes rows only for projects with the `notification_center` feature flag on. The flag is off by default. While it is off, `s.watch()` and `s.setWatch()` return `403 feature_disabled`. The session handle adds `watch()`, `setWatch(watching)` and `presence(…)`. See [Notifications](/docs/work/sessions#notifications).
 
@@ -306,7 +307,7 @@ Policies and approvals are explained in [Policies and approvals](/docs/connect/c
 | `secrets.setGitCredential(input)` | The credential for a bring-your-own git repository. |
 | `secrets.listProviderOAuth()` · `.startProviderOAuth(…)` · `.pollProviderOAuth(…)` · `.removeProviderOAuth(provider)` | Subscription logins for model providers, through a device-code flow. |
 | `tokens.list()` · `tokens.create(input?)` · `tokens.revoke(tokenId)` | Project API keys. Kortix also mints one per session as `KORTIX_TOKEN`. |
-| `setupLinks.requestSecret(input)` · `setupLinks.requestConnector(input)` | A link a person opens to enter a secret or connect an app, without full project access. |
+| `setupLinks.requestSecret(input)` · `setupLinks.requestConnector(input)` | A link a person opens to enter a secret or connect an app, without full project access. A connector link works on `composio` and `pipedream` connectors, and on `mcp` connectors with one-click sign-in. |
 
 Exposure policies and flags are explained in [Secrets](/docs/project/secrets).
 
@@ -320,12 +321,14 @@ Exposure policies and flags are explained in [Secrets](/docs/project/secrets).
 | `connectors.catalog(options?)` · `.tools()` · `.search(query)` · `.describe(tool)` · `.accounts(slug)` · `.uploadAttachment(…)` | Find and inspect callable tools and accounts. |
 | `connectors.list()` · `.config(slug)` · `.create(input)` · `.remove(slug)` · `.sync()` · `.auth.discover(input)` | Configure connectors. `auth.discover` reads auth from an OpenAPI spec, a Postman collection or an endpoint. |
 | `connectors.setName` · `.setSensitive` · `.setCredentialMode` · `.setCredential` · `.deleteCredential` | Connector settings and its stored credential. |
-| `connectors.policies.get(slug)` · `connectors.policies.set(slug, policies)` | One connector's tool policies. |
+| `connectors.policies.get(slug, { policySet? })` · `connectors.policies.set(slug, policies, { policySet? })` | One connector's base rules, or with `policySet` the rules of that policy set. A rule is `{ match, action, conditions? }`. |
+| `connectors.policySets.list(slug)` · `.upsert(slug, name, { description? })` · `.rename(slug, name, newName)` · `.remove(slug, name)` | The connector's [policy sets](/docs/connect/connectors#policy-sets): list each set with its rules and the agents that use it · create one or set its description · rename it and every agent reference · delete it (`409`, `policy_set_in_use`, while an agent uses it). The root exports `listConnectorPolicySets`, `upsertConnectorPolicySet`, `renameConnectorPolicySet` and `deleteConnectorPolicySet`. |
 | `connectors.connections.list()` · `.listAll()` · `.reconcile(…)` · `.reconcileMember(…)` · `.updateCredential(…)` · `.revoke(…)` · `.activate(…)` · `.setDefault(…)` · `.rename(…)` · `.share(…)` · `.addComputer(…)` | Connected accounts: shared or private, defaults, labels, sharing and paired computers. |
-| `connectors.pipedream.listApps` · `.listSections` · `.connect` · `.finalize` | Managed OAuth connect for OAuth apps. |
-| `connectors.discover.list` · `.sections` · `.detail` | The direct connector catalog. Needs the `connectors_api_discover` feature flag. |
+| `connectors.pipedream.listApps` · `.listSections` · `.connect` · `.finalize` | Legacy Pipedream connect for OAuth apps. |
+| `connectors.listMoves()` · `connectors.move(slug, { connectionId? })` | Move a Pipedream or Composio connector to its Kortix MCP app. It keeps its slug. `listMoves` returns `ConnectorMove[]`. `move` returns `ConnectorMoveResult`: `status: 'sign_in'` with the `connection_id` to sign in on, or `status: 'moved'`. The root exports the same calls as `listConnectorMoves(projectId)` and `moveConnector(projectId, slug, { connectionId? })`. See [Move a Pipedream or Composio connector to Kortix](/docs/connect/connectors#move-a-pipedream-or-composio-connector-to-kortix). |
+| `connectors.discover.list` · `.sections` · `.detail` · `.tools` · `.install` | The app catalog: every MCP server, REST and GraphQL API and Composio app. `list` and `sections` take `q`, `category`, `kinds` (`mcp`, `composio`, `openapi`, `graphql`) and `oneClick`. `detail(id)` lists the app's ways to connect, best first, the first `recommended`. `tools(id, way?)` lists what one way can do before install. `install({ id, way?, name?, slug? })` adds a named connector profile and returns `next` (`connect`, `credential` or `ready`). |
 | `policies.list()` · `policies.set(policies)` | Project policies. |
-| `agentIdentities()` · `setAgentScope(agentName, scope)` | The project's agents as principals · bind secrets and connectors to one agent. |
+| `agentIdentities()` · `setAgentScope(agentName, scope)` | The project's agents as principals · bind secrets, connectors and policy sets to one agent. `scope.policy_sets` is `{ <slug>: <name> \| null }`, merged per connector; `null` or `'base'` removes the entry. |
 
 Accounts, the account a call uses, typed calls and errors are explained in [Connectors](/docs/connect/connectors) and [Call connectors from code](/docs/connect/connectors#call-connectors-from-code).
 
@@ -334,12 +337,12 @@ Accounts, the account a call uses, typed calls and errors are explained in [Conn
 | Method | What it does |
 | --- | --- |
 | `triggers.list()` | Every trigger, with parse errors and `triggers_paused`. |
-| `triggers.create(input)` · `triggers.update(slug, input)` · `triggers.remove(slug)` | Write a trigger. `type` is `cron`, `webhook`, `monitor` or `event`. `name`, `type` and `prompt_template` are required. |
+| `triggers.create(input)` · `triggers.update(slug, input)` · `triggers.remove(slug)` | Write a trigger. `type` is `cron`, `webhook`, `event` or `app` (`monitor` is refused with `MONITOR_REMOVED`). `name` and `type` are required. `prompt_template` is required unless `target` (`{ app, path?, method?, payload? }`) calls an App. A schedule takes `cron`, `every` or `run_at`. `type: 'app'` takes `app` and, optionally, `filter: { 'event.name': … }`. |
 | `triggers.fire(slug, { payload?, dryRun? }?)` | Run one trigger now. It works while triggers are paused. `payload` deep-merges over the manual payload at the root, for example `{ body: { … } }`. `dryRun: true` writes nothing and returns `ProjectTriggerDryRunResult`: `rendered_prompt`, `filter_matches`, `session_key` and `payload`. A real fire returns `status` (`fired`, `queued` or `deduped`), `session_id`, `command_id` and `run_id`. |
 | `triggers.runs(slug, { cursor?, limit? }?)` · `triggers.projectRuns({ status?, cursor?, limit? }?)` | One trigger's runs · every run of the project, newest first, as `{ runs: ProjectTriggerRun[], next_cursor }`. `limit` is 1–100, default 25. `status` is `queued`, `running`, `fired`, `failed`, `skipped` or `rejected`. A page can hold fewer than `limit` runs while `next_cursor` is set: follow `next_cursor` until it is `null`. |
 | `triggers.replay(slug, runId, { confirmUnverified? }?)` | Fire the trigger again with the run's stored payload and the current spec. Returns `409 run_in_progress` while the run is queued or running, `409 payload_unverified` for an unverified webhook payload unless `confirmUnverified: true`, and `422 payload_truncated` for a payload over 64 KiB. |
 | `triggers.setActivation(paused)` | Pause or resume every trigger of the project. |
-| `triggers.eventApps()` · `triggers.eventTypes({ connector } \| { app, source? })` | Apps with events · the event types of one connector or app. |
+| `triggers.eventApps()` · `triggers.eventTypes({ connector } \| { app, source? })` | Connected apps with connector events (not Kortix Apps) · the event types of one connector or app. |
 | `reminders.list()` · `reminders.updateMany(…)` · `reminders.removeMany(…)` | Reminders on every session you can open: list, pause or resume, delete. One session's reminders are `s.reminders`. |
 
 Every field of `create` is in [Triggers & reminders](/docs/connect/triggers#fields).
@@ -426,7 +429,7 @@ See [Sandboxes & previews](/docs/work/runtime).
 | Prompts | `send(text, { model?, agent? })`, `abort()`, `prompts.create` · `.list` · `.remove` · `.retry` · `.edit` · `.interrupt` · `.hold` |
 | Live events | `stream({ onEvent, onGapRehydrate?, signal? })` returns a handle with `close()` |
 | Conversation | `messages({ conversationId?, limit?, before? })`, `pending()`, `answerPermission(requestId, 'once' \| 'always' \| 'reject', message?)`, `answerQuestion(requestId, answers \| null)`, `compact(model?)`, `rewind(messageId)`, `restoreRewind()` |
-| Server-side reads | `turn()`, `transcript(options?)`, `transcriptSync(options?)` (answers while the sandbox is stopped), `log(query?)` (one page of the stored session log, `null` when the session has none), `messageAuthors()`, `modelUsage()`, `cost()`, `audit(limit?)` |
+| Server-side reads | `turn()`, `log(query?)` (one page of the stored session log, `null` when the session has none; answers while the sandbox is stopped), `transcript(options?)` and `transcriptSync(options?)` (deprecated: the v1 transcript; read `log`), `messageAuthors()`, `modelUsage()`, `cost()`, `audit(limit?)` |
 | Files and previews | `files.list` · `.read` · `.readBlob` · `.status` · `.findFiles` · `.findText` · `.upload` · `.write` · `.create` · `.copy` · `.remove` · `.mkdir` · `.rename`, `previews()`, `previewUrl(port, path?)`, `proxyUrl(url)`, `sandboxPortUrl(port)`, `attachments.upload` · `.read` |
 | Model, agent and scope | `setModel(model)`, `setAgent(agent)` (every later `send` on this handle uses it, until you change it; `send(text, { model, agent })` overrides it for one prompt), `changeModel('provider/model')` (persisted, restarts the runtime), `scope()`, `rescope(scope)`, `providerSecretPool.list` · `.get` · `.set` |
 | Config | `configState()`, `reloadConfig(input?)`, `reloadConfigStream(…)` |
@@ -663,7 +666,7 @@ Each name below is marked `@deprecated` and stays until the next major version. 
 | `OpenCodeConfigIssue` · `OpenCodeConfigInvalidError` · `getOpenCodeConfigInvalidError` · `isOpenCodeConfigInvalidError` | `RuntimeConfigIssue` · `RuntimeConfigInvalidError` · `getRuntimeConfigInvalidError` · `isRuntimeConfigInvalidError` |
 | `p.sessions.claimWarm(input)` · `claimWarmProjectSession` | Open the session from `p.sessions.ensureWarm()` and prompt it |
 | `p.connectors.setAuthorizationStrategy` · `setConnectorAuthorizationStrategy` | The call changes nothing. To create an account under one owner, pass `owner` to `connectorConnect`. |
-| `getConnectionPolicies` · `setConnectionPolicies` | `p.connectors.policies.get` · `p.connectors.policies.set` |
+| `getConnectionPolicies` · `setConnectionPolicies` | `p.connectors.policies.get` · `p.connectors.policies.set`. For other rules per agent, a [policy set](/docs/connect/connectors#policy-sets). |
 | `pipedreamConnect` · `pipedreamFinalize` | `connectorConnect` · `connectorFinalize` |
 | `listDiscoverIntegrations` · `getDiscoverIntegration` · `DiscoverIntegration*` types | `listDiscoverConnectors` · `getDiscoverConnector` · `DiscoverConnector*` types |
 | `SessionScopeResult` · `toWorkspaceRelative` | `SessionScope` · `toDaemonPath` |
