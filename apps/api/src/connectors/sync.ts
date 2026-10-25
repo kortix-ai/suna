@@ -34,6 +34,7 @@ import {
   manifestHashForConnector,
 } from '../projects/connectors';
 import { type GitBackedProject, isRepoFileNotFoundError, readRepoFile } from '../projects/git';
+import { mapWithConcurrency } from '../shared/map-with-concurrency';
 import { MANIFEST_PROJECT_NAME_KEY, metadataMerge, projectNameAction, withProjectGitAuth } from '../projects/surface';
 import { extractProjectPolicies } from '../projects/policies';
 import { hideSupersededSlack } from './channel-rules';
@@ -431,7 +432,15 @@ export interface SyncOptions {
    *  own connector, not the whole project, so repeated saves cannot fan out
    *  into every connector's catalog fetch. */
   onlyConnectorId?: string;
+  /** Re-fetch only these connectors (by slug): an edit to one connector
+   *  syncs that one. The rest of the reconcile (removals, triggers, Apps)
+   *  still runs: it reads the database, not the network. */
+  onlySlugs?: ReadonlySet<string>;
 }
+
+/** Connectors whose catalogs load at once: a project with many MCP servers
+ *  syncs in about a quarter of the time, without a burst at every upstream. */
+const SYNC_CONCURRENCY = 4;
 
 interface ResolvedCatalog {
   actions: NormalizedAction[];
@@ -599,13 +608,12 @@ async function syncProjectConnectorsFenced(
   const desiredSlugs = new Set(specs.map((s) => s.slug));
 
   let synced = 0;
-  for (const sourceSpec of specs) {
-    if (
-      opts.onlyConnectorId &&
-      existingBySlug.get(sourceSpec.slug)?.connectorId !== opts.onlyConnectorId
-    ) {
-      continue;
-    }
+  const selected = specs.filter(
+    (sourceSpec) =>
+      (!opts.onlyConnectorId || existingBySlug.get(sourceSpec.slug)?.connectorId === opts.onlyConnectorId) &&
+      (!opts.onlySlugs || opts.onlySlugs.has(sourceSpec.slug)),
+  );
+  await mapWithConcurrency(selected, SYNC_CONCURRENCY, async (sourceSpec) => {
     try {
       let spec = sourceSpec;
       if (sourceSpec.authAuto) {
@@ -699,7 +707,7 @@ async function syncProjectConnectorsFenced(
     } catch (e) {
       errors.push({ slug: sourceSpec.slug, error: (e as Error).message });
     }
-  }
+  });
 
   await reconcileEmailConnections(projectId).catch(() => {});
 

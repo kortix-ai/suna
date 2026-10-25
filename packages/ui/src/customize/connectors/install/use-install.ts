@@ -39,6 +39,7 @@ export interface InstallRequest {
   connectors: readonly AdminConnector[];
   app: AppRef | null;
   addAccount?: boolean;
+  asNewProfile?: boolean;
 }
 
 const sdkInstallDeps: InstallDeps = { createConnector };
@@ -75,12 +76,19 @@ export function useInstall(
         addAccount?: boolean;
         /** The profile's name, as the user chose it. */
         name?: string;
+        asNewProfile?: boolean;
       },
     ) => {
       /** Settles when every invalidated query has refetched. Never rejects. */
       const refresh = () => invalidateConnections(queryClient, projectId);
       setPendingKey(options.app?.slug ?? target.appName);
-      void runInstall(sdkInstallDeps, { projectId, target, connectors: options.connectors, name: options.name })
+      void runInstall(sdkInstallDeps, {
+        projectId,
+        target,
+        connectors: options.connectors,
+        name: options.name,
+        asNewProfile: options.asNewProfile,
+      })
         .then(async (result) => {
           // Before the navigation: the connector page reads the fresh list.
           await refresh();
@@ -89,6 +97,8 @@ export function useInstall(
           const failed = result.status === 'sync_failed';
           if (failed) {
             warningToast(t('installedSyncFailed', { name: result.name, error: result.error }));
+          } else if (result.existing) {
+            successToast(t('installedAlready', { name: options.name?.trim() || target.appName }));
           } else {
             successToast(t('installed', { name: options.name?.trim() || target.appName }));
           }
@@ -126,6 +136,7 @@ export function useInstall(
         connectors: request.connectors,
         app: request.app,
         addAccount: request.addAccount,
+        asNewProfile: request.asNewProfile,
         name,
       });
     },

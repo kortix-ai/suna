@@ -42,11 +42,24 @@ export const CONNECTOR_TOOLS = [
     name: 'list_connectors',
     title: 'List connectors',
     description:
-      'List the connectors of a project (Gmail, Slack, GitHub, MCP servers, OpenAPI/HTTP APIs, …): slug, name, provider, status, whether it is `connected` (usable by you now), its action count and its accounts. A connector that is not connected cannot run actions: call connect_connector, give the human the url, then list again. Pass `connector` to get one connector\'s accounts in full (label, owner shared|private, default, connected_as, connection_id): a connector can hold several accounts and a call with several and no default needs `account`. `policy_set` is the rule set you run under on that connector (null = its base rules); with `connector`, `policy_sets` lists the sets it defines when you may read them. Flow: list_connectors → search_connector_actions → describe_connector_action → call_connector.',
+      'List the connectors of a project (Gmail, Slack, GitHub, MCP servers, OpenAPI/HTTP APIs, …): slug, name, provider, status, whether it is `connected` (usable by you now), its action count and its accounts. A connector that is not connected cannot run actions: call connect_connector, give the human the url, then list again. Pass `connector` to get one connector\'s accounts in full (label, owner shared|private, default, connected_as, connection_id): a connector can hold several accounts and a call with several and no default needs `account`. `policy_set` is the rule set you run under on that connector (null = its base rules); with `connector`, `policy_sets` lists the sets it defines and the agents using each, when you may read them. Flow: list_connectors → search_connector_actions → describe_connector_action → call_connector.',
     inputSchema: {
       type: 'object',
       properties: { project_id: PROJECT_ID, connector: { ...CONNECTOR, description: 'Optional: one connector slug, to get its accounts and policy sets in full.' } },
       required: ['project_id'],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'list_connector_accounts',
+    title: 'List connector accounts',
+    description:
+      'The accounts you may run one connector as: `label` (the value for call_connector `account`), `owner` (shared: the project\'s; private: one person\'s), `default` (an unnamed call uses it), `connected_as` (the signed-in identity, when known) and `connection_id`. A call on a connector with several accounts and no default needs `account`. None listed: call connect_connector.',
+    inputSchema: {
+      type: 'object',
+      properties: { project_id: PROJECT_ID, connector: CONNECTOR },
+      required: ['project_id', 'connector'],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: true, openWorldHint: false },
@@ -172,7 +185,7 @@ export const CONNECTOR_TOOLS = [
     name: 'get_connector_app',
     title: 'Get a connector app',
     description:
-      'Every way to connect one catalogue app, best first: `ways[]` with `way` (its id), `via` (kortix, mcp, composio, openapi, graphql, postman, http; `kortix` is built into Kortix — Slack, Teams, Email, Telegram or Computer — set up by the human, never installed), `one_click`, `recommended` and `installable`; and `tools` — what one way can do before install (the recommended way unless `way`): up to `limit` tools with descriptions, `total`, and `source` (mcp: the server itself; directory: tool names from a public MCP directory; composio; spec: OpenAPI operations; none: listed after install). Composio is a third-party partner that runs the sign-in for the human (one click). Pass `app` and the chosen `way` to add_connector.',
+      'Every way to connect one catalogue app, best first: `ways[]` with `way` (its id), `via` (kortix, mcp, composio, openapi, graphql, postman, http; `kortix` is built into Kortix — Slack, Teams, Email, Telegram or Computer — set up by the human, never installed), `one_click`, `recommended` and `installable`; and `tools` — what one way can do before install (the recommended way unless `way`): up to `limit` tools with descriptions, `total`, and `source` (mcp: the server itself; directory: tool names from a public MCP directory; composio; spec: OpenAPI operations; none: listed after install). Composio is a third-party partner that runs the sign-in for the human (one click). `installed` names the project\'s profiles of this app already. Pass `app` and the chosen `way` to add_connector.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -190,13 +203,14 @@ export const CONNECTOR_TOOLS = [
     name: 'add_connector',
     title: 'Add a connector',
     description:
-      'Add (or update) a connector on the project now: it is committed to kortix.yaml on main and synced, like the dashboard\'s "Add app". For an app (Gmail, Slack, GitHub, …) pass `app` from search_connector_apps; Kortix adds the app\'s recommended way (a one-click MCP server, else Composio, else its API) unless you pass `way`. The connector is a profile in kortix.yaml: its accounts, who may use them and its tool rules live on it. `name` names it; the slug defaults from the name. For your own server pass `provider` and `slug` with `url` (mcp, plus `transport` http|sse), `endpoint` (graphql), `spec` (openapi, postman) or `base_url` (http). The result says what is next: call connect_connector for an OAuth app; an API-key connector needs its credential set by the human in Kortix. To remove a connector call remove_connector. Needs the connector-write permission.',
+      'Add (or update) a connector on the project now: it is committed to kortix.yaml on main and synced, like the dashboard\'s "Add app". Idempotent for an app: a way the project already has answers that profile with `existing: true` (pass `as_new_profile` for a second one). For an app (Gmail, Slack, GitHub, …) pass `app` from search_connector_apps; Kortix adds the app\'s recommended way (a one-click MCP server, else Composio, else its API) unless you pass `way`. The connector is a profile in kortix.yaml: its accounts, who may use them and its tool rules live on it. `name` names it; the slug defaults from the name. For your own server pass `provider` and `slug` with `url` (mcp, plus `transport` http|sse), `endpoint` (graphql), `spec` (openapi, postman) or `base_url` (http): a server the project does not have yet needs a person, so the result is `custom_connector_needs_human` with a `setup_url` to give the human. The result says what is next: call connect_connector for an OAuth app; an API-key connector needs its credential set by the human in Kortix. To remove a connector call remove_connector. Needs the connector-write permission.',
     inputSchema: {
       type: 'object',
       properties: {
         project_id: PROJECT_ID,
         app: { type: 'string', description: 'The `app` from search_connector_apps, e.g. "kortix:linear" or "composio:gmail"; a bare name such as "linear" means "kortix:linear".' },
-        way: { type: 'string', description: 'One of the app\'s ways to connect by id (call_api GET /v1/connectors/projects/{projectId}/discover/connectors/detail?id=<app> lists them). Default: the recommended way.' },
+        way: { type: 'string', description: 'One of the app\'s ways to connect by id (`ways[].way` from get_connector_app). Default: the recommended way.' },
+        as_new_profile: { type: 'boolean', description: 'Add a second profile of a way the project already has. Default false: the existing profile is answered (`existing: true`) and nothing is added.' },
         slug: { type: 'string', description: 'The connector\'s name in kortix.yaml (lowercase letters, digits, - and _). Defaults to `app`.' },
         provider: { type: 'string', enum: ['composio', 'mcp', 'openapi', 'postman', 'graphql', 'http'], description: 'Your own server\'s kind, with `slug`. Omit it when you pass `app`.' },
         name: { type: 'string', description: 'Display name.' },
@@ -384,12 +398,30 @@ export async function runConnectorTool(name: string, input: Record<string, unkno
       // The sets this connector defines. The route needs connector admin read:
       // a caller without it still sees its own `policy_set`, not the list.
       if (only && sets && sets.status < 400 && rows[0]) {
-        const listed = (parse(sets.body)?.sets ?? []) as Array<{ name?: unknown; description?: unknown }>;
+        const listed = (parse(sets.body)?.sets ?? []) as Array<{ name?: unknown; description?: unknown; agents?: unknown }>;
         rows[0].policy_sets = listed
           .filter((set) => typeof set.name === 'string')
-          .map((set) => ({ name: set.name, description: typeof set.description === 'string' ? set.description : null }));
+          .map((set) => ({
+            name: set.name,
+            description: typeof set.description === 'string' ? set.description : null,
+            // The agents that run under this set on this connector.
+            agents: Array.isArray(set.agents) ? set.agents.filter((agent): agent is string => typeof agent === 'string') : [],
+          }));
       }
       return h.text(JSON.stringify({ connectors: rows }, null, 2));
+    }
+    case 'list_connector_accounts': {
+      const slug = h.arg(input, 'connector');
+      const r = await h.call('GET', `${base}/connectors/${encodeURIComponent(slug)}/accounts`);
+      if (r.status >= 400) return h.apiResult(r);
+      const listed = parse(r.body) ?? {};
+      return h.text(
+        JSON.stringify(
+          { connector: slug, accounts: ((listed.accounts ?? []) as CatalogAccount[]).map(accountRow), default_account: listed.default_account ?? null },
+          null,
+          2,
+        ),
+      );
     }
     case 'search_connector_actions': {
       const only = h.optionalArg(input, 'connector');
@@ -466,6 +498,14 @@ export async function runConnectorTool(name: string, input: Record<string, unkno
             null,
             2,
           ),
+        );
+      }
+      if (body.status === 'tool_error') {
+        // The tool ran and said no: `data` holds its full answer, `error` its text.
+        const { output: _output, data, ...rest } = body;
+        return h.text(
+          fitData({ ...rest, next: 'The tool ran and reported this error. Fix the args it names and call again; if it is not about the args, tell the human.' }, 'data', data),
+          true,
         );
       }
       const next = denialNext(String(body.reason ?? ''), body);
@@ -604,6 +644,8 @@ export async function runConnectorTool(name: string, input: Record<string, unkno
         one_click: v.oneClick === true,
         recommended: v.recommended === true,
         installable: Boolean(v.connector) || v.kind === 'composio',
+        // The project's profiles that are this way already.
+        ...(Array.isArray(v.installed) && v.installed.length ? { installed: v.installed } : {}),
         ...(v.kind === 'kortix' ? { setup: 'Built into Kortix: the human sets it up on its page (a channel: kortix channels connect; a computer: the desktop app or the pairing command); add_connector cannot install it.' } : {}),
         url: v.url ?? null,
       }));
@@ -625,7 +667,10 @@ export async function runConnectorTool(name: string, input: Record<string, unkno
                   list: ((tools.tools ?? []) as any[]).slice(0, limit).map((tool) => ({ name: tool.name, description: oneLine(tool.description ?? '', 160) })),
                 }
               : { error: t.status === 404 ? `no way "${h.optionalArg(input, 'way')}"` : 'the tools could not be read now' },
-            next: 'add_connector with app=<app> installs the recommended way; pass way=<way> for another.',
+            installed: Array.isArray(detail.installed) ? detail.installed : [],
+            next: Array.isArray(detail.installed) && detail.installed.length
+              ? `Already in the project as ${detail.installed.map((slug: string) => `"${slug}"`).join(', ')}: list_connectors connector=<slug> shows its accounts and rule sets. add_connector adds another way; as_new_profile: true adds a second profile of the same way.`
+              : 'add_connector with app=<app> installs the recommended way; pass way=<way> for another.',
           },
           null,
           2,
@@ -638,7 +683,13 @@ export async function runConnectorTool(name: string, input: Record<string, unkno
       if (app && !h.optionalArg(input, 'provider')) {
         const id = /[:/]/.test(app) ? app : `kortix:${app}`;
         const r = await h.call('POST', `${base}/discover/install`, {
-          body: { id, way: h.optionalArg(input, 'way'), name: h.optionalArg(input, 'name'), slug: h.optionalArg(input, 'slug') },
+          body: {
+            id,
+            way: h.optionalArg(input, 'way'),
+            name: h.optionalArg(input, 'name'),
+            slug: h.optionalArg(input, 'slug'),
+            as_new_profile: input.as_new_profile === true ? true : undefined,
+          },
         });
         if (r.status === 404) throw h.input(`"${app}" is not in the app catalogue: search_connector_apps lists the apps`);
         if (r.status >= 400) return h.apiResult(r);
@@ -649,10 +700,15 @@ export async function runConnectorTool(name: string, input: Record<string, unkno
               connector: done.slug,
               name: done.name,
               via: done.way?.kind ?? null,
+              existing: done.existing === true,
               live: true,
               sync: done.sync ?? null,
-              next:
-                done.next === 'connect'
+              ...(done.error ? { error: done.error } : {}),
+              next: done.existing === true
+                ? `The project already has this way as "${done.slug}": nothing was added. Use it (list_connectors connector="${done.slug}"), or pass as_new_profile: true for a second profile.`
+                : done.next === 'fix'
+                  ? `Added as "${done.slug}", but its tools did not load: ${done.error ?? 'unknown error'}. Tell the human; they fix it on the connector's page.`
+                  : done.next === 'connect'
                   ? `Live on the project (a connector profile in kortix.yaml on main). Call connect_connector for "${done.slug}" and give the human the url.`
                   : done.next === 'credential'
                     ? `Live on the project. It needs a credential: the human sets it in Kortix (the connector's settings); then list_connectors shows connected: true.`
@@ -672,6 +728,13 @@ export async function runConnectorTool(name: string, input: Record<string, unkno
         if (v) draft[to] = v;
       }
       const r = await h.call('POST', `${base}/connectors`, { body: draft });
+      const refused = r.status === 403 ? parse(r.body) : undefined;
+      if (refused?.code === 'custom_connector_needs_human') {
+        return h.text(
+          JSON.stringify({ ...refused, next: 'Give the human setup_url: they review the server and add it. Then list_connectors shows it. Do not retry.' }, null, 2),
+          true,
+        );
+      }
       if (r.status >= 400) return h.apiResult(r);
       const done = parse(r.body) ?? {};
       const oauth = provider === 'composio';

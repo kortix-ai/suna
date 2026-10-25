@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 928,
+  "count": 931,
   "routes": [
     {
       "method": "GET",
@@ -1315,6 +1315,10 @@
       "path": "/v1/connectors/projects/:projectId/connectors/:slug/accounts"
     },
     {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/agents"
+    },
+    {
       "method": "PUT",
       "path": "/v1/connectors/projects/:projectId/connectors/:slug/authorization-strategy"
     },
@@ -1345,6 +1349,10 @@
     {
       "method": "PUT",
       "path": "/v1/connectors/projects/:projectId/connectors/:slug/name"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/oauth2/connection"
     },
     {
       "method": "GET",
@@ -1425,6 +1433,10 @@
     {
       "method": "PUT",
       "path": "/v1/connectors/projects/:projectId/policies"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/rules-matrix"
     },
     {
       "method": "GET",

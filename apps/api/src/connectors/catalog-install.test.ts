@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { CatalogInstallError, catalogInstallDraft, catalogSlug } from './catalog-install';
+import { CatalogInstallError, catalogInstallDraft, catalogSlug, connectorIdentity, freeSlug, installedSlugs } from './catalog-install';
 import type { ConnectorCatalogDetail } from './connector-catalog';
 import { specOperations } from './catalog-tools';
 
@@ -68,5 +68,33 @@ describe('install from the catalogue', () => {
     expect(() => catalogInstallDraft(computer)).toThrow('npx --yes @kortix/agent-tunnel@latest connect');
     // A way saved before the rename (`channel:<platform>`) is the same way.
     expect(() => catalogInstallDraft(computer, { way: 'channel:computer' })).toThrow('npx --yes @kortix/agent-tunnel@latest connect');
+  });
+});
+
+describe('one profile per way: the identity an install matches on', () => {
+  test('MCP by URL (case of host, trailing slash and fragment ignored), toolkit by app, API by spec, GraphQL by endpoint', () => {
+    expect(connectorIdentity({ provider: 'mcp', url: 'https://MCP.stripe.com/mcp/#x' })).toBe('mcp:https://mcp.stripe.com/mcp');
+    expect(connectorIdentity({ provider: 'mcp', url: 'https://mcp.stripe.com/mcp?key=a' })).toBe('mcp:https://mcp.stripe.com/mcp?key=a');
+    expect(connectorIdentity({ provider: 'composio', app: 'Gmail' })).toBe('composio:gmail');
+    expect(connectorIdentity({ provider: 'openapi', spec: 'https://example.test/spec.json' })).toBe('openapi:https://example.test/spec.json');
+    expect(connectorIdentity({ provider: 'graphql', endpoint: 'https://api.linear.app/graphql/' })).toBe('graphql:https://api.linear.app/graphql');
+    expect(connectorIdentity({ provider: 'mcp' })).toBeNull();
+    expect(connectorIdentity({ provider: 'computer' })).toBeNull();
+  });
+
+  test('a catalogue way and an installed profile with the same identity match', () => {
+    const profiles = [
+      { slug: 'stripe', identity: 'mcp:https://mcp.stripe.com' },
+      { slug: 'billing', identity: 'composio:stripe' },
+      { slug: 'other', identity: 'mcp:https://mcp.linear.app/mcp' },
+    ];
+    expect(installedSlugs(detail.variants[0]!, profiles)).toEqual(['stripe']);
+    expect(installedSlugs(detail.variants[1]!, profiles)).toEqual(['billing']);
+    expect(installedSlugs(detail.variants[2]!, profiles)).toEqual([]);
+  });
+
+  test('a new profile of an installed way takes the next free numbered slug', () => {
+    expect(freeSlug('stripe', ['linear'])).toBe('stripe');
+    expect(freeSlug('stripe', ['stripe', 'stripe-2'])).toBe('stripe-3');
   });
 });

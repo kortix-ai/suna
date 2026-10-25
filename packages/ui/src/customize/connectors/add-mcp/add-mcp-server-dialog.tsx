@@ -53,11 +53,14 @@ export function AddMcpServerDialog({
   takenSlugs,
   onAdded,
   app = null,
+  initial = null,
 }: {
   projectId: string;
   /** A catalogue app's own MCP server: the URL is filled in and the dialog
    *  is titled for the app. Null for a server the user pastes. */
   app?: McpServerApp | null;
+  /** A pasted server prefilled from a link (an agent's `setup_url`): a person confirms it here. */
+  initial?: { url: string; name?: string } | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Slugs of the project's connectors: a new server never reuses one. */
@@ -84,7 +87,7 @@ export function AddMcpServerDialog({
     ? tSharing('everyone', { project: projectName })
     : tSharing('visibilityEveryone');
 
-  const [url, setUrl] = useState(app?.url ?? '');
+  const [url, setUrl] = useState(app?.url ?? initial?.url ?? '');
   const [audience, setAudience] = useState<Audience>({ audience: 'private', picked: NO_PICKS });
   // The catalogue app's own server, unchanged: named after the app, and its
   // sign-in is known to be one click (`mcpServerFor`).
@@ -96,7 +99,7 @@ export function AddMcpServerDialog({
       : mcpServerIdentity(url, takenSlugs);
   const urlInvalid = url.trim() !== '' && identity === null;
   // The profile's name: proposed from the app or the URL until the user edits it.
-  const [nameEdit, setNameEdit] = useState<string | null>(null);
+  const [nameEdit, setNameEdit] = useState<string | null>(initial?.name ?? null);
   const name = (nameEdit ?? identity?.name ?? '').trim();
 
   const add = useMutation({
@@ -182,6 +185,9 @@ export function AddMcpServerDialog({
           }}
         >
           <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
+            {/* A catalogue app's own server: its URL is known, so the dialog
+                asks only who can use it. The URL is not a choice to make. */}
+            {app ? null : (
             <Field>
               <FieldLabel htmlFor={`${id}-url`}>{t('addMcpUrlLabel')}</FieldLabel>
               <Input
@@ -205,6 +211,8 @@ export function AddMcpServerDialog({
                 <FieldDescription>{t('addMcpUrlHint')}</FieldDescription>
               )}
             </Field>
+            )}
+            {app && nameEdit === null ? null : (
             <Field>
               <FieldLabel htmlFor={`${id}-name`}>{t('installNameLabel')}</FieldLabel>
               <Input
@@ -216,6 +224,7 @@ export function AddMcpServerDialog({
               />
               <FieldDescription>{t('installProfileHint')}</FieldDescription>
             </Field>
+            )}
             <AudienceFields
               projectId={projectId}
               value={audience}
@@ -228,9 +237,22 @@ export function AddMcpServerDialog({
             />
           </ModalBody>
           <ModalFooter className="sm:justify-between">
+            {app && nameEdit === null ? (
+              <Button
+                type="button"
+                variant="text"
+                size="sm"
+                className="px-0"
+                onClick={() => setNameEdit(identity?.name ?? app.name)}
+                disabled={add.isPending}
+              >
+                {t('installRename')}
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="outline-ghost"
+              className={app && nameEdit === null ? 'sm:ml-auto' : undefined}
               onClick={() => close(false)}
               disabled={add.isPending}
             >

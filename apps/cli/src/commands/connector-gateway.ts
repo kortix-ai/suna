@@ -35,12 +35,14 @@ import {
 import {
   CliError,
   connectorErrorPayload,
+  ExitAfterOutput,
   out,
   parseExecArgs,
   stringValue,
 } from '../connector-gateway/io.ts';
 import { saveResult } from '../connector-gateway/result-spill.ts';
 import { resolveProjectId } from '../project-link.ts';
+import { tokenRejectedLine } from '../command-helpers.ts';
 
 const PROVIDERS = ['composio', 'pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http'];
 
@@ -304,6 +306,14 @@ async function call({ args, flags, repeated }: Invocation): Promise<void> {
   // `--out <file>`: the full result goes to the file, a summary to stdout
   // (bytes, the shape of `data`, the path). Large results stay out of the
   // agent's context, where OpenCode would truncate them.
+  // The tool ran and reported a failure (MCP `isError`, GraphQL `errors`):
+  // the call did not do its job, so the exit code says so.
+  const raw = result as typeof result & { upstream_error?: string; error?: string };
+  const toolError = raw.status === 'tool_error' || typeof raw.upstream_error === 'string';
+  if (toolError) {
+    out({ ...result, ok: false, status: 'tool_error', error: raw.error ?? raw.upstream_error ?? 'the tool reported an error' });
+    throw new ExitAfterOutput(1);
+  }
   const outPath = stringValue(flags.out);
   out(outPath ? await saveResult(result, resolve(outPath)) : result);
 }
@@ -500,6 +510,14 @@ export async function runConnector(argv: string[]): Promise<number> {
     await dispatch(command, args, flags, repeated);
     return 0;
   } catch (err) {
+    if (err instanceof ExitAfterOutput) return err.exitCode;
+    // A rejected token is the human's to fix: say it in a sentence. --json keeps the payload.
+    if (err instanceof ApiError && err.status === 401) {
+      const payload: Record<string, unknown> = { ...connectorErrorPayload(err), code: 'unauthorized' };
+      if (flags.json === true) out(payload);
+      else process.stderr.write(`${tokenRejectedLine(typeof payload.error === 'string' ? payload.error : null)}\n`);
+      return 1;
+    }
     if (err instanceof ApiError) {
       // VERBATIM: a 403 denial carries the remedy (available_accounts, hint,
       // connect_url). Printing only `err.message` threw all of it away.

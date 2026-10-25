@@ -1,5 +1,5 @@
 import type { UpdateConnectionCredentialInput } from '@kortix/api-contract';
-import { connectors, projects, projectSessionConnectorBindings } from '@kortix/db';
+import { connectorConnections, connectors, projects, projectSessionConnectorBindings } from '@kortix/db';
 /**
  * Connector CRUD that round-trips `kortix.yaml` — the web UI "Add connector"
  * flow (mirrors triggers). The manifest holds the connector definition.
@@ -18,7 +18,8 @@ import {
   RESERVED_SLUG_PROVIDERS,
   extractConnectors,
 } from '../projects/connectors';
-import { loadManifestForEdit } from '../projects/surface';
+import { extractAgents, grantsByAgent, loadManifestForEdit } from '../projects/surface';
+import { type RulesMatrix, rulesMatrix } from './agent-rules-matrix';
 import { withProjectGitAuth } from '../projects/lib/git';
 import {
   type DefaultMode,
@@ -30,7 +31,7 @@ import {
 import { db } from '../shared/db';
 import { featureDisabledBody } from '../feature-flags/gate';
 import { resolveFeatureFlag } from '../feature-flags/registry';
-import { upsertCredential, upsertOAuth2Credential } from './credentials';
+import { defaultConnectionIdForConnector, upsertCredential, upsertOAuth2Credential } from './credentials';
 import { areValidConditions, isValidMatcher, normalizeConditions } from './policy';
 import { canonicalConnectorAlias } from '../shared/connector-alias';
 import {
@@ -242,7 +243,7 @@ export async function upsertConnectorInManifest(
   if (!result.ok) return result;
   await options.beforeSync?.();
 
-  const sync = await syncProjectConnectors(projectId, accountId);
+  const sync = await syncProjectConnectors(projectId, accountId, { onlySlugs: new Set([draft.slug]) });
   return { ok: true, sync };
 }
 
@@ -253,12 +254,14 @@ async function mutateProjectConnectorManifest(
   accountId: string,
   operation: string,
   mutate: (manifest: EditableManifest) => ManifestMutationResult,
+  /** The one connector the edit touches: only it is synced. Omit to sync all. */
+  onlySlug?: string,
 ): Promise<CrudResult> {
   const row = await loadRow(projectId);
   if (!row) return { ok: false, error: 'project not found', status: 404 };
   const result = await mutateManifestWithRetry(row, operation, mutate);
   if (!result.ok) return result;
-  const sync = await syncProjectConnectors(projectId, accountId);
+  const sync = await syncProjectConnectors(projectId, accountId, onlySlug ? { onlySlugs: new Set([onlySlug]) } : {});
   return { ok: true, sync };
 }
 
@@ -351,7 +354,7 @@ export async function setConnectorCredentialShared(
   projectId: string,
   slug: string,
   input: UpdateConnectionCredentialInput,
-): Promise<CrudResult> {
+): Promise<CrudResult & { account?: string | null; oauth2ExpiresAt?: number }> {
   const [connector] = await db
     .select({
       connectorId: connectors.connectorId,
@@ -374,13 +377,14 @@ export async function setConnectorCredentialShared(
       status: 409,
     };
   }
+  let oauth2ExpiresAt: number | undefined;
   if ('oauth2' in input) {
-    await upsertOAuth2Credential({
+    ({ expiresAt: oauth2ExpiresAt } = await upsertOAuth2Credential({
       projectId,
       connectorId: connector.connectorId,
       userId: null,
       oauth2: input.oauth2,
-    });
+    }));
   } else {
     await upsertCredential({
       projectId,
@@ -397,7 +401,20 @@ export async function setConnectorCredentialShared(
     ownerType: 'project',
     isDefault: true,
   });
-  return { ok: true, ...(sync ? { sync } : {}) };
+  const connectionId = await defaultConnectionIdForConnector(connector.connectorId);
+  const [account] = connectionId
+    ? await db
+        .select({ label: connectorConnections.label })
+        .from(connectorConnections)
+        .where(eq(connectorConnections.connectionId, connectionId))
+        .limit(1)
+    : [];
+  return {
+    ok: true,
+    ...(sync ? { sync } : {}),
+    account: account?.label ?? null,
+    ...(oauth2ExpiresAt !== undefined ? { oauth2ExpiresAt } : {}),
+  };
 }
 
 /**
@@ -432,6 +449,7 @@ export async function setConnectorCredentialModeInManifest(
       if (error) return { ok: false, error: error.error, status: 400 };
       return { ok: true, commitMessage: `chore: set ${slug} credential mode → ${mode}` };
     },
+    slug,
   );
 }
 
@@ -463,6 +481,7 @@ export async function setConnectorAuthorizationStrategyInManifest(
         commitMessage: `chore: set ${slug} connection strategy to ${authorizationStrategy}`,
       };
     },
+    slug,
   );
 }
 
@@ -500,6 +519,7 @@ export async function setConnectorSensitiveInManifest(
         commitMessage: `chore: mark ${slug} ${sensitive ? 'sensitive' : 'not sensitive'}`,
       };
     },
+    slug,
   );
 }
 
@@ -531,6 +551,7 @@ export async function setConnectorNameInManifest(
       if (error) return { ok: false, error: error.error, status: 400 };
       return { ok: true, commitMessage: `chore: rename connector ${slug} → ${trimmed}` };
     },
+    slug,
   );
 }
 
@@ -754,6 +775,7 @@ export async function setConnectorPoliciesInManifest(
           : `chore: update ${slug} permissions`,
       };
     },
+    slug,
   );
 }
 
@@ -880,6 +902,8 @@ export async function upsertConnectorPolicySetInManifest(
   slug: string,
   name: string,
   description: string | null | undefined,
+  /** Replace the set's rules in the same commit (a template). */
+  policies?: Array<{ match: string; action: ConnectorPolicyAction }>,
 ): Promise<CrudResult & { created?: boolean }> {
   const bad = checkSetName(name);
   if (bad) return bad;
@@ -901,7 +925,8 @@ export async function upsertConnectorPolicySetInManifest(
         if (description && description.trim()) set.description = description.trim();
         else delete set.description;
       }
-      if (!created && description === undefined) return { ok: true, commitMessage: null };
+      if (policies) set.policies = policies.map((rule) => ({ match: rule.match, action: rule.action }));
+      if (!created && description === undefined && !policies) return { ok: true, commitMessage: null };
       sets[name] = set;
       target.entry.policy_sets = sets;
       manifest.raw.connectors = target.current;
@@ -912,6 +937,7 @@ export async function upsertConnectorPolicySetInManifest(
         commitMessage: created ? `chore: add ${slug} policy set ${name}` : `chore: update ${slug} policy set ${name}`,
       };
     },
+    slug,
   );
   return result.ok ? { ...result, created } : result;
 }
@@ -952,6 +978,7 @@ export async function renameConnectorPolicySetInManifest(
       manifest.raw.connectors = target.current;
       return { ok: true, commitMessage: `chore: rename ${slug} policy set ${from} to ${to}` };
     },
+    slug,
   );
 }
 
@@ -989,6 +1016,7 @@ export async function deleteConnectorPolicySetInManifest(
       manifest.raw.connectors = target.current;
       return { ok: true, commitMessage: `chore: delete ${slug} policy set ${name}` };
     },
+    slug,
   );
 }
 
@@ -1080,4 +1108,24 @@ export async function setProjectPoliciesInManifest(
       return { ok: true, commitMessage: 'chore: update connector policies' };
     },
   );
+}
+
+/**
+ * Every declared agent × every connector profile, from kortix.yaml (the source
+ * of truth): granted, and the rule set each runs under. Null: no project, or
+ * the manifest cannot be read.
+ */
+export async function rulesMatrixFromManifest(projectId: string): Promise<RulesMatrix | null> {
+  const row = await loadRow(projectId);
+  if (!row) return null;
+  const manifest = await loadManifestForEdit(row).catch(() => null);
+  if (!manifest) return null;
+  const connectors = connectorEntries(manifest)
+    .filter((entry) => typeof entry?.slug === 'string')
+    .map((entry) => ({
+      slug: String(entry.slug),
+      name: typeof entry.name === 'string' && entry.name.trim() ? entry.name.trim() : String(entry.slug),
+      policy_sets: Object.keys(policySetsOf(entry) ?? {}).sort(),
+    }));
+  return rulesMatrix(connectors, grantsByAgent(extractAgents(manifest)));
 }

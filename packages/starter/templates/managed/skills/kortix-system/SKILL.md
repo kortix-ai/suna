@@ -137,7 +137,7 @@ multi-source investigation), **browser automation** (logins, forms, JS
 sites), **code & data** (full Linux sandbox, any language, Docker-in-Docker),
 **documents** (finished PDF/DOCX/PPTX/XLSX), **media** (image/video/TTS/
 transcription), **websites & apps** (build + deploy from the repo),
-**connectors** (3,000+ apps + MCP/OpenAPI/GraphQL/HTTP, brokered
+**connectors** (a catalog of apps, any MCP server, OpenAPI, GraphQL or HTTP API, brokered
 server-side), **secrets** (encrypted, scoped to this agent's grant), **memory**
 (a compounding file-based company brain), **scheduling** (schedules,
 webhooks, connector events and App events — see `<scheduling>` below), **channels** (Slack and chat

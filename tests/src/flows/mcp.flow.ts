@@ -283,7 +283,7 @@ flow(
       const names = r.json<any>().result.tools.map((t: { name: string }) => t.name).sort();
       const want = [
         "add_connector", "call_api", "call_connector", "connect_connector", "describe_api", "describe_connector_action", "get_connector_app", "kortix",
-        "list_connectors", "list_files", "list_projects", "list_sessions", "read_file", "read_session", "read_skill",
+        "list_connector_accounts", "list_connectors", "list_files", "list_projects", "list_sessions", "read_file", "read_session", "read_skill",
         "remove_connector", "run_command", "search_api", "search_connector_actions", "search_connector_apps",
         "send_message", "start_session", "upload_connector_attachment", "write_file",
       ];
@@ -709,7 +709,7 @@ flow(
         const r = await ctx.client.as(ctx.P.ANON).post("/v1/mcp", rpc(1, "tools/list"), { headers: { Authorization: `Bearer ${pat}` } });
         const tools = r.json<any>().result.tools as Array<{ name: string; title?: string; description: string; annotations: Record<string, boolean>; inputSchema: { additionalProperties?: boolean } }>;
         const by = (n: string) => tools.find((t) => t.name === n)!;
-        const readOnly = ["list_connectors", "search_connector_actions", "describe_connector_action", "search_connector_apps", "get_connector_app"];
+        const readOnly = ["list_connectors", "list_connector_accounts", "search_connector_actions", "describe_connector_action", "search_connector_apps", "get_connector_app"];
         const writes = ["call_connector", "upload_connector_attachment", "connect_connector", "add_connector", "remove_connector"];
         for (const n of [...readOnly, ...writes]) {
           if (!by(n)?.title || by(n).description.length < 80 || by(n).inputSchema.additionalProperties !== false) throw new Error(`${n}: ${JSON.stringify(by(n))?.slice(0, 200)}`);
