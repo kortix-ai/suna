@@ -251,20 +251,23 @@ export function BellMark({
   count,
   needsYou,
   surface = 'bg-background',
+  icon: Glyph = BellIcon,
 }: {
   count: number;
   needsYou: boolean;
   surface?: 'bg-background' | 'bg-sidebar';
+  /** The glyph under the count: the bell, or another control's own mark. */
+  icon?: typeof BellIcon;
 }) {
   const tone = needsYou
     ? { reflection: 'text-kortix-yellow', disc: 'bg-kortix-yellow' }
     : { reflection: 'text-kortix-blue', disc: 'bg-kortix-blue' };
   return (
     <span className="relative size-4 shrink-0">
-      <BellIcon className="size-4" />
+      <Glyph className="size-4" />
       {count > 0 ? (
         <>
-          <BellIcon
+          <Glyph
             aria-hidden
             className={cn('absolute inset-0 size-4', tone.reflection)}
             style={{ maskImage: BELL_REFLECTION_MASK, WebkitMaskImage: BELL_REFLECTION_MASK }}
