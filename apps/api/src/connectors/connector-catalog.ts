@@ -103,7 +103,7 @@ export interface ConnectorCatalogItem {
 }
 
 export interface ConnectorTemplate {
-  provider: 'openapi' | 'postman' | 'mcp' | 'graphql';
+  provider: 'openapi' | 'postman' | 'mcp' | 'graphql' | 'shopify';
   spec?: string;
   url?: string;
   transport?: 'http' | 'sse';
@@ -151,7 +151,7 @@ export type KortixApp = 'slack' | 'teams' | 'email' | 'telegram' | 'computer';
  *  any MCP server, the APIs; a surface Kortix cannot install comes last. */
 export function variantRank(variant: ConnectorSurfaceVariant): number {
   // Kortix's own integration leads: no third party in between.
-  if (variant.kind === 'kortix') return -1;
+  if (variant.kind === 'kortix' || variant.connector?.provider === 'shopify') return -1;
   if (variant.kind === 'composio') return 1;
   if (!variant.connector) return 10;
   if (variant.kind === 'mcp') return variant.oneClick ? 0 : 2;
@@ -388,7 +388,9 @@ const SURFACE_RANK: Record<ConnectorCatalogKind, number> = {
   graphql: 4,
 };
 export const surfaceRank = (item: ConnectorCatalogItem) =>
-  item.kind === 'mcp' && item.oneClick ? 0 : SURFACE_RANK[item.kind];
+  (item.kind === 'mcp' && item.oneClick) || (item.feeds.includes('kortix') && item.kind !== 'kortix')
+    ? 0
+    : SURFACE_RANK[item.kind];
 
 /**
  * One record per app (domain), at the position of the app's first record, and

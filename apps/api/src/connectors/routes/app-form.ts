@@ -1,4 +1,4 @@
-/** The public own-app connect form: read the link, then connect with the app's credentials. */
+/** The public connect form (read the link, submit the app's credentials) and Shopify's OAuth callback. */
 import { createHash } from 'node:crypto';
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import type { Context, Next } from 'hono';
@@ -12,22 +12,38 @@ import { featureNotSupportedResponse } from './shared';
 
 const TokenParams = z.object({ token: z.string() });
 
+const CapabilitySchema = z.enum(['ok', 'blocked', 'missing_scope', 'error']);
+const ShopifyAccessSchema = z.object({
+  shop: z.object({ name: z.string().nullable(), domain: z.string().nullable(), currency: z.string().nullable() }),
+  catalog: CapabilitySchema,
+  orders: CapabilitySchema,
+  customers: CapabilitySchema,
+  inventory: CapabilitySchema,
+});
+
 const AppFormInfoSchema = z
   .object({
     app: z.string(),
     name: z.string(),
     connector: z.string(),
+    flow: z.enum(['oauth', 'client_credentials']),
     connected: z.boolean(),
     connected_as: z.string().nullable(),
     expires_at: z.string(),
+    shop: z.string().nullable().optional(),
+    shared_app: z.boolean().optional(),
+    scopes: z.array(z.string()).optional(),
+    redirect_uri: z.string().optional(),
+    access: ShopifyAccessSchema.nullable().optional(),
   })
   .openapi('ConnectorAppFormInfo');
 
 const AppFormResultSchema = z
   .object({
-    connected: z.literal(true),
-    connected_as: z.string(),
+    connected: z.boolean(),
+    connected_as: z.string().optional(),
     success_redirect_uri: z.string().optional(),
+    authorize_url: z.string().optional(),
   })
   .openapi('ConnectorAppFormResult');
 
@@ -57,8 +73,57 @@ async function limitPerLink(c: Context, next: Next) {
   await next();
 }
 
+async function limitCallbackPerIp(c: Context, next: Next) {
+  const denied = await enforceRateLimit(
+    c,
+    appFormLimiter,
+    `shopify-callback:${requestClientKey(c)}`,
+    { limit: 30, windowMs: 60_000 },
+    {
+      action: RATE_LIMIT_EXCEEDED_ACTION,
+      resourceType: 'connector_shopify_callback',
+      resourceId: null,
+      metadata: { limiter: 'connector_shopify_callback' },
+    },
+  );
+  if (denied) return denied;
+  await next();
+}
+
 export function registerAppFormRoutes(app: OpenAPIHono, deps: ConnectorRouterDeps): void {
   app.use('/app-form/:token', limitPerLink);
+  app.use('/shopify/callback', limitCallbackPerIp);
+
+  // Shopify redirects the merchant's browser here after approval. No user
+  // auth: the one-use state, Shopify's HMAC and the store name authenticate it.
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/shopify/callback',
+      tags: ['connector'],
+      summary: "Shopify OAuth callback (no user auth; state + Shopify's HMAC)",
+      request: {
+        query: z.object({
+          code: z.string().optional(),
+          hmac: z.string().optional(),
+          shop: z.string().optional(),
+          state: z.string().optional(),
+          timestamp: z.string().optional(),
+          host: z.string().optional(),
+        }),
+      },
+      responses: {
+        302: { description: 'Back to the Kortix connect form, with `connected=1` or `error=<code>`' },
+        ...errors(400, 501),
+      },
+    }),
+    async (c) => {
+      if (!deps.shopifyCallback) return featureNotSupportedResponse(c, 'connector_shopify');
+      const outcome = await deps.shopifyCallback(c.req.url);
+      if (outcome.status === 302) return c.redirect(outcome.location, 302);
+      return c.text(outcome.body, 400);
+    },
+  );
 
   app.openapi(
     createRoute({
@@ -92,7 +157,7 @@ export function registerAppFormRoutes(app: OpenAPIHono, deps: ConnectorRouterDep
             'application/json': {
               schema: lenientBody({
                 store: z.string().optional().openapi({ description: "The store's myshopify.com name, host, or admin URL." }),
-                client_id: z.string().optional().openapi({ description: "The app's Client ID." }),
+                client_id: z.string().optional().openapi({ description: "The app's Client ID. Omit to use the deployment's shared Shopify app." }),
                 client_secret: z.string().optional().openapi({ description: "The app's Client secret." }),
               }),
             },
@@ -100,7 +165,7 @@ export function registerAppFormRoutes(app: OpenAPIHono, deps: ConnectorRouterDep
         },
       },
       responses: {
-        200: json(AppFormResultSchema, 'Connected'),
+        200: json(AppFormResultSchema, 'Connected, or (`connected: false`) the Shopify authorize URL to open'),
         ...errors(400, 404, 409, 410, 422, 501, 502),
       },
     }),

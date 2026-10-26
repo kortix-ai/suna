@@ -120,6 +120,8 @@ export function connectorErrorHttpStatus(
   if (COMPUTER_REFUSALS.includes(kind)) return 403;
   // The upstream refused the stored credential: Kortix worked, the dependency did not.
   if (kind === 'credential_rejected') return 424;
+  // Shopify refused access the app was never granted (protected data, a scope).
+  if (kind === 'protected_data_blocked' || kind === 'scope_missing') return 403;
   if (COMPUTER_STATES.includes(kind)) return 409;
   if (upstreamStatus === 429 || upstreamStatus === 503) return upstreamStatus;
   return 500;

@@ -38,6 +38,8 @@ describe('the Kortix MCP app catalogue', () => {
     const listed = new Set([
       ...MCP_APPS.filter((app) => app.icon).map((app) => `${app.slug}.svg`),
       ...KORTIX_APPS.flatMap((entry) => (entry.icon ? [entry.icon.split('/').pop()!] : [])),
+      // The native Shopify entry, which is not an MCP app.
+      'shopify.svg',
     ]);
     expect(readdirSync(ICONS).filter((file) => !listed.has(file))).toEqual([]);
   });
@@ -186,6 +188,17 @@ describe('the ways to connect one app (catalogue detail)', () => {
       ['openapi', false],
     ]);
   });
+
+  test('Shopify: the native connector leads, ahead of the managed toolkit', async () => {
+    const items = await connectorsV2Items({ apps: () => [], index: async () => [], toolkits: async () => [toolkit('shopify', 'Shopify')] });
+    expect(items.filter((item) => item.domain === 'shopify.com').map((item) => item.id)).toEqual(['kortix:shopify', 'composio:shopify']);
+    const ways = await connectorsV2Surfaces('shopify.com', { items: async () => items, surfaces: async () => [] });
+    expect(ways.map((way) => [way.id, way.recommended === true])).toEqual([
+      ['kortix:shopify:native', true],
+      ['composio:shopify', false],
+    ]);
+    expect(ways[0]?.connector).toEqual({ provider: 'shopify' });
+  });
 });
 
 describe('What Kortix built, in the catalogue', () => {
@@ -303,7 +316,8 @@ describe('a catalogue source that is down', () => {
         throw new Error('composio 503');
       },
     });
-    expect(items.length).toBe(KORTIX_APPS.length);
+    // Kortix's apps and native Shopify: none of them comes from a source.
+    expect(items.length).toBe(KORTIX_APPS.length + 1);
     expect(catalogDegraded()).toEqual(['composio']);
     await connectorsV2Items({ apps: () => [], index: async () => [], toolkits: async () => [] });
     expect(catalogDegraded()).toEqual([]);

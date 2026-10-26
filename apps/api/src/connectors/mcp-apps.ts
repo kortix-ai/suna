@@ -290,6 +290,43 @@ export function mcpAppSurface(app: McpApp): ConnectorSurfaceVariant {
   };
 }
 
+/**
+ * Native Shopify (`provider: shopify`) is a Kortix integration that Install
+ * adds like any connector: Kortix calls the Admin API itself, signed in with
+ * the store's own app. A shared app (Composio's) reads no orders or customers
+ * without Shopify's review, so this way leads Shopify's ways (`variantRank`).
+ */
+const SHOPIFY_DOMAIN = 'shopify.com';
+
+const SHOPIFY_ITEM: ConnectorCatalogItem = {
+  id: 'kortix:shopify',
+  kind: 'graphql',
+  slug: 'shopify',
+  name: 'Shopify',
+  description: 'Orders, customers, products and inventory.',
+  url: `https://${SHOPIFY_DOMAIN}`,
+  icon: '/connector-icons/shopify.svg',
+  domain: SHOPIFY_DOMAIN,
+  categories: ['ecommerce'],
+  feeds: ['kortix'],
+  popularity: null,
+  oauth: true,
+  oneClick: true,
+};
+
+const SHOPIFY_SURFACE: ConnectorSurfaceVariant = {
+  id: 'kortix:shopify:native',
+  kind: 'graphql',
+  name: 'Shopify',
+  url: null,
+  docs: 'https://shopify.dev/docs/api/admin-graphql',
+  description: "The Admin GraphQL API, signed in with the store's own app.",
+  transports: [],
+  requiresAuth: true,
+  command: null,
+  connector: { provider: 'shopify' },
+};
+
 /** A managed toolkit as a way to connect its app. */
 export function composioSurface(item: ConnectorCatalogItem): ConnectorSurfaceVariant {
   return {
@@ -414,7 +451,7 @@ export async function connectorsV2Items(
     toolkits?: () => Promise<ComposioCatalogCard[]>;
   } = {},
 ): Promise<ConnectorCatalogItem[]> {
-  const kortix = [...KORTIX_APPS.map(kortixCatalogItem), ...(load.apps ?? availableMcpApps)().map(mcpAppCatalogItem)];
+  const kortix = [...KORTIX_APPS.map(kortixCatalogItem), ...(load.apps ?? availableMcpApps)().map(mcpAppCatalogItem), SHOPIFY_ITEM];
   const failed: string[] = [];
   const [index, toolkits] = await Promise.all([
     (load.index ?? connectorCatalogItems)().catch(() => {
@@ -506,6 +543,7 @@ export async function connectorsV2Surfaces(
     ...availableMcpApps()
       .filter((app) => app.domain === domain)
       .map(mcpAppSurface),
+    ...(domain === SHOPIFY_DOMAIN ? [SHOPIFY_SURFACE] : []),
   ];
   const registryDomains = new Set(
     records.filter((item) => !item.feeds.includes('kortix') && item.kind !== 'composio').map((item) => item.registryDomain ?? item.domain),
