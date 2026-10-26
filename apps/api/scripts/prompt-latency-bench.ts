@@ -8,7 +8,8 @@
  *   - wall time of POST /sessions and POST /prompts, as the client sees it;
  *   - their `Server-Timing` stages (`db;dur=…;desc="n=…"` = DB wall time and
  *     statement count, see src/lib/server-timing.ts);
- *   - POST→busy and POST→idle per turn (`session.status` frames on /events);
+ *   - POST→busy, POST→first token (the first `message.part.delta`) and POST→idle per
+ *     turn (frames on /events); create→first token = runtimeReady + T1 POST→first token;
  *   - delivery: `[provision-timeline] deliver|proxy … total=…ms` lines of this
  *     run's prompts and sessions (BENCH_API_LOG, a local API's stdout), and
  *     lifecycle command created_at→result.forwarded_at (BENCH_DB_URL).
@@ -24,7 +25,8 @@
  * BENCH_PROVIDER (sandbox provider), BENCH_LABEL (run), BENCH_OUT
  * (<repo>/output/prompt-latency-<label>.jsonl), BENCH_API_LOG, BENCH_DB_URL,
  * BENCH_KEEP=1 (leave the sessions running, e.g. to open one in the web app),
- * BENCH_TURN_GAP_MS (1000, the pause after each turn).
+ * BENCH_TURN_GAP_MS (1000, the pause after each turn), BENCH_BETTERSTACK_TOKEN + BENCH_BETTERSTACK_HOST
+ * (a Better Stack source: one `[session-speed]` event per session; the canary workflow sets them).
  * Runbook and baseline: .agents/skills/testing/references/api-latency-baseline.md
  */
 import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
@@ -55,7 +57,7 @@ type Timing = Record<string, { dur: number; n?: number }>;
 interface Timeline { kind: string; id: string; total: number; marks: Record<string, number> }
 interface Turn {
   label: string; status: number; postMs: number; timing: Timing; promptId: string | null;
-  busyMs: number | null; idleMs: number | null; text: string; model: string | null; error?: string;
+  busyMs: number | null; firstTokenMs: number | null; idleMs: number | null; text: string; model: string | null; error?: string;
   deliver?: Timeline | null; proxy?: Timeline | null; forwardedMs?: number | null;
   /** Frame types this turn saw, kept only when it failed. */
   seen?: string[];
@@ -139,7 +141,7 @@ async function runTurn(sessionId: string, spec: { label: string; text: string },
   });
   const turn: Turn = {
     label: spec.label, status: r.status, postMs: r.ms, timing: r.timing, promptId: r.body?.prompt_id ?? null,
-    busyMs: null, idleMs: null, text: '', model: null,
+    busyMs: null, firstTokenMs: null, idleMs: null, text: '', model: null,
   };
   if (r.status !== 202 && r.status !== 200) return { ...turn, error: `prompt ${r.status}: ${JSON.stringify(r.body).slice(0, 200)}` };
   // Text parts by part id, kept only for assistant messages: a delivery may re-mint the
@@ -153,6 +155,7 @@ async function runTurn(sessionId: string, spec: { label: string; text: string },
       const { t, type, payload } = frames[i];
       const at = Math.round(t - t0);
       if (type === 'session.status' && payload.status?.type === 'busy') turn.busyMs ??= at;
+      if (type === 'message.part.delta' && payload.delta) turn.firstTokenMs ??= at;
       if (type === 'message.updated' && payload.info?.role === 'assistant') {
         assistant.add(payload.info.id);
         turn.model = payload.info.modelID ?? turn.model;
@@ -212,7 +215,7 @@ async function runSession(round: number): Promise<Session> {
     for (const spec of TURNS) {
       const turn = await runTurn(s.sessionId, spec, frames, sent);
       s.turns.push(turn);
-      console.error(`  ${turn.label} post=${turn.postMs}ms db=${turn.timing.db?.dur ?? '-'}ms/n=${turn.timing.db?.n ?? '-'} busy=${turn.busyMs} idle=${turn.idleMs} model=${turn.model} ${JSON.stringify(turn.text)} ${turn.error ?? ''}`);
+      console.error(`  ${turn.label} post=${turn.postMs}ms db=${turn.timing.db?.dur ?? '-'}ms/n=${turn.timing.db?.n ?? '-'} busy=${turn.busyMs} first-token=${turn.firstTokenMs} idle=${turn.idleMs} model=${turn.model} ${JSON.stringify(turn.text)} ${turn.error ?? ''}`);
       if (turn.error) break;
       await sleep(TURN_GAP_MS);
     }
@@ -292,7 +295,9 @@ export function table(sessions: Session[]): string {
     ['delivery: log deliver total', turns.map((t) => t.deliver?.total ?? NaN)],
     ['delivery: log proxy total', turns.map((t) => t.proxy?.total ?? NaN)],
     ['delivery: created→forwarded (DB)', turns.map((t) => t.forwardedMs ?? NaN)],
+    ['create→first token (T1)', ok.map((s) => (s.readyMs ?? NaN) + (s.turns[0]?.firstTokenMs ?? NaN))],
     ['POST→busy', turns.map((t) => t.busyMs ?? NaN)],
+    ['POST→first token', turns.map((t) => t.firstTokenMs ?? NaN)],
     ['POST→idle', turns.map((t) => t.idleMs ?? NaN)],
   ];
   // Per-stage deltas of the two log lines, in first-seen order: the row an R1 change moves.
@@ -312,6 +317,32 @@ export function table(sessions: Session[]): string {
     lines.push(`${name.padEnd(38)}${String(n).padStart(5)}${String(pct(values, 50) ?? '-').padStart(8)}${String(pct(values, 90) ?? '-').padStart(8)}`);
   }
   return lines.join('\n');
+}
+
+/** One `[session-speed]` event per session for the Better Stack "Session speed" dashboard. */
+async function ship(sessions: Session[]): Promise<void> {
+  const health = (await api('/health')).body ?? {};
+  const events = sessions.map((s) => ({
+    dt: s.at,
+    message: `[session-speed] ${LABEL} ${s.error ? 'failed' : 'ok'}`,
+    canary_target: LABEL,
+    canary_ok: !s.error && !s.turns.some((t) => t.error),
+    canary_error: s.error ?? s.turns.find((t) => t.error)?.error ?? null,
+    canary_ready_ms: s.readyMs,
+    canary_cold_ttft_ms: s.readyMs !== null && s.turns[0]?.firstTokenMs != null ? s.readyMs + s.turns[0].firstTokenMs : null,
+    canary_ttft_ms: s.turns[0]?.firstTokenMs ?? null,
+    // T3: a chat turn on a session that already answered twice.
+    canary_warm_ttft_ms: s.turns[2]?.firstTokenMs ?? null,
+    canary_model: s.turns[0]?.model ?? null,
+    api_version: health.version ?? null,
+    api_commit: health.commit ?? null,
+  }));
+  const res = await fetch(`https://${env.BENCH_BETTERSTACK_HOST}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${env.BENCH_BETTERSTACK_TOKEN}` },
+    body: JSON.stringify(events),
+  });
+  if (!res.ok) throw new Error(`Better Stack ingest ${res.status}: ${await res.text()}`);
 }
 
 async function main(): Promise<void> {
@@ -343,6 +374,7 @@ async function main(): Promise<void> {
   for (const s of sessions) appendFileSync(OUT, `${JSON.stringify(s)}\n`);
   console.log(table(sessions));
   console.error(`wrote ${sessions.length} sessions to ${OUT}`);
+  if (env.BENCH_BETTERSTACK_TOKEN) await ship(sessions);
 }
 
 if (import.meta.main) {
