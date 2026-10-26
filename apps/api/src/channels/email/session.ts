@@ -16,7 +16,7 @@ import {
   replyToResendThreadEmail,
   resolveEmailApiKey,
 } from '../resend-email-api';
-import { type ChannelMessage, type ChannelPort, routeChannelMessage } from '../core/conversation';
+import { type ChannelPort, type ChannelSessionPlan, type ChannelTarget, routeChannelMessage } from '../core/conversation';
 import {
   type EmailSenderPolicy,
   emailOwnKeyForInbox,
@@ -30,7 +30,7 @@ import type { InboundEmail, ResendInboxEmailReceivedEvent } from './types';
 
 let emailSenderPolicyLoader = emailSenderPolicyForInbox;
 
-export function resetEmailLoadersForTest() {
+export function resetEmailChannelForTest() {
   emailSenderPolicyLoader = emailSenderPolicyForInbox;
   threadEmailLoader = getResendThreadEmail;
 }
@@ -82,17 +82,17 @@ export async function dispatchResendEmailEvent(event: ResendInboxEmailReceivedEv
   const policy = await emailSenderPolicyLoader(projectId, inboxId);
   const sender = event.data.from ?? '';
   if (!isEmailSenderAllowed(sender, policy)) {
-    console.warn('[email-webhook] sender rejected by inbox policy', { inboxId, emailId, sender });
+    logger.warn('[email-webhook] sender rejected by inbox policy', { inboxId, emailId, sender });
     return;
   }
   if (!(await claimInboundMessage(inboxId, emailId))) return;
   const apiKey = resolveEmailApiKey(await emailOwnKeyForInbox(projectId, inboxId));
   if (!apiKey) {
-    console.error('[email-webhook] no Resend key for inbox', { projectId, inboxId });
+    logger.error('[email-webhook] no Resend key for inbox', { projectId, inboxId });
     return;
   }
   const full = await threadEmailLoader({ apiKey, inboxId, threadId, emailId });
-  await spawnEmailAgentTurn(projectId, {
+  const email: InboundEmail = {
     inboxId,
     threadId,
     emailId,
@@ -105,7 +105,26 @@ export async function dispatchResendEmailEvent(event: ResendInboxEmailReceivedEv
       filename: a.filename ?? null,
       size: a.size ?? null,
     })),
-  });
+  };
+  // Resend does not retry a webhook the route already acked (channels/webhook-work.ts),
+  // so every attempt is the last one.
+  await routeChannelMessage(
+    emailPort,
+    {
+      target: { platform: 'email', workspaceId: inboxId, threadId, projectId, messageId: emailId },
+      // One lifecycle key per message, never per thread: the lifecycle keeps a
+      // key forever, so under the thread's key a failed first start (dead-lettered)
+      // answered every later reply in the thread with the same failure.
+      keys: {
+        followUp: `email:${inboxId}:${emailId}`,
+        create: `email:create:${inboxId}:${threadId}:${emailId}`,
+        createClaim: `email:threadcreate:${inboxId}:${threadId}`,
+      },
+      followUp: { text: renderFollowUpPrompt(email) },
+      plan: (revived) => planEmailSession(projectId, email, revived),
+    },
+    { finalAttempt: true },
+  );
 }
 
 /** A readable body for an HTML-only email. */
@@ -124,125 +143,103 @@ function stripHtml(html: string | null | undefined): string {
     .trim();
 }
 
-interface EmailChannelMessage extends ChannelMessage {
-  email: InboundEmail;
-}
-
 /**
- * Email on the conversation core: a Resend thread is the conversation. The
- * inbox's binding picks the agent and model, a private inbox ("only me") runs
- * as its owner, and the session is pinned to the inbox's connector account.
+ * Email on the conversation core: a Resend thread is the conversation. A sender
+ * outside the workspace gets no status mail, because a reply invites backscatter
+ * and auto-responder loops; the one exception is the archived project's notice.
  */
-const emailPort: ChannelPort<EmailChannelMessage> = {
-  source: 'email',
-  prompt: ({ email }, kind) => (kind === 'follow-up' ? renderFollowUpPrompt(email) : renderAgentPrompt(email, kind === 'revived')),
-  beforeFollowUp: async ({ projectId, email }, sessionId) => {
-    const bound = await ensureEmailSessionBinding({ projectId, sessionId, inboxId: email.inboxId });
-    if (!bound) {
-      logger.error('[email-webhook] could not bind the thread session to the inbox connection', {
-        projectId,
-        sessionId,
-        inboxId: email.inboxId,
-      });
-    }
-    return bound;
+const emailPort: ChannelPort = {
+  async notify(target, notice) {
+    if (notice.kind === 'create_failed' && notice.error.body.code === 'project_archived') await replyNotAccepting(target);
   },
-  planCreate: async ({ email }, project) => {
-    const { inboxId, threadId } = email;
-    // An email inbox is a first-class channel. Its binding selects the
-    // concrete project agent exactly like Slack and Teams bindings do. Older
-    // installs have no binding row and fall through to the project default.
-    const [selection] = await db
-      .select({
-        agentName: chatChannelBindings.agentName,
-        opencodeModel: chatChannelBindings.model,
-      })
-      .from(chatChannelBindings)
-      .where(
-        and(
-          eq(chatChannelBindings.projectId, project.projectId),
-          eq(chatChannelBindings.platform, 'email'),
-          eq(chatChannelBindings.workspaceId, inboxId),
-        ),
-      )
-      .limit(1);
-
-    // A private inbox ("only me") is its owner's account: its mail starts a
-    // private session as that person, the only session that may use it. A
-    // shared inbox runs as the project's automation actor, visible to the project.
-    const account = await loadEmailInboxAccountForInbox(project.projectId, inboxId);
-    if (!account) {
-      logger.error('[email-webhook] no active inbox account', { projectId: project.projectId, inboxId });
-      return null;
+  async prepareFollowUp(target, thread) {
+    if (await ensureEmailSessionBinding({ projectId: target.projectId, sessionId: thread.sessionId, inboxId: target.workspaceId })) {
+      return true;
     }
-    const privateInbox = account.ownerType === 'member' && Boolean(account.ownerId);
-    return {
-      ...(privateInbox ? { userId: account.ownerId! } : {}),
-      body: {
-        agent_name: selection?.agentName || 'default',
-        ...(selection?.opencodeModel ? { opencode_model: selection.opencodeModel } : {}),
-        connector_bindings: {
-          email: { connection_id: account.connectionId },
-        },
-        // Email delivers its prompt via postCreate, so create is the only moment
-        // this session has any user text — title from the subject.
-        title_source: messageSubject(email) ?? messageSummary(email),
-      },
-      mayManageSystemConnections: true,
-      visibility: privateInbox ? 'private' : 'project',
-      metadata: {
-        email: {
-          inbox_id: inboxId,
-          thread_id: threadId,
-          message_id: email.emailId,
-          address: email.to[0] ?? '',
-          from: messageSender(email),
-          subject: messageSubject(email),
-        },
-      },
-      extraEnvVars: {
-        KORTIX_EMAIL_INBOX_ID: inboxId,
-        KORTIX_EMAIL_THREAD_ID: threadId,
-        KORTIX_EMAIL_MESSAGE_ID: email.emailId,
-        KORTIX_EMAIL_ADDRESS: email.to[0] ?? '',
-        KORTIX_FRONTEND_URL: config.FRONTEND_URL,
-      },
-    };
-  },
-  // A sender outside the workspace gets no status mail: a reply would invite
-  // backscatter and auto-responder loops. The one exception is the archived
-  // project's "not accepting" notice, once per thread.
-  notify: async ({ projectId, email }, notice) => {
-    if (notice.kind === 'create_failed' && notice.error.body.code === 'project_archived') {
-      await replyNotAccepting(projectId, email);
-      return;
-    }
-    logger.warn('[email-webhook] message not delivered', { projectId, inboxId: email.inboxId, notice: notice.kind });
+    logger.warn('[email-webhook] could not bind the thread session to the inbox connection; email dropped', {
+      projectId: target.projectId,
+      sessionId: thread.sessionId,
+      inboxId: target.workspaceId,
+    });
+    return false;
   },
 };
 
-async function spawnEmailAgentTurn(projectId: string, email: InboundEmail): Promise<void> {
-  const { inboxId, threadId, emailId } = email;
-  if (!inboxId || !threadId) return;
-  // Resend does not retry a webhook the route already acked (channels/webhook-work.ts),
-  // so every attempt is the last one.
-  await routeChannelMessage(
-    emailPort,
-    {
-      thread: { platform: 'email', workspaceId: inboxId, threadId },
-      projectId,
-      // One lifecycle key per message, never per thread: the lifecycle keeps a
-      // key forever, so under the thread's key a failed first start (dead-lettered)
-      // answered every later reply in the thread with the same failure.
-      keys: {
-        followUp: `email:${inboxId}:${emailId}`,
-        create: `email:create:${inboxId}:${threadId}:${emailId}`,
-        claim: `email:threadcreate:${inboxId}:${threadId}`,
+/**
+ * The session an email thread starts. The inbox's binding picks the agent and
+ * model, a private inbox ("only me") runs as its owner, and the session is
+ * pinned to the inbox's connector account.
+ */
+async function planEmailSession(projectId: string, email: InboundEmail, revived: boolean): Promise<ChannelSessionPlan | null> {
+  const { inboxId, threadId } = email;
+  const [project] = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  if (!project) return null;
+
+  // An email inbox is a first-class channel. Its binding selects the
+  // concrete project agent exactly like Slack and Teams bindings do. Older
+  // installs have no binding row and fall through to the project default.
+  const [selection] = await db
+    .select({
+      agentName: chatChannelBindings.agentName,
+      opencodeModel: chatChannelBindings.model,
+    })
+    .from(chatChannelBindings)
+    .where(
+      and(
+        eq(chatChannelBindings.projectId, projectId),
+        eq(chatChannelBindings.platform, 'email'),
+        eq(chatChannelBindings.workspaceId, inboxId),
+      ),
+    )
+    .limit(1);
+
+  // A private inbox ("only me") is its owner's account: its mail starts a
+  // private session as that person, the only session that may use it. A
+  // shared inbox runs as the project's automation actor, visible to the project.
+  const account = await loadEmailInboxAccountForInbox(projectId, inboxId);
+  if (!account) {
+    logger.error('[email-webhook] no active inbox account', { projectId, inboxId });
+    return null;
+  }
+  const privateInbox = account.ownerType === 'member' && Boolean(account.ownerId);
+  return {
+    project,
+    ...(privateInbox ? { userId: account.ownerId! } : {}),
+    visibility: privateInbox ? 'private' : 'project',
+    body: {
+      agent_name: selection?.agentName || 'default',
+      ...(selection?.opencodeModel ? { opencode_model: selection.opencodeModel } : {}),
+      connector_bindings: {
+        email: { connection_id: account.connectionId },
       },
-      email,
+      // Email delivers its prompt via postCreate, so create is the only moment
+      // this session has any user text — title from the subject.
+      title_source: messageSubject(email) ?? messageSummary(email),
     },
-    { finalAttempt: true },
-  );
+    mayManageSystemConnections: true,
+    metadata: {
+      email: {
+        inbox_id: inboxId,
+        thread_id: threadId,
+        message_id: email.emailId,
+        address: email.to[0] ?? '',
+        from: messageSender(email),
+        subject: messageSubject(email),
+      },
+    },
+    extraEnvVars: {
+      KORTIX_EMAIL_INBOX_ID: inboxId,
+      KORTIX_EMAIL_THREAD_ID: threadId,
+      KORTIX_EMAIL_MESSAGE_ID: email.emailId,
+      KORTIX_EMAIL_ADDRESS: email.to[0] ?? '',
+      KORTIX_FRONTEND_URL: config.FRONTEND_URL,
+    },
+    prompt: renderAgentPrompt(email, revived),
+  };
 }
 
 // A deleted workspace keeps its inbox until the purge, so mail still arrives
@@ -254,8 +251,8 @@ const NOT_ACCEPTING_NOTICE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const NOT_ACCEPTING_REPLY =
   'This address is not accepting email right now. No one will answer this message.';
 
-async function replyNotAccepting(projectId: string, email: InboundEmail): Promise<void> {
-  const { inboxId, threadId, emailId } = email;
+async function replyNotAccepting(target: ChannelTarget): Promise<void> {
+  const { projectId, workspaceId: inboxId, threadId, messageId: emailId } = target;
   try {
     const claimed = await db
       .insert(chatEventDedup)
@@ -289,7 +286,7 @@ async function alreadyHandled(key: string): Promise<boolean> {
     if (inserted.length > 0) recordClaim(key);
     return inserted.length === 0;
   } catch (err) {
-    console.warn('[email-webhook] event dedup check failed', err);
+    logger.warn('[email-webhook] event dedup check failed', { error: err instanceof Error ? err.message : String(err) });
     return false;
   }
 }
@@ -308,7 +305,7 @@ async function claimInboundMessage(inboxId: string, emailId: string): Promise<bo
     if (inserted.length > 0) recordClaim(key);
     return inserted.length > 0;
   } catch (err) {
-    console.error('[email-webhook] inbound message claim failed (fail-open)', err);
+    logger.error('[email-webhook] inbound message claim failed (fail-open)', { error: err instanceof Error ? err.message : String(err) });
     return true;
   }
 }

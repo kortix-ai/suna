@@ -12,11 +12,13 @@
  * The agent answers through the `kortix_telegram` connector (connectors/channels.ts);
  * the bot token never enters the sandbox.
  */
+import { projects } from '@kortix/db';
+import { eq } from 'drizzle-orm';
 import { type IntegrationEvent, registerEventConsumer } from '../../integrations/event-inbox';
 import { logger } from '../../lib/logger';
+import { db } from '../../shared/db';
 import { TELEGRAM_CHANNEL_CONNECTOR_SLUG } from '../../connectors/channels';
-import { type ChannelMessage, type ChannelPort, forgetChatThread, routeChannelMessage } from '../core/conversation';
-import type { ChatThreadKey } from '../core/threads';
+import { type ChannelNotice, type ChannelPort, type ChannelTarget, forgetChatThread, routeChannelMessage } from '../core/conversation';
 import { startErrorMessage, TELEGRAM_START_ERROR_COMMANDS } from '../start-error';
 import { telegramCall } from './api';
 import { loadTelegramBotToken, loadTelegramInstall } from './installs';
@@ -38,13 +40,6 @@ export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
   edited_message?: TelegramMessage;
-}
-
-interface TelegramChannelMessage extends ChannelMessage {
-  message: TelegramMessage;
-  /** The install's bot token, for the server's own replies. */
-  token: string;
-  text: string;
 }
 
 /** A forum topic is its own conversation; otherwise the whole chat is one. */
@@ -73,41 +68,33 @@ export function telegramMessageEvent(
   };
 }
 
-const telegramPort: ChannelPort<TelegramChannelMessage> = {
-  source: 'telegram',
-  prompt: (m, kind) => renderTelegramPrompt(m.message, kind === 'follow-up' ? 'follow-up' : 'new'),
-  planCreate: async (m) => ({
-    body: { agent_name: 'default', title_source: m.text || null },
-    visibility: 'project',
-    metadata: {
-      telegram: {
-        bot_id: m.thread.workspaceId,
-        chat_id: m.message.chat.id,
-        chat_type: m.message.chat.type,
-        from_id: m.message.from?.id,
-        message_id: m.message.message_id,
-      },
-    },
-  }),
-  notify: (m, notice) => {
-    switch (notice.kind) {
-      case 'follow_up_failed':
-        return sendTelegramReply(m.token, m.message, 'This chat\'s Kortix session has failed and cannot take messages. Send /new to start a new conversation.');
-      case 'create_pending':
-        return sendTelegramReply(m.token, m.message, 'Kortix is still starting a session for this chat. The agent replies here when it is ready.');
-      case 'create_in_flight':
-        return sendTelegramReply(m.token, m.message, 'Kortix is still starting a session for this chat. Send your message again in a minute.');
-      case 'create_failed':
-        return sendTelegramReply(m.token, m.message, startErrorMessage(notice.error.status, notice.error.body, TELEGRAM_START_ERROR_COMMANDS));
-    }
+const telegramPort: ChannelPort = {
+  async notify(target, notice) {
+    const token = await loadTelegramBotToken(target.projectId);
+    if (token) await sendTelegramReply(token, target, telegramNotice(notice));
   },
 };
+
+function telegramNotice(notice: ChannelNotice): string {
+  switch (notice.kind) {
+    case 'create_pending':
+      return 'Kortix is still starting a session for this chat. The agent replies here when it is ready.';
+    case 'create_in_flight':
+      return 'Kortix is still starting a session for this chat. Send your message again in a minute.';
+    case 'create_failed':
+      return startErrorMessage(notice.error.status, notice.error.body, TELEGRAM_START_ERROR_COMMANDS);
+    case 'follow_up_failed':
+      return "This chat's Kortix session cannot take new messages. Send /new to start a new conversation, then send your message again.";
+  }
+}
 
 export async function handleTelegramEvent(
   event: IntegrationEvent,
   run: { finalAttempt: boolean } = { finalAttempt: false },
 ): Promise<void> {
   const message = event.data.message as unknown as TelegramMessage;
+  const [project] = await db.select().from(projects).where(eq(projects.projectId, event.projectId)).limit(1);
+  if (!project) return;
   const [install, token] = await Promise.all([
     loadTelegramInstall(event.projectId),
     loadTelegramBotToken(event.projectId),
@@ -116,7 +103,14 @@ export async function handleTelegramEvent(
 
   const text = (message.text ?? message.caption ?? '').trim();
   const senderId = message.from?.id == null ? '' : String(message.from.id);
-  const reply = (body: string) => sendTelegramReply(token, message, body);
+  const target: ChannelTarget = {
+    platform: 'telegram',
+    workspaceId: install.botId,
+    threadId: telegramThreadId(message),
+    projectId: event.projectId,
+    messageId: String(message.message_id),
+  };
+  const reply = (body: string) => sendTelegramReply(token, target, body);
 
   if (!senderId || !install.allowedUserIds.includes(senderId)) {
     await reply(
@@ -125,14 +119,13 @@ export async function handleTelegramEvent(
     );
     return;
   }
-  const thread: ChatThreadKey = { platform: 'telegram', workspaceId: install.botId, threadId: telegramThreadId(message) };
-  const claimKey = `telegram:threadcreate:${event.projectId}:${install.botId}:${thread.threadId}`;
+  const createClaim = `telegram:threadcreate:${event.projectId}:${install.botId}:${target.threadId}`;
   if (/^\/start(@\w+)?\b/.test(text)) {
     await reply('Connected to Kortix. Send a message to start working with the agent. /new starts a new conversation.');
     return;
   }
   if (/^\/new(@\w+)?\b/.test(text)) {
-    await forgetChatThread(thread, claimKey);
+    await forgetChatThread(target, createClaim);
     await reply('Started a new conversation. Your next message goes to a new session.');
     return;
   }
@@ -146,27 +139,42 @@ export async function handleTelegramEvent(
   await routeChannelMessage(
     telegramPort,
     {
-      thread,
-      projectId: event.projectId,
+      target,
       keys: {
         followUp: `telegram:${install.botId}:${event.id}`,
         create: `telegram:create:${install.botId}:${event.id}`,
-        claim: claimKey,
+        createClaim,
       },
-      message,
-      token,
-      text,
+      followUp: { text: renderTelegramPrompt(message, 'follow-up') },
+      // A revived chat starts with the `new` prompt: the agent reads the chat afresh.
+      plan: async () => ({
+        project,
+        visibility: 'project',
+        body: { agent_name: 'default', title_source: text || null },
+        metadata: {
+          telegram: {
+            bot_id: install.botId,
+            chat_id: message.chat.id,
+            chat_type: message.chat.type,
+            from_id: message.from?.id,
+            message_id: message.message_id,
+          },
+        },
+        prompt: renderTelegramPrompt(message, 'new'),
+      }),
     },
     run,
   );
 }
 
-async function sendTelegramReply(token: string, message: TelegramMessage, text: string): Promise<void> {
+/** One reply path for commands and notices: the chat and topic come from the target's thread id. */
+async function sendTelegramReply(token: string, target: ChannelTarget, text: string): Promise<void> {
+  const [chatId, topicId] = target.threadId.split(':');
   await telegramCall(token, 'sendMessage', {
-    chat_id: message.chat.id,
+    chat_id: Number(chatId),
     text,
-    reply_parameters: { message_id: message.message_id, allow_sending_without_reply: true },
-    ...(message.is_topic_message ? { message_thread_id: message.message_thread_id } : {}),
+    reply_parameters: { message_id: Number(target.messageId), allow_sending_without_reply: true },
+    ...(topicId ? { message_thread_id: Number(topicId) } : {}),
   }).catch((error) => logger.warn('[telegram] reply failed', { error: String(error) }));
 }
 

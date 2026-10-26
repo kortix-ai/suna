@@ -1,4 +1,5 @@
 import type { ReleaseOutcome } from '../projects/session-lifecycle/release-runtime-question';
+import type { ChannelPlatform } from './core/conversation';
 
 /**
  * Releasing a channel session's blocking `question` call, from the server.
@@ -25,7 +26,8 @@ import type { ReleaseOutcome } from '../projects/session-lifecycle/release-runti
  * the agent reads; the daemon's own late release returns 404 and is ignored.
  */
 
-export type ChatChannel = 'teams' | 'slack' | 'telegram' | 'email';
+/** Every chat platform: a new one fails tsc until it has question copy below. */
+export type ChatChannel = ChannelPlatform;
 
 /**
  * Which chat channel a session belongs to, from its own metadata — the

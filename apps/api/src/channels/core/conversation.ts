@@ -1,11 +1,12 @@
 /**
  * The conversation core: how one admitted chat message reaches a session.
  *
- * A chat platform plugs in as a `ChannelPort` (what the platform does at each
- * step) and hands the core one `ChannelMessage` per inbound message (which
- * conversation, which project, which persisted keys). The adapter keeps what
- * only its platform has: webhook verification and intake, the sender gate,
- * commands, typing, the prompt text and the copy of every notice.
+ * A chat platform plugs in as a `ChannelPort`: what the platform does for the
+ * core, addressed by a `ChannelTarget` (one conversation). The adapter hands
+ * the core one `ChannelMessage` per inbound message: its target, its persisted
+ * keys, the follow-up text and how a new session would start. The adapter
+ * keeps what only its platform has: webhook verification and intake, the
+ * sender gate, commands, typing, prompts and the wording of every notice.
  *
  *   a known thread       → a follow-up into its session
  *   its session is gone  → forget the thread, start a new session ("revived")
@@ -14,21 +15,50 @@
  *
  * Telegram and Email run on it. Slack and Teams still route themselves.
  */
-import { chatEventDedup, projects } from '@kortix/db';
+import { chatEventDedup } from '@kortix/db';
+import type { CHANNEL_PLATFORMS } from '@kortix/manifest-schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { createSession, deliverThroughQueue, resolveProjectAutomationActor } from '../../projects/surface';
 import { db } from '../../shared/db';
 import { type ChatThreadKey, dropChatThread, findChatThread, touchChatThread } from './threads';
 
-type CreateCommand = Parameters<typeof createSession>[0];
 type CreateError = NonNullable<Awaited<ReturnType<typeof createSession>>['error']>;
 
-/** One admitted inbound message: built by the adapter after its own sender gate and commands. */
-export interface ChannelMessage {
-  /** The conversation (`chat_threads` key, unique across projects). */
-  thread: ChatThreadKey;
+/** `chat_threads.platform` = `metadata.source` = the lifecycle `source` of a channel session. */
+export type ChannelPlatform = (typeof CHANNEL_PLATFORMS)[number];
+
+/** One conversation, and the inbound message an answer anchors to. */
+export interface ChannelTarget extends ChatThreadKey {
+  platform: ChannelPlatform;
+  /** Follow-ups are confined to it; ports read the install's secrets with it. */
   projectId: string;
+  /** The message a notice answers (a Telegram `message_id`, an email id). */
+  messageId: string;
+}
+
+/** An outcome the agent will not report itself. The port words it, or stays silent. */
+export type ChannelNotice =
+  /** The create went to the lifecycle queue; its drain binds the thread and delivers the prompt. */
+  | { kind: 'create_pending' }
+  /** Last attempt: another message's create still holds the thread. */
+  | { kind: 'create_in_flight' }
+  /** The create failed for good; the thread is free again. */
+  | { kind: 'create_failed'; error: CreateError }
+  /** Last attempt: the thread's session refused the message (a failed session). */
+  | { kind: 'follow_up_failed' };
+
+/** What one chat platform does for the core. */
+export interface ChannelPort {
+  /** Tell the conversation an outcome. Send errors are logged, not thrown. */
+  notify(target: ChannelTarget, notice: ChannelNotice): Promise<void>;
+  /** Runs before every follow-up into an existing session; false drops the message (the port logs why). */
+  prepareFollowUp?(target: ChannelTarget, thread: { sessionId: string; projectId: string }): Promise<boolean>;
+}
+
+/** One verified, deduped, sender-gated inbound message. */
+export interface ChannelMessage {
+  target: ChannelTarget;
   /**
    * Persisted strings, supplied by the adapter so the core never changes one.
    * The lifecycle keeps both idempotency keys forever: a new format for a
@@ -40,50 +70,33 @@ export interface ChannelMessage {
     /** `createSession` idempotency key of this message. */
     create: string;
     /** `chat_event_dedup` key that lets one message per thread create its session. */
-    claim: string;
+    createClaim: string;
   };
+  followUp: { text: string };
+  /** How the thread's session starts. `revived`: its earlier session is gone. Null drops the message (the adapter logs why). */
+  plan(revived: boolean): Promise<ChannelSessionPlan | null>;
 }
 
-/** What one chat platform does at each step of the core. */
-export interface ChannelPort<M extends ChannelMessage> {
-  /** The session `source`, `metadata.source` and `chat_threads.platform`. */
-  source: CreateCommand['source'];
-  /** The text the session receives for this message. `revived`: the thread's earlier session is gone. */
-  prompt(message: M, kind: 'new' | 'revived' | 'follow-up'): string;
-  /** Runs before a follow-up reaches an existing session; false drops the message. */
-  beforeFollowUp?(message: M, sessionId: string): Promise<boolean>;
-  /** How the thread's session starts, or null to drop the message (the adapter logs why). */
-  planCreate(message: M, project: CreateCommand['project']): Promise<ChannelSessionPlan | null>;
-  /** Tell the sender an outcome the agent will not report itself. The adapter owns the copy and may stay silent. */
-  notify(message: M, notice: ChannelNotice): Promise<void>;
-}
-
-export type ChannelSessionPlan = Pick<CreateCommand, 'body' | 'visibility' | 'metadata' | 'extraEnvVars' | 'mayManageSystemConnections'> & {
+export interface ChannelSessionPlan {
+  project: Parameters<typeof createSession>[0]['project'];
   /** Who the session runs as. Omitted: the project's automation actor. */
   userId?: string;
-};
-
-export type ChannelNotice =
-  /** The thread's session refused the message (a failed session), on the last attempt. */
-  | { kind: 'follow_up_failed' }
-  /** The create went to the lifecycle queue; its drain binds the thread and delivers the prompt. */
-  | { kind: 'create_pending' }
-  /** Another message's create still holds the thread, on the last attempt. */
-  | { kind: 'create_in_flight' }
-  | { kind: 'create_failed'; error: CreateError };
-
-export type ChannelRoute =
-  | { kind: 'followed_up'; sessionId: string }
-  | { kind: 'created'; sessionId: string }
-  | { kind: 'pending' }
-  | { kind: 'failed' }
-  | { kind: 'dropped' };
+  visibility: 'project' | 'private';
+  /** The core adds `base_ref` first. */
+  body: Record<string, unknown>;
+  /** The platform block; the core adds `source` first. */
+  metadata: Record<string, unknown>;
+  extraEnvVars?: Record<string, string>;
+  mayManageSystemConnections?: boolean;
+  /** The first prompt, delivered once the session is bound to the thread. */
+  prompt: string;
+}
 
 /** Up to 8 s for a racing message's create to bind the thread. */
-const WAIT_POLL_MS = 250;
-const WAIT_POLLS = 32;
+const CREATE_WAIT_POLL_MS = 250;
+const CREATE_WAIT_POLLS = 32;
 /** A claim outlives a create that never finishes (a crash) by at most this long. */
-const CLAIM_TTL_MS = 10 * 60_000;
+const CREATE_CLAIM_TTL_MS = 10 * 60_000;
 
 const defaultLifecycle = {
   createSession,
@@ -103,122 +116,131 @@ export function resetChannelLifecycleForTest(): void {
 
 /**
  * Route one admitted message. Throws to ask the transport for a retry, never
- * on `finalAttempt`: the sender is told there instead (a transport without
- * retries passes `finalAttempt: true`).
+ * on `finalAttempt`: the conversation is told there instead (a transport
+ * without retries passes `finalAttempt: true`).
  */
-export async function routeChannelMessage<M extends ChannelMessage>(
-  port: ChannelPort<M>,
-  message: M,
+export async function routeChannelMessage(
+  port: ChannelPort,
+  message: ChannelMessage,
   run: { finalAttempt: boolean },
-): Promise<ChannelRoute> {
-  const existing = await findChatThread(message.thread);
+): Promise<void> {
+  const { target, keys } = message;
+  const existing = await findChatThread(target);
   if (existing) {
-    const followed = await followUp(port, message, existing.sessionId, run);
-    if (followed) return followed;
-    await dropChatThread(message.thread);
+    if ((await followUp(port, message, existing, run)) !== 'no-session') return;
+    // Its session is gone, or it belongs to another project.
+    await dropChatThread(target);
   }
 
-  const [project] = await db.select().from(projects).where(eq(projects.projectId, message.projectId)).limit(1);
-  const plan = project ? await port.planCreate(message, project) : null;
-  if (!project || !plan) return { kind: 'dropped' };
-  const userId = plan.userId ?? (await lifecycle.resolveProjectAutomationActor(project.accountId));
+  const plan = await message.plan(existing !== null);
+  if (!plan) return;
+  const userId = plan.userId ?? (await lifecycle.resolveProjectAutomationActor(plan.project.accountId));
   if (!userId) {
-    logger.warn('[channel] no automation actor for the project', { source: port.source, projectId: project.projectId });
-    return { kind: 'dropped' };
+    logger.warn('[channel] no automation actor for the project', { platform: target.platform, projectId: target.projectId });
+    return;
   }
 
-  const claim = await claimThreadCreate(message.keys.claim);
+  const claim = await claimThreadCreate(keys.createClaim);
   if (!claim) {
-    const sessionId = await waitForThreadSession(message.thread);
-    if (sessionId) return (await followUp(port, message, sessionId, run)) ?? { kind: 'dropped' };
-    if (!run.finalAttempt) throw new Error(`${port.source} thread create in flight`);
-    await port.notify(message, { kind: 'create_in_flight' });
-    return { kind: 'failed' };
+    const thread = await waitForThreadSession(target);
+    if (thread) {
+      await followUp(port, message, thread, run);
+      return;
+    }
+    if (!run.finalAttempt) throw new Error(`${target.platform} thread create in flight`);
+    logger.warn('[channel] a racing create never bound the thread', { platform: target.platform, projectId: target.projectId });
+    await port.notify(target, { kind: 'create_in_flight' });
+    return;
   }
 
-  const { userId: _planUser, body, metadata, ...rest } = plan;
   let result: Awaited<ReturnType<typeof createSession>>;
   try {
     result = await lifecycle.createSession({
-      ...rest,
-      source: port.source,
-      project,
+      source: target.platform,
+      project: plan.project,
       userId,
       requestingPrincipalType: 'human',
-      body: { base_ref: project.defaultBranch, ...body },
-      metadata: { source: port.source, ...metadata },
+      body: { base_ref: plan.project.defaultBranch, ...plan.body },
+      visibility: plan.visibility,
+      metadata: { source: target.platform, ...plan.metadata },
+      ...(plan.extraEnvVars ? { extraEnvVars: plan.extraEnvVars } : {}),
+      ...(plan.mayManageSystemConnections ? { mayManageSystemConnections: true } : {}),
       queuePolicy: 'on_backpressure',
-      idempotencyKey: message.keys.create,
+      idempotencyKey: keys.create,
       postCreate: [
-        { type: 'bind_chat_thread', ...message.thread },
-        { type: 'deliver_prompt', source: port.source, text: port.prompt(message, existing ? 'revived' : 'new'), userId },
+        { type: 'bind_chat_thread', platform: target.platform, workspaceId: target.workspaceId, threadId: target.threadId },
+        { type: 'deliver_prompt', source: target.platform, text: plan.prompt, userId },
       ],
     });
   } catch (error) {
     // Free the thread so the transport's retry creates under the same key,
-    // instead of waiting for a thread this attempt may never bind.
-    await releaseThreadCreate(message.keys.claim, claim);
+    // instead of waiting for a thread this attempt never bound.
+    await releaseThreadCreate(keys.createClaim, claim);
     throw error;
   }
 
   if (result.sessionId && !result.error) {
     // The create bound the thread: later messages find it, so the claim is spent.
-    await releaseThreadCreate(message.keys.claim, claim);
-    return { kind: 'created', sessionId: result.sessionId };
+    await releaseThreadCreate(keys.createClaim, claim);
+    return;
   }
   if (!result.error || result.requeued) {
-    // ponytail: the claim stays until the drain's create; a session that dies
-    // before the claim expires blocks a new one for up to CLAIM_TTL_MS.
-    await port.notify(message, { kind: 'create_pending' });
-    return { kind: 'pending' };
+    // ponytail: the claim stays until it expires; the drain binds the thread but
+    // never releases it, so a session that dies within 10 min of a queued create
+    // blocks a new one until then. Fix: a release post-create action.
+    await port.notify(target, { kind: 'create_pending' });
+    return;
   }
   // Final for this message: free the thread so a corrected re-send starts at once.
-  logger.warn('[channel] session create failed', { source: port.source, projectId: project.projectId, status: result.error.status });
-  await releaseThreadCreate(message.keys.claim, claim);
-  await port.notify(message, { kind: 'create_failed', error: result.error });
-  return { kind: 'failed' };
+  logger.warn('[channel] session create failed', {
+    platform: target.platform,
+    projectId: target.projectId,
+    status: result.error.status,
+    code: result.error.body.code,
+  });
+  await releaseThreadCreate(keys.createClaim, claim);
+  await port.notify(target, { kind: 'create_failed', error: result.error });
 }
 
 /** Forget a conversation (a `/new` command): the next message starts a new session. */
-export async function forgetChatThread(thread: ChatThreadKey, claimKey: string): Promise<void> {
-  await dropChatThread(thread);
+export async function forgetChatThread(target: ChannelTarget, createClaim: string): Promise<void> {
+  await dropChatThread(target);
   // Its create claim too, or the next message waits on it. A create still in
   // flight may then race that message: two sessions, for a reset the sender asked for.
-  await db.delete(chatEventDedup).where(eq(chatEventDedup.eventId, claimKey));
+  await db.delete(chatEventDedup).where(eq(chatEventDedup.eventId, createClaim));
 }
 
-/** Null when the session is gone, so the caller starts a new one. */
-async function followUp<M extends ChannelMessage>(
-  port: ChannelPort<M>,
-  message: M,
-  sessionId: string,
+async function followUp(
+  port: ChannelPort,
+  { target, keys, followUp: { text } }: ChannelMessage,
+  thread: { sessionId: string; projectId: string },
   run: { finalAttempt: boolean },
-): Promise<ChannelRoute | null> {
-  if (port.beforeFollowUp && !(await port.beforeFollowUp(message, sessionId))) return { kind: 'dropped' };
-  const delivery = await lifecycle.deliverThroughQueue({
-    source: port.source,
-    idempotencyKey: message.keys.followUp,
-    projectId: message.projectId,
-    sessionId,
-    text: port.prompt(message, 'follow-up'),
+): Promise<Awaited<ReturnType<typeof deliverThroughQueue>> | 'refused'> {
+  if (port.prepareFollowUp && !(await port.prepareFollowUp(target, thread))) return 'refused';
+  const outcome = await lifecycle.deliverThroughQueue({
+    source: target.platform,
+    idempotencyKey: keys.followUp,
+    projectId: target.projectId,
+    sessionId: thread.sessionId,
+    text,
   });
-  if (delivery === 'delivered' || delivery === 'queued') {
-    await touchChatThread(message.thread);
-    return { kind: 'followed_up', sessionId };
+  if (outcome === 'delivered' || outcome === 'queued') await touchChatThread(target);
+  if (outcome === 'failed') {
+    if (!run.finalAttempt) throw new Error(`${target.platform} follow-up failed`);
+    logger.warn('[channel] the thread session refused the message', { platform: target.platform, sessionId: thread.sessionId });
+    await port.notify(target, { kind: 'follow_up_failed' });
   }
-  if (delivery === 'no-session') return null;
-  if (!run.finalAttempt) throw new Error(`${port.source} follow-up ${delivery}`);
-  await port.notify(message, { kind: 'follow_up_failed' });
-  return { kind: 'failed' };
+  return outcome;
 }
 
 /**
  * Claim the first create of a thread. An expired claim (a create that never
  * finished) is taken over in the same statement. Returns the owner token for
- * `releaseThreadCreate`, or null while another create holds it.
+ * `releaseThreadCreate`, or null while another create holds it. A DB error
+ * throws: no create runs unclaimed.
  */
 async function claimThreadCreate(key: string): Promise<Date | null> {
-  const expiresAt = new Date(Date.now() + CLAIM_TTL_MS);
+  const expiresAt = new Date(Date.now() + CREATE_CLAIM_TTL_MS);
   const rows = await db
     .insert(chatEventDedup)
     .values({ eventId: key, expiresAt })
@@ -236,11 +258,11 @@ async function releaseThreadCreate(key: string, token: Date): Promise<void> {
   await db.delete(chatEventDedup).where(and(eq(chatEventDedup.eventId, key), eq(chatEventDedup.expiresAt, token)));
 }
 
-async function waitForThreadSession(thread: ChatThreadKey): Promise<string | null> {
+async function waitForThreadSession(thread: ChatThreadKey): Promise<{ sessionId: string; projectId: string } | null> {
   for (let poll = 0; ; poll++) {
     const row = await findChatThread(thread);
-    if (row) return row.sessionId;
-    if (poll === WAIT_POLLS) return null;
-    await lifecycle.sleep(WAIT_POLL_MS);
+    if (row) return row;
+    if (poll === CREATE_WAIT_POLLS) return null;
+    await lifecycle.sleep(CREATE_WAIT_POLL_MS);
   }
 }

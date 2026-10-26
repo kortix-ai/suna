@@ -439,9 +439,6 @@
   "src/channels/email/session.ts": {
     "kortix-api/projects-surface": {
       "count": 1
-    },
-    "no-console": {
-      "count": 4
     }
   },
   "src/channels/install-store.ts": {

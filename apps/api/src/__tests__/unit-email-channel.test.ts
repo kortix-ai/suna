@@ -89,6 +89,7 @@ let continueCalls: Array<{
   projectId?: string | null;
 }> = [];
 let createCalls: Array<any> = [];
+let deliverOutcome: "delivered" | "no-session" = "delivered";
 
 // The email tools go through the `kortix connectors` CLI, which every harness's
 // shell has. OpenCode alone has the MCP face, so an MCP-only prompt left a pi
@@ -110,7 +111,7 @@ function expectConnectorEmailPrompt(prompt: string) {
 const {
   dispatchResendEmailEvent,
   isEmailSenderAllowed,
-  resetEmailLoadersForTest,
+  resetEmailChannelForTest,
   setEmailSenderPolicyLoaderForTest,
   setThreadEmailLoaderForTest,
 } = await import("../channels/email/session");
@@ -145,7 +146,7 @@ let threadEmailReads: Array<{
 }> = [];
 
 afterAll(() => {
-  resetEmailLoadersForTest();
+  resetEmailChannelForTest();
   resetChannelLifecycleForTest();
   mock.restore();
 });
@@ -154,6 +155,7 @@ beforeEach(() => {
   dbResults = [];
   continueCalls = [];
   createCalls = [];
+  deliverOutcome = "delivered";
   threadEmailReads = [];
   inboxWebhookSecret = null;
   inboxOwner = { ownerType: "project", ownerId: null };
@@ -186,7 +188,7 @@ beforeEach(() => {
         idempotencyKey: input.idempotencyKey,
         projectId: input.projectId,
       });
-      return "delivered";
+      return deliverOutcome;
     },
     createSession: async (input) => {
       createCalls.push(input);
@@ -614,6 +616,51 @@ describe("dispatchResendEmailEvent", () => {
     expect(continueCalls[0].projectId).toBe("proj-1");
     expect(continueCalls[0].text).toContain("Customer <customer@example.com>");
     expectConnectorEmailPrompt(continueCalls[0].text);
+  });
+
+  test("a thread whose session is gone starts a new session that knows it is a revival", async () => {
+    deliverOutcome = "no-session";
+    dbResults = [
+      [{ eventId: "email:event:eml-1" }],
+      [{ projectId: "proj-1" }],
+      [{ eventId: "email:msg:inb-1:eml-1" }],
+      [{ sessionId: "sess-old", projectId: "proj-1" }],
+      // ensureEmailSessionBinding: the inbox account is still bound.
+      [
+        {
+          connectionId: "connection-email-1",
+          metadata: { inbox_id: "inb-1" },
+          status: "active",
+        },
+      ],
+      [{ accountId: "acc-1", connectorId: "conn-email" }],
+      [{ accountId: "acc-1" }],
+      [],
+      [{ connectionId: "connection-email-1" }],
+      // The stale thread is dropped, then the session plan reads the project and the binding.
+      [],
+      [
+        {
+          projectId: "proj-1",
+          accountId: "acc-1",
+          defaultBranch: "main",
+          name: "Support",
+        },
+      ],
+      [{ agentName: null, opencodeModel: null }],
+      [{ eventId: "email:threadcreate:inb-1:thr-1" }],
+    ];
+
+    await dispatchResendEmailEvent(event);
+
+    expect(continueCalls).toHaveLength(1);
+    expect(continueCalls[0].sessionId).toBe("sess-old");
+    expect(createCalls).toHaveLength(1);
+    expect(createCalls[0].idempotencyKey).toBe("email:create:inb-1:thr-1:eml-1");
+    expect(createCalls[0].postCreate[1].text).toContain(
+      "NOTE: This email thread had an earlier conversation",
+    );
+    expect(dbResults).toHaveLength(0);
   });
 
   test("an inbox no project here owns is ignored before any body read", async () => {
