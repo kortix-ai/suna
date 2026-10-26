@@ -11,7 +11,7 @@ mock.module('./slack/questions', () => ({ postQuestion: async () => { calls.push
 mock.module('./slack/review', () => ({ postReviewCard: async () => { calls.push('slack'); return { ok: true }; } }));
 mock.module('./teams/questions', () => ({}));
 mock.module('./teams/review', () => ({}));
-const { relayReviewCard, relayTurnAnswerDetailed, relayTurnEnd, relayTurnQuestion } = await import('./turn-relay');
+const { relayReviewCard, relayTurnAnswerDetailed, relayTurnEnd, relayTurnQuestion, relayTurnStepDetailed } = await import('./turn-relay');
 beforeEach(() => { rows = []; calls.length = 0; });
 
 test('an error from a non-channel session is not a dropped Slack error', async () => {
@@ -53,6 +53,8 @@ for (const source of ['telegram', 'email']) {
     rows = [[], session];
     expect(await relayTurnQuestion('synthetic-session', [])).toEqual({ ok: false, error: 'not_relayed' });
     rows = [[], session];
+    expect(await relayTurnStepDetailed('synthetic-session', 'working')).toEqual({ ok: false, reason: 'not_relayed' });
+    rows = [[], session];
     expect(await relayTurnAnswerDetailed('synthetic-session', 'done')).toEqual({ ok: false, reason: 'not_relayed' });
     rows = [[], session];
     expect(await relayReviewCard('synthetic-session', {} as never)).toEqual({ ok: false, error: 'not_relayed' });
@@ -64,4 +66,12 @@ test('an unknown session still falls back to the Slack renderer, as before', asy
   rows = [[], []];
   expect(await relayTurnQuestion('synthetic-session', [])).toEqual({ ok: true });
   expect(calls).toEqual(['slack']);
+});
+
+test('a Telegram session with a live Slack turn (it bound a Slack thread) still streams to Slack', async () => {
+  rows = [[{ channelRef: null }], [{ metadata: { source: 'telegram', telegram: { chat_id: 1 } } }]];
+  expect(await relayTurnEnd('synthetic-session', 'error')).toBe(true);
+  rows = [[{ channelRef: null }], [{ metadata: { source: 'email', email: { thread_id: 't' } } }]];
+  expect(await relayTurnQuestion('synthetic-session', [])).toEqual({ ok: true });
+  expect(calls).toEqual(['slack', 'slack']);
 });

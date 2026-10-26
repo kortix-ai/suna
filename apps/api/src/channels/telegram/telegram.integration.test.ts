@@ -100,6 +100,10 @@ beforeAll(async () => {
   });
   await saveTelegramInstall({ projectId: PROJECT, botId: BOT_ID, username: 'synthetic_bot', token: TOKEN, webhookSecret: 's' });
   await allowSender();
+  restoreLifecycle();
+});
+
+function restoreLifecycle() {
   setChannelLifecycleForTest({
     resolveProjectAutomationActor: async () => actor,
     createSession: (async (input: Record<string, any>) => {
@@ -122,7 +126,7 @@ beforeAll(async () => {
       await onSleep?.();
     },
   });
-});
+}
 
 beforeEach(() => {
   calls.length = 0;
@@ -250,6 +254,38 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
     expect(sleeps).toBe(1);
     expect(delivered).toHaveLength(1);
     expect(delivered[0]).toMatchObject({ sessionId: winner, idempotencyKey: `telegram:${BOT_ID}:${event.id}` });
+  });
+
+  test('a message whose racing create bound the chat and freed its claim follows up instead of creating', async () => {
+    // Between this message's lookup and its claim, another message's create
+    // bound the chat and released its claim (the actor lookup runs in between).
+    let winner = '';
+    setChannelLifecycleForTest({
+      resolveProjectAutomationActor: async () => {
+        winner = await bindChat(919);
+        return ACTOR;
+      },
+      createSession: (async (input: Record<string, any>) => {
+        created.push(input);
+        return { status: 'created', sessionId: crypto.randomUUID() };
+      }) as never,
+      deliverThroughQueue: (async (command: Record<string, any>) => {
+        delivered.push(command);
+        return deliverResult;
+      }) as never,
+      sleep: async () => {
+        sleeps++;
+      },
+    });
+    try {
+      await handleTelegramEvent(update('me as well', ALLOWED, 919));
+    } finally {
+      restoreLifecycle();
+    }
+    expect(created).toHaveLength(0);
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]!.sessionId).toBe(winner);
+    expect(await claimRows(919)).toHaveLength(0);
   });
 
   test('a project with no owner starts nothing and holds no claim', async () => {

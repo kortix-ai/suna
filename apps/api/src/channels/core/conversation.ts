@@ -152,6 +152,15 @@ export async function routeChannelMessage(
     await port.notify(target, { kind: 'create_in_flight' });
     return;
   }
+  // A racing message may have bound the thread and released its claim between
+  // our lookup and our claim (a create binds before it releases): follow up
+  // into that session instead of starting a second one.
+  const bound = await findChatThread(target);
+  if (bound) {
+    await releaseThreadCreate(keys.createClaim, claim);
+    await followUp(port, message, bound, run);
+    return;
+  }
 
   let result: Awaited<ReturnType<typeof createSession>>;
   try {

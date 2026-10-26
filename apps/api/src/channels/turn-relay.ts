@@ -46,8 +46,10 @@ async function platformFor(sessionId: string, fallback: Platform | null = 'slack
     .limit(1);
   const channel = channelOfSessionMetadata(session?.metadata);
   if (channel === 'slack' || channel === 'teams') return channel;
-  if (channel) return null;
-  return row ? 'slack' : fallback;
+  // A live Slack row renders in Slack whatever channel started the session: a
+  // Telegram session that bound a Slack thread (`slack send --channel`) streams there.
+  if (row) return 'slack';
+  return channel ? null : fallback;
 }
 
 /** Teams relays answer a bare boolean; carry a stable reason for the sandbox. */
