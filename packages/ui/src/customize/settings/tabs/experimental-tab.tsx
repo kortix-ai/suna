@@ -54,7 +54,7 @@ import { useTranslations as useI18nTranslations } from '../../../i18n';
  * in `settings-panel.tsx` guarantees happens only while this tab is active.
  */
 
-import { useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { Button } from '../../../primitives/button';
 import {
@@ -83,6 +83,7 @@ import {
 import { contract, invalidateProject, qk } from '@kortix/sdk/react';
 import { FlagIcon, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ChannelsSwitchDialog } from '../../shared/channels-switch-dialog';
 import { SettingsTabHeader } from '../settings-tab-header';
 
 /**
@@ -471,40 +472,65 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
     enabled: pendingValues[f.key] ?? f.enabled,
   }));
 
-  const features = useMemo(() => filterFeatures(withPending, query), [withPending, query]);
+  // the Channels switch changes the sidebar for everyone, so only a
+  // viewer who may flip it sees it (hidden while that answer loads).
+  const visible = canEdit ? withPending : withPending.filter((f) => f.key !== 'project_channels');
+  const features = filterFeatures(visible, query);
 
-  const handleToggle = (key: string, next: boolean) => {
+  const apply = (key: string, next: boolean) => {
     setPendingValues((prev) => ({ ...prev, [key]: next }));
     toggleMutation.mutate({ key: key as FeatureFlagKey, next });
   };
+  // Channels asks first: the dialog says what changes for everyone.
+  const [channelsTarget, setChannelsTarget] = useState<boolean | null>(null);
+  const handleToggle = (key: string, next: boolean) => {
+    if (key === 'project_channels') setChannelsTarget(next);
+    else apply(key, next);
+  };
+  const drive = rawFeatures.find((f) => f.key === 'drives');
 
   return (
-    <ExperimentalTabView
-      isLoading={projectQuery.isLoading}
-      isError={projectQuery.isError}
-      errorMessage={(projectQuery.error as Error)?.message ?? ''}
-      onRetry={() => projectQuery.refetch()}
-      features={features}
-      pendingKeys={Object.keys(pendingValues)}
-      canManage={canEdit}
-      canManageOperatorOnly={isOperator}
-      onToggle={handleToggle}
-      showPermissionNotice={!canEdit && !writeCap.isLoading}
-      query={query}
-      onQueryChange={setQuery}
-      copy={{
-        overridden: t('origin.overridden'),
-        managedByKortix: tI18nComplete.raw('texte9ec6c0ad396'),
-        defaultOn: t('origin.defaultOn'),
-        defaultOff: t('origin.defaultOff'),
-        search: t('search'),
-        loadFailed: t('loadFailed'),
-        retry: t('retry'),
-        noMatches: (value) => t('noMatches', { query: value }),
-        emptyTitle: t('emptyTitle'),
-        emptyDescription: t('emptyDescription'),
-        permission: t('permission'),
-      }}
-    />
+    <>
+      <ChannelsSwitchDialog
+        open={channelsTarget !== null}
+        onOpenChange={(open) => !open && setChannelsTarget(null)}
+        turningOn={channelsTarget === true}
+        projectName={project?.name ?? ''}
+        driveOff={!!drive && !drive.enabled && drive.operator_only !== true}
+        onConfirm={(alsoDrive) => {
+          const target = channelsTarget === true;
+          setChannelsTarget(null);
+          apply('project_channels', target);
+          if (alsoDrive) apply('drives', true);
+        }}
+      />
+      <ExperimentalTabView
+        isLoading={projectQuery.isLoading}
+        isError={projectQuery.isError}
+        errorMessage={(projectQuery.error as Error)?.message ?? ''}
+        onRetry={() => projectQuery.refetch()}
+        features={features}
+        pendingKeys={Object.keys(pendingValues)}
+        canManage={canEdit}
+        canManageOperatorOnly={isOperator}
+        onToggle={handleToggle}
+        showPermissionNotice={!canEdit && !writeCap.isLoading}
+        query={query}
+        onQueryChange={setQuery}
+        copy={{
+          overridden: t('origin.overridden'),
+          managedByKortix: tI18nComplete.raw('texte9ec6c0ad396'),
+          defaultOn: t('origin.defaultOn'),
+          defaultOff: t('origin.defaultOff'),
+          search: t('search'),
+          loadFailed: t('loadFailed'),
+          retry: t('retry'),
+          noMatches: (value) => t('noMatches', { query: value }),
+          emptyTitle: t('emptyTitle'),
+          emptyDescription: t('emptyDescription'),
+          permission: t('permission'),
+        }}
+      />
+    </>
   );
 }

@@ -5,6 +5,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { sessionLogOfV1Rows, sessionLogTurns, SESSION_LOG_SCHEMA, SESSION_LOG_MINOR, type SessionLogMessage, type SessionLogTurn } from '@kortix/sdk';
 
+import { AfterFirstPromptContext } from './after-first-prompt';
+import { TranscriptRowsContext } from './transcript-rows';
 import { SessionTurn, TranscriptTurnRow, openTextBlock } from './transcript';
 
 /**
@@ -102,6 +104,142 @@ describe('openTextBlock: only the text block still being written streams (KRTX-2
   test('a settled turn streams nothing', () => {
     expect(openTextBlock(false, reply([text('b1')], null))).toBeNull();
     expect(openTextBlock(true, undefined)).toBeNull();
+  });
+});
+
+describe('the slot under the first prompt (a channel thread\'s "N replies")', () => {
+  const [answered] = sessionLogTurns(
+    sessionLogOfV1Rows(
+      's',
+      'rs',
+      [
+        { info: { id: 'p0', role: 'user', time: { created: 1 } }, parts: [{ id: 'pt', type: 'text', text: 'the parent message' }] },
+        { info: { id: 'r0', role: 'assistant', parentID: 'p0', time: { created: 2 } }, parts: [{ id: 'rt', type: 'text', text: 'the first reply' }] },
+      ] as never[],
+    ).threads[0]!,
+  );
+  const render = (isFirstTurn: boolean) =>
+    renderToStaticMarkup(
+      createElement(
+        QueryClientProvider,
+        { client: new QueryClient() },
+        createElement(
+          AfterFirstPromptContext.Provider,
+          { value: createElement('hr', { 'data-probe': 'replies' }) },
+          createElement(TranscriptTurnRow, {
+            turnId: answered!.id,
+            viewportClassName: '',
+            suppressed: false,
+            showBusyRow: false,
+            turn: answered!,
+            turnOutcome: {},
+            isLast: true,
+            ownsPlan: false,
+            sessionId: 's',
+            sessionStatus: undefined,
+            permissions: [],
+            questions: [],
+            sessionWorking: false,
+            isWorkingTurn: false,
+            suppressBusyIndicator: false,
+            awaitingUser: false,
+            pending: false,
+            isFirstTurn,
+            onPermissionReply: () => Promise.resolve(),
+            onRewind: () => undefined,
+            rewindDisabled: false,
+            fullTextState: 'idle',
+            onLoadFullText: () => undefined,
+          }),
+        ),
+      ),
+    );
+
+  test('the first turn draws it between the parent message and the reply', () => {
+    const html = render(true);
+    const parent = html.indexOf('the parent message');
+    const slot = html.indexOf('data-probe="replies"');
+    const reply = html.indexOf('the first reply');
+    expect(parent).toBeGreaterThan(-1);
+    expect(slot).toBeGreaterThan(parent);
+    expect(reply).toBeGreaterThan(slot);
+  });
+
+  test('a later turn does not draw it', () => {
+    const html = render(false);
+    expect(html).toContain('the parent message');
+    expect(html).not.toContain('data-probe');
+  });
+});
+
+describe('message rows (a channel thread panel)', () => {
+  const [turn] = sessionLogTurns(
+    sessionLogOfV1Rows(
+      's',
+      'rs',
+      [
+        { info: { id: 'q0', role: 'user', time: { created: 1 } }, parts: [{ id: 'qt', type: 'text', text: 'spawned prompt' }] },
+        { info: { id: 'q1', role: 'assistant', parentID: 'q0', time: { created: 2 } }, parts: [{ id: 'qr', type: 'text', text: 'the answer' }] },
+      ] as never[],
+    ).threads[0]!,
+  );
+  const render = (author: Parameters<typeof TranscriptTurnRow>[0]['author']) =>
+    renderToStaticMarkup(
+      createElement(
+        QueryClientProvider,
+        { client: new QueryClient() },
+        createElement(
+          TranscriptRowsContext.Provider,
+          {
+            value: {
+              agent: 'Kortix',
+              owner: { name: 'Thread Owner', email: 'owner@example.test', avatarUrl: null },
+              unknownAuthor: 'Someone',
+            },
+          },
+          createElement(TranscriptTurnRow, {
+            turnId: turn!.id,
+            viewportClassName: '',
+            suppressed: false,
+            showBusyRow: false,
+            turn: turn!,
+            author,
+            turnOutcome: {},
+            isLast: true,
+            ownsPlan: false,
+            sessionId: 's',
+            sessionStatus: undefined,
+            permissions: [],
+            questions: [],
+            sessionWorking: false,
+            isWorkingTurn: false,
+            suppressBusyIndicator: false,
+            awaitingUser: false,
+            pending: false,
+            isFirstTurn: true,
+            onPermissionReply: () => Promise.resolve(),
+            onRewind: () => undefined,
+            rewindDisabled: false,
+            fullTextState: 'idle',
+            onLoadFullText: () => undefined,
+          }),
+        ),
+      ),
+    );
+
+  test('a prompt with no recorded author is the thread owner\'s row', () => {
+    const html = render(undefined);
+    expect(html).toContain('Thread Owner');
+    expect(html).toContain('data-slot="message-row"');
+  });
+
+  test("a prompt another session's agent sent is that agent's row, not the owner's", () => {
+    const html = render({ kind: 'session', session_id: 'ses_1', name: 'Coordinator', agent: 'research-bot' });
+    const prompt = html.indexOf('spawned prompt');
+    const row = html.lastIndexOf('data-slot="message-row"', prompt);
+    const header = html.slice(row, prompt);
+    expect(header).toContain('Research-Bot');
+    expect(header).not.toContain('Thread Owner');
   });
 });
 

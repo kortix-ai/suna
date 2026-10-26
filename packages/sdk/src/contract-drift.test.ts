@@ -24,6 +24,26 @@ import type { ChangeRequest } from './core/rest/projects-client/change-requests'
 import type { KortixProject } from './core/rest/projects-client/projects';
 import type { SessionStartResult } from './core/rest/projects-client/session-sandbox';
 import type {
+  AddProjectMemoryNoteInput,
+  CreateProjectMemoryPageInput,
+  ProjectMemoryDeleteResult,
+  ProjectMemoryLayer,
+  ProjectMemoryPage,
+  ProjectMemoryPageSummary,
+  ProjectMemorySearchInput,
+  ProjectMemorySearchResult,
+  ProjectMemoryVersionList,
+  SessionMemoryUsage,
+  UpdateProjectMemoryPageInput,
+} from './core/rest/projects-client/memory';
+import type {
+  ChannelsOnboarding,
+  ChannelsOnboardingMark,
+  ProjectSpace,
+  ProjectSpaceGeneralNotice,
+  ProjectSpaceLink,
+} from './core/rest/projects-client/spaces';
+import type {
   CreateSessionPromptResult,
   ProjectSession,
   SessionAuditAction,
@@ -69,6 +89,43 @@ export function contractDrift(): void {
 
   fits<ProjectSession>(wire<C.ProjectSession>());
   noPhantom<NoPhantom<ProjectSession, C.ProjectSession>>();
+
+  fits<ProjectSpace>(wire<C.Space>());
+  noPhantom<NoPhantom<ProjectSpace, C.Space>>();
+
+  fits<ProjectSpaceLink>(wire<C.SpaceLink>());
+  noPhantom<NoPhantom<ProjectSpaceLink, C.SpaceLink>>();
+  // The fetched title and icon: the SDK declares every field the Links tab reads.
+  noPhantom<NoPhantom<C.SpaceLink, ProjectSpaceLink>>();
+  fits<ProjectSpaceGeneralNotice>(wire<NonNullable<C.SpaceList['general_notice']>>());
+  noPhantom<NoPhantom<ProjectSpaceGeneralNotice, C.SpaceGeneralNotice>>();
+  fits<ChannelsOnboarding>(wire<C.ChannelsOnboarding>());
+  noPhantom<NoPhantom<ChannelsOnboarding, C.ChannelsOnboarding>>();
+  noPhantom<NoPhantom<ChannelsOnboarding['get_started'], C.ChannelsOnboarding['get_started']>>();
+  fits<C.ChannelsOnboardingMark>(wire<ChannelsOnboardingMark>());
+  fits<ChannelsOnboardingMark>(wire<C.ChannelsOnboardingMark>());
+
+  // Memory (`/projects/:id/memory/*`, files in Drive). The inputs are checked the other way: what the SDK sends parses.
+  fits<ProjectMemoryLayer>(wire<C.MemoryLayer>());
+  noPhantom<NoPhantom<ProjectMemoryLayer, C.MemoryLayer>>();
+  fits<ProjectMemoryPageSummary>(wire<C.MemoryPageSummary>());
+  noPhantom<NoPhantom<ProjectMemoryPageSummary, C.MemoryPageSummary>>();
+  fits<ProjectMemoryPage>(wire<C.MemoryPage>());
+  noPhantom<NoPhantom<ProjectMemoryPage, C.MemoryPage>>();
+  fits<ProjectMemoryVersionList>(wire<C.MemoryVersionList>());
+  noPhantom<NoPhantom<ProjectMemoryVersionList['versions'][number], C.MemoryVersion>>();
+  fits<ProjectMemoryDeleteResult>(wire<C.MemoryDeleteResult>());
+  noPhantom<NoPhantom<ProjectMemoryDeleteResult, C.MemoryDeleteResult>>();
+  fits<C.MemoryPageCreateInput>(wire<CreateProjectMemoryPageInput>());
+  fits<C.MemoryPageUpdateInput>(wire<UpdateProjectMemoryPageInput>());
+  fits<C.MemoryNoteInput>(wire<AddProjectMemoryNoteInput>());
+  fits<ProjectMemorySearchResult>(wire<C.MemorySearchResult>());
+  noPhantom<NoPhantom<ProjectMemorySearchResult['hits'][number], C.MemorySearchHit>>();
+  fits<C.MemorySearchHit['type']>(wire<NonNullable<ProjectMemorySearchInput['type']>>());
+  fits<SessionMemoryUsage>(wire<C.MemoryUsage>());
+  noPhantom<NoPhantom<SessionMemoryUsage, C.MemoryUsage>>();
+  noPhantom<NoPhantom<SessionMemoryUsage['layers'][number], C.MemoryUsage['layers'][number]>>();
+  noPhantom<NoPhantom<SessionMemoryUsage['layers'][number]['pages'][number], C.MemoryUsage['layers'][number]['pages'][number]>>();
 
   fits<SessionStartResult>(wire<C.SessionStartResult>());
   noPhantom<NoPhantom<SessionStartResult, C.SessionStartResult>>();

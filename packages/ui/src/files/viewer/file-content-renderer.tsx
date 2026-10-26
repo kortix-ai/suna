@@ -567,7 +567,7 @@ export function FileContentRenderer({
                   />
                 ) : isMarkdownPreview && isMarkdownFile ? (
                   // Markdown is prose, so it gets a measure. The markdown root
-                  // renders at text-[15px]; full-bleed on a wide viewport that
+                  // renders at text-base (16px); full-bleed on a wide viewport that
                   // is ~190 characters per line, well past the comfortable
                   // 65-90. `max-w-2xl` is the same reading column the customize
                   // sections use, and it is a no-op in panels already narrower

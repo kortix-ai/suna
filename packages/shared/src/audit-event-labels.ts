@@ -45,6 +45,7 @@ export const AUDIT_EVENT_LABELS: Readonly<Record<string, string>> = {
   'enterprise_demo.set': 'Recorded Enterprise demo change',
   'enterprise_demo.enable': 'Turned the Enterprise demo on',
   'enterprise_demo.disable': 'Turned the Enterprise demo off',
+  'space.visibility.changed': 'Made a channel private',
   'iam.assignment.granted': 'Granted a role',
   'iam.assignment.revoked': 'Revoked a role assignment',
   'iam.assignment.expired': 'Expired a role',

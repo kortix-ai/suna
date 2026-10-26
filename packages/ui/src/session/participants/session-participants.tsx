@@ -16,9 +16,15 @@ const STACK_LIMIT = 3;
 /** What an avatar needs: a participant, or a message's member author. */
 type AvatarPerson = Pick<SessionParticipant, 'name' | 'email'> & { avatar_url?: string | null };
 
-/** The display name, else the email local part. The viewer too: every row names a person. */
+/**
+ * The display name, else the email local part. The viewer too: every row names
+ * a person. The API sends the email as the name when the profile has none, so
+ * a name that is an email address reads as no name.
+ */
 export function participantLabel(person: AvatarPerson): string {
-  return person.name?.trim() || person.email?.split('@')[0] || '';
+  const name = person.name?.trim();
+  if (name && !name.includes('@')) return name;
+  return (person.email ?? name)?.split('@')[0] || '';
 }
 
 function ParticipantAvatar({ person, size }: { person: AvatarPerson; size: 'sm' | 'md' }) {

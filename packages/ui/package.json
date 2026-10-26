@@ -191,6 +191,7 @@
     "./emoji-picker": "./src/primitives/emoji-picker.tsx",
     "./emoji-tint": "./src/primitives/emoji-tint.ts",
     "./empty": "./src/primitives/empty.tsx",
+    "./empty-art": "./src/primitives/empty-art.tsx",
     "./empty-state": "./src/primitives/empty-state.tsx",
     "./entity-avatar": "./src/primitives/entity-avatar.tsx",
     "./error-boundary": "./src/primitives/error-boundary.tsx",
@@ -1227,6 +1228,10 @@
       "./empty": {
         "types": "./dist/primitives/empty.d.ts",
         "import": "./dist/primitives/empty.js"
+      },
+      "./empty-art": {
+        "types": "./dist/primitives/empty-art.d.ts",
+        "import": "./dist/primitives/empty-art.js"
       },
       "./empty-state": {
         "types": "./dist/primitives/empty-state.d.ts",
@@ -2750,12 +2755,15 @@
     "@tiptap/extension-document": "3.30.5",
     "@tiptap/extension-floating-menu": "3.30.5",
     "@tiptap/extension-hard-break": "3.30.5",
+    "@tiptap/extension-list": "3.30.5",
     "@tiptap/extension-paragraph": "3.30.5",
     "@tiptap/extension-placeholder": "3.30.5",
+    "@tiptap/extension-table": "3.30.5",
     "@tiptap/extension-text": "3.30.5",
     "@tiptap/extensions": "3.30.5",
     "@tiptap/pm": "3.30.5",
     "@tiptap/react": "3.30.5",
+    "@tiptap/starter-kit": "3.30.5",
     "@tiptap/suggestion": "3.30.5",
     "@uiw/codemirror-extensions-langs": "^4.23.10",
     "@uiw/codemirror-themes": "4.23.10",

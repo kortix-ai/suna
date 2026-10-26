@@ -313,7 +313,7 @@ function AppsEmptyState() {
   );
 }
 
-function AppCard({ projectId, app, shown, onOpen }: { projectId: string; app: App; shown: App | null; onOpen: () => void }) {
+export function AppCard({ projectId, app, shown, onOpen }: { projectId: string; app: App; shown: App | null; onOpen: () => void }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // `shown` is the App whose live preview the card frames: the App itself, or
   // the first tab of one that hides its own (a backend shows its dashboard).

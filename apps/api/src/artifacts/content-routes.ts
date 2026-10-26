@@ -19,7 +19,7 @@ import { PUBLIC_SHARE_SANDBOX_CSP } from '../sandbox-proxy/routes/public-share';
 import { isUuid } from '../shared/validate';
 import { DriveStorageError } from '../drives/volumes';
 import { renderDoc } from './formats';
-import { ARTIFACTS_FLAG, artifactPublicContentUrl, contentTypeFor, getArtifactById, normalizeArtifactPath, readArtifactFile, type ArtifactRow } from './service';
+import { ARTIFACTS_FLAG, artifactPrivateFolder, artifactPublicContentUrl, contentTypeFor, getArtifactById, normalizeArtifactPath, readArtifactFile, type ArtifactRow } from './service';
 
 export const artifactContentApp = new Hono();
 
@@ -124,7 +124,7 @@ export function registerArtifactContentRoutes(): void {
   artifactContentApp.get('/meta/:artifactId', async (c) => {
     const id = c.req.param('artifactId');
     const row = isUuid(id) ? await getArtifactById(id) : null;
-    if (!row || row.visibility !== 'public' || !(await projectFeatureFlagEnabled(row.projectId, ARTIFACTS_FLAG))) {
+    if (!row || row.visibility !== 'public' || (await artifactPrivateFolder(row)) || !(await projectFeatureFlagEnabled(row.projectId, ARTIFACTS_FLAG))) {
       return c.json({ error: 'Artifact not found' }, 404);
     }
     c.header('Cache-Control', 'no-store');
@@ -144,6 +144,7 @@ export function registerArtifactContentRoutes(): void {
     if (!isUuid(id) || rest === null) return notFound(c);
     const row = await getArtifactById(id);
     // Revoking public access must take effect at once: no shared cache.
-    return serve(c, row?.visibility === 'public' ? row : null, null, rest, 'public, max-age=0, must-revalidate');
+    // A private channel's artifact is never public, whatever its row says.
+    return serve(c, row?.visibility === 'public' && !(await artifactPrivateFolder(row)) ? row : null, null, rest, 'public, max-age=0, must-revalidate');
   });
 }

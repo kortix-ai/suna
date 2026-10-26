@@ -14,7 +14,9 @@ Before every publish:
    `--description`.
 2. **Share when asked.** "So the team can review it", "share with the team" or
    "for the project" → add `--visibility project`, on the publish or with
-   `kortix artifacts share <id> --visibility project`.
+   `kortix artifacts share <id> --visibility project`. In a private channel
+   (`/drives/README.md` says so) never use `--visibility project` or `public`:
+   the artifact stays private to the channel's members.
 3. **Answer first**: the recommendation or result is the first paragraph.
 4. **One artifact per thing.** Revising an existing one? Save into it (`--id`).
 5. **Hand it over with `show`**: `url` = the artifact's app link, `title` = its

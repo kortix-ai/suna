@@ -35,6 +35,7 @@ function fakeSessionRow(sessionId: string): ProjectSessionRow {
     parentSessionId: null,
     initiatorType: null,
     initiatorId: null,
+    spaceId: null,
     secretsAllowlist: null,
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,

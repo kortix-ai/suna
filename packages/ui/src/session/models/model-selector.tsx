@@ -301,7 +301,7 @@ function ModelRow({
             }}
             className={cn(
               'absolute inset-0 flex cursor-pointer items-center justify-center rounded-md',
-              'text-muted-foreground/70 hover:text-foreground hover:bg-foreground/10',
+              'text-muted-foreground hover:text-foreground hover:bg-foreground/10',
               /* `opacity` is NOT in this list, on purpose — see above. These
                  only ever run on the one row the cursor is on, so they cannot
                  leave a trail. */
@@ -648,7 +648,9 @@ export function ModelSelector({
             type="button"
             variant={triggerVariant}
             size="sm"
-            className={cn('rounded-lg hit-area-y-3', triggerVariant === 'ghost' && 'text-muted-foreground')}
+            // `min-w-0 shrink`: in a narrow toolbar (a channel's thread panel) the
+            // model name truncates; the controls beside it keep their width.
+            className={cn('min-w-0 shrink rounded-lg hit-area-y-3', triggerVariant === 'ghost' && 'text-muted-foreground')}
           >
             <span className={cn('max-w-30 truncate', triggerLabelClassName)}>{displayName}</span>
             <ChevronDown
