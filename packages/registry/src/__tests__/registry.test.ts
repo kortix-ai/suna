@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseItemAddress, parseRegistryAddress, rawGithubUrl } from '../address';
+import { assertFetchableUrl, parseItemAddress, parseRegistryAddress, rawGithubUrl } from '../address';
 import { validateRegistry } from '../validate';
 import { expandTarget } from '../paths';
 import { buildRegistry, type BuildSource } from '../build';
@@ -366,5 +366,26 @@ describe('loadRegistry — SKILL.md scan fallback (no registry.json)', () => {
     const bundle = resolved.registry.items!.find((i) => i.name === 'document-skills')!;
     expect(bundle.type).toBe('registry:bundle');
     expect(bundle.registryDependencies).toEqual(['xlsx', 'docx']); // leaf names, only the scanned ones
+  });
+});
+
+// Pin the string-only admission policy, including WHATWG bracketed IPv6.
+describe('registry URL host admission', () => {
+  test.each([
+    ['localhost', false], ['SUB.LOCALHOST.', false], ['127.2.3.4', false],
+    ['0.0.0.0', false], ['169.254.169.254', false], ['10.1.2.3', false],
+    ['192.168.1.2', false], ['172.16.0.1', false], ['172.31.255.1', false],
+    ['service.internal', false], ['service.LOCAL.', false],
+    ['example.com', true], ['EXAMPLE.COM.', true], ['172.15.0.1', true],
+    ['172.32.0.1', true], ['[::1]', true], ['[fd00::1]', true],
+  ])('%s admission is %s', (host, allowed) => {
+    const check = () => assertFetchableUrl(`https://${host}/registry.json`);
+    if (allowed) expect(check).not.toThrow();
+    else expect(check).toThrow('only https:// URLs on public hosts are allowed');
+  });
+  test('rejects HTTP on a public host', () => {
+    expect(() => assertFetchableUrl('http://example.com/registry.json')).toThrow(
+      'only https:// URLs on public hosts are allowed',
+    );
   });
 });
