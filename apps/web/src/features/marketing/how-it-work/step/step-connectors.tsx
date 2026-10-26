@@ -1,188 +1,183 @@
 'use client';
 
-import { faviconUrlForHostname } from '@kortix/ui';
-import { KortixLogo } from '@kortix/ui/kortix-logo';
-import { IconFrame } from '@/components/ui/marketing/icon-frame';
-import { m, useReducedMotion } from 'motion/react';
-import { useTranslations } from '@/i18n/use-translations';
-import { useCallback, useState, type ReactNode } from 'react';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
+import { BrandGlyph } from '@/features/marketing/kit/brand-glyph';
+import { m, useInView, useReducedMotion } from 'motion/react';
+import Image from 'next/image';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useStepShowcaseStart } from '../use-step-showcase';
 
 /**
- * The wall. Real favicons of apps the catalog actually carries — the claim is
- * "every tool your company already runs on", so a mock tile would be worth
- * nothing here. The list is longer than any viewport shows on purpose: the rows
- * run past both edges and the mask dissolves them, which is what reads as
- * "and thousands more" without printing a number.
+ * Layer 02 — the tools, written as one sentence (Paper "Kortix 2", connect
+ * tools, C10): "Your agents work in Slack, Notion, Linear, HubSpot, Stripe
+ * and GitHub.", each name led by its official logo, then two facts on a
+ * hairline.
  *
- * Order matters visually, not semantically: adjacent tiles are kept different
- * in color and weight so no two neighbours read as one blob.
+ * Logos: official marks in their brand colours. Single-colour marks draw
+ * through `BrandGlyph` (colours from `works-with-logos.ts`; Notion and GitHub
+ * are black marks and draw in ink, so they follow the theme). Slack's mark is
+ * four colours, so it is an image, as is every other multi-colour mark.
+ *
+ * The sentence names six tools at a time and swaps to the next six every
+ * 10 seconds while the panel is on screen, so it reads as "and the rest of
+ * your stack" without printing a number.
+ *
+ * ACCURACY GATE:
+ *   - Only CONNECTOR credentials stay on the server. A granted runtime secret
+ *     does reach the machine, so never write "no credential in the machine".
+ *   - Rules are allow, ask or block per call, down to the arguments. They are
+ *     opt-in, so never write that every call pauses.
+ *
+ * MOTION. A fade-and-rise, word group by word group, when the panel first
+ * scrolls in and on every swap; the old names fade out first. Reduced motion
+ * shows the first six and never swaps.
  */
-export const APPS: string[] = [
-  'slack.com',
-  'notion.so',
-  'github.com',
-  'linear.app',
-  'figma.com',
-  'stripe.com',
-  'hubspot.com',
-  'salesforce.com',
-  'gmail.com',
-  'drive.google.com',
-  'atlassian.com',
-  'airtable.com',
-  'shopify.com',
-  'zoom.us',
-  'asana.com',
-  'discord.com',
-  'twilio.com',
-  'sendgrid.com',
-  'zendesk.com',
-  'intercom.com',
-  'gitlab.com',
-  'dropbox.com',
-  'calendly.com',
-  'mailchimp.com',
-  'openai.com',
-  'anthropic.com',
-  'x.ai',
-  'deepseek.com',
-  'mistral.ai',
-  'perplexity.ai',
-  'huggingface.co',
-  'vercel.com',
-  'netlify.com',
-  'cloudflare.com',
-  'aws.amazon.com',
-  'azure.microsoft.com',
-  'cloud.google.com',
-  'digitalocean.com',
-  'supabase.com',
-  'mongodb.com',
-  'redis.io',
-  'snowflake.com',
-  'databricks.com',
-  'datadoghq.com',
-  'sentry.io',
-  'pagerduty.com',
-  'posthog.com',
-  'amplitude.com',
-  'mixpanel.com',
-  'segment.com',
-  'looker.com',
-  'tableau.com',
-  'xero.com',
-  'ramp.com',
-  'brex.com',
-  'plaid.com',
-  'docusign.com',
-  'box.com',
-  'workday.com',
-  'gusto.com',
-  'rippling.com',
-  'greenhouse.io',
-  'lever.co',
-  'webflow.com',
-  'wordpress.com',
-  'contentful.com',
-  'sanity.io',
-  'algolia.com',
-  'elastic.co',
-  'temporal.io',
-  'circleci.com',
-  'docker.com',
-  'hashicorp.com',
-  '1password.com',
-  'okta.com',
-  'auth0.com',
-  'cloudinary.com',
-  'miro.com',
+
+type Tool = { slug: string; name: string; image?: string };
+
+const COLOR = '/media/landing/logos/color';
+
+/** Six tools a sentence. Each set mixes chat, docs, work, CRM, money and code. */
+const SETS: Tool[][] = [
+  [
+    { slug: 'slack', name: 'Slack', image: `${COLOR}/slack.svg` },
+    { slug: 'notion', name: 'Notion' },
+    { slug: 'linear', name: 'Linear' },
+    { slug: 'hubspot', name: 'HubSpot' },
+    { slug: 'stripe', name: 'Stripe' },
+    { slug: 'github', name: 'GitHub' },
+  ],
+  [
+    { slug: 'gmail', name: 'Gmail', image: `${COLOR}/gmail.svg` },
+    { slug: 'googledrive', name: 'Google Drive', image: `${COLOR}/googledrive.svg` },
+    { slug: 'jira', name: 'Jira' },
+    { slug: 'salesforce', name: 'Salesforce' },
+    { slug: 'quickbooks', name: 'QuickBooks' },
+    { slug: 'gitlab', name: 'GitLab' },
+  ],
+  [
+    { slug: 'intercom', name: 'Intercom', image: `${COLOR}/intercom.svg` },
+    { slug: 'confluence', name: 'Confluence', image: `${COLOR}/confluence.svg` },
+    { slug: 'asana', name: 'Asana' },
+    { slug: 'airtable', name: 'Airtable', image: `${COLOR}/airtable.svg` },
+    { slug: 'shopify', name: 'Shopify' },
+    { slug: 'figma', name: 'Figma', image: `${COLOR}/figma.svg` },
+  ],
 ];
 
-/** 13 per row × 6 rows. Wider than the panel — the overflow is the point. */
-const COLUMNS = 13;
-const ROWS: string[][] = Array.from({ length: Math.ceil(APPS.length / COLUMNS) }, (_, row) =>
-  APPS.slice(row * COLUMNS, row * COLUMNS + COLUMNS),
-);
+const SWAP_MS = 10_000;
+/** How long the old names take to fade before the new ones come in. */
+const OUT_MS = 300;
 
-const ROW_COUNT = ROWS.length;
-const CENTER_ROW = (ROW_COUNT - 1) / 2;
-const CENTER_COL = (COLUMNS - 1) / 2;
+const COPY = {
+  lead: 'Your agents work in',
+  and: 'and',
+  keysTitle: 'Connector keys stay on the server',
+  keysBody: 'The session machine never sees them.',
+  rulesTitle: 'Allow, ask or block',
+  rulesBody: 'Set per call, down to its arguments.',
+};
 
-/**
- * Tiles come in from the middle outward, so the eye lands on the Kortix mark
- * first and the catalog spreads out under it. Distance is measured in tiles,
- * halved on the row axis because rows are the shorter travel.
- */
-function tileDelay(row: number, col: number): number {
-  const dx = col - CENTER_COL;
-  const dy = (row - CENTER_ROW) * 1.6;
-  return Math.sqrt(dx * dx + dy * dy) * 0.028;
-}
+const EASE_OUT = [0.22, 1, 0.36, 1] as const;
 
-/**
- * Layer 02 — the app wall with the Kortix mark sitting on top of it.
- *
- * Geometry runs off two custom properties: `--tile` is the square, `--gap` the
- * space between two. Every other row is pushed half a pitch to the right, which
- * is what stops the wall reading as a spreadsheet. Both properties are set once
- * on the root and every child derives from them, so one breakpoint change
- * rescales the whole thing — tiles, offsets and the center mark together.
- */
 export function StepConnectors(): ReactNode {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const copy = useLocalizedUiCatalog(COPY);
   const reduced = useReducedMotion();
   const [started, setStarted] = useState(false);
   const rootRef = useStepShowcaseStart(useCallback(() => setStarted(true), []));
   const shown = started || !!reduced;
+  const onScreen = useInView(rootRef);
+  const [set, setSet] = useState(0);
+  const [leaving, setLeaving] = useState(false);
+
+  useEffect(() => {
+    if (reduced || !started || !onScreen) return;
+    let swap: number | undefined;
+    const id = window.setInterval(() => {
+      setLeaving(true);
+      swap = window.setTimeout(() => {
+        setSet((i) => (i + 1) % SETS.length);
+        setLeaving(false);
+      }, OUT_MS);
+    }, SWAP_MS);
+    return () => {
+      window.clearInterval(id);
+      window.clearTimeout(swap);
+    };
+  }, [reduced, started, onScreen]);
+
+  const tools = SETS[set];
+
+  // Word groups in reading order: each tool, "and" before the last. Keys carry
+  // the set, so a swap mounts fresh words that rise in.
+  const groups: { key: string; node: ReactNode; muted?: boolean }[] = [
+    ...tools.flatMap((tool, i) => {
+      const last = i === tools.length - 1;
+      const mark = tool.image ? (
+        <Image src={tool.image} alt="" width={28} height={28} unoptimized className="size-5 sm:size-6 lg:size-7" />
+      ) : (
+        <BrandGlyph slug={tool.slug} className="size-5 sm:size-6 lg:size-7" />
+      );
+      const word = {
+        key: `${set}-${tool.slug}`,
+        node: (
+          <span className="inline-flex items-center gap-2">
+            {mark}
+            {tool.name}
+            {last ? '.' : i === tools.length - 2 ? '' : ','}
+          </span>
+        ),
+      };
+      return last ? [{ key: `${set}-and`, node: copy.and, muted: true }, word] : [word];
+    }),
+  ];
 
   return (
     <div
       ref={rootRef}
-      className="relative isolate h-full w-full overflow-hidden [--gap:0.5rem] [--tile:2.5rem] sm:[--gap:0.625rem] sm:[--tile:3.25rem] xl:[--tile:3.75rem]"
+      className="flex h-full min-h-0 w-full flex-col justify-center gap-8"
     >
-      <div className="absolute inset-0 flex flex-col items-center justify-center gap-[var(--gap)] mask-y-from-68% mask-y-to-100% mask-x-from-72% mask-x-to-100% opacity-50">
-        {ROWS.map((row, rowIndex) => (
-          <div
-            key={rowIndex}
-            className="flex flex-none gap-[var(--gap)]"
-            // Brick offset: odd rows shift by half a pitch (tile + gap).
-            style={{
-              transform: rowIndex % 2 === 1 ? "translateX(calc((var(--tile) + var(--gap)) / 2))" : undefined,
-            }}
+      <p className="text-foreground flex flex-wrap items-center gap-x-3 gap-y-2 text-xl tracking-tight sm:text-2xl lg:text-3xl">
+        <m.span
+          initial={reduced ? false : { opacity: 0, y: 6 }}
+          animate={shown ? { opacity: 1, y: 0 } : undefined}
+          transition={{ duration: 0.4, ease: EASE_OUT }}
+          className="text-muted-foreground"
+        >
+          {copy.lead}
+        </m.span>
+        {groups.map((group, i) => (
+          <m.span
+            key={group.key}
+            initial={reduced ? false : { opacity: 0, y: 6 }}
+            animate={shown && !leaving ? { opacity: 1, y: 0 } : { opacity: 0, y: leaving ? -4 : 6 }}
+            transition={
+              leaving
+                ? { duration: OUT_MS / 1000, ease: EASE_OUT }
+                : { duration: 0.4, ease: EASE_OUT, delay: (i + 1) * 0.05 }
+            }
+            className={group.muted ? 'text-muted-foreground' : undefined}
           >
-            {row.map((domain, colIndex) => (
-              <m.div
-                key={domain}
-                initial={reduced ? false : { opacity: 0, scale: 0.86 }}
-                animate={shown ? { opacity: 1, scale: 1 } : undefined}
-                transition={{
-                  duration: 0.4,
-                  ease: [0.16, 1, 0.3, 1],
-                  delay: tileDelay(rowIndex, colIndex),
-                }}
-                className="border-border bg-popover flex size-[var(--tile)] flex-none items-center justify-center rounded-[calc(var(--tile)*0.26)] border"
-              >
-                <img
-                  src={faviconUrlForHostname(domain)}
-                  alt=""
-                  aria-hidden
-                  loading="lazy"
-                  decoding="async"
-                  className="size-[calc(var(--tile)*0.46)] object-contain"
-                />
-              </m.div>
-            ))}
-          </div>
+            {group.node}
+          </m.span>
         ))}
-      </div>
+      </p>
 
-      {/* The mark sits on top of the wall, opaque, one plane above it. */}
-      <div className="pointer-events-none absolute inset-0 grid place-items-center">
-        <IconFrame className="size-[calc(var(--tile)*2)]">
-          <KortixLogo variant="icon" />
-        </IconFrame>
-      </div>
+      <m.dl
+        initial={reduced ? false : { opacity: 0 }}
+        animate={shown ? { opacity: 1 } : undefined}
+        transition={{ duration: 0.4, ease: EASE_OUT, delay: (groups.length + 1) * 0.05 }}
+        className="border-border grid grid-cols-1 gap-6 border-t pt-6 sm:grid-cols-2"
+      >
+        <div className="flex flex-col gap-1">
+          <dt className="text-foreground text-sm">{copy.keysTitle}</dt>
+          <dd className="text-muted-foreground text-sm">{copy.keysBody}</dd>
+        </div>
+        <div className="flex flex-col gap-1">
+          <dt className="text-foreground text-sm">{copy.rulesTitle}</dt>
+          <dd className="text-muted-foreground text-sm">{copy.rulesBody}</dd>
+        </div>
+      </m.dl>
     </div>
   );
 }

@@ -580,6 +580,140 @@
   }
 }
 
+/* Marketing button (the Buio "dimensional" button): `kx-button`, rendered by
+   `features/marketing/kit/marketing-button.tsx` and nowhere else. The one
+   sanctioned gradient outside an art module: Jay asked for Buio's lit button
+   (2026-10-25), so it lives here as a single component class built from the
+   theme tokens with color-mix, never as utilities on a page.
+
+   - Two stops, light from the top. Hover swaps them, so the light edge moves
+     to the bottom. The stops are registered as <color> so the swap cross-fades
+     instead of snapping (an unregistered custom property cannot interpolate).
+   - The edge is the inset highlight ring plus a 1px outer ring, not a border.
+   - Light theme mirrors dark: secondary is a paper button with a hairline,
+     primary is an ink button, because grey with white ink fails contrast there.
+   - In @layer components so a utility on the same element (w-full, a size)
+     still wins. */
+@property --kx-btn-top {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
+
+@property --kx-btn-bottom {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
+
+@layer components {
+  .kx-button {
+    --kx-btn-hi: color-mix(in oklch, var(--background) 14%, transparent);
+    --kx-btn-ring: color-mix(in oklch, var(--foreground) 12%, transparent);
+    --kx-btn-shade: var(--foreground);
+    --kx-btn-top: var(--kx-btn-light);
+    --kx-btn-bottom: var(--kx-btn-deep);
+    background-image: linear-gradient(to top, var(--kx-btn-bottom), var(--kx-btn-top));
+    box-shadow:
+      inset 0 0 0.5px 1px var(--kx-btn-hi),
+      0 0 0 1px var(--kx-btn-ring),
+      0 0.5px 1px color-mix(in oklch, var(--kx-btn-shade) 6%, transparent),
+      0 1px 2px color-mix(in oklch, var(--kx-btn-shade) 5%, transparent);
+    transition-property: --kx-btn-top, --kx-btn-bottom, scale;
+    transition-duration: var(--duration-slow), var(--duration-slow), var(--duration-normal);
+    transition-timing-function: var(--ease-in-out), var(--ease-in-out), var(--ease-out);
+  }
+
+  .kx-button[data-variant='primary'] {
+    --kx-btn-deep: var(--foreground);
+    --kx-btn-light: color-mix(in oklch, var(--foreground) 80%, var(--background));
+    color: var(--background);
+  }
+
+  .kx-button[data-variant='secondary'] {
+    --kx-btn-deep: color-mix(in oklch, var(--foreground) 6%, var(--background));
+    --kx-btn-light: var(--background);
+    color: var(--foreground);
+  }
+
+  .dark .kx-button {
+    --kx-btn-hi: color-mix(in oklch, var(--foreground) 10%, transparent);
+    --kx-btn-ring: color-mix(in oklch, var(--background) 8%, transparent);
+    --kx-btn-shade: var(--background);
+  }
+
+  .dark .kx-button[data-variant='primary'] {
+    --kx-btn-deep: color-mix(in oklch, var(--foreground) 24%, var(--background));
+    --kx-btn-light: color-mix(in oklch, var(--foreground) 49%, var(--background));
+    color: var(--foreground);
+  }
+
+  .dark .kx-button[data-variant='secondary'] {
+    --kx-btn-deep: var(--background);
+    --kx-btn-light: color-mix(in oklch, var(--foreground) 8%, var(--background));
+    color: var(--foreground);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .kx-button:hover {
+      --kx-btn-top: var(--kx-btn-deep);
+      --kx-btn-bottom: var(--kx-btn-light);
+    }
+  }
+
+  .kx-button:active {
+    scale: 0.96;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .kx-button:active {
+      scale: none;
+    }
+  }
+}
+
+/* Landing band rows (`kx-rail-fade`): their top and bottom hairlines cross the
+   page past the two rails. Outside the rails the line fades out to the page
+   edge instead of stopping hard. The mask only touches the gutter outside the
+   rails, where a row has nothing but its border; --rail matches the rails'
+   inset (left-4 / lg:left-17 in the home page). */
+.kx-rail-fade {
+  --rail: calc(var(--spacing) * 4);
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    white var(--rail),
+    white calc(100% - var(--rail)),
+    transparent
+  );
+}
+
+@media (min-width: 64rem) {
+  .kx-rail-fade {
+    --rail: calc(var(--spacing) * 17);
+  }
+}
+
+/* A highlighted column behind a band's table (/pricing compare plans): its
+   fill fades out at the left and right edges, the way kx-rail-fade fades a
+   band's hairlines past the rails. */
+.kx-column-fade {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    white calc(var(--spacing) * 2),
+    white calc(100% - var(--spacing) * 2),
+    transparent
+  );
+}
+
+/* Lenis (features/marketing/kit/smooth-scroll.tsx) drives the page scroll on
+   marketing routes. The base `scroll-behavior: smooth` above would animate
+   every scrollTo it issues a second time, so it steps aside while Lenis runs. */
+html.lenis {
+  scroll-behavior: auto;
+}
+
 /* Catalogue card reveal — the cards a "View all" uncovers in a category grid.
 
    Deliberately NOT `.kx-fade-up`. That is page-enter motion for a handful of

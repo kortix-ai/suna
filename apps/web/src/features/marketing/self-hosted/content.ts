@@ -16,6 +16,10 @@ import type { UiTranslator } from '@/i18n/translator';
  * (`apps/cli/src/commands/self-host.ts`, `apps/cli/src/self-host/*`) and the
  * rendered Compose stack, not against the docs, which are stale in two places.
  *
+ * `titleMuted` is the second, muted line of a two-tone title. It restates the
+ * section's own copy and adds no claim. Titles of two sentences are split at
+ * render time instead (`splitTitle`), so they keep their translation key.
+ *
  * CORRECTIONS made against the brief this page was written from:
  *  1. The first run does NOT ask for managed-git / GitHub credentials. That
  *     step was deliberately removed; GitHub is connected in the dashboard at
@@ -38,6 +42,7 @@ import type { UiTranslator } from '@/i18n/translator';
 export const hero = {
   eyebrow: 'Self-hosted',
   title: 'The same Kortix, on your box.',
+  titleMuted: 'Your data sits on disk you control.',
   sub: 'One Docker Compose stack, built from the same images the managed cloud runs. Your database, your files, your repos and your policies sit on disk you control. It is open source, so what you are running is code you can read.',
   ctaPrimary: 'Self-host free',
   ctaPrimaryHref: '/docs/host',
@@ -61,6 +66,7 @@ export const hero = {
 export const yours = {
   eyebrow: 'What you keep',
   title: 'The company stays on your side of the wall.',
+  titleMuted: 'Sandbox compute runs on your provider.',
   sub: 'Self-hosting is not a smaller Kortix with the interesting parts removed. It is the whole control plane — accounts, projects, repos, secrets, connectors, policies, audit — running inside your network, on storage you back up yourself.',
   onbox: {
     label: 'on your box',
@@ -196,6 +202,7 @@ export const firstRun = {
 export const stack = {
   eyebrow: 'The stack',
   title: 'One Compose project, no hidden pieces.',
+  titleMuted: 'Everything lives in one instance directory.',
   sub: 'The same artifact runs on a laptop, a VPS or a cloud VM. A domain is one environment variable, not a different deployment. Everything lives in one instance directory you can back up by copying it.',
   groups: [
     {
@@ -247,6 +254,7 @@ export const stack = {
 export const parity = {
   eyebrow: 'Parity',
   title: 'Not a community edition.',
+  titleMuted: 'The same images the cloud runs.',
   sub: 'This is not a stripped build with the good parts held back for the paid tier. Self-hosted instances run the same images the managed cloud runs, produced by the same pipeline, on the same release train.',
   rows: [
     {
@@ -314,6 +322,7 @@ export const models = {
 export const targets = {
   eyebrow: 'Where it runs',
   title: 'A laptop, a VPS, or your own network.',
+  titleMuted: 'The same Compose project everywhere.',
   sub: 'It is the same Compose project everywhere. What changes is where you point the domain and how much you give it.',
   rows: [
     {
