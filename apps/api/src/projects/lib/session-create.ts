@@ -98,7 +98,7 @@ import { mergeSessionSandboxEnv, parseSessionRuntimeContext } from './session-ru
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { resolvePlatformMetaSandbox } from './platform-meta-agent';
 import { spaceAccessFor } from '../../shared/space-access';
-import { FIRST_PROMPT_MAX_CHARS, SPACE_NOT_FOUND, ensureDefaultSpace, findForkSourceSpace, findLiveChannel, findSessionSpace, inheritedPrivateSpace, spaceSessionVisibility } from './project-spaces';
+import { FIRST_PROMPT_MAX_CHARS, SPACE_NOT_FOUND, ensureDefaultSpace, findForkSourceSpace, forkSourceVisibility, findLiveChannel, findSessionSpace, inheritedPrivateSpace, spaceSessionVisibility } from './project-spaces';
 import { liveTriggerSpace, triggerRunSpace } from './trigger-space';
 
 import {
@@ -330,7 +330,12 @@ async function resolveRequestedSessionSpace(input: CreateProjectSessionInput): P
     ? await findSessionSpace(project.projectId, body.space_id, await access())
     : null;
   if (!space) return { error: { status: 404, body: SPACE_NOT_FOUND } };
-  return { filed: true, spaceId: space.spaceId, visibility: spaceSessionVisibility(space.kind) };
+  // A fork into a named space keeps its source's sharing too, so naming a
+  // channel cannot publish a private or restricted transcript.
+  const sourceVisibility = typeof body.fork_from_session_id === 'string'
+    ? await forkSourceVisibility(project.projectId, body.fork_from_session_id)
+    : null;
+  return { filed: true, spaceId: space.spaceId, visibility: spaceSessionVisibility(space.kind, sourceVisibility) };
 }
 
 /** The session's sharing: explicit, or inherited from the spawning session. */

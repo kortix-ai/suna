@@ -448,7 +448,7 @@ export interface SpaceNotesLink {
 export const SPACE_NOTES_LINKS = 20;
 
 /** Member-typed text on one line: no newline or control character can start a heading. */
-const oneLine = (text: string) => text.replace(/[\s\u0000-\u001f\u007f]+/g, ' ').trim();
+export const oneLine = (text: string) => text.replace(/[\s\u0000-\u001f\u007f]+/g, ' ').trim();
 
 function linkLines(place: string, links: readonly SpaceNotesLink[] = []): string[] {
   if (links.length === 0) return [];

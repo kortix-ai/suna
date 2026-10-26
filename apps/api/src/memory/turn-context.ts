@@ -9,7 +9,7 @@
  */
 import { MEMORY_TURN_SYSTEM_MAX_CHARS, type MemoryPageType } from '@kortix/api-contract';
 import type { MemoryThreadLoadLayer } from '@kortix/db';
-import { mountedAt, type NotesMount } from '../drives/folders';
+import { mountedAt, type NotesMount, oneLine } from '../drives/folders';
 import { findProjectDrive, listFolderGrants, personalFolderFor, readSessionDriveMounts } from '../drives/service';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
@@ -46,7 +46,7 @@ const INTRO = [
 ].join('\n');
 
 function heading(layer: TurnLayer): string {
-  const name = layer.scope === 'company' ? 'Company' : layer.scope === 'dm' ? `Your memory with ${layer.name}` : layer.name;
+  const name = layer.scope === 'company' ? 'Company' : layer.scope === 'dm' ? `Your memory with ${oneLine(layer.name)}` : oneLine(layer.name);
   if (!layer.mountPath) return `### ${name}: not mounted in this thread`;
   return `### ${name}: ${layer.mountPath}/${layer.readOnly ? ' (save here only from the DM)' : ''}`;
 }
@@ -67,7 +67,8 @@ export function memorySystem(layers: readonly TurnLayer[]): { system: string; pa
     let used = lines[0]!.length;
     if (layer.mountPath && layer.files.length === 0) lines.push('(no files yet)');
     for (const [n, file] of (layer.mountPath ? layer.files : []).entries()) {
-      const line = `- ${file.title} (${file.rel})`;
+      // Names are member-written: one line each, so none can start a heading.
+      const line = `- ${oneLine(file.title)} (${oneLine(file.rel)})`;
       const rest = layer.files.length - n;
       if (used + line.length + 1 > share - 40) {
         lines.push(`- … ${rest} more file${rest === 1 ? '' : 's'}: \`ls -R\` the folder.`);

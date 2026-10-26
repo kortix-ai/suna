@@ -755,6 +755,20 @@ flow('SPACE-13', createMeta([ROUTES.list, SESSION_ROUTES.create, SESSION_ROUTES.
         throw new Error(`the fork is ${forked.visibility} in ${forked.space_id}, expected project in the channel`);
       }
     });
+
+    await ctx.step('a fork of a private session that names a channel lands there private; another member cannot read it', async () => {
+      const channel = (await world.owner.post(SPACES, { name: 'Fork target' }, { params })).status(201).json<Space>().space_id;
+      const source = await insertSession(world, world.ownerUserId, 'private', { spaceId: general });
+      await seedSessionLog(world, source);
+      const r = await world.owner.post(SESSIONS, { fork_from_session_id: source, space_id: channel }, { params });
+      r.status(201);
+      const forked = r.json<Session>();
+      world.sessions.push(forked.session_id);
+      if (forked.space_id !== channel || forked.visibility !== 'private') {
+        throw new Error(`the fork is ${forked.visibility} in ${forked.space_id}, expected private in the channel`);
+      }
+      (await ctx.client.as(member).get(`${SESSIONS}/:sessionId`, { params: { ...params, sessionId: forked.session_id } })).status(404);
+    });
   } finally {
     await world.close();
   }

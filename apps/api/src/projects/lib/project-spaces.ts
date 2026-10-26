@@ -376,6 +376,16 @@ export function spaceSessionVisibility(kind: 'channel' | 'dm', forkSourceVisibil
   return forkSourceVisibility === 'project' ? 'project' : 'private';
 }
 
+/** A fork source's sharing; null when the source is not a session of this project. */
+export async function forkSourceVisibility(projectId: string, sourceSessionId: string): Promise<SessionVisibility | null> {
+  const [source] = await db
+    .select({ visibility: projectSessions.visibility })
+    .from(projectSessions)
+    .where(and(eq(projectSessions.projectId, projectId), eq(projectSessions.sessionId, sourceSessionId)))
+    .limit(1);
+  return (source?.visibility as SessionVisibility | undefined) ?? null;
+}
+
 /** A fork source's space, when the caller may file a session into it, and the source's sharing. */
 export async function findForkSourceSpace(
   projectId: string,
