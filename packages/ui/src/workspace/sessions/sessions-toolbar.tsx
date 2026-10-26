@@ -30,6 +30,7 @@ export function SessionsToolbar({
   onNewSession,
   creatingSession,
   canSelect,
+  showNewSession = true,
 }: {
   projectId: string;
   sessions: ProjectSession[];
@@ -46,6 +47,8 @@ export function SessionsToolbar({
   onNewSession?: () => void;
   creatingSession: boolean;
   canSelect: boolean;
+  /** False under `project_channels`: work starts from a channel's composer. */
+  showNewSession?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const closeSearch = () => {
@@ -154,7 +157,7 @@ export function SessionsToolbar({
           so <Link> holds its payload in the segment cache and the click never
           runs a cold RSC fetch. The in-flight state stays a real <button> so
           `disabled` still holds. */}
-      {creatingSession ? (
+      {!showNewSession ? null : creatingSession ? (
         <Button
           type="button"
           size="sm"

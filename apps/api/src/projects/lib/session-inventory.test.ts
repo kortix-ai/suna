@@ -38,6 +38,7 @@ function row(
     parentSessionId: null,
     initiatorType: null,
     initiatorId: null,
+    spaceId: null,
     secretsAllowlist: null,
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
@@ -66,15 +67,18 @@ describe('selectSessionRowsForViewer', () => {
       runtimeStatusBySession: new Map(),
     };
 
-    const withOversight = selectSessionRowsForViewer({ ...base, scope: 'project', accountSessionOversight: true });
+    const withOversight = selectSessionRowsForViewer({
+      hiddenSpaceIds: new Set(), ...base, scope: 'project', accountSessionOversight: true });
     expect(withOversight.items.map((item) => item.row.sessionId)).toEqual(['private-other', 'restricted-other']);
 
-    const withoutOversight = selectSessionRowsForViewer({ ...base, scope: 'project', accountSessionOversight: false });
+    const withoutOversight = selectSessionRowsForViewer({
+      hiddenSpaceIds: new Set(), ...base, scope: 'project', accountSessionOversight: false });
     expect(withoutOversight.items).toEqual([]);
   });
 
   test('account session oversight never widens the default sidebar scope', () => {
     const selected = selectSessionRowsForViewer({
+      hiddenSpaceIds: new Set(),
       rows: [row('private-other', { createdBy: OTHER_ID })],
       scope: 'visible',
       canManageProject: true,
@@ -100,6 +104,7 @@ describe('selectSessionRowsForViewer', () => {
     });
 
     const selected = selectSessionRowsForViewer({
+      hiddenSpaceIds: new Set(),
       rows: [privateOther, stoppedWithoutRuntime, deleted],
       scope: 'project',
       canManageProject: true,
@@ -149,6 +154,7 @@ describe('selectSessionRowsForViewer', () => {
     });
 
     const selected = selectSessionRowsForViewer({
+      hiddenSpaceIds: new Set(),
       rows: [deletedWarmDraft, deletedReal, liveWarmDraft],
       scope: 'project',
       canManageProject: true,
@@ -172,6 +178,7 @@ describe('selectSessionRowsForViewer', () => {
 
   test('project scope is denied without project-management rights', () => {
     const selected = selectSessionRowsForViewer({
+      hiddenSpaceIds: new Set(),
       rows: [row('private-other', { createdBy: OTHER_ID })],
       scope: 'project',
       canManageProject: false,
@@ -187,6 +194,7 @@ describe('selectSessionRowsForViewer', () => {
 
   test('manager inventory includes trigger-created private rows and hides ordinary private rows', () => {
     const selected = selectSessionRowsForViewer({
+      hiddenSpaceIds: new Set(),
       rows: [
         row('trigger-private', {
           createdBy: OTHER_ID,
@@ -214,6 +222,7 @@ describe('selectSessionRowsForViewer', () => {
 
   test('ordinary members still cannot access trigger-created private rows', () => {
     const selected = selectSessionRowsForViewer({
+      hiddenSpaceIds: new Set(),
       rows: [row('trigger-private', {
         createdBy: OTHER_ID,
         metadata: {
@@ -251,6 +260,7 @@ describe('selectSessionRowsForViewer', () => {
     });
 
     const selected = selectSessionRowsForViewer({
+      hiddenSpaceIds: new Set(),
       rows: [own, privateOther, migrated, stoppedLost, stoppedResumable, deleted],
       scope: 'visible',
       canManageProject: false,
@@ -278,6 +288,7 @@ describe('selectSessionRowsForViewer', () => {
     const stoppedWithoutRuntime = row('stopped-no-runtime', { status: 'stopped' });
 
     const selected = selectSessionRowsForViewer({
+      hiddenSpaceIds: new Set(),
       rows: [parkedAfterTurnError, stoppedWithoutRuntime],
       scope: 'visible',
       canManageProject: false,
@@ -305,6 +316,7 @@ describe('selectSessionRowsForViewer', () => {
 describe('selectSessionRowsForViewer — warm sessions', () => {
   function visible(rows: Array<typeof projectSessions.$inferSelect>) {
     return selectSessionRowsForViewer({
+      hiddenSpaceIds: new Set(),
       rows,
       scope: 'visible',
       canManageProject: false,
@@ -353,6 +365,7 @@ describe('selectSessionRowsForViewer — warm sessions', () => {
   // stop it, even though the sidebar hides it.
   test('manager project scope keeps a live billed warm row listed', () => {
     const selected = selectSessionRowsForViewer({
+      hiddenSpaceIds: new Set(),
       rows: [row('billed-warm', { metadata: { warm: true } })],
       scope: 'project',
       canManageProject: true,
@@ -371,6 +384,7 @@ describe('selectSessionRowsForViewer — warm sessions', () => {
   // resurface as an ordinary stopped session.
   test('a reaped warm session stays hidden even though it looks resumable', () => {
     const selected = selectSessionRowsForViewer({
+      hiddenSpaceIds: new Set(),
       rows: [row('reaped-warm', { status: 'stopped', metadata: { warm: true } })],
       scope: 'visible',
       canManageProject: false,
@@ -388,6 +402,7 @@ describe('selectSessionRowsForViewer — warm sessions', () => {
   // they are real rows holding a real sandbox.
   test('project scope keeps the warm session', () => {
     const selected = selectSessionRowsForViewer({
+      hiddenSpaceIds: new Set(),
       rows: [row('own'), row('warm', { metadata: { warm: true } })],
       scope: 'project',
       canManageProject: true,
@@ -487,6 +502,7 @@ describe('backend credential session isolation', () => {
 
   const select = (callerSessionId: string | null) =>
     selectSessionRowsForViewer({
+      hiddenSpaceIds: new Set(),
       rows: [alice, bob],
       scope: 'visible',
       canManageProject: false,
@@ -526,6 +542,7 @@ describe('backend credential session isolation', () => {
     const mine = row('cccc3333-3333-4333-8333-333333333333', { createdBy: VIEWER_ID });
     const sibling = row('dddd4444-4444-4444-8444-444444444444', { createdBy: VIEWER_ID });
     const selected = selectSessionRowsForViewer({
+      hiddenSpaceIds: new Set(),
       rows: [mine, sibling],
       scope: 'visible',
       canManageProject: false,
@@ -552,6 +569,7 @@ describe('runtime status map tolerates a superset', () => {
     const kept = row('kept', { status: 'running' });
 
     const withExact = selectSessionRowsForViewer({
+      hiddenSpaceIds: new Set(),
       rows: [kept],
       scope: 'visible',
       canManageProject: false,
@@ -563,6 +581,7 @@ describe('runtime status map tolerates a superset', () => {
     });
 
     const withSuperset = selectSessionRowsForViewer({
+      hiddenSpaceIds: new Set(),
       rows: [kept],
       scope: 'visible',
       canManageProject: false,
@@ -591,6 +610,7 @@ describe('runtime status map tolerates a superset', () => {
     const orphan = row('orphan', { status: 'running' });
 
     const selected = selectSessionRowsForViewer({
+      hiddenSpaceIds: new Set(),
       rows: [orphan],
       scope: 'visible',
       canManageProject: false,
@@ -740,6 +760,7 @@ describe('session list cursor', () => {
 describe('selectSessionRowsForViewer — agent principal (spec §2)', () => {
   test("an agent session lists its own session, its children and project sessions, never the launcher's private ones", () => {
     const selected = selectSessionRowsForViewer({
+      hiddenSpaceIds: new Set(),
       rows: [
         row('agent-own'),
         row('agent-child', { metadata: { spawned_by_session: 'agent-own' } }),
@@ -760,6 +781,7 @@ describe('selectSessionRowsForViewer — agent principal (spec §2)', () => {
 
   test('the same credential without the flag keeps the launcher-keyed listing', () => {
     const selected = selectSessionRowsForViewer({
+      hiddenSpaceIds: new Set(),
       rows: [row('agent-own'), row('launcher-private')],
       scope: 'visible',
       canManageProject: false,

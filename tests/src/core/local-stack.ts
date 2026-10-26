@@ -17,7 +17,7 @@ import {
 interface WorktreeMarker extends LocalWorktreeConfig {
   path: string;
   branch: string;
-  dbMode?: "shared" | "isolated";
+  dbMode?: "shared" | "isolated" | "branch";
 }
 
 interface RegistrySlot {
@@ -177,7 +177,28 @@ export async function readLocalSupabaseEnvironment(
   if (exitCode !== 0 && !hasRequiredLocalSupabaseEnvironment(environment)) {
     throw new Error("local Supabase is not running");
   }
-  return environment;
+  return withWorktreeDatabase(topology, environment);
+}
+
+/**
+ * A `--db` worktree (`dbMode: "branch"`) owns database `kortix_wt_<name>`
+ * inside the shared Postgres (scripts/worktree/lib/branch-db.ts). Migrations,
+ * the API under test, and flows must use it, never the primary `postgres`
+ * database every other session shares.
+ */
+export function withWorktreeDatabase(
+  topology: LocalTopology,
+  environment: LocalSupabaseEnvironment,
+): LocalSupabaseEnvironment {
+  if (topology.marker?.dbMode !== "branch" || !environment.DB_URL) {
+    return environment;
+  }
+  if (!topology.worktreeName) {
+    throw new Error("branch-database worktree is missing from the worktree registry");
+  }
+  const url = new URL(environment.DB_URL);
+  url.pathname = `/kortix_wt_${topology.worktreeName.replace(/-/g, "_")}`;
+  return { ...environment, DB_URL: url.toString() };
 }
 
 function localSupabaseCommand(topology: LocalTopology): string[] {
@@ -677,6 +698,8 @@ export function localApiEnvironment(options: {
     EMAIL_FROM: "Kortix Local <noreply@kortix.local>",
     AUTH_EMAIL_HOOK_SECRET: LOCAL_AUTH_EMAIL_HOOK_SECRET,
     KORTIX_MARKETPLACE_EXTERNAL_ENABLED: "0",
+    // Private channels are per deployment; SPACE-24..29 run them, a skip fails the local run.
+    KORTIX_PRIVATE_CHANNELS_ENABLED: "true",
     KORTIX_MODEL_CATALOG_LIVE_ENABLED: "0",
     KORTIX_MODEL_PRICING_LIVE_ENABLED: "0",
   };

@@ -3,6 +3,7 @@
  * endpoint, and the per-session reconstruction timeline.
  */
 
+import { redactHiddenChannelAuditRows } from '../../shared/space-access';
 import { RuntimeAuditBatchSchema } from '@kortix/api-contract/runtime-relay';
 import { auditCredentialNames } from '../../shared/audit-credential-names';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -550,8 +551,14 @@ export function registerProjectAuditRoutes(): void {
         .orderBy(desc(auditEventsAll.occurredAt), desc(auditEventsAll.eventId))
         .limit(limit + 1);
       const hasMore = fetched.length > limit;
-      const rows = hasMore ? fetched.slice(0, limit) : fetched;
-      const last = rows.at(-1);
+      const page = hasMore ? fetched.slice(0, limit) : fetched;
+      const last = page.at(-1);
+      // A private channel's threads the manager is not in: metadata only.
+      const rows = await redactHiddenChannelAuditRows(
+        page,
+        { userId: loaded.userId, bound: callerKortixSessionId(c) },
+        { searching: Boolean(c.req.query('q')?.trim()) },
+      );
       const names = await auditCredentialNames(rows);
       return c.json({
         events: rows.map((row) => serializeAuditEvent(row, names)),

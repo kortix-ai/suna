@@ -20,6 +20,7 @@ import {
   accounts,
   projectSessionGrants,
   projectSessions,
+  projectSpaces,
   projects,
 } from '@kortix/db';
 import { and, desc, eq, sql } from 'drizzle-orm';
@@ -32,6 +33,7 @@ import {
   sessionListViewerSql,
 } from '../projects/lib/session-list';
 import { isWarmProjectSession } from '../projects/lib/warm-sessions';
+import { spaceVisibleFor } from '../shared/space-access';
 import { db } from '../shared/db';
 
 const ACCOUNT = crypto.randomUUID();
@@ -325,6 +327,7 @@ describe('scenario B: 1,500 tombstones newer than the owner’s live sessions', 
             agentPrincipal: false,
             canManageProject: false,
             accountSessionOversight: false,
+            hiddenSpaceIds: new Set(),
           }),
         ),
       )
@@ -356,8 +359,37 @@ describe('scenario B: 1,500 tombstones newer than the owner’s live sessions', 
 describe('the page WHERE agrees with the JS fold on every rule', () => {
   const viewers = [MEMBER_A, MEMBER_B, crypto.randomUUID()];
   const bindings = [null, sid('backend-own'), sid('private-a')];
+  // A private channel holding every second session of the project: hidden
+  // (the viewer is not in it) or not, both sides must drop the same rows.
+  const PRIVATE_SPACE = crypto.randomUUID();
+  const hiddenSets: ReadonlySet<string>[] = [new Set(), new Set([PRIVATE_SPACE])];
 
-  test('for every viewer, binding, agent principal, standing and oversight', async () => {
+  // Filed for the two equivalence tests only: the walks below read the real
+  // `hiddenSpaceIds`, and none of their viewers is in the channel.
+  const filePrivateSpace = async () => {
+    await db.insert(projectSpaces).values({
+      spaceId: PRIVATE_SPACE,
+      accountId: ACCOUNT,
+      projectId: PROJECT_RULES,
+      kind: 'channel',
+      slug: `p-${tag}`,
+      name: 'p',
+      visibility: 'private',
+    });
+    const rows = await db.select({ sessionId: projectSessions.sessionId }).from(projectSessions)
+      .where(eq(projectSessions.projectId, PROJECT_RULES)).orderBy(projectSessions.sessionId);
+    for (const [index, row] of rows.entries()) {
+      if (index % 2 === 0) await db.update(projectSessions).set({ spaceId: PRIVATE_SPACE }).where(eq(projectSessions.sessionId, row.sessionId));
+    }
+  };
+  const unfilePrivateSpace = async () => {
+    await db.update(projectSessions).set({ spaceId: null }).where(eq(projectSessions.spaceId, PRIVATE_SPACE));
+    await db.delete(projectSpaces).where(eq(projectSpaces.spaceId, PRIVATE_SPACE));
+  };
+
+  test('for every viewer, binding, agent principal, standing, oversight and hidden private channel', async () => {
+    await filePrivateSpace();
+    try {
     const rows = await db.select().from(projectSessions).where(eq(projectSessions.projectId, PROJECT_RULES));
     const grantsBySession = await loadSessionGrants(rows.map((row) => row.sessionId));
     let compared = 0;
@@ -371,7 +403,8 @@ describe('the page WHERE agrees with the JS fold on every rule', () => {
               if (scope === 'project' && !canManageProject) continue;
               for (const accountSessionOversight of [false, true]) {
                for (const deleted of [false, true]) {
-                const viewer = { scope, viewerId, boundCredentialSessionId: bound, agentPrincipal, canManageProject, accountSessionOversight, deleted };
+                for (const hiddenSpaceIds of hiddenSets) {
+                const viewer = { scope, viewerId, boundCredentialSessionId: bound, agentPrincipal, canManageProject, accountSessionOversight, deleted, hiddenSpaceIds };
                 const fromSql = await db
                   .select({ sessionId: projectSessions.sessionId })
                   .from(projectSessions)
@@ -388,13 +421,15 @@ describe('the page WHERE agrees with the JS fold on every rule', () => {
                   accountSessionOversight,
                   agentPrincipal,
                   deleted,
+                  hiddenSpaceIds,
                 });
-                const label = JSON.stringify({ ...viewer, viewerId: viewers.indexOf(viewerId) });
+                const label = JSON.stringify({ ...viewer, hiddenSpaceIds: hiddenSpaceIds.size, viewerId: viewers.indexOf(viewerId) });
                 expect({ label, ids: fromSql.map((row) => short(row.sessionId)).sort() }).toEqual({
                   label,
                   ids: fromJs.items.map((item) => short(item.row.sessionId)).sort(),
                 });
                 compared += 1;
+                }
                }
               }
             }
@@ -402,7 +437,10 @@ describe('the page WHERE agrees with the JS fold on every rule', () => {
         }
       }
     }
-    expect(compared).toBe(3 * 3 * 2 * (2 + 1) * 2 * 2);
+    expect(compared).toBe(3 * 3 * 2 * (2 + 1) * 2 * 2 * 2);
+    } finally {
+      await unfilePrivateSpace();
+    }
   });
 
   // `projectReadView` (gateway logs and spend, change requests, the review
@@ -410,6 +448,8 @@ describe('the page WHERE agrees with the JS fold on every rule', () => {
   // viewer's WHERE is `case when <access> then <tombstone> else false end`:
   // the rows a JS rule can open, deleted ones kept, deleted warm drafts out.
   test('the non-manager project read keeps every session the viewer can open, deleted ones included, and drops deleted warm drafts', async () => {
+    await filePrivateSpace();
+    try {
     const rows = await db.select().from(projectSessions).where(eq(projectSessions.projectId, PROJECT_RULES));
     const grantsBySession = await loadSessionGrants(rows.map((row) => row.sessionId));
     let compared = 0;
@@ -418,7 +458,8 @@ describe('the page WHERE agrees with the JS fold on every rule', () => {
       for (const bound of [...bindings, sid('deleted-warm-project-a')]) {
         for (const agentPrincipal of [false, true]) {
           for (const accountSessionOversight of [false, true]) {
-            const viewer = { scope: 'project' as const, viewerId, boundCredentialSessionId: bound, agentPrincipal, canManageProject: false, accountSessionOversight };
+           for (const hiddenSpaceIds of hiddenSets) {
+            const viewer = { scope: 'project' as const, viewerId, boundCredentialSessionId: bound, agentPrincipal, canManageProject: false, accountSessionOversight, hiddenSpaceIds };
             const fromSql = await db
               .select({ sessionId: projectSessions.sessionId })
               .from(projectSessions)
@@ -432,21 +473,31 @@ describe('the page WHERE agrees with the JS fold on every rule', () => {
                 grantsBySession.get(row.sessionId) ?? [],
                 subject,
                 { origin: row.origin ?? null, sessionId: row.sessionId, callerSessionId: bound, boundCredentialSessionId: bound },
-                { metadata: row.metadata, initiatorType: row.initiatorType, canManageProject: false, accountSessionOversight },
+                {
+                  metadata: row.metadata,
+                  initiatorType: row.initiatorType,
+                  canManageProject: false,
+                  accountSessionOversight,
+                  spaceVisible: spaceVisibleFor(hiddenSpaceIds, row.spaceId),
+                },
               );
-              return agentPrincipal ? agentSessionStanding(bound, row, canAccess).visible : canAccess;
+              return agentPrincipal ? spaceVisibleFor(hiddenSpaceIds, row.spaceId) && agentSessionStanding(bound, row, canAccess).visible : canAccess;
             });
-            const label = JSON.stringify({ ...viewer, viewerId: viewers.indexOf(viewerId) });
+            const label = JSON.stringify({ ...viewer, hiddenSpaceIds: hiddenSpaceIds.size, viewerId: viewers.indexOf(viewerId) });
             expect({ label, ids: fromSql.map((row) => short(row.sessionId)).sort() }).toEqual({
               label,
               ids: fromJs.map((row) => short(row.sessionId)).sort(),
             });
             compared += 1;
+           }
           }
         }
       }
     }
-    expect(compared).toBe(3 * 4 * 2 * 2);
+    expect(compared).toBe(3 * 4 * 2 * 2 * 2);
+    } finally {
+      await unfilePrivateSpace();
+    }
     // The fixture reaches both halves of the CASE: member A opens a deleted
     // session (kept) and a deleted warm draft (dropped).
     // Member B reaches a restricted session through a group grant.
@@ -456,6 +507,7 @@ describe('the page WHERE agrees with the JS fold on every rule', () => {
         .from(projectSessions)
         .where(and(eq(projectSessions.projectId, PROJECT_RULES), sessionListViewerSql({
           scope: 'project', viewerId, boundCredentialSessionId: null, agentPrincipal: false, canManageProject: false, accountSessionOversight: false,
+          hiddenSpaceIds: new Set(),
         })))).map((row) => short(row.sessionId));
     const memberA = await readIds(MEMBER_A);
     expect(memberA).toContain('deleted-project-a');

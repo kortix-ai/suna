@@ -827,7 +827,21 @@ const catalog = {
         "email_channel": {
           "name": "Email channel",
           "description": "Give the agent an email inbox on Resend: inbound mail starts and continues sessions, and the agent reads, replies and sends from the inbox. Bring your own Resend API key and domain."
+        },
+        "project_channels": {
+          "name": "Channels",
+          "description": "Organize work in channels. Each new message in a channel or a direct message with an agent starts a thread. Replaces the session list in the sidebar."
         }
+      },
+      "channelsSwitch": {
+        "onTitle": "Turn on Channels for {project}?",
+        "onBody": "Everyone in this project gets Channels and Direct messages instead of the session list. All existing sessions move into #general. You can turn it off any time; nothing is deleted.",
+        "drive": "Turn on Drive too, so channels get Files.",
+        "turnOn": "Turn on",
+        "cancel": "Cancel",
+        "offTitle": "Turn off Channels?",
+        "offBody": "Channels, memory, files and links stay saved. The session list comes back for everyone.",
+        "turnOff": "Turn off"
       }
     },
     "upgrades": {
@@ -1286,7 +1300,14 @@ const catalog = {
     "underMore": "More",
     "sidebarEmpty": "Drag a row here to show it in the sidebar.",
     "moreEmpty": "Drag a row here to move it under More.",
-    "moreCaption": "Rows under More open from the More menu, below the nav."
+    "moreCaption": "Rows under More open from the More menu, below the nav.",
+    "spaces": {
+      "channels": "Channels",
+      "directMessages": "Direct messages",
+      "addChannel": "Add channel",
+      "loadError": "Could not load channels.",
+      "newAgent": "New agent"
+    }
   },
   "sessionPage": {
     "backToProject": "Back to project",
@@ -5338,6 +5359,7 @@ const catalog = {
       "textf7e31759b202": "No output",
       "textf7f52e59df1d": "10 MB",
       "textf7fcff0d8fea": "No limit",
+      "textf810ceed99d6": "Asked to join",
       "textf82de1c9a1f5": "No memory found.",
       "textf831c2a83de9": "Non-dismissible red banner — active outage or incident",
       "textf849c02f8075": "Zipping…",
@@ -5808,7 +5830,9 @@ const catalog = {
       "text25db7e5609e5": "No App events yet",
       "text9f8f92588517": "An App starts agents by emitting events. Add a trigger with on: { event, app } in kortix.yaml.",
       "text7c0a91e5b3d2": "Unclassified tools",
-      "text9d2b6f0c41ae": "Tools & rules"
+      "text9d2b6f0c41ae": "Tools & rules",
+      "openThreadAction": "Open thread",
+      "untitledThread": "Untitled thread"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -5954,7 +5978,10 @@ const catalog = {
     "copySessionTitle": "session title",
     "copyAction": "Copy {label}",
     "copied": "Copied {label}",
-    "copyFailed": "Could not copy to the clipboard"
+    "copyFailed": "Could not copy to the clipboard",
+    "threads": "Threads",
+    "recentThreads": "Recent threads",
+    "searchChannels": "Search channels, threads, commands..."
   },
   "repositoryAccess": {
     "label": "Project repository access",
@@ -6136,7 +6163,12 @@ const catalog = {
     "overlapAllow": "Start a new run anyway",
     "perHour": "Per hour",
     "perDay": "Per day",
-    "noLimit": "No limit"
+    "noLimit": "No limit",
+    "postTo": "Post to",
+    "postToHint": "Each run starts a new thread there. With no channel, runs go to #{channel}.",
+    "postToNone": "No channel",
+    "postToUnavailable": "Unavailable channel",
+    "postToPrivate": "Private: triggers can't post here"
   },
   "gatewayAccess": {
     "heroTitle": "Use this project's models anywhere",
@@ -7563,6 +7595,453 @@ const catalog = {
     "jump": "Jump to response for #{number}",
     "unavailable": "This response is not available in the loaded history.",
     "loadError": "Could not load the response. Try again."
+  },
+  "spaces": {
+    "memory": {
+      "search": "Search memory",
+      "pagesLabel": "Memory pages",
+      "all": {
+        "title": "All",
+        "explainCompany": "Kortix memory: what agents know about this project. They read it before every reply.",
+        "explainChannel": "Kortix memory: what agents know about {place}. They read it before every reply.",
+        "explainDm": "Kortix memory: what agents know about you and {place}. They read it before every reply."
+      },
+      "allPages": "All pages",
+      "noMatches": "No page matches “{query}”.",
+      "loadError": "Could not load this memory.",
+      "pageLoadError": "Could not load this page.",
+      "retry": "Try again",
+      "close": "Close",
+      "author": {
+        "system": "Kortix",
+        "unknown": "A member",
+        "agent": "An agent"
+      },
+      "edit": "Edit",
+      "delete": "Delete",
+      "deleteTitle": "Delete “{title}”?",
+      "deleteDescription": "This can't be undone.",
+      "deleted": "Page deleted",
+      "deleteFailed": "Could not delete the page. Try again.",
+      "relatedPages": "Related pages",
+      "emptyPage": "Nothing on this page yet.",
+      "history": {
+        "title": "History",
+        "description": "Every change to “{title}”, newest first.",
+        "loadError": "Could not load the history.",
+        "current": "Current",
+        "restore": "Restore this version",
+        "restored": "Version restored",
+        "restoreFailed": "Could not restore this version. Try again.",
+        "op": {
+          "create": "{author} created the page",
+          "update": "{author} edited the page"
+        },
+        "preview": "Preview",
+        "restoreShort": "Restore",
+        "viewing": "Viewing the version from {time}",
+        "backToCurrent": "Back to current",
+        "added": "+{count, plural, one {# line} other {# lines}}",
+        "removed": "−{count, plural, one {# line} other {# lines}}",
+        "viewingBy": "by {author}",
+        "created": "Page created",
+        "edited": "Page edited"
+      },
+      "editor": {
+        "body": "Page",
+        "save": "Save",
+        "cancel": "Cancel",
+        "saved": "Page saved",
+        "conflict": "Someone changed this page. Reload to see it.",
+        "reload": "Reload",
+        "error": {
+          "tooLarge": "This page is over 8 KB. Make it shorter.",
+          "secret": "That looks like a secret. Keep secrets in Secrets.",
+          "readOnly": "This memory is read-only.",
+          "failed": "Could not save the page. Try again."
+        }
+      },
+      "remember": {
+        "label": "Something for {place} to remember",
+        "placeholder": "Tell {place} something to remember…",
+        "hint": "Saved as a note with your name",
+        "send": "Save to memory",
+        "status": {
+          "secret": "That looks like a secret. Keep secrets in Secrets.",
+          "readOnly": "This memory is read-only.",
+          "failed": "Could not save. Try again."
+        },
+        "open": "Remember this…"
+      },
+      "empty": {
+        "title": "No memory in {place} yet",
+        "titleDm": "No memory with {place} yet",
+        "description": "Agents save what they learn here, and read it before every reply.",
+        "titleCompany": "No Company memory yet",
+        "openCompany": "Open Company memory · {count, plural, one {# page} other {# pages}}"
+      },
+      "source": {
+        "thread": "Open the thread “{label}”",
+        "threadGone": "From the thread “{label}”",
+        "outside": "Open {label} in a new tab",
+        "outsideText": "From {label}",
+        "person": "Added by {label}",
+        "import": "Imported from {label}"
+      },
+      "used": {
+        "label": "Used {places} memory · {count, plural, one {# page} other {# pages}}",
+        "title": "Pages this thread started with",
+        "company": "Company",
+        "removed": "Removed"
+      },
+      "searchError": "Could not search this memory.",
+      "searchResults": "Search results",
+      "palette": {
+        "heading": "Memory"
+      },
+      "company": {
+        "subtitle": "What every agent in this project knows.",
+        "gateDescription": "Company memory comes with Channels: every agent in this project starts each thread with what the team saved here.",
+        "title": "Memory",
+        "place": "Company"
+      },
+      "rememberThis": {
+        "label": "Remember this",
+        "saved": "Saved to memory",
+        "saveTo": "Save to",
+        "dm": "Your memory with {agent}"
+      },
+      "updated": "Updated {time} by {author}",
+      "updatedAt": "Updated {time}",
+      "sourceKind": {
+        "thread": "thread",
+        "person": "message",
+        "outside": "link",
+        "import": "file"
+      },
+      "pageCount": "{count, plural, one {# page} other {# pages}}",
+      "companyLink": "Company memory · {count, plural, one {# page} other {# pages}}",
+      "companyLinkHint": "The agent here also uses Company memory.",
+      "group": {
+        "other": "About",
+        "people": "People",
+        "decisions": "Decisions",
+        "workstreams": "Projects",
+        "playbooks": "How we work",
+        "note": "Notes"
+      }
+    },
+    "create": {
+      "title": "Create a channel",
+      "description": "Everyone in this project can see and use the channel.",
+      "nameLabel": "Name",
+      "namePlaceholder": "marketing",
+      "slugPlaceholder": "channel-name",
+      "descriptionLabel": "Description (optional)",
+      "descriptionPlaceholder": "What this channel is for",
+      "submit": "Create channel",
+      "created": "Channel created",
+      "nameRequired": "Add a name.",
+      "invalidName": "Use at least one letter or number in the name.",
+      "slugTaken": "<link>#{slug}</link> already exists.",
+      "failed": "Could not create the channel. Try again.",
+      "renameTitle": "Rename channel",
+      "renameDescription": "The channel's link changes with its name.",
+      "save": "Save",
+      "renamed": "Channel renamed",
+      "renameFailed": "Could not rename the channel. Try again.",
+      "descriptionPrivate": "Only the people you add can see and use the channel.",
+      "privateLabel": "Private",
+      "privateHint": "Only invited members can see it.",
+      "privateUnavailable": "Private channels are not available in this workspace yet.",
+      "privateLimits": "Private hides the channel from other people. Code changes (git branches) and the agents’ own tools aren’t private."
+    },
+    "view": {
+      "welcomeTitle": "Welcome to #{name}",
+      "welcomeEmpty": "Start the first thread in #{name}. Every message starts a new thread.",
+      "welcomeStart": "This is the start of #{name}.",
+      "dmIntro": "This conversation is just between you and {agent}.",
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "openThread": "Open thread",
+      "replyInThread": "Reply in thread",
+      "lastReply": "Last reply {time}",
+      "working": "{agent} is working…",
+      "agentFallback": "Agent",
+      "authorFallback": "Someone",
+      "loadEarlier": "Load earlier threads",
+      "messageChannel": "Message #{name}",
+      "messageAgent": "Message {agent}",
+      "threadsEmptyTitle": "No threads yet",
+      "threadsEmpty": "Threads you start will show up here.",
+      "loadError": "Could not load this channel.",
+      "threadsLoadError": "Could not load the threads.",
+      "retry": "Try again",
+      "notFound": "This channel doesn't exist.",
+      "notFoundHint": "The link may be wrong, or someone renamed the channel.",
+      "openDefault": "Open #{name}",
+      "archivedTitle": "#{name} is archived.",
+      "archivedHint": "Unarchive it to read and start threads here again.",
+      "archivedLocked": "Only its creator or a project manager can unarchive it.",
+      "unarchive": "Unarchive channel",
+      "unarchived": "Channel unarchived",
+      "unarchiveFailed": "Could not unarchive the channel. Try again.",
+      "dmFailed": "Could not open this conversation.",
+      "archive": "Archive channel",
+      "archiveTitle": "Archive #{name}?",
+      "archiveDescription": "The channel leaves the sidebar for every member. Its threads stay, and its creator or a project manager can unarchive it.",
+      "archived": "Channel archived",
+      "archiveFailed": "Could not archive the channel. Try again.",
+      "threadTitle": "Thread",
+      "closeThread": "Close thread",
+      "sendFailed": "Could not start the thread. Try again.",
+      "replies": "{count, plural, one {# reply} other {# replies}}",
+      "replyPlaceholder": "Reply…",
+      "tab": {
+        "chat": "Chat",
+        "threads": "Threads",
+        "files": "Files",
+        "memory": "Memory",
+        "apps": "Apps",
+        "links": "Links",
+        "triggers": "Triggers"
+      },
+      "empty": {
+        "files": {
+          "title": "No files yet",
+          "description": "Files shared in {place} show up here.",
+          "action": "Upload a file"
+        },
+        "memory": {
+          "title": "No memory yet",
+          "description": "What the agents remember for {place} shows up here.",
+          "action": "Add memory"
+        },
+        "apps": {
+          "title": "No apps yet",
+          "description": "Apps built in {place} show up here."
+        },
+        "links": {
+          "title": "No links yet",
+          "description": "Links people share in {place} threads show up here. Pin one to give it to every agent in the channel."
+        },
+        "triggers": {
+          "title": "No triggers yet",
+          "description": "Triggers start a thread in {place} on a schedule or an event.",
+          "action": "New trigger"
+        }
+      },
+      "channelDetails": "#{name} details",
+      "roster": "{people} · {agents}",
+      "rosterPeople": "{count, plural, one {# person} other {# people}}",
+      "rosterAgents": "{count, plural, one {# agent} other {# agents}}",
+      "copyLink": "Copy link to thread",
+      "linkCopied": "Link copied",
+      "notice": {
+        "unreachable": "Lost contact with this thread's computer. Messages you send are queued until it reconnects.",
+        "unreachableMidTurn": "Lost contact with this thread's computer while a turn is still open. Messages you send stay queued until it answers.",
+        "stalled": "Waking this thread's computer is taking longer than usual. Messages you send are queued.",
+        "starting": "Starting this thread's computer. Your message sends automatically.",
+        "idle": "This thread's computer is asleep. Your next message wakes it up and is delivered.",
+        "waking": "Waking this thread's computer. Messages you send are queued and go out automatically."
+      },
+      "boot": {
+        "restart": "Restart thread"
+      },
+      "links": {
+        "add": "Add link",
+        "addDescription": "Add a link to {place}.",
+        "urlLabel": "URL",
+        "titleLabel": "Title (optional)",
+        "titlePlaceholder": "What it is",
+        "invalidUrl": "Enter a valid link, like example.com.",
+        "addFailed": "Could not add the link. Try again.",
+        "limit": "This channel already pins 200 links. Unpin one first.",
+        "addLimit": "This channel already holds 200 added links. Remove one first.",
+        "added": "Added",
+        "remove": "Remove link",
+        "removeTitle": "Remove this link?",
+        "removeDescription": "{link} is removed from {place} for everyone.",
+        "removed": "Link removed",
+        "removeFailed": "Could not remove the link. Try again.",
+        "loadError": "Could not load the links.",
+        "pinnedLabel": "Pinned",
+        "pin": "Pin",
+        "unpin": "Unpin",
+        "pinnedToast": "Link pinned",
+        "unpinnedToast": "Link unpinned",
+        "pinFailed": "Could not pin the link. Try again.",
+        "unpinFailed": "Could not unpin the link. Try again.",
+        "search": "Search links",
+        "show": "Show",
+        "all": "All",
+        "sharedBy": "Shared by",
+        "earlier": "Earlier",
+        "pinHint": "Pin it. Every agent in the channel reads pinned links.",
+        "unpinHint": "Unpin it. Agents stop reading it.",
+        "copyLink": "Copy link",
+        "linkCopied": "Link copied",
+        "openThread": "Open thread",
+        "noMatch": "No links match"
+      },
+      "appsLoadError": "Could not load the apps.",
+      "triggers": {
+        "loadError": "Could not load the triggers.",
+        "privateNote": "Triggers can't post into a private channel. Set a reminder in a thread instead."
+      },
+      "reply": "Reply",
+      "rosterTitlePeople": "People",
+      "rosterTitleAgents": "Agents",
+      "viewAllMembers": "View all members",
+      "agentThreads": "{count, plural, one {# thread} other {# threads}}",
+      "threadFilter": {
+        "search": "Search threads",
+        "filter": "Filter",
+        "clear": "Clear",
+        "clearFilters": "Clear filters",
+        "noMatch": "No threads match",
+        "noMatchHint": "Try another search, or clear the filters.",
+        "remove": "Remove filter {facet}: {value}",
+        "status": "Status",
+        "startedBy": "Started by",
+        "agent": "Agent",
+        "activity": "Activity",
+        "any": "Any",
+        "anyone": "Anyone",
+        "me": "Me",
+        "anyAgent": "Any agent",
+        "anyTime": "Any time",
+        "statusValue": {
+          "working": "Working",
+          "needsYou": "Needs you",
+          "failed": "Failed",
+          "done": "Done"
+        },
+        "activityValue": {
+          "today": "Today",
+          "last7": "Last 7 days",
+          "last30": "Last 30 days"
+        }
+      },
+      "setup": {
+        "label": "Set up {name}",
+        "addAgents": "Add agents",
+        "addAgentsHint": "Pick who answers here",
+        "invite": "Invite members",
+        "inviteHint": "Bring your team in",
+        "remember": "Remember something",
+        "rememberHint": "Notes every agent reads"
+      },
+      "allAgents": "All agents",
+      "join": "Join channel",
+      "joined": "You joined #{name}.",
+      "joinFailed": "Could not join the channel. Try again."
+    },
+    "details": {
+      "about": "About",
+      "members": "Members",
+      "name": "Channel name",
+      "description": "Description",
+      "noDescription": "Add a description",
+      "created": "Created",
+      "editField": "Edit {field}",
+      "archiveTitle": "Archive this channel",
+      "archiveHint": "It leaves the sidebar for every member. Its threads stay.",
+      "archive": "Archive",
+      "find": "Find people or agents",
+      "search": "Search",
+      "you": "(you)",
+      "noMatches": "No one matches “{query}”.",
+      "defaultAgent": "Default agent",
+      "defaultAgentHint": "Answers a message that names no agent. Set for the whole project in Customize › Agents.",
+      "visibility": "Who can see it",
+      "visibilityProject": "Everyone in the project",
+      "defaultTag": "Default",
+      "agentTag": "Agent",
+      "makeDefault": "Make default",
+      "removeAgent": "Remove from #{name}",
+      "agentMenu": "{agent} options",
+      "agentsFailed": "Could not update the agents. Try again.",
+      "defaultSet": "{agent} is the default in #{name}.",
+      "agentRemoved": "{agent} removed from #{name}.",
+      "channelDefaultHint": "Answers a message that names no agent. Change it in Members.",
+      "personRemoved": "{person} removed from #{name}.",
+      "peopleFailed": "Could not update the members. Try again.",
+      "personMenu": "{person} options",
+      "removePerson": "Remove from #{name}",
+      "leave": "Leave channel",
+      "left": "You left #{name}.",
+      "leaveTitle": "Leave this channel",
+      "leaveHint": "You can still read it, and join again at any time.",
+      "visibilityPrivate": "Only its members",
+      "privateNote": "Only members can see #{name}.",
+      "makePrivate": "Make private",
+      "makePrivateTitle": "Make #{name} private?",
+      "makePrivateWho": "Only members will see #{name}: its threads, files, memory and links. Everyone who started a thread or added a link becomes a member.",
+      "makePrivateLeave": "Everyone else loses access. A member who leaves later loses access too, to their own threads as well.",
+      "makePrivateFinal": "You cannot make it public again. Files copied out of it stay where they are.",
+      "makePrivateTriggers": "{count, plural, one {# trigger posts here. It stops running.} other {# triggers post here. They stop running.}}",
+      "madePrivate": "#{name} is now private",
+      "leaveHintPrivate": "You lose access to its threads, files and memory, your own threads included. A member must add you again.",
+      "leavePrivateTitle": "Leave #{name}?",
+      "addMembers": "Add members",
+      "privateLimits": "Private hides the channel from other people. Code changes (git branches) and the agents’ own tools aren’t private."
+    },
+    "onboarding": {
+      "reenabled": "Sessions started while Channels was off are here.",
+      "intro": {
+        "title": "Welcome to Channels",
+        "channels": "Channels group work by team.",
+        "threads": "Every new message starts a thread.",
+        "memory": "Agents remember what each channel agrees on.",
+        "gotIt": "Got it"
+      },
+      "getStarted": {
+        "dismiss": "Dismiss",
+        "channel": "Create a channel for a team",
+        "done": "Done"
+      }
+    },
+    "addMembers": {
+      "title": "Add members to #{name}",
+      "description": "Pick people and agents from the project.",
+      "search": "Search people and agents",
+      "selected": "Selected members",
+      "people": "People",
+      "agents": "Agents",
+      "unpick": "Remove {member}",
+      "cancel": "Cancel",
+      "inviteByEmail": "Invite by email",
+      "confirmEmpty": "Add members",
+      "confirm": "Add {what}",
+      "peopleCount": "{count, plural, one {# person} other {# people}}",
+      "agentsCount": "{count, plural, one {# agent} other {# agents}}",
+      "both": "{people} and {agents}",
+      "added": "Added {what} to #{name}.",
+      "failed": "Could not add the members. Try again.",
+      "peopleFailed": "Could not add the people. Try again.",
+      "agentsFailed": "Could not add the agents. Try again.",
+      "peopleFailedAgentsAdded": "Added {what} to #{name}. Could not add the people: they are still selected.",
+      "agentsFailedPeopleAdded": "Added {what} to #{name}. Could not add the agents: they are still selected.",
+      "allAdded": "Everyone in the project is already here.",
+      "noMatches": "Nothing matches “{query}”."
+    },
+    "privateNotIn": {
+      "row": "Private channels you are not in",
+      "title": "Private channels you are not in",
+      "description": "You can rename, archive and add people. Only members read what is in a channel, so you cannot add yourself.",
+      "meta": "{count, plural, =0 {No members} one {# member} other {# members}} · created by {name}",
+      "metaNoCreator": "{count, plural, =0 {No members} one {# member} other {# members}}",
+      "archived": "Archived",
+      "menu": "Options for #{name}",
+      "addPeople": "Add people",
+      "rename": "Rename",
+      "archive": "Archive",
+      "unarchive": "Unarchive",
+      "archivedToast": "#{name} archived",
+      "unarchivedToast": "#{name} unarchived",
+      "failed": "Could not update #{name}. Try again."
+    }
   }
 };
 

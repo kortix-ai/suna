@@ -19,9 +19,8 @@ they start.
   The `memory` tool covers only the project brain at `memory/`, not this
   folder.
 
-User memory is not project memory. Facts the whole team needs go in the
-project brain (`memory/`, the `kortix-memory` skill) or in `Company/Memory`
-when it is mounted (the `kortix-drives` skill).
+User memory is not project or team memory. Where every other fact goes is
+the one table in the `kortix-drives` skill (`<memory>`).
 </overview>
 
 <protocol>
@@ -40,7 +39,9 @@ when it is mounted (the `kortix-drives` skill).
 
 `/drives/me` is the folder of the session's owner. In a session several
 people use (a shared session, a channel thread), keep only the owner's facts
-there. When `/drives/me` is absent (Volumes off for the project, or no
+there. In a private channel's thread `/drives/me` is read-only: save nothing
+there, and keep what you learn in the channel's memory (the
+`kortix-channel-memory` skill). When `/drives/me` is absent (Volumes off for the project, or no
 personal folder in `/drives/README.md`), there is no user memory: do not
 write one anywhere else, and tell the user if they asked you to remember
 something.
@@ -90,7 +91,7 @@ Create the folder if it is missing: `mkdir -p /drives/me/Memory`.
 - Facts the repo, Files or a connector already holds — point to them.
 - Guesses about the user. Store what they said or did, not what you infer
   about their personality, health, beliefs or private life.
-- Team facts. Those are project memory (`kortix-memory`).
+- Team and channel facts. Save them where the `kortix-drives` table says.
 
 ### Style
 

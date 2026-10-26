@@ -27,6 +27,7 @@ import {
   maxSidebarWidth,
 } from './sidebar-width';
 import { cn } from '../lib/utils';
+import { RESIZE_SEAM_CLASS } from './resize-seam';
 import { SidebarGlyph as PanelLeftIcon } from '../icons/sidebar-toggle';
 
 function Sidebar({
@@ -426,17 +427,10 @@ function SidebarRail({ className, ...props }: React.ComponentProps<'div'>) {
       }}
       className={cn(
         'absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 cursor-col-resize touch-none outline-none select-none group-data-[side=left]:-right-4 group-data-[side=right]:left-0 sm:flex',
-        // The hairline is a pseudo-element so the 16px hit area stays 16px
-        // (well over the 8px a pointer needs) while the visible line stays 2px.
-        // Opacity only — a width/position transition here would animate layout
-        // on hover, on an element that sits over the content pane.
-        'after:pointer-events-none after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] after:-translate-x-1/2 after:opacity-0',
-        'after:bg-kortix-base after:transition-opacity after:duration-fast after:ease-out',
-        'hover:after:opacity-100 focus-visible:after:opacity-100 data-[resizing]:after:opacity-100',
-        // Tapered top and bottom so the line reads as a seam, not a border.
-        'after:[clip-path:polygon(calc(50%-0.0625rem)_0%,calc(50%+0.0625rem)_0%,calc(50%+0.125rem)_50%,calc(50%+0.0625rem)_100%,calc(50%-0.0625rem)_100%,calc(50%-0.125rem)_50%)]',
-        'after:[mask-image:linear-gradient(to_bottom,transparent,black_15%,black_85%,transparent)]',
-        'motion-reduce:after:transition-none',
+        // The seam is a pseudo-element so the 16px hit area stays 16px (well
+        // over the 8px a pointer needs) while the visible line stays 2px.
+        RESIZE_SEAM_CLASS,
+        'hover:before:opacity-100 focus-visible:before:opacity-100 data-[resizing]:before:opacity-100',
         className,
       )}
       {...props}

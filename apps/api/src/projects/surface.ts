@@ -136,6 +136,16 @@ export type { GitBackedProject } from './git/types';
 // Who may stop a running turn (consumed by channels/core/turn-stop.ts and
 // sandbox-proxy/forward/abort-authority.ts).
 export { readRunningTurn, sessionLifecycleStandingFor, turnPrompterOf } from './session-lifecycle/turn-stop-authority';
+// Who may rewind a session (consumed by sandbox-proxy/forward/forward-to-sandbox.ts).
+export { mayRewindSession } from './session-lifecycle/rewind-authority';
 
 export { registerRuntimeFork } from './lib/runtime-session-snapshot';
+
+// `project_channels` on: file every session into `#general`, and the "turned on
+// again" record (consumed by ../feature-flags/toggle-effects).
+export { turnOnChannels } from './lib/project-spaces';
+export { recordChannelsReenabled } from './lib/channels-onboarding';
+
+// Author names written into memory files (consumed by ../memory/layers.ts).
+export { resolveUserIdentities } from './lib/user-identity';
 export { readPublicResponse } from './lib/public-response';

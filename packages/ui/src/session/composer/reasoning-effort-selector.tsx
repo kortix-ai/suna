@@ -180,7 +180,7 @@ export function ReasoningEffortSelector({
           variant="ghost"
           size="sm"
           aria-label={t('thinkingEffort')}
-          className="text-foreground/70 gap-1.5 rounded-lg hit-area-y-3"
+          className="text-muted-foreground gap-1.5 rounded-lg hit-area-y-3"
         >
           <EffortIcon value={current} className="size-4 shrink-0" />
           <span className="max-w-[7rem] truncate">{current ? label(current) : t('auto')}</span>
