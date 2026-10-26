@@ -93,6 +93,7 @@ export type FeatureFlagKey =
   | 'session_log_restore'
   /** @deprecated Graduated — the Kortix connectors catalog is the only connectors path. Removed in the next major. */
   | 'connectors_v2'
+  | 'project_channels'
   | 'agent_rooms'
   | 'goals'
   | 'workspace_volume'
@@ -144,6 +145,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'volumes',
   'drives',
   'session_log_restore',
+  'project_channels',
   'agent_rooms',
   'goals',
   'workspace_volume',

@@ -342,6 +342,17 @@ describe('filtered list caches (KRTX-639)', () => {
     expect(ids(qc, pinned)).toEqual(['PIN']);
   });
 
+  test('a new session lands only in its own space list, never in another space', () => {
+    const qc = new QueryClient();
+    const spaceA = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', spaceId: 'A' });
+    const spaceB = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', spaceId: 'B' });
+    for (const key of [spaceA, spaceB]) qc.setQueryData(key, pagedOf([]));
+    upsertCachedProjectSession(qc, 'P1', withInitiator('IN-A', { space_id: 'A' }));
+    upsertCachedProjectSession(qc, 'P1', withInitiator('NO-SPACE', {}));
+    expect(ids(qc, spaceA)).toEqual(['IN-A']);
+    expect(ids(qc, spaceB)).toEqual([]);
+  });
+
   test('an unfiltered legacy cache still receives every session', () => {
     const qc = new QueryClient();
     const legacy = qk.project.sessionsPaged('P1');

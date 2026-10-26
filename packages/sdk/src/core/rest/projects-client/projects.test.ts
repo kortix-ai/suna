@@ -1014,6 +1014,7 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'session_log_restore',
     'workspace_volume',
     'volumes',
+    'project_channels',
     'agent_rooms',
     'goals',
     'artifacts',

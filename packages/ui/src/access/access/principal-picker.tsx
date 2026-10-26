@@ -590,9 +590,11 @@ function PickerSectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function PickerRow({
+/** One picker row. Exported for the channel "Add members" picker, which moves `highlighted` with the arrow keys. */
+export function PickerRow({
   selected,
   selection,
+  highlighted = false,
   disabled,
   onSelect,
   leading,
@@ -601,6 +603,7 @@ function PickerRow({
 }: {
   selected: boolean;
   selection: 'single' | 'multi';
+  highlighted?: boolean;
   disabled?: boolean;
   onSelect: () => void;
   leading: React.ReactNode;
@@ -618,7 +621,7 @@ function PickerRow({
       className={cn(
         'flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors',
         'disabled:cursor-not-allowed disabled:opacity-50',
-        selected ? 'bg-primary/[0.06]' : 'hover:bg-muted/50',
+        selected ? 'bg-primary/[0.06]' : highlighted ? 'bg-muted/50' : 'hover:bg-muted/50',
       )}
     >
       {leading}

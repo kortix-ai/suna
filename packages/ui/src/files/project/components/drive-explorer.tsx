@@ -26,7 +26,7 @@ import { DRAG_MIME } from '../../tree/components/file-tree-item';
 import { useFilesStore, useFilesStoreApi } from '../../../internal/stores/files-store';
 import type { FileNode } from '../../../internal/files/types';
 import { EmptyState } from '../../../primitives/empty-state';
-import { DriveEmptyArt } from './drive-empty-art';
+import { EmptyArt } from '../../../primitives/empty-art';
 import { ErrorState } from '../../../primitives/error-state';
 import { isSandboxNotReadyError } from '@kortix/sdk';
 import {
@@ -1490,7 +1490,7 @@ export function DriveExplorer({
               {isEmpty && !parked && (
                 <EmptyState
                   className="min-h-full"
-                  media={<DriveEmptyArt />}
+                  media={<EmptyArt />}
                   title={tHardcodedUi.raw(
                     'featuresProjectFilesComponentsDriveListView.line396JsxTextThisFolderIsEmpty',
                   )}

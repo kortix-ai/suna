@@ -25,6 +25,7 @@ import { callerKortixSessionId } from '../../middleware/caller-session';
 import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed, resolveUserIdentities } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { DriveStorageError } from '../../drives/volumes';
+import { privateChannelFoldersFor, sessionPrivateChannelFolder } from '../../drives/service';
 import { ARTIFACT_TYPES, ARTIFACT_TYPE_KEYS } from '../../artifacts/formats';
 import {
   ARTIFACTS_FLAG,
@@ -182,7 +183,20 @@ async function authorize(c: Context, projectId: string, mode: 'read' | 'write') 
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, action);
   const can = async (leaf: string) => agentMayPerform(getAgentGrant(c), leaf) && projectCapabilityAllowed(c, loaded.userId, loaded.row.accountId, projectId, leaf);
   const [projectWrite, manageAny] = await Promise.all([can(PROJECT_ACTIONS.PROJECT_WRITE), can(PROJECT_ACTIONS.PROJECT_ARTIFACT_MANAGE)]);
-  const viewer: Viewer = { userId: loaded.userId as string, projectWrite, manageAny };
+  // A private channel's files: only its members, and a session token only from its own thread (the one Drive rule).
+  const bound = callerKortixSessionId(c);
+  const [folders, channelFolder] = await Promise.all([
+    privateChannelFoldersFor(projectId, loaded.userId as string, bound),
+    bound ? sessionPrivateChannelFolder(bound) : Promise.resolve(null),
+  ]);
+  const viewer: Viewer = {
+    userId: loaded.userId as string,
+    projectWrite,
+    manageAny,
+    privateFolders: folders.visible,
+    allPrivateFolders: folders.all,
+    channelFolder,
+  };
   return { ok: true as const, loaded, viewer, can };
 }
 
@@ -200,7 +214,7 @@ async function loadArtifact(c: Context, projectId: string, artifactId: string, m
   const access = await authorize(c, projectId, mode === 'read' || mode === 'pin' ? 'read' : 'write');
   if (!access.ok) return access;
   const row = await getArtifact(projectId, artifactId);
-  if (!row || !canView(row, access.viewer.userId)) return { ok: false as const, response: c.json({ error: 'Artifact not found' }, 404) };
+  if (!row || !canView(row, access.viewer)) return { ok: false as const, response: c.json({ error: 'Artifact not found' }, 404) };
   if (mode === 'manage' && !canManage(row, access.viewer)) {
     return { ok: false as const, response: c.json({ error: 'Only its creator or a project manager can change how this artifact is shared', code: 'artifact_read_only' }, 403) };
   }
@@ -271,7 +285,7 @@ export function registerArtifactRoutes(): void {
     const q = c.req.valid('query');
     const access = await authorize(c, projectId, 'read');
     if (!access.ok) return access.response;
-    const rows = await listArtifacts(projectId, access.viewer.userId, { scope: q.scope ?? 'all', type: q.type, q: q.q, limit: q.limit ?? 100 });
+    const rows = await listArtifacts(projectId, access.viewer, { scope: q.scope ?? 'all', type: q.type, q: q.q, limit: q.limit ?? 100 });
     return c.json({ artifacts: await serialize(rows, access.viewer) }, 200);
   });
 
@@ -289,7 +303,12 @@ export function registerArtifactRoutes(): void {
     const refused = await refusePublic(c, access, c.req.valid('json').visibility);
     if (refused) return refused;
     try {
-      const row = await publishNew({ accountId: access.loaded.row.accountId, projectId }, author(c, access.viewer.userId), c.req.valid('json'));
+      const row = await publishNew(
+        { accountId: access.loaded.row.accountId, projectId },
+        author(c, access.viewer.userId),
+        c.req.valid('json'),
+        access.viewer.channelFolder,
+      );
       return c.json(await detail(row, access.viewer), 201);
     } catch (err) {
       return failure(c, err);
@@ -367,7 +386,14 @@ export function registerArtifactRoutes(): void {
     if (!loaded.ok) return loaded.response;
     const refused = await refusePublic(c, loaded, c.req.valid('json').visibility);
     if (refused) return refused;
-    const updated = await updateArtifactMeta(loaded.row, c.req.valid('json'));
+    let updated: ArtifactRow;
+    try {
+      updated = await updateArtifactMeta(loaded.row, c.req.valid('json'));
+    } catch (err) {
+      // 403 `private_channel`: a private channel's artifact stays private.
+      if (err instanceof ArtifactError && err.status === 403) return c.json({ error: err.message, code: err.code }, 403);
+      throw err;
+    }
     const [out] = await serialize([updated], loaded.viewer);
     return c.json(out!, 200);
   });

@@ -1286,7 +1286,21 @@
         "email_channel": {
           "name": "电子邮件渠道",
           "description": "为智能体提供一个 Resend 邮箱：收到的邮件会启动并延续会话，智能体从该邮箱阅读、回复和发送邮件。使用你自己的 Resend API 密钥和域名。"
+        },
+        "project_channels": {
+          "name": "频道",
+          "description": "在频道中组织工作。频道中的每条新消息或与智能体的私信都会开启一个话题。取代侧边栏中的会话列表。"
         }
+      },
+      "channelsSwitch": {
+        "onTitle": "为 {project} 开启频道？",
+        "onBody": "此项目中的所有人将看到频道和私信，而不是会话列表。所有现有会话都会移入 #general。你可以随时关闭；不会删除任何内容。",
+        "drive": "同时开启云盘，让频道拥有文件。",
+        "turnOn": "开启",
+        "cancel": "取消",
+        "offTitle": "关闭频道？",
+        "offBody": "频道、记忆、文件和链接都会保留。所有人都会重新看到会话列表。",
+        "turnOff": "关闭"
       }
     },
     "upgrades": {
@@ -1777,7 +1791,14 @@
     "underMore": "更多",
     "sidebarEmpty": "将项目拖到这里以在侧边栏中显示。",
     "moreEmpty": "将项目拖到这里以移入“更多”。",
-    "moreCaption": "“更多”中的项目可从导航下方的“更多”菜单打开。"
+    "moreCaption": "“更多”中的项目可从导航下方的“更多”菜单打开。",
+    "spaces": {
+      "channels": "频道",
+      "directMessages": "私信",
+      "addChannel": "添加频道",
+      "loadError": "无法加载频道。",
+      "newAgent": "新建智能体"
+    }
   },
   "dashboard": {
     "title": "仪表板",
@@ -20404,7 +20425,9 @@
       "textd529a06f471c": "Resend 将在可用时创建此前缀，例如",
       "text51cfb12fffdd": "已收到入站邮件",
       "text7c0a91e5b3d2": "未分类工具",
-      "text9d2b6f0c41ae": "工具与规则"
+      "text9d2b6f0c41ae": "工具与规则",
+      "openThreadAction": "打开话题",
+      "untitledThread": "未命名话题"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -20577,7 +20600,10 @@
     "copySessionTitle": "会话标题",
     "copyAction": "复制{label}",
     "copied": "已复制{label}",
-    "copyFailed": "无法复制到剪贴板"
+    "copyFailed": "无法复制到剪贴板",
+    "threads": "话题",
+    "recentThreads": "最近的话题",
+    "searchChannels": "搜索频道、话题、命令..."
   },
   "personalWelcome": {
     "dismiss": "关闭",
@@ -20763,7 +20789,12 @@
     "overlapAllow": "仍然启动新的运行",
     "perHour": "每小时",
     "perDay": "每天",
-    "noLimit": "不限"
+    "noLimit": "不限",
+    "postTo": "发布到",
+    "postToHint": "每次运行都会在那里开始一个新话题。未选择频道时，运行会进入 #{channel}。",
+    "postToNone": "无频道",
+    "postToUnavailable": "不可用的频道",
+    "postToPrivate": "私有：触发器无法发布到这里"
   },
   "gatewayAccess": {
     "heroTitle": "在任何地方使用此项目的模型",
@@ -22861,5 +22892,448 @@
     "jump": "跳转到 #{number} 的回复",
     "unavailable": "已加载的历史记录中没有此回复。",
     "loadError": "无法加载回复。请重试。"
+  },
+  "spaces": {
+    "memory": {
+      "search": "搜索记忆",
+      "pagesLabel": "记忆页面",
+      "all": {
+        "title": "全部",
+        "explainCompany": "Kortix 记忆：智能体对此项目的了解。它们会在每次回复前阅读。",
+        "explainChannel": "Kortix 记忆：智能体对 {place} 的了解。它们会在每次回复前阅读。",
+        "explainDm": "Kortix 记忆：智能体对你和 {place} 的了解。它们会在每次回复前阅读。"
+      },
+      "allPages": "所有页面",
+      "noMatches": "没有与“{query}”匹配的页面。",
+      "loadError": "无法加载此记忆。",
+      "pageLoadError": "无法加载此页面。",
+      "retry": "重试",
+      "close": "关闭",
+      "author": {
+        "system": "Kortix",
+        "unknown": "一位成员",
+        "agent": "一个智能体"
+      },
+      "edit": "编辑",
+      "delete": "删除",
+      "deleteTitle": "删除“{title}”？",
+      "deleteDescription": "此操作无法撤销。",
+      "deleted": "页面已删除",
+      "deleteFailed": "无法删除页面，请重试。",
+      "relatedPages": "相关页面",
+      "emptyPage": "此页面还没有内容。",
+      "history": {
+        "title": "历史记录",
+        "description": "“{title}”的所有更改，最新的在前。",
+        "loadError": "无法加载历史记录。",
+        "current": "当前",
+        "restore": "恢复此版本",
+        "restored": "版本已恢复",
+        "restoreFailed": "无法恢复此版本，请重试。",
+        "op": {
+          "create": "{author} 创建了页面",
+          "update": "{author} 编辑了页面"
+        },
+        "preview": "预览",
+        "restoreShort": "恢复",
+        "viewing": "正在查看{time}的版本",
+        "backToCurrent": "返回当前版本",
+        "added": "+{count} 行",
+        "removed": "−{count} 行",
+        "viewingBy": "由 {author}",
+        "created": "页面已创建",
+        "edited": "页面已编辑"
+      },
+      "editor": {
+        "body": "页面",
+        "save": "保存",
+        "cancel": "取消",
+        "saved": "页面已保存",
+        "conflict": "有人更改了此页面。重新加载以查看。",
+        "reload": "重新加载",
+        "error": {
+          "tooLarge": "此页面超过 8 KB，请缩短。",
+          "secret": "这看起来像密钥。请将密钥保存在“密钥”中。",
+          "readOnly": "此记忆为只读。",
+          "failed": "无法保存页面，请重试。"
+        }
+      },
+      "remember": {
+        "label": "{place} 需要记住的事",
+        "placeholder": "告诉 {place} 需要记住的事…",
+        "hint": "以你的名字保存为笔记",
+        "send": "保存到记忆",
+        "status": {
+          "secret": "这看起来像密钥。请将密钥保存在“密钥”中。",
+          "readOnly": "此记忆为只读。",
+          "failed": "无法保存，请重试。"
+        },
+        "open": "记住这个…"
+      },
+      "empty": {
+        "title": "{place} 中还没有记忆",
+        "titleDm": "与 {place} 还没有记忆",
+        "description": "智能体会把学到的内容保存在这里，并在每次回复前阅读。",
+        "titleCompany": "还没有公司记忆",
+        "openCompany": "打开公司记忆 · {count, plural, other {# 个页面}}"
+      },
+      "source": {
+        "thread": "打开话题“{label}”",
+        "threadGone": "来自话题“{label}”",
+        "outside": "在新标签页中打开 {label}",
+        "outsideText": "来自 {label}",
+        "person": "由 {label} 添加",
+        "import": "从 {label} 导入"
+      },
+      "used": {
+        "label": "使用了 {places} 的记忆 · {count, plural, other {# 个页面}}",
+        "title": "此线程开始时使用的页面",
+        "company": "公司",
+        "removed": "已删除"
+      },
+      "searchError": "无法搜索此记忆。",
+      "searchResults": "搜索结果",
+      "palette": {
+        "heading": "记忆"
+      },
+      "company": {
+        "subtitle": "此项目中每个智能体都知道的内容。",
+        "gateDescription": "公司记忆随频道功能提供：此项目中的每个智能体在每个线程开始时都会读取团队保存在这里的内容。",
+        "title": "记忆",
+        "place": "公司"
+      },
+      "rememberThis": {
+        "label": "记住这个",
+        "saved": "已保存到记忆",
+        "saveTo": "保存到",
+        "dm": "你与 {agent} 的记忆"
+      },
+      "updated": "{author} 更新于 {time}",
+      "updatedAt": "更新于 {time}",
+      "sourceKind": {
+        "thread": "话题",
+        "person": "消息",
+        "outside": "链接",
+        "import": "文件"
+      },
+      "pageCount": "{count, plural, other {# 个页面}}",
+      "companyLink": "公司记忆 · {count, plural, other {# 个页面}}",
+      "companyLinkHint": "这里的智能体也会使用公司记忆。",
+      "group": {
+        "other": "概况",
+        "people": "人员",
+        "decisions": "决策",
+        "workstreams": "项目",
+        "playbooks": "工作方式",
+        "note": "笔记"
+      }
+    },
+    "create": {
+      "title": "创建频道",
+      "description": "此项目中的所有人都可以查看和使用该频道。",
+      "nameLabel": "名称",
+      "namePlaceholder": "marketing",
+      "slugPlaceholder": "channel-name",
+      "descriptionLabel": "描述（可选）",
+      "descriptionPlaceholder": "这个频道的用途",
+      "submit": "创建频道",
+      "created": "频道已创建",
+      "nameRequired": "请添加名称。",
+      "invalidName": "名称中至少要有一个字母或数字。",
+      "slugTaken": "<link>#{slug}</link> 已存在。",
+      "failed": "无法创建频道。请重试。",
+      "renameTitle": "重命名频道",
+      "renameDescription": "频道链接会随名称一起改变。",
+      "save": "保存",
+      "renamed": "频道已重命名",
+      "renameFailed": "无法重命名频道。请重试。",
+      "descriptionPrivate": "只有你添加的人可以查看和使用该频道。",
+      "privateLabel": "私密",
+      "privateHint": "只有受邀成员可以看到它。",
+      "privateUnavailable": "此工作区尚未开放私密频道。",
+      "privateLimits": "私密会对其他人隐藏该频道。代码更改（git 分支）和代理自身的工具不是私密的。"
+    },
+    "view": {
+      "welcomeTitle": "欢迎来到 #{name}",
+      "welcomeEmpty": "在 #{name} 中开始第一个话题。每条消息都会开始一个新话题。",
+      "welcomeStart": "这里是 #{name} 的开始。",
+      "dmIntro": "这段对话只在你和 {agent} 之间。",
+      "today": "今天",
+      "yesterday": "昨天",
+      "openThread": "打开话题",
+      "replyInThread": "在话题中回复",
+      "lastReply": "最后回复 {time}",
+      "working": "{agent} 正在处理…",
+      "agentFallback": "智能体",
+      "authorFallback": "某人",
+      "loadEarlier": "加载更早的话题",
+      "messageChannel": "发消息到 #{name}",
+      "messageAgent": "发消息给 {agent}",
+      "threadsEmptyTitle": "还没有话题",
+      "threadsEmpty": "你开始的话题会显示在这里。",
+      "loadError": "无法加载此频道。",
+      "threadsLoadError": "无法加载话题。",
+      "retry": "重试",
+      "notFound": "此频道不存在。",
+      "notFoundHint": "链接可能有误，或者有人重命名了该频道。",
+      "openDefault": "打开 #{name}",
+      "archivedTitle": "#{name} 已归档。",
+      "archivedHint": "取消归档后，可以再次在这里阅读和开始话题。",
+      "archivedLocked": "只有频道创建者或项目管理员可以取消归档。",
+      "unarchive": "取消归档频道",
+      "unarchived": "频道已取消归档",
+      "unarchiveFailed": "无法取消归档频道。请重试。",
+      "dmFailed": "无法打开此对话。",
+      "archive": "归档频道",
+      "archiveTitle": "归档 #{name}？",
+      "archiveDescription": "该频道会从所有成员的侧边栏中消失。它的话题会保留，频道创建者或项目管理员可以取消归档。",
+      "archived": "频道已归档",
+      "archiveFailed": "无法归档频道。请重试。",
+      "threadTitle": "话题",
+      "closeThread": "关闭话题",
+      "sendFailed": "无法开始话题。请重试。",
+      "replies": "{count, plural, other {# 条回复}}",
+      "replyPlaceholder": "回复…",
+      "tab": {
+        "chat": "聊天",
+        "threads": "话题",
+        "files": "文件",
+        "memory": "记忆",
+        "apps": "应用",
+        "links": "链接",
+        "triggers": "触发器"
+      },
+      "empty": {
+        "files": {
+          "title": "还没有文件",
+          "description": "在 {place} 中分享的文件会显示在这里。",
+          "action": "上传文件"
+        },
+        "memory": {
+          "title": "还没有记忆",
+          "description": "智能体为 {place} 记住的内容会显示在这里。",
+          "action": "添加记忆"
+        },
+        "apps": {
+          "title": "还没有应用",
+          "description": "在 {place} 中构建的应用会显示在这里。"
+        },
+        "links": {
+          "title": "还没有链接",
+          "description": "在 {place} 的线程中分享的链接会显示在这里。固定一个链接即可将其提供给频道中的每个智能体。"
+        },
+        "triggers": {
+          "title": "还没有触发器",
+          "description": "触发器会按计划或在事件发生时在 {place} 中开启话题。",
+          "action": "新建触发器"
+        }
+      },
+      "channelDetails": "#{name} 详情",
+      "roster": "{people} · {agents}",
+      "rosterPeople": "{count, plural, other {# 人}}",
+      "rosterAgents": "{count, plural, other {# 个智能体}}",
+      "copyLink": "复制话题链接",
+      "linkCopied": "链接已复制",
+      "notice": {
+        "unreachable": "与此话题的计算机失去连接。你发送的消息会排队，直到重新连接。",
+        "unreachableMidTurn": "在一轮对话仍未结束时与此话题的计算机失去连接。你发送的消息会继续排队，直到它响应。",
+        "stalled": "唤醒此话题的计算机比平时更久。你发送的消息已排队。",
+        "starting": "正在启动此话题的计算机。你的消息会自动发送。",
+        "idle": "此话题的计算机正在休眠。你的下一条消息会唤醒它并送达。",
+        "waking": "正在唤醒此话题的计算机。你发送的消息会排队并自动发出。"
+      },
+      "boot": {
+        "restart": "重启话题"
+      },
+      "links": {
+        "add": "添加链接",
+        "addDescription": "向 {place} 添加链接。",
+        "urlLabel": "URL",
+        "titleLabel": "标题（可选）",
+        "titlePlaceholder": "它是什么",
+        "invalidUrl": "请输入有效的链接，例如 example.com。",
+        "addFailed": "无法添加链接，请重试。",
+        "limit": "此频道已固定 200 个链接。请先取消固定一个。",
+        "addLimit": "此频道已添加 200 个链接。请先移除一个。",
+        "added": "添加时间",
+        "remove": "移除链接",
+        "removeTitle": "移除此链接？",
+        "removeDescription": "{link} 将从 {place} 中移除，对所有人生效。",
+        "removed": "已移除链接",
+        "removeFailed": "无法移除链接，请重试。",
+        "loadError": "无法加载链接。",
+        "pinnedLabel": "已固定",
+        "pin": "固定",
+        "unpin": "取消固定",
+        "pinnedToast": "已固定链接",
+        "unpinnedToast": "已取消固定链接",
+        "pinFailed": "无法固定链接，请重试。",
+        "unpinFailed": "无法取消固定链接，请重试。",
+        "search": "搜索链接",
+        "show": "显示",
+        "all": "全部",
+        "sharedBy": "分享者",
+        "earlier": "更早",
+        "pinHint": "固定它。频道中的每个智能体都会读取已固定的链接。",
+        "unpinHint": "取消固定。智能体将不再读取它。",
+        "copyLink": "复制链接",
+        "linkCopied": "已复制链接",
+        "openThread": "打开话题",
+        "noMatch": "没有匹配的链接"
+      },
+      "appsLoadError": "无法加载应用。",
+      "triggers": {
+        "loadError": "无法加载触发器。",
+        "privateNote": "触发器无法发布到私有频道。请改为在线程中设置提醒。"
+      },
+      "reply": "回复",
+      "rosterTitlePeople": "成员",
+      "rosterTitleAgents": "智能体",
+      "viewAllMembers": "查看全部成员",
+      "agentThreads": "{count} 个话题",
+      "threadFilter": {
+        "search": "搜索话题",
+        "filter": "筛选",
+        "clear": "清除",
+        "clearFilters": "清除筛选",
+        "noMatch": "没有匹配的话题",
+        "noMatchHint": "试试其他搜索，或清除筛选。",
+        "remove": "移除筛选 {facet}：{value}",
+        "status": "状态",
+        "startedBy": "发起人",
+        "agent": "智能体",
+        "activity": "活动",
+        "any": "全部",
+        "anyone": "所有人",
+        "me": "我",
+        "anyAgent": "所有智能体",
+        "anyTime": "任意时间",
+        "statusValue": {
+          "working": "进行中",
+          "needsYou": "需要你处理",
+          "failed": "失败",
+          "done": "已完成"
+        },
+        "activityValue": {
+          "today": "今天",
+          "last7": "最近 7 天",
+          "last30": "最近 30 天"
+        }
+      },
+      "setup": {
+        "label": "设置 {name}",
+        "addAgents": "添加智能体",
+        "addAgentsHint": "选择谁在这里回复",
+        "invite": "邀请成员",
+        "inviteHint": "把团队拉进来",
+        "remember": "记住一件事",
+        "rememberHint": "每个智能体都会读的笔记"
+      },
+      "allAgents": "所有智能体",
+      "join": "加入频道",
+      "joined": "你已加入 #{name}。",
+      "joinFailed": "无法加入频道，请重试。"
+    },
+    "details": {
+      "about": "关于",
+      "members": "成员",
+      "name": "频道名称",
+      "description": "描述",
+      "noDescription": "添加描述",
+      "created": "创建于",
+      "editField": "编辑{field}",
+      "archiveTitle": "归档此频道",
+      "archiveHint": "它会从所有成员的侧边栏中移除。其中的话题会保留。",
+      "archive": "归档",
+      "find": "查找成员或智能体",
+      "search": "搜索",
+      "you": "（你）",
+      "noMatches": "没有与“{query}”匹配的结果。",
+      "defaultAgent": "默认智能体",
+      "defaultAgentHint": "回复未指定智能体的消息。在“自定义 › 智能体”中为整个项目设置。",
+      "visibility": "可见范围",
+      "visibilityProject": "项目中的所有人",
+      "defaultTag": "默认",
+      "agentTag": "智能体",
+      "makeDefault": "设为默认",
+      "removeAgent": "从 #{name} 移除",
+      "agentMenu": "{agent} 选项",
+      "agentsFailed": "无法更新智能体，请重试。",
+      "defaultSet": "{agent} 现在是 #{name} 的默认智能体。",
+      "agentRemoved": "已将 {agent} 从 #{name} 移除。",
+      "channelDefaultHint": "回复未指定智能体的消息。可在“成员”中更改。",
+      "personRemoved": "已将 {person} 从 #{name} 移除。",
+      "peopleFailed": "无法更新成员，请重试。",
+      "personMenu": "{person} 选项",
+      "removePerson": "从 #{name} 移除",
+      "leave": "退出频道",
+      "left": "你已退出 #{name}。",
+      "leaveTitle": "退出此频道",
+      "leaveHint": "退出后仍可阅读，并可随时重新加入。",
+      "visibilityPrivate": "仅限成员",
+      "privateNote": "只有成员可以看到 #{name}。",
+      "makePrivate": "设为私密",
+      "makePrivateTitle": "将 #{name} 设为私密？",
+      "makePrivateWho": "只有成员可以看到 #{name} 的线程、文件、记忆和链接。发起过线程或添加过链接的人都会成为成员。",
+      "makePrivateLeave": "其他人将失去访问权限。之后退出的成员也会失去访问权限，包括自己的线程。",
+      "makePrivateFinal": "之后无法再设为公开。已复制到外部的文件保持不变。",
+      "makePrivateTriggers": "{count, plural, other {# 个触发器发布到这里，它们将停止运行。}}",
+      "madePrivate": "#{name} 现在是私密频道",
+      "leaveHintPrivate": "你将失去对其线程、文件和记忆的访问权限，包括你自己的线程。需要成员重新添加你。",
+      "leavePrivateTitle": "退出 #{name}？",
+      "addMembers": "添加成员",
+      "privateLimits": "私密会对其他人隐藏该频道。代码更改（git 分支）和代理自身的工具不是私密的。"
+    },
+    "folder": {
+      "memory": "记忆",
+      "loadError": "无法加载此文件夹",
+      "memoryNoteChannel": "{place} 中的智能体记住的内容。智能体会在每个线程开始时阅读这些内容。",
+      "memoryNoteDm": "{agent} 在此私信中记住的内容。它会在每个线程开始时阅读这些内容。",
+      "off": {
+        "title": "开启 Drive",
+        "description": "{place} 的文件和记忆保存在 Drive 中。在 Feature flags 中开启 Volumes 即可使用。",
+        "descriptionMember": "{place} 的文件和记忆保存在 Drive 中。请项目管理员开启它。",
+        "action": "打开 Feature flags"
+      }
+    },
+    "onboarding": {
+      "reenabled": "频道关闭期间开始的会话都在这里。",
+      "intro": {
+        "title": "欢迎使用频道",
+        "channels": "频道按团队组织工作。",
+        "threads": "每条新消息都会开始一个话题。",
+        "memory": "智能体会记住每个频道达成的共识。",
+        "gotIt": "知道了"
+      },
+      "getStarted": {
+        "dismiss": "关闭",
+        "channel": "为团队创建一个频道",
+        "done": "已完成"
+      }
+    },
+    "addMembers": {
+      "title": "向 #{name} 添加成员",
+      "description": "从项目中选择成员和智能体。",
+      "search": "搜索成员和智能体",
+      "selected": "已选成员",
+      "people": "成员",
+      "agents": "智能体",
+      "unpick": "移除 {member}",
+      "cancel": "取消",
+      "inviteByEmail": "通过邮箱邀请",
+      "confirmEmpty": "添加成员",
+      "confirm": "添加{what}",
+      "peopleCount": "{count} 人",
+      "agentsCount": "{count} 个智能体",
+      "both": "{people}和{agents}",
+      "added": "已向 #{name} 添加{what}。",
+      "failed": "无法添加成员。请重试。",
+      "peopleFailed": "无法添加成员。请重试。",
+      "agentsFailed": "无法添加智能体。请重试。",
+      "peopleFailedAgentsAdded": "已向 #{name} 添加{what}。无法添加成员：他们仍处于选中状态。",
+      "agentsFailedPeopleAdded": "已向 #{name} 添加{what}。无法添加智能体：它们仍处于选中状态。",
+      "allAdded": "项目里的所有人都已经在这里。",
+      "noMatches": "没有与“{query}”匹配的项。"
+    }
   }
 }

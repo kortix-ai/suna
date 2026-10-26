@@ -101,7 +101,7 @@ These are **mandatory** for their job. Import from the paths below; never reimpl
 | Inline alerts | `packages/ui/src/primitives/info-banner.tsx` | `tone` + optional `icon` + `title` |
 | Search fields | `packages/ui/src/primitives/input-group.tsx` | `InputGroupSearch` + `InputGroupSearchInput`. Every input is the one field surface: `bg-popover`, border, `rounded-md`. `variant="popover"` is deprecated and ignored (D4j) |
 | Forms in panels | `packages/ui/src/primitives/field.tsx` | `Field`, `FieldLabel`, `FieldGroup`, `FieldDescription` |
-| Empty / error states | `packages/ui/src/primitives/empty-state.tsx`, `error-state.tsx` | `size="sm"` in customize sections. An empty state is one muted line and an optional hint, with no icon tile and no card (D4g) |
+| Empty / error states | `packages/ui/src/primitives/empty-state.tsx`, `empty-art.tsx`, `error-state.tsx` | The empty state of a tab, a folder or a list: `EmptyState` + `media={<EmptyArt icon={…} />}` (stacked cards, one Phosphor glyph), one title, one sentence, outline buttons with icons. No other decorative tile (D14, 2026-10-25) |
 | Confirm destructive | `packages/ui/src/primitives/confirm-dialog.tsx` | **Mandatory before any destructive mutation** — including `DropdownMenuItem variant="destructive"` items (see `secrets-view.tsx` delete, `sections/view/gateway/gateway-keys.tsx` revoke). Only accepted alternative: the inline Cancel/confirm button swap used for channel disconnects (`channels-view.tsx`). Never mutate from a single click |
 | Loading / pending spinners | `packages/ui/src/primitives/loading.tsx` | `import Loading from '@kortix/ui/loading'` — default `size-4`; use `className="size-4 shrink-0"` in dense buttons. **Never** `CircleNotchIcon`, `SpinnerIcon`, or other icons |
 
@@ -117,7 +117,7 @@ Paths are relative to `apps/web/src/`. The values and the copy are in `kortix-br
 | A list loads inside a mounted shell and the row shape is known | `Skeleton` rows | A spinner for a list |
 | A page or list failed to load | `ErrorState size="sm"` (`packages/ui/src/primitives/error-state.tsx`) inside the host panel, with a "Try again" action | `InfoBanner` for a load failure, or a wrapper box around it |
 | An inline alert in a view that did load (a connection, a warning) | `InfoBanner` with a `tone` | A hand-colored banner |
-| A list has no items | `EmptyState size="sm"` unmodified: one muted line and an optional hint. A first-run list adds `PixelKortixMark` (`packages/ui/src/primitives/pixel-kortix-mark.tsx`) as a sibling above it | An icon tile, a card, a `className` override of its slots, a new prop |
+| A tab, a folder or a list has no items | `EmptyState` with `media={<EmptyArt icon={…} />}` (`packages/ui/src/primitives/empty-art.tsx`): one title, one sentence, `Button variant="outline" size="sm"` actions with a leading icon. An empty folder passes no glyph. A search with no result uses `MagnifyingGlassIcon` (D14) | Any other icon tile or illustration, a card, a forked or restyled `EmptyArt` / `EmptyState`, a new prop |
 | People and agents with a role | `AccessRow` (`packages/ui/src/access/access/access-row.tsx`), grouped "People" then "Agents" under a `Label` | A hand-built `li`, a kind badge, a `[&>div]:` selector |
 | Any form field, in a panel or in a `Modal` | `Field`, `FieldLabel`, `FieldGroup` (`packages/ui/src/primitives/field.tsx`) | A raw `<label>` beside an `Input` |
 | A mutation finished | `successToast` or `errorToast` from `packages/ui/src/primitives/toast.tsx` | An inline "Saved" line |
@@ -146,7 +146,8 @@ relative to `apps/web/src/features/workspace/` unless given in full.
 | **`packages/ui/src/primitives/menu-recipe.ts`** | Menu row grid; `MENU_PANEL_STATIC` and `FLOATING_PANEL_SURFACE` are instant, `MENU_PANEL` and `FLOATING_PANEL` are for the hover card (D4a) |
 | **`apps/web/src/components/projects/project-pending-screen.tsx`** | The page-level loading mark (D4h) |
 | **`packages/ui/src/primitives/dot-matrix/session-dot-matrix.tsx`** | The session busy mark (D4f) |
-| **`packages/ui/src/primitives/pixel-kortix-mark.tsx`** | First-run empty state art (D4g) |
+| **`packages/ui/src/primitives/empty-art.tsx`** | The empty state art of a tab, a folder or a list, composed in `packages/ui/src/workspace/spaces/space-links.tsx` (D14) |
+| **`packages/ui/src/primitives/pixel-kortix-mark.tsx`** | The pixel Kortix mark (D4g). Not an empty-state art for a tab, a folder or a list (D14) |
 | **`apps/web/src/features/workspace/command-palette.tsx`** | Instant palette, `PaletteEmpty` one-line empty state |
 
 **Shells:** `capabilities/shared/capability-page-shell.tsx` (`CapabilityPageShell`)
@@ -687,7 +688,7 @@ Standard content block (`agents-page.tsx` pattern):
 - ✅ Color → `kortix-*` + semantic tokens. ❌ `text-emerald-600`, `bg-amber-500`.
 - ✅ Clickable elements → `cursor: pointer`; disabled keep `default`. ❌ `cursor-default` on an interactive element.
 - ✅ Meta separators → `InlineMeta` or `text-muted-foreground/40` bullet (`&bull;`). ❌ inconsistent separators.
-- ✅ Empty → `EmptyState size="sm"`, one muted line (D4g). ❌ centered `<p>` only, ❌ a forked or restyled `EmptyState` (Q23).
+- ✅ Empty tab, folder or list → `EmptyState` + `EmptyArt` (one Phosphor glyph), one title, one sentence, outline buttons with icons (D14). ❌ centered `<p>` only, ❌ any other decorative tile or illustration, ❌ a forked or restyled `EmptyState` / `EmptyArt` (Q23).
 - ✅ Alerts → `InfoBanner`. ❌ hand-rolled colored banners.
 - ✅ Pending spinners → `Loading` from `loading.tsx`. ❌ `CircleNotchIcon`, `SpinnerIcon`, or any `animate-spin` icon.
 - ✅ Motion → count the frequency first; `transition-colors duration-fast` on hover, `ease-out` on enter/exit, `active:scale-[0.96]` on press. ❌ `transition-all`, ❌ bare `transition`, ❌ `ease-in`, ❌ anything over 300ms in product UI.
@@ -701,7 +702,7 @@ Standard content block (`agents-page.tsx` pattern):
 1. **Load [`kortix-brand`](../kortix-brand/SKILL.md)** — the value allowlists and the motion budget. Then this file, then [`make-interfaces-feel-better`](../../../apps/web/.agents/skills/make-interfaces-feel-better/SKILL.md).
 2. **Read the closest reference view** from the table above. Copy structure, spacing, and primitives — don't invent a new layout dialect.
 3. Skim `/design-system` and `packages/ui/src/primitives/` for anything not covered by the reference.
-4. Compose: the page shell (`CapabilityPageShell`) → search/panel/row/disclosure/table → `Badge` + `Hint` + `Modal` + `toast` + `Loading` + `EmptyState`. Buttons in a row → `ButtonGroup`. **Never** `SectionCard`, `List`, or `CircleNotchIcon`.
+4. Compose: the page shell (`CapabilityPageShell`) → search/panel/row/disclosure/table → `Badge` + `Hint` + `Modal` + `toast` + `Loading` + `EmptyState` + `EmptyArt`. Buttons in a row → `ButtonGroup`. **Never** `SectionCard`, `List`, or `CircleNotchIcon`.
 5. Status → tinted icon tile. Color → `kortix-*`. Radius → `rounded-md` (panel), `rounded-none` (flush trigger). Elevation → overlays only; flat border for in-flow panels.
 6. **Motion last.** Count how often a user sees it. Constant → none. Otherwise ≤300ms, `ease-out`, named property, token duration, reduced-motion variant.
 7. New primitive? Tokens only, tiny API, add to `/design-system`.

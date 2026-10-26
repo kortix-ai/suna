@@ -16,6 +16,7 @@ import {
   waitForLocalPostgrest,
   localTopology,
   parseSupabaseEnvironment,
+  withWorktreeDatabase,
 } from "../src/core/local-stack";
 import { runExitCode } from "../src/core/result";
 
@@ -147,6 +148,30 @@ describe("ke2e local profile", () => {
         ports: { web: 22000, api: 70_000, gateway: 22090 },
       }),
     ).toThrow("invalid local API port");
+  });
+
+  it("points a branch-database worktree at its own database, never 54322/postgres", () => {
+    const primary = "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+    const marker = (dbMode: "shared" | "branch") => ({
+      path: "/repo-feature",
+      branch: "feature-x",
+      dbMode,
+      ports: { web: 22000, api: 22008, gateway: 22090 },
+    });
+    const slots = { "feature-x": { path: "/repo-feature" } };
+    const branch = withWorktreeDatabase(
+      localTopology("/repo-feature", marker("branch"), slots),
+      { DB_URL: primary },
+    );
+    expect(branch.DB_URL).toBe("postgresql://postgres:postgres@127.0.0.1:54322/kortix_wt_feature_x");
+    expect(branch.DB_URL).not.toMatch(/\/postgres$/);
+    expect(
+      withWorktreeDatabase(localTopology("/repo-feature", marker("shared"), slots), { DB_URL: primary })
+        .DB_URL,
+    ).toBe(primary);
+    expect(() =>
+      withWorktreeDatabase(localTopology("/repo-feature", marker("branch")), { DB_URL: primary }),
+    ).toThrow("missing from the worktree registry");
   });
 
   it("allows only unauthenticated loopback HTTP health targets", () => {

@@ -83,6 +83,7 @@ try/catching every call.
 | preview candidates (live ports) | `GET .../sessions/:sid/previews` |
 | public shares | `GET/POST/DELETE .../sessions/:sid/public-shares[/:id]` |
 | public transcript share (`{ transcript: true }`, one live link per session; `findActiveTranscriptShare`) + anonymous read (`getPublicSessionShare`, `getPublicSessionShareMessages`, by `share_id` or `kps_` token) | `POST .../sessions/:sid/public-shares` · `GET /v1/public/session-shares/:ref[/messages]` |
+| spaces: channels + the caller's DMs (experimental, `project_channels` flag) | `GET/POST /v1/projects/:id/spaces`, `PATCH .../spaces/:spaceId`, `POST .../spaces/dm` → `projects-client/spaces.ts`, facade `project(id).spaces.{list,create,update,dm}`, hooks `useProjectSpaces` / `useCreateProjectSpace` / `useUpdateProjectSpace` / `useOpenProjectDm`; a space's threads: `GET .../sessions?space_id=` (`listProjectSessions({ spaceId })`, `useProjectSessions(id, { spaceId })`) ✅ |
 
 ### 5b. Token minting (CLI PATs) — Kortix-as-a-Backend-critical  ✅
 | op | REST | SDK |

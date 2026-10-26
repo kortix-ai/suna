@@ -24,14 +24,17 @@ import { ProjectManifestUpgradeAlert } from './footer/project-manifest-upgrade-a
 import { ProjectSandboxAlert } from './footer/project-sandbox-alert';
 import { ProjectRepositoryDisconnectedAlert } from '../repository-disconnected';
 import { CustomizeSidebarModal } from './customize-sidebar-modal';
+import { ProjectMemoryNavItem } from './footer/project-memory-nav';
 import { ProjectNavItems } from './project-nav-items';
 import { ProjectSessionList } from './project-session-list';
+import { ProjectSpacesNav } from './project-spaces-nav';
 import { useIsCreatingProjectSession } from '../../internal/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '../../internal/hooks/projects/use-new-project-session';
 import { useIsMobile } from '../../internal/hooks';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../internal/lib/utils';
 import { useBillingAccountId } from '../../internal/stores/billing-account-context';
+import { useFeatureFlag } from '@kortix/sdk/react';
 import {
   MagnifyingGlassIcon,
   NavigationArrowIcon,
@@ -76,6 +79,8 @@ export function ProjectSidebar({
   const [connectMcpOpen, setConnectMcpOpen] = useState(false);
 
   const accountId = useBillingAccountId();
+  // Channels replace New session and the session list (fail-closed: off until the project answers).
+  const channels = useFeatureFlag(projectId, 'project_channels').enabled;
 
   // Open the project composer without creating a durable session.
   const newSession = useNewProjectSession(projectId);
@@ -118,6 +123,7 @@ export function ProjectSidebar({
   }, [isMobile, setOpenMobile, onOpenSearch]);
 
   useEffect(() => {
+    if (channels) return;
     const handler = (event: KeyboardEvent) => {
       if (
         (event.metaKey || event.ctrlKey) &&
@@ -131,7 +137,7 @@ export function ProjectSidebar({
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [handleNewSession]);
+  }, [channels, handleNewSession]);
 
   return (
     <>
@@ -272,36 +278,44 @@ export function ProjectSidebar({
         <div className="flex h-full min-h-0 flex-col space-y-2">
           <SidebarGroup className="py-0">
             <SidebarMenu>
-              <SidebarMenuItem>
-                {creatingSession ? (
-                  <SidebarMenuButton
-                    disabled
-                    aria-busy
-                    className="group/menu-button text-sidebar-foreground relative"
-                  >
-                    {newSessionRowBody}
-                  </SidebarMenuButton>
-                ) : (
-                  <SidebarMenuButton
-                    asChild
-                    className="group/menu-button text-sidebar-foreground relative"
-                  >
-                    <Link href={uiRoutes().project(projectId)} prefetch onClick={handleNewSessionClick}>
+              {channels ? null : (
+                <SidebarMenuItem>
+                  {creatingSession ? (
+                    <SidebarMenuButton
+                      disabled
+                      aria-busy
+                      className="group/menu-button text-sidebar-foreground relative"
+                    >
                       {newSessionRowBody}
-                    </Link>
-                  </SidebarMenuButton>
-                )}
-              </SidebarMenuItem>
+                    </SidebarMenuButton>
+                  ) : (
+                    <SidebarMenuButton
+                      asChild
+                      className="group/menu-button text-sidebar-foreground relative"
+                    >
+                      <Link href={uiRoutes().project(projectId)} prefetch onClick={handleNewSessionClick}>
+                        {newSessionRowBody}
+                      </Link>
+                    </SidebarMenuButton>
+                  )}
+                </SidebarMenuItem>
+              )}
 
               {/* Customize, Apps, Files: order and
                   visibility come from "Customize sidebar". They moved up here
                   from the footer (Jay, 2026-10-12) to keep the footer short. */}
+              {/* Channels on: the Company memory, the first row under the new-thread slot. */}
+              {channels ? <ProjectMemoryNavItem projectId={projectId} /> : null}
               <ProjectNavItems projectId={projectId} />
             </SidebarMenu>
           </SidebarGroup>
 
           <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
-            <ProjectSessionList projectId={projectId} />
+            {channels ? (
+              <ProjectSpacesNav projectId={projectId} />
+            ) : (
+              <ProjectSessionList projectId={projectId} />
+            )}
           </SidebarGroup>
 
           <SidebarGroup className="mt-auto">
