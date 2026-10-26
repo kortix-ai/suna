@@ -108,6 +108,17 @@ export async function loadMcpConnector(projectId: string, slug: string) {
   return { connectorId: row.connectorId, accountId: row.accountId, url, needsSignIn };
 }
 
+/** Load a native Shopify connector (verifies provider). */
+export async function loadShopifyConnector(projectId: string, slug: string) {
+  const [row] = await db
+    .select({ connectorId: connectors.connectorId, accountId: connectors.accountId, providerType: connectors.providerType })
+    .from(connectors)
+    .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
+    .limit(1);
+  if (!row || row.providerType !== 'shopify') return null;
+  return { connectorId: row.connectorId, accountId: row.accountId };
+}
+
 /** Load a Composio connector's toolkit slug + id (verifies provider). */
 export async function loadComposioConnector(projectId: string, slug: string) {
   const [row] = await db
@@ -190,8 +201,8 @@ export type ConnectLinkEligibility =
       ok: true;
       connectorId: string;
       app: string;
-      /** Which provider mints the hosted page behind the link. `mcp`: Kortix's own OAuth sign-in. */
-      providerType: 'pipedream' | 'composio' | 'mcp';
+      /** Which provider mints the hosted page behind the link. `mcp`/`shopify`: Kortix's own sign-in. */
+      providerType: 'pipedream' | 'composio' | 'mcp' | 'shopify';
     }
   /** No connector with this slug on the project. The manifest really is missing it. */
   | { ok: false; reason: 'no_such_connector' }
@@ -238,6 +249,10 @@ export async function connectLinkEligibility(
       return { ok: false, reason: 'unsupported_provider', providerType: row.providerType };
     }
     return { ok: true, connectorId: row.connectorId, app: mcpAppForUrl(url)?.slug ?? slug, providerType: 'mcp' };
+  }
+  // Shopify connects through Kortix's own form and Shopify's OAuth grant.
+  if (row.providerType === 'shopify') {
+    return { ok: true, connectorId: row.connectorId, app: 'shopify', providerType: 'shopify' };
   }
   if (row.providerType !== 'pipedream' && row.providerType !== 'composio') {
     return {

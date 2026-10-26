@@ -88,7 +88,7 @@ export function catalogInstallDraft(
 
 /**
  * What makes two profiles the same way in: the MCP server URL, the managed
- * toolkit, the API document, or the GraphQL endpoint. Install answers the
+ * toolkit, the API document, the GraphQL endpoint, or native Shopify. Install answers the
  * existing profile for a way the project already has (a second one needs
  * `as_new_profile`). Null: nothing to match on (a channel, a computer).
  */
@@ -109,7 +109,9 @@ export function connectorIdentity(c: {
           ? c.endpoint
           : provider === 'openapi' || provider === 'postman' || provider === 'http'
             ? typeof c.spec === 'string' ? c.spec : null
-            : null;
+            : provider === 'shopify'
+              ? 'admin' // one way: each account picks its store
+              : null;
   if (!value) return null;
   return `${provider}:${normalizeEndpoint(value)}`;
 }

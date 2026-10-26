@@ -1286,7 +1286,21 @@
         "email_channel": {
           "name": "メールチャネル",
           "description": "エージェントに Resend のメール受信箱を用意します。届いたメールでセッションを開始・継続し、エージェントはその受信箱で読み、返信し、送信します。自分の Resend API キーとドメインを使います。"
+        },
+        "project_channels": {
+          "name": "チャンネル",
+          "description": "作業をチャンネルで整理します。チャンネルでの新しいメッセージや、エージェントとのダイレクトメッセージはそれぞれスレッドを開始します。サイドバーのセッション一覧を置き換えます。"
         }
+      },
+      "channelsSwitch": {
+        "onTitle": "{project} でチャンネルをオンにしますか？",
+        "onBody": "このプロジェクトの全員に、セッション一覧の代わりにチャンネルとダイレクトメッセージが表示されます。既存のセッションはすべて #general に移動します。いつでもオフにでき、何も削除されません。",
+        "drive": "ドライブもオンにして、チャンネルでファイルを使えるようにする。",
+        "turnOn": "オンにする",
+        "cancel": "キャンセル",
+        "offTitle": "チャンネルをオフにしますか？",
+        "offBody": "チャンネル、メモリ、ファイル、リンクは保存されたままです。全員にセッション一覧が戻ります。",
+        "turnOff": "オフにする"
       }
     },
     "upgrades": {
@@ -1777,7 +1791,14 @@
     "underMore": "その他",
     "sidebarEmpty": "ここに項目をドラッグするとサイドバーに表示されます。",
     "moreEmpty": "ここに項目をドラッグすると「その他」に移動します。",
-    "moreCaption": "「その他」の項目は、ナビゲーション下の「その他」メニューから開けます。"
+    "moreCaption": "「その他」の項目は、ナビゲーション下の「その他」メニューから開けます。",
+    "spaces": {
+      "channels": "チャンネル",
+      "directMessages": "ダイレクトメッセージ",
+      "addChannel": "チャンネルを追加",
+      "loadError": "チャンネルを読み込めませんでした。",
+      "newAgent": "新しいエージェント"
+    }
   },
   "dashboard": {
     "title": "ダッシュボード",
@@ -20405,7 +20426,9 @@
       "textd529a06f471c": "利用可能な場合、Resend はこのプレフィックスを作成します。例：",
       "text51cfb12fffdd": "受信メールを受け取りました",
       "text7c0a91e5b3d2": "未分類のツール",
-      "text9d2b6f0c41ae": "ツールとルール"
+      "text9d2b6f0c41ae": "ツールとルール",
+      "openThreadAction": "スレッドを開く",
+      "untitledThread": "無題のスレッド"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -20578,7 +20601,10 @@
     "copySessionTitle": "セッションのタイトル",
     "copyAction": "{label}をコピー",
     "copied": "{label}をコピーしました",
-    "copyFailed": "クリップボードにコピーできませんでした"
+    "copyFailed": "クリップボードにコピーできませんでした",
+    "threads": "スレッド",
+    "recentThreads": "最近のスレッド",
+    "searchChannels": "チャンネル、スレッド、コマンドを検索…"
   },
   "personalWelcome": {
     "dismiss": "閉じる",
@@ -20764,7 +20790,12 @@
     "overlapAllow": "それでも新しい実行を開始",
     "perHour": "1時間あたり",
     "perDay": "1日あたり",
-    "noLimit": "上限なし"
+    "noLimit": "上限なし",
+    "postTo": "投稿先",
+    "postToHint": "実行ごとにそこで新しいスレッドが始まります。チャンネルがない場合、実行は #{channel} に入ります。",
+    "postToNone": "チャンネルなし",
+    "postToUnavailable": "利用できないチャンネル",
+    "postToPrivate": "非公開: トリガーはここに投稿できません"
   },
   "gatewayAccess": {
     "heroTitle": "このプロジェクトのモデルをどこでも使う",
@@ -21101,6 +21132,7 @@
     "wayMcpOneClick": "{name} 自身の MCP サーバーに接続します。{name} にサインインするだけです。",
     "wayMcpSetup": "{name} 自身の MCP サーバーに接続します。自分の OAuth アプリか API キーが必要で、インストール後に設定します。",
     "wayApi": "{name} の {kind} に直接接続します。インストール後に API キーかトークンでアカウントを追加します。",
+    "wayShopify": "自分の Shopify アプリを通じてストアの Admin API に接続し、注文と顧客も扱えます。アカウントを追加するには、ストア、アプリの Client ID とシークレットを入力し、Shopify でアプリを承認します。",
     "installsWay": "{kind} でインストール",
     "wayOneClick": "ワンクリック",
     "wayRecommended": "おすすめ",
@@ -21112,6 +21144,7 @@
     "toolsSource_directory": "公開 MCP ディレクトリのツール名です。サインイン後にサーバーが全一覧を返します。",
     "toolsSource_composio": "Composio が一覧にしたもの。",
     "toolsSource_spec": "OpenAPI ドキュメントの操作です。",
+    "toolsSource_kortix": "これらのアクションは Kortix がアプリの API で直接実行します。",
     "toolsSource_none": "インストール後に一覧されます。",
     "toolsShowAll": "{count} 件すべて表示",
     "toolsAfterInstall": "この {kind} はインストール後にツールを一覧します。",
@@ -22557,25 +22590,54 @@
   },
   "connectAppForm": {
     "title": "Shopify を接続",
-    "description": "Kortix は組織内の Shopify アプリを通じてストアにアクセスします。認証情報を一度入力してください。",
+    "description": "Kortix は Shopify アプリを通じてストアにアクセスします。",
     "loading": "フォームを読み込んでいます…",
     "stepsTitle": "Shopify でアプリを作成",
     "step1": "<link>Shopify Dev Dashboard</link> を開き、ストアを所有する組織でアプリを作成します。",
     "step2": "アプリのバージョンで、エージェントに必要な Admin API スコープを選択し、バージョンをリリースします。",
     "step3": "アプリをストアにインストールします。",
     "step4": "アプリの設定から Client ID と Client secret をコピーします。",
+    "oauthStep2": "Distribution で Custom distribution を選び、このストアを選択します。",
+    "oauthStep3": "アプリの設定で、下のリダイレクト URL と Admin API スコープを追加し、バージョンをリリースします。",
+    "protectedDataNote": "このストア向けの Custom distribution なら、アプリは Shopify の審査なしで注文データと顧客データを利用できます。",
     "sameOrganization": "アプリとストアは同じ Shopify 組織に属している必要があります。",
+    "sharedAppNote": "ストアを入力してください。その後、Shopify で Kortix のアプリを承認するよう求められます。",
     "storeLabel": "ストア",
     "clientIdLabel": "Client ID",
     "clientSecretLabel": "Client secret",
+    "redirectUrlLabel": "リダイレクト URL",
+    "scopesLabel": "Admin API スコープ",
     "submit": "{app} を接続",
+    "continueToApp": "{app} に進む",
     "connecting": "接続しています…",
+    "openingApp": "{app} を開いています…",
     "missingFields": "ストア、Client ID、Client secret を入力してください。",
+    "missingStore": "ストアを入力してください。",
     "failed": "接続できませんでした。接続を確認して、もう一度お試しください。",
     "secretNote": "Kortix はシークレットを、接続を実行する Composio に送信します。Kortix はコピーを保持しません。",
+    "oauthSecretNote": "Kortix はシークレットを暗号化して保存します。エージェントには見えません。",
     "connectedTitle": "{app} が接続されました",
     "connectedDescription": "Kortix は {store} にアクセスできます。このウィンドウを閉じてかまいません。",
     "closeWindow": "このウィンドウを閉じてかまいません。",
+    "callbackErrorTitle": "{app} に接続できませんでした",
+    "errorInvalidSignature": "Shopify の応答が署名の検証に失敗しました。もう一度お試しください。",
+    "errorShopMismatch": "Shopify は入力したものとは別のストアを承認しました。ストアを確認して、もう一度お試しください。",
+    "errorTokenExchange": "Shopify が Client ID または Client secret を拒否しました。両方を確認して、もう一度お試しください。",
+    "errorAppMissing": "アプリの Client ID と Client secret が見つかりません。入力して、もう一度お試しください。",
+    "errorAuthorizationFailed": "Shopify でアプリが承認されませんでした。もう一度お試しください。",
+    "errorStrategyChanged": "サインイン中にコネクタのサインイン設定が変更されました。Kortix で接続をやり直してください。",
+    "errorUnknown": "Shopify がサインインを完了しませんでした。もう一度お試しください。",
+    "accessTitle": "ストアへのアクセス",
+    "accessCatalog": "カタログ",
+    "accessOrders": "注文",
+    "accessCustomers": "顧客",
+    "accessInventory": "在庫",
+    "accessOk": "利用可能",
+    "accessBlocked": "未承認",
+    "accessMissingScope": "スコープ不足",
+    "accessError": "確認できません",
+    "accessBlockedHelp": "このアプリは保護された顧客データについて承認されていません。このストア向けの Custom distribution のアプリなら、審査なしで利用できます。アプリの配布をこのストア向けの Custom distribution に変更するか、そのようなアプリを作成してください。その後、アカウントを再接続してください。公開アプリには先に Shopify の審査が必要です。",
+    "accessMissingScopeHelp": "このデータに必要な Admin API スコープがアプリにありません。スコープを追加してバージョンをリリースし、アカウントを再接続してください。",
     "expiredTitle": "このリンクは期限切れです",
     "invalidTitle": "このリンクは使用できません",
     "staleTitle": "このリンクは置き換えられました",
@@ -22862,5 +22924,448 @@
     "jump": "#{number} の応答に移動",
     "unavailable": "この応答は読み込まれた履歴にはありません。",
     "loadError": "応答を読み込めませんでした。もう一度お試しください。"
+  },
+  "spaces": {
+    "memory": {
+      "search": "メモリを検索",
+      "pagesLabel": "メモリのページ",
+      "all": {
+        "title": "すべて",
+        "explainCompany": "Kortix メモリ: エージェントがこのプロジェクトについて知っていること。毎回の返信の前に読みます。",
+        "explainChannel": "Kortix メモリ: エージェントが {place} について知っていること。毎回の返信の前に読みます。",
+        "explainDm": "Kortix メモリ: エージェントがあなたと {place} について知っていること。毎回の返信の前に読みます。"
+      },
+      "allPages": "すべてのページ",
+      "noMatches": "「{query}」に一致するページはありません。",
+      "loadError": "このメモリを読み込めませんでした。",
+      "pageLoadError": "このページを読み込めませんでした。",
+      "retry": "再試行",
+      "close": "閉じる",
+      "author": {
+        "system": "Kortix",
+        "unknown": "メンバー",
+        "agent": "エージェント"
+      },
+      "edit": "編集",
+      "delete": "削除",
+      "deleteTitle": "「{title}」を削除しますか？",
+      "deleteDescription": "元に戻せません。",
+      "deleted": "ページを削除しました",
+      "deleteFailed": "ページを削除できませんでした。もう一度お試しください。",
+      "relatedPages": "関連ページ",
+      "emptyPage": "このページにはまだ内容がありません。",
+      "history": {
+        "title": "履歴",
+        "description": "「{title}」へのすべての変更（新しい順）。",
+        "loadError": "履歴を読み込めませんでした。",
+        "current": "現在",
+        "restore": "このバージョンに戻す",
+        "restored": "バージョンを復元しました",
+        "restoreFailed": "このバージョンを復元できませんでした。もう一度お試しください。",
+        "op": {
+          "create": "{author} がページを作成",
+          "update": "{author} がページを編集"
+        },
+        "preview": "プレビュー",
+        "restoreShort": "復元",
+        "viewing": "{time}のバージョンを表示中",
+        "backToCurrent": "現在の版に戻る",
+        "added": "+{count}行",
+        "removed": "−{count}行",
+        "viewingBy": "作成者: {author}",
+        "created": "ページを作成",
+        "edited": "ページを編集"
+      },
+      "editor": {
+        "body": "ページ",
+        "save": "保存",
+        "cancel": "キャンセル",
+        "saved": "ページを保存しました",
+        "conflict": "誰かがこのページを変更しました。再読み込みして確認してください。",
+        "reload": "再読み込み",
+        "error": {
+          "tooLarge": "このページは 8 KB を超えています。短くしてください。",
+          "secret": "シークレットのようです。シークレットは「シークレット」に保管してください。",
+          "readOnly": "このメモリは読み取り専用です。",
+          "failed": "ページを保存できませんでした。もう一度お試しください。"
+        }
+      },
+      "remember": {
+        "label": "{place} に覚えてほしいこと",
+        "placeholder": "{place} に覚えてほしいことを入力…",
+        "hint": "あなたの名前でメモとして保存されます",
+        "send": "メモリに保存",
+        "status": {
+          "secret": "シークレットのようです。シークレットは「シークレット」に保管してください。",
+          "readOnly": "このメモリは読み取り専用です。",
+          "failed": "保存できませんでした。もう一度お試しください。"
+        },
+        "open": "これを覚える…"
+      },
+      "empty": {
+        "title": "{place} のメモリはまだありません",
+        "titleDm": "{place} とのメモリはまだありません",
+        "description": "エージェントは学んだことをここに保存し、毎回の返信の前に読みます。",
+        "titleCompany": "会社のメモリはまだありません",
+        "openCompany": "会社のメモリを開く · {count, plural, other {# ページ}}"
+      },
+      "source": {
+        "thread": "スレッド「{label}」を開く",
+        "threadGone": "スレッド「{label}」から",
+        "outside": "{label} を新しいタブで開く",
+        "outsideText": "{label} から",
+        "person": "{label} が追加",
+        "import": "{label} からインポート"
+      },
+      "used": {
+        "label": "{places} のメモリを使用 · {count, plural, other {# ページ}}",
+        "title": "このスレッドの開始時に読み込んだページ",
+        "company": "会社",
+        "removed": "削除済み"
+      },
+      "searchError": "このメモリを検索できませんでした。",
+      "searchResults": "検索結果",
+      "palette": {
+        "heading": "メモリ"
+      },
+      "company": {
+        "subtitle": "このプロジェクトのすべてのエージェントが知っていること。",
+        "gateDescription": "会社のメモリはチャンネルの機能です。このプロジェクトのすべてのエージェントは、チームがここに保存した内容を持ってスレッドを始めます。",
+        "title": "メモリ",
+        "place": "会社"
+      },
+      "rememberThis": {
+        "label": "これを覚える",
+        "saved": "メモリに保存しました",
+        "saveTo": "保存先",
+        "dm": "{agent} とのあなたのメモリ"
+      },
+      "updated": "{time}に{author}が更新",
+      "updatedAt": "{time}に更新",
+      "sourceKind": {
+        "thread": "スレッド",
+        "person": "メッセージ",
+        "outside": "リンク",
+        "import": "ファイル"
+      },
+      "pageCount": "{count, plural, other {# ページ}}",
+      "companyLink": "会社のメモリ · {count, plural, other {# ページ}}",
+      "companyLinkHint": "ここのエージェントは会社のメモリも使います。",
+      "group": {
+        "other": "概要",
+        "people": "メンバー",
+        "decisions": "決定事項",
+        "workstreams": "プロジェクト",
+        "playbooks": "仕事の進め方",
+        "note": "メモ"
+      }
+    },
+    "create": {
+      "title": "チャンネルを作成",
+      "description": "このプロジェクトの全員がチャンネルを表示して使用できます。",
+      "nameLabel": "名前",
+      "namePlaceholder": "marketing",
+      "slugPlaceholder": "channel-name",
+      "descriptionLabel": "説明（任意）",
+      "descriptionPlaceholder": "このチャンネルの用途",
+      "submit": "チャンネルを作成",
+      "created": "チャンネルを作成しました",
+      "nameRequired": "名前を入力してください。",
+      "invalidName": "名前には英字か数字を 1 文字以上含めてください。",
+      "slugTaken": "<link>#{slug}</link> はすでにあります。",
+      "failed": "チャンネルを作成できませんでした。もう一度お試しください。",
+      "renameTitle": "チャンネル名を変更",
+      "renameDescription": "チャンネルのリンクは名前と一緒に変わります。",
+      "save": "保存",
+      "renamed": "チャンネル名を変更しました",
+      "renameFailed": "チャンネル名を変更できませんでした。もう一度お試しください。",
+      "descriptionPrivate": "追加したメンバーだけがチャンネルを表示して使用できます。",
+      "privateLabel": "プライベート",
+      "privateHint": "招待されたメンバーだけが表示できます。",
+      "privateUnavailable": "このワークスペースではプライベートチャンネルはまだ利用できません。",
+      "privateLimits": "プライベートにすると、他の人からチャンネルが見えなくなります。コードの変更（git ブランチ）とエージェント自身のツールはプライベートになりません。"
+    },
+    "view": {
+      "welcomeTitle": "#{name} へようこそ",
+      "welcomeEmpty": "#{name} で最初のスレッドを始めましょう。メッセージごとに新しいスレッドが始まります。",
+      "welcomeStart": "ここが #{name} の始まりです。",
+      "dmIntro": "この会話はあなたと {agent} だけのものです。",
+      "today": "今日",
+      "yesterday": "昨日",
+      "openThread": "スレッドを開く",
+      "replyInThread": "スレッドで返信",
+      "lastReply": "最終返信 {time}",
+      "working": "{agent} が作業中…",
+      "agentFallback": "エージェント",
+      "authorFallback": "メンバー",
+      "loadEarlier": "以前のスレッドを読み込む",
+      "messageChannel": "#{name} へのメッセージ",
+      "messageAgent": "{agent} へのメッセージ",
+      "threadsEmptyTitle": "スレッドはまだありません",
+      "threadsEmpty": "始めたスレッドがここに表示されます。",
+      "loadError": "このチャンネルを読み込めませんでした。",
+      "threadsLoadError": "スレッドを読み込めませんでした。",
+      "retry": "もう一度試す",
+      "notFound": "このチャンネルは存在しません。",
+      "notFoundHint": "リンクが間違っているか、誰かがチャンネル名を変更した可能性があります。",
+      "openDefault": "#{name} を開く",
+      "archivedTitle": "#{name} はアーカイブされています。",
+      "archivedHint": "アーカイブを解除すると、ここでまたスレッドを読んだり始めたりできます。",
+      "archivedLocked": "アーカイブを解除できるのは、作成者またはプロジェクト管理者のみです。",
+      "unarchive": "チャンネルのアーカイブを解除",
+      "unarchived": "チャンネルのアーカイブを解除しました",
+      "unarchiveFailed": "チャンネルのアーカイブを解除できませんでした。もう一度お試しください。",
+      "dmFailed": "この会話を開けませんでした。",
+      "archive": "チャンネルをアーカイブ",
+      "archiveTitle": "#{name} をアーカイブしますか？",
+      "archiveDescription": "チャンネルはすべてのメンバーのサイドバーから消えます。スレッドは残り、作成者またはプロジェクト管理者がアーカイブを解除できます。",
+      "archived": "チャンネルをアーカイブしました",
+      "archiveFailed": "チャンネルをアーカイブできませんでした。もう一度お試しください。",
+      "threadTitle": "スレッド",
+      "closeThread": "スレッドを閉じる",
+      "sendFailed": "スレッドを開始できませんでした。もう一度お試しください。",
+      "replies": "{count, plural, other {#件の返信}}",
+      "replyPlaceholder": "返信…",
+      "tab": {
+        "chat": "チャット",
+        "threads": "スレッド",
+        "files": "ファイル",
+        "memory": "メモリ",
+        "apps": "アプリ",
+        "links": "リンク",
+        "triggers": "トリガー"
+      },
+      "empty": {
+        "files": {
+          "title": "まだファイルはありません",
+          "description": "{place} で共有されたファイルがここに表示されます。",
+          "action": "ファイルをアップロード"
+        },
+        "memory": {
+          "title": "まだメモリはありません",
+          "description": "エージェントが {place} について覚えていることがここに表示されます。",
+          "action": "メモリを追加"
+        },
+        "apps": {
+          "title": "まだアプリはありません",
+          "description": "{place} で作られたアプリがここに表示されます。"
+        },
+        "links": {
+          "title": "まだリンクはありません",
+          "description": "{place} のスレッドで共有されたリンクがここに表示されます。固定すると、チャンネルのすべてのエージェントに渡されます。"
+        },
+        "triggers": {
+          "title": "まだトリガーはありません",
+          "description": "トリガーはスケジュールやイベントに応じて {place} でスレッドを開始します。",
+          "action": "新しいトリガー"
+        }
+      },
+      "channelDetails": "#{name} の詳細",
+      "roster": "{people} · {agents}",
+      "rosterPeople": "{count, plural, other {#人}}",
+      "rosterAgents": "{count, plural, other {#件のエージェント}}",
+      "copyLink": "スレッドへのリンクをコピー",
+      "linkCopied": "リンクをコピーしました",
+      "notice": {
+        "unreachable": "このスレッドのコンピューターとの接続が切れました。送信したメッセージは再接続までキューに入ります。",
+        "unreachableMidTurn": "ターンが開いたまま、このスレッドのコンピューターとの接続が切れました。送信したメッセージは応答があるまでキューに残ります。",
+        "stalled": "このスレッドのコンピューターの起動にいつもより時間がかかっています。送信したメッセージはキューに入ります。",
+        "starting": "このスレッドのコンピューターを起動しています。メッセージは自動で送信されます。",
+        "idle": "このスレッドのコンピューターはスリープ中です。次のメッセージで起動し、配信されます。",
+        "waking": "このスレッドのコンピューターを起動しています。送信したメッセージはキューに入り、自動で送信されます。"
+      },
+      "boot": {
+        "restart": "スレッドを再起動"
+      },
+      "links": {
+        "add": "リンクを追加",
+        "addDescription": "{place} にリンクを追加します。",
+        "urlLabel": "URL",
+        "titleLabel": "タイトル（任意）",
+        "titlePlaceholder": "内容",
+        "invalidUrl": "example.com のような有効なリンクを入力してください。",
+        "addFailed": "リンクを追加できませんでした。もう一度お試しください。",
+        "limit": "このチャンネルにはすでに 200 件の固定リンクがあります。先に 1 件の固定を解除してください。",
+        "addLimit": "このチャンネルにはすでに 200 件の追加済みリンクがあります。先に 1 件を削除してください。",
+        "added": "追加日",
+        "remove": "リンクを削除",
+        "removeTitle": "このリンクを削除しますか？",
+        "removeDescription": "{link} は全員の {place} から削除されます。",
+        "removed": "リンクを削除しました",
+        "removeFailed": "リンクを削除できませんでした。もう一度お試しください。",
+        "loadError": "リンクを読み込めませんでした。",
+        "pinnedLabel": "固定済み",
+        "pin": "固定",
+        "unpin": "固定解除",
+        "pinnedToast": "リンクを固定しました",
+        "unpinnedToast": "リンクの固定を解除しました",
+        "pinFailed": "リンクを固定できませんでした。もう一度お試しください。",
+        "unpinFailed": "リンクの固定を解除できませんでした。もう一度お試しください。",
+        "search": "リンクを検索",
+        "show": "表示",
+        "all": "すべて",
+        "sharedBy": "共有者",
+        "earlier": "それ以前",
+        "pinHint": "固定します。チャンネルのすべてのエージェントが固定リンクを読みます。",
+        "unpinHint": "固定を解除します。エージェントは読まなくなります。",
+        "copyLink": "リンクをコピー",
+        "linkCopied": "リンクをコピーしました",
+        "openThread": "スレッドを開く",
+        "noMatch": "一致するリンクはありません"
+      },
+      "appsLoadError": "アプリを読み込めませんでした。",
+      "triggers": {
+        "loadError": "トリガーを読み込めませんでした。",
+        "privateNote": "トリガーは非公開チャンネルに投稿できません。代わりにスレッドでリマインダーを設定してください。"
+      },
+      "reply": "返信",
+      "rosterTitlePeople": "メンバー",
+      "rosterTitleAgents": "エージェント",
+      "viewAllMembers": "すべてのメンバーを表示",
+      "agentThreads": "{count}件のスレッド",
+      "threadFilter": {
+        "search": "スレッドを検索",
+        "filter": "フィルター",
+        "clear": "クリア",
+        "clearFilters": "フィルターをクリア",
+        "noMatch": "一致するスレッドはありません",
+        "noMatchHint": "別の検索を試すか、フィルターをクリアしてください。",
+        "remove": "フィルター {facet} を解除: {value}",
+        "status": "ステータス",
+        "startedBy": "開始した人",
+        "agent": "エージェント",
+        "activity": "アクティビティ",
+        "any": "すべて",
+        "anyone": "全員",
+        "me": "自分",
+        "anyAgent": "すべてのエージェント",
+        "anyTime": "すべての期間",
+        "statusValue": {
+          "working": "作業中",
+          "needsYou": "要対応",
+          "failed": "失敗",
+          "done": "完了"
+        },
+        "activityValue": {
+          "today": "今日",
+          "last7": "過去 7 日間",
+          "last30": "過去 30 日間"
+        }
+      },
+      "setup": {
+        "label": "{name} を設定",
+        "addAgents": "エージェントを追加",
+        "addAgentsHint": "ここで応答する相手を選ぶ",
+        "invite": "メンバーを招待",
+        "inviteHint": "チームを招く",
+        "remember": "記憶させる",
+        "rememberHint": "すべてのエージェントが読むメモ"
+      },
+      "allAgents": "すべてのエージェント",
+      "join": "チャンネルに参加",
+      "joined": "#{name} に参加しました。",
+      "joinFailed": "チャンネルに参加できませんでした。もう一度お試しください。"
+    },
+    "details": {
+      "about": "概要",
+      "members": "メンバー",
+      "name": "チャンネル名",
+      "description": "説明",
+      "noDescription": "説明を追加",
+      "created": "作成日",
+      "editField": "{field}を編集",
+      "archiveTitle": "このチャンネルをアーカイブ",
+      "archiveHint": "すべてのメンバーのサイドバーから消えます。スレッドは残ります。",
+      "archive": "アーカイブ",
+      "find": "メンバーやエージェントを検索",
+      "search": "検索",
+      "you": "（あなた）",
+      "noMatches": "「{query}」に一致するメンバーはいません。",
+      "defaultAgent": "デフォルトのエージェント",
+      "defaultAgentHint": "エージェントを指定していないメッセージに応答します。プロジェクト全体の設定はカスタマイズ › エージェントで行います。",
+      "visibility": "閲覧できる人",
+      "visibilityProject": "プロジェクトの全員",
+      "defaultTag": "デフォルト",
+      "agentTag": "エージェント",
+      "makeDefault": "デフォルトにする",
+      "removeAgent": "#{name} から外す",
+      "agentMenu": "{agent} のオプション",
+      "agentsFailed": "エージェントを更新できませんでした。もう一度お試しください。",
+      "defaultSet": "{agent} が #{name} のデフォルトになりました。",
+      "agentRemoved": "{agent} を #{name} から外しました。",
+      "channelDefaultHint": "エージェントを指定しないメッセージに答えます。メンバーで変更できます。",
+      "personRemoved": "{person} を #{name} から外しました。",
+      "peopleFailed": "メンバーを更新できませんでした。もう一度お試しください。",
+      "personMenu": "{person} のオプション",
+      "removePerson": "#{name} から外す",
+      "leave": "チャンネルを抜ける",
+      "left": "#{name} を抜けました。",
+      "leaveTitle": "このチャンネルを抜ける",
+      "leaveHint": "抜けた後も閲覧でき、いつでも再参加できます。",
+      "visibilityPrivate": "メンバーのみ",
+      "privateNote": "#{name} はメンバーだけが表示できます。",
+      "makePrivate": "プライベートにする",
+      "makePrivateTitle": "#{name} をプライベートにしますか？",
+      "makePrivateWho": "#{name} のスレッド、ファイル、メモリ、リンクはメンバーだけが表示できます。スレッドを開始した人やリンクを追加した人はメンバーになります。",
+      "makePrivateLeave": "それ以外の人はアクセスできなくなります。後で抜けたメンバーも、自分のスレッドを含めてアクセスできなくなります。",
+      "makePrivateFinal": "公開に戻すことはできません。外にコピーしたファイルはそのまま残ります。",
+      "makePrivateTriggers": "{count, plural, other {# 件のトリガーがここに投稿しています。実行は停止します。}}",
+      "madePrivate": "#{name} はプライベートになりました",
+      "leaveHintPrivate": "自分のスレッドを含め、スレッド、ファイル、メモリにアクセスできなくなります。再参加するにはメンバーに追加してもらう必要があります。",
+      "leavePrivateTitle": "#{name} を抜けますか？",
+      "addMembers": "メンバーを追加",
+      "privateLimits": "プライベートにすると、他の人からチャンネルが見えなくなります。コードの変更（git ブランチ）とエージェント自身のツールはプライベートになりません。"
+    },
+    "folder": {
+      "memory": "メモリ",
+      "loadError": "このフォルダを読み込めませんでした",
+      "memoryNoteChannel": "{place} のエージェントが覚えていること。エージェントはスレッドの開始時に毎回これを読みます。",
+      "memoryNoteDm": "{agent} がこの DM から覚えていること。スレッドの開始時に毎回これを読みます。",
+      "off": {
+        "title": "Drive をオンにする",
+        "description": "{place} のファイルとメモリは Drive にあります。使うには Feature flags で Volumes をオンにしてください。",
+        "descriptionMember": "{place} のファイルとメモリは Drive にあります。プロジェクト管理者にオンにするよう依頼してください。",
+        "action": "Feature flags を開く"
+      }
+    },
+    "onboarding": {
+      "reenabled": "チャンネルがオフの間に始まったセッションはここにあります。",
+      "intro": {
+        "title": "チャンネルへようこそ",
+        "channels": "チャンネルはチームごとに作業をまとめます。",
+        "threads": "新しいメッセージごとにスレッドが始まります。",
+        "memory": "エージェントは各チャンネルで決まったことを覚えます。",
+        "gotIt": "OK"
+      },
+      "getStarted": {
+        "dismiss": "閉じる",
+        "channel": "チーム用のチャンネルを作成する",
+        "done": "完了"
+      }
+    },
+    "addMembers": {
+      "title": "#{name} にメンバーを追加",
+      "description": "プロジェクトのメンバーとエージェントを選択します。",
+      "search": "メンバーとエージェントを検索",
+      "selected": "選択したメンバー",
+      "people": "メンバー",
+      "agents": "エージェント",
+      "unpick": "{member} を外す",
+      "cancel": "キャンセル",
+      "inviteByEmail": "メールで招待",
+      "confirmEmpty": "メンバーを追加",
+      "confirm": "{what}を追加",
+      "peopleCount": "{count}人",
+      "agentsCount": "{count}個のエージェント",
+      "both": "{people}と{agents}",
+      "added": "#{name} に{what}を追加しました。",
+      "failed": "メンバーを追加できませんでした。もう一度お試しください。",
+      "peopleFailed": "メンバーを追加できませんでした。もう一度お試しください。",
+      "agentsFailed": "エージェントを追加できませんでした。もう一度お試しください。",
+      "peopleFailedAgentsAdded": "#{name} に{what}を追加しました。メンバーは追加できませんでした。選択したままです。",
+      "agentsFailedPeopleAdded": "#{name} に{what}を追加しました。エージェントは追加できませんでした。選択したままです。",
+      "allAdded": "プロジェクトの全員がすでに参加しています。",
+      "noMatches": "「{query}」に一致する項目はありません。"
+    }
   }
 }

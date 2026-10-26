@@ -95,6 +95,9 @@ export const LIST_OMITTED_SESSION_METADATA_KEYS = [
   'session_start_timeline',
   'audit_v2',
   'remote_branch',
+  // A channel thread's top message: the list already serves it as the
+  // top-level `first_prompt` field, so the metadata copy is a duplicate.
+  'first_prompt',
 ] as const;
 
 function trimSessionMetadataForList(
@@ -116,6 +119,8 @@ export function serializeSession(
     grants?: SecretGrant[];
     /** Model selected by the durable conversation log, not the creation pin. */
     conversationModel?: string | null;
+    /** `reply_count`: set by a channel or DM thread list only. */
+    replyCount?: number | null;
     /** The viewing user, to compute is_owner / can_manage_*. */
     viewerId?: string;
     /** Viewer can manage the project (account owner/admin, or a project manager). */
@@ -227,6 +232,9 @@ export function serializeSession(
     visibility: row.visibility,
     origin: row.origin,
     parent_session_id: row.parentSessionId ?? null,
+    space_id: row.spaceId ?? null,
+    first_prompt: canAccess && typeof row.metadata?.first_prompt === 'string' ? row.metadata.first_prompt : null,
+    reply_count: canAccess ? (ctx?.replyCount ?? null) : null,
     initiator: row.initiatorType
       ? {
           type: row.initiatorType,

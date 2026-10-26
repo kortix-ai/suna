@@ -339,11 +339,15 @@ export async function markInboxRead(
   target: InboxReadTarget,
   ctx: InboxReadContext = {},
 ): Promise<{ updated: number; unread_count: number }> {
-  const updated =
-    'ids' in target
-      ? await inboxStore().markRead(userId, target.ids)
-      : 'sessionId' in target
-        ? await markSessionNotificationsRead(userId, target.sessionId)
-        : await markWhere(userId);
-  return { updated, unread_count: await unreadCount(userId, ctx) };
+  // `updated` counts only rows the person may see: the drop in their visible
+  // unread count. The raw row count would disclose how many hidden rows (a
+  // private channel they left) they hold.
+  // ponytail: both counts read the newest INBOX_UNREAD_SCAN unread rows, so a
+  // larger backlog under-reports; exact per-row filtering when that matters.
+  const before = await unreadCount(userId, ctx);
+  if ('ids' in target) await inboxStore().markRead(userId, target.ids);
+  else if ('sessionId' in target) await markSessionNotificationsRead(userId, target.sessionId);
+  else await markWhere(userId);
+  const after = await unreadCount(userId, ctx);
+  return { updated: Math.max(0, before - after), unread_count: after };
 }

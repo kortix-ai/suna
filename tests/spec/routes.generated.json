@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 931,
+  "count": 958,
   "routes": [
     {
       "method": "GET",
@@ -1443,6 +1443,10 @@
       "path": "/v1/connectors/projects/:projectId/sessions/:sessionId/connect-requests"
     },
     {
+      "method": "GET",
+      "path": "/v1/connectors/shopify/callback"
+    },
+    {
       "method": "POST",
       "path": "/v1/connectors/webhook/pipedream"
     },
@@ -2668,6 +2672,42 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/memory/layers/:layerKey"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/memory/layers/:layerKey/notes"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/memory/layers/:layerKey/pages"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/memory/layers/:layerKey/pages"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/memory/pages/:pageId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/memory/pages/:pageId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/memory/pages/:pageId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/memory/pages/:pageId/history"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/memory/search"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/model-access"
     },
     {
@@ -2713,6 +2753,14 @@
     {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/onboarding"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/onboarding/channels"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/onboarding/channels/marks"
     },
     {
       "method": "GET",
@@ -3024,6 +3072,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/memory-usage"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/message-authors"
     },
     {
@@ -3245,6 +3297,62 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/snapshots/rebuild"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/spaces"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/spaces"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/spaces/:spaceId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/apps"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/join"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/links"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/links"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/links/:linkId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/links/:linkId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/members"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/members"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/members/:userId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/spaces/dm"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/spaces/private"
     },
     {
       "method": "POST",

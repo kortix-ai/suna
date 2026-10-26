@@ -1282,6 +1282,13 @@
       "when": 1792823946886,
       "tag": "20261024063906_connector_policy_sets",
       "breakpoints": true
+    },
+    {
+      "idx": 183,
+      "version": "7",
+      "when": 1792955176796,
+      "tag": "20261025190616_project_channels",
+      "breakpoints": true
     }
   ]
 }

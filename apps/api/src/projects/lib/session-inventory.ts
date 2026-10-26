@@ -6,6 +6,7 @@ import {
   type SecretGrant,
   type ShareSubject,
 } from '../../connectors/share';
+import { spaceVisibleFor } from '../../shared/space-access';
 import type { projectSessions, sessionSandboxes } from '@kortix/db';
 import { isWarmProjectSession } from './warm-sessions';
 import { sessionRestoreUntil } from '../session-log-purge';
@@ -111,6 +112,8 @@ export function selectSessionRowsForViewer(input: {
   deleted?: boolean;
   /** Now, for the restore window. */
   now?: number;
+  /** The private channels the caller may not see (`hiddenSpaceIds`): their sessions are never listed. */
+  hiddenSpaceIds: ReadonlySet<string>;
 }): { authorized: boolean; items: SessionInventoryItem[] } {
   if (input.scope === 'project' && !input.canManageProject) {
     return { authorized: false, items: [] };
@@ -140,10 +143,12 @@ export function selectSessionRowsForViewer(input: {
         initiatorType: row.initiatorType,
         canManageProject: input.canManageProject,
         accountSessionOversight: input.scope === 'project' && input.accountSessionOversight === true,
+        spaceVisible: spaceVisibleFor(input.hiddenSpaceIds, row.spaceId),
       },
     );
     const access = input.agentPrincipal
-      ? agentSessionStanding(input.boundCredentialSessionId, row, canAccess).visible
+      ? spaceVisibleFor(input.hiddenSpaceIds, row.spaceId) &&
+        agentSessionStanding(input.boundCredentialSessionId, row, canAccess).visible
       : canAccess;
     return { row, canAccess: access, runtimeStatus, deletedAt, deletedBy };
   });

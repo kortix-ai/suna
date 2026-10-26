@@ -143,9 +143,10 @@ describe('loadVisibleSessionsForList (KRTX-532 pool-saturation regression)', () 
     expect(first.canManageSharing).toBe(true);
     // THE REGRESSION: 30 sessions used to cost 30 × (3 reads + owner probe)
     // ≈ 120 statements issued in one parallel fan-out. Batched, the whole list
-    // costs one read per shared input plus one memoized owner probe per
-    // distinct creator: 4 statements total for this fixture.
-    expect(statements).toBe(4);
+    // costs one read per shared input (the caller's hidden private channels
+    // among them) plus one memoized owner probe per distinct creator: 5
+    // statements total for this fixture.
+    expect(statements).toBe(5);
   });
 
   test('invisible sessions are excluded, not errors', async () => {

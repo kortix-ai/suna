@@ -13,6 +13,7 @@ import {
 import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { loadProjectRosterIds } from '../lib/project-access-view';
+import { privateSpaceMemberIds } from '../../shared/space-access';
 import { buildSessionParticipants, sessionAudienceIds } from '../lib/session-audience';
 
 const ParticipantSchema = z.object({
@@ -95,13 +96,15 @@ export function registerSessionParticipantsRoutes(): void {
           if (roleDelta !== 0) return roleDelta;
           return (identities.get(a)?.email ?? a).localeCompare(identities.get(b)?.email ?? b);
       });
+      // A private channel's thread opens only for the channel's members.
+      const channelMembers = await privateSpaceMemberIds(visible.row.spaceId);
       const audienceIds = sessionAudienceIds({
         ownerId,
         visibility,
         grants: visible.grants,
         rosterIds,
         groupMembers,
-      });
+      }).filter((id) => !channelMembers || channelMembers.has(id));
 
       return c.json(
         buildSessionParticipants({ viewerId: loaded.userId, ownerId, audienceIds, identities, canReadMembers }),

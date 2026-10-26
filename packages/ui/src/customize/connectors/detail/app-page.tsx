@@ -303,7 +303,7 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
     // The way the user picked is the way installed.
     const mcpUrl = surface.kind === 'mcp' && surface.oneClick ? surface.url : null;
     const askName = () =>
-      ask({ target, way: { kind: surface.kind, oneClick: surface.oneClick }, connectors, app, asNewProfile });
+      ask({ target, way: { kind: surface.kind, oneClick: surface.oneClick, provider: target.provider }, connectors, app, asNewProfile });
     if (!mcpUrl) {
       askName();
       return;
@@ -569,7 +569,7 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
                     ) : null}
                   </span>
                   <span className="text-muted-foreground block text-xs text-pretty">
-                    {wayDescription(t, { kind: surface.kind, oneClick: surface.oneClick }, resolved.name)}
+                    {wayDescription(t, { kind: surface.kind, oneClick: surface.oneClick, provider: surface.target?.provider }, resolved.name)}
                   </span>
                 </span>
                 {surface.variantId && detail ? (

@@ -44,7 +44,7 @@ import { saveResult } from '../connector-gateway/result-spill.ts';
 import { resolveProjectId } from '../project-link.ts';
 import { tokenRejectedLine } from '../command-helpers.ts';
 
-const PROVIDERS = ['composio', 'pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http'];
+const PROVIDERS = ['composio', 'pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http', 'shopify'];
 
 // Built-in channels are never added/connected through the connector — the
 // platform materializes their connectors automatically after the channel is
@@ -164,6 +164,7 @@ function connectorDraftFromFlags(
   const url = stringValue(flags.url);
   const transport = stringValue(flags.transport);
   const endpoint = stringValue(flags.endpoint);
+  const shop = stringValue(flags.shop);
   const baseUrl = stringValue(flags['base-url']);
   const spec = stringValue(flags.spec);
   const credential = stringValue(flags.credential);
@@ -175,6 +176,7 @@ function connectorDraftFromFlags(
   if (url) draft.url = url;
   if (transport) draft.transport = transport;
   if (endpoint) draft.endpoint = endpoint;
+  if (shop) draft.shop = shop;
   if (baseUrl) draft.baseUrl = baseUrl;
   if (spec) draft.spec = spec;
   if (credential) draft.credential = credential;

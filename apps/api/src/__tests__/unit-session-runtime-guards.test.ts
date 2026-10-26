@@ -18,6 +18,7 @@ import {
   projectSecrets,
   projectSessionRuntimeContexts,
   projectSessions,
+  projectSpaces,
   projects,
   sessionLifecycleCommands,
   sessionSandboxes,
@@ -202,6 +203,7 @@ function resetState() {
     parentSessionId: null,
     initiatorType: null,
     initiatorId: null,
+    spaceId: null,
     secretsAllowlist: null,
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
@@ -805,6 +807,19 @@ mock.module('../shared/db', () => ({
             }),
             limit: async () => pairRows(),
           }),
+          // A fork or child reads its source's private channel
+          // (`inheritedPrivateSpace`): no session of this fake is in one.
+          // Any other join stays unsupported, as before.
+          innerJoin: (joined: unknown) => {
+            if (joined !== projectSpaces) throw new TypeError('innerJoin is not supported by this fake');
+            return {
+              where: (_predicate?: unknown) => ({
+                then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) =>
+                  Promise.resolve([]).then(resolve, reject),
+                limit: async () => [],
+              }),
+            };
+          },
           where: (predicate?: unknown) => ({
           then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) => {
             Promise.resolve(table === projectSecrets ? secretRows : table === sessionSandboxes ? sessionSandboxRows : []).then(resolve, reject);
@@ -962,6 +977,7 @@ mock.module('../shared/db', () => ({
             parentSessionId: values.parentSessionId ?? null,
             initiatorType: values.initiatorType ?? null,
             initiatorId: values.initiatorId ?? null,
+            spaceId: values.spaceId ?? null,
             secretsAllowlist: values.secretsAllowlist ?? null,
             requiredConnectors: null,
             connectorBindingsInheritUnbound: values.connectorBindingsInheritUnbound ?? false,

@@ -282,7 +282,7 @@ async function authorizeMemberSession(c: Context, scope: { accountId: string; pr
   if (typeof (visible.row.metadata as Record<string, unknown> | null)?.deletedAt === 'string') {
     return { ok: false as const, response: c.json({ error: 'Session is deleted' }, 409) };
   }
-  await resolveAndAuthorizeAgent(c, target, home.projectId, null, visible.row.agentName);
+  await resolveAndAuthorizeAgent(c, target, home.projectId, null, visible.row.agentName, undefined, visible.row.spaceId);
   return { ok: true as const, session: visible.row, projectId: home.projectId, userId: target.userId };
 }
 

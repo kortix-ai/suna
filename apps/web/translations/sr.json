@@ -1286,7 +1286,21 @@
         "email_channel": {
           "name": "Kanal e-pošte",
           "description": "Dajte agentu poštansko sanduče na Resend-u: dolazna pošta pokreće i nastavlja sesije, a agent čita, odgovara i šalje iz sandučeta. Koristite sopstveni Resend API ključ i domen."
+        },
+        "project_channels": {
+          "name": "Kanali",
+          "description": "Organizujte rad u kanalima. Svaka nova poruka u kanalu ili u direktnoj poruci sa agentom započinje nit. Zamenjuje listu sesija u bočnoj traci."
         }
+      },
+      "channelsSwitch": {
+        "onTitle": "Укључити канале за {project}?",
+        "onBody": "Сви у овом пројекту добијају канале и директне поруке уместо листе сесија. Све постојеће сесије прелазе у #general. Можете их искључити било када; ништа се не брише.",
+        "drive": "Укључи и Drive, да канали добију датотеке.",
+        "turnOn": "Укључи",
+        "cancel": "Откажи",
+        "offTitle": "Искључити канале?",
+        "offBody": "Канали, меморија, датотеке и линкови остају сачувани. Листа сесија се враћа свима.",
+        "turnOff": "Искључи"
       }
     },
     "upgrades": {
@@ -1777,7 +1791,14 @@
     "underMore": "Više",
     "sidebarEmpty": "Prevuci stavku ovde da bi se prikazala u bočnoj traci.",
     "moreEmpty": "Prevuci stavku ovde da bi je premestio u Više.",
-    "moreCaption": "Stavke u Više otvaraju se iz menija Više, ispod navigacije."
+    "moreCaption": "Stavke u Više otvaraju se iz menija Više, ispod navigacije.",
+    "spaces": {
+      "channels": "Канали",
+      "directMessages": "Директне поруке",
+      "addChannel": "Додај канал",
+      "loadError": "Учитавање канала није успело.",
+      "newAgent": "Нови агент"
+    }
   },
   "dashboard": {
     "title": "Контролна табла",
@@ -20405,7 +20426,9 @@
       "textd529a06f471c": "Resend ће направити овај префикс када буде доступан, на пример",
       "text51cfb12fffdd": "Primljen dolazni imejl",
       "text7c0a91e5b3d2": "Некласификовани алати",
-      "text9d2b6f0c41ae": "Алати и правила"
+      "text9d2b6f0c41ae": "Алати и правила",
+      "openThreadAction": "Отвори тему",
+      "untitledThread": "Тема без наслова"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -20578,7 +20601,10 @@
     "copySessionTitle": "наслов сесије",
     "copyAction": "Копирај {label}",
     "copied": "Копирано: {label}",
-    "copyFailed": "Копирање у оставу није успело"
+    "copyFailed": "Копирање у оставу није успело",
+    "threads": "Теме",
+    "recentThreads": "Недавне теме",
+    "searchChannels": "Претражи канале, теме, команде..."
   },
   "personalWelcome": {
     "dismiss": "Затвори",
@@ -20764,7 +20790,12 @@
     "overlapAllow": "Ипак покрени ново извршавање",
     "perHour": "Po satu",
     "perDay": "Po danu",
-    "noLimit": "Bez ograničenja"
+    "noLimit": "Bez ograničenja",
+    "postTo": "Објави у",
+    "postToHint": "Свако покретање тамо започиње нову тему. Без канала, покретања иду у #{channel}.",
+    "postToNone": "Без канала",
+    "postToUnavailable": "Недоступан канал",
+    "postToPrivate": "Приватно: окидачи не могу да објављују овде"
   },
   "gatewayAccess": {
     "heroTitle": "Користите моделе овог пројекта било где",
@@ -21101,6 +21132,7 @@
     "wayMcpOneClick": "Povezuje se na sopstveni MCP server aplikacije {name}. Samo se prijaviš na {name}.",
     "wayMcpSetup": "Povezuje se na sopstveni MCP server aplikacije {name}. Potrebna je tvoja OAuth aplikacija ili API ključ, podešava se posle instalacije.",
     "wayApi": "Povezuje se direktno na {kind} aplikacije {name}. Posle instalacije dodaj nalog sa API ključem ili tokenom.",
+    "wayShopify": "Povezuje se na Admin API tvoje prodavnice preko tvoje Shopify aplikacije, sa porudžbinama i kupcima. Dodaj nalog: prodavnicu, Client ID i secret aplikacije, pa odobri aplikaciju u Shopify-ju.",
     "installsWay": "Instalira preko {kind}",
     "wayOneClick": "Jedan klik",
     "wayRecommended": "Preporučeno",
@@ -21112,6 +21144,7 @@
     "toolsSource_directory": "Nazivi alata iz javnog MCP direktorijuma. Server navodi sve posle prijave.",
     "toolsSource_composio": "Navodi ih Composio.",
     "toolsSource_spec": "Operacije iz njegovog OpenAPI dokumenta.",
+    "toolsSource_kortix": "Kortix sam izvršava ove akcije, preko API-ja aplikacije.",
     "toolsSource_none": "Navode se posle instalacije.",
     "toolsShowAll": "Prikaži svih {count}",
     "toolsAfterInstall": "Ova {kind} navodi svoje alate posle instalacije.",
@@ -22557,25 +22590,54 @@
   },
   "connectAppForm": {
     "title": "Повежите Shopify",
-    "description": "Kortix приступа вашој продавници преко Shopify апликације у вашој организацији. Унесите њене податке за пријаву једном.",
+    "description": "Kortix приступа вашој продавници преко Shopify апликације.",
     "loading": "Учитавање обрасца…",
     "stepsTitle": "Направите апликацију у Shopify-ју",
     "step1": "Отворите <link>Shopify Dev Dashboard</link> и направите апликацију у организацији која поседује вашу продавницу.",
     "step2": "У верзији апликације изаберите Admin API опсеге који су потребни вашим агентима, па објавите верзију.",
     "step3": "Инсталирајте апликацију у своју продавницу.",
     "step4": "Копирајте Client ID и Client secret из подешавања апликације.",
+    "oauthStep2": "У одељку Distribution изаберите Custom distribution и одаберите ову продавницу.",
+    "oauthStep3": "У конфигурацији апликације додајте URL за преусмеравање и Admin API опсеге испод, па објавите верзију.",
+    "protectedDataNote": "Уз Custom distribution за ову продавницу апликација добија податке о поруџбинама и купцима без Shopify провере.",
     "sameOrganization": "Апликација и продавница морају бити у истој Shopify организацији.",
+    "sharedAppNote": "Унесите продавницу. Shopify ће затим тражити да одобрите Kortix апликацију за њу.",
     "storeLabel": "Продавница",
     "clientIdLabel": "Client ID",
     "clientSecretLabel": "Client secret",
+    "redirectUrlLabel": "URL за преусмеравање",
+    "scopesLabel": "Admin API опсези",
     "submit": "Повежите {app}",
+    "continueToApp": "Наставите на {app}",
     "connecting": "Повезивање…",
+    "openingApp": "Отвара се {app}…",
     "missingFields": "Унесите продавницу, Client ID и Client secret.",
+    "missingStore": "Унесите продавницу.",
     "failed": "Повезивање није успело. Проверите везу и покушајте поново.",
     "secretNote": "Kortix шаље тајну Composio-у, који одржава везу. Kortix не чува копију.",
+    "oauthSecretNote": "Kortix чува тајну шифровану. Агенти је никада не виде.",
     "connectedTitle": "{app} је повезан",
     "connectedDescription": "Kortix приступа продавници {store}. Можете затворити овај прозор.",
     "closeWindow": "Можете затворити овај прозор.",
+    "callbackErrorTitle": "Повезивање са {app} није успело",
+    "errorInvalidSignature": "Одговор Shopify-ја није прошао проверу потписа. Покушајте поново.",
+    "errorShopMismatch": "Shopify је одобрио другу продавницу од унете. Проверите продавницу и покушајте поново.",
+    "errorTokenExchange": "Shopify је одбио Client ID или Client secret. Проверите оба, па покушајте поново.",
+    "errorAppMissing": "Client ID и Client secret апликације нису пронађени. Унесите их и покушајте поново.",
+    "errorAuthorizationFailed": "Апликација није одобрена у Shopify-ју. Покушајте поново.",
+    "errorStrategyChanged": "Подешавања пријаве конектора су се променила током пријаве. Поново покрените повезивање у Kortix-у.",
+    "errorUnknown": "Shopify није довршио пријаву. Покушајте поново.",
+    "accessTitle": "Приступ продавници",
+    "accessCatalog": "Каталог",
+    "accessOrders": "Поруџбине",
+    "accessCustomers": "Купци",
+    "accessInventory": "Залихе",
+    "accessOk": "Доступно",
+    "accessBlocked": "Није одобрено",
+    "accessMissingScope": "Недостаје опсег",
+    "accessError": "Провера није успела",
+    "accessBlockedHelp": "Апликација није одобрена за заштићене податке о купцима. Апликација са Custom distribution за ову продавницу их добија без провере. Подесите дистрибуцију апликације на Custom distribution за ову продавницу или направите такву апликацију. Затим поново повежите налог. Јавној апликацији прво треба Shopify провера.",
+    "accessMissingScopeHelp": "Апликацији недостаје Admin API опсег за ове податке. Додајте опсег, објавите верзију, па поново повежите налог.",
     "expiredTitle": "Овај линк је истекао",
     "invalidTitle": "Овај линк не ради",
     "staleTitle": "Овај линк је замењен",
@@ -22862,5 +22924,448 @@
     "jump": "Idi na odgovor za #{number}",
     "unavailable": "Ovaj odgovor nije dostupan u učitanoj istoriji.",
     "loadError": "Odgovor nije moguće učitati. Pokušajte ponovo."
+  },
+  "spaces": {
+    "memory": {
+      "search": "Претражи меморију",
+      "pagesLabel": "Странице меморије",
+      "all": {
+        "title": "Све",
+        "explainCompany": "Kortix меморија: шта агенти знају о овом пројекту. Читају је пре сваког одговора.",
+        "explainChannel": "Kortix меморија: шта агенти знају о {place}. Читају је пре сваког одговора.",
+        "explainDm": "Kortix меморија: шта агенти знају о теби и {place}. Читају је пре сваког одговора."
+      },
+      "allPages": "Све странице",
+      "noMatches": "Ниједна страница не одговара упиту „{query}“.",
+      "loadError": "Ова меморија није учитана.",
+      "pageLoadError": "Ова страница није учитана.",
+      "retry": "Покушај поново",
+      "close": "Затвори",
+      "author": {
+        "system": "Kortix",
+        "unknown": "Члан",
+        "agent": "Agent"
+      },
+      "edit": "Уреди",
+      "delete": "Обриши",
+      "deleteTitle": "Обрисати „{title}“?",
+      "deleteDescription": "Ово се не може опозвати.",
+      "deleted": "Страница је обрисана",
+      "deleteFailed": "Страница није обрисана. Покушај поново.",
+      "relatedPages": "Повезане странице",
+      "emptyPage": "На овој страници још нема ничега.",
+      "history": {
+        "title": "Историја",
+        "description": "Свака измена странице „{title}“, најновија прва.",
+        "loadError": "Историја није учитана.",
+        "current": "Тренутна",
+        "restore": "Врати ову верзију",
+        "restored": "Верзија је враћена",
+        "restoreFailed": "Ова верзија није враћена. Покушај поново.",
+        "op": {
+          "create": "{author} је направио/ла страницу",
+          "update": "{author} је уредио/ла страницу"
+        },
+        "preview": "Pregled",
+        "restoreShort": "Vrati",
+        "viewing": "Pregled verzije od {time}",
+        "backToCurrent": "Nazad na trenutnu",
+        "added": "+{count, plural, one {# red} few {# reda} other {# redova}}",
+        "removed": "−{count, plural, one {# red} few {# reda} other {# redova}}",
+        "viewingBy": "autor {author}",
+        "created": "Страница је направљена",
+        "edited": "Страница је уређена"
+      },
+      "editor": {
+        "body": "Страница",
+        "save": "Сачувај",
+        "cancel": "Откажи",
+        "saved": "Страница је сачувана",
+        "conflict": "Неко је променио ову страницу. Поново учитај да је видиш.",
+        "reload": "Поново учитај",
+        "error": {
+          "tooLarge": "Ова страница има више од 8 KB. Скрати је.",
+          "secret": "Ово личи на тајну. Чувај тајне у одељку „Тајне“.",
+          "readOnly": "Ова меморија је само за читање.",
+          "failed": "Страница није сачувана. Покушај поново."
+        }
+      },
+      "remember": {
+        "label": "Нешто што {place} треба да запамти",
+        "placeholder": "Реци {place} нешто да запамти…",
+        "hint": "Чува се као белешка са твојим именом",
+        "send": "Сачувај у меморију",
+        "status": {
+          "secret": "Ово личи на тајну. Чувај тајне у одељку „Тајне“.",
+          "readOnly": "Ова меморија је само за читање.",
+          "failed": "Није сачувано. Покушај поново."
+        },
+        "open": "Запамти ово…"
+      },
+      "empty": {
+        "title": "Још нема меморије у {place}",
+        "titleDm": "Још нема меморије са {place}",
+        "description": "Агенти овде чувају оно што науче и читају то пре сваког одговора.",
+        "titleCompany": "Још нема меморије компаније",
+        "openCompany": "Отвори меморију компаније · {count, plural, one {# страница} few {# странице} other {# страница}}"
+      },
+      "source": {
+        "thread": "Отвори тему „{label}“",
+        "threadGone": "Из теме „{label}“",
+        "outside": "Отвори {label} у новој картици",
+        "outsideText": "Из {label}",
+        "person": "Додао/ла {label}",
+        "import": "Увезено из {label}"
+      },
+      "used": {
+        "label": "Коришћена меморија: {places} · {count, plural, one {# страница} few {# странице} other {# страница}}",
+        "title": "Странице са којима је ова тема почела",
+        "company": "Компанија",
+        "removed": "Уклоњена"
+      },
+      "searchError": "Претрага ове меморије није успела.",
+      "searchResults": "Резултати претраге",
+      "palette": {
+        "heading": "Меморија"
+      },
+      "company": {
+        "subtitle": "Оно што зна сваки агент у овом пројекту.",
+        "gateDescription": "Меморија компаније долази уз канале: сваки агент у овом пројекту почиње сваку тему са оним што је тим овде сачувао.",
+        "title": "Меморија",
+        "place": "Компанија"
+      },
+      "rememberThis": {
+        "label": "Запамти ово",
+        "saved": "Сачувано у меморију",
+        "saveTo": "Сачувај у",
+        "dm": "Твоја меморија са агентом {agent}"
+      },
+      "updated": "{author} ажурирао/ла {time}",
+      "updatedAt": "Ажурирано {time}",
+      "sourceKind": {
+        "thread": "тема",
+        "person": "порука",
+        "outside": "веза",
+        "import": "фајл"
+      },
+      "pageCount": "{count, plural, one {# страница} few {# странице} other {# страница}}",
+      "companyLink": "Меморија компаније · {count, plural, one {# страница} few {# странице} other {# страница}}",
+      "companyLinkHint": "Агент овде користи и меморију компаније.",
+      "group": {
+        "other": "O nama",
+        "people": "Ljudi",
+        "decisions": "Odluke",
+        "workstreams": "Projekti",
+        "playbooks": "Kako radimo",
+        "note": "Beleške"
+      }
+    },
+    "create": {
+      "title": "Направи канал",
+      "description": "Сви у овом пројекту могу да виде и користе канал.",
+      "nameLabel": "Назив",
+      "namePlaceholder": "marketing",
+      "slugPlaceholder": "naziv-kanala",
+      "descriptionLabel": "Опис (опционо)",
+      "descriptionPlaceholder": "За шта служи овај канал",
+      "submit": "Направи канал",
+      "created": "Канал је направљен",
+      "nameRequired": "Додај назив.",
+      "invalidName": "Користи бар једно слово или цифру у називу.",
+      "slugTaken": "<link>#{slug}</link> већ постоји.",
+      "failed": "Прављење канала није успело. Покушај поново.",
+      "renameTitle": "Преименуј канал",
+      "renameDescription": "Линк канала се мења са његовим називом.",
+      "save": "Сачувај",
+      "renamed": "Канал је преименован",
+      "renameFailed": "Преименовање канала није успело. Покушај поново.",
+      "descriptionPrivate": "Само особе које додаш могу да виде и користе канал.",
+      "privateLabel": "Приватно",
+      "privateHint": "Само позвани чланови могу да га виде.",
+      "privateUnavailable": "Приватни канали још нису доступни у овом радном простору.",
+      "privateLimits": "Приватно сакрива канал од других људи. Измене кода (git гране) и сопствени алати агената нису приватни."
+    },
+    "view": {
+      "welcomeTitle": "Добро дошао у #{name}",
+      "welcomeEmpty": "Започни прву тему у #{name}. Свака порука започиње нову тему.",
+      "welcomeStart": "Овде почиње #{name}.",
+      "dmIntro": "Овај разговор је само између тебе и агента {agent}.",
+      "today": "Данас",
+      "yesterday": "Јуче",
+      "openThread": "Отвори тему",
+      "replyInThread": "Одговори у теми",
+      "lastReply": "Последњи одговор {time}",
+      "working": "{agent} ради…",
+      "agentFallback": "Агент",
+      "authorFallback": "Неко",
+      "loadEarlier": "Учитај раније теме",
+      "messageChannel": "Порука за #{name}",
+      "messageAgent": "Порука за {agent}",
+      "threadsEmptyTitle": "Још нема тема",
+      "threadsEmpty": "Теме које започнеш појавиће се овде.",
+      "loadError": "Учитавање овог канала није успело.",
+      "threadsLoadError": "Учитавање тема није успело.",
+      "retry": "Покушај поново",
+      "notFound": "Овај канал не постоји.",
+      "notFoundHint": "Линк је можда погрешан, или је неко преименовао канал.",
+      "openDefault": "Отвори #{name}",
+      "archivedTitle": "#{name} је архивиран.",
+      "archivedHint": "Врати га из архиве да би овде поново читао и започињао теме.",
+      "archivedLocked": "Само његов творац или менаџер пројекта може да га врати из архиве.",
+      "unarchive": "Врати канал из архиве",
+      "unarchived": "Канал је враћен из архиве",
+      "unarchiveFailed": "Враћање канала из архиве није успело. Покушај поново.",
+      "dmFailed": "Отварање овог разговора није успело.",
+      "archive": "Архивирај канал",
+      "archiveTitle": "Архивирати #{name}?",
+      "archiveDescription": "Канал нестаје из бочне траке свих чланова. Његове теме остају, а његов творац или менаџер пројекта може да га врати из архиве.",
+      "archived": "Канал је архивиран",
+      "archiveFailed": "Архивирање канала није успело. Покушај поново.",
+      "threadTitle": "Тема",
+      "closeThread": "Затвори тему",
+      "sendFailed": "Покретање теме није успело. Покушај поново.",
+      "replies": "{count, plural, one {# одговор} few {# одговора} other {# одговора}}",
+      "replyPlaceholder": "Одговори…",
+      "tab": {
+        "chat": "Ћаскање",
+        "threads": "Теме",
+        "files": "Датотеке",
+        "memory": "Меморија",
+        "apps": "Апликације",
+        "links": "Линкови",
+        "triggers": "Окидачи"
+      },
+      "empty": {
+        "files": {
+          "title": "Још нема датотека",
+          "description": "Датотеке подељене у {place} појављују се овде.",
+          "action": "Отпреми датотеку"
+        },
+        "memory": {
+          "title": "Још нема меморије",
+          "description": "Оно што агенти памте за {place} појављује се овде.",
+          "action": "Додај меморију"
+        },
+        "apps": {
+          "title": "Још нема апликација",
+          "description": "Апликације направљене у {place} појављују се овде."
+        },
+        "links": {
+          "title": "Још нема линкова",
+          "description": "Линкови подељени у нитима канала {place} појављују се овде. Закачи један да би га добио сваки агент у каналу."
+        },
+        "triggers": {
+          "title": "Још нема окидача",
+          "description": "Окидачи започињу тему у {place} по распореду или на догађај.",
+          "action": "Нови окидач"
+        }
+      },
+      "channelDetails": "Детаљи канала #{name}",
+      "roster": "{people} · {agents}",
+      "rosterPeople": "{count, plural, one {# особа} few {# особе} other {# особа}}",
+      "rosterAgents": "{count, plural, one {# агент} few {# агента} other {# агената}}",
+      "copyLink": "Копирај линк до теме",
+      "linkCopied": "Линк је копиран",
+      "notice": {
+        "unreachable": "Изгубљена је веза са рачунаром ове теме. Поруке које пошаљеш чекају у реду док се поново не повеже.",
+        "unreachableMidTurn": "Изгубљена је веза са рачунаром ове теме док је ред још отворен. Поруке које пошаљеш чекају док не одговори.",
+        "stalled": "Буђење рачунара ове теме траје дуже него обично. Поруке које пошаљеш чекају у реду.",
+        "starting": "Покреће се рачунар ове теме. Твоја порука ће бити послата аутоматски.",
+        "idle": "Рачунар ове теме спава. Твоја следећа порука га буди и биће испоручена.",
+        "waking": "Буди се рачунар ове теме. Поруке које пошаљеш чекају у реду и шаљу се аутоматски."
+      },
+      "boot": {
+        "restart": "Поново покрени тему"
+      },
+      "links": {
+        "add": "Додај линк",
+        "addDescription": "Додај линк у {place}.",
+        "urlLabel": "URL",
+        "titleLabel": "Наслов (опционо)",
+        "titlePlaceholder": "О чему се ради",
+        "invalidUrl": "Unesite ispravan link, na primer example.com.",
+        "addFailed": "Линк није додат. Покушај поново.",
+        "limit": "Овај канал већ има 200 закачених линкова. Прво откачи један.",
+        "addLimit": "Овај канал већ има 200 додатих линкова. Прво уклони један.",
+        "added": "Додато",
+        "remove": "Уклони линк",
+        "removeTitle": "Уклонити овај линк?",
+        "removeDescription": "{link} се уклања из {place} за све.",
+        "removed": "Линк је уклоњен",
+        "removeFailed": "Линк није уклоњен. Покушај поново.",
+        "loadError": "Линкови нису учитани.",
+        "pinnedLabel": "Закачено",
+        "pin": "Закачи",
+        "unpin": "Откачи",
+        "pinnedToast": "Линк је закачен",
+        "unpinnedToast": "Линк је откачен",
+        "pinFailed": "Линк није закачен. Покушај поново.",
+        "unpinFailed": "Линк није откачен. Покушај поново.",
+        "search": "Претражи линкове",
+        "show": "Прикажи",
+        "all": "Сви",
+        "sharedBy": "Поделио",
+        "earlier": "Раније",
+        "pinHint": "Закачи га. Сваки агент у каналу чита закачене линкове.",
+        "unpinHint": "Откачи га. Агенти престају да га читају.",
+        "copyLink": "Копирај линк",
+        "linkCopied": "Линк је копиран",
+        "openThread": "Отвори нит",
+        "noMatch": "Ниједан линк се не поклапа"
+      },
+      "appsLoadError": "Апликације нису учитане.",
+      "triggers": {
+        "loadError": "Окидачи нису могли да се учитају.",
+        "privateNote": "Окидачи не могу да објављују у приватни канал. Уместо тога постави подсетник у теми."
+      },
+      "reply": "Одговори",
+      "rosterTitlePeople": "Особе",
+      "rosterTitleAgents": "Агенти",
+      "viewAllMembers": "Прикажи све чланове",
+      "agentThreads": "{count, plural, one {# нит} few {# нити} other {# нити}}",
+      "threadFilter": {
+        "search": "Pretraži niti",
+        "filter": "Filter",
+        "clear": "Obriši",
+        "clearFilters": "Obriši filtere",
+        "noMatch": "Nijedna nit se ne poklapa",
+        "noMatchHint": "Pokušaj drugu pretragu ili obriši filtere.",
+        "remove": "Ukloni filter {facet}: {value}",
+        "status": "Status",
+        "startedBy": "Pokrenuo",
+        "agent": "Agent",
+        "activity": "Aktivnost",
+        "any": "Bilo koji",
+        "anyone": "Bilo ko",
+        "me": "Ja",
+        "anyAgent": "Bilo koji agent",
+        "anyTime": "Bilo kada",
+        "statusValue": {
+          "working": "Radi",
+          "needsYou": "Treba te",
+          "failed": "Neuspešno",
+          "done": "Gotovo"
+        },
+        "activityValue": {
+          "today": "Danas",
+          "last7": "Poslednjih 7 dana",
+          "last30": "Poslednjih 30 dana"
+        }
+      },
+      "setup": {
+        "label": "Podesi {name}",
+        "addAgents": "Dodaj agente",
+        "addAgentsHint": "Izaberi ko ovde odgovara",
+        "invite": "Pozovi članove",
+        "inviteHint": "Dovedi svoj tim",
+        "remember": "Zapamti nešto",
+        "rememberHint": "Beleške koje čita svaki agent"
+      },
+      "allAgents": "Сви агенти",
+      "join": "Придружи се каналу",
+      "joined": "Придружио си се #{name}.",
+      "joinFailed": "Придруживање каналу није успело. Покушај поново."
+    },
+    "details": {
+      "about": "О каналу",
+      "members": "Чланови",
+      "name": "Назив канала",
+      "description": "Опис",
+      "noDescription": "Додај опис",
+      "created": "Направљен",
+      "editField": "Измени: {field}",
+      "archiveTitle": "Архивирај овај канал",
+      "archiveHint": "Нестаје из бочне траке свих чланова. Његове теме остају.",
+      "archive": "Архивирај",
+      "find": "Пронађи особе или агенте",
+      "search": "Претрага",
+      "you": "(ти)",
+      "noMatches": "Нико не одговара „{query}“.",
+      "defaultAgent": "Подразумевани агент",
+      "defaultAgentHint": "Одговара на поруке које не наводе агента. Подешава се за цео пројекат у Прилагоди › Агенти.",
+      "visibility": "Ко може да га види",
+      "visibilityProject": "Сви у пројекту",
+      "defaultTag": "Подразумевани",
+      "agentTag": "Агент",
+      "makeDefault": "Постави као подразумеваног",
+      "removeAgent": "Уклони из #{name}",
+      "agentMenu": "Опције за {agent}",
+      "agentsFailed": "Агенти нису ажурирани. Покушај поново.",
+      "defaultSet": "{agent} је сада подразумевани у #{name}.",
+      "agentRemoved": "{agent} је уклоњен из #{name}.",
+      "channelDefaultHint": "Одговара на поруку која не наводи агента. Мења се у одељку Чланови.",
+      "personRemoved": "{person} је уклоњен из #{name}.",
+      "peopleFailed": "Измена чланова није успела. Покушај поново.",
+      "personMenu": "Опције за {person}",
+      "removePerson": "Уклони из #{name}",
+      "leave": "Напусти канал",
+      "left": "Напустио си #{name}.",
+      "leaveTitle": "Напусти овај канал",
+      "leaveHint": "И даље можеш да га читаш и да се поново придружиш кад год желиш.",
+      "visibilityPrivate": "Само његови чланови",
+      "privateNote": "Само чланови могу да виде #{name}.",
+      "makePrivate": "Учини приватним",
+      "makePrivateTitle": "Учинити #{name} приватним?",
+      "makePrivateWho": "Само чланови ће видети #{name}: његове нити, фајлове, меморију и линкове. Сви који су започели нит или додали линк постају чланови.",
+      "makePrivateLeave": "Сви остали губе приступ. Члан који касније напусти канал такође губи приступ, и својим нитима.",
+      "makePrivateFinal": "Не можеш поново да га учиниш јавним. Фајлови копирани из њега остају где јесу.",
+      "makePrivateTriggers": "{count, plural, one {# окидач објављује овде. Престаје да се покреће.} few {# окидача објављују овде. Престају да се покрећу.} other {# окидача објављује овде. Престају да се покрећу.}}",
+      "madePrivate": "#{name} је сада приватан",
+      "leaveHintPrivate": "Губиш приступ његовим нитима, фајловима и меморији, укључујући и своје нити. Члан мора поново да те дода.",
+      "leavePrivateTitle": "Напустити #{name}?",
+      "addMembers": "Додај чланове",
+      "privateLimits": "Приватно сакрива канал од других људи. Измене кода (git гране) и сопствени алати агената нису приватни."
+    },
+    "folder": {
+      "memory": "Меморија",
+      "loadError": "Учитавање ове фасцикле није успело",
+      "memoryNoteChannel": "Шта агенти у {place} памте. Агенти ово читају на почетку сваке теме.",
+      "memoryNoteDm": "Шта {agent} памти из ове DM поруке. Ово чита на почетку сваке теме.",
+      "off": {
+        "title": "Укључи Drive",
+        "description": "Датотеке и меморија за {place} налазе се у Drive-у. Укључи Volumes у Feature flags да би их користио.",
+        "descriptionMember": "Датотеке и меморија за {place} налазе се у Drive-у. Замоли администратора пројекта да га укључи.",
+        "action": "Отвори Feature flags"
+      }
+    },
+    "onboarding": {
+      "reenabled": "Сесије започете док су канали били искључени налазе се овде.",
+      "intro": {
+        "title": "Добро дошли у канале",
+        "channels": "Канали групишу рад по тиму.",
+        "threads": "Свака нова порука започиње тему.",
+        "memory": "Агенти памте шта се у сваком каналу договори.",
+        "gotIt": "Разумем"
+      },
+      "getStarted": {
+        "dismiss": "Одбаци",
+        "channel": "Направите канал за тим",
+        "done": "Готово"
+      }
+    },
+    "addMembers": {
+      "title": "Додај чланове у #{name}",
+      "description": "Изабери људе и агенте из пројекта.",
+      "search": "Претражи људе и агенте",
+      "selected": "Изабрани чланови",
+      "people": "Људи",
+      "agents": "Агенти",
+      "unpick": "Уклони {member}",
+      "cancel": "Откажи",
+      "inviteByEmail": "Позови путем е-поште",
+      "confirmEmpty": "Додај чланове",
+      "confirm": "Додај {what}",
+      "peopleCount": "{count, plural, one {# особу} few {# особе} other {# особа}}",
+      "agentsCount": "{count, plural, one {# агента} few {# агента} other {# агената}}",
+      "both": "{people} и {agents}",
+      "added": "У #{name} је додато: {what}.",
+      "failed": "Чланови нису додати. Покушај поново.",
+      "peopleFailed": "Људи нису додати. Покушај поново.",
+      "agentsFailed": "Агенти нису додати. Покушај поново.",
+      "peopleFailedAgentsAdded": "У #{name} је додато: {what}. Људи нису додати и остају изабрани.",
+      "agentsFailedPeopleAdded": "У #{name} је додато: {what}. Агенти нису додати и остају изабрани.",
+      "allAdded": "Сви из пројекта су већ овде.",
+      "noMatches": "Ништа не одговара „{query}“."
+    }
   }
 }
