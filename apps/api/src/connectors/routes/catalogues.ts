@@ -277,7 +277,9 @@ function registerDiscoverToolsAndInstallRoutes(app: OpenAPIHono, deps: Connector
         provider: draft.provider,
         way: { id: way.id, kind: way.kind, name: way.name, oneClick: way.oneClick === true },
       };
-      const signIn = way.kind === 'composio' || (way.kind === 'mcp' && way.oneClick === true);
+      // Composio and native Shopify sign each account in through a Connect link.
+      const connectLink = way.kind === 'composio' || draft.provider === 'shopify';
+      const signIn = connectLink || (way.kind === 'mcp' && way.oneClick === true);
       // The way is already a profile: answer it, before any network probe.
       const profiles = (await deps.listConnectorIdentities?.(projectId)) ?? [];
       const identity = connectorIdentity(draft);
@@ -307,7 +309,7 @@ function registerDiscoverToolsAndInstallRoutes(app: OpenAPIHono, deps: Connector
       try {
         // Best effort, as on the web: a server that cannot be probed now still
         // installs, and its sign-in or credential is set on the profile later.
-        if (way.kind !== 'composio' && !draft.auth && deps.discoverConnectorAuth) {
+        if (!connectLink && !draft.auth && deps.discoverConnectorAuth) {
           const discovery = await deps.discoverConnectorAuth(projectId, draft).catch((err: unknown) => {
             if (allowedSourceValidationResponse(c, err)) throw err;
             return null;
@@ -316,7 +318,7 @@ function registerDiscoverToolsAndInstallRoutes(app: OpenAPIHono, deps: Connector
         }
         const authType = (draft.auth as { type?: string } | undefined)?.type;
         const next =
-          way.kind === 'composio' ? 'connect' : !authType || authType === 'none' ? 'ready' : signIn ? 'connect' : 'credential';
+          connectLink ? 'connect' : !authType || authType === 'none' ? 'ready' : signIn ? 'connect' : 'credential';
         const result = await deps.createConnector(projectId, admin.accountId, draft, admin.userId);
         if (!result.ok) return c.json(result.body ?? { error: result.error }, result.status as 400 | 403 | 409 | 502);
         // A way that still needs a sign-in or a credential cannot list its tools

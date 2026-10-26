@@ -339,6 +339,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/connectors/projects/:projectId/policies': { action: 'connector.project_policy.list', title: 'Listed project connector policies' },
   'PUT /v1/connectors/projects/:projectId/policies': { action: 'connector.project_policy.update', title: 'Updated project connector policies' },
   'GET /v1/connectors/projects/:projectId/sessions/:sessionId/connect-requests': { action: 'connector.connect_request.list', title: 'Viewed pending connector authorizations' },
+  'GET /v1/connectors/shopify/callback': { action: 'connector.shopify.oauth.callback', title: 'Completed Shopify sign-in' },
   'POST /v1/connectors/webhook/pipedream': { action: 'webhook.pipedream.connection.receive', title: 'Received Pipedream connection webhook' },
   'GET /v1/docs': { action: 'system.api_docs.read', title: 'Viewed API reference docs' },
   'GET /v1/drives': { action: 'drive.list', title: 'Listed drives' },

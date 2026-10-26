@@ -84,7 +84,8 @@ export interface GatewayConnector {
     | 'graphql'
     | 'http'
     | 'channel'
-    | 'computer';
+    | 'computer'
+    | 'shopify';
   platform?: string | null;
   /** Computer connectors: the paired machine of the resolved account. Null
    *  when the machine was unpaired. */
@@ -146,6 +147,13 @@ export interface EmailConnectorContext {
 
 export interface GatewayDeps {
   loadConnectorBySlug(projectId: string, slug: string): Promise<GatewayConnector | null>;
+  /**
+   * Shopify: the origin of the selected account's store, read from its stored
+   * credential (the store its OAuth grant was issued for) or, for a pasted
+   * token, from the connector's `shop`. Never from connection metadata, which
+   * the account owner can write. Null = the account has no known store.
+   */
+  resolveShopifyStoreOrigin?(connector: GatewayConnector): Promise<string | null>;
   /**
    * Spec 2026-09-22 §2.5: the `X-Kortix-App-Authorization` value for a call
    * whose base URL is a Kortix App of THIS deployment in the caller's OWN
@@ -803,7 +811,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
   const selection = await selectComputerAccountForCall(deps, input, resolved.slug, resolved.connector);
   if ('status' in selection) return selection;
   input = selection.input;
-  const connector = selection.connector;
+  let connector = selection.connector;
   if (!connector || !connector.enabled) {
     const reason = !connector
       ? deps.explainMissingConnector
@@ -866,6 +874,18 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       reason: usable.reason,
     });
     return { status: 'denied', reason: usable.reason };
+  }
+  if (connector.provider === 'shopify') {
+    const origin = await deps.resolveShopifyStoreOrigin?.(connector).catch(() => null);
+    if (!origin) {
+      const message =
+        `${connector.slug}: account "${connector.connectionLabel ?? connector.connectionId ?? 'default'}" has no Shopify store. ` +
+        `Connect the account again: kortix connectors connect ${connector.slug}.`;
+      await audit(deps, input, connector, 'denied', action.risk, { reason: 'shopify_store_unknown' });
+      return { status: 'denied', reason: 'shopify_store_unknown', message };
+    }
+    // The digest below and the call both use the account's own store.
+    connector = { ...connector, baseUrl: origin };
   }
 
   const executionArgs = emailExecution.args;
@@ -993,7 +1013,7 @@ async function enforceCallPolicies(
     };
   };
 
-  const decision = resolveEffectiveAction({
+  let decision = resolveEffectiveAction({
     fullPath,
     relPath: input.actionPath,
     projectPolicies,
@@ -1010,6 +1030,25 @@ async function enforceCallPolicies(
     args: executionArgs,
     argsAvailable: true,
   });
+  // A raw GraphQL document (a server that refuses introspection) runs whatever
+  // the caller writes, mutations included. No per-field rule, no wildcard and
+  // no project default can stand in for a decision about it: it runs
+  // unattended only when a rule names it exactly, else it asks for approval.
+  if (action.binding.kind === 'graphql_document' && decision.action === 'always_run') {
+    decision = resolveEffectiveAction({
+      fullPath,
+      relPath: input.actionPath,
+      projectPolicies: projectPolicies.filter((policy) => policy.match === fullPath),
+      connectorPolicies: connectorPolicies.filter((policy) => policy.match === input.actionPath),
+      setPolicies: setPolicies?.filter((policy) => policy.match === input.actionPath),
+      setMissing,
+      risk: 'write',
+      defaultMode: 'risk',
+      sensitive: connector.sensitive,
+      args: executionArgs,
+      argsAvailable: true,
+    });
+  }
   // Audit keys naming the set that decided: the agent, the set, the manifest
   // commit the grant came from. Omitted when a project rule, a base rule,
   // `sensitive` or `default_mode` decided, so no surface credits the set.

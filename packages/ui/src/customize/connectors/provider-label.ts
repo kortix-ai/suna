@@ -21,6 +21,7 @@ export function providerLabel(p: AdminConnector['provider']): string {
   if (p === 'channel') return 'Channel';
   if (p === 'computer') return 'Computer';
   if (p === 'postman') return 'Postman';
+  if (p === 'shopify') return 'Shopify';
   // The catalogue's words for the same ways in (`install/way-kind.ts`).
   if (p === 'openapi') return 'REST API';
   if (p === 'graphql') return 'GraphQL';
@@ -31,6 +32,17 @@ export function providerLabel(p: AdminConnector['provider']): string {
 /** Providers whose accounts are authorized through the normalized Connect Link gateway. */
 export function isManagedConnectorProvider(p: AdminConnector['provider']): boolean {
   return p === 'composio' || p === 'pipedream';
+}
+
+/**
+ * Providers whose accounts sign in through a Connect Link: the connect route
+ * answers a link, the popup opens it, finalize reports the account active.
+ * The managed apps, and Shopify: Kortix's own form, then Shopify's OAuth. A
+ * Shopify account has no credential to type in, and Kortix (not a third
+ * party) holds its token, so it is not "managed" anywhere else.
+ */
+export function signsInWithConnectLink(p: AdminConnector['provider']): boolean {
+  return isManagedConnectorProvider(p) || p === 'shopify';
 }
 
 /** Whether a Composio connection has completed provider authorization. */
