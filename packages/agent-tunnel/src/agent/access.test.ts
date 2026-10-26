@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -270,5 +270,31 @@ describe('access after pairing', () => {
   test('a first pairing asks when the desktop app can answer, else always', () => {
     expect(accessAfterPairing(tempHome(), true).mode).toBe('ask');
     expect(accessAfterPairing(tempHome(), false).mode).toBe('always');
+  });
+});
+
+// Characterize the PID probe through the desktop observer, without launching an app.
+describe('desktop PID liveness', () => {
+  test.each([null, '1', 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])('rejects invalid PID %p without probing', (pid) => {
+    const home = tempHome();
+    writeFileSync(join(home, 'desktop-app.json'), JSON.stringify({ pid }));
+    const kill = spyOn(process, 'kill');
+    try {
+      expect(wakeDesktopApp(home)).toBe('no-app');
+      expect(kill).not.toHaveBeenCalled();
+    } finally { kill.mockRestore(); }
+  });
+
+  test.each(['live', 'ESRCH', 'EPERM'])('handles %s', (result) => {
+    const home = tempHome();
+    writeFileSync(join(home, 'desktop-app.json'), JSON.stringify({ pid: process.pid }));
+    const kill = spyOn(process, 'kill').mockImplementation(() => {
+      if (result !== 'live') throw Object.assign(new Error(result), { code: result });
+      return true;
+    });
+    try {
+      expect(wakeDesktopApp(home)).toBe(result === 'ESRCH' ? 'no-app' : 'running');
+      expect(kill).toHaveBeenCalledWith(process.pid, 0);
+    } finally { kill.mockRestore(); }
   });
 });
