@@ -37,11 +37,8 @@ function email(n: number, thread: string, type = 'inbox.email.received'): Resend
 }
 
 const replies = () => calls.filter((c) => c.method === 'POST');
-
-/** Five minutes later: the thread-create claim of the first message expired. */
-async function expireThreadCreateClaims() {
-  await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `email:threadcreate:${INBOX}:%`));
-}
+const threadCreateClaims = () =>
+  db.select().from(chatEventDedup).where(like(chatEventDedup.eventId, `email:threadcreate:${INBOX}:%`));
 
 beforeAll(async () => {
   project = await seedProject('archived-email-reply');
@@ -114,10 +111,11 @@ describe('email to a deleted workspace', () => {
       auth: 'Bearer re_project_key',
       body: { text: REPLY },
     });
+    // The failed create freed the thread: the next email tries again at once.
+    expect(await threadCreateClaims()).toHaveLength(0);
   });
 
   test('a later email in the same thread gets no second reply', async () => {
-    await expireThreadCreateClaims();
     await dispatchResendEmailEvent(email(2, 'a'));
     expect(replies()).toHaveLength(0);
   });

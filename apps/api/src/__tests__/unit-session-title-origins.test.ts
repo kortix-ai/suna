@@ -83,11 +83,6 @@ describe('session-title origins — create-time title source', () => {
     };
     expect(body).not.toHaveProperty('initial_prompt');
     expect(titleSourceForCreate(body)).toBe('Invoice discrepancy for March');
-
-    const source = createBody('channels/email/session.ts', 'emailSessionLifecycle.createSession(');
-    expect(source).not.toContain('initial_prompt');
-    expect(source).toContain('title_source: messageSubject(email) ?? messageSummary(email)');
-    // The full rendered envelope still reaches the agent via postCreate.
-    expect(read('channels/email/session.ts')).toContain("type: 'deliver_prompt'");
+    // The create body Email actually sends is asserted in unit-email-channel.test.ts.
   });
 });
