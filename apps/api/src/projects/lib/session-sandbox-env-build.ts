@@ -30,6 +30,7 @@ import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 import { db } from '../../shared/db';
 import { configReleaseEnvForSession } from '../../config-releases/publish';
 import { logger } from '../../lib/logger';
+import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 
 
 
@@ -326,14 +327,19 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
   // value to the sandbox. Every OTHER secret is project-wide (secret
   // sharing was retired — authorization is centralized on the running agent's
   // `secrets` grant, applied below by identifier).
+  // One `[provision-timeline] session-env` line per build: create, restart and open all wait on it.
+  const tl = new ProvisionTimeline(input.sessionId, 'session-env');
   const { agentGrantEnv, compiledAgentConfig, manifestPackages, manifestCodemode } =
     await resolveSessionAgentConfig(input);
+  tl.mark('agent-config');
   const sessionLogRestore = await resolveSessionLogRestore(input);
+  tl.mark('log-restore');
   // The prebuilt bundle of the project's pi packages (one S3 HEAD + presign; none without npm packages).
   const piPackagesBundle =
     manifestPackages.length > 0
       ? await piPackageBundleForSession(manifestPackages, { projectId: input.projectId, sessionId: input.sessionId })
       : null;
+  tl.mark('pi-packages');
 
   // Per-session secret policy, read by sessionId inside the builder so all three
   // call sites (create, restart, open/ensure) are covered — no caller can
@@ -376,6 +382,7 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
     accountId: input.accountId,
     legacyUserId: sessionPolicyRow?.createdBy ?? input.userId,
   });
+  tl.mark('policy-owner');
 
   // A session's stored model pin outlives any single boot — the runtime
   // managed lineup can rotate past it while the session sits open. Re-point
@@ -396,12 +403,14 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
     });
   }
 
+  tl.mark('model-repoint');
   const runtimeSecrets = await loadSessionRuntimeSecrets(
     input,
     secretsPrincipalUserId,
     grantEnvForSession,
     agentGrantEnv,
   );
+  tl.mark('secrets');
   // Restore the session's channel binding on EVERY (re)provision. A session
   // created from a chat channel (e.g. Slack) persists its binding in
   // metadata.slack; the in-box relay gates turn-end/answer on SLACK_THREAD_TS /
@@ -427,6 +436,7 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
           return null;
         })
       : null;
+  tl.mark('config-release');
   if (compiledAgentConfig && !fitsInEnvString(COMPILED_AGENT_CONFIG_ENV, compiledAgentConfig)) {
     // Sizes only. An image whose kortixd predates the gzip form boots without
     // this config, so the line is how to find sessions that need a newer image.
@@ -439,6 +449,8 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
   const channelEnv = await buildSessionChannelEnv(input.sessionId);
   const sessionContextEnv = await buildSessionRuntimeContextEnv(input.sessionId);
   const featureFlagEnv = await buildFeatureFlagSandboxEnv(input.projectId);
+  tl.mark('channel-context-flags');
+  tl.log();
   return {
     ...runtimeSecrets.env,
     ...channelEnv,
