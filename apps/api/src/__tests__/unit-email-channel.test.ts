@@ -23,6 +23,7 @@ function makeChain(): any {
     "set",
     "values",
     "onConflictDoNothing",
+    "onConflictDoUpdate",
     "returning",
   ]) {
     chain[m] = () => chain;
@@ -84,7 +85,8 @@ mock.module("../channels/install-store", () => ({
 let continueCalls: Array<{
   sessionId: string;
   text: string;
-  opencodeEnv?: Record<string, string | null>;
+  idempotencyKey: string;
+  projectId?: string | null;
 }> = [];
 let createCalls: Array<any> = [];
 
@@ -108,11 +110,12 @@ function expectConnectorEmailPrompt(prompt: string) {
 const {
   dispatchResendEmailEvent,
   isEmailSenderAllowed,
-  resetEmailSessionLifecycleForTest,
+  resetEmailLoadersForTest,
   setEmailSenderPolicyLoaderForTest,
-  setEmailSessionLifecycleForTest,
   setThreadEmailLoaderForTest,
 } = await import("../channels/email/session");
+const { resetChannelLifecycleForTest, setChannelLifecycleForTest } =
+  await import("../channels/core/conversation");
 const { emailWebhookApp } = await import("../channels/email/app");
 (await import("../channels/email/routes")).registerEmailWebhookRoutes();
 
@@ -142,7 +145,8 @@ let threadEmailReads: Array<{
 }> = [];
 
 afterAll(() => {
-  resetEmailSessionLifecycleForTest();
+  resetEmailLoadersForTest();
+  resetChannelLifecycleForTest();
   mock.restore();
 });
 
@@ -173,13 +177,14 @@ beforeEach(() => {
       attachments: [{ id: "att-1", filename: "invoice.pdf", size: 1200 }],
     };
   });
-  setEmailSessionLifecycleForTest({
+  setChannelLifecycleForTest({
     resolveProjectAutomationActor: async () => "user-1",
-    deliverFollowUp: async (input) => {
+    deliverThroughQueue: async (input) => {
       continueCalls.push({
         sessionId: input.sessionId,
         text: input.text,
-        opencodeEnv: input.opencodeEnv,
+        idempotencyKey: input.idempotencyKey,
+        projectId: input.projectId,
       });
       return "delivered";
     },
@@ -191,6 +196,7 @@ beforeEach(() => {
         row: { sessionId: "sess-1" } as any,
       };
     },
+    sleep: async () => {},
   });
 });
 
@@ -531,7 +537,16 @@ describe("dispatchResendEmailEvent", () => {
       email: { connection_id: "connection-email-1" },
     });
     expect(createCalls[0].body.agent_name).toBe("veyris");
-    expect(createCalls[0].metadata.email.subject).toBe("Need help");
+    expect(createCalls[0].metadata).toMatchObject({
+      source: "email",
+      email: { inbox_id: "inb-1", thread_id: "thr-1", subject: "Need help" },
+    });
+    // Email has no initial_prompt: the subject titles the session at create,
+    // and the full envelope reaches the agent through the postCreate prompt.
+    expect(createCalls[0].body).not.toHaveProperty("initial_prompt");
+    expect(createCalls[0].body.title_source).toBe("Need help");
+    expect(createCalls[0].body.base_ref).toBe("main");
+    expect(createCalls[0].mayManageSystemConnections).toBe(true);
     // One lifecycle key per email: the lifecycle keeps a key forever.
     expect(createCalls[0].idempotencyKey).toBe(
       "email:create:inb-1:thr-1:eml-1",
@@ -594,6 +609,9 @@ describe("dispatchResendEmailEvent", () => {
     expect(createCalls).toHaveLength(0);
     expect(continueCalls).toHaveLength(1);
     expect(continueCalls[0].sessionId).toBe("sess-1");
+    // One lifecycle key per received email, kept forever.
+    expect(continueCalls[0].idempotencyKey).toBe("email:inb-1:eml-1");
+    expect(continueCalls[0].projectId).toBe("proj-1");
     expect(continueCalls[0].text).toContain("Customer <customer@example.com>");
     expectConnectorEmailPrompt(continueCalls[0].text);
   });
