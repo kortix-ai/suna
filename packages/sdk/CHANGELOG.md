@@ -5,6 +5,11 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Deprecated (Shopify app form)
+- `getConnectorAppForm`, `submitConnectorAppForm`, `ConnectorAppFormInfo`, `ConnectorAppFormInput`
+  and `ConnectorAppFormResult`. The server removed `/connectors/app-form/:token`; every call
+  answers 404. The names stay exported until the next major.
+
 ### Added (connector policy sets)
 - `listConnectorPolicySets`, `upsertConnectorPolicySet`, `renameConnectorPolicySet`,
   `deleteConnectorPolicySet` and the `ConnectorPolicySet` type: named rule sets on one connector

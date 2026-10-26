@@ -42,7 +42,6 @@ import { gateChannelRead } from './channel-read-scope';
 import { gateChannelWrite } from './channel-write-scope';
 import { resolveCredentialValue, resolveConnectionCredentialValue } from './credentials';
 import { connectorEgressFetch } from './egress';
-import { shopifyStoreOriginForConnection } from './shopify-connect';
 import { CredentialNotSharedError } from './gateway';
 import type { GatewayAction, GatewayConnector, GatewayDeps } from './gateway';
 import { graphToken } from '../channels/teams-auth';
@@ -394,11 +393,6 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
         binding: a.binding as unknown as ActionBinding,
       } satisfies GatewayAction;
     },
-    resolveShopifyStoreOrigin: (connector) =>
-      shopifyStoreOriginForConnection({
-        connectorId: connector.connectorId,
-        connectionId: connector.connectionId ?? null,
-      }),
     resolveCredential: async (connector, userId) => {
       // Channel connectors resolve to their platform install token (server-side);
       // the provider is already in hand, so only the channel path does a lookup —

@@ -65,6 +65,10 @@ const ALLOWLIST: Array<{ pattern: RegExp; reason: string }> = [
     pattern: /^\/public\/session-shares(\/|$)/,
     reason: 'public transcript shares removed server-side (KRTX-2358); the deprecated client names stay exported until the next major, every call answers 404',
   },
+  {
+    pattern: /^\/connectors\/app-form(\/|$)/,
+    reason: 'Shopify app form removed server-side; the deprecated client names stay exported until the next major, every call answers 404',
+  },
 ];
 
 export interface SdkRoute {

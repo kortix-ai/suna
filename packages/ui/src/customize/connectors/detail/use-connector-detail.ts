@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import { connectorDisplayName } from '../connector-filter';
-import { signsInWithConnectLink } from '../provider-label';
+import { isManagedConnectorProvider } from '../provider-label';
 import { connectorSetupStatus } from '../../sections/connector-connection-form';
 import { connectorConnectionRows } from '../../sections/view/connector-connections';
 import { emptyProjectSlot } from '../../../internal/hooks/connectors/use-add-account';
@@ -37,9 +37,7 @@ export function useConnectorDetail({
   /** Refetch every authorization-derived query. */
   onChanged: () => void;
 }) {
-  // "Managed" here means its accounts sign in with a Connect Link: Composio,
-  // Pipedream, and Shopify (Kortix's form, then Shopify's OAuth).
-  const isManagedProvider = signsInWithConnectLink(connector.provider);
+  const isManagedProvider = isManagedConnectorProvider(connector.provider);
   // Email is a channel whose accounts are inboxes: it lists and adds accounts
   // like any connector, so only the single-install channels count here.
   const isChannel = connector.provider === 'channel' && connector.platform !== 'email';

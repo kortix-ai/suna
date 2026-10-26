@@ -212,8 +212,7 @@ export const CONNECTOR_TOOLS = [
         way: { type: 'string', description: 'One of the app\'s ways to connect by id (`ways[].way` from get_connector_app). Default: the recommended way.' },
         as_new_profile: { type: 'boolean', description: 'Add a second profile of a way the project already has. Default false: the existing profile is answered (`existing: true`) and nothing is added.' },
         slug: { type: 'string', description: 'The connector\'s name in kortix.yaml (lowercase letters, digits, - and _). Defaults to `app`.' },
-        provider: { type: 'string', enum: ['composio', 'mcp', 'openapi', 'postman', 'graphql', 'http', 'shopify'], description: 'Your own server\'s kind, with `slug`. Omit it when you pass `app`.' },
-        shop: { type: 'string', description: 'Default Shopify store, <name>.myshopify.com (provider shopify).' },
+        provider: { type: 'string', enum: ['composio', 'mcp', 'openapi', 'postman', 'graphql', 'http'], description: 'Your own server\'s kind, with `slug`. Omit it when you pass `app`.' },
         name: { type: 'string', description: 'Display name.' },
         url: { type: 'string', description: 'MCP server URL (provider mcp).' },
         transport: { type: 'string', enum: ['http', 'sse'], description: 'MCP transport (provider mcp).' },
@@ -724,7 +723,7 @@ export async function runConnectorTool(name: string, input: Record<string, unkno
       const slug = h.optionalArg(input, 'slug');
       if (!provider || !slug) throw h.input('pass `app` (from search_connector_apps), or `provider` and `slug` for your own server');
       const draft: Record<string, unknown> = { slug, provider };
-      for (const [from, to] of [['app', 'app'], ['name', 'name'], ['url', 'url'], ['transport', 'transport'], ['endpoint', 'endpoint'], ['spec', 'spec'], ['base_url', 'baseUrl'], ['shop', 'shop']] as const) {
+      for (const [from, to] of [['app', 'app'], ['name', 'name'], ['url', 'url'], ['transport', 'transport'], ['endpoint', 'endpoint'], ['spec', 'spec'], ['base_url', 'baseUrl']] as const) {
         const v = h.optionalArg(input, from);
         if (v) draft[to] = v;
       }
@@ -738,7 +737,7 @@ export async function runConnectorTool(name: string, input: Record<string, unkno
       }
       if (r.status >= 400) return h.apiResult(r);
       const done = parse(r.body) ?? {};
-      const oauth = provider === 'composio' || provider === 'shopify';
+      const oauth = provider === 'composio';
       return h.text(
         JSON.stringify(
           {

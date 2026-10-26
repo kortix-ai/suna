@@ -810,15 +810,6 @@ const envSchema = z.object({
   // Exported collection JSON and Postman-managed Git repositories need no key.
   POSTMAN_API_KEY: optStr,
 
-  // ── Shopify (optional — `provider: shopify` connectors) ───────────────────
-  // The operator's shared Shopify app. Unset: each store connects with its own
-  // Shopify Dev Dashboard app (client ID and secret entered at Connect).
-  SHOPIFY_CLIENT_ID: optStr,
-  SHOPIFY_CLIENT_SECRET: optStr,
-  // Local stacks only (KORTIX_LOCAL_DEV=1): send every store request to this
-  // origin (a fake Shopify) instead of https://<shop>. Ignored everywhere else.
-  KORTIX_SHOPIFY_STORE_ORIGIN: optStr,
-
   // ── Tunnel (optional, all have sane defaults) ────────────────────────────
   TUNNEL_SIGNING_SECRET: optStr,
   TUNNEL_ENABLED: optBoolTrue,
@@ -1341,12 +1332,6 @@ export const config = {
   COMPOSIO_API_KEY: env.COMPOSIO_API_KEY,
   COMPOSIO_WEBHOOK_SECRET: env.COMPOSIO_WEBHOOK_SECRET,
   POSTMAN_API_KEY: env.POSTMAN_API_KEY,
-
-  // ─── Shopify (`provider: shopify`) ─────────────────────────────────────────
-  SHOPIFY_CLIENT_ID: env.SHOPIFY_CLIENT_ID,
-  SHOPIFY_CLIENT_SECRET: env.SHOPIFY_CLIENT_SECRET,
-  KORTIX_SHOPIFY_STORE_ORIGIN:
-    process.env.KORTIX_LOCAL_DEV === '1' ? env.KORTIX_SHOPIFY_STORE_ORIGIN : undefined,
 
   // ─── Search Providers ──────────────────────────────────────────────────────
   TAVILY_API_URL: env.TAVILY_API_URL,

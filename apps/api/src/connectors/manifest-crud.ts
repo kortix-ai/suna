@@ -45,7 +45,6 @@ import {
   type SyncResult,
   syncProjectConnectors,
 } from './sync';
-import { shopifyShopDomain } from './shopify';
 import {
   type ManifestMutationResult,
   mutateManifestWithRetry,
@@ -62,8 +61,7 @@ export interface ConnectorDraft {
     | 'postman'
     | 'graphql'
     | 'http'
-    | 'channel'
-    | 'shopify';
+    | 'channel';
   /** Refuse to update an existing slug. */
   create_only?: boolean;
   platform?: 'slack' | 'email';
@@ -74,10 +72,6 @@ export interface ConnectorDraft {
   endpoint?: string;
   baseUrl?: string;
   spec?: string;
-  /** shopify: the default store, `<name>.myshopify.com` (a bare name is accepted). */
-  shop?: string;
-  /** shopify: the Admin API scopes Connect requests. Omit for the default set. */
-  scopes?: string[];
   /** Credential storage mode. `shared` is the only mode (`per_user` was
    *  removed 2026-07-05) — accepted for back-compat callers but never emitted
    *  into the manifest, since `shared` is already the implicit default. */
@@ -136,10 +130,6 @@ function draftToEntry(d: ConnectorDraft): Record<string, unknown> {
     if (d.spec) entry.spec = d.spec;
   } else if (d.provider === 'channel') {
     if (d.platform) entry.platform = d.platform;
-  } else if (d.provider === 'shopify') {
-    // A bare store name becomes its host; anything else reaches the parser as typed and fails there.
-    if (d.shop) entry.shop = shopifyShopDomain(d.shop) ?? d.shop;
-    if (d.scopes?.length) entry.scopes = [...d.scopes];
   }
   // Omitted means auto-detect; explicit none must remain a durable opt-out.
   if (d.auth && d.auth.type) {

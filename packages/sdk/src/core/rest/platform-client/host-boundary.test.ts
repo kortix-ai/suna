@@ -197,45 +197,6 @@ describe('host boundary transport', () => {
     expect(requests[1]?.init?.headers).not.toHaveProperty('Authorization');
   });
 
-  test('native Shopify form: the OAuth fields, then the authorize URL to open', async () => {
-    responseFactory = () =>
-      Response.json({
-        app: 'shopify',
-        name: 'Shopify',
-        connector: 'Shopify',
-        flow: 'oauth',
-        connected: false,
-        connected_as: null,
-        expires_at: '2026-10-23T12:00:00.000Z',
-        shop: 'acme.myshopify.com',
-        shared_app: false,
-        scopes: ['read_orders'],
-        redirect_uri: 'https://api.example.test/v1/connectors/shopify/callback',
-        access: null,
-      });
-    const info = await boundary.getConnectorAppForm('kaf_token', { backendUrl: 'https://api.example.test/v1' });
-    const oauth: { flow: 'oauth' | 'client_credentials' | undefined; redirect: string | undefined; shared: boolean | undefined } = {
-      flow: info.flow,
-      redirect: info.redirect_uri,
-      shared: info.shared_app,
-    };
-    expect(oauth).toEqual({
-      flow: 'oauth',
-      redirect: 'https://api.example.test/v1/connectors/shopify/callback',
-      shared: false,
-    });
-
-    responseFactory = () => Response.json({ connected: false, authorize_url: 'https://acme.myshopify.com/admin/oauth/authorize?state=s' });
-    const result = await boundary.submitConnectorAppForm(
-      'kaf_token',
-      { store: 'acme', clientId: 'client-id', clientSecret: 'client-secret' },
-      { backendUrl: 'https://api.example.test/v1' },
-    );
-    const next: string | undefined = result.authorize_url;
-    expect(result.connected).toBe(false);
-    expect(next).toStartWith('https://acme.myshopify.com/admin/oauth/authorize');
-  });
-
   test("own-app connect form submit surfaces the provider's refusal", async () => {
     responseFactory = () =>
       Response.json(

@@ -14,7 +14,7 @@ import { Label } from '../../../primitives/label';
 import Loading from '../../../primitives/loading';
 import { errorToast, successToast } from '../../../primitives/toast';
 import { ConnectionSection } from '../../sections/connectors-view';
-import { isManagedConnectorProvider, signsInWithConnectLink } from '../provider-label';
+import { isManagedConnectorProvider } from '../provider-label';
 import { appHref, browseForAnotherProfileHref, type AppRef } from '../connector-routes';
 import { UiLink as Link } from '../../../providers/ui-provider';
 import { connectorRunsOver } from './connector-status';
@@ -69,7 +69,7 @@ export function ConnectorSettings({
   const managed = isManagedConnectorProvider(connector.provider);
   const isComputer = connector.provider === 'computer';
   const isDirectProvider =
-    !signsInWithConnectLink(connector.provider) && !isChannel && !isComputer;
+    !isManagedConnectorProvider(connector.provider) && !isChannel && !isComputer;
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const remove = useMutation({

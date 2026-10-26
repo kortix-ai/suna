@@ -6881,8 +6881,8 @@ export const connectorProviderEnum = kortixSchema.enum('connector_provider', [
   // credential, with per-machine auth/scope enforced by the tunnel permission
   // layer.
   'computer',
-  // Native Shopify Admin API (GraphQL), authorized per store with Shopify OAuth.
-  'shopify',
+  // The database also holds 'shopify' (20261026092023000) from a removed
+  // connector. Postgres cannot drop an enum value; no code writes it.
 ]);
 
 export const connectorStatusEnum = kortixSchema.enum('connector_status', [

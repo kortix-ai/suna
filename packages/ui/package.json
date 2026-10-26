@@ -390,7 +390,6 @@
     "./markdown": "./src/markdown/index.tsx",
     "./markdown/copy-button": "./src/markdown/copy-button.tsx",
     "./markdown/setup-links/api-base": "./src/markdown/setup-links/api-base.ts",
-    "./markdown/setup-links/app-credentials-form": "./src/markdown/setup-links/app-credentials-form.tsx",
     "./markdown/setup-links/approval-decision": "./src/markdown/setup-links/approval-decision.tsx",
     "./markdown/setup-links/connector-handshake": "./src/markdown/setup-links/connector-handshake.tsx",
     "./markdown/setup-links/connector-link-info": "./src/markdown/setup-links/connector-link-info.ts",
@@ -2021,10 +2020,6 @@
       "./markdown/setup-links/api-base": {
         "types": "./dist/markdown/setup-links/api-base.d.ts",
         "import": "./dist/markdown/setup-links/api-base.js"
-      },
-      "./markdown/setup-links/app-credentials-form": {
-        "types": "./dist/markdown/setup-links/app-credentials-form.d.ts",
-        "import": "./dist/markdown/setup-links/app-credentials-form.js"
       },
       "./markdown/setup-links/approval-decision": {
         "types": "./dist/markdown/setup-links/approval-decision.d.ts",
