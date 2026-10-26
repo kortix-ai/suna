@@ -1,10 +1,11 @@
 /**
- * Real-Postgres contract for Telegram as a channel connector:
- * the inbox stores an update once, an unknown sender gets a pairing reply and
- * no session, an allowed sender in a new chat starts one session bound to the
- * chat, the next message follows up into it, `/new` forgets it, and with the
- * flag off nothing runs. Telegram is a local fake; the session lifecycle is a
- * recorder, so no sandbox is needed.
+ * Real-Postgres contract for Telegram as a channel connector on the
+ * conversation core: the inbox stores an update once, an unknown sender gets a
+ * pairing reply and no session, an allowed sender in a new chat starts one
+ * session bound to the chat, the next message follows up into it, `/new`
+ * forgets it, and every outcome the agent cannot report reaches the chat.
+ * Telegram is a local fake; the session lifecycle is a recorder and the clock
+ * an instant sleep, so no sandbox and no real wait is needed.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { accounts, chatEventDedup, chatThreads, jobQueue, projectSessions, projects } from '@kortix/db';
@@ -13,14 +14,9 @@ import { config } from '../../config';
 import { emitIntegrationEvent, INTEGRATION_EVENTS_QUEUE } from '../../integrations/event-inbox';
 import { connectorConnectionIsConnected } from '../../projects/lib/session-connector-bindings';
 import { db } from '../../shared/db';
+import { resetChannelLifecycleForTest, setChannelLifecycleForTest } from '../core/conversation';
 import { deleteTelegramInstall, saveTelegramInstall, setTelegramAllowedUserIds } from './installs';
-import {
-  handleTelegramEvent,
-  resetTelegramLifecycleForTest,
-  setTelegramLifecycleForTest,
-  telegramMessageEvent,
-  type TelegramMessage,
-} from './session';
+import { handleTelegramEvent, telegramMessageEvent, type TelegramMessage } from './session';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -43,6 +39,8 @@ const fake = Bun.serve({
 const created: Array<Record<string, any>> = [];
 const delivered: Array<Record<string, any>> = [];
 let createResult: Record<string, unknown> = {};
+let deliverResult = 'queued';
+let sleeps = 0;
 let updateId = 1;
 
 function update(text: string, from = ALLOWED, chatId = 777) {
@@ -54,6 +52,18 @@ function update(text: string, from = ALLOWED, chatId = 777) {
     text,
   };
   return telegramMessageEvent(PROJECT, BOT_ID, { update_id: updateId++, message })!;
+}
+
+const claimKey = (chat: number) => `telegram:threadcreate:${PROJECT}:${BOT_ID}:${chat}`;
+const claim = (chat: number) => db.select().from(chatEventDedup).where(eq(chatEventDedup.eventId, claimKey(chat)));
+const holdClaim = (chat: number, expiresInMs = 60_000) =>
+  db.insert(chatEventDedup).values({ eventId: claimKey(chat), expiresAt: new Date(Date.now() + expiresInMs) });
+
+async function bindChat(chat: number) {
+  const sessionId = crypto.randomUUID();
+  await db.insert(projectSessions).values({ sessionId, accountId: ACCOUNT, projectId: PROJECT, branchName: sessionId, createdBy: ACTOR });
+  await db.insert(chatThreads).values({ projectId: PROJECT, platform: 'telegram', workspaceId: BOT_ID, threadId: String(chat), sessionId });
+  return sessionId;
 }
 
 async function allowSender() {
@@ -74,7 +84,7 @@ beforeAll(async () => {
   });
   await saveTelegramInstall({ projectId: PROJECT, botId: BOT_ID, username: 'synthetic_bot', token: TOKEN, webhookSecret: 's' });
   await allowSender();
-  setTelegramLifecycleForTest({
+  setChannelLifecycleForTest({
     resolveProjectAutomationActor: async () => ACTOR,
     createSession: (async (input: Record<string, any>) => {
       created.push(input);
@@ -82,8 +92,11 @@ beforeAll(async () => {
     }) as never,
     deliverThroughQueue: (async (command: Record<string, any>) => {
       delivered.push(command);
-      return 'queued';
+      return deliverResult;
     }) as never,
+    sleep: async () => {
+      sleeps++;
+    },
   });
 });
 
@@ -91,11 +104,13 @@ beforeEach(() => {
   calls.length = 0;
   created.length = 0;
   delivered.length = 0;
-  createResult = {};
+  createResult = { status: 'created', sessionId: crypto.randomUUID() };
+  deliverResult = 'queued';
+  sleeps = 0;
 });
 
 afterAll(async () => {
-  resetTelegramLifecycleForTest();
+  resetChannelLifecycleForTest();
   fake.stop(true);
   await db.delete(chatThreads).where(eq(chatThreads.workspaceId, BOT_ID));
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:threadcreate:${PROJECT}:%`));
@@ -125,31 +140,42 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
     expect(String(calls[0]!.body.text)).toContain('999');
   });
 
-  test('an allowed sender in a new chat starts one project-visible session bound to the chat', async () => {
-    await handleTelegramEvent(update('summarize the release'));
+  test('an allowed sender in a new chat starts one project-visible session bound to the chat, then frees the chat', async () => {
+    const event = update('summarize the release');
+    await handleTelegramEvent(event);
     expect(calls.map((c) => c.method)).toEqual(['sendChatAction']);
     expect(created).toHaveLength(1);
     expect(created[0]).toMatchObject({
       source: 'telegram',
       visibility: 'project',
       userId: ACTOR,
+      queuePolicy: 'on_backpressure',
+      idempotencyKey: `telegram:create:${BOT_ID}:${event.id}`,
+      body: { agent_name: 'default', title_source: 'summarize the release' },
       metadata: { source: 'telegram', telegram: { bot_id: BOT_ID, chat_id: 777 } },
       postCreate: [
         { type: 'bind_chat_thread', platform: 'telegram', workspaceId: BOT_ID, threadId: '777' },
-        { type: 'deliver_prompt', source: 'telegram' },
+        { type: 'deliver_prompt', source: 'telegram', userId: ACTOR },
       ],
     });
     expect(created[0]!.postCreate[1].text).toContain('kortix_telegram.send_message');
+    // The create bound the chat, so its claim is spent: the next session start never waits on it.
+    expect(await claim(777)).toHaveLength(0);
   });
 
-  test('the next message in a bound chat follows up into its session; /new forgets the chat', async () => {
-    const sessionId = crypto.randomUUID();
-    await db.insert(projectSessions).values({ sessionId, accountId: ACCOUNT, projectId: PROJECT, branchName: sessionId, createdBy: ACTOR });
-    await db.insert(chatThreads).values({ projectId: PROJECT, platform: 'telegram', workspaceId: BOT_ID, threadId: '888', sessionId });
-    await handleTelegramEvent(update('and the risks?', ALLOWED, 888));
+  test('the next message in a bound chat follows up into its session under its own key; /new forgets the chat', async () => {
+    const sessionId = await bindChat(888);
+    const event = update('and the risks?', ALLOWED, 888);
+    await handleTelegramEvent(event);
     expect(created).toHaveLength(0);
     expect(delivered).toHaveLength(1);
-    expect(delivered[0]).toMatchObject({ source: 'telegram', sessionId, projectId: PROJECT });
+    expect(delivered[0]).toMatchObject({
+      source: 'telegram',
+      sessionId,
+      projectId: PROJECT,
+      idempotencyKey: `telegram:${BOT_ID}:${event.id}`,
+    });
+    expect(delivered[0]!.text).toContain('in the same chat');
 
     await handleTelegramEvent(update('/new', ALLOWED, 888));
     const [thread] = await db.select().from(chatThreads).where(and(eq(chatThreads.workspaceId, BOT_ID), eq(chatThreads.threadId, '888')));
@@ -157,10 +183,40 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
     expect(calls.at(-1)?.method).toBe('sendMessage');
   });
 
-  test('a create the lifecycle requeued keeps the chat claimed; a final failure says why and frees it', async () => {
-    const claim = (chat: number) =>
-      db.select().from(chatEventDedup).where(eq(chatEventDedup.eventId, `telegram:threadcreate:${PROJECT}:${BOT_ID}:${chat}`));
+  test('/new frees a chat whose create claim is still held: the next message starts a session at once', async () => {
+    await bindChat(889);
+    await holdClaim(889);
+    await handleTelegramEvent(update('/new', ALLOWED, 889));
+    expect(await claim(889)).toHaveLength(0);
 
+    await handleTelegramEvent(update('fresh start', ALLOWED, 889));
+    expect(created).toHaveLength(1);
+    expect(sleeps).toBe(0);
+  });
+
+  test('a message whose session is gone starts a new session for the chat', async () => {
+    await bindChat(890);
+    deliverResult = 'no-session';
+    await handleTelegramEvent(update('still there?', ALLOWED, 890));
+    expect(delivered).toHaveLength(1);
+    expect(created).toHaveLength(1);
+    expect(created[0]!.postCreate[0]).toMatchObject({ type: 'bind_chat_thread', threadId: '890' });
+  });
+
+  test('a failed session: retry, and on the last attempt tell the chat to start over', async () => {
+    await bindChat(891);
+    deliverResult = 'failed';
+    await expect(handleTelegramEvent(update('hello?', ALLOWED, 891))).rejects.toThrow('telegram follow-up failed');
+    expect(calls.map((c) => c.method)).toEqual(['sendChatAction']);
+
+    calls.length = 0;
+    await handleTelegramEvent(update('hello?', ALLOWED, 891), { finalAttempt: true });
+    expect(calls.map((c) => c.method)).toEqual(['sendChatAction', 'sendMessage']);
+    expect(String(calls[1]!.body.text)).toContain('/new');
+    expect(created).toHaveLength(0);
+  });
+
+  test('a create the lifecycle requeued keeps the chat claimed; a final failure says why and frees it', async () => {
     createResult = { status: 'failed', retryable: true, requeued: true, error: { status: 503, body: { error: 'clone failed' } } };
     await handleTelegramEvent(update('first try', ALLOWED, 901));
     expect(calls.map((c) => c.method)).toEqual(['sendChatAction', 'sendMessage']);
@@ -174,17 +230,24 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
     expect(await claim(902)).toHaveLength(0);
   });
 
-  test('a chat whose first session is still starting: retry, and on the last attempt say so', async () => {
-    await db.insert(chatEventDedup).values({
-      eventId: `telegram:threadcreate:${PROJECT}:${BOT_ID}:903`,
-      expiresAt: new Date(Date.now() + 60_000),
-    });
-    const event = update('are you there?', ALLOWED, 903);
-    await handleTelegramEvent(event, { finalAttempt: true });
+  test('a chat whose first session is still starting: wait 8 s, retry, and on the last attempt say so', async () => {
+    await holdClaim(903);
+    await expect(handleTelegramEvent(update('are you there?', ALLOWED, 903))).rejects.toThrow('in flight');
+    expect(sleeps).toBe(32);
+
+    calls.length = 0;
+    await handleTelegramEvent(update('are you there?', ALLOWED, 903), { finalAttempt: true });
     expect(created).toHaveLength(0);
     expect(calls.map((c) => c.method)).toEqual(['sendChatAction', 'sendMessage']);
     expect(String(calls[1]!.body.text)).toContain('Send your message again');
-  }, 20_000);
+  });
+
+  test('an expired claim (a create that never finished) is taken over', async () => {
+    await holdClaim(904, -1_000);
+    await handleTelegramEvent(update('anyone?', ALLOWED, 904));
+    expect(created).toHaveLength(1);
+    expect(sleeps).toBe(0);
+  });
 
   test('the kortix_telegram connector counts as connected exactly while the project has an install', async () => {
     const check = (projectId: string) =>
