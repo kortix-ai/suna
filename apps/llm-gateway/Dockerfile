@@ -39,13 +39,7 @@ COPY packages/shared ./packages/shared
 COPY packages/llm-catalog ./packages/llm-catalog
 
 RUN printf '{"name":"kortix-gateway-build","private":true,"workspaces":["apps/llm-gateway","packages/*"]}\n' > package.json \
-    && bun install --no-save \
-    # Fail the build, so the layer is never cached, when a dependency link
-    # dangles. 2026-10-26: `hono` linked to 4.13.14 while the store held
-    # 4.13.13, and every gateway task exited at start with ENOENT.
-    && for dir in apps/llm-gateway packages/llm-gateway; do \
-         (cd "$dir" && bun -e "for (const d of Object.keys(require('./package.json').dependencies ?? {})) require('fs').realpathSync(Bun.resolveSync(d, process.cwd()))") || exit 1; \
-       done
+    && bun install --no-save
 
 # ---- Runner Stage ----
 FROM oven/bun:${BUN_VERSION}-slim AS runner
@@ -60,15 +54,18 @@ ARG KORTIX_COMMIT=unknown
 ENV KORTIX_VERSION=${KORTIX_VERSION}
 ENV KORTIX_COMMIT=${KORTIX_COMMIT}
 
-# Hoisted deps + the workspace package sources the app imports as
-# @kortix/llm-gateway (→ @kortix/shared). package.json "main"
-# points at src, so bun runs the TypeScript directly — no separate build step.
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/package.json ./package.json
-COPY --from=deps /app/packages/shared ./packages/shared
-COPY --from=deps /app/packages/llm-catalog ./packages/llm-catalog
-COPY --from=deps /app/packages/llm-gateway ./packages/llm-gateway
-COPY --from=deps /app/apps/llm-gateway ./apps/llm-gateway
+# The whole install in ONE layer: node_modules (the bun store) + the workspace
+# sources whose node_modules links point into it. package.json "main" points
+# at src, so bun runs the TypeScript directly — no separate build step.
+# Separate COPY layers let the build cache reuse a stale store next to fresh
+# links: 2026-10-26, `hono` linked to 4.13.14 while a cached store from
+# 2026-10-23 held 4.13.13, and every gateway task exited with ENOENT.
+COPY --from=deps /app ./
+
+# Fail the build when any direct dependency link dangles in the final image.
+RUN for dir in apps/llm-gateway packages/llm-gateway; do \
+      (cd "$dir" && bun -e "for (const d of Object.keys(require('./package.json').dependencies ?? {})) require('fs').realpathSync(Bun.resolveSync(d, process.cwd()))") || exit 1; \
+    done
 
 WORKDIR /app/apps/llm-gateway
 
