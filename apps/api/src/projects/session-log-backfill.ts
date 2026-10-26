@@ -44,10 +44,13 @@
  *   `20261023124001597_mirror_messages_missing_from_log.sql`, the one definition the Release B guard
  *   reads too) which mirror messages the log lacks by id: `missing` (some content not in the log),
  *   `present` (all of it under another id) or `empty`. A session with a `missing` one goes through
- *   `mergeMirrorIntoLog` (`session-log-capture.ts`); a session over the cap through the same thread,
- *   memory guard and poison pill as a conversion. A merge pass that counts no `missing` sets
- *   `mergedMissing`; only then does `mirrorDrained` answer true. `mergePasses` and `mergeTotals`
- *   (the passes' counts summed) stay in the state row as the record of what the merge did.
+ *   `mergeMirrorIntoLog` (`session-log-capture.ts`), in process at any mirror size: it reads only the
+ *   missing rows and the mirror's skeleton, never the whole mirror, so it needs no size cap and no
+ *   thread. A missing message too large for the process is `oversize` (WARN with the session id and
+ *   bytes) and stays missing; messages over the cap of one merge are `deferred` to the next pass. A
+ *   merge pass that counts no `missing` sets `mergedMissing`; only then does `mirrorDrained` answer
+ *   true, so an `oversize` message keeps Release B waiting for a person. `mergePasses` and
+ *   `mergeTotals` (the passes' counts summed) stay in the state row as the record of what the merge did.
  * - Size cap (P3.4). A mirror over the capture's cap (`mirrorStoredCap`, `session-log-capture.ts`)
  *   makes the capture answer `too_large` after one cheap size query. The backfill counts it
  *   (`too_large`) and converts it in a Bun `Worker` (`session-log-backfill-thread.ts`): the same
@@ -62,7 +65,8 @@
  *   - Memory: the thread starts only while RSS plus `THREAD_BYTES_PER_JSON_BYTE` (`lib/thread-memory.ts`) times the
  *     mirror's JSON bytes stays under 75 % of the limit (cgroup `memory.max`,
  *     capped by `SESSION_LOG_BACKFILL_MEMORY_MB`). Else the session is `deferred` (and
- *     `too_large`), not converted, not failed: a later pass tries again.
+ *     `too_large`), not converted, not failed: a later pass tries again. One WARN per deferral names
+ *     the session and its JSON bytes, so a session deferred pass after pass shows in the logs.
  *   - Poison pill: the tick saves the state with the cursor on this session and
  *     `threadStarted` = its id, and clears it when the thread answers. A tick that loads a
  *     `threadStarted` knows its process died during that thread (out of memory, a deploy): the
@@ -85,7 +89,8 @@
  *   `session_log_converting`); this pass's thread converts it. Once drained, a read of a
  *   session with no log (a new session before its first journal batch) reads no mirror table.
  * - Logs. One info line of counts per tick that converted anything, one summary
- *   per pass. No session id or content above debug. A `write` pass while
+ *   per pass. No content in any line. No session id above debug, except in the WARN lines that need a
+ *   person to act: a deferred session, a merge left `oversize` or `deferred`. A `write` pass while
  *   `SESSION_LOG_INGEST_ENABLED` is off skips every session: one warning per pass.
  */
 import { toV1, type SessionLog, type V1Row } from '@kortix/api-contract/session-log';
@@ -114,7 +119,10 @@ export const zero = () => ({
   failed: 0,
   /** Sessions whose mirror is over the capture's size cap (`mirrorStoredCap`): converted in a thread. */
   too_large: 0,
-  /** Of `too_large`: not converted, the thread had no room under the memory limit. A later pass tries again. */
+  /**
+   * Sessions not done for want of memory; a later pass tries again. Conversion: of `too_large`, the thread had
+   * no room under the memory limit. Merge: missing messages over the cap of one merge (`mergeMirrorIntoLog`).
+   */
   deferred: 0,
   messages: 0,
   // Restore grades of the logs. `fromV1` gives converted or partial.
@@ -158,6 +166,8 @@ export const zero = () => ({
   misplaced: 0,
   /** Of `missing`: not written, a compaction summary whose marker message the log holds. */
   unplaced: 0,
+  /** Of `missing`: not written, too large for this process (`mergeMirrorIntoLog`). They keep `mergedMissing` false until a person decides. */
+  oversize: 0,
 });
 export type BackfillCounts = ReturnType<typeof zero>;
 const MAX_KEYS = new Set<keyof BackfillCounts>(['max_session_ms', 'max_session_messages', 'max_session_record_bytes', 'pass_ms']);
@@ -211,13 +221,14 @@ const restart = (state: BackfillState, mode: BackfillMode, extra: Partial<Backfi
 
 /** Thread attempts per session: a thread that kills its process twice never starts again. */
 export const THREAD_ATTEMPTS = 2;
-/** Room for `sessionId`'s conversion thread (`threadRoom`, `lib/thread-memory.ts`). */
-async function threadFits(sessionId: string): Promise<boolean> {
+/** Room for `sessionId`'s conversion thread (`threadRoom`, `lib/thread-memory.ts`), and the mirror's JSON bytes. */
+async function threadRoomFor(sessionId: string) {
   // Postgres detoasts the mirror for the length (~200 ms on 180 MB), off this event loop.
   const [row] = await db.execute<{ bytes: string }>(sql`
     SELECT coalesce(sum(octet_length(info::text) + coalesce(octet_length(parts::text), 0)), 0)::bigint AS bytes
       FROM kortix.session_transcript_messages WHERE session_id = ${sessionId}`);
-  return threadRoom(Number(row?.bytes ?? 0)).fits;
+  const bytes = Number(row?.bytes ?? 0);
+  return { ...threadRoom(bytes), bytes };
 }
 
 const STATE_ID = 'pass';
@@ -342,14 +353,14 @@ function addCounts(into: BackfillCounts, from: BackfillCounts) {
  * ponytail: the thread holds the whole mirror (1-vCPU Linux, 131 MB of JSON: ~1.4 GB peak with `smol`);
  * page the read and write if a session outgrows the API task's memory.
  */
-function convertInThread(sessionId: string, mode: BackfillMode, merge: boolean): Promise<BackfillCounts> {
+function convertInThread(sessionId: string, mode: BackfillMode): Promise<BackfillCounts> {
   const worker = new Worker(new URL('./session-log-backfill-thread.ts', import.meta.url).href, { smol: true });
   return new Promise<BackfillCounts>((resolve, reject) => {
     worker.onmessage = (event: MessageEvent<BackfillCounts>) => resolve(event.data);
     worker.onerror = (event) => reject(new Error(event.message));
     // A thread that exits before it answers.
     worker.addEventListener('close', () => reject(new Error('the conversion thread exited')));
-    worker.postMessage({ sessionId, mode, merge });
+    worker.postMessage({ sessionId, mode });
   }).finally(() => worker.terminate());
 }
 
@@ -410,24 +421,15 @@ export async function convertOne(
 
 /**
  * The merge of one session (`mergeMirrorIntoLog`) into `counts`; the caller counts the session and
- * its messages by content. `inThread` as in `convertOne`.
+ * its messages by content. It reads only the missing rows, so no session needs the thread.
  */
-export async function mergeOne(
-  sessionId: string,
-  merge: typeof mergeMirrorIntoLog,
-  counts: BackfillCounts,
-  inThread?: (sessionId: string) => Promise<BackfillCounts>,
-) {
+export async function mergeOne(sessionId: string, merge: typeof mergeMirrorIntoLog, counts: BackfillCounts) {
   const started = performance.now();
   const result = await merge(sessionId).catch((err: unknown) => {
     logger.debug('[session-log] backfill merge threw', { sessionId, error: err instanceof Error ? err.message : String(err) });
     return { outcome: 'failed' as const };
   });
   counts.max_session_ms = Math.max(counts.max_session_ms, Math.round(performance.now() - started));
-  if (result.outcome === 'too_large') {
-    counts.too_large++;
-    if (inThread) addCounts(counts, { ...(await inThread(sessionId)), sessions: 0 });
-  }
   if (result.outcome === 'skipped') counts.skipped++;
   if (result.outcome === 'invalid') counts.validation_failed++;
   if (result.outcome === 'failed') counts.failed++;
@@ -436,6 +438,8 @@ export async function mergeOne(
   counts.threads_created += result.threads;
   counts.misplaced += result.misplaced;
   counts.unplaced += result.unplaced;
+  counts.oversize += result.oversize;
+  if (result.deferred > 0) counts.deferred++;
 }
 
 /**
@@ -493,14 +497,15 @@ export async function backfillSessionLogs(
     return saved;
   };
   const inThread = async (sessionId: string): Promise<BackfillCounts> => {
-    // ponytail: the merge's thread converts the whole mirror, as the backfill's: one memory guard for both.
     const one = { ...zero(), sessions: 1 };
     if ((state.threadCrashes[sessionId] ?? 0) >= THREAD_ATTEMPTS) {
       logger.debug('[session-log] backfill session whose thread ended its process too often; not started', { sessionId });
       return { ...one, failed: 1 };
     }
-    if (!(await threadFits(sessionId))) {
-      logger.debug('[session-log] backfill session deferred: no memory for its thread', { sessionId });
+    const room = await threadRoomFor(sessionId);
+    if (!room.fits) {
+      // A WARN on every pass: a session deferred pass after pass is stuck, and its size says why.
+      logger.warn('[session-log] backfill session deferred: no memory for its thread', { sessionId, bytes: room.bytes, need: room.need, rss: room.rss, limit: room.limit });
       return { ...one, deferred: 1 };
     }
     // Saved with the cursor on this session before the thread starts: a process the thread kills leaves the id behind.
@@ -509,7 +514,7 @@ export async function backfillSessionLogs(
       state.threadStarted = null;
       return { ...one, failed: 1 };
     }
-    const result = await convertInThread(sessionId, mode, merging).catch((err: unknown) => {
+    const result = await convertInThread(sessionId, mode).catch((err: unknown) => {
       logger.debug('[session-log] backfill conversion thread failed', { sessionId, error: err instanceof Error ? err.message : String(err) });
       return { ...one, failed: 1 };
     });
@@ -528,7 +533,7 @@ export async function backfillSessionLogs(
       counts.missing += found.missing;
       counts.present += found.present;
       counts.empty += found.empty;
-      if (found.missing > 0) await mergeOne(row.session_id, merge, counts, inThread);
+      if (found.missing > 0) await mergeOne(row.session_id, merge, counts);
     } else await convertOne(row.session_id, mode, convert, counts, inThread);
     if (Date.now() - started >= budgetMs) break;
   }
