@@ -25,7 +25,7 @@ import type { ReleaseOutcome } from '../projects/session-lifecycle/release-runti
  * the agent reads; the daemon's own late release returns 404 and is ignored.
  */
 
-export type ChatChannel = 'teams' | 'slack';
+export type ChatChannel = 'teams' | 'slack' | 'telegram' | 'email';
 
 /**
  * Which chat channel a session belongs to, from its own metadata — the
@@ -36,10 +36,23 @@ export type ChatChannel = 'teams' | 'slack';
 export function channelOfSessionMetadata(metadata: unknown): ChatChannel | null {
   const m =
     metadata && typeof metadata === 'object' ? (metadata as Record<string, unknown>) : {};
-  if (m.source === 'teams' || (m.teams !== null && typeof m.teams === 'object')) return 'teams';
-  if (m.source === 'slack' || (m.slack !== null && typeof m.slack === 'object')) return 'slack';
+  for (const channel of ['teams', 'slack', 'telegram', 'email'] as const) {
+    if (m.source === channel || (m[channel] !== null && typeof m[channel] === 'object')) return channel;
+  }
   return null;
 }
+
+/**
+ * Where a question lands, and the agent's own way to ask in plain words when it
+ * could not be posted. Telegram and Email have no live turn to post into (their
+ * agent answers through its connector), so their questions are never posted.
+ */
+const QUESTION_COPY: Record<ChatChannel, { where: string; send: string }> = {
+  slack: { where: 'the Slack thread', send: '`slack send`' },
+  teams: { where: 'the Teams conversation', send: '`teams send`' },
+  telegram: { where: 'the Telegram chat', send: '`kortix connectors call kortix_telegram.send_message`' },
+  email: { where: 'the email thread', send: '`kortix connectors call email.reply_message`' },
+};
 
 /**
  * What the agent reads as the answer to its own question. Two cases, because
@@ -50,7 +63,7 @@ export function channelOfSessionMetadata(metadata: unknown): ChatChannel | null 
  *   the channel's own `send`, rather than letting it believe it asked.
  */
 export function questionReleaseSentinel(channel: ChatChannel, posted: boolean): string {
-  const where = channel === 'teams' ? 'the Teams conversation' : 'the Slack thread';
+  const { where, send } = QUESTION_COPY[channel];
   if (posted) {
     return (
       `(Posted to ${where}. Questions here are async — the user answers with a tap or ` +
@@ -58,7 +71,6 @@ export function questionReleaseSentinel(channel: ChatChannel, posted: boolean): 
       'answer, and post nothing else: the question is your reply. Just finish this turn now.)'
     );
   }
-  const send = channel === 'teams' ? '`teams send`' : '`slack send`';
   return (
     `(This question could NOT be posted to ${where}, so the user has not seen it. Ask it ` +
     `in plain words with ${send}, then finish this turn — their reply reaches you as a NEW turn.)`
