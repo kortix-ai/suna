@@ -1,7 +1,8 @@
 /**
  * Room for a conversion thread (a Bun `Worker` that holds a whole session in memory): the
  * session-log backfill's thread (`session-log-backfill.ts`) and the journal-less capture's
- * (`captureInThread`, `session-transcript-capture.ts`) share this one guard.
+ * (`captureInThread`, `session-transcript-capture.ts`) share this one guard. The mirror merge
+ * (`mergeMirrorIntoLog`, `session-log-capture.ts`) uses the same estimate for its in-process rows.
  */
 import { readFileSync } from 'node:fs';
 import { config } from '../../config';
@@ -26,10 +27,13 @@ function memoryLimit(): number {
   return configured;
 }
 
-/** Room for a thread that holds `jsonBytes` of session JSON: RSS plus its estimate under 75 % of the limit. */
-export function threadRoom(jsonBytes: number): { fits: boolean; rss: number; need: number; limit: number } {
+/**
+ * Room for a thread that holds `jsonBytes` of session JSON: RSS plus its estimate under 75 % of the limit.
+ * `everFits`: the estimate alone is under that share, so the work fits a process with no other memory.
+ */
+export function threadRoom(jsonBytes: number): { fits: boolean; everFits: boolean; rss: number; need: number; limit: number } {
   const rss = process.memoryUsage().rss;
   const need = jsonBytes * THREAD_BYTES_PER_JSON_BYTE;
   const limit = memoryLimit();
-  return { fits: rss + need <= THREAD_MEMORY_SHARE * limit, rss, need, limit };
+  return { fits: rss + need <= THREAD_MEMORY_SHARE * limit, everFits: need <= THREAD_MEMORY_SHARE * limit, rss, need, limit };
 }
