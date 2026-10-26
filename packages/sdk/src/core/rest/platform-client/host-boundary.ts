@@ -298,7 +298,7 @@ export function finalizeConnectorSetupLink(
   });
 }
 
-/** @deprecated The Shopify app form was removed; the server answers 404. Removed in the next major. */
+/** @deprecated The app form was removed; the server answers 404. Removed in the next major. */
 export interface ConnectorAppFormInfo {
   app: string;
   name: string;
@@ -308,21 +308,21 @@ export interface ConnectorAppFormInfo {
   expires_at: string;
 }
 
-/** @deprecated The Shopify app form was removed; the server answers 404. Removed in the next major. */
+/** @deprecated The app form was removed; the server answers 404. Removed in the next major. */
 export interface ConnectorAppFormInput {
   store: string;
   clientId: string;
   clientSecret: string;
 }
 
-/** @deprecated The Shopify app form was removed; the server answers 404. Removed in the next major. */
+/** @deprecated The app form was removed; the server answers 404. Removed in the next major. */
 export interface ConnectorAppFormResult {
   connected: true;
   connected_as: string;
   success_redirect_uri?: string;
 }
 
-/** @deprecated The Shopify app form was removed; the server answers 404. Removed in the next major. */
+/** @deprecated The app form was removed; the server answers 404. Removed in the next major. */
 export function getConnectorAppForm(
   token: string,
   options: HostRequestOptions,
@@ -330,7 +330,7 @@ export function getConnectorAppForm(
   return requestJson(`/connectors/app-form/${encodeURIComponent(token)}`, options);
 }
 
-/** @deprecated The Shopify app form was removed; the server answers 404. Removed in the next major. */
+/** @deprecated The app form was removed; the server answers 404. Removed in the next major. */
 export function submitConnectorAppForm(
   token: string,
   input: ConnectorAppFormInput,

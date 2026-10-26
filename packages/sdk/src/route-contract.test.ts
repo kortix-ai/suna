@@ -67,7 +67,7 @@ const ALLOWLIST: Array<{ pattern: RegExp; reason: string }> = [
   },
   {
     pattern: /^\/connectors\/app-form(\/|$)/,
-    reason: 'Shopify app form removed server-side; the deprecated client names stay exported until the next major, every call answers 404',
+    reason: 'connector app form removed server-side; the deprecated client names stay exported until the next major, every call answers 404',
   },
 ];
 
