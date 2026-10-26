@@ -31,6 +31,9 @@ export interface ConnectorRouterAuth {
    * logged-in user token) and pins the project from the path. Null → 403.
    */
   resolveProjectPrincipal(c: Context, projectId: string): Promise<ConnectorPrincipal | null>;
+  /** True for a session token (an agent), never a person's JWT or PAT: the
+   *  custom-server guard on `POST …/connectors` applies to it. */
+  isAgentCaller?(c: Context): boolean;
   /** Admin auth: resolve user + verify project access, or null for 401/403. */
   resolveAdmin(
     c: Context,

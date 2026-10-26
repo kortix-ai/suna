@@ -31,7 +31,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { cn } from '@kortix/ui';
 import { type App, type AppDeployment } from '@kortix/sdk';
-import { useAppAccess, useAppDeployments, useProjectApps } from '@kortix/sdk/react';
+import { useAppAccess, useAppDeployments, useProjectApps, useProjectTriggers } from '@kortix/sdk/react';
 import { ArrowClockwiseIcon, ArrowSquareOutIcon, GearSixIcon, PauseIcon, PlayIcon, TrashIcon, XIcon } from '@phosphor-icons/react';
 
 import { useCallback, useState } from 'react';
@@ -53,6 +53,7 @@ import { AppAccessModal } from './app-access';
 import { AppConnectDialog } from './app-connect';
 import { AppReleasesPanel } from './app-releases';
 import { AppMachinesPanel, AppVolumesPanel } from './app-fleet';
+import { AppOverview } from './app-overview';
 
 /**
  * The App, full screen, with its controls above it.
@@ -87,6 +88,7 @@ export function AppDetailModal({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const appCopy = localizedAppCopy(tI18nComplete);
   const apps = useProjectApps(projectId);
+  const triggers = useProjectTriggers(projectId);
   // Releases, logs, machines and volumes are operations data: the API answers
   // them only with `deploy`. No id, no request for anyone else.
   const deployments = useAppDeployments(projectId, canDeploy ? app.app_id : null);
@@ -141,6 +143,11 @@ export function AppDetailModal({
   const busy = apps.start.isPending || apps.stop.isPending || apps.remove.isPending;
   const liveUrl = access.session.data?.url ?? app.url;
   const viewedUrl = viewedChild ? (childAccess.session.data?.url ?? viewedChild.url) : liveUrl;
+  // A background App (not on the Apps page), or one with nothing to frame,
+  // opens to what it is and does: how it runs, what calls it, which agents it
+  // starts. Its page, when it has one, is still one click away (Open).
+  const showOverview = !viewedChild && !app.external_url
+    && (!preview || !app.active_deployment_id || app.display?.listed !== true);
 
   const rollback = deployments.rollback.mutateAsync;
   const onRollback = useCallback(
@@ -273,7 +280,7 @@ export function AppDetailModal({
                     </Button>
                   </Hint>
                 ) : null}
-                {appCan(viewed, 'preview') || viewed.external_url ? (
+                {(appCan(viewed, 'preview') && viewed.active_deployment_id) || viewed.external_url ? (
                   <Hint
                     label={tI18nComplete('text06ce842278f6', { value0: appHost(viewed.url) })}
                     side="bottom"
@@ -339,6 +346,13 @@ export function AppDetailModal({
                 accessError={viewedChild.viewer_can_access === false || childAccess.session.isError}
                 interactive
                 className="absolute inset-0 size-full"
+              />
+            ) : showOverview ? (
+              <AppOverview
+                app={app}
+                triggers={triggers.data?.triggers ?? []}
+                latest={latest}
+                onVersions={canDeploy && status.deployed ? () => setVersionsOpen(true) : undefined}
               />
             ) : preview || app.external_url ? (
               <AppPreview
@@ -446,6 +460,19 @@ export function AppDetailModal({
                     )}
                     {running ? tI18nComplete.raw('text6f50fb1f4f46') : tI18nComplete.raw('text971ed7129524')}
                   </Button>
+                </SettingsRow>
+              ) : null}
+              {canWrite ? (
+                <SettingsRow label={tI18nComplete.raw('text1d7b00a8a249')} description={tI18nComplete.raw('textf15a2daaaabf')}>
+                  <Switch
+                    checked={app.display?.listed === true}
+                    disabled={apps.update.isPending}
+                    aria-label={tI18nComplete.raw('text1d7b00a8a249')}
+                    onCheckedChange={(listed) =>
+                      apps.update.mutate({ appId: app.app_id, input: { display: { ...(app.display ?? {}), listed } } })
+                    }
+                    data-testid="app-listed-switch"
+                  />
                 </SettingsRow>
               ) : null}
               {canWrite && canSleep ? (

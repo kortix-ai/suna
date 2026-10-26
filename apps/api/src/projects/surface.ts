@@ -53,6 +53,9 @@ export {
   commitManifest,
 } from './lib/triggers';
 
+// Every declared agent's grant (consumed by the connectors rules matrix).
+export { extractAgents, grantsByAgent } from './agents';
+
 // Project access, the route app and the secret envelope.
 export { assertProjectCapability, loadProjectForUser } from './lib/access';
 
@@ -64,6 +67,10 @@ export { approvalTargetSession, expireDueApprovals } from './lib/connector-appro
 export { projectsApp } from './lib/app';
 export { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
 export { listResolvedProjectSecrets } from './secrets';
+// App events (`type: app` triggers): apps/event-routes.ts appends through these.
+export { ingestAppEvents, parseAppEventsBody, type AppEventInput } from './lib/app-events';
+// One-off App runs (runAfter / runAt) on the trigger engine.
+export { cancelAppRun, insertAppRun } from './lib/app-runs';
 export { currentInstanceId } from './instance-scope';
 
 // What account erasure deletes outside the database (consumed by
@@ -83,7 +90,8 @@ export { markKortixRemovalIntent } from './runtime-identity';
 export { disableRemindersAuthoredBy } from './lib/session-reminders';
 
 // Nested `projects.metadata` writes (consumed by ../feature-flags/write).
-export { metadataClearSubtreeKey, metadataMergeSubtree } from './lib/metadata-merge';
+export { metadataClearSubtreeKey, metadataMerge, metadataMergeSubtree } from './lib/metadata-merge';
+export { MANIFEST_PROJECT_NAME_KEY, projectNameAction } from './lib/manifest-project-name';
 
 // Whether any app-event adapter is configured (consumed by ../feature-flags/registry).
 
@@ -128,6 +136,16 @@ export type { GitBackedProject } from './git/types';
 // Who may stop a running turn (consumed by channels/core/turn-stop.ts and
 // sandbox-proxy/forward/abort-authority.ts).
 export { readRunningTurn, sessionLifecycleStandingFor, turnPrompterOf } from './session-lifecycle/turn-stop-authority';
+// Who may rewind a session (consumed by sandbox-proxy/forward/forward-to-sandbox.ts).
+export { mayRewindSession } from './session-lifecycle/rewind-authority';
 
 export { registerRuntimeFork } from './lib/runtime-session-snapshot';
+
+// `project_channels` on: file every session into `#general`, and the "turned on
+// again" record (consumed by ../feature-flags/toggle-effects).
+export { turnOnChannels } from './lib/project-spaces';
+export { recordChannelsReenabled } from './lib/channels-onboarding';
+
+// Author names written into memory files (consumed by ../memory/layers.ts).
+export { resolveUserIdentities } from './lib/user-identity';
 export { readPublicResponse } from './lib/public-response';

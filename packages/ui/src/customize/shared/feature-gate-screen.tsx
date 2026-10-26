@@ -5,12 +5,13 @@ import { UiLink, useUiParams } from '../../providers/ui-provider';
 
 import { Button } from '../../primitives/button';
 import { projectSettingsSectionHref } from '../project-settings/project-settings-sections';
+import { ChannelsSwitchDialog } from './channels-switch-dialog';
 import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
 import { useProjectCan } from '../../internal/lib/use-project-can';
-import { updateFeatureFlag, type FeatureFlagKey, type ProjectDetail } from '@kortix/sdk';
-import { invalidateProject, qk } from '@kortix/sdk/react';
+import { getProject, updateFeatureFlag, type FeatureFlagKey, type ProjectDetail } from '@kortix/sdk';
+import { contract, invalidateProject, qk } from '@kortix/sdk/react';
 import { FlagIcon } from '@phosphor-icons/react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
 /** A disabled surface keeps its enable action and settings link in place. */
@@ -37,11 +38,12 @@ export function FeatureGateScreen({
   const permission = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
   const [error, setError] = useState('');
   const enable = useMutation({
-    mutationFn: () => {
+    mutationFn: async (alsoDrive: boolean = false) => {
       if (!projectId || internalOnly || permission.isLoading || permission.allowed !== true) {
         throw new Error('Feature activation is not permitted');
       }
-      return updateFeatureFlag(projectId, featureKey, true);
+      const updated = await updateFeatureFlag(projectId, featureKey, true);
+      return alsoDrive ? updateFeatureFlag(projectId, 'drives', true) : updated;
     },
     onSuccess: (updated) => {
       if (!projectId) return;
@@ -54,9 +56,31 @@ export function FeatureGateScreen({
     },
     onError: (cause: Error) => setError(cause.message),
   });
+  const channels = featureKey === 'project_channels';
+  const [confirming, setConfirming] = useState(false);
+  const project = useQuery({
+    queryKey: qk.project.summary(projectId ?? ''),
+    queryFn: () => getProject(projectId as string),
+    enabled: channels && !!projectId,
+    ...contract('config'),
+  });
+  const drive = project.data?.experimental_features?.find((f) => f.key === 'drives' && f.available);
 
   return (
     <div className="bg-popover rounded-md border px-4 py-5">
+      {channels ? (
+        <ChannelsSwitchDialog
+          open={confirming}
+          onOpenChange={setConfirming}
+          turningOn
+          projectName={project.data?.name ?? ''}
+          driveOff={!!drive && !drive.enabled && drive.operator_only !== true}
+          onConfirm={(alsoDrive) => {
+            setConfirming(false);
+            enable.mutate(alsoDrive);
+          }}
+        />
+      ) : null}
       <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-start gap-3">
           <span className="bg-muted/50 flex size-9 shrink-0 items-center justify-center rounded-sm">
@@ -86,7 +110,9 @@ export function FeatureGateScreen({
               disabled={permission.isLoading || permission.allowed !== true || enable.isPending}
               onClick={() => {
                 setError('');
-                enable.mutate();
+                // Channels changes the sidebar for everyone: it asks first.
+                if (channels) setConfirming(true);
+                else enable.mutate(false);
               }}
             >
               {enable.isPending ? t('enabling') : t('enable', { name: featureName })}

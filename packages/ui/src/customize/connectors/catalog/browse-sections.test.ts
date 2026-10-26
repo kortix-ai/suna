@@ -7,21 +7,15 @@
  * catalogue holds 5531 connectors. A heading reading `Finance · 1` was
  * describing the page, not the catalogue.
  *
- * Every catalogue now serves its browse page from the server with each
- * section's true size. These tests pin the mapping from those responses to
+ * The catalogue serves its browse page from the server with each section's
+ * true size. These tests pin the mapping from those responses to
  * what the grid renders.
  */
 import type { DiscoverConnector } from '@kortix/sdk';
 import { expect, test } from 'bun:test';
 
-import {
-  browseSections,
-  connectToolkitApp,
-  sectionsPageFromConnect,
-  sectionsPageFromDiscover,
-  sectionsPageFromPipedream,
-} from './browse-sections';
-import type { CatalogEntry } from './catalog-entry';
+import { browseSections, sectionsPageFromDiscover } from './browse-sections';
+import { connectToolkitApp } from './catalog-entry';
 import { POPULAR_SECTION } from './connector-categories';
 
 const toolkit = (slug: string, categories: string[] = ['server-monitoring']) => ({
@@ -51,17 +45,6 @@ const discover = (slug: string, categories: string[] = ['payments']): DiscoverCo
 
 const title = (key: string) => `title:${key}`;
 
-const native: CatalogEntry = {
-  source: 'computer',
-  key: 'computer:computers',
-  slug: 'computers',
-  name: 'Computer',
-  description: null,
-  icon: null,
-  categories: ['developer-tools'],
-  popularity: null,
-};
-
 test('a Composio toolkit becomes the same card the paged catalogue renders', () => {
   expect(connectToolkitApp({ ...toolkit('sentry'), isNoAuth: true })).toEqual({
     slug: 'sentry',
@@ -82,109 +65,17 @@ test('a Composio toolkit becomes the same card the paged catalogue renders', () 
   ).toMatchObject({ description: null, categories: [], authType: 'oauth' });
 });
 
-test('a Composio section states its category’s size, not how many cards it carries', () => {
-  const page = sectionsPageFromConnect({
-    provider: 'composio',
+test('each section is capped to its card slice, keeping the true total', () => {
+  const page = sectionsPageFromDiscover({
+    popular: [],
     sections: [
-      {
-        key: 'server-monitoring',
-        label: 'server monitoring',
-        total: 42,
-        toolkits: [toolkit('sentry')],
-      },
-    ],
-    categories: [{ key: 'server-monitoring', label: 'server monitoring', count: 42 }],
-  });
-  const [section] = browseSections(page, { native: null, cardCount: 6, title });
-  expect(section).toMatchObject({
-    key: 'server-monitoring',
-    label: 'title:server-monitoring',
-    total: 42,
-  });
-  expect(section.items.map((item) => item.slug)).toEqual(['sentry']);
-  expect(section.items[0]).toMatchObject({ source: 'easy-connect', key: 'easy-connect:sentry' });
-});
-
-test('Composio sections and categories are titled by key, so labels match the paged grid', () => {
-  // Composio names are lowercase ("server monitoring"). The key is what
-  // `localizedSectionTitle` humanizes, and what an open category is keyed by.
-  const page = sectionsPageFromConnect({
-    provider: 'composio',
-    sections: [{ key: 'images-&-design', label: 'images & design', total: 76, toolkits: [] }],
-    categories: [{ key: 'images-&-design', label: 'images & design', count: 76 }],
-  });
-  expect(page.sections[0]).toMatchObject({ key: 'images-&-design', label: 'images-&-design' });
-  expect(page.categories).toEqual([
-    { key: 'images-&-design', label: 'images-&-design', count: 76 },
-  ]);
-});
-
-test('each section is capped to its card slice', () => {
-  const page = sectionsPageFromConnect({
-    provider: 'composio',
-    sections: [
-      {
-        key: 'crm',
-        label: 'crm',
-        total: 89,
-        toolkits: ['a', 'b', 'c', 'd'].map((slug) => toolkit(slug, ['crm'])),
-      },
+      { key: 'crm', label: 'CRM', total: 89, items: ['a', 'b', 'c', 'd'].map((slug) => discover(slug, ['crm'])) },
     ],
     categories: [],
   });
-  const [section] = browseSections(page, { native: null, cardCount: 3, title });
+  const [section] = browseSections(page, { cardCount: 3, title });
   expect(section.items.map((item) => item.slug)).toEqual(['a', 'b', 'c']);
   expect(section.total).toBe(89);
-});
-
-test('the native Computers card leads the developer-tools section without changing its count', () => {
-  // It is the only way to discover Computer on the browse page. The
-  // catalogue does not publish it, so it must not inflate the catalogue total.
-  const page = sectionsPageFromConnect({
-    provider: 'composio',
-    sections: [
-      {
-        key: 'developer-tools',
-        label: 'developer tools',
-        total: 404,
-        toolkits: ['github', 'gitlab', 'linear'].map((slug) => toolkit(slug, ['developer-tools'])),
-      },
-      { key: 'crm', label: 'crm', total: 89, toolkits: [toolkit('hubspot', ['crm'])] },
-    ],
-    categories: [],
-  });
-  const [developerTools, crm] = browseSections(page, { native, cardCount: 3, title });
-  expect(developerTools.items.map((item) => item.key)).toEqual([
-    'computer:computers',
-    'easy-connect:github',
-    'easy-connect:gitlab',
-  ]);
-  expect(developerTools.total).toBe(404);
-  expect(crm.items.map((item) => item.key)).toEqual(['easy-connect:hubspot']);
-});
-
-test('Pipedream keeps its own section labels and matches its spelling of developer tools', () => {
-  const page = sectionsPageFromPipedream({
-    sections: [{ key: 'Developer Tools', label: 'Developer Tools', total: 300, apps: [] }],
-    categories: [{ key: 'Developer Tools', label: 'Developer Tools', count: 300 }],
-  });
-  const [section] = browseSections(page, { native, cardCount: 6, title });
-  expect(section).toMatchObject({ label: 'title:Developer Tools', total: 300 });
-  expect(section.items.map((item) => item.key)).toEqual(['computer:computers']);
-  expect(page.categories).toEqual([
-    { key: 'Developer Tools', label: 'Developer Tools', count: 300 },
-  ]);
-});
-
-test('no section is invented for the native card when the catalogue has none for it', () => {
-  const page = sectionsPageFromConnect({
-    provider: 'composio',
-    sections: [{ key: 'crm', label: 'crm', total: 89, toolkits: [] }],
-    categories: [],
-  });
-  const sections = browseSections(page, { native, cardCount: 6, title });
-  expect(sections.map((section) => section.key)).toEqual(['crm']);
-  expect(sections[0].items).toEqual([]);
 });
 
 test('a Discover section states its size across the whole catalogue, Popular first', () => {
@@ -205,7 +96,7 @@ test('a Discover section states its size across the whole catalogue, Popular fir
       { key: 'Other', label: 'Other', count: 3337 },
     ],
   });
-  const sections = browseSections(page, { native, cardCount: 6, title });
+  const sections = browseSections(page, { cardCount: 6, title });
   expect(sections.map(({ key, label, total }) => ({ key, label, total }))).toEqual([
     // Popular is a per-item rank, not a category: its total is its own slice,
     // so it never offers "View all" into a bucket with no more members.
@@ -218,11 +109,7 @@ test('a Discover section states its size across the whole catalogue, Popular fir
     'discover:mcp/github',
   ]);
   expect(sections[1].items[0]).toMatchObject({ source: 'discover', slug: 'stripe' });
-  // The native card joins Discover's developer tools too, without the count.
-  expect(sections[2].items.map((item) => item.key)).toEqual([
-    'computer:computers',
-    'discover:mcp/github',
-  ]);
+  expect(sections[2].items.map((item) => item.key)).toEqual(['discover:mcp/github']);
   // Discover is titled by key: curated keys resolve to our own titles.
   expect(page.categories).toEqual([
     { key: 'finance', label: 'finance', count: 116 },
@@ -237,6 +124,6 @@ test('an unranked Discover catalogue gets no Popular heading', () => {
     sections: [{ key: 'finance', label: 'Finance', total: 116, items: [] }],
     categories: [],
   });
-  const sections = browseSections(page, { native: null, cardCount: 6, title });
+  const sections = browseSections(page, { cardCount: 6, title });
   expect(sections.map((section) => section.key)).toEqual(['finance']);
 });

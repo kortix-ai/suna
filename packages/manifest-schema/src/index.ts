@@ -16,6 +16,7 @@
  */
 
 import { Cron } from 'croner';
+import { normalizeTriggerList } from './trigger-shape';
 import { TomlError } from 'smol-toml';
 import { type ManifestFormat, parseManifestText } from './format';
 import { parseConnectorHeaders } from './connector-headers';
@@ -24,6 +25,7 @@ import { appDisplayIssues, appReleaseConfigIssues, resolveAppReleaseConfig } fro
 import { appReleaseInputFromBlock } from './app-config';
 import { parseTriggerFilter } from './trigger-filter';
 import { validateManifestBodyV3 } from './index.v3';
+import { validateAgentPolicySetRefs, validateConnectorPolicySets } from './policy-sets';
 import {
   CHANNEL_PLATFORMS,
   CONNECTOR_AUTH_TYPES,
@@ -38,10 +40,6 @@ import {
   LEGACY_TOLERATED_KORTIX_PERMISSIONS,
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
   reservedEnvNameReason,
-  MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
-  MONITOR_MIN_INTERVAL_SECONDS,
-  MONITOR_MODES,
-  MONITOR_RUN_MAX_LENGTH,
   TRIGGER_MIN_MAX_LATENESS_SECONDS,
   DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR,
   EVENT_FORBIDDEN_KEYS,
@@ -52,6 +50,7 @@ import {
   SANDBOX_MEMORY_BOUNDS,
   SLUG_RE,
   TRIGGER_TYPES,
+  MONITOR_REMOVED_MESSAGE,
   parseDurationSeconds,
 } from './constants';
 // The 7 below (v2-only enums/regex) are no longer consumed directly in this
@@ -124,6 +123,15 @@ export {
 } from './format';
 
 export { slugifySlug } from './slug';
+export {
+  MAX_POLICY_SETS_PER_CONNECTOR,
+  MAX_RULES_PER_POLICY_SET,
+  POLICY_SETS_UNSUPPORTED_PROVIDERS,
+  POLICY_SET_NAME_RE,
+  RESERVED_POLICY_SET_NAME,
+  policySetNameError,
+} from './policy-sets';
+export { normalizeTriggerEntry, normalizeTriggerList } from './trigger-shape';
 export {
   TRIGGER_FILTER_OPERATORS,
   parseTriggerFilter,
@@ -204,10 +212,6 @@ export {
   reservedEnvNameReason,
   RESERVED_SANDBOX_SLUG,
   RESERVED_SLUG_PROVIDERS,
-  MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
-  MONITOR_MIN_INTERVAL_SECONDS,
-  MONITOR_MODES,
-  MONITOR_RUN_MAX_LENGTH,
   TRIGGER_MIN_MAX_LATENESS_SECONDS,
   DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR,
   EVENT_FORBIDDEN_KEYS,
@@ -225,6 +229,7 @@ export {
   selectedKortixTools,
   TOOL_NAME_RE,
   TRIGGER_TYPES,
+  MONITOR_REMOVED_MESSAGE,
   V2_RUNTIME_VALUES,
   WORKSPACE_MODES_V2,
   CODEMODE_VALUES,
@@ -439,6 +444,7 @@ function validateManifestBodyV2(
   warnUnknownAgentTools(parsed.agents, parsed.tools, issues);
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
+  validateAgentPolicySetRefs(parsed.agents, parsed.connectors, 'agents', issues);
 }
 
 /**
@@ -1232,93 +1238,6 @@ function validateMonitorDuration(
 }
 
 /**
- * `type: monitor` — the third trigger type.
- * A monitor names a repo command (`run`) that the platform supervises 24/7 in
- * the project's monitor box; its stdout lines are the events. `cron`/`run_at`/
- * `timezone`/`secret_env` are cron/webhook wiring and are hard-rejected here —
- * silently ignoring them would let a manifest claim a schedule the monitor
- * runner never reads.
- *
- * MUST stay in sync with the runtime parser (apps/api/.../triggers.ts
- * `parseTriggerEntry`'s monitor branch) and with `triggerSchema` in
- * ./json-schema.ts — the conformance suite fails CI if the two validators
- * disagree on a fixture.
- */
-function validateMonitorTrigger(
-  entry: Record<string, unknown>,
-  where: string,
-  issues: ManifestIssue[],
-): void {
-  const run = typeof entry.run === 'string' ? entry.run.trim() : '';
-  if (!run) {
-    issues.push({
-      path: `${where}.run`,
-      message: 'monitor triggers must declare a `run` command (repo-relative).',
-      severity: 'error',
-    });
-  } else if (run.length > MONITOR_RUN_MAX_LENGTH) {
-    issues.push({
-      path: `${where}.run`,
-      message: `must be at most ${MONITOR_RUN_MAX_LENGTH} characters.`,
-      severity: 'error',
-    });
-  } else if (/[\r\n]/.test(run)) {
-    issues.push({
-      path: `${where}.run`,
-      message: 'must be a single command line — no newlines.',
-      severity: 'error',
-    });
-  }
-
-  const mode = typeof entry.mode === 'string' ? entry.mode.trim() : '';
-  if (!(MONITOR_MODES as readonly string[]).includes(mode)) {
-    issues.push({
-      path: `${where}.mode`,
-      message: `mode must be one of: ${MONITOR_MODES.join(', ')} (got "${mode || 'unset'}").`,
-      severity: 'error',
-    });
-  }
-
-  // `interval` is the poll period, so it is required iff mode=poll and
-  // meaningless on a long-running stream.
-  if (mode === 'poll') {
-    validateMonitorDuration(
-      entry.interval,
-      `${where}.interval`,
-      MONITOR_MIN_INTERVAL_SECONDS,
-      issues,
-    );
-  } else if (entry.interval !== undefined) {
-    issues.push({
-      path: `${where}.interval`,
-      message: 'is only valid on a `mode: poll` monitor — a stream runs continuously.',
-      severity: 'error',
-    });
-  }
-
-  // Optional silence watchdog: no event within this window synthesizes a
-  // `silent` lifecycle event so a wedged monitor can never fail silently.
-  if (entry.expect_event_within !== undefined) {
-    validateMonitorDuration(
-      entry.expect_event_within,
-      `${where}.expect_event_within`,
-      MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
-      issues,
-    );
-  }
-
-  for (const key of ['cron', 'schedule', 'run_at', 'runAt', 'timezone', 'secret_env', 'secretEnv']) {
-    if (entry[key] !== undefined) {
-      issues.push({
-        path: `${where}.${key}`,
-        message: 'is not valid on a monitor trigger — monitors are driven by their `run` process.',
-        severity: 'error',
-      });
-    }
-  }
-}
-
-/**
  * `type: event` — the fourth trigger type: "when <app event> happens on
  * <connected app>, run the agent". `connector` names a declared connector,
  * `event` is the provider's event type id, `config` is the provider event
@@ -1379,8 +1298,77 @@ function validateEventTrigger(
   }
 }
 
-export function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
-  if (node == null) return;
+/**
+ * `type: app` — "when App <app> emits an event, run the agent". The App decides
+ * when and why it emits (a poll, a webhook it received, a timer); Kortix only
+ * delivers. `app` names an App slug of this project. Narrow by event name with
+ * the generic `filter` (`event.name`).
+ *
+ * MUST stay in sync with `parseTriggerEntry`'s app branch (apps/api) and
+ * `triggerSchema` in ./json-schema.ts.
+ */
+function validateAppTrigger(
+  entry: Record<string, unknown>,
+  where: string,
+  issues: ManifestIssue[],
+): void {
+  if (typeof entry.app !== 'string' || !APP_SLUG_RE.test(entry.app.trim())) {
+    issues.push({
+      path: `${where}.app`,
+      message: 'app triggers must declare `app`: the slug of an App in this project.',
+      severity: 'error',
+    });
+  }
+  for (const key of EVENT_FORBIDDEN_KEYS) {
+    if (entry[key] !== undefined) {
+      issues.push({
+        path: `${where}.${key}`,
+        message: 'is not valid on an app trigger — the App decides when to emit.',
+        severity: 'error',
+      });
+    }
+  }
+}
+
+/**
+ * `target: { app, path?, method? }` — a fire calls an App of this project
+ * instead of running an agent; `prompt` is then optional.
+ * MUST stay in sync with `parseTargetField` (apps/api).
+ */
+function validateTriggerTarget(entry: Record<string, unknown>, where: string, type: string, issues: ManifestIssue[]): void {
+  const target = entry.target;
+  if (target === undefined) return;
+  const push = (path: string, message: string): void => {
+    issues.push({ path: `${where}.target${path}`, message, severity: 'error' });
+  };
+  if (!isTable(target)) return push('', 'must be a table: { app, path, method }.');
+  for (const key of Object.keys(target)) if (!['app', 'path', 'method', 'payload'].includes(key)) push(`.${key}`, 'is not a target field (app, path, method, payload).');
+  if (target.payload !== undefined && !isTable(target.payload)) push('.payload', 'must be a table.');
+  if (typeof target.app !== 'string' || !APP_SLUG_RE.test(target.app.trim())) push('.app', 'must be the slug of an App in this project.');
+  if (target.path !== undefined && (typeof target.path !== 'string' || !target.path.startsWith('/'))) push('.path', 'must be an HTTP path starting with /.');
+  if (target.method !== undefined && target.method !== 'POST' && target.method !== 'GET') push('.method', 'must be POST or GET.');
+}
+
+const ON_KEYS = ['cron', 'timezone', 'every', 'at', 'webhook', 'event', 'connector', 'account', 'source', 'config', 'app'];
+const RUN_KEYS = ['agent', 'prompt', 'session', 'session_key', 'session_id', 'model', 'app', 'path', 'method', 'payload'];
+
+/** The raw `on:` / `run:` objects carry only known keys, and a trigger carries both or neither (trigger-shape.ts). */
+function validateOnRunShape(entry: Record<string, unknown>, where: string, issues: ManifestIssue[]): void {
+  // A legacy monitor's `run:` is a command string, not this shape.
+  if (entry.on === undefined && !isTable(entry.run)) return;
+  const push = (at: string, message: string) => issues.push({ path: `${where}.${at}`, message, severity: 'error' });
+  if (!isTable(entry.on)) push('on', 'must be a table: what fires the trigger (cron, every, at, webhook, or event).');
+  else for (const key of Object.keys(entry.on)) if (!ON_KEYS.includes(key)) push(`on.${key}`, `is not an \`on\` field (${ON_KEYS.join(', ')}).`);
+  if (!isTable(entry.run)) push('run', 'must be a table: what a fire runs (agent + prompt, or app + path).');
+  else for (const key of Object.keys(entry.run)) if (!RUN_KEYS.includes(key)) push(`run.${key}`, `is not a \`run\` field (${RUN_KEYS.join(', ')}).`);
+  if (entry.type !== undefined) push('type', 'is implied by `on`; remove it.');
+}
+
+export function validateTriggers(rawNode: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
+  if (rawNode == null) return;
+  if (Array.isArray(rawNode)) rawNode.forEach((entry, i) => { if (isTable(entry)) validateOnRunShape(entry, `${path}[${i}]`, issues); });
+  // One set of rules for both shapes: an `on:` / `run:` entry is checked as the flat fields it means.
+  const node = normalizeTriggerList(rawNode);
   if (!Array.isArray(node)) {
     issues.push({
       path,
@@ -1415,7 +1403,9 @@ export function validateTriggers(node: unknown, path: string, issues: ManifestIs
       seenSlugs.add(slug);
     }
     const type = typeof entry.type === 'string' ? entry.type.trim() : '';
-    if (!(TRIGGER_TYPES as readonly string[]).includes(type)) {
+    if (type === 'monitor') {
+      issues.push({ path: `${where}.type`, message: MONITOR_REMOVED_MESSAGE, severity: 'error' });
+    } else if (!(TRIGGER_TYPES as readonly string[]).includes(type)) {
       issues.push({
         path: `${where}.type`,
         message: `type must be one of: ${TRIGGER_TYPES.join(', ')} (got "${type || 'unset'}").`,
@@ -1433,7 +1423,8 @@ export function validateTriggers(node: unknown, path: string, issues: ManifestIs
         : typeof entry.prompt_template === 'string'
           ? entry.prompt_template
           : '';
-    if (!promptRaw.trim()) {
+    // An App target receives the payload, not a prompt.
+    if (!promptRaw.trim() && entry.target === undefined) {
       issues.push({
         path: `${where}.prompt`,
         message: 'prompt is required and may not be empty.',
@@ -1479,7 +1470,9 @@ export function validateTriggers(node: unknown, path: string, issues: ManifestIs
           : typeof entry.runAt === 'string'
             ? entry.runAt.trim()
             : '';
-      if (runAt) {
+      if (entry.every !== undefined) {
+        if (cron || runAt) issues.push({ path: `${where}.every`, message: 'declare one of cron, run_at or every.', severity: 'error' });
+      } else if (runAt) {
         if (Number.isNaN(Date.parse(runAt))) {
           issues.push({
             path: `${where}.run_at`,
@@ -1490,7 +1483,7 @@ export function validateTriggers(node: unknown, path: string, issues: ManifestIs
       } else if (!cron) {
         issues.push({
           path: `${where}.cron`,
-          message: 'cron triggers must declare a `cron` expression or a one-off `run_at`.',
+          message: 'cron triggers must declare a `cron` expression, an `every` period, or a one-off `run_at`.',
           severity: 'error',
         });
       } else {
@@ -1553,10 +1546,22 @@ export function validateTriggers(node: unknown, path: string, issues: ManifestIs
           severity: 'error',
         });
       }
-    } else if (type === 'monitor') {
-      validateMonitorTrigger(entry, where, issues);
     } else if (type === 'event') {
       validateEventTrigger(entry, where, issues);
+    } else if (type === 'app') {
+      validateAppTrigger(entry, where, issues);
+    }
+    validateTriggerTarget(entry, where, type, issues);
+    if (entry.every !== undefined) {
+      if (type !== 'cron') issues.push({ path: `${where}.every`, message: `is only valid on a cron trigger (type is "${type}").`, severity: 'error' });
+      else validateMonitorDuration(entry.every, `${where}.every`, 60, issues);
+    }
+    if (type && type !== 'app' && entry.app !== undefined) {
+      issues.push({
+        path: `${where}.app`,
+        message: `is only valid on an app trigger (type is "${type}").`,
+        severity: 'error',
+      });
     }
     if (type && type !== 'event' && (TRIGGER_TYPES as readonly string[]).includes(type)) {
       for (const key of ['connector', 'account', 'source', 'event', 'config']) {
@@ -1908,6 +1913,7 @@ export function validateConnectors(node: unknown, path: string, issues: Manifest
         });
       }
     }
+    validateConnectorPolicySets(entry, where, issues, version);
     // Optional [[connectors.policies]]
     if (entry.policies !== undefined) {
       const policies = entry.policies;

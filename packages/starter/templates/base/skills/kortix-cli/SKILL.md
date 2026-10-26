@@ -46,7 +46,7 @@ kortix secrets request <NAME>                   # mint a link for a human to ent
 kortix sessions status                          # every agent on the project + what it's doing now
 kortix sessions new --json --wait --prompt "…"  # spawn a subagent, get a ready session id
 kortix connectors call <connector> <action> '…' # run a configured connector action (server-side)
-kortix apps deploy apps/<slug> --slug <slug>     # deploy an App's folder; block until its URL is ready
+kortix apps deploy apps/<slug> --slug <slug> --listed  # deploy an App's folder; --listed only for an App people open
 kortix tools ls                                 # the tools a session gets (kortix.yaml tools:), and removed Kortix tools
 kortix tools eject <name>                       # copy a Kortix tool to tools/<name>.ts to change it
 kortix cr open --title "…"                       # propose landing your branch on main (the user merges)

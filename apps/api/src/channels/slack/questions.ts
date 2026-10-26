@@ -1,4 +1,5 @@
 import { postBlocks, postMessage } from '../slack-api';
+import { slackAgentPersona } from './persona';
 import { deleteTurn, finalizeTurn, loadTurn } from './turn';
 import { escapeMrkdwn } from './util';
 import type { QuestionInfo } from './types';
@@ -47,14 +48,15 @@ export async function postQuestion(
 
   const blocks = buildQuestionBlocks(questions);
   const fallback = questions[0]?.question?.slice(0, 200) ?? 'A question for you';
-  const messageTs = await postBlocks(handle.token, handle.channel, fallback, blocks, handle.triggerTs);
+  const persona = await slackAgentPersona(handle).catch(() => null);
+  const messageTs = await postBlocks(handle.token, handle.channel, fallback, blocks, handle.triggerTs, persona);
   if (!messageTs) {
     // The Block Kit render was rejected (e.g. invalid_blocks). We've already
     // closed the plan and the agent is about to end its turn, so losing the
     // question here means a silent dead-end. Fall back to plain text — the
     // buttons are gone, but the user can still see what's asked and answer with a
     // free-form in-thread reply (which arrives as a normal follow-up turn).
-    const plainTs = await postMessage(handle.token, handle.channel, renderQuestionsPlain(questions), handle.triggerTs);
+    const plainTs = await postMessage(handle.token, handle.channel, renderQuestionsPlain(questions), handle.triggerTs, persona);
     if (!plainTs) {
       return { ok: false, error: 'Failed to post the question to Slack.' };
     }

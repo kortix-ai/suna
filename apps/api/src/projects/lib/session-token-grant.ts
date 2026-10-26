@@ -311,6 +311,7 @@ function describeGrant(grant: AgentGrant | null): Record<string, unknown> {
     permissions: grant.permissions,
     env: grant.env ?? 'all',
     apps: grant.apps ?? [],
+    policySets: grant.policySets ?? {},
     manifestRevision: grant.manifestRevision ?? null,
     manifestCommit: grant.manifestCommit ?? null,
   };

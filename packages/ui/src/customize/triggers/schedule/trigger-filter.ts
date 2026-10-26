@@ -12,7 +12,7 @@ import type { TriggerKind } from './schedule-copy';
 export type TriggerFilter = 'all' | TriggerKind;
 
 /** Tab order on the page; the value is the `?type=` it writes. */
-export const TRIGGER_FILTERS: readonly TriggerFilter[] = ['all', 'cron', 'event', 'webhook'];
+export const TRIGGER_FILTERS: readonly TriggerFilter[] = ['all', 'cron', 'event', 'app', 'webhook'];
 
 /** An unknown or missing `?type=` is `all`, and so is one the page does not offer (`event` while events are off). */
 export function parseTriggerFilter(

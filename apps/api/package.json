@@ -50,6 +50,7 @@
     "drizzle-orm": "^0.45.2",
     "hono": "^4.13.11",
     "jose": "^5.9.6",
+    "marked": "^15.0.7",
     "nodemailer": "^10.0.13",
     "oauth4webapi": "^3.8.7",
     "postgres": "^3.4.8",

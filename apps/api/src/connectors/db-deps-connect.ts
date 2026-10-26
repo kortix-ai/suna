@@ -100,9 +100,12 @@ export async function loadMcpConnector(projectId: string, slug: string) {
     .from(connectors)
     .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
     .limit(1);
-  const url = (row?.config as { url?: unknown } | null)?.url;
+  const config = row?.config as { url?: unknown; auth?: { type?: unknown } } | null;
+  const url = config?.url;
   if (!row || row.providerType !== 'mcp' || typeof url !== 'string' || !url) return null;
-  return { connectorId: row.connectorId, accountId: row.accountId, url };
+  // A server declared with `auth: none` (a public one) has nothing to sign in to.
+  const needsSignIn = config?.auth?.type !== undefined && config.auth.type !== 'none';
+  return { connectorId: row.connectorId, accountId: row.accountId, url, needsSignIn };
 }
 
 /** Load a native Shopify connector (verifies provider). */

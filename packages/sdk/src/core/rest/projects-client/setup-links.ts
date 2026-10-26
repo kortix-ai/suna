@@ -127,6 +127,11 @@ export interface ApprovalLinkDetails {
   /** `unavailable` when Kortix could not read that content. */
   resolved_error?: string | null;
   policy_source: string | null;
+  /** The agent policy set that held this call; non-null only when
+   *  `policy_source` is `policy_set`. Absent on older servers. */
+  policy_set?: string | null;
+  /** With `policy_set`: the agent whose set held this call. */
+  agent?: string | null;
   requested_at: string;
   resolved_at: string | null;
   expires_at: string;

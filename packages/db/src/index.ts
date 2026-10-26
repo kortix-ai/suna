@@ -85,6 +85,14 @@ export {
   chatEventDedup,
   chatUserIdentities,
   projectSessions,
+  projectSpaces,
+  projectSpaceLinks,
+  projectSpaceMembers,
+  projectSpaceKindEnum,
+  projectSpaceVisibilityEnum,
+  // Memory ("Used memory" records)
+  memoryThreadLoads,
+  projectUserMarks,
   sessionPresenceLeases,
   projectSessionRuntimeContexts,
   accountModelPreferences,
@@ -156,6 +164,8 @@ export {
   roomMessages,
   roomMembers,
   sessionIdleWatches,
+  // Artifacts: published HTML pages (flag artifacts)
+  artifacts,
   // Product feedback (POST /v1/feedback)
   feedback,
   // Billing v2 — per-seat + compute metering + per-member YOLO
@@ -274,6 +284,7 @@ export {
   connectorActions,
   connectionPolicies,
   connectorPolicies,
+  connectorPolicySets,
   connectorProjectPolicies,
   connectorProjectSettings,
   connectorSyncFences,
@@ -301,6 +312,7 @@ export {
 export type { AgentGrant, StoredAgentGrant } from './schema/kortix';
 export { readStoredAgentGrant } from './schema/kortix';
 export type { AccountBrandingRecord } from './schema/kortix';
+export type { MemoryThreadLoadLayer } from './schema/kortix';
 export type { SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot } from './schema/kortix';
 
 export type {
@@ -357,6 +369,8 @@ export type {
   NewGatewayApiKey,
   GatewayBudget,
   NewGatewayBudget,
+  MemoryThreadLoad,
+  NewMemoryThreadLoad,
 } from './types';
 
 export { userProviderConnections, projectUserProviderConnections, sessionUserProviderConnections } from './schema/kortix';

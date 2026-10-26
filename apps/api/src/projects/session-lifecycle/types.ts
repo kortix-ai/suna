@@ -1,3 +1,4 @@
+import type { Actor } from '../../iam/actor';
 import type { ProjectRow, ProjectSessionRow, RequestAuditContext } from '../lib/serializers';
 import type { PromptOverridesWire, PromptPartWire } from './prompt-payload';
 import type { SessionCreateError } from '../lib/sessions';
@@ -16,6 +17,7 @@ export type SessionInvocationSource =
   | 'trigger:manual'
   | 'trigger:monitor'
   | 'trigger:event'
+  | 'trigger:app'
   | 'trigger:reminder'
   | 'system:sandbox-build-fix'
   | 'system:approval-resume'
@@ -102,6 +104,7 @@ export interface CreateSessionCommand {
   apiKeyType?: string | null;
   inSession?: boolean | null;
   callerSessionId?: string | null;
+  parentActor?: Actor;
 }
 
 export interface QueuedCreateSessionPayload {
@@ -120,6 +123,7 @@ export interface QueuedCreateSessionPayload {
   apiKeyType?: string | null;
   inSession?: boolean | null;
   callerSessionId?: string | null;
+  parentActor?: Actor;
 }
 
 export interface ContinueSessionCommand {

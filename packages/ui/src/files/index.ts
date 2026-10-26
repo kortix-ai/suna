@@ -45,3 +45,4 @@ export { useSelectedVersion } from './project/store/version-store';
 export { workspaceFileSource } from './runtime/file-source';
 export { useWorkspaceSearch } from './runtime/hooks/use-workspace-search';
 export { SandboxFileExplorer } from './runtime/sandbox-file-explorer';
+export { CodeEditor } from './editor/lazy-code-editor';

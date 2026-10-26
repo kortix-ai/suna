@@ -18,6 +18,7 @@ import {
   projectSecrets,
   projectSessionRuntimeContexts,
   projectSessions,
+  projectSpaces,
   projects,
   sessionLifecycleCommands,
   sessionSandboxes,
@@ -202,6 +203,7 @@ function resetState() {
     parentSessionId: null,
     initiatorType: null,
     initiatorId: null,
+    spaceId: null,
     secretsAllowlist: null,
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
@@ -805,6 +807,19 @@ mock.module('../shared/db', () => ({
             }),
             limit: async () => pairRows(),
           }),
+          // A fork or child reads its source's private channel
+          // (`inheritedPrivateSpace`): no session of this fake is in one.
+          // Any other join stays unsupported, as before.
+          innerJoin: (joined: unknown) => {
+            if (joined !== projectSpaces) throw new TypeError('innerJoin is not supported by this fake');
+            return {
+              where: (_predicate?: unknown) => ({
+                then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) =>
+                  Promise.resolve([]).then(resolve, reject),
+                limit: async () => [],
+              }),
+            };
+          },
           where: (predicate?: unknown) => ({
           then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) => {
             Promise.resolve(table === projectSecrets ? secretRows : table === sessionSandboxes ? sessionSandboxRows : []).then(resolve, reject);
@@ -962,6 +977,7 @@ mock.module('../shared/db', () => ({
             parentSessionId: values.parentSessionId ?? null,
             initiatorType: values.initiatorType ?? null,
             initiatorId: values.initiatorId ?? null,
+            spaceId: values.spaceId ?? null,
             secretsAllowlist: values.secretsAllowlist ?? null,
             requiredConnectors: null,
             connectorBindingsInheritUnbound: values.connectorBindingsInheritUnbound ?? false,
@@ -1456,6 +1472,33 @@ describe('project session runtime guards', () => {
     expect(created.metadata?.source).toBe('agent');
     // Ownership does not move: the coordinator's token still owns its worker.
     expect(lastSessionInsertValues?.createdBy).toBe(sessionRow!.createdBy);
+  });
+
+  test('a human explicit parent groups the session without inheriting sharing or automation identity', async () => {
+    const parentId = SESSION_ID;
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main', parent_session_id: parentId }),
+    });
+    expect(response.status).toBe(201);
+    const created = await response.json();
+    expect(created.parent_session_id).toBe(parentId);
+    expect(created.visibility).toBe('private');
+    expect(created.metadata?.spawned_by_session).toBeUndefined();
+    expect(created.initiator).toMatchObject({ type: 'member' });
+  });
+
+  test('a bound session ignores a body-selected parent', async () => {
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SESSION_BOUND_PAT}` },
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main', parent_session_id: '00000000-0000-4000-a000-000000000999' }),
+    });
+    expect(response.status).toBe(201);
+    expect((await response.json()).parent_session_id).toBe(SESSION_ID);
   });
 
   test('a browser create is its member’s, from the web; the CLI names itself (KRTX-639)', async () => {

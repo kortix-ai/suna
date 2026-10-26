@@ -29,6 +29,9 @@ will be deleted. Until then:
 - Names that say `opencode` but serve pi too (`opencode_session_id`,
   `/kortix/opencode/*`, the OpenCode-shaped event wire pi emits) are wire
   names, not OpenCode code. They stay until a separate rename.
+- Accepted gap: OpenCode stores a prompt's `system` (the memory file list,
+  `project_channels`) on the user message (`info.system`), and the transcript
+  and event stream hand it to every viewer of the thread. pi stores nothing.
 
 ## Selection
 
@@ -722,6 +725,17 @@ other adapter, no route and nothing in `src/app/`. The app hands a boot what it
 needs through `HarnessBootContext` (`serve` starts the HTTP server).
 `bun run lint` enforces all of it.
 
+## The prompt body
+
+`POST /kortix/runtime/sessions/:id/prompt` (`routes/kortix/runtime.ts`
+`parseRuntimePromptBody`) takes `{ message_id?, parts, agent?, model:
+"provider/model"?, variant?, directory?, no_reply?, system? }`
+and answers `400 { error }` for a malformed one.
+
+| Field | What the turn does with it |
+| --- | --- |
+| `system` | A string of 16,000 characters at most (`MAX_TURN_SYSTEM_CHARS`), trimmed; blank is none. Added to this turn's system prompt only: pi sets it through the hidden `kortix-turn` extension (`before_agent_start`), OpenCode receives it as `prompt_async` `system`. apps/api sends the thread's memory file list here (`project_channels`): titles and paths of the Drive Memory folders the thread mounts; the agent reads and writes those files with its file tools. A prompt without it runs without it; a daemon that predates the field ignores it. `/steer` drops it ("Steering"). |
+
 ## Steering
 
 `POST /kortix/runtime/sessions/:id/steer` takes the `/prompt` body with
@@ -732,6 +746,9 @@ step boundary, after the running tool batch; the turn does not stop. Answers:
 already admitted, steered or on the transcript; `409 { code: 'no_active_turn' }`
 when no turn runs (nothing is stored, the caller sends a prompt);
 `501 { code: 'feature_not_supported' }` on OpenCode older than 1.18.15.
+The route drops a steer's `system`: the turn keeps its prompt's `system` to the
+end. OpenCode reads `system` from the latest user message, so its adapter sends
+the session's last prompt `system` again with each steer.
 
 - **Read.** pi: the loop emits the message as a user message
   (`steeringMode: 'all'`: every message steered before one boundary arrives
@@ -1108,14 +1125,23 @@ dir sets `compaction.enabled`, `reserveTokens` and `keepRecentTokens`.
 Subagent child sessions have no `AgentSession` and do not compact.
 
 The threshold is `window - reserve`, and this daemon sets the reserve from the
-catalog: the model's own output limit, floored at pi's 16,384 default and
-capped at half the window (`compactionSettings` in `pi/model.ts`). pi's default
-reserve alone lets a request enter the window with less room left than the
-answer may use, so the provider cuts the reply (`stopReason: length`,
-`output_length` on the wire) at a context the meter still calls healthy. The
-reserve follows a catalog refresh (`refreshModels`), so a custom endpoint's
-real limits apply to a running session. A model's `limit.output` therefore
-also decides when its session compacts.
+catalog: the model's own output limit, floored at pi's 16,384 default and at the
+`compaction.reserveTokens` a project configures, and capped at half the window
+(`compactionSettings` in `pi/model.ts`). pi's default reserve alone lets a
+request enter the window with less room left than the answer may use, so the
+provider cuts the reply (`stopReason: length`, `output_length` on the wire) at a
+context the meter still calls healthy. The reserve follows a catalog refresh
+(`applyCompaction`), so a custom endpoint's real limits apply to a running
+session. A model's `limit.output` therefore also decides when its session
+compacts; a project can only ask for an earlier cut, never a later one.
+
+A transient model error is retried at pi's `agent_before_settle` boundary
+(`turnExtension`), not after `session.prompt` returns. The retry therefore stays
+inside pi's loop: every step after it runs pi's post-run checks, so a context
+threshold, an overflow or a cut answer there still compacts. The boundary
+appends a `context_edit` that omits the failed attempt, as pi's own retry does.
+A child session has no loop to re-enter and keeps the out-of-loop retry
+(`transient-retry.ts`).
 
 A `/summarize` is a turn of its own, named by its compaction marker (the user
 message with the `compaction` part), as on OpenCode: when the compaction that

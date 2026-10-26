@@ -28,7 +28,7 @@ export function registerEventIngressRoutes(): void {
     method: 'post',
     path: '/events/{provider}',
     tags: ['triggers'],
-    summary: 'Receive an app event',
+    summary: 'Receive a connector event',
     description:
       'Authenticated by the event provider signature, not a bearer token. Fans each delivery out to the event triggers subscribed to it. Answers 500 when any fire failed, so the provider retries; the idempotency key dedupes the fires that succeeded.',
     // No body schema: the provider signs the raw bytes, so nothing may parse them first.

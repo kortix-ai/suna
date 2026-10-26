@@ -701,11 +701,8 @@ describe('runCreate: the full create() orchestration', () => {
   /**
    * The create's handoff contract (KRTX-1419): a successful create must land
    * the user on the project they just created — it stamps the project
-   * onboarded (the same PATCH the wizard's own exits use) and then navigates
-   * to `/projects/<id>`. It used to redirect to `/new?onboarding=<id>`, which
-   * mounted the full-screen wizard over the page and held the user until they
-   * completed three steps or clicked "Skip for now" — the project page was
-   * never reached without a click.
+   * onboarded (the same PATCH the onboarding chat's kickoff uses) and then
+   * navigates to `/projects/<id>`, which opens on the usual home.
    */
   test('on success, stamps the project onboarded, then hands off to the project page', async () => {
     const stamps: string[] = [];
@@ -725,23 +722,20 @@ describe('runCreate: the full create() orchestration', () => {
     );
     expect(result.ok).toBe(true);
     expect(stamps).toEqual(['created-handoff']);
-    // The stamp precedes the handoff: the project shell's wizard reads the
-    // stamped metadata on arrival, so it can never mount over the landing.
+    // The stamp precedes the handoff: project home reads the stamped metadata
+    // on arrival, so the onboarding chat never opens for a later project.
     expect(handoffs).toEqual(['created-handoff']);
     expect(stamps.length).toBe(1);
     expect(handoffs.length).toBe(1);
   });
 
   /**
-   * KRTX-2092: the three-step onboarding wizard (work, apps, models) is the
-   * post-signup first run, and the create flow's unconditional stamp made it
-   * unreachable — the project shell mounts the wizard only while
-   * `metadata.onboarding_completed_at` is absent. A fresh account's first
-   * project therefore stays unstamped so the wizard opens on the landing,
-   * where its own Skip control closes it in place; projects on an account
-   * that already has one keep the implicit skip (KRTX-1419).
+   * KRTX-2092: the onboarding chat is the post-signup first run. Project home
+   * shows it only while `metadata.onboarding_completed_at` is absent, so a
+   * fresh account's first project stays unstamped; projects on an account
+   * that already has one are stamped at create (KRTX-1419).
    */
-  test('on success, leaves the account\'s FIRST project unstamped so the onboarding wizard opens on the landing', async () => {
+  test('on success, leaves the account\'s FIRST project unstamped so the onboarding chat opens on the landing', async () => {
     const stamps: string[] = [];
     const handoffs: string[] = [];
     const result = await runCreate(
@@ -763,7 +757,7 @@ describe('runCreate: the full create() orchestration', () => {
     expect(handoffs).toEqual(['created-first']);
   });
 
-  test('a cold project cache reads as a first project — the wizard is skippable, a missed first run is not', async () => {
+  test('a cold project cache reads as a first project — a missed first run is worse than a repeated one', async () => {
     const stamps: string[] = [];
     const result = await runCreate(
       { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },

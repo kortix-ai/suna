@@ -1,4 +1,4 @@
-import { withClient } from '../src/with-client';
+import { withClient, withTransaction } from '../src/with-client';
 
 const INDEX_NAME = 'idx_project_sessions_one_available_warm';
 
@@ -45,8 +45,7 @@ export async function repairLocalWarmSessionIndex(
     `);
     if (index?.valid === true) return { repaired: false, discardedDuplicates: 0 };
 
-    await client.query('begin');
-    try {
+    return withTransaction(client, async () => {
       await client.query('lock table kortix.project_sessions in share row exclusive mode');
       const repaired = await client.query(`
         with ranked as (
@@ -86,14 +85,10 @@ export async function repairLocalWarmSessionIndex(
            and metadata->'warm_session'->>'state' = 'available'
            and coalesce(metadata->>'deletedAt', '') = ''
       `);
-      await client.query('commit');
       return {
         repaired: true,
         discardedDuplicates: repaired.rowCount ?? 0,
       };
-    } catch (error) {
-      await client.query('rollback');
-      throw error;
-    }
+    });
   });
 }

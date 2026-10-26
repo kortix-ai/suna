@@ -10,6 +10,9 @@ import {
   legacyDetailRedirect,
   connectorSearchFromParams,
   withConnectorSearch,
+  browseForAnotherProfileHref,
+  rulesHref,
+  waysFromParams,
 } from './connector-routes';
 
 const BASE = '/projects/p1/customize/connectors';
@@ -26,17 +29,6 @@ const discoverEntry = {
   connector: { id: 'resend.com' },
 } as unknown as CatalogEntry;
 
-const managedEntry = {
-  source: 'easy-connect',
-  key: 'easy-connect:google_sheets',
-  slug: 'google_sheets',
-  name: 'Google Sheets',
-  description: null,
-  icon: null,
-  categories: [],
-  popularity: null,
-  app: { slug: 'google_sheets', name: 'Google Sheets' },
-} as unknown as CatalogEntry;
 
 describe('connectorsHref', () => {
   test('the bare list has no query', () => {
@@ -44,6 +36,7 @@ describe('connectorsHref', () => {
   });
   test('a scope rides as ?scope=', () => {
     expect(connectorsHref('p1', 'connected')).toBe(`${BASE}?scope=connected`);
+    expect(rulesHref('p1')).toBe(`${BASE}?rules=1`);
   });
 });
 
@@ -53,23 +46,14 @@ describe('app URLs', () => {
     expect(ref).toEqual({ source: 'discover', slug: 'resend-com', id: 'resend.com' });
     expect(appHref('p1', ref!)).toBe(`${BASE}/resend-com?id=resend.com`);
   });
-  test('a managed app carries ?src=apps', () => {
-    const ref = appRefFromEntry(managedEntry);
-    expect(appHref('p1', ref!)).toBe(`${BASE}/google_sheets?src=apps`);
-  });
-  test('the computer entry has no app page', () => {
-    expect(appRefFromEntry({ source: 'computer' } as unknown as CatalogEntry)).toBeNull();
-  });
   test('the location round-trips to the same ref', () => {
     expect(appRefFromLocation('resend-com', new URLSearchParams('id=resend.com'))).toEqual({
       source: 'discover',
       slug: 'resend-com',
       id: 'resend.com',
     });
-    expect(appRefFromLocation('google_sheets', new URLSearchParams('src=apps'))).toEqual({
-      source: 'easy-connect',
-      slug: 'google_sheets',
-    });
+    // The retired managed-catalogue link (`?src=apps`) names no app.
+    expect(appRefFromLocation('google_sheets', new URLSearchParams('src=apps'))).toBeNull();
   });
   test('the reserved segment and an unmarked segment name no app', () => {
     expect(appRefFromLocation('connected', new URLSearchParams('id=x'))).toBeNull();
@@ -138,5 +122,17 @@ describe('the catalogue search in the URL', () => {
     expect(params.toString()).toBe('scope=channels&q=Shopify');
     withConnectorSearch(params, '   ');
     expect(params.toString()).toBe('scope=channels');
+  });
+});
+
+describe('another profile', () => {
+  const app = { source: 'discover' as const, slug: 'gmail', id: 'composio:gmail' };
+  test('the app page keeps itself open with ways=1', () => {
+    expect(appHref('p1', app, { ways: true })).toBe(`${BASE}/gmail?id=composio%3Agmail&ways=1`);
+    expect(waysFromParams(new URLSearchParams('ways=1'))).toBe(true);
+    expect(waysFromParams(new URLSearchParams(''))).toBe(false);
+  });
+  test('Browse searches for the app and links its cards to the app page', () => {
+    expect(browseForAnotherProfileHref('p1', 'Gmail')).toBe(`${BASE}?scope=all&ways=1&q=Gmail`);
   });
 });

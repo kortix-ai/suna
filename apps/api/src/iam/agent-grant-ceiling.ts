@@ -26,7 +26,14 @@ import type { Actor } from './actor';
 // Re-exported here so every importer keeps working.
 export { assertNoGrantEscalation } from '../middleware/agent-grant-ceiling';
 
-export type GrantDimension = 'permissions' | 'connectors' | 'secrets' | 'apps';
+/**
+ * `policy_sets` is not a list of things held: rule sets are not ordered by
+ * privilege, so ANY change to any agent's `policy_sets` (add, change, remove)
+ * needs the writer to hold `project.connector.write` — the trust that edits
+ * the rules themselves. Without it an agent with only `project.agent.write`
+ * could move itself to a looser set.
+ */
+export type GrantDimension = 'permissions' | 'connectors' | 'secrets' | 'apps' | 'policy_sets';
 export interface GrantEscalation {
   target: string;
   dimension: GrantDimension;
@@ -34,30 +41,33 @@ export interface GrantEscalation {
 }
 type Items = string[] | 'all';
 
-const DIMENSIONS: GrantDimension[] = ['permissions', 'connectors', 'secrets', 'apps'];
+type ListDimension = Exclude<GrantDimension, 'policy_sets'>;
+const DIMENSIONS: ListDimension[] = ['permissions', 'connectors', 'secrets', 'apps'];
+/** The action that may change `policy_sets` (see `GrantDimension`). */
+export const POLICY_SET_WRITE_ACTION = 'project.connector.write';
 // Secret identifiers match case-insensitively (agentMayUseEnv), App slugs lowercase (agentMayOpenApp).
-const KEY: Record<GrantDimension, (item: string) => string> = {
+const KEY: Record<ListDimension, (item: string) => string> = {
   permissions: (s) => s,
   connectors: (s) => s,
   secrets: (s) => s.toUpperCase(),
   apps: (s) => s.toLowerCase(),
 };
 
-function dimensionsOf(grant: AgentGrant | undefined): Record<GrantDimension, Items> {
+function dimensionsOf(grant: AgentGrant | undefined): Record<ListDimension, Items> {
   if (!grant) return { permissions: [], connectors: [], secrets: [], apps: [] };
   // An omitted `env` is `all` and an omitted `apps` is none: the same reading
   // as agentMayUseEnv / agentMayOpenApp at use time.
   const raw = { permissions: grant.permissions, connectors: grant.connectors, secrets: grant.env ?? 'all', apps: grant.apps ?? [] };
-  const out = {} as Record<GrantDimension, Items>;
+  const out = {} as Record<ListDimension, Items>;
   for (const d of DIMENSIONS) out[d] = raw[d] === 'all' || raw[d].includes('*') ? 'all' : raw[d];
   return out;
 }
 
 /** What `after` holds that `before` did not, per dimension (`all` when it widens to all). */
-export function grantAdditions(before: AgentGrant | undefined, after: AgentGrant): Record<GrantDimension, Items> {
+export function grantAdditions(before: AgentGrant | undefined, after: AgentGrant): Record<ListDimension, Items> {
   const was = dimensionsOf(before);
   const now = dimensionsOf(after);
-  const added = {} as Record<GrantDimension, Items>;
+  const added = {} as Record<ListDimension, Items>;
   for (const d of DIMENSIONS) {
     const a = now[d];
     const b = was[d];
@@ -95,6 +105,35 @@ export async function findGrantEscalation(input: {
       const missing = (added[d] as string[]).find((item) => !keys.has(KEY[d](item)));
       if (missing !== undefined) return { target, dimension: d, item: missing };
     }
+    const changed = changedPolicySet(input.before.get(target), grant);
+    if (changed !== null && !(await input.writerMayPerform(POLICY_SET_WRITE_ACTION))) {
+      return { target, dimension: 'policy_sets', item: changed };
+    }
+  }
+  // Removing an agent that runs under a set removes that set: without this,
+  // delete-then-declare-again moves the agent onto the base rules.
+  for (const [target, grant] of input.before) {
+    if (input.after.has(target)) continue;
+    const slug = Object.keys(grant.policySets ?? {}).sort()[0];
+    if (slug !== undefined && !(await input.writerMayPerform(POLICY_SET_WRITE_ACTION))) {
+      return { target, dimension: 'policy_sets', item: slug };
+    }
+  }
+  return null;
+}
+
+/** The first connector slug whose policy set differs between two grants, or null. */
+export function changedPolicySet(before: AgentGrant | undefined, after: AgentGrant): string | null {
+  const was = before?.policySets ?? {};
+  const now = after.policySets ?? {};
+  const slugs = new Set([...Object.keys(was), ...Object.keys(now)]);
+  for (const slug of [...slugs].sort()) {
+    // Every entry counts, also one on a connector the agent does not hold now:
+    // an un-grant keeps the entry, and it applies again on re-grant. Skipping
+    // un-granted slugs let un-grant, drop the entry, re-grant reach the base rules.
+    const a = Object.hasOwn(was, slug) ? was[slug] : undefined;
+    const b = Object.hasOwn(now, slug) ? now[slug] : undefined;
+    if (a !== b) return slug;
   }
   return null;
 }
@@ -108,7 +147,18 @@ export async function holdsEveryGrant(
   writer: AgentGrant,
   writerMayPerform: (action: string) => Promise<boolean>,
 ): Promise<boolean> {
-  const everything: AgentGrant = { agent: '*', permissions: 'all', connectors: 'all', env: 'all', apps: 'all' };
+  // A writer bound by a policy set could push a commit that moves it off that
+  // set: it never holds everything.
+  if (writer.policySets && Object.keys(writer.policySets).length > 0) return false;
+  // `policySets` on the target makes the check ask for POLICY_SET_WRITE_ACTION.
+  const everything: AgentGrant = {
+    agent: '*',
+    permissions: 'all',
+    connectors: 'all',
+    env: 'all',
+    apps: 'all',
+    policySets: { '*': '*' },
+  };
   const escalation = await findGrantEscalation({
     writer,
     writerMayPerform,
@@ -147,6 +197,13 @@ export async function assertNoGrantEscalationBy(
     after,
   });
   if (!escalation) return;
+  if (escalation.dimension === 'policy_sets') {
+    throw buildDenialError(
+      POLICY_SET_WRITE_ACTION,
+      'agent_grant_escalation',
+      `Agent "${writer.agent}" cannot change the policy set of agent "${escalation.target}" on connector "${escalation.item}": changing policy_sets needs ${POLICY_SET_WRITE_ACTION}.`,
+    );
+  }
   const what = escalation.dimension === 'permissions' ? `"${escalation.item}"` : `${escalation.dimension} "${escalation.item}"`;
   throw buildDenialError(
     escalation.dimension === 'permissions' ? escalation.item : 'project.agent.write',

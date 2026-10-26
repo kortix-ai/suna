@@ -215,8 +215,9 @@ apps:
 
 Rules:
 
-- `kortix apps deploy` with no arguments deploys every block: each App after
-  the Apps it uses, then by name.
+- `kortix apps deploy` with no arguments deploys every block that has a `path`
+  or an `image`: each App after the Apps it uses, then by name. It skips the
+  other blocks.
 - `kortix apps deploy <path>` uses the block whose `path` is that path.
   `--manifest-app <slug>` names a block. A flag you pass wins over the block.
 - `kortix validate` applies the same rules as the API. The API refuses a bad
@@ -229,16 +230,26 @@ Rules:
 ### Where an App shows
 
 `display` decides where an App appears in the **Apps** tab. It never changes how
-the App runs or who may open it.
+the App runs or who may open it. The tab shows a card only for an App
+registered with `listed: true`. Every other App (a poller, a bot, a backend)
+sits in the **Background** list under the grid: one row per App with its
+status, how it runs, the trigger that calls it and its last activity. Opening
+a background App shows what it does: how it runs, the triggers that call it
+and the agents its [events](/docs/connect/triggers#app-events) start. In the
+web app, **Settings → Show on Apps page** moves an App between the grid and
+the list. Like every App setting kortix.yaml can declare, the switch commits
+`display.listed` to `apps.<slug>` in kortix.yaml; a push that edits it applies
+it without a deploy.
 
 | Key | Default | Effect |
 |---|---|---|
-| `listed` | `true` | `false` takes the App out of the grid. |
+| `listed` | `false` | `true` gives the App a card in the grid. `kortix apps deploy --listed` and `kortix apps set <app> --listed` set it; `--unlisted` clears it. An external App (`--url`) is listed from the start. |
 | `preview` | `live` | `live` frames the App on its card. `none` shows an icon. Use `none` for an App whose root page is not for people, such as an API or a backend. |
 | `parent` | none | `parent: <slug>` makes the App a tab in that App's detail, with no card of its own. The tab label is the App's name without the `<parent>-` prefix: `backend-dashboard` becomes **Dashboard**. A tab whose parent does not exist stays a card. |
 
-An App with `preview: none` opens on its first tab. Every deploy writes the
-block's `display`; an absent `display` means the defaults. `kortix apps show`
+An App with `preview: none` opens on its first tab. A deploy writes the
+block's `display` when the block declares one; an absent `display` keeps what
+the App has. `kortix apps show`
 prints it on the `shown` row. `PATCH /v1/projects/<project_id>/apps/<app_id>`
 with `display` replaces it whole, and `{}` restores the defaults. An unknown
 key, a `preview` other than `live` or `none`, or a malformed `parent` answers
@@ -317,7 +328,7 @@ A server App runs in one of two modes:
 | Mode | Behavior | Use it for |
 |---|---|---|
 | Always on (`--always-on`) | Runs 24/7. Kortix checks every 5 minutes and restarts it when it stops. | WebSockets, background loops, databases |
-| On demand (`--on-demand`) | Stops after `idle_timeout_seconds` without requests. The next request wakes it. | Apps that only answer requests |
+| On demand (`--on-demand`) | Stops after `idle_timeout_seconds` without requests. The next request or a trigger that calls the App wakes it. A stop keeps the disk and loses memory. | Apps that only answer requests, pollers a schedule calls |
 
 A new App is always on. Change the mode with `kortix apps set <app> --always-on`
 or `--on-demand`, or with `always_on` in `kortix.yaml`. The change applies
@@ -653,6 +664,24 @@ An `openapi` or `http` connector whose base URL is an App of the same project
 needs no Kortix credential. The connector gateway adds a signed, 60-second
 assertion for the calling session. See [Connectors](/docs/connect/connectors).
 
+## Triggers and App events
+
+An App can start agents, and triggers can call it.
+
+| You want | Use |
+|---|---|
+| An agent to run when the App sees something | The App posts an App event to `$KORTIX_APP_EVENTS_URL` with `Authorization: Bearer $KORTIX_APP_TOKEN`. A trigger with `on: { event, app }` picks the agent. See [App events](/docs/connect/triggers#app-events). |
+| The App called on a schedule or an event | A trigger with `run: { app, path, method, payload }`. Kortix wakes an on-demand App and sends the request. No session, no model. See [Call an App](/docs/connect/triggers#call-an-app). |
+| The App to call itself later | `POST /v1/projects/<project_id>/apps/<app_id>/runs` with the App token: `run_after` or `run_at`. See [Call an App](/docs/connect/triggers#call-an-app). |
+
+To react to the outside world, try a connector event first, then a webhook,
+then a schedule. Post App events only when none of these works. An App never
+starts an agent itself: it posts events, and a trigger decides. Deploy a
+watcher App unlisted: it belongs in the Background list.
+
+App events and runs are REST only. They authenticate with the App token, not
+a Kortix token.
+
 ## Environment inside an App
 
 Kortix sets these variables in every machine:
@@ -668,6 +697,9 @@ Kortix sets these variables in every machine:
 | `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE`, `KORTIX_AUTH_JWKS` | The values that verify the App's sign-in tokens |
 | `KORTIX_APP_VIEWER_SECRET` | The key that verifies the signed viewer header |
 | `KORTIX_APP_ACCOUNT_ID` | The account that owns the App |
+| `KORTIX_APP_ID` | The App's id |
+| `KORTIX_APP_TOKEN` | The App's token for [App events](/docs/connect/triggers#app-events) and scheduled runs. A secret. |
+| `KORTIX_APP_EVENTS_URL` | Where the App posts App events |
 
 Your own values come from `env` and `secrets` in the `kortix.yaml` block:
 
@@ -1017,10 +1049,9 @@ types: [SDK reference](/docs/sdk/reference#the-project-handle) and
 | `project.app.read` | List and view Apps, releases, logs, machines, volumes, snapshots, the access policy and the granted agents. Create an access link. Mint a sign-in token. |
 | `project.app.write` | Create, rename, resize and label Apps, set run mode and `uses`, change the access policy, delete a release, delete an App |
 | `project.app.deploy` | Upload artifacts, deploy, roll back, start and stop. Start, stop, restart and destroy machines. Scale. Create, extend, snapshot and fork volumes. |
-| `project.app.admin` | `exec`, restore or destroy a volume, open an `access: admins` service, delete an App that has volumes |
+| `project.app.admin` | `exec`, restore or destroy a volume, open an `access: admins` service, delete an App that has volumes, read the App's event credentials (`GET …/apps/<app_id>/events/credentials`) |
 
-Every route also needs the project's Apps switch on. See
-[Accounts & access](/docs/accounts) for roles and custom roles.
+See [Accounts & access](/docs/accounts) for roles and custom roles.
 
 `<app>` is an App id or slug. Every subcommand takes `--project <id>`,
 `--host <name>` and `--json`.
@@ -1030,8 +1061,8 @@ Every route also needs the project's Apps switch on. See
 | `kortix apps list` (`ls`) | The Apps you may open: slug, state, URL |
 | `kortix apps create <slug>` (`new`) | Create an App without a deploy. `--name`, `--cpu`, `--memory`, `--disk`, `--idle-timeout`, `--always-on` or `--on-demand`, `--uses`. `--url <https-url>` creates an external App |
 | `kortix apps launch --template convex` | Write a template's blocks to `kortix.yaml` in the current directory and deploy them. `--name <slug>`, `--provider <name>`, `--no-deploy` |
-| `kortix apps deploy [path]` | Deploy a directory, a `.tar.gz` or `--image`. Flags: `--app`, `--slug`, `--name`, `--manifest-app`, `--type static\|bundle\|dockerfile`, `--command`, `--port`, `--dockerfile`, `--root`, `--output-dir`, `--install-command`, `--build-command`, `--readiness-path`, `--spa` or `--no-spa`, `--include-node-modules`, `--provider platinum\|daytona` (`daytona` is a legacy fallback), `--access`, `--password`, `--members`, `--groups`, `--always-on` or `--on-demand`, `--no-wait`, `--wait-seconds` |
-| `kortix apps set <app>` (`update`) | Change `--name`, `--url` (an external App), `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--always-on` or `--on-demand`, `--uses` |
+| `kortix apps deploy [path]` | Deploy a directory, a `.tar.gz` or `--image`. Flags: `--app`, `--slug`, `--name`, `--manifest-app`, `--type static\|bundle\|dockerfile`, `--command`, `--port`, `--dockerfile`, `--root`, `--output-dir`, `--install-command`, `--build-command`, `--readiness-path`, `--spa` or `--no-spa`, `--include-node-modules`, `--provider platinum\|daytona` (`daytona` is a legacy fallback), `--access`, `--password`, `--members`, `--groups`, `--always-on` or `--on-demand`, `--listed` or `--unlisted`, `--no-wait`, `--wait-seconds` |
+| `kortix apps set <app>` (`update`) | Change `--name`, `--url` (an external App), `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--always-on` or `--on-demand`, `--uses`, `--listed` or `--unlisted` |
 | `kortix apps link <app> --uses <slugs>` | Add used Apps. `unlink` removes them. |
 | `kortix apps show <app>` (`get`) | Capabilities, links, run mode and releases |
 | `kortix apps releases <app>` | Releases, marking the live one |

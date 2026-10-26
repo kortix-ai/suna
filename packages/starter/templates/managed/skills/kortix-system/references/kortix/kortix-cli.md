@@ -157,13 +157,13 @@ no feature flag or enablement request is required.
 | Command | Effect |
 | --- | --- |
 | `kortix apps ls [--json]` | List the Apps you may open (a project manager sees all) with their state (`static` for a static App) and stable URL. `--json` adds labels, scale and services. |
-| `kortix apps create <slug> [--name …]` | Create an App identity without deploying source. Flags: `--uses <slugs>`, `--cpu`, `--memory`, `--disk`, `--idle-timeout`, `--always-on\|--on-demand`. |
+| `kortix apps create <slug> [--name …]` | Create an App identity without deploying source. Flags: `--uses <slugs>`, `--cpu`, `--memory`, `--disk`, `--idle-timeout`, `--always-on\|--on-demand`, `--url <https-url>` (an external App: a link card, listed on create). |
 | `kortix apps launch --template <name> [--name <slug>] [--no-deploy]` | Write a ready-made App's blocks into `kortix.yaml` and deploy them. Template `convex`: a self-hosted Convex backend (data on a volume) and an admins-only dashboard. Prints the next steps. |
 | `kortix apps deploy [path]` | Upload and deploy a directory or `.tar.gz` as a new release. Auto-detects static, bundle, or Dockerfile source; pass `--type`. Waits until the release is live by default. |
 | `kortix apps deploy … --always-on\|--on-demand` | Server Apps: set the run mode. Prints `Runs 24/7 on <size>` for an always-on App. |
-| `kortix apps deploy --manifest-app <name>` | Use one v2 `kortix.yaml` `apps.<name>` block, config included (`processes`, `http_service`, `services`, `mounts`, `vm`, `deploy`, `labels`). A sole block is selected for bare `deploy`; with several, bare `deploy` deploys every App, each after the Apps it uses. |
+| `kortix apps deploy --manifest-app <name>` | Use one v2 `kortix.yaml` `apps.<name>` block, config included (`processes`, `http_service`, `services`, `mounts`, `vm`, `deploy`, `labels`). A sole block is selected for bare `deploy`; with several, bare `deploy` deploys every block that has a `path` or `image`, each after the Apps it uses, and skips the rest. |
 | `kortix apps deploy --image <ref> --command <argv> --port <n>` | Deploy a public OCI image. `--command` accepts a JSON string array or shell-like string. Omit `--port` for a worker-only App. |
-| `kortix apps set <id-or-slug>` | Change an App: `--name`, `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--always-on\|--on-demand`, `--uses <slugs>`. Run mode applies within 5 minutes; a machine size change applies to the next release. |
+| `kortix apps set <id-or-slug>` | Change an App: `--name`, `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--always-on\|--on-demand`, `--uses <slugs>`, `--listed\|--unlisted`. Each change is committed to the App's `kortix.yaml` block first. Run mode applies within 5 minutes; a machine size change applies to the next release. |
 | `kortix apps link\|unlink <id-or-slug> --uses <slugs>` | Add or remove Apps this App uses (bindings and sign-in tokens). |
 | `kortix apps show <id-or-slug> [--json]` | Show an App (`capabilities`, `labels`, `scale`, `services`, `uses`, `used_by`, `hosting_type`, `always_on`) and its releases. |
 | `kortix apps releases <id-or-slug>` | List releases (`vN`, status, strategy, release command); mark the live one. |
@@ -181,7 +181,7 @@ no feature flag or enablement request is required.
 | `kortix apps auth-env <id-or-slug> [--json]` | Dotenv lines that verify the App's sign-in tokens offline: `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE`, `KORTIX_AUTH_JWKS` (a `data:` URL). Public values. |
 | `kortix apps logs <id-or-slug> [deployment-id]` | Read supervisor, Caddy, and user-process logs; a static App prints its deployment events. Supports `--after` and `--limit`. |
 | `kortix apps start <id-or-slug>` | Server Apps: permit traffic and start the live release now. A static App answers `409 static_app_no_runtime`. |
-| `kortix apps stop <id-or-slug>` | Server Apps: stop compute now. The next authorized request wakes it. A static App answers `409 static_app_no_runtime`. |
+| `kortix apps stop <id-or-slug>` | Server Apps: stop compute now. The next authorized request, or a trigger that calls the App, wakes it. A static App answers `409 static_app_no_runtime`. |
 | `kortix apps access <id-or-slug>` | Read or change access: `--mode private\|project\|restricted\|public\|password`, `--members`, `--groups`, `--password`, `--viewer off\|identity\|api`. |
 | `kortix apps access-link <id-or-slug> [--json]` | Create a five-minute authenticated browser URL. Treat it as a secret. |
 | `kortix apps connect <id-or-slug> [--json]` | Print how to reach the App from code. No secret. |
@@ -192,7 +192,7 @@ no feature flag or enablement request is required.
 Deploy options include `--type static|bundle|dockerfile`, `--root`, `--spa`,
 `--output-dir`, `--install-command`, `--build-command`, `--dockerfile`,
 `--command`, `--port`, `--readiness-path`, `--access`, `--members`, `--groups`,
-`--password`, `--always-on`, `--on-demand`, and `--provider`. Omit
+`--password`, `--always-on`, `--on-demand`, `--listed`, `--unlisted`, and `--provider`. `--listed` makes the App a card on the Apps page; without it the App sits in the Background list. Pass `--listed` only for an App people open. Omit
 `--provider` for platform policy. Prefer a local build deployed with
 `--type static` over `--type bundle`. Use `--no-wait` only when another process
 will poll the deployment.
@@ -357,11 +357,11 @@ and document tooling preinstalled.
 ### Triggers
 
 Round-trip through `kortix.yaml`'s `triggers:`. Dashboard sees
-the same state.
+the same state. New triggers are written as `on:`/`run:`.
 
 | Command | Effect |
 | --- | --- |
-| `kortix triggers ls [--type cron\|webhook\|event\|monitor] [--connector <slug>] [--json]` | List triggers + runtime state (`last_fired_at`). `--type` keeps one kind; `--type event` groups the rows by app. `--connector` keeps the app events on one connector. The filters combine, and `--json` respects them. |
+| `kortix triggers ls [--type cron\|webhook\|event\|app] [--connector <slug>] [--json]` | List triggers + runtime state (`last_fired_at`). `--type` keeps one kind; `--type event` groups the rows by app. `--connector` keeps the connector events on one connector. The filters combine, and `--json` respects them. |
 | `kortix triggers info <slug>` | Show one trigger in full. |
 | `kortix triggers fire <slug>` | Manually fire a trigger now. |
 | `kortix triggers fire <slug> --payload <json\|@file> [--dry-run] [--json]` | Fire with a JSON object merged over the manual payload. `--dry-run` fires nothing: it prints the rendered prompt, the filter verdict and the session key. Test a webhook or event prompt this way. |
@@ -369,17 +369,20 @@ the same state.
 | `kortix triggers replay <slug> <run_id> [--confirm-unverified]` | Fire again with that run's stored payload. An unverified webhook run exits 1 until you pass `--confirm-unverified`. |
 | `kortix triggers enable <slug>` | Set `enabled = true`. |
 | `kortix triggers disable <slug>` | Set `enabled = false`. |
-| `kortix triggers events --apps [--json]` (all `triggers events` forms and `triggers add|set --type event` need the project flag `event_triggers`: off prints `App event triggers are off for this project. Turn them on: kortix projects features enable event_triggers`, exit 1) | List apps that can trigger events: event count and state (`connected`, `needs account`). Under each app, every connector (profile) with its shared accounts: label, `as <connected_as>`, `default`, `not connected`. Apps with no connector print as one `No connector yet` line. |
+| `kortix triggers events --apps [--json]` (all `triggers events` forms and `triggers add|set --type event` need the project flag `event_triggers`, off by default: while it is off they print `Composio event triggers are off for this project. Turn them on: kortix projects features enable event_triggers`, exit 1) | List apps that can trigger events: event count and state (`connected`, `needs account`). Under each app, every connector (profile) with its shared accounts: label, `as <connected_as>`, `default`, `not connected`. Apps with no connector print as one `No connector yet` line. |
 | `kortix triggers events --app <app> [--source <adapter>] [--event <TYPE>] [--json]` | List an app's events, or one event's fields, with no connector: browse before you add a connector. `--source` defaults to `composio`. |
 | `kortix triggers events --connector <slug> [--json]` | List the events a connector offers: `TYPE`, `NAME`, `DELIVERY`. |
 | `kortix triggers events --connector <slug> --event <TYPE> [--json]` | One event in full: config fields (type, required, default, allowed values, description) and the `{{ event.data.* }}` prompt variables. |
+| `kortix triggers add <slug> --cron "<6-field>" [--timezone <tz>] \| --every 5m \| --run-at <ISO> --prompt "…" [--agent <a>] [--apply]` | Add a schedule. `--every` takes at least `60s`. Without `--apply` it writes the block to the local `kortix.yaml`; with `--apply` it creates the trigger now. |
+| `kortix triggers add <slug> --type app --app <app-slug> [--event <name>] --prompt "…" [--apply]` | Add an App event trigger: it runs when the App posts that event (omit `--event` for every name). No feature flag. |
+| `kortix triggers add <slug> <schedule flags> --target-app <app-slug> [--target-path /tick] [--apply]` | Add a trigger that calls an App instead of an agent (`run: { app, path }`): no session, no model. |
 | `kortix triggers add <slug> --type event --connector <slug> --event <TYPE> --config <k>=<v> [--account <label>] --prompt "…" [--apply]` | Add an event trigger. `--connector` is the profile. `--account` names one shared account of it; omit it for the connector's default shared account. Without `--apply` it writes a `triggers:` block to the local `kortix.yaml` (`kortix ship` applies it). With `--apply` it creates the trigger now and prints its status and the next step. Online, the config is checked against the event catalog; every missing or invalid field is listed with its description. |
 | `kortix triggers set <slug> [--event <TYPE>] [--connector <slug>] [--account <label> | --default-account] [--config <k>=<v>] [--config-json '<json>']` | Change a live event trigger. `--account` picks a shared account; `--default-account` clears it (the two are exclusive). Changing `--connector` clears the account. `--config` merges into the current config. `--config-json` replaces it. Do not pass both. |
 
 `--config k=v` is converted to the field's type (number, boolean, comma
 list) using the catalog. `--config-json` passes typed values as-is. An event
-trigger takes none of `--cron`, `--run-at`, `--timezone`, `--secret-env`,
-`--run`, `--mode`, `--interval`, `--expect-event-within`. `triggers ls` shows
+trigger takes none of `--cron`, `--every`, `--run-at`, `--timezone`,
+`--secret-env`. `triggers ls` shows
 a status word per event trigger (`live`, `pending`, `needs connection`,
 `error`). `triggers info <slug>` shows the status, the error, the last event,
 and a `Next` block with the exact command to run.

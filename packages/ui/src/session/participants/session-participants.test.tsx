@@ -46,6 +46,11 @@ describe('participantLabel', () => {
     expect(participantLabel(MEMBER)).toBe('member');
     expect(participantLabel(person('b', { email: null }))).toBe('');
   });
+
+  test('a name that is an email address reads as no name: the API sends the email when the profile has none', () => {
+    expect(participantLabel(person('c', { name: 'ada@example.test', email: 'ada@example.test' }))).toBe('ada');
+    expect(participantLabel(person('d', { name: 'ada@example.test', email: null }))).toBe('ada');
+  });
 });
 
 describe('MessageSenderAbove', () => {

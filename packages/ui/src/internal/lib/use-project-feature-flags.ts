@@ -28,10 +28,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   isLoading: boolean;
 } {
   const marketplace = useFeatureFlag(projectId, 'marketplace');
-  const connectorsApiDiscover = useFeatureFlag(projectId, 'connectors_api_discover');
-  const agentmailEmail = useFeatureFlag(projectId, 'agentmail_email');
   const metaAgent = useFeatureFlag(projectId, 'meta_agent');
-  const monitors = useFeatureFlag(projectId, 'monitors');
   const reminders = useFeatureFlag(projectId, 'reminders');
   const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
   const secretsEgress = useFeatureFlag(projectId, 'secrets_egress');
@@ -44,17 +41,17 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const drives = useFeatureFlag(projectId, 'drives');
   const sessionLog = useFeatureFlag(projectId, 'session_log');
   const sessionLogRestore = useFeatureFlag(projectId, 'session_log_restore');
-  const connectorsV2 = useFeatureFlag(projectId, 'connectors_v2');
+  const projectChannels = useFeatureFlag(projectId, 'project_channels');
   const agentRooms = useFeatureFlag(projectId, 'agent_rooms');
   const goals = useFeatureFlag(projectId, 'goals');
+  const artifacts = useFeatureFlag(projectId, 'artifacts');
+  const emailChannel = useFeatureFlag(projectId, 'email_channel');
+  const workspaceVolume = useFeatureFlag(projectId, 'workspace_volume');
 
   return {
     flags: {
       marketplace: marketplace.enabled,
-      connectors_api_discover: connectorsApiDiscover.enabled,
-      agentmail_email: agentmailEmail.enabled,
       meta_agent: metaAgent.enabled,
-      monitors: monitors.enabled,
       reminders: reminders.enabled,
       warm_sessions: warmSessions.enabled,
       secrets_egress: secretsEgress.enabled,
@@ -67,11 +64,14 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       drives: drives.enabled,
       session_log: sessionLog.enabled,
       session_log_restore: sessionLogRestore.enabled,
-      connectors_v2: connectorsV2.enabled,
+      project_channels: projectChannels.enabled,
       agent_rooms: agentRooms.enabled,
       goals: goals.enabled,
+      artifacts: artifacts.enabled,
+      email_channel: emailChannel.enabled,
+      workspace_volume: workspaceVolume.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: goals.isLoading,
+    isLoading: workspaceVolume.isLoading,
   };
 }

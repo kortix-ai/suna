@@ -52,17 +52,20 @@ describe('Kortix Apps React Query bindings', () => {
     deployments.deploy.onSuccess();
     deployments.rollback.onSuccess();
 
+    // The App list key also covers every channel's Apps (`qk.project.spaceApps`).
+    const listed = [qk.project.apps('project-1')];
     expect(invalidated).toEqual([
-      qk.project.apps('project-1'),
-      qk.project.apps('project-1'),
-      qk.project.apps('project-1'),
-      qk.project.apps('project-1'),
-      qk.project.apps('project-1'),
-      qk.project.apps('project-1'),
+      ...listed, ...listed, ...listed, ...listed, ...listed,
+      ...listed,
       qk.project.appDeployments('project-1', 'app-1'),
-      qk.project.apps('project-1'),
+      ...listed,
       qk.project.appDeployments('project-1', 'app-1'),
     ]);
+  });
+
+  test('a channel’s Apps sit under the App list key, so every App invalidation refetches them', () => {
+    const scope = qk.project.apps('project-1');
+    expect(qk.project.spaceApps('project-1', 'S1').slice(0, scope.length)).toEqual([...scope]);
   });
 
   test('access policy updates revoke cached browser sessions and refresh App metadata', async () => {

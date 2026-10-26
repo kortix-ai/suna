@@ -62,9 +62,9 @@ flow(
       (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/files/content", { params: { projectId: p.id }, query: { path: "ke2e-no-such-file.txt" } }))
         .status(404).body().has("$.error", "File not found");
     });
-    await ctx.step("absolute and traversal paths → 404 File not found", async () => {
+    await ctx.step("absolute, traversal and NUL-containing paths → 404 File not found", async () => {
       // No `../`: an edge WAF answers that itself (403) before the API sees it.
-      for (const path of ["/workspace/AGENTS.md", "..", "ke2e/.."]) {
+      for (const path of ["/workspace/AGENTS.md", "..", "ke2e/..", "\0", "\0a", "a\0b", "a\0"]) {
         (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/files/content", { params: { projectId: p.id }, query: { path } }))
           .status(404).body().has("$.error", "File not found");
       }
@@ -635,6 +635,13 @@ flow('FILE-14', { domain: 'files', routes: ['GET /v1/projects/:projectId/files/c
   const body = { path: 'README.md', ref: original.ref, content: original.content + '\nowner file edit regression\n', expected_revision: original.revision };
   await ctx.step('owner commits a viewed file and reads the persisted edit', async () => {
     (await owner.put('/v1/projects/:projectId/files/content', body, { params })).status(200).body().exists('$.commit_sha');
+    const after = await owner.get('/v1/projects/:projectId/files/content', { params, query: { path: body.path } });
+    after.status(200).body().has('$.content', body.content);
+  });
+  await ctx.step('non-JSON writes return 400 instead of throwing', async () => {
+    (await owner.put('/v1/projects/:projectId/files/content', JSON.stringify(body), {
+      params, raw: true, headers: { 'Content-Type': 'text/plain' },
+    })).status(400);
     const after = await owner.get('/v1/projects/:projectId/files/content', { params, query: { path: body.path } });
     after.status(200).body().has('$.content', body.content);
   });

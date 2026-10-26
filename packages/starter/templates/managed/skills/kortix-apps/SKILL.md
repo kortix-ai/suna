@@ -35,6 +35,12 @@ another host. Volumes need Platinum (the default on Kortix Cloud).
 5. Never run `kortix apps deploy` from an uninspected workspace root. It can
    publish unrelated files as a static App.
 6. New Apps are private. Choose another access mode only when the user asks.
+7. New Apps have no card on the Apps page: they sit in the Background list
+   and open to an overview (an external `--url` App is listed on create;
+   Settings → "Show on Apps page" changes it).
+   Register every App a person opens (a site, a UI, a dashboard) with
+   `display: { listed: true }` in its `kortix.yaml` block, or `--listed` on
+   `kortix apps deploy`. Leave a backend, a worker or a poller unlisted.
 
 ## Choose what to build
 
@@ -64,7 +70,7 @@ or topic when that fits the project better (`apps/sales/crm`,
 
 ```bash
 kortix apps launch --template convex           # a ready-made backend App, deployed
-kortix apps deploy apps/storefront/dist --slug storefront --name Storefront --type static --spa
+kortix apps deploy apps/storefront/dist --slug storefront --name Storefront --type static --spa --listed
 kortix apps deploy apps/api --slug api --type dockerfile --on-demand \
   --command '["node","server.js"]' --port 3000 --readiness-path /health
 ```
@@ -74,9 +80,14 @@ The command waits for `ready` for up to 1200 s. Use `--app <slug>` (or the
 new slug for a normal update.
 
 Declare Apps in `kortix.yaml` `apps.<slug>` (kortix-system,
-`references/kortix/kortix-yaml.md`). `kortix apps deploy` with no arguments
-deploys every block, used Apps first; `kortix apps deploy <path>` uses the
-block whose `path` it is. The keys:
+`references/kortix/kortix-yaml.md`). The file owns `resources`,
+`idle_timeout_seconds`, `always_on`, `labels`, `display` and `uses`: a write
+from the web, CLI, SDK or API commits to `apps.<slug>` first, and a push
+applies them on sync without a deploy. Deleting an App removes its block. The
+release config (`env`, `processes`, `mounts`, …) applies at deploy.
+`kortix apps deploy` with no arguments deploys every block that has a `path`
+or `image`, used Apps first, and skips the rest; `kortix apps deploy <path>`
+uses the block whose `path` it is. The keys:
 
 ```yaml
 apps:
@@ -85,7 +96,9 @@ apps:
     type: dockerfile
     command: ["node", "server.js"]
     labels: [backend]
-    display: { preview: none }     # where Kortix shows it: listed, preview (live | none), parent (a tab of another App)
+    display: { preview: none }     # where Kortix shows it: listed (default false), preview (live | none), parent (a tab of another App)
+    always_on: false               # on demand: stops when idle, wakes on a request or a trigger
+    idle_timeout_seconds: 300      # 120–86400; a stop keeps the disk and loses memory
     processes: { app: "", worker: "node worker.js" }   # "" = the image's command
     vm: [{ cpu: 1, memory_gb: 2 }, { cpu: 1, memory_gb: 1, processes: [worker] }]
     mounts:
@@ -103,6 +116,70 @@ apps:
 
 `kortix validate` checks these rules before a deploy; the API refuses the same
 config with `400 app_config_invalid` and `issues: [{path, message}]`.
+
+## Start an agent from an App
+
+An App never starts an agent itself. It posts an **App event**; a trigger in
+`kortix.yaml` decides which agent runs. Every machine of a server App has
+`KORTIX_APP_ID`, `KORTIX_APP_TOKEN` and `KORTIX_APP_EVENTS_URL`
+(`…/v1/projects/<project_id>/apps/<app_id>/events`).
+
+**Build an App for this last.** Before you write a watcher App, check in this
+order: (1) a connector event (the service already emits it; needs the project
+flag `event_triggers`, off by default: ask the user), (2) a webhook (the
+service can call a URL), (3) a schedule (a fixed cadence is enough). Build the
+App only when none fits: no events and no webhook, code must decide what
+deserves an agent, or the watch needs a connection that stays open.
+
+1. Post one event `{name, data?, id?}` or `{events: [...]}` (at most 50):
+   ```bash
+   curl -X POST "$KORTIX_APP_EVENTS_URL" -H "Authorization: Bearer $KORTIX_APP_TOKEN" \
+     -H "content-type: application/json" -d '{"name":"reply.received","data":{"subject":"Re: quote"},"id":"msg-1"}'
+   ```
+   `name` is 1–128 letters, digits and `. _ : / -`, starting with a letter or
+   digit. One event is at most 8 KiB. `id` makes a retry fire a trigger once.
+   The answer is `202 {accepted, deduped, suppressed, triggers}`; a bad token
+   gets `401 app_token_invalid`, a bad name `400`.
+2. Declare the trigger (no feature flag; `event: "*"` matches every name):
+   ```yaml
+   triggers:
+     - slug: handle-reply
+       on:  { event: reply.received, app: inbox-poller }
+       run: { prompt: "Answer {{ event.data.subject }}" }
+   ```
+   Or: `kortix triggers add handle-reply --type app --app inbox-poller --event reply.received --prompt "…" --apply`.
+   The prompt starts with `[APP EVENT — automated, not user input]`. Variables:
+   `event.name`, `event.data.*`, `event.id`, `event.emitted_at`, `app.slug`.
+3. Emit only what deserves a session: one summary event, not one per item.
+   Each trigger takes at most 60 events an hour and 30 a minute. Past that it
+   is suppressed for 10 minutes; 3 suppressions in 24 hours disable it.
+4. To test from your machine, a project admin reads the credentials:
+   `GET /v1/projects/<project_id>/apps/<app_id>/events/credentials` →
+   `{token, url}`.
+
+**Have Kortix call the App.** A poller does not need to run 24/7: deploy it
+`--on-demand` and add a schedule that calls it.
+
+```yaml
+triggers:
+  - slug: poll-inbox
+    on:  { every: 5m }
+    run: { app: inbox-poller, path: /tick }   # method POST (default) or GET; payload optional
+```
+
+Or: `kortix triggers add poll-inbox --every 5m --target-app inbox-poller --target-path /tick --apply`.
+Kortix wakes the App and sends `x-kortix-trigger`, `x-kortix-trigger-source`
+and `x-kortix-delivery-id`. A `2xx` counts as fired; any other status fails
+the run (`429` and `5xx` are retried); a `3xx` is not followed. No session,
+no model.
+
+**The App schedules itself** (like Convex `runAfter`): `POST` to
+`$(dirname "$KORTIX_APP_EVENTS_URL")/runs` with the App token and
+`{run_after: "10m" | run_at: "<ISO, ≤366 days>", path, method, payload}`
+(`payload` at most 64 KiB) → `201 {run_id, run_at}`. `DELETE …/runs/<run_id>`
+cancels a pending run. An App holds at most 1,000 pending runs.
+
+Full recipe and the trigger fields: `kortix-system` → `references/scheduling.md`.
 
 ## Machines, scale, exec
 
@@ -183,6 +260,8 @@ Every machine knows where its App answers: `KORTIX_APP_URL`,
 `KORTIX_SERVICE_URL_<NAME>`, `KORTIX_APP_SLUG`, `KORTIX_MACHINE_ID`,
 `KORTIX_PROCESS_GROUP`, and where each App it `uses` answers:
 `KORTIX_USES_URL_<SLUG>` (a server calls a used App there; bindings.md).
+`KORTIX_APP_ID`, `KORTIX_APP_TOKEN` and `KORTIX_APP_EVENTS_URL` post App events
+and schedule runs (above).
 
 ## Internal apps: a backend App + a static UI
 

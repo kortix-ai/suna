@@ -2,7 +2,7 @@
 
 import { useTranslations } from '../../../i18n';
 import { type AdminConnector, deleteConnector, setConnectorName } from '@kortix/sdk';
-import { TrashIcon } from '@phosphor-icons/react';
+import { ArrowRightIcon, TrashIcon } from '@phosphor-icons/react';
 import { useMutation } from '@tanstack/react-query';
 import { useId, useState } from 'react';
 
@@ -15,6 +15,8 @@ import Loading from '../../../primitives/loading';
 import { errorToast, successToast } from '../../../primitives/toast';
 import { ConnectionSection } from '../../sections/connectors-view';
 import { isManagedConnectorProvider, signsInWithConnectLink } from '../provider-label';
+import { appHref, browseForAnotherProfileHref, type AppRef } from '../connector-routes';
+import { UiLink as Link } from '../../../providers/ui-provider';
 import { connectorRunsOver } from './connector-status';
 
 interface ConnectorSettingsProps {
@@ -23,6 +25,8 @@ interface ConnectorSettingsProps {
   displayName: string;
   onChanged: () => void;
   onRemoved: () => void;
+  /** The catalogue app, when the URL names it: "Install as another profile" opens its page. */
+  app?: AppRef | null;
 }
 
 /**
@@ -57,6 +61,7 @@ export function ConnectorSettings({
   displayName,
   onChanged,
   onRemoved,
+  app = null,
 }: ConnectorSettingsProps) {
   const t = useTranslations('connectorPages');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -153,6 +158,34 @@ export function ConnectorSettings({
           onChanged={onChanged}
           canWrite={true}
         />
+      ) : null}
+
+      {/* The only path to a second profile of this app. Most people want
+          another account (Accounts) or different rules per agent (a rule set
+          on Tools & rules), so the row says that first. */}
+      {!isChannel && !isComputer ? (
+        <div className="bg-popover rounded-md border px-4 py-3">
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-foreground text-sm font-medium">{t('anotherProfileTitle')}</p>
+              <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
+                {t('anotherProfileHelp', { name: displayName })}
+              </p>
+            </div>
+            <Button asChild size="sm" variant="outline" className="shrink-0 gap-1.5">
+              <Link
+                href={
+                  app
+                    ? appHref(projectId, app, { ways: true })
+                    : browseForAnotherProfileHref(projectId, displayName)
+                }
+              >
+                {t('anotherProfileAction')}
+                <ArrowRightIcon className="size-3.5 shrink-0" />
+              </Link>
+            </Button>
+          </div>
+        </div>
       ) : null}
 
       {/* Capability #11. Channel connectors disconnect from their own connection

@@ -1,5 +1,17 @@
 // Generated from the final user-visible i18n audit. Keys are SHA-256(message)[0:12].
 export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
+  "Connector events": 'text0ba357fa63f8',
+  "Connector event": 'textca395c4d19b2',
+  "connector event": 'text6064256ee716',
+  "New connector event": 'text85a6c98e5584',
+  "Search connector events": 'text165d9237c163',
+  "No connector events yet": 'texta9caf7909165',
+  "Have an agent run when one of your Kortix Apps emits an event.": 'text451ef98453d2',
+  "App event": 'text5441e7146193',
+  "New App event": 'text064694999e1f',
+  "Search App events": 'text1934aa0740bb',
+  "No App events yet": 'text25db7e5609e5',
+  "An App starts agents by emitting events. Add a trigger with on: { event, app } in kortix.yaml.": 'text9f8f92588517',
   Drive: 'text6312b4b9baf1',
   Drives: 'text729fe0e7b138',
   '{label} has finished.': 'text27d628c8b427',

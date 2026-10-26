@@ -40,6 +40,7 @@
     "./alert": "./src/primitives/alert.tsx",
     "./alert-dialog": "./src/primitives/alert-dialog.tsx",
     "./apps": "./src/apps/index.ts",
+    "./artifacts": "./src/artifacts/index.ts",
     "./avatar": "./src/primitives/avatar.tsx",
     "./back-pill": "./src/primitives/back-pill.tsx",
     "./badge": "./src/primitives/badge.tsx",
@@ -77,6 +78,7 @@
     "./customize/project-settings/project-settings-page": "./src/customize/project-settings/project-settings-page.tsx",
     "./customize/secrets/secrets-page": "./src/customize/secrets/secrets-page.tsx",
     "./customize/sections/add-account-fields": "./src/customize/sections/add-account-fields.tsx",
+    "./customize/sections/component/email-connect-form": "./src/customize/sections/component/email-connect-form.tsx",
     "./customize/sections/component/manifest-copy-block": "./src/customize/sections/component/manifest-copy-block.tsx",
     "./customize/sections/component/slack-byo-wizard": "./src/customize/sections/component/slack-byo-wizard.tsx",
     "./customize/sections/component/slack-connect-card": "./src/customize/sections/component/slack-connect-card.tsx",
@@ -87,7 +89,6 @@
     "./customize/sections/connector-oauth2": "./src/customize/sections/connector-oauth2.ts",
     "./customize/sections/connector-oauth2-application-fields": "./src/customize/sections/connector-oauth2-application-fields.tsx",
     "./customize/sections/connector-oauth2-fields": "./src/customize/sections/connector-oauth2-fields.tsx",
-    "./customize/sections/connectors-view": "./src/customize/sections/connectors-view.tsx",
     "./customize/sections/gateway-view": "./src/customize/sections/gateway-view.tsx",
     "./customize/sections/llm-provider/llm-provider-modal": "./src/customize/sections/llm-provider/llm-provider-modal.tsx",
     "./customize/sections/llm-provider/model-capability-icons": "./src/customize/sections/llm-provider/model-capability-icons.tsx",
@@ -190,6 +191,7 @@
     "./emoji-picker": "./src/primitives/emoji-picker.tsx",
     "./emoji-tint": "./src/primitives/emoji-tint.ts",
     "./empty": "./src/primitives/empty.tsx",
+    "./empty-art": "./src/primitives/empty-art.tsx",
     "./empty-state": "./src/primitives/empty-state.tsx",
     "./entity-avatar": "./src/primitives/entity-avatar.tsx",
     "./error-boundary": "./src/primitives/error-boundary.tsx",
@@ -259,6 +261,7 @@
     "./internal/hooks/account/use-my-invites": "./src/internal/hooks/account/use-my-invites.ts",
     "./internal/hooks/admin/use-admin-role": "./src/internal/hooks/admin/use-admin-role.ts",
     "./internal/hooks/channels/use-channels-installations": "./src/internal/hooks/channels/use-channels-installations.ts",
+    "./internal/hooks/channels/use-email-inboxes": "./src/internal/hooks/channels/use-email-inboxes.ts",
     "./internal/hooks/connectors/use-add-managed-account": "./src/internal/hooks/connectors/use-add-managed-account.ts",
     "./internal/hooks/connectors/use-pipedream-connect-member": "./src/internal/hooks/connectors/use-pipedream-connect-member.ts",
     "./internal/hooks/connectors/use-pipedream-connect-project": "./src/internal/hooks/connectors/use-pipedream-connect-project.ts",
@@ -628,6 +631,10 @@
         "types": "./dist/apps/index.d.ts",
         "import": "./dist/apps/index.js"
       },
+      "./artifacts": {
+        "types": "./dist/artifacts/index.d.ts",
+        "import": "./dist/artifacts/index.js"
+      },
       "./avatar": {
         "types": "./dist/primitives/avatar.d.ts",
         "import": "./dist/primitives/avatar.js"
@@ -773,6 +780,10 @@
         "types": "./dist/customize/sections/add-account-fields.d.ts",
         "import": "./dist/customize/sections/add-account-fields.js"
       },
+      "./customize/sections/component/email-connect-form": {
+        "types": "./dist/customize/sections/component/email-connect-form.d.ts",
+        "import": "./dist/customize/sections/component/email-connect-form.js"
+      },
       "./customize/sections/component/manifest-copy-block": {
         "types": "./dist/customize/sections/component/manifest-copy-block.d.ts",
         "import": "./dist/customize/sections/component/manifest-copy-block.js"
@@ -812,10 +823,6 @@
       "./customize/sections/connector-oauth2-fields": {
         "types": "./dist/customize/sections/connector-oauth2-fields.d.ts",
         "import": "./dist/customize/sections/connector-oauth2-fields.js"
-      },
-      "./customize/sections/connectors-view": {
-        "types": "./dist/customize/sections/connectors-view.d.ts",
-        "import": "./dist/customize/sections/connectors-view.js"
       },
       "./customize/sections/gateway-view": {
         "types": "./dist/customize/sections/gateway-view.d.ts",
@@ -1222,6 +1229,10 @@
         "types": "./dist/primitives/empty.d.ts",
         "import": "./dist/primitives/empty.js"
       },
+      "./empty-art": {
+        "types": "./dist/primitives/empty-art.d.ts",
+        "import": "./dist/primitives/empty-art.js"
+      },
       "./empty-state": {
         "types": "./dist/primitives/empty-state.d.ts",
         "import": "./dist/primitives/empty-state.js"
@@ -1494,6 +1505,10 @@
       "./internal/hooks/channels/use-channels-installations": {
         "types": "./dist/internal/hooks/channels/use-channels-installations.d.ts",
         "import": "./dist/internal/hooks/channels/use-channels-installations.js"
+      },
+      "./internal/hooks/channels/use-email-inboxes": {
+        "types": "./dist/internal/hooks/channels/use-email-inboxes.d.ts",
+        "import": "./dist/internal/hooks/channels/use-email-inboxes.js"
       },
       "./internal/hooks/connectors/use-add-managed-account": {
         "types": "./dist/internal/hooks/connectors/use-add-managed-account.d.ts",
@@ -2740,12 +2755,15 @@
     "@tiptap/extension-document": "3.30.5",
     "@tiptap/extension-floating-menu": "3.30.5",
     "@tiptap/extension-hard-break": "3.30.5",
+    "@tiptap/extension-list": "3.30.5",
     "@tiptap/extension-paragraph": "3.30.5",
     "@tiptap/extension-placeholder": "3.30.5",
+    "@tiptap/extension-table": "3.30.5",
     "@tiptap/extension-text": "3.30.5",
     "@tiptap/extensions": "3.30.5",
     "@tiptap/pm": "3.30.5",
     "@tiptap/react": "3.30.5",
+    "@tiptap/starter-kit": "3.30.5",
     "@tiptap/suggestion": "3.30.5",
     "@uiw/codemirror-extensions-langs": "^4.23.10",
     "@uiw/codemirror-themes": "4.23.10",

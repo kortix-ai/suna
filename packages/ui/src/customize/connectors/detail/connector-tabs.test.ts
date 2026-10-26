@@ -22,12 +22,13 @@ const conn = (over: Partial<AdminConnector> = {}): AdminConnector =>
 // by position, against literals — never against `CONNECTOR_TABS`, which
 // would make the assertion agree with any reordering of the constant.
 describe('the canonical tab order', () => {
-  test('CONNECTOR_TABS is exactly accounts, tools, triggers, settings', () => {
-    expect(CONNECTOR_TABS.length).toBe(4);
+  test('CONNECTOR_TABS is exactly accounts, tools, agents, triggers, settings', () => {
+    expect(CONNECTOR_TABS.length).toBe(5);
     expect(CONNECTOR_TABS[0]).toBe('accounts');
     expect(CONNECTOR_TABS[1]).toBe('tools');
-    expect(CONNECTOR_TABS[2]).toBe('triggers');
-    expect(CONNECTOR_TABS[3]).toBe('settings');
+    expect(CONNECTOR_TABS[2]).toBe('agents');
+    expect(CONNECTOR_TABS[3]).toBe('triggers');
+    expect(CONNECTOR_TABS[4]).toBe('settings');
   });
 
   test('a connector that yields every tab emits them in that literal sequence', () => {
@@ -35,11 +36,12 @@ describe('the canonical tab order', () => {
       canWrite: true,
       hasEvents: true,
     });
-    expect(tabs.length).toBe(4);
+    expect(tabs.length).toBe(5);
     expect(tabs[0]).toBe('accounts');
     expect(tabs[1]).toBe('tools');
-    expect(tabs[2]).toBe('triggers');
-    expect(tabs[3]).toBe('settings');
+    expect(tabs[2]).toBe('agents');
+    expect(tabs[3]).toBe('triggers');
+    expect(tabs[4]).toBe('settings');
   });
 });
 
@@ -47,7 +49,7 @@ describe('connectorTabs', () => {
   test('Triggers sits between Tools and Settings and shows only for an app with events', () => {
     expect(
       connectorTabs(conn({ provider: 'pipedream' }), { canWrite: true, hasEvents: true }),
-    ).toEqual(['accounts', 'tools', 'triggers', 'settings']);
+    ).toEqual(['accounts', 'tools', 'agents', 'triggers', 'settings']);
     expect(
       connectorTabs(conn({ provider: 'pipedream' }), { canWrite: true, hasEvents: false }),
     ).not.toContain('triggers');
@@ -57,14 +59,16 @@ describe('connectorTabs', () => {
   test('a read-only viewer still sees the Triggers list of an app with events', () => {
     expect(connectorTabs(conn(), { canWrite: false, hasEvents: true })).toEqual([
       'accounts',
+      'agents',
       'triggers',
     ]);
   });
 
-  test('order is always accounts, tools, settings', () => {
+  test('order is always accounts, tools, agents, settings', () => {
     expect(connectorTabs(conn({ provider: 'pipedream' }), { canWrite: true })).toEqual([
       'accounts',
       'tools',
+      'agents',
       'settings',
     ]);
   });
@@ -102,8 +106,8 @@ describe('connectorTabs', () => {
     ]);
   });
 
-  test('a read-only viewer gets exactly accounts', () => {
-    expect(connectorTabs(conn(), { canWrite: false })).toEqual(['accounts']);
+  test('a read-only viewer gets accounts and the read-only agents list', () => {
+    expect(connectorTabs(conn(), { canWrite: false })).toEqual(['accounts', 'agents']);
   });
 
   // The whole point of the tab model: a tab that does not apply is ABSENT,

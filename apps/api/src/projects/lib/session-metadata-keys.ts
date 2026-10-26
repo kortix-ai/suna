@@ -44,12 +44,17 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   'source',
   'trigger_kind',
   'trigger_slug',
+  // Shown as a channel thread's author (`trigger-fire.ts`).
+  'trigger_name',
   'trigger_source',
   'trigger_type',
   'trigger_session_key',
   // Titles (`projects/session-title-generate.ts`). Renames use `body.name`.
   'name',
   'title_source',
+  // A channel thread's top message (`session-create.ts`): the creator's first
+  // prompt, shown to every member of the channel.
+  'first_prompt',
   // The initial turn's harness context, server-read by the initial-turn claim.
   'initial_context',
   // Agents as principals (spec 2026-09-22 §2.3): the mint reads these to decide
@@ -83,6 +88,9 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // Server-confirmed runtime fork provenance and inventory.
   'runtime_forks',
   'opencode_sessions',
+  // The session's /workspace volume (platform/services/workspace-volume.ts):
+  // its boxes mount it and a delete deletes it.
+  'workspace_volume',
 ] as const;
 
 /**

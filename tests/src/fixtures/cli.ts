@@ -229,7 +229,7 @@ export class CliSandbox {
   }
 
   /** Write a file relative to the sandbox cwd (e.g. to set up a fixture state). */
-  writeFile(rel: string, content: string): void {
+  writeFile(rel: string, content: string | Uint8Array): void {
     const p = join(this.cwd, rel);
     mkdirSync(resolve(p, '..'), { recursive: true });
     writeFileSync(p, content, 'utf8');

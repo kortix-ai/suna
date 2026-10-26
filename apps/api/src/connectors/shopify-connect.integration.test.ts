@@ -80,7 +80,6 @@ beforeAll(async () => {
     accountId: ACCOUNT,
     name: 'shopify-connect-test',
     repoUrl: 'https://example.test/shopify-connect.git',
-    metadata: { experimental: { connectors_v2: true } },
   });
   await db.insert(connectors).values({
     connectorId: CONNECTOR,
@@ -101,7 +100,6 @@ afterAll(async () => {
 describe('Shopify connect', () => {
   let connectionId = '';
   let firstToken = '';
-  let latestToken = '';
 
   test('a full grant stores the token for its store and records what it can read', async () => {
     const started = await connect();
@@ -144,7 +142,6 @@ describe('Shopify connect', () => {
 
   test('a reconnect stays open until its own grant: the old token does not count', async () => {
     const again = await connect();
-    latestToken = again.token;
     expect(again.connectionId).toBe(connectionId);
     expect(await finalize()).toBe(false);
     await expect(appFormInfo(firstToken)).rejects.toMatchObject({ status: 409 });
@@ -168,14 +165,5 @@ describe('Shopify connect', () => {
     await submit(again.token, 'elsewhere');
     expect(await shopifyStoreForConnection({ connectorId: CONNECTOR, connectionId })).toBe('acme.myshopify.com');
     expect(await finalize()).toBe(false);
-  });
-
-  test('without connectors_v2, Connect and an open form link refuse with 403 feature_disabled', async () => {
-    await db.update(projects).set({ metadata: {} }).where(eq(projects.projectId, PROJECT));
-    const disabled = { status: 403 };
-    await expect(connect()).rejects.toMatchObject(disabled);
-    await expect(
-      submitAppForm(latestToken, { store: 'acme', client_id: 'client-id', client_secret: SECRET }),
-    ).rejects.toMatchObject(disabled);
   });
 });

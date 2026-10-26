@@ -18,7 +18,7 @@ import {
   publicConnectorAlias,
 } from '../../shared/connector-alias';
 import {
-  loadAgentMailInstall,
+  loadEmailInboxAccountForInbox,
   loadSlackInstall,
   loadTeamsInstall,
   loadTelegramInstall,
@@ -119,10 +119,6 @@ export async function connectorConnectionIsConnected(input: {
     // batch the install store if projects gain many distinct inboxes.
     const connected = (async () => {
       const platform = connectorPlatform(connector.config);
-      const connectionSlug =
-        typeof connection.metadata.connector_slug === 'string'
-          ? connection.metadata.connector_slug
-          : connector.slug;
       if (platform === 'slack') {
         return (await loadSlackInstall(connector.projectId).catch(() => null)) !== null;
       }
@@ -133,14 +129,13 @@ export async function connectorConnectionIsConnected(input: {
         return (await loadTelegramInstall(connector.projectId).catch(() => null)) !== null;
       }
       if (platform === 'email') {
-        const install = await loadAgentMailInstall(connector.projectId, connectionSlug).catch(
-          () => null,
-        );
-        if (!install) return false;
-        return (
-          typeof connection.metadata.inbox_id !== 'string' ||
-          install.inboxId === connection.metadata.inbox_id
-        );
+        // An email account is connected while it is its inbox's active account.
+        if (typeof connection.metadata.inbox_id !== 'string') return false;
+        const account = await loadEmailInboxAccountForInbox(
+          connector.projectId,
+          connection.metadata.inbox_id,
+        ).catch(() => null);
+        return account?.connectionId === connection.connectionId;
       }
       return false;
     })();
@@ -905,11 +900,25 @@ export async function resolveSessionConnectorConnectionOutcome(input: {
           agentId: input.agentPrincipal?.agentId ?? null,
         }, input.preloaded)
       )(connection.connectionId);
+      // A private inbox's mail starts a private session as the inbox's owner
+      // with no `on_behalf_of` (an email sender is no Kortix identity), so the
+      // owner's personal accounts stay out of reach. The one exception is the
+      // inbox itself: a private session its creator owns may use the email
+      // inbox account it is bound to, and nothing else of that person's.
+      const ownBoundInbox =
+        visibility === 'private' &&
+        !actingPrincipalIsServiceAccount &&
+        actingUserId !== '' &&
+        connection.ownerType === 'member' &&
+        connection.ownerId === actingUserId &&
+        connectorPlatform(connector.config) === 'email' &&
+        typeof connection.metadata?.inbox_id === 'string';
       if (
         !connector.enabled ||
         connector.status !== 'active' ||
         connection.status !== 'active' ||
         (connectionNeedsPrivateSession(connection.ownerType, audience) && visibility !== 'private') ||
+        (!ownBoundInbox &&
         !sessionConnectionIsReachable(
           connector,
           connection,
@@ -921,7 +930,7 @@ export async function resolveSessionConnectorConnectionOutcome(input: {
               : null,
           },
           audience,
-        ) ||
+        )) ||
         !(await connectorConnectionIsConnected({ connector, connection, preloaded: input.preloaded }))
       ) {
         return { kind: 'none' };

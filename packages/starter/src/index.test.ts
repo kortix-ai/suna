@@ -302,6 +302,8 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
     expect([...KORTIX_MANAGED_SKILL_NAMES]).toEqual([
       'kortix-cli',
       'kortix-apps',
+      'kortix-artifacts',
+      'kortix-channel-memory',
       'kortix-computer',
       'kortix-connectors',
       'kortix-drives',

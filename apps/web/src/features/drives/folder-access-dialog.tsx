@@ -1,5 +1,6 @@
 'use client';
 
+import { AgentMark } from '@kortix/ui/internal/components/agent-mark';
 import { Button } from '@kortix/ui/button';
 import { EntityAvatar } from '@kortix/ui/entity-avatar';
 import { Field, FieldLabel } from '@kortix/ui/field';
@@ -30,7 +31,7 @@ import { useFolderAccess, useFolderPrincipals, useShareFolder, useUnshareFolder 
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@kortix/ui';
 import type { FolderGrant, FolderLevel, FolderPrincipalType } from '@kortix/sdk';
-import { LockIcon, RobotIcon, UsersIcon, UsersThreeIcon, XIcon } from '@phosphor-icons/react';
+import { LockIcon, UsersIcon, UsersThreeIcon, XIcon } from '@phosphor-icons/react';
 import { type ReactNode, useId, useMemo, useState } from 'react';
 
 import {
@@ -51,8 +52,9 @@ export function folderName(path: string, root: string): string {
 /** A grant's avatar: a person's initials, or the team / agent / project glyph. */
 export function GrantAvatar({ type, label }: { type: FolderPrincipalType; label: string }) {
   if (type === 'user') return <UserAvatar email={label} size="sm" />;
-  const icon = type === 'group' ? UsersIcon : type === 'agent' ? RobotIcon : UsersThreeIcon;
-  return <EntityAvatar icon={icon} label={label} size="sm" />;
+  // An agent grant's label is the agent's name: its pixel mark, on the `sm` tile's 22px.
+  if (type === 'agent') return <AgentMark slug={label} size={14} tile={22} />;
+  return <EntityAvatar icon={type === 'group' ? UsersIcon : UsersThreeIcon} label={label} size="sm" />;
 }
 
 /** One row of an access list, the same row the agent and account share dialogs draw. */

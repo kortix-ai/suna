@@ -10,7 +10,7 @@ import Link from 'next/link';
 import { ReleaseNotes } from './changelog-view';
 import { CopyLinkButton } from './copy-link-button';
 import type { ChangelogWeekDetail } from './types';
-import { weekRange } from './weekly-view';
+import { WeekSummary, weekRange } from './weekly-view';
 
 /**
  * `/changelog/<slug>`: one week with every New, Improved and Fixed item,
@@ -77,6 +77,7 @@ export async function WeekView({ data }: { data: ChangelogWeekDetail }) {
           <h1 className="mt-4 max-w-4xl text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">
             {week.headline}
           </h1>
+          {week.summary && <WeekSummary lines={week.summary} className="mt-8 max-w-2xl" />}
           <ul className="mt-6 -ml-2 flex flex-wrap gap-x-1 gap-y-1">
             {week.releases.map((release) => (
               <li key={release.tag}>

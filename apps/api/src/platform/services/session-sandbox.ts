@@ -78,6 +78,7 @@ import {
   initialSandboxTurnMetadata,
 } from '../../projects/session-turn-ledger';
 import { resolveSessionSandboxRegion } from './sandbox-region';
+import type { WorkspaceVolume } from './workspace-volume';
 import { logger } from '../../lib/logger';
 
 /**
@@ -368,6 +369,12 @@ interface SessionProvisionState {
   // provider drops them itself when Platinum refuses the create over them.
   driveMounts: SessionDriveMounts | undefined;
   driveMountsResolved: boolean;
+  // /workspace on a Platinum volume (workspace-volume.ts): undefined until the
+  // first attempt resolves it, null for a box-disk session.
+  workspaceVolume: WorkspaceVolume | null | undefined;
+  // Started with the provisioning, so the volume open runs alongside row+tokens
+  // and the env build instead of before the create. Read once.
+  workspaceVolumePromise: Promise<WorkspaceVolume | null> | undefined;
 }
 
 /** What the detached provisioning loop reads but never changes. */
@@ -542,6 +549,8 @@ export async function provisionSessionSandbox(opts: {
     platinumCreateAttempt: 0,
     driveMounts: undefined,
     driveMountsResolved: false,
+    workspaceVolume: undefined,
+    workspaceVolumePromise: undefined,
   };
   const tl = new ProvisionTimeline(sandboxId, 'provision');
 
@@ -595,6 +604,14 @@ export async function provisionSessionSandbox(opts: {
   // Swallow the unhandled-rejection warning; the IIFE's try/catch owns the error
   // when it awaits the promise.
   state.firstImagePromise?.catch(() => {});
+
+  // The /workspace volume opens in parallel with row+tokens and the env build:
+  // it needs only the session row, which exists before provisioning starts.
+  // The first attempt awaits it (prepareAttemptVolumes).
+  state.workspaceVolumePromise = import('./workspace-volume').then(({ resolveWorkspaceVolume }) =>
+    resolveWorkspaceVolume(sandboxId),
+  );
+  state.workspaceVolumePromise.catch(() => {});
 
   // Sandbox-row insert + tokens + credit lookup all run in parallel. None of
   // them depend on the others — `sandboxId` is known up front, so even the
@@ -791,6 +808,8 @@ async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: Sessio
         sessionId: sandbox.sandboxId,
         bootingUserId: userId,
         agentName: opts.agentName ?? 'default',
+        // The /workspace volume takes one of the box's mount slots.
+        reservedSlots: state.workspaceVolume ? 1 : 0,
       }),
     );
   if (drivesRequirePlatinum && providerName !== 'platinum' && drivesSyncAllowed) {
@@ -810,6 +829,18 @@ async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: Sessio
       [],
     );
   }
+  const { applyWorkspaceVolume, resolveWorkspaceVolume } = await import('./workspace-volume');
+  if (state.workspaceVolume === undefined) {
+    // The early open is used once: a retry after it failed opens again.
+    const early = state.workspaceVolumePromise;
+    state.workspaceVolumePromise = undefined;
+    state.workspaceVolume = await (early ?? resolveWorkspaceVolume(sandbox.sandboxId));
+    if (state.workspaceVolume) ctx.tl.mark('workspace-volume');
+  }
+  if (state.workspaceVolume && (providerName !== 'platinum' || slug === META_SANDBOX_SLUG)) {
+    // A box anywhere else would boot without the session's files.
+    throw new Error('[workspace] This session’s files are on a Platinum volume, and this box would not mount it, so the session did not start.');
+  }
   if (providerName !== 'platinum' || slug === META_SANDBOX_SLUG) {
     providerCreateInput.volumes = undefined;
     return;
@@ -819,6 +850,7 @@ async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: Sessio
     state.driveMountsResolved = true;
   }
   providerCreateInput.volumes = state.driveMounts?.volumes;
+  if (state.workspaceVolume) applyWorkspaceVolume(providerCreateInput, state.workspaceVolume);
 }
 
 /** What the box mounted (its drives), for its row. */
@@ -1324,7 +1356,8 @@ async function failOverToNextProvider(
   // Drives run on Platinum only: no hand-off to another provider. (With drive
   // sync on, any provider can carry the drives.)
   const next = nextFailoverProvider({
-    providerLocked: providerWasExplicitlySelected || (drivesRequirePlatinum && !drivesSyncAllowed),
+    // A session whose /workspace is a Platinum volume runs on Platinum only.
+    providerLocked: providerWasExplicitlySelected || (drivesRequirePlatinum && !drivesSyncAllowed) || !!state.workspaceVolume,
     fallbackAttempted: state.fallbackAttempted,
     fallbackEnabled: providerFallbackSetting().enabled,
     current: providerName,

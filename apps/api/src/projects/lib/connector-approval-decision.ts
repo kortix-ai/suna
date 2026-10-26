@@ -4,6 +4,7 @@
  * and the Slack approval card). Authorization is the CALLER's job: each surface
  * proves a human with `mayResolveApproval` / `humanMayResolveApproval` first.
  */
+import { hiddenSpaceIds, sessionsInSpaces } from '../../shared/space-access';
 import { connectorCalls, projectSessions, sessionLifecycleCommands } from '@kortix/db';
 import { and, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { approvalNotExpired, isApprovalExpired } from '../../connectors/approval-expiry';
@@ -242,6 +243,12 @@ export async function resolveApprovalAs(input: {
 }): Promise<ResolveApprovalResult> {
   const row = await loadApprovalRow(input.projectId, input.executionId);
   if (!row) return { outcome: 'not_found' };
+  // A call of a private channel's thread the caller is not in does not exist
+  // for them, a manager included.
+  if (row.sessionId) {
+    const hidden = await hiddenSpaceIds(input.projectId, input.caller.callerUserId, input.caller.callerSessionId ?? null);
+    if ((await sessionsInSpaces(input.projectId, [String(row.sessionId)], hidden)).size > 0) return { outcome: 'not_found' };
+  }
   if (isApprovalExpired(row)) return { outcome: 'expired' };
   if (!isPendingApproval(row)) return { outcome: 'already_resolved' };
   const target = await approvalTargetSession(input.projectId, row);

@@ -20,7 +20,18 @@
  * footer: it reads `useInAccountHubSheetBody()`.
  */
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from 'react';
+import { createPortal } from 'react-dom';
+
+import { SelectionBar } from '../selection/selection-bar';
 
 import {
   SplitSheet,
@@ -47,6 +58,24 @@ export interface AccountHubSheet {
 
 const AccountHubSheetContext = createContext<AccountHubSheet | null>(null);
 const SheetBodyContext = createContext(false);
+const BottomBarSlotContext = createContext<HTMLElement | null>(null);
+
+/**
+ * A pane's bulk-action bar: the shared `SelectionBar`, pinned to the bottom of
+ * the hub's page column. The column scrolls, so `sticky` would stop under a
+ * short list: this renders into a slot that overlays the column's bottom edge
+ * and never scrolls. Render it only while something is selected.
+ */
+export function AccountHubSelectionBar(props: ComponentProps<typeof SelectionBar>) {
+  const slot = useContext(BottomBarSlotContext);
+  if (!slot) return null;
+  return createPortal(
+    <div className="pointer-events-auto w-full max-w-xl">
+      <SelectionBar {...props} />
+    </div>,
+    slot,
+  );
+}
 
 /** True inside the hub sheet's body: a form there draws the sheet layout, not a modal. */
 export function useInAccountHubSheetBody(): boolean {
@@ -65,9 +94,11 @@ export function AccountHubSheetProvider({ children }: { children: ReactNode }) {
   const [content, setContent] = useState<AccountHubSheetContent | null>(null);
   const close = useCallback(() => setContent(null), []);
   const sheet = useMemo<AccountHubSheet>(() => ({ open: setContent, close }), [close]);
+  const [barSlot, setBarSlot] = useState<HTMLElement | null>(null);
 
   return (
     <AccountHubSheetContext.Provider value={sheet}>
+      <BottomBarSlotContext.Provider value={barSlot}>
       <SplitSheet
         open={content !== null}
         onOpenChange={(next) => {
@@ -76,6 +107,12 @@ export function AccountHubSheetProvider({ children }: { children: ReactNode }) {
         size="md"
       >
         <SplitSheetMain>{children}</SplitSheetMain>
+        {/* `AccountHubSelectionBar`'s slot: the page column's cell again, its
+            bottom edge. It takes no clicks of its own and never scrolls. */}
+        <div
+          ref={setBarSlot}
+          className="pointer-events-none z-10 col-start-1 row-start-1 flex justify-center self-end px-4 pb-4 empty:hidden"
+        />
         {content ? (
           <SplitSheetContent>
             <SplitSheetHeader>
@@ -91,6 +128,7 @@ export function AccountHubSheetProvider({ children }: { children: ReactNode }) {
           </SplitSheetContent>
         ) : null}
       </SplitSheet>
+      </BottomBarSlotContext.Provider>
     </AccountHubSheetContext.Provider>
   );
 }

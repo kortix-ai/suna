@@ -28,10 +28,12 @@ interface MermaidRendererProps {
    * still for `CODE_SETTLE_MS`, not once per streamed token.
    */
   isStreaming?: boolean;
+  /** Extra controls beside copy and fullscreen, shown on hover (e.g. "Edit diagram"). */
+  actions?: React.ReactNode;
 }
 
 export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
-  ({ chart, className, enableFullscreen = true, isStreaming = false }) => {
+  ({ chart, className, enableFullscreen = true, isStreaming = false, actions }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -336,23 +338,29 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
             display: block !important;
             margin: 0 auto !important;
           }
-          .mermaid-container .node {
-            fill: hsl(var(--card)) !important;
-            stroke: hsl(var(--foreground)) !important;
+          .mermaid-container .node :is(rect, polygon, circle, ellipse, path) {
+            fill: var(--card) !important;
+            stroke: var(--border) !important;
           }
-          .mermaid-container .cluster {
-            fill: hsl(var(--muted)) !important;
-            stroke: hsl(var(--foreground)) !important;
+          .mermaid-container .cluster rect {
+            fill: var(--muted) !important;
+            stroke: var(--border) !important;
           }
-          .mermaid-container text {
-            fill: hsl(var(--foreground)) !important;
-            font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif !important;
+          .mermaid-container :is(text, .nodeLabel, .edgeLabel, .label) {
+            fill: var(--foreground) !important;
+            color: var(--foreground) !important;
+            font-family: var(--font-sans) !important;
           }
-          .mermaid-container .edgePath {
-            stroke: hsl(var(--foreground)) !important;
+          .mermaid-container :is(.edgePath path, .flowchart-link) {
+            stroke: var(--muted-foreground) !important;
           }
-          .mermaid-container .marker {
-            fill: hsl(var(--foreground)) !important;
+          .mermaid-container :is(.marker, .arrowheadPath) {
+            fill: var(--muted-foreground) !important;
+            stroke: var(--muted-foreground) !important;
+          }
+          .mermaid-container .edgeLabel :is(rect, p) {
+            background-color: var(--background) !important;
+            fill: var(--background) !important;
           }
         `,
           }}
@@ -362,11 +370,11 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
             'mermaid-container group bg-background relative my-4 w-full overflow-auto rounded-lg border',
             className,
           )}
-          style={{ minHeight: '200px' }}
         >
           {/* Inline controls — reveal on hover/focus */}
           <div className="absolute top-2 right-2 z-10 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
             <ButtonGroup>
+              {actions}
               {enableFullscreen && (
                 <Hint label="Fullscreen" side="top">
                   <Button

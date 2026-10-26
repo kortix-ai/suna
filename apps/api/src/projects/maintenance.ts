@@ -13,16 +13,18 @@ import { sweepAppRetention } from '../apps/retention';
 import { sweepAppVolumes } from '../apps/volumes';
 import { reclaimAppSiteBlobs } from '../apps/static-site';
 import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
-import { purgeExpiredMonitorEvents, reconcileMonitorBoxes } from './lib/monitor-box';
+import { purgeExpiredMonitorEvents } from './lib/monitor-ingest';
+import { retireMonitorBoxes } from './lib/monitor-retire';
+import { purgeFiredAppRuns } from './lib/app-runs';
 import { SESSION_DELETE_ROWS_DAYS } from './session-log-purge';
 import { purgeExpiredTriggerRuns } from './trigger-execution-store';
 import { settleTriggerRunsFromTurns } from './lib/trigger-run-outcome';
 import { mapWithConcurrency } from './lib/trigger-scheduler-state';
-import { emptyMonitorReconcileResult } from './lib/monitor-box-core';
 import { reconcileForwardedPrompts } from './session-lifecycle/consumption';
 import { reconcileUndeliveredPrompts } from './session-lifecycle/undelivered-prompts';
 import { verifyParkedRuntimes } from './reaping/parked-runtime-verification';
 import { removeArchivedProviderBoxes } from './reaping/archived-box-removal';
+import { retireIdleVolumeBoxes } from './reaping/idle-volume-retire';
 import { convergeStuckProvisioningRuntimes } from './reaping/stuck-provisioning';
 import { reconcileRuntimeWakeFences } from './session-lifecycle/runtime-wake-maintenance';
 import {
@@ -522,20 +524,15 @@ function runMaintenanceSweeps() {
       );
       return { examined: 0, lost: 0, healed: 0, errors: 1 };
     }),
-    // Monitors. Converges the
-    // per-project monitor box: flag on + >=1 enabled monitor => a box exists
-    // running the current manifest revision; flag off, zero monitors, or an
-    // exceeded budget => no box. Also the ONLY place a persistent monitor box
-    // is observed alive, which is what keeps its billing window earning.
-    () => reconcileMonitorBoxes().catch((err) => {
-      console.warn(
-        '[project-maintenance] monitor-box reconcile failed:',
-        err instanceof Error ? err.message : err,
-      );
-      return { ...emptyMonitorReconcileResult(), errors: 1 };
+    // Monitor boxes left live when the box was removed: stop them and close
+    // their compute windows (lib/monitor-retire.ts). Goes with the table.
+    () => retireMonitorBoxes().catch((err) => {
+      console.warn('[project-maintenance] monitor-box retirement failed:', err instanceof Error ? err.message : err);
+      return { retired: 0, errors: 1 };
     }),
-    // 30-day retention on the append-only monitor event log.
-    () => purgeExpiredMonitorEvents().catch((err) => {
+    // 30-day retention on the append-only App event log, and on fired
+    // one-off App runs (lib/app-runs.ts). The step reports the event count.
+    () => purgeFiredAppRuns().catch(() => 0).then(() => purgeExpiredMonitorEvents()).catch((err) => {
       console.warn(
         '[project-maintenance] monitor-event retention failed:',
         err instanceof Error ? err.message : err,
@@ -571,6 +568,12 @@ function runMaintenanceSweeps() {
       logger.warn('[project-maintenance] trigger-run settle failed', { error: err instanceof Error ? err.message : String(err) });
       return 0;
     }),
+    // A /workspace-volume session's box stopped past the idle-delete window is
+    // removed; its next open boots a fresh box on the volume.
+    () => retireIdleVolumeBoxes().catch((err) => {
+      logger.warn('[project-maintenance] idle volume box retire failed', { error: err instanceof Error ? err.message : String(err) });
+      return { retired: 0, removed: 0, failed: 1 };
+    }),
   ]);
 }
 
@@ -595,12 +598,13 @@ function logMaintenanceCycle(
     promptAttachments,
     runtimeWakes,
     parkedRuntimes,
-    monitorBoxes,
+    monitorBoxesRetired,
     monitorEventsPurged,
     archivedRemovals,
     stuckProvisioning,
     triggerRunsPurged,
     triggerRunsSettled,
+    idleVolumeRetires,
   ] = sweeps;
   const hadAction = Boolean(
     idle.stopped ||
@@ -638,19 +642,18 @@ function logMaintenanceCycle(
       parkedRuntimes.lost ||
       parkedRuntimes.healed ||
       parkedRuntimes.errors ||
-      monitorBoxes.created ||
-      monitorBoxes.restarted ||
-      monitorBoxes.stopped ||
-      monitorBoxes.disabledOverCap ||
-      monitorBoxes.deferred ||
-      monitorBoxes.errors ||
+      monitorBoxesRetired.retired ||
+      monitorBoxesRetired.errors ||
       monitorEventsPurged ||
       archivedRemovals.removed ||
       archivedRemovals.failed ||
       stuckProvisioning.examined ||
       stuckProvisioning.errors ||
       triggerRunsPurged ||
-      triggerRunsSettled,
+      triggerRunsSettled ||
+      idleVolumeRetires.retired ||
+      idleVolumeRetires.removed ||
+      idleVolumeRetires.failed,
   );
   if (hadAction) {
     console.log('[project-maintenance] completed', {
@@ -668,12 +671,13 @@ function logMaintenanceCycle(
       connectorAttachments,
       promptAttachments,
       runtimeWakes,
-      monitorBoxes,
+      monitorBoxesRetired,
       monitorEventsPurged,
       archivedRemovals,
       stuckProvisioning,
       triggerRunsPurged,
       triggerRunsSettled,
+      idleVolumeRetires,
     });
   }
   // Unconditional heartbeat — proof-of-life independent of whether any
@@ -717,13 +721,6 @@ function logMaintenanceCycle(
     `app_deployments_retired=${appImages.deploymentsRetired}`,
     `app_artifacts_reclaimed=${appImages.artifactsReclaimed}`,
     `app_site_blobs_reclaimed=${appImages.siteBlobsReclaimed}`,
-    // A monitor box only stays billable while this sweep observes it, so
-    // `monitor_observed` going flat while boxes exist is the signal that
-    // monitor billing has silently stopped earning.
-    `monitor_projects=${monitorBoxes.projects}`,
-    `monitor_observed=${monitorBoxes.observed}`,
-    `monitor_created=${monitorBoxes.created}`,
-    `monitor_stopped=${monitorBoxes.stopped}`,
     // The sweeps run SWEEP_CONCURRENCY at a time. A cycle that takes longer
     // than the interval makes the next tick skip, which halves every sweep's
     // rate: alert on this value approaching the interval.
