@@ -205,6 +205,58 @@
       "slack": {
         "status": "skipped"
       }
+    },
+    "2026-W43": {
+      "week": "2026-W43",
+      "start": "2026-10-19T00:00:00.000Z",
+      "end": "2026-10-26T00:00:00.000Z",
+      "releases": [
+        "v0.14.8",
+        "v0.14.7",
+        "v0.14.6",
+        "v0.14.5",
+        "v0.14.4",
+        "v0.14.3",
+        "v0.14.2"
+      ],
+      "highlights": [
+        {
+          "text": "Share a finished assistant response through a public link, with or without its prompt, and turn off anonymous access at any time.",
+          "tags": [
+            "v0.14.8"
+          ]
+        },
+        {
+          "text": "Move a project to another account or organization.",
+          "tags": [
+            "v0.14.7"
+          ]
+        },
+        {
+          "text": "Pause all account automations with one switch, and use trigger run history to inspect errors, test triggers and replay runs.",
+          "tags": [
+            "v0.14.3",
+            "v0.14.2"
+          ]
+        },
+        {
+          "text": "Retry failed reminders from the session, project list or calendar, with the last error visible.",
+          "tags": [
+            "v0.14.6"
+          ]
+        },
+        {
+          "text": "Upload, view and manage files in a shared drive with team folders, accessible from the app and command line.",
+          "tags": [
+            "v0.14.3",
+            "v0.14.4"
+          ]
+        }
+      ],
+      "generated_at": "2026-10-26T06:06:15.003Z",
+      "slack": {
+        "status": "skipped"
+      }
     }
   }
 }
