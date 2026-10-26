@@ -38,6 +38,23 @@ export const MEGA_MENUS: MegaMenu[] = [
           { label: 'Pricing', href: '/pricing' },
         ],
       },
+      {
+        title: 'Apps',
+        links: [
+          { label: 'Desktop', href: '/desktop' },
+          { label: 'Mobile', href: '/mobile' },
+          { label: 'CLI', href: '/cli' },
+        ],
+      },
+      {
+        // ACCURACY: the channel set is Slack, Microsoft Teams and email
+        // (kortix-brand claims.md). Email has no page yet.
+        title: 'Channels',
+        links: [
+          { label: 'Slack', href: '/slack' },
+          { label: 'Microsoft Teams', href: '/teams' },
+        ],
+      },
     ],
   },
   {
@@ -146,14 +163,18 @@ export function MegaMenuPanel({ menu, open, ref, onNavigate, onKeyDown, stars }:
         {menu.groups.map((group) => (
           <div key={group.title}>
             <p className="text-muted-foreground text-sm">{group.title}</p>
-            <ul className="mt-4 flex flex-col gap-3">
+            {/* Each link fills its column and carries the row gap as padding,
+                so the whole row is the target and the rows touch: no dead
+                strip between two links, and the hover tint shows anywhere on
+                the row. Same spacing as before (gap-3 = 2 × py-1.5). */}
+            <ul className="mt-2.5 flex flex-col">
               {group.links.map((link) => (
                 <li key={link.href}>
                   <Link
                     href={link.href}
                     onClick={onNavigate}
                     {...(link.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-                    className="text-foreground hover:text-ring outline-ring inline-flex items-center gap-1.5 rounded-sm text-base transition-colors duration-moderate focus-visible:outline-2"
+                    className="text-foreground hover:text-ring outline-ring flex w-full items-center gap-1.5 rounded-sm py-1.5 text-base transition-colors duration-moderate focus-visible:outline-2"
                   >
                     {link.label}
                     {link.external && <ArrowUpRightIcon className="size-3.5" />}

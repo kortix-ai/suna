@@ -26,14 +26,17 @@ export function PageHero({
   titleMuted,
   sub,
   actions,
+  aside,
 }: {
   title: string;
   titleMuted?: string;
   sub: string;
   actions?: ReactNode;
+  /** Art: right column from `lg`, centred; hidden below `lg`. */
+  aside?: ReactNode;
 }) {
-  return (
-    <div className="flex flex-col gap-7.5 px-8 pt-32 pb-18 lg:px-28 lg:pt-40">
+  const copy = (
+    <div className="flex min-w-0 flex-col gap-7.5">
       <div className="flex flex-col gap-4 lg:gap-5">
         <h1 className="max-w-261 text-3xl font-medium tracking-tight text-balance sm:text-4xl lg:text-[44px] lg:leading-13">
           <span className="text-foreground block">{title}</span>
@@ -42,6 +45,18 @@ export function PageHero({
         <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">{sub}</p>
       </div>
       {actions ? <div className="flex flex-wrap gap-2.5 pt-2">{actions}</div> : null}
+    </div>
+  );
+  if (!aside) return <div className="px-8 pt-32 pb-18 lg:px-28 lg:pt-40">{copy}</div>;
+  // With art: the copy takes 3/5 from `lg` so a title line never wraps, the
+  // art is centred in the remaining 2/5.
+  // The padding is even around the content: the top carries the fixed 59px
+  // navbar on top of the same space as the bottom. Below `lg` the art is not
+  // shown: on a phone it only pushes the content down.
+  return (
+    <div className="grid grid-cols-1 items-center gap-12 px-8 pt-32 pb-16 lg:grid-cols-[3fr_2fr] lg:gap-16 lg:px-28 lg:pt-48 lg:pb-32">
+      {copy}
+      <div className="hidden items-center justify-center lg:flex">{aside}</div>
     </div>
   );
 }

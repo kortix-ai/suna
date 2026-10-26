@@ -4,8 +4,8 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import Link from '@/components/site-link';
 import { UseCaseToc, type TocItem } from '@/components/use-cases/use-case-toc';
-import { MARKETING_CONTAINER } from '@/features/marketing/kit/section';
-import { SectionHeading } from '@/features/marketing/kit/section-heading';
+import { CopyRow } from '@/features/marketing/kit/copy-row';
+import { Band, PageFrame, PageHero } from '@/features/marketing/kit/page-frame';
 import { cn } from '@kortix/ui';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { Fragment, Suspense, useState, type ReactNode } from 'react';
@@ -32,8 +32,9 @@ function isLegalTab(value: string | null): value is LegalTab {
  */
 const PROSE = 'text-muted-foreground text-base leading-7 text-pretty';
 
+// Hover takes the ring colour, like the contact rows (`kit/copy-row.tsx`).
 const LINK =
-  'text-foreground decoration-foreground/25 hover:decoration-foreground/60 wrap-break-word underline underline-offset-4 transition-colors';
+  'text-foreground decoration-foreground/25 hover:text-ring hover:decoration-ring/60 wrap-break-word underline underline-offset-4 transition-colors duration-normal ease-out';
 
 // ---------------------------------------------------------------------------
 // Prose atoms
@@ -143,13 +144,16 @@ function Imprint() {
       </Section>
 
       <Section id="imprint-contact" title={t.raw('i18nComplete.text2b5c3d26721a')}>
-        <P>
-          {t.raw('i18nComplete.text969ccbd3cf63')}{' '}
-          <a href="mailto:info@kortix.com" className={LINK}>
-            {t.raw('appLegalPage.line130JsxTextInfoKortixCom')}
-          </a>
-          .
-        </P>
+        {/* The same click-to-copy rows as /contact; they carry the address
+            the sentence used to repeat. */}
+        <ul className="divide-y border-y">
+          <li>
+            <CopyRow label="General" value="info@kortix.com" />
+          </li>
+          <li>
+            <CopyRow label="Privacy" value={PRIVACY_EMAIL} />
+          </li>
+        </ul>
       </Section>
 
       <Section
@@ -514,17 +518,13 @@ function railItem(active: boolean) {
   );
 }
 
-/** The kit measure plus the page's bottom rhythm. */
-const PAGE = cn(MARKETING_CONTAINER, 'pb-24 md:pb-30');
-
+/** The landing hero's header, shared with the Suspense fallback so nothing jumps. */
 function LegalHeading() {
   return (
-    <SectionHeading
-      as="h1"
-      className="pt-24 md:pt-30"
+    <PageHero
       title="Legal information."
       titleMuted="Imprint, terms and privacy."
-      description="Company details, how we handle your data, and the terms that govern Kortix."
+      sub="Company details, how we handle your data, and the terms that govern Kortix."
     />
   );
 }
@@ -582,68 +582,73 @@ function LegalContent() {
   ).map(([id, title]) => ({ title, url: `#${id}`, depth: 2 }));
 
   return (
-    <main className="bg-background min-h-screen pt-16">
-      {/* Buio's legal layout: a two-tone header, then the shared 4-column
-          grid. Column 1 is the document rail (a scrolling row below `lg`),
-          columns 2–3 the document, column 4 its contents. */}
-      <div className={PAGE}>
-        <LegalHeading />
+    <PageFrame>
+      <LegalHeading />
 
-        <div className="border-border mt-16 grid grid-cols-1 gap-y-12 border-t pt-8 lg:grid-cols-4">
-          <nav
-            aria-label={t.raw('i18nComplete.text02881bb0fe83')}
-            className="scrollbar-hide -mx-4 flex gap-x-6 overflow-x-auto px-4 lg:sticky lg:top-24 lg:mx-0 lg:flex-col lg:self-start lg:overflow-visible lg:px-0 lg:pr-8"
-          >
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => handleTabChange(tab.id)}
-                aria-current={activeTab === tab.id ? 'page' : undefined}
-                aria-controls="legal-document"
-                className={railItem(activeTab === tab.id)}
-              >
-                {tab.label}
-              </button>
-            ))}
-            <Link href="/legal/subprocessors" className={railItem(false)}>
-              Subprocessors
-            </Link>
-          </nav>
+      {/* The landing page's frame (`kit/page-frame.tsx`), like /security:
+          one band holds the document rail (a scrolling row below `lg`), the
+          document, and its contents, split by hairlines. */}
+      <section className="pb-20 lg:pb-28">
+        <Band>
+          <div className="grid grid-cols-1 lg:grid-cols-12">
+            <nav
+              aria-label={t.raw('i18nComplete.text02881bb0fe83')}
+              className="scrollbar-hide flex gap-x-6 overflow-x-auto border-b px-6 py-2 lg:sticky lg:top-24 lg:col-span-2 lg:flex-col lg:self-start lg:overflow-visible lg:border-b-0 lg:px-8 lg:py-10"
+            >
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => handleTabChange(tab.id)}
+                  aria-current={activeTab === tab.id ? 'page' : undefined}
+                  aria-controls="legal-document"
+                  className={railItem(activeTab === tab.id)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+              <Link href="/legal/subprocessors" className={railItem(false)}>
+                Subprocessors
+              </Link>
+            </nav>
 
-          <article id="legal-document" className="min-w-0 lg:col-span-2 lg:pr-8">
-            <div className="mb-10">
-              <h2 className="text-foreground text-xl font-medium tracking-tight text-balance md:text-2xl lg:text-3xl">
-                {activeTab === 'imprint'
-                  ? 'Imprint'
-                  : activeTab === 'terms'
-                    ? t.raw('i18nComplete.text4afa55bf7aec')
-                    : t.raw('appLegalPage.line1531JsxTextPrivacyPolicy')}
-              </h2>
-              {activeTab === 'imprint' ? null : (
-                <p className="text-muted-foreground mt-2 text-sm tabular-nums">
-                  {t.raw('appLegalPage.line1534JsxTextLastUpdated')}{' '}
-                  {activeTab === 'terms' ? TERMS_LAST_UPDATED : LEGAL_LAST_UPDATED}
-                </p>
+            <article
+              id="legal-document"
+              className="min-w-0 px-6 py-10 lg:col-span-7 lg:border-x lg:px-11 lg:py-12"
+            >
+              <div className="mb-10">
+                <h2 className="text-foreground text-xl font-medium tracking-tight text-balance md:text-2xl lg:text-3xl">
+                  {activeTab === 'imprint'
+                    ? 'Imprint'
+                    : activeTab === 'terms'
+                      ? t.raw('i18nComplete.text4afa55bf7aec')
+                      : t.raw('appLegalPage.line1531JsxTextPrivacyPolicy')}
+                </h2>
+                {activeTab === 'imprint' ? null : (
+                  <p className="text-muted-foreground mt-2 text-sm tabular-nums">
+                    {t.raw('appLegalPage.line1534JsxTextLastUpdated')}{' '}
+                    {activeTab === 'terms' ? TERMS_LAST_UPDATED : LEGAL_LAST_UPDATED}
+                  </p>
+                )}
+              </div>
+
+              {activeTab === 'imprint' ? (
+                <Imprint />
+              ) : activeTab === 'terms' ? (
+                <TermsOfService />
+              ) : (
+                <PrivacyPolicy />
               )}
-            </div>
+            </article>
 
-            {activeTab === 'imprint' ? (
-              <Imprint />
-            ) : activeTab === 'terms' ? (
-              <TermsOfService />
-            ) : (
-              <PrivacyPolicy />
-            )}
-          </article>
-
-          {/* Keyed by document so the scroll-spy starts at its first section. */}
-          <aside className="hidden lg:sticky lg:top-24 lg:block lg:self-start">
-            <UseCaseToc key={activeTab} items={toc} />
-          </aside>
-        </div>
-      </div>
-    </main>
+            {/* Keyed by document so the scroll-spy starts at its first section. */}
+            <aside className="hidden px-8 py-12 lg:sticky lg:top-24 lg:col-span-3 lg:block lg:self-start">
+              <UseCaseToc key={activeTab} items={toc} />
+            </aside>
+          </div>
+        </Band>
+      </section>
+    </PageFrame>
   );
 }
 
@@ -655,11 +660,9 @@ export default function LegalPage() {
   return (
     <Suspense
       fallback={
-        <main className="bg-background min-h-screen pt-16">
-          <div className={PAGE}>
-            <LegalHeading />
-          </div>
-        </main>
+        <PageFrame>
+          <LegalHeading />
+        </PageFrame>
       }
     >
       <LegalContent />

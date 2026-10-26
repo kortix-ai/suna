@@ -23,6 +23,7 @@ const TABS: {
     description:
       'Agents, skills, memory and triggers live in one repo you own.',
     panel: () => <StepSourceOfTruth />,
+    bare: true,
   },
   {
     id: 'context',
@@ -30,6 +31,7 @@ const TABS: {
     description:
       'Connect your tools once and choose which agent may use each.',
     panel: () => <StepConnectors />,
+    bare: true,
   },
   {
     id: 'models',
@@ -45,6 +47,7 @@ const TABS: {
     description:
       'Each session runs on its own isolated machine with your repo.',
     panel: () => <StepComputer />,
+    bare: true,
   },
 ];
 

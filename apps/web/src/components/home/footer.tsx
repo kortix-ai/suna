@@ -29,6 +29,7 @@ const FOOTER_SECTIONS: FooterSection[] = [
       { label: 'Enterprise', href: '/enterprise' },
       { label: 'Pricing', href: '/pricing' },
       { label: 'Download', href: '/download' },
+      { label: 'Mobile', href: '/mobile' },
     ],
   },
   {
@@ -37,13 +38,9 @@ const FOOTER_SECTIONS: FooterSection[] = [
       // /docs/reference/cli 404s — there is no reference/ directory. The page
       // is content/docs/cli.mdx, routed at /docs/cli.
       { label: 'Documentation', href: '/docs' },
-      { label: 'AI Operating System', href: '/docs' },
       { label: 'CLI', href: '/docs/cli' },
-      { label: 'SDK', href: '/docs/sdk' },
-      { label: 'Quickstart', href: '/docs/quickstart' },
-      { label: 'For developers', href: '/developers' },
+      { label: 'Developers', href: '/developers' },
       { label: 'Marketplace', href: '/marketplace' },
-      { label: 'GitHub', href: 'https://github.com/kortix-ai/suna', external: true },
     ],
   },
   {
@@ -53,7 +50,6 @@ const FOOTER_SECTIONS: FooterSection[] = [
       { label: 'Careers', href: '/careers' },
       { label: 'Blog', href: '/blog' },
       { label: 'Changelog', href: '/changelog' },
-      { label: 'Release history', href: '/changelog/releases' },
       { label: 'Use Cases', href: '/use-cases' },
       { label: 'Brand', href: '/design-system' },
     ],

@@ -37,7 +37,7 @@ test.describe('free-tier pricing and onboarding surface', () => {
     for (let step = 0; step < 3; step++) await tier.press('ArrowRight');
     await expect(tier).toHaveAttribute('aria-valuetext', '50,000 credits, $500 / mo');
     await expect(page.getByText('$500', { exact: true })).toBeVisible();
-    await expect(page.getByText(/agent-computer hours a month/)).toBeVisible();
+    await expect(page.getByText(/agent hours/)).toBeVisible();
 
     await expect(page.getByRole('link', { name: /get started/i }).first()).toHaveAttribute(
       'href',

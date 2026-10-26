@@ -30,6 +30,11 @@ export const LOCALIZED_ROUTES = [
   '/security',
   '/self-hosted',
   '/white-label',
+  '/cli',
+  '/desktop',
+  '/mobile',
+  '/slack',
+  '/teams',
 ] as const;
 
 function htmlEntry(pathname: string, lastModified?: string): SitemapEntry {

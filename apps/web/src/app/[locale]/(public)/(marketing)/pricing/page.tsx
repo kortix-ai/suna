@@ -190,9 +190,11 @@ function PlanColumn({ plan, includedLabel }: { plan: PricingPlan; includedLabel:
     // From lg the column is a subgrid of the plans band (seven rows: name, note,
     // price, action, rule, label, list), so every row lines up across the three
     // plans even when the credits ladder is taller than a plain price.
+    // `grid-cols-1` is minmax(0, 1fr): the one column never grows past the
+    // padding to fit its content.
     <div
       className={cn(
-        'flex flex-col px-4 py-10 lg:row-span-7 lg:grid lg:grid-rows-subgrid lg:px-8 lg:py-12',
+        'flex flex-col px-4 py-10 lg:row-span-7 lg:grid lg:grid-cols-1 lg:grid-rows-subgrid lg:px-8 lg:py-12',
         plan.highlight && 'bg-card',
       )}
     >
@@ -233,7 +235,7 @@ function PlanColumn({ plan, includedLabel }: { plan: PricingPlan; includedLabel:
       <ul className="text-foreground mt-4 flex flex-col gap-3.5 text-sm">
         {plan.features.map((feature) => (
           <li key={feature} className="flex items-start gap-3">
-            <SolidCheckIcon className="mt-0.5" />
+            <SolidCheckIcon className="text-ring mt-0.5" />
             <span className="text-pretty">{feature}</span>
           </li>
         ))}
@@ -247,7 +249,7 @@ function MarkCell({ mark }: { mark: Mark }) {
   if (mark === true) {
     return (
       <>
-        <SolidCheckIcon className="mx-auto" />
+        <SolidCheckIcon className="text-ring mx-auto" />
         <span className="sr-only">Included</span>
       </>
     );

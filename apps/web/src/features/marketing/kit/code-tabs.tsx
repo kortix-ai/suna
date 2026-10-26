@@ -7,7 +7,13 @@ export type CodeTab = {
   readonly id: string;
   readonly k: string;
   readonly v: string;
-  readonly panel: { readonly title: string; readonly lines: readonly string[]; readonly lang: 'yaml' | 'sh' };
+  readonly panel: {
+    readonly title: string;
+    readonly lines: readonly string[];
+    readonly lang: 'yaml' | 'sh';
+    /** [start, end) lines to keep bright; the rest of the file dims. */
+    readonly focus?: readonly [number, number];
+  };
 };
 
 /**
@@ -65,9 +71,15 @@ export function CodeTabs({ label, tabs }: { label: string; tabs: readonly CodeTa
         role="tabpanel"
         id={`${base}-panel`}
         aria-labelledby={`${base}-tab-${tab.id}`}
-        className="bg-card flex min-w-0 items-center border-t p-4 sm:p-8 lg:border-t-0 lg:border-l lg:p-12"
+        className="bg-background flex min-w-0 items-center border-t p-4 sm:p-8 lg:border-t-0 lg:border-l lg:p-12"
       >
-        <CodePanel title={tab.panel.title} lines={tab.panel.lines} lang={tab.panel.lang} className="w-full" />
+        <CodePanel
+          title={tab.panel.title}
+          lines={tab.panel.lines}
+          lang={tab.panel.lang}
+          focus={tab.panel.focus}
+          className="w-full"
+        />
       </div>
     </div>
   );

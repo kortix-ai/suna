@@ -57,7 +57,28 @@ const MARKETING_ROUTES = [
   '/self-hosted',
   '/use-cases',
   '/white-label',
+  // Surface pages: where Kortix runs. /cli, /slack and /teams are also app
+  // prefixes (auth flows under them), so they are EXACT_MARKETING_ROUTES.
+  '/desktop',
+  '/mobile',
 ];
+
+// Marketing pages whose slug is ALSO an app prefix: /cli/authorize,
+// /slack/install, /slack/login/<token>, /teams/install and /teams/login/<token>
+// are signed-in flows (PROTECTED_APP_PREFIXES). Every other list here matches
+// by prefix, which would make those flows public. These match the exact path
+// only, with or without a locale prefix, and nothing under it.
+const EXACT_MARKETING_ROUTES = ['/cli', '/slack', '/teams'];
+
+function isExactMarketingPath(pathname: string): boolean {
+  if (EXACT_MARKETING_ROUTES.includes(pathname)) return true;
+  const [, first = '', ...rest] = pathname.split('/');
+  return (
+    rest.length === 1 &&
+    (locales as readonly string[]).includes(first) &&
+    EXACT_MARKETING_ROUTES.includes(`/${rest[0]}`)
+  );
+}
 
 // Pure marketing/promo routes that a self-host with the landing page disabled
 // (KORTIX_PUBLIC_DISABLE_LANDING_PAGE) should NOT serve — they bounce to the
@@ -77,6 +98,8 @@ const SELF_HOST_MARKETING_ONLY = [
   '/use-cases',
   '/security',
   '/white-label',
+  '/desktop',
+  '/mobile',
 ];
 
 // Top-level segments that render the signed-in app. Anonymous traffic to one
@@ -140,6 +163,8 @@ const PUBLIC_ROUTES = [
   '/about', // About page should be public
   '/self-hosted', // marketing page should be public
   '/white-label', // marketing page should be public
+  '/desktop', // surface page: the desktop app
+  '/mobile', // surface page: the mobile app
   '/careers', // Careers page should be public
   '/changelog', // Public release notes (sourced from GitHub Releases)
   '/install',
@@ -425,7 +450,11 @@ export async function middleware(request: NextRequest) {
   // /Pricing, /DOCS, /DE/Pricing: a public page in another letter case was a
   // 200 "Page not found" page (KRTX-3312). /pricing/ was a 200 duplicate of
   // /pricing (KRTX-3234).
-  const canonicalPath = canonicalPublicPath(pathname, [...MARKETING_ROUTES, '/docs'], locales);
+  const canonicalPath = canonicalPublicPath(
+    pathname,
+    [...MARKETING_ROUTES, ...EXACT_MARKETING_ROUTES, '/docs'],
+    locales,
+  );
   if (canonicalPath) {
     // A plain URL: a NextURL clone re-adds the request's trailing slash, and
     // /pricing/ would redirect to itself.
@@ -438,9 +467,11 @@ export async function middleware(request: NextRequest) {
   const pathSegments = pathname.split('/').filter(Boolean);
   const explicitLocale = locales.find((locale) => locale === pathSegments[0]);
   const remainingPath = '/' + pathSegments.slice(1).join('/');
-  const isRemainingPathMarketing = MARKETING_ROUTES.some(
-    (route) => remainingPath === route || (route !== '/' && remainingPath.startsWith(route + '/')),
-  );
+  const isRemainingPathMarketing =
+    EXACT_MARKETING_ROUTES.includes(remainingPath) ||
+    MARKETING_ROUTES.some(
+      (route) => remainingPath === route || (route !== '/' && remainingPath.startsWith(route + '/')),
+    );
   if (explicitLocale && !isRemainingPathMarketing) pathname = remainingPath;
 
   // ── Blocking maintenance mode ──────────────────────────────────────────
@@ -453,9 +484,9 @@ export async function middleware(request: NextRequest) {
   // (so admins can disable the lockdown). Everything else — /projects,
   // /accounts, /invites and the other authed product routes — still gets the
   // maintenance takeover.
-  const isPublicMaintenanceRoute = PUBLIC_ROUTES.some(
-    (route) => pathname === route || pathname.startsWith(route + '/'),
-  );
+  const isPublicMaintenanceRoute =
+    isExactMarketingPath(pathname) ||
+    PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'));
   const isAdminMaintenanceRoute = pathname === '/admin' || pathname.startsWith('/admin/');
   const bypassesMaintenance = isPublicMaintenanceRoute || isAdminMaintenanceRoute;
 
@@ -600,12 +631,13 @@ export async function middleware(request: NextRequest) {
       process.env.NEXT_PUBLIC_DISABLE_LANDING_PAGE) === 'true';
   const isMarketingContent =
     pathname === '/' ||
+    isExactMarketingPath(pathname) ||
     SELF_HOST_MARKETING_ONLY.some(
       (route) => pathname === route || pathname.startsWith(`${route}/`),
     );
-  const isPublicRoute = PUBLIC_ROUTES.some(
-    (route) => pathname === route || pathname.startsWith(route + '/'),
-  );
+  const isPublicRoute =
+    isExactMarketingPath(pathname) ||
+    PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'));
 
   // Identity only where it changes the response: protected routes, `/` (a
   // signed-in visitor goes to a project), and marketing pages a self-host has

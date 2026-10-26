@@ -2342,6 +2342,7 @@
         "choose": "Choisissez un palier",
         "chooseHint": "Les paliers commencent à {min} par mois.",
         "hours": "≈ {hours} heures d'ordinateur d'agent par mois.",
+        "hoursShort": "≈ {hours} heures d'agent",
         "groups": {
           "small": "Petites équipes",
           "growing": "Équipes en croissance",

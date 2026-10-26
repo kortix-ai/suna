@@ -66,6 +66,11 @@ export const STATIC_PUBLIC_ROUTES = [
   '/self-hosted',
   '/use-cases',
   '/white-label',
+  '/cli',
+  '/desktop',
+  '/mobile',
+  '/slack',
+  '/teams',
 ] as const;
 
 const MARKETING_RECORDS: PublicContentRecord[] = [
@@ -200,6 +205,46 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
       'Fork Kortix, put your brand on it, and sell it as your own product. The license is free. The one requirement is that your compute runs on Platinum.dev.',
     htmlPath: '/white-label',
     markdownPath: '/markdown/white-label.md',
+  },
+  {
+    kind: 'marketing',
+    slug: 'desktop',
+    title: 'Kortix desktop app for Mac, Windows and Linux',
+    description:
+      'The Kortix desktop app: Quick Entry over any app (⌘⇧Space), a badge for finished work, and an opt-in connection that lends an agent this computer. macOS universal, Windows 64-bit, Linux AppImage.',
+    htmlPath: '/desktop',
+  },
+  {
+    kind: 'marketing',
+    slug: 'mobile',
+    title: 'Kortix mobile app for iPhone, iPad and Android',
+    description:
+      'Start, steer and approve Kortix sessions from your phone: live streaming, dictation, attachments, tool approvals, change-request review and push notifications. On the App Store and Google Play.',
+    htmlPath: '/mobile',
+  },
+  {
+    kind: 'marketing',
+    slug: 'cli',
+    title: 'Kortix CLI: your company from the terminal',
+    description:
+      'One kortix binary for people and agents: init, ship and chat with projects, script access and audit, and self-host the whole stack. macOS and Linux, x86_64 and arm64, WSL on Windows.',
+    htmlPath: '/cli',
+  },
+  {
+    kind: 'marketing',
+    slug: 'slack',
+    title: 'Kortix in Slack: one thread, one session',
+    description:
+      'Mention Kortix in a Slack thread. An agent runs the session on its own machine, streams progress into the thread, and asks for approval in the thread before it acts, as the person who asked.',
+    htmlPath: '/slack',
+  },
+  {
+    kind: 'marketing',
+    slug: 'teams',
+    title: 'Kortix in Microsoft Teams',
+    description:
+      'Kortix agent sessions in Teams chats, group chats and channels: a live progress card, approval cards with feedback, and per-person identity. A tenant admin grants consent once.',
+    htmlPath: '/teams',
   },
 ];
 

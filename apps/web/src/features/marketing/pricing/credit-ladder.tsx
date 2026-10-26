@@ -82,19 +82,70 @@ export function CreditLadder({ value, onChange }: { value: number; onChange: (mo
   // keeps the whole label at one size.
   const compact = new Intl.NumberFormat(locale, { notation: 'compact' }).format(credits);
   const compactLabel = t('credits', { credits: compact });
+  // Every count the ladder can show, once each: stacked invisibly in the
+  // count's grid cell, the widest one sets the slot's width.
+  const allCounts = [
+    ...new Set(
+      CREDIT_TIERS.map((item) =>
+        new Intl.NumberFormat(locale, { notation: 'compact' }).format(monthlyCreditsForUsd(item.monthlyUsd)),
+      ),
+    ),
+  ];
   const unit = compactLabel.startsWith(compact) ? compactLabel.slice(compact.length) : null;
+  // "≈ 2,740 agent hours": the hour figure rolls like the count beside it;
+  // the words around it stay put. The short form, so the line fits under
+  // the price at every tier ("≈ 456,860 agent hours" at $50,000) without
+  // wrapping or cutting off.
+  const hours = formatCredits(agentHoursForCredits(credits), { locale });
+  const hoursLine = t('hoursShort', { hours });
+  const hoursAt = hoursLine.indexOf(hours);
+
 
   return (
     <div>
-      <div className="flex items-end justify-between gap-4">
-        <p className="flex items-baseline">
-          <RollingNumber value={unit === null ? compactLabel : compact} className="text-foreground text-2xl" />
-          {unit ? <span className="text-muted-foreground ml-1 text-sm">{unit.trim()}</span> : null}
+      {/* Paper "Pricing · Credits card" V08: the count is the hero on the
+          left; the price and what it buys share one right-aligned column, so
+          nothing trails under the ladder. Each line is one line at every
+          tier, so the card keeps one height. */}
+      {/* From lg to xl the three cards are too narrow (about 240px) for two
+          columns, so the price block sits under the count. The switch is
+          by breakpoint, never by content, so moving the ladder cannot
+          change the layout. */}
+      <div className="flex items-end justify-between gap-4 lg:max-xl:flex-col lg:max-xl:items-start lg:max-xl:gap-2">
+        <p className="flex shrink-0 items-baseline">
+          {/* The count's slot is as wide as the widest count on the ladder
+              (invisible copies set it), so "credits" never moves sideways
+              as the count grows from "5K" to "2.5M". */}
+          <span className="inline-grid text-3xl tracking-tight">
+            {allCounts.map((count) => (
+              <span key={count} aria-hidden className="invisible col-start-1 row-start-1 tabular-nums">
+                {count}
+              </span>
+            ))}
+            <RollingNumber
+              value={unit === null ? compactLabel : compact}
+              className="text-foreground col-start-1 row-start-1"
+            />
+          </span>
+          {unit ? <span className="text-muted-foreground ml-1.5 text-sm">{unit.trim()}</span> : null}
         </p>
-        <p className="flex items-baseline gap-1">
-          <RollingNumber value={price} className="text-foreground text-lg" />
-          <span className="text-muted-foreground text-sm">{t('perMonth')}</span>
-        </p>
+        <div className="flex min-w-0 flex-col items-end gap-0.5 lg:max-xl:items-start">
+          <p className="flex items-baseline gap-1">
+            <RollingNumber value={price} className="text-foreground text-lg" />
+            <span className="text-muted-foreground text-sm">{t('perMonth')}</span>
+          </p>
+          <p className="text-muted-foreground max-w-full truncate text-xs tabular-nums" aria-live="polite">
+            {hoursAt === -1 ? (
+              hoursLine
+            ) : (
+              <>
+                {hoursLine.slice(0, hoursAt)}
+                <RollingNumber value={hours} />
+                {hoursLine.slice(hoursAt + hours.length)}
+              </>
+            )}
+          </p>
+        </div>
       </div>
 
       {/* The track: the inset keeps the end ticks off the rounded edge. */}
@@ -134,9 +185,6 @@ export function CreditLadder({ value, onChange }: { value: number; onChange: (mo
         </div>
       </div>
 
-      <p className="text-muted-foreground mt-3 text-xs text-balance" aria-live="polite">
-        {creditsLabel} · {t('hours', { hours: formatCredits(agentHoursForCredits(credits), { locale }) })}
-      </p>
     </div>
   );
 }

@@ -159,13 +159,13 @@ function LeanMark({ side, lean }: { side: 'them' | 'kortix'; lean: RowLean }) {
   const on = lean === side || lean === 'both';
   if (side === 'kortix') {
     return on ? (
-      <Check className="text-kortix-green mt-0.5 size-4 shrink-0" />
+      <Check className="text-ring mt-0.5 size-4 shrink-0" />
     ) : (
       <Minus className="text-background/40 mt-0.5 size-4 shrink-0" />
     );
   }
   return on ? (
-    <Check className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+    <Check className="text-ring mt-0.5 size-4 shrink-0" />
   ) : (
     <Minus className="text-muted-foreground/30 mt-0.5 size-4 shrink-0" />
   );

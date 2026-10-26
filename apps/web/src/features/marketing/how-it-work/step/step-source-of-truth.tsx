@@ -1,160 +1,137 @@
 'use client';
 
 import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
-import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@kortix/ui';
-import {
-  BookOpenIcon,
-  CpuIcon,
-  LightningIcon,
-  PlugIcon,
-  RobotIcon,
-  ShieldIcon,
-  SparkleIcon,
-} from '@phosphor-icons/react';
-import { m, useInView, useReducedMotion, type Transition } from 'motion/react';
+import { AgentMark } from '@kortix/ui/internal/components/agent-mark';
+import { BookOpenIcon, CpuIcon, LightningIcon, PlugIcon, ShieldIcon, SparkleIcon } from '@phosphor-icons/react';
+import { AnimatePresence, m, useInView, useReducedMotion, type Transition } from 'motion/react';
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
 
 /**
- * Layer 01 — the repo IS the company, drawn as a dock (Paper "Kortix 2",
- * source of truth v2, Q25).
+ * Layer 01 — the repo is the company, drawn as its activity feed (Paper
+ * "Kortix 2", source of truth v2, Q26).
  *
- * Seven tiles in one dock: the three folders, a hairline, then the four
- * blocks of `kortix.yaml`. One tile is "lifted" at a time and named in a
- * tooltip; the dock walks through them on its own so a visitor who never
- * hovers still reads every part. Hover takes over and pauses the walk.
+ * Four changes stacked newest first, each one fainter and narrower than the
+ * one above it, over the line "Every change lands in acme-co". While the
+ * panel is on screen a new change arrives at the top every few seconds and
+ * the oldest falls off the bottom, so the repo reads as something that keeps
+ * moving, not a settings page.
  *
- * ACCURACY GATE — every tile is something that verifiably lives in the repo:
- *   - `agents/`, `skills/` and `memory/` are folders at the repo root.
- *   - Rules, Triggers, Connectors and Machine are declared in `kortix.yaml`.
- *   - No Channels tile (`channels:` is rejected in version 2) and no Members
- *     tile (members are live project state, not files).
+ * ACCURACY GATE — every change is something that verifiably lives in the repo:
+ *   - Skills, agents and memory are folders at the repo root.
+ *   - Rules, triggers, connectors and the machine are declared in `kortix.yaml`.
  * `acme-co` is a placeholder, not a customer.
  *
- * MOTION. Only `transform` and `opacity` move. The lift is a scale from the
- * tile's bottom edge (44 → 56px on the board), never a width change, so the
- * dock never reflows. Entry plays once when the panel scrolls in; the walk
- * runs only while the panel is on screen. Reduced motion keeps the fades and
- * the tooltip, drops the lift and the stagger, and does not walk.
+ * MOTION. Only `transform` and `opacity` move. Rows hand their place over
+ * with a layout animation, the new row drops in from above, the old one
+ * fades out. Reduced motion shows the first four changes and never cycles.
  */
 
-type TileId = 'agents' | 'skills' | 'memory' | 'rules' | 'triggers' | 'connectors' | 'machine';
+type Kind = 'skills' | 'rules' | 'triggers' | 'agents' | 'memory' | 'connectors' | 'machine';
 
-const TILES: {
-  id: TileId;
-  icon: ComponentType<{ className?: string }>;
-  label: string;
-}[] = [
-  { id: 'agents', icon: RobotIcon, label: 'Agents' },
-  { id: 'skills', icon: SparkleIcon, label: 'Skills' },
-  { id: 'memory', icon: BookOpenIcon, label: 'Memory' },
-  { id: 'rules', icon: ShieldIcon, label: 'Rules' },
-  { id: 'triggers', icon: LightningIcon, label: 'Triggers' },
-  { id: 'connectors', icon: PlugIcon, label: 'Connectors' },
-  { id: 'machine', icon: CpuIcon, label: 'Machine' },
+const ICONS: Record<Exclude<Kind, 'agents'>, ComponentType<{ className?: string }>> = {
+  skills: SparkleIcon,
+  rules: ShieldIcon,
+  triggers: LightningIcon,
+  memory: BookOpenIcon,
+  connectors: PlugIcon,
+  machine: CpuIcon,
+};
+
+/** The feed, newest first. Rows past the fourth arrive one by one. */
+const CHANGES: { id: string; kind: Kind; title: string; label: string }[] = [
+  { id: 'skill', kind: 'skills', title: 'New skill: weekly report', label: 'Skills' },
+  { id: 'rule', kind: 'rules', title: 'Finance can read billing', label: 'Rules' },
+  { id: 'trigger', kind: 'triggers', title: 'Runs every Monday at 9:00', label: 'Triggers' },
+  { id: 'agent', kind: 'agents', title: 'Support agent added', label: 'Agents' },
+  { id: 'memory', kind: 'memory', title: 'Three notes from a refund thread', label: 'Memory' },
+  { id: 'connector', kind: 'connectors', title: 'Linear connected', label: 'Connectors' },
+  { id: 'machine', kind: 'machine', title: 'Machine image updated', label: 'Machine' },
 ];
 
-const COPY = { title: 'Your whole company, in one repo' };
+const COPY = { caption: 'Every change lands in', repo: 'acme-co' };
 
-/** The hairline sits after the folders: everything right of it is `kortix.yaml`. */
-const FOLDER_COUNT = 3;
-/** The board opens on Skills. */
-const START = 1;
-/** Long enough to read a word, short enough to reach all seven in ~15s. */
-const WALK_MS = 2200;
-/** 56 / 44 — the lifted tile on the board. */
-const LIFT = 56 / 44;
+const VISIBLE = 4;
+/** Relative time per slot, newest first. */
+const AGES = ['now', '2m', '1h', '3h'];
+/** Each slot down the stack: fainter, and a little narrower. */
+const OPACITY = [1, 0.8, 0.6, 0.4];
+const WIDTH = ['max-w-98', 'max-w-92', 'max-w-87', 'max-w-81'];
+/** Long enough to read one row, short enough to feel live. */
+const TICK_MS = 2800;
 
 const EASE_OUT: Transition['ease'] = [0.22, 1, 0.36, 1];
-const ENTER: Transition = { duration: 0.3, ease: EASE_OUT };
-const MOVE: Transition = { duration: 0.16, ease: EASE_OUT };
-const FADE: Transition = { duration: 0.12, ease: EASE_OUT };
+const MOVE: Transition = { duration: 0.4, ease: EASE_OUT };
 
 export function StepSourceOfTruth(): ReactNode {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const tiles = useLocalizedUiCatalog(TILES);
+  const changes = useLocalizedUiCatalog(CHANGES);
   const copy = useLocalizedUiCatalog(COPY);
   const reduced = useReducedMotion();
   const rootRef = useRef<HTMLDivElement>(null);
   const entered = useInView(rootRef, { once: true, amount: 0.35 });
   const onScreen = useInView(rootRef);
-  const [active, setActive] = useState(START);
-  const [hovering, setHovering] = useState(false);
+  // `head` is the index of the newest change; the feed shows the four from it,
+  // walking backwards through the list so the next arrival is always new.
+  const [head, setHead] = useState(0);
+  // The first four stagger in once; later arrivals do not.
+  const [ticked, setTicked] = useState(false);
 
   useEffect(() => {
-    if (reduced || hovering || !onScreen || !entered) return;
-    const id = window.setInterval(() => setActive((i) => (i + 1) % TILES.length), WALK_MS);
+    if (reduced || !onScreen || !entered) return;
+    const id = window.setInterval(
+      () => {
+        setTicked(true);
+        setHead((h) => (h - 1 + CHANGES.length) % CHANGES.length);
+      },
+      TICK_MS,
+    );
     return () => window.clearInterval(id);
-  }, [reduced, hovering, onScreen, entered]);
+  }, [reduced, onScreen, entered]);
+
+  const rows = Array.from({ length: VISIBLE }, (_, slot) => changes[(head + slot) % changes.length]);
 
   return (
     <div
       ref={rootRef}
-      className="bg-card flex h-full min-h-0 w-full flex-col items-center justify-center gap-6 overflow-hidden p-4"
+      className="flex h-full min-h-0 w-full flex-col items-center justify-center gap-2"
     >
-      <m.ul
-        aria-label={tI18nComplete.raw('text7918c1b7fe03')}
-        initial={{ opacity: 0, y: reduced ? 0 : 8 }}
-        animate={entered ? { opacity: 1, y: 0 } : undefined}
-        transition={ENTER}
-        onMouseLeave={() => setHovering(false)}
-        className="border-border bg-background mt-12 flex items-end gap-1.5 rounded-2xl border p-2 sm:gap-2 sm:p-2.5"
-      >
-        {tiles.map((tile, i) => {
-          const Icon = tile.icon;
-          const lifted = i === active;
-          return (
-            <li key={tile.id} className="flex items-end gap-1.5 sm:gap-2">
-              {i === FOLDER_COUNT && <span aria-hidden className="bg-border h-9 w-px self-center" />}
-              <m.div
-                initial={{ opacity: 0, scale: reduced ? 1 : 0.95 }}
-                animate={
-                  entered
-                    ? { opacity: 1, scale: lifted && !reduced ? LIFT : 1 }
-                    : undefined
-                }
-                transition={{ ...MOVE, opacity: { ...ENTER, delay: reduced ? 0 : i * 0.04 } }}
-                onMouseEnter={() => {
-                  setHovering(true);
-                  setActive(i);
-                }}
-                style={{ transformOrigin: 'bottom center' }}
-                className="bg-card text-foreground relative flex size-10 items-center justify-center rounded-xl sm:size-12"
+      <ul className="flex w-full flex-col items-center gap-2">
+        <AnimatePresence initial={false} mode="popLayout">
+          {rows.map((change, slot) => {
+            const Icon = change.kind === 'agents' ? null : ICONS[change.kind];
+            return (
+              <m.li
+                key={change.id}
+                layout={!reduced}
+                initial={{ opacity: 0, y: reduced ? 0 : -12 }}
+                animate={entered ? { opacity: OPACITY[slot], y: 0 } : { opacity: 0 }}
+                exit={{ opacity: 0, transition: { duration: 0.2, ease: EASE_OUT } }}
+                transition={{ ...MOVE, delay: ticked || reduced ? 0 : slot * 0.06 }}
+                className={`bg-background flex w-full items-center gap-3 rounded-xl border px-4 py-3 ${WIDTH[slot]} ${
+                  slot === 0 ? 'border-border shadow-sm' : 'border-border/60'
+                }`}
               >
-                <Icon className="size-4 sm:size-4.5" />
-                <span className="sr-only">{tile.label}</span>
-                {/* Tooltip — counter-scaled so the label never grows with the tile. */}
-                <m.span
-                  aria-hidden
-                  initial={false}
-                  animate={{
-                    opacity: lifted ? 1 : 0,
-                    y: lifted || reduced ? 0 : 4,
-                    scale: lifted && !reduced ? 1 / LIFT : 1,
-                  }}
-                  transition={{ ...MOVE, opacity: FADE }}
-                  style={{ transformOrigin: 'bottom center' }}
-                  className="bg-foreground text-background pointer-events-none absolute bottom-full mb-2 rounded-md px-2.5 py-1.5 text-xs leading-4 whitespace-nowrap"
-                >
-                  {tile.label}
-                </m.span>
-              </m.div>
-            </li>
-          );
-        })}
-      </m.ul>
+                <span className="bg-card text-foreground flex size-8 shrink-0 items-center justify-center rounded-lg">
+                  {Icon ? <Icon className="size-4" /> : <AgentMark slug="support" tile={30} />}
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="text-foreground truncate text-sm font-medium">{change.title}</span>
+                  <span className="text-muted-foreground text-xs">{change.label}</span>
+                </span>
+                <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{AGES[slot]}</span>
+              </m.li>
+            );
+          })}
+        </AnimatePresence>
+      </ul>
 
-      <m.div
+      <m.p
         initial={{ opacity: 0 }}
         animate={entered ? { opacity: 1 } : undefined}
-        transition={{ ...ENTER, delay: reduced ? 0 : 0.2 }}
-        className="flex flex-col items-center gap-1 text-center"
+        transition={{ ...MOVE, delay: reduced ? 0 : 0.3 }}
+        className="text-muted-foreground pt-3 text-sm"
       >
-        <p className="text-foreground text-lg leading-snug font-medium text-balance">
-          {copy.title}
-        </p>
-        <p className="text-muted-foreground font-mono text-xs">{tI18nComplete.raw('text7918c1b7fe03')}</p>
-      </m.div>
+        {copy.caption} <span className="text-foreground font-mono">{copy.repo}</span>
+      </m.p>
     </div>
   );
 }

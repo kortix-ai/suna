@@ -2342,6 +2342,7 @@
         "choose": "选择档位",
         "chooseHint": "档位起价为每月 {min}。",
         "hours": "每月约 {hours} 小时的智能体计算机。",
+        "hoursShort": "约 {hours} 智能体小时",
         "groups": {
           "small": "小型团队",
           "growing": "成长型团队",

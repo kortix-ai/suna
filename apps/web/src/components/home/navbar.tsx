@@ -81,8 +81,9 @@ const BAR_LINK =
 const NAV_ITEM =
   'text-foreground hover:text-muted-foreground outline-ring flex h-8 items-center rounded-md px-3 text-sm transition-colors duration-moderate focus-visible:outline-2';
 
-/** Drawer row: a hairline-separated link, tall enough for a 44px tap target. */
-const DRAWER_ROW = 'text-foreground flex items-center gap-2 py-3 text-base';
+/** Drawer row: one link per line, the full width, 44px tall to tap. */
+const DRAWER_ROW =
+  'text-foreground hover:text-muted-foreground outline-ring flex min-h-11 w-full items-center gap-2 rounded-sm text-left text-base transition-colors duration-moderate focus-visible:outline-2';
 
 const firstLink = (panel: HTMLElement | null | undefined) =>
   panel?.querySelector<HTMLElement>('a[href]') ?? null;
@@ -426,7 +427,10 @@ export function Navbar() {
         <header
           data-solid={solid || undefined}
           className={cn(
-            'relative w-full border-b border-transparent transition-[background-color,backdrop-filter,border-color] duration-slow ease-out',
+            // Below `lg` the bar is always in its scrolled state (background,
+            // blur, hairline): the compact bar has no menus to separate it from
+            // the page, so it needs its own surface and edge from the start.
+            'relative w-full border-b border-transparent max-lg:border-border max-lg:bg-background/90 max-lg:backdrop-blur-md transition-[background-color,backdrop-filter,border-color] duration-slow ease-out',
             solid && 'bg-background/90 backdrop-blur-md',
             scrolled && 'border-border',
             overBand && 'dark',
@@ -620,18 +624,37 @@ export function Navbar() {
             </button>
           </div>
 
-          <nav className="min-h-0 flex-1 overflow-y-auto">
-            <div className={cn(MARKETING_CONTAINER, 'grid grid-cols-2 gap-x-4 gap-y-8 py-8 sm:grid-cols-4')}>
-              {menus.map((menu) => (
-                <div key={menu.id}>
-                  <p className="text-muted-foreground text-sm">{menu.label}</p>
-                  <ul className="mt-4 border-b">
-                    {menu.groups.flatMap((group) => group.links).map((link) => (
-                      <li key={link.href} className="border-t">
+          {/* One column: each group is a small muted label over its links.
+              Simple on a phone, no side-by-side lists to squeeze. */}
+          <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <div className={cn(MARKETING_CONTAINER, 'flex flex-col gap-8 py-6')}>
+              {[
+                ...menus.map((menu) => ({
+                  id: menu.id,
+                  label: menu.label,
+                  links: menu.groups.flatMap((group) => group.links),
+                })),
+                {
+                  id: 'kortix',
+                  label: 'Kortix',
+                  links: [
+                    { label: tHardcodedUi.raw('componentsHomeNavbar.home'), href: '/' },
+                    ...plainLinks,
+                    { label: 'X', href: 'https://x.com/kortix', external: true },
+                  ],
+                },
+              ].map((section) => (
+                <div key={section.id}>
+                  <p className="text-muted-foreground text-sm">{section.label}</p>
+                  <ul className="mt-1">
+                    {section.links.map((link) => (
+                      <li key={link.href}>
                         <Link
                           href={link.href}
                           onClick={handleDrawerNavClick(link.href)}
-                          {...(link.external ? { target: '_blank', rel: 'noreferrer noopener' } : {})}
+                          {...('external' in link && link.external
+                            ? { target: '_blank', rel: 'noreferrer noopener' }
+                            : {})}
                           className={DRAWER_ROW}
                         >
                           {link.label}
@@ -639,47 +662,23 @@ export function Navbar() {
                         </Link>
                       </li>
                     ))}
+                    {section.id === 'kortix' ? (
+                      <li>
+                        <button
+                          type="button"
+                          className={cn(DRAWER_ROW, 'w-full')}
+                          onClick={() => {
+                            setIsDrawerOpen(false);
+                            openDemo();
+                          }}
+                        >
+                          {tHardcodedUi.raw('componentsHomeNavbar.line301JsxTextRequestDemo')}
+                        </button>
+                      </li>
+                    ) : null}
                   </ul>
                 </div>
               ))}
-              <div>
-                <p className="text-muted-foreground text-sm">Kortix</p>
-                <ul className="mt-4 border-b">
-                  {[{ label: tHardcodedUi.raw('componentsHomeNavbar.home'), href: '/' }, ...plainLinks].map(
-                    (link) => (
-                      <li key={link.href} className="border-t">
-                        <Link href={link.href} onClick={handleDrawerNavClick(link.href)} className={DRAWER_ROW}>
-                          {link.label}
-                          {isPending(link.href) && <Loading variant="spokes" />}
-                        </Link>
-                      </li>
-                    ),
-                  )}
-                  <li className="border-t">
-                    <button
-                      type="button"
-                      className={cn(DRAWER_ROW, 'w-full')}
-                      onClick={() => {
-                        setIsDrawerOpen(false);
-                        openDemo();
-                      }}
-                    >
-                      {tHardcodedUi.raw('componentsHomeNavbar.line301JsxTextRequestDemo')}
-                    </button>
-                  </li>
-                  <li className="border-t">
-                    <Link
-                      href="https://x.com/kortix"
-                      target="_blank"
-                      rel="noreferrer noopener"
-                      onClick={handleDrawerNavClick('https://x.com/kortix')}
-                      className={DRAWER_ROW}
-                    >
-                      X
-                    </Link>
-                  </li>
-                </ul>
-              </div>
             </div>
           </nav>
 

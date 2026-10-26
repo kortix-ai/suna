@@ -6,7 +6,7 @@ import { DitherField } from '@/features/marketing/kit/dither-field';
 import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { ArrowUpRightIcon } from '@phosphor-icons/react';
 import { cn } from '@kortix/ui';
-import { AnimatePresence, m, useReducedMotion, type Transition } from 'motion/react';
+import { m, useReducedMotion, type Transition } from 'motion/react';
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 
 import { TEAMS, type TeamId } from './use-case-teams';
@@ -58,8 +58,6 @@ function tickOpacity(distance: number): number {
 /** Titles listed under a team before "See all". */
 const LISTED = 4;
 
-const EASE_OUT: Transition['ease'] = [0.22, 1, 0.36, 1];
-const SWAP: Transition = { duration: 0.2, ease: EASE_OUT };
 const SLIDE: Transition = { duration: 0.32, ease: [0.77, 0, 0.175, 1] };
 
 /** "How we chase down overdue invoices" → "Chase down overdue invoices". */
@@ -127,13 +125,6 @@ export function UseCasesSection({ items, linkable }: { items: UseCaseItem[]; lin
     if (!(event.key in moves)) return;
     event.preventDefault();
     select(moves[event.key], true);
-  };
-
-  const swap = {
-    initial: { opacity: 0, y: reduced ? 0 : 8, filter: 'blur(2px)' },
-    animate: { opacity: 1, y: 0, filter: 'blur(0px)' },
-    exit: { opacity: 0, y: reduced ? 0 : -4, filter: 'blur(2px)', transition: { ...SWAP, duration: 0.15 } },
-    transition: SWAP,
   };
 
   return (
@@ -236,8 +227,9 @@ export function UseCasesSection({ items, linkable }: { items: UseCaseItem[]; lin
         className="grid grid-cols-1 gap-10 px-8 pt-8 lg:grid-cols-2 lg:gap-16 lg:px-28"
       >
         <div className="relative py-2">
-          <AnimatePresence mode="popLayout" initial={false}>
-            <m.div key={team.id} {...swap} className="flex h-full flex-col justify-between gap-8">
+          {/* The copy swaps in place when the team changes: no fade, slide
+              or blur, so the headline reads at once. */}
+          <div className="flex h-full flex-col justify-between gap-8">
               <div className="flex flex-col gap-4">
                 <h3 className="text-foreground text-2xl font-medium tracking-tight text-balance lg:text-3xl">
                   {team.headline}
@@ -250,8 +242,7 @@ export function UseCasesSection({ items, linkable }: { items: UseCaseItem[]; lin
               <div className="flex max-w-md flex-col items-start gap-5">
                 <UseCaseLinks items={teamItems.slice(0, LISTED)} linkable={linkable} variant={linksVariant} />
               </div>
-            </m.div>
-          </AnimatePresence>
+          </div>
         </div>
 
         {/* One finished exchange on a dithered field: what you asked, and

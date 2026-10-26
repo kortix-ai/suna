@@ -2342,6 +2342,7 @@
         "choose": "Elige un nivel",
         "chooseHint": "Los niveles empiezan en {min} al mes.",
         "hours": "≈ {hours} horas de ordenador de agente al mes.",
+        "hoursShort": "≈ {hours} horas de agente",
         "groups": {
           "small": "Equipos pequeños",
           "growing": "Equipos en crecimiento",

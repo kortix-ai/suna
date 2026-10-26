@@ -41,7 +41,7 @@ export function RollingNumber({ value, className }: { value: string; className?:
   return (
     <span className={cn('inline-flex tabular-nums', className)}>
       <span className="sr-only">{value}</span>
-      <span aria-hidden className="inline-flex">
+      <span aria-hidden className="inline-flex select-none">
         {chars.map((char, i) => {
           const slot = chars.length - i;
           return /\d/.test(char) ? (

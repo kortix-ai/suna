@@ -2342,6 +2342,7 @@
         "choose": "Wähle eine Stufe",
         "chooseHint": "Die Stufen beginnen bei {min} pro Monat.",
         "hours": "≈ {hours} Agent-Computer-Stunden pro Monat.",
+        "hoursShort": "≈ {hours} Agentenstunden",
         "groups": {
           "small": "Kleine Teams",
           "growing": "Wachsende Teams",

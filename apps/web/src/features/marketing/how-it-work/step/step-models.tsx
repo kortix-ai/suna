@@ -52,6 +52,38 @@ import { SandGlobe } from './sand-globe';
 
 type Glyph = (props: { className?: string }) => ReactNode;
 
+/**
+ * A provider mark from `public/provider-icons`, drawn as a mask in the
+ * current text colour so every logo reads at one weight, like the works-with
+ * strip's marks.
+ */
+function iconGlyph(slug: string): Glyph {
+  function ProviderMark({ className }: { className?: string }) {
+    return (
+      <span
+        aria-hidden
+        className={cn('inline-block bg-current', className)}
+        style={{
+          maskImage: `url(/provider-icons/${slug}.svg)`,
+          maskSize: 'contain',
+          maskRepeat: 'no-repeat',
+          maskPosition: 'center',
+        }}
+      />
+    );
+  }
+  return ProviderMark;
+}
+
+/*
+ * Every provider below is a BYOK target the LLM gateway routes today: a
+ * models.dev catalog provider whose package maps to a transport
+ * (`providerKindForNpm`, packages/llm-gateway/src/catalog/compatibility.ts),
+ * with its base URL in `apps/api/src/llm-gateway/models/provider-registry.ts`
+ * or the catalog. Kimi, DeepSeek and GLM are also Kortix managed models.
+ * Families only, never version numbers (see the gate above). Names are
+ * short ("Bedrock", "Vercel") so they fit the Provider cell untruncated.
+ */
 const PROVIDERS: {
   id: string;
   glyph: Glyph;
@@ -60,21 +92,21 @@ const PROVIDERS: {
   /** Values the slot may settle on. An unwired provider gets no traffic. */
   connected: boolean;
 }[] = [
-  {
-    id: 'anthropic',
-    glyph: Claude as Glyph,
-    name: 'Anthropic',
-    models: 'Opus · Sonnet · Haiku',
-    connected: true,
-  },
+  { id: 'anthropic', glyph: Claude as Glyph, name: 'Anthropic', models: 'Opus · Sonnet · Haiku', connected: true },
   { id: 'openai', glyph: OpenAI as Glyph, name: 'OpenAI', models: 'GPT · Codex', connected: true },
-  {
-    id: 'google',
-    glyph: Gemini as Glyph,
-    name: 'Google',
-    models: 'Gemini Pro · Flash',
-    connected: true,
-  },
+  { id: 'google', glyph: Gemini as Glyph, name: 'Google', models: 'Gemini Pro · Flash', connected: true },
+  { id: 'deepseek', glyph: iconGlyph('deepseek'), name: 'DeepSeek', models: 'Chat · Reasoner', connected: true },
+  { id: 'mistral', glyph: iconGlyph('mistral'), name: 'Mistral', models: 'Large · Codestral', connected: true },
+  { id: 'xai', glyph: iconGlyph('xai'), name: 'xAI', models: 'Grok', connected: true },
+  { id: 'moonshotai', glyph: iconGlyph('moonshotai'), name: 'Moonshot', models: 'Kimi', connected: true },
+  { id: 'vercel', glyph: iconGlyph('vercel'), name: 'Vercel', models: 'AI Gateway', connected: true },
+  { id: 'openrouter', glyph: iconGlyph('openrouter'), name: 'OpenRouter', models: 'Every model', connected: true },
+  { id: 'amazon-bedrock', glyph: iconGlyph('amazon-bedrock'), name: 'Bedrock', models: 'Claude · Llama', connected: true },
+  { id: 'groq', glyph: iconGlyph('groq'), name: 'Groq', models: 'Llama · Qwen', connected: true },
+  { id: 'cerebras', glyph: iconGlyph('cerebras'), name: 'Cerebras', models: 'Llama · Qwen', connected: true },
+  { id: 'togetherai', glyph: iconGlyph('togetherai'), name: 'Together', models: 'Open models', connected: true },
+  { id: 'perplexity', glyph: iconGlyph('perplexity'), name: 'Perplexity', models: 'Sonar', connected: true },
+  { id: 'deepinfra', glyph: iconGlyph('deepinfra'), name: 'DeepInfra', models: 'Open models', connected: true },
   {
     id: 'custom',
     glyph: GlobeIcon as Glyph,
@@ -199,20 +231,18 @@ export function StepModels(): ReactNode {
           the next provider, the grains flow into a new pattern. */}
       <m.div
         {...band(0)}
-        className="pointer-events-none absolute -inset-x-4 -top-38 bottom-14 sm:-inset-x-8 sm:-top-46 sm:bottom-10 lg:-inset-x-12 lg:-top-62 lg:bottom-6"
+        className="pointer-events-none absolute -inset-x-4 -top-34 bottom-18 sm:-inset-x-8 sm:-top-38 lg:-inset-x-12 lg:-top-50"
       >
         <SandGlobe mode={index} reduced={!!reduced} radius={0.46} />
       </m.div>
 
-      {/* THE SLOT, as a spec strip: it runs past the panel's padding and sits
-          flush on the panel's bottom edge, open at the foot like a tab. The
-          mark in its own cell, then Provider,
+      {/* THE SLOT, as a spec strip: the mark in its own cell, then Provider,
           Models and Mode, each a mono label over its value, split by
           hairlines. Provider and Models move with the slot; Mode is `auto`
           and never moves. */}
       <m.div
         {...band(1)}
-        className="border-border bg-background absolute inset-x-4 -bottom-4 flex items-stretch rounded-t-lg border border-b-0 sm:inset-x-8 sm:-bottom-8 lg:-bottom-12"
+        className="border-border bg-background absolute inset-x-4 bottom-0 flex items-stretch rounded-lg border sm:inset-x-8"
       >
         {/* Fixed-size boxes with their contents stacked inside, so the
             outgoing and incoming values overlap and blur into each other
@@ -247,7 +277,7 @@ export function StepModels(): ReactNode {
           </AnimatePresence>
         </SpecCell>
 
-        <SpecCell label="Models" className="hidden flex-1 sm:flex">
+        <SpecCell label="Models" className="hidden flex-[1.5] sm:flex">
           <AnimatePresence initial={false} mode="popLayout">
             <m.span
               key={active.id}

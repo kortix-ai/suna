@@ -86,9 +86,9 @@ function readInk(canvas: HTMLCanvasElement): [number, number, number] {
  * A rectangular dither field after Buio's hero (DitherOrb.astro), drawn in the
  * theme's ink (`text-foreground` by default) so it reads in light and dark.
  * WebGL at half resolution, 30fps, paused off screen, one still frame under
- * prefers-reduced-motion. Without WebGL the canvas stays empty.
+ * prefers-reduced-motion or with `still`. Without WebGL the canvas stays empty.
  */
-export function DitherField({ className }: { className?: string }) {
+export function DitherField({ className, still: stillProp = false }: { className?: string; still?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -120,7 +120,8 @@ export function DitherField({ className }: { className?: string }) {
     const uDpr = gl.getUniformLocation(program, 'dpr');
     const uInk = gl.getUniformLocation(program, 'ink');
 
-    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // `still`: draw one frame and never run a loop (static art, no motion cost).
+    const still = stillProp || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let visible = false;
     let frame = 0;
     let last = -Infinity;
@@ -178,7 +179,7 @@ export function DitherField({ className }: { className?: string }) {
       // getContext, so killing it here left Strict Mode's second mount (and any
       // remount) drawing into a dead context. The context goes with the canvas.
     };
-  }, []);
+  }, [stillProp]);
 
   return (
     <canvas

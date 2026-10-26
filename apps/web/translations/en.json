@@ -2342,6 +2342,7 @@
         "choose": "Choose a tier",
         "chooseHint": "Tiers start at {min} a month.",
         "hours": "≈ {hours} agent-computer hours a month.",
+        "hoursShort": "≈ {hours} agent hours",
         "groups": {
           "small": "Small teams",
           "growing": "Growing teams",

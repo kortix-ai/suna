@@ -86,3 +86,21 @@ test('a public page with a trailing slash redirects to the spelling without it',
     expect(response.headers.get('location')).toBe(location);
   }
 });
+
+// /cli, /slack and /teams are marketing pages AND app prefixes: the auth flows
+// under them (/cli/authorize, /slack/install, /slack/login/<token>,
+// /teams/install, /teams/login/<token>) must stay signed-in only. The pages
+// match the exact path; nothing under it becomes public.
+test('surface pages are public, and the auth flows that share their slug are not', async () => {
+  for (const path of ['/desktop', '/mobile', '/cli', '/slack', '/teams', '/de/cli', '/de/slack', '/de/teams']) {
+    const response = await middleware(new NextRequest(`http://localhost:3000${path}`));
+    expect(response.headers.get('x-middleware-rewrite')).toContain(path.startsWith('/de') ? path : `/en${path}`);
+  }
+  for (const path of ['/cli/authorize', '/slack/install', '/slack/login/tok', '/teams/install', '/teams/login/tok']) {
+    const response = await middleware(new NextRequest(`https://dev.kortix.com${path}`));
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe(
+      `https://dev.kortix.com/auth?redirect=${encodeURIComponent(path)}`,
+    );
+  }
+});

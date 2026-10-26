@@ -2342,6 +2342,7 @@
         "choose": "ティアを選択",
         "chooseHint": "ティアは月 {min} からです。",
         "hours": "月に約 {hours} 時間のエージェント用コンピューター。",
+        "hoursShort": "約 {hours} エージェント時間",
         "groups": {
           "small": "小規模チーム",
           "growing": "成長中のチーム",

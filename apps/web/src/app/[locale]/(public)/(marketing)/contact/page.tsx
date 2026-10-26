@@ -6,11 +6,10 @@ import { useState } from 'react';
 import { DemoQualifierModal } from '@/features/contact/demo-qualifier-modal';
 import { useEnglishOnly } from '@/features/marketing/kit/english-only';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
-import { MARKETING_CONTAINER } from '@/features/marketing/kit/section';
-import { SectionHeading } from '@/features/marketing/kit/section-heading';
+import { CopyRow, LinkRow } from '@/features/marketing/kit/copy-row';
+import { Band, PageFrame, PageHero } from '@/features/marketing/kit/page-frame';
 import { CONTACT_TRANSLATION_KEYS } from '@/i18n/contact-translation-keys.generated';
 import { localizeUiCatalog } from '@kortix/ui/i18n';
-import { cn } from '@kortix/ui';
 
 const CONTACT_EMAIL = 'hey@kortix.ai';
 const SUPPORT_EMAIL = 'support@kortix.com';
@@ -56,17 +55,22 @@ const VALUE_PROPS = [
   },
 ];
 
+// The email rows copy their address on click (`CopyRow`); Community opens
+// the Discord invite in a new tab (`LinkRow`), like the careers page's links.
 const CHANNELS = [
-  { label: 'General', value: CONTACT_EMAIL, href: `mailto:${CONTACT_EMAIL}` },
-  { label: 'Support', value: SUPPORT_EMAIL, href: `mailto:${SUPPORT_EMAIL}` },
-  { label: 'Security', value: SECURITY_EMAIL, href: `mailto:${SECURITY_EMAIL}` },
-  { label: 'Community', value: 'Discord', href: DISCORD_URL, external: true },
+  { label: 'General', value: CONTACT_EMAIL },
+  { label: 'Support', value: SUPPORT_EMAIL },
+  { label: 'Security', value: SECURITY_EMAIL },
+  { label: 'Community', value: 'Discord', href: DISCORD_URL },
 ] as const;
 
 /**
- * `/contact` (Buio contact page): the two-line heading, the demo actions and
- * the ways to reach us on the left; what the demo covers on the right. The
- * demo request stays the `DemoQualifierModal` flow with `source="contact"`.
+ * `/contact`, in the landing page's frame (`kit/page-frame.tsx`) like
+ * /security and /about: the two-line hero with the demo actions, then one
+ * band with the ways to reach us as click-to-copy rows on the left (after
+ * Lexington astromaxsp `contact/channels`) and what the demo covers on the
+ * right. The demo request stays the `DemoQualifierModal` flow with
+ * `source="contact"`.
  */
 export default function ContactPage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -77,67 +81,53 @@ export default function ContactPage() {
   const translatedTitle = `${tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextSeeKortixRun82bdbdad')} ${tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextYourCompanyS9f04147b')}`;
 
   return (
-    <main className="bg-background pt-16">
-      <section
-        className={cn(
-          MARKETING_CONTAINER,
-          'grid grid-cols-1 gap-y-16 pt-24 pb-24 md:pt-30 md:pb-30 lg:grid-cols-4',
-        )}
-      >
-        <div className="lg:col-span-2 lg:pr-12">
-          <SectionHeading
-            as="h1"
-            title={englishOnly(HEADING.title) ?? translatedTitle}
-            titleMuted={englishOnly(HEADING.titleMuted)}
-            description={tI18nHardcoded.raw(
-              'autoAppPublicMarketingContactPageJsxTextBookA30ee0f8c6a',
-            )}
-            actions={
-              <>
-                <MarketingButton size="md" className="hit-area-y-1" variant="secondary" asChild>
-                  <a href={`mailto:${CONTACT_EMAIL}`}>
-                    {tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextEmailUs505f9598')}
-                  </a>
-                </MarketingButton>
-                <MarketingButton size="md" className="hit-area-y-1" onClick={() => setOpen(true)}>
-                  {tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextBookADemofaaea0a0')}
-                </MarketingButton>
-              </>
-            }
-          />
-          <dl className="mt-12 grid grid-cols-2 gap-x-8 gap-y-6 border-t pt-8">
-            {CHANNELS.map((channel) => (
-              <div key={channel.label} className="min-w-0">
-                <dt className="text-muted-foreground text-sm">{channel.label}</dt>
-                <dd className="mt-1">
-                  <a
-                    href={channel.href}
-                    {...('external' in channel
-                      ? { target: '_blank', rel: 'noopener noreferrer' }
-                      : {})}
-                    className="text-foreground hover:text-muted-foreground duration-moderate block py-1 text-sm break-all transition-colors"
-                  >
-                    {channel.value}
-                  </a>
-                </dd>
-              </div>
-            ))}
-          </dl>
-          <p className="text-muted-foreground mt-12 max-w-sm text-sm text-balance">
-            {tI18nHardcoded.raw(
-              'autoAppPublicMarketingContactPageJsxTextASolutionsEngineer7001e57e',
-            )}
-          </p>
-        </div>
-
-        <ul className="border-b lg:col-span-2">
-          {valueProps.map(({ title, desc }) => (
-            <li key={title} className="border-t py-6">
-              <h2 className="text-foreground text-base font-medium">{title}</h2>
-              <p className="text-muted-foreground mt-2 text-sm text-pretty">{desc}</p>
-            </li>
-          ))}
-        </ul>
+    <PageFrame>
+      <section id="hero" className="pb-20 lg:pb-28">
+        <PageHero
+          title={englishOnly(HEADING.title) ?? translatedTitle}
+          titleMuted={englishOnly(HEADING.titleMuted)}
+          sub={tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextBookA30ee0f8c6a')}
+          actions={
+            <>
+              <MarketingButton size="md" className="hit-area-y-1" variant="secondary" asChild>
+                <a href={`mailto:${CONTACT_EMAIL}`}>
+                  {tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextEmailUs505f9598')}
+                </a>
+              </MarketingButton>
+              <MarketingButton size="md" className="hit-area-y-1" onClick={() => setOpen(true)}>
+                {tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextBookADemofaaea0a0')}
+              </MarketingButton>
+            </>
+          }
+        />
+        <Band>
+          <div className="grid grid-cols-1 lg:grid-cols-2">
+            <div className="flex flex-col px-6 py-4 lg:px-11 lg:py-6">
+              <ul className="divide-y">
+                {CHANNELS.map((channel) => (
+                  <li key={channel.label}>
+                    {'href' in channel ? (
+                      <LinkRow label={channel.label} value={channel.value} href={channel.href} />
+                    ) : (
+                      <CopyRow label={channel.label} value={channel.value} />
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-muted-foreground border-t pt-6 pb-2 text-sm text-pretty lg:pt-8">
+                {tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextASolutionsEngineer7001e57e')}
+              </p>
+            </div>
+            <ul className="bg-card divide-y border-t lg:border-t-0 lg:border-l">
+              {valueProps.map(({ title, desc }) => (
+                <li key={title} className="flex flex-col gap-2 px-6 py-6 lg:px-11">
+                  <h2 className="text-foreground text-base font-medium">{title}</h2>
+                  <p className="text-muted-foreground text-sm text-pretty">{desc}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </Band>
       </section>
 
       <DemoQualifierModal
@@ -147,6 +137,6 @@ export default function ContactPage() {
         calNamespace={CAL_NAMESPACE}
         source="contact"
       />
-    </main>
+    </PageFrame>
   );
 }
