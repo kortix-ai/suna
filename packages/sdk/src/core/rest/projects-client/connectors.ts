@@ -2310,9 +2310,10 @@ export interface DiscoverConnectorTools {
   /** Every tool the source lists; `tools` holds at most 500. */
   total: number;
   /** `mcp`: the server's own list; `directory`: names from a public
-   *  directory; `composio`; `spec`: the OpenAPI operations; `none`: this way
-   *  lists its tools only after install. */
-  source: 'mcp' | 'directory' | 'composio' | 'spec' | 'none';
+   *  directory; `composio`; `spec`: the OpenAPI operations; `kortix`: the
+   *  fixed actions of a connector Kortix runs itself (Shopify); `none`: this
+   *  way lists its tools only after install. */
+  source: 'mcp' | 'directory' | 'composio' | 'spec' | 'kortix' | 'none';
 }
 
 /** The tools of one way to connect a Discover app (`way`: a variant id;

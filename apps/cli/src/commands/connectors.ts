@@ -165,7 +165,7 @@ interface DiscoverTools {
   way: { id: string; kind: string; name: string };
   tools: { name: string; description: string }[];
   total: number;
-  source: 'mcp' | 'directory' | 'composio' | 'spec' | 'none';
+  source: 'mcp' | 'directory' | 'composio' | 'spec' | 'kortix' | 'none';
 }
 
 const WAY_LABEL: Record<string, string> = {
@@ -184,6 +184,7 @@ const TOOLS_SOURCE: Record<DiscoverTools['source'], string> = {
   directory: 'names from a public MCP directory; the server lists the full set after sign-in',
   composio: 'listed by Composio',
   spec: 'operations in its OpenAPI document',
+  kortix: 'actions Kortix runs itself, on the app\'s API',
   none: 'listed after install',
 };
 

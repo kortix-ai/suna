@@ -311,6 +311,7 @@ const SHOPIFY_ITEM: ConnectorCatalogItem = {
   feeds: ['kortix'],
   popularity: null,
   oauth: true,
+  oneClick: true,
 };
 
 const SHOPIFY_SURFACE: ConnectorSurfaceVariant = {

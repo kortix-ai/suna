@@ -24,6 +24,8 @@ import { wayKindLabel, type WayKind } from './way-kind';
 export interface InstallWay {
   kind: WayKind;
   oneClick: boolean;
+  /** The connector the way installs, when the kind alone does not say it. */
+  provider?: string;
 }
 
 /**
@@ -123,6 +125,7 @@ export function wayDescription(
   way: InstallWay,
   appName: string,
 ): string {
+  if (way.provider === 'shopify') return t('wayShopify');
   if (way.kind === 'composio') return t('wayComposio', { name: appName });
   if (way.kind === 'kortix') return t('wayChannel', { name: appName });
   if (way.kind === 'mcp') return way.oneClick ? t('wayMcpOneClick', { name: appName }) : t('wayMcpSetup', { name: appName });
