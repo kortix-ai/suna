@@ -128,7 +128,7 @@ jobs:
         # packages-rest also runs apps/web's layout test that launches Chromium.
         # The core lanes run no package quality, so they need no Chromium.
         if: matrix.lane == 'packages-rest'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.PLAYWRIGHT_BROWSERS_PATH }}
           key: playwright-chromium-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
