@@ -280,7 +280,7 @@ export function DemoQualifierModal({
           <div className="bg-background rounded-t-xl pb-7.5" style={TICKET_TOP}>
             <div className="flex items-center justify-between pt-4 pr-3 pl-5">
               <div className="flex items-center gap-1.5">
-                <SolidCheckIcon className="text-kortix-green size-4" />
+                <SolidCheckIcon className="text-ring size-4" />
                 <ModalTitle className="text-kortix-green text-xs font-medium">
                   {t('bookedLabel')}
                 </ModalTitle>

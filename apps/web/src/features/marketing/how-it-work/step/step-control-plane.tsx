@@ -62,7 +62,7 @@ function MergePath({
 
 function StatusIcon({ outcome, reduced }: { outcome: Outcome; reduced: boolean }): ReactNode {
   let icon = <GitPullRequestIcon className="size-5" />;
-  if (outcome === 'merged') icon = <CheckCircleIcon weight="fill" className="size-5" />;
+  if (outcome === 'merged') icon = <CheckCircleIcon weight="fill" className="text-ring size-5" />;
   if (outcome === 'changes-requested') icon = <XCircleIcon weight="fill" className="size-5" />;
 
   return (
@@ -244,7 +244,7 @@ function ReviewGate({
               </Button>
               <m.div className="relative" whileTap={{ transform: 'scale(0.96)' }}>
                 <Button type="button" size="sm" className="gap-1.5" onClick={onApprove}>
-                  <CheckIcon className="size-3.5 shrink-0" />
+                  <CheckIcon className="text-ring size-3.5 shrink-0" />
                   {tI18nComplete.raw('text7a348a00da4d')}
                 </Button>
 
