@@ -39,7 +39,13 @@ COPY packages/shared ./packages/shared
 COPY packages/llm-catalog ./packages/llm-catalog
 
 RUN printf '{"name":"kortix-gateway-build","private":true,"workspaces":["apps/llm-gateway","packages/*"]}\n' > package.json \
-    && bun install --no-save
+    && bun install --no-save \
+    # Fail the build, so the layer is never cached, when a dependency link
+    # dangles. 2026-10-26: `hono` linked to 4.13.14 while the store held
+    # 4.13.13, and every gateway task exited at start with ENOENT.
+    && for dir in apps/llm-gateway packages/llm-gateway; do \
+         (cd "$dir" && bun -e "for (const d of Object.keys(require('./package.json').dependencies ?? {})) require('fs').realpathSync(Bun.resolveSync(d, process.cwd()))") || exit 1; \
+       done
 
 # ---- Runner Stage ----
 FROM oven/bun:${BUN_VERSION}-slim AS runner
