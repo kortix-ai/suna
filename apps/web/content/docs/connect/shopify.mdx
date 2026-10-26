@@ -5,6 +5,8 @@ description: Connect a Shopify store and give agents its orders, customers, prod
 
 The Shopify connector (`provider: shopify`) calls a store's Admin GraphQL API. Each account is one store. You approve the app once in Shopify, and the token does not expire.
 
+The connector is part of **Connectors v2**. Turn on the project flag `connectors_v2` first: **Customize → Settings → [Feature flags](/docs/project#feature-flags)**, or `kortix projects features enable connectors_v2`. Without it, adding a `shopify` connector answers `403` `feature_disabled`, and an existing one has no actions.
+
 ## Why your own app
 
 Shopify gives orders and customers (protected customer data) only to an app that it approved for them. A public app needs Shopify's review. An app with **Custom distribution** for your store has the access at once, without review. So you connect with a Shopify app that you create for the store.
@@ -29,7 +31,7 @@ If this Kortix deployment has a shared Shopify app, Connect asks only for the st
 
 ## Connect
 
-From the web app: **Customize → Connectors → Add**, choose **Shopify**, then **Connect**. The form asks for the store (`acme` for `acme.myshopify.com`), the Client ID and the Client secret, and shows the redirect URL and the scopes. Then Shopify asks you to approve the app, and the form shows what the account can read.
+From the web app: **Customize → Connectors**, choose **Shopify** in the catalogue, then **Install**. The connector page opens **Add account**. Continue, and a window opens the Kortix form. The form asks for the store (`acme` for `acme.myshopify.com`), the Client ID and the Client secret, and shows the redirect URL and the scopes. Then Shopify asks you to approve the app, and the form shows what the account can read.
 
 From a terminal:
 
@@ -96,4 +98,4 @@ When the sign-in fails, the form names the reason: a signature that does not mat
 
 ## A Shopify connector made with Composio
 
-A `composio` connector with `app: shopify` keeps working. Its account connects with the client credentials of an app in the same Shopify organization as the store, and Composio's shared app cannot read orders. Add a `shopify` connector for full access.
+A `composio` connector with `app: shopify` keeps working, with or without `connectors_v2`. Its account connects with the client credentials of an app in the same Shopify organization as the store, and Composio's shared app cannot read orders. Add a `shopify` connector for full access.

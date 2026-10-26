@@ -29,7 +29,8 @@ describe('the Kortix MCP app catalogue', () => {
         }
       }
     }
-    const listed = new Set(MCP_APPS.filter((app) => app.icon).map((app) => `${app.slug}.svg`));
+    // shopify.svg belongs to the native Shopify entry, which is not an MCP app.
+    const listed = new Set([...MCP_APPS.filter((app) => app.icon).map((app) => `${app.slug}.svg`), 'shopify.svg']);
     expect(readdirSync(ICONS).filter((file) => !listed.has(file))).toEqual([]);
   });
 
@@ -80,6 +81,14 @@ describe('the Kortix MCP app catalogue', () => {
     expect(detail.variants).toEqual([
       expect.objectContaining({ kind: 'mcp', connector: { provider: 'mcp', url: 'https://mcp.notion.com/mcp', transport: 'http' } }),
     ]);
+  });
+
+  test('Shopify is in the catalogue as the native connector, not an MCP server', async () => {
+    const page = await kortixMcpCatalog.list({ q: 'shopify' });
+    expect(page.items[0]).toMatchObject({ id: 'kortix:shopify', icon: '/connector-icons/shopify.svg' });
+    expect(page.items[0]?.mcpUrl).toBeUndefined();
+    const detail = await kortixMcpCatalog.detail('kortix:shopify');
+    expect(detail.variants.map((variant) => variant.connector)).toEqual([{ provider: 'shopify' }]);
   });
 });
 

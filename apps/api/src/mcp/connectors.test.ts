@@ -135,4 +135,12 @@ describe('apps on a Connectors v2 project', () => {
     const created = calls.find((c) => c.method === 'POST' && c.path.endsWith('/connectors'));
     expect(created?.body).toEqual({ slug: 'linear', provider: 'mcp', name: 'Linear', url: 'https://mcp.linear.app/mcp', transport: 'http' });
   });
+
+  test('add_connector with app shopify adds the native shopify connector', async () => {
+    const calls: Array<{ method: string; path: string; body?: unknown }> = [];
+    await runConnectorTool('add_connector', { project_id: 'proj-1', app: 'shopify', shop: 'acme.myshopify.com' }, v2Host(calls));
+    const created = calls.find((c) => c.method === 'POST' && c.path.endsWith('/connectors'));
+    expect(created?.body).toEqual({ slug: 'shopify', provider: 'shopify', name: 'Shopify', shop: 'acme.myshopify.com' });
+    expect(calls.some((c) => c.path.endsWith('/discover/connectors/detail'))).toBe(false);
+  });
 });

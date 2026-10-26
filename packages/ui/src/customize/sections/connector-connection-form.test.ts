@@ -2,7 +2,6 @@ import { qk } from '@kortix/sdk/react';
 import { describe, expect, test } from 'bun:test';
 
 import {
-  buildAppConnectorDraft,
   buildEasyConnectConnectorDraft,
   buildEmailConnectorConnectionSlug,
   connectorConnectionQueryKeys,
@@ -105,21 +104,6 @@ describe('Easy Connect connection draft', () => {
       app: 'google_drive',
       account: 'default',
       create_only: true,
-    });
-  });
-});
-
-describe('app install draft', () => {
-  test('Shopify installs the native connector; other apps keep their provider', () => {
-    expect(buildAppConnectorDraft({ slug: 'shopify', name: 'Shopify', provider: 'composio' }, { name: 'Shopify', slug: 'shopify-abc123' })).toEqual({
-      slug: 'shopify-abc123',
-      name: 'Shopify',
-      provider: 'shopify',
-      create_only: true,
-    });
-    expect(buildAppConnectorDraft({ slug: 'gmail', name: 'Gmail', provider: 'composio' }, { name: 'Gmail', slug: 'gmail-1' })).toMatchObject({
-      provider: 'composio',
-      app: 'gmail',
     });
   });
 });

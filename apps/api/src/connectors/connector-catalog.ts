@@ -70,7 +70,7 @@ export interface ConnectorCatalogItem {
 }
 
 export interface ConnectorTemplate {
-  provider: 'openapi' | 'postman' | 'mcp' | 'graphql';
+  provider: 'openapi' | 'postman' | 'mcp' | 'graphql' | 'shopify';
   spec?: string;
   url?: string;
   transport?: 'http' | 'sse';

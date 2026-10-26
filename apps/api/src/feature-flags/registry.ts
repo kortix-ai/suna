@@ -459,7 +459,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'connectors_v2',
     name: 'Connectors v2',
     description:
-      'Connectors on Kortix: the MCP app catalog in Customize → Connectors (vendor MCP servers, signed in with OAuth that Kortix runs), app events that Kortix checks on those apps (with App event triggers on), and Telegram as a channel connector. New connector accounts are no longer created for the whole project by default.',
+      'Connectors on Kortix: the MCP app catalog in Customize → Connectors (vendor MCP servers, signed in with OAuth that Kortix runs), app events that Kortix checks on those apps (with App event triggers on), Telegram as a channel connector, and the native Shopify connector (the store\'s own app, with orders and customers). New connector accounts are no longer created for the whole project by default.',
     stability: 'experimental',
     available: () => true,
     platformDefault: () => false,
@@ -472,7 +472,11 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'empty project-owned account while on (connectors/sync.ts). Discover serves the Kortix MCP ' +
       'catalog while on (connectors/routes/catalogues.ts). The `mcp` app-event source exists only ' +
       'while on (projects/trigger-events/registry.ts); turning it off moves those triggers to error ' +
-      'and drops their poll streams (feature-flags/toggle-effects.ts).',
+      'and drops their poll streams (feature-flags/toggle-effects.ts). SHOPIFY: creating a ' +
+      '`provider: shopify` connector answers 403 `feature_disabled` (connectors/manifest-crud.ts), ' +
+      'Connect and the Connect form refuse (connectors/shopify-connect.ts), and sync gives the ' +
+      'connector no actions and an error (connectors/sync.ts); the raw `graphql` fallback for a ' +
+      'GraphQL server that refuses introspection exists only while on.',
   },
   {
     key: 'agent_rooms',

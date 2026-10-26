@@ -232,6 +232,10 @@ export async function upsertConnectorInManifest(
     const disabled = featureDisabledBody('agentmail_email');
     return { ok: false, error: disabled.error, status: 403, body: disabled };
   }
+  if (draft.provider === 'shopify' && !resolveFeatureFlag(row.metadata, 'connectors_v2')) {
+    const disabled = featureDisabledBody('connectors_v2');
+    return { ok: false, error: disabled.error, status: 403, body: disabled };
+  }
 
   let gitProject: Awaited<ReturnType<typeof withProjectGitAuth>>;
   try {

@@ -351,7 +351,8 @@ Add options (provider-specific):
   --transport <http|sse>   MCP transport (provider=mcp).
   --endpoint <url>         GraphQL endpoint (provider=graphql).
   --shop <store>           Default Shopify store, <name>.myshopify.com or the
-                           bare name (provider=shopify).
+                           bare name (provider=shopify, which needs the
+                           \`connectors_v2\` flag).
   --scopes <a,b>           Shopify Admin API scopes Connect requests
                            (provider=shopify). Default: orders, draft orders,
                            products, customers, inventory, locations.

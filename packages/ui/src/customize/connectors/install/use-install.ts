@@ -103,9 +103,8 @@ export function useInstall(
     (entry: CatalogEntry, connectors: readonly AdminConnector[]) => {
       const app = appRefFromEntry(entry);
       if (entry.source === 'easy-connect') {
-        const target = easyConnectInstallTarget(entry.app);
-        if (!target.managed || !onMcpServer || !entry.app.directMcpUrl) {
-          install(target, { connectors, app });
+        if (!onMcpServer || !entry.app.directMcpUrl) {
+          install(easyConnectInstallTarget(entry.app), { connectors, app });
           return;
         }
         setPendingKey(app?.slug ?? entry.app.name);
@@ -114,7 +113,7 @@ export function useInstall(
             setPendingKey(null);
             onMcpServer(server);
           } else {
-            install(target, { connectors, app });
+            install(easyConnectInstallTarget(entry.app), { connectors, app });
           }
         });
         return;

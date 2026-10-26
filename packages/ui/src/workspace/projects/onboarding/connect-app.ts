@@ -17,7 +17,7 @@ import {
 } from '@kortix/sdk';
 
 import {
-  buildAppConnectorDraft,
+  buildEasyConnectConnectorDraft,
   connectorSyncErrorForSlug,
   proposeConnectorConnectionSlug,
   randomConnectorSlugSuffix,
@@ -78,7 +78,7 @@ export async function connectApp(
   const { projectId, app, connectorSlug, created } = input;
   await deps.runFlow(async () => {
     if (!created) {
-      const draft = buildAppConnectorDraft(app, { name: app.name, slug: connectorSlug });
+      const draft = buildEasyConnectConnectorDraft(app, { name: app.name, slug: connectorSlug });
       const result = (await deps.create(projectId, draft)) as Parameters<
         typeof connectorSyncErrorForSlug
       >[0];

@@ -4,7 +4,6 @@ import {
   buildDiscoverConnectorDraft,
   buildEasyConnectConnectorDraft,
   connectorSyncErrorForSlug,
-  createOnlyConnectorDraft,
   isAuthChallenge,
   normalizeConnectorConnectionSlug,
   proposeConnectorConnectionName,
@@ -20,8 +19,7 @@ export interface InstallTarget {
   /** The app's display name. The connector and its first account are named from it. */
   appName: string;
   provider: AdminConnector['provider'];
-  /** Authorization runs through a hosted Connect Link (Composio, Pipedream).
-   *  Only a managed target can prefer the app's MCP server instead. */
+  /** Authorization runs through a hosted Connect Link (Composio, Pipedream). */
   managed: boolean;
   /** A NEW direct connector needs a credential before it works. */
   needsCredential: boolean;
@@ -40,26 +38,7 @@ export function discoverInstallTarget(appName: string, variant: InstallableVaria
   };
 }
 
-/**
- * The managed catalogue's Shopify app installs the native `shopify` connector:
- * the store's own OAuth grant through the merchant's custom-distribution app.
- * Composio's shared app is not approved for protected customer data, so every
- * order and customer read on it answered ACCESS_DENIED.
- */
-const NATIVE_SHOPIFY_APP = 'shopify';
-
 export function easyConnectInstallTarget(app: EasyConnectApp): InstallTarget {
-  if (app.slug === NATIVE_SHOPIFY_APP) {
-    return {
-      appName: app.name,
-      provider: 'shopify',
-      // Kortix's own form signs it in, not a hosted provider (no MCP twin).
-      managed: false,
-      needsCredential: false,
-      buildDraft: (input) =>
-        createOnlyConnectorDraft({ slug: input.slug, name: input.name.trim(), provider: 'shopify' }),
-    };
-  }
   return {
     appName: app.name,
     provider: app.provider ?? 'pipedream',

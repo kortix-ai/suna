@@ -5597,16 +5597,36 @@ flow(
       'POST /v1/connectors/app-form/:token',
       'GET /v1/connectors/shopify/callback',
       'POST /v1/connectors/projects/:projectId/call',
+      'GET /v1/connectors/projects/:projectId/discover/connectors/detail',
     ],
   },
   async (ctx) => {
     const { createHmac } = await import('node:crypto');
     const owner = ctx.client.as(ctx.P.OWNER);
     const anon = ctx.client.as(ctx.P.ANON);
-    const project = await ctx.fixtures.project({ managedGit: true });
+    const project = await ctx.fixtures.project({ managedGit: true, metadata: { experimental: { connectors_v2: true } } });
+    const off = await ctx.fixtures.project();
     const params = { projectId: project.id };
     let token = '';
     let state = '';
+
+    await ctx.step('without connectors_v2 a shopify connector is refused: 403 feature_disabled', async () => {
+      (await owner.post(
+        '/v1/connectors/projects/:projectId/connectors',
+        { slug: 'store', provider: 'shopify', create_only: true },
+        { params: { projectId: off.id } },
+      )).status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'connectors_v2');
+    });
+
+    await ctx.step('the connectors_v2 catalogue lists Shopify as the native connector', async () => {
+      const detail = (await owner.get('/v1/connectors/projects/:projectId/discover/connectors/detail', {
+        params,
+        query: { id: 'kortix:shopify' },
+      })).status(200).json<{ variants: Array<{ connector: { provider: string } | null }> }>();
+      if (detail.variants.length !== 1 || detail.variants[0]?.connector?.provider !== 'shopify') {
+        throw new Error(`catalogue detail is wrong: ${JSON.stringify(detail.variants)}`);
+      }
+    });
 
     await ctx.step('a shopify connector with a bare store name materializes the 16 Shopify actions', async () => {
       (await owner.post(

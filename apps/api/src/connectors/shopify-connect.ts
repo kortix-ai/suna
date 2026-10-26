@@ -22,10 +22,12 @@
  */
 import { createHash, randomBytes } from 'node:crypto';
 import type { OAuth2ApplicationInput } from '@kortix/api-contract';
-import { connectionOAuthSessions, connectorConnections, connectors } from '@kortix/db';
+import { connectionOAuthSessions, connectorConnections, connectors, projects } from '@kortix/db';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '../config';
+import { featureDisabledBody } from '../feature-flags/gate';
+import { resolveFeatureFlag } from '../feature-flags/registry';
 import { logger } from '../lib/logger';
 import { encryptProjectSecret } from '../projects/surface';
 import { db } from '../shared/db';
@@ -78,6 +80,18 @@ function refuse(status: 400 | 404 | 409 | 410 | 501, message: string, code: stri
     message,
     res: Response.json({ error: true, message, status, code }, { status }),
   });
+}
+
+/** Native Shopify is part of Connectors v2: without the flag, no Connect starts or continues. */
+async function requireConnectorsV2(projectId: string): Promise<void> {
+  const [row] = await db
+    .select({ metadata: projects.metadata })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  if (resolveFeatureFlag(row?.metadata, 'connectors_v2')) return;
+  const body = featureDisabledBody('connectors_v2');
+  throw new HTTPException(403, { message: body.error, res: Response.json(body, { status: 403 }) });
 }
 
 /** The store of an application saved for Shopify: the host of its token URL. */
@@ -135,6 +149,7 @@ export async function startShopifyConnect(input: {
   userId: string;
   successRedirect?: string;
 }): Promise<{ connectUrl: string; requestId: string }> {
+  await requireConnectorsV2(input.projectId);
   const nonce = newAppFormNonce();
   await db
     .update(connectorConnections)
@@ -231,6 +246,7 @@ export async function submitShopifyForm(input: {
 }): Promise<{ connected: false; authorize_url: string }> {
   const { payload } = input;
   if (!payload.u) refuse(409, 'This link cannot start a Shopify sign-in. Start Connect again in Kortix.', 'app_form_superseded');
+  await requireConnectorsV2(payload.pid);
   const shop = shopifyShopDomain(input.body.store);
   if (!shop) {
     refuse(400, "Enter the store's myshopify.com name, such as acme for acme.myshopify.com.", 'app_form_invalid');

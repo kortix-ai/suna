@@ -278,10 +278,48 @@ export function mcpAppSurface(app: McpApp): ConnectorSurfaceVariant {
   };
 }
 
+/**
+ * Shopify is in the same catalogue as a native connector (`provider: shopify`):
+ * Kortix calls the Admin API itself, signed in with the store's own app. A
+ * shared app reads no orders or customers without Shopify's review.
+ */
+const SHOPIFY_DOMAIN = 'shopify.com';
+
+const SHOPIFY_ITEM: ConnectorCatalogItem = {
+  id: 'kortix:shopify',
+  kind: 'graphql',
+  slug: 'shopify',
+  name: 'Shopify',
+  description: 'Orders, customers, products and inventory.',
+  url: `https://${SHOPIFY_DOMAIN}`,
+  icon: '/connector-icons/shopify.svg',
+  domain: SHOPIFY_DOMAIN,
+  categories: ['ecommerce'],
+  feeds: ['kortix'],
+  popularity: null,
+  oauth: true,
+};
+
+const SHOPIFY_SURFACE: ConnectorSurfaceVariant = {
+  id: 'kortix:shopify:native',
+  kind: 'graphql',
+  name: 'Shopify',
+  url: null,
+  docs: 'https://shopify.dev/docs/api/admin-graphql',
+  description: "The Admin GraphQL API, signed in with the store's own app.",
+  transports: [],
+  requiresAuth: true,
+  command: null,
+  connector: { provider: 'shopify' },
+};
+
 /** The Discover catalogue a `connectors_v2` project browses: Kortix's own list. */
 export const kortixMcpCatalog = createConnectorCatalog({
   source: {
-    items: () => availableMcpApps().map(mcpAppCatalogItem),
-    surfaces: (domain) => availableMcpApps().filter((app) => app.domain === domain).map(mcpAppSurface),
+    items: () => [...availableMcpApps().map(mcpAppCatalogItem), SHOPIFY_ITEM],
+    surfaces: (domain) =>
+      domain === SHOPIFY_DOMAIN
+        ? [SHOPIFY_SURFACE]
+        : availableMcpApps().filter((app) => app.domain === domain).map(mcpAppSurface),
   },
 });

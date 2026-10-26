@@ -1889,7 +1889,7 @@ export interface DiscoverConnector {
 }
 
 export interface DiscoverConnectorTemplate {
-  provider: 'openapi' | 'postman' | 'mcp' | 'graphql';
+  provider: 'openapi' | 'postman' | 'mcp' | 'graphql' | 'shopify';
   spec?: string;
   url?: string;
   transport?: 'http' | 'sse';

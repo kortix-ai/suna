@@ -23,6 +23,7 @@ import { and, eq, inArray, isNotNull, notExists, or, sql } from 'drizzle-orm';
 import { getImpersonationContext } from '../shared/impersonation';
 import { parse as parseToml } from 'smol-toml';
 import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
+import { featureDisabledBody } from '../feature-flags/gate';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { assertAllowedEndpointUrl, assertAllowedSourceAddress } from '../marketplace/catalog';
 import { safeEgressFetch, UnsafeEgressError } from '../shared/ssrf-guard';
@@ -110,6 +111,7 @@ export function shouldReuseConnectorCatalog(input: {
     input.existingStatus !== 'error' &&
     input.provider !== 'channel' &&
     input.provider !== 'computer' &&
+    input.provider !== 'shopify' &&
     (input.provider !== 'mcp' || input.mcpHasActions) &&
     input.manifestMatches
   );
@@ -599,6 +601,8 @@ async function syncProjectConnectorsFenced(
   );
   const desiredSlugs = new Set(specs.map((s) => s.slug));
 
+  // Native Shopify and the raw GraphQL fallback are part of Connectors v2.
+  const connectorsV2 = resolveFeatureFlag(row.metadata, 'connectors_v2');
   let synced = 0;
   for (const sourceSpec of specs) {
     if (
@@ -691,7 +695,7 @@ async function syncProjectConnectorsFenced(
         : catalogCredentialError
           ? { actions: [], server: null, error: catalogCredentialError }
           : {
-              ...(await resolveCatalog(gitProject, spec, { credential: catalogCredential })),
+              ...(await resolveCatalog(gitProject, spec, { credential: catalogCredential, connectorsV2 })),
               memberPublished,
             };
       await upsertConnector(projectId, accountId, spec, catalog, ex?.connectorId ?? null, fence);
@@ -1368,6 +1372,8 @@ export async function resolveCatalog(
     credential?: string | null;
     mcpFetchImpl?: FetchImpl;
     composioCatalogTools?: typeof composioCatalogTools;
+    /** The project has `connectors_v2`: native Shopify and the raw GraphQL fallback. */
+    connectorsV2?: boolean;
   } = {},
 ): Promise<ResolvedCatalog> {
   try {
@@ -1425,11 +1431,13 @@ export async function resolveCatalog(
         // action, which the gateway never runs unattended without a rule that
         // names it (see `graphql_document` in gateway.ts).
         return {
-          actions: introspectionRefused(introspection) ? [graphqlDocumentAction()] : [],
+          actions:
+            options.connectorsV2 && introspectionRefused(introspection) ? [graphqlDocumentAction()] : [],
           server: spec.endpoint,
         };
       }
       case 'shopify':
+        if (!options.connectorsV2) throw new Error(featureDisabledBody('connectors_v2').error);
         // A fixed catalog: Shopify disables introspection, and no network call is needed.
         return { actions: shopifyCatalog(), server: null };
       case 'mcp': {

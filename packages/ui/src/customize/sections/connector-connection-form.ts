@@ -193,22 +193,6 @@ export function buildEasyConnectConnectorDraft(
   });
 }
 
-/**
- * The connector an app install creates. Shopify installs the native `shopify`
- * connector (the store's own OAuth grant): Composio's shared app cannot read
- * orders or customers. The trigger composer keeps `buildEasyConnectConnectorDraft`,
- * because Shopify's event triggers exist on the Composio toolkit only.
- */
-export function buildAppConnectorDraft(
-  app: EasyConnectApp,
-  connection: EasyConnectConnectionInput,
-): ConnectorDraftInput {
-  if (app.slug === 'shopify' && (app.provider ?? 'composio') === 'composio') {
-    return createOnlyConnectorDraft({ slug: connection.slug, name: connection.name.trim(), provider: 'shopify' });
-  }
-  return buildEasyConnectConnectorDraft(app, connection);
-}
-
 export function buildDiscoverConnectorDraft(
   template: DiscoverConnectorTemplate,
   input: EasyConnectConnectionInput,
