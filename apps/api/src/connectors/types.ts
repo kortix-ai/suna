@@ -49,8 +49,6 @@ export type ActionBinding =
       bodyMode: 'json' | 'raw' | 'urlencoded' | null;
     }
   | { kind: 'graphql'; operation: 'query' | 'mutation'; field: string }
-  // A GraphQL server that blocks introspection: the caller sends the document.
-  | { kind: 'graphql_document' }
   | { kind: 'mcp'; tool: string }
   | { kind: 'http'; method: string; path: string; bodyMediaType?: string }
   // Agent Computer Tunnel: relay one machine-bound RPC (`fs.read`,
@@ -59,9 +57,6 @@ export type ActionBinding =
   | { kind: 'tunnel'; method: string }
   | { kind: 'pipedream'; app: string; actionKey: string }
   | { kind: 'composio'; toolkit: string; toolSlug: string }
-  // Native Shopify: one of the fixed actions in `shopify.ts`, run against the
-  // store of the selected account.
-  | { kind: 'shopify'; action: string }
   // Generic Connect-Proxy request: hit ANY endpoint of a Pipedream-connected
   // app's API. Pipedream injects the user's credential server-side, so this
   // makes a pipedream connector behave like an openapi/http one — the agent

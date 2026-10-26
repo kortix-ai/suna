@@ -264,31 +264,6 @@ function resolvePointer(doc: any, parts: string[]): any {
  * Normalize a GraphQL introspection result (`{ __schema: {...} }` or the inner
  * `__schema`). Query fields → read, Mutation fields → write.
  */
-/**
- * The one action a GraphQL connector offers when its server answers no
- * introspection (Shopify disables it): the caller writes the document. Offered
- * only then, so it never bypasses the per-field policies of an introspected
- * schema.
- */
-export function graphqlDocumentAction(): NormalizedAction {
-  return {
-    path: 'graphql',
-    name: 'GraphQL',
-    description: 'Run a GraphQL query or mutation. The server blocks introspection, so write the document from its API reference.',
-    inputSchema: {
-      type: 'object',
-      required: ['query'],
-      properties: {
-        query: { type: 'string', description: 'The GraphQL document.' },
-        variables: { type: 'object', additionalProperties: true, description: 'GraphQL variables.' },
-      },
-    },
-    outputSchema: null,
-    risk: 'write',
-    binding: { kind: 'graphql_document' },
-  };
-}
-
 export function normalizeGraphql(introspection: any): NormalizedAction[] {
   const schema = introspection?.__schema ?? introspection?.data?.__schema ?? introspection;
   if (!schema || !Array.isArray(schema.types)) return [];

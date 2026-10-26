@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 958,
+  "count": 955,
   "routes": [
     {
       "method": "GET",
@@ -1247,14 +1247,6 @@
       "path": "/v1/clients/mobile"
     },
     {
-      "method": "GET",
-      "path": "/v1/connectors/app-form/:token"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/connectors/app-form/:token"
-    },
-    {
       "method": "POST",
       "path": "/v1/connectors/attachments"
     },
@@ -1441,10 +1433,6 @@
     {
       "method": "GET",
       "path": "/v1/connectors/projects/:projectId/sessions/:sessionId/connect-requests"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/connectors/shopify/callback"
     },
     {
       "method": "POST",

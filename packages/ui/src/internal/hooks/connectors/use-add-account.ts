@@ -13,10 +13,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 
 import { errorToast, warningToast } from '../../../primitives/toast';
 import { proposeAccountLabel } from '../../../customize/connectors/install/install';
-import {
-  isManagedConnectorProvider,
-  signsInWithConnectLink,
-} from '../../../customize/connectors/provider-label';
+import { isManagedConnectorProvider } from '../../../customize/connectors/provider-label';
 import {
   signInOrReason,
   startDiscoveredSignIn,
@@ -38,7 +35,7 @@ import { useTranslations } from '../../../i18n';
  * that one (`emptyProjectSlot`), so it stays the connector's default.
  *
  * Then sign it in at once:
- * - a managed provider (Composio, Pipedream) and Shopify run a Connect Link;
+ * - a managed provider (Composio, Pipedream) runs its hosted Connect Link;
  * - a direct provider starts the server's one-click OAuth when it has one,
  *   else hands the account to `onCredential` for credential entry;
  * - a connector with no auth is ready as soon as the account exists.
@@ -153,7 +150,7 @@ export function useAddAccount({
   };
   const submit = (draft: NewAccountDraft) => {
     if (pending) return;
-    if (signsInWithConnectLink(connector.provider)) {
+    if (isManagedConnectorProvider(connector.provider)) {
       // The hooks toast their own errors.
       void addManaged.add(draft).catch(() => undefined);
     } else {

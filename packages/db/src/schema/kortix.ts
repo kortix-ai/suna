@@ -6881,8 +6881,6 @@ export const connectorProviderEnum = kortixSchema.enum('connector_provider', [
   // credential, with per-machine auth/scope enforced by the tunnel permission
   // layer.
   'computer',
-  // Native Shopify Admin API (GraphQL), authorized per store with Shopify OAuth.
-  'shopify',
 ]);
 
 export const connectorStatusEnum = kortixSchema.enum('connector_status', [

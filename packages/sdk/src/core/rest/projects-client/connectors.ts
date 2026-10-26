@@ -314,8 +314,6 @@ export interface ConnectorAccount {
    *  absent, on older servers) when not rejected. An ok call or a new
    *  credential clears it. */
   credential_rejected_at?: string | null;
-  /** Shopify: what the account's token could read when it connected. Absent for other providers. */
-  access?: import('../platform-client/host-boundary').ShopifyAccess | null;
 }
 
 export interface ConnectorCallOptions {
@@ -486,8 +484,7 @@ export interface AdminConnector {
     | 'graphql'
     | 'http'
     | 'channel'
-    | 'computer'
-    | 'shopify';
+    | 'computer';
   platform?: 'slack' | 'email' | null;
   /** Provider icon materialized during connector synchronization. */
   iconUrl?: string | null;
@@ -1717,10 +1714,6 @@ export interface ConnectorDraftInput {
   endpoint?: string;
   baseUrl?: string;
   spec?: string;
-  /** shopify: the default store, `<name>.myshopify.com` (a bare name is accepted). */
-  shop?: string;
-  /** shopify: the Admin API scopes Connect requests. Omit for the default set. */
-  scopes?: string[];
   /**
    * @deprecated Computers are accounts of the `computer` connector now: add one
    * with `addComputerToProject`. The server ignores this field. Removed in the
@@ -2128,7 +2121,7 @@ export interface DiscoverConnector {
 }
 
 export interface DiscoverConnectorTemplate {
-  provider: 'openapi' | 'postman' | 'mcp' | 'graphql' | 'shopify';
+  provider: 'openapi' | 'postman' | 'mcp' | 'graphql';
   spec?: string;
   url?: string;
   transport?: 'http' | 'sse';
@@ -2310,10 +2303,9 @@ export interface DiscoverConnectorTools {
   /** Every tool the source lists; `tools` holds at most 500. */
   total: number;
   /** `mcp`: the server's own list; `directory`: names from a public
-   *  directory; `composio`; `spec`: the OpenAPI operations; `kortix`: the
-   *  fixed actions of a connector Kortix runs itself (Shopify); `none`: this
-   *  way lists its tools only after install. */
-  source: 'mcp' | 'directory' | 'composio' | 'spec' | 'kortix' | 'none';
+   *  directory; `composio`; `spec`: the OpenAPI operations; `none`: this way
+   *  lists its tools only after install. */
+  source: 'mcp' | 'directory' | 'composio' | 'spec' | 'none';
 }
 
 /** The tools of one way to connect a Discover app (`way`: a variant id;

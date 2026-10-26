@@ -71,12 +71,7 @@ import { EmptyState } from '../../primitives/empty-state';
 import { ComputerConnectModal, ComputerStateDot } from '../../internal/tunnel/computer-connect';
 import { mcpServerIdentity } from '../connectors/add-mcp/add-mcp-server';
 import { connectorDisplayName } from '../connectors/connector-filter';
-import { signsInWithConnectLink } from '../connectors/provider-label';
-import {
-  ShopifyAccessInline,
-  shopifyAccessNeedsReconnect,
-  shopifyAccessOf,
-} from '../../markdown/setup-links/shopify-access';
+import { isManagedConnectorProvider } from '../connectors/provider-label';
 import { AccessDialog } from '../../access/access/access-dialog';
 import {
   type SlackInstallation,
@@ -284,10 +279,6 @@ function ConnectionRow({
   const mayMutate = isProjectAuthorization ? canManage : isMine;
   const visibility = accountVisibility(connection, viewerId);
   const everyoneWithAccess = (connection.shared_with ?? []).map((share) => share.label);
-  // A Shopify account: what its token could read when it connected. A read the
-  // app's settings refuse is fixed in Shopify, then by connecting again.
-  const shopifyAccess = active ? shopifyAccessOf(connection.metadata) : null;
-  const reconnect = !needsSignIn && shopifyAccessNeedsReconnect(shopifyAccess);
 
   const { copy } = useCopy({ successMessage: tI18nComplete.raw('text56ee71f3ece0') });
 
@@ -352,17 +343,14 @@ function ConnectionRow({
           {/* The connection id is not shown: it is a value for a backend, and the
               row menu copies it. */}
         </InlineMeta>
-        {shopifyAccess ? <ShopifyAccessInline access={shopifyAccess} /> : null}
       </div>
       {/* Share and the row menu: one control group, so the pair reads as one
           set of actions for this account. */}
       {/* An account that never finished signing in (an abandoned OAuth flow)
           gets its next step on the row, not behind the menu. */}
-      {onConnect && mayMutate && (needsSignIn || reconnect) ? (
+      {onConnect && mayMutate && needsSignIn ? (
         <Button size="sm" className="shrink-0" onClick={onConnect} disabled={pending || disabled}>
-          {reconnect
-            ? tI18nComplete.raw('textbf8a9eab9e7e')
-            : tConnectorPages('connectAccount')}
+          {tConnectorPages('connectAccount')}
         </Button>
       ) : null}
       <ButtonGroup className="shrink-0">
@@ -525,7 +513,7 @@ export function ConnectionsList({
   // An email account is an inbox: "Add" creates one (own Resend key or Kortix
   // managed), and removing it deletes the inbox Kortix made.
   const isEmail = connector.provider === 'channel' && connector.platform === 'email';
-  const isDirectProvider = !signsInWithConnectLink(connector.provider) && !isComputer && !isEmail;
+  const isDirectProvider = !isManagedConnectorProvider(connector.provider) && !isComputer && !isEmail;
   const [computerOpen, setComputerOpen] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
   const [policyInbox, setPolicyInbox] = useState<EmailInbox | null>(null);

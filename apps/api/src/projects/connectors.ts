@@ -41,7 +41,6 @@ import {
   CONNECTOR_AUTHORIZATION_STRATEGIES,
   CONNECTOR_PROVIDERS,
   RESERVED_SLUG_PROVIDERS,
-  SHOPIFY_SHOP_RE,
   SLUG_RE,
   type ConnectorProvider as ManifestConnectorProvider,
   MAX_POLICY_SETS_PER_CONNECTOR,
@@ -186,11 +185,6 @@ export interface ConnectorSpec {
   platform: ChannelPlatform | null;
   /** openapi/postman/graphql/http: a URL or repo-relative file path. Optional for graphql. */
   spec: string | null;
-  /** shopify: the default store (`<name>.myshopify.com`) Connect offers. Each
-   *  account still carries the store its OAuth grant was issued for. */
-  shop?: string | null;
-  /** shopify: the Admin API scopes Connect requests. Null = the default set. */
-  scopes?: string[] | null;
   // ── shared ──
   auth: ConnectorAuthSpec;
   /**
@@ -328,8 +322,6 @@ export function manifestHashForConnector(spec: ConnectorSpec): string {
     // rewritten when this hash changes. Leaving them out would let a header
     // edit commit to kortix.yaml and never reach the gateway.
     headers: spec.headers,
-    // Only a shopify connector carries these, so every other hash stays as it was.
-    ...(spec.provider === 'shopify' ? { shop: spec.shop ?? null, scopes: spec.scopes ?? null } : {}),
   });
   return createHash('sha256').update(canonical).digest('hex');
 }
@@ -479,7 +471,6 @@ function parseConnectorEntry(
         provider !== 'pipedream' &&
         provider !== 'composio' &&
         provider !== 'channel' &&
-        provider !== 'shopify' &&
         provider !== 'computer',
       policies: policiesParsed.value,
       ...(setsParsed.value.length > 0 ? { policySets: setsParsed.value } : {}),
@@ -503,22 +494,6 @@ function parseProviderFields(
     // account defaults to the slug — names the connected-account binding.
     const account = str(row.account) ?? slug;
     return { ok: true, value: { ...base, app, account } };
-  }
-
-  if (provider === 'shopify') {
-    const shopRaw = str(row.shop);
-    const shop = shopRaw ? shopRaw.toLowerCase() : null;
-    if (shop && !SHOPIFY_SHOP_RE.test(shop)) {
-      return err(slug, 'shop must be the store\'s permanent host, `<name>.myshopify.com`', filename);
-    }
-    let scopes: string[] | null = null;
-    if (row.scopes !== undefined && row.scopes !== null) {
-      if (!Array.isArray(row.scopes) || !row.scopes.every((v) => typeof v === 'string' && /^[a-z_]+$/.test(v.trim()))) {
-        return err(slug, 'scopes must be a list of Shopify access scopes, such as read_orders', filename);
-      }
-      scopes = [...new Set((row.scopes as string[]).map((v) => v.trim()))];
-    }
-    return { ok: true, value: { ...base, shop, scopes } };
   }
 
   if (provider === 'mcp') {
@@ -613,13 +588,6 @@ function parseAuth(
     return err(
       slug,
       'provider="channel" authenticates via its platform install token — omit [connectors.auth]',
-      filename,
-    );
-  }
-  if (provider === 'shopify' && type !== 'none') {
-    return err(
-      slug,
-      'provider="shopify" authenticates through the store\'s OAuth sign-in — omit [connectors.auth]',
       filename,
     );
   }

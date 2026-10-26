@@ -30,7 +30,7 @@ function warnIfConnectorRouteMissing(err: unknown): void {
 interface ShipConnector {
   slug: string;
   name: string;
-  provider: 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http' | 'shopify';
+  provider: 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http';
   status: 'active' | 'disabled' | 'needs_auth' | 'error';
   authSecret: string | null;
   secretSet: boolean;

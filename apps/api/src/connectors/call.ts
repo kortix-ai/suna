@@ -10,7 +10,6 @@
  */
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { sanitizeConnectorHeaders } from '@kortix/manifest-schema';
-import { executeShopifyCall } from './shopify';
 import type { ActionBinding } from './types';
 
 export interface ConnectorAuth {
@@ -1157,42 +1156,6 @@ export async function executeCall(opts: {
       fetchImpl: opts.fetchImpl,
       now: opts.now ?? (() => new Date()),
     });
-  }
-
-  if (binding.kind === 'shopify') {
-    // The gateway sets baseUrl to the selected account's store origin.
-    if (!opts.baseUrl) throw new Error('shopify connector has no store');
-    return executeShopifyCall({
-      origin: opts.baseUrl,
-      action: binding.action,
-      args: opts.args ?? {},
-      token: opts.secret ?? null,
-      headers: opts.headers,
-      fetchImpl: opts.fetchImpl,
-    });
-  }
-
-  if (binding.kind === 'graphql_document') {
-    if (!opts.baseUrl) throw new Error('graphql connector has no endpoint');
-    const args = opts.args ?? {};
-    if (typeof args.query !== 'string' || !args.query.trim()) {
-      return { status: 400, ok: false, data: { error: 'invalid_input', message: 'query is required' } };
-    }
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    const search = new URLSearchParams();
-    const auth = opts.auth ?? NO_AUTH;
-    applyConnectorHeaders(headers, opts.headers, auth);
-    applyAuth(headers, search, auth, opts.secret ?? null);
-    const qs = search.toString();
-    const url = qs ? opts.baseUrl + (opts.baseUrl.includes('?') ? '&' : '?') + qs : opts.baseUrl;
-    const variables = args.variables && typeof args.variables === 'object' ? args.variables : {};
-    return performRequest(
-      { url, method: 'POST', headers, body: JSON.stringify({ query: args.query, variables }) },
-      opts.fetchImpl,
-      auth,
-      opts.secret ?? null,
-      opts.now ?? (() => new Date()),
-    );
   }
 
   if (binding.kind === 'graphql') {

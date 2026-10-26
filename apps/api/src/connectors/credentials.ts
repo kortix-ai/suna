@@ -4,7 +4,7 @@ import {
   connectors,
   connectionCredentials,
 } from '@kortix/db';
-import type { OAuth2ApplicationInput, OAuth2ClientCredentials } from '@kortix/api-contract';
+import type { OAuth2ClientCredentials } from '@kortix/api-contract';
 /**
  * Connector credentials. A connector is project-wide visible — the only
  * ACCESS gate is the agent-side `[[agents]].connectors` grant (iam/agent-scope.ts),
@@ -26,7 +26,7 @@ import {
   type OAuth2AccessToken,
 } from './oauth2';
 import { DEFAULT_MEMBER_LABEL, DEFAULT_SLOT_KEY } from './connection-identity';
-import { parseDelegatedCredential, resolveStoredDelegatedCredential } from './oauth2-delegated';
+import { resolveStoredDelegatedCredential } from './oauth2-delegated';
 
 /* ─── credentials (split per user) ────────────────────────────────────────── */
 
@@ -472,36 +472,6 @@ export async function resolveConnectionCredentialValue(
     .limit(1);
   if (!row) return null;
   return resolveCredentialRow(row, runtime);
-}
-
-/**
- * The OAuth application a connection's delegated credential was issued under,
- * or null for any other credential. Its token URL names the server that issued
- * the token (a Shopify store, for example). Never returns the token.
- */
-export async function delegatedCredentialApplication(input: {
-  connectorId: string;
-  connectionId: string;
-}): Promise<OAuth2ApplicationInput | null> {
-  const [row] = await db
-    .select({
-      credentialId: connectionCredentials.credentialId,
-      kind: connectionCredentials.kind,
-      valueEnc: connectionCredentials.valueEnc,
-      projectId: connectors.projectId,
-      slug: connectors.slug,
-    })
-    .from(connectionCredentials)
-    .innerJoin(connectors, eq(connectors.connectorId, connectionCredentials.connectorId))
-    .where(
-      and(
-        eq(connectionCredentials.connectorId, input.connectorId),
-        eq(connectionCredentials.connectionId, input.connectionId),
-      ),
-    )
-    .limit(1);
-  if (!row || row.kind !== 'oauth2_delegated') return null;
-  return parseDelegatedCredential(decryptCredential(row, row.valueEnc))?.application ?? null;
 }
 
 export async function connectionCredentialExists(input: {

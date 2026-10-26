@@ -11,7 +11,7 @@ describe('agentAccess', () => {
   });
 
   test('a scoped agent lists each grant: everything, a count, or none', () => {
-    expect(agentAccess({ env: [], connectors: ['shopify', 'gmail'], kortix_permissions: 'all', kortix_cli: 'all' })).toEqual({
+    expect(agentAccess({ env: [], connectors: ['notion', 'gmail'], kortix_permissions: 'all', kortix_cli: 'all' })).toEqual({
       kind: 'scoped',
       parts: [
         { kind: 'connectors', value: 2 },

@@ -197,7 +197,7 @@ export function useInstall(
           }
           ask({
             target: discoverInstallTarget(entry.name, variant),
-            way: { kind: variant.kind, oneClick: recommended?.oneClick === true, provider: variant.template.provider },
+            way: { kind: variant.kind, oneClick: recommended?.oneClick === true },
             connectors,
             app,
             ...(addAccount !== undefined ? { addAccount } : {}),

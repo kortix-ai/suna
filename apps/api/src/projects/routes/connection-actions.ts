@@ -15,7 +15,6 @@ import {
 } from '../../connectors/credentials';
 import { validateConnectionLabel } from '../../connectors/connection-identity';
 import { oauth2ConnectionStatus, revokeConnectionOAuth2, startConnectionSignIn } from '../../connectors/oauth2-store';
-import { shopifyAccountConnected, startShopifyConnect } from '../../connectors/shopify-connect';
 import { composioConfigured } from '../../connectors/composio';
 import { pipedreamConfigured } from '../../connectors/pipedream';
 import { rematerializeCatalogAfterCredentialUpdate } from '../../connectors/sync';
@@ -544,21 +543,6 @@ export function registerConnectionActionsRoutes(): void {
             return c.json({ app: connection.connectorAlias, connectUrl });
           }
           return c.json({ connected: (await oauth2ConnectionStatus(connectionId)).status === 'active' });
-        }
-        // Shopify: Kortix's form, then Shopify's OAuth grant (shopify-connect.ts).
-        if (connection.providerType === 'shopify') {
-          if (operation === 'connect') {
-            const started = await startShopifyConnect({
-              projectId,
-              connectionId,
-              userId: loaded.userId,
-              successRedirect: parseRedirects(await readJsonObject(c))?.success,
-            });
-            return c.json({ app: 'shopify', connectUrl: started.connectUrl, requestId: started.requestId });
-          }
-          return c.json({
-            connected: await shopifyAccountConnected({ connectorId: connection.connectorId, connectionId }),
-          });
         }
         // Provider-neutral, like the connector-scoped route and the connect-link
         // intake. This was Pipedream-only, so a Composio connector's labelled
