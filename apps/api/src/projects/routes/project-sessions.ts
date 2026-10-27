@@ -477,6 +477,10 @@ export function registerProjectSessionsRoutes(): void {
             // that the caller may see (400 unless a UUID). Ignored while the
             // flag is off, whatever its value, as before the flag existed.
             space_id: z.string().optional(),
+            // `session_groups` on: only the sessions filed into this group (a
+            // UUID), or `none` for the sessions in no group (400 otherwise).
+            // Ignored while the flag is off, whatever its value.
+            group: z.string().optional(),
             // Only the sessions this person started (a user id), the agent
             // they run (its slug), or with activity at or after a time.
             created_by: z.string().uuid().optional(),
@@ -562,6 +566,10 @@ export function registerProjectSessionsRoutes(): void {
 
     const spaceId = resolveFeatureFlag(loaded.row.metadata, 'project_channels') ? (query.space_id ?? null) : null;
     if (spaceId !== null && !isUuid(spaceId)) return c.json({ error: 'space_id must be a UUID' }, 400);
+    const group = resolveFeatureFlag(loaded.row.metadata, 'session_groups') ? (query.group ?? null) : null;
+    if (group !== null && group !== 'none' && !isUuid(group)) {
+      return c.json({ error: 'group must be a group id or none' }, 400);
+    }
     const inventory = await loadProjectSessionInventory({
       projectId,
       accountId: loaded.row.accountId,
@@ -579,6 +587,7 @@ export function registerProjectSessionsRoutes(): void {
         view: query.pinned ? 'pinned' : query.archived ? 'archived' : null,
         deleted: query.deleted === 'only',
         spaceId,
+        group,
         createdBy: query.created_by ?? null,
         agent: query.agent ?? null,
         updatedAfter: query.updated_after ? new Date(query.updated_after) : null,

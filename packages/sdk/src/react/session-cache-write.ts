@@ -52,6 +52,11 @@ type ListFilters = {
   q: string | null;
   view?: 'pinned' | 'archived' | 'deleted';
   spaceId?: string;
+  group?: string;
+  labels?: string[];
+  createdBy?: string;
+  agent?: string;
+  updatedAfter?: string;
 };
 
 /**
@@ -62,7 +67,8 @@ type ListFilters = {
  * here, so "mine" is `is_owner !== false` on a member-started row. A pinned
  * or archived view takes only a row the viewer pinned or archived: a new
  * session is neither, so it never shows under Pinned. A space list takes only
- * a session filed in that space.
+ * a session filed in that space, and a group list only a session filed in
+ * that group (`group: 'none'`: in no group).
  */
 function sessionBelongsInList(projectId: string, query: Query, session: ProjectSession): boolean {
   const rest = query.queryKey.slice(qk.project.sessionsScope(projectId).length);
@@ -79,6 +85,17 @@ function sessionBelongsInList(projectId: string, query: Query, session: ProjectS
   if (filters.parent && filters.parent !== 'root') return parentId === filters.parent;
   // A space list takes only that space's sessions; a row without `space_id` (an older API) never.
   if (filters.spaceId && session.space_id !== filters.spaceId) return false;
+  // A group list takes only that group's sessions; the no-group list only a session in none.
+  if (filters.group === 'none' && session.group_id) return false;
+  if (filters.group && filters.group !== 'none' && session.group_id !== filters.group) return false;
+  // The other server filters, checked on the row: a row that fails one waits for the refetch.
+  if (filters.labels?.length && !filters.labels.every((label) => session.labels?.includes(label))) return false;
+  if (filters.agent && session.agent_name !== filters.agent) return false;
+  if (filters.createdBy) {
+    const starter = session.initiator ? (session.initiator.type === 'member' ? session.initiator.id : null) : session.created_by;
+    if (starter !== filters.createdBy) return false;
+  }
+  if (filters.updatedAfter && !(Date.parse(session.updated_at) >= Date.parse(filters.updatedAfter))) return false;
   if (!filters.startedBy) return true;
   const isMember = (session.initiator?.type ?? 'member') === 'member';
   if (filters.startedBy === 'automated') return !isMember;
@@ -261,6 +278,39 @@ export function removeCachedProjectSession(
   return () => {
     for (const [queryKey, data] of previous) queryClient.setQueryData(queryKey, data);
   };
+}
+
+/**
+ * Move a cached session to the lists its new state belongs in: replace it, or
+ * add it to page one, in every list it belongs in, and take it out of every
+ * group list (`group` filter) it no longer belongs in. The optimistic
+ * counterpart of filing a session into a group. Lists without a group filter
+ * keep the row where it is: their membership did not change.
+ */
+export function refileCachedProjectSession(
+  queryClient: QueryClient,
+  projectId: string,
+  session: ProjectSession,
+): void {
+  const queries = queryClient.getQueryCache().findAll({
+    queryKey: qk.project.sessionsScope(projectId),
+    predicate: (query) => isSessionCacheKey(projectId, query),
+  });
+  for (const query of queries) {
+    if (sessionBelongsInList(projectId, query, session)) {
+      queryClient.setQueryData(query.queryKey, (cached: unknown) => upsertIntoCachedSessionShape(cached, session));
+      continue;
+    }
+    const rest = query.queryKey.slice(qk.project.sessionsScope(projectId).length);
+    const filters = rest[0] === 'list-paged' ? (rest[2] as ListFilters | undefined) : undefined;
+    if (!filters?.group) continue;
+    queryClient.setQueryData(query.queryKey, (cached: unknown) =>
+      applyToCachedSessionShape(cached, (rows) => {
+        const kept = rows.filter((row) => row.session_id !== session.session_id);
+        return kept.length === rows.length ? rows : kept;
+      }),
+    );
+  }
 }
 
 /**

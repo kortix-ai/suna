@@ -1290,6 +1290,10 @@
         "project_channels": {
           "name": "Canales",
           "description": "Organiza el trabajo en canales. Cada mensaje nuevo en un canal o en un mensaje directo con un agente inicia un hilo. Sustituye la lista de sesiones en la barra lateral."
+        },
+        "session_groups": {
+          "name": "Grupos de sesiones",
+          "description": "Agrupa las sesiones de la barra lateral en carpetas con nombre que comparte todo el proyecto, por ejemplo una por tienda o cliente. Mueve una sesión a un grupo desde su menú o arrastrándola; reordena y contrae los grupos."
         }
       },
       "channelsSwitch": {
@@ -1768,6 +1772,38 @@
       "bulkFailed": "{count, plural, one {No se pudo cambiar # sesión} other {No se pudieron cambiar # sesiones}}",
       "showArchived": "Sesiones archivadas",
       "pinnedMark": "Fijada"
+    },
+    "sessionGroups": {
+      "newGroup": "Nuevo grupo",
+      "newGroupFromMenu": "Nuevo grupo…",
+      "createTitle": "Nuevo grupo",
+      "createDescription": "Todos en este proyecto ven el grupo. Mueve una sesión al grupo desde su menú o arrástrala sobre él.",
+      "namePlaceholder": "Nombre del grupo",
+      "create": "Crear grupo",
+      "created": "Grupo creado",
+      "createFailed": "No se pudo crear el grupo",
+      "rename": "Renombrar grupo",
+      "save": "Guardar",
+      "renamed": "Grupo renombrado",
+      "renameFailed": "No se pudo renombrar el grupo",
+      "nameTaken": "Otro grupo de este proyecto ya tiene ese nombre.",
+      "limit": "Un proyecto tiene como máximo 50 grupos.",
+      "cancel": "Cancelar",
+      "delete": "Eliminar grupo",
+      "deleteTitle": "¿Eliminar este grupo?",
+      "deleteDescription": "{name} se elimina para todos en este proyecto. Sus sesiones se conservan, sin grupo. Esto no se puede deshacer.",
+      "deleted": "Grupo eliminado",
+      "deleteFailed": "No se pudo eliminar el grupo",
+      "moveUp": "Subir",
+      "moveDown": "Bajar",
+      "reorderFailed": "No se pudieron reordenar los grupos",
+      "moveTo": "Mover a un grupo",
+      "removeFromGroup": "Quitar del grupo",
+      "moved": "Sesión movida",
+      "noGroup": "Sin grupo",
+      "moveFailed": "No se pudo mover la sesión",
+      "empty": "Las sesiones que muevas aquí aparecerán aquí.",
+      "groupOptions": "Opciones del grupo"
     },
     "recentlyDeleted": {
       "view": "Eliminadas recientemente",

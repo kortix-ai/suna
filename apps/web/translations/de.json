@@ -1290,6 +1290,10 @@
         "project_channels": {
           "name": "Kanäle",
           "description": "Organisieren Sie die Arbeit in Kanälen. Jede neue Nachricht in einem Kanal oder in einer Direktnachricht mit einem Agenten startet einen Thread. Ersetzt die Sitzungsliste in der Seitenleiste."
+        },
+        "session_groups": {
+          "name": "Sitzungsgruppen",
+          "description": "Ordne die Sitzungen der Seitenleiste in benannte Ordner, die alle im Projekt teilen, zum Beispiel einen pro Shop oder Kunde. Verschiebe eine Sitzung über ihr Menü oder per Ziehen in eine Gruppe; sortiere die Gruppen und klappe sie ein."
         }
       },
       "channelsSwitch": {
@@ -1768,6 +1772,38 @@
       "bulkFailed": "{count, plural, one {# Sitzung konnte nicht geändert werden} other {# Sitzungen konnten nicht geändert werden}}",
       "showArchived": "Archivierte Sitzungen",
       "pinnedMark": "Angeheftet"
+    },
+    "sessionGroups": {
+      "newGroup": "Neue Gruppe",
+      "newGroupFromMenu": "Neue Gruppe…",
+      "createTitle": "Neue Gruppe",
+      "createDescription": "Alle in diesem Projekt sehen die Gruppe. Verschiebe eine Sitzung über ihr Menü in die Gruppe oder ziehe sie darauf.",
+      "namePlaceholder": "Gruppenname",
+      "create": "Gruppe erstellen",
+      "created": "Gruppe erstellt",
+      "createFailed": "Die Gruppe konnte nicht erstellt werden",
+      "rename": "Gruppe umbenennen",
+      "save": "Speichern",
+      "renamed": "Gruppe umbenannt",
+      "renameFailed": "Die Gruppe konnte nicht umbenannt werden",
+      "nameTaken": "Eine andere Gruppe in diesem Projekt hat diesen Namen.",
+      "limit": "Ein Projekt hat höchstens 50 Gruppen.",
+      "cancel": "Abbrechen",
+      "delete": "Gruppe löschen",
+      "deleteTitle": "Diese Gruppe löschen?",
+      "deleteDescription": "{name} wird für alle in diesem Projekt gelöscht. Ihre Sitzungen bleiben erhalten, ohne Gruppe. Dies kann nicht rückgängig gemacht werden.",
+      "deleted": "Gruppe gelöscht",
+      "deleteFailed": "Die Gruppe konnte nicht gelöscht werden",
+      "moveUp": "Nach oben",
+      "moveDown": "Nach unten",
+      "reorderFailed": "Die Gruppen konnten nicht neu sortiert werden",
+      "moveTo": "In Gruppe verschieben",
+      "removeFromGroup": "Aus Gruppe entfernen",
+      "moved": "Sitzung verschoben",
+      "noGroup": "Keine Gruppe",
+      "moveFailed": "Die Sitzung konnte nicht verschoben werden",
+      "empty": "Sitzungen, die du hierher verschiebst, erscheinen hier.",
+      "groupOptions": "Gruppenoptionen"
     },
     "recentlyDeleted": {
       "view": "Zuletzt gelöscht",

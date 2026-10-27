@@ -1290,6 +1290,10 @@
         "project_channels": {
           "name": "Kanali",
           "description": "Organizujte rad u kanalima. Svaka nova poruka u kanalu ili u direktnoj poruci sa agentom započinje nit. Zamenjuje listu sesija u bočnoj traci."
+        },
+        "session_groups": {
+          "name": "Групе сесија",
+          "description": "Груписање сесија у бочној траци у именоване фасцикле које дели цео пројекат, на пример једну по продавници или клијенту. Премести сесију у групу из њеног менија или превлачењем; преуреди и скупи групе."
         }
       },
       "channelsSwitch": {
@@ -1768,6 +1772,38 @@
       "bulkFailed": "{count, plural, one {# сесију није могуће променити} few {# сесије није могуће променити} other {# сесија није могуће променити}}",
       "showArchived": "Архивиране сесије",
       "pinnedMark": "Закачена"
+    },
+    "sessionGroups": {
+      "newGroup": "Нова група",
+      "newGroupFromMenu": "Нова група…",
+      "createTitle": "Нова група",
+      "createDescription": "Сви у овом пројекту виде групу. Премести сесију у групу из њеног менија или је превуци на групу.",
+      "namePlaceholder": "Назив групе",
+      "create": "Направи групу",
+      "created": "Група је направљена",
+      "createFailed": "Групу није могуће направити",
+      "rename": "Преименуј групу",
+      "save": "Сачувај",
+      "renamed": "Група је преименована",
+      "renameFailed": "Групу није могуће преименовати",
+      "nameTaken": "Друга група у овом пројекту већ има тај назив.",
+      "limit": "Пројекат може имати највише 50 група.",
+      "cancel": "Откажи",
+      "delete": "Обриши групу",
+      "deleteTitle": "Обрисати ову групу?",
+      "deleteDescription": "{name} се брише за све у овом пројекту. Њене сесије остају, без групе. Ово се не може опозвати.",
+      "deleted": "Група је обрисана",
+      "deleteFailed": "Групу није могуће обрисати",
+      "moveUp": "Помери нагоре",
+      "moveDown": "Помери надоле",
+      "reorderFailed": "Групе није могуће преуредити",
+      "moveTo": "Премести у групу",
+      "removeFromGroup": "Уклони из групе",
+      "moved": "Сесија је премештена",
+      "noGroup": "Без групе",
+      "moveFailed": "Сесију није могуће преместити",
+      "empty": "Сесије које овде преместиш појавиће се овде.",
+      "groupOptions": "Опције групе"
     },
     "recentlyDeleted": {
       "view": "Недавно обрисане",

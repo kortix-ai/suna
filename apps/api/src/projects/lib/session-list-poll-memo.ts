@@ -63,6 +63,21 @@ export function peekSessionListPollEtag(key: string, ifNoneMatch: string): PollE
   return entry.etag === ifNoneMatch ? entry : null;
 }
 
+/**
+ * Forget every memoized page of one project on this replica, after a write
+ * that changes which list a session is in (filing it into a session group).
+ * Without it, a list refetched within the window right after a second write
+ * answers 304 and the client keeps the body from before that write. Another
+ * replica's entries still expire within the 2 s window.
+ */
+export function forgetSessionListPollEtags(projectId: string): void {
+  // The key carries the project id as one `|`-separated segment (project-sessions.ts).
+  const segment = `|${projectId}|`;
+  for (const key of entries.keys()) {
+    if (key.includes(segment)) entries.delete(key);
+  }
+}
+
 /** Record the page identity after a successful computation. */
 export function storeSessionListPollEtag(
   key: string,

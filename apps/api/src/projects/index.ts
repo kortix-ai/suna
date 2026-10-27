@@ -76,6 +76,7 @@ import { registerSessionLogRoutes } from './routes/session-log';
 import { registerSessionRuntimeRoutes } from './routes/session-runtime';
 import { registerSessionPresenceRoutes } from './routes/session-presence';
 import { registerSessionWatchRoutes } from './routes/session-watch';
+import { registerSessionGroupsRoutes } from './routes/session-groups';
 import { registerSessionListStateRoutes } from './routes/session-list-state';
 import { registerSessionParticipantsRoutes } from './routes/session-participants';
 import { registerSessionPromptsRoutes } from './routes/session-prompts';
@@ -168,6 +169,7 @@ export function registerAllProjectRoutes(): void {
   registerSessionPresenceRoutes();
   registerSessionWatchRoutes();
   registerSessionListStateRoutes();
+  registerSessionGroupsRoutes();
   registerSessionParticipantsRoutes();
   registerSessionPromptsRoutes();
   registerRoomsRoutes();
