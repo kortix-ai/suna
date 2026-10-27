@@ -7,6 +7,7 @@ import {
 import { and, eq } from 'drizzle-orm';
 import { config } from '../../config';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { type IntegrationEvent, registerEventConsumer } from '../../integrations/event-inbox';
 import { logger } from '../../lib/logger';
 import { ensureEmailSessionBinding } from '../../projects/lib/session-connector-bindings';
 import { db } from '../../shared/db';
@@ -19,26 +20,15 @@ import {
 import { type ChannelPort, type ChannelSessionPlan, type ChannelTarget, routeChannelMessage } from '../core/conversation';
 import {
   type EmailSenderPolicy,
+  emailOwnKeyForAccount,
   emailOwnKeyForInbox,
-  emailSenderPolicyForInbox,
   loadEmailInboxAccountForInbox,
 } from '../install-store';
-import { EMAIL_EVENT_DEDUPE_TTL_MS } from './app';
-import { recordClaim } from '../webhook-work';
 import { matchesEmailSenderRegex } from './sender-policy-regex';
 import type { InboundEmail, ResendInboxEmailReceivedEvent } from './types';
 
-let emailSenderPolicyLoader = emailSenderPolicyForInbox;
-
 export function resetEmailChannelForTest() {
-  emailSenderPolicyLoader = emailSenderPolicyForInbox;
   threadEmailLoader = getResendThreadEmail;
-}
-
-export function setEmailSenderPolicyLoaderForTest(
-  loader: typeof emailSenderPolicyForInbox,
-) {
-  emailSenderPolicyLoader = loader;
 }
 
 export async function resolveProjectForEmailInbox(inboxId: string): Promise<string | null> {
@@ -66,27 +56,63 @@ export function setThreadEmailLoaderForTest(loader: typeof getResendThreadEmail)
   threadEmailLoader = loader;
 }
 
+export const EMAIL_MESSAGE_EVENT = 'email.message.received';
+
+/** `IntegrationEvent.data` of a received email: the webhook's ids and headers, never a body. */
+interface EmailEventData {
+  inbox_id: string;
+  thread_id: string;
+  email_id: string;
+  from: string;
+  to: string[];
+  subject: string | null;
+}
+
 /**
- * One received inbox email. The event names it (inbox, thread, email) but
- * carries no body, so the body is read from Resend once the sender passed the
- * inbox's policy. An inbox this environment does not know is ignored: dev,
- * staging and prod share Kortix's Resend team and its team-wide webhooks.
+ * The event-inbox envelope of a received email, or null when the Resend event
+ * is not one. The event names the email but carries no body; the consumer
+ * reads the body from Resend.
  */
-export async function dispatchResendEmailEvent(event: ResendInboxEmailReceivedEvent): Promise<void> {
-  if (event.type !== RESEND_INBOX_EMAIL_RECEIVED) return;
-  const { inbox_id: inboxId, thread_id: threadId, email_id: emailId } = event.data;
-  if (!inboxId || !threadId || !emailId) return;
-  if (await alreadyHandled(`email:event:${emailId}`)) return;
-  const projectId = await resolveProjectForEmailInbox(inboxId);
-  if (!projectId) return;
-  const policy = await emailSenderPolicyLoader(projectId, inboxId);
-  const sender = event.data.from ?? '';
-  if (!isEmailSenderAllowed(sender, policy)) {
-    logger.warn('[email-webhook] sender rejected by inbox policy', { inboxId, emailId, sender });
+export function emailMessageEvent(projectId: string, event: ResendInboxEmailReceivedEvent): IntegrationEvent | null {
+  if (event.type !== RESEND_INBOX_EMAIL_RECEIVED) return null;
+  const { inbox_id, thread_id, email_id, from, to, subject } = event.data;
+  if (!inbox_id || !thread_id || !email_id) return null;
+  const data: EmailEventData = { inbox_id, thread_id, email_id, from: from ?? '', to: to ?? [], subject: subject ?? null };
+  return {
+    id: email_id,
+    source: `email:${inbox_id}`,
+    type: EMAIL_MESSAGE_EVENT,
+    time: event.created_at ?? new Date().toISOString(),
+    subject: thread_id,
+    projectId,
+    data: data as unknown as Record<string, unknown>,
+  };
+}
+
+/**
+ * One stored received email, in the project that held its inbox at the ack.
+ * The route checked the sender policy before the store; the email runs only
+ * while that project still has the channel, the inbox and the sender allowed.
+ * A throw retries the email (8 attempts over about 20 min).
+ */
+export async function handleEmailEvent(event: IntegrationEvent, run: { finalAttempt: boolean }): Promise<void> {
+  const { inbox_id: inboxId, thread_id: threadId, email_id: emailId, from, to, subject } =
+    event.data as unknown as EmailEventData;
+  const { projectId } = event;
+  if (!(await emailChannelOnForProject(projectId))) {
+    logger.info('[email-webhook] email channel turned off since the email arrived; dropped', { projectId, inboxId, emailId });
     return;
   }
-  if (!(await claimInboundMessage(inboxId, emailId))) return;
-  const apiKey = resolveEmailApiKey(await emailOwnKeyForInbox(projectId, inboxId));
+  const account = await loadEmailInboxAccountForInbox(projectId, inboxId);
+  if (!account) {
+    logger.info('[email-webhook] inbox removed from the project since the email arrived; dropped', { projectId, inboxId, emailId });
+    return;
+  }
+  if (!isEmailSenderAllowed(from, account.senderPolicy)) {
+    logger.warn('[email-webhook] sender rejected by inbox policy', { inboxId, emailId, sender: from });
+    return;
+  }
+  const apiKey = resolveEmailApiKey(await emailOwnKeyForAccount(account));
   if (!apiKey) {
     logger.error('[email-webhook] no Resend key for inbox', { projectId, inboxId });
     return;
@@ -96,9 +122,9 @@ export async function dispatchResendEmailEvent(event: ResendInboxEmailReceivedEv
     inboxId,
     threadId,
     emailId,
-    from: full.from || sender,
-    to: full.to ?? event.data.to ?? [],
-    subject: full.subject ?? event.data.subject ?? null,
+    from: full.from || from,
+    to: full.to ?? to,
+    subject: full.subject ?? subject,
     text: full.text || stripHtml(full.html) || '',
     attachments: (full.attachments ?? []).map((a) => ({
       id: a.id,
@@ -106,8 +132,6 @@ export async function dispatchResendEmailEvent(event: ResendInboxEmailReceivedEv
       size: a.size ?? null,
     })),
   };
-  // Resend does not retry a webhook the route already acked (channels/webhook-work.ts),
-  // so every attempt is the last one.
   await routeChannelMessage(
     emailPort,
     {
@@ -123,9 +147,14 @@ export async function dispatchResendEmailEvent(event: ResendInboxEmailReceivedEv
       followUp: { text: renderFollowUpPrompt(email) },
       plan: (revived) => planEmailSession(projectId, email, revived),
     },
-    { finalAttempt: true },
+    run,
   );
 }
+
+// A cold start can take ~405 s (a 15 s body read, a 90 s clone, a 300 s
+// first-prompt wait): the visibility outlasts it. Two per replica, so mail
+// never takes every job slot.
+registerEventConsumer('email.', handleEmailEvent, { visibilityMs: 7 * 60_000, batch: 2 });
 
 /**
  * A readable body for an HTML-only email. Linear in the input: a sender
@@ -294,43 +323,6 @@ async function replyNotAccepting(target: ChannelTarget): Promise<void> {
     logger.warn('[email-webhook] not-accepting reply failed', {
       error: err instanceof Error ? err.message : String(err),
     });
-  }
-}
-
-async function alreadyHandled(key: string): Promise<boolean> {
-  try {
-    const inserted = await db
-      .insert(chatEventDedup)
-      .values({
-        eventId: key,
-        expiresAt: new Date(Date.now() + EMAIL_EVENT_DEDUPE_TTL_MS),
-      })
-      .onConflictDoNothing({ target: chatEventDedup.eventId })
-      .returning({ eventId: chatEventDedup.eventId });
-    if (inserted.length > 0) recordClaim(key);
-    return inserted.length === 0;
-  } catch (err) {
-    logger.warn('[email-webhook] event dedup check failed', { error: err instanceof Error ? err.message : String(err) });
-    return false;
-  }
-}
-
-async function claimInboundMessage(inboxId: string, emailId: string): Promise<boolean> {
-  const key = `email:msg:${inboxId}:${emailId}`;
-  try {
-    const inserted = await db
-      .insert(chatEventDedup)
-      .values({
-        eventId: key,
-        expiresAt: new Date(Date.now() + EMAIL_EVENT_DEDUPE_TTL_MS),
-      })
-      .onConflictDoNothing({ target: chatEventDedup.eventId })
-      .returning({ eventId: chatEventDedup.eventId });
-    if (inserted.length > 0) recordClaim(key);
-    return inserted.length > 0;
-  } catch (err) {
-    logger.error('[email-webhook] inbound message claim failed (fail-open)', { error: err instanceof Error ? err.message : String(err) });
-    return true;
   }
 }
 

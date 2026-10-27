@@ -124,6 +124,23 @@ Two Apps changes ship in one release and survive a code rollback:
    To defer it, set `KORTIX_APPS_RETAINED_DEPLOYMENTS` high on prod for that
    release and lower it on the next one.
 
+### Email: received mail waits for the roll-forward
+
+From the release that stores each received email before the ack (KRTX-2235
+step 3), the api puts Email on the `integration.events.email` job queue. An
+older api never claims that queue, so emails stored before the rollback stay
+`queued` until a later promote runs them; Resend got its 200 and does not
+resend. Nothing is lost, only late. List what waits:
+
+```sql
+select job_key, created_at from kortix.job_queue
+where queue = 'integration.events.email' and status = 'queued' order by created_at;
+```
+
+If a sender must not wait, replay that email from the Resend dashboard: the
+older api handles it, and the stored copy is a no-op at the roll-forward (its
+session create already started, or its follow-up key exists). Delete nothing.
+
 ## 5. Per-surface availability (the engine handles this)
 
 You can't roll a surface BELOW where it existed. The gateway only entered prod

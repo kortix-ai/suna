@@ -9,6 +9,20 @@
  * queue's handler. A consumer must be idempotent: an event runs at least once.
  * A throw retries the event; on `finalAttempt` a throw dead-letters it, so a
  * consumer tells its user there instead.
+ *
+ * Runbook, a dead event (a consumer failed every attempt):
+ *   1. List them:
+ *        SELECT job_id, queue, job_key, attempts, max_attempts, last_error, updated_at
+ *          FROM kortix.job_queue WHERE queue LIKE 'integration.events%' AND status = 'dead';
+ *   2. Fix the cause in `last_error` (a revoked key, a provider outage).
+ *   3. Within 7 days (finished rows are pruned after that), queue it again:
+ *        UPDATE kortix.job_queue SET status = 'queued', attempts = 0, run_at = now(),
+ *               locked_until = NULL, last_error = NULL, updated_at = now()
+ *         WHERE job_id = '<job_id>' AND status = 'dead';
+ *   A message whose session create already started is a no-op when it runs again.
+ *   `attempt N of N never settled` means its last run's replica died or the run
+ *   outlived its visibility: that run may have finished its work, and the chat
+ *   was told nothing. While the row exists, a provider replay is a no-op.
  */
 import { enqueueJob, registerJobHandler } from '../shared/job-queue';
 
