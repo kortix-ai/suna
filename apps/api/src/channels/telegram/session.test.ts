@@ -71,6 +71,17 @@ describe('telegram notices for a session (run errors)', () => {
     expect(runFailed({ name: 'Error', message: '', code: 'aborted' })).toBeNull();
   });
 
+  test('a failed start says so, with the classified reason when there is one, and asks for /new', () => {
+    const reason = "Couldn't access the project's Git repository. Check the project's Git credentials and try again.";
+    const tail = ['Send /new, then send your message again. If it fails again, a project admin can check the session in Kortix.', details];
+    expect(telegramNotice(target, { kind: 'start_failed', sessionId: 's1', reason })).toBe(
+      [`Kortix could not start this chat's session, so the agent did not run. ${reason}`, ...tail].join('\n'),
+    );
+    expect(telegramNotice(target, { kind: 'start_failed', sessionId: 's1', reason: null })).toBe(
+      ["Kortix could not start this chat's session, so the agent did not run.", ...tail].join('\n'),
+    );
+  });
+
   test('the inbound notices keep their copy', () => {
     const inbound = { ...target, messageId: '7' };
     expect(telegramNotice(inbound, { kind: 'create_pending' })).toBe('Kortix is still starting a session for this chat. The agent replies here when it is ready.');

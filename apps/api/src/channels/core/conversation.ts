@@ -14,7 +14,7 @@
  *                          a racing message waits for that session and follows up
  *
  * Telegram and Email run on it. Slack and Teams still route themselves.
- * Session-addressed notices (a failed run) go through session-notice.ts.
+ * Session-addressed notices (a failed run, a failed start) go through session-notice.ts.
  */
 import { chatEventDedup } from '@kortix/db';
 import type { CHANNEL_PLATFORMS } from '@kortix/manifest-schema';
@@ -54,7 +54,13 @@ export type ChannelNotice =
   /** Last attempt: the thread's session refused the message (a failed session). */
   | { kind: 'follow_up_failed' }
   /** Session-addressed: a root turn closed in a non-abort error that no Slack or Teams turn carried. */
-  | { kind: 'run_failed'; sessionId: string; error?: TurnErrorInfo };
+  | { kind: 'run_failed'; sessionId: string; error?: TurnErrorInfo }
+  /**
+   * Session-addressed: the session's sandbox failed to start for a reason a retry
+   * does not clear, and the session is `failed`. `reason`: the classified
+   * user-facing cause, or null when only internal text exists.
+   */
+  | { kind: 'start_failed'; sessionId: string; reason: string | null };
 
 /** The notices a port receives with a target found from a session (session-notice.ts). */
 export type SessionNotice = Extract<ChannelNotice, { sessionId: string }>;

@@ -17,7 +17,8 @@ import { connectorConnectionIsConnected } from '../../projects/lib/session-conne
 import { db } from '../../shared/db';
 import { config as appConfig } from '../../config';
 import { forgetChatThread, resetChannelLifecycleForTest, setChannelLifecycleForTest } from '../core/conversation';
-import { notifySessionChannel } from '../core/session-notice';
+import { notifySessionChannel, notifyStartFailure } from '../core/session-notice';
+import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { adoptChatThreads, bindChatThread } from '../core/threads';
 import { sessionWebUrl } from '../slack/util';
 import { deleteTelegramInstall, saveTelegramInstall, setTelegramAllowedUserIds } from './installs';
@@ -30,13 +31,19 @@ const BOT_ID = String(5_000_000_000 + Math.floor(Math.random() * 1_000_000));
 const TOKEN = `${BOT_ID}:${'A'.repeat(35)}`;
 const ALLOWED = '111';
 
-const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
+type Call = { method: string; body: Record<string, unknown> };
+const calls: Call[] = [];
+const waiters: Array<(call: Call) => void> = [];
+/** The next Bot API call, for a send nothing awaits (the provisioning notifier fires and forgets). */
+const nextCall = () => new Promise<Call>((resolve) => waiters.push(resolve));
 const fake = Bun.serve({
   port: 0,
   async fetch(req) {
     const [, botToken, method] = new URL(req.url).pathname.split('/');
     if (botToken !== `bot${TOKEN}`) return Response.json({ ok: false, description: 'Unauthorized' }, { status: 401 });
-    calls.push({ method: method ?? '', body: (await req.json().catch(() => ({}))) as Record<string, unknown> });
+    const call = { method: method ?? '', body: (await req.json().catch(() => ({}))) as Record<string, unknown> };
+    calls.push(call);
+    waiters.splice(0).forEach((resolve) => resolve(call));
     return Response.json({ ok: true, result: { message_id: 1 } });
   },
 });
@@ -486,5 +493,38 @@ describe('Telegram notices addressed by session — migrated PostgreSQL', () => 
     await runFailed(sessionId);
     expect(calls.map((c) => c.body.chat_id)).toEqual([946]);
   });
-});
 
+  test('a sandbox that cannot start says so once, with its classified reason, and asks for /new', async () => {
+    const sessionId = await bindChat(948);
+    const reason = "Couldn't access the project's Git repository. Check the project's Git credentials and try again.";
+    await notifyStartFailure(sessionId, reason, { transient: false });
+    expect(calls).toHaveLength(1);
+    const text = String(calls[0]!.body.text);
+    expect(text).toContain(reason);
+    expect(text).toContain('Send /new');
+    expect(text).toContain(`/projects/${PROJECT}/sessions/${sessionId}`);
+  });
+
+  test('a failure the provider may clear says nothing: the session is retried', async () => {
+    const sessionId = await bindChat(951);
+    await notifyStartFailure(sessionId, 'The compute provider is at capacity.', { transient: true });
+    expect(calls).toHaveLength(0);
+    await notifyStartFailure(sessionId, 'The compute provider is at capacity.', { transient: false });
+    expect(calls).toHaveLength(1);
+  });
+
+  test('a kick-off failure posts the generic copy, never its internal text', async () => {
+    const sessionId = await bindChat(949);
+    await notifyStartFailure(sessionId, 'connect ECONNREFUSED 10.0.0.1:5432');
+    expect(calls).toHaveLength(1);
+    expect(String(calls[0]!.body.text)).not.toContain('ECONNREFUSED');
+    expect(String(calls[0]!.body.text)).toStartWith("Kortix could not start this chat's session, so the agent did not run.\n");
+  });
+
+  test('provisioning failures reach the chat through the registered notifier', async () => {
+    const sessionId = await bindChat(950);
+    const sent = nextCall();
+    notifySessionProvisioningFailed(sessionId, 'x', { transient: false });
+    expect((await sent).body.chat_id).toBe(950);
+  });
+});

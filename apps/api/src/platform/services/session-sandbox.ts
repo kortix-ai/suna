@@ -1500,10 +1500,10 @@ async function failSessionSandboxProvisioning(
   } catch (markErr) {
     console.error(`[session-sandbox] Failed to mark sandbox ${sandbox.sandboxId} as error:`, markErr);
   }
-  // Tell the originating channel (Slack) so the live thread shows the friendly
-  // reason now instead of a stranded ⏳ until the 30-min GC. Fire-and-forget;
-  // a no-op for non-channel sessions.
-  notifySessionProvisioningFailed(sandbox.sandboxId, userMessage);
+  // Tell the originating channel (Slack, Teams, Telegram) so it shows the
+  // friendly reason now instead of a stranded ⏳ until the 30-min GC.
+  // Fire-and-forget; a no-op for non-channel sessions.
+  notifySessionProvisioningFailed(sandbox.sandboxId, userMessage, { transient: failureTransient });
   const errTl = tl.summary();
   recordProviderEvent({
     provider: providerName, kind: 'provision', outcome: 'error',
