@@ -48,11 +48,19 @@ function UseCaseTile({ post }: { post: Post }) {
   );
 }
 
-function TileGrid({ posts }: { posts: Post[] }) {
+function TileGrid({
+  posts,
+  cols = 'sm:grid-cols-2 xl:grid-cols-3',
+}: {
+  posts: Post[];
+  cols?: string;
+}) {
+  // Hairlines per card (top and left on the grid, right and bottom on each
+  // card), so a short last row leaves blank space instead of a grey block.
   return (
-    <ul className="bg-border grid grid-cols-1 gap-px overflow-hidden rounded-lg border sm:grid-cols-2 xl:grid-cols-3">
+    <ul className={cn('grid grid-cols-1 border-t border-l', cols)}>
       {posts.map((post) => (
-        <li key={post.slug}>
+        <li key={post.slug} className="border-r border-b">
           <UseCaseTile post={post} />
         </li>
       ))}
@@ -148,7 +156,7 @@ export function UseCasesBrowser({ posts }: { posts: Post[] }) {
                 Four use cases that show what agents on Kortix do.
               </p>
               <div className="mt-6">
-                <TileGrid posts={starters} />
+                <TileGrid posts={starters} cols="sm:grid-cols-2 xl:grid-cols-4" />
               </div>
             </section>
 
@@ -156,9 +164,9 @@ export function UseCasesBrowser({ posts }: { posts: Post[] }) {
               <h2 id="by-team" className="text-foreground text-lg font-medium tracking-tight">
                 Browse by team
               </h2>
-              <ul className="bg-border mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-lg border sm:grid-cols-3 xl:grid-cols-4">
+              <ul className="mt-6 grid grid-cols-2 border-t border-l sm:grid-cols-3 xl:grid-cols-4">
                 {teams.map((t) => (
-                  <li key={t.id}>
+                  <li key={t.id} className="border-r border-b">
                     <button
                       type="button"
                       onClick={() => setFilter(t.id)}
