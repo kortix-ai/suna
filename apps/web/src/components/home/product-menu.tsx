@@ -44,6 +44,9 @@ export const MEGA_MENUS: MegaMenu[] = [
         title: 'Building blocks',
         links: [
           { label: 'Agents', href: '/docs/project/agents' },
+          // Apps: the compute platform (sites, internal tools, backends with data,
+          // functions and realtime), docs/apps.mdx.
+          { label: 'Apps', href: '/docs/apps' },
           { label: 'Connectors', href: '/docs/connect/connectors' },
           { label: 'Triggers', href: '/docs/connect/triggers' },
           { label: 'Computers', href: '/docs/connect/computers' },
