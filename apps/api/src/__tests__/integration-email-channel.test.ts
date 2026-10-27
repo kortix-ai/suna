@@ -5,7 +5,9 @@
  * allows. A consumer reads the body from Resend and routes the email; a failed
  * read retries, a crashed run is claimed again, and a run whose create already
  * started routes nothing twice. Email to a deleted workspace gets one "not
- * accepting" reply per thread (KRTX-1714). Only Resend's HTTP API is stubbed;
+ * accepting" reply per thread (KRTX-1714). Mail in a thread of an inbox that
+ * moved to this project, or was removed and added again, starts the thread
+ * over instead of being dropped. Only Resend's HTTP API is stubbed;
  * the active project's lifecycle is a recorder that binds the thread through
  * the real post-create step.
  */
@@ -18,6 +20,7 @@ import {
   connectorConnections,
   connectors,
   jobQueue,
+  projectSessionConnectorBindings,
   projectSessions,
   projects,
   sessionLifecycleCommands,
@@ -208,6 +211,7 @@ describe('a received email: stored before the ack, then run', () => {
   const INBOX = `inbox-open-${RUN}`;
   const STRICT = `inbox-strict-${RUN}`;
   const GONE = `inbox-gone-${RUN}`;
+  const READDED = `inbox-readded-${RUN}`;
   let project: SeededProject;
   const created: Array<Record<string, any>> = [];
   const delivered: Array<Record<string, any>> = [];
@@ -254,7 +258,7 @@ describe('a received email: stored before the ack, then run', () => {
 
   afterAll(async () => {
     resetChannelLifecycleForTest();
-    for (const inbox of [INBOX, STRICT, GONE]) {
+    for (const inbox of [INBOX, STRICT, GONE, READDED]) {
       await db.delete(chatThreads).where(eq(chatThreads.workspaceId, inbox));
       await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `%${inbox}%`));
       await db.delete(jobQueue).where(like(jobQueue.jobKey, `email:${inbox}:%`));
@@ -384,5 +388,81 @@ describe('a received email: stored before the ack, then run', () => {
     expect((await jobsOf(GONE)).map((j) => j.status)).toEqual(['done']);
     expect(bodyReads()).toHaveLength(0);
     expect(created).toHaveLength(0);
+  });
+
+  /** A session of `projectId` whose thread `thread` of `inbox` is bound to it. */
+  async function threadWithSession(projectId: string, inbox: string, thread: string) {
+    const sessionId = crypto.randomUUID();
+    await db.insert(projectSessions).values({ sessionId, accountId: project.account_id, projectId, branchName: sessionId, createdBy: OWNER });
+    await db.insert(chatThreads).values({ projectId, platform: 'email', workspaceId: inbox, threadId: `${inbox}-${thread}`, sessionId });
+    return sessionId;
+  }
+  /** A second project of the suite's account; `removeSeeded` would delete the account too. */
+  async function dropProject(projectId: string) {
+    await db.delete(chatThreads).where(eq(chatThreads.projectId, projectId));
+    await db.delete(projectSessions).where(eq(projectSessions.projectId, projectId));
+    await db.delete(projects).where(eq(projects.projectId, projectId));
+  }
+  const threadOf = async (inbox: string, thread: string) =>
+    (await db.select().from(chatThreads).where(and(eq(chatThreads.workspaceId, inbox), eq(chatThreads.threadId, `${inbox}-${thread}`))))[0];
+  const runEmail = (inbox: string, n: number, thread: string) =>
+    handleEmailEvent(emailMessageEvent(project.project_id, email(inbox, n, thread))!, { finalAttempt: true });
+
+  test('mail in a thread of an inbox that moved here starts the thread over here', async () => {
+    const from = await seedProject('email-moved-from', { accountId: project.account_id });
+    try {
+      const old = await threadWithSession(from.project_id, INBOX, 'm1');
+      await runEmail(INBOX, 11, 'm1');
+      expect(delivered).toHaveLength(0);
+      expect(created).toHaveLength(1);
+      expect(created[0]!.postCreate[1].text).toStartWith('NOTE: This email thread had an earlier conversation');
+      const thread = await threadOf(INBOX, 'm1');
+      expect(thread?.projectId).toBe(project.project_id);
+      expect(thread?.sessionId).not.toBe(old);
+    } finally {
+      await dropProject(from.project_id);
+    }
+  });
+
+  test('while the old project still holds the inbox, the email is refused and its thread kept', async () => {
+    const from = await seedProject('email-held-by-two', { accountId: project.account_id });
+    try {
+      const old = await threadWithSession(from.project_id, INBOX, 'm2');
+      await reserveEmailInbox({ projectId: from.project_id, inboxId: INBOX, email: 'inbox@example.test', agentName: null });
+      await runEmail(INBOX, 12, 'm2');
+      expect(created).toHaveLength(0);
+      expect(delivered).toHaveLength(0);
+      expect((await threadOf(INBOX, 'm2'))?.sessionId).toBe(old);
+    } finally {
+      await releaseEmailInbox(from.project_id, INBOX);
+      await dropProject(from.project_id);
+    }
+  });
+
+  test('mail in a thread of an inbox removed and added again starts over, on the new account', async () => {
+    await addInbox(project, READDED);
+    const first = (await loadEmailInboxAccountForInbox(project.project_id, READDED))!;
+    const old = await threadWithSession(project.project_id, READDED, 'r1');
+    await db.insert(projectSessionConnectorBindings).values({
+      sessionId: old,
+      accountId: project.account_id,
+      projectId: project.project_id,
+      connectorAlias: 'kortix_email',
+      connectorId: first.connectorId,
+      connectionId: first.connectionId,
+      source: 'default',
+      createdBy: null,
+    });
+    await revokeEmailInboxAccount(first);
+    await addInbox(project, READDED);
+
+    await runEmail(READDED, 1, 'r1');
+    expect(delivered).toHaveLength(0);
+    expect(created).toHaveLength(1);
+    expect(created[0]!.postCreate[1].text).toStartWith('NOTE: This email thread had an earlier conversation');
+    const second = (await loadEmailInboxAccountForInbox(project.project_id, READDED))!;
+    expect(second.connectionId).not.toBe(first.connectionId);
+    expect(created[0]!.body.connector_bindings).toEqual({ email: { connection_id: second.connectionId } });
+    expect((await threadOf(READDED, 'r1'))?.sessionId).not.toBe(old);
   });
 });

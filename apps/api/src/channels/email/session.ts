@@ -22,6 +22,7 @@ import {
   type EmailSenderPolicy,
   emailOwnKeyForAccount,
   emailOwnKeyForInbox,
+  listProjectsForWorkspace,
   loadEmailInboxAccountForInbox,
 } from '../install-store';
 import { matchesEmailSenderRegex } from './sender-policy-regex';
@@ -204,15 +205,40 @@ const emailPort: ChannelPort = {
     if (notice.kind === 'create_failed' && notice.error.body.code === 'project_archived') await replyNotAccepting(target);
   },
   async prepareFollowUp(target, thread) {
-    if (await ensureEmailSessionBinding({ projectId: target.projectId, sessionId: thread.sessionId, inboxId: target.workspaceId })) {
-      return true;
+    const inboxId = target.workspaceId;
+    if (thread.projectId !== target.projectId) {
+      // The inbox moved: the thread's project released it and this one holds
+      // it now. Its old session cannot reach this inbox, so the thread starts
+      // over here. While both projects hold it (an attach in flight), refuse.
+      if ((await listProjectsForWorkspace('email', inboxId)).includes(thread.projectId)) {
+        logger.warn('[email-webhook] two projects hold the inbox; email dropped', { inboxId, projectIds: [thread.projectId, target.projectId] });
+        return 'refuse';
+      }
+      logger.warn('[email-webhook] inbox moved to another project; the thread starts over there', {
+        inboxId,
+        threadId: target.threadId,
+        fromProjectId: thread.projectId,
+        toProjectId: target.projectId,
+        oldSessionId: thread.sessionId,
+      });
+      return 'restart';
+    }
+    const binding = await ensureEmailSessionBinding({ projectId: target.projectId, sessionId: thread.sessionId, inboxId });
+    if (binding === 'bound') return 'deliver';
+    if (binding === 'stale') {
+      logger.info('[email-webhook] inbox was removed and added again; the thread starts over', {
+        projectId: target.projectId,
+        inboxId,
+        oldSessionId: thread.sessionId,
+      });
+      return 'restart';
     }
     logger.warn('[email-webhook] could not bind the thread session to the inbox connection; email dropped', {
       projectId: target.projectId,
       sessionId: thread.sessionId,
-      inboxId: target.workspaceId,
+      inboxId,
     });
-    return false;
+    return 'refuse';
   },
 };
 
@@ -365,7 +391,7 @@ function renderAgentPrompt(email: InboundEmail, revived: boolean): string {
   const lines: string[] = [];
   if (revived) {
     lines.push(
-      'NOTE: This email thread had an earlier conversation, but that session was deleted.',
+      'NOTE: This email thread had an earlier conversation in another Kortix session, which cannot continue it: that session was deleted, or this inbox was removed and connected again.',
       'Pick the thread back up from the current email context.',
       '',
     );

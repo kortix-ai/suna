@@ -317,6 +317,7 @@ kortix channels email connect --api-key - --username support --domain mail.examp
 - **Shared with the project** (`share: project`, the default): its mail starts a project session as the project's automation account. Narrow who may use it in the connector's **Accounts**, like any shared account.
 - The first inbox of each owner is that owner's default. Set another with `kortix channels email inboxes default <address>` (or the standard default-account route).
 - Removing an inbox deletes it on Resend when Kortix created it. An inbox you attached by id is only unlinked.
+- After you remove an inbox and add it again, here or in another project, the next email in one of its old threads starts a new session: the old session cannot use the inbox any more, and the new one is told the thread had an earlier conversation.
 
 - **One email thread is one session.** A new message starts a session. A reply in the thread continues it. The agent reads and replies through the inbox that received the mail.
 - **Each email is stored before Kortix acknowledges it.** A failure while it runs (Resend unreachable, a session still starting) retries it for about 20 minutes, so a restart or a deploy loses no mail. Resend sending the same email again never starts a second session.

@@ -84,12 +84,19 @@ export type ChannelNotice =
 /** The notices a port receives with a target found from a session (session-notice.ts). */
 export type SessionNotice = Extract<ChannelNotice, { sessionId: string }>;
 
+/**
+ * What happens to a message in a thread whose session exists: deliver it,
+ * refuse it (the port logs why), or restart the thread (forget its session
+ * and start a new one, which knows it is a revival).
+ */
+export type FollowUpVerdict = 'deliver' | 'refuse' | 'restart';
+
 /** What one chat platform does for the core. */
 export interface ChannelPort {
   /** Tell the conversation an outcome. Send errors are logged, not thrown. */
   notify(target: ChannelTarget, notice: ChannelNotice): Promise<void>;
-  /** Runs before every follow-up into an existing session; false drops the message (the port logs why). */
-  prepareFollowUp?(target: ChannelTarget, thread: { sessionId: string; projectId: string }): Promise<boolean>;
+  /** Runs before every follow-up into an existing session; absent = deliver. */
+  prepareFollowUp?(target: ChannelTarget, thread: { sessionId: string; projectId: string }): Promise<FollowUpVerdict>;
 }
 
 /** One verified, deduped, sender-gated inbound message. */
@@ -288,7 +295,9 @@ async function followUp(
   thread: { sessionId: string; projectId: string },
   run: { finalAttempt: boolean },
 ): Promise<Awaited<ReturnType<typeof deliverThroughQueue>> | 'refused'> {
-  if (port.prepareFollowUp && !(await port.prepareFollowUp(target, thread))) return 'refused';
+  const verdict = port.prepareFollowUp ? await port.prepareFollowUp(target, thread) : 'deliver';
+  if (verdict === 'refuse') return 'refused';
+  if (verdict === 'restart') return 'no-session';
   const outcome = await lifecycle.deliverThroughQueue({
     source: target.platform,
     idempotencyKey: keys.followUp,
