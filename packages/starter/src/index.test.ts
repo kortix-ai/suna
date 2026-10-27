@@ -497,4 +497,17 @@ describe('marketplace projects — full project templates', () => {
     }
     for (const f of files) expect(f.content).not.toContain('\uFFFD');
   });
+
+  /**
+   * Daytona refuses a snapshot whose disk exceeds its per-sandbox cap ("Disk
+   * request 60GB exceeds maximum allowed per sandbox (40GB)"), so every session
+   * of a cloned agency stalled in provisioning (2026-10-27).
+   */
+  test('the agency sandbox templates fit Daytona per-sandbox disk cap', () => {
+    const DAYTONA_MAX_DISK_GB = 40;
+    const manifest = getProjectTemplateFiles().find((f) => f.path === 'youtube-infotainment-agency/kortix.yaml');
+    const disks = [...(manifest?.content ?? '').matchAll(/^\s+disk:\s*(\d+)/gm)].map((m) => Number(m[1]));
+    expect(disks.length).toBeGreaterThan(0);
+    for (const disk of disks) expect(disk).toBeLessThanOrEqual(DAYTONA_MAX_DISK_GB);
+  });
 });

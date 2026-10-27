@@ -40,6 +40,7 @@ env:
 
 # Rendering is CPU-only (headless Chrome + ffmpeg scale with vCPUs): 10 s of 1080p30 renders in ~26 s
 # on 4 vCPU. 6 vCPU / 12 GB fits common sandbox-provider limits; raise both if your provider allows.
+# Disk stays at 40 GB, Daytona's per-sandbox cap: episode media lives in object storage, not here.
 sandbox:
   default: video
   templates:
@@ -48,7 +49,7 @@ sandbox:
       dockerfile: Dockerfile.video
       cpu: 6
       memory: 12
-      disk: 60
+      disk: 40
 
 agents:
   # ── Orchestration ────────────────────────────────────────────────────────────
