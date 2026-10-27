@@ -26,7 +26,7 @@ export type MegaMenu = {
 export const MEGA_MENUS: MegaMenu[] = [
   {
     id: 'product',
-    label: 'AI OS',
+    label: 'Product',
     groups: [
       {
         title: 'Platform',

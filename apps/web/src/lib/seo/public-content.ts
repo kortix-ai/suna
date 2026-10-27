@@ -192,10 +192,10 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   {
     kind: 'marketing',
     slug: 'services',
-    // ACCURACY: never "AI transformation" (kortix-brand voice-and-tone.md).
-    title: 'AI Restructuring: strategy and Forward Deployed Engineers',
+    // "AI Transformation" is allowed here only (kortix-brand decisions.md D15).
+    title: 'AI Transformation, done for you by a Forward Deployed Engineer',
     description:
-      'Our team audits how your company works, then builds agents into your product, processes and people on the Kortix AI Operating System, in a repo you own.',
+      'We map how your company works, unify your data, automate the work with agents and build your custom software. One flat monthly fee. You own all of it.',
     htmlPath: '/services',
   },
   {

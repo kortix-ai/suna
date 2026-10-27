@@ -119,7 +119,7 @@ capitalized only at the start of a sentence or as a UI label.
 | Fully autonomous | "Opens a change request you approve" | A person approves. |
 | Please (in UI) | Say what to do: "Try again." | Section 4. |
 | Source-available, Elastic License, Apache, MIT | open source | Never name a license. |
-| more powerful, fully extensible, seamless, revolutionary, unlock productivity, next-gen, AI-powered magic, transformative, AI transformation | A concrete mechanism | Banned hype. The old brand guide banned "AI transformation" by name (Q41). |
+| more powerful, fully extensible, seamless, revolutionary, unlock productivity, next-gen, AI-powered magic, transformative, AI transformation | A concrete mechanism | Banned hype. The old brand guide banned "AI transformation" by name (Q41). Exception: "AI Transformation" is the service name on `/services` (D15). |
 | preview, beta (for email) | experimental, per project | The claim word is "experimental" ([claims.md](claims.md)). The one exception is the sanctioned Companies pitch line in [positioning.md](positioning.md), word for word (Q41). |
 
 ### Capitalization and mechanics

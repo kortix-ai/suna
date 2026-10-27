@@ -2,6 +2,7 @@
 
 import { MEGA_MENUS, type MegaMenu, MegaMenuPanel } from '@/components/home/product-menu';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { SiteSwitcher } from '@/features/marketing/kit/site-switcher';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -67,7 +68,6 @@ type MenuId = MegaMenu['id'];
 
 /** Links in the bar that navigate directly, beside the three menus. */
 const PLAIN_LINKS = [
-  { label: 'Services', href: '/services' },
   { label: 'Enterprise', href: '/enterprise' },
   { label: 'Pricing', href: '/pricing' },
 ];
@@ -480,6 +480,8 @@ export function Navbar() {
                 </ContextMenuItem>
               </ContextMenuContent>
             </ContextMenu>
+
+            <SiteSwitcher className="mr-auto ml-4 lg:mr-0" />
 
             {/* The links sit right after the logo; `mr-auto` pushes the actions to the end. */}
             <nav className="hidden items-center gap-1 lg:mr-auto lg:ml-8 lg:flex">

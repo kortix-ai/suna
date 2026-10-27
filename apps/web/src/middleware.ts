@@ -183,7 +183,7 @@ const PUBLIC_ROUTES = [
   '/developers', // Developer walkthrough landing page should be public
   '/countryerror', // Country restriction error page should be public
   '/enterprise', // Enterprise page should be public
-  '/services', // Services (AI Restructuring) page should be public
+  '/services', // Services (AI Transformation) sales page should be public
   '/pricing', // Pricing page should be public
   '/use-cases', // Use cases page should be public
   '/blog', // Blog index and posts should be public

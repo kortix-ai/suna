@@ -53,7 +53,7 @@ const MARKETING_SOURCES = {
   legal: 'apps/web/src/app/[locale]/(public)/(seo)/legal/page.tsx',
   security: 'apps/web/src/app/[locale]/(public)/(marketing)/security/page.tsx',
   'self-hosted': 'apps/web/src/app/[locale]/(public)/(marketing)/self-hosted/page.tsx',
-  services: 'apps/web/src/app/[locale]/(public)/(marketing)/services/page.tsx',
+  services: 'apps/web/src/app/[locale]/(public)/(sales)/services/page.tsx',
   'white-label': 'apps/web/src/app/[locale]/(public)/(marketing)/white-label/page.tsx',
   careers: 'apps/web/src/app/[locale]/(public)/(seo)/careers/page.tsx',
   changelog: 'apps/web/src/app/[locale]/(public)/(seo)/changelog/page.tsx',
