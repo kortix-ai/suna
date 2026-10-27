@@ -24,7 +24,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { projectSecrets } from '@kortix/db';
 import { GrantSecretToAgentInputSchema, GrantSecretToAgentResultSchema } from '@kortix/api-contract';
 import { and, eq, isNull, or } from 'drizzle-orm';
-import { auth, errors, json } from '../../openapi';
+import { auth, boundedIssues, errors, json } from '../../openapi';
 import { applyAgentScope, extractAgents, grantsByAgent } from '../agents';
 import { extractConnectors } from '../connectors';
 import { canonicalConnectorAlias } from '../../shared/connector-alias';
@@ -207,7 +207,7 @@ export function registerAgentScopeRoutes(): void {
         if (!applied.ok) {
           return applied.notFound
             ? c.json({ error: applied.error, code: 'agent_not_found' }, 404)
-            : c.json({ error: applied.error, code: 'invalid_scope', issues: applied.issues }, 400);
+            : c.json({ error: applied.error, code: 'invalid_scope', ...boundedIssues(applied.issues) }, 400);
         }
         manifest.raw = applied.raw;
       } else {
@@ -431,7 +431,7 @@ export function registerAgentScopeRoutes(): void {
       if (!applied.ok) {
         return applied.unsupportedV1
           ? c.json({ error: applied.error, code: 'manifest_v1_unsupported' }, 400)
-          : c.json({ error: applied.error, code: 'invalid_grant', issues: applied.issues }, 400);
+          : c.json({ error: applied.error, code: 'invalid_grant', ...boundedIssues(applied.issues) }, 400);
       }
       if (applied.alreadyGranted) {
         return c.json({
